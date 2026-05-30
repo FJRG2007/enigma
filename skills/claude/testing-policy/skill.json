@@ -1,0 +1,7 @@
+{
+  "name": "testing-policy",
+  "version": "1.0.0",
+  "provider": "FJRG2007",
+  "description": "Test strategy, coverage gates, deterministic tests, mocking discipline, and regression-first bug fixing.",
+  "sha": "d19fa8ec7985ed231478be504d3c80360897f555d0bc0624bea19c091f459fb0"
+}

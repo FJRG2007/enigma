@@ -1,0 +1,7 @@
+{
+  "name": "code-review-policy",
+  "version": "1.0.0",
+  "provider": "FJRG2007",
+  "description": "Pre-delivery self-review gate, prioritized review dimensions, and change-quality criteria.",
+  "sha": "3d3bbe0602d5bbb4afe37648fe3c2fa39376b1bcbac5d8c441f01fad1e866ed0"
+}

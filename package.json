@@ -1,0 +1,27 @@
+{
+  "name": "@tpeoficial/skills",
+  "version": "1.0.0",
+  "description": "Install/update AI agent skills (Claude Code, ...) globally or locally with a single command.",
+  "type": "module",
+  "bin": {
+    "skills": "scripts/install-skills.mjs"
+  },
+  "scripts": {
+    "skills": "node scripts/install-skills.mjs",
+    "skills:global": "node scripts/install-skills.mjs --global --all --yes",
+    "skills:local": "node scripts/install-skills.mjs --local --all --yes",
+    "seal": "node scripts/install-skills.mjs --seal"
+  },
+  "files": [
+    "scripts",
+    "skills"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@clack/prompts": "^0.7.0"
+  },
+  "author": "FJRG2007 <fjrg2007@tpeoficial.com>",
+  "license": "MIT"
+}

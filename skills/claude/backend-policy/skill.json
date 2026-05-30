@@ -1,0 +1,7 @@
+{
+  "name": "backend-policy",
+  "version": "1.0.0",
+  "provider": "FJRG2007",
+  "description": "Backend/API architecture: controller-service-repository layering, API and request optimization, server-side caching (Redis), and Zod boundary validation.",
+  "sha": "c442bc9e39a7710cb709ef2abb8d15ecd8aa16ed4f5c8af92b7af6877401cba4"
+}
