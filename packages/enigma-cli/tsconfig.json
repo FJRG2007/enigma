@@ -9,9 +9,7 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "noEmit": true,
-    "rootDir": "src",
-    "outDir": "dist"
+    "noEmit": true
   },
   "include": ["src", "tsup.config.ts"]
 }
