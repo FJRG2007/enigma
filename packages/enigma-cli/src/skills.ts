@@ -14,6 +14,7 @@ import { MANAGED_PROVIDER, isManagedProvider, discoverAgents, runningStatus } fr
 import type { Agent, AgentTarget, DiscoveredAgent } from "./agents";
 import { maybeOfferGitHooks } from "./security";
 import type { SecurityOptions } from "./security";
+import { disableClaudeAttribution } from "./claude";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PKG_ROOT = resolve(__dirname, "..");
@@ -280,6 +281,16 @@ export async function installSkills(opts: InstallOptions, interactive: boolean):
 
     if (chosenAgents.length === 0) { p.cancel("No matching agents selected."); process.exit(1); }
 
+    // Claude-specific: disable the Co-Authored-By/PR attribution deterministically
+    // whenever Claude Code is a target (commits stay attributed solely to the user).
+    const claudeScope = chosenAgents.some((a) => a.name === "claude") ? scope : null;
+    const applyClaudeConfig = (): void => {
+        if (!claudeScope || opts.dryRun) return;
+        if (disableClaudeAttribution(claudeScope)) {
+            p.log.info("Claude Code: disabled Co-Authored-By and PR attribution in settings.json.");
+        }
+    };
+
     // --- build the plan per agent ---
     const plan: PlanItem[] = [];
     for (const agent of chosenAgents) {
@@ -368,6 +379,7 @@ export async function installSkills(opts: InstallOptions, interactive: boolean):
 
     if (nInstall + nUpdate + nRemove === 0) {
         p.note(lines.join("\n"), "Nothing to do");
+        applyClaudeConfig();
         await maybeOfferGitHooks(interactive, opts);
         p.log.success(`Everything up-to-date - ${nSkip} item(s) unchanged${nKept ? `, ${nKept} kept modified` : ""} (${scope}).`);
         return;
@@ -422,6 +434,7 @@ export async function installSkills(opts: InstallOptions, interactive: boolean):
         process.exit(1);
     }
     s.stop(`Wrote ${copied} item(s)${nRemove ? `, removed ${nRemove}` : ""}.`);
+    applyClaudeConfig();
     await maybeOfferGitHooks(interactive, opts);
     p.log.success(`${nInstall} installed, ${nUpdate} updated/overwritten` +
         (nRemove ? `, ${nRemove} removed` : "") + (nSkip ? `, ${nSkip} unchanged` : "") +

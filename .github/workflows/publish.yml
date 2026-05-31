@@ -2,6 +2,7 @@ name: Publish enigma-cli
 
 # Auto-publish to npm. Triggers:
 #   - a published GitHub Release (recommended: create a release tagged vX.Y.Z)
+#   - a push to main whose head commit message contains "publish:"
 #   - manual run from the Actions tab (workflow_dispatch)
 #
 # Requires repo secret NPM_TOKEN (an npm automation token with publish rights).
@@ -9,6 +10,8 @@ name: Publish enigma-cli
 on:
   release:
     types: [published]
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -18,6 +21,12 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    # Publish on a release, a manual dispatch, or a push whose head commit
+    # message contains "publish:". Plain pushes without that marker are ignored.
+    if: >-
+      github.event_name == 'release' ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && contains(github.event.head_commit.message, 'publish:'))
     steps:
       - uses: actions/checkout@v4
 
@@ -47,7 +56,22 @@ jobs:
             echo "package.json version ($PKG_VERSION) does not match release tag ($TAG)"; exit 1
           fi
 
+      # Skip cleanly if this exact version is already on npm (e.g. a "publish:"
+      # push that forgot to bump). Avoids a hard failure on a duplicate version.
+      - name: Determine if version is new
+        id: ver
+        run: |
+          NAME="$(node -p "require('./packages/enigma-cli/package.json').name")"
+          VERSION="$(node -p "require('./packages/enigma-cli/package.json').version")"
+          if npm view "$NAME@$VERSION" version >/dev/null 2>&1; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "$NAME@$VERSION already published; skipping."
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Publish to npm
+        if: steps.ver.outputs.publish == 'true'
         run: npm publish --workspace enigma-cli --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
