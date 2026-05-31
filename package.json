@@ -8,11 +8,13 @@
     "packages/*"
   ],
   "scripts": {
-    "enigma": "node packages/enigma-cli/bin/enigma.mjs",
-    "seal": "node packages/enigma-cli/bin/enigma.mjs seal",
-    "check": "node --check packages/enigma-cli/bin/enigma.mjs && node packages/enigma-cli/bin/enigma.mjs check",
-    "guard": "node packages/enigma-cli/lib/guard.mjs --all",
-    "verify": "npm run check && npm run guard"
+    "enigma": "npm run -w enigma-cli enigma --",
+    "build": "npm run -w enigma-cli build",
+    "typecheck": "npm run -w enigma-cli typecheck",
+    "seal": "npm run -w enigma-cli seal",
+    "check": "npm run -w enigma-cli check",
+    "guard": "npm run -w enigma-cli guard",
+    "verify": "npm run -w enigma-cli verify"
   },
   "engines": {
     "node": ">=18"

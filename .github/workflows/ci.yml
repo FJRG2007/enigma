@@ -21,7 +21,11 @@ jobs:
       - name: Install dependencies
         run: npm ci || npm install
 
-      # Script syntax + skill integrity (catches silent stale-sha drift), then
-      # enigma-guard over all tracked files (secrets, .env, node_modules, ...).
+      # Typecheck + skill integrity (catches silent stale-sha drift) + guard
+      # over all tracked files (secrets, .env, node_modules, ...).
       - name: Verify
         run: npm run verify
+
+      # The package must build (tsup) so dist is publishable.
+      - name: Build
+        run: npm run build

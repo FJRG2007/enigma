@@ -4,17 +4,21 @@
   "description": "Everything you need to work with a coding agent: install shared policy skills for Claude Code, OpenAI Codex and opencode, and set up portable git security hooks.",
   "type": "module",
   "bin": {
-    "enigma": "bin/enigma.mjs"
+    "enigma": "dist/enigma.js"
   },
   "scripts": {
-    "seal": "node bin/enigma.mjs seal",
-    "check": "node --check bin/enigma.mjs && node bin/enigma.mjs check",
-    "guard": "node lib/guard.mjs --all",
-    "verify": "npm run check && npm run guard"
+    "enigma": "tsx src/bin/enigma.ts",
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "seal": "tsx src/bin/enigma.ts seal",
+    "check": "tsx src/bin/enigma.ts check",
+    "guard": "tsx src/guard.ts --all",
+    "verify": "npm run typecheck && npm run check && npm run guard",
+    "prepublishOnly": "npm run build"
   },
   "files": [
-    "bin",
-    "lib",
+    "dist",
     "assets",
     "README.md",
     "LICENSE"
@@ -24,6 +28,12 @@
   },
   "dependencies": {
     "@clack/prompts": "^0.7.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsup": "^8.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.0"
   },
   "keywords": [
     "ai",
