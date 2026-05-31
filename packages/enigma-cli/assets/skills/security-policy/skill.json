@@ -1,0 +1,7 @@
+{
+  "name": "security-policy",
+  "version": "1.0.0",
+  "provider": "FJRG2007",
+  "description": "Application and AI-agent security: secrets, authn/authz (least privilege), OWASP Top 10, transport/crypto baseline, secure logging, and agent/MCP/tool-use safety.",
+  "sha": "9971e9d9127397d0152e89d24aad3191e2935e55a8483db7fd15f5d4d7a60e7a"
+}

@@ -29,6 +29,8 @@ description: Highest-authority engineering rules - priority hierarchy, modular a
 - Domain triggers (load the skill when the work touches it):
   - Any persistence, schema, SQL, ORM, or query work -> database-expert.
   - Any external input (forms, request bodies, params, CLI args, payloads) -> validation-policy.
+  - Any secrets, credentials, auth, permissions, crypto, untrusted/tool output, or security-sensitive code -> security-policy.
+  - Any dependency added/upgraded/removed/audited, or package manifest/lockfile change -> dependency-policy.
   - Any UI, client state, data fetching, or client caching -> frontend-policy.
   - Any API endpoint, service, controller, or server request flow -> backend-policy.
   - Any new or changed code that needs verification -> testing-policy.
@@ -81,6 +83,8 @@ This core policy owns orchestration, architecture, and the global rules. Each co
 - debugging-policy: reproduce-isolate-fix methodology and root-cause discipline.
 - git-policy: commits, branches, and pull request standards.
 - ciphera-style-policy: Ciphera code style conventions - formatting, naming, quotes, string interpolation, length-sorted imports, indentation, comments/JSDoc, and code-level anti-patterns (TypeScript-first, language-agnostic).
+- security-policy: application and AI-agent security - secrets, authn/authz (least privilege), OWASP Top 10, transport/crypto baseline, secure logging, and agent/MCP/tool-use safety. Owns runtime security; the core security baseline defers detail here.
+- dependency-policy: dependency and supply-chain security - lockfiles, reproducible installs, version pinning, vulnerability auditing, vetting/minimizing packages, vendoring, and SBOM/provenance.
 
 ---
 

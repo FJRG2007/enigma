@@ -1,7 +1,7 @@
 {
   "name": "core-engineering-policy",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "provider": "FJRG2007",
   "description": "Core engineering execution policy and harness orchestration (highest-authority rules).",
-  "sha": "ef70bba746a40d1fa81648086b1f2917fc7aa7e3fe5c75aa8c9d0690c2343379"
+  "sha": "06842e80666efa1b6c4bc1d7400403938c50365a7ed967350e0ea5d55652384b"
 }

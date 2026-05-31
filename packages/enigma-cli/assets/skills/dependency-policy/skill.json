@@ -1,0 +1,7 @@
+{
+  "name": "dependency-policy",
+  "version": "1.0.0",
+  "provider": "FJRG2007",
+  "description": "Dependency and supply-chain security: lockfiles and reproducible installs, version pinning, vulnerability auditing, vetting/minimizing packages, vendoring, and SBOM/provenance.",
+  "sha": "6375d835c2aef2c9bd31ce116444dc3d796f510f9970a213aa3ac4696d7e21b9"
+}
