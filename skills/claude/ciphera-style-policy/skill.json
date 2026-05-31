@@ -1,0 +1,7 @@
+{
+  "name": "ciphera-style-policy",
+  "version": "1.0.0",
+  "provider": "FJRG2007",
+  "description": "Ciphera code style conventions (formatting, naming, imports, comments, code-level anti-patterns; TypeScript-first, language-agnostic).",
+  "sha": "9126987e914be6477cdcaf0ca4e778510b48c94617b82d8bf7cd9efac8529ed8"
+}
