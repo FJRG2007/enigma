@@ -29,9 +29,13 @@ jobs:
       - name: Install dependencies
         run: npm ci || npm install
 
-      # Never publish a broken package: integrity + guard must pass first.
+      # Never publish a broken package: typecheck + integrity + guard first.
       - name: Verify
         run: npm run verify
+
+      # Build the dist that gets published (also enforced by prepublishOnly).
+      - name: Build
+        run: npm run build
 
       # Guard against tag/version drift when triggered by a release.
       - name: Check version matches release tag
