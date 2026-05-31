@@ -1,0 +1,55 @@
+{
+  "name": "enigma-cli",
+  "version": "1.0.0",
+  "description": "Everything you need to work with a coding agent: install shared policy skills for Claude Code, OpenAI Codex and opencode, and set up portable git security hooks.",
+  "type": "module",
+  "bin": {
+    "enigma": "bin/enigma.mjs"
+  },
+  "scripts": {
+    "seal": "node bin/enigma.mjs seal",
+    "check": "node --check bin/enigma.mjs && node bin/enigma.mjs check",
+    "guard": "node lib/guard.mjs --all",
+    "verify": "npm run check && npm run guard"
+  },
+  "files": [
+    "bin",
+    "lib",
+    "assets",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@clack/prompts": "^0.7.0"
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "claude-code",
+    "codex",
+    "opencode",
+    "skills",
+    "agents.md",
+    "git-hooks",
+    "secrets",
+    "cli"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/FJRG2007/enigma.git",
+    "directory": "packages/enigma-cli"
+  },
+  "homepage": "https://github.com/FJRG2007/enigma#readme",
+  "bugs": {
+    "url": "https://github.com/FJRG2007/enigma/issues"
+  },
+  "author": "FJRG2007 <fjrg2007@tpeoficial.com>",
+  "license": "Apache-2.0",
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
+}

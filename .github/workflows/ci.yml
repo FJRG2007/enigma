@@ -1,0 +1,27 @@
+name: CI
+
+# Deterministic enforcement gate. Skills/memory only persuade the agent; this
+# workflow mechanically blocks merges that break the package's integrity rules.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # Reproducible install (dependency-policy): prefer the lockfile.
+      - name: Install dependencies
+        run: npm ci || npm install
+
+      # Script syntax + skill integrity (catches silent stale-sha drift), then
+      # enigma-guard over all tracked files (secrets, .env, node_modules, ...).
+      - name: Verify
+        run: npm run verify

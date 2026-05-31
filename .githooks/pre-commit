@@ -1,0 +1,8 @@
+#!/bin/sh
+# This repo's own pre-commit gate. Enable once with:
+#   git config core.hooksPath .githooks
+#
+# 1. enigma-guard: block committed secrets, .env files, and dependency dirs.
+# 2. Skill integrity: every SKILL.md well-formed and sealed (no stale sha).
+node "$(git rev-parse --show-toplevel)/packages/enigma-cli/lib/guard.mjs" || exit 1
+node "$(git rev-parse --show-toplevel)/packages/enigma-cli/bin/enigma.mjs" check || exit 1

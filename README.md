@@ -1,124 +1,139 @@
-# skills
+# enigma
 
-Install/update the *skills* and memory files of your AI agents
-(Claude Code, …) at the **global** (user) or **local** (project) level with a
-single command.
+Everything you need to work with a coding agent, in one command. `enigma`
+installs a shared set of engineering **policy skills** into the agents you
+actually use (Claude Code, OpenAI Codex, opencode) and sets up portable **git
+security hooks** that block secrets, `.env` files, and dependency dirs from being
+committed.
 
-## Structure
+This is a monorepo. The published, installable CLI lives in
+[`packages/enigma-cli`](packages/enigma-cli).
 
-```
-skills/
-└── <agent>/                   # target agent name (claude, codex, …)
-    ├── CLAUDE.md / AGENTS.md   # memory/instruction files (agent root)
-    └── <skill>/
-        ├── SKILL.md            # skill content (the only thing the AI reads)
-        └── skill.json          # metadata (NOT read by the AI) — see below
-```
-
-## Skill metadata (`skill.json`)
-
-Convention: a `skill.json` sidecar next to each `SKILL.md`. The agent harness
-only loads `SKILL.md`, so **the AI never reads `skill.json`** nor interprets it
-as instructions. It is used to version and attribute the skill:
-
-```json
-{
-  "name": "git-policy",
-  "version": "1.0.0",
-  "provider": "FJRG2007",
-  "description": "Git & contribution policy (senior engineering standards).",
-  "sha": "884000ff61ba558c020d21723d87942fdd00fe85c1eee57b15bf1e9b0c47c3b9"
-}
-```
-
-Using the `version`, the installer compares source vs destination and shows
-whether each skill is **installed** (`install v1.0.0`), **updated**
-(`update 0.9.0 → 1.0.0`) or **reinstalled** (same version, `reinstall v1.0.0`).
-In the interactive menu **all skills are selected by default** and you can
-deselect any you do not want to install.
-
-### Integrity by hash (`sha`) and optimization
-
-The `sha` field is the SHA-256 hash of the skill content (all of its files
-**except** `skill.json`). It serves two purposes during updates:
-
-- **Same version and intact content** → the skill is considered identical and is
-  **skipped** (`up-to-date (skip)`). It does not count as updated.
-- **Same version but the destination was modified by hand** (the current hash
-  does not match the one recorded at install time) → it is marked as
-  **`MODIFIED locally`** and, in interactive mode, a selector appears with all
-  modified skills **selected by default** so you can choose which to overwrite.
-  With `--keep-modified` they are all kept without prompting.
-
-Generate/update the hashes before publishing with:
+## Install
 
 ```bash
-node scripts/install-skills.mjs --seal     # = npm run seal
+npm install -g enigma-cli      # provides the `enigma` command
+enigma                         # interactive: pick what to set up
 ```
 
-### Pruning orphaned skills (prune)
-
-If a skill is removed from the source repository, on the next update the
-installer **deletes it from the destination** — but **only if its `skill.json`
-at the destination declares `"provider": "FJRG2007"`**. Hand-made skills
-(without `skill.json`) or those from other providers are **never touched**. They
-are shown in the plan as `remove (orphaned)` and confirmed before deletion.
-Disable it with `--no-prune`.
-
-> Pruning is based on what the repo ships in `skills/`, not on your menu
-> selection: deselecting a skill does not remove it, it only avoids reinstalling
-> it.
-
-The installer automatically discovers the agents present in `skills/` and copies
-each part to the agent's standard location:
-
-| Agent       | Scope    | Skills                | Memory (`*.md`)    |
-| ----------- | -------- | --------------------- | ------------------ |
-| Claude Code | global   | `~/.claude/skills/`   | `~/.claude/`       |
-| Claude Code | local    | `.claude/skills/`     | project root       |
-
-> Installs **always overwrite** existing files.
-
-## Usage
-
-Interactive (menus with `@clack/prompts`):
+Or run once without installing:
 
 ```bash
-npx @tpeoficial/skills
+npx enigma-cli
 ```
 
-Single command (non-interactive):
+## Commands
+
+```
+enigma                 Interactive menu: choose features to set up
+enigma install         Install/update agent skills
+enigma security        Set up git security hooks in the current repo
+enigma guard [--all]   Run the commit guard (staged files, or all tracked)
+enigma seal            Maintenance: (re)compute skill content hashes
+enigma check           Integrity gate: verify skills are well-formed and sealed
+enigma help | version
+```
+
+Everything is modular: the top-level menu (and the install/security flows) use
+[`@clack/prompts`](https://github.com/bombshell-dev/clack) so you can enable or
+disable each feature and each protection. Nothing touches your git config unless
+you run `enigma security` or accept its prompt.
+
+## Agent skills
+
+Skills are authored **once** under `packages/enigma-cli/assets/skills` and
+deployed to every selected agent; memory/instruction files live in
+`packages/enigma-cli/assets/memory`. There is no per-agent duplication.
+
+```
+packages/enigma-cli/
+├── bin/enigma.mjs           # CLI entry point
+├── lib/                     # modular logic
+│   ├── cli.mjs              # arg parsing + interactive menu + dispatch
+│   ├── agents.mjs           # supported agents + OS detection
+│   ├── skills.mjs           # discovery, seal/check, install
+│   ├── security.mjs         # git hooks setup
+│   ├── guard.mjs            # self-contained commit guard (also copied into repos)
+│   └── util.mjs             # shared helpers
+└── assets/
+    ├── skills/<skill>/      # SKILL.md (+ skill.json metadata, not read by the AI)
+    └── memory/              # CLAUDE.md (Claude Code), AGENTS.md (Codex + opencode)
+```
+
+### Agent auto-detection
+
+By default `enigma install` only targets agents actually installed on the machine
+(CLI on `PATH` **or** a config dir like `~/.claude`, `~/.codex`,
+`~/.config/opencode`). In the interactive menu detected agents are
+**preselected** (`detected` / `not detected`); `--all` overrides detection.
+
+| Agent       | Scope  | Skills                        | Memory file                    |
+| ----------- | ------ | ----------------------------- | ------------------------------ |
+| Claude Code | global | `~/.claude/skills/`           | `~/.claude/CLAUDE.md`          |
+| Claude Code | local  | `.claude/skills/`             | `./CLAUDE.md`                  |
+| OpenAI Codex| global | `~/.agents/skills/`           | `~/.codex/AGENTS.md`           |
+| OpenAI Codex| local  | `.agents/skills/`             | `./AGENTS.md`                  |
+| opencode    | global | `~/.config/opencode/skills/`  | `~/.config/opencode/AGENTS.md` |
+| opencode    | local  | `.opencode/skills/`           | `./AGENTS.md`                  |
+
+### Skill metadata and integrity
+
+Each skill has a `skill.json` sidecar (`name`, `version`, `provider`, `sha`). The
+agent harness only loads `SKILL.md`, so the AI never reads `skill.json`. The `sha`
+(SHA-256 of the skill content) lets the installer skip unchanged skills and detect
+ones modified by hand. Re-hash after editing with `enigma seal`.
+
+### Install options
+
+```
+-g, --global         User level    -l, --local   This project
+-a, --agent <name>   Target agent(s) (default: auto-detect)
+-s, --skill <name>   Skill(s) (default: all)
+    --all            Every supported agent, ignoring detection
+    --skills-only / --memory-only / --no-prune / --keep-modified / --dry-run
+```
+
+## Git security hooks
+
+`enigma security` drops a portable, dependency-free commit guard into **any** repo
+(not just this one): it copies `guard.mjs` into the repo's `.githooks/`, writes a
+cross-platform `pre-commit` shim and a toggle config, and points `core.hooksPath`
+at it. Commit `.githooks/` so the whole team inherits it. Because the hook runs on
+`git commit`, it also covers commits made through the **GitHub CLI** (`gh`), which
+shells out to `git`.
+
+On every commit the guard, OS-agnostically:
+
+- **Blocks** committed secrets (API keys, tokens, private keys).
+- **Blocks** `.env` / `.env.local` and similar (allows `*.example` / `*.sample` /
+  `*.template`).
+- **Blocks** dependency/cache dirs (`node_modules`, `__pycache__`, virtualenvs).
+- **Warns** on generated dirs (`dist`, `build`, `.next`, `coverage`), log/OS-junk
+  files, and files over 5 MB.
+
+Each protection is individually toggleable: the interactive setup uses a
+multiselect, and the choices are saved to `.githooks/enigma-guard.json`. Bypass
+once with `git commit --no-verify`.
+
+## Quality gates and publishing
+
+This repo gates itself mechanically (it is a tooling distributor, so there is no
+app test suite):
 
 ```bash
-# Everything, for every agent, at the user level
-npm run skills:global          # = node scripts/install-skills.mjs --global --all --yes
-
-# Everything, inside the current project
-npm run skills:local           # = node scripts/install-skills.mjs --local --all --yes
-
-# A specific skill of an agent, global
-node scripts/install-skills.mjs -g -a claude -s git-policy -y
+npm run check     # script syntax + every skill well-formed and SEALED
+npm run guard     # scan all tracked files for secrets, .env, node_modules, ...
+npm run verify    # both (used by CI)
 ```
 
-## Options
+- **CI** (`.github/workflows/ci.yml`) runs `npm ci` + `npm run verify` on every
+  push and pull request.
+- **Publish** (`.github/workflows/publish.yml`) publishes `enigma-cli` to npm with
+  provenance when a GitHub Release is published (or via manual dispatch). It
+  requires the `NPM_TOKEN` repo secret and checks that the release tag matches the
+  package version.
+- **Pre-commit** for this repo: `git config core.hooksPath .githooks`.
 
-```
--g, --global         Install at the user level (~/.claude, …)
--l, --local          Install into the current project (.claude, …)
--a, --agent <name>   Agent(s): comma-separated or repeated (default: all)
--s, --skill <name>   Skill(s): comma-separated or repeated (default: all)
-    --skills-only    Skills only (skip CLAUDE.md / AGENTS.md)
-    --memory-only    Memory files only
-    --no-prune       Do not remove orphaned skills (pruned by default)
-    --keep-modified  Do not overwrite skills modified by hand at the destination
-    --seal           Maintenance: recompute the sha in the source skill.json files
--y, --yes            Non-interactive (accepts defaults / flags)
-    --dry-run        Show the plan without writing anything
--h, --help           Help
-```
+## License
 
-## Adding a new agent
-
-Create `skills/<agent>/` with its skills/memory and, if its destination path is
-not one of the supported ones, add its mapping to the `AGENTS` object in
-`scripts/install-skills.mjs`.
+[Apache-2.0](LICENSE).

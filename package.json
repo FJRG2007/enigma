@@ -1,27 +1,30 @@
 {
-  "name": "@tpeoficial/skills",
+  "name": "enigma",
   "version": "1.0.0",
-  "description": "Install/update AI agent skills (Claude Code, ...) globally or locally with a single command.",
+  "description": "Monorepo for enigma: tooling to work with coding agents. The publishable CLI lives in packages/enigma-cli.",
+  "private": true,
   "type": "module",
-  "bin": {
-    "skills": "scripts/install-skills.mjs"
-  },
-  "scripts": {
-    "skills": "node scripts/install-skills.mjs",
-    "skills:global": "node scripts/install-skills.mjs --global --all --yes",
-    "skills:local": "node scripts/install-skills.mjs --local --all --yes",
-    "seal": "node scripts/install-skills.mjs --seal"
-  },
-  "files": [
-    "scripts",
-    "skills"
+  "workspaces": [
+    "packages/*"
   ],
+  "scripts": {
+    "enigma": "node packages/enigma-cli/bin/enigma.mjs",
+    "seal": "node packages/enigma-cli/bin/enigma.mjs seal",
+    "check": "node --check packages/enigma-cli/bin/enigma.mjs && node packages/enigma-cli/bin/enigma.mjs check",
+    "guard": "node packages/enigma-cli/lib/guard.mjs --all",
+    "verify": "npm run check && npm run guard"
+  },
   "engines": {
     "node": ">=18"
   },
-  "dependencies": {
-    "@clack/prompts": "^0.7.0"
-  },
   "author": "FJRG2007 <fjrg2007@tpeoficial.com>",
-  "license": "MIT"
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/FJRG2007/enigma.git"
+  },
+  "homepage": "https://github.com/FJRG2007/enigma#readme",
+  "bugs": {
+    "url": "https://github.com/FJRG2007/enigma/issues"
+  }
 }
