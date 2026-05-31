@@ -10,13 +10,32 @@ import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 import * as p from "@clack/prompts";
 import { isDir, readJson } from "./util.mjs";
-import { MANAGED_PROVIDER, discoverAgents, runningStatus } from "./agents.mjs";
+import { MANAGED_PROVIDER, isManagedProvider, discoverAgents, runningStatus } from "./agents.mjs";
 import { maybeOfferGitHooks } from "./security.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const ASSETS = resolve(__dirname, "..", "assets");
+const PKG_ROOT = resolve(__dirname, "..");
+const ASSETS = join(PKG_ROOT, "assets");
 export const SKILLS_ROOT = join(ASSETS, "skills");
 export const MEMORY_ROOT = join(ASSETS, "memory");
+
+/** This CLI package's own version, stamped into skills at seal time. */
+function cliVersion() {
+  return (readJson(join(PKG_ROOT, "package.json")) || {}).version || "0.0.0";
+}
+
+/**
+ * Serialize skill metadata with a stable key order and exactly one trailing
+ * newline (no blank last line). Keeps sealed files diff-friendly.
+ */
+function serializeMeta(meta) {
+  const ordered = {};
+  for (const k of ["name", "version", "provider", "description", "cliVersion", "sha"]) {
+    if (meta[k] !== undefined) ordered[k] = meta[k];
+  }
+  for (const k of Object.keys(meta)) if (!(k in ordered)) ordered[k] = meta[k];
+  return JSON.stringify(ordered, null, 2) + "\n";
+}
 
 // --- metadata + hashing --------------------------------------------------------
 
@@ -87,7 +106,7 @@ function computePrune(destSkillsDir, sourceNames) {
     .filter((e) => isDir(join(destSkillsDir, e)) && existsSync(join(destSkillsDir, e, "SKILL.md")))
     .filter((e) => !sourceNames.includes(e))
     .map((e) => ({ name: e, dir: join(destSkillsDir, e), meta: readSkillMeta(join(destSkillsDir, e)) }))
-    .filter((s) => s.meta.provider === MANAGED_PROVIDER);
+    .filter((s) => isManagedProvider(s.meta.provider));
 }
 
 /** Shared skills: every folder with a SKILL.md under assets/skills. */
@@ -110,20 +129,25 @@ function inspectMemory(agent) {
 /** (Re)compute each source skill's content hash into its skill.json. */
 export function sealSources() {
   if (!isDir(SKILLS_ROOT)) { console.error(`No skills directory found at ${SKILLS_ROOT}.`); process.exit(1); }
+  const cli = cliVersion();
   let sealed = 0;
   for (const name of readdirSync(SKILLS_ROOT)) {
     const dir = join(SKILLS_ROOT, name);
     if (!isDir(dir) || !existsSync(join(dir, "SKILL.md"))) continue;
     const metaPath = join(dir, "skill.json");
-    const meta = readJson(metaPath) || { name, provider: MANAGED_PROVIDER };
-    const sha = computeContentSha(dir);
-    const changed = meta.sha !== sha;
-    meta.sha = sha;
-    writeFileSync(metaPath, JSON.stringify(meta, null, 2) + "\n");
-    console.log(`${changed ? "updated" : "ok     "}  ${name}  sha=${sha.slice(0, 12)}`);
+    const meta = readJson(metaPath) || { name };
+    const before = JSON.stringify(meta);
+    // Auto-managed fields (never hand-written): canonical provider, the version
+    // of the CLI doing the seal, and the content hash.
+    meta.provider = MANAGED_PROVIDER;
+    meta.cliVersion = cli;
+    meta.sha = computeContentSha(dir);
+    const changed = JSON.stringify(meta) !== before;
+    writeFileSync(metaPath, serializeMeta(meta));
+    console.log(`${changed ? "updated" : "ok     "}  ${name}  cli=${cli}  sha=${meta.sha.slice(0, 12)}`);
     sealed++;
   }
-  console.log(`\nSealed ${sealed} skill(s).`);
+  console.log(`\nSealed ${sealed} skill(s) at cliVersion ${cli}.`);
 }
 
 /**
@@ -133,6 +157,7 @@ export function sealSources() {
  */
 export function checkSources() {
   if (!isDir(SKILLS_ROOT)) { console.error(`No skills directory found at ${SKILLS_ROOT}.`); process.exit(1); }
+  const cli = cliVersion();
   const problems = [];
   let checked = 0;
   for (const name of readdirSync(SKILLS_ROOT)) {
@@ -150,8 +175,9 @@ export function checkSources() {
     if (!existsSync(metaPath)) { problems.push(`${name}: missing skill.json`); continue; }
     const meta = readJson(metaPath);
     if (!meta) { problems.push(`${name}: skill.json is not valid JSON`); continue; }
-    if (meta.provider !== MANAGED_PROVIDER) problems.push(`${name}: skill.json provider is not ${MANAGED_PROVIDER}`);
+    if (!isManagedProvider(meta.provider)) problems.push(`${name}: skill.json provider is not ${MANAGED_PROVIDER}`);
     if (!meta.version) problems.push(`${name}: skill.json missing 'version'`);
+    if (meta.cliVersion !== cli) problems.push(`${name}: stale cliVersion (${meta.cliVersion || "none"} != ${cli}) - run 'enigma seal'`);
     if (!meta.sha) problems.push(`${name}: not sealed (run 'enigma seal')`);
     else if (meta.sha !== computeContentSha(dir)) problems.push(`${name}: stale sha - content changed since seal (run 'enigma seal')`);
   }

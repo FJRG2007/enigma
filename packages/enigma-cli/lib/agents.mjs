@@ -17,10 +17,19 @@ const HOME = homedir();
 
 /**
  * Pruning safety: an installed skill that no longer exists in the source is
- * removed ONLY if its destination skill.json declares this provider, so we never
- * delete skills authored by the user or other providers.
+ * removed ONLY if its destination skill.json declares one of our providers, so
+ * we never delete skills authored by the user or other providers.
+ *
+ * MANAGED_PROVIDER is the current canonical value that seal writes; LEGACY_PROVIDERS
+ * are older values we still recognize so existing installs keep being managed.
  */
-export const MANAGED_PROVIDER = "FJRG2007";
+export const MANAGED_PROVIDER = "FJRG2007/enigma";
+export const LEGACY_PROVIDERS = ["FJRG2007"];
+
+/** True if a skill.json `provider` is one we own (canonical or legacy). */
+export function isManagedProvider(provider) {
+  return provider === MANAGED_PROVIDER || LEGACY_PROVIDERS.includes(provider);
+}
 
 export const AGENTS = {
   claude: {
