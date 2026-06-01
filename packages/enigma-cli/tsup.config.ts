@@ -15,6 +15,10 @@ export default defineConfig({
     target: "node18",
     platform: "node",
     outDir: "dist",
+    // OpenTUI ships a native Zig core loaded via Bun FFI; never bundle it. It is an
+    // optionalDependency, imported dynamically only under Bun, so it stays external
+    // and is resolved at runtime (Node never reaches that import).
+    external: ["@opentui/core", "@opentui/react"],
     splitting: false,
     clean: true,
     dts: false,

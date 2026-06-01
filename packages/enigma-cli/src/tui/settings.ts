@@ -2,11 +2,15 @@
  * The enigma TUI, built with Ink (React for the terminal). One unified view: a
  * left "MENU" sidebar listing the setting categories and, in hub mode, the action
  * entries (install skills, git hooks); the right panel adapts to the selection.
- * Selecting an action opens a NATIVE Ink sub-view (multiselect of agents/scope or
- * guard protections) - no clack prompt is shown inside the TUI, since mixing
- * clack's raw-mode prompts with Ink is unreliable. On confirm the TUI exits and the
- * chosen options are executed non-interactively by the launcher; clack is only used
- * when the user runs `enigma install` / `enigma security` directly.
+ * An action's options (agents/scope or guard protections) render as a NATIVE Ink
+ * checklist DIRECTLY in the right panel - exactly like a settings category shows
+ * its toggles - so they are visible and editable in place (tab/enter/-> to focus,
+ * space to toggle, enter to run). No clack prompt is shown inside the TUI, since
+ * mixing clack's raw-mode prompts with Ink is unreliable. Running an action is
+ * INLINE: installSkills/setupGitHooks write through a buffering reporter (no
+ * stdout, which would corrupt the live render) and the outcome is shown in a
+ * native result panel; the user returns to the menu with esc/enter. clack is only
+ * used when the user runs `enigma install` / `enigma security` directly.
  *
  * Settings toggles are staged in memory and persisted via the shared registry only
  * on an explicit save (s save, x save & exit). Leaving with unsaved edits raises a
@@ -26,12 +30,19 @@ import type { Scope, Setting } from "../settings-registry";
 
 const CLEAR_SCREEN = "\x1b[2J\x1b[H"; // erase screen + home cursor (VT100; preserves scrollback)
 
-/** A hub action and the options the user chose for it in the native sub-view. */
-export interface LeaveIntent {
-    action: "skills" | "security" | "quit";
+/** A skill-install or git-hook action requested from its right-panel checklist. */
+export interface ActionRequest {
+    action: "skills" | "security";
     scope?: Scope;
     agents?: string[];
     protections?: string[];
+}
+
+/** The outcome of a hub action, rendered inline in the native result panel. */
+export interface ActionResult {
+    ok: boolean;
+    title: string;
+    lines: string[];
 }
 
 /** Minimal agent/protection shapes the hub needs (passed in to avoid heavy imports). */
@@ -40,7 +51,7 @@ export interface HubProtection { value: string; label: string; hint: string; }
 export interface HubContext {
     agents: HubAgent[];
     protections: HubProtection[];
-    runAction: (intent: LeaveIntent) => Promise<void>;
+    runAction: (req: ActionRequest) => Promise<ActionResult>;
 }
 
 /** Registry lookup by stable key, used to resolve staged edits back to settings. */
@@ -58,9 +69,13 @@ const ACTION_ITEMS: Array<{ action: "skills" | "security"; title: string; blurb:
     { action: "security", title: "Git security hooks", blurb: "block secrets, .env, node_modules on commit" },
 ];
 
+/** The display title for an action, reused by the running and result panels. */
+const actionTitle = (action: "skills" | "security"): string =>
+    ACTION_ITEMS.find((a) => a.action === action)!.title;
+
 const EXIT_OPTIONS = ["Save & exit", "Exit without saving", "Cancel"] as const;
 
-/** Open the hub TUI (settings + native install/security sub-views). */
+/** Open the hub TUI (settings + native, inline install/security checklists). */
 export async function runHomeTui(hub: HubContext): Promise<void> {
     await runTui({ showActions: true, hub });
 }
@@ -80,47 +95,33 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
     const h = React.createElement;
     const agents = opts.hub?.agents ?? [];
     const protections = opts.hub?.protections ?? [];
-    const clear = (): void => { if (fullscreen) try { process.stdout.write(CLEAR_SCREEN); } catch { /* ignore */ } };
+    // No-op fallback for the settings-only TUI, where no action can be invoked.
+    const runAction = opts.hub?.runAction
+        ?? (async (): Promise<ActionResult> => ({ ok: false, title: "", lines: [] }));
 
-    for (;;) {
-        const state: { intent: LeaveIntent } = { intent: { action: "quit" } };
-        const App = buildApp(React, ink, { showActions: opts.showActions, fullscreen, agents, protections, onLeave: (i) => { state.intent = i; } });
-
-        clear(); // clean slate for the TUI
-        const app = render(h(App), { exitOnCtrlC: true });
-        await app.waitUntilExit();
-
-        const { intent } = state;
-        if (opts.hub && (intent.action === "skills" || intent.action === "security")) {
-            clear(); // clean slate so the action's output does not draw over the TUI
-            await opts.hub.runAction(intent);
-            await waitForEnter(); // let the user read the result before the hub reopens
-            continue;
-        }
-        break;
-    }
-}
-
-/** Block until the user presses a key, so action output is readable before reopening. */
-function waitForEnter(): Promise<void> {
-    return new Promise((resolve) => {
-        process.stdout.write("\nPress Enter to return to the menu...\n");
-        const stdin = process.stdin;
-        stdin.resume();
-        stdin.once("data", () => { stdin.pause(); resolve(); });
-    });
+    if (fullscreen) try { process.stdout.write(CLEAR_SCREEN); } catch { /* ignore */ }
+    const App = buildApp(React, ink, { showActions: opts.showActions, fullscreen, agents, protections, runAction });
+    const app = render(h(App), { exitOnCtrlC: true });
+    await app.waitUntilExit();
 }
 
 /**
- * Build the root TUI component. Separated from the launcher (which owns the render
- * loop) so it can be rendered in isolation for testing. `showActions` adds the hub
- * action entries; `fullscreen` fills the terminal height; `agents`/`protections`
- * feed the native action sub-views; `onLeave` reports the chosen intent.
+ * Build the root TUI component. Separated from the launcher (which owns the
+ * render) so it can be rendered in isolation for testing. `showActions` adds the
+ * hub action entries; `fullscreen` fills the terminal height; `agents`/
+ * `protections` feed the right-panel checklists; `runAction` executes a chosen
+ * action inline and resolves with the result rendered in the result panel.
  */
 export function buildApp(
     React: typeof import("react"),
     ink: typeof import("ink"),
-    opts: { showActions: boolean; fullscreen: boolean; agents: HubAgent[]; protections: HubProtection[]; onLeave: (intent: LeaveIntent) => void },
+    opts: {
+        showActions: boolean;
+        fullscreen: boolean;
+        agents: HubAgent[];
+        protections: HubProtection[];
+        runAction: (req: ActionRequest) => Promise<ActionResult>;
+    },
 ) {
     const { useApp, useInput, useStdout } = ink;
     const Box = ink.Box as never;
@@ -137,21 +138,31 @@ export function buildApp(
         ...(opts.showActions ? ACTION_ITEMS.map((a) => ({ kind: "action" as const, ...a })) : []),
     ];
 
+    /** Checklist item keys for an action: agent names (skills) or protection values (security). */
+    const actionItemKeys = (action: "skills" | "security"): string[] =>
+        action === "security" ? opts.protections.map((pr) => pr.value) : opts.agents.map((a) => a.name);
+
+    type Mode = "menu" | "running" | "result";
+
     return function App() {
         const { exit } = useApp();
         const { stdout } = useStdout();
         const [size, setSize] = useState({ columns: stdout.columns || 80, rows: stdout.rows || 24 });
-        const [mode, setMode] = useState<"menu" | "skills" | "security">("menu");
+        const [mode, setMode] = useState<Mode>("menu");
         const [scope, setScope] = useState<Scope>("global");
         const [sideIndex, setSideIndex] = useState(0);
         const [focusRight, setFocusRight] = useState(false);
         const [setIndex, setSetIndex] = useState(0);
         const [pending, setPending] = useState<Record<string, boolean>>({});
         const [confirm, setConfirm] = useState<{ index: number } | null>(null);
-        // Native action sub-view state: cursor, per-item checkbox, and install scope.
+        // Right-panel checklist state for the selected action: cursor + per-item checkbox.
         const [actCursor, setActCursor] = useState(0);
         const [actChecked, setActChecked] = useState<Record<string, boolean>>({});
-        const [actScope, setActScope] = useState<Scope>("global");
+        // Inline-execution state: title shown while running, the resolved result,
+        // and the result panel's scroll offset (output can exceed the panel height).
+        const [busyTitle, setBusyTitle] = useState("");
+        const [result, setResult] = useState<ActionResult | null>(null);
+        const [resultScroll, setResultScroll] = useState(0);
 
         useEffect(() => {
             const onResize = (): void => setSize({ columns: stdout.columns || 80, rows: stdout.rows || 24 });
@@ -161,6 +172,27 @@ export function buildApp(
 
         const current = sideItems[sideIndex]!;
         const category = current.kind === "category" ? CATEGORIES[current.catIndex]! : null;
+        const action = current.kind === "action" ? current.action : null;
+
+        // Preselect the checklist whenever the selected action changes (detected
+        // agents for skills, every protection for security), resetting the cursor.
+        useEffect(() => {
+            if (!action) return;
+            setActCursor(0);
+            if (action === "security") {
+                setActChecked(Object.fromEntries(opts.protections.map((pr) => [pr.value, true])));
+            } else {
+                const detected = opts.agents.filter((a) => a.installed);
+                const preselect = detected.length ? detected : opts.agents;
+                setActChecked(Object.fromEntries(opts.agents.map((a) => [a.name, preselect.some((d) => d.name === a.name)])));
+            }
+        }, [action]);
+
+        // Visible result lines: in fullscreen the panel has a fixed height, so long
+        // output (e.g. a multi-agent install plan) is windowed and scrolled; inline
+        // mode lets the terminal scroll naturally, so every line is shown.
+        const resultRows = fill ? Math.max(3, size.rows - 7) : (result?.lines.length ?? 0);
+        const maxResultScroll = Math.max(0, (result?.lines.length ?? 0) - resultRows);
 
         const valueOf = (setting: Setting, sc: Scope): boolean => {
             const k = stageKey(setting.key, sc);
@@ -181,20 +213,22 @@ export function buildApp(
                 if (setting && setting.read(sc) !== v) setting.write(v, sc);
             }
         };
-        const leave = (intent: LeaveIntent): void => { opts.onLeave(intent); exit(); };
 
-        // Enter a native action sub-view, preselecting sensible defaults.
-        const openAction = (action: "skills" | "security"): void => {
-            setActCursor(0);
-            if (action === "security") {
-                setActChecked(Object.fromEntries(opts.protections.map((p) => [p.value, true])));
-            } else {
-                const detected = opts.agents.filter((a) => a.installed);
-                const preselect = detected.length ? detected : opts.agents;
-                setActChecked(Object.fromEntries(opts.agents.map((a) => [a.name, preselect.some((d) => d.name === a.name)])));
-                setActScope("global");
-            }
-            setMode(action);
+        // Run the selected action inline (no exit) and show its result in the panel.
+        const runChosen = (act: "skills" | "security"): void => {
+            const keys = actionItemKeys(act);
+            const chosen = keys.filter((k) => actChecked[k]);
+            const req: ActionRequest = act === "security"
+                ? { action: act, protections: chosen }
+                : { action: act, scope, agents: chosen };
+            persistPending(); setPending({}); // don't lose staged settings while an action runs
+            setBusyTitle(actionTitle(act));
+            setResult(null);
+            setResultScroll(0);
+            setMode("running");
+            opts.runAction(req)
+                .then((res) => { setResult(res); setMode("result"); })
+                .catch((err) => { setResult({ ok: false, title: actionTitle(act), lines: [`Error: ${(err as Error).message}`] }); setMode("result"); });
         };
 
         useInput((input, key) => {
@@ -209,65 +243,67 @@ export function buildApp(
                     if (index === 2) return; // cancel
                     if (index === 0) persistPending(); // save & exit
                     setPending({});
-                    leave({ action: "quit" });
+                    exit();
                 }
                 return;
             }
 
-            // --- native action sub-views (skills / security) ---
-            if (mode !== "menu") {
-                const items = mode === "security"
-                    ? opts.protections.map((p) => p.value)
-                    : opts.agents.map((a) => a.name);
-                if (key.escape || input === "q") { setMode("menu"); return; }
-                if (mode === "skills" && input === "g") { setActScope((s) => (s === "global" ? "local" : "global")); return; }
-                if (key.upArrow || input === "k") { setActCursor((i) => Math.max(0, i - 1)); return; }
-                if (key.downArrow || input === "j") { setActCursor((i) => Math.min(items.length - 1, i + 1)); return; }
-                if (input === " ") { const k = items[actCursor]!; setActChecked((c) => ({ ...c, [k]: !c[k] })); return; }
-                if (key.return) {
-                    const chosen = items.filter((k) => actChecked[k]);
-                    persistPending(); setPending({}); // don't lose staged settings when leaving
-                    if (mode === "security") leave({ action: "security", protections: chosen });
-                    else leave({ action: "skills", scope: actScope, agents: chosen });
-                }
+            // --- inline action in progress: ignore input until it resolves ---
+            if (mode === "running") return;
+
+            // --- result panel: scroll the buffered output, or return to the menu ---
+            if (mode === "result") {
+                if (key.return || key.escape || input === " " || input === "q") { setMode("menu"); return; }
+                if (key.upArrow || input === "k") { setResultScroll((s) => Math.max(0, s - 1)); return; }
+                if (key.downArrow || input === "j") { setResultScroll((s) => Math.min(maxResultScroll, s + 1)); return; }
                 return;
             }
 
-            // --- menu (settings categories + action entries) ---
-            if (input === "q" || key.escape) { dirty ? setConfirm({ index: 0 }) : leave({ action: "quit" }); return; }
+            // --- menu: sidebar + right panel (settings toggles or action checklist) ---
+            if (input === "q" || key.escape) { dirty ? setConfirm({ index: 0 }) : exit(); return; }
             if (input === "s") { persistPending(); setPending({}); return; }
-            if (input === "x") { persistPending(); setPending({}); leave({ action: "quit" }); return; }
+            if (input === "x") { persistPending(); setPending({}); exit(); return; }
             if (input === "g") { setScope((s) => (s === "global" ? "local" : "global")); return; }
-            if (key.tab) { if (category) setFocusRight((f) => !f); return; }
+            if (key.tab) { setFocusRight((f) => !f); return; }
             if (key.leftArrow || input === "h") { setFocusRight(false); return; }
-            if (key.rightArrow || input === "l") { if (category) setFocusRight(true); return; }
+            if (key.rightArrow || input === "l") { setFocusRight(true); return; }
             if (key.upArrow || input === "k") {
                 if (focusRight && category) setSetIndex((i) => Math.max(0, i - 1));
+                else if (focusRight && action) setActCursor((i) => Math.max(0, i - 1));
                 else { setSideIndex((i) => Math.max(0, i - 1)); setSetIndex(0); setFocusRight(false); }
                 return;
             }
             if (key.downArrow || input === "j") {
                 if (focusRight && category) setSetIndex((i) => Math.min(category.settings.length - 1, i + 1));
+                else if (focusRight && action) setActCursor((i) => Math.min(actionItemKeys(action).length - 1, i + 1));
                 else { setSideIndex((i) => Math.min(sideItems.length - 1, i + 1)); setSetIndex(0); setFocusRight(false); }
                 return;
             }
+            // space toggles an action checkbox when the checklist is focused.
+            if (input === " " && focusRight && action) {
+                const k = actionItemKeys(action)[actCursor]!;
+                setActChecked((c) => ({ ...c, [k]: !c[k] }));
+                return;
+            }
             if (key.return || input === " ") {
-                if (current.kind === "action") { openAction(current.action); return; }
                 if (!focusRight) { setFocusRight(true); return; }
+                if (action) { runChosen(action); return; }
                 const setting = category!.settings[setIndex]!;
-                setPending((p) => ({ ...p, [stageKey(setting.key, scope)]: !valueOf(setting, scope) }));
+                setPending((pr) => ({ ...pr, [stageKey(setting.key, scope)]: !valueOf(setting, scope) }));
             }
         });
 
         // --- header ---
         const headerRight = confirm
             ? h(Text, { color: "yellow" }, "unsaved changes")
-            : mode === "menu"
-                ? h(Box, {}, h(Text, { dimColor: true }, "scope "),
-                    h(Text, { bold: true, color: scope === "global" ? "green" : "yellow" }, scope),
-                    h(Text, { dimColor: true }, "  (g)"),
-                    dirty ? h(Text, { color: "yellow" }, "   * unsaved") : null)
-                : h(Text, { dimColor: true }, mode === "skills" ? "install" : "security");
+            : mode === "running"
+                ? h(Text, { dimColor: true }, "working")
+                : mode === "result"
+                    ? h(Text, { dimColor: true }, "result")
+                    : h(Box, {}, h(Text, { dimColor: true }, "scope "),
+                        h(Text, { bold: true, color: scope === "global" ? "green" : "yellow" }, scope),
+                        h(Text, { dimColor: true }, "  (g)"),
+                        dirty ? h(Text, { color: "yellow" }, "   * unsaved") : null);
         const titleBar = h(Box, { width: size.columns, paddingX: 1, justifyContent: "space-between" },
             h(Text, { bold: true, color: "cyan" }, "enigma"), headerRight);
 
@@ -275,34 +311,42 @@ export function buildApp(
         let content: import("react").ReactElement;
         if (confirm) {
             content = renderConfirm(h, Box, Text, confirm.index, fill);
-        } else if (mode === "security") {
-            content = renderChecklist(h, Box, Text, {
-                title: "Git security hooks", blurb: "Choose what the commit guard enforces, then press enter.",
-                items: opts.protections.map((p) => ({ key: p.value, label: p.label, hint: p.hint })),
-                cursor: actCursor, checked: actChecked, fill,
-            });
-        } else if (mode === "skills") {
-            content = renderChecklist(h, Box, Text, {
-                title: "Install agent skills", blurb: `Scope ${actScope} (g to change). Choose agents, then press enter.`,
-                items: opts.agents.map((a) => ({ key: a.name, label: a.label, hint: a.installed ? "detected" : "not detected" })),
-                cursor: actCursor, checked: actChecked, fill,
-            });
+        } else if (mode === "running") {
+            content = renderRunning(h, Box, Text, busyTitle, fill);
+        } else if (mode === "result" && result) {
+            content = renderResult(h, Box, Text, { res: result, scroll: Math.min(resultScroll, maxResultScroll), maxRows: resultRows, fill });
         } else {
             const sidebarWidth = Math.min(28, Math.max(20, Math.floor(size.columns * 0.3)));
             const panel = category
                 ? renderCategoryPanel(h, Box, Text, { category, scope, focusRight, setIndex, valueOf, isModified, fill })
-                : renderActionPanel(h, Box, Text, current as Extract<SideItem, { kind: "action" }>);
+                : renderChecklist(h, Box, Text, {
+                    title: actionTitle(action!),
+                    blurb: action === "skills"
+                        ? `Scope ${scope} (g to change). Choose agents, then enter to install.`
+                        : "Choose what the commit guard enforces, then enter to apply.",
+                    items: action === "security"
+                        ? opts.protections.map((pr) => ({ key: pr.value, label: pr.label, hint: pr.hint }))
+                        : opts.agents.map((a) => ({ key: a.name, label: a.label, hint: a.installed ? "detected" : "not detected" })),
+                    cursor: actCursor, checked: actChecked, focused: focusRight, fill,
+                });
             content = h(Box, fill ? { flexGrow: 1 } : {}, renderSidebar(h, Box, Text, sideItems, sideIndex, focusRight, sidebarWidth), panel);
         }
 
         // --- footer ---
+        const menuFooter = focusRight && action
+            ? (action === "skills"
+                ? "up/down move    space toggle    g scope    enter install    tab back"
+                : "up/down move    space toggle    enter apply    tab back")
+            : focusRight && category
+                ? "up/down move    enter toggle    g scope    tab back"
+                : `up/down move    tab switch    enter ${action ? "edit" : "focus"}    s save    x save & exit    q quit`;
         const footerText = confirm
             ? "up/down move    enter select    esc cancel"
-            : mode === "security"
-                ? "up/down move    space toggle    enter apply    esc back"
-                : mode === "skills"
-                    ? "up/down move    space toggle    g scope    enter install    esc back"
-                    : `up/down move    tab switch    ${category ? "enter toggle    g scope    " : "enter open    "}s save    x save & exit    q quit`;
+            : mode === "running"
+                ? "working..."
+                : mode === "result"
+                    ? `${maxResultScroll > 0 ? "up/down scroll    " : ""}enter / esc    back to menu`
+                    : menuFooter;
         const footer = h(Box, { width: size.columns, paddingX: 1 }, h(Text, { dimColor: true }, footerText));
 
         return h(Box, { width: size.columns, ...(fill ? { height: size.rows } : {}), flexDirection: "column" },
@@ -338,27 +382,79 @@ function renderConfirm(h: typeof import("react").createElement, Box: never, Text
         ]));
 }
 
+/** Transient panel shown while an action runs inline (writes via a buffering reporter). */
+function renderRunning(h: typeof import("react").createElement, Box: never, Text: never, title: string, fill: boolean): import("react").ReactElement {
+    return h(Box, {
+        flexDirection: "column", borderStyle: "round", borderColor: "cyan", paddingX: 1,
+        ...(fill ? { flexGrow: 1 } : {}),
+    }, [
+        h(Text, { key: "__t", bold: true, color: "cyan" }, title || "Working"),
+        h(Text, { key: "__w", marginTop: 1, dimColor: true }, "Working..."),
+        ...(fill ? [h(Box, { key: "__grow", flexGrow: 1 })] : []),
+    ]);
+}
+
+interface ResultState {
+    res: ActionResult;
+    scroll: number;
+    maxRows: number;
+    fill: boolean;
+}
+
+/**
+ * Native panel for an action's outcome: the buffered output lines, colored by
+ * success. When the output is taller than `maxRows` (fullscreen), a window of
+ * `scroll..scroll+maxRows` lines is shown with "more above/below" markers so the
+ * summary is always reachable; otherwise every line is rendered.
+ */
+function renderResult(h: typeof import("react").createElement, Box: never, Text: never, s: ResultState): import("react").ReactElement {
+    const { res, maxRows } = s;
+    const windowed = maxRows > 0 && res.lines.length > maxRows;
+    const start = windowed ? Math.max(0, Math.min(s.scroll, res.lines.length - maxRows)) : 0;
+    const slice = windowed ? res.lines.slice(start, start + maxRows) : res.lines;
+    const rows = slice.length
+        ? slice.map((line, i) => h(Text, { key: String(start + i), wrap: "truncate-end" }, ` ${line} `))
+        : [h(Text, { key: "__none", dimColor: true }, " (no output) ")];
+    const above = windowed && start > 0;
+    const below = windowed && start + maxRows < res.lines.length;
+    return h(Box, {
+        flexDirection: "column", borderStyle: "round", borderColor: res.ok ? "green" : "red", paddingX: 1,
+        ...(s.fill ? { flexGrow: 1 } : {}),
+    }, [
+        h(Text, { key: "__t", bold: true, color: res.ok ? "green" : "red" }, res.title),
+        h(Text, { key: "__up", dimColor: true }, above ? ` ... ${start} more above ` : " "),
+        h(Box, { key: "__rows", flexDirection: "column" }, rows),
+        h(Text, { key: "__dn", dimColor: true }, below ? ` ... ${res.lines.length - start - maxRows} more below ` : " "),
+        ...(s.fill ? [h(Box, { key: "__grow", flexGrow: 1 })] : []),
+    ]);
+}
+
 interface ChecklistState {
     title: string;
     blurb: string;
     items: Array<{ key: string; label: string; hint: string }>;
     cursor: number;
     checked: Record<string, boolean>;
+    focused: boolean;
     fill: boolean;
 }
 
-/** Native multiselect panel used by the install and security action sub-views. */
+/**
+ * Right-panel multiselect for an action (install agents / guard protections).
+ * Mirrors the settings-category panel: border and row highlight only light up
+ * when `focused`, so it reads as a live preview while the sidebar has focus.
+ */
 function renderChecklist(h: typeof import("react").createElement, Box: never, Text: never, s: ChecklistState): import("react").ReactElement {
     const rows = s.items.map((it, i) => {
         const on = !!s.checked[it.key];
-        const selected = i === s.cursor;
+        const selected = s.focused && i === s.cursor;
         return h(Box, { key: it.key, justifyContent: "space-between" },
             h(Text, { inverse: selected, bold: selected }, ` ${on ? "[x]" : "[ ]"} ${it.label} `),
             h(Text, { dimColor: true }, `${it.hint}  `));
     });
     return h(Box, {
-        flexDirection: "column", borderStyle: "round", borderColor: "cyan", paddingX: 1,
-        ...(s.fill ? { flexGrow: 1 } : {}),
+        flexDirection: "column", borderStyle: "round",
+        borderColor: s.focused ? "cyan" : "gray", paddingX: 1, flexGrow: 1,
     }, [
         h(Text, { key: "__t", bold: true, color: "cyan" }, s.title),
         h(Text, { key: "__bl", dimColor: true }, s.blurb),
@@ -398,19 +494,5 @@ function renderCategoryPanel(h: typeof import("react").createElement, Box: never
         h(Box, { key: "__rows", marginTop: 1, flexDirection: "column" }, rows),
         ...(s.fill ? [h(Box, { key: "__grow", flexGrow: 1 })] : []),
         h(Text, { key: "__hint", marginTop: 1, dimColor: true, wrap: "truncate-end" }, focused.hint),
-    ]);
-}
-
-/** Right panel for an action entry: what it does and how to open it. */
-function renderActionPanel(
-    h: typeof import("react").createElement, Box: never, Text: never,
-    item: { title: string; blurb: string },
-): import("react").ReactElement {
-    return h(Box, {
-        flexDirection: "column", borderStyle: "round", borderColor: "gray", paddingX: 1, flexGrow: 1,
-    }, [
-        h(Text, { key: "__t", bold: true, color: "cyan" }, item.title),
-        h(Text, { key: "__bl", dimColor: true }, item.blurb),
-        h(Text, { key: "__h", marginTop: 1, dimColor: true }, "Press enter to open"),
     ]);
 }

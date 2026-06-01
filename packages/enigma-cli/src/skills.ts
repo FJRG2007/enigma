@@ -14,6 +14,8 @@ import { MANAGED_PROVIDER, isManagedProvider, discoverAgents, runningStatus } fr
 import type { Agent, AgentTarget, DiscoveredAgent } from "./agents";
 import { maybeOfferGitHooks } from "./security";
 import type { SecurityOptions } from "./security";
+import { clackReporter } from "./reporter";
+import type { Reporter } from "./reporter";
 import { disableClaudeAttribution } from "./claude";
 import { resolveBypassSelection, applyBypass } from "./permissions";
 
@@ -230,13 +232,15 @@ export function checkSources(): void {
 
 // --- install -------------------------------------------------------------------
 
-/** Plan and apply a skills install. Prints progress via clack. */
-export async function installSkills(opts: InstallOptions, interactive: boolean): Promise<void> {
+/**
+ * Plan and apply a skills install. Progress is emitted through `reporter`:
+ * clack for the CLI, or a buffering reporter when driven inline by the TUI.
+ * Interactive prompts (scope/agent/skill selection) still use clack directly and
+ * only run when `interactive` is true, so the TUI never triggers them.
+ */
+export async function installSkills(opts: InstallOptions, interactive: boolean, reporter: Reporter = clackReporter()): Promise<void> {
     const available = discoverAgents();
-    if (available.length === 0) {
-        p.cancel("No installable agents known.");
-        process.exit(1);
-    }
+    if (available.length === 0) reporter.fatal("No installable agents known.");
 
     // --- scope ---
     let scope: "global" | "local";
@@ -262,7 +266,7 @@ export async function installSkills(opts: InstallOptions, interactive: boolean):
     if (opts.agents.length) {
         chosenAgents = available.filter((a) => opts.agents.includes(a.name));
         const unknown = opts.agents.filter((n) => !available.some((a) => a.name === n));
-        if (unknown.length) p.log.warn(`Skipping unknown/absent agents: ${unknown.join(", ")}`);
+        if (unknown.length) reporter.warn(`Skipping unknown/absent agents: ${unknown.join(", ")}`);
     } else if (opts.allAgents) {
         chosenAgents = available;
     } else if (interactive && available.length > 1) {
@@ -279,10 +283,10 @@ export async function installSkills(opts: InstallOptions, interactive: boolean):
         chosenAgents = detected;
     } else {
         chosenAgents = available;
-        p.log.warn("No installed agents detected; defaulting to all supported agents.");
+        reporter.warn("No installed agents detected; defaulting to all supported agents.");
     }
 
-    if (chosenAgents.length === 0) { p.cancel("No matching agents selected."); process.exit(1); }
+    if (chosenAgents.length === 0) reporter.fatal("No matching agents selected.");
 
     // Claude-specific: disable the Co-Authored-By/PR attribution deterministically
     // whenever Claude Code is a target (commits stay attributed solely to the user).
@@ -290,7 +294,7 @@ export async function installSkills(opts: InstallOptions, interactive: boolean):
     const applyClaudeConfig = (): void => {
         if (!claudeScope || opts.dryRun) return;
         if (disableClaudeAttribution(claudeScope)) {
-            p.log.info("Claude Code: disabled Co-Authored-By and PR attribution in settings.json.");
+            reporter.info("Claude Code: disabled Co-Authored-By and PR attribution in settings.json.");
         }
     };
 
@@ -303,7 +307,7 @@ export async function installSkills(opts: InstallOptions, interactive: boolean):
     const plan: PlanItem[] = [];
     for (const agent of chosenAgents) {
         const target = agent.targets[scope];
-        if (!target) { p.log.warn(`${agent.label} has no '${scope}' target - skipping.`); continue; }
+        if (!target) { reporter.warn(`${agent.label} has no '${scope}' target - skipping.`); continue; }
         const skills = inspectSkills();
         const memory = inspectMemory(agent);
 
@@ -340,7 +344,7 @@ export async function installSkills(opts: InstallOptions, interactive: boolean):
     if (tampered.length) {
         if (opts.keepModified) {
             for (const s of tampered) s.overwrite = false;
-            p.log.warn(`${tampered.length} locally-modified skill(s) will be kept (--keep-modified).`);
+            reporter.warn(`${tampered.length} locally-modified skill(s) will be kept (--keep-modified).`);
         } else if (interactive && !opts.dryRun) {
             const sel = await p.multiselect({
                 message: `${tampered.length} skill(s) were modified locally since install. Select which to OVERWRITE`,
@@ -386,15 +390,15 @@ export async function installSkills(opts: InstallOptions, interactive: boolean):
     }
 
     if (nInstall + nUpdate + nRemove === 0) {
-        p.note(lines.join("\n"), "Nothing to do");
+        reporter.note(lines.join("\n"), "Nothing to do");
         applyClaudeConfig();
         applyBypassConfig();
         await maybeOfferGitHooks(interactive, opts);
-        p.log.success(`Everything up-to-date - ${nSkip} item(s) unchanged${nKept ? `, ${nKept} kept modified` : ""} (${scope}).`);
+        reporter.success(`Everything up-to-date - ${nSkip} item(s) unchanged${nKept ? `, ${nKept} kept modified` : ""} (${scope}).`);
         return;
     }
 
-    p.note(lines.join("\n"), opts.dryRun ? "Dry run - planned changes" : "Planned changes");
+    reporter.note(lines.join("\n"), opts.dryRun ? "Dry run - planned changes" : "Planned changes");
 
     if (interactive && !opts.dryRun) {
         const summary = [
@@ -407,7 +411,7 @@ export async function installSkills(opts: InstallOptions, interactive: boolean):
         if (p.isCancel(ok) || !ok) { p.cancel("Aborted."); return; }
     }
 
-    if (opts.dryRun) { applyBypassConfig(); p.log.info("Dry run complete - no files written."); return; }
+    if (opts.dryRun) { applyBypassConfig(); reporter.info("Dry run complete - no files written."); return; }
 
     // Which agents actually receive changes (computed before writing, since
     // memoryStatus flips to "identical" once files are copied). Used for the
@@ -418,7 +422,7 @@ export async function installSkills(opts: InstallOptions, interactive: boolean):
         x.prune.length > 0
     );
 
-    const s = p.spinner();
+    const s = reporter.spinner();
     s.start("Installing...");
     let copied = 0;
     try {
@@ -439,14 +443,13 @@ export async function installSkills(opts: InstallOptions, interactive: boolean):
         }
     } catch (err) {
         s.stop("Failed.");
-        p.cancel(`Error while installing: ${(err as Error).message}`);
-        process.exit(1);
+        reporter.fatal(`Error while installing: ${(err as Error).message}`);
     }
     s.stop(`Wrote ${copied} item(s)${nRemove ? `, removed ${nRemove}` : ""}.`);
     applyClaudeConfig();
     applyBypassConfig();
     await maybeOfferGitHooks(interactive, opts);
-    p.log.success(`${nInstall} installed, ${nUpdate} updated/overwritten` +
+    reporter.success(`${nInstall} installed, ${nUpdate} updated/overwritten` +
         (nRemove ? `, ${nRemove} removed` : "") + (nSkip ? `, ${nSkip} unchanged` : "") +
         (nKept ? `, ${nKept} kept modified` : "") + ` (${scope}).`);
 
@@ -457,10 +460,10 @@ export async function installSkills(opts: InstallOptions, interactive: boolean):
         const { known, running } = runningStatus(changedAgents.map((x) => x.agent));
         if (running.size) {
             const names = changedAgents.filter((x) => running.has(x.agent.name)).map((x) => x.agent.label);
-            p.log.warn(`Restart ${names.join(", ")} to apply the changes (running now).`);
+            reporter.warn(`Restart ${names.join(", ")} to apply the changes (running now).`);
         } else if (!known) {
             const names = changedAgents.map((x) => x.agent.label);
-            p.log.info(`If any of these agents are running, restart them to apply the changes: ${names.join(", ")}.`);
+            reporter.info(`If any of these agents are running, restart them to apply the changes: ${names.join(", ")}.`);
         }
     }
 }
