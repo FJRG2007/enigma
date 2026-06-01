@@ -10,7 +10,8 @@ import * as p from "@clack/prompts";
 import { readJson } from "./util";
 import { installSkills, sealSources, checkSources } from "./skills";
 import type { InstallOptions } from "./skills";
-import { setupGitHooks } from "./security";
+import { setupGitHooks, GUARD_PROTECTIONS } from "./security";
+import { discoverAgents } from "./agents";
 import { runGuardCli } from "./guard";
 import { runConfigCli } from "./settings";
 import { notifyUpdate } from "./update";
@@ -77,7 +78,7 @@ Usage:
 
 Commands:
   (none)               Interactive hub: configure settings or set up features
-  install              Install/update agent skills (Claude Code, Codex, opencode)
+  install              Install/update agent skills (Claude Code, Codex, OpenCode)
   security             Set up git security hooks in the current repo
   guard [--all]        Run the commit guard (staged files, or --all for every tracked file)
   config [key val]     Configure settings: no args opens the interactive menu;
@@ -86,7 +87,7 @@ Commands:
   check                Integrity gate: verify skills are well-formed and sealed
   help, version
 
-Config keys: commit-emoji, update-notifier, claude-attribution,
+Config keys: commit-emoji, update-notifier, fullscreen, claude-attribution,
              bypass-claude, bypass-codex, bypass-opencode
 
 Install options:
@@ -154,19 +155,25 @@ export async function run(argv: string[]): Promise<void> {
         return;
     }
 
-    // Full-screen home TUI. Install/security drop to their clack wizards (run
-    // outside the alt screen) and the menu reopens afterwards.
+    // Full-screen hub TUI. Install/security are chosen natively in the TUI; on
+    // confirm the TUI exits and we run the chosen options non-interactively (no
+    // clack prompts), then the hub reopens. Direct `enigma install` / `enigma
+    // security` still use the clack wizards above.
     const { runHomeTui } = await import("./tui/settings");
-    await runHomeTui(async (action) => {
-        if (action === "skills") {
-            p.intro("enigma - install agent skills");
-            await installSkills(opts, interactive);
-            p.outro("Done.");
-        } else if (action === "security") {
-            p.intro("enigma - git security hooks");
-            const done = await setupGitHooks(opts, interactive);
-            p.outro(done ? "Git hooks configured." : "No changes made.");
-        }
+    await runHomeTui({
+        agents: discoverAgents().map((a) => ({ name: a.name, label: a.label, installed: a.installed })),
+        protections: GUARD_PROTECTIONS,
+        runAction: async (intent) => {
+            if (intent.action === "skills") {
+                p.intro("enigma - install agent skills");
+                await installSkills({ ...opts, scope: intent.scope ?? opts.scope, agents: intent.agents ?? [], allAgents: !(intent.agents && intent.agents.length) }, false);
+                p.outro("Done.");
+            } else if (intent.action === "security") {
+                p.intro("enigma - git security hooks");
+                const done = await setupGitHooks({ ...opts, protections: intent.protections, force: true }, false);
+                p.outro(done ? "Git hooks configured." : "No changes made.");
+            }
+        },
     });
     await notifyUpdate(version, interactive);
 }

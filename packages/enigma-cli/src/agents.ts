@@ -73,7 +73,7 @@ export const AGENTS: Record<string, AgentDef> = {
         },
     },
     opencode: {
-        label: "opencode",
+        label: "OpenCode",
         memoryFile: "AGENTS.md",
         // opencode reads AGENTS.md from ~/.config/opencode (global) or the project
         // root (local); skills from ~/.config/opencode/skills and .opencode/skills.

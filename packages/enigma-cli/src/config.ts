@@ -21,10 +21,16 @@ export const CONFIG_FILE = ".enigma.json";
 export interface EnigmaConfig {
     commitEmoji: boolean;
     updateNotifier: boolean;
+    fullscreen: boolean;
 }
 
-/** Built-in defaults: everything the skills enable is on unless opted out. */
-export const CONFIG_DEFAULTS: EnigmaConfig = { commitEmoji: true, updateNotifier: true };
+/**
+ * Built-in defaults: everything the skills enable is on unless opted out.
+ * fullscreen clears the screen so the TUI renders cleanly (on by default); it uses
+ * an OS-agnostic clear rather than the alternate screen buffer, so exiting returns
+ * to the shell without wiping/restoring the terminal.
+ */
+export const CONFIG_DEFAULTS: EnigmaConfig = { commitEmoji: true, updateNotifier: true, fullscreen: true };
 
 export type EnigmaConfigKey = keyof EnigmaConfig;
 
