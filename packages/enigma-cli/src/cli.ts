@@ -12,15 +12,17 @@ import { installSkills, sealSources, checkSources } from "./skills";
 import type { InstallOptions } from "./skills";
 import { setupGitHooks } from "./security";
 import { runGuardCli } from "./guard";
+import { runConfigCli } from "./config";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PKG = readJson<{ version?: string }>(join(__dirname, "..", "package.json")) || {};
 
-type Command = "install" | "security" | "guard" | "seal" | "check" | "help" | "version";
-const COMMANDS = new Set<string>(["install", "security", "guard", "seal", "check", "help", "version"]);
+type Command = "install" | "security" | "guard" | "seal" | "check" | "config" | "help" | "version";
+const COMMANDS = new Set<string>(["install", "security", "guard", "seal", "check", "config", "help", "version"]);
 
 interface CliOptions extends InstallOptions {
     command: Command | null;
+    positionals: string[];
     all: boolean;
     yes: boolean;
     help: boolean;
@@ -29,7 +31,7 @@ interface CliOptions extends InstallOptions {
 
 function parseArgs(argv: string[]): CliOptions {
     const opts: CliOptions = {
-        command: null,
+        command: null, positionals: [],
         scope: null, agents: [], allAgents: false, skills: [],
         skillsOnly: false, memoryOnly: false, prune: true, keepModified: false,
         force: false, all: false, yes: false, dryRun: false, help: false, version: false,
@@ -55,6 +57,7 @@ function parseArgs(argv: string[]): CliOptions {
             case "-v": case "--version": opts.version = true; break;
             default:
                 if (a.startsWith("-")) { console.error(`Unknown option: ${a}`); process.exit(1); }
+                else if (opts.command) { opts.positionals.push(a); }
                 else { console.error(`Unknown command: ${a}`); process.exit(1); }
         }
     }
@@ -73,6 +76,7 @@ Commands:
   install              Install/update agent skills (Claude Code, Codex, opencode)
   security             Set up git security hooks in the current repo
   guard [--all]        Run the commit guard (staged files, or --all for every tracked file)
+  config [key val]     Show/set runtime toggles (e.g. config commit-emoji off)
   seal                 Maintenance: (re)compute skill content hashes
   check                Integrity gate: verify skills are well-formed and sealed
   help, version
@@ -98,6 +102,8 @@ Examples:
   enigma install --global             # skills for detected agents, user level
   enigma install --all -y             # every supported agent, non-interactive
   enigma security                     # configure git hooks (choose protections)
+  enigma config                       # show effective runtime config
+  enigma config commit-emoji off      # opt out of commit-message emojis (global)
 `);
 }
 
@@ -110,6 +116,7 @@ export async function run(argv: string[]): Promise<void> {
     if (opts.command === "seal") return sealSources();
     if (opts.command === "check") return checkSources();
     if (opts.command === "guard") { process.exit(runGuardCli(opts.all)); }
+    if (opts.command === "config") { process.exit(runConfigCli(opts.positionals, opts.scope)); }
 
     const interactive = Boolean(process.stdout.isTTY) && !opts.yes;
 

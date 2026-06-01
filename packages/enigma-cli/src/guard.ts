@@ -152,7 +152,14 @@ export function runGuardCli(all: boolean): number {
     return 0;
 }
 
-// Run standalone when executed directly (as the copied hook or via npm script).
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+// Run standalone only when this file is itself the program entry: the built
+// dist/guard.js, the copied .githooks/guard.mjs, or src/guard.ts via tsx. The
+// basename guard is required because this module is also bundled into the CLI
+// (cli.ts imports runGuardCli); there import.meta.url and argv[1] both resolve
+// to enigma.js, so a bare equality check would mis-fire the guard on every
+// command. Matching only a "guard.*" entry keeps the bundled copy inert.
+const guardEntry = process.argv[1] ?? "";
+const isGuardEntry = /(^|[\\/])guard\.[mc]?[jt]s$/.test(guardEntry);
+if (isGuardEntry && fileURLToPath(import.meta.url) === guardEntry) {
     process.exit(runGuardCli(process.argv.includes("--all")));
 }

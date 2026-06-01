@@ -122,7 +122,8 @@ This core policy owns orchestration, architecture, and the global rules. Each co
 
 ## Character & Output Constraints
 
-- Do not use emojis.
+- Do not use emojis in responses, prose, code, comments, identifiers, or documentation.
+  - The single exception is the commit-subject type emoji defined by git-policy (default on, user-disableable). It never appears anywhere else.
 - Do not use typographic dashes (—). Use "-".
 - Do not use arrows (→). Use "->".
 - Prefer ASCII-compatible characters only.

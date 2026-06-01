@@ -22,6 +22,7 @@ enigma                 Interactive menu: choose features to set up
 enigma install         Install/update agent skills
 enigma security        Set up git security hooks in the current repo
 enigma guard [--all]   Run the commit guard (staged files, or all tracked)
+enigma config [k v]    Show or set runtime toggles (e.g. config commit-emoji off)
 enigma seal            Maintenance: (re)compute skill content hashes
 enigma check           Integrity gate: verify skills are well-formed and sealed
 enigma help | version
@@ -65,6 +66,21 @@ On every commit the guard, OS-agnostically:
 
 Each protection is individually toggleable (saved to `.githooks/enigma-guard.json`).
 Bypass once with `git commit --no-verify`.
+
+## Commit emojis
+
+By default the policy skills make commit subjects carry a leading type emoji
+(one per subject, e.g. for `feat`/`fix`); code, prose, and PR text stay
+emoji-free. The convention and its type-to-emoji map live in the `git-policy`
+skill. Opt out per repo or globally:
+
+```bash
+enigma config commit-emoji off       # disable (writes .enigma.json)
+enigma config commit-emoji on        # re-enable
+enigma config commit-emoji off -g    # global (~/.enigma.json)
+```
+
+Precedence: built-in default (on) -> `~/.enigma.json` -> repo `.enigma.json`.
 
 ## License
 

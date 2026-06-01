@@ -18,7 +18,7 @@ description: Ciphera code style conventions - mandatory formatting and language 
 - These are Layer 3 style rules and rank lowest in the core priority hierarchy.
 - When editing an existing file or project, match its established style (indentation width, quote style, naming) - architecture/consistency outranks style per core-engineering-policy. Do not reformat working code just to satisfy this skill.
 - Ciphera style governs new code and greenfield modules.
-- Commit, branch, and pull request conventions are owned by git-policy; do not apply Ciphera's emoji-commit tags here (the agent follows git-policy and the no-emoji output rule in core-engineering-policy).
+- Commit, branch, and pull request conventions are owned by git-policy. Ciphera-style commit emojis are defined and applied there (default on, user-disableable); do not restate the map here. Outside the commit subject, the no-emoji output rule in core-engineering-policy still holds.
 - Reuse, single-use-variable, and anti-overengineering rules are owned by core-engineering-policy; this skill does not restate them.
 
 ---

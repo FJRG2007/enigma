@@ -11,3 +11,6 @@ dist/
 # Internal-only content (never published)
 /internal/
 /docs/internal/
+
+# Claude Code local runtime state (not project content)
+/.claude/scheduled_tasks.lock

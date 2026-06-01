@@ -55,10 +55,36 @@ description: Commit, branch, and pull request standards - conventional commits, 
 
 ---
 
-## Contribution Standard System (Optional Visual Tags)
+## Commit Emoji Convention (Ciphera Style, Default On)
 
-- When applicable, include structured emojis for readability (if repo uses it).
-- Otherwise prioritize Conventional Commits over emoji-based systems.
+- Commit subjects use a leading type emoji by default: `<emoji> <type>: <short description>`.
+  Example: `✨ feat: add dual-provider matching`.
+- This is the one sanctioned exception to the global no-emoji rule: it applies ONLY to the
+  commit subject line. Commit bodies, PR text, code, comments, identifiers, and chat responses
+  stay emoji-free. Do not add more than one emoji, and place it only at the start of the subject.
+- Use exactly this type-to-emoji map (do not invent others):
+  - ✨ feat: new features
+  - 🐛 fix: bug fixes
+  - 🔧 chore: maintenance tasks
+  - ♻️ refactor: code restructuring without behavior change
+  - ⚡ perf: performance improvements
+  - 📝 docs: documentation changes
+  - ✅ test: testing changes
+  - 📦 build: build system changes
+  - 👷 ci: CI/CD changes
+  - 🎨 style: formatting-only changes
+  - 🔒 security: security fixes or hardening
+  - ⏪ revert: reverting a previous commit
+- Always keep a valid Conventional Commit `<type>:` after the emoji; the emoji augments it, never replaces it.
+- If the target repository defines its own commit convention (CONTRIBUTING.md, commitlint), follow the repo.
+
+### Opt-out
+
+- A user can disable commit emojis. When disabled, omit the leading emoji and commit as plain
+  `<type>: <short description>`; everything else in this policy is unchanged.
+- Disabled when `.enigma.json` (in the repo root or the user home) contains `"commitEmoji": false`,
+  or via `enigma config commit-emoji off`. Re-enable with `enigma config commit-emoji on`.
+- Check for this opt-out before composing a commit; treat commit emojis as on when no config is present.
 
 ---
 
