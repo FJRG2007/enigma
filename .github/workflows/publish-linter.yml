@@ -1,0 +1,62 @@
+name: Publish @enigmax/linter
+
+# Publish the @enigmax/linter package to npm. Separate from the enigma-cli
+# publish so the two version independently. Triggers:
+#   - manual run from the Actions tab (workflow_dispatch)
+#   - a push to main whose head commit message contains "publish-linter:"
+#
+# Reuses the repo secret NPM_TOKEN (must have publish rights for the @enigmax
+# scope). Uses npm provenance, so the job needs id-token: write.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && contains(github.event.head_commit.message, 'publish-linter:'))
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: npm ci || npm install
+
+      # Never publish a broken package: typecheck + tests, then build the dist.
+      - name: Verify
+        run: |
+          npm run --workspace @enigmax/linter typecheck
+          npm run --workspace @enigmax/linter test
+
+      - name: Build
+        run: npm run --workspace @enigmax/linter build
+
+      # Skip cleanly if this exact version is already on npm.
+      - name: Determine if version is new
+        id: ver
+        run: |
+          NAME="$(node -p "require('./packages/linter/package.json').name")"
+          VERSION="$(node -p "require('./packages/linter/package.json').version")"
+          if npm view "$NAME@$VERSION" version >/dev/null 2>&1; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "$NAME@$VERSION already published; skipping."
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish to npm
+        if: steps.ver.outputs.publish == 'true'
+        run: npm publish --workspace @enigmax/linter --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

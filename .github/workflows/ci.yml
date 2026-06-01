@@ -29,3 +29,26 @@ jobs:
       # The package must build (tsup) so dist is publishable.
       - name: Build
         run: npm run build
+
+  linter:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci || npm install
+
+      # Gate the @enigmax/linter package: typecheck, tests, and a build.
+      - name: Typecheck, test, build
+        run: |
+          npm run --workspace @enigmax/linter typecheck
+          npm run --workspace @enigmax/linter test
+          npm run --workspace @enigmax/linter build
+
+      # Dogfood: audit the repo's source for hardcoded secrets with the linter.
+      - name: Secret audit (enigmax-lint)
+        run: node packages/linter/dist/cli.js --audit-only packages
