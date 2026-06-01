@@ -15,7 +15,7 @@
     "check": "tsx src/bin/enigma.ts check",
     "guard": "tsx src/guard.ts --all",
     "verify": "npm run typecheck && npm run check && npm run guard",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run verify && npm run build"
   },
   "files": [
     "dist",
