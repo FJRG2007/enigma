@@ -15,6 +15,7 @@ import type { Agent, AgentTarget, DiscoveredAgent } from "./agents";
 import { maybeOfferGitHooks } from "./security";
 import type { SecurityOptions } from "./security";
 import { disableClaudeAttribution } from "./claude";
+import { resolveBypassSelection, applyBypass } from "./permissions";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PKG_ROOT = resolve(__dirname, "..");
@@ -56,6 +57,8 @@ export interface InstallOptions extends SecurityOptions {
     prune: boolean;
     keepModified: boolean;
     dryRun: boolean;
+    bypass: string[] | null;
+    noBypass: boolean;
 }
 
 /** This CLI package's own version, stamped into skills at seal time. */
@@ -291,6 +294,11 @@ export async function installSkills(opts: InstallOptions, interactive: boolean):
         }
     };
 
+    // Optional, opt-in: disable each chosen agent's per-action approval prompts.
+    // Asked here (right after agent selection) so it is grouped with that choice.
+    const bypassAgents = await resolveBypassSelection(chosenAgents, opts, interactive);
+    const applyBypassConfig = (): void => applyBypass(bypassAgents, scope, opts.dryRun);
+
     // --- build the plan per agent ---
     const plan: PlanItem[] = [];
     for (const agent of chosenAgents) {
@@ -380,6 +388,7 @@ export async function installSkills(opts: InstallOptions, interactive: boolean):
     if (nInstall + nUpdate + nRemove === 0) {
         p.note(lines.join("\n"), "Nothing to do");
         applyClaudeConfig();
+        applyBypassConfig();
         await maybeOfferGitHooks(interactive, opts);
         p.log.success(`Everything up-to-date - ${nSkip} item(s) unchanged${nKept ? `, ${nKept} kept modified` : ""} (${scope}).`);
         return;
@@ -398,7 +407,7 @@ export async function installSkills(opts: InstallOptions, interactive: boolean):
         if (p.isCancel(ok) || !ok) { p.cancel("Aborted."); return; }
     }
 
-    if (opts.dryRun) { p.log.info("Dry run complete - no files written."); return; }
+    if (opts.dryRun) { applyBypassConfig(); p.log.info("Dry run complete - no files written."); return; }
 
     // Which agents actually receive changes (computed before writing, since
     // memoryStatus flips to "identical" once files are copied). Used for the
@@ -435,6 +444,7 @@ export async function installSkills(opts: InstallOptions, interactive: boolean):
     }
     s.stop(`Wrote ${copied} item(s)${nRemove ? `, removed ${nRemove}` : ""}.`);
     applyClaudeConfig();
+    applyBypassConfig();
     await maybeOfferGitHooks(interactive, opts);
     p.log.success(`${nInstall} installed, ${nUpdate} updated/overwritten` +
         (nRemove ? `, ${nRemove} removed` : "") + (nSkip ? `, ${nSkip} unchanged` : "") +

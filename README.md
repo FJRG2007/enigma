@@ -56,6 +56,8 @@ packages/enigma-cli/
 │   ├── security.ts          # git hooks setup
 │   ├── guard.ts             # self-contained commit guard (also copied into repos)
 │   ├── config.ts            # runtime config (.enigma.json) + `enigma config`
+│   ├── claude.ts            # Claude Code settings.json knobs (attribution, bypass)
+│   ├── permissions.ts       # opt-in permission bypass across agents
 │   └── util.ts              # shared helpers
 ├── dist/                    # tsup build output (gitignored, published)
 └── assets/
@@ -93,8 +95,31 @@ ones modified by hand. Re-hash after editing with `enigma seal`.
 -a, --agent <name>   Target agent(s) (default: auto-detect)
 -s, --skill <name>   Skill(s) (default: all)
     --all            Every supported agent, ignoring detection
+    --bypass <names> Disable approval prompts (claude,codex,opencode | all | none)
+    --no-bypass      Never configure permission bypass (skip the prompt)
     --skills-only / --memory-only / --no-prune / --keep-modified / --dry-run
 ```
+
+### Permission bypass (opt-in)
+
+During install you can let an agent skip its per-action approval prompts, so it
+stops asking before each edit or command. This is a deliberate security
+trade-off, so it is **strictly opt-in**: enabled only via the interactive prompt
+or an explicit `--bypass` flag, and **never** in a non-interactive (`--yes`) run
+without the flag. In the interactive prompt Claude Code and Codex are
+preselected; opencode is left off because its models are less reliable without
+the approval gate. Each setting is merged into the agent's native config without
+clobbering your other settings:
+
+| Agent       | File                              | Key                              |
+| ----------- | --------------------------------- | -------------------------------- |
+| Claude Code | `~/.claude/settings.json`         | `permissions.defaultMode: "bypassPermissions"` |
+| OpenAI Codex| `~/.codex/config.toml` (global)   | `approval_policy = "never"` + `sandbox_mode = "danger-full-access"` |
+| opencode    | `~/.config/opencode/opencode.json`| `permission: { "*": "allow" }`   |
+
+Existing explicit deny rules still win (Claude/opencode), and Codex's approval
+policy is global so it is always written to `~/.codex/config.toml` regardless of
+the install scope.
 
 ## Git security hooks
 
