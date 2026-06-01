@@ -12,7 +12,7 @@ import { installSkills, sealSources, checkSources } from "./skills";
 import type { InstallOptions } from "./skills";
 import { setupGitHooks } from "./security";
 import { runGuardCli } from "./guard";
-import { runConfigCli, runSettingsMenu } from "./settings";
+import { runConfigCli } from "./settings";
 import { notifyUpdate } from "./update";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -166,7 +166,7 @@ export async function run(argv: string[]): Promise<void> {
             ],
         });
         if (p.isCancel(action) || action === "exit") break;
-        if (action === "config") await runSettingsMenu();
+        if (action === "config") { const { runSettingsTui } = await import("./tui/settings"); await runSettingsTui(); }
         else if (action === "skills") await installSkills(opts, interactive);
         else if (action === "security") await setupGitHooks(opts, interactive);
     }
