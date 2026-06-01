@@ -13,6 +13,7 @@ import type { InstallOptions } from "./skills";
 import { setupGitHooks } from "./security";
 import { runGuardCli } from "./guard";
 import { runConfigCli } from "./config";
+import { notifyUpdate } from "./update";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PKG = readJson<{ version?: string }>(join(__dirname, "..", "package.json")) || {};
@@ -34,6 +35,7 @@ function parseArgs(argv: string[]): CliOptions {
         command: null, positionals: [],
         scope: null, agents: [], allAgents: false, skills: [],
         skillsOnly: false, memoryOnly: false, prune: true, keepModified: false,
+        bypass: null, noBypass: false,
         force: false, all: false, yes: false, dryRun: false, help: false, version: false,
     };
     for (let i = 0; i < argv.length; i++) {
@@ -50,6 +52,8 @@ function parseArgs(argv: string[]): CliOptions {
             case "--memory-only": opts.memoryOnly = true; break;
             case "--no-prune": opts.prune = false; break;
             case "--keep-modified": opts.keepModified = true; break;
+            case "--bypass": opts.bypass = (opts.bypass || []).concat(next().split(",")); break;
+            case "--no-bypass": opts.noBypass = true; break;
             case "--force": opts.force = true; break;
             case "-y": case "--yes": opts.yes = true; break;
             case "--dry-run": opts.dryRun = true; break;
@@ -89,6 +93,8 @@ Install options:
       --all            Target every supported agent, ignoring detection
       --skills-only    Only skill folders   --memory-only  Only memory files
       --no-prune       Keep orphaned skills  --keep-modified  Don't overwrite local edits
+      --bypass <names> Disable approval prompts for agents (claude,codex,opencode | all | none)
+      --no-bypass      Never configure permission bypass (skip the prompt)
       --dry-run        Show the plan without writing
 
 Security options:
@@ -101,6 +107,7 @@ Examples:
   enigma                              # interactive
   enigma install --global             # skills for detected agents, user level
   enigma install --all -y             # every supported agent, non-interactive
+  enigma install -y --bypass claude,codex  # also disable approval prompts (unattended)
   enigma security                     # configure git hooks (choose protections)
   enigma config                       # show effective runtime config
   enigma config commit-emoji off      # opt out of commit-message emojis (global)
@@ -109,27 +116,30 @@ Examples:
 
 export async function run(argv: string[]): Promise<void> {
     const opts = parseArgs(argv);
-    if (opts.help || opts.command === "help") { printHelp(); return; }
-    if (opts.version || opts.command === "version") { console.log(PKG.version || "0.0.0"); return; }
+    const interactive = Boolean(process.stdout.isTTY) && !opts.yes;
+    const version = PKG.version || "0.0.0";
+    if (opts.help || opts.command === "help") { printHelp(); await notifyUpdate(version, interactive); return; }
+    if (opts.version || opts.command === "version") { console.log(version); await notifyUpdate(version, interactive); return; }
 
-    // Direct (non-menu) maintenance and feature commands.
+    // Direct (non-menu) maintenance and feature commands. Machine/CI commands
+    // (seal, check, guard, config) skip the update notice to keep their output clean.
     if (opts.command === "seal") return sealSources();
     if (opts.command === "check") return checkSources();
     if (opts.command === "guard") { process.exit(runGuardCli(opts.all)); }
     if (opts.command === "config") { process.exit(runConfigCli(opts.positionals, opts.scope)); }
 
-    const interactive = Boolean(process.stdout.isTTY) && !opts.yes;
-
     if (opts.command === "install") {
         p.intro("enigma - install agent skills");
         await installSkills(opts, interactive);
         p.outro("Done.");
+        await notifyUpdate(version, interactive);
         return;
     }
     if (opts.command === "security") {
         p.intro("enigma - git security hooks");
         const done = await setupGitHooks(opts, interactive);
         p.outro(done ? "Git hooks configured." : "No changes made.");
+        await notifyUpdate(version, interactive);
         return;
     }
 
@@ -155,4 +165,5 @@ export async function run(argv: string[]): Promise<void> {
     if (features.includes("skills")) await installSkills(opts, interactive);
     if (features.includes("security")) await setupGitHooks(opts, interactive);
     p.outro("Done.");
+    await notifyUpdate(version, interactive);
 }

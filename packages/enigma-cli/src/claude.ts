@@ -1,7 +1,8 @@
 /**
- * Claude Code specific configuration. Currently: deterministically disable the
- * automatic "Co-Authored-By: Claude" commit trailer and the "Generated with
- * Claude Code" PR footer, so commits/PRs are attributed solely to the user.
+ * Claude Code specific configuration. Deterministically disables the automatic
+ * "Co-Authored-By: Claude" commit trailer / "Generated with Claude Code" PR
+ * footer, and (opt-in) sets the permission bypass mode, by writing the real
+ * settings.json knobs.
  *
  * A skill rule only persuades the model; this writes the real settings.json knob
  * so the behavior is enforced regardless of what the model does.
@@ -47,4 +48,28 @@ export function disableClaudeAttribution(scope: "global" | "local"): boolean {
     if (!isDir(dir)) mkdirSync(dir, { recursive: true });
     writeFileSync(path, JSON.stringify(next, null, 2) + "\n");
     return true;
+}
+
+/**
+ * Enable Claude Code's permission bypass by setting `permissions.defaultMode`
+ * to "bypassPermissions" so the agent stops asking for per-action approval.
+ * Merges into any existing settings; explicit `permissions.deny` rules still
+ * take precedence (deny wins). Returns the target path and whether it changed.
+ * On `dryRun`, reports the would-be change without writing.
+ */
+export function enableClaudeBypass(scope: "global" | "local", dryRun: boolean): { path: string; changed: boolean } {
+    const path = claudeSettingsPath(scope);
+    const current = readJson<Record<string, unknown>>(path) || {};
+
+    const permissions = (typeof current.permissions === "object" && current.permissions !== null)
+        ? current.permissions as Record<string, unknown>
+        : {};
+    if (permissions.defaultMode === "bypassPermissions") return { path, changed: false };
+    if (dryRun) return { path, changed: true };
+
+    const next = { ...current, permissions: { ...permissions, defaultMode: "bypassPermissions" } };
+    const dir = join(path, "..");
+    if (!isDir(dir)) mkdirSync(dir, { recursive: true });
+    writeFileSync(path, JSON.stringify(next, null, 2) + "\n");
+    return { path, changed: true };
 }
