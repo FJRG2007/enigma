@@ -59,6 +59,33 @@ The bump sequence:
 Bump the skill's own `version` (separate from `cliVersion`) only when its content
 actually changes.
 
+### Pitfall: keep the bump and the re-seal in one merge
+
+The bump and the re-seal must reach `main` together. The version bump alone makes
+every skill's `cliVersion` stale, so any commit that carries the bump but not the
+re-seal fails `check` / `verify`.
+
+This bit us once: the bump and the re-seal lived in two separate commits, and the
+PR was squash-merged after the bump but before the re-seal commit was pushed.
+`main` landed with `package.json` at the new version but `skill.json` still on the
+old `cliVersion`. The result:
+
+- CI on `main` went red (`verify` failed on the stale seal).
+- The tagged release's `publish.yml` run failed at the `verify` step, so the
+  version never reached npm even though the git tag existed.
+
+To avoid it:
+
+- Put the bump and the re-sealed `skill.json` files in the SAME commit (or at
+  least the same PR), and confirm the PR's CI is green before merging.
+- If you squash-merge, make sure the re-seal commit is already part of the PR -
+  do not push it after starting the merge.
+
+Recovery if `main` ships stale: branch from `main`, run `npm run seal`, verify,
+and merge a reseal-only fix; then re-publish. Because the failed release never
+pushed anything to npm, that version number is still free - re-run `publish.yml`
+via `workflow_dispatch` (or recreate the release) once `main` is green.
+
 ## Release flow (recommended)
 
 The publish workflow checks that the git tag matches the package version, so the
