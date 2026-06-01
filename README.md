@@ -1,13 +1,22 @@
-# enigma
+<div align="center">
+  <h1>Enigma</h1>
+  <h3>Everything you need to work with a coding agent, in one command.</h3>
+  <img src="https://img.shields.io/badge/TypeScript-blue?style=for-the-badge&logo=typescript&logoColor=white"/> 
+  <a href="https://github.com/FJRG2007"> <img alt="GitHub" src="https://img.shields.io/badge/GitHub-purple?style=for-the-badge&logo=github&logoColor=white"/></a>
+  <a href="https://ko-fi.com/fjrg2007"> <img alt="Kofi" src="https://img.shields.io/badge/Ko--fi-purple?style=for-the-badge&logo=ko-fi&logoColor=white"></a>
+  <br />
+  <br />
+  <a href="#">Quickstart</a>
+  <span>&nbsp;&nbsp;•&nbsp;&nbsp;</span>
+  <a href="https://tpe.li/dsc">Discord</a>
+  <br />
+  <hr />
+</div>
 
-Everything you need to work with a coding agent, in one command. `enigma`
-installs a shared set of engineering **policy skills** into the agents you
+`enigma` installs a shared set of engineering **policy skills** into the agents you
 actually use (Claude Code, OpenAI Codex, opencode) and sets up portable **git
 security hooks** that block secrets, `.env` files, and dependency dirs from being
 committed.
-
-This is a monorepo. The published, installable CLI lives in
-[`packages/enigma-cli`](packages/enigma-cli).
 
 ## Install
 
@@ -40,36 +49,9 @@ Everything is modular: the top-level menu (and the install/security flows) use
 disable each feature and each protection. Nothing touches your git config unless
 you run `enigma security` or accept its prompt.
 
-## Agent skills
-
-Skills are authored **once** under `packages/enigma-cli/assets/skills` and
-deployed to every selected agent; memory/instruction files live in
-`packages/enigma-cli/assets/memory`. There is no per-agent duplication.
-
-```
-packages/enigma-cli/
-├── src/                     # TypeScript source (built with tsup)
-│   ├── bin/enigma.ts        # CLI entry point
-│   ├── cli.ts               # arg parsing + interactive menu + dispatch
-│   ├── agents.ts            # supported agents + OS detection
-│   ├── skills.ts            # discovery, seal/check, install
-│   ├── security.ts          # git hooks setup
-│   ├── guard.ts             # self-contained commit guard (also copied into repos)
-│   ├── config.ts            # runtime config (.enigma.json) + `enigma config`
-│   ├── claude.ts            # Claude Code settings.json knobs (attribution, bypass)
-│   ├── permissions.ts       # opt-in permission bypass across agents
-│   └── util.ts              # shared helpers
-├── dist/                    # tsup build output (gitignored, published)
-└── assets/
-    ├── skills/<skill>/      # SKILL.md (+ skill.json metadata, not read by the AI)
-    └── memory/              # CLAUDE.md (Claude Code), AGENTS.md (Codex + opencode)
-```
-
 ### Agent auto-detection
 
-By default `enigma install` only targets agents actually installed on the machine
-(CLI on `PATH` **or** a config dir like `~/.claude`, `~/.codex`,
-`~/.config/opencode`). In the interactive menu detected agents are
+By default `enigma install` only targets agents actually installed on the machine. In the interactive menu detected agents are
 **preselected** (`detected` / `not detected`); `--all` overrides detection.
 
 | Agent       | Scope  | Skills                        | Memory file                    |
@@ -167,6 +149,11 @@ npm run build     # build dist with tsup (enigma.js + guard.js)
 Full contributor guide (dev loop, build internals, release flow, local testing):
 [`docs/developers/`](docs/developers/README.md).
 
+#### Contributors
+To contribute to the project visit the requirements at [`CONTRIBUTING`](./docs/developers/CONTRIBUTING.md).
+
 ## License
 
 [Apache-2.0](LICENSE).
+
+<p align="right"><a href="#top">Back to top 🔼</a></p>
