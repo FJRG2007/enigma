@@ -13,6 +13,7 @@ import type { InstallOptions } from "./skills";
 import { setupGitHooks } from "./security";
 import { runGuardCli } from "./guard";
 import { runConfigCli } from "./config";
+import { notifyUpdate } from "./update";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PKG = readJson<{ version?: string }>(join(__dirname, "..", "package.json")) || {};
@@ -115,27 +116,30 @@ Examples:
 
 export async function run(argv: string[]): Promise<void> {
     const opts = parseArgs(argv);
-    if (opts.help || opts.command === "help") { printHelp(); return; }
-    if (opts.version || opts.command === "version") { console.log(PKG.version || "0.0.0"); return; }
+    const interactive = Boolean(process.stdout.isTTY) && !opts.yes;
+    const version = PKG.version || "0.0.0";
+    if (opts.help || opts.command === "help") { printHelp(); await notifyUpdate(version, interactive); return; }
+    if (opts.version || opts.command === "version") { console.log(version); await notifyUpdate(version, interactive); return; }
 
-    // Direct (non-menu) maintenance and feature commands.
+    // Direct (non-menu) maintenance and feature commands. Machine/CI commands
+    // (seal, check, guard, config) skip the update notice to keep their output clean.
     if (opts.command === "seal") return sealSources();
     if (opts.command === "check") return checkSources();
     if (opts.command === "guard") { process.exit(runGuardCli(opts.all)); }
     if (opts.command === "config") { process.exit(runConfigCli(opts.positionals, opts.scope)); }
 
-    const interactive = Boolean(process.stdout.isTTY) && !opts.yes;
-
     if (opts.command === "install") {
         p.intro("enigma - install agent skills");
         await installSkills(opts, interactive);
         p.outro("Done.");
+        await notifyUpdate(version, interactive);
         return;
     }
     if (opts.command === "security") {
         p.intro("enigma - git security hooks");
         const done = await setupGitHooks(opts, interactive);
         p.outro(done ? "Git hooks configured." : "No changes made.");
+        await notifyUpdate(version, interactive);
         return;
     }
 
@@ -161,4 +165,5 @@ export async function run(argv: string[]): Promise<void> {
     if (features.includes("skills")) await installSkills(opts, interactive);
     if (features.includes("security")) await setupGitHooks(opts, interactive);
     p.outro("Done.");
+    await notifyUpdate(version, interactive);
 }
