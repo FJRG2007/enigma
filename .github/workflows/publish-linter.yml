@@ -1,16 +1,14 @@
 name: Publish @enigmax/linter
 
 # Publish the @enigmax/linter package to npm. Separate from the enigma-cli
-# publish so the two version independently. Triggers:
-#   - manual run from the Actions tab (workflow_dispatch)
-#   - a push to main whose head commit message contains "publish-linter:"
+# publish so the two version independently. Manual only (workflow_dispatch from
+# the Actions tab) to avoid accidental publishes - a commit-message marker is too
+# easy to trip (e.g. a message that merely describes the trigger).
 #
 # Reuses the repo secret NPM_TOKEN (must have publish rights for the @enigmax
 # scope). Uses npm provenance, so the job needs id-token: write.
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
 
 permissions:
   contents: read
@@ -19,9 +17,6 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'push' && contains(github.event.head_commit.message, 'publish-linter:'))
     steps:
       - uses: actions/checkout@v4
 
