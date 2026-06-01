@@ -13,6 +13,7 @@ import { writeFileSync } from "node:fs";
 import { spawn, spawnSync } from "node:child_process";
 import * as p from "@clack/prompts";
 import { readJson } from "./util";
+import { readConfig } from "./config";
 
 const REGISTRY_URL = "https://registry.npmjs.org/enigma-cli/latest";
 const UPDATE_COMMAND = "npm i -g enigma-cli@latest";
@@ -127,6 +128,7 @@ function runUpdate(): void {
 export async function notifyUpdate(current: string, interactive: boolean): Promise<void> {
     if (!process.stdout.isTTY || process.env.CI) return;
     try {
+        if (!readConfig().config.updateNotifier) return;
         scheduleUpdateCheck();
         const cache = readCache();
         const latest = cache?.latest ? String(cache.latest).replace(/[^\w.+-]/g, "") : "";
