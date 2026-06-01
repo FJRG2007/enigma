@@ -12,7 +12,7 @@ import { installSkills, sealSources, checkSources } from "./skills";
 import type { InstallOptions } from "./skills";
 import { setupGitHooks } from "./security";
 import { runGuardCli } from "./guard";
-import { runConfigCli } from "./config";
+import { runConfigCli, runSettingsMenu } from "./settings";
 import { notifyUpdate } from "./update";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -76,14 +76,18 @@ Usage:
   enigma [command] [options]
 
 Commands:
-  (none)               Interactive menu: pick which features to set up
+  (none)               Interactive hub: configure settings or set up features
   install              Install/update agent skills (Claude Code, Codex, opencode)
   security             Set up git security hooks in the current repo
   guard [--all]        Run the commit guard (staged files, or --all for every tracked file)
-  config [key val]     Show/set runtime toggles (e.g. config commit-emoji off)
+  config [key val]     Configure settings: no args opens the interactive menu;
+                       'config <key> <on|off> [-g|-l]' sets one (e.g. config claude-attribution on)
   seal                 Maintenance: (re)compute skill content hashes
   check                Integrity gate: verify skills are well-formed and sealed
   help, version
+
+Config keys: commit-emoji, update-notifier, claude-attribution,
+             bypass-claude, bypass-codex, bypass-opencode
 
 Install options:
   -g, --global         Install at user level
@@ -126,7 +130,7 @@ export async function run(argv: string[]): Promise<void> {
     if (opts.command === "seal") return sealSources();
     if (opts.command === "check") return checkSources();
     if (opts.command === "guard") { process.exit(runGuardCli(opts.all)); }
-    if (opts.command === "config") { process.exit(runConfigCli(opts.positionals, opts.scope)); }
+    if (opts.command === "config") { process.exit(await runConfigCli(opts.positionals, opts.scope, interactive)); }
 
     if (opts.command === "install") {
         p.intro("enigma - install agent skills");
@@ -143,27 +147,29 @@ export async function run(argv: string[]): Promise<void> {
         return;
     }
 
-    // No command: interactive feature menu (or sensible default with --yes).
-    p.intro("enigma");
-    let features: string[];
-    if (interactive) {
-        const r = await p.multiselect({
-            message: "What do you want to set up?",
-            options: [
-                { value: "skills", label: "Agent skills", hint: "Claude Code, Codex, opencode" },
-                { value: "security", label: "Git security hooks", hint: "block secrets, .env, node_modules on commit" },
-            ],
-            initialValues: ["skills"],
-            required: true,
-        });
-        if (p.isCancel(r)) { p.cancel("Aborted."); return; }
-        features = r as string[];
-    } else {
-        features = ["skills"]; // non-interactive default
+    // No command: non-interactive default installs skills; a TTY gets the hub.
+    if (!interactive) {
+        await installSkills(opts, interactive);
+        await notifyUpdate(version, interactive);
+        return;
     }
 
-    if (features.includes("skills")) await installSkills(opts, interactive);
-    if (features.includes("security")) await setupGitHooks(opts, interactive);
+    p.intro("enigma");
+    for (;;) {
+        const action = await p.select({
+            message: "What would you like to do?",
+            options: [
+                { value: "config", label: "Configure settings", hint: "emoji, attribution, permission bypass, ..." },
+                { value: "skills", label: "Install agent skills", hint: "Claude Code, Codex, opencode" },
+                { value: "security", label: "Git security hooks", hint: "block secrets, .env, node_modules on commit" },
+                { value: "exit", label: "Exit" },
+            ],
+        });
+        if (p.isCancel(action) || action === "exit") break;
+        if (action === "config") await runSettingsMenu();
+        else if (action === "skills") await installSkills(opts, interactive);
+        else if (action === "security") await setupGitHooks(opts, interactive);
+    }
     p.outro("Done.");
     await notifyUpdate(version, interactive);
 }

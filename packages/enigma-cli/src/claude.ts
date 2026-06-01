@@ -51,6 +51,85 @@ export function disableClaudeAttribution(scope: "global" | "local"): boolean {
 }
 
 /**
+ * Read whether Claude commit attribution is enabled for a scope. Returns true
+ * when Claude would add its own attribution (the Claude default), false when
+ * enigma's disabling overrides are in place. Used by the config surface to show
+ * the current value.
+ */
+export function getClaudeAttribution(scope: "global" | "local"): boolean {
+    const current = readJson<Record<string, unknown>>(claudeSettingsPath(scope)) || {};
+    const attribution = current.attribution as Record<string, unknown> | undefined;
+    const disabled = Boolean(attribution) && attribution!.commit === "" && attribution!.pr === ""
+        && current.includeCoAuthoredBy === false;
+    return !disabled;
+}
+
+/**
+ * Enable or disable Claude commit attribution for a scope. Disabling delegates to
+ * `disableClaudeAttribution`. Enabling restores Claude's defaults by removing the
+ * overrides enigma wrote (empty `attribution.commit`/`pr` and
+ * `includeCoAuthoredBy: false`), without touching unrelated settings. Returns
+ * true if the file was written.
+ */
+export function setClaudeAttribution(scope: "global" | "local", enabled: boolean): boolean {
+    if (!enabled) return disableClaudeAttribution(scope);
+
+    const path = claudeSettingsPath(scope);
+    const current = readJson<Record<string, unknown>>(path) || {};
+    const attribution = (typeof current.attribution === "object" && current.attribution !== null)
+        ? { ...current.attribution as Record<string, unknown> }
+        : {};
+
+    let changed = false;
+    if (attribution.commit === "") { delete attribution.commit; changed = true; }
+    if (attribution.pr === "") { delete attribution.pr; changed = true; }
+    if (current.includeCoAuthoredBy === false) changed = true;
+    if (!changed) return false;
+
+    const next: Record<string, unknown> = { ...current };
+    if (Object.keys(attribution).length) next.attribution = attribution;
+    else delete next.attribution;
+    delete next.includeCoAuthoredBy;
+
+    writeClaudeSettings(path, next);
+    return true;
+}
+
+/** Read whether Claude's permission bypass is enabled for a scope. */
+export function getClaudeBypass(scope: "global" | "local"): boolean {
+    const current = readJson<Record<string, unknown>>(claudeSettingsPath(scope)) || {};
+    const permissions = current.permissions as Record<string, unknown> | undefined;
+    return Boolean(permissions) && permissions!.defaultMode === "bypassPermissions";
+}
+
+/**
+ * Enable or disable Claude Code's permission bypass for a scope. Enabling sets
+ * `permissions.defaultMode` to "bypassPermissions"; disabling removes that key so
+ * Claude returns to its default (ask before acting). Other settings and explicit
+ * `permissions.deny` rules are preserved. On `dryRun`, reports the would-be
+ * change without writing.
+ */
+export function setClaudeBypass(scope: "global" | "local", on: boolean, dryRun: boolean): { path: string; changed: boolean } {
+    if (on) return enableClaudeBypass(scope, dryRun);
+
+    const path = claudeSettingsPath(scope);
+    const current = readJson<Record<string, unknown>>(path) || {};
+    const permissions = (typeof current.permissions === "object" && current.permissions !== null)
+        ? { ...current.permissions as Record<string, unknown> }
+        : {};
+    if (permissions.defaultMode !== "bypassPermissions") return { path, changed: false };
+    if (dryRun) return { path, changed: true };
+
+    delete permissions.defaultMode;
+    const next: Record<string, unknown> = { ...current };
+    if (Object.keys(permissions).length) next.permissions = permissions;
+    else delete next.permissions;
+
+    writeClaudeSettings(path, next);
+    return { path, changed: true };
+}
+
+/**
  * Enable Claude Code's permission bypass by setting `permissions.defaultMode`
  * to "bypassPermissions" so the agent stops asking for per-action approval.
  * Merges into any existing settings; explicit `permissions.deny` rules still
@@ -68,8 +147,13 @@ export function enableClaudeBypass(scope: "global" | "local", dryRun: boolean): 
     if (dryRun) return { path, changed: true };
 
     const next = { ...current, permissions: { ...permissions, defaultMode: "bypassPermissions" } };
+    writeClaudeSettings(path, next);
+    return { path, changed: true };
+}
+
+/** Write Claude settings.json, creating the parent directory if needed. */
+function writeClaudeSettings(path: string, data: Record<string, unknown>): void {
     const dir = join(path, "..");
     if (!isDir(dir)) mkdirSync(dir, { recursive: true });
-    writeFileSync(path, JSON.stringify(next, null, 2) + "\n");
-    return { path, changed: true };
+    writeFileSync(path, JSON.stringify(data, null, 2) + "\n");
 }

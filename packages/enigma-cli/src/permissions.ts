@@ -15,7 +15,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import * as p from "@clack/prompts";
 import { AGENTS } from "./agents";
 import { isDir, readJson } from "./util";
-import { enableClaudeBypass } from "./claude";
+import { enableClaudeBypass, getClaudeBypass, setClaudeBypass } from "./claude";
 import type { Agent } from "./agents";
 
 /** Agents that expose a permission-bypass switch. */
@@ -92,6 +92,99 @@ function enableFor(name: string, scope: "global" | "local", dryRun: boolean): By
     }
 }
 
+/** Read whether permission bypass is currently enabled for an agent + scope. */
+export function getBypass(name: string, scope: "global" | "local"): boolean {
+    switch (name) {
+        case "claude": return getClaudeBypass(scope);
+        case "codex": return getCodexBypass();
+        case "opencode": return getOpencodeBypass(scope);
+        default: return false;
+    }
+}
+
+/**
+ * Enable or disable permission bypass for a single agent + scope, the symmetric
+ * counterpart used by the interactive config surface. Returns the target path and
+ * whether it changed, or null for an unknown agent. Codex is always written
+ * globally (it has no project-local config).
+ */
+export function setBypass(name: string, scope: "global" | "local", on: boolean, dryRun: boolean): BypassWrite | null {
+    switch (name) {
+        case "claude": return setClaudeBypass(scope, on, dryRun);
+        case "codex": return on ? enableCodexBypass(dryRun) : disableCodexBypass(dryRun);
+        case "opencode": return on ? enableOpencodeBypass(scope, dryRun) : disableOpencodeBypass(scope, dryRun);
+        default: return null;
+    }
+}
+
+/** True when Codex's global config has the full-bypass knobs set. */
+function getCodexBypass(): boolean {
+    const path = join(homedir(), ".codex", "config.toml");
+    const content = existsSync(path) ? readFileSync(path, "utf8") : "";
+    return getTomlTopLevelKey(content, "approval_policy") === "\"never\"";
+}
+
+/**
+ * Disable Codex bypass by removing the `approval_policy` and `sandbox_mode`
+ * top-level keys, returning Codex to its default approval behavior. Other config
+ * is preserved.
+ */
+function disableCodexBypass(dryRun: boolean): BypassWrite {
+    const path = join(homedir(), ".codex", "config.toml");
+    const before = existsSync(path) ? readFileSync(path, "utf8") : "";
+    let after = removeTomlTopLevelKey(before, "approval_policy");
+    after = removeTomlTopLevelKey(after, "sandbox_mode");
+    const changed = after !== before;
+    if (changed && !dryRun) writeFileSync(path, after);
+    return { path, changed };
+}
+
+/** True when opencode's config grants the `"*": "allow"` catch-all (or `"allow"`). */
+function getOpencodeBypass(scope: "global" | "local"): boolean {
+    const path = opencodeConfigPath(scope);
+    const perm = (readJson<Record<string, unknown>>(path) || {}).permission;
+    return perm === "allow"
+        || (typeof perm === "object" && perm !== null && (perm as Record<string, unknown>)["*"] === "allow");
+}
+
+/**
+ * Disable opencode bypass by removing the `"*": "allow"` catch-all (or a bare
+ * `"allow"`) while preserving any explicit per-pattern rules. Removes the
+ * `permission` key entirely if nothing else remains.
+ */
+function disableOpencodeBypass(scope: "global" | "local", dryRun: boolean): BypassWrite {
+    const path = opencodeConfigPath(scope);
+    const current = readJson<Record<string, unknown>>(path) || {};
+    const perm = current.permission;
+
+    if (!getOpencodeBypass(scope)) return { path, changed: false };
+    if (dryRun) return { path, changed: true };
+
+    const next: Record<string, unknown> = { ...current };
+    if (typeof perm === "object" && perm !== null) {
+        const rest: Record<string, unknown> = {};
+        for (const k of Object.keys(perm as Record<string, unknown>)) {
+            if (k !== "*") rest[k] = (perm as Record<string, unknown>)[k];
+        }
+        if (Object.keys(rest).length) next.permission = rest;
+        else delete next.permission;
+    } else {
+        delete next.permission;
+    }
+
+    const dir = join(path, "..");
+    if (!isDir(dir)) mkdirSync(dir, { recursive: true });
+    writeFileSync(path, JSON.stringify(next, null, 2) + "\n");
+    return { path, changed: true };
+}
+
+/** opencode config path for a scope (global user config, or the project root). */
+function opencodeConfigPath(scope: "global" | "local"): string {
+    return scope === "global"
+        ? join(homedir(), ".config", "opencode", "opencode.json")
+        : join(process.cwd(), "opencode.json");
+}
+
 /**
  * Codex reads its config only from ~/.codex/config.toml (there is no
  * project-local equivalent), so bypass is always written there regardless of
@@ -121,9 +214,7 @@ function enableCodexBypass(dryRun: boolean): BypassWrite {
  * wins in opencode).
  */
 function enableOpencodeBypass(scope: "global" | "local", dryRun: boolean): BypassWrite {
-    const path = scope === "global"
-        ? join(homedir(), ".config", "opencode", "opencode.json")
-        : join(process.cwd(), "opencode.json");
+    const path = opencodeConfigPath(scope);
     const current = readJson<Record<string, unknown>>(path) || {};
     const perm = current.permission;
 
@@ -174,6 +265,39 @@ function setTomlTopLevelKey(content: string, key: string, tomlValue: string): st
     const followsTable = insertAt < lines.length && /^\s*\[/.test(lines[insertAt]!);
     lines.splice(insertAt, 0, ...(followsTable ? [assign, ""] : [assign]));
     return normalizeTrailingNewline(lines.join("\n"));
+}
+
+/**
+ * Read a top-level scalar key's raw value from a TOML document (the region before
+ * the first `[table]`), or null if absent. The value is returned verbatim
+ * including quotes, so a string compares against e.g. `"\"never\""`.
+ */
+function getTomlTopLevelKey(content: string, key: string): string | null {
+    const lines = content.split("\n");
+    const firstTable = lines.findIndex((l) => /^\s*\[/.test(l));
+    const scanEnd = firstTable === -1 ? lines.length : firstTable;
+    const keyRe = new RegExp(`^\\s*${key}\\s*=\\s*(.+?)\\s*$`);
+    for (let i = 0; i < scanEnd; i++) {
+        const m = keyRe.exec(lines[i]!);
+        if (m) return m[1]!;
+    }
+    return null;
+}
+
+/**
+ * Remove a top-level key assignment from a TOML document (only in the region
+ * before the first `[table]`). Returns the content unchanged when the key is
+ * absent; otherwise drops the line and normalizes trailing whitespace.
+ */
+function removeTomlTopLevelKey(content: string, key: string): string {
+    if (content.trim() === "") return content;
+    const lines = content.split("\n");
+    const firstTable = lines.findIndex((l) => /^\s*\[/.test(l));
+    const scanEnd = firstTable === -1 ? lines.length : firstTable;
+    const keyRe = new RegExp(`^\\s*${key}\\s*=`);
+    const kept = lines.filter((l, i) => !(i < scanEnd && keyRe.test(l)));
+    if (kept.length === lines.length) return content;
+    return normalizeTrailingNewline(kept.join("\n"));
 }
 
 /** Trim trailing whitespace/blank lines and end with exactly one newline. */
