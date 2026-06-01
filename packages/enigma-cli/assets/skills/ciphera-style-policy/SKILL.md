@@ -1,6 +1,6 @@
 ---
 name: ciphera-style-policy
-description: Ciphera code style conventions - mandatory formatting and language idioms for source code (TypeScript-first, applies to every language): American-English naming, double quotes, string interpolation, length-sorted imports, 4-space indentation, comment/JSDoc format, compact single-line blocks, and code-level anti-patterns (barrel files, external CDN/hosting dependencies). Use whenever writing, refactoring, or reviewing source code.
+description: Ciphera code style conventions - mandatory formatting and language idioms for source code (TypeScript-first, applies to every language) - American-English naming, double quotes, string interpolation, length-sorted imports, 4-space indentation, comment/JSDoc format, compact single-line blocks, and code-level anti-patterns (barrel files, external CDN/hosting dependencies). Use whenever writing, refactoring, or reviewing source code.
 ---
 
 # Ciphera Code Style Policy
