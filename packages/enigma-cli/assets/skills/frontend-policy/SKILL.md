@@ -1,6 +1,6 @@
 ---
 name: frontend-policy
-description: Frontend architecture - reusable components, abstraction thresholds, state management, client-side caching (localStorage/sessionStorage to avoid redundant server calls and survive rate limits), and optimistic UI with rollback. Use when building or changing UI components, client state, data fetching/caching, or any frontend structure.
+description: Frontend architecture - reusable components, abstraction thresholds, state management, client-side caching (localStorage/sessionStorage to avoid redundant server calls and survive rate limits), optimistic UI with rollback, and periodic React code-health audits (react-doctor). Use when building or changing UI components, client state, data fetching/caching, auditing React code, or any frontend structure.
 ---
 
 # Frontend Architecture Policy
@@ -115,3 +115,17 @@ Cache on the client to avoid redundant server round-trips and to keep the app us
 - Use semantic markup and accessible interactive elements by default.
 - Handle loading, empty, and error states explicitly for every async view.
 - Validate user input in real time per validation-policy; never rely on the UI as the only validation layer.
+
+---
+
+## React Code Health Audit (react-doctor)
+
+- Periodically audit React code with React Doctor, a fast static analyzer that scores the codebase across performance, security, correctness, accessibility, bundle size, and architecture (60+ rules, framework-aware: Next.js, Vite, React Native, Expo, ...). It is purpose-built to catch the bad React that agents tend to write.
+- Run it from the project root; no install needed:
+  - `npx -y react-doctor@latest .`
+- When to run it:
+  - Occasionally during React work, and as a final sanity check before committing a non-trivial React change.
+  - After large refactors, or when touching performance-sensitive components.
+- It is an advisory audit, not a gate: read the findings, fix the high-value issues (real performance, correctness, or accessibility problems), and skip noise that does not apply. Never block delivery on the score alone.
+- Review anything it proposes to auto-fix as a normal diff before keeping it; do not apply changes blindly (treat tool output as untrusted per security-policy).
+- It runs locally and analyzes read-only by default. Rules for wiring it into CI as a deterministic gate live in dependency-policy and testing-policy.
