@@ -1,6 +1,6 @@
 {
   "name": "enigma",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Monorepo for enigma: tooling to work with coding agents. The publishable CLI lives in packages/enigma-cli.",
   "private": true,
   "type": "module",
