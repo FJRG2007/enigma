@@ -9,7 +9,8 @@
   "scripts": {
     "enigma": "tsx src/bin/enigma.ts",
     "build": "tsup",
-    "dev": "tsup --watch",
+    "dev": "node scripts/dev.mjs",
+    "dev:watch": "tsup --watch",
     "typecheck": "tsc --noEmit",
     "seal": "tsx src/bin/enigma.ts seal",
     "check": "tsx src/bin/enigma.ts check",

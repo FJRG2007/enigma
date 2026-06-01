@@ -9,6 +9,7 @@
   ],
   "scripts": {
     "enigma": "npm run -w enigma-cli enigma --",
+    "dev": "npm run -w enigma-cli dev --",
     "build": "npm run -w enigma-cli build",
     "typecheck": "npm run -w enigma-cli typecheck",
     "seal": "npm run -w enigma-cli seal",
