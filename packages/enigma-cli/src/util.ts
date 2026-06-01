@@ -11,9 +11,14 @@ export function isDir(pth: string): boolean {
     try { return statSync(pth).isDirectory(); } catch { return false; }
 }
 
-/** Parse a JSON file, returning null on any error. */
+/**
+ * Parse a JSON file, returning null on any error. Strips a leading UTF-8 BOM
+ * (common in Windows-edited files) so a valid-but-BOM-prefixed config is not
+ * mistaken for unreadable - callers merge into the parsed object, so a false
+ * null would clobber the user's existing settings.
+ */
 export function readJson<T = Record<string, unknown>>(file: string): T | null {
-    try { return JSON.parse(readFileSync(file, "utf8")) as T; } catch { return null; }
+    try { return JSON.parse(readFileSync(file, "utf8").replace(/^\uFEFF/, "")) as T; } catch { return null; }
 }
 
 /** Is an executable named `bin` resolvable on the user's PATH? (cross-platform, no spawn) */
