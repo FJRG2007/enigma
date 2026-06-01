@@ -29,6 +29,7 @@ enigma                 Interactive menu: choose features to set up
 enigma install         Install/update agent skills
 enigma security        Set up git security hooks in the current repo
 enigma guard [--all]   Run the commit guard (staged files, or all tracked)
+enigma config [k v]    Show or set runtime toggles (e.g. config commit-emoji off)
 enigma seal            Maintenance: (re)compute skill content hashes
 enigma check           Integrity gate: verify skills are well-formed and sealed
 enigma help | version
@@ -47,14 +48,16 @@ deployed to every selected agent; memory/instruction files live in
 
 ```
 packages/enigma-cli/
-├── bin/enigma.mjs           # CLI entry point
-├── lib/                     # modular logic
-│   ├── cli.mjs              # arg parsing + interactive menu + dispatch
-│   ├── agents.mjs           # supported agents + OS detection
-│   ├── skills.mjs           # discovery, seal/check, install
-│   ├── security.mjs         # git hooks setup
-│   ├── guard.mjs            # self-contained commit guard (also copied into repos)
-│   └── util.mjs             # shared helpers
+├── src/                     # TypeScript source (built with tsup)
+│   ├── bin/enigma.ts        # CLI entry point
+│   ├── cli.ts               # arg parsing + interactive menu + dispatch
+│   ├── agents.ts            # supported agents + OS detection
+│   ├── skills.ts            # discovery, seal/check, install
+│   ├── security.ts          # git hooks setup
+│   ├── guard.ts             # self-contained commit guard (also copied into repos)
+│   ├── config.ts            # runtime config (.enigma.json) + `enigma config`
+│   └── util.ts              # shared helpers
+├── dist/                    # tsup build output (gitignored, published)
 └── assets/
     ├── skills/<skill>/      # SKILL.md (+ skill.json metadata, not read by the AI)
     └── memory/              # CLAUDE.md (Claude Code), AGENTS.md (Codex + opencode)
@@ -96,8 +99,8 @@ ones modified by hand. Re-hash after editing with `enigma seal`.
 ## Git security hooks
 
 `enigma security` drops a portable, dependency-free commit guard into **any** repo
-(not just this one): it copies `guard.mjs` into the repo's `.githooks/`, writes a
-cross-platform `pre-commit` shim and a toggle config, and points `core.hooksPath`
+(not just this one): it copies the built guard into the repo's `.githooks/` (as
+`guard.mjs`), writes a cross-platform `pre-commit` shim and a toggle config, and points `core.hooksPath`
 at it. Commit `.githooks/` so the whole team inherits it. Because the hook runs on
 `git commit`, it also covers commits made through the **GitHub CLI** (`gh`), which
 shells out to `git`.
@@ -121,18 +124,23 @@ This repo gates itself mechanically (it is a tooling distributor, so there is no
 app test suite):
 
 ```bash
-npm run check     # script syntax + every skill well-formed and SEALED
+npm run typecheck # tsc --noEmit (tsup does not typecheck)
+npm run check     # every skill well-formed and SEALED
 npm run guard     # scan all tracked files for secrets, .env, node_modules, ...
-npm run verify    # both (used by CI)
+npm run verify    # typecheck + check + guard (used by CI)
+npm run build     # build dist with tsup (enigma.js + guard.js)
 ```
 
-- **CI** (`.github/workflows/ci.yml`) runs `npm ci` + `npm run verify` on every
-  push and pull request.
+- **CI** (`.github/workflows/ci.yml`) runs `npm ci` + `npm run verify` + `npm run
+  build` on every push and pull request.
 - **Publish** (`.github/workflows/publish.yml`) publishes `enigma-cli` to npm with
   provenance when a GitHub Release is published (or via manual dispatch). It
   requires the `NPM_TOKEN` repo secret and checks that the release tag matches the
   package version.
 - **Pre-commit** for this repo: `git config core.hooksPath .githooks`.
+
+Full contributor guide (dev loop, build internals, release flow, local testing):
+[`docs/developers/`](docs/developers/README.md).
 
 ## License
 
