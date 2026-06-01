@@ -1,0 +1,53 @@
+{
+  "name": "@enigmax/linter",
+  "version": "0.1.0",
+  "description": "Ciphera-style linter and security auditor: length-sorted imports, double quotes, template literals over concatenation, semicolons, no URL/CDN imports, file hygiene, and hardcoded-secret detection.",
+  "type": "module",
+  "bin": {
+    "enigmax-lint": "dist/cli.js"
+  },
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsx src/cli.ts",
+    "typecheck": "tsc --noEmit",
+    "lint:self": "tsx src/cli.ts src",
+    "prepublishOnly": "npm run typecheck && npm run build"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "typescript": "^5.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsup": "^8.0.0",
+    "tsx": "^4.0.0"
+  },
+  "keywords": [
+    "linter",
+    "lint",
+    "ciphera",
+    "code-style",
+    "secrets",
+    "audit",
+    "security",
+    "typescript"
+  ],
+  "license": "Apache-2.0",
+  "author": "FJRG2007 <fjrg2007@tpeoficial.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/FJRG2007/enigma.git",
+    "directory": "packages/linter"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
