@@ -154,22 +154,19 @@ export async function run(argv: string[]): Promise<void> {
         return;
     }
 
-    p.intro("enigma");
-    for (;;) {
-        const action = await p.select({
-            message: "What would you like to do?",
-            options: [
-                { value: "config", label: "Configure settings", hint: "emoji, attribution, permission bypass, ..." },
-                { value: "skills", label: "Install agent skills", hint: "Claude Code, Codex, opencode" },
-                { value: "security", label: "Git security hooks", hint: "block secrets, .env, node_modules on commit" },
-                { value: "exit", label: "Exit" },
-            ],
-        });
-        if (p.isCancel(action) || action === "exit") break;
-        if (action === "config") { const { runSettingsTui } = await import("./tui/settings"); await runSettingsTui(); }
-        else if (action === "skills") await installSkills(opts, interactive);
-        else if (action === "security") await setupGitHooks(opts, interactive);
-    }
-    p.outro("Done.");
+    // Full-screen home TUI. Install/security drop to their clack wizards (run
+    // outside the alt screen) and the menu reopens afterwards.
+    const { runHomeTui } = await import("./tui/settings");
+    await runHomeTui(async (action) => {
+        if (action === "skills") {
+            p.intro("enigma - install agent skills");
+            await installSkills(opts, interactive);
+            p.outro("Done.");
+        } else if (action === "security") {
+            p.intro("enigma - git security hooks");
+            const done = await setupGitHooks(opts, interactive);
+            p.outro(done ? "Git hooks configured." : "No changes made.");
+        }
+    });
     await notifyUpdate(version, interactive);
 }
