@@ -12,6 +12,8 @@ import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 import * as p from "@clack/prompts";
 import { isOnPath } from "./util";
+import { clackReporter } from "./reporter";
+import type { Reporter } from "./reporter";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -67,30 +69,31 @@ function currentHooksPath(root: string): string {
 }
 
 /**
- * Configure git security hooks in the current repo.
- * `opts.force` overrides an existing core.hooksPath without prompting.
+ * Configure git security hooks in the current repo. Output is emitted through
+ * `reporter` (clack for the CLI, or a buffering reporter when driven inline by
+ * the TUI). `opts.force` overrides an existing core.hooksPath without prompting.
  * `opts.protections` limits what is enabled; omitted means all protections on.
  */
-export async function setupGitHooks(opts: SecurityOptions, interactive: boolean): Promise<boolean> {
+export async function setupGitHooks(opts: SecurityOptions, interactive: boolean, reporter: Reporter = clackReporter()): Promise<boolean> {
     const root = findGitRoot(process.cwd());
     if (!root) {
-        p.log.error("Not inside a git repository (no .git found). Run this from your project root.");
+        reporter.error("Not inside a git repository (no .git found). Run this from your project root.");
         return false;
     }
     const guardSrc = findGuardSrc();
     if (!guardSrc) {
-        p.log.error("Cannot find the built guard (dist/guard.js). Run 'npm run build' first.");
+        reporter.error("Cannot find the built guard (dist/guard.js). Run 'npm run build' first.");
         return false;
     }
 
     const current = currentHooksPath(root);
     if (current && current !== ".githooks" && !opts.force) {
-        p.log.warn(`core.hooksPath is already set to '${current}'.`);
+        reporter.warn(`core.hooksPath is already set to '${current}'.`);
         if (interactive) {
             const ok = await p.confirm({ message: `Override existing core.hooksPath '${current}' with '.githooks'?` });
-            if (p.isCancel(ok) || !ok) { p.log.info("Left git hooks unchanged."); return false; }
+            if (p.isCancel(ok) || !ok) { reporter.info("Left git hooks unchanged."); return false; }
         } else {
-            p.log.info("Re-run with --force to override.");
+            reporter.info("Re-run with --force to override.");
             return false;
         }
     }
@@ -104,7 +107,7 @@ export async function setupGitHooks(opts: SecurityOptions, interactive: boolean)
             initialValues: GUARD_PROTECTIONS.map((o) => o.value),
             required: true,
         });
-        if (p.isCancel(r)) { p.log.info("Left git hooks unchanged."); return false; }
+        if (p.isCancel(r)) { reporter.info("Left git hooks unchanged."); return false; }
         enabled = r as string[];
     }
     const config: Record<string, boolean> = {};
@@ -132,15 +135,15 @@ export async function setupGitHooks(opts: SecurityOptions, interactive: boolean)
     try {
         execFileSync("git", ["-C", root, "config", "core.hooksPath", ".githooks"]);
     } catch (err) {
-        p.log.error(`Failed to set core.hooksPath: ${(err as Error).message}`);
+        reporter.error(`Failed to set core.hooksPath: ${(err as Error).message}`);
         return false;
     }
 
     const on = Object.entries(config).filter(([, v]) => v).map(([k]) => k);
-    p.log.success(`Git security hooks installed in ${relative(process.cwd(), hooksDir) || ".githooks"} (core.hooksPath set).`);
-    p.log.info(`Enforcing: ${on.join(", ") || "nothing"}. Commit .githooks/ so your team inherits it.`);
+    reporter.success(`Git security hooks installed in ${relative(process.cwd(), hooksDir) || ".githooks"} (core.hooksPath set).`);
+    reporter.info(`Enforcing: ${on.join(", ") || "nothing"}. Commit .githooks/ so your team inherits it.`);
     if (isOnPath("gh")) {
-        p.log.info("GitHub CLI (gh) detected: these hooks also run for commits made via gh, since gh uses git underneath.");
+        reporter.info("GitHub CLI (gh) detected: these hooks also run for commits made via gh, since gh uses git underneath.");
     }
     return true;
 }

@@ -8,6 +8,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as p from "@clack/prompts";
 import { readJson } from "./util";
+import { isBun } from "./runtime";
+import { collectReporter } from "./reporter";
 import { installSkills, sealSources, checkSources } from "./skills";
 import type { InstallOptions } from "./skills";
 import { setupGitHooks, GUARD_PROTECTIONS } from "./security";
@@ -155,23 +157,30 @@ export async function run(argv: string[]): Promise<void> {
         return;
     }
 
-    // Full-screen hub TUI. Install/security are chosen natively in the TUI; on
-    // confirm the TUI exits and we run the chosen options non-interactively (no
-    // clack prompts), then the hub reopens. Direct `enigma install` / `enigma
-    // security` still use the clack wizards above.
-    const { runHomeTui } = await import("./tui/settings");
+    // Full-screen hub TUI. Install/security are chosen AND executed inline in the
+    // TUI: the action writes through a buffering reporter (no stdout, which would
+    // corrupt the live render) and the outcome is shown in a native result panel.
+    // Direct `enigma install` / `enigma security` still use the clack wizards above.
+    // Under Bun the OpenTUI (native Zig) renderer is used; under Node, Ink.
+    const { runHomeTui } = isBun()
+        ? await import("./tui/opentui")
+        : await import("./tui/settings");
     await runHomeTui({
         agents: discoverAgents().map((a) => ({ name: a.name, label: a.label, installed: a.installed })),
         protections: GUARD_PROTECTIONS,
-        runAction: async (intent) => {
-            if (intent.action === "skills") {
-                p.intro("enigma - install agent skills");
-                await installSkills({ ...opts, scope: intent.scope ?? opts.scope, agents: intent.agents ?? [], allAgents: !(intent.agents && intent.agents.length) }, false);
-                p.outro("Done.");
-            } else if (intent.action === "security") {
-                p.intro("enigma - git security hooks");
-                const done = await setupGitHooks({ ...opts, protections: intent.protections, force: true }, false);
-                p.outro(done ? "Git hooks configured." : "No changes made.");
+        runAction: async (req) => {
+            const reporter = collectReporter();
+            const title = req.action === "skills" ? "Install agent skills" : "Git security hooks";
+            try {
+                if (req.action === "skills") {
+                    await installSkills({ ...opts, scope: req.scope ?? opts.scope, agents: req.agents ?? [], allAgents: !(req.agents && req.agents.length) }, false, reporter);
+                    return { ok: true, title, lines: reporter.lines };
+                }
+                const done = await setupGitHooks({ ...opts, protections: req.protections, force: true }, false, reporter);
+                return { ok: done, title, lines: reporter.lines };
+            } catch (err) {
+                reporter.error(`Error: ${(err as Error).message}`);
+                return { ok: false, title, lines: reporter.lines };
             }
         },
     });

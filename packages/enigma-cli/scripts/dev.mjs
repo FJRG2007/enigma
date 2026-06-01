@@ -1,21 +1,25 @@
 /**
- * Sandboxed dev runner for the enigma CLI.
+ * Dev runner for the enigma CLI.
  *
- * Runs the CLI straight from TypeScript source (via tsx) inside an isolated
- * sandbox so testing - install, config, the settings menu, security hooks -
- * never touches your real global agent configs (~/.claude, ~/.codex,
- * ~/.config/opencode, ~/.enigma.json, the update-check cache) and never shadows
- * the globally installed `enigma` binary. It is NOT `npm link`: nothing is
- * installed, so the published version you have on PATH is left exactly as is.
+ * Runs the CLI straight from TypeScript source (via tsx). By default it uses your
+ * REAL HOME/cwd, so the settings menu shows the values actually configured on this
+ * machine (Claude permission bypass, attribution, etc.). Real configs are read and,
+ * if you save or install, written - the same way the published binary behaves.
  *
- * The sandbox redirects HOME/USERPROFILE (so os.homedir() resolves into it) and
- * runs with its working directory set to a throwaway project folder (so
- * local-scope writes land there too). Both live under .dev-home/ (gitignored).
+ * Pass --sandbox to run inside an isolated sandbox instead, so testing - install,
+ * config, the settings menu, security hooks - never touches your real global agent
+ * configs (~/.claude, ~/.codex, ~/.config/opencode, ~/.enigma.json). The sandbox
+ * redirects HOME/USERPROFILE and uses a throwaway project cwd; both live under
+ * .dev-home/ (gitignored). Either way this is NOT `npm link` - nothing is installed
+ * and the globally installed `enigma` on PATH is left exactly as is.
  *
  * Usage:
- *   npm run dev -- <enigma args>      e.g. npm run dev -- config
- *   npm run dev -- --reset <args>     wipe the sandbox first, then run
+ *   npm run dev -- <enigma args>      e.g. npm run dev -- config  (real configs)
+ *   npm run dev -- --sandbox <args>   isolate from real configs (writes go to .dev-home)
+ *   npm run dev -- --reset <args>     wipe the sandbox first (implies --sandbox state)
  *   npm run dev -- --built <args>     run the built dist/enigma.js instead of source
+ *   npm run dev -- --bun <args>       run from source under Bun (exercises the
+ *                                     OpenTUI TUI; requires Bun on PATH)
  */
 
 import { spawnSync } from "node:child_process";
@@ -46,21 +50,36 @@ function resolveTsxCli() {
 const args = process.argv.slice(2);
 const reset = args[0] === "--reset" && (args.shift(), true);
 const built = args[0] === "--built" && (args.shift(), true);
+const useBun = args[0] === "--bun" && (args.shift(), true);
+// Default is REAL (uses the actual HOME/cwd so the menu shows real configured
+// values). --sandbox opts into the isolated .dev-home so writes never touch real
+// configs. --reset (sandbox-only) wipes that sandbox first.
+const useSandbox = (args[0] === "--sandbox" && (args.shift(), true)) || reset;
 
-if (reset && existsSync(sandboxHome)) rmSync(sandboxHome, { recursive: true, force: true });
-mkdirSync(sandboxProject, { recursive: true });
+if (useSandbox) {
+    if (reset && existsSync(sandboxHome)) rmSync(sandboxHome, { recursive: true, force: true });
+    mkdirSync(sandboxProject, { recursive: true });
+}
 
-const env = { ...process.env, HOME: sandboxHome, USERPROFILE: sandboxHome, ENIGMA_DEV_SANDBOX: "1" };
+const env = useSandbox
+    ? { ...process.env, HOME: sandboxHome, USERPROFILE: sandboxHome, ENIGMA_DEV_SANDBOX: "1" }
+    : { ...process.env };
 
 let command;
 if (built) {
     const dist = join(pkgRoot, "dist", "enigma.js");
     if (!existsSync(dist)) { console.error("dist/enigma.js not found - run `npm run build` first."); process.exit(1); }
     command = [process.execPath, [dist, ...args]];
+} else if (useBun) {
+    // Bun runs TypeScript directly; this exercises the OpenTUI (native) TUI path.
+    command = ["bun", [join(pkgRoot, "src", "bin", "enigma.ts"), ...args]];
 } else {
     command = [process.execPath, [resolveTsxCli(), join(pkgRoot, "src", "bin", "enigma.ts"), ...args]];
 }
 
-process.stderr.write(`[enigma dev] sandbox: ${sandboxHome} (real ~/.claude, ~/.codex, global enigma untouched)\n`);
-const result = spawnSync(command[0], command[1], { cwd: sandboxProject, env, stdio: "inherit" });
+process.stderr.write(useSandbox
+    ? `[enigma dev] sandbox: ${sandboxHome} (real ~/.claude, ~/.codex, global enigma untouched)\n`
+    : `[enigma dev] REAL configs: using your actual HOME/cwd (reads, and on save/install writes, your real configs)\n`);
+// shell:true lets Windows resolve the `bun` launcher (bun.cmd/.ps1) from PATH.
+const result = spawnSync(command[0], command[1], { cwd: useSandbox ? sandboxProject : process.cwd(), env, stdio: "inherit", shell: useBun });
 process.exit(result.status ?? 1);
