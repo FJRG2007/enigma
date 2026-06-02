@@ -16,7 +16,7 @@
 
 import { CATEGORIES, ALL_SETTINGS, valueLabel } from "../settings-registry";
 import type { Scope, Setting } from "../settings-registry";
-import type { HubContext, ActionRequest, ActionResult } from "./types";
+import type { HubContext, HubAccount, ActionRequest, ActionResult } from "./types";
 
 /** Rendered tree node (React element or primitive child). */
 type RNode = import("react").ReactNode;
@@ -81,6 +81,11 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
     const showActions = opts.showActions;
     const agents = opts.hub?.agents ?? [];
     const protections = opts.hub?.protections ?? [];
+    const initialAccounts = opts.hub?.accounts ?? [];
+    const activateAccount = opts.hub?.activateAccount;
+    const removeAccountFn = opts.hub?.removeAccount;
+    // The Accounts panel only appears when the hub wired account operations in.
+    const hasAccounts = showActions && Boolean(activateAccount) && initialAccounts.length > 0;
     // No-op fallback for the settings-only TUI, where no action can be invoked.
     const runAction = opts.hub?.runAction
         ?? (async (): Promise<ActionResult> => ({ ok: false, title: "", lines: [] }));
@@ -125,6 +130,31 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
                         txt(`${it.hint}  `, { fg: COL.gray }));
                 })),
         ]);
+
+    const renderAccounts = (s: {
+        accounts: HubAccount[]; focused: boolean; cursor: number;
+        onSelect: (i: number) => void;
+    }): RNode =>
+        panelBox(s.focused ? COL.cyan : COL.gray, [
+            txt("Claude Code accounts", { fg: COL.cyan, attributes: BOLD }),
+            txt("Switch login without logging out (CLAUDE_CONFIG_DIR per account)", { fg: COL.gray }),
+            h(box, { flexDirection: "column", marginTop: 1 },
+                ...s.accounts.map((a, i) => {
+                    const selected = s.focused && i === s.cursor;
+                    return h(box, { flexDirection: "row", justifyContent: "space-between", onMouseDown: () => s.onSelect(i) },
+                        txt(` ${a.active ? "*" : " "} ${a.name} `, selStyle(selected, { fg: a.active ? COL.green : undefined, attributes: a.active ? BOLD : undefined })),
+                        txt(`${a.dir}  `, { fg: COL.gray, truncate: true }));
+                })),
+            h(box, { flexGrow: 1 }),
+            txt("enter set active   d remove   create: enigma account add <name>", { fg: COL.gray, marginTop: 1, truncate: true }),
+        ]);
+
+    const renderRemoveConfirm = (name: string, index: number, onChoose: (i: number) => void): RNode =>
+        h(box, { flexGrow: 1, justifyContent: "center", alignItems: "center" },
+            h(box, { border: true, borderStyle: "rounded", borderColor: COL.red, flexDirection: "column", paddingLeft: 2, paddingRight: 2, paddingTop: 1, paddingBottom: 1 },
+                txt(`Remove account '${name}' and delete its config dir?`, { fg: COL.red, attributes: BOLD }),
+                h(box, { flexDirection: "column", marginTop: 1 },
+                    ...["Remove", "Cancel"].map((o, i) => txt(` ${o} `, { ...selStyle(i === index), onMouseDown: () => onChoose(i) })))));
 
     const renderCategoryPanel = (s: {
         category: { title: string; blurb: string; settings: Setting[] };
@@ -188,10 +218,12 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
     type Mode = "menu" | "running" | "result";
     type SideItem =
         | { kind: "category"; catIndex: number; title: string }
-        | { kind: "action"; action: "skills" | "security"; title: string; blurb: string };
+        | { kind: "action"; action: "skills" | "security"; title: string; blurb: string }
+        | { kind: "accounts"; title: string };
     const sideItems: SideItem[] = [
         ...CATEGORIES.map((c, i) => ({ kind: "category" as const, catIndex: i, title: c.title })),
         ...(showActions ? ACTION_ITEMS.map((a) => ({ kind: "action" as const, ...a })) : []),
+        ...(hasAccounts ? [{ kind: "accounts" as const, title: "Accounts" }] : []),
     ];
     const actionItemKeys = (action: "skills" | "security"): string[] =>
         action === "security" ? protections.map((p) => p.value) : agents.map((a) => a.name);
@@ -211,10 +243,14 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         const [busyTitle, setBusyTitle] = useState("");
         const [result, setResult] = useState<ActionResult | null>(null);
         const [resultScroll, setResultScroll] = useState(0);
+        const [accounts, setAccounts] = useState<HubAccount[]>(initialAccounts);
+        const [accCursor, setAccCursor] = useState(0);
+        const [removeConfirm, setRemoveConfirm] = useState<{ name: string; index: number } | null>(null);
 
         const current = sideItems[sideIndex]!;
         const category = current.kind === "category" ? CATEGORIES[current.catIndex]! : null;
         const action = current.kind === "action" ? current.action : null;
+        const accountsMode = current.kind === "accounts";
 
         useEffect(() => {
             if (!action) return;
@@ -289,6 +325,29 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             setPending({});
             onExit();
         };
+        // Account operations call back into the data layer (via the hub) and replace the
+        // local list with the refreshed result, so the panel always reflects truth on disk.
+        const activateSelected = (i: number): void => {
+            const acc = accounts[i];
+            if (!acc || acc.active || !activateAccount) return;
+            setAccounts(activateAccount(acc.name));
+        };
+        const requestRemove = (i: number): void => {
+            const acc = accounts[i];
+            if (acc && acc.removable && removeAccountFn) setRemoveConfirm({ name: acc.name, index: 0 });
+        };
+        const chooseRemove = (i: number): void => {
+            const target = removeConfirm?.name;
+            setRemoveConfirm(null);
+            if (i !== 0 || !target || !removeAccountFn) return;
+            const next = removeAccountFn(target);
+            setAccounts(next);
+            setAccCursor((c) => Math.max(0, Math.min(c, next.length - 1)));
+        };
+        const clickAccount = (i: number): void => {
+            if (focusRight && accCursor === i) activateSelected(i);
+            else { setFocusRight(true); setAccCursor(i); }
+        };
         const scrollResult = (dir?: "up" | "down" | "left" | "right"): void => {
             if (dir === "up") setResultScroll((s) => Math.max(0, s - 1));
             else if (dir === "down") setResultScroll((s) => Math.min(maxResultScroll, s + 1));
@@ -303,6 +362,15 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             const up = name === "up", down = name === "down", left = name === "left", right = name === "right";
             const enter = name === "return", esc = name === "escape", tab = name === "tab", space = name === "space";
             const ch = name && name.length === 1 ? name : "";
+
+            if (removeConfirm) {
+                if (esc || ch === "n") { setRemoveConfirm(null); return; }
+                if (up || ch === "k") { setRemoveConfirm((c) => c && { ...c, index: Math.max(0, c.index - 1) }); return; }
+                if (down || ch === "j") { setRemoveConfirm((c) => c && { ...c, index: Math.min(1, c.index + 1) }); return; }
+                if (ch === "y") { chooseRemove(0); return; }
+                if (enter || space) { chooseRemove(removeConfirm.index); return; }
+                return;
+            }
 
             if (confirm) {
                 if (esc) { setConfirm(null); return; }
@@ -335,15 +403,18 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             if (tab) { setFocusRight((f) => !f); return; }
             if (left || ch === "h") { setFocusRight(false); return; }
             if (right || ch === "l") { setFocusRight(true); return; }
+            if (focusRight && accountsMode && ch === "d") { requestRemove(accCursor); return; }
             if (up || ch === "k") {
                 if (focusRight && category) setSetIndex((i) => Math.max(0, i - 1));
                 else if (focusRight && action) setActCursor((i) => Math.max(0, i - 1));
+                else if (focusRight && accountsMode) setAccCursor((i) => Math.max(0, i - 1));
                 else { setSideIndex((i) => Math.max(0, i - 1)); setSetIndex(0); setFocusRight(false); }
                 return;
             }
             if (down || ch === "j") {
                 if (focusRight && category) setSetIndex((i) => Math.min(category.settings.length - 1, i + 1));
                 else if (focusRight && action) setActCursor((i) => Math.min(actionItemKeys(action).length - 1, i + 1));
+                else if (focusRight && accountsMode) setAccCursor((i) => Math.min(accounts.length - 1, i + 1));
                 else { setSideIndex((i) => Math.min(sideItems.length - 1, i + 1)); setSetIndex(0); setFocusRight(false); }
                 return;
             }
@@ -354,6 +425,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             }
             if (enter || space) {
                 if (!focusRight) { setFocusRight(true); return; }
+                if (accountsMode) { activateSelected(accCursor); return; }
                 if (action) { runChosen(action); return; }
                 const setting = category!.settings[setIndex]!;
                 setPending((p) => ({ ...p, [stageKey(setting.key, scope)]: !valueOf(setting, scope) }));
@@ -361,7 +433,9 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         });
 
         // header
-        const headerRight = confirm
+        const headerRight = removeConfirm
+            ? txt("remove account", { fg: COL.red })
+            : confirm
             ? txt("unsaved changes", { fg: COL.yellow })
             : mode === "running"
                 ? txt("working", { fg: COL.gray })
@@ -377,7 +451,9 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
 
         // body
         let content: RNode;
-        if (confirm) {
+        if (removeConfirm) {
+            content = renderRemoveConfirm(removeConfirm.name, removeConfirm.index, chooseRemove);
+        } else if (confirm) {
             content = renderConfirm(confirm.index, chooseConfirm);
         } else if (mode === "running") {
             content = renderRunning(busyTitle);
@@ -385,7 +461,9 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             content = renderResult(result, Math.min(resultScroll, maxResultScroll), resultRows, scrollResult);
         } else {
             const sidebarWidth = Math.min(28, Math.max(20, Math.floor(size.columns * 0.3)));
-            const panel = category
+            const panel = accountsMode
+                ? renderAccounts({ accounts, focused: focusRight, cursor: accCursor, onSelect: clickAccount })
+                : category
                 ? renderCategoryPanel({ category, scope, focusRight, setIndex, valueOf, isModified, onSelect: clickSetting })
                 : renderChecklist({
                     title: actionTitle(action!),
@@ -405,15 +483,19 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         // right (split with space-between) so those are visible even while editing.
         const footerLine = (s: string): RNode =>
             h(box, { width: size.columns, paddingLeft: 1, paddingRight: 1 }, txt(s, { fg: COL.gray, attributes: DIM }));
-        const menuNav = focusRight && action
+        const menuNav = focusRight && accountsMode
+            ? "up/down move   enter set active   d remove   tab back"
+            : focusRight && action
             ? (action === "skills"
                 ? "up/down move   space toggle   g scope   enter install   tab back"
                 : "up/down move   space toggle   enter apply   tab back")
             : focusRight && category
                 ? "up/down move   enter toggle   g scope   tab back"
-                : `up/down move   tab switch   enter ${action ? "edit" : "focus"}`;
+                : `up/down move   tab switch   enter ${action || accountsMode ? "edit" : "focus"}`;
         let footer: RNode;
-        if (confirm) {
+        if (removeConfirm) {
+            footer = footerLine("y remove   n / esc cancel");
+        } else if (confirm) {
             footer = footerLine("up/down move   enter select   esc cancel");
         } else if (mode === "running") {
             footer = footerLine("working...");

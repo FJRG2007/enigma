@@ -23,6 +23,8 @@ enigma install         Install/update agent skills
 enigma security        Set up git security hooks in the current repo
 enigma guard [--all]   Run the commit guard (staged files, or all tracked)
 enigma config [k v]    Show or set runtime toggles (e.g. config commit-emoji off)
+enigma claude [acct]   Launch Claude Code using an account (active if omitted)
+enigma account ...     Manage Claude Code accounts (list/add/use/login/remove)
 enigma seal            Maintenance: (re)compute skill content hashes
 enigma check           Integrity gate: verify skills are well-formed and sealed
 enigma help | version
@@ -66,6 +68,31 @@ On every commit the guard, OS-agnostically:
 
 Each protection is individually toggleable (saved to `.githooks/enigma-guard.json`).
 Bypass once with `git commit --no-verify`.
+
+## Multiple Claude Code accounts
+
+If you use one Claude Code login for work and another for personal projects,
+`enigma` lets you keep both side by side and switch without logging out. Claude
+Code reads its credentials and session from the directory in `CLAUDE_CONFIG_DIR`
+(default `~/.claude`), so each account just needs its own directory. Rather than
+hand-editing per-shell aliases, `enigma` launches Claude for you with that
+variable set - the same command on macOS, Linux and Windows.
+
+```bash
+enigma account add work --login   # create 'work' and run /login to authenticate
+enigma account add personal       # create 'personal' (log in later)
+enigma account list               # show all accounts (active one marked *)
+enigma claude work                # run Claude Code as 'work'
+enigma account use personal       # make 'personal' the active account
+enigma claude                     # run the active account
+enigma claude work -- --version   # forward args after -- to Claude
+enigma account remove work        # delete an account and its config dir
+```
+
+Your existing `~/.claude` is always available as the built-in `default` account
+(it is never deleted). New accounts live under `~/.enigma/claude/<name>/`. The
+hub TUI (`enigma`) also has an **Accounts** panel to list, activate, and remove
+accounts. A bare `claude` command keeps using `~/.claude` as before.
 
 ## Commit emojis
 

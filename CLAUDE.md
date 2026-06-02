@@ -234,6 +234,13 @@ Non-obvious lessons for working in THIS repo. Keep this section concise; add onl
 - Action output (install/security) is decoupled from clack via `src/reporter.ts`: `clackReporter` for the direct CLI, `collectReporter` for the TUI (buffers lines so nothing corrupts the live render). The TUI runs actions inline and shows a native result panel.
 - Dev: `npm run dev` (Bun, the real TUI), `npm run dev -- --node` (Node/tsx, non-TUI commands only), `npm run dev -- --built` (launcher -> compiled host binary). Defaults to the REAL HOME/cwd; `--sandbox` isolates writes to `.dev-home`. The TUI cannot be runtime-verified headless (no TTY).
 
+### Multi-account for Claude Code (enigma-as-launcher)
+
+- `src/accounts.ts` manages multiple Claude Code logins via `CLAUDE_CONFIG_DIR` (each account = its own config dir). The OS-agnostic switch is NOT shell aliases (what the reference blogs do, per-shell/per-OS) but enigma spawning `claude` as a child with `CLAUDE_CONFIG_DIR` injected - one `child_process.spawn` path for macOS/Linux/Windows. Surfaces: `enigma claude [account]` (launch) and `enigma account <list|add|use|login|run|remove>` (manage), dispatched in `cli.ts` (`runAccountCli`); plus an Accounts panel in the hub TUI.
+- The existing `~/.claude` is a synthetic, non-removable `default` account (never stored, never deleted); new accounts live under `~/.enigma/claude/<name>/`, indexed in `~/.enigma/accounts.json` (`{active, accounts[]}`). `removeAccount` only `rm -rf`s a dir inside `ACCOUNTS_BASE` (a tampered registry can't point removal elsewhere). `accounts.ts` is Node-builtins-only (no clack); the CLI wrapper does prompting/printing.
+- Windows spawn: a `.cmd` shim (Claude's installed bin) or a bare name needs `shell:true`; `spawnInherit` quotes args (`quoteWinArg`) and uses `shell:false` with the resolved absolute path for `.exe`. Binary resolved via `ENIGMA_CLAUDE_BIN` -> `resolveBin("claude")` (full-path PATH/PATHEXT resolver in `util.ts`, which `isOnPath` now delegates to). `--` ends enigma arg parsing; everything after is forwarded verbatim to Claude.
+- TUI Accounts panel only lists/activates/removes (no spawn): launching Claude tears down the TUI's terminal, and `add` chains into the interactive `/login`, so creation/launch stay CLI-only. The panel renders purely from `HubContext` (`accounts`/`activateAccount`/`removeAccount` callbacks return the refreshed list); `opentui.ts` never imports `accounts.ts` directly.
+
 ### Style-conflict resolutions already decided
 
 - ciphera-style-policy mandates 4-space indent, but this repo's own JS uses 2-space. When editing existing files, match the file's style; Ciphera style governs new code only (consistency outranks style per the priority hierarchy).
