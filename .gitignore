@@ -1,6 +1,8 @@
 node_modules/
 dist/
 dist-bin/
+# Generated at publish time from the release binaries; ships in the npm tarball only.
+packages/enigma-cli/bin/checksums.json
 .dev-home/
 *.log
 .DS_Store
