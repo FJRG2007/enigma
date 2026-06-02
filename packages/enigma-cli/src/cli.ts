@@ -8,7 +8,6 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as p from "@clack/prompts";
 import { readJson } from "./util";
-import { isBun } from "./runtime";
 import { collectReporter } from "./reporter";
 import { installSkills, sealSources, checkSources } from "./skills";
 import type { InstallOptions } from "./skills";
@@ -19,6 +18,9 @@ import { runConfigCli } from "./settings";
 import { notifyUpdate } from "./update";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+// In the compiled binary __dirname lives in Bun's virtual fs (no package.json on
+// disk); the launcher passes ENIGMA_VERSION. Reading package.json stays as the
+// dev/tsx fallback.
 const PKG = readJson<{ version?: string }>(join(__dirname, "..", "package.json")) || {};
 
 type Command = "install" | "security" | "guard" | "seal" | "check" | "config" | "help" | "version";
@@ -124,7 +126,7 @@ Examples:
 export async function run(argv: string[]): Promise<void> {
     const opts = parseArgs(argv);
     const interactive = Boolean(process.stdout.isTTY) && !opts.yes;
-    const version = PKG.version || "0.0.0";
+    const version = process.env.ENIGMA_VERSION || PKG.version || "0.0.0";
     if (opts.help || opts.command === "help") { printHelp(); await notifyUpdate(version, interactive); return; }
     if (opts.version || opts.command === "version") { console.log(version); await notifyUpdate(version, interactive); return; }
 
@@ -161,10 +163,8 @@ export async function run(argv: string[]): Promise<void> {
     // TUI: the action writes through a buffering reporter (no stdout, which would
     // corrupt the live render) and the outcome is shown in a native result panel.
     // Direct `enigma install` / `enigma security` still use the clack wizards above.
-    // Under Bun the OpenTUI (native Zig) renderer is used; under Node, Ink.
-    const { runHomeTui } = isBun()
-        ? await import("./tui/opentui")
-        : await import("./tui/settings");
+    // Imported dynamically so non-TUI commands never load the native OpenTUI core.
+    const { runHomeTui } = await import("./tui/opentui");
     await runHomeTui({
         agents: discoverAgents().map((a) => ({ name: a.name, label: a.label, installed: a.installed })),
         protections: GUARD_PROTECTIONS,

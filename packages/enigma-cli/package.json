@@ -1,16 +1,17 @@
 {
   "name": "enigma-cli",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Everything you need to work with a coding agent: install shared policy skills for Claude Code, OpenAI Codex and opencode, and set up portable git security hooks.",
   "type": "module",
   "bin": {
-    "enigma": "dist/enigma.js"
+    "enigma": "bin/enigma.mjs"
   },
   "scripts": {
     "enigma": "tsx src/bin/enigma.ts",
     "build": "tsup",
+    "build:binaries": "bun scripts/build-binaries.ts",
     "dev": "node scripts/dev.mjs",
-    "dev:bun": "node scripts/dev.mjs --bun",
+    "dev:node": "node scripts/dev.mjs --node",
     "dev:watch": "tsup --watch",
     "typecheck": "tsc --noEmit",
     "seal": "tsx src/bin/enigma.ts seal",
@@ -20,6 +21,7 @@
     "prepublishOnly": "npm run verify && npm run build"
   },
   "files": [
+    "bin",
     "dist",
     "assets",
     "README.md",
@@ -28,18 +30,20 @@
   "engines": {
     "node": ">=18"
   },
-  "dependencies": {
-    "@clack/prompts": "^0.7.0",
-    "ink": "^7.0.5",
-    "react": "^19.2.0"
-  },
   "optionalDependencies": {
-    "@opentui/core": "^0.3.1",
-    "@opentui/react": "^0.3.1"
+    "enigma-cli-linux-x64": "1.4.0",
+    "enigma-cli-linux-arm64": "1.4.0",
+    "enigma-cli-darwin-x64": "1.4.0",
+    "enigma-cli-darwin-arm64": "1.4.0",
+    "enigma-cli-win32-x64": "1.4.0"
   },
   "devDependencies": {
+    "@clack/prompts": "^0.7.0",
+    "@opentui/core": "^0.3.1",
+    "@opentui/react": "^0.3.1",
     "@types/node": "^22.0.0",
     "@types/react": "^19.2.0",
+    "react": "^19.2.0",
     "tsup": "^8.0.0",
     "tsx": "^4.0.0",
     "typescript": "^5.0.0"
