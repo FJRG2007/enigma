@@ -44,20 +44,6 @@ enigma check           Integrity gate: verify skills are well-formed and sealed
 enigma help | version
 ```
 
-### Agent auto-detection
-
-By default `enigma install` only targets agents actually installed on the machine. In the interactive menu detected agents are
-**preselected** (`detected` / `not detected`); `--all` overrides detection.
-
-| Agent       | Scope  | Skills                        | Memory file                    |
-| ----------- | ------ | ----------------------------- | ------------------------------ |
-| Claude Code | global | `~/.claude/skills/`           | `~/.claude/CLAUDE.md`          |
-| Claude Code | local  | `.claude/skills/`             | `./CLAUDE.md`                  |
-| OpenAI Codex| global | `~/.agents/skills/`           | `~/.codex/AGENTS.md`           |
-| OpenAI Codex| local  | `.agents/skills/`             | `./AGENTS.md`                  |
-| opencode    | global | `~/.config/opencode/skills/`  | `~/.config/opencode/AGENTS.md` |
-| opencode    | local  | `.opencode/skills/`           | `./AGENTS.md`                  |
-
 ### Install options
 
 ```
