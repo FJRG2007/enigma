@@ -44,11 +44,6 @@ enigma check           Integrity gate: verify skills are well-formed and sealed
 enigma help | version
 ```
 
-Everything is modular: the top-level menu (and the install/security flows) use
-[`@clack/prompts`](https://github.com/bombshell-dev/clack) so you can enable or
-disable each feature and each protection. Nothing touches your git config unless
-you run `enigma security` or accept its prompt.
-
 ### Agent auto-detection
 
 By default `enigma install` only targets agents actually installed on the machine. In the interactive menu detected agents are
