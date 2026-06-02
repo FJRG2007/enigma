@@ -21,7 +21,10 @@ import { resolveBypassSelection, applyBypass } from "./permissions";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PKG_ROOT = resolve(__dirname, "..");
-const ASSETS = join(PKG_ROOT, "assets");
+// In the compiled binary the assets are not on disk next to the code (they live in
+// Bun's virtual fs); the launcher points ENIGMA_ASSETS_DIR at the real assets shipped
+// in the main npm package. The __dirname path stays as the dev/tsx fallback.
+const ASSETS = process.env.ENIGMA_ASSETS_DIR ?? join(PKG_ROOT, "assets");
 export const SKILLS_ROOT = join(ASSETS, "skills");
 export const MEMORY_ROOT = join(ASSETS, "memory");
 

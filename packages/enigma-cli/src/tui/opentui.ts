@@ -1,27 +1,27 @@
 /**
- * OpenTUI implementation of the hub TUI, selected when enigma runs under Bun
- * (see runtime.isBun). It is a faithful port of the Ink TUI in ./settings.ts -
- * same HubContext contract, same state machine and key map - rendered with
- * @opentui/react primitives (a native Zig core) instead of Ink. Under Node the
- * Ink version is used; the two are kept in sync by mirroring structure.
+ * The hub TUI, rendered with @opentui/react primitives on a native Zig core. This
+ * is the only renderer: enigma ships as a Bun-compiled binary (see scripts/
+ * build-binaries.ts) that always runs under Bun, so the OpenTUI core is always
+ * available. runHomeTui drives the full hub (settings + install/security actions);
+ * runSettingsTui drives the settings-only view used by `enigma config`.
  *
- * Why a separate module instead of sharing a controller: OpenTUI's core loads via
- * Bun FFI and cannot run on Node, so this file is imported dynamically only under
- * Bun. Keeping it standalone isolates the Bun-only path and leaves the Node TUI
- * untouched. If both paths are later runtime-verified, the shared state machine is
- * a good candidate to extract into a framework-agnostic controller hook.
+ * @opentui/core and @opentui/react load via Bun FFI; every import here is dynamic so
+ * non-TUI commands (run under tsx/Node in dev) never resolve the native core at
+ * startup, only when a TUI is actually opened.
  *
- * @opentui/core and @opentui/react are optionalDependencies (Node installs never
- * need their native binaries); every import here is dynamic so Node never resolves
- * them.
+ * Mouse support: rows carry onMouseDown handlers and the result view an onMouseScroll
+ * handler, all reusing the same state setters as the key map (no duplicated logic).
+ * OpenTUI enables mouse capture by default (useMouse).
  */
 
 import { CATEGORIES, ALL_SETTINGS, valueLabel } from "../settings-registry";
 import type { Scope, Setting } from "../settings-registry";
-import type { HubContext, ActionRequest, ActionResult } from "./settings";
+import type { HubContext, ActionRequest, ActionResult } from "./types";
 
 /** Rendered tree node (React element or primitive child). */
 type RNode = import("react").ReactNode;
+/** OpenTUI mouse event, typed via inline import so Node never resolves the native module at runtime. */
+type MouseEvt = import("@opentui/core").MouseEvent;
 
 // Hex palette mirroring the Ink TUI's named colors (OpenTUI takes hex/RGBA).
 const COL = {
@@ -57,6 +57,15 @@ const EXIT_OPTIONS = ["Save & exit", "Exit without saving", "Cancel"] as const;
 
 /** Open the OpenTUI hub (settings + native, inline install/security checklists). */
 export async function runHomeTui(hub: HubContext): Promise<void> {
+    await runTui({ showActions: true, hub });
+}
+
+/** Open the settings-only OpenTUI directly (for `enigma config`). */
+export async function runSettingsTui(): Promise<void> {
+    await runTui({ showActions: false });
+}
+
+async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise<void> {
     if (!process.stdout.isTTY) return;
 
     const React = (await import("react")).default;
@@ -69,8 +78,12 @@ export async function runHomeTui(hub: HubContext): Promise<void> {
     const text = "text" as never;
     const BOLD = TextAttributes.BOLD;
     const DIM = TextAttributes.DIM;
-    const agents = hub.agents;
-    const protections = hub.protections;
+    const showActions = opts.showActions;
+    const agents = opts.hub?.agents ?? [];
+    const protections = opts.hub?.protections ?? [];
+    // No-op fallback for the settings-only TUI, where no action can be invoked.
+    const runAction = opts.hub?.runAction
+        ?? (async (): Promise<ActionResult> => ({ ok: false, title: "", lines: [] }));
 
     // ---- render helpers (closures over the primitives) ----
 
@@ -84,18 +97,21 @@ export async function runHomeTui(hub: HubContext): Promise<void> {
     const panelBox = (borderColor: string, children: RNode[], extra: Record<string, unknown> = {}): RNode =>
         h(box, { border: true, borderStyle: "rounded", borderColor, flexDirection: "column", paddingLeft: 1, paddingRight: 1, flexGrow: 1, ...extra }, ...children);
 
-    const renderSidebar = (items: Array<{ title: string }>, index: number, focusRight: boolean, width: number): RNode =>
+    const renderSidebar = (items: Array<{ title: string }>, index: number, focusRight: boolean, width: number, onSelect: (i: number) => void): RNode =>
         h(box, { border: true, borderStyle: "rounded", borderColor: focusRight ? COL.gray : COL.cyan, flexDirection: "column", paddingLeft: 1, paddingRight: 1, width, marginRight: 1 },
             txt("MENU", { fg: COL.gray, attributes: BOLD }),
-            ...items.map((it, i) => txt(` ${it.title} `,
-                !focusRight && i === index
+            ...items.map((it, i) => txt(` ${it.title} `, {
+                ...(!focusRight && i === index
                     ? { bg: SEL_BG, fg: SEL_FG, attributes: BOLD }
-                    : { fg: i === index ? COL.cyan : undefined })));
+                    : { fg: i === index ? COL.cyan : undefined }),
+                onMouseDown: () => onSelect(i),
+            })));
 
     const renderChecklist = (s: {
         title: string; blurb: string; focused: boolean;
         items: Array<{ key: string; label: string; hint: string }>;
         cursor: number; checked: Record<string, boolean>;
+        onToggle: (i: number) => void;
     }): RNode =>
         panelBox(s.focused ? COL.cyan : COL.gray, [
             txt(s.title, { fg: COL.cyan, attributes: BOLD }),
@@ -104,7 +120,7 @@ export async function runHomeTui(hub: HubContext): Promise<void> {
                 ...s.items.map((it, i) => {
                     const on = !!s.checked[it.key];
                     const selected = s.focused && i === s.cursor;
-                    return h(box, { flexDirection: "row", justifyContent: "space-between" },
+                    return h(box, { flexDirection: "row", justifyContent: "space-between", onMouseDown: () => s.onToggle(i) },
                         txt(` ${on ? "[x]" : "[ ]"} ${it.label} `, selStyle(selected)),
                         txt(`${it.hint}  `, { fg: COL.gray }));
                 })),
@@ -115,6 +131,7 @@ export async function runHomeTui(hub: HubContext): Promise<void> {
         scope: Scope; focusRight: boolean; setIndex: number;
         valueOf: (setting: Setting, sc: Scope) => boolean;
         isModified: (setting: Setting, sc: Scope) => boolean;
+        onSelect: (i: number) => void;
     }): RNode => {
         const focusedHint = s.category.settings[s.setIndex]!.hint;
         return panelBox(s.focusRight ? COL.cyan : COL.gray, [
@@ -125,7 +142,7 @@ export async function runHomeTui(hub: HubContext): Promise<void> {
                     const on = s.valueOf(setting, s.scope);
                     const modified = s.isModified(setting, s.scope);
                     const selected = s.focusRight && i === s.setIndex;
-                    return h(box, { flexDirection: "row", justifyContent: "space-between" },
+                    return h(box, { flexDirection: "row", justifyContent: "space-between", onMouseDown: () => s.onSelect(i) },
                         txt(` ${setting.label}${setting.globalOnly ? "  (global)" : ""} `, selStyle(selected)),
                         txt(`${valueLabel(on)}${modified ? " *" : ""} `, { attributes: BOLD, fg: modified ? COL.yellow : on ? COL.green : COL.gray }));
                 })),
@@ -134,12 +151,12 @@ export async function runHomeTui(hub: HubContext): Promise<void> {
         ]);
     };
 
-    const renderConfirm = (index: number): RNode =>
+    const renderConfirm = (index: number, onChoose: (i: number) => void): RNode =>
         h(box, { flexGrow: 1, justifyContent: "center", alignItems: "center" },
             h(box, { border: true, borderStyle: "rounded", borderColor: COL.yellow, flexDirection: "column", paddingLeft: 2, paddingRight: 2, paddingTop: 1, paddingBottom: 1 },
                 txt("You have unsaved changes", { fg: COL.yellow, attributes: BOLD }),
                 h(box, { flexDirection: "column", marginTop: 1 },
-                    ...EXIT_OPTIONS.map((o, i) => txt(` ${o} `, selStyle(i === index))))));
+                    ...EXIT_OPTIONS.map((o, i) => txt(` ${o} `, { ...selStyle(i === index), onMouseDown: () => onChoose(i) })))));
 
     const renderRunning = (title: string): RNode =>
         panelBox(COL.cyan, [
@@ -148,7 +165,7 @@ export async function runHomeTui(hub: HubContext): Promise<void> {
             h(box, { flexGrow: 1 }),
         ]);
 
-    const renderResult = (res: ActionResult, scroll: number, maxRows: number): RNode => {
+    const renderResult = (res: ActionResult, scroll: number, maxRows: number, onScroll: (dir?: "up" | "down" | "left" | "right") => void): RNode => {
         const windowed = maxRows > 0 && res.lines.length > maxRows;
         const start = windowed ? Math.max(0, Math.min(scroll, res.lines.length - maxRows)) : 0;
         const slice = windowed ? res.lines.slice(start, start + maxRows) : res.lines;
@@ -163,7 +180,7 @@ export async function runHomeTui(hub: HubContext): Promise<void> {
             h(box, { flexDirection: "column" }, ...rows),
             txt(below ? ` ... ${res.lines.length - start - maxRows} more below ` : " ", { fg: COL.gray }),
             h(box, { flexGrow: 1 }),
-        ]);
+        ], { onMouseScroll: (e: MouseEvt) => onScroll(e.scroll?.direction) });
     };
 
     // ---- the component (state machine mirrors ./settings.ts) ----
@@ -174,7 +191,7 @@ export async function runHomeTui(hub: HubContext): Promise<void> {
         | { kind: "action"; action: "skills" | "security"; title: string; blurb: string };
     const sideItems: SideItem[] = [
         ...CATEGORIES.map((c, i) => ({ kind: "category" as const, catIndex: i, title: c.title })),
-        ...ACTION_ITEMS.map((a) => ({ kind: "action" as const, ...a })),
+        ...(showActions ? ACTION_ITEMS.map((a) => ({ kind: "action" as const, ...a })) : []),
     ];
     const actionItemKeys = (action: "skills" | "security"): string[] =>
         action === "security" ? protections.map((p) => p.value) : agents.map((a) => a.name);
@@ -244,9 +261,37 @@ export async function runHomeTui(hub: HubContext): Promise<void> {
             setResult(null);
             setResultScroll(0);
             setMode("running");
-            hub.runAction(req)
+            runAction(req)
                 .then((res) => { setResult(res); setMode("result"); })
                 .catch((err) => { setResult({ ok: false, title: actionTitle(act), lines: [`Error: ${(err as Error).message}`] }); setMode("result"); });
+        };
+
+        // Mouse handlers - each mirrors the equivalent keyboard action, reusing the same
+        // setters so there is a single source of truth for state transitions.
+        const selectSide = (i: number): void => { setSideIndex(i); setSetIndex(0); setFocusRight(false); };
+        const clickSetting = (i: number): void => {
+            if (!category) return;
+            if (focusRight && setIndex === i) {
+                const setting = category.settings[i]!;
+                setPending((p) => ({ ...p, [stageKey(setting.key, scope)]: !valueOf(setting, scope) }));
+            } else { setFocusRight(true); setSetIndex(i); }
+        };
+        const clickActItem = (i: number): void => {
+            if (!action) return;
+            const k = actionItemKeys(action)[i]!;
+            setFocusRight(true); setActCursor(i);
+            setActChecked((c) => ({ ...c, [k]: !c[k] }));
+        };
+        const chooseConfirm = (i: number): void => {
+            setConfirm(null);
+            if (i === 2) return;
+            if (i === 0) persistPending();
+            setPending({});
+            onExit();
+        };
+        const scrollResult = (dir?: "up" | "down" | "left" | "right"): void => {
+            if (dir === "up") setResultScroll((s) => Math.max(0, s - 1));
+            else if (dir === "down") setResultScroll((s) => Math.min(maxResultScroll, s + 1));
         };
 
         useKeyboard((key) => {
@@ -329,15 +374,15 @@ export async function runHomeTui(hub: HubContext): Promise<void> {
         // body
         let content: RNode;
         if (confirm) {
-            content = renderConfirm(confirm.index);
+            content = renderConfirm(confirm.index, chooseConfirm);
         } else if (mode === "running") {
             content = renderRunning(busyTitle);
         } else if (mode === "result" && result) {
-            content = renderResult(result, Math.min(resultScroll, maxResultScroll), resultRows);
+            content = renderResult(result, Math.min(resultScroll, maxResultScroll), resultRows, scrollResult);
         } else {
             const sidebarWidth = Math.min(28, Math.max(20, Math.floor(size.columns * 0.3)));
             const panel = category
-                ? renderCategoryPanel({ category, scope, focusRight, setIndex, valueOf, isModified })
+                ? renderCategoryPanel({ category, scope, focusRight, setIndex, valueOf, isModified, onSelect: clickSetting })
                 : renderChecklist({
                     title: actionTitle(action!),
                     blurb: action === "skills"
@@ -346,9 +391,9 @@ export async function runHomeTui(hub: HubContext): Promise<void> {
                     items: action === "security"
                         ? protections.map((p) => ({ key: p.value, label: p.label, hint: p.hint }))
                         : agents.map((a) => ({ key: a.name, label: a.label, hint: a.installed ? "detected" : "not detected" })),
-                    cursor: actCursor, checked: actChecked, focused: focusRight,
+                    cursor: actCursor, checked: actChecked, focused: focusRight, onToggle: clickActItem,
                 });
-            content = h(box, { flexGrow: 1, flexDirection: "row" }, renderSidebar(sideItems, sideIndex, focusRight, sidebarWidth), panel);
+            content = h(box, { flexGrow: 1, flexDirection: "row" }, renderSidebar(sideItems, sideIndex, focusRight, sidebarWidth, selectSide), panel);
         }
 
         // footer. A single full-width hint line for overlays/transient modes; in the

@@ -35,7 +35,7 @@ export async function runConfigCli(positionals: string[], scope: Scope | null, i
 
     if (!rawKey) {
         if (interactive) {
-            const { runSettingsTui } = await import("./tui/settings");
+            const { runSettingsTui } = await import("./tui/opentui");
             await runSettingsTui();
         } else {
             printEffective();

@@ -18,12 +18,14 @@ import type { Reporter } from "./reporter";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 /**
- * The built, self-contained guard to copy into target repos. In a published
- * install it sits next to the bundled CLI (dist/guard.js); when running from
- * source via tsx it lives in ../dist after a build. First existing wins.
+ * The built, self-contained guard to copy into target repos. In the compiled binary
+ * the launcher points ENIGMA_GUARD_PATH at the real dist/guard.js shipped in the main
+ * npm package; in a plain install it sits next to the bundled CLI (dist/guard.js);
+ * running from source via tsx it lives in ../dist after a build. First existing wins.
  */
 function findGuardSrc(): string | null {
     const candidates = [
+        ...(process.env.ENIGMA_GUARD_PATH ? [process.env.ENIGMA_GUARD_PATH] : []),
         join(__dirname, "guard.js"),
         join(__dirname, "..", "dist", "guard.js"),
     ];
