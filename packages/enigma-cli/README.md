@@ -94,10 +94,12 @@ Your existing `~/.claude` is always available as the built-in `default` account
 `claude` command keeps using `~/.claude` as before.
 
 From the hub TUI (`enigma`), the **Accounts** panel lists accounts - showing the
-tool (e.g. Claude Code) and the signed-in email for each - and lets you set the
-active one, **connect** (log in) an account, or remove it. Connecting closes the
+tool (e.g. Claude Code) and the signed-in email for each - and lets you **add**
+(`a`), set active (`enter`), **connect**/log in (`c`), or remove (`d`). Adding
+prompts for a name and then offers to connect right away. Connecting closes the
 hub, runs the tool's own login flow (for Claude: it launches and you run
-`/login`), then reopens the hub. `enigma account list` shows the same details.
+`/login`), then reopens the hub. `enigma account list` shows the same details,
+and `enigma account add <name>` does the same from the CLI.
 
 The mechanism is tool-agnostic by design: only Claude Code is wired up today, but
 the same per-account-config-dir approach extends to other agents (e.g. Codex via

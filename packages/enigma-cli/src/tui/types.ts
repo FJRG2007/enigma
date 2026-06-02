@@ -48,4 +48,10 @@ export interface HubContext {
     accounts?: HubAccount[];
     activateAccount?: (tool: string, name: string) => HubAccount[];
     removeAccount?: (tool: string, name: string) => HubAccount[];
+    /**
+     * Create an account from the panel. Returns the refreshed list plus a
+     * validation result so the renderer can show inline errors (bad/duplicate
+     * name) without importing the data layer.
+     */
+    addAccount?: (tool: string, name: string) => { ok: boolean; error?: string; accounts: HubAccount[] };
 }
