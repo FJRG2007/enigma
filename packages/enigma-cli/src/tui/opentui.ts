@@ -428,10 +428,17 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         return h(box, { width: size.columns, height: size.rows, flexDirection: "column" }, titleBar, content, footer);
     }
 
+    // Warp does not fully support the alternate screen buffer: leaving it on exit can
+    // close the Warp tab. Render on the main screen there (other terminals keep the
+    // cleaner full-screen enter/exit). OTUI_USE_ALTERNATE_SCREEN overrides either way.
+    const isWarp = process.env.TERM_PROGRAM === "WarpTerminal";
     // exitOnCtrlC:false - we handle Ctrl+C (and q) ourselves so quitting always runs
     // the full teardown (unmount + destroy) and resolves cleanly. OpenTUI's built-in
     // exitOnCtrlC would destroy the renderer without resolving this run loop.
-    const renderer = await createCliRenderer({ exitOnCtrlC: false });
+    const renderer = await createCliRenderer({
+        exitOnCtrlC: false,
+        screenMode: isWarp ? "main-screen" : "alternate-screen",
+    });
     await new Promise<void>((resolve) => {
         const root = createRoot(renderer);
         const onExit = (): void => {
