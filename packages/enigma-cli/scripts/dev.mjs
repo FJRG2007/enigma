@@ -72,8 +72,8 @@ if (built) {
     // Drive the real launcher (bin/enigma.mjs) and point it at the freshly compiled
     // host binary, exercising the full launcher -> binary -> env-asset chain.
     const osName = process.platform === "win32" ? "win32" : process.platform;
-    const exe = process.platform === "win32" ? "enigma.exe" : "enigma";
-    const binary = join(pkgRoot, "dist-bin", `enigma-cli-${osName}-${process.arch}`, "bin", exe);
+    const exe = process.platform === "win32" ? ".exe" : "";
+    const binary = join(pkgRoot, "dist-bin", `enigma-${osName}-${process.arch}${exe}`);
     if (!existsSync(binary)) { console.error(`${binary} not found - run \`npm run build:binaries\` first.`); process.exit(1); }
     env = { ...env, ENIGMA_BIN_PATH: binary };
     command = [process.execPath, [join(pkgRoot, "bin", "enigma.mjs"), ...args]];

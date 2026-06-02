@@ -1,41 +1,46 @@
 /**
- * Build the platform-specific, Bun-compiled enigma binaries (the opencode model).
+ * Build the platform-specific, Bun-compiled enigma binaries.
  *
- * Each target produces a standalone executable that embeds the Bun runtime plus the
- * OpenTUI native core, laid out as a publishable npm package under dist-bin/:
+ * Single-package distribution (opencode-style mechanism): the binaries are NOT npm
+ * packages. Each is published as a flat asset on the GitHub Release and fetched at
+ * install time (see bin/download.mjs). This script emits, under dist-bin/:
  *
- *   dist-bin/enigma-cli-<os>-<arch>/
- *     bin/enigma[.exe]      <- bun build --compile output
- *     package.json          <- name/version/os/cpu so npm installs only the match
+ *   dist-bin/enigma-<os>-<arch>[.exe]          <- bun build --compile output
+ *   dist-bin/enigma-<os>-<arch>[.exe].sha256   <- hex SHA256 (CI -> bin/checksums.json)
  *
- * The main package lists these as optionalDependencies; its bin/enigma.mjs launcher
- * resolves and execs the right one. Run under Bun: `bun scripts/build-binaries.ts`.
+ * The asset name MUST match bin/platform.mjs `assetName()` (enigma-<os>-<arch>, .exe on
+ * Windows), since that is what the launcher/downloader request. Run under Bun:
+ * `bun scripts/build-binaries.ts`.
  *
- * By default builds only the HOST target (what this runner can compile natively, the
- * only reliable way to embed OpenTUI's native FFI core). CI calls one runner per OS.
- * Pass `--target=<bun-target>` to force a specific one, or `--all` to attempt every
- * target (cross-compile; the non-host native cores may be missing - use the matrix).
+ * By default builds only the HOST target (the only one whose OpenTUI native FFI core
+ * embeds reliably). CI runs one native runner per OS. Pass `--target=<bun-target>` to
+ * force one, or `--all` to attempt every target (cross-compile; non-host native cores
+ * may be missing - use the matrix for releases).
  */
 
-import { mkdirSync, writeFileSync, copyFileSync, existsSync, rmSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-interface Target { bun: string; pkg: string; os: string; cpu: string; exe: string; }
+interface Target { bun: string; os: string; cpu: string; }
 
-// bun --target -> npm package identity. npm "os" uses win32 (not "windows").
+// bun --target -> npm "os"/"cpu" identity (win32, not "windows"). Mirrors the CI matrix.
 const TARGETS: Target[] = [
-    { bun: "bun-linux-x64", pkg: "enigma-cli-linux-x64", os: "linux", cpu: "x64", exe: "enigma" },
-    { bun: "bun-linux-arm64", pkg: "enigma-cli-linux-arm64", os: "linux", cpu: "arm64", exe: "enigma" },
-    { bun: "bun-darwin-x64", pkg: "enigma-cli-darwin-x64", os: "darwin", cpu: "x64", exe: "enigma" },
-    { bun: "bun-darwin-arm64", pkg: "enigma-cli-darwin-arm64", os: "darwin", cpu: "arm64", exe: "enigma" },
-    { bun: "bun-windows-x64", pkg: "enigma-cli-win32-x64", os: "win32", cpu: "x64", exe: "enigma.exe" },
+    { bun: "bun-linux-x64", os: "linux", cpu: "x64" },
+    { bun: "bun-linux-arm64", os: "linux", cpu: "arm64" },
+    { bun: "bun-darwin-arm64", os: "darwin", cpu: "arm64" },
+    { bun: "bun-windows-x64", os: "win32", cpu: "x64" },
 ];
 
 const pkgRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const distBin = join(pkgRoot, "dist-bin");
 const entry = join(pkgRoot, "src", "bin", "enigma.ts");
-const main = JSON.parse(await Bun.file(join(pkgRoot, "package.json")).text()) as { version: string; license?: string; repository?: unknown };
+
+/** Release asset name for a target (kept in sync with bin/platform.mjs assetName). */
+function assetName(target: Target): string {
+    return `enigma-${target.os}-${target.cpu}${target.os === "win32" ? ".exe" : ""}`;
+}
 
 /** The bun target string for the current host (the only natively embeddable one). */
 function hostTarget(): string {
@@ -52,36 +57,25 @@ function selectTargets(argv: string[]): Target[] {
     return [match];
 }
 
-async function build(target: Target): Promise<void> {
-    const outDir = join(distBin, target.pkg);
-    rmSync(outDir, { recursive: true, force: true });
-    mkdirSync(join(outDir, "bin"), { recursive: true });
+function build(target: Target): void {
+    const asset = assetName(target);
+    const outfile = join(distBin, asset);
 
-    const outfile = join(outDir, "bin", target.exe);
-    console.log(`Compiling ${target.pkg} (${target.bun})...`);
+    console.log(`Compiling ${asset} (${target.bun})...`);
     const proc = Bun.spawnSync(
         ["bun", "build", "--compile", `--target=${target.bun}`, entry, "--outfile", outfile],
         { cwd: pkgRoot, stdout: "inherit", stderr: "inherit" },
     );
-    if (proc.exitCode !== 0) throw new Error(`bun build failed for ${target.pkg} (exit ${proc.exitCode}).`);
+    if (proc.exitCode !== 0) throw new Error(`bun build failed for ${asset} (exit ${proc.exitCode}).`);
     if (!existsSync(outfile)) throw new Error(`Expected ${outfile} was not produced.`);
 
-    const pkg = {
-        name: target.pkg,
-        version: main.version,
-        description: `Prebuilt enigma binary for ${target.os}-${target.cpu}.`,
-        os: [target.os],
-        cpu: [target.cpu],
-        files: ["bin"],
-        license: main.license ?? "Apache-2.0",
-        repository: main.repository,
-    };
-    writeFileSync(join(outDir, "package.json"), JSON.stringify(pkg, null, 2) + "\n");
-    const license = join(pkgRoot, "LICENSE");
-    if (existsSync(license)) copyFileSync(license, join(outDir, "LICENSE"));
-    console.log(`  -> ${join("dist-bin", target.pkg, "bin", target.exe)}`);
+    const sha256 = createHash("sha256").update(readFileSync(outfile)).digest("hex");
+    writeFileSync(`${outfile}.sha256`, `${sha256}\n`);
+    console.log(`  -> dist-bin/${asset}  (${sha256.slice(0, 12)}...)`);
 }
 
 const targets = selectTargets(process.argv.slice(2));
-for (const target of targets) await build(target);
-console.log(`Built ${targets.length} binary package(s) into dist-bin/.`);
+rmSync(distBin, { recursive: true, force: true });
+mkdirSync(distBin, { recursive: true });
+for (const target of targets) build(target);
+console.log(`Built ${targets.length} binary/binaries into dist-bin/.`);
