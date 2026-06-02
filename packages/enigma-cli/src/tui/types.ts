@@ -24,8 +24,14 @@ export interface ActionResult {
 /** Minimal agent/protection shapes the hub needs (passed in to avoid heavy imports). */
 export interface HubAgent { name: string; label: string; installed: boolean; }
 export interface HubProtection { value: string; label: string; hint: string; }
+/** A Claude Code account row shown in the hub's Accounts panel. */
+export interface HubAccount { name: string; dir: string; active: boolean; removable: boolean; }
 export interface HubContext {
     agents: HubAgent[];
     protections: HubProtection[];
     runAction: (req: ActionRequest) => Promise<ActionResult>;
+    /** Claude Code accounts and the operations the panel can perform without spawning. */
+    accounts?: HubAccount[];
+    activateAccount?: (name: string) => HubAccount[];
+    removeAccount?: (name: string) => HubAccount[];
 }

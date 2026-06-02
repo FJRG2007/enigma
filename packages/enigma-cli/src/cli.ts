@@ -16,6 +16,11 @@ import { discoverAgents } from "./agents";
 import { runGuardCli } from "./guard";
 import { runConfigCli } from "./settings";
 import { notifyUpdate } from "./update";
+import {
+    DEFAULT_NAME, addAccount, getActive, launchClaude,
+    listAccounts, removeAccount, setActive,
+} from "./accounts";
+import type { HubAccount } from "./tui/types";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 // In the compiled binary __dirname lives in Bun's virtual fs (no package.json on
@@ -23,30 +28,35 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // dev/tsx fallback.
 const PKG = readJson<{ version?: string }>(join(__dirname, "..", "package.json")) || {};
 
-type Command = "install" | "security" | "guard" | "seal" | "check" | "config" | "help" | "version";
-const COMMANDS = new Set<string>(["install", "security", "guard", "seal", "check", "config", "help", "version"]);
+type Command = "install" | "security" | "guard" | "seal" | "check" | "config" | "account" | "claude" | "help" | "version";
+const COMMANDS = new Set<string>(["install", "security", "guard", "seal", "check", "config", "account", "accounts", "claude", "help", "version"]);
 
 interface CliOptions extends InstallOptions {
     command: Command | null;
     positionals: string[];
+    /** Args after a literal `--`, forwarded verbatim to the launched agent. */
+    passthrough: string[];
     all: boolean;
     yes: boolean;
+    login: boolean;
     help: boolean;
     version: boolean;
 }
 
 function parseArgs(argv: string[]): CliOptions {
     const opts: CliOptions = {
-        command: null, positionals: [],
+        command: null, positionals: [], passthrough: [],
         scope: null, agents: [], allAgents: false, skills: [],
         skillsOnly: false, memoryOnly: false, prune: true, keepModified: false,
         bypass: null, noBypass: false,
-        force: false, all: false, yes: false, dryRun: false, help: false, version: false,
+        force: false, all: false, yes: false, login: false, dryRun: false, help: false, version: false,
     };
     for (let i = 0; i < argv.length; i++) {
         const a = argv[i]!;
         const next = (): string => argv[++i]!;
-        if (i === 0 && COMMANDS.has(a)) { opts.command = a as Command; continue; }
+        if (i === 0 && COMMANDS.has(a)) { opts.command = (a === "accounts" ? "account" : a) as Command; continue; }
+        // Everything after a literal `--` is forwarded verbatim (e.g. to Claude Code).
+        if (a === "--") { opts.passthrough.push(...argv.slice(i + 1)); break; }
         switch (a) {
             case "-g": case "--global": opts.scope = "global"; break;
             case "-l": case "--local": opts.scope = "local"; break;
@@ -60,6 +70,7 @@ function parseArgs(argv: string[]): CliOptions {
             case "--bypass": opts.bypass = (opts.bypass || []).concat(next().split(",")); break;
             case "--no-bypass": opts.noBypass = true; break;
             case "--force": opts.force = true; break;
+            case "--login": opts.login = true; break;
             case "-y": case "--yes": opts.yes = true; break;
             case "--dry-run": opts.dryRun = true; break;
             case "-h": case "--help": opts.help = true; break;
@@ -87,6 +98,14 @@ Commands:
   guard [--all]        Run the commit guard (staged files, or --all for every tracked file)
   config [key val]     Configure settings: no args opens the interactive menu;
                        'config <key> <on|off> [-g|-l]' sets one (e.g. config claude-attribution on)
+  claude [account]     Launch Claude Code using an account's config (active if omitted);
+                       pass args to Claude after '--' (e.g. claude work -- --version)
+  account <subcommand> Manage Claude Code accounts (multi-login without logging out):
+                         list                 List accounts (active one marked)
+                         add <name> [--login] Create an account (then optionally log in)
+                         use <name>           Set the active account
+                         login|run <name>     Launch Claude with that account
+                         remove <name>        Delete an account (-y to skip confirm)
   seal                 Maintenance: (re)compute skill content hashes
   check                Integrity gate: verify skills are well-formed and sealed
   help, version
@@ -120,7 +139,73 @@ Examples:
   enigma security                     # configure git hooks (choose protections)
   enigma config                       # show effective runtime config
   enigma config commit-emoji off      # opt out of commit-message emojis (global)
+  enigma account add work --login     # create a 'work' account and log into it
+  enigma claude work                  # run Claude Code as the 'work' account
+  enigma account use personal         # make 'personal' the default account
 `);
+}
+
+/**
+ * `enigma account <subcommand>` surface. Wraps the accounts data layer with
+ * prompting/printing (the data layer stays UI-free). Returns a process exit code.
+ */
+async function runAccountCli(opts: CliOptions, interactive: boolean): Promise<number> {
+    const [sub, name] = opts.positionals;
+
+    switch (sub) {
+        case undefined:
+        case "list":
+        case "ls": {
+            const accounts = listAccounts();
+            console.log("Claude Code accounts:\n");
+            for (const a of accounts) {
+                const marker = a.active ? "*" : " ";
+                const meta = a.name === DEFAULT_NAME ? "(your ~/.claude)" : a.lastUsed ? `last used ${a.lastUsed}` : "never used";
+                console.log(` ${marker} ${a.name.padEnd(16)} ${a.dir}  ${meta}`);
+            }
+            console.log(`\nActive: ${getActive()}. Launch with: enigma claude [account].`);
+            return 0;
+        }
+        case "add": {
+            if (!name) { console.error("Usage: enigma account add <name> [--login]"); return 1; }
+            try {
+                const account = addAccount(name);
+                console.log(`Account '${account.name}' ready at ${account.dir}.`);
+                if (opts.login) {
+                    console.log("Launching Claude Code - run /login to authenticate this account.");
+                    return launchClaude(account.name, opts.passthrough);
+                }
+                console.log(`Log in with: enigma claude ${account.name}  (then /login inside Claude).`);
+                return 0;
+            } catch (err) { console.error((err as Error).message); return 1; }
+        }
+        case "use":
+        case "switch": {
+            if (!name) { console.error("Usage: enigma account use <name>"); return 1; }
+            try { setActive(name); console.log(`Active account is now '${name}'.`); return 0; }
+            catch (err) { console.error((err as Error).message); return 1; }
+        }
+        case "login":
+        case "run": {
+            if (!name) { console.error(`Usage: enigma account ${sub} <name>`); return 1; }
+            try { return await launchClaude(name, opts.passthrough); }
+            catch (err) { console.error((err as Error).message); return 1; }
+        }
+        case "remove":
+        case "rm": {
+            if (!name) { console.error("Usage: enigma account remove <name>"); return 1; }
+            if (!opts.yes) {
+                if (!interactive) { console.error(`Refusing to remove '${name}' without confirmation. Re-run with -y.`); return 1; }
+                const ok = await p.confirm({ message: `Remove account '${name}' and delete its config directory?` });
+                if (p.isCancel(ok) || !ok) { console.log("Aborted."); return 0; }
+            }
+            try { removeAccount(name); console.log(`Removed account '${name}'.`); return 0; }
+            catch (err) { console.error((err as Error).message); return 1; }
+        }
+        default:
+            console.error(`Unknown account subcommand: ${sub}. Try: list, add, use, login, remove.`);
+            return 1;
+    }
 }
 
 export async function run(argv: string[]): Promise<void> {
@@ -136,6 +221,8 @@ export async function run(argv: string[]): Promise<void> {
     if (opts.command === "check") return checkSources();
     if (opts.command === "guard") { process.exit(runGuardCli(opts.all)); }
     if (opts.command === "config") { process.exit(await runConfigCli(opts.positionals, opts.scope, interactive)); }
+    if (opts.command === "claude") { process.exit(await launchClaude(opts.positionals[0] ?? null, opts.passthrough)); }
+    if (opts.command === "account") { process.exit(await runAccountCli(opts, interactive)); }
 
     if (opts.command === "install") {
         p.intro("enigma - install agent skills");
@@ -165,9 +252,15 @@ export async function run(argv: string[]): Promise<void> {
     // Direct `enigma install` / `enigma security` still use the clack wizards above.
     // Imported dynamically so non-TUI commands never load the native OpenTUI core.
     const { runHomeTui } = await import("./tui/opentui");
+    // Map account rows to the renderer-neutral shape; "default" (~/.claude) is not removable.
+    const hubAccounts = (): HubAccount[] =>
+        listAccounts().map((a) => ({ name: a.name, dir: a.dir, active: a.active, removable: a.name !== DEFAULT_NAME }));
     await runHomeTui({
         agents: discoverAgents().map((a) => ({ name: a.name, label: a.label, installed: a.installed })),
         protections: GUARD_PROTECTIONS,
+        accounts: hubAccounts(),
+        activateAccount: (name) => { setActive(name); return hubAccounts(); },
+        removeAccount: (name) => { removeAccount(name); return hubAccounts(); },
         runAction: async (req) => {
             const reporter = collectReporter();
             const title = req.action === "skills" ? "Install agent skills" : "Git security hooks";
