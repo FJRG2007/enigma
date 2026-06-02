@@ -296,6 +296,10 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
 
         useKeyboard((key) => {
             const name = key.name;
+            // Ctrl+C is an unconditional clean quit: route it through onExit (which
+            // restores the terminal) instead of OpenTUI's exitOnCtrlC path, which would
+            // destroy the renderer without resolving our run loop. See createCliRenderer.
+            if (key.ctrl && name === "c") { onExit(); return; }
             const up = name === "up", down = name === "down", left = name === "left", right = name === "right";
             const enter = name === "return", esc = name === "escape", tab = name === "tab", space = name === "space";
             const ch = name && name.length === 1 ? name : "";
@@ -424,7 +428,10 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         return h(box, { width: size.columns, height: size.rows, flexDirection: "column" }, titleBar, content, footer);
     }
 
-    const renderer = await createCliRenderer({ exitOnCtrlC: true });
+    // exitOnCtrlC:false - we handle Ctrl+C (and q) ourselves so quitting always runs
+    // the full teardown (unmount + destroy) and resolves cleanly. OpenTUI's built-in
+    // exitOnCtrlC would destroy the renderer without resolving this run loop.
+    const renderer = await createCliRenderer({ exitOnCtrlC: false });
     await new Promise<void>((resolve) => {
         const root = createRoot(renderer);
         const onExit = (): void => {

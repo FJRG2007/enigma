@@ -61,7 +61,9 @@ child.on("error", (err) => {
     process.stderr.write(`Failed to launch enigma binary: ${err.message}\n`);
     process.exit(1);
 });
-child.on("exit", (code, signal) => {
-    if (signal) { try { process.kill(process.pid, signal); } catch { /* fall through */ } }
-    process.exit(code ?? 1);
+child.on("exit", (code) => {
+    // Do NOT re-raise the child's exit signal on this process: re-raising SIGHUP/SIGTERM
+    // can hang up (close) the controlling terminal. A signal exit from the interactive
+    // binary - e.g. quitting the TUI - is treated as a clean exit.
+    process.exit(code ?? 0);
 });
