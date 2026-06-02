@@ -5,8 +5,15 @@ name: Publish enigma-cli
 #   - a push to main whose head commit message contains "publish:"
 #   - manual run from the Actions tab (workflow_dispatch)
 #
+# enigma ships as Bun-compiled, per-platform binaries (the opencode model). The
+# `build` matrix compiles one binary per OS on a NATIVE runner (so OpenTUI's native
+# FFI core embeds correctly - cross-compiling native addons is unreliable), each laid
+# out as a publishable `enigma-cli-<os>-<arch>` package. The `publish` job then
+# publishes those per-platform packages and finally the main `enigma-cli` launcher
+# package, which lists them as optionalDependencies.
+#
 # Requires repo secret NPM_TOKEN (an npm automation token with publish rights).
-# Uses npm provenance, so the job needs id-token: write.
+# Uses npm provenance, so the jobs need id-token: write.
 on:
   release:
     types: [published]
@@ -19,14 +26,51 @@ permissions:
   id-token: write
 
 jobs:
-  publish:
-    runs-on: ubuntu-latest
-    # Publish on a release, a manual dispatch, or a push whose head commit
-    # message contains "publish:". Plain pushes without that marker are ignored.
+  build:
+    # Publish on a release, a manual dispatch, or a push whose head commit message
+    # contains "publish:". Plain pushes without that marker are ignored.
     if: >-
       github.event_name == 'release' ||
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'push' && contains(github.event.head_commit.message, 'publish:'))
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { os: ubuntu-latest, target: bun-linux-x64, pkg: enigma-cli-linux-x64 }
+          - { os: ubuntu-24.04-arm, target: bun-linux-arm64, pkg: enigma-cli-linux-arm64 }
+          - { os: macos-13, target: bun-darwin-x64, pkg: enigma-cli-darwin-x64 }
+          - { os: macos-14, target: bun-darwin-arm64, pkg: enigma-cli-darwin-arm64 }
+          - { os: windows-latest, target: bun-windows-x64, pkg: enigma-cli-win32-x64 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # Installs devDependencies including the host's @opentui/core-<plat> native
+      # package, which `bun build --compile` embeds into the binary.
+      - name: Install dependencies
+        run: npm ci || npm install
+
+      - name: Compile binary
+        working-directory: packages/enigma-cli
+        run: npm run build:binaries -- --target=${{ matrix.target }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.pkg }}
+          path: packages/enigma-cli/dist-bin/${{ matrix.pkg }}
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -40,11 +84,11 @@ jobs:
 
       # Never publish a broken package: typecheck + integrity + guard first.
       - name: Verify
-        run: npm run verify
+        run: npm run verify --workspace enigma-cli
 
-      # Build the dist that gets published (also enforced by prepublishOnly).
-      - name: Build
-        run: npm run build
+      # Build dist/guard.js (the real guard file shipped in the main package).
+      - name: Build guard
+        run: npm run build --workspace enigma-cli
 
       # Guard against tag/version drift when triggered by a release.
       - name: Check version matches release tag
@@ -56,9 +100,40 @@ jobs:
             echo "package.json version ($PKG_VERSION) does not match release tag ($TAG)"; exit 1
           fi
 
-      # Skip cleanly if this exact version is already on npm (e.g. a "publish:"
-      # push that forgot to bump). Avoids a hard failure on a duplicate version.
-      - name: Determine if version is new
+      # The main package pins each platform package in optionalDependencies; they must
+      # all equal the main version, or installs would pull a mismatched binary.
+      - name: Check optionalDependencies pins match version
+        run: |
+          node -e '
+            const pkg = require("./packages/enigma-cli/package.json");
+            const bad = Object.entries(pkg.optionalDependencies || {})
+              .filter(([, v]) => v !== pkg.version);
+            if (bad.length) { console.error("optionalDependencies out of sync with version " + pkg.version + ":", bad); process.exit(1); }
+          '
+
+      - name: Download platform binaries
+        uses: actions/download-artifact@v4
+        with:
+          path: packages/enigma-cli/dist-bin
+
+      # Publish each per-platform package first (so the main package's optional deps
+      # resolve), then the main launcher package. Skip any version already on npm.
+      - name: Publish platform packages
+        run: |
+          for dir in packages/enigma-cli/dist-bin/*/; do
+            name="$(node -p "require('./${dir}package.json').name")"
+            version="$(node -p "require('./${dir}package.json').version")"
+            if npm view "$name@$version" version >/dev/null 2>&1; then
+              echo "$name@$version already published; skipping."
+            else
+              echo "Publishing $name@$version"
+              (cd "$dir" && npm publish --provenance --access public)
+            fi
+          done
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Determine if main version is new
         id: ver
         run: |
           NAME="$(node -p "require('./packages/enigma-cli/package.json').name")"
@@ -70,7 +145,7 @@ jobs:
             echo "publish=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Publish to npm
+      - name: Publish main package
         if: steps.ver.outputs.publish == 'true'
         run: npm publish --workspace enigma-cli --provenance --access public
         env:
