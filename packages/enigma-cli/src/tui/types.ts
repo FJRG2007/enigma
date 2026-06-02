@@ -25,7 +25,15 @@ export interface ActionResult {
 export interface HubAgent { name: string; label: string; installed: boolean; }
 export interface HubProtection { value: string; label: string; hint: string; }
 /** A tool account row shown in the hub's Accounts panel. */
-export interface HubAccount { tool: string; name: string; dir: string; active: boolean; removable: boolean; }
+export interface HubAccount {
+    tool: string;
+    toolLabel: string;
+    name: string;
+    dir: string;
+    email?: string;
+    active: boolean;
+    removable: boolean;
+}
 /**
  * A follow-up the hub asks its caller to perform after the TUI tears down.
  * Connecting/logging in must run the tool's own login flow, which needs the

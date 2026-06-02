@@ -93,10 +93,11 @@ Your existing `~/.claude` is always available as the built-in `default` account
 (it is never deleted). New accounts live under `~/.enigma/<tool>/<name>/`. A bare
 `claude` command keeps using `~/.claude` as before.
 
-From the hub TUI (`enigma`), the **Accounts** panel lists accounts and lets you
-set the active one, **connect** (log in) an account, or remove it. Connecting
-closes the hub, runs the tool's own login flow (for Claude: it launches and you
-run `/login`), then reopens the hub.
+From the hub TUI (`enigma`), the **Accounts** panel lists accounts - showing the
+tool (e.g. Claude Code) and the signed-in email for each - and lets you set the
+active one, **connect** (log in) an account, or remove it. Connecting closes the
+hub, runs the tool's own login flow (for Claude: it launches and you run
+`/login`), then reopens the hub. `enigma account list` shows the same details.
 
 The mechanism is tool-agnostic by design: only Claude Code is wired up today, but
 the same per-account-config-dir approach extends to other agents (e.g. Codex via

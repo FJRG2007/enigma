@@ -139,20 +139,20 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         accounts: HubAccount[]; focused: boolean; cursor: number;
         onSelect: (i: number) => void;
     }): RNode => {
-        // Prefix rows with the tool only when more than one tool is present.
-        const multiTool = new Set(s.accounts.map((a) => a.tool)).size > 1;
+        const selectedAcc = s.accounts[s.cursor];
         return panelBox(s.focused ? COL.cyan : COL.gray, [
             txt("Accounts", { fg: COL.cyan, attributes: BOLD }),
             txt("Switch login without logging out (per-account config dir)", { fg: COL.gray }),
             h(box, { flexDirection: "column", marginTop: 1 },
                 ...s.accounts.map((a, i) => {
                     const selected = s.focused && i === s.cursor;
-                    const label = multiTool ? `${a.tool}/${a.name}` : a.name;
+                    const identity = a.email ?? "not logged in";
                     return h(box, { flexDirection: "row", justifyContent: "space-between", onMouseDown: () => s.onSelect(i) },
-                        txt(` ${a.active ? "*" : " "} ${label} `, selStyle(selected, { fg: a.active ? COL.green : undefined, attributes: a.active ? BOLD : undefined })),
-                        txt(`${a.dir}  `, { fg: COL.gray, truncate: true }));
+                        txt(` ${a.active ? "*" : " "} ${a.name} `, selStyle(selected, { fg: a.active ? COL.green : undefined, attributes: a.active ? BOLD : undefined })),
+                        txt(`${identity}   ${a.toolLabel}  `, { fg: a.email ? COL.gray : COL.yellow, truncate: true }));
                 })),
             h(box, { flexGrow: 1 }),
+            txt(selectedAcc ? ` ${selectedAcc.dir}` : " ", { fg: COL.gray, truncate: true }),
             txt("enter set active   c connect/login   d remove   add: enigma account add <name>", { fg: COL.gray, marginTop: 1, truncate: true }),
         ]);
     };
