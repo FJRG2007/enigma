@@ -63,13 +63,6 @@ By default `enigma install` only targets agents actually installed on the machin
 | opencode    | global | `~/.config/opencode/skills/`  | `~/.config/opencode/AGENTS.md` |
 | opencode    | local  | `.opencode/skills/`           | `./AGENTS.md`                  |
 
-### Skill metadata and integrity
-
-Each skill has a `skill.json` sidecar (`name`, `version`, `provider`, `sha`). The
-agent harness only loads `SKILL.md`, so the AI never reads `skill.json`. The `sha`
-(SHA-256 of the skill content) lets the installer skip unchanged skills and detect
-ones modified by hand. Re-hash after editing with `enigma seal`.
-
 ### Install options
 
 ```
