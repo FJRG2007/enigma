@@ -282,6 +282,10 @@ export async function run(argv: string[]): Promise<void> {
         accounts: hubAccounts(),
         activateAccount: (tool: string, name: string) => { setActive(tool, name); return hubAccounts(); },
         removeAccount: (tool: string, name: string) => { removeAccount(tool, name); return hubAccounts(); },
+        addAccount: (tool: string, name: string) => {
+            try { addAccount(tool, name); return { ok: true, accounts: hubAccounts() }; }
+            catch (err) { return { ok: false, error: (err as Error).message, accounts: hubAccounts() }; }
+        },
         runAction: async (req: { action: "skills" | "security"; scope?: "global" | "local"; agents?: string[]; protections?: string[] }) => {
             const reporter = collectReporter();
             const title = req.action === "skills" ? "Install agent skills" : "Git security hooks";

@@ -80,6 +80,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
     const { useState, useEffect } = React;
     const box = "box" as never;
     const text = "text" as never;
+    const input = "input" as never;
     const BOLD = TextAttributes.BOLD;
     const DIM = TextAttributes.DIM;
     const showActions = opts.showActions;
@@ -88,6 +89,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
     const initialAccounts = opts.hub?.accounts ?? [];
     const activateAccount = opts.hub?.activateAccount;
     const removeAccountFn = opts.hub?.removeAccount;
+    const addAccountFn = opts.hub?.addAccount;
     // The Accounts panel only appears when the hub wired account operations in.
     const hasAccounts = showActions && Boolean(activateAccount) && initialAccounts.length > 0;
     // No-op fallback for the settings-only TUI, where no action can be invoked.
@@ -153,7 +155,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
                 })),
             h(box, { flexGrow: 1 }),
             txt(selectedAcc ? ` ${selectedAcc.dir}` : " ", { fg: COL.gray, truncate: true }),
-            txt("enter set active   c connect/login   d remove   add: enigma account add <name>", { fg: COL.gray, marginTop: 1, truncate: true }),
+            txt("enter set active   c connect/login   a add   d remove", { fg: COL.gray, marginTop: 1, truncate: true }),
         ]);
     };
 
@@ -163,6 +165,26 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
                 txt(`Remove account '${name}' and delete its config dir?`, { fg: COL.red, attributes: BOLD }),
                 h(box, { flexDirection: "column", marginTop: 1 },
                     ...["Remove", "Cancel"].map((o, i) => txt(` ${o} `, { ...selStyle(i === index), onMouseDown: () => onChoose(i) })))));
+
+    // Name-input overlay for creating an account. The <input> is focused so the
+    // renderer routes keystrokes to it; onSubmit fires on Enter. The global key
+    // handler short-circuits while this is open so typing does not trigger nav.
+    const renderAddInput = (s: { toolLabel: string; error?: string; onSubmit: (value: string) => void }): RNode =>
+        h(box, { flexGrow: 1, justifyContent: "center", alignItems: "center" },
+            h(box, { border: true, borderStyle: "rounded", borderColor: COL.cyan, flexDirection: "column", paddingLeft: 2, paddingRight: 2, paddingTop: 1, paddingBottom: 1, width: 52 },
+                txt(`New ${s.toolLabel} account name`, { fg: COL.cyan, attributes: BOLD }),
+                h(box, { border: true, borderStyle: "rounded", borderColor: COL.gray, marginTop: 1 },
+                    h(input, { focused: true, placeholder: "e.g. work", maxLength: 64, onSubmit: s.onSubmit })),
+                s.error
+                    ? txt(s.error, { fg: COL.red, marginTop: 1, truncate: true })
+                    : txt("enter create   esc cancel", { fg: COL.gray, marginTop: 1 })));
+
+    const renderConnectPrompt = (name: string, index: number, onChoose: (i: number) => void): RNode =>
+        h(box, { flexGrow: 1, justifyContent: "center", alignItems: "center" },
+            h(box, { border: true, borderStyle: "rounded", borderColor: COL.green, flexDirection: "column", paddingLeft: 2, paddingRight: 2, paddingTop: 1, paddingBottom: 1 },
+                txt(`Account '${name}' created. Connect (log in) now?`, { fg: COL.green, attributes: BOLD }),
+                h(box, { flexDirection: "column", marginTop: 1 },
+                    ...["Connect now", "Later"].map((o, i) => txt(` ${o} `, { ...selStyle(i === index), onMouseDown: () => onChoose(i) })))));
 
     const renderCategoryPanel = (s: {
         category: { title: string; blurb: string; settings: Setting[] };
@@ -254,6 +276,8 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         const [accounts, setAccounts] = useState<HubAccount[]>(initialAccounts);
         const [accCursor, setAccCursor] = useState(0);
         const [removeConfirm, setRemoveConfirm] = useState<{ tool: string; name: string; index: number } | null>(null);
+        const [adding, setAdding] = useState<{ tool: string; error?: string } | null>(null);
+        const [connectPrompt, setConnectPrompt] = useState<{ tool: string; account: string; index: number } | null>(null);
 
         const current = sideItems[sideIndex]!;
         const category = current.kind === "category" ? CATEGORIES[current.catIndex]! : null;
@@ -358,6 +382,28 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             const acc = accounts[i];
             if (acc) onExit({ type: "connect", tool: acc.tool, account: acc.name });
         };
+        // Create flow: open the name input, then (on success) ask whether to log in.
+        const startAdd = (i: number): void => {
+            if (!addAccountFn) return;
+            setAdding({ tool: accounts[i]?.tool ?? "claude" });
+        };
+        const submitAdd = (value: string): void => {
+            const name = value.trim();
+            const tool = adding?.tool ?? "claude";
+            if (!addAccountFn || !name) { setAdding(null); return; }
+            const res = addAccountFn(tool, name);
+            if (!res.ok) { setAdding({ tool, error: res.error }); return; }
+            setAccounts(res.accounts);
+            setAdding(null);
+            const idx = res.accounts.findIndex((a) => a.tool === tool && a.name === name);
+            setAccCursor(idx >= 0 ? idx : 0);
+            setConnectPrompt({ tool, account: name, index: 0 });
+        };
+        const chooseConnectPrompt = (i: number): void => {
+            const target = connectPrompt;
+            setConnectPrompt(null);
+            if (i === 0 && target) onExit({ type: "connect", tool: target.tool, account: target.account });
+        };
         const clickAccount = (i: number): void => {
             if (focusRight && accCursor === i) activateSelected(i);
             else { setFocusRight(true); setAccCursor(i); }
@@ -376,6 +422,19 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             const up = name === "up", down = name === "down", left = name === "left", right = name === "right";
             const enter = name === "return", esc = name === "escape", tab = name === "tab", space = name === "space";
             const ch = name && name.length === 1 ? name : "";
+
+            // While the name input is open, the focused <input> consumes typing and
+            // fires onSubmit on Enter; the global handler must stay out of the way
+            // (only Escape cancels) or letters like q/s/x would trigger hub actions.
+            if (adding) { if (esc) setAdding(null); return; }
+
+            if (connectPrompt) {
+                if (esc) { setConnectPrompt(null); return; }
+                if (up || ch === "k") { setConnectPrompt((c) => c && { ...c, index: Math.max(0, c.index - 1) }); return; }
+                if (down || ch === "j") { setConnectPrompt((c) => c && { ...c, index: Math.min(1, c.index + 1) }); return; }
+                if (enter || space) { chooseConnectPrompt(connectPrompt.index); return; }
+                return;
+            }
 
             if (removeConfirm) {
                 if (esc || ch === "n") { setRemoveConfirm(null); return; }
@@ -419,6 +478,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             if (right || ch === "l") { setFocusRight(true); return; }
             if (focusRight && accountsMode && ch === "d") { requestRemove(accCursor); return; }
             if (focusRight && accountsMode && ch === "c") { connectSelected(accCursor); return; }
+            if (focusRight && accountsMode && ch === "a") { startAdd(accCursor); return; }
             if (up || ch === "k") {
                 if (focusRight && category) setSetIndex((i) => Math.max(0, i - 1));
                 else if (focusRight && action) setActCursor((i) => Math.max(0, i - 1));
@@ -448,7 +508,11 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         });
 
         // header
-        const headerRight = removeConfirm
+        const headerRight = adding
+            ? txt("new account", { fg: COL.cyan })
+            : connectPrompt
+            ? txt("connect?", { fg: COL.green })
+            : removeConfirm
             ? txt("remove account", { fg: COL.red })
             : confirm
             ? txt("unsaved changes", { fg: COL.yellow })
@@ -466,7 +530,12 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
 
         // body
         let content: RNode;
-        if (removeConfirm) {
+        if (adding) {
+            const toolLabel = accounts.find((a) => a.tool === adding.tool)?.toolLabel ?? adding.tool;
+            content = renderAddInput({ toolLabel, error: adding.error, onSubmit: submitAdd });
+        } else if (connectPrompt) {
+            content = renderConnectPrompt(connectPrompt.account, connectPrompt.index, chooseConnectPrompt);
+        } else if (removeConfirm) {
             content = renderRemoveConfirm(removeConfirm.name, removeConfirm.index, chooseRemove);
         } else if (confirm) {
             content = renderConfirm(confirm.index, chooseConfirm);
@@ -499,7 +568,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         const footerLine = (s: string): RNode =>
             h(box, { width: size.columns, paddingLeft: 1, paddingRight: 1 }, txt(s, { fg: COL.gray, attributes: DIM }));
         const menuNav = focusRight && accountsMode
-            ? "up/down move   enter set active   c connect   d remove   tab back"
+            ? "up/down move   enter set active   c connect   a add   d remove   tab back"
             : focusRight && action
             ? (action === "skills"
                 ? "up/down move   space toggle   g scope   enter install   tab back"
@@ -508,7 +577,11 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
                 ? "up/down move   enter toggle   g scope   tab back"
                 : `up/down move   tab switch   enter ${action || accountsMode ? "edit" : "focus"}`;
         let footer: RNode;
-        if (removeConfirm) {
+        if (adding) {
+            footer = footerLine("type a name   enter create   esc cancel");
+        } else if (connectPrompt) {
+            footer = footerLine("up/down move   enter select   esc later");
+        } else if (removeConfirm) {
             footer = footerLine("y remove   n / esc cancel");
         } else if (confirm) {
             footer = footerLine("up/down move   enter select   esc cancel");
