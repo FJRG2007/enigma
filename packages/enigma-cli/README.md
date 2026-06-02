@@ -71,12 +71,22 @@ Bypass once with `git commit --no-verify`.
 
 ## Multiple Claude Code accounts
 
-If you use one Claude Code login for work and another for personal projects,
-`enigma` lets you keep both side by side and switch without logging out. Claude
-Code reads its credentials and session from the directory in `CLAUDE_CONFIG_DIR`
-(default `~/.claude`), so each account just needs its own directory. Rather than
-hand-editing per-shell aliases, `enigma` launches Claude for you with that
-variable set - the same command on macOS, Linux and Windows.
+Work across separate workflows with different Claude Code accounts/profiles - for
+example your **company** Claude Code account and your **personal** one - keeping
+each fully isolated and switching between them without ever logging out. Each
+profile has its own credentials, session, and history, so client work never mixes
+with personal projects.
+
+> This is for legitimate, professional account separation (one account per
+> employer/context, as many organizations require). It is **not** a way to evade
+> usage limits or Anthropic's terms - each account still authenticates as itself
+> and is subject to its own limits. Use the account that each piece of work
+> belongs to.
+
+Claude Code reads its credentials and session from the directory in
+`CLAUDE_CONFIG_DIR` (default `~/.claude`), so each profile just needs its own
+directory. Rather than hand-editing per-shell aliases, `enigma` launches Claude
+for you with that variable set - the same command on macOS, Linux and Windows.
 
 ```bash
 enigma account add work --login   # create 'work' and run /login to authenticate
