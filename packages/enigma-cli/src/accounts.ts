@@ -1,18 +1,21 @@
 /**
- * Native multi-account management for Claude Code. Each account is just a
- * separate config directory; pointing Claude Code at it via the CLAUDE_CONFIG_DIR
- * environment variable gives that account its own credentials and session, so a
+ * Native multi-account management for coding agents. Each account is just a
+ * separate config directory; pointing the tool at it (via a tool-specific
+ * environment variable) gives that account its own credentials and session, so a
  * user can keep e.g. a company login and a personal login side by side without
  * ever logging out.
  *
  * The OS-agnostic switch is the launcher itself: instead of generating shell
- * aliases (which differ per shell and OS), enigma spawns `claude` as a child
- * process with CLAUDE_CONFIG_DIR injected - one code path that behaves the same
- * on macOS, Linux and Windows.
+ * aliases (which differ per shell and OS), enigma spawns the tool as a child
+ * process with the config-dir env var injected - one code path that behaves the
+ * same on macOS, Linux and Windows.
  *
- * The existing ~/.claude is surfaced as a synthetic, non-removable "default"
+ * The design is tool-agnostic via the TOOLS registry: only Claude Code is wired
+ * up today, but adding another agent (Codex via CODEX_HOME, opencode via
+ * XDG_DATA_HOME/XDG_CONFIG_HOME) is a single registry entry, not a rewrite. Each
+ * tool's existing config dir is surfaced as a synthetic, non-removable "default"
  * account so the user's current login is never lost; new accounts live under
- * ~/.enigma/claude/<name>/. This module is the pure data + spawn layer (Node
+ * ~/.enigma/<tool>/<name>/. This module is the pure data + spawn layer (Node
  * builtins only); the CLI wrapper in cli.ts does the prompting and printing.
  */
 
@@ -22,14 +25,59 @@ import { join, resolve, sep } from "node:path";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { isDir, readJson, resolveBin } from "./util";
 
-/** Reserved name for the built-in ~/.claude account; never stored or removable. */
+/**
+ * A coding agent enigma can manage accounts for. `envFor` maps an account's
+ * config directory to the environment overrides that point the tool at it
+ * (a Record so a tool needing several vars - e.g. opencode's XDG_* pair - fits
+ * without changing this shape). `loginArgs` are passed to the binary for a
+ * dedicated login flow; Claude has none, so connecting just launches it and the
+ * user runs /login.
+ */
+export interface ToolSpec {
+    name: string;
+    label: string;
+    bin: string;
+    binEnv: string;
+    defaultDir: string;
+    envFor: (dir: string) => Record<string, string>;
+    loginArgs?: string[];
+    loginHint: string;
+}
+
+/** Registry of supported tools. Add an entry here to support a new agent. */
+const TOOLS: Record<string, ToolSpec> = {
+    claude: {
+        name: "claude",
+        label: "Claude Code",
+        bin: "claude",
+        binEnv: "ENIGMA_CLAUDE_BIN",
+        defaultDir: join(homedir(), ".claude"),
+        envFor: (dir) => ({ CLAUDE_CONFIG_DIR: dir }),
+        loginHint: "Launching Claude Code - run /login inside it to authenticate this account.",
+    },
+};
+
+/** The tool assumed when a command omits one (keeps the common case terse). */
+export const DEFAULT_TOOL = "claude";
+export const TOOL_NAMES = Object.keys(TOOLS);
+
+/** True when `name` is a supported tool. */
+export function isToolName(name: string): boolean {
+    return Object.prototype.hasOwnProperty.call(TOOLS, name);
+}
+
+/** Resolve a tool spec by name, throwing on an unknown tool. */
+export function getTool(name: string): ToolSpec {
+    const tool = TOOLS[name];
+    if (!tool) throw new Error(`Unknown tool '${name}'. Known tools: ${TOOL_NAMES.join(", ")}.`);
+    return tool;
+}
+
+/** Reserved name for a tool's built-in (existing) config-dir account. */
 export const DEFAULT_NAME = "default";
-/** Config dir Claude Code uses out of the box (and for the "default" account). */
-const DEFAULT_DIR = join(homedir(), ".claude");
-/** Base dir holding every managed account's config directory. */
-export const ACCOUNTS_BASE = join(homedir(), ".enigma", "claude");
-/** Registry file mapping account names to their config directories. */
-const REGISTRY_PATH = join(homedir(), ".enigma", "accounts.json");
+const ENIGMA_DIR = join(homedir(), ".enigma");
+/** Registry file mapping each tool's accounts to their config directories. */
+const REGISTRY_PATH = join(ENIGMA_DIR, "accounts.json");
 
 const NAME_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/;
 
@@ -40,169 +88,234 @@ export interface Account {
     lastUsed?: string;
 }
 
-/** An account plus whether it is the currently active one. */
+/** An account plus whether it is the currently active one for its tool. */
 export interface AccountView extends Account {
     active: boolean;
 }
 
-interface Registry {
+/** Per-tool slice of the registry: its accounts and which one is active. */
+interface ToolBucket {
     active: string | null;
     accounts: Account[];
 }
 
+interface Registry {
+    tools: Record<string, ToolBucket>;
+}
+
 /**
  * Validate a user-supplied account name. Throws on anything that is not a short,
- * filesystem-safe slug, and rejects the reserved "default" so it cannot shadow
- * the built-in ~/.claude account. Boundary validation keeps untrusted input from
+ * filesystem-safe slug, and rejects the reserved "default" so it cannot shadow a
+ * tool's built-in account. Boundary validation keeps untrusted input from
  * reaching the filesystem as a path segment.
  */
 export function validateAccountName(name: string): void {
     if (!NAME_PATTERN.test(name)) {
         throw new Error(`Invalid account name '${name}'. Use letters, digits, '.', '_' or '-' (max 64 chars).`);
     }
-    if (name === DEFAULT_NAME) throw new Error(`'${DEFAULT_NAME}' is reserved for your existing ~/.claude account.`);
+    if (name === DEFAULT_NAME) throw new Error(`'${DEFAULT_NAME}' is reserved for the tool's existing config-dir account.`);
 }
 
-/** Read the registry, returning an empty one if absent or unreadable. */
+/** Normalize a raw object into a ToolBucket, tolerating partial/legacy data. */
+function normalizeBucket(raw: unknown): ToolBucket {
+    const obj = (raw && typeof raw === "object") ? raw as Record<string, unknown> : {};
+    return {
+        active: typeof obj.active === "string" ? obj.active : null,
+        accounts: Array.isArray(obj.accounts) ? obj.accounts as Account[] : [],
+    };
+}
+
+/**
+ * Read the registry, migrating the legacy claude-only shape ({active, accounts})
+ * into the tool-namespaced shape ({tools: {claude: ...}}). Returns an empty
+ * registry when absent or unreadable.
+ */
 function readRegistry(): Registry {
-    const raw = readJson<Partial<Registry>>(REGISTRY_PATH);
-    const accounts = Array.isArray(raw?.accounts) ? raw!.accounts! : [];
-    return { active: typeof raw?.active === "string" ? raw!.active! : null, accounts };
+    const raw = readJson<Record<string, unknown>>(REGISTRY_PATH);
+    if (!raw || typeof raw !== "object") return { tools: {} };
+
+    if (raw.tools && typeof raw.tools === "object") {
+        const tools: Record<string, ToolBucket> = {};
+        for (const [name, bucket] of Object.entries(raw.tools as Record<string, unknown>)) {
+            tools[name] = normalizeBucket(bucket);
+        }
+        return { tools };
+    }
+    // Legacy shape: a flat {active, accounts} was always Claude Code.
+    if (Array.isArray(raw.accounts)) return { tools: { [DEFAULT_TOOL]: normalizeBucket(raw) } };
+    return { tools: {} };
 }
 
 /** Persist the registry, creating ~/.enigma if needed. */
 function writeRegistry(reg: Registry): void {
-    const dir = join(REGISTRY_PATH, "..");
-    if (!isDir(dir)) mkdirSync(dir, { recursive: true });
+    if (!isDir(ENIGMA_DIR)) mkdirSync(ENIGMA_DIR, { recursive: true });
     writeFileSync(REGISTRY_PATH, JSON.stringify(reg, null, 2) + "\n");
 }
 
-/** The synthetic entry describing the built-in ~/.claude account. */
-function defaultAccount(): Account {
-    return { name: DEFAULT_NAME, dir: DEFAULT_DIR, createdAt: "" };
+/** The accounts bucket for a tool (an empty one if it has none yet). */
+function bucketOf(reg: Registry, tool: string): ToolBucket {
+    return reg.tools[tool] ?? { active: null, accounts: [] };
+}
+
+/** Base directory holding a tool's managed account config directories. */
+function accountsBase(tool: ToolSpec): string {
+    return join(ENIGMA_DIR, tool.name);
+}
+
+/** The synthetic entry describing a tool's built-in (existing) config dir. */
+function defaultAccount(tool: ToolSpec): Account {
+    return { name: DEFAULT_NAME, dir: tool.defaultDir, createdAt: "" };
 }
 
 /**
- * Every account (the synthetic "default" first, then registered ones) with an
- * `active` flag. The active account is the registry pointer, or "default" when
- * unset or pointing at an account that no longer exists.
+ * Every account for a tool (the synthetic "default" first, then registered ones)
+ * with an `active` flag. The active account is the bucket pointer, or "default"
+ * when unset or pointing at an account that no longer exists.
  */
-export function listAccounts(): AccountView[] {
-    const reg = readRegistry();
-    const all = [defaultAccount(), ...reg.accounts];
-    const active = resolveActiveName(reg, all);
+export function listAccounts(toolName: string = DEFAULT_TOOL): AccountView[] {
+    const tool = getTool(toolName);
+    const bucket = bucketOf(readRegistry(), toolName);
+    const all = [defaultAccount(tool), ...bucket.accounts];
+    const active = resolveActiveName(bucket, all);
     return all.map((a) => ({ ...a, active: a.name === active }));
 }
 
-/** Name of the active account, falling back to "default" when the pointer is stale. */
-export function getActive(): string {
-    const reg = readRegistry();
-    return resolveActiveName(reg, [defaultAccount(), ...reg.accounts]);
+/** Name of a tool's active account, falling back to "default" when the pointer is stale. */
+export function getActive(toolName: string = DEFAULT_TOOL): string {
+    const tool = getTool(toolName);
+    const bucket = bucketOf(readRegistry(), toolName);
+    return resolveActiveName(bucket, [defaultAccount(tool), ...bucket.accounts]);
 }
 
-function resolveActiveName(reg: Registry, all: Account[]): string {
-    if (reg.active && all.some((a) => a.name === reg.active)) return reg.active;
+function resolveActiveName(bucket: ToolBucket, all: Account[]): string {
+    if (bucket.active && all.some((a) => a.name === bucket.active)) return bucket.active;
     return DEFAULT_NAME;
 }
 
-/** Look up an account by name (including the synthetic "default"), or null. */
-function findAccount(name: string): Account | null {
-    if (name === DEFAULT_NAME) return defaultAccount();
-    return readRegistry().accounts.find((a) => a.name === name) ?? null;
+/** Look up an account by name for a tool (including the synthetic "default"), or null. */
+function findAccount(toolName: string, name: string): Account | null {
+    const tool = getTool(toolName);
+    if (name === DEFAULT_NAME) return defaultAccount(tool);
+    return bucketOf(readRegistry(), toolName).accounts.find((a) => a.name === name) ?? null;
 }
 
-/** True when an account with this name exists. */
-export function accountExists(name: string): boolean {
-    return findAccount(name) !== null;
+/** True when an account with this name exists for the tool. */
+export function accountExists(toolName: string, name: string): boolean {
+    return findAccount(toolName, name) !== null;
 }
 
 /**
- * Create (or return, if it already exists) a managed account. Validates the name,
- * creates its config directory under ACCOUNTS_BASE, and records it. Idempotent so
- * re-running `account add` is safe.
+ * Create (or return, if it already exists) a managed account for a tool.
+ * Validates the name, creates its config directory under the tool's base, and
+ * records it. Idempotent so re-running `account add` is safe.
  */
-export function addAccount(name: string): Account {
+export function addAccount(toolName: string, name: string): Account {
+    const tool = getTool(toolName);
     validateAccountName(name);
     const reg = readRegistry();
-    const existing = reg.accounts.find((a) => a.name === name);
+    const bucket = bucketOf(reg, toolName);
+    const existing = bucket.accounts.find((a) => a.name === name);
     if (existing) {
         if (!isDir(existing.dir)) mkdirSync(existing.dir, { recursive: true });
         return existing;
     }
-    const dir = join(ACCOUNTS_BASE, name);
+    const dir = join(accountsBase(tool), name);
     mkdirSync(dir, { recursive: true });
     const account: Account = { name, dir, createdAt: nowIso() };
-    reg.accounts.push(account);
+    bucket.accounts.push(account);
+    reg.tools[toolName] = bucket;
     writeRegistry(reg);
     return account;
 }
 
 /**
- * Make `name` the active account. Validates the account exists; storing the
- * built-in "default" clears the pointer rather than persisting the reserved name.
+ * Make `name` the active account for a tool. Validates the account exists;
+ * setting the built-in "default" clears the pointer rather than persisting the
+ * reserved name.
  */
-export function setActive(name: string): void {
-    if (!accountExists(name)) throw new Error(`No such account: '${name}'.`);
+export function setActive(toolName: string, name: string): void {
+    if (!accountExists(toolName, name)) throw new Error(`No such ${toolName} account: '${name}'.`);
     const reg = readRegistry();
-    reg.active = name === DEFAULT_NAME ? null : name;
+    const bucket = bucketOf(reg, toolName);
+    bucket.active = name === DEFAULT_NAME ? null : name;
+    reg.tools[toolName] = bucket;
     writeRegistry(reg);
 }
 
 /**
- * Remove a managed account: drops it from the registry and deletes its config
- * directory. Refuses the built-in "default", and only deletes a directory that
- * lives inside ACCOUNTS_BASE so a tampered registry can never point removal at an
- * arbitrary path. Clears the active pointer if it referenced this account.
+ * Remove a managed account for a tool: drops it from the registry and deletes its
+ * config directory. Refuses the built-in "default", and only deletes a directory
+ * that lives inside the tool's base so a tampered registry can never point
+ * removal at an arbitrary path. Clears the active pointer if it referenced this
+ * account.
  */
-export function removeAccount(name: string): void {
-    if (name === DEFAULT_NAME) throw new Error(`The '${DEFAULT_NAME}' account (your ~/.claude) cannot be removed.`);
+export function removeAccount(toolName: string, name: string): void {
+    const tool = getTool(toolName);
+    if (name === DEFAULT_NAME) throw new Error(`The '${DEFAULT_NAME}' account (${tool.label}'s existing config) cannot be removed.`);
     const reg = readRegistry();
-    const account = reg.accounts.find((a) => a.name === name);
-    if (!account) throw new Error(`No such account: '${name}'.`);
+    const bucket = bucketOf(reg, toolName);
+    const account = bucket.accounts.find((a) => a.name === name);
+    if (!account) throw new Error(`No such ${toolName} account: '${name}'.`);
 
-    if (isWithinBase(account.dir) && isDir(account.dir)) rmSync(account.dir, { recursive: true, force: true });
-    reg.accounts = reg.accounts.filter((a) => a.name !== name);
-    if (reg.active === name) reg.active = null;
+    if (isWithinBase(account.dir, accountsBase(tool)) && isDir(account.dir)) {
+        rmSync(account.dir, { recursive: true, force: true });
+    }
+    bucket.accounts = bucket.accounts.filter((a) => a.name !== name);
+    if (bucket.active === name) bucket.active = null;
+    reg.tools[toolName] = bucket;
     writeRegistry(reg);
 }
 
-/** Config directory for an account, ensuring the directory exists. Throws if unknown. */
-export function resolveConfigDir(name: string): string {
-    const account = findAccount(name);
-    if (!account) throw new Error(`No such account: '${name}'.`);
+/** Config directory for a tool's account, ensuring the directory exists. Throws if unknown. */
+export function resolveConfigDir(toolName: string, name: string): string {
+    const account = findAccount(toolName, name);
+    if (!account) throw new Error(`No such ${toolName} account: '${name}'.`);
     if (!isDir(account.dir)) mkdirSync(account.dir, { recursive: true });
     return account.dir;
 }
 
 /**
- * Launch Claude Code for an account by spawning the `claude` binary with
- * CLAUDE_CONFIG_DIR pointed at that account's config directory. `name` of null
- * uses the active account; `passthrough` are extra args forwarded verbatim to
- * Claude. Resolves with Claude's exit code (127 if the binary cannot be found).
+ * Launch a tool for an account by spawning its binary with the tool's config-dir
+ * env var pointed at that account's directory. `name` of null uses the active
+ * account; `passthrough` are extra args forwarded verbatim. Resolves with the
+ * tool's exit code (127 if the binary cannot be found).
  *
  * The env-injection + child spawn is what makes account switching OS-agnostic:
  * the same call works identically on macOS, Linux and Windows.
  */
-export async function launchClaude(name: string | null, passthrough: string[] = []): Promise<number> {
-    const account = name ?? getActive();
-    const dir = resolveConfigDir(account);
+export async function launchTool(toolName: string, name: string | null, passthrough: string[] = []): Promise<number> {
+    const tool = getTool(toolName);
+    const account = name ?? getActive(toolName);
+    const dir = resolveConfigDir(toolName, account);
 
-    const binary = process.env.ENIGMA_CLAUDE_BIN || resolveBin("claude") || "claude";
-    const env = { ...process.env, CLAUDE_CONFIG_DIR: dir };
+    const binary = process.env[tool.binEnv] || resolveBin(tool.bin) || tool.bin;
+    const env = { ...process.env, ...tool.envFor(dir) };
 
-    // Stamp last-used for managed accounts (the synthetic "default" is not stored).
-    touchLastUsed(account);
-
+    touchLastUsed(toolName, account);
     return spawnInherit(binary, passthrough, env);
 }
 
+/**
+ * Connect (authenticate) an account by delegating to the tool's own login flow:
+ * the tool's dedicated login subcommand if it has one (`tool.loginArgs`), or a
+ * normal launch otherwise (Claude Code has no login subcommand - the user runs
+ * /login). Prints the tool's login hint first. Resolves with the exit code.
+ */
+export async function loginTool(toolName: string, name: string): Promise<number> {
+    const tool = getTool(toolName);
+    if (tool.loginHint) process.stdout.write(`${tool.loginHint}\n`);
+    return launchTool(toolName, name, tool.loginArgs ?? []);
+}
+
 /** Update an account's lastUsed timestamp; no-op for the synthetic "default". */
-function touchLastUsed(name: string): void {
+function touchLastUsed(toolName: string, name: string): void {
     if (name === DEFAULT_NAME) return;
     const reg = readRegistry();
-    const account = reg.accounts.find((a) => a.name === name);
+    const bucket = bucketOf(reg, toolName);
+    const account = bucket.accounts.find((a) => a.name === name);
     if (!account) return;
     account.lastUsed = nowIso();
+    reg.tools[toolName] = bucket;
     writeRegistry(reg);
 }
 
@@ -225,7 +338,7 @@ function spawnInherit(command: string, args: string[], env: NodeJS.ProcessEnv): 
     return new Promise<number>((res) => {
         child.on("error", (err) => {
             for (const sig of signals) process.off(sig, forward);
-            process.stderr.write(`Failed to launch Claude Code ('${command}'): ${err.message}\n`);
+            process.stderr.write(`Failed to launch '${command}': ${err.message}\n`);
             res(127);
         });
         child.on("exit", (code) => {
@@ -242,11 +355,11 @@ function quoteWinArg(arg: string): string {
     return `"${arg.replace(/"/g, "\"\"")}"`;
 }
 
-/** True when `dir` resolves to a path inside ACCOUNTS_BASE (never outside it). */
-function isWithinBase(dir: string): boolean {
-    const base = resolve(ACCOUNTS_BASE);
+/** True when `dir` resolves to a path inside `base` (never outside it). */
+function isWithinBase(dir: string, base: string): boolean {
+    const root = resolve(base);
     const target = resolve(dir);
-    return target === base || target.startsWith(base + sep);
+    return target === root || target.startsWith(root + sep);
 }
 
 /** Current timestamp as an ISO string, isolated so the rest stays side-effect free. */

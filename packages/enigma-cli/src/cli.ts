@@ -17,10 +17,10 @@ import { runGuardCli } from "./guard";
 import { runConfigCli } from "./settings";
 import { notifyUpdate } from "./update";
 import {
-    DEFAULT_NAME, addAccount, getActive, launchClaude,
-    listAccounts, removeAccount, setActive,
+    DEFAULT_NAME, DEFAULT_TOOL, TOOL_NAMES, addAccount, getActive, getTool,
+    isToolName, launchTool, listAccounts, loginTool, removeAccount, setActive,
 } from "./accounts";
-import type { HubAccount } from "./tui/types";
+import type { HubAccount, HubExitAction } from "./tui/types";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 // In the compiled binary __dirname lives in Bun's virtual fs (no package.json on
@@ -28,14 +28,19 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // dev/tsx fallback.
 const PKG = readJson<{ version?: string }>(join(__dirname, "..", "package.json")) || {};
 
-type Command = "install" | "security" | "guard" | "seal" | "check" | "config" | "account" | "claude" | "help" | "version";
-const COMMANDS = new Set<string>(["install", "security", "guard", "seal", "check", "config", "account", "accounts", "claude", "help", "version"]);
+// Fixed commands plus one launch command per supported tool (e.g. `enigma claude`).
+const COMMANDS = new Set<string>([
+    "install", "security", "guard", "seal", "check", "config", "account", "accounts", "help", "version",
+    ...TOOL_NAMES,
+]);
 
 interface CliOptions extends InstallOptions {
-    command: Command | null;
+    command: string | null;
     positionals: string[];
     /** Args after a literal `--`, forwarded verbatim to the launched agent. */
     passthrough: string[];
+    /** Target tool for account/launch commands (default: claude). */
+    tool: string;
     all: boolean;
     yes: boolean;
     login: boolean;
@@ -45,7 +50,7 @@ interface CliOptions extends InstallOptions {
 
 function parseArgs(argv: string[]): CliOptions {
     const opts: CliOptions = {
-        command: null, positionals: [], passthrough: [],
+        command: null, positionals: [], passthrough: [], tool: DEFAULT_TOOL,
         scope: null, agents: [], allAgents: false, skills: [],
         skillsOnly: false, memoryOnly: false, prune: true, keepModified: false,
         bypass: null, noBypass: false,
@@ -54,10 +59,11 @@ function parseArgs(argv: string[]): CliOptions {
     for (let i = 0; i < argv.length; i++) {
         const a = argv[i]!;
         const next = (): string => argv[++i]!;
-        if (i === 0 && COMMANDS.has(a)) { opts.command = (a === "accounts" ? "account" : a) as Command; continue; }
+        if (i === 0 && COMMANDS.has(a)) { opts.command = a === "accounts" ? "account" : a; continue; }
         // Everything after a literal `--` is forwarded verbatim (e.g. to Claude Code).
         if (a === "--") { opts.passthrough.push(...argv.slice(i + 1)); break; }
         switch (a) {
+            case "-t": case "--tool": opts.tool = next(); break;
             case "-g": case "--global": opts.scope = "global"; break;
             case "-l": case "--local": opts.scope = "local"; break;
             case "-a": case "--agent": opts.agents.push(...next().split(",")); break;
@@ -100,11 +106,12 @@ Commands:
                        'config <key> <on|off> [-g|-l]' sets one (e.g. config claude-attribution on)
   claude [account]     Launch Claude Code using an account's config (active if omitted);
                        pass args to Claude after '--' (e.g. claude work -- --version)
-  account <subcommand> Manage Claude Code accounts (multi-login without logging out):
+  account <subcommand> Manage tool accounts (multi-login without logging out).
+                       Defaults to Claude Code; target another tool with --tool <name>:
                          list                 List accounts (active one marked)
                          add <name> [--login] Create an account (then optionally log in)
                          use <name>           Set the active account
-                         login|run <name>     Launch Claude with that account
+                         login|run <name>     Launch the tool with that account
                          remove <name>        Delete an account (-y to skip confirm)
   seal                 Maintenance: (re)compute skill content hashes
   check                Integrity gate: verify skills are well-formed and sealed
@@ -127,6 +134,9 @@ Install options:
 
 Security options:
       --force          Override an existing core.hooksPath
+
+Account options:
+  -t, --tool <name>    Target tool for account/launch commands (default: claude)
 
 Global:
   -y, --yes            Non-interactive   -h, --help   -v, --version
@@ -151,44 +161,48 @@ Examples:
  */
 async function runAccountCli(opts: CliOptions, interactive: boolean): Promise<number> {
     const [sub, name] = opts.positionals;
+    const tool = opts.tool;
+    if (!isToolName(tool)) { console.error(`Unknown tool '${tool}'. Known tools: ${TOOL_NAMES.join(", ")}.`); return 1; }
+    const spec = getTool(tool);
 
     switch (sub) {
         case undefined:
         case "list":
         case "ls": {
-            const accounts = listAccounts();
-            console.log("Claude Code accounts:\n");
+            const accounts = listAccounts(tool);
+            console.log(`${spec.label} accounts:\n`);
             for (const a of accounts) {
                 const marker = a.active ? "*" : " ";
-                const meta = a.name === DEFAULT_NAME ? "(your ~/.claude)" : a.lastUsed ? `last used ${a.lastUsed}` : "never used";
+                const meta = a.name === DEFAULT_NAME ? `(existing ${spec.defaultDir})` : a.lastUsed ? `last used ${a.lastUsed}` : "never used";
                 console.log(` ${marker} ${a.name.padEnd(16)} ${a.dir}  ${meta}`);
             }
-            console.log(`\nActive: ${getActive()}. Launch with: enigma claude [account].`);
+            console.log(`\nActive: ${getActive(tool)}. Launch with: enigma ${tool} [account].`);
             return 0;
         }
         case "add": {
-            if (!name) { console.error("Usage: enigma account add <name> [--login]"); return 1; }
+            if (!name) { console.error(`Usage: enigma account add <name> [--login] [--tool ${tool}]`); return 1; }
             try {
-                const account = addAccount(name);
+                const account = addAccount(tool, name);
                 console.log(`Account '${account.name}' ready at ${account.dir}.`);
-                if (opts.login) {
-                    console.log("Launching Claude Code - run /login to authenticate this account.");
-                    return launchClaude(account.name, opts.passthrough);
-                }
-                console.log(`Log in with: enigma claude ${account.name}  (then /login inside Claude).`);
+                if (opts.login) return loginTool(tool, account.name);
+                console.log(`Log in with: enigma account login ${account.name}${tool === DEFAULT_TOOL ? "" : ` --tool ${tool}`}.`);
                 return 0;
             } catch (err) { console.error((err as Error).message); return 1; }
         }
         case "use":
         case "switch": {
             if (!name) { console.error("Usage: enigma account use <name>"); return 1; }
-            try { setActive(name); console.log(`Active account is now '${name}'.`); return 0; }
+            try { setActive(tool, name); console.log(`Active ${tool} account is now '${name}'.`); return 0; }
             catch (err) { console.error((err as Error).message); return 1; }
         }
-        case "login":
+        case "login": {
+            if (!name) { console.error("Usage: enigma account login <name>"); return 1; }
+            try { return await loginTool(tool, name); }
+            catch (err) { console.error((err as Error).message); return 1; }
+        }
         case "run": {
-            if (!name) { console.error(`Usage: enigma account ${sub} <name>`); return 1; }
-            try { return await launchClaude(name, opts.passthrough); }
+            if (!name) { console.error("Usage: enigma account run <name>"); return 1; }
+            try { return await launchTool(tool, name, opts.passthrough); }
             catch (err) { console.error((err as Error).message); return 1; }
         }
         case "remove":
@@ -196,14 +210,14 @@ async function runAccountCli(opts: CliOptions, interactive: boolean): Promise<nu
             if (!name) { console.error("Usage: enigma account remove <name>"); return 1; }
             if (!opts.yes) {
                 if (!interactive) { console.error(`Refusing to remove '${name}' without confirmation. Re-run with -y.`); return 1; }
-                const ok = await p.confirm({ message: `Remove account '${name}' and delete its config directory?` });
+                const ok = await p.confirm({ message: `Remove ${tool} account '${name}' and delete its config directory?` });
                 if (p.isCancel(ok) || !ok) { console.log("Aborted."); return 0; }
             }
-            try { removeAccount(name); console.log(`Removed account '${name}'.`); return 0; }
+            try { removeAccount(tool, name); console.log(`Removed ${tool} account '${name}'.`); return 0; }
             catch (err) { console.error((err as Error).message); return 1; }
         }
         default:
-            console.error(`Unknown account subcommand: ${sub}. Try: list, add, use, login, remove.`);
+            console.error(`Unknown account subcommand: ${sub}. Try: list, add, use, login, run, remove.`);
             return 1;
     }
 }
@@ -221,7 +235,7 @@ export async function run(argv: string[]): Promise<void> {
     if (opts.command === "check") return checkSources();
     if (opts.command === "guard") { process.exit(runGuardCli(opts.all)); }
     if (opts.command === "config") { process.exit(await runConfigCli(opts.positionals, opts.scope, interactive)); }
-    if (opts.command === "claude") { process.exit(await launchClaude(opts.positionals[0] ?? null, opts.passthrough)); }
+    if (opts.command && isToolName(opts.command)) { process.exit(await launchTool(opts.command, opts.positionals[0] ?? null, opts.passthrough)); }
     if (opts.command === "account") { process.exit(await runAccountCli(opts, interactive)); }
 
     if (opts.command === "install") {
@@ -252,16 +266,18 @@ export async function run(argv: string[]): Promise<void> {
     // Direct `enigma install` / `enigma security` still use the clack wizards above.
     // Imported dynamically so non-TUI commands never load the native OpenTUI core.
     const { runHomeTui } = await import("./tui/opentui");
-    // Map account rows to the renderer-neutral shape; "default" (~/.claude) is not removable.
+    // Account rows for every supported tool, mapped to the renderer-neutral shape;
+    // each tool's "default" (its existing config dir) is not removable.
     const hubAccounts = (): HubAccount[] =>
-        listAccounts().map((a) => ({ name: a.name, dir: a.dir, active: a.active, removable: a.name !== DEFAULT_NAME }));
-    await runHomeTui({
+        TOOL_NAMES.flatMap((tool) =>
+            listAccounts(tool).map((a) => ({ tool, name: a.name, dir: a.dir, active: a.active, removable: a.name !== DEFAULT_NAME })));
+    const buildCtx = () => ({
         agents: discoverAgents().map((a) => ({ name: a.name, label: a.label, installed: a.installed })),
         protections: GUARD_PROTECTIONS,
         accounts: hubAccounts(),
-        activateAccount: (name) => { setActive(name); return hubAccounts(); },
-        removeAccount: (name) => { removeAccount(name); return hubAccounts(); },
-        runAction: async (req) => {
+        activateAccount: (tool: string, name: string) => { setActive(tool, name); return hubAccounts(); },
+        removeAccount: (tool: string, name: string) => { removeAccount(tool, name); return hubAccounts(); },
+        runAction: async (req: { action: "skills" | "security"; scope?: "global" | "local"; agents?: string[]; protections?: string[] }) => {
             const reporter = collectReporter();
             const title = req.action === "skills" ? "Install agent skills" : "Git security hooks";
             try {
@@ -277,5 +293,13 @@ export async function run(argv: string[]): Promise<void> {
             }
         },
     });
+
+    // Connecting an account must run the tool's own login flow, which needs the
+    // terminal the TUI owns; so the hub closes, we run the login here, then reopen.
+    let action: HubExitAction | null = await runHomeTui(buildCtx());
+    while (action?.type === "connect") {
+        await loginTool(action.tool, action.account);
+        action = await runHomeTui(buildCtx());
+    }
     await notifyUpdate(version, interactive);
 }

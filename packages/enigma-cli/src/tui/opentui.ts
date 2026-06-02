@@ -16,7 +16,7 @@
 
 import { CATEGORIES, ALL_SETTINGS, valueLabel } from "../settings-registry";
 import type { Scope, Setting } from "../settings-registry";
-import type { HubContext, HubAccount, ActionRequest, ActionResult } from "./types";
+import type { HubContext, HubAccount, HubExitAction, ActionRequest, ActionResult } from "./types";
 
 /** Rendered tree node (React element or primitive child). */
 type RNode = import("react").ReactNode;
@@ -55,9 +55,13 @@ const actionTitle = (action: "skills" | "security"): string =>
     ACTION_ITEMS.find((a) => a.action === action)!.title;
 const EXIT_OPTIONS = ["Save & exit", "Exit without saving", "Cancel"] as const;
 
-/** Open the OpenTUI hub (settings + native, inline install/security checklists). */
-export async function runHomeTui(hub: HubContext): Promise<void> {
-    await runTui({ showActions: true, hub });
+/**
+ * Open the OpenTUI hub (settings + native, inline install/security checklists).
+ * Resolves with a follow-up action the caller must run after teardown (e.g.
+ * connecting an account, which needs the terminal), or null on a plain exit.
+ */
+export async function runHomeTui(hub: HubContext): Promise<HubExitAction | null> {
+    return runTui({ showActions: true, hub });
 }
 
 /** Open the settings-only OpenTUI directly (for `enigma config`). */
@@ -65,8 +69,8 @@ export async function runSettingsTui(): Promise<void> {
     await runTui({ showActions: false });
 }
 
-async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise<void> {
-    if (!process.stdout.isTTY) return;
+async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise<HubExitAction | null> {
+    if (!process.stdout.isTTY) return null;
 
     const React = (await import("react")).default;
     const { createCliRenderer, TextAttributes } = await import("@opentui/core");
@@ -134,20 +138,24 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
     const renderAccounts = (s: {
         accounts: HubAccount[]; focused: boolean; cursor: number;
         onSelect: (i: number) => void;
-    }): RNode =>
-        panelBox(s.focused ? COL.cyan : COL.gray, [
-            txt("Claude Code accounts", { fg: COL.cyan, attributes: BOLD }),
-            txt("Switch login without logging out (CLAUDE_CONFIG_DIR per account)", { fg: COL.gray }),
+    }): RNode => {
+        // Prefix rows with the tool only when more than one tool is present.
+        const multiTool = new Set(s.accounts.map((a) => a.tool)).size > 1;
+        return panelBox(s.focused ? COL.cyan : COL.gray, [
+            txt("Accounts", { fg: COL.cyan, attributes: BOLD }),
+            txt("Switch login without logging out (per-account config dir)", { fg: COL.gray }),
             h(box, { flexDirection: "column", marginTop: 1 },
                 ...s.accounts.map((a, i) => {
                     const selected = s.focused && i === s.cursor;
+                    const label = multiTool ? `${a.tool}/${a.name}` : a.name;
                     return h(box, { flexDirection: "row", justifyContent: "space-between", onMouseDown: () => s.onSelect(i) },
-                        txt(` ${a.active ? "*" : " "} ${a.name} `, selStyle(selected, { fg: a.active ? COL.green : undefined, attributes: a.active ? BOLD : undefined })),
+                        txt(` ${a.active ? "*" : " "} ${label} `, selStyle(selected, { fg: a.active ? COL.green : undefined, attributes: a.active ? BOLD : undefined })),
                         txt(`${a.dir}  `, { fg: COL.gray, truncate: true }));
                 })),
             h(box, { flexGrow: 1 }),
-            txt("enter set active   d remove   create: enigma account add <name>", { fg: COL.gray, marginTop: 1, truncate: true }),
+            txt("enter set active   c connect/login   d remove   add: enigma account add <name>", { fg: COL.gray, marginTop: 1, truncate: true }),
         ]);
+    };
 
     const renderRemoveConfirm = (name: string, index: number, onChoose: (i: number) => void): RNode =>
         h(box, { flexGrow: 1, justifyContent: "center", alignItems: "center" },
@@ -228,7 +236,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
     const actionItemKeys = (action: "skills" | "security"): string[] =>
         action === "security" ? protections.map((p) => p.value) : agents.map((a) => a.name);
 
-    function App({ onExit }: { onExit: () => void }) {
+    function App({ onExit }: { onExit: (action?: HubExitAction) => void }) {
         const dims = useTerminalDimensions();
         const size = { columns: dims.width || 80, rows: dims.height || 24 };
         const [mode, setMode] = useState<Mode>("menu");
@@ -245,7 +253,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         const [resultScroll, setResultScroll] = useState(0);
         const [accounts, setAccounts] = useState<HubAccount[]>(initialAccounts);
         const [accCursor, setAccCursor] = useState(0);
-        const [removeConfirm, setRemoveConfirm] = useState<{ name: string; index: number } | null>(null);
+        const [removeConfirm, setRemoveConfirm] = useState<{ tool: string; name: string; index: number } | null>(null);
 
         const current = sideItems[sideIndex]!;
         const category = current.kind === "category" ? CATEGORIES[current.catIndex]! : null;
@@ -330,19 +338,25 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         const activateSelected = (i: number): void => {
             const acc = accounts[i];
             if (!acc || acc.active || !activateAccount) return;
-            setAccounts(activateAccount(acc.name));
+            setAccounts(activateAccount(acc.tool, acc.name));
         };
         const requestRemove = (i: number): void => {
             const acc = accounts[i];
-            if (acc && acc.removable && removeAccountFn) setRemoveConfirm({ name: acc.name, index: 0 });
+            if (acc && acc.removable && removeAccountFn) setRemoveConfirm({ tool: acc.tool, name: acc.name, index: 0 });
         };
         const chooseRemove = (i: number): void => {
-            const target = removeConfirm?.name;
+            const target = removeConfirm;
             setRemoveConfirm(null);
             if (i !== 0 || !target || !removeAccountFn) return;
-            const next = removeAccountFn(target);
+            const next = removeAccountFn(target.tool, target.name);
             setAccounts(next);
             setAccCursor((c) => Math.max(0, Math.min(c, next.length - 1)));
+        };
+        // Connecting needs the tool's own login flow, which needs this terminal -
+        // so exit the TUI with a connect action; cli.ts runs the login and reopens.
+        const connectSelected = (i: number): void => {
+            const acc = accounts[i];
+            if (acc) onExit({ type: "connect", tool: acc.tool, account: acc.name });
         };
         const clickAccount = (i: number): void => {
             if (focusRight && accCursor === i) activateSelected(i);
@@ -404,6 +418,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             if (left || ch === "h") { setFocusRight(false); return; }
             if (right || ch === "l") { setFocusRight(true); return; }
             if (focusRight && accountsMode && ch === "d") { requestRemove(accCursor); return; }
+            if (focusRight && accountsMode && ch === "c") { connectSelected(accCursor); return; }
             if (up || ch === "k") {
                 if (focusRight && category) setSetIndex((i) => Math.max(0, i - 1));
                 else if (focusRight && action) setActCursor((i) => Math.max(0, i - 1));
@@ -484,7 +499,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         const footerLine = (s: string): RNode =>
             h(box, { width: size.columns, paddingLeft: 1, paddingRight: 1 }, txt(s, { fg: COL.gray, attributes: DIM }));
         const menuNav = focusRight && accountsMode
-            ? "up/down move   enter set active   d remove   tab back"
+            ? "up/down move   enter set active   c connect   d remove   tab back"
             : focusRight && action
             ? (action === "skills"
                 ? "up/down move   space toggle   g scope   enter install   tab back"
@@ -521,12 +536,12 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         exitOnCtrlC: false,
         screenMode: isWarp ? "main-screen" : "alternate-screen",
     });
-    await new Promise<void>((resolve) => {
+    return new Promise<HubExitAction | null>((resolve) => {
         const root = createRoot(renderer);
-        const onExit = (): void => {
+        const onExit = (action?: HubExitAction): void => {
             try { root.unmount(); } catch { /* ignore */ }
             try { renderer.destroy(); } catch { /* ignore */ }
-            resolve();
+            resolve(action ?? null);
         };
         root.render(h(App, { onExit }));
     });
