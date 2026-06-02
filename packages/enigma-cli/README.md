@@ -30,11 +30,6 @@ enigma check           Integrity gate: verify skills are well-formed and sealed
 enigma help | version
 ```
 
-Everything is modular and opt-in via [`@clack/prompts`](https://github.com/bombshell-dev/clack):
-the menu lets you enable or disable each feature, and `enigma security` lets you
-toggle each protection. Nothing touches your git config unless you run
-`enigma security` or accept its prompt.
-
 ## Agent skills
 
 Skills are authored once and deployed to every selected agent (no per-agent
