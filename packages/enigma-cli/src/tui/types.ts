@@ -24,14 +24,20 @@ export interface ActionResult {
 /** Minimal agent/protection shapes the hub needs (passed in to avoid heavy imports). */
 export interface HubAgent { name: string; label: string; installed: boolean; }
 export interface HubProtection { value: string; label: string; hint: string; }
-/** A Claude Code account row shown in the hub's Accounts panel. */
-export interface HubAccount { name: string; dir: string; active: boolean; removable: boolean; }
+/** A tool account row shown in the hub's Accounts panel. */
+export interface HubAccount { tool: string; name: string; dir: string; active: boolean; removable: boolean; }
+/**
+ * A follow-up the hub asks its caller to perform after the TUI tears down.
+ * Connecting/logging in must run the tool's own login flow, which needs the
+ * terminal the TUI owns - so the hub exits with this and cli.ts runs it.
+ */
+export type HubExitAction = { type: "connect"; tool: string; account: string };
 export interface HubContext {
     agents: HubAgent[];
     protections: HubProtection[];
     runAction: (req: ActionRequest) => Promise<ActionResult>;
-    /** Claude Code accounts and the operations the panel can perform without spawning. */
+    /** Tool accounts and the operations the panel can perform without spawning. */
     accounts?: HubAccount[];
-    activateAccount?: (name: string) => HubAccount[];
-    removeAccount?: (name: string) => HubAccount[];
+    activateAccount?: (tool: string, name: string) => HubAccount[];
+    removeAccount?: (tool: string, name: string) => HubAccount[];
 }
