@@ -173,8 +173,10 @@ async function runAccountCli(opts: CliOptions, interactive: boolean): Promise<nu
             console.log(`${spec.label} accounts:\n`);
             for (const a of accounts) {
                 const marker = a.active ? "*" : " ";
-                const meta = a.name === DEFAULT_NAME ? `(existing ${spec.defaultDir})` : a.lastUsed ? `last used ${a.lastUsed}` : "never used";
-                console.log(` ${marker} ${a.name.padEnd(16)} ${a.dir}  ${meta}`);
+                const email = a.email ?? "(not logged in)";
+                const meta = a.name === DEFAULT_NAME ? "(existing config)" : a.lastUsed ? `last used ${a.lastUsed}` : "never used";
+                console.log(` ${marker} ${a.name.padEnd(14)} ${email.padEnd(30)} ${meta}`);
+                console.log(`     ${a.dir}`);
             }
             console.log(`\nActive: ${getActive(tool)}. Launch with: enigma ${tool} [account].`);
             return 0;
@@ -270,7 +272,10 @@ export async function run(argv: string[]): Promise<void> {
     // each tool's "default" (its existing config dir) is not removable.
     const hubAccounts = (): HubAccount[] =>
         TOOL_NAMES.flatMap((tool) =>
-            listAccounts(tool).map((a) => ({ tool, name: a.name, dir: a.dir, active: a.active, removable: a.name !== DEFAULT_NAME })));
+            listAccounts(tool).map((a) => ({
+                tool, toolLabel: a.toolLabel, name: a.name, dir: a.dir,
+                email: a.email, active: a.active, removable: a.name !== DEFAULT_NAME,
+            })));
     const buildCtx = () => ({
         agents: discoverAgents().map((a) => ({ name: a.name, label: a.label, installed: a.installed })),
         protections: GUARD_PROTECTIONS,

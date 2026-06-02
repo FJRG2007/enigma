@@ -42,6 +42,12 @@ export interface ToolSpec {
     envFor: (dir: string) => Record<string, string>;
     loginArgs?: string[];
     loginHint: string;
+    /**
+     * Best-effort read of the logged-in identity from an account's config dir
+     * (e.g. the account email), so it can be shown in listings. Returns undefined
+     * fields when the account has not been authenticated yet.
+     */
+    accountInfo?: (dir: string) => { email?: string; displayName?: string };
 }
 
 /** Registry of supported tools. Add an entry here to support a new agent. */
@@ -54,6 +60,12 @@ const TOOLS: Record<string, ToolSpec> = {
         defaultDir: join(homedir(), ".claude"),
         envFor: (dir) => ({ CLAUDE_CONFIG_DIR: dir }),
         loginHint: "Launching Claude Code - run /login inside it to authenticate this account.",
+        // Claude Code records the signed-in account under oauthAccount in
+        // <config-dir>/.claude.json (no tokens there - those live elsewhere).
+        accountInfo: (dir) => {
+            const config = readJson<{ oauthAccount?: { emailAddress?: string; displayName?: string } }>(join(dir, ".claude.json"));
+            return { email: config?.oauthAccount?.emailAddress, displayName: config?.oauthAccount?.displayName };
+        },
     },
 };
 
@@ -88,9 +100,12 @@ export interface Account {
     lastUsed?: string;
 }
 
-/** An account plus whether it is the currently active one for its tool. */
+/** An account plus display metadata: active flag, owning tool, and signed-in email. */
 export interface AccountView extends Account {
     active: boolean;
+    tool: string;
+    toolLabel: string;
+    email?: string;
 }
 
 /** Per-tool slice of the registry: its accounts and which one is active. */
@@ -177,7 +192,13 @@ export function listAccounts(toolName: string = DEFAULT_TOOL): AccountView[] {
     const bucket = bucketOf(readRegistry(), toolName);
     const all = [defaultAccount(tool), ...bucket.accounts];
     const active = resolveActiveName(bucket, all);
-    return all.map((a) => ({ ...a, active: a.name === active }));
+    return all.map((a) => ({
+        ...a,
+        active: a.name === active,
+        tool: tool.name,
+        toolLabel: tool.label,
+        email: tool.accountInfo?.(a.dir).email,
+    }));
 }
 
 /** Name of a tool's active account, falling back to "default" when the pointer is stale. */
