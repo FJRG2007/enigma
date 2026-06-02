@@ -36,10 +36,14 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
+        # Native runner per target (OpenTUI's native core only embeds reliably when
+        # built on its own platform). Intel macOS (darwin-x64) is omitted: the only
+        # free runner for it (macos-13) is deprecated/unavailable, and a cross-built
+        # binary can't be verified on Intel. Add it back via macos-14 cross-compile
+        # once validated. The launcher errors cleanly on an unsupported platform.
         include:
           - { os: ubuntu-latest, target: bun-linux-x64, pkg: enigma-cli-linux-x64 }
           - { os: ubuntu-24.04-arm, target: bun-linux-arm64, pkg: enigma-cli-linux-arm64 }
-          - { os: macos-13, target: bun-darwin-x64, pkg: enigma-cli-darwin-x64 }
           - { os: macos-14, target: bun-darwin-arm64, pkg: enigma-cli-darwin-arm64 }
           - { os: windows-latest, target: bun-windows-x64, pkg: enigma-cli-win32-x64 }
     runs-on: ${{ matrix.os }}

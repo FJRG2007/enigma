@@ -33,7 +33,6 @@
   "optionalDependencies": {
     "enigma-cli-linux-x64": "1.4.0",
     "enigma-cli-linux-arm64": "1.4.0",
-    "enigma-cli-darwin-x64": "1.4.0",
     "enigma-cli-darwin-arm64": "1.4.0",
     "enigma-cli-win32-x64": "1.4.0"
   },
