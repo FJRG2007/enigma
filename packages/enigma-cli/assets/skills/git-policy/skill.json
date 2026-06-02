@@ -3,6 +3,6 @@
   "version": "1.2.0",
   "provider": "FJRG2007/enigma",
   "description": "Git & contribution policy (senior engineering standards).",
-  "cliVersion": "1.4.1",
+  "cliVersion": "1.4.2",
   "sha": "ada4b7eb5bb7e013429e23703c271c0f34b0d76327c059efa148ea2794f96178"
 }
