@@ -15,6 +15,7 @@
  */
 
 import { CATEGORIES, ALL_SETTINGS, valueLabel } from "../settings-registry";
+import { applyMemoryToggles } from "../skills";
 import type { Scope, Setting } from "../settings-registry";
 import type { HubContext, HubAccount, HubExitAction, ActionRequest, ActionResult } from "./types";
 
@@ -190,6 +191,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         category: { title: string; blurb: string; settings: Setting[] };
         scope: Scope; focusRight: boolean; setIndex: number;
         valueOf: (setting: Setting, sc: Scope) => boolean;
+        displayValue: (setting: Setting, sc: Scope) => string;
         isModified: (setting: Setting, sc: Scope) => boolean;
         onSelect: (i: number) => void;
     }): RNode => {
@@ -200,11 +202,12 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             h(box, { flexDirection: "column", marginTop: 1 },
                 ...s.category.settings.map((setting, i) => {
                     const on = s.valueOf(setting, s.scope);
+                    const shown = s.displayValue(setting, s.scope);
                     const modified = s.isModified(setting, s.scope);
                     const selected = s.focusRight && i === s.setIndex;
                     return h(box, { flexDirection: "row", justifyContent: "space-between", onMouseDown: () => s.onSelect(i) },
                         txt(` ${setting.label}${setting.globalOnly ? "  (global)" : ""} `, selStyle(selected)),
-                        txt(`${valueLabel(on)}${modified ? " *" : ""} `, { attributes: BOLD, fg: modified ? COL.yellow : on ? COL.green : COL.gray }));
+                        txt(`${shown}${modified ? " *" : ""} `, { attributes: BOLD, fg: modified ? COL.yellow : on ? COL.green : COL.gray }));
                 })),
             h(box, { flexGrow: 1 }),
             txt(focusedHint, { fg: COL.gray, marginTop: 1, truncate: true }),
@@ -266,7 +269,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         const [sideIndex, setSideIndex] = useState(0);
         const [focusRight, setFocusRight] = useState(false);
         const [setIndex, setSetIndex] = useState(0);
-        const [pending, setPending] = useState<Record<string, boolean>>({});
+        const [pending, setPending] = useState<Record<string, boolean | string>>({});
         const [confirm, setConfirm] = useState<{ index: number } | null>(null);
         const [actCursor, setActCursor] = useState(0);
         const [actChecked, setActChecked] = useState<Record<string, boolean>>({});
@@ -299,24 +302,59 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         const resultRows = Math.max(3, size.rows - 7);
         const maxResultScroll = Math.max(0, (result?.lines.length ?? 0) - resultRows);
 
-        const valueOf = (setting: Setting, sc: Scope): boolean => {
+        // A staged value is a boolean for on/off toggles or a string (the level) for
+        // choice settings. These helpers interpret both kinds uniformly.
+        const stagedOf = (setting: Setting, sc: Scope): boolean | string | undefined => {
             const k = stageKey(setting.key, sc);
-            return k in pending ? pending[k]! : setting.read(sc);
+            return k in pending ? pending[k] : undefined;
         };
+        /** Saved (.enigma.json) value to diff staged changes against. */
+        const savedOf = (setting: Setting, sc: Scope): boolean | string =>
+            setting.choices && setting.readChoice ? setting.readChoice(sc) : setting.read(sc);
+        /** Current level of a choice setting (staged or saved). */
+        const choiceOf = (setting: Setting, sc: Scope): string => {
+            const st = stagedOf(setting, sc);
+            return st !== undefined ? String(st) : (setting.readChoice ? setting.readChoice(sc) : "");
+        };
+        /** On/off face: drives row color and the boolean settings. */
+        const valueOf = (setting: Setting, sc: Scope): boolean => {
+            const st = stagedOf(setting, sc);
+            if (st === undefined) return setting.read(sc);
+            return setting.choices ? st !== "off" : Boolean(st);
+        };
+        /** Text shown in the row: the level for choice settings, on/off otherwise. */
+        const displayValue = (setting: Setting, sc: Scope): string =>
+            setting.choices ? choiceOf(setting, sc) : valueLabel(valueOf(setting, sc));
         const isModified = (setting: Setting, sc: Scope): boolean => {
-            const k = stageKey(setting.key, sc);
-            return k in pending && pending[k] !== setting.read(sc);
+            const st = stagedOf(setting, sc);
+            return st !== undefined && st !== savedOf(setting, sc);
         };
         const dirty = Object.entries(pending).some(([k, v]) => {
             const { key, scope: sc } = parseStageKey(k);
-            return SETTING_BY_KEY.get(key)?.read(sc) !== v;
+            const setting = SETTING_BY_KEY.get(key);
+            return setting ? savedOf(setting, sc) !== v : false;
         });
+        // Next value when a row is activated: cycle through choices, or flip a boolean.
+        const nextStaged = (setting: Setting, sc: Scope): boolean | string => {
+            if (!setting.choices) return !valueOf(setting, sc);
+            const i = setting.choices.indexOf(choiceOf(setting, sc));
+            return setting.choices[(i + 1) % setting.choices.length]!;
+        };
+        const stageNext = (setting: Setting, sc: Scope): void =>
+            setPending((p) => ({ ...p, [stageKey(setting.key, sc)]: nextStaged(setting, sc) }));
         const persistPending = (): void => {
+            const memoryScopes = new Set<Scope>();
             for (const [k, v] of Object.entries(pending)) {
                 const { key, scope: sc } = parseStageKey(k);
                 const setting = SETTING_BY_KEY.get(key);
-                if (setting && setting.read(sc) !== v) setting.write(v, sc);
+                if (!setting || savedOf(setting, sc) === v) continue;
+                if (setting.choices && typeof v === "string" && setting.writeChoice) setting.writeChoice(v, sc);
+                else setting.write(Boolean(v), sc);
+                if (setting.affectsMemory) memoryScopes.add(sc);
             }
+            // Memory-affecting settings must re-render the deployed memory file; restart the
+            // agent to pick it up (memory loads at startup).
+            for (const sc of memoryScopes) applyMemoryToggles(sc);
         };
 
         const runChosen = (act: "skills" | "security"): void => {
@@ -340,8 +378,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         const clickSetting = (i: number): void => {
             if (!category) return;
             if (focusRight && setIndex === i) {
-                const setting = category.settings[i]!;
-                setPending((p) => ({ ...p, [stageKey(setting.key, scope)]: !valueOf(setting, scope) }));
+                stageNext(category.settings[i]!, scope);
             } else { setFocusRight(true); setSetIndex(i); }
         };
         const clickActItem = (i: number): void => {
@@ -502,8 +539,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
                 if (!focusRight) { setFocusRight(true); return; }
                 if (accountsMode) { activateSelected(accCursor); return; }
                 if (action) { runChosen(action); return; }
-                const setting = category!.settings[setIndex]!;
-                setPending((p) => ({ ...p, [stageKey(setting.key, scope)]: !valueOf(setting, scope) }));
+                stageNext(category!.settings[setIndex]!, scope);
             }
         });
 
@@ -548,7 +584,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             const panel = accountsMode
                 ? renderAccounts({ accounts, focused: focusRight, cursor: accCursor, onSelect: clickAccount })
                 : category
-                ? renderCategoryPanel({ category, scope, focusRight, setIndex, valueOf, isModified, onSelect: clickSetting })
+                ? renderCategoryPanel({ category, scope, focusRight, setIndex, valueOf, displayValue, isModified, onSelect: clickSetting })
                 : renderChecklist({
                     title: actionTitle(action!),
                     blurb: action === "skills"
@@ -574,7 +610,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
                 ? "up/down move   space toggle   g scope   enter install   tab back"
                 : "up/down move   space toggle   enter apply   tab back")
             : focusRight && category
-                ? "up/down move   enter toggle   g scope   tab back"
+                ? "up/down move   enter toggle/cycle   g scope   tab back"
                 : `up/down move   tab switch   enter ${action || accountsMode ? "edit" : "focus"}`;
         let footer: RNode;
         if (adding) {

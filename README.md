@@ -53,29 +53,36 @@ enigma help | version
     --all            Every supported agent, ignoring detection
     --bypass <names> Disable approval prompts (claude,codex,opencode | all | none)
     --no-bypass      Never configure permission bypass (skip the prompt)
+    --output-style <off|lite|full|ultra>  Token-efficient output level (asked if omitted)
     --skills-only / --memory-only / --no-prune / --keep-modified / --dry-run
 ```
 
 ### Permission bypass (opt-in)
 
 During install you can let an agent skip its per-action approval prompts, so it
-stops asking before each edit or command. This is a deliberate security
-trade-off, so it is **strictly opt-in**: enabled only via the interactive prompt
-or an explicit `--bypass` flag, and **never** in a non-interactive (`--yes`) run
+stops asking before each edit or command. It is a deliberate security trade-off,
+so it is **strictly opt-in**: enabled only via the interactive prompt or an
+explicit `--bypass` flag, and **never** in a non-interactive (`--yes`) run
 without the flag. In the interactive prompt Claude Code and Codex are
 preselected; opencode is left off because its models are less reliable without
-the approval gate. Each setting is merged into the agent's native config without
-clobbering your other settings:
+the approval gate. Your existing deny rules and other settings are preserved.
 
-| Agent       | File                              | Key                              |
-| ----------- | --------------------------------- | -------------------------------- |
-| Claude Code | `~/.claude/settings.json`         | `permissions.defaultMode: "bypassPermissions"` |
-| OpenAI Codex| `~/.codex/config.toml` (global)   | `approval_policy = "never"` + `sandbox_mode = "danger-full-access"` |
-| opencode    | `~/.config/opencode/opencode.json`| `permission: { "*": "allow" }`   |
+### Token-efficient output (opt-in)
 
-Existing explicit deny rules still win (Claude/opencode), and Codex's approval
-policy is global so it is always written to `~/.codex/config.toml` regardless of
-the install scope.
+Optionally have the agent compress its chat prose to save output tokens - drop
+filler and pleasantries, keep every technical fact. It is chosen at install (or
+`enigma config output-style <off|lite|full|ultra>`) and writes a section into the
+agent's memory file, so **restart the agent** after changing it:
+
+- `off` - normal full prose (default).
+- `lite` - professional and tight: drops filler, keeps grammar and your language.
+- `full` - shorter, caveman-style fragments.
+- `ultra` - telegraphic, maximum compression.
+
+Code, comments, commits, and PRs are always written normally, and the agent
+reverts to full prose for security warnings and other safety-critical replies.
+You can also switch level mid-session just by asking ("be more terse", "ultra",
+"normal mode"). Inspired by [caveman](https://github.com/JuliusBrussee/caveman).
 
 ## Git security hooks
 

@@ -53,7 +53,7 @@ function parseArgs(argv: string[]): CliOptions {
         command: null, positionals: [], passthrough: [], tool: DEFAULT_TOOL,
         scope: null, agents: [], allAgents: false, skills: [],
         skillsOnly: false, memoryOnly: false, prune: true, keepModified: false,
-        bypass: null, noBypass: false,
+        bypass: null, noBypass: false, outputStyle: null,
         force: false, all: false, yes: false, login: false, dryRun: false, help: false, version: false,
     };
     for (let i = 0; i < argv.length; i++) {
@@ -75,6 +75,7 @@ function parseArgs(argv: string[]): CliOptions {
             case "--keep-modified": opts.keepModified = true; break;
             case "--bypass": opts.bypass = (opts.bypass || []).concat(next().split(",")); break;
             case "--no-bypass": opts.noBypass = true; break;
+            case "--output-style": opts.outputStyle = next(); break;
             case "--force": opts.force = true; break;
             case "--login": opts.login = true; break;
             case "-y": case "--yes": opts.yes = true; break;
@@ -117,7 +118,8 @@ Commands:
   check                Integrity gate: verify skills are well-formed and sealed
   help, version
 
-Config keys: commit-emoji, update-notifier, fullscreen, claude-attribution,
+Config keys: commit-emoji, update-notifier, fullscreen, parallel-subagents,
+             output-style (off|lite|full|ultra), claude-attribution,
              bypass-claude, bypass-codex, bypass-opencode
 
 Install options:
@@ -130,6 +132,7 @@ Install options:
       --no-prune       Keep orphaned skills  --keep-modified  Don't overwrite local edits
       --bypass <names> Disable approval prompts for agents (claude,codex,opencode | all | none)
       --no-bypass      Never configure permission bypass (skip the prompt)
+      --output-style <off|lite|full|ultra>  Token-efficient output level (asked if omitted)
       --dry-run        Show the plan without writing
 
 Security options:

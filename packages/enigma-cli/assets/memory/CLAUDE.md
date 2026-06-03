@@ -25,6 +25,28 @@
 - End files with exactly one trailing newline and no trailing whitespace.
 - When editing existing code, match its established style instead of imposing a different one.
 
+### Task Execution (Always-On)
+
+- For long or complex tasks - or any task you judge to warrant it - break the work into smaller, well-scoped subtasks and complete them incrementally, validating each subtask before moving to the next.
+- Map the dependencies between subtasks before starting, and do only the decomposition the task genuinely needs - never over-decompose simple work.
+
+<!-- enigma:parallel-subagents:start -->
+- When subtasks are genuinely independent and your runtime can spawn sub-agents (parallel task or sub-agent tools), delegate them to sub-agents that run in parallel to finish faster, then reconcile their results into a coherent whole. If the runtime has no sub-agent support, execute the subtasks sequentially.
+- Only parallelize independent work; never spawn sub-agents for trivial, tightly-coupled, or strictly sequential tasks. Keep each sub-agent's responsibility well-scoped and validate what it returns.
+<!-- enigma:parallel-subagents:end -->
+
+<!-- enigma:output-style:start -->
+### Output Style (Token-Efficient)
+
+- Default to **{{output-level}}** compression in conversational prose: cut filler, pleasantries, and hedging while keeping every technical fact, exact identifier, and code block intact. Brevity must never drop substance or change a technical claim.
+- Levels (the user can switch any time by asking - e.g. "be more terse", "full", "ultra", or "normal mode" to turn it off):
+  - **lite** - professional and tight: drop filler and hedging, keep correct grammar and the user's language. The safe default.
+  - **full** - drop articles and use fragments where meaning stays unambiguous; prefer short synonyms ("fix", not "implement a solution for").
+  - **ultra** - telegraphic: one word where one word suffices, arrows for causality (X -> Y). Never abbreviate code symbols, function/API names, paths, or error strings.
+- Auto-clarity: revert to full prose for security warnings, irreversible or destructive action confirmations, and any multi-step sequence where compression would make the order or meaning ambiguous. Resume after the critical part.
+- Boundaries: code, comments, commit messages, and PR text are always written normally - compression applies only to chat prose. Always respond in the user's language regardless of level.
+<!-- enigma:output-style:end -->
+
 ---
 
 ## Core Identity

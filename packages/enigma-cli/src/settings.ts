@@ -7,14 +7,17 @@
 
 import { readConfig } from "./config";
 import { ALL_SETTINGS, CATEGORIES, parseBool, valueLabel } from "./settings-registry";
-import type { Scope } from "./settings-registry";
+import type { ApplyResult, Scope } from "./settings-registry";
 
 /** Print every setting's effective value, grouped by category, for non-TTY use. */
 function printEffective(): void {
     console.log("Effective enigma settings:\n");
     for (const category of CATEGORIES) {
         console.log(`${category.title}:`);
-        for (const s of category.settings) console.log(`  ${s.key}: ${valueLabel(s.read("global"))}`);
+        for (const s of category.settings) {
+            const shown = s.choices && s.readChoice ? s.readChoice("global") : valueLabel(s.read("global"));
+            console.log(`  ${s.key}: ${shown}`);
+        }
         console.log("");
     }
     const { sources } = readConfig();
@@ -48,19 +51,60 @@ export async function runConfigCli(positionals: string[], scope: Scope | null, i
         console.error(`Unknown config key: ${rawKey}. Known keys: ${ALL_SETTINGS.map((s) => s.key).join(", ")}.`);
         return 1;
     }
+    const usage = setting.choices ? `<${setting.choices.join("|")}> (or on|off)` : "<on|off>";
     if (rawValue === undefined) {
-        console.error(`Missing value for '${rawKey}'. Usage: enigma config ${rawKey} <on|off> [-g|-l]`);
-        return 1;
-    }
-    const value = parseBool(rawValue);
-    if (value === null) {
-        console.error(`Invalid value '${rawValue}' for '${rawKey}'. Use on or off.`);
+        console.error(`Missing value for '${rawKey}'. Usage: enigma config ${rawKey} ${usage} [-g|-l]`);
         return 1;
     }
 
     const target: Scope = setting.globalOnly ? "global" : (scope || "global");
-    const result = setting.write(value, target);
+    const choice = rawValue.toLowerCase();
+
+    // Choice settings accept an explicit value (e.g. "ultra") as well as the on/off face.
+    let result: ApplyResult;
+    let label: string;
+    if (setting.choices && setting.writeChoice && setting.readChoice && setting.choices.includes(choice)) {
+        result = setting.writeChoice(choice, target);
+        label = choice;
+    } else {
+        const value = parseBool(rawValue);
+        if (value === null) {
+            const allowed = setting.choices ? `one of: ${setting.choices.join(", ")} (on/off also work)` : "on or off";
+            console.error(`Invalid value '${rawValue}' for '${rawKey}'. Use ${allowed}.`);
+            return 1;
+        }
+        result = setting.write(value, target);
+        label = setting.readChoice ? setting.readChoice(target) : valueLabel(value);
+    }
     const where = result.path ? ` in ${result.path}` : "";
-    console.log(`Set ${rawKey} = ${valueLabel(value)} (${target})${where}.`);
+    console.log(`Set ${rawKey} = ${label} (${target})${where}.`);
+
+    // Memory-affecting toggles change the deployed agent memory file, so re-render it
+    // now and tell the user to restart - agents only read memory at startup.
+    if (setting.affectsMemory) await applyMemoryChange(target);
     return 0;
+}
+
+/**
+ * Re-render the deployed memory file(s) for the given scope after a memory-affecting
+ * toggle changed, and print a restart notice for the affected agents (loaded lazily so
+ * the no-key/print paths never pull in the install machinery).
+ */
+async function applyMemoryChange(scope: Scope): Promise<void> {
+    const { applyMemoryToggles } = await import("./skills");
+    const changed = applyMemoryToggles(scope);
+    if (!changed.length) {
+        console.log("No deployed memory files to update yet - run 'enigma install' to deploy.");
+        return;
+    }
+    const labels = changed.map((a) => a.label).join(", ");
+    console.log(`Updated the memory file for ${labels} (${scope}).`);
+    const { runningStatus } = await import("./agents");
+    const { known, running } = runningStatus(changed);
+    if (running.size) {
+        const names = changed.filter((a) => running.has(a.name)).map((a) => a.label).join(", ");
+        console.log(`Restart ${names} to apply the change (running now).`);
+    } else if (!known) {
+        console.log(`Restart ${labels} if running, to apply the change.`);
+    }
 }

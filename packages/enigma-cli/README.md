@@ -125,6 +125,44 @@ enigma config commit-emoji off -g    # global (~/.enigma.json)
 
 Precedence: built-in default (on) -> `~/.enigma.json` -> repo `.enigma.json`.
 
+## Parallel sub-agents
+
+The memory file always tells agents to break long or complex tasks into smaller
+subtasks and complete them incrementally. The parallel part - delegating
+independent subtasks to sub-agents that run at the same time to finish faster -
+is opt-in, because spawning sub-agents multiplies token cost:
+
+```bash
+enigma config parallel-subagents on        # add the parallel section to the memory file
+enigma config parallel-subagents off       # remove it (default)
+enigma config parallel-subagents on -g      # global (~/.enigma.json)
+```
+
+This toggle edits the deployed agent memory file (adds or removes the section),
+so **restart Claude Code / Codex / OpenCode** after changing it for the new
+session to pick it up. Subtask decomposition itself is always on and is never
+removed.
+
+## Token-efficient output
+
+Optionally compress the agent's chat prose to cut output tokens while keeping
+full technical accuracy (inspired by [caveman](https://github.com/JuliusBrussee/caveman)).
+Chosen at install or via config; off by default:
+
+```bash
+enigma config output-style lite     # professional terse (drop filler, keep grammar)
+enigma config output-style full     # caveman-style fragments
+enigma config output-style ultra    # telegraphic, maximum compression
+enigma config output-style off      # back to full prose (default)
+enigma install --output-style lite  # set it during install
+```
+
+`on`/`off` also work (`on` = `lite`). Like the toggle above it edits the memory
+file, so **restart your agent** after changing it. Code, comments, commits, and
+PRs stay normal, the agent reverts to full prose for security warnings and other
+safety-critical replies, and the level is switchable mid-session by asking
+("be more terse", "ultra", "normal mode").
+
 ## License
 
 [Apache-2.0](LICENSE).
