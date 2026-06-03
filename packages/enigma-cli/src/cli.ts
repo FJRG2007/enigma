@@ -15,7 +15,8 @@ import { setupGitHooks, GUARD_PROTECTIONS } from "./security";
 import { discoverAgents } from "./agents";
 import { runGuardCli } from "./guard";
 import { runConfigCli } from "./settings";
-import { notifyUpdate } from "./update";
+import { readConfig } from "./config";
+import { getAvailableUpdate, notifyUpdate, runUpdate } from "./update";
 import {
     DEFAULT_NAME, DEFAULT_TOOL, TOOL_NAMES, addAccount, getActive, getTool,
     isToolName, launchTool, listAccounts, loginTool, removeAccount, setActive,
@@ -30,7 +31,7 @@ const PKG = readJson<{ version?: string }>(join(__dirname, "..", "package.json")
 
 // Fixed commands plus one launch command per supported tool (e.g. `enigma claude`).
 const COMMANDS = new Set<string>([
-    "install", "security", "guard", "seal", "check", "config", "account", "accounts", "help", "version",
+    "install", "security", "guard", "seal", "check", "config", "account", "accounts", "statusline", "help", "version",
     ...TOOL_NAMES,
 ]);
 
@@ -116,6 +117,7 @@ Commands:
                          remove <name>        Delete an account (-y to skip confirm)
   seal                 Maintenance: (re)compute skill content hashes
   check                Integrity gate: verify skills are well-formed and sealed
+  statusline           Print the [ENIGMA] badge for an agent status bar (active mode only)
   help, version
 
 Config keys: commit-emoji, update-notifier, fullscreen, parallel-subagents,
@@ -227,10 +229,31 @@ async function runAccountCli(opts: CliOptions, interactive: boolean): Promise<nu
     }
 }
 
+/**
+ * Print the [ENIGMA] status badge when token-efficient output is active, nothing when
+ * off. Mirrors the format an agent status bar expects (e.g. Claude Code's statusLine):
+ * `[ENIGMA]` at the default level, `[ENIGMA:LITE]` / `[ENIGMA:ULTRA]` otherwise. Cyan
+ * unless NO_COLOR. Never throws or prints noise - a status bar must stay quiet.
+ */
+function printStatusline(): void {
+    try {
+        const style = readConfig().config.outputStyle;
+        if (!style || style === "off") return;
+        const label = style === "full" ? "ENIGMA" : `ENIGMA:${style.toUpperCase()}`;
+        process.stdout.write(process.env.NO_COLOR ? `[${label}]` : `\x1b[36m[${label}]\x1b[0m`);
+    } catch {
+        // A status bar command must never error or emit noise.
+    }
+}
+
 export async function run(argv: string[]): Promise<void> {
     const opts = parseArgs(argv);
     const interactive = Boolean(process.stdout.isTTY) && !opts.yes;
     const version = process.env.ENIGMA_VERSION || PKG.version || "0.0.0";
+    // Statusline: fast, silent badge for an agent's status bar (e.g. Claude Code). No
+    // update notice or other output. The Node launcher also short-circuits this before
+    // spawning the binary, so it stays cheap on every status refresh.
+    if (opts.command === "statusline") { printStatusline(); return; }
     if (opts.help || opts.command === "help") { printHelp(); await notifyUpdate(version, interactive); return; }
     if (opts.version || opts.command === "version") { console.log(version); await notifyUpdate(version, interactive); return; }
 
@@ -282,6 +305,7 @@ export async function run(argv: string[]): Promise<void> {
     const buildCtx = () => ({
         agents: discoverAgents().map((a) => ({ name: a.name, label: a.label, installed: a.installed })),
         protections: GUARD_PROTECTIONS,
+        update: getAvailableUpdate(version) ?? undefined,
         accounts: hubAccounts(),
         activateAccount: (tool: string, name: string) => { setActive(tool, name); return hubAccounts(); },
         removeAccount: (tool: string, name: string) => { removeAccount(tool, name); return hubAccounts(); },
@@ -313,5 +337,8 @@ export async function run(argv: string[]): Promise<void> {
         await loginTool(action.tool, action.account);
         action = await runHomeTui(buildCtx());
     }
+    // "Update now" from the hub: run npm in the freed terminal (the running binary is
+    // about to be replaced, so do not reopen the hub).
+    if (action?.type === "update") { runUpdate(); return; }
     await notifyUpdate(version, interactive);
 }

@@ -18,7 +18,7 @@ import { maybeOfferGitHooks } from "./security";
 import type { SecurityOptions } from "./security";
 import { clackReporter } from "./reporter";
 import type { Reporter } from "./reporter";
-import { disableClaudeAttribution } from "./claude";
+import { disableClaudeAttribution, enableClaudeStatusline } from "./claude";
 import { resolveBypassSelection, applyBypass } from "./permissions";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -282,7 +282,7 @@ async function resolveOutputStyle(opts: InstallOptions, scope: "global" | "local
             options: [
                 { value: "off", label: "Off", hint: "full prose (default)" },
                 { value: "lite", label: "Lite", hint: "professional terse - drop filler, keep grammar" },
-                { value: "full", label: "Full", hint: "caveman-style: drop articles, fragments (caveman default)" },
+                { value: "full", label: "Full", hint: "drop articles and use fragments (most compressed)" },
                 { value: "ultra", label: "Ultra", hint: "telegraphic, maximum compression" },
             ],
             initialValue: readConfig().config.outputStyle,
@@ -359,6 +359,9 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
         if (!claudeScope || opts.dryRun) return;
         if (disableClaudeAttribution(claudeScope)) {
             reporter.info("Claude Code: disabled Co-Authored-By and PR attribution in settings.json.");
+        }
+        if (enableClaudeStatusline(claudeScope)) {
+            reporter.info("Claude Code: statusline shows an [ENIGMA] badge while token-efficient output is active.");
         }
     };
 

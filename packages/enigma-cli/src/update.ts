@@ -105,17 +105,42 @@ function scheduleUpdateCheck(): void {
     }
 }
 
-/** Run the global update in-place, reporting the outcome without ever throwing. */
-function runUpdate(): void {
+/**
+ * Run the global update in place, reporting the outcome without ever throwing.
+ * Clears the npm cache first so a stale cached tarball is never reused, then
+ * installs the latest. OS-agnostic: npm is resolved through the shell on Windows
+ * (where it is npm.cmd) and spawned directly elsewhere.
+ */
+export function runUpdate(): void {
+    const onWindows = process.platform === "win32";
     try {
-        const result = spawnSync("npm", ["i", "-g", "enigma-cli@latest"], {
-            stdio: "inherit",
-            shell: process.platform === "win32",
-        });
-        if (result.status === 0) console.log("Updated. Re-run your command to use the new version.");
+        // Best-effort cache clean; ignore its exit status so a clean-only failure
+        // does not block the install.
+        spawnSync("npm", ["cache", "clean", "--force"], { stdio: "inherit", shell: onWindows });
+        const result = spawnSync("npm", ["i", "-g", "enigma-cli@latest"], { stdio: "inherit", shell: onWindows });
+        if (result.status === 0) console.log("Updated. Re-run enigma to use the new version.");
         else console.log(`Update did not complete. Run '${UPDATE_COMMAND}' manually.`);
     } catch {
         console.log(`Could not run the update. Run '${UPDATE_COMMAND}' manually.`);
+    }
+}
+
+/**
+ * Non-prompting update check for the hub: returns the current/latest pair when a
+ * newer release is cached, else null. Schedules a background refresh for next time,
+ * and stays silent for non-TTY/CI or when the notifier is disabled.
+ */
+export function getAvailableUpdate(current: string): { current: string; latest: string } | null {
+    try {
+        if (!process.stdout.isTTY || process.env.CI) return null;
+        if (!readConfig().config.updateNotifier) return null;
+        scheduleUpdateCheck();
+        const cache = readCache();
+        const latest = cache?.latest ? String(cache.latest).replace(/[^\w.+-]/g, "") : "";
+        if (!latest || !isNewer(latest, current)) return null;
+        return { current, latest };
+    } catch {
+        return null;
     }
 }
 

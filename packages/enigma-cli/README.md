@@ -146,22 +146,26 @@ removed.
 ## Token-efficient output
 
 Optionally compress the agent's chat prose to cut output tokens while keeping
-full technical accuracy (inspired by [caveman](https://github.com/JuliusBrussee/caveman)).
-Chosen at install or via config; off by default:
+full technical accuracy. Chosen at install or via config; off by default:
 
 ```bash
 enigma config output-style lite     # professional terse (drop filler, keep grammar)
-enigma config output-style full     # caveman-style fragments
+enigma config output-style full     # shorter, drops articles and uses fragments
 enigma config output-style ultra    # telegraphic, maximum compression
 enigma config output-style off      # back to full prose (default)
 enigma install --output-style lite  # set it during install
 ```
 
-`on`/`off` also work (`on` = `full`, caveman's default). Like the toggle above it edits the memory
+`on`/`off` also work (`on` = `full`). Like the toggle above it edits the memory
 file, so **restart your agent** after changing it. Code, comments, commits, and
 PRs stay normal, the agent reverts to full prose for security warnings and other
 safety-critical replies, and the level is switchable mid-session by asking
 ("be more terse", "ultra", "normal mode").
+
+While the mode is active, Claude Code's status bar shows an `[ENIGMA]` badge
+(`[ENIGMA:LITE]` / `[ENIGMA:ULTRA]` for the other levels). enigma wires this on
+install only if you have no status line configured, and the badge disappears when
+you turn the mode off.
 
 ## License
 

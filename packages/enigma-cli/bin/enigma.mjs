@@ -16,11 +16,39 @@
  */
 
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import os from "node:os";
 import { ARCH, PLATFORM, packageVersion, pkgRoot } from "./platform.mjs";
 import { downloadBinary, installedBinary } from "./download.mjs";
+
+/**
+ * Fast path: an agent status bar (e.g. Claude Code's statusLine) calls `enigma
+ * statusline` on every refresh. Handle it here in the lightweight Node launcher -
+ * reading .enigma.json directly - so it never resolves or spawns the Bun binary.
+ * Prints `[ENIGMA]` (cyan) while token-efficient output is active, nothing when off.
+ */
+function readOutputStyle() {
+    let style = "off";
+    // Mirror config.ts precedence: global (~/.enigma.json) then local (cwd), nearest wins.
+    for (const dir of [os.homedir(), process.cwd()]) {
+        try {
+            const raw = JSON.parse(readFileSync(join(dir, ".enigma.json"), "utf8"));
+            if (raw && typeof raw.outputStyle === "string") style = raw.outputStyle;
+        } catch { /* missing/invalid .enigma.json - ignore */ }
+    }
+    return style;
+}
+if (process.argv[2] === "statusline") {
+    try {
+        const style = readOutputStyle();
+        if (style && style !== "off") {
+            const label = style === "full" ? "ENIGMA" : `ENIGMA:${style.toUpperCase()}`;
+            process.stdout.write(process.env.NO_COLOR ? `[${label}]` : `\x1b[36m[${label}]\x1b[0m`);
+        }
+    } catch { /* a status bar must never error */ }
+    process.exit(0);
+}
 
 /** Resolve the binary, downloading it on first run if the postinstall was skipped. */
 async function resolveBinary() {
