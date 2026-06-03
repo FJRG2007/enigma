@@ -117,7 +117,7 @@ Commands:
                          remove <name>        Delete an account (-y to skip confirm)
   seal                 Maintenance: (re)compute skill content hashes
   check                Integrity gate: verify skills are well-formed and sealed
-  statusline           Print the [ENIGMA] badge for an agent status bar (active mode only)
+  statusline           Print the [ENIGMA] badge for an agent status bar (shows the active level)
   help, version
 
 Config keys: commit-emoji, update-notifier, fullscreen, parallel-subagents,
@@ -230,16 +230,15 @@ async function runAccountCli(opts: CliOptions, interactive: boolean): Promise<nu
 }
 
 /**
- * Print the [ENIGMA] status badge when token-efficient output is active, nothing when
- * off. Mirrors the format an agent status bar expects (e.g. Claude Code's statusLine):
- * `[ENIGMA]` at the default level, `[ENIGMA:LITE]` / `[ENIGMA:ULTRA]` otherwise. Cyan
- * unless NO_COLOR. Never throws or prints noise - a status bar must stay quiet.
+ * Print the [ENIGMA] status badge for an agent status bar (e.g. Claude Code's
+ * statusLine). Always shows `[ENIGMA]`; when token-efficient output is active it
+ * appends the level, e.g. `[ENIGMA:FULL]` / `[ENIGMA:ULTRA]`. Cyan unless NO_COLOR.
+ * Never throws or prints noise - a status bar must stay quiet.
  */
 function printStatusline(): void {
     try {
         const style = readConfig().config.outputStyle;
-        if (!style || style === "off") return;
-        const label = style === "full" ? "ENIGMA" : `ENIGMA:${style.toUpperCase()}`;
+        const label = (!style || style === "off") ? "ENIGMA" : `ENIGMA:${style.toUpperCase()}`;
         process.stdout.write(process.env.NO_COLOR ? `[${label}]` : `\x1b[36m[${label}]\x1b[0m`);
     } catch {
         // A status bar command must never error or emit noise.
