@@ -12,6 +12,7 @@
 import { AGENTS } from "./agents";
 import { readConfig, setEnigmaToggle, setEnigmaValue, OUTPUT_STYLES } from "./config";
 import { getClaudeAttribution, setClaudeAttribution } from "./claude";
+import { getGhTelemetry, setGhTelemetry } from "./github";
 import { BYPASS_SUPPORTED, getBypass, setBypass } from "./permissions";
 import type { EnigmaConfig, EnigmaConfigKey } from "./config";
 
@@ -45,8 +46,11 @@ export interface Setting {
      * Present only on choice (enum) settings. `choices` is the full value set including
      * the "off" value; `readChoice`/`writeChoice` get and set the exact value so the CLI
      * can accept e.g. `config output-style ultra` on top of the on/off face above.
+     * `offChoice` names the choice that counts as "off" for display color/boolean face
+     * (default "off") - e.g. gh-telemetry's off value is "disabled".
      */
     choices?: readonly string[];
+    offChoice?: string;
     readChoice?(scope: Scope): string;
     writeChoice?(value: string, scope: Scope): ApplyResult;
 }
@@ -76,7 +80,7 @@ function enigmaChoice(
     choices: readonly string[], enabledDefault: string, affectsMemory = false, offValue = "off",
 ): Setting {
     return {
-        key, label, hint, affectsMemory, choices,
+        key, label, hint, affectsMemory, choices, offChoice: offValue,
         read: () => readConfig().config[field] !== offValue,
         write: (value, scope) => ({ path: setEnigmaValue(field, value ? enabledDefault : offValue, scope), changed: true }),
         readChoice: () => String(readConfig().config[field]),
@@ -90,6 +94,7 @@ export const CATEGORIES: Category[] = [
         blurb: "enigma runtime toggles (.enigma.json)",
         settings: [
             enigmaToggle("update-notifier", "updateNotifier", "Update notifications", "notify when a newer enigma-cli is published"),
+            enigmaToggle("auto-sync", "autoSync", "Auto-sync on launch", "refresh already-deployed skills/memory when launching a tool via enigma (e.g. enigma claude)"),
             enigmaToggle("fullscreen", "fullscreen", "Full-screen TUI", "clear the screen for a clean TUI view; off renders inline among existing output"),
             enigmaToggle("parallel-subagents", "parallelSubagents", "Parallel sub-agents", "let agents split long tasks across sub-agents running in parallel; edits the memory file - restart your agent to apply", true),
             enigmaChoice("output-style", "outputStyle", "Token-efficient output", "compress prose replies (off|lite|full|ultra); on = full; edits the memory file - restart your agent to apply", OUTPUT_STYLES, "full", true),
@@ -106,6 +111,24 @@ export const CATEGORIES: Category[] = [
                 hint: "let Claude Code commit as its own contributor (Co-Authored-By / PR footer); enigma default: off",
                 read: (scope) => getClaudeAttribution(scope),
                 write: (value, scope) => ({ changed: setClaudeAttribution(scope, value) }),
+            },
+            {
+                key: "gh-telemetry",
+                label: "GitHub CLI telemetry",
+                hint: "let gh send usage analytics to GitHub; enigma default: disabled (privacy; avoids a Windows window-flash bug)",
+                globalOnly: true,
+                // Choice setting so every surface shows gh's REAL state (gh's own
+                // vocabulary), including "not installed" when gh is absent.
+                choices: ["enabled", "disabled"],
+                offChoice: "disabled",
+                read: () => getGhTelemetry() === true,
+                write: (value) => ({ changed: setGhTelemetry(value) === true }),
+                readChoice: () => {
+                    const v = getGhTelemetry();
+                    if (v === null) return "not installed";
+                    return v ? "enabled" : "disabled";
+                },
+                writeChoice: (value) => ({ changed: setGhTelemetry(value === "enabled") === true }),
             },
         ],
     },

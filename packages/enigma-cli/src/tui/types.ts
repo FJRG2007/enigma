@@ -47,6 +47,8 @@ export interface HubContext {
     agents: HubAgent[];
     protections: HubProtection[];
     runAction: (req: ActionRequest) => Promise<ActionResult>;
+    /** True when no agent has a skills deployment yet, so the hub guides first-time setup. */
+    firstRun?: boolean;
     /** Present when a newer enigma-cli is available, so the hub can offer "update now". */
     update?: { current: string; latest: string };
     /** Tool accounts and the operations the panel can perform without spawning. */

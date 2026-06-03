@@ -20,16 +20,27 @@ committed.
 
 ## Install
 
+One command, no global install, no prompts - deploy the skills to every supported
+agent at user level:
+
+```bash
+npx enigma-cli@latest install --all --yes
+```
+
+Or install the command and pick interactively:
+
 ```bash
 npm install -g enigma-cli      # provides the `enigma` command
-enigma                         # interactive: pick what to set up
+enigma                         # interactive hub: pick what to set up
 ```
 
-Or run once without installing:
-
-```bash
-npx enigma-cli
-```
+That first install is the only one you ever need to run by hand: afterwards,
+launching a tool through enigma (e.g. `enigma claude`) **auto-syncs** the deployed
+skills and memory with the installed package version, so updates apply without
+re-running `enigma install`. Opt out with `enigma config auto-sync off`. Auto-sync
+only refreshes what you already installed - it never deploys to a new agent, never
+overwrites skills you edited locally, and never rewrites a memory file
+(`CLAUDE.md` / `AGENTS.md`) that you authored or edited yourself.
 
 ## Commands
 
@@ -39,6 +50,7 @@ enigma install         Install/update agent skills
 enigma security        Set up git security hooks in the current repo
 enigma guard [--all]   Run the commit guard (staged files, or all tracked)
 enigma config [k v]    Show or set runtime toggles (e.g. config commit-emoji off)
+enigma claude [acct]   Launch Claude Code (auto-syncs deployed skills first)
 enigma seal            Maintenance: (re)compute skill content hashes
 enigma check           Integrity gate: verify skills are well-formed and sealed
 enigma help | version
@@ -74,6 +86,14 @@ enigma install --no-bypass             # skip it for a single run
 opencode is included but is the least reliable without the approval gate, so use
 `enigma config bypass-opencode off` if you want to keep its gate. Your existing
 deny rules and other settings are always preserved.
+
+### GitHub CLI telemetry (default off)
+
+If `gh` is installed, `enigma install` disables its usage telemetry: privacy
+upside with zero functional cost, and it avoids a known Windows bug where gh's
+telemetry subprocess flashes a terminal window
+([cli/cli#13354](https://github.com/cli/cli/issues/13354)). Re-enable with
+`enigma config gh-telemetry on`.
 
 ### Token-efficient output (opt-in)
 

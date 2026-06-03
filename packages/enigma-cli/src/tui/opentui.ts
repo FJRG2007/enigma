@@ -92,6 +92,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
     const removeAccountFn = opts.hub?.removeAccount;
     const addAccountFn = opts.hub?.addAccount;
     const update = opts.hub?.update ?? null;
+    const firstRun = showActions && Boolean(opts.hub?.firstRun);
     // The Accounts panel only appears when the hub wired account operations in.
     const hasAccounts = showActions && Boolean(activateAccount) && initialAccounts.length > 0;
     // No-op fallback for the settings-only TUI, where no action can be invoked.
@@ -261,13 +262,17 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
     ];
     const actionItemKeys = (action: "skills" | "security"): string[] =>
         action === "security" ? protections.map((p) => p.value) : agents.map((a) => a.name);
+    // On a first run the install action starts selected, so setup is enter + enter.
+    const initialSideIndex = firstRun
+        ? Math.max(0, sideItems.findIndex((it) => it.kind === "action" && it.action === "skills"))
+        : 0;
 
     function App({ onExit }: { onExit: (action?: HubExitAction) => void }) {
         const dims = useTerminalDimensions();
         const size = { columns: dims.width || 80, rows: dims.height || 24 };
         const [mode, setMode] = useState<Mode>("menu");
         const [scope, setScope] = useState<Scope>("global");
-        const [sideIndex, setSideIndex] = useState(0);
+        const [sideIndex, setSideIndex] = useState(initialSideIndex);
         const [focusRight, setFocusRight] = useState(false);
         const [setIndex, setSetIndex] = useState(0);
         const [pending, setPending] = useState<Record<string, boolean | string>>({});
@@ -277,6 +282,8 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         const [busyTitle, setBusyTitle] = useState("");
         const [result, setResult] = useState<ActionResult | null>(null);
         const [resultScroll, setResultScroll] = useState(0);
+        // Hides the first-run banner once a skills install succeeded in this session.
+        const [setupDone, setSetupDone] = useState(false);
         const [accounts, setAccounts] = useState<HubAccount[]>(initialAccounts);
         const [accCursor, setAccCursor] = useState(0);
         const [removeConfirm, setRemoveConfirm] = useState<{ tool: string; name: string; index: number } | null>(null);
@@ -321,7 +328,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         const valueOf = (setting: Setting, sc: Scope): boolean => {
             const st = stagedOf(setting, sc);
             if (st === undefined) return setting.read(sc);
-            return setting.choices ? st !== "off" : Boolean(st);
+            return setting.choices ? st !== (setting.offChoice ?? "off") : Boolean(st);
         };
         /** Text shown in the row: the level for choice settings, on/off otherwise. */
         const displayValue = (setting: Setting, sc: Scope): string =>
@@ -369,7 +376,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             setResultScroll(0);
             setMode("running");
             runAction(req)
-                .then((res) => { setResult(res); setMode("result"); })
+                .then((res) => { if (act === "skills" && res.ok) setSetupDone(true); setResult(res); setMode("result"); })
                 .catch((err) => { setResult({ ok: false, title: actionTitle(act), lines: [`Error: ${(err as Error).message}`] }); setMode("result"); });
         };
 
@@ -641,8 +648,15 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
                 txt(`Update available  ${update.current} -> ${update.latest}   `, { fg: COL.yellow, attributes: BOLD }),
                 txt("press u to update now", { fg: COL.gray }))
             : null;
+        // First-run guidance: nothing deployed yet, so point at the preselected install
+        // action. Disappears once a skills install succeeds in this session.
+        const setupBanner = firstRun && !setupDone && mode === "menu" && noOverlay
+            ? h(box, { width: size.columns, flexDirection: "row", paddingLeft: 1, paddingRight: 1 },
+                txt("First run - no agent skills deployed yet.   ", { fg: COL.yellow, attributes: BOLD }),
+                txt("'Install agent skills' is selected: press enter to pick agents, enter again to install", { fg: COL.gray }))
+            : null;
 
-        return h(box, { width: size.columns, height: size.rows, flexDirection: "column" }, titleBar, updateBanner, content, footer);
+        return h(box, { width: size.columns, height: size.rows, flexDirection: "column" }, titleBar, updateBanner, setupBanner, content, footer);
     }
 
     // Warp does not fully support the alternate screen buffer: leaving it on exit can

@@ -39,7 +39,7 @@ function readOutputStyle() {
         } catch { /* missing/invalid .enigma.json - ignore */ }
     }
     return style;
-}
+};
 if (process.argv[2] === "statusline") {
     try {
         const style = readOutputStyle();
@@ -56,7 +56,7 @@ async function resolveBinary() {
     if (existing) return existing;
     // Lazy path (e.g. `npm i --ignore-scripts`): fetch + verify before first use.
     return downloadBinary({ log: (message) => process.stderr.write(`enigma: ${message}\n`) });
-}
+};
 
 let binary;
 try {
