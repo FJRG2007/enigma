@@ -435,6 +435,18 @@ export async function run(argv: string[]): Promise<void> {
         tools: TOOL_NAMES.map((t) => ({ name: t, label: getTool(t).label })),
         profiles: hubProfiles(),
         activateProfile: (name: string) => { setActiveProfile(name || null); return hubProfiles(); },
+        addProfile: (name: string) => {
+            try { addProfile(name); return { ok: true, profiles: hubProfiles() }; }
+            catch (err) { return { ok: false, error: (err as Error).message, profiles: hubProfiles() }; }
+        },
+        removeProfile: (name: string) => { removeProfile(name); return hubProfiles(); },
+        setProfileAccount: (profile: string, tool: string, account: string | null) => {
+            try {
+                if (account === null) unsetProfileAccount(profile, tool);
+                else setProfileAccount(profile, tool, account);
+                return { ok: true, profiles: hubProfiles() };
+            } catch (err) { return { ok: false, error: (err as Error).message, profiles: hubProfiles() }; }
+        },
         runAction: async (req: { action: "skills" | "security"; scope?: "global" | "local"; agents?: string[]; protections?: string[] }) => {
             const reporter = collectReporter();
             const title = req.action === "skills" ? "Install agent skills" : "Git security hooks";

@@ -7,9 +7,9 @@
  * offline registry can neither block, slow down, nor break the actual command.
  */
 
-import { homedir } from "node:os";
-import { join } from "node:path";
-import { writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { basename, dirname, join } from "node:path";
+import { mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { spawn, spawnSync } from "node:child_process";
 import * as p from "@clack/prompts";
 import { readJson } from "./util";
@@ -106,6 +106,41 @@ function scheduleUpdateCheck(): void {
 }
 
 /**
+ * Windows-only pre-update step: updating from INSIDE enigma means the running
+ * `enigma-bin.exe` is this very process, and Windows refuses to unlink a running
+ * executable - npm then spams "npm warn cleanup EPERM" and leaves an orphaned
+ * `.enigma-cli-*` staging dir behind. A running exe CAN be renamed/moved though,
+ * so park it in a temp dir first: npm's cleanup finds nothing locked, the fresh
+ * install ships its own binary (postinstall or lazy download), and parked copies
+ * plus stale staging dirs are swept on the next update. Entirely best-effort -
+ * any failure just leaves npm's warning as before.
+ */
+function parkRunningBinary(): void {
+    if (process.platform !== "win32") return;
+    const exe = process.execPath;
+    // Strict guard: only ever move our own compiled binary, never node/bun (the
+    // dev/tsx path runs under node.exe and must stay untouched).
+    if (!basename(exe).toLowerCase().startsWith("enigma-bin")) return;
+    try {
+        const park = join(tmpdir(), "enigma-old-binaries");
+        mkdirSync(park, { recursive: true });
+        // Sweep previously parked binaries (skip any still running/locked) and
+        // stale npm staging dirs from updates made before this fix existed.
+        for (const f of readdirSync(park)) {
+            try { rmSync(join(park, f), { force: true }); } catch { /* still locked */ }
+        }
+        const modulesDir = dirname(dirname(dirname(exe))); // bin -> enigma-cli -> node_modules
+        for (const entry of readdirSync(modulesDir)) {
+            if (!entry.startsWith(".enigma-cli-")) continue;
+            try { rmSync(join(modulesDir, entry), { recursive: true, force: true }); } catch { /* still locked */ }
+        }
+        renameSync(exe, join(park, `enigma-bin-${process.pid}-${Date.now()}.exe`));
+    } catch {
+        // Parking is an optimization; the update itself proceeds either way.
+    }
+}
+
+/**
  * Run the global update in place, reporting the outcome without ever throwing.
  * Clears the npm cache first so a stale cached tarball is never reused, then
  * installs the latest. OS-agnostic: npm is resolved through the shell on Windows
@@ -114,6 +149,7 @@ function scheduleUpdateCheck(): void {
 export function runUpdate(): void {
     const onWindows = process.platform === "win32";
     try {
+        parkRunningBinary();
         // Best-effort cache clean; ignore its exit status so a clean-only failure
         // does not block the install.
         spawnSync("npm", ["cache", "clean", "--force"], { stdio: "inherit", shell: onWindows });

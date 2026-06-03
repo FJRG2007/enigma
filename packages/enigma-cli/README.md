@@ -163,9 +163,10 @@ with the signed-in identity (email for Claude/Codex, connected providers for
 OpenCode) - and lets you **add** (`a`), set active (`enter`), **connect**/log in
 (`c`), or remove (`d`). Adding first asks **which tool** with a searchable
 selector (type to filter, like opencode's model picker), then the account name,
-then offers to connect right away. The **Profiles** panel shows each profile's
-mappings and switches the active one with `enter` (`(none)` deactivates);
-create/edit profiles via `enigma profile`.
+then offers to connect right away. The **Profiles** panel manages profiles
+end-to-end: `enter` switches the active one (`(none)` deactivates), `a` creates
+one, `e` edits its mappings (searchable tool selector, then a searchable account
+selector including `(unpin)`), and `d` removes it (accounts are kept).
 
 ## GitHub CLI telemetry (default off)
 
