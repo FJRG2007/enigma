@@ -32,6 +32,10 @@ export interface EnigmaConfig {
     fullscreen: boolean;
     parallelSubagents: boolean;
     outputStyle: OutputStyle;
+    /** Master switch for applying permission bypass on install (default on). */
+    permissionBypass: boolean;
+    /** Agents the user explicitly opted out of bypass; never auto-enabled even when permissionBypass is on. */
+    bypassDisabled: string[];
 }
 
 /**
@@ -45,9 +49,13 @@ export interface EnigmaConfig {
  * outputStyle is opt-in (off): it changes the voice of every reply, so it is an
  * explicit choice. When not off, the memory file gains the token-efficient output
  * section keyed to the chosen level.
+ * permissionBypass is on by default: every install enables each agent's bypass
+ * (approval prompts off) unless the user opts out globally (this flag) or per-agent
+ * (bypassDisabled). It is a deliberate security downgrade - keep it visible in output.
  */
 export const CONFIG_DEFAULTS: EnigmaConfig = {
     commitEmoji: true, updateNotifier: true, fullscreen: true, parallelSubagents: false, outputStyle: "off",
+    permissionBypass: true, bypassDisabled: [],
 };
 
 export type EnigmaConfigKey = keyof EnigmaConfig;
@@ -73,7 +81,7 @@ export function readConfig(): { config: EnigmaConfig; sources: string[] } {
  * already present. Accepts boolean toggles and string-valued settings alike.
  * Returns the written file path.
  */
-export function setEnigmaValue(key: EnigmaConfigKey, value: boolean | string, scope: "global" | "local"): string {
+export function setEnigmaValue(key: EnigmaConfigKey, value: boolean | string | string[], scope: "global" | "local"): string {
     const path = configPath(scope);
     const current = readJson<Record<string, unknown>>(path) || {};
     const next = { ...current, [key]: value };
@@ -86,4 +94,17 @@ export function setEnigmaValue(key: EnigmaConfigKey, value: boolean | string, sc
 /** Boolean-toggle convenience over setEnigmaValue, for the on/off settings. */
 export function setEnigmaToggle(key: EnigmaConfigKey, value: boolean, scope: "global" | "local"): string {
     return setEnigmaValue(key, value, scope);
+}
+
+/**
+ * Record (disabled=true) or clear (false) a per-agent permission-bypass opt-out in
+ * the global .enigma.json `bypassDisabled` list, so a deliberate "off" survives
+ * future installs and is never auto-re-enabled. Operates on the global file's own
+ * list, not the merged view.
+ */
+export function setBypassDisabled(name: string, disabled: boolean): void {
+    const path = configPath("global");
+    const set = new Set((readJson<Partial<EnigmaConfig>>(path) || {}).bypassDisabled || []);
+    if (disabled) set.add(name); else set.delete(name);
+    setEnigmaValue("bypassDisabled", [...set], "global");
 }
