@@ -162,10 +162,11 @@ PRs stay normal, the agent reverts to full prose for security warnings and other
 safety-critical replies, and the level is switchable mid-session by asking
 ("be more terse", "ultra", "normal mode").
 
-While the mode is active, Claude Code's status bar shows an `[ENIGMA]` badge
-(`[ENIGMA:LITE]` / `[ENIGMA:ULTRA]` for the other levels). enigma wires this on
-install only if you have no status line configured, and the badge disappears when
-you turn the mode off.
+Claude Code's status bar shows an `[ENIGMA]` badge at all times; while the mode is
+active it appends the level (`[ENIGMA:FULL]`, `[ENIGMA:LITE]`, `[ENIGMA:ULTRA]`).
+enigma wires this into `settings.json` during `enigma install`, only when you have
+no status line configured (it never replaces your own). If you upgraded the package,
+re-run `enigma install` once to wire it.
 
 ## License
 
