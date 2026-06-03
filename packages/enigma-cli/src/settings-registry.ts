@@ -88,7 +88,42 @@ function enigmaChoice(
     };
 }
 
-export const CATEGORIES: Category[] = [
+// --- render-speed read cache (SWR) ----------------------------------------------
+// The TUI re-reads every visible setting on every render (display value, dirty
+// diffing, save comparison), and each underlying read hits disk (or spawns gh).
+// Web-style fix: serve reads from a short-TTL memo and invalidate on every write
+// through the registry, so renders cost microseconds while external edits still
+// surface within the TTL. Writes are never cached.
+
+const READ_TTL_MS = 2500;
+const readCache = new Map<string, { value: boolean | string; at: number }>();
+
+/** Drop every cached read (called after writes and external-change signals). */
+export function invalidateSettingReads(): void {
+    readCache.clear();
+}
+
+function swrRead<T extends boolean | string>(cacheKey: string, fn: () => T): T {
+    const hit = readCache.get(cacheKey);
+    if (hit && Date.now() - hit.at < READ_TTL_MS) return hit.value as T;
+    const value = fn();
+    readCache.set(cacheKey, { value, at: Date.now() });
+    return value;
+}
+
+/** Wrap a setting so reads are memoized and writes bust the cache. */
+function withReadCache(s: Setting): Setting {
+    const wrapped: Setting = {
+        ...s,
+        read: (scope) => swrRead(`${s.key}/${scope}/bool`, () => s.read(scope)),
+        write: (value, scope) => { const r = s.write(value, scope); invalidateSettingReads(); return r; },
+    };
+    if (s.readChoice) wrapped.readChoice = (scope) => swrRead(`${s.key}/${scope}/choice`, () => s.readChoice!(scope));
+    if (s.writeChoice) wrapped.writeChoice = (value, scope) => { const r = s.writeChoice!(value, scope); invalidateSettingReads(); return r; };
+    return wrapped;
+}
+
+const RAW_CATEGORIES: Category[] = [
     {
         title: "General",
         blurb: "enigma runtime toggles (.enigma.json)",
@@ -150,6 +185,9 @@ export const CATEGORIES: Category[] = [
         ],
     },
 ];
+
+/** The public registry: every setting read-cached, grouped by category. */
+export const CATEGORIES: Category[] = RAW_CATEGORIES.map((c) => ({ ...c, settings: c.settings.map(withReadCache) }));
 
 export const ALL_SETTINGS = CATEGORIES.flatMap((c) => c.settings);
 
