@@ -97,19 +97,24 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
     const tools: HubTool[] = opts.hub?.tools ?? [];
     const initialProfiles = opts.hub?.profiles ?? [];
     const activateProfileFn = opts.hub?.activateProfile;
+    const addProfileFn = opts.hub?.addProfile;
+    const removeProfileFn = opts.hub?.removeProfile;
+    const setProfileAccountFn = opts.hub?.setProfileAccount;
     // The Accounts/Profiles panels only appear when the hub wired their operations in.
     const hasAccounts = showActions && Boolean(activateAccount) && initialAccounts.length > 0;
     const hasProfiles = showActions && Boolean(activateProfileFn);
 
-    // Tool search for the add-account selector: prefix matches first, then
-    // substring matches over name+label (the opencode-model-picker pattern).
-    const filterTools = (query: string): HubTool[] => {
+    // Generic searchable-list items (the opencode-model-picker pattern): prefix
+    // matches first, then substring matches over value+label+hint.
+    interface PickItem { value: string; label: string; hint: string; }
+    const filterItems = (items: PickItem[], query: string): PickItem[] => {
         const q = query.trim().toLowerCase();
-        if (!q) return tools;
-        const starts = tools.filter((t) => t.name.toLowerCase().startsWith(q) || t.label.toLowerCase().startsWith(q));
-        const rest = tools.filter((t) => !starts.includes(t) && `${t.name} ${t.label}`.toLowerCase().includes(q));
+        if (!q) return items;
+        const starts = items.filter((it) => it.value.toLowerCase().startsWith(q) || it.label.toLowerCase().startsWith(q));
+        const rest = items.filter((it) => !starts.includes(it) && `${it.value} ${it.label} ${it.hint}`.toLowerCase().includes(q));
         return [...starts, ...rest];
     };
+    const toolItems = (): PickItem[] => tools.map((t) => ({ value: t.name, label: t.label, hint: t.name }));
     // No-op fallback for the settings-only TUI, where no action can be invoked.
     const runAction = opts.hub?.runAction
         ?? (async (): Promise<ActionResult> => ({ ok: false, title: "", lines: [] }));
@@ -195,49 +200,51 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
                         txt(`${r.summary}  `, { fg: COL.gray, truncate: true }));
                 })),
             h(box, { flexGrow: 1 }),
-            txt("enter set active   create/edit via: enigma profile add/set", { fg: COL.gray, marginTop: 1, truncate: true }),
+            txt("enter set active   a add   e edit accounts   d remove", { fg: COL.gray, marginTop: 1, truncate: true }),
         ]);
 
-    const renderRemoveConfirm = (name: string, index: number, onChoose: (i: number) => void): RNode =>
+    const renderRemoveConfirm = (message: string, index: number, onChoose: (i: number) => void): RNode =>
         h(box, { flexGrow: 1, justifyContent: "center", alignItems: "center" },
             h(box, { border: true, borderStyle: "rounded", borderColor: COL.red, flexDirection: "column", paddingLeft: 2, paddingRight: 2, paddingTop: 1, paddingBottom: 1 },
-                txt(`Remove account '${name}' and delete its config dir?`, { fg: COL.red, attributes: BOLD }),
+                txt(message, { fg: COL.red, attributes: BOLD }),
                 h(box, { flexDirection: "column", marginTop: 1 },
                     ...["Remove", "Cancel"].map((o, i) => txt(` ${o} `, { ...selStyle(i === index), onMouseDown: () => onChoose(i) })))));
 
     // Name-input overlay for creating an account. The <input> is focused so the
     // renderer routes keystrokes to it; onSubmit fires on Enter. The global key
     // handler short-circuits while this is open so typing does not trigger nav.
-    const renderAddInput = (s: { toolLabel: string; error?: string; onSubmit: (value: string) => void }): RNode =>
+    const renderAddInput = (s: { title: string; placeholder: string; error?: string; onSubmit: (value: string) => void }): RNode =>
         h(box, { flexGrow: 1, justifyContent: "center", alignItems: "center" },
             h(box, { border: true, borderStyle: "rounded", borderColor: COL.cyan, flexDirection: "column", paddingLeft: 2, paddingRight: 2, paddingTop: 1, paddingBottom: 1, width: 52 },
-                txt(`New ${s.toolLabel} account name`, { fg: COL.cyan, attributes: BOLD }),
+                txt(s.title, { fg: COL.cyan, attributes: BOLD }),
                 h(box, { border: true, borderStyle: "rounded", borderColor: COL.gray, marginTop: 1 },
-                    h(input, { focused: true, placeholder: "e.g. work", maxLength: 64, onSubmit: s.onSubmit })),
+                    h(input, { focused: true, placeholder: s.placeholder, maxLength: 64, onSubmit: s.onSubmit })),
                 s.error
                     ? txt(s.error, { fg: COL.red, marginTop: 1, truncate: true })
-                    : txt("enter create   esc cancel", { fg: COL.gray, marginTop: 1 })));
+                    : txt("enter confirm   esc cancel", { fg: COL.gray, marginTop: 1 })));
 
-    // Searchable tool selector (the opencode model-picker pattern): a focused
-    // filter input on top, the filtered list below. Typing filters via onInput;
+    // Searchable selector (the opencode model-picker pattern): a focused filter
+    // input on top, the filtered list below. Typing filters via onInput;
     // navigation/selection stays in the global key handler (up/down/enter), so
     // the input never needs an onSubmit here.
-    const renderToolSelect = (s: {
-        query: string; cursor: number; filtered: HubTool[];
+    const renderSearchSelect = (s: {
+        title: string; items: PickItem[]; cursor: number; error?: string;
         onQuery: (value: string) => void; onPick: (i: number) => void;
     }): RNode =>
         h(box, { flexGrow: 1, justifyContent: "center", alignItems: "center" },
-            h(box, { border: true, borderStyle: "rounded", borderColor: COL.cyan, flexDirection: "column", paddingLeft: 2, paddingRight: 2, paddingTop: 1, paddingBottom: 1, width: 52 },
-                txt("New account - which tool?", { fg: COL.cyan, attributes: BOLD }),
+            h(box, { border: true, borderStyle: "rounded", borderColor: COL.cyan, flexDirection: "column", paddingLeft: 2, paddingRight: 2, paddingTop: 1, paddingBottom: 1, width: 56 },
+                txt(s.title, { fg: COL.cyan, attributes: BOLD }),
                 h(box, { border: true, borderStyle: "rounded", borderColor: COL.gray, marginTop: 1 },
-                    h(input, { focused: true, placeholder: "type to search...", maxLength: 32, onInput: s.onQuery })),
+                    h(input, { focused: true, placeholder: "type to search...", maxLength: 64, onInput: s.onQuery })),
                 h(box, { flexDirection: "column", marginTop: 1 },
-                    ...(s.filtered.length
-                        ? s.filtered.map((t, i) => h(box, { flexDirection: "row", justifyContent: "space-between", onMouseDown: () => s.onPick(i) },
-                            txt(` ${t.label} `, selStyle(i === s.cursor)),
-                            txt(`${t.name}  `, { fg: COL.gray })))
-                        : [txt(" (no tool matches) ", { fg: COL.yellow })])),
-                txt("type to search   up/down move   enter select   esc cancel", { fg: COL.gray, marginTop: 1 })));
+                    ...(s.items.length
+                        ? s.items.map((it, i) => h(box, { flexDirection: "row", justifyContent: "space-between", onMouseDown: () => s.onPick(i) },
+                            txt(` ${it.label} `, selStyle(i === s.cursor)),
+                            txt(`${it.hint}  `, { fg: COL.gray, truncate: true })))
+                        : [txt(" (no matches) ", { fg: COL.yellow })])),
+                s.error
+                    ? txt(s.error, { fg: COL.red, marginTop: 1, truncate: true })
+                    : txt("type to search   up/down move   enter select   esc cancel", { fg: COL.gray, marginTop: 1 })));
 
     const renderConnectPrompt = (name: string, index: number, onChoose: (i: number) => void): RNode =>
         h(box, { flexGrow: 1, justifyContent: "center", alignItems: "center" },
@@ -352,6 +359,11 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         const [connectPrompt, setConnectPrompt] = useState<{ tool: string; account: string; index: number } | null>(null);
         const [profiles, setProfiles] = useState<HubProfile[]>(initialProfiles);
         const [profCursor, setProfCursor] = useState(0);
+        // Profile management overlays: name input, two-step mapping editor
+        // (searchable tool -> searchable account incl. "(unpin)"), remove confirm.
+        const [profAdd, setProfAdd] = useState<{ error?: string } | null>(null);
+        const [profEdit, setProfEdit] = useState<{ profile: string; step: "tool" | "account"; tool: string; toolLabel: string; query: string; cursor: number; error?: string } | null>(null);
+        const [profRemove, setProfRemove] = useState<{ name: string; index: number } | null>(null);
 
         const current = sideItems[sideIndex]!;
         const category = current.kind === "category" ? CATEGORIES[current.catIndex]! : null;
@@ -509,9 +521,9 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         };
         const pickTool = (i: number): void => {
             if (!adding) return;
-            const filtered = filterTools(adding.query);
+            const filtered = filterItems(toolItems(), adding.query);
             const sel = filtered[Math.min(i, filtered.length - 1)];
-            if (sel) setAdding({ step: "name", tool: sel.name, toolLabel: sel.label, query: "", cursor: 0 });
+            if (sel) setAdding({ step: "name", tool: sel.value, toolLabel: sel.label, query: "", cursor: 0 });
         };
         const submitAdd = (value: string): void => {
             const name = value.trim();
@@ -533,6 +545,55 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         const clickProfile = (i: number): void => {
             if (focusRight && profCursor === i) activateProfileRow(i);
             else { setFocusRight(true); setProfCursor(i); }
+        };
+        // Profile management: add (name input), edit (tool -> account selectors),
+        // remove (confirm). Row 0 is the synthetic "(none)" and is never editable.
+        const submitProfAdd = (value: string): void => {
+            const name = value.trim();
+            if (!addProfileFn || !name) { setProfAdd(null); return; }
+            const res = addProfileFn(name);
+            if (!res.ok) { setProfAdd({ error: res.error }); return; }
+            setProfiles(res.profiles);
+            setProfAdd(null);
+            const idx = res.profiles.findIndex((p) => p.name === name);
+            setProfCursor(idx >= 0 ? idx + 1 : 0); // +1 for the "(none)" row
+        };
+        const startProfEdit = (i: number): void => {
+            const row = profRows[i];
+            if (!row || !row.name || !setProfileAccountFn) return;
+            setProfEdit({ profile: row.name, step: "tool", tool: "", toolLabel: "", query: "", cursor: 0 });
+        };
+        const profAccountItems = (tool: string): PickItem[] => [
+            { value: "", label: "(unpin)", hint: "remove this tool from the profile" },
+            ...accounts.filter((a) => a.tool === tool).map((a) => ({ value: a.name, label: a.name, hint: a.email ?? "" })),
+        ];
+        const pickProfEdit = (i: number): void => {
+            if (!profEdit || !setProfileAccountFn) return;
+            if (profEdit.step === "tool") {
+                const filtered = filterItems(toolItems(), profEdit.query);
+                const sel = filtered[Math.min(i, filtered.length - 1)];
+                if (sel) setProfEdit({ profile: profEdit.profile, step: "account", tool: sel.value, toolLabel: sel.label, query: "", cursor: 0 });
+                return;
+            }
+            const filtered = filterItems(profAccountItems(profEdit.tool), profEdit.query);
+            const sel = filtered[Math.min(i, filtered.length - 1)];
+            if (!sel) return;
+            const res = setProfileAccountFn(profEdit.profile, profEdit.tool, sel.value === "" ? null : sel.value);
+            if (!res.ok) { setProfEdit({ ...profEdit, error: res.error }); return; }
+            setProfiles(res.profiles);
+            setProfEdit(null);
+        };
+        const requestProfRemove = (i: number): void => {
+            const row = profRows[i];
+            if (row && row.name && removeProfileFn) setProfRemove({ name: row.name, index: 0 });
+        };
+        const chooseProfRemove = (i: number): void => {
+            const target = profRemove;
+            setProfRemove(null);
+            if (i !== 0 || !target || !removeProfileFn) return;
+            const next = removeProfileFn(target.name);
+            setProfiles(next);
+            setProfCursor((c) => Math.max(0, Math.min(c, next.length))); // rows = profiles + "(none)"
         };
         const chooseConnectPrompt = (i: number): void => {
             const target = connectPrompt;
@@ -564,11 +625,31 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             if (adding) {
                 if (esc) { setAdding(null); return; }
                 if (adding.step === "tool") {
-                    const filtered = filterTools(adding.query);
+                    const filtered = filterItems(toolItems(), adding.query);
                     if (up) { setAdding({ ...adding, cursor: Math.max(0, adding.cursor - 1) }); return; }
                     if (down) { setAdding({ ...adding, cursor: Math.min(Math.max(0, filtered.length - 1), adding.cursor + 1) }); return; }
                     if (enter) { pickTool(adding.cursor); return; }
                 }
+                return;
+            }
+
+            // Profile overlays mirror the add-account flow: the focused input owns
+            // typing; the global handler only navigates, selects and cancels.
+            if (profAdd) { if (esc) setProfAdd(null); return; }
+            if (profEdit) {
+                if (esc) { setProfEdit(null); return; }
+                const items = filterItems(profEdit.step === "tool" ? toolItems() : profAccountItems(profEdit.tool), profEdit.query);
+                if (up) { setProfEdit({ ...profEdit, cursor: Math.max(0, profEdit.cursor - 1) }); return; }
+                if (down) { setProfEdit({ ...profEdit, cursor: Math.min(Math.max(0, items.length - 1), profEdit.cursor + 1) }); return; }
+                if (enter) { pickProfEdit(profEdit.cursor); return; }
+                return;
+            }
+            if (profRemove) {
+                if (esc || ch === "n") { setProfRemove(null); return; }
+                if (up || ch === "k") { setProfRemove((c) => c && { ...c, index: Math.max(0, c.index - 1) }); return; }
+                if (down || ch === "j") { setProfRemove((c) => c && { ...c, index: Math.min(1, c.index + 1) }); return; }
+                if (ch === "y") { chooseProfRemove(0); return; }
+                if (enter || space) { chooseProfRemove(profRemove.index); return; }
                 return;
             }
 
@@ -624,6 +705,9 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             if (focusRight && accountsMode && ch === "d") { requestRemove(accCursor); return; }
             if (focusRight && accountsMode && ch === "c") { connectSelected(accCursor); return; }
             if (focusRight && accountsMode && ch === "a") { startAdd(); return; }
+            if (focusRight && profilesMode && ch === "a") { if (addProfileFn) setProfAdd({}); return; }
+            if (focusRight && profilesMode && ch === "e") { startProfEdit(profCursor); return; }
+            if (focusRight && profilesMode && ch === "d") { requestProfRemove(profCursor); return; }
             if (up || ch === "k") {
                 if (focusRight && category) setSetIndex((i) => Math.max(0, i - 1));
                 else if (focusRight && action) setActCursor((i) => Math.max(0, i - 1));
@@ -657,6 +741,12 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         // header
         const headerRight = adding
             ? txt("new account", { fg: COL.cyan })
+            : profAdd
+            ? txt("new profile", { fg: COL.cyan })
+            : profEdit
+            ? txt("edit profile", { fg: COL.cyan })
+            : profRemove
+            ? txt("remove profile", { fg: COL.red })
             : connectPrompt
             ? txt("connect?", { fg: COL.green })
             : removeConfirm
@@ -678,19 +768,36 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         // body
         let content: RNode;
         if (adding && adding.step === "tool") {
-            content = renderToolSelect({
-                query: adding.query,
-                cursor: Math.min(adding.cursor, Math.max(0, filterTools(adding.query).length - 1)),
-                filtered: filterTools(adding.query),
+            const filtered = filterItems(toolItems(), adding.query);
+            content = renderSearchSelect({
+                title: "New account - which tool?",
+                items: filtered,
+                cursor: Math.min(adding.cursor, Math.max(0, filtered.length - 1)),
                 onQuery: (value: string) => setAdding((a) => a && { ...a, query: value, cursor: 0 }),
                 onPick: pickTool,
             });
         } else if (adding) {
-            content = renderAddInput({ toolLabel: adding.toolLabel, error: adding.error, onSubmit: submitAdd });
+            content = renderAddInput({ title: `New ${adding.toolLabel} account name`, placeholder: "e.g. work", error: adding.error, onSubmit: submitAdd });
+        } else if (profAdd) {
+            content = renderAddInput({ title: "New profile name", placeholder: "e.g. work", error: profAdd.error, onSubmit: submitProfAdd });
+        } else if (profEdit) {
+            const items = filterItems(profEdit.step === "tool" ? toolItems() : profAccountItems(profEdit.tool), profEdit.query);
+            content = renderSearchSelect({
+                title: profEdit.step === "tool"
+                    ? `Profile '${profEdit.profile}' - which tool?`
+                    : `Profile '${profEdit.profile}' - ${profEdit.toolLabel} account`,
+                items,
+                cursor: Math.min(profEdit.cursor, Math.max(0, items.length - 1)),
+                error: profEdit.error,
+                onQuery: (value: string) => setProfEdit((s) => s && { ...s, query: value, cursor: 0 }),
+                onPick: pickProfEdit,
+            });
+        } else if (profRemove) {
+            content = renderRemoveConfirm(`Remove profile '${profRemove.name}'? (its accounts are kept)`, profRemove.index, chooseProfRemove);
         } else if (connectPrompt) {
             content = renderConnectPrompt(connectPrompt.account, connectPrompt.index, chooseConnectPrompt);
         } else if (removeConfirm) {
-            content = renderRemoveConfirm(removeConfirm.name, removeConfirm.index, chooseRemove);
+            content = renderRemoveConfirm(`Remove account '${removeConfirm.name}' and delete its config dir?`, removeConfirm.index, chooseRemove);
         } else if (confirm) {
             content = renderConfirm(confirm.index, chooseConfirm);
         } else if (mode === "running") {
@@ -735,10 +842,12 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
                 ? "up/down move   enter toggle/cycle   g scope   tab back"
                 : `up/down move   tab switch   enter ${action || accountsMode || profilesMode ? "edit" : "focus"}`;
         let footer: RNode;
-        if (adding && adding.step === "tool") {
+        if ((adding && adding.step === "tool") || profEdit) {
             footer = footerLine("type to search   up/down move   enter select   esc cancel");
-        } else if (adding) {
+        } else if (adding || profAdd) {
             footer = footerLine("type a name   enter create   esc cancel");
+        } else if (profRemove) {
+            footer = footerLine("y remove   n / esc cancel");
         } else if (connectPrompt) {
             footer = footerLine("up/down move   enter select   esc later");
         } else if (removeConfirm) {
@@ -757,7 +866,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
 
         // A one-line "update available" banner under the title, shown only in the plain
         // menu view (not over an overlay or the result/running panels).
-        const noOverlay = !adding && !connectPrompt && !removeConfirm && !confirm;
+        const noOverlay = !adding && !profAdd && !profEdit && !profRemove && !connectPrompt && !removeConfirm && !confirm;
         const updateBanner = update && mode === "menu" && noOverlay
             ? h(box, { width: size.columns, flexDirection: "row", paddingLeft: 1, paddingRight: 1 },
                 txt(`Update available  ${update.current} -> ${update.latest}   `, { fg: COL.yellow, attributes: BOLD }),

@@ -75,4 +75,10 @@ export interface HubContext {
     /** Profiles (one account per tool under a name) and activation; "" deactivates. */
     profiles?: HubProfile[];
     activateProfile?: (name: string) => HubProfile[];
+    /** Create a profile; validation errors come back inline like addAccount. */
+    addProfile?: (name: string) => { ok: boolean; error?: string; profiles: HubProfile[] };
+    /** Delete a profile (its accounts are kept). */
+    removeProfile?: (name: string) => HubProfile[];
+    /** Pin a tool's account inside a profile, or unpin it with null. */
+    setProfileAccount?: (profile: string, tool: string, account: string | null) => { ok: boolean; error?: string; profiles: HubProfile[] };
 }
