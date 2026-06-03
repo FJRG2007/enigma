@@ -89,7 +89,6 @@ export const CATEGORIES: Category[] = [
         title: "General",
         blurb: "enigma runtime toggles (.enigma.json)",
         settings: [
-            enigmaToggle("commit-emoji", "commitEmoji", "Commit subject emoji", "leading gitmoji on commit subjects"),
             enigmaToggle("update-notifier", "updateNotifier", "Update notifications", "notify when a newer enigma-cli is published"),
             enigmaToggle("fullscreen", "fullscreen", "Full-screen TUI", "clear the screen for a clean TUI view; off renders inline among existing output"),
             enigmaToggle("parallel-subagents", "parallelSubagents", "Parallel sub-agents", "let agents split long tasks across sub-agents running in parallel; edits the memory file - restart your agent to apply", true),
@@ -98,8 +97,9 @@ export const CATEGORIES: Category[] = [
     },
     {
         title: "Git & attribution",
-        blurb: "how the coding agent attributes its work in git",
+        blurb: "how the coding agent commits and attributes its work in git",
         settings: [
+            enigmaToggle("commit-emoji", "commitEmoji", "Commit subject emoji", "leading gitmoji on commit subjects"),
             {
                 key: "claude-attribution",
                 label: "Claude commit attribution",
