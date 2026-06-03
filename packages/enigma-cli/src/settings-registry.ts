@@ -10,12 +10,15 @@
  */
 
 import { AGENTS } from "./agents";
-import { readConfig, setEnigmaToggle } from "./config";
+import { readConfig, setEnigmaToggle, setEnigmaValue, OUTPUT_STYLES } from "./config";
 import { getClaudeAttribution, setClaudeAttribution } from "./claude";
 import { BYPASS_SUPPORTED, getBypass, setBypass } from "./permissions";
-import type { EnigmaConfigKey } from "./config";
+import type { EnigmaConfig, EnigmaConfigKey } from "./config";
 
 export type Scope = "global" | "local";
+
+/** Keys of EnigmaConfig whose value is a boolean (the on/off toggles). */
+type BooleanConfigKey = { [K in EnigmaConfigKey]: EnigmaConfig[K] extends boolean ? K : never }[EnigmaConfigKey];
 
 export interface ApplyResult { path?: string; changed: boolean; }
 
@@ -26,8 +29,26 @@ export interface Setting {
     hint: string;
     /** True when the underlying config is user-global only (no project-local form). */
     globalOnly?: boolean;
+    /**
+     * True when changing this toggle alters the deployed agent memory file, so the
+     * surface must re-render that file and prompt for an agent restart after writing.
+     */
+    affectsMemory?: boolean;
+    /**
+     * On/off face of the setting. A multi-value (choice) setting still implements this
+     * as "is it enabled" (read) and "enable to the default value / disable" (write), so
+     * the boolean TUI and `config <key> <on|off>` keep working unchanged.
+     */
     read(scope: Scope): boolean;
     write(value: boolean, scope: Scope): ApplyResult;
+    /**
+     * Present only on choice (enum) settings. `choices` is the full value set including
+     * the "off" value; `readChoice`/`writeChoice` get and set the exact value so the CLI
+     * can accept e.g. `config output-style ultra` on top of the on/off face above.
+     */
+    choices?: readonly string[];
+    readChoice?(scope: Scope): string;
+    writeChoice?(value: string, scope: Scope): ApplyResult;
 }
 
 export interface Category {
@@ -37,11 +58,29 @@ export interface Category {
 }
 
 /** Declare an .enigma.json runtime toggle as a registry setting. */
-function enigmaToggle(key: string, field: EnigmaConfigKey, label: string, hint: string): Setting {
+function enigmaToggle(key: string, field: BooleanConfigKey, label: string, hint: string, affectsMemory = false): Setting {
     return {
-        key, label, hint,
+        key, label, hint, affectsMemory,
         read: () => readConfig().config[field],
         write: (value, scope) => ({ path: setEnigmaToggle(field, value, scope), changed: true }),
+    };
+}
+
+/**
+ * Declare a string-valued .enigma.json setting. It exposes a boolean face (enabled =
+ * value is not `offValue`; enabling sets `enabledDefault`) so the on/off TUI and CLI
+ * still drive it, plus choice accessors so the CLI can set an exact value.
+ */
+function enigmaChoice(
+    key: string, field: EnigmaConfigKey, label: string, hint: string,
+    choices: readonly string[], enabledDefault: string, affectsMemory = false, offValue = "off",
+): Setting {
+    return {
+        key, label, hint, affectsMemory, choices,
+        read: () => readConfig().config[field] !== offValue,
+        write: (value, scope) => ({ path: setEnigmaValue(field, value ? enabledDefault : offValue, scope), changed: true }),
+        readChoice: () => String(readConfig().config[field]),
+        writeChoice: (value, scope) => ({ path: setEnigmaValue(field, value, scope), changed: true }),
     };
 }
 
@@ -53,6 +92,8 @@ export const CATEGORIES: Category[] = [
             enigmaToggle("commit-emoji", "commitEmoji", "Commit subject emoji", "leading gitmoji on commit subjects"),
             enigmaToggle("update-notifier", "updateNotifier", "Update notifications", "notify when a newer enigma-cli is published"),
             enigmaToggle("fullscreen", "fullscreen", "Full-screen TUI", "clear the screen for a clean TUI view; off renders inline among existing output"),
+            enigmaToggle("parallel-subagents", "parallelSubagents", "Parallel sub-agents", "let agents split long tasks across sub-agents running in parallel; edits the memory file - restart your agent to apply", true),
+            enigmaChoice("output-style", "outputStyle", "Token-efficient output", "compress prose replies (off|lite|full|ultra); on = lite (professional terse); edits the memory file - restart your agent to apply", OUTPUT_STYLES, "lite", true),
         ],
     },
     {

@@ -18,10 +18,20 @@ import { isDir, readJson } from "./util";
 
 export const CONFIG_FILE = ".enigma.json";
 
+/**
+ * Output compression level for agent prose replies. "off" disables it; the rest are
+ * graded terseness, deployed as a memory-file section (see skills.ts renderMemory).
+ * "lite" is professional terse (keeps grammar/language), "full"/"ultra" go shorter.
+ */
+export type OutputStyle = "off" | "lite" | "full" | "ultra";
+export const OUTPUT_STYLES: readonly OutputStyle[] = ["off", "lite", "full", "ultra"];
+
 export interface EnigmaConfig {
     commitEmoji: boolean;
     updateNotifier: boolean;
     fullscreen: boolean;
+    parallelSubagents: boolean;
+    outputStyle: OutputStyle;
 }
 
 /**
@@ -29,8 +39,16 @@ export interface EnigmaConfig {
  * fullscreen clears the screen so the TUI renders cleanly (on by default); it uses
  * an OS-agnostic clear rather than the alternate screen buffer, so exiting returns
  * to the shell without wiping/restoring the terminal.
+ * parallelSubagents is opt-in (off): spawning sub-agents in parallel multiplies
+ * token cost, so it stays explicit. When on, the deployed memory file gains the
+ * parallel sub-agent section (subtask decomposition itself is always on).
+ * outputStyle is opt-in (off): it changes the voice of every reply, so it is an
+ * explicit choice. When not off, the memory file gains the token-efficient output
+ * section keyed to the chosen level.
  */
-export const CONFIG_DEFAULTS: EnigmaConfig = { commitEmoji: true, updateNotifier: true, fullscreen: true };
+export const CONFIG_DEFAULTS: EnigmaConfig = {
+    commitEmoji: true, updateNotifier: true, fullscreen: true, parallelSubagents: false, outputStyle: "off",
+};
 
 export type EnigmaConfigKey = keyof EnigmaConfig;
 
@@ -52,9 +70,10 @@ export function readConfig(): { config: EnigmaConfig; sources: string[] } {
 
 /**
  * Set a single key in the chosen scope's .enigma.json, preserving any other keys
- * already present. Returns the written file path.
+ * already present. Accepts boolean toggles and string-valued settings alike.
+ * Returns the written file path.
  */
-export function setEnigmaToggle(key: EnigmaConfigKey, value: boolean, scope: "global" | "local"): string {
+export function setEnigmaValue(key: EnigmaConfigKey, value: boolean | string, scope: "global" | "local"): string {
     const path = configPath(scope);
     const current = readJson<Record<string, unknown>>(path) || {};
     const next = { ...current, [key]: value };
@@ -62,4 +81,9 @@ export function setEnigmaToggle(key: EnigmaConfigKey, value: boolean, scope: "gl
     if (!isDir(dir)) mkdirSync(dir, { recursive: true });
     writeFileSync(path, JSON.stringify(next, null, 2) + "\n");
     return path;
+}
+
+/** Boolean-toggle convenience over setEnigmaValue, for the on/off settings. */
+export function setEnigmaToggle(key: EnigmaConfigKey, value: boolean, scope: "global" | "local"): string {
+    return setEnigmaValue(key, value, scope);
 }

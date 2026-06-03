@@ -10,6 +10,8 @@ import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 import * as p from "@clack/prompts";
 import { isDir, readJson } from "./util";
+import { readConfig, setEnigmaValue, OUTPUT_STYLES } from "./config";
+import type { OutputStyle } from "./config";
 import { MANAGED_PROVIDER, isManagedProvider, discoverAgents, runningStatus } from "./agents";
 import type { Agent, AgentTarget, DiscoveredAgent } from "./agents";
 import { maybeOfferGitHooks } from "./security";
@@ -64,6 +66,8 @@ export interface InstallOptions extends SecurityOptions {
     dryRun: boolean;
     bypass: string[] | null;
     noBypass: boolean;
+    /** Output-compression level to set before deploying memory (off|lite|full|ultra), or null to leave/ask. */
+    outputStyle: string | null;
 }
 
 /** This CLI package's own version, stamped into skills at seal time. */
@@ -137,12 +141,37 @@ function statusLabel(st: SkillStatus): string {
     }
 }
 
-function filesEqual(a: string, b: string): boolean {
-    try { return readFileSync(a).equals(readFileSync(b)); } catch { return false; }
+/**
+ * Remove an optional, marker-delimited block from memory-file content. The block is
+ * bounded by `<!-- enigma:<id>:start -->` / `<!-- enigma:<id>:end -->` lines (authored
+ * with a blank line on each side); we drop the markers and everything between them,
+ * leaving a single blank line so the adjacent sections stay separated.
+ */
+function stripMarkedBlock(content: string, id: string): string {
+    const re = new RegExp(`\\n<!-- enigma:${id}:start -->[\\s\\S]*?<!-- enigma:${id}:end -->\\n`, "g");
+    return content.replace(re, "");
 }
+
+/**
+ * Read a source memory file and apply the user's .enigma.json toggles to it:
+ * - parallelSubagents off -> strip the parallel sub-agent block (decomposition stays).
+ * - outputStyle off -> strip the token-efficient output block; otherwise keep it and
+ *   bind {{output-level}} to the chosen level (lite/full/ultra).
+ * Everything else is passed through verbatim, preserving the exact trailing newline.
+ */
+function renderMemory(srcFile: string): string {
+    const cfg = readConfig().config;
+    let out = readFileSync(srcFile, "utf8");
+    if (!cfg.parallelSubagents) out = stripMarkedBlock(out, "parallel-subagents");
+    if (cfg.outputStyle === "off") out = stripMarkedBlock(out, "output-style");
+    else out = out.replace(/\{\{output-level\}\}/g, cfg.outputStyle);
+    return out;
+}
+
+/** Compare the toggle-rendered source against the deployed file, not the raw bytes. */
 function memoryStatus(srcFile: string, destFile: string): "install" | "identical" | "overwrite" {
     if (!existsSync(destFile)) return "install";
-    return filesEqual(srcFile, destFile) ? "identical" : "overwrite";
+    return readFileSync(destFile, "utf8") === renderMemory(srcFile) ? "identical" : "overwrite";
 }
 
 function computePrune(destSkillsDir: string, sourceNames: string[]): PruneEntry[] {
@@ -236,6 +265,38 @@ export function checkSources(): void {
 // --- install -------------------------------------------------------------------
 
 /**
+ * Resolve the token-efficient output level (off|lite|full|ultra) for this install and
+ * persist it to .enigma.json at `scope`, so renderMemory bakes the matching section into
+ * the deployed memory file. Honors an explicit --output-style flag, otherwise asks once
+ * when interactive (defaulting to the current value). Never writes on a dry run.
+ */
+async function resolveOutputStyle(opts: InstallOptions, scope: "global" | "local", interactive: boolean, reporter: Reporter): Promise<void> {
+    let style = opts.outputStyle?.toLowerCase() ?? null;
+    if (style && !OUTPUT_STYLES.includes(style as OutputStyle)) {
+        reporter.warn(`Ignoring --output-style '${opts.outputStyle}': use one of ${OUTPUT_STYLES.join(", ")}.`);
+        style = null;
+    }
+    if (!style && interactive && !opts.dryRun) {
+        const r = await p.select({
+            message: "Token-efficient output? (compress chat prose; code/commits/PRs stay normal)",
+            options: [
+                { value: "off", label: "Off", hint: "full prose (default)" },
+                { value: "lite", label: "Lite", hint: "professional terse - drop filler, keep grammar" },
+                { value: "full", label: "Full", hint: "caveman-style: drop articles, fragments" },
+                { value: "ultra", label: "Ultra", hint: "telegraphic, maximum compression" },
+            ],
+            initialValue: readConfig().config.outputStyle,
+        });
+        if (p.isCancel(r)) return;          // keep the current value; do not abort the whole install
+        style = r as string;
+    }
+    if (style && !opts.dryRun && style !== readConfig().config.outputStyle) {
+        setEnigmaValue("outputStyle", style, scope);
+        reporter.info(`Token-efficient output: ${style} (${scope}).`);
+    }
+}
+
+/**
  * Plan and apply a skills install. Progress is emitted through `reporter`:
  * clack for the CLI, or a buffering reporter when driven inline by the TUI.
  * Interactive prompts (scope/agent/skill selection) still use clack directly and
@@ -305,6 +366,10 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
     // Asked here (right after agent selection) so it is grouped with that choice.
     const bypassAgents = await resolveBypassSelection(chosenAgents, opts, interactive);
     const applyBypassConfig = (): void => applyBypass(bypassAgents, scope, opts.dryRun);
+
+    // Output-compression level (memory section). Resolved before the plan so memoryStatus
+    // and the deployed content reflect it. Irrelevant when only skills are installed.
+    if (!opts.skillsOnly) await resolveOutputStyle(opts, scope, interactive, reporter);
 
     // --- build the plan per agent ---
     const plan: PlanItem[] = [];
@@ -439,7 +504,7 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
             }
             for (const m of x.memory) {
                 if (memoryStatus(m.src, join(x.target.memory, m.name)) === "identical") continue;
-                cpSync(m.src, join(x.target.memory, m.name), { force: true });
+                writeFileSync(join(x.target.memory, m.name), renderMemory(m.src));
                 copied++;
             }
             for (const pr of x.prune) rmSync(pr.dir, { recursive: true, force: true });
@@ -469,4 +534,27 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
             reporter.info(`If any of these agents are running, restart them to apply the changes: ${names.join(", ")}.`);
         }
     }
+}
+
+/**
+ * Re-render the deployed memory file(s) at `scope` for every agent that already has
+ * one, applying the current .enigma.json toggles (e.g. parallel-subagents). It only
+ * touches files that already exist - it never creates a new deployment - so toggling a
+ * setting just rewrites what `enigma install` previously wrote. Returns the agents whose
+ * memory file actually changed; memory loads at startup, so those need a restart. With
+ * `dryRun`, the changed set is computed without writing.
+ */
+export function applyMemoryToggles(scope: "global" | "local", dryRun = false): Agent[] {
+    const changed: Agent[] = [];
+    for (const agent of discoverAgents()) {
+        const target = agent.targets[scope];
+        if (!target) continue;
+        for (const m of inspectMemory(agent)) {
+            const dest = join(target.memory, m.name);
+            if (!existsSync(dest) || memoryStatus(m.src, dest) === "identical") continue;
+            if (!dryRun) writeFileSync(dest, renderMemory(m.src));
+            changed.push(agent);
+        }
+    }
+    return changed;
 }
