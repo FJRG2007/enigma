@@ -70,6 +70,8 @@ export interface HubContext {
      * name) without importing the data layer.
      */
     addAccount?: (tool: string, name: string) => { ok: boolean; error?: string; accounts: HubAccount[] };
+    /** Rename an account (its config dir moves with it); errors come back inline. */
+    renameAccount?: (tool: string, oldName: string, newName: string) => { ok: boolean; error?: string; accounts: HubAccount[] };
     /** Supported tools, for the add-account searchable selector. */
     tools?: HubTool[];
     /** Profiles (one account per tool under a name) and activation; "" deactivates. */
@@ -77,6 +79,8 @@ export interface HubContext {
     activateProfile?: (name: string) => HubProfile[];
     /** Create a profile; validation errors come back inline like addAccount. */
     addProfile?: (name: string) => { ok: boolean; error?: string; profiles: HubProfile[] };
+    /** Rename a profile (mappings and active pointer follow); errors come back inline. */
+    renameProfile?: (oldName: string, newName: string) => { ok: boolean; error?: string; profiles: HubProfile[] };
     /** Delete a profile (its accounts are kept). */
     removeProfile?: (name: string) => HubProfile[];
     /** Pin a tool's account inside a profile, or unpin it with null. */

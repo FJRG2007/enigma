@@ -20,7 +20,8 @@ import { getAvailableUpdate, notifyUpdate, runUpdate } from "./update";
 import {
     DEFAULT_NAME, DEFAULT_TOOL, TOOL_NAMES, addAccount, addProfile, getActive, getTool,
     isToolName, launchTool, listAccounts, listProfiles, loginTool, removeAccount,
-    removeProfile, setActive, setActiveProfile, setProfileAccount, unsetProfileAccount,
+    removeProfile, renameAccount, renameProfile, setActive, setActiveProfile,
+    setProfileAccount, unsetProfileAccount,
 } from "./accounts";
 import type { HubAccount, HubExitAction, HubProfile } from "./tui/types";
 
@@ -121,6 +122,7 @@ Commands:
                          add <name> [--login] Create an account (then optionally log in)
                          use <name>           Set the active account
                          login|run <name>     Launch the tool with that account
+                         rename <old> <new>   Rename an account (its config dir moves)
                          remove <name>        Delete an account (-y to skip confirm)
   profile <subcommand> Group one account per tool under a profile (e.g. 'work' =
                        claude:acme + codex:acme); the active profile drives launches:
@@ -129,6 +131,7 @@ Commands:
                          use <name|none>            Activate a profile (none = off)
                          set <name> <tool> <acct>   Pin a tool's account in the profile
                          unset <name> <tool>        Drop a tool from the profile
+                         rename <old> <new>         Rename a profile (mappings stay)
                          remove <name>              Delete a profile (accounts stay)
   seal                 Maintenance: (re)compute skill content hashes
   check                Integrity gate: verify skills are well-formed and sealed
@@ -248,6 +251,12 @@ async function runAccountCli(opts: CliOptions, interactive: boolean): Promise<nu
             try { autoSyncForLaunch(tool); return await launchTool(tool, name, opts.passthrough); }
             catch (err) { console.error((err as Error).message); return 1; }
         }
+        case "rename": {
+            const to = opts.positionals[2];
+            if (!name || !to) { console.error("Usage: enigma account rename <old> <new>"); return 1; }
+            try { renameAccount(tool, name, to); console.log(`Renamed ${tool} account '${name}' to '${to}'.`); return 0; }
+            catch (err) { console.error((err as Error).message); return 1; }
+        }
         case "remove":
         case "rm": {
             if (!name) { console.error("Usage: enigma account remove <name>"); return 1; }
@@ -260,7 +269,7 @@ async function runAccountCli(opts: CliOptions, interactive: boolean): Promise<nu
             catch (err) { console.error((err as Error).message); return 1; }
         }
         default:
-            console.error(`Unknown account subcommand: ${sub}. Try: list, add, use, login, run, remove.`);
+            console.error(`Unknown account subcommand: ${sub}. Try: list, add, use, login, run, rename, remove.`);
             return 1;
     }
 }
@@ -315,6 +324,13 @@ async function runProfileCli(opts: CliOptions, interactive: boolean): Promise<nu
                 console.log(`Profile '${name}': ${tool} mapping removed.`);
                 return 0;
             }
+            case "rename": {
+                const to = opts.positionals[2];
+                if (!name || !to) { console.error("Usage: enigma profile rename <old> <new>"); return 1; }
+                renameProfile(name, to);
+                console.log(`Renamed profile '${name}' to '${to}'.`);
+                return 0;
+            }
             case "remove":
             case "rm": {
                 if (!name) { console.error("Usage: enigma profile remove <name>"); return 1; }
@@ -327,7 +343,7 @@ async function runProfileCli(opts: CliOptions, interactive: boolean): Promise<nu
                 return 0;
             }
             default:
-                console.error(`Unknown profile subcommand: ${sub}. Try: list, add, use, set, unset, remove.`);
+                console.error(`Unknown profile subcommand: ${sub}. Try: list, add, use, set, unset, rename, remove.`);
                 return 1;
         }
     } catch (err) {
@@ -432,11 +448,19 @@ export async function run(argv: string[]): Promise<void> {
             try { addAccount(tool, name); return { ok: true, accounts: hubAccounts() }; }
             catch (err) { return { ok: false, error: (err as Error).message, accounts: hubAccounts() }; }
         },
+        renameAccount: (tool: string, oldName: string, newName: string) => {
+            try { renameAccount(tool, oldName, newName); return { ok: true, accounts: hubAccounts() }; }
+            catch (err) { return { ok: false, error: (err as Error).message, accounts: hubAccounts() }; }
+        },
         tools: TOOL_NAMES.map((t) => ({ name: t, label: getTool(t).label })),
         profiles: hubProfiles(),
         activateProfile: (name: string) => { setActiveProfile(name || null); return hubProfiles(); },
         addProfile: (name: string) => {
             try { addProfile(name); return { ok: true, profiles: hubProfiles() }; }
+            catch (err) { return { ok: false, error: (err as Error).message, profiles: hubProfiles() }; }
+        },
+        renameProfile: (oldName: string, newName: string) => {
+            try { renameProfile(oldName, newName); return { ok: true, profiles: hubProfiles() }; }
             catch (err) { return { ok: false, error: (err as Error).message, profiles: hubProfiles() }; }
         },
         removeProfile: (name: string) => { removeProfile(name); return hubProfiles(); },

@@ -134,6 +134,7 @@ enigma codex acme                 # run Codex as 'acme'
 enigma account use personal       # make 'personal' the active account
 enigma claude                     # run the resolved account (profile > active)
 enigma claude work -- --version   # forward args after -- to the tool
+enigma account rename work corp   # rename an account (its config dir moves)
 enigma account remove work        # delete an account and its config dir
 ```
 
@@ -155,18 +156,20 @@ enigma profile set work claude work     # pin claude account 'work'
 enigma profile set work codex acme      # pin codex account 'acme'
 enigma profile use work                 # activate (enigma claude/codex now use it)
 enigma profile list                     # profiles + mappings (* = active)
+enigma profile rename work corp         # rename a profile (mappings stay)
 enigma profile use none                 # deactivate
 ```
 
 From the hub TUI (`enigma`), the **Accounts** panel lists every tool's accounts -
 with the signed-in identity (email for Claude/Codex, connected providers for
 OpenCode) - and lets you **add** (`a`), set active (`enter`), **connect**/log in
-(`c`), or remove (`d`). Adding first asks **which tool** with a searchable
-selector (type to filter, like opencode's model picker), then the account name,
-then offers to connect right away. The **Profiles** panel manages profiles
-end-to-end: `enter` switches the active one (`(none)` deactivates), `a` creates
-one, `e` edits its mappings (searchable tool selector, then a searchable account
-selector including `(unpin)`), and `d` removes it (accounts are kept).
+(`c`), rename (`r`), or remove (`d`). Adding first asks **which tool** with a
+searchable selector (type to filter, like opencode's model picker), then the
+account name, then offers to connect right away. The **Profiles** panel manages
+profiles end-to-end: `enter` switches the active one (`(none)` deactivates), `a`
+creates one, `e` edits its mappings (searchable tool selector, then a searchable
+account selector including `(unpin)`), `r` renames it, and `d` removes it
+(accounts are kept).
 
 ## GitHub CLI telemetry (default off)
 

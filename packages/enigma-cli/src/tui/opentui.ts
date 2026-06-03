@@ -92,12 +92,14 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
     const activateAccount = opts.hub?.activateAccount;
     const removeAccountFn = opts.hub?.removeAccount;
     const addAccountFn = opts.hub?.addAccount;
+    const renameAccountFn = opts.hub?.renameAccount;
     const update = opts.hub?.update ?? null;
     const firstRun = showActions && Boolean(opts.hub?.firstRun);
     const tools: HubTool[] = opts.hub?.tools ?? [];
     const initialProfiles = opts.hub?.profiles ?? [];
     const activateProfileFn = opts.hub?.activateProfile;
     const addProfileFn = opts.hub?.addProfile;
+    const renameProfileFn = opts.hub?.renameProfile;
     const removeProfileFn = opts.hub?.removeProfile;
     const setProfileAccountFn = opts.hub?.setProfileAccount;
     // The Accounts/Profiles panels only appear when the hub wired their operations in.
@@ -178,7 +180,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
                 })),
             h(box, { flexGrow: 1 }),
             txt(selectedAcc ? ` ${selectedAcc.dir}` : " ", { fg: COL.gray, truncate: true }),
-            txt("enter set active   c connect/login   a add   d remove", { fg: COL.gray, marginTop: 1, truncate: true }),
+            txt("enter set active   c connect/login   a add   r rename   d remove", { fg: COL.gray, marginTop: 1, truncate: true }),
         ]);
     };
 
@@ -200,7 +202,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
                         txt(`${r.summary}  `, { fg: COL.gray, truncate: true }));
                 })),
             h(box, { flexGrow: 1 }),
-            txt("enter set active   a add   e edit accounts   d remove", { fg: COL.gray, marginTop: 1, truncate: true }),
+            txt("enter set active   a add   e edit accounts   r rename   d remove", { fg: COL.gray, marginTop: 1, truncate: true }),
         ]);
 
     const renderRemoveConfirm = (message: string, index: number, onChoose: (i: number) => void): RNode =>
@@ -356,6 +358,10 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         // Two-step add flow: pick the tool in a searchable selector, then type the
         // account name. `query`/`cursor` drive the tool step only.
         const [adding, setAdding] = useState<{ step: "tool" | "name"; tool: string; toolLabel: string; query: string; cursor: number; error?: string } | null>(null);
+        // Rename overlays: the same name-input dialog as the add flows, pre-targeted
+        // at the selected account/profile; errors come back inline from the callback.
+        const [renaming, setRenaming] = useState<{ tool: string; toolLabel: string; name: string; error?: string } | null>(null);
+        const [profRename, setProfRename] = useState<{ name: string; error?: string } | null>(null);
         const [connectPrompt, setConnectPrompt] = useState<{ tool: string; account: string; index: number } | null>(null);
         const [profiles, setProfiles] = useState<HubProfile[]>(initialProfiles);
         const [profCursor, setProfCursor] = useState(0);
@@ -537,6 +543,21 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             setAccCursor(idx >= 0 ? idx : 0);
             setConnectPrompt({ tool, account: name, index: 0 });
         };
+        // Rename flow: only managed accounts (never a tool's built-in "default").
+        const startRename = (i: number): void => {
+            const acc = accounts[i];
+            if (acc && acc.removable && renameAccountFn) setRenaming({ tool: acc.tool, toolLabel: acc.toolLabel, name: acc.name });
+        };
+        const submitRename = (value: string): void => {
+            const newName = value.trim();
+            if (!renameAccountFn || !renaming || !newName) { setRenaming(null); return; }
+            const res = renameAccountFn(renaming.tool, renaming.name, newName);
+            if (!res.ok) { setRenaming({ ...renaming, error: res.error }); return; }
+            setAccounts(res.accounts);
+            setRenaming(null);
+            const idx = res.accounts.findIndex((a) => a.tool === renaming.tool && a.name === newName);
+            setAccCursor(idx >= 0 ? idx : 0);
+        };
         const activateProfileRow = (i: number): void => {
             const row = profRows[i];
             if (!row || !activateProfileFn || row.active) return;
@@ -582,6 +603,21 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             if (!res.ok) { setProfEdit({ ...profEdit, error: res.error }); return; }
             setProfiles(res.profiles);
             setProfEdit(null);
+        };
+        // Profile rename: row 0 is the synthetic "(none)" and can never be renamed.
+        const startProfRename = (i: number): void => {
+            const row = profRows[i];
+            if (row && row.name && renameProfileFn) setProfRename({ name: row.name });
+        };
+        const submitProfRename = (value: string): void => {
+            const newName = value.trim();
+            if (!renameProfileFn || !profRename || !newName) { setProfRename(null); return; }
+            const res = renameProfileFn(profRename.name, newName);
+            if (!res.ok) { setProfRename({ ...profRename, error: res.error }); return; }
+            setProfiles(res.profiles);
+            setProfRename(null);
+            const idx = res.profiles.findIndex((p) => p.name === newName);
+            setProfCursor(idx >= 0 ? idx + 1 : 0); // +1 for the "(none)" row
         };
         const requestProfRemove = (i: number): void => {
             const row = profRows[i];
@@ -632,6 +668,10 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
                 }
                 return;
             }
+
+            // Rename overlays: the focused input owns typing; only Escape cancels.
+            if (renaming) { if (esc) setRenaming(null); return; }
+            if (profRename) { if (esc) setProfRename(null); return; }
 
             // Profile overlays mirror the add-account flow: the focused input owns
             // typing; the global handler only navigates, selects and cancels.
@@ -705,8 +745,10 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             if (focusRight && accountsMode && ch === "d") { requestRemove(accCursor); return; }
             if (focusRight && accountsMode && ch === "c") { connectSelected(accCursor); return; }
             if (focusRight && accountsMode && ch === "a") { startAdd(); return; }
+            if (focusRight && accountsMode && ch === "r") { startRename(accCursor); return; }
             if (focusRight && profilesMode && ch === "a") { if (addProfileFn) setProfAdd({}); return; }
             if (focusRight && profilesMode && ch === "e") { startProfEdit(profCursor); return; }
+            if (focusRight && profilesMode && ch === "r") { startProfRename(profCursor); return; }
             if (focusRight && profilesMode && ch === "d") { requestProfRemove(profCursor); return; }
             if (up || ch === "k") {
                 if (focusRight && category) setSetIndex((i) => Math.max(0, i - 1));
@@ -741,6 +783,10 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         // header
         const headerRight = adding
             ? txt("new account", { fg: COL.cyan })
+            : renaming
+            ? txt("rename account", { fg: COL.cyan })
+            : profRename
+            ? txt("rename profile", { fg: COL.cyan })
             : profAdd
             ? txt("new profile", { fg: COL.cyan })
             : profEdit
@@ -778,6 +824,10 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             });
         } else if (adding) {
             content = renderAddInput({ title: `New ${adding.toolLabel} account name`, placeholder: "e.g. work", error: adding.error, onSubmit: submitAdd });
+        } else if (renaming) {
+            content = renderAddInput({ title: `Rename ${renaming.toolLabel} account '${renaming.name}'`, placeholder: "new name", error: renaming.error, onSubmit: submitRename });
+        } else if (profRename) {
+            content = renderAddInput({ title: `Rename profile '${profRename.name}'`, placeholder: "new name", error: profRename.error, onSubmit: submitProfRename });
         } else if (profAdd) {
             content = renderAddInput({ title: "New profile name", placeholder: "e.g. work", error: profAdd.error, onSubmit: submitProfAdd });
         } else if (profEdit) {
@@ -831,9 +881,9 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         const footerLine = (s: string): RNode =>
             h(box, { width: size.columns, paddingLeft: 1, paddingRight: 1 }, txt(s, { fg: COL.gray, attributes: DIM }));
         const menuNav = focusRight && profilesMode
-            ? "up/down move   enter set active   tab back"
+            ? "up/down move   enter set active   a add   e edit   r rename   d remove   tab back"
             : focusRight && accountsMode
-            ? "up/down move   enter set active   c connect   a add   d remove   tab back"
+            ? "up/down move   enter set active   c connect   a add   r rename   d remove   tab back"
             : focusRight && action
             ? (action === "skills"
                 ? "up/down move   space toggle   g scope   enter install   tab back"
@@ -846,6 +896,8 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             footer = footerLine("type to search   up/down move   enter select   esc cancel");
         } else if (adding || profAdd) {
             footer = footerLine("type a name   enter create   esc cancel");
+        } else if (renaming || profRename) {
+            footer = footerLine("type the new name   enter rename   esc cancel");
         } else if (profRemove) {
             footer = footerLine("y remove   n / esc cancel");
         } else if (connectPrompt) {
@@ -866,7 +918,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
 
         // A one-line "update available" banner under the title, shown only in the plain
         // menu view (not over an overlay or the result/running panels).
-        const noOverlay = !adding && !profAdd && !profEdit && !profRemove && !connectPrompt && !removeConfirm && !confirm;
+        const noOverlay = !adding && !renaming && !profRename && !profAdd && !profEdit && !profRemove && !connectPrompt && !removeConfirm && !confirm;
         const updateBanner = update && mode === "menu" && noOverlay
             ? h(box, { width: size.columns, flexDirection: "row", paddingLeft: 1, paddingRight: 1 },
                 txt(`Update available  ${update.current} -> ${update.latest}   `, { fg: COL.yellow, attributes: BOLD }),

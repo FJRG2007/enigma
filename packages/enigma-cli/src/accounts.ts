@@ -29,7 +29,7 @@
 import { spawn } from "node:child_process";
 import { homedir } from "node:os";
 import { join, resolve, sep } from "node:path";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { isDir, readJson, resolveBin } from "./util";
 
 /**
@@ -391,6 +391,43 @@ export function removeAccount(toolName: string, name: string): void {
     writeRegistry(reg);
 }
 
+/**
+ * Rename a managed account for a tool: moves its config directory to the new
+ * name's path (only when it is a managed dir inside the tool's base - a tampered
+ * registry can never make rename touch an arbitrary path) and updates the
+ * registry, the active pointer and any profile mapping that pinned the old name.
+ * Refuses the built-in "default" and name collisions.
+ */
+export function renameAccount(toolName: string, oldName: string, newName: string): Account {
+    const tool = getTool(toolName);
+    if (oldName === DEFAULT_NAME) throw new Error(`The '${DEFAULT_NAME}' account (${tool.label}'s existing config) cannot be renamed.`);
+    validateAccountName(newName);
+    const reg = readRegistry();
+    const bucket = bucketOf(reg, toolName);
+    const account = bucket.accounts.find((a) => a.name === oldName);
+    if (!account) throw new Error(`No such ${toolName} account: '${oldName}'.`);
+    if (newName === oldName) return account;
+    if (bucket.accounts.some((a) => a.name === newName)) throw new Error(`A ${toolName} account named '${newName}' already exists.`);
+
+    const base = accountsBase(tool);
+    const newDir = join(base, newName);
+    if (isWithinBase(account.dir, base)) {
+        if (isDir(newDir)) throw new Error(`Directory already exists: ${newDir}.`);
+        if (isDir(account.dir)) renameSync(account.dir, newDir);
+        account.dir = newDir;
+    }
+    account.name = newName;
+    if (bucket.active === oldName) bucket.active = newName;
+    reg.tools[toolName] = bucket;
+    // Re-point any profile mapping that pinned the old name, so profiles keep
+    // resolving to the same config dir after the rename.
+    for (const mapping of Object.values(reg.profiles.items)) {
+        if (mapping[toolName] === oldName) mapping[toolName] = newName;
+    }
+    writeRegistry(reg);
+    return account;
+}
+
 // --- profiles --------------------------------------------------------------------
 
 /** Every profile with its mappings and an `active` flag. */
@@ -413,6 +450,23 @@ export function addProfile(name: string): ProfileView {
     reg.profiles.items[name] ??= {};
     writeRegistry(reg);
     return { name, accounts: { ...reg.profiles.items[name]! }, active: reg.profiles.active === name };
+}
+
+/**
+ * Rename a profile, keeping its mappings and following the active pointer.
+ * Profile names follow the account-name rules; collisions are refused.
+ */
+export function renameProfile(oldName: string, newName: string): void {
+    validateAccountName(newName);
+    const reg = readRegistry();
+    const mapping = reg.profiles.items[oldName];
+    if (!mapping) throw new Error(`No such profile: '${oldName}'.`);
+    if (newName === oldName) return;
+    if (newName in reg.profiles.items) throw new Error(`A profile named '${newName}' already exists.`);
+    delete reg.profiles.items[oldName];
+    reg.profiles.items[newName] = mapping;
+    if (reg.profiles.active === oldName) reg.profiles.active = newName;
+    writeRegistry(reg);
 }
 
 /** Delete a profile, clearing the active pointer if it referenced it. */
