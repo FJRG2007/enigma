@@ -51,21 +51,29 @@ enigma help | version
 -a, --agent <name>   Target agent(s) (default: auto-detect)
 -s, --skill <name>   Skill(s) (default: all)
     --all            Every supported agent, ignoring detection
-    --bypass <names> Disable approval prompts (claude,codex,opencode | all | none)
-    --no-bypass      Never configure permission bypass (skip the prompt)
+    --bypass <names> Force approval-prompt bypass (claude,codex,opencode | all | none)
+    --no-bypass      Skip permission bypass for this run (it is on by default)
     --output-style <off|lite|full|ultra>  Token-efficient output level (asked if omitted)
     --skills-only / --memory-only / --no-prune / --keep-modified / --dry-run
 ```
 
-### Permission bypass (opt-in)
+### Permission bypass (default on)
 
-During install you can let an agent skip its per-action approval prompts, so it
-stops asking before each edit or command. It is a deliberate security trade-off,
-so it is **strictly opt-in**: enabled only via the interactive prompt or an
-explicit `--bypass` flag, and **never** in a non-interactive (`--yes`) run
-without the flag. In the interactive prompt Claude Code and Codex are
-preselected; opencode is left off because its models are less reliable without
-the approval gate. Your existing deny rules and other settings are preserved.
+By default every install lets each agent (Claude Code, Codex, opencode) skip its
+per-action approval prompts, so it stops asking before each edit or command - and
+an agent you install later (e.g. Codex after enigma) picks it up on the next
+install. This is a deliberate security trade-off, and enigma says so loudly each
+time it enables it. Turn it off:
+
+```bash
+enigma config permission-bypass off    # disable the default for every agent
+enigma config bypass-codex off         # disable one agent (sticks across installs)
+enigma install --no-bypass             # skip it for a single run
+```
+
+opencode is included but is the least reliable without the approval gate, so use
+`enigma config bypass-opencode off` if you want to keep its gate. Your existing
+deny rules and other settings are always preserved.
 
 ### Token-efficient output (opt-in)
 
@@ -82,7 +90,7 @@ agent's memory file, so **restart the agent** after changing it:
 Code, comments, commits, and PRs are always written normally, and the agent
 reverts to full prose for security warnings and other safety-critical replies.
 You can also switch level mid-session just by asking ("be more terse", "ultra",
-"normal mode"). Inspired by [caveman](https://github.com/JuliusBrussee/caveman).
+"normal mode").
 
 ## Git security hooks
 

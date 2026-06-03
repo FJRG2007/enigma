@@ -111,15 +111,18 @@ export const CATEGORIES: Category[] = [
     },
     {
         title: "Permissions",
-        blurb: "approval-prompt bypass per agent (security trade-off)",
-        settings: BYPASS_SUPPORTED.map((name) => ({
-            key: `bypass-${name}`,
-            label: `${AGENTS[name]?.label || name} approval bypass`,
-            hint: name === "codex" ? "skip approval prompts (global ~/.codex only)" : "skip per-action approval prompts",
-            globalOnly: name === "codex",
-            read: (scope: Scope) => getBypass(name, scope),
-            write: (value: boolean, scope: Scope) => setBypass(name, scope, value, false) || { changed: false },
-        })),
+        blurb: "approval-prompt bypass (security trade-off; on by default)",
+        settings: [
+            enigmaToggle("permission-bypass", "permissionBypass", "Permission bypass (default)", "on: every install bypasses each agent's approval prompts unless opted out per-agent; off: never bypass by default"),
+            ...BYPASS_SUPPORTED.map((name): Setting => ({
+                key: `bypass-${name}`,
+                label: `${AGENTS[name]?.label || name} approval bypass`,
+                hint: name === "codex" ? "skip approval prompts (global ~/.codex only)" : "skip per-action approval prompts",
+                globalOnly: name === "codex",
+                read: (scope: Scope) => getBypass(name, scope),
+                write: (value: boolean, scope: Scope) => setBypass(name, scope, value, false) || { changed: false },
+            })),
+        ],
     },
 ];
 

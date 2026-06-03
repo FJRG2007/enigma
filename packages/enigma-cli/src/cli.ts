@@ -120,7 +120,7 @@ Commands:
 
 Config keys: commit-emoji, update-notifier, fullscreen, parallel-subagents,
              output-style (off|lite|full|ultra), claude-attribution,
-             bypass-claude, bypass-codex, bypass-opencode
+             permission-bypass, bypass-claude, bypass-codex, bypass-opencode
 
 Install options:
   -g, --global         Install at user level
@@ -130,8 +130,8 @@ Install options:
       --all            Target every supported agent, ignoring detection
       --skills-only    Only skill folders   --memory-only  Only memory files
       --no-prune       Keep orphaned skills  --keep-modified  Don't overwrite local edits
-      --bypass <names> Disable approval prompts for agents (claude,codex,opencode | all | none)
-      --no-bypass      Never configure permission bypass (skip the prompt)
+      --bypass <names> Force approval-prompt bypass (claude,codex,opencode | all | none)
+      --no-bypass      Skip permission bypass for this run (on by default)
       --output-style <off|lite|full|ultra>  Token-efficient output level (asked if omitted)
       --dry-run        Show the plan without writing
 

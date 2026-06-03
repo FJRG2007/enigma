@@ -4,9 +4,13 @@
  * Claude Code (settings.json `permissions.defaultMode`), Codex (config.toml
  * `approval_policy`), opencode (opencode.json `permission`).
  *
- * Bypassing approvals is a deliberate least-privilege downgrade, so it is
- * strictly opt-in: enabled only via the interactive prompt or an explicit
- * `--bypass` flag, never silently in non-interactive (`--yes`) runs.
+ * Bypassing approvals is a deliberate least-privilege downgrade. It is ON by
+ * default for every supported agent on install (the `permissionBypass` config
+ * flag), so an agent installed later (e.g. Codex after enigma) gets it on the
+ * next install. The user can opt out globally (`enigma config permission-bypass
+ * off`) or per-agent (`enigma config bypass-<name> off`, recorded in
+ * `bypassDisabled` so it is never re-enabled), or skip it for one run with
+ * `--no-bypass`. Every enable is logged loudly since approval prompts go off.
  */
 
 import { homedir } from "node:os";
@@ -15,26 +19,22 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import * as p from "@clack/prompts";
 import { AGENTS } from "./agents";
 import { isDir, readJson } from "./util";
+import { readConfig, setBypassDisabled } from "./config";
 import { enableClaudeBypass, getClaudeBypass, setClaudeBypass } from "./claude";
 import type { Agent } from "./agents";
 
 /** Agents that expose a permission-bypass switch. */
 export const BYPASS_SUPPORTED = ["claude", "codex", "opencode"];
 
-/**
- * Preselected in the interactive prompt. opencode is intentionally excluded:
- * its supported models are less reliable, so removing the approval gate there
- * is riskier and should be a conscious choice rather than a default.
- */
-const BYPASS_DEFAULT_ON = new Set(["claude", "codex"]);
-
 interface BypassWrite { path: string; changed: boolean; }
 
 /**
  * Decide which agents get permission-bypass. Precedence: `--no-bypass` wins
- * (none); then an explicit `--bypass` list; then the interactive prompt
- * (claude+codex preselected). A non-interactive run without a flag returns []
- * so a security downgrade is never applied silently.
+ * (none); then an explicit `--bypass` list; then the default-on policy - every
+ * supported agent except those the user opted out of (`permissionBypass` off
+ * disables the whole default; `bypassDisabled` excludes specific agents). The
+ * default applies in non-interactive (`--yes`) runs too; an interactive run still
+ * shows a review prompt with the defaults preselected.
  */
 export async function resolveBypassSelection(
     candidates: Agent[],
@@ -51,19 +51,24 @@ export async function resolveBypassSelection(
         if (req.includes("all")) return names;
         return names.filter((n) => req.includes(n));
     }
-    if (!interactive) return [];
+
+    const cfg = readConfig().config;
+    if (!cfg.permissionBypass) return [];                       // global opt-out
+    const defaults = names.filter((n) => !cfg.bypassDisabled.includes(n));
+    if (!defaults.length) return [];
+    if (!interactive) return defaults;                          // default-on applies in --yes runs too
 
     const r = await p.multiselect({
         message: "Bypass approval prompts for which agents? (security trade-off: the agent stops asking before acting)",
         options: supported.map((a) => ({
             value: a.name,
             label: a.label,
-            hint: BYPASS_DEFAULT_ON.has(a.name) ? "recommended" : "less reliable - off by default",
+            hint: a.name === "opencode" ? "on by default - note: less reliable without the approval gate" : "on by default",
         })),
-        initialValues: names.filter((n) => BYPASS_DEFAULT_ON.has(n)),
+        initialValues: defaults,
         required: false,
     });
-    if (p.isCancel(r)) return [];
+    if (p.isCancel(r)) return [];                               // cancel: do not apply this run
     return r as string[];
 }
 
@@ -109,6 +114,10 @@ export function getBypass(name: string, scope: "global" | "local"): boolean {
  * globally (it has no project-local config).
  */
 export function setBypass(name: string, scope: "global" | "local", on: boolean, dryRun: boolean): BypassWrite | null {
+    if (!BYPASS_SUPPORTED.includes(name)) return null;
+    // Persist the explicit choice so a deliberate "off" is never auto-re-enabled by a
+    // later install, and turning it back "on" clears that opt-out.
+    if (!dryRun) setBypassDisabled(name, !on);
     switch (name) {
         case "claude": return setClaudeBypass(scope, on, dryRun);
         case "codex": return on ? enableCodexBypass(dryRun) : disableCodexBypass(dryRun);
