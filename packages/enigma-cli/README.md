@@ -157,7 +157,7 @@ enigma config output-style off      # back to full prose (default)
 enigma install --output-style lite  # set it during install
 ```
 
-`on`/`off` also work (`on` = `lite`). Like the toggle above it edits the memory
+`on`/`off` also work (`on` = `full`, caveman's default). Like the toggle above it edits the memory
 file, so **restart your agent** after changing it. Code, comments, commits, and
 PRs stay normal, the agent reverts to full prose for security warnings and other
 safety-critical replies, and the level is switchable mid-session by asking
