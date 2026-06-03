@@ -151,6 +151,21 @@ export function enableClaudeBypass(scope: "global" | "local", dryRun: boolean): 
     return { path, changed: true };
 }
 
+/**
+ * Point Claude Code's statusline at `enigma statusline`, so an active token-efficient
+ * output mode surfaces an [ENIGMA] badge. Only writes when no statusline is configured
+ * yet - it never clobbers a user's own. The command prints nothing while the mode is
+ * off, so wiring it is harmless until the feature is enabled. Returns true if written.
+ */
+export function enableClaudeStatusline(scope: "global" | "local"): boolean {
+    const path = claudeSettingsPath(scope);
+    const current = readJson<Record<string, unknown>>(path) || {};
+    if (current.statusLine !== undefined) return false;
+    const next = { ...current, statusLine: { type: "command", command: "enigma statusline", padding: 0 } };
+    writeClaudeSettings(path, next);
+    return true;
+}
+
 /** Write Claude settings.json, creating the parent directory if needed. */
 function writeClaudeSettings(path: string, data: Record<string, unknown>): void {
     const dir = join(path, "..");

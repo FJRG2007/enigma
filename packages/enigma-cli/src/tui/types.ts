@@ -35,15 +35,20 @@ export interface HubAccount {
     removable: boolean;
 }
 /**
- * A follow-up the hub asks its caller to perform after the TUI tears down.
- * Connecting/logging in must run the tool's own login flow, which needs the
- * terminal the TUI owns - so the hub exits with this and cli.ts runs it.
+ * A follow-up the hub asks its caller to perform after the TUI tears down, because
+ * each needs the terminal the TUI owns: connecting runs the tool's own login flow;
+ * updating runs npm to replace the running binary. The hub exits with this and
+ * cli.ts runs it.
  */
-export type HubExitAction = { type: "connect"; tool: string; account: string };
+export type HubExitAction =
+    | { type: "connect"; tool: string; account: string }
+    | { type: "update" };
 export interface HubContext {
     agents: HubAgent[];
     protections: HubProtection[];
     runAction: (req: ActionRequest) => Promise<ActionResult>;
+    /** Present when a newer enigma-cli is available, so the hub can offer "update now". */
+    update?: { current: string; latest: string };
     /** Tool accounts and the operations the panel can perform without spawning. */
     accounts?: HubAccount[];
     activateAccount?: (tool: string, name: string) => HubAccount[];

@@ -91,6 +91,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
     const activateAccount = opts.hub?.activateAccount;
     const removeAccountFn = opts.hub?.removeAccount;
     const addAccountFn = opts.hub?.addAccount;
+    const update = opts.hub?.update ?? null;
     // The Accounts panel only appears when the hub wired account operations in.
     const hasAccounts = showActions && Boolean(activateAccount) && initialAccounts.length > 0;
     // No-op fallback for the settings-only TUI, where no action can be invoked.
@@ -506,6 +507,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
                 return;
             }
 
+            if (update && ch === "u") { onExit({ type: "update" }); return; }
             if (ch === "q" || esc) { dirty ? setConfirm({ index: 0 }) : onExit(); return; }
             if (ch === "s") { persistPending(); setPending({}); return; }
             if (ch === "x") { persistPending(); setPending({}); onExit(); return; }
@@ -628,10 +630,19 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         } else {
             footer = h(box, { width: size.columns, flexDirection: "row", justifyContent: "space-between", paddingLeft: 1, paddingRight: 1 },
                 txt(menuNav, { fg: COL.gray, attributes: DIM }),
-                txt("s save   x save & exit   q quit", { fg: COL.gray, attributes: DIM }));
+                txt(`${update ? "u update   " : ""}s save   x save & exit   q quit`, { fg: COL.gray, attributes: DIM }));
         }
 
-        return h(box, { width: size.columns, height: size.rows, flexDirection: "column" }, titleBar, content, footer);
+        // A one-line "update available" banner under the title, shown only in the plain
+        // menu view (not over an overlay or the result/running panels).
+        const noOverlay = !adding && !connectPrompt && !removeConfirm && !confirm;
+        const updateBanner = update && mode === "menu" && noOverlay
+            ? h(box, { width: size.columns, flexDirection: "row", paddingLeft: 1, paddingRight: 1 },
+                txt(`Update available  ${update.current} -> ${update.latest}   `, { fg: COL.yellow, attributes: BOLD }),
+                txt("press u to update now", { fg: COL.gray }))
+            : null;
+
+        return h(box, { width: size.columns, height: size.rows, flexDirection: "column" }, titleBar, updateBanner, content, footer);
     }
 
     // Warp does not fully support the alternate screen buffer: leaving it on exit can

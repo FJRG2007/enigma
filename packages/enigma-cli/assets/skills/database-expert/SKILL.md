@@ -19,9 +19,20 @@ description: Senior database architecture - schema design, normalization and ant
 2. NEVER duplicate data, unless the value is expensive to compute AND the use case justifies persisting it.
 3. ALWAYS encrypt data that legally or contractually requires it (RGPD/GDPR and equivalents).
 4. ALWAYS design for large-scale growth: optimal, scalable, fast, and secure by default.
+5. ALWAYS use UUID primary keys and identifiers; NEVER use auto-increment, serial, or IDENTITY integer IDs.
 
-- These four directives take priority over convenience or speed of implementation.
+- These five directives take priority over convenience or speed of implementation.
 - If a request conflicts with them, surface the conflict and propose the compliant alternative before proceeding.
+
+---
+
+## Identifier Policy (Non-Negotiable)
+
+- Every primary key and every externally exposed identifier MUST be a UUID. NEVER use auto-increment, SERIAL, BIGSERIAL, IDENTITY, AUTO_INCREMENT, or any incrementing integer/sequence as an entity ID - no exceptions, in any datastore.
+- Prefer monotonic UUIDv7 or ULID for index locality and write performance; use random UUIDv4 only when unpredictability matters more than locality. Store IDs in a native UUID type (or 16-byte binary), not a formatted string column where the engine offers UUID.
+- Why: sequential integer IDs are enumerable (IDOR/scraping risk), leak row counts and growth rate, and collide across shards, replicas, and offline/merge flows. UUIDs can be generated client-side before insert and stay unique across distributed systems.
+- Generate the identifier at the application/domain layer (or via a database UUID default) so an entity owns its identity before it is persisted.
+- Natural/business keys may still back UNIQUE constraints, but the surrogate primary key is always a UUID.
 
 ---
 
@@ -81,8 +92,7 @@ Any denormalized or duplicated value MUST have:
 
 - Design the schema around the real access patterns, not only the entity model.
 - Choose correct, minimal data types (smallest type that safely fits; native date/time, numeric, boolean, UUID, enum types).
-- Use surrogate keys (BIGINT identity / UUIDv7 or ULID for distributed inserts) where natural keys are unstable or wide.
-- Prefer monotonic keys (UUIDv7/ULID) over UUIDv4 for write locality and index health.
+- The surrogate primary key is always a UUID (see Identifier Policy) - never an auto-increment/IDENTITY integer; prefer monotonic UUIDv7 or ULID over random UUIDv4 for write locality and index health.
 
 ### Indexing Rules
 
@@ -200,6 +210,7 @@ Any denormalized or duplicated value MUST have:
 
 ## Anti-Patterns (Never Do)
 
+- Using auto-increment / serial / IDENTITY integer primary keys, or exposing sequential numeric IDs instead of UUIDs.
 - Duplicating data without a documented sync strategy and justification.
 - Storing easily computable values that should be derived at read time.
 - SELECT * on hot paths or fetching columns that are not used.

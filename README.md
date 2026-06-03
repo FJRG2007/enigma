@@ -84,7 +84,7 @@ agent's memory file, so **restart the agent** after changing it:
 
 - `off` - normal full prose (default).
 - `lite` - professional and tight: drops filler, keeps grammar and your language.
-- `full` - shorter, caveman-style fragments.
+- `full` - shorter, drops articles and uses fragments.
 - `ultra` - telegraphic, maximum compression.
 
 Code, comments, commits, and PRs are always written normally, and the agent
