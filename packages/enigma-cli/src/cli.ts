@@ -232,14 +232,14 @@ async function runAccountCli(opts: CliOptions, interactive: boolean): Promise<nu
 /**
  * Print the [ENIGMA] status badge for an agent status bar (e.g. Claude Code's
  * statusLine). Always shows `[ENIGMA]`; when token-efficient output is active it
- * appends the level, e.g. `[ENIGMA:FULL]` / `[ENIGMA:ULTRA]`. Cyan unless NO_COLOR.
+ * appends the level, e.g. `[ENIGMA:FULL]` / `[ENIGMA:ULTRA]`. Amber unless NO_COLOR.
  * Never throws or prints noise - a status bar must stay quiet.
  */
 function printStatusline(): void {
     try {
         const style = readConfig().config.outputStyle;
         const label = (!style || style === "off") ? "ENIGMA" : `ENIGMA:${style.toUpperCase()}`;
-        process.stdout.write(process.env.NO_COLOR ? `[${label}]` : `\x1b[36m[${label}]\x1b[0m`);
+        process.stdout.write(process.env.NO_COLOR ? `[${label}]` : `\x1b[38;5;172m[${label}]\x1b[0m`);
     } catch {
         // A status bar command must never error or emit noise.
     }

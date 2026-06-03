@@ -3,6 +3,6 @@
   "version": "1.4.0",
   "provider": "FJRG2007/enigma",
   "description": "Core engineering execution policy and harness orchestration (highest-authority rules).",
-  "cliVersion": "1.6.8",
+  "cliVersion": "1.6.9",
   "sha": "c9c69c59516794311cb7b306ed4d4ad971824de3689a39c2b86c7669c73f2e8b"
 }
