@@ -14,8 +14,9 @@
  * OpenTUI enables mouse capture by default (useMouse).
  */
 
-import { CATEGORIES, ALL_SETTINGS, valueLabel } from "../settings-registry";
+import { CATEGORIES, ALL_SETTINGS, valueLabel, invalidateSettingReads } from "../settings-registry";
 import { applyMemoryToggles } from "../skills";
+import { onGhTelemetryChange } from "../github";
 import type { Scope, Setting } from "../settings-registry";
 import type { HubContext, HubAccount, HubExitAction, ActionRequest, ActionResult } from "./types";
 
@@ -294,6 +295,11 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         const category = current.kind === "category" ? CATEGORIES[current.catIndex]! : null;
         const action = current.kind === "action" ? current.action : null;
         const accountsMode = current.kind === "accounts";
+
+        // Settings render instantly from caches; when gh's background revalidation
+        // finds a different real value, bust the read cache and re-render.
+        const [, setGhTick] = useState(0);
+        useEffect(() => onGhTelemetryChange(() => { invalidateSettingReads(); setGhTick((t) => t + 1); }), []);
 
         useEffect(() => {
             if (!action) return;
