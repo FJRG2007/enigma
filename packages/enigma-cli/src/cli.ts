@@ -18,10 +18,11 @@ import { runConfigCli } from "./settings";
 import { readConfig } from "./config";
 import { getAvailableUpdate, notifyUpdate, runUpdate } from "./update";
 import {
-    DEFAULT_NAME, DEFAULT_TOOL, TOOL_NAMES, addAccount, getActive, getTool,
-    isToolName, launchTool, listAccounts, loginTool, removeAccount, setActive,
+    DEFAULT_NAME, DEFAULT_TOOL, TOOL_NAMES, addAccount, addProfile, getActive, getTool,
+    isToolName, launchTool, listAccounts, listProfiles, loginTool, removeAccount,
+    removeProfile, setActive, setActiveProfile, setProfileAccount, unsetProfileAccount,
 } from "./accounts";
-import type { HubAccount, HubExitAction } from "./tui/types";
+import type { HubAccount, HubExitAction, HubProfile } from "./tui/types";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 // In the compiled binary __dirname lives in Bun's virtual fs (no package.json on
@@ -31,7 +32,8 @@ const PKG = readJson<{ version?: string }>(join(__dirname, "..", "package.json")
 
 // Fixed commands plus one launch command per supported tool (e.g. `enigma claude`).
 const COMMANDS = new Set<string>([
-    "install", "security", "guard", "seal", "check", "config", "account", "accounts", "statusline", "help", "version",
+    "install", "security", "guard", "seal", "check", "config", "account", "accounts",
+    "profile", "profiles", "statusline", "help", "version",
     ...TOOL_NAMES,
 ]);
 
@@ -60,7 +62,10 @@ function parseArgs(argv: string[]): CliOptions {
     for (let i = 0; i < argv.length; i++) {
         const a = argv[i]!;
         const next = (): string => argv[++i]!;
-        if (i === 0 && COMMANDS.has(a)) { opts.command = a === "accounts" ? "account" : a; continue; }
+        if (i === 0 && COMMANDS.has(a)) {
+            opts.command = a === "accounts" ? "account" : a === "profiles" ? "profile" : a;
+            continue;
+        }
         // Everything after a literal `--` is forwarded verbatim (e.g. to Claude Code).
         if (a === "--") { opts.passthrough.push(...argv.slice(i + 1)); break; }
         switch (a) {
@@ -106,9 +111,10 @@ Commands:
   guard [--all]        Run the commit guard (staged files, or --all for every tracked file)
   config [key val]     Configure settings: no args opens the interactive menu;
                        'config <key> <on|off> [-g|-l]' sets one (e.g. config claude-attribution on)
-  claude [account]     Launch Claude Code using an account's config (active if omitted);
+  <tool> [account]     Launch a tool (claude | codex | opencode) with an account's
+                       config (resolution: explicit > active profile > tool active);
                        auto-syncs deployed skills first (see auto-sync config key);
-                       pass args to Claude after '--' (e.g. claude work -- --version)
+                       pass args to the tool after '--' (e.g. claude work -- --version)
   account <subcommand> Manage tool accounts (multi-login without logging out).
                        Defaults to Claude Code; target another tool with --tool <name>:
                          list                 List accounts (active one marked)
@@ -116,6 +122,14 @@ Commands:
                          use <name>           Set the active account
                          login|run <name>     Launch the tool with that account
                          remove <name>        Delete an account (-y to skip confirm)
+  profile <subcommand> Group one account per tool under a profile (e.g. 'work' =
+                       claude:acme + codex:acme); the active profile drives launches:
+                         list                       List profiles and their mappings
+                         add <name>                 Create a profile
+                         use <name|none>            Activate a profile (none = off)
+                         set <name> <tool> <acct>   Pin a tool's account in the profile
+                         unset <name> <tool>        Drop a tool from the profile
+                         remove <name>              Delete a profile (accounts stay)
   seal                 Maintenance: (re)compute skill content hashes
   check                Integrity gate: verify skills are well-formed and sealed
   statusline           Print the [ENIGMA] badge for an agent status bar (shows the active level)
@@ -158,6 +172,11 @@ Examples:
   enigma account add work --login     # create a 'work' account and log into it
   enigma claude work                  # run Claude Code as the 'work' account
   enigma account use personal         # make 'personal' the default account
+  enigma account add acme -t codex    # create a Codex account
+  enigma profile add work             # profile grouping one account per tool
+  enigma profile set work claude work # 'work' profile uses claude account 'work'
+  enigma profile set work codex acme  # ...and codex account 'acme'
+  enigma profile use work             # now 'enigma claude'/'enigma codex' use them
 `);
 }
 
@@ -195,9 +214,9 @@ async function runAccountCli(opts: CliOptions, interactive: boolean): Promise<nu
             console.log(`${spec.label} accounts:\n`);
             for (const a of accounts) {
                 const marker = a.active ? "*" : " ";
-                const email = a.email ?? "(not logged in)";
+                const identity = a.email ?? a.displayName ?? "(not logged in)";
                 const meta = a.name === DEFAULT_NAME ? "(existing config)" : a.lastUsed ? `last used ${a.lastUsed}` : "never used";
-                console.log(` ${marker} ${a.name.padEnd(14)} ${email.padEnd(30)} ${meta}`);
+                console.log(` ${marker} ${a.name.padEnd(14)} ${identity.padEnd(30)} ${meta}`);
                 console.log(`     ${a.dir}`);
             }
             console.log(`\nActive: ${getActive(tool)}. Launch with: enigma ${tool} [account].`);
@@ -247,6 +266,77 @@ async function runAccountCli(opts: CliOptions, interactive: boolean): Promise<nu
 }
 
 /**
+ * `enigma profile <subcommand>` surface: profiles group one account per tool and
+ * the active profile drives account resolution on launches. Returns an exit code.
+ */
+async function runProfileCli(opts: CliOptions, interactive: boolean): Promise<number> {
+    const [sub, name, tool, account] = opts.positionals;
+    try {
+        switch (sub) {
+            case undefined:
+            case "list":
+            case "ls": {
+                const profiles = listProfiles();
+                if (!profiles.length) {
+                    console.log("No profiles yet. Create one with: enigma profile add <name>.");
+                    return 0;
+                }
+                console.log("Profiles:\n");
+                for (const p of profiles) {
+                    const marker = p.active ? "*" : " ";
+                    const mappings = Object.entries(p.accounts).map(([t, a]) => `${t}=${a}`).join("  ") || "(no accounts pinned)";
+                    console.log(` ${marker} ${p.name.padEnd(14)} ${mappings}`);
+                }
+                console.log("\nActive profile drives 'enigma <tool>' account resolution; 'enigma profile use none' disables.");
+                return 0;
+            }
+            case "add": {
+                if (!name) { console.error("Usage: enigma profile add <name>"); return 1; }
+                addProfile(name);
+                console.log(`Profile '${name}' ready. Pin accounts with: enigma profile set ${name} <tool> <account>.`);
+                return 0;
+            }
+            case "use":
+            case "switch": {
+                if (!name) { console.error("Usage: enigma profile use <name|none>"); return 1; }
+                setActiveProfile(name === "none" ? null : name);
+                console.log(name === "none" ? "No active profile (tools use their own active accounts)." : `Active profile is now '${name}'.`);
+                return 0;
+            }
+            case "set": {
+                if (!name || !tool || !account) { console.error("Usage: enigma profile set <name> <tool> <account>"); return 1; }
+                setProfileAccount(name, tool, account);
+                console.log(`Profile '${name}': ${tool} -> '${account}'.`);
+                return 0;
+            }
+            case "unset": {
+                if (!name || !tool) { console.error("Usage: enigma profile unset <name> <tool>"); return 1; }
+                unsetProfileAccount(name, tool);
+                console.log(`Profile '${name}': ${tool} mapping removed.`);
+                return 0;
+            }
+            case "remove":
+            case "rm": {
+                if (!name) { console.error("Usage: enigma profile remove <name>"); return 1; }
+                if (!opts.yes && interactive) {
+                    const ok = await p.confirm({ message: `Remove profile '${name}'? (its accounts are kept)` });
+                    if (p.isCancel(ok) || !ok) { console.log("Aborted."); return 0; }
+                }
+                removeProfile(name);
+                console.log(`Removed profile '${name}'.`);
+                return 0;
+            }
+            default:
+                console.error(`Unknown profile subcommand: ${sub}. Try: list, add, use, set, unset, remove.`);
+                return 1;
+        }
+    } catch (err) {
+        console.error((err as Error).message);
+        return 1;
+    }
+}
+
+/**
  * Print the [ENIGMA] status badge for an agent status bar (e.g. Claude Code's
  * statusLine). Always shows `[ENIGMA]`; when token-efficient output is active it
  * appends the level, e.g. `[ENIGMA:FULL]` / `[ENIGMA:ULTRA]`. Amber unless NO_COLOR.
@@ -284,6 +374,7 @@ export async function run(argv: string[]): Promise<void> {
         process.exit(await launchTool(opts.command, opts.positionals[0] ?? null, opts.passthrough));
     }
     if (opts.command === "account") { process.exit(await runAccountCli(opts, interactive)); }
+    if (opts.command === "profile") { process.exit(await runProfileCli(opts, interactive)); }
 
     if (opts.command === "install") {
         p.intro("enigma - install agent skills");
@@ -319,8 +410,13 @@ export async function run(argv: string[]): Promise<void> {
         TOOL_NAMES.flatMap((tool) =>
             listAccounts(tool).map((a) => ({
                 tool, toolLabel: a.toolLabel, name: a.name, dir: a.dir,
-                email: a.email, active: a.active, removable: a.name !== DEFAULT_NAME,
+                email: a.email ?? a.displayName, active: a.active, removable: a.name !== DEFAULT_NAME,
             })));
+    const hubProfiles = (): HubProfile[] =>
+        listProfiles().map((p) => ({
+            name: p.name, active: p.active,
+            summary: Object.entries(p.accounts).map(([t, a]) => `${t}=${a}`).join("  ") || "(no accounts pinned)",
+        }));
     const discovered = discoverAgents();
     const buildCtx = () => ({
         agents: discovered.map((a) => ({ name: a.name, label: a.label, installed: a.installed })),
@@ -336,6 +432,9 @@ export async function run(argv: string[]): Promise<void> {
             try { addAccount(tool, name); return { ok: true, accounts: hubAccounts() }; }
             catch (err) { return { ok: false, error: (err as Error).message, accounts: hubAccounts() }; }
         },
+        tools: TOOL_NAMES.map((t) => ({ name: t, label: getTool(t).label })),
+        profiles: hubProfiles(),
+        activateProfile: (name: string) => { setActiveProfile(name || null); return hubProfiles(); },
         runAction: async (req: { action: "skills" | "security"; scope?: "global" | "local"; agents?: string[]; protections?: string[] }) => {
             const reporter = collectReporter();
             const title = req.action === "skills" ? "Install agent skills" : "Git security hooks";
