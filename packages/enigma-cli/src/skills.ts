@@ -282,7 +282,7 @@ async function resolveOutputStyle(opts: InstallOptions, scope: "global" | "local
             options: [
                 { value: "off", label: "Off", hint: "full prose (default)" },
                 { value: "lite", label: "Lite", hint: "professional terse - drop filler, keep grammar" },
-                { value: "full", label: "Full", hint: "caveman-style: drop articles, fragments" },
+                { value: "full", label: "Full", hint: "caveman-style: drop articles, fragments (caveman default)" },
                 { value: "ultra", label: "Ultra", hint: "telegraphic, maximum compression" },
             ],
             initialValue: readConfig().config.outputStyle,
