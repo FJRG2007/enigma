@@ -6,6 +6,7 @@
 
 import { existsSync, readdirSync, readFileSync, writeFileSync, cpSync, mkdirSync, rmSync } from "node:fs";
 import { dirname, join, resolve, relative, sep } from "node:path";
+import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 import * as p from "@clack/prompts";
@@ -172,6 +173,42 @@ function renderMemory(srcFile: string): string {
 function memoryStatus(srcFile: string, destFile: string): "install" | "identical" | "overwrite" {
     if (!existsSync(destFile)) return "install";
     return readFileSync(destFile, "utf8") === renderMemory(srcFile) ? "identical" : "overwrite";
+}
+
+// --- sync state ------------------------------------------------------------
+// ~/.enigma/state.json records the sha256 of every memory file enigma writes,
+// keyed by absolute destination path. A CLAUDE.md/AGENTS.md existing is NOT
+// proof enigma wrote it (users have their own), so auto-sync uses this record
+// to distinguish "stale because the package updated" (safe to rewrite) from
+// "user-authored or user-edited" (never touched silently).
+
+const STATE_FILE = join(homedir(), ".enigma", "state.json");
+interface SyncState { memory?: Record<string, string>; }
+
+const contentHash = (content: string): string => createHash("sha256").update(content).digest("hex");
+
+function readSyncState(): SyncState {
+    return readJson<SyncState>(STATE_FILE) || {};
+}
+
+function recordMemoryWrite(dest: string, content: string): void {
+    const state = readSyncState();
+    state.memory = { ...state.memory, [dest]: contentHash(content) };
+    mkdirSync(dirname(STATE_FILE), { recursive: true });
+    writeFileSync(STATE_FILE, JSON.stringify(state, null, 2) + "\n");
+}
+
+/** True when the file at `dest` is byte-identical to what enigma last wrote there. */
+function isEnigmaWritten(dest: string): boolean {
+    const recorded = (readSyncState().memory || {})[dest];
+    return Boolean(recorded) && existsSync(dest) && recorded === contentHash(readFileSync(dest, "utf8"));
+}
+
+/** Write the rendered memory file and record its hash so auto-sync can trust it later. */
+function writeMemory(src: string, dest: string): void {
+    const content = renderMemory(src);
+    writeFileSync(dest, content);
+    recordMemoryWrite(dest, content);
 }
 
 function computePrune(destSkillsDir: string, sourceNames: string[]): PruneEntry[] {
@@ -507,7 +544,7 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
             }
             for (const m of x.memory) {
                 if (memoryStatus(m.src, join(x.target.memory, m.name)) === "identical") continue;
-                writeFileSync(join(x.target.memory, m.name), renderMemory(m.src));
+                writeMemory(m.src, join(x.target.memory, m.name));
                 copied++;
             }
             for (const pr of x.prune) rmSync(pr.dir, { recursive: true, force: true });
@@ -555,9 +592,72 @@ export function applyMemoryToggles(scope: "global" | "local", dryRun = false): A
         for (const m of inspectMemory(agent)) {
             const dest = join(target.memory, m.name);
             if (!existsSync(dest) || memoryStatus(m.src, dest) === "identical") continue;
-            if (!dryRun) writeFileSync(dest, renderMemory(m.src));
+            if (!dryRun) writeMemory(m.src, dest);
             changed.push(agent);
         }
     }
     return changed;
+}
+
+/**
+ * True when `agent` already received an enigma deployment at `scope`: its skills
+ * dir contains a managed-provider skill, or its memory file was written by enigma
+ * (recorded in the sync state - a memory file merely EXISTING proves nothing, the
+ * user may have authored it). This is the consent marker auto-sync relies on - an
+ * agent without a deployment was never opted in, so sync must leave it untouched.
+ */
+export function hasDeployment(agent: Agent, scope: "global" | "local"): boolean {
+    const target = agent.targets[scope];
+    if (!target) return false;
+    const recorded = readSyncState().memory || {};
+    if (inspectMemory(agent).some((m) => join(target.memory, m.name) in recorded && existsSync(join(target.memory, m.name)))) return true;
+    return isDir(target.skills) && readdirSync(target.skills)
+        .some((e) => isManagedProvider(readSkillMeta(join(target.skills, e)).provider));
+}
+
+/**
+ * Silently bring EXISTING deployments up to date with the shipped assets, so a
+ * package update applies without re-running `enigma install`. For every agent
+ * (optionally filtered by name) and scope that already has a deployment: copy
+ * new/updated/unsealed skills, prune orphaned managed skills, and re-render the
+ * memory file. Locally-modified (tampered) skills are never overwritten, a memory
+ * file is only rewritten when it is byte-identical to what enigma last wrote
+ * (isEnigmaWritten), and a first deployment is never created - all of those stay
+ * explicit user decisions. Returns one human-readable line per agent+scope that
+ * changed, for a brief notice.
+ */
+export function syncDeployed(agentNames?: string[]): string[] {
+    const notices: string[] = [];
+    const skills = inspectSkills();
+    for (const agent of discoverAgents()) {
+        if (agentNames && !agentNames.includes(agent.name)) continue;
+        for (const scope of ["global", "local"] as const) {
+            const target = agent.targets[scope];
+            if (!target || !hasDeployment(agent, scope)) continue;
+            let changed = 0;
+            for (const sk of skills) {
+                const dest = join(target.skills, sk.name);
+                const kind = skillStatus(dest, sk.meta).kind;
+                if (kind === "identical" || kind === "tampered") continue;
+                mkdirSync(target.skills, { recursive: true });
+                cpSync(sk.src, dest, { recursive: true, force: true });
+                changed++;
+            }
+            for (const orphan of computePrune(target.skills, skills.map((s) => s.name))) {
+                rmSync(orphan.dir, { recursive: true, force: true });
+                changed++;
+            }
+            for (const m of inspectMemory(agent)) {
+                const dest = join(target.memory, m.name);
+                if (!existsSync(dest) || memoryStatus(m.src, dest) === "identical") continue;
+                // Only rewrite a memory file enigma wrote and the user has not
+                // touched since; a user-edited or user-authored file stays as-is.
+                if (!isEnigmaWritten(dest)) continue;
+                writeMemory(m.src, dest);
+                changed++;
+            }
+            if (changed) notices.push(`${agent.label}: ${changed} item(s) updated (${scope})`);
+        }
+    }
+    return notices;
 }

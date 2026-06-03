@@ -19,6 +19,13 @@ async function main() {
 
     try {
         await downloadBinary({ log: (message) => process.stdout.write(`enigma: ${message}\n`) });
+        // Next-step hint: the binary is ready, but skills only deploy when the user
+        // asks (explicit consent for writes to agent config dirs). After that first
+        // install, launching a tool via enigma keeps the deployment auto-synced.
+        process.stdout.write(
+            "enigma: ready. Next step: run `enigma` to set up your agents " +
+            "(non-interactive: `enigma install --all --yes`).\n",
+        );
     } catch (error) {
         process.stdout.write(
             `enigma: could not download the binary now (${error.message}). ` +

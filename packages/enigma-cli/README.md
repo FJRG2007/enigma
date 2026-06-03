@@ -8,12 +8,24 @@ committed.
 
 ## Install
 
+One command, no global install, no prompts - deploy the skills to every supported
+agent at user level:
+
 ```bash
-npm install -g enigma-cli      # provides the `enigma` command
-enigma                         # interactive: pick what to set up
+npx enigma-cli@latest install --all --yes
 ```
 
-Or run once without installing: `npx enigma-cli`.
+Or install the command and pick interactively:
+
+```bash
+npm install -g enigma-cli      # provides the `enigma` command
+enigma                         # interactive hub: pick what to set up
+```
+
+That first install is the only one you ever need to run by hand: afterwards,
+launching a tool through enigma (e.g. `enigma claude`) auto-syncs the deployed
+skills and memory with the installed package version (see
+[Auto-sync](#auto-sync-on-launch)).
 
 ## Commands
 
@@ -23,7 +35,8 @@ enigma install         Install/update agent skills
 enigma security        Set up git security hooks in the current repo
 enigma guard [--all]   Run the commit guard (staged files, or all tracked)
 enigma config [k v]    Show or set runtime toggles (e.g. config commit-emoji off)
-enigma claude [acct]   Launch Claude Code using an account (active if omitted)
+enigma claude [acct]   Launch Claude Code using an account (active if omitted);
+                       auto-syncs deployed skills first
 enigma account ...     Manage Claude Code accounts (list/add/use/login/remove)
 enigma seal            Maintenance: (re)compute skill content hashes
 enigma check           Integrity gate: verify skills are well-formed and sealed
@@ -44,6 +57,29 @@ preselects them; `--all` targets every supported agent.
 | opencode    | global | `~/.config/opencode/skills/`  | `~/.config/opencode/AGENTS.md` |
 
 (`--local` installs into the current project instead.)
+
+## Auto-sync on launch
+
+After the first `enigma install`, you never need to run it again: whenever you
+launch a tool through enigma (`enigma claude`, `enigma account run work`), enigma
+first compares the deployed skills/memory against the installed package version
+and silently refreshes anything that changed (new skills, updated versions,
+removed skills, memory-file edits). On by default; opt out with:
+
+```bash
+enigma config auto-sync off
+```
+
+Auto-sync is deliberately conservative:
+
+- It only touches agents/scopes that **already have** a deployment - it never
+  performs a first install (that stays your explicit `enigma install`).
+- Skills you modified locally are **never overwritten** (same rule as
+  `--keep-modified`).
+- The memory file (`CLAUDE.md` / `AGENTS.md`) is only rewritten when it is
+  byte-identical to what enigma last wrote (tracked in `~/.enigma/state.json`) -
+  a file you authored or edited is never touched.
+- A sync failure never blocks the launch; the tool starts anyway.
 
 ## Git security hooks
 

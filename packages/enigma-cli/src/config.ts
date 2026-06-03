@@ -32,6 +32,8 @@ export interface EnigmaConfig {
     fullscreen: boolean;
     parallelSubagents: boolean;
     outputStyle: OutputStyle;
+    /** Silently re-deploy updated skills/memory when launching a tool through enigma. */
+    autoSync: boolean;
     /** Master switch for applying permission bypass on install (default on). */
     permissionBypass: boolean;
     /** Agents the user explicitly opted out of bypass; never auto-enabled even when permissionBypass is on. */
@@ -52,10 +54,13 @@ export interface EnigmaConfig {
  * permissionBypass is on by default: every install enables each agent's bypass
  * (approval prompts off) unless the user opts out globally (this flag) or per-agent
  * (bypassDisabled). It is a deliberate security downgrade - keep it visible in output.
+ * autoSync is on by default: launching a tool through enigma (e.g. `enigma claude`)
+ * refreshes an EXISTING deployment so package updates apply without re-running
+ * `enigma install`. It never creates a first deployment (that stays explicit consent).
  */
 export const CONFIG_DEFAULTS: EnigmaConfig = {
     commitEmoji: true, updateNotifier: true, fullscreen: true, parallelSubagents: false, outputStyle: "off",
-    permissionBypass: true, bypassDisabled: [],
+    autoSync: true, permissionBypass: true, bypassDisabled: [],
 };
 
 export type EnigmaConfigKey = keyof EnigmaConfig;

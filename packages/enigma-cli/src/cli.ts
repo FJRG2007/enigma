@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import * as p from "@clack/prompts";
 import { readJson } from "./util";
 import { collectReporter } from "./reporter";
-import { installSkills, sealSources, checkSources } from "./skills";
+import { installSkills, sealSources, checkSources, syncDeployed, hasDeployment } from "./skills";
 import type { InstallOptions } from "./skills";
 import { setupGitHooks, GUARD_PROTECTIONS } from "./security";
 import { discoverAgents } from "./agents";
@@ -107,6 +107,7 @@ Commands:
   config [key val]     Configure settings: no args opens the interactive menu;
                        'config <key> <on|off> [-g|-l]' sets one (e.g. config claude-attribution on)
   claude [account]     Launch Claude Code using an account's config (active if omitted);
+                       auto-syncs deployed skills first (see auto-sync config key);
                        pass args to Claude after '--' (e.g. claude work -- --version)
   account <subcommand> Manage tool accounts (multi-login without logging out).
                        Defaults to Claude Code; target another tool with --tool <name>:
@@ -120,7 +121,7 @@ Commands:
   statusline           Print the [ENIGMA] badge for an agent status bar (shows the active level)
   help, version
 
-Config keys: commit-emoji, update-notifier, fullscreen, parallel-subagents,
+Config keys: commit-emoji, update-notifier, auto-sync, fullscreen, parallel-subagents,
              output-style (off|lite|full|ultra), claude-attribution,
              permission-bypass, bypass-claude, bypass-codex, bypass-opencode
 
@@ -158,6 +159,22 @@ Examples:
   enigma claude work                  # run Claude Code as the 'work' account
   enigma account use personal         # make 'personal' the default account
 `);
+}
+
+/**
+ * Keep an existing skills deployment fresh before handing the terminal to a tool:
+ * with autoSync on (default), silently re-deploys changed/new skills and the memory
+ * file for the launched tool's agent (tool names match agent names). It never
+ * creates a first deployment - that stays an explicit `enigma install` - and never
+ * blocks the launch: any sync error is reported and ignored.
+ */
+function autoSyncForLaunch(tool: string): void {
+    if (!readConfig().config.autoSync) return;
+    try {
+        for (const notice of syncDeployed([tool])) console.log(`enigma: synced ${notice}.`);
+    } catch (err) {
+        console.error(`enigma: skill auto-sync failed (${(err as Error).message}); launching anyway.`);
+    }
 }
 
 /**
@@ -209,7 +226,7 @@ async function runAccountCli(opts: CliOptions, interactive: boolean): Promise<nu
         }
         case "run": {
             if (!name) { console.error("Usage: enigma account run <name>"); return 1; }
-            try { return await launchTool(tool, name, opts.passthrough); }
+            try { autoSyncForLaunch(tool); return await launchTool(tool, name, opts.passthrough); }
             catch (err) { console.error((err as Error).message); return 1; }
         }
         case "remove":
@@ -262,7 +279,10 @@ export async function run(argv: string[]): Promise<void> {
     if (opts.command === "check") return checkSources();
     if (opts.command === "guard") { process.exit(runGuardCli(opts.all)); }
     if (opts.command === "config") { process.exit(await runConfigCli(opts.positionals, opts.scope, interactive)); }
-    if (opts.command && isToolName(opts.command)) { process.exit(await launchTool(opts.command, opts.positionals[0] ?? null, opts.passthrough)); }
+    if (opts.command && isToolName(opts.command)) {
+        autoSyncForLaunch(opts.command);
+        process.exit(await launchTool(opts.command, opts.positionals[0] ?? null, opts.passthrough));
+    }
     if (opts.command === "account") { process.exit(await runAccountCli(opts, interactive)); }
 
     if (opts.command === "install") {
@@ -301,9 +321,13 @@ export async function run(argv: string[]): Promise<void> {
                 tool, toolLabel: a.toolLabel, name: a.name, dir: a.dir,
                 email: a.email, active: a.active, removable: a.name !== DEFAULT_NAME,
             })));
+    const discovered = discoverAgents();
     const buildCtx = () => ({
-        agents: discoverAgents().map((a) => ({ name: a.name, label: a.label, installed: a.installed })),
+        agents: discovered.map((a) => ({ name: a.name, label: a.label, installed: a.installed })),
         protections: GUARD_PROTECTIONS,
+        // First run = nothing deployed anywhere: the hub preselects the install action
+        // and shows a setup banner so the first install is a couple of keystrokes.
+        firstRun: !discovered.some((a) => hasDeployment(a, "global") || hasDeployment(a, "local")),
         update: getAvailableUpdate(version) ?? undefined,
         accounts: hubAccounts(),
         activateAccount: (tool: string, name: string) => { setActive(tool, name); return hubAccounts(); },

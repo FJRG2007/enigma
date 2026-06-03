@@ -11,10 +11,10 @@
  * Used by bin/postinstall.mjs (at install) and bin/enigma.mjs (lazy, first run when
  * install scripts were skipped). Node builtins only.
  */
-
+import { dirname } from "node:path";
 import { createHash } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+
 import {
     ARCH,
     PLATFORM,
@@ -23,7 +23,7 @@ import {
     isWindows,
     loadChecksums,
     packageVersion,
-    platformKeys,
+    platformKeys
 } from "./platform.mjs";
 
 const DEFAULT_BASE = "https://github.com/FJRG2007/enigma/releases/download";
@@ -37,7 +37,7 @@ function selectAsset() {
         if (checksums[asset]) return { asset, sha256: checksums[asset] };
     }
     return null;
-}
+};
 
 /** Resolve the release-asset URL, allowing an env override for mirrors/tests. */
 function assetUrl(asset) {
@@ -45,13 +45,13 @@ function assetUrl(asset) {
     const url = `${base}/${asset}`;
     if (!url.startsWith("https://")) throw new Error(`Refusing non-HTTPS download URL: ${url}`);
     return url;
-}
+};
 
 /** Returns the installed binary path if already present, else null. */
 export function installedBinary() {
     const target = binTargetPath();
     return existsSync(target) ? target : null;
-}
+};
 
 /**
  * Download, verify and atomically install the binary. Returns its path.
@@ -59,10 +59,7 @@ export function installedBinary() {
  */
 export async function downloadBinary({ log = () => {} } = {}) {
     const choice = selectAsset();
-    if (!choice) {
-        const tried = platformKeys().map(assetName).join(", ") || `${PLATFORM}-${ARCH}`;
-        throw new Error(`No prebuilt enigma binary is available for this platform (looked for: ${tried}).`);
-    }
+    if (!choice) throw new Error(`No prebuilt enigma binary is available for this platform (looked for: ${platformKeys().map(assetName).join(", ") || `${PLATFORM}-${ARCH}`}).`);
 
     const url = assetUrl(choice.asset);
     log(`Downloading ${choice.asset}...`);
@@ -79,20 +76,16 @@ export async function downloadBinary({ log = () => {} } = {}) {
     }
 
     const actual = createHash("sha256").update(buffer).digest("hex");
-    if (actual !== choice.sha256) {
-        throw new Error(`Checksum mismatch for ${choice.asset}: expected ${choice.sha256}, got ${actual}.`);
-    }
-
+    if (actual !== choice.sha256) throw new Error(`Checksum mismatch for ${choice.asset}: expected ${choice.sha256}, got ${actual}.`);
+    
     const target = binTargetPath();
     mkdirSync(dirname(target), { recursive: true });
     const tmp = `${target}.download-${process.pid}`;
     writeFileSync(tmp, buffer);
     if (!isWindows) chmodSync(tmp, 0o755);
     // rename is atomic on POSIX; on Windows it fails over an existing file, so drop it first.
-    if (existsSync(target)) {
-        try { unlinkSync(target); } catch { /* in use; rename will surface the error */ }
-    }
+    if (existsSync(target)) try { unlinkSync(target); } catch { /* in use; rename will surface the error */ }
     renameSync(tmp, target);
     log(`Installed ${choice.asset} -> ${target}`);
     return target;
-}
+};

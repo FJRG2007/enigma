@@ -1,0 +1,53 @@
+name: Feature request
+description: Suggest an improvement or new capability for enigma.
+title: "[feat]: "
+labels: ["enhancement"]
+body:
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Pre-submission checklist
+      options:
+        - label: >-
+            I have searched the existing issues (open and closed) and confirmed this
+            is not a duplicate. I understand that knowingly filing duplicates may
+            result in a sanction or limits on participating in this repository.
+          required: true
+
+  - type: dropdown
+    id: tool
+    attributes:
+      label: Related coding agent
+      description: Which agent(s) is this request about, if any?
+      multiple: true
+      options:
+        - Claude Code
+        - OpenAI Codex
+        - OpenCode
+        - Other
+        - None (enigma itself)
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What problem or friction does this solve? What is the current workaround?
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: What you would like enigma to do.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+    validations:
+      required: false

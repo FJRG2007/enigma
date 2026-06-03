@@ -11,10 +11,10 @@
  * path. Node builtins only - no dependencies (it runs during install).
  */
 
-import { existsSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import os from "node:os";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
 
 // npm/Node "os" identifiers (win32, not "windows"); kept stable across the toolchain.
 const PLATFORMS = { win32: "win32", darwin: "darwin", linux: "linux" };
@@ -37,7 +37,7 @@ function isMusl() {
     } catch {
         return false;
     }
-}
+};
 
 /**
  * Ordered platform keys to try for this host, most specific first. The downloader
@@ -49,22 +49,22 @@ export function platformKeys() {
     const base = `${PLATFORM}-${ARCH}`;
     if (PLATFORM === "linux" && isMusl()) return [`${base}-musl`, base];
     return [base];
-}
+};
 
 /** Release asset name for a platform key, e.g. "enigma-win32-x64.exe". */
 export function assetName(key) {
     return `enigma-${key}${isWindows ? ".exe" : ""}`;
-}
+};
 
 /** On-disk path of the installed binary inside this package's bin/ directory. */
 export function binTargetPath() {
     return join(pkgRoot, "bin", isWindows ? "enigma-bin.exe" : "enigma-bin");
-}
+};
 
 /** This package's declared version (release tag is `v<version>`). */
 export function packageVersion() {
     return JSON.parse(readFileSync(join(pkgRoot, "package.json"), "utf8")).version;
-}
+};
 
 /** Parsed bin/checksums.json (asset name -> sha256 hex), or {} if absent. */
 export function loadChecksums() {
@@ -75,4 +75,4 @@ export function loadChecksums() {
     } catch {
         return {};
     }
-}
+};
