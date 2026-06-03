@@ -9,14 +9,40 @@
  * Reads/writes go through `gh config` itself rather than parsing gh's YAML, so
  * enigma stays agnostic to gh's config location (~/.config/gh vs %AppData%) and
  * key validation. gh's config is user-global only - there is no per-repo form.
+ *
+ * Reading via a child process is slow (~hundreds of ms on Windows), far too slow
+ * for a TUI that re-reads settings on every render. The display path therefore
+ * uses stale-while-revalidate: `getGhTelemetryCached` answers instantly from an
+ * in-process memo backed by ~/.enigma/cache.json, while one async revalidation
+ * per process fetches the real value and notifies subscribers (the TUI
+ * re-renders) if it differs. Only the very first read ever - no cache file yet -
+ * pays a synchronous probe. Writes go through gh synchronously (explicit user
+ * action) and write back to the cache, so it never goes stale via enigma itself.
  */
 
-import { spawnSync } from "node:child_process";
-import { resolveBin } from "./util";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { isDir, readJson, resolveBin } from "./util";
+
+/** Last-known gh state: enabled/disabled, or null when gh is not installed. */
+export type GhTelemetry = boolean | null;
+
+const CACHE_FILE = join(homedir(), ".enigma", "cache.json");
+interface EnigmaCache { ghTelemetry?: GhTelemetry; ghTelemetryCheckedAt?: number; }
+
+let memo: GhTelemetry | "unknown" = "unknown";
+let revalidated = false;
+const listeners = new Set<() => void>();
+
+function ghBin(): string | null {
+    return process.env.ENIGMA_GH_BIN || resolveBin("gh");
+}
 
 /** Run `gh config <args>` and return trimmed stdout, or null when gh is unusable. */
 function ghConfig(args: string[]): string | null {
-    const bin = process.env.ENIGMA_GH_BIN || resolveBin("gh");
+    const bin = ghBin();
     if (!bin) return null;
     try {
         const r = spawnSync(bin, ["config", ...args], { encoding: "utf8", windowsHide: true, timeout: 10_000 });
@@ -29,27 +55,91 @@ function ghConfig(args: string[]): string | null {
 
 /** Is the GitHub CLI installed (resolvable on PATH)? */
 export function hasGhCli(): boolean {
-    return Boolean(process.env.ENIGMA_GH_BIN || resolveBin("gh"));
+    return Boolean(ghBin());
 }
 
 /**
- * Whether gh telemetry is currently enabled. gh's default is enabled, so an
- * unset/unreadable value reads as true. Returns null when gh is not installed.
+ * Whether gh telemetry is currently enabled, asking gh synchronously (slow but
+ * authoritative). gh's default is enabled, so an unset/unreadable value reads as
+ * true. Returns null when gh is not installed.
  */
-export function getGhTelemetry(): boolean | null {
+export function getGhTelemetry(): GhTelemetry {
     if (!hasGhCli()) return null;
     const value = ghConfig(["get", "telemetry"]);
     return value !== "disabled";
 }
 
+/** Update the memo + persistent cache, notifying subscribers when the value changed. */
+function remember(value: GhTelemetry): void {
+    const changed = memo !== "unknown" && memo !== value;
+    memo = value;
+    try {
+        const cache = readJson<EnigmaCache>(CACHE_FILE) || {};
+        cache.ghTelemetry = value;
+        cache.ghTelemetryCheckedAt = Date.now();
+        const dir = join(CACHE_FILE, "..");
+        if (!isDir(dir)) mkdirSync(dir, { recursive: true });
+        writeFileSync(CACHE_FILE, JSON.stringify(cache, null, 2) + "\n");
+    } catch { /* cache is best-effort; the memo still serves this process */ }
+    if (changed) for (const cb of listeners) cb();
+}
+
+/**
+ * Revalidate the cached value once per process, off the render path: ask gh in a
+ * non-blocking child and notify subscribers if reality differs from the cache
+ * (e.g. the user toggled telemetry outside enigma).
+ */
+function revalidate(): void {
+    if (revalidated) return;
+    revalidated = true;
+    const bin = ghBin();
+    if (!bin) { remember(null); return; }
+    try {
+        const child = spawn(bin, ["config", "get", "telemetry"], { windowsHide: true });
+        let out = "";
+        child.stdout?.on("data", (d) => { out += String(d); });
+        child.on("error", () => { /* keep the cached value */ });
+        child.on("close", (code) => { if (code === 0) remember(out.trim() !== "disabled"); });
+    } catch { /* keep the cached value */ }
+}
+
+/**
+ * Instant, render-safe read: in-process memo, then the JSON cache, and only on
+ * the first read ever (no cache yet) a synchronous probe. Always schedules the
+ * once-per-process async revalidation.
+ */
+export function getGhTelemetryCached(): GhTelemetry {
+    if (memo === "unknown") {
+        const cache = readJson<EnigmaCache>(CACHE_FILE);
+        if (cache && cache.ghTelemetry !== undefined) memo = cache.ghTelemetry;
+        else { memo = getGhTelemetry(); remember(memo); }
+    }
+    revalidate();
+    return memo;
+}
+
+/**
+ * Subscribe to cache corrections (revalidation or a write found a different
+ * value). Returns an unsubscribe function. Used by the TUI to re-render the row
+ * once the real value lands without ever blocking the initial paint.
+ */
+export function onGhTelemetryChange(cb: () => void): () => void {
+    listeners.add(cb);
+    return () => { listeners.delete(cb); };
+}
+
 /**
  * Enable or disable gh telemetry. Returns whether the value actually changed;
  * null when gh is not installed or too old to know the `telemetry` key (the
- * set command fails on unknown keys - treated as "nothing to do").
+ * set command fails on unknown keys - treated as "nothing to do"). Successful
+ * writes update the cache, keeping cached reads truthful.
  */
 export function setGhTelemetry(enabled: boolean): boolean | null {
     const current = getGhTelemetry();
-    if (current === null || current === enabled) return current === null ? null : false;
+    if (current === null) return null;
+    if (current === enabled) { remember(current); return false; }
     const result = ghConfig(["set", "telemetry", enabled ? "enabled" : "disabled"]);
-    return result === null ? null : true;
+    if (result === null) return null;
+    remember(enabled);
+    return true;
 }

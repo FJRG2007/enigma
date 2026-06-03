@@ -12,7 +12,7 @@
 import { AGENTS } from "./agents";
 import { readConfig, setEnigmaToggle, setEnigmaValue, OUTPUT_STYLES } from "./config";
 import { getClaudeAttribution, setClaudeAttribution } from "./claude";
-import { getGhTelemetry, setGhTelemetry } from "./github";
+import { getGhTelemetryCached, setGhTelemetry } from "./github";
 import { BYPASS_SUPPORTED, getBypass, setBypass } from "./permissions";
 import type { EnigmaConfig, EnigmaConfigKey } from "./config";
 
@@ -118,13 +118,15 @@ export const CATEGORIES: Category[] = [
                 hint: "let gh send usage analytics to GitHub; enigma default: disabled (privacy; avoids a Windows window-flash bug)",
                 globalOnly: true,
                 // Choice setting so every surface shows gh's REAL state (gh's own
-                // vocabulary), including "not installed" when gh is absent.
+                // vocabulary), including "not installed" when gh is absent. Reads use
+                // the stale-while-revalidate cache (github.ts) so the TUI paints
+                // instantly; onGhTelemetryChange re-renders it when reality differs.
                 choices: ["enabled", "disabled"],
                 offChoice: "disabled",
-                read: () => getGhTelemetry() === true,
+                read: () => getGhTelemetryCached() === true,
                 write: (value) => ({ changed: setGhTelemetry(value) === true }),
                 readChoice: () => {
-                    const v = getGhTelemetry();
+                    const v = getGhTelemetryCached();
                     if (v === null) return "not installed";
                     return v ? "enabled" : "disabled";
                 },

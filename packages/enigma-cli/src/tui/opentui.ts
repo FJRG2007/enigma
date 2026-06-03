@@ -16,6 +16,7 @@
 
 import { CATEGORIES, ALL_SETTINGS, valueLabel } from "../settings-registry";
 import { applyMemoryToggles } from "../skills";
+import { onGhTelemetryChange } from "../github";
 import type { Scope, Setting } from "../settings-registry";
 import type { HubContext, HubAccount, HubExitAction, ActionRequest, ActionResult } from "./types";
 
@@ -294,6 +295,11 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         const category = current.kind === "category" ? CATEGORIES[current.catIndex]! : null;
         const action = current.kind === "action" ? current.action : null;
         const accountsMode = current.kind === "accounts";
+
+        // Settings render instantly from the gh cache; when the background
+        // revalidation finds a different real value, bump a tick to re-render.
+        const [, setGhTick] = useState(0);
+        useEffect(() => onGhTelemetryChange(() => setGhTick((t) => t + 1)), []);
 
         useEffect(() => {
             if (!action) return;
