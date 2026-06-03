@@ -328,7 +328,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         const valueOf = (setting: Setting, sc: Scope): boolean => {
             const st = stagedOf(setting, sc);
             if (st === undefined) return setting.read(sc);
-            return setting.choices ? st !== "off" : Boolean(st);
+            return setting.choices ? st !== (setting.offChoice ?? "off") : Boolean(st);
         };
         /** Text shown in the row: the level for choice settings, on/off otherwise. */
         const displayValue = (setting: Setting, sc: Scope): string =>

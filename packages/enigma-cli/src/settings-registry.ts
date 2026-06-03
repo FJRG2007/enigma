@@ -46,8 +46,11 @@ export interface Setting {
      * Present only on choice (enum) settings. `choices` is the full value set including
      * the "off" value; `readChoice`/`writeChoice` get and set the exact value so the CLI
      * can accept e.g. `config output-style ultra` on top of the on/off face above.
+     * `offChoice` names the choice that counts as "off" for display color/boolean face
+     * (default "off") - e.g. gh-telemetry's off value is "disabled".
      */
     choices?: readonly string[];
+    offChoice?: string;
     readChoice?(scope: Scope): string;
     writeChoice?(value: string, scope: Scope): ApplyResult;
 }
@@ -77,7 +80,7 @@ function enigmaChoice(
     choices: readonly string[], enabledDefault: string, affectsMemory = false, offValue = "off",
 ): Setting {
     return {
-        key, label, hint, affectsMemory, choices,
+        key, label, hint, affectsMemory, choices, offChoice: offValue,
         read: () => readConfig().config[field] !== offValue,
         write: (value, scope) => ({ path: setEnigmaValue(field, value ? enabledDefault : offValue, scope), changed: true }),
         readChoice: () => String(readConfig().config[field]),
@@ -112,10 +115,20 @@ export const CATEGORIES: Category[] = [
             {
                 key: "gh-telemetry",
                 label: "GitHub CLI telemetry",
-                hint: "let gh send usage analytics to GitHub; enigma default: off (privacy; avoids a Windows window-flash bug)",
+                hint: "let gh send usage analytics to GitHub; enigma default: disabled (privacy; avoids a Windows window-flash bug)",
                 globalOnly: true,
-                read: () => getGhTelemetry() ?? false,
+                // Choice setting so every surface shows gh's REAL state (gh's own
+                // vocabulary), including "not installed" when gh is absent.
+                choices: ["enabled", "disabled"],
+                offChoice: "disabled",
+                read: () => getGhTelemetry() === true,
                 write: (value) => ({ changed: setGhTelemetry(value) === true }),
+                readChoice: () => {
+                    const v = getGhTelemetry();
+                    if (v === null) return "not installed";
+                    return v ? "enabled" : "disabled";
+                },
+                writeChoice: (value) => ({ changed: setGhTelemetry(value === "enabled") === true }),
             },
         ],
     },
