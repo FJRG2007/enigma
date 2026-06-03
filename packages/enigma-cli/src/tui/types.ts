@@ -34,6 +34,15 @@ export interface HubAccount {
     active: boolean;
     removable: boolean;
 }
+/** A launchable tool, for the add-account tool selector. */
+export interface HubTool { name: string; label: string; }
+/** A profile row shown in the hub's Profiles panel. */
+export interface HubProfile {
+    name: string;
+    active: boolean;
+    /** Human summary of the tool->account mappings, e.g. "claude=work  codex=acme". */
+    summary: string;
+}
 /**
  * A follow-up the hub asks its caller to perform after the TUI tears down, because
  * each needs the terminal the TUI owns: connecting runs the tool's own login flow;
@@ -61,4 +70,9 @@ export interface HubContext {
      * name) without importing the data layer.
      */
     addAccount?: (tool: string, name: string) => { ok: boolean; error?: string; accounts: HubAccount[] };
+    /** Supported tools, for the add-account searchable selector. */
+    tools?: HubTool[];
+    /** Profiles (one account per tool under a name) and activation; "" deactivates. */
+    profiles?: HubProfile[];
+    activateProfile?: (name: string) => HubProfile[];
 }

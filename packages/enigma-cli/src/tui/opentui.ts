@@ -18,7 +18,7 @@ import { CATEGORIES, ALL_SETTINGS, valueLabel, invalidateSettingReads } from "..
 import { applyMemoryToggles } from "../skills";
 import { onGhTelemetryChange } from "../github";
 import type { Scope, Setting } from "../settings-registry";
-import type { HubContext, HubAccount, HubExitAction, ActionRequest, ActionResult } from "./types";
+import type { HubContext, HubAccount, HubExitAction, HubProfile, HubTool, ActionRequest, ActionResult } from "./types";
 
 /** Rendered tree node (React element or primitive child). */
 type RNode = import("react").ReactNode;
@@ -94,8 +94,22 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
     const addAccountFn = opts.hub?.addAccount;
     const update = opts.hub?.update ?? null;
     const firstRun = showActions && Boolean(opts.hub?.firstRun);
-    // The Accounts panel only appears when the hub wired account operations in.
+    const tools: HubTool[] = opts.hub?.tools ?? [];
+    const initialProfiles = opts.hub?.profiles ?? [];
+    const activateProfileFn = opts.hub?.activateProfile;
+    // The Accounts/Profiles panels only appear when the hub wired their operations in.
     const hasAccounts = showActions && Boolean(activateAccount) && initialAccounts.length > 0;
+    const hasProfiles = showActions && Boolean(activateProfileFn);
+
+    // Tool search for the add-account selector: prefix matches first, then
+    // substring matches over name+label (the opencode-model-picker pattern).
+    const filterTools = (query: string): HubTool[] => {
+        const q = query.trim().toLowerCase();
+        if (!q) return tools;
+        const starts = tools.filter((t) => t.name.toLowerCase().startsWith(q) || t.label.toLowerCase().startsWith(q));
+        const rest = tools.filter((t) => !starts.includes(t) && `${t.name} ${t.label}`.toLowerCase().includes(q));
+        return [...starts, ...rest];
+    };
     // No-op fallback for the settings-only TUI, where no action can be invoked.
     const runAction = opts.hub?.runAction
         ?? (async (): Promise<ActionResult> => ({ ok: false, title: "", lines: [] }));
@@ -163,6 +177,27 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         ]);
     };
 
+    // Profiles panel: a synthetic "(none)" row first (no active profile = each
+    // tool uses its own active account), then one row per profile with its
+    // tool->account mappings. Creation/editing stays in `enigma profile`.
+    const renderProfiles = (s: {
+        rows: Array<{ name: string; label: string; active: boolean; summary: string }>;
+        focused: boolean; cursor: number; onSelect: (i: number) => void;
+    }): RNode =>
+        panelBox(s.focused ? COL.cyan : COL.gray, [
+            txt("Profiles", { fg: COL.cyan, attributes: BOLD }),
+            txt("One account per tool under a name; the active profile drives launches", { fg: COL.gray }),
+            h(box, { flexDirection: "column", marginTop: 1 },
+                ...s.rows.map((r, i) => {
+                    const selected = s.focused && i === s.cursor;
+                    return h(box, { flexDirection: "row", justifyContent: "space-between", onMouseDown: () => s.onSelect(i) },
+                        txt(` ${r.active ? "*" : " "} ${r.label} `, selStyle(selected, { fg: r.active ? COL.green : undefined, attributes: r.active ? BOLD : undefined })),
+                        txt(`${r.summary}  `, { fg: COL.gray, truncate: true }));
+                })),
+            h(box, { flexGrow: 1 }),
+            txt("enter set active   create/edit via: enigma profile add/set", { fg: COL.gray, marginTop: 1, truncate: true }),
+        ]);
+
     const renderRemoveConfirm = (name: string, index: number, onChoose: (i: number) => void): RNode =>
         h(box, { flexGrow: 1, justifyContent: "center", alignItems: "center" },
             h(box, { border: true, borderStyle: "rounded", borderColor: COL.red, flexDirection: "column", paddingLeft: 2, paddingRight: 2, paddingTop: 1, paddingBottom: 1 },
@@ -182,6 +217,27 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
                 s.error
                     ? txt(s.error, { fg: COL.red, marginTop: 1, truncate: true })
                     : txt("enter create   esc cancel", { fg: COL.gray, marginTop: 1 })));
+
+    // Searchable tool selector (the opencode model-picker pattern): a focused
+    // filter input on top, the filtered list below. Typing filters via onInput;
+    // navigation/selection stays in the global key handler (up/down/enter), so
+    // the input never needs an onSubmit here.
+    const renderToolSelect = (s: {
+        query: string; cursor: number; filtered: HubTool[];
+        onQuery: (value: string) => void; onPick: (i: number) => void;
+    }): RNode =>
+        h(box, { flexGrow: 1, justifyContent: "center", alignItems: "center" },
+            h(box, { border: true, borderStyle: "rounded", borderColor: COL.cyan, flexDirection: "column", paddingLeft: 2, paddingRight: 2, paddingTop: 1, paddingBottom: 1, width: 52 },
+                txt("New account - which tool?", { fg: COL.cyan, attributes: BOLD }),
+                h(box, { border: true, borderStyle: "rounded", borderColor: COL.gray, marginTop: 1 },
+                    h(input, { focused: true, placeholder: "type to search...", maxLength: 32, onInput: s.onQuery })),
+                h(box, { flexDirection: "column", marginTop: 1 },
+                    ...(s.filtered.length
+                        ? s.filtered.map((t, i) => h(box, { flexDirection: "row", justifyContent: "space-between", onMouseDown: () => s.onPick(i) },
+                            txt(` ${t.label} `, selStyle(i === s.cursor)),
+                            txt(`${t.name}  `, { fg: COL.gray })))
+                        : [txt(" (no tool matches) ", { fg: COL.yellow })])),
+                txt("type to search   up/down move   enter select   esc cancel", { fg: COL.gray, marginTop: 1 })));
 
     const renderConnectPrompt = (name: string, index: number, onChoose: (i: number) => void): RNode =>
         h(box, { flexGrow: 1, justifyContent: "center", alignItems: "center" },
@@ -255,11 +311,13 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
     type SideItem =
         | { kind: "category"; catIndex: number; title: string }
         | { kind: "action"; action: "skills" | "security"; title: string; blurb: string }
-        | { kind: "accounts"; title: string };
+        | { kind: "accounts"; title: string }
+        | { kind: "profiles"; title: string };
     const sideItems: SideItem[] = [
         ...CATEGORIES.map((c, i) => ({ kind: "category" as const, catIndex: i, title: c.title })),
         ...(showActions ? ACTION_ITEMS.map((a) => ({ kind: "action" as const, ...a })) : []),
         ...(hasAccounts ? [{ kind: "accounts" as const, title: "Accounts" }] : []),
+        ...(hasProfiles ? [{ kind: "profiles" as const, title: "Profiles" }] : []),
     ];
     const actionItemKeys = (action: "skills" | "security"): string[] =>
         action === "security" ? protections.map((p) => p.value) : agents.map((a) => a.name);
@@ -288,13 +346,23 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         const [accounts, setAccounts] = useState<HubAccount[]>(initialAccounts);
         const [accCursor, setAccCursor] = useState(0);
         const [removeConfirm, setRemoveConfirm] = useState<{ tool: string; name: string; index: number } | null>(null);
-        const [adding, setAdding] = useState<{ tool: string; error?: string } | null>(null);
+        // Two-step add flow: pick the tool in a searchable selector, then type the
+        // account name. `query`/`cursor` drive the tool step only.
+        const [adding, setAdding] = useState<{ step: "tool" | "name"; tool: string; toolLabel: string; query: string; cursor: number; error?: string } | null>(null);
         const [connectPrompt, setConnectPrompt] = useState<{ tool: string; account: string; index: number } | null>(null);
+        const [profiles, setProfiles] = useState<HubProfile[]>(initialProfiles);
+        const [profCursor, setProfCursor] = useState(0);
 
         const current = sideItems[sideIndex]!;
         const category = current.kind === "category" ? CATEGORIES[current.catIndex]! : null;
         const action = current.kind === "action" ? current.action : null;
         const accountsMode = current.kind === "accounts";
+        const profilesMode = current.kind === "profiles";
+        // Profile rows: "(none)" deactivates (each tool falls back to its own active account).
+        const profRows = [
+            { name: "", label: "(none)", active: !profiles.some((p) => p.active), summary: "each tool uses its own active account" },
+            ...profiles.map((p) => ({ name: p.name, label: p.name, active: p.active, summary: p.summary })),
+        ];
 
         // Settings render instantly from caches; when gh's background revalidation
         // finds a different real value, bust the read cache and re-render.
@@ -433,22 +501,38 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             const acc = accounts[i];
             if (acc) onExit({ type: "connect", tool: acc.tool, account: acc.name });
         };
-        // Create flow: open the name input, then (on success) ask whether to log in.
-        const startAdd = (i: number): void => {
-            if (!addAccountFn) return;
-            setAdding({ tool: accounts[i]?.tool ?? "claude" });
+        // Create flow: searchable tool selector first, then the name input, then
+        // (on success) ask whether to log in.
+        const startAdd = (): void => {
+            if (!addAccountFn || tools.length === 0) return;
+            setAdding({ step: "tool", tool: "", toolLabel: "", query: "", cursor: 0 });
+        };
+        const pickTool = (i: number): void => {
+            if (!adding) return;
+            const filtered = filterTools(adding.query);
+            const sel = filtered[Math.min(i, filtered.length - 1)];
+            if (sel) setAdding({ step: "name", tool: sel.name, toolLabel: sel.label, query: "", cursor: 0 });
         };
         const submitAdd = (value: string): void => {
             const name = value.trim();
-            const tool = adding?.tool ?? "claude";
-            if (!addAccountFn || !name) { setAdding(null); return; }
+            if (!addAccountFn || !adding || !name) { setAdding(null); return; }
+            const { tool, toolLabel } = adding;
             const res = addAccountFn(tool, name);
-            if (!res.ok) { setAdding({ tool, error: res.error }); return; }
+            if (!res.ok) { setAdding({ step: "name", tool, toolLabel, query: "", cursor: 0, error: res.error }); return; }
             setAccounts(res.accounts);
             setAdding(null);
             const idx = res.accounts.findIndex((a) => a.tool === tool && a.name === name);
             setAccCursor(idx >= 0 ? idx : 0);
             setConnectPrompt({ tool, account: name, index: 0 });
+        };
+        const activateProfileRow = (i: number): void => {
+            const row = profRows[i];
+            if (!row || !activateProfileFn || row.active) return;
+            setProfiles(activateProfileFn(row.name));
+        };
+        const clickProfile = (i: number): void => {
+            if (focusRight && profCursor === i) activateProfileRow(i);
+            else { setFocusRight(true); setProfCursor(i); }
         };
         const chooseConnectPrompt = (i: number): void => {
             const target = connectPrompt;
@@ -474,10 +558,19 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             const enter = name === "return", esc = name === "escape", tab = name === "tab", space = name === "space";
             const ch = name && name.length === 1 ? name : "";
 
-            // While the name input is open, the focused <input> consumes typing and
-            // fires onSubmit on Enter; the global handler must stay out of the way
-            // (only Escape cancels) or letters like q/s/x would trigger hub actions.
-            if (adding) { if (esc) setAdding(null); return; }
+            // While the add overlay is open, the focused <input> consumes typing
+            // (filter query or account name); the global handler only navigates the
+            // tool list and cancels - any other key must not trigger hub actions.
+            if (adding) {
+                if (esc) { setAdding(null); return; }
+                if (adding.step === "tool") {
+                    const filtered = filterTools(adding.query);
+                    if (up) { setAdding({ ...adding, cursor: Math.max(0, adding.cursor - 1) }); return; }
+                    if (down) { setAdding({ ...adding, cursor: Math.min(Math.max(0, filtered.length - 1), adding.cursor + 1) }); return; }
+                    if (enter) { pickTool(adding.cursor); return; }
+                }
+                return;
+            }
 
             if (connectPrompt) {
                 if (esc) { setConnectPrompt(null); return; }
@@ -530,11 +623,12 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             if (right || ch === "l") { setFocusRight(true); return; }
             if (focusRight && accountsMode && ch === "d") { requestRemove(accCursor); return; }
             if (focusRight && accountsMode && ch === "c") { connectSelected(accCursor); return; }
-            if (focusRight && accountsMode && ch === "a") { startAdd(accCursor); return; }
+            if (focusRight && accountsMode && ch === "a") { startAdd(); return; }
             if (up || ch === "k") {
                 if (focusRight && category) setSetIndex((i) => Math.max(0, i - 1));
                 else if (focusRight && action) setActCursor((i) => Math.max(0, i - 1));
                 else if (focusRight && accountsMode) setAccCursor((i) => Math.max(0, i - 1));
+                else if (focusRight && profilesMode) setProfCursor((i) => Math.max(0, i - 1));
                 else { setSideIndex((i) => Math.max(0, i - 1)); setSetIndex(0); setFocusRight(false); }
                 return;
             }
@@ -542,6 +636,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
                 if (focusRight && category) setSetIndex((i) => Math.min(category.settings.length - 1, i + 1));
                 else if (focusRight && action) setActCursor((i) => Math.min(actionItemKeys(action).length - 1, i + 1));
                 else if (focusRight && accountsMode) setAccCursor((i) => Math.min(accounts.length - 1, i + 1));
+                else if (focusRight && profilesMode) setProfCursor((i) => Math.min(profRows.length - 1, i + 1));
                 else { setSideIndex((i) => Math.min(sideItems.length - 1, i + 1)); setSetIndex(0); setFocusRight(false); }
                 return;
             }
@@ -553,6 +648,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             if (enter || space) {
                 if (!focusRight) { setFocusRight(true); return; }
                 if (accountsMode) { activateSelected(accCursor); return; }
+                if (profilesMode) { activateProfileRow(profCursor); return; }
                 if (action) { runChosen(action); return; }
                 stageNext(category!.settings[setIndex]!, scope);
             }
@@ -581,9 +677,16 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
 
         // body
         let content: RNode;
-        if (adding) {
-            const toolLabel = accounts.find((a) => a.tool === adding.tool)?.toolLabel ?? adding.tool;
-            content = renderAddInput({ toolLabel, error: adding.error, onSubmit: submitAdd });
+        if (adding && adding.step === "tool") {
+            content = renderToolSelect({
+                query: adding.query,
+                cursor: Math.min(adding.cursor, Math.max(0, filterTools(adding.query).length - 1)),
+                filtered: filterTools(adding.query),
+                onQuery: (value: string) => setAdding((a) => a && { ...a, query: value, cursor: 0 }),
+                onPick: pickTool,
+            });
+        } else if (adding) {
+            content = renderAddInput({ toolLabel: adding.toolLabel, error: adding.error, onSubmit: submitAdd });
         } else if (connectPrompt) {
             content = renderConnectPrompt(connectPrompt.account, connectPrompt.index, chooseConnectPrompt);
         } else if (removeConfirm) {
@@ -596,7 +699,9 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             content = renderResult(result, Math.min(resultScroll, maxResultScroll), resultRows, scrollResult);
         } else {
             const sidebarWidth = Math.min(28, Math.max(20, Math.floor(size.columns * 0.3)));
-            const panel = accountsMode
+            const panel = profilesMode
+                ? renderProfiles({ rows: profRows, focused: focusRight, cursor: profCursor, onSelect: clickProfile })
+                : accountsMode
                 ? renderAccounts({ accounts, focused: focusRight, cursor: accCursor, onSelect: clickAccount })
                 : category
                 ? renderCategoryPanel({ category, scope, focusRight, setIndex, valueOf, displayValue, isModified, onSelect: clickSetting })
@@ -618,7 +723,9 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         // right (split with space-between) so those are visible even while editing.
         const footerLine = (s: string): RNode =>
             h(box, { width: size.columns, paddingLeft: 1, paddingRight: 1 }, txt(s, { fg: COL.gray, attributes: DIM }));
-        const menuNav = focusRight && accountsMode
+        const menuNav = focusRight && profilesMode
+            ? "up/down move   enter set active   tab back"
+            : focusRight && accountsMode
             ? "up/down move   enter set active   c connect   a add   d remove   tab back"
             : focusRight && action
             ? (action === "skills"
@@ -626,9 +733,11 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
                 : "up/down move   space toggle   enter apply   tab back")
             : focusRight && category
                 ? "up/down move   enter toggle/cycle   g scope   tab back"
-                : `up/down move   tab switch   enter ${action || accountsMode ? "edit" : "focus"}`;
+                : `up/down move   tab switch   enter ${action || accountsMode || profilesMode ? "edit" : "focus"}`;
         let footer: RNode;
-        if (adding) {
+        if (adding && adding.step === "tool") {
+            footer = footerLine("type to search   up/down move   enter select   esc cancel");
+        } else if (adding) {
             footer = footerLine("type a name   enter create   esc cancel");
         } else if (connectPrompt) {
             footer = footerLine("up/down move   enter select   esc later");

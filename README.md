@@ -50,7 +50,9 @@ enigma install         Install/update agent skills
 enigma security        Set up git security hooks in the current repo
 enigma guard [--all]   Run the commit guard (staged files, or all tracked)
 enigma config [k v]    Show or set runtime toggles (e.g. config commit-emoji off)
-enigma claude [acct]   Launch Claude Code (auto-syncs deployed skills first)
+enigma <tool> [acct]   Launch claude | codex | opencode with an account's config
+                       (explicit > active profile > tool active; auto-syncs first)
+enigma account ...     Manage per-tool accounts   enigma profile ...  Group them
 enigma seal            Maintenance: (re)compute skill content hashes
 enigma check           Integrity gate: verify skills are well-formed and sealed
 enigma help | version

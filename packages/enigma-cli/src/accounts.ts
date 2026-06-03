@@ -10,13 +10,20 @@
  * process with the config-dir env var injected - one code path that behaves the
  * same on macOS, Linux and Windows.
  *
- * The design is tool-agnostic via the TOOLS registry: only Claude Code is wired
- * up today, but adding another agent (Codex via CODEX_HOME, opencode via
- * XDG_DATA_HOME/XDG_CONFIG_HOME) is a single registry entry, not a rewrite. Each
- * tool's existing config dir is surfaced as a synthetic, non-removable "default"
- * account so the user's current login is never lost; new accounts live under
- * ~/.enigma/<tool>/<name>/. This module is the pure data + spawn layer (Node
- * builtins only); the CLI wrapper in cli.ts does the prompting and printing.
+ * The design is tool-agnostic via the TOOLS registry: Claude Code (via
+ * CLAUDE_CONFIG_DIR), OpenAI Codex (via CODEX_HOME) and OpenCode (via the
+ * XDG_DATA_HOME/XDG_CONFIG_HOME pair) are wired up; adding another agent is a
+ * single registry entry, not a rewrite. Each tool's existing config dir is
+ * surfaced as a synthetic, non-removable "default" account so the user's current
+ * login is never lost; new accounts live under ~/.enigma/<tool>/<name>/.
+ *
+ * PROFILES group one account per tool under a single name (e.g. profile "work" =
+ * claude:work + codex:acme), stored alongside the accounts in the registry. When
+ * a profile is active, launching a tool without an explicit account uses the
+ * profile's mapping for that tool, falling back to the tool's own active account.
+ *
+ * This module is the pure data + spawn layer (Node builtins only); the CLI
+ * wrapper in cli.ts does the prompting and printing.
  */
 
 import { spawn } from "node:child_process";
@@ -50,6 +57,8 @@ export interface ToolSpec {
     accountInfo?: (dir: string) => { email?: string; displayName?: string };
 }
 
+const OPENCODE_DEFAULT_DIR = join(homedir(), ".local", "share", "opencode");
+
 /** Registry of supported tools. Add an entry here to support a new agent. */
 const TOOLS: Record<string, ToolSpec> = {
     claude: {
@@ -65,6 +74,58 @@ const TOOLS: Record<string, ToolSpec> = {
         accountInfo: (dir) => {
             const config = readJson<{ oauthAccount?: { emailAddress?: string; displayName?: string } }>(join(dir, ".claude.json"));
             return { email: config?.oauthAccount?.emailAddress, displayName: config?.oauthAccount?.displayName };
+        },
+    },
+    codex: {
+        name: "codex",
+        label: "OpenAI Codex",
+        bin: "codex",
+        binEnv: "ENIGMA_CODEX_BIN",
+        defaultDir: join(homedir(), ".codex"),
+        envFor: (dir) => ({ CODEX_HOME: dir }),
+        loginArgs: ["login"],
+        loginHint: "Launching `codex login` to authenticate this account.",
+        // Codex stores its OAuth tokens in <CODEX_HOME>/auth.json; the id_token is
+        // a JWT whose payload carries the account email. Decode (no verification
+        // needed - it is the user's own local file) and surface ONLY the email;
+        // tokens never leave this function.
+        accountInfo: (dir) => {
+            const auth = readJson<{ tokens?: { id_token?: string } }>(join(dir, "auth.json"));
+            const jwt = auth?.tokens?.id_token;
+            if (!jwt) return {};
+            try {
+                const payload = JSON.parse(Buffer.from(jwt.split(".")[1] ?? "", "base64url").toString("utf8")) as { email?: unknown };
+                return { email: typeof payload.email === "string" ? payload.email : undefined };
+            } catch {
+                return {};
+            }
+        },
+    },
+    opencode: {
+        name: "opencode",
+        label: "OpenCode",
+        bin: "opencode",
+        binEnv: "ENIGMA_OPENCODE_BIN",
+        defaultDir: OPENCODE_DEFAULT_DIR,
+        // opencode has no single config-dir variable; it resolves its data dir
+        // (auth.json) from XDG_DATA_HOME and its config from XDG_CONFIG_HOME. For
+        // the built-in default account we inject NOTHING so the user's real
+        // environment stays untouched; managed accounts get a private XDG pair
+        // under the account dir (this also redirects any XDG-aware children
+        // opencode spawns - acceptable for full isolation).
+        envFor: (dir): Record<string, string> => dir === OPENCODE_DEFAULT_DIR
+            ? {}
+            : { XDG_DATA_HOME: join(dir, "xdg-data"), XDG_CONFIG_HOME: join(dir, "xdg-config") },
+        loginArgs: ["auth", "login"],
+        loginHint: "Launching `opencode auth login` to authenticate this account.",
+        // opencode's auth.json maps provider ids to credentials; there is no email
+        // to show, so surface the connected providers as the display identity.
+        accountInfo: (dir) => {
+            const auth = dir === OPENCODE_DEFAULT_DIR
+                ? readJson<Record<string, unknown>>(join(dir, "auth.json"))
+                : readJson<Record<string, unknown>>(join(dir, "xdg-data", "opencode", "auth.json"));
+            const providers = auth ? Object.keys(auth) : [];
+            return providers.length ? { displayName: providers.join(", ") } : {};
         },
     },
 };
@@ -100,12 +161,14 @@ export interface Account {
     lastUsed?: string;
 }
 
-/** An account plus display metadata: active flag, owning tool, and signed-in email. */
+/** An account plus display metadata: active flag, owning tool, and signed-in identity. */
 export interface AccountView extends Account {
     active: boolean;
     tool: string;
     toolLabel: string;
     email?: string;
+    /** Fallback identity when the tool has no email (e.g. opencode's provider list). */
+    displayName?: string;
 }
 
 /** Per-tool slice of the registry: its accounts and which one is active. */
@@ -114,8 +177,23 @@ interface ToolBucket {
     accounts: Account[];
 }
 
+/** Profiles: one account name per tool under a single profile name. */
+interface ProfilesBucket {
+    active: string | null;
+    items: Record<string, Record<string, string>>;
+}
+
 interface Registry {
     tools: Record<string, ToolBucket>;
+    profiles: ProfilesBucket;
+}
+
+/** A profile with display metadata for listings and the hub. */
+export interface ProfileView {
+    name: string;
+    active: boolean;
+    /** tool name -> account name mappings this profile pins. */
+    accounts: Record<string, string>;
 }
 
 /**
@@ -145,20 +223,37 @@ function normalizeBucket(raw: unknown): ToolBucket {
  * into the tool-namespaced shape ({tools: {claude: ...}}). Returns an empty
  * registry when absent or unreadable.
  */
+/** Normalize a raw object into a ProfilesBucket, tolerating partial/absent data. */
+function normalizeProfiles(raw: unknown): ProfilesBucket {
+    const obj = (raw && typeof raw === "object") ? raw as Record<string, unknown> : {};
+    const items: Record<string, Record<string, string>> = {};
+    if (obj.items && typeof obj.items === "object") {
+        for (const [name, mapping] of Object.entries(obj.items as Record<string, unknown>)) {
+            if (!mapping || typeof mapping !== "object") continue;
+            const clean: Record<string, string> = {};
+            for (const [tool, account] of Object.entries(mapping as Record<string, unknown>)) {
+                if (typeof account === "string") clean[tool] = account;
+            }
+            items[name] = clean;
+        }
+    }
+    return { active: typeof obj.active === "string" ? obj.active : null, items };
+}
+
 function readRegistry(): Registry {
     const raw = readJson<Record<string, unknown>>(REGISTRY_PATH);
-    if (!raw || typeof raw !== "object") return { tools: {} };
+    if (!raw || typeof raw !== "object") return { tools: {}, profiles: normalizeProfiles(null) };
 
     if (raw.tools && typeof raw.tools === "object") {
         const tools: Record<string, ToolBucket> = {};
         for (const [name, bucket] of Object.entries(raw.tools as Record<string, unknown>)) {
             tools[name] = normalizeBucket(bucket);
         }
-        return { tools };
+        return { tools, profiles: normalizeProfiles(raw.profiles) };
     }
     // Legacy shape: a flat {active, accounts} was always Claude Code.
-    if (Array.isArray(raw.accounts)) return { tools: { [DEFAULT_TOOL]: normalizeBucket(raw) } };
-    return { tools: {} };
+    if (Array.isArray(raw.accounts)) return { tools: { [DEFAULT_TOOL]: normalizeBucket(raw) }, profiles: normalizeProfiles(null) };
+    return { tools: {}, profiles: normalizeProfiles(null) };
 }
 
 /** Persist the registry, creating ~/.enigma if needed. */
@@ -192,13 +287,17 @@ export function listAccounts(toolName: string = DEFAULT_TOOL): AccountView[] {
     const bucket = bucketOf(readRegistry(), toolName);
     const all = [defaultAccount(tool), ...bucket.accounts];
     const active = resolveActiveName(bucket, all);
-    return all.map((a) => ({
-        ...a,
-        active: a.name === active,
-        tool: tool.name,
-        toolLabel: tool.label,
-        email: tool.accountInfo?.(a.dir).email,
-    }));
+    return all.map((a) => {
+        const info = tool.accountInfo?.(a.dir) ?? {};
+        return {
+            ...a,
+            active: a.name === active,
+            tool: tool.name,
+            toolLabel: tool.label,
+            email: info.email,
+            displayName: info.displayName,
+        };
+    });
 }
 
 /** Name of a tool's active account, falling back to "default" when the pointer is stale. */
@@ -284,7 +383,92 @@ export function removeAccount(toolName: string, name: string): void {
     bucket.accounts = bucket.accounts.filter((a) => a.name !== name);
     if (bucket.active === name) bucket.active = null;
     reg.tools[toolName] = bucket;
+    // Drop any profile mapping that pinned the removed account, so profiles never
+    // point at a config dir that no longer exists.
+    for (const mapping of Object.values(reg.profiles.items)) {
+        if (mapping[toolName] === name) delete mapping[toolName];
+    }
     writeRegistry(reg);
+}
+
+// --- profiles --------------------------------------------------------------------
+
+/** Every profile with its mappings and an `active` flag. */
+export function listProfiles(): ProfileView[] {
+    const { profiles } = readRegistry();
+    return Object.entries(profiles.items).map(([name, accounts]) => ({
+        name, accounts: { ...accounts }, active: name === profiles.active,
+    }));
+}
+
+/** The active profile, or null when none is set (tools fall back to their own active account). */
+export function getActiveProfile(): ProfileView | null {
+    return listProfiles().find((p) => p.active) ?? null;
+}
+
+/** Create an empty profile (idempotent). Profile names follow the account-name rules. */
+export function addProfile(name: string): ProfileView {
+    validateAccountName(name);
+    const reg = readRegistry();
+    reg.profiles.items[name] ??= {};
+    writeRegistry(reg);
+    return { name, accounts: { ...reg.profiles.items[name]! }, active: reg.profiles.active === name };
+}
+
+/** Delete a profile, clearing the active pointer if it referenced it. */
+export function removeProfile(name: string): void {
+    const reg = readRegistry();
+    if (!(name in reg.profiles.items)) throw new Error(`No such profile: '${name}'.`);
+    delete reg.profiles.items[name];
+    if (reg.profiles.active === name) reg.profiles.active = null;
+    writeRegistry(reg);
+}
+
+/**
+ * Pin `account` as the profile's account for `toolName`. The tool must be
+ * supported and the account must already exist (including "default", which pins
+ * the tool's built-in config dir explicitly).
+ */
+export function setProfileAccount(profile: string, toolName: string, account: string): void {
+    getTool(toolName);
+    if (!accountExists(toolName, account)) {
+        throw new Error(`No such ${toolName} account: '${account}'. Create it first: enigma account add ${account} --tool ${toolName}.`);
+    }
+    const reg = readRegistry();
+    const mapping = reg.profiles.items[profile];
+    if (!mapping) throw new Error(`No such profile: '${profile}'. Create it first: enigma profile add ${profile}.`);
+    mapping[toolName] = account;
+    writeRegistry(reg);
+}
+
+/** Remove a profile's mapping for a tool (it falls back to the tool's active account). */
+export function unsetProfileAccount(profile: string, toolName: string): void {
+    getTool(toolName);
+    const reg = readRegistry();
+    const mapping = reg.profiles.items[profile];
+    if (!mapping) throw new Error(`No such profile: '${profile}'.`);
+    delete mapping[toolName];
+    writeRegistry(reg);
+}
+
+/** Activate a profile by name, or deactivate with null. */
+export function setActiveProfile(name: string | null): void {
+    const reg = readRegistry();
+    if (name !== null && !(name in reg.profiles.items)) throw new Error(`No such profile: '${name}'.`);
+    reg.profiles.active = name;
+    writeRegistry(reg);
+}
+
+/**
+ * Account used when launching `toolName` without an explicit account: the active
+ * profile's mapping for that tool when one exists (and the account still does),
+ * else the tool's own active account.
+ */
+export function resolveLaunchAccount(toolName: string): string {
+    const profile = getActiveProfile();
+    const pinned = profile?.accounts[toolName];
+    if (pinned && accountExists(toolName, pinned)) return pinned;
+    return getActive(toolName);
 }
 
 /** Config directory for a tool's account, ensuring the directory exists. Throws if unknown. */
@@ -306,7 +490,9 @@ export function resolveConfigDir(toolName: string, name: string): string {
  */
 export async function launchTool(toolName: string, name: string | null, passthrough: string[] = []): Promise<number> {
     const tool = getTool(toolName);
-    const account = name ?? getActive(toolName);
+    // Explicit account wins; otherwise the active profile's mapping, then the
+    // tool's own active account (see resolveLaunchAccount).
+    const account = name ?? resolveLaunchAccount(toolName);
     const dir = resolveConfigDir(toolName, account);
 
     const binary = process.env[tool.binEnv] || resolveBin(tool.bin) || tool.bin;

@@ -35,9 +35,11 @@ enigma install         Install/update agent skills
 enigma security        Set up git security hooks in the current repo
 enigma guard [--all]   Run the commit guard (staged files, or all tracked)
 enigma config [k v]    Show or set runtime toggles (e.g. config commit-emoji off)
-enigma claude [acct]   Launch Claude Code using an account (active if omitted);
+enigma <tool> [acct]   Launch claude | codex | opencode with an account
+                       (resolution: explicit > active profile > tool active);
                        auto-syncs deployed skills first
-enigma account ...     Manage Claude Code accounts (list/add/use/login/remove)
+enigma account ...     Manage per-tool accounts (list/add/use/login/remove)
+enigma profile ...     Group one account per tool (list/add/use/set/unset/remove)
 enigma seal            Maintenance: (re)compute skill content hashes
 enigma check           Integrity gate: verify skills are well-formed and sealed
 enigma help | version
@@ -100,13 +102,16 @@ On every commit the guard, OS-agnostically:
 Each protection is individually toggleable (saved to `.githooks/enigma-guard.json`).
 Bypass once with `git commit --no-verify`.
 
-## Multiple Claude Code accounts
+## Multiple accounts and profiles
 
-Work across separate workflows with different Claude Code accounts/profiles - for
-example your **company** Claude Code account and your **personal** one - keeping
-each fully isolated and switching between them without ever logging out. Each
-profile has its own credentials, session, and history, so client work never mixes
-with personal projects.
+Work across separate workflows with different accounts per tool - for example
+your **company** Claude Code account and your **personal** one - keeping each
+fully isolated and switching between them without ever logging out. Each account
+has its own credentials, session, and history, so client work never mixes with
+personal projects. Supported tools: **Claude Code** (`CLAUDE_CONFIG_DIR`),
+**OpenAI Codex** (`CODEX_HOME`) and **OpenCode** (a private `XDG_DATA_HOME` /
+`XDG_CONFIG_HOME` pair per managed account; its default account keeps your real
+environment untouched).
 
 > This is for legitimate, professional account separation (one account per
 > employer/context, as many organizations require). It is **not** a way to evade
@@ -122,29 +127,45 @@ for you with that variable set - the same command on macOS, Linux and Windows.
 ```bash
 enigma account add work --login   # create 'work' and run /login to authenticate
 enigma account add personal       # create 'personal' (log in later)
+enigma account add acme -t codex  # create a Codex account
 enigma account list               # show all accounts (active one marked *)
 enigma claude work                # run Claude Code as 'work'
+enigma codex acme                 # run Codex as 'acme'
 enigma account use personal       # make 'personal' the active account
-enigma claude                     # run the active account
-enigma claude work -- --version   # forward args after -- to Claude
+enigma claude                     # run the resolved account (profile > active)
+enigma claude work -- --version   # forward args after -- to the tool
 enigma account remove work        # delete an account and its config dir
 ```
 
-Your existing `~/.claude` is always available as the built-in `default` account
-(it is never deleted). New accounts live under `~/.enigma/<tool>/<name>/`. A bare
-`claude` command keeps using `~/.claude` as before.
+Your existing `~/.claude` / `~/.codex` / opencode setup is always available as
+each tool's built-in `default` account (never deleted). New accounts live under
+`~/.enigma/<tool>/<name>/`. Bare `claude` / `codex` / `opencode` commands keep
+using your real environment as before.
 
-From the hub TUI (`enigma`), the **Accounts** panel lists accounts - showing the
-tool (e.g. Claude Code) and the signed-in email for each - and lets you **add**
-(`a`), set active (`enter`), **connect**/log in (`c`), or remove (`d`). Adding
-prompts for a name and then offers to connect right away. Connecting closes the
-hub, runs the tool's own login flow (for Claude: it launches and you run
-`/login`), then reopens the hub. `enigma account list` shows the same details,
-and `enigma account add <name>` does the same from the CLI.
+### Profiles (one account per tool)
 
-The mechanism is tool-agnostic by design: only Claude Code is wired up today, but
-the same per-account-config-dir approach extends to other agents (e.g. Codex via
-`CODEX_HOME`). Target another tool with `--tool <name>` on `account` commands.
+A profile pins one account per tool under a single name - e.g. profile `work` =
+Claude Code `work` + Codex `acme`. While a profile is active, `enigma <tool>`
+launches that profile's account for the tool (explicit account arguments still
+win; unmapped tools fall back to their own active account):
+
+```bash
+enigma profile add work                 # create the profile
+enigma profile set work claude work     # pin claude account 'work'
+enigma profile set work codex acme      # pin codex account 'acme'
+enigma profile use work                 # activate (enigma claude/codex now use it)
+enigma profile list                     # profiles + mappings (* = active)
+enigma profile use none                 # deactivate
+```
+
+From the hub TUI (`enigma`), the **Accounts** panel lists every tool's accounts -
+with the signed-in identity (email for Claude/Codex, connected providers for
+OpenCode) - and lets you **add** (`a`), set active (`enter`), **connect**/log in
+(`c`), or remove (`d`). Adding first asks **which tool** with a searchable
+selector (type to filter, like opencode's model picker), then the account name,
+then offers to connect right away. The **Profiles** panel shows each profile's
+mappings and switches the active one with `enter` (`(none)` deactivates);
+create/edit profiles via `enigma profile`.
 
 ## GitHub CLI telemetry (default off)
 
