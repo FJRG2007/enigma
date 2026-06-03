@@ -26,7 +26,7 @@ import { downloadBinary, installedBinary } from "./download.mjs";
  * Fast path: an agent status bar (e.g. Claude Code's statusLine) calls `enigma
  * statusline` on every refresh. Handle it here in the lightweight Node launcher -
  * reading .enigma.json directly - so it never resolves or spawns the Bun binary.
- * Always prints `[ENIGMA]` (cyan); when token-efficient output is active it appends
+ * Always prints `[ENIGMA]` (amber); when token-efficient output is active it appends
  * the level, e.g. `[ENIGMA:FULL]`.
  */
 function readOutputStyle() {
@@ -44,7 +44,7 @@ if (process.argv[2] === "statusline") {
     try {
         const style = readOutputStyle();
         const label = (!style || style === "off") ? "ENIGMA" : `ENIGMA:${style.toUpperCase()}`;
-        process.stdout.write(process.env.NO_COLOR ? `[${label}]` : `\x1b[36m[${label}]\x1b[0m`);
+        process.stdout.write(process.env.NO_COLOR ? `[${label}]` : `\x1b[38;5;172m[${label}]\x1b[0m`);
     } catch { /* a status bar must never error */ }
     process.exit(0);
 }
