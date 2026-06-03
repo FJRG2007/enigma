@@ -20,6 +20,7 @@ import type { SecurityOptions } from "./security";
 import { clackReporter } from "./reporter";
 import type { Reporter } from "./reporter";
 import { disableClaudeAttribution, enableClaudeStatusline } from "./claude";
+import { setGhTelemetry } from "./github";
 import { resolveBypassSelection, applyBypass } from "./permissions";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -402,6 +403,17 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
         }
     };
 
+    // GitHub CLI (used by agents for PRs): disable usage telemetry by default.
+    // Privacy win with zero functional cost (no gh feature depends on it), and it
+    // sidesteps the Windows window-flash bug where the detached `gh send-telemetry`
+    // spawns tzutil.exe unhidden (cli/cli#13354). No-op when gh is not installed.
+    const applyGhConfig = (): void => {
+        if (opts.dryRun) return;
+        if (setGhTelemetry(false) === true) {
+            reporter.info("GitHub CLI: telemetry disabled (privacy; re-enable with 'enigma config gh-telemetry on').");
+        }
+    };
+
     // Optional, opt-in: disable each chosen agent's per-action approval prompts.
     // Asked here (right after agent selection) so it is grouped with that choice.
     const bypassAgents = await resolveBypassSelection(chosenAgents, opts, interactive);
@@ -500,6 +512,7 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
     if (nInstall + nUpdate + nRemove === 0) {
         reporter.note(lines.join("\n"), "Nothing to do");
         applyClaudeConfig();
+        applyGhConfig();
         applyBypassConfig();
         await maybeOfferGitHooks(interactive, opts);
         reporter.success(`Everything up-to-date - ${nSkip} item(s) unchanged${nKept ? `, ${nKept} kept modified` : ""} (${scope}).`);
@@ -555,6 +568,7 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
     }
     s.stop(`Wrote ${copied} item(s)${nRemove ? `, removed ${nRemove}` : ""}.`);
     applyClaudeConfig();
+    applyGhConfig();
     applyBypassConfig();
     await maybeOfferGitHooks(interactive, opts);
     reporter.success(`${nInstall} installed, ${nUpdate} updated/overwritten` +

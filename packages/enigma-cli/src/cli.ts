@@ -122,7 +122,7 @@ Commands:
   help, version
 
 Config keys: commit-emoji, update-notifier, auto-sync, fullscreen, parallel-subagents,
-             output-style (off|lite|full|ultra), claude-attribution,
+             output-style (off|lite|full|ultra), claude-attribution, gh-telemetry,
              permission-bypass, bypass-claude, bypass-codex, bypass-opencode
 
 Install options:

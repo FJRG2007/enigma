@@ -146,6 +146,21 @@ The mechanism is tool-agnostic by design: only Claude Code is wired up today, bu
 the same per-account-config-dir approach extends to other agents (e.g. Codex via
 `CODEX_HOME`). Target another tool with `--tool <name>` on `account` commands.
 
+## GitHub CLI telemetry (default off)
+
+If the GitHub CLI (`gh`) is installed, `enigma install` disables its usage
+telemetry (`gh config set telemetry disabled`). This is pure privacy upside -
+telemetry is usage analytics only (command, flags, OS/version, device ids) and
+no gh feature depends on it - and it also avoids a known Windows bug where the
+detached `gh send-telemetry` subprocess spawns `tzutil.exe` without hiding its
+window, flashing a terminal on gh invocations
+([cli/cli#13354](https://github.com/cli/cli/issues/13354)). Re-enable any time:
+
+```bash
+enigma config gh-telemetry on     # restore gh's default
+enigma config gh-telemetry off    # disable again
+```
+
 ## Commit emojis
 
 By default the policy skills make commit subjects carry a leading type emoji

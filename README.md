@@ -87,6 +87,14 @@ opencode is included but is the least reliable without the approval gate, so use
 `enigma config bypass-opencode off` if you want to keep its gate. Your existing
 deny rules and other settings are always preserved.
 
+### GitHub CLI telemetry (default off)
+
+If `gh` is installed, `enigma install` disables its usage telemetry: privacy
+upside with zero functional cost, and it avoids a known Windows bug where gh's
+telemetry subprocess flashes a terminal window
+([cli/cli#13354](https://github.com/cli/cli/issues/13354)). Re-enable with
+`enigma config gh-telemetry on`.
+
 ### Token-efficient output (opt-in)
 
 Optionally have the agent compress its chat prose to save output tokens - drop

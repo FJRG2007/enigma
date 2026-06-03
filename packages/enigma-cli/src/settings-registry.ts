@@ -12,6 +12,7 @@
 import { AGENTS } from "./agents";
 import { readConfig, setEnigmaToggle, setEnigmaValue, OUTPUT_STYLES } from "./config";
 import { getClaudeAttribution, setClaudeAttribution } from "./claude";
+import { getGhTelemetry, setGhTelemetry } from "./github";
 import { BYPASS_SUPPORTED, getBypass, setBypass } from "./permissions";
 import type { EnigmaConfig, EnigmaConfigKey } from "./config";
 
@@ -107,6 +108,14 @@ export const CATEGORIES: Category[] = [
                 hint: "let Claude Code commit as its own contributor (Co-Authored-By / PR footer); enigma default: off",
                 read: (scope) => getClaudeAttribution(scope),
                 write: (value, scope) => ({ changed: setClaudeAttribution(scope, value) }),
+            },
+            {
+                key: "gh-telemetry",
+                label: "GitHub CLI telemetry",
+                hint: "let gh send usage analytics to GitHub; enigma default: off (privacy; avoids a Windows window-flash bug)",
+                globalOnly: true,
+                read: () => getGhTelemetry() ?? false,
+                write: (value) => ({ changed: setGhTelemetry(value) === true }),
             },
         ],
     },
