@@ -1,4 +1,5 @@
 <div align="center">
+  <img src="docs/images/enigma-logo.svg" width="120" />
   <h1>Enigma</h1>
   <h3>Everything you need to work with a coding agent, in one command.</h3>
   <img src="https://img.shields.io/badge/TypeScript-blue?style=for-the-badge&logo=typescript&logoColor=white"/> 
@@ -31,8 +32,85 @@ Or install the command and pick interactively:
 
 ```bash
 npm install -g enigma-cli      # provides the `enigma` command
+enigma install
 enigma                         # interactive hub: pick what to set up
 ```
+
+<table>
+<tr>
+<td width="50%">
+
+### <img src="docs/images/enigma-logo.svg" width="20" height="20" alt="Enigma"/> Policy skills, everywhere
+
+12 engineering policy skills (security, testing, git, style, debugging...) authored once and deployed to **Claude Code, OpenAI Codex and OpenCode**, sealed with content hashes so tampering is detected.
+
+```bash
+npx enigma-cli@latest install --all --yes
+```
+
+</td>
+<td width="50%">
+
+### <img src="docs/images/enigma-logo.svg" width="20" height="20" alt="Enigma"/> Git security hooks
+
+A portable, dependency-free commit guard for **any** repo: blocks secrets, `.env` files and `node_modules` before they are committed. Commit `.githooks/` and the whole team inherits it.
+
+```bash
+enigma security
+```
+
+</td>
+</tr>
+<tr>
+<td>
+
+### <img src="docs/images/enigma-logo.svg" width="20" height="20" alt="Enigma"/> Token-efficient output
+
+Optional compression of the agent's chat prose (`off | lite | full | ultra`):
+
+> Normal (69 tokens): "The reason your React component is re-rendering is likely because you're creating a new object reference on each render cycle..."
+
+> Ultra (19 tokens): "New object ref each render. Inline object prop = new ref = re-render. Wrap in `useMemo`."
+
+</td>
+<td>
+
+### <img src="docs/images/enigma-logo.svg" width="20" height="20" alt="Enigma"/> Multi-account + profiles
+
+Several logins per tool without logging out, each in its own config dir, switched OS-agnostically. Profiles pin one account per tool ("work" = claude:acme + codex:acme) and drive every launch.
+
+```bash
+enigma claude work
+enigma profile use work
+```
+
+</td>
+</tr>
+<tr>
+<td>
+
+### <img src="docs/images/enigma-logo.svg" width="20" height="20" alt="Enigma"/> Interactive hub TUI
+
+A full-screen hub (keyboard + mouse, wheel scroll included) to install skills, set up hooks, manage settings and the unified Accounts & profiles panel - plus auto-sync on every launch and an update notifier.
+
+```bash
+enigma
+```
+
+</td>
+<td>
+
+### <img src="docs/images/enigma-logo.svg" width="20" height="20" alt="Enigma"/> One-command bug reports
+
+Generates a GitHub issue URL with your environment prefilled - OS and version, terminal, detected agents, enigma version and install method - and opens it in the browser.
+
+```bash
+enigma issue
+```
+
+</td>
+</tr>
+</table>
 
 That first install is the only one you ever need to run by hand: afterwards,
 launching a tool through enigma (e.g. `enigma claude`) **auto-syncs** the deployed
@@ -53,6 +131,7 @@ enigma config [k v]    Show or set runtime toggles (e.g. config commit-emoji off
 enigma <tool> [acct]   Launch claude | codex | opencode with an account's config
                        (explicit > active profile > tool active; auto-syncs first)
 enigma account ...     Manage per-tool accounts   enigma profile ...  Group them
+enigma issue [type]    Prefilled GitHub issue URL (OS, versions, terminal, agents)
 enigma seal            Maintenance: (re)compute skill content hashes
 enigma check           Integrity gate: verify skills are well-formed and sealed
 enigma help | version
