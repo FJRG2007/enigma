@@ -17,6 +17,8 @@ import { runGuardCli } from "./guard";
 import { runConfigCli } from "./settings";
 import { readConfig } from "./config";
 import { getAvailableUpdate, notifyUpdate, runUpdate } from "./update";
+import { buildIssueUrl, openUrl } from "./issue";
+import type { IssueKind } from "./issue";
 import {
     DEFAULT_NAME, DEFAULT_TOOL, TOOL_NAMES, addAccount, addProfile, getActive, getTool,
     isToolName, launchTool, listAccounts, listProfiles, loginTool, removeAccount,
@@ -34,7 +36,7 @@ const PKG = readJson<{ version?: string }>(join(__dirname, "..", "package.json")
 // Fixed commands plus one launch command per supported tool (e.g. `enigma claude`).
 const COMMANDS = new Set<string>([
     "install", "security", "guard", "seal", "check", "config", "account", "accounts",
-    "profile", "profiles", "statusline", "help", "version",
+    "profile", "profiles", "issue", "statusline", "help", "version",
     ...TOOL_NAMES,
 ]);
 
@@ -133,6 +135,8 @@ Commands:
                          unset <name> <tool>        Drop a tool from the profile
                          rename <old> <new>         Rename a profile (mappings stay)
                          remove <name>              Delete a profile (accounts stay)
+  issue [bug|feature]  Open a prefilled GitHub issue (OS, versions, terminal,
+                       detected agents autocompleted; default: bug)
   seal                 Maintenance: (re)compute skill content hashes
   check                Integrity gate: verify skills are well-formed and sealed
   statusline           Print the [ENIGMA] badge for an agent status bar (shows the active level)
@@ -180,6 +184,7 @@ Examples:
   enigma profile set work claude work # 'work' profile uses claude account 'work'
   enigma profile set work codex acme  # ...and codex account 'acme'
   enigma profile use work             # now 'enigma claude'/'enigma codex' use them
+  enigma issue                        # report a bug with your environment prefilled
 `);
 }
 
@@ -353,6 +358,27 @@ async function runProfileCli(opts: CliOptions, interactive: boolean): Promise<nu
 }
 
 /**
+ * `enigma issue [bug|feature]` surface: print a GitHub new-issue URL with the
+ * environment fields prefilled (OS, OS version, terminal, detected agents,
+ * enigma version, install method) and offer to open it in the browser. The URL
+ * is always printed so it works in non-interactive shells too.
+ */
+async function runIssueCli(kindArg: string | undefined, version: string, interactive: boolean): Promise<number> {
+    const kind = (kindArg ?? "bug") as IssueKind;
+    if (kind !== "bug" && kind !== "feature") {
+        console.error(`Unknown issue type: ${kindArg}. Try: bug, feature.`);
+        return 1;
+    }
+    const url = buildIssueUrl(kind, version);
+    console.log(`Prefilled ${kind} report (environment details autocompleted):\n\n${url}\n`);
+    if (interactive) {
+        const open = await p.confirm({ message: "Open it in your browser now?", initialValue: true });
+        if (!p.isCancel(open) && open && !openUrl(url)) console.error("Could not open the browser; use the URL above.");
+    }
+    return 0;
+}
+
+/**
  * Print the [ENIGMA] status badge for an agent status bar (e.g. Claude Code's
  * statusLine). Always shows `[ENIGMA]`; when token-efficient output is active it
  * appends the level, e.g. `[ENIGMA:FULL]` / `[ENIGMA:ULTRA]`. Amber unless NO_COLOR.
@@ -391,6 +417,7 @@ export async function run(argv: string[]): Promise<void> {
     }
     if (opts.command === "account") { process.exit(await runAccountCli(opts, interactive)); }
     if (opts.command === "profile") { process.exit(await runProfileCli(opts, interactive)); }
+    if (opts.command === "issue") { process.exit(await runIssueCli(opts.positionals[0], version, interactive)); }
 
     if (opts.command === "install") {
         p.intro("enigma - install agent skills");
