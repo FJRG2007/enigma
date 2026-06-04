@@ -27,10 +27,13 @@ interface UpdateCache {
 }
 
 /**
- * Inline script run by a detached child: fetch the latest version and write it to
- * the cache. Self-aborts after 5s and swallows every error so it can never hang
- * or surface output. Values arrive via env vars (not string interpolation) to
- * keep the registry response out of the executed code.
+ * Inline script for the detached child on the DEV path only (node/tsx, where
+ * process.execPath is node and `-e` works): fetch the latest version and write it
+ * to the cache. Self-aborts after 5s and swallows every error so it can never
+ * hang or surface output. Values arrive via env vars (not string interpolation)
+ * to keep the registry response out of the executed code. The packaged binary
+ * cannot run this (a Bun-compiled executable has no `-e`); it re-invokes itself
+ * with the hidden `__update-check` command instead (see performUpdateCheck).
  */
 const CHILD_SCRIPT = [
     "const fs = require('fs');",
@@ -42,6 +45,26 @@ const CHILD_SCRIPT = [
     "  .catch(() => {})",
     "  .finally(() => clearTimeout(t));",
 ].join("\n");
+
+/**
+ * Entrypoint of the hidden `enigma __update-check` command: the compiled binary's
+ * detached child runs this to fetch the latest version and refresh the cache
+ * (mirrors CHILD_SCRIPT). Bounded by the same 5s abort; errors leave the attempt
+ * stamp in place, retried on the stale cadence.
+ */
+export async function performUpdateCheck(): Promise<void> {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 5000);
+    try {
+        const res = await fetch(REGISTRY_URL, { signal: ctrl.signal, headers: { "user-agent": "enigma-cli-update-check" } });
+        const data = res.ok ? (await res.json()) as { version?: string } : null;
+        if (data?.version) writeFileSync(CACHE_FILE, JSON.stringify({ latest: data.version, checkedAt: Date.now() }));
+    } catch {
+        // Offline/blocked registry: keep the stamp, the stale cadence retries.
+    } finally {
+        clearTimeout(t);
+    }
+}
 
 /** Split a version into [major, minor, patch], dropping a leading "v" and any prerelease tag. */
 function parseVersion(version: string): [number, number, number] {
@@ -87,25 +110,42 @@ function readCache(): UpdateCache | null {
 /**
  * Kick off a detached, fire-and-forget registry check if the cache is stale.
  * Stamps the cache with the attempt time up front so repeated commands (or an
- * unreachable registry) don't spawn a checker on every run. A cache whose
- * `latest` is already older than the running version is stale by definition
- * (the user updated past it, or a release just shipped), so it re-checks on a
- * much shorter cadence - but not on every run, or a dev build running ahead
- * of npm would hit the registry once per command.
+ * unreachable registry) don't spawn a checker on every run. A cache with no
+ * `latest` (a previous check failed) or whose `latest` is already older than the
+ * running version (the user updated past it, or a release just shipped) is stale
+ * by definition, so it re-checks on a much shorter cadence - but not on every
+ * run, or a dev build running ahead of npm would hit the registry per command.
+ *
+ * The child process depends on the runtime: the compiled Bun binary cannot run
+ * `node -e` scripts (its execPath is the binary itself, which parses `-e` as a
+ * CLI flag), so it re-invokes itself with the hidden `__update-check` command;
+ * Bun running the source entry re-runs that entry with the same command; dev
+ * runs under node/tsx keep the classic update-notifier `-e` child.
  */
 function scheduleUpdateCheck(current: string): void {
     try {
         const cache = readCache();
-        const cacheBehind = cache?.latest ? isNewer(current, cache.latest) : false;
-        const interval = cacheBehind ? STALE_RECHECK_MS : CHECK_INTERVAL_MS;
+        const cacheStale = !cache?.latest || isNewer(current, cache.latest);
+        const interval = cacheStale ? STALE_RECHECK_MS : CHECK_INTERVAL_MS;
         if (cache && Date.now() - cache.checkedAt < interval) return;
         writeFileSync(CACHE_FILE, JSON.stringify({ latest: cache?.latest ?? null, checkedAt: Date.now() }));
-        const child = spawn(process.execPath, ["-e", CHILD_SCRIPT], {
-            detached: true,
-            stdio: "ignore",
-            windowsHide: true,
-            env: { ...process.env, E_URL: REGISTRY_URL, E_FILE: CACHE_FILE },
-        });
+        const exe = basename(process.execPath).toLowerCase();
+        const spawnOpts = { detached: true, stdio: "ignore", windowsHide: true } as const;
+        let child;
+        if (exe === "node" || exe === "node.exe") {
+            // Dev under node/tsx: the classic update-notifier `node -e` child.
+            child = spawn(process.execPath, ["-e", CHILD_SCRIPT], {
+                ...spawnOpts,
+                env: { ...process.env, E_URL: REGISTRY_URL, E_FILE: CACHE_FILE },
+            });
+        } else if (exe === "bun" || exe === "bun.exe") {
+            // Bun running the source entry (npm run dev): re-run it with the command.
+            child = spawn(process.execPath, [process.argv[1]!, "__update-check"], spawnOpts);
+        } else {
+            // Compiled binary (any asset name): every arg goes straight to the
+            // embedded CLI, so it re-invokes itself with the hidden command.
+            child = spawn(process.execPath, ["__update-check"], spawnOpts);
+        }
         child.unref();
     } catch {
         // Best-effort only: a failed schedule must never affect the command.
