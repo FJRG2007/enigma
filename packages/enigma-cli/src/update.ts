@@ -12,8 +12,9 @@ import { basename, dirname, join } from "node:path";
 import { mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { spawn, spawnSync } from "node:child_process";
 import * as p from "@clack/prompts";
-import { readJson } from "./util";
+import { isNewer, readJson } from "./util";
 import { readConfig } from "./config";
+import { refreshSkillsFromGitHub } from "./skills";
 
 const REGISTRY_URL = "https://registry.npmjs.org/enigma-cli/latest";
 const UPDATE_COMMAND = "npm i -g enigma-cli@latest";
@@ -53,35 +54,43 @@ const CHILD_SCRIPT = [
  * stamp in place, retried on the stale cadence.
  */
 export async function performUpdateCheck(): Promise<void> {
+    try {
+        await fetchAndCacheLatest();
+    } catch {
+        // Offline/blocked registry: keep the stamp, the stale cadence retries.
+    }
+    // Same detached child also refreshes the GitHub skill cache, so auto-sync on
+    // the next launch deploys new skills without any explicit install/update.
+    // Bounded by its own fetch timeouts and silent by contract.
+    try { await refreshSkillsFromGitHub(); } catch { /* best-effort */ }
+}
+
+/** Fetch the latest published version (5s bound) and write it to the cache. */
+async function fetchAndCacheLatest(): Promise<void> {
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), 5000);
     try {
         const res = await fetch(REGISTRY_URL, { signal: ctrl.signal, headers: { "user-agent": "enigma-cli-update-check" } });
         const data = res.ok ? (await res.json()) as { version?: string } : null;
         if (data?.version) writeFileSync(CACHE_FILE, JSON.stringify({ latest: data.version, checkedAt: Date.now() }));
-    } catch {
-        // Offline/blocked registry: keep the stamp, the stale cadence retries.
     } finally {
         clearTimeout(t);
     }
 }
 
-/** Split a version into [major, minor, patch], dropping a leading "v" and any prerelease tag. */
-function parseVersion(version: string): [number, number, number] {
-    const core = String(version).trim().replace(/^v/, "").split("-")[0]!;
-    const [major, minor, patch] = core.split(".").map((n) => parseInt(n, 10) || 0);
-    return [major || 0, minor || 0, patch || 0];
-}
-
-/** True when `latest` is a strictly higher release than `current`. */
-function isNewer(latest: string, current: string): boolean {
-    const a = parseVersion(latest);
-    const b = parseVersion(current);
-    for (let i = 0; i < 3; i++) {
-        if (a[i]! > b[i]!) return true;
-        if (a[i]! < b[i]!) return false;
+/**
+ * Foreground registry check for `enigma update`: refresh the cache now and
+ * return the newer published version, or null when current is already the
+ * latest or the registry is unreachable.
+ */
+export async function checkLatestNow(current: string): Promise<string | null> {
+    try {
+        await fetchAndCacheLatest();
+        const latest = readCache()?.latest;
+        return latest && isNewer(latest, current) ? latest : null;
+    } catch {
+        return null;
     }
-    return false;
 }
 
 /** Wrap text in an ANSI color, but only on a real terminal that allows color. */

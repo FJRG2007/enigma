@@ -120,6 +120,13 @@ only refreshes what you already installed - it never deploys to a new agent, nev
 overwrites skills you edited locally, and never rewrites a memory file
 (`CLAUDE.md` / `AGENTS.md`) that you authored or edited yourself.
 
+Skills also update **without waiting for an npm release**: `enigma install` and
+`enigma update` check this repo on GitHub for newer sealed skills, download and
+verify them (content hash + provider), and cache them locally so installs and
+auto-sync deploy the freshest versions. The check is fully fault-tolerant - if the
+GitHub API is down, slow, or rate-limited, enigma silently keeps the bundled
+skills - and can be disabled with `enigma config remote-skills off`.
+
 ## Requirements
 
 **Minimum:** [Node.js](https://nodejs.org) `>= 18` (with `npm`), [Git](https://git-scm.com)
@@ -155,6 +162,8 @@ Everything in **Minimum**, plus:
 ```
 enigma                 Interactive menu: choose features to set up
 enigma install         Install/update agent skills
+enigma update          Fetch the latest skills from GitHub, sync deployments,
+                       and self-update enigma-cli when a newer release exists
 enigma security        Set up git security hooks in the current repo
 enigma guard [--all]   Run the commit guard (staged files, or all tracked)
 enigma config [k v]    Show or set runtime toggles (e.g. config commit-emoji off)

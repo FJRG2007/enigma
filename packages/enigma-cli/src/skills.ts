@@ -5,12 +5,12 @@
  */
 
 import { existsSync, readdirSync, readFileSync, writeFileSync, cpSync, mkdirSync, rmSync } from "node:fs";
-import { dirname, join, resolve, relative, sep } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 import * as p from "@clack/prompts";
-import { isDir, readJson } from "./util";
+import { isDir, isNewer, readJson, listFilesRel, computeContentSha } from "./util";
 import { readConfig, setEnigmaValue, OUTPUT_STYLES } from "./config";
 import type { OutputStyle } from "./config";
 import { MANAGED_PROVIDER, isManagedProvider, discoverAgents, runningStatus } from "./agents";
@@ -22,6 +22,8 @@ import type { Reporter } from "./reporter";
 import { disableClaudeAttribution, enableClaudeStatusline } from "./claude";
 import { setGhTelemetry } from "./github";
 import { resolveBypassSelection, applyBypass } from "./permissions";
+import { cachedRemoteSkills, refreshRemoteSkills, shouldCheckRemote } from "./skills-remote";
+import type { RemoteRefreshResult } from "./skills-remote";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PKG_ROOT = resolve(__dirname, "..");
@@ -92,28 +94,6 @@ function serializeMeta(meta: SkillMeta): string {
 
 function readSkillMeta(skillDir: string): SkillMeta {
     return readJson<SkillMeta>(join(skillDir, "skill.json")) || {};
-}
-
-/** List file paths under `dir` relative to it, posix-normalized. */
-function listFilesRel(dir: string, base: string = dir): string[] {
-    const out: string[] = [];
-    for (const e of readdirSync(dir)) {
-        const full = join(dir, e);
-        if (isDir(full)) out.push(...listFilesRel(full, base));
-        else out.push(relative(base, full).split(sep).join("/"));
-    }
-    return out;
-}
-
-/** Deterministic sha256 over every file in a skill EXCEPT skill.json (which carries it). */
-function computeContentSha(dir: string): string {
-    const files = listFilesRel(dir).filter((f) => f !== "skill.json").sort();
-    const h = createHash("sha256");
-    for (const f of files) {
-        h.update(f); h.update("\0");
-        h.update(readFileSync(join(dir, f))); h.update("\0");
-    }
-    return h.digest("hex");
 }
 
 /**
@@ -221,13 +201,44 @@ function computePrune(destSkillsDir: string, sourceNames: string[]): PruneEntry[
         .filter((s) => isManagedProvider(s.meta.provider));
 }
 
-/** Shared skills: every folder with a SKILL.md under assets/skills. */
-function inspectSkills(): SkillEntry[] {
+/** Skills bundled with this package: every folder with a SKILL.md under assets/skills. */
+function bundledSkills(): SkillEntry[] {
     if (!isDir(SKILLS_ROOT)) return [];
     return readdirSync(SKILLS_ROOT)
         .filter((e) => isDir(join(SKILLS_ROOT, e)) && existsSync(join(SKILLS_ROOT, e, "SKILL.md")))
         .map((e) => ({ name: e, src: join(SKILLS_ROOT, e), meta: readSkillMeta(join(SKILLS_ROOT, e)) }));
 }
+
+/**
+ * The effective skill set used for installs and syncs: the bundled assets,
+ * overlaid with any verified GitHub-cached skill that is strictly newer (see
+ * skills-remote.ts). The overlay also surfaces skills published to the repo
+ * that this package version does not bundle yet.
+ */
+function inspectSkills(): SkillEntry[] {
+    const skills = bundledSkills();
+    const remote = cachedRemoteSkills();
+    if (!remote.length) return skills;
+    const byName = new Map(skills.map((s) => [s.name, s]));
+    for (const r of remote) {
+        const bundled = byName.get(r.name);
+        if (!bundled || isNewer(r.meta.version || "", bundled.meta.version || "")) byName.set(r.name, r);
+    }
+    return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * Refresh the GitHub remote-skill cache (see skills-remote.ts), feeding it this
+ * package's bundled versions so only strictly newer releases are adopted. Safe
+ * to call from anywhere: never throws, never blocks beyond its fetch timeouts.
+ */
+export async function refreshSkillsFromGitHub(force = false): Promise<RemoteRefreshResult> {
+    const bundledVersions: Record<string, string> = {};
+    for (const s of bundledSkills()) if (s.meta.version) bundledVersions[s.name] = s.meta.version;
+    return refreshRemoteSkills({ force, bundledVersions });
+}
+
+export { shouldCheckRemote };
 
 /** The single shared memory file an agent uses (from assets/memory), if present. */
 function inspectMemory(agent: Agent): MemoryEntry[] {
@@ -363,6 +374,18 @@ async function resolveOutputStyle(opts: InstallOptions, scope: "global" | "local
 export async function installSkills(opts: InstallOptions, interactive: boolean, reporter: Reporter = clackReporter()): Promise<void> {
     const available = discoverAgents();
     if (available.length === 0) reporter.fatal("No installable agents known.");
+
+    // Refresh the GitHub skill cache first so the plan below uses the newest
+    // published skills, not only the ones bundled with this package version.
+    // Strictly best-effort: any failure falls back to bundled/cached skills.
+    if (shouldCheckRemote(false)) {
+        const sp = reporter.spinner();
+        sp.start("Checking GitHub for skill updates...");
+        const r = await refreshSkillsFromGitHub();
+        if (r.error) sp.stop(`Skill update check failed (${r.error}); using bundled skills.`);
+        else if (r.updated.length) sp.stop(`Skill update(s) from GitHub: ${r.updated.join(", ")}.`);
+        else sp.stop("Skills are up to date with GitHub.");
+    }
 
     // --- scope ---
     let scope: "global" | "local";

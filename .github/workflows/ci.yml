@@ -26,6 +26,12 @@ jobs:
       - name: Verify
         run: npm run verify
 
+      # Unit tests that need the Bun test runner (network is stubbed; no TTY).
+      - uses: oven-sh/setup-bun@v2
+      - name: Test remote skill updates
+        run: bun test tests/skills-remote.test.ts
+        working-directory: packages/enigma-cli
+
       # The package must build (tsup) so dist is publishable.
       - name: Build
         run: npm run build

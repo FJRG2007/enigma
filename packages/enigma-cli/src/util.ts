@@ -3,8 +3,9 @@
  * can import them without pulling in heavier concerns.
  */
 
-import { existsSync, statSync, readFileSync } from "node:fs";
-import { join, sep } from "node:path";
+import { existsSync, statSync, readFileSync, readdirSync } from "node:fs";
+import { join, relative, sep } from "node:path";
+import { createHash } from "node:crypto";
 
 /** True if `pth` exists and is a directory. */
 export function isDir(pth: string): boolean {
@@ -44,4 +45,44 @@ export function resolveBin(bin: string): string | null {
 /** Is an executable named `bin` resolvable on the user's PATH? (cross-platform, no spawn) */
 export function isOnPath(bin: string): boolean {
     return resolveBin(bin) !== null;
+}
+
+/** Split a version into [major, minor, patch], dropping a leading "v" and any prerelease tag. */
+export function parseVersion(version: string): [number, number, number] {
+    const core = String(version).trim().replace(/^v/, "").split("-")[0]!;
+    const [major, minor, patch] = core.split(".").map((n) => parseInt(n, 10) || 0);
+    return [major || 0, minor || 0, patch || 0];
+}
+
+/** True when `latest` is a strictly higher release than `current`. */
+export function isNewer(latest: string, current: string): boolean {
+    const a = parseVersion(latest);
+    const b = parseVersion(current);
+    for (let i = 0; i < 3; i++) {
+        if (a[i]! > b[i]!) return true;
+        if (a[i]! < b[i]!) return false;
+    }
+    return false;
+}
+
+/** List file paths under `dir` relative to it, posix-normalized. */
+export function listFilesRel(dir: string, base: string = dir): string[] {
+    const out: string[] = [];
+    for (const e of readdirSync(dir)) {
+        const full = join(dir, e);
+        if (isDir(full)) out.push(...listFilesRel(full, base));
+        else out.push(relative(base, full).split(sep).join("/"));
+    }
+    return out;
+}
+
+/** Deterministic sha256 over every file in a skill EXCEPT skill.json (which carries it). */
+export function computeContentSha(dir: string): string {
+    const files = listFilesRel(dir).filter((f) => f !== "skill.json").sort();
+    const h = createHash("sha256");
+    for (const f of files) {
+        h.update(f); h.update("\0");
+        h.update(readFileSync(join(dir, f))); h.update("\0");
+    }
+    return h.digest("hex");
 }

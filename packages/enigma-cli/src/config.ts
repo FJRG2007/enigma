@@ -34,6 +34,8 @@ export interface EnigmaConfig {
     outputStyle: OutputStyle;
     /** Silently re-deploy updated skills/memory when launching a tool through enigma. */
     autoSync: boolean;
+    /** Fetch newer skills from the GitHub repo (install/update) without a package update. */
+    remoteSkills: boolean;
     /** Master switch for applying permission bypass on install (default on). */
     permissionBypass: boolean;
     /** Agents the user explicitly opted out of bypass; never auto-enabled even when permissionBypass is on. */
@@ -57,10 +59,13 @@ export interface EnigmaConfig {
  * autoSync is on by default: launching a tool through enigma (e.g. `enigma claude`)
  * refreshes an EXISTING deployment so package updates apply without re-running
  * `enigma install`. It never creates a first deployment (that stays explicit consent).
+ * remoteSkills is on by default: `enigma install`/`enigma update` check the GitHub
+ * repo for skills newer than the bundled ones and cache verified downloads, so
+ * skill fixes reach users without waiting for an npm release (skills-remote.ts).
  */
 export const CONFIG_DEFAULTS: EnigmaConfig = {
     commitEmoji: true, updateNotifier: true, fullscreen: true, parallelSubagents: false, outputStyle: "off",
-    autoSync: true, permissionBypass: true, bypassDisabled: [],
+    autoSync: true, remoteSkills: true, permissionBypass: true, bypassDisabled: [],
 };
 
 export type EnigmaConfigKey = keyof EnigmaConfig;

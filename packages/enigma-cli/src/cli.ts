@@ -9,14 +9,14 @@ import { fileURLToPath } from "node:url";
 import * as p from "@clack/prompts";
 import { readJson } from "./util";
 import { collectReporter } from "./reporter";
-import { installSkills, sealSources, checkSources, syncDeployed, hasDeployment } from "./skills";
+import { installSkills, sealSources, checkSources, syncDeployed, hasDeployment, refreshSkillsFromGitHub, shouldCheckRemote } from "./skills";
 import type { InstallOptions } from "./skills";
 import { setupGitHooks, GUARD_PROTECTIONS } from "./security";
 import { discoverAgents } from "./agents";
 import { runGuardCli } from "./guard";
 import { runConfigCli } from "./settings";
 import { readConfig } from "./config";
-import { getAvailableUpdate, notifyUpdate, performUpdateCheck, runUpdate } from "./update";
+import { checkLatestNow, getAvailableUpdate, notifyUpdate, performUpdateCheck, runUpdate } from "./update";
 import { buildIssueUrl, openUrl } from "./issue";
 import type { IssueKind } from "./issue";
 import {
@@ -35,7 +35,7 @@ const PKG = readJson<{ version?: string }>(join(__dirname, "..", "package.json")
 
 // Fixed commands plus one launch command per supported tool (e.g. `enigma claude`).
 const COMMANDS = new Set<string>([
-    "install", "security", "guard", "seal", "check", "config", "account", "accounts",
+    "install", "update", "security", "guard", "seal", "check", "config", "account", "accounts",
     "profile", "profiles", "issue", "statusline", "help", "version",
     ...TOOL_NAMES,
 ]);
@@ -110,6 +110,8 @@ Usage:
 Commands:
   (none)               Interactive hub: configure settings or set up features
   install              Install/update agent skills (Claude Code, Codex, OpenCode)
+  update               Fetch the latest skills from GitHub (no package release
+                       needed), sync deployments, and self-update enigma-cli
   security             Set up git security hooks in the current repo
   guard [--all]        Run the commit guard (staged files, or --all for every tracked file)
   config [key val]     Configure settings: no args opens the interactive menu;
@@ -142,9 +144,9 @@ Commands:
   statusline           Print the [ENIGMA] badge for an agent status bar (shows the active level)
   help, version
 
-Config keys: commit-emoji, update-notifier, auto-sync, fullscreen, parallel-subagents,
-             output-style (off|lite|full|ultra), claude-attribution, gh-telemetry,
-             permission-bypass, bypass-claude, bypass-codex, bypass-opencode
+Config keys: commit-emoji, update-notifier, auto-sync, remote-skills, fullscreen,
+             parallel-subagents, output-style (off|lite|full|ultra), claude-attribution,
+             gh-telemetry, permission-bypass, bypass-claude, bypass-codex, bypass-opencode
 
 Install options:
   -g, --global         Install at user level
@@ -202,6 +204,35 @@ function autoSyncForLaunch(tool: string): void {
     } catch (err) {
         console.error(`enigma: skill auto-sync failed (${(err as Error).message}); launching anyway.`);
     }
+}
+
+/**
+ * `enigma update` (also the hub's "update now" action): refresh the GitHub
+ * skill cache, push new skills to existing deployments, then self-update
+ * enigma-cli when a newer release is published. Each phase is independent and
+ * failure-tolerant, so an unreachable GitHub or npm never blocks the others.
+ */
+async function runUpdateCli(version: string): Promise<void> {
+    if (shouldCheckRemote(true)) {
+        const s = p.spinner();
+        s.start("Checking GitHub for skill updates...");
+        const r = await refreshSkillsFromGitHub(true);
+        if (r.error) s.stop(`Skill update check failed (${r.error}); keeping bundled/cached skills.`);
+        else if (r.updated.length) s.stop(`Skill update(s) from GitHub: ${r.updated.join(", ")}.`);
+        else s.stop("Skills are up to date with GitHub.");
+    } else {
+        p.log.info("Remote skill updates are off (enable with 'enigma config remote-skills on').");
+    }
+    try {
+        for (const notice of syncDeployed()) p.log.info(`Synced ${notice}.`);
+    } catch (err) {
+        p.log.warn(`Skill sync failed: ${(err as Error).message}`);
+    }
+    const s = p.spinner();
+    s.start("Checking npm for a newer enigma-cli...");
+    const latest = await checkLatestNow(version);
+    s.stop(latest ? `Update available: ${version} -> ${latest}.` : `enigma-cli ${version} is up to date.`);
+    if (latest) runUpdate();
 }
 
 /**
@@ -423,6 +454,12 @@ export async function run(argv: string[]): Promise<void> {
     if (opts.command === "profile") { process.exit(await runProfileCli(opts, interactive)); }
     if (opts.command === "issue") { process.exit(await runIssueCli(opts.positionals[0], version, interactive)); }
 
+    if (opts.command === "update") {
+        p.intro("enigma - update");
+        await runUpdateCli(version);
+        p.outro("Done.");
+        return;
+    }
     if (opts.command === "install") {
         p.intro("enigma - install agent skills");
         await installSkills(opts, interactive);
@@ -526,8 +563,8 @@ export async function run(argv: string[]): Promise<void> {
         await loginTool(action.tool, action.account);
         action = await runHomeTui(buildCtx());
     }
-    // "Update now" from the hub: run npm in the freed terminal (the running binary is
-    // about to be replaced, so do not reopen the hub).
-    if (action?.type === "update") { runUpdate(); return; }
+    // "Update now" from the hub: run the full update (skills + npm) in the freed
+    // terminal (the running binary is about to be replaced, so do not reopen the hub).
+    if (action?.type === "update") { await runUpdateCli(version); return; }
     await notifyUpdate(version, interactive);
 }
