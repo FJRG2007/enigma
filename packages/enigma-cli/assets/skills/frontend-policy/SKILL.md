@@ -1,6 +1,6 @@
 ---
 name: frontend-policy
-description: Frontend architecture - reusable components, abstraction thresholds, state management, client-side caching (localStorage/sessionStorage to avoid redundant server calls and survive rate limits), optimistic UI with rollback, and periodic React code-health audits (react-doctor). Use when building or changing UI components, client state, data fetching/caching, auditing React code, or any frontend structure.
+description: Frontend architecture - reusable components, abstraction thresholds, state management, no-op save detection (skip mutations when the edited state equals the saved state), client-side caching (localStorage/sessionStorage to avoid redundant server calls and survive rate limits), optimistic UI with rollback, and periodic React code-health audits (react-doctor). Use when building or changing UI components, client state, forms/save flows, data fetching/caching, auditing React code, or any frontend structure.
 ---
 
 # Frontend Architecture Policy
@@ -63,6 +63,31 @@ description: Frontend architecture - reusable components, abstraction thresholds
 - Keep state as local as possible; lift it only when genuinely shared.
 - Derive values during render instead of duplicating state.
 - Avoid redundant client state that mirrors server state without a reason.
+
+---
+
+## No-Op Save Detection (Dirty-State Check)
+
+Before sending a save/update mutation, compare the edited state against the last-known saved state. If they are equal, the save is a no-op: skip the request entirely.
+
+### The rule
+
+- Track the saved (pristine) snapshot of the form/settings when it loads or after a successful save.
+- Compute dirtiness by comparing the current edited values against that snapshot (deep/structural equality on the fields being saved), not by counting user interactions.
+  - Example: a value goes from state x to state z, then back to x before saving. The net change is zero - the form is NOT dirty, and pressing Save must send nothing to the backend.
+- When the form is not dirty, the Save action does nothing (and the button should reflect it, e.g. disabled or neutral); no request, no spinner, no toast.
+- When partial updates are supported, send only the changed fields (a diff against the snapshot), not the full object.
+- After a successful save, replace the snapshot with the newly saved state so subsequent edits diff against it.
+
+### When NOT to apply it (judgment call)
+
+This is the default, not an absolute. Skip the no-op check and allow the save to go through when overwriting has value on its own:
+
+- The resource is edited concurrently by many users or updated constantly server-side, and an explicit save is meant to assert/overwrite the user's view ("last write wins" by intent).
+- Saving has intentional side effects beyond persisting values: bumping `updatedAt`, re-triggering a pipeline/deploy, re-validating, or acknowledging a state.
+- The client snapshot cannot be trusted to match the server (long-lived stale forms) and the save doubles as a sync.
+
+Decide per case which mode fits; when in doubt for simple single-user forms and settings panels, apply the no-op check.
 
 ---
 
