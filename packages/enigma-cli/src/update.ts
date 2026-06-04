@@ -19,6 +19,7 @@ const REGISTRY_URL = "https://registry.npmjs.org/enigma-cli/latest";
 const UPDATE_COMMAND = "npm i -g enigma-cli@latest";
 const CACHE_FILE = join(homedir(), ".enigma-update-check.json");
 const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000; // re-check the registry at most once a day
+const STALE_RECHECK_MS = 10 * 60 * 1000; // faster cadence while the cache lags the running version
 
 interface UpdateCache {
     latest: string | null;
@@ -86,12 +87,18 @@ function readCache(): UpdateCache | null {
 /**
  * Kick off a detached, fire-and-forget registry check if the cache is stale.
  * Stamps the cache with the attempt time up front so repeated commands (or an
- * unreachable registry) don't spawn a checker on every run.
+ * unreachable registry) don't spawn a checker on every run. A cache whose
+ * `latest` is already older than the running version is stale by definition
+ * (the user updated past it, or a release just shipped), so it re-checks on a
+ * much shorter cadence - but not on every run, or a dev build running ahead
+ * of npm would hit the registry once per command.
  */
-function scheduleUpdateCheck(): void {
+function scheduleUpdateCheck(current: string): void {
     try {
         const cache = readCache();
-        if (cache && Date.now() - cache.checkedAt < CHECK_INTERVAL_MS) return;
+        const cacheBehind = cache?.latest ? isNewer(current, cache.latest) : false;
+        const interval = cacheBehind ? STALE_RECHECK_MS : CHECK_INTERVAL_MS;
+        if (cache && Date.now() - cache.checkedAt < interval) return;
         writeFileSync(CACHE_FILE, JSON.stringify({ latest: cache?.latest ?? null, checkedAt: Date.now() }));
         const child = spawn(process.execPath, ["-e", CHILD_SCRIPT], {
             detached: true,
@@ -154,8 +161,12 @@ export function runUpdate(): void {
         // does not block the install.
         spawnSync("npm", ["cache", "clean", "--force"], { stdio: "inherit", shell: onWindows });
         const result = spawnSync("npm", ["i", "-g", "enigma-cli@latest"], { stdio: "inherit", shell: onWindows });
-        if (result.status === 0) console.log("Updated. Re-run enigma to use the new version.");
-        else console.log(`Update did not complete. Run '${UPDATE_COMMAND}' manually.`);
+        if (result.status === 0) {
+            // Drop the cached check so the freshly installed version re-reads the
+            // registry on its next run instead of trusting a pre-update snapshot.
+            try { rmSync(CACHE_FILE, { force: true }); } catch { /* best-effort */ }
+            console.log("Updated. Re-run enigma to use the new version.");
+        } else console.log(`Update did not complete. Run '${UPDATE_COMMAND}' manually.`);
     } catch {
         console.log(`Could not run the update. Run '${UPDATE_COMMAND}' manually.`);
     }
@@ -170,7 +181,7 @@ export function getAvailableUpdate(current: string): { current: string; latest: 
     try {
         if (!process.stdout.isTTY || process.env.CI) return null;
         if (!readConfig().config.updateNotifier) return null;
-        scheduleUpdateCheck();
+        scheduleUpdateCheck(current);
         const cache = readCache();
         const latest = cache?.latest ? String(cache.latest).replace(/[^\w.+-]/g, "") : "";
         if (!latest || !isNewer(latest, current)) return null;
@@ -190,7 +201,7 @@ export async function notifyUpdate(current: string, interactive: boolean): Promi
     if (!process.stdout.isTTY || process.env.CI) return;
     try {
         if (!readConfig().config.updateNotifier) return;
-        scheduleUpdateCheck();
+        scheduleUpdateCheck(current);
         const cache = readCache();
         const latest = cache?.latest ? String(cache.latest).replace(/[^\w.+-]/g, "") : "";
         if (!latest || !isNewer(latest, current)) return;
