@@ -3,6 +3,6 @@
   "version": "1.0.0",
   "provider": "FJRG2007/enigma",
   "description": "Test strategy, coverage gates, deterministic tests, mocking discipline, and regression-first bug fixing.",
-  "cliVersion": "1.10.2",
+  "cliVersion": "1.11.0",
   "sha": "d19fa8ec7985ed231478be504d3c80360897f555d0bc0624bea19c091f459fb0"
 }
