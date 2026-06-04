@@ -9,9 +9,10 @@
  * non-TUI commands (run under tsx/Node in dev) never resolve the native core at
  * startup, only when a TUI is actually opened.
  *
- * Mouse support: rows carry onMouseDown handlers and the result view an onMouseScroll
- * handler, all reusing the same state setters as the key map (no duplicated logic).
- * OpenTUI enables mouse capture by default (useMouse).
+ * Mouse support: rows carry onMouseDown handlers, and every scrollable list (sidebar,
+ * panels, overlays, result view) carries an onMouseScroll handler via wheel(), all
+ * reusing the same state setters as the key map (no duplicated logic). OpenTUI
+ * enables mouse capture by default (useMouse).
  */
 
 import { CATEGORIES, ALL_SETTINGS, valueLabel, invalidateSettingReads } from "../settings-registry";
@@ -102,9 +103,11 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
     const renameProfileFn = opts.hub?.renameProfile;
     const removeProfileFn = opts.hub?.removeProfile;
     const setProfileAccountFn = opts.hub?.setProfileAccount;
-    // The Accounts/Profiles panels only appear when the hub wired their operations in.
+    // The unified Accounts & profiles panel appears when the hub wired either side
+    // in; each section renders only when its operations are available.
     const hasAccounts = showActions && Boolean(activateAccount) && initialAccounts.length > 0;
     const hasProfiles = showActions && Boolean(activateProfileFn);
+    const hasIdentity = hasAccounts || hasProfiles;
 
     // Generic searchable-list items (the opencode-model-picker pattern): prefix
     // matches first, then substring matches over value+label+hint.
@@ -130,16 +133,29 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
     const selStyle = (selected: boolean, normal: Record<string, unknown> = {}): Record<string, unknown> =>
         selected ? { bg: SEL_BG, fg: SEL_FG, attributes: BOLD } : normal;
 
+    /**
+     * Mouse-wheel props for a list container: route scroll up/down to the same
+     * movement handler the arrow keys use (events bubble up from child rows).
+     */
+    const wheel = (move: (delta: 1 | -1) => void): Record<string, unknown> => ({
+        onMouseScroll: (e: MouseEvt) => {
+            const dir = e.scroll?.direction;
+            if (dir === "up") move(-1);
+            else if (dir === "down") move(1);
+        },
+    });
+
     const panelBox = (borderColor: string, children: RNode[], extra: Record<string, unknown> = {}): RNode =>
         h(box, { border: true, borderStyle: "rounded", borderColor, flexDirection: "column", paddingLeft: 1, paddingRight: 1, flexGrow: 1, ...extra }, ...children);
 
-    const renderSidebar = (items: Array<{ title: string }>, index: number, focusRight: boolean, width: number, onSelect: (i: number) => void): RNode =>
-        h(box, { border: true, borderStyle: "rounded", borderColor: focusRight ? COL.gray : COL.cyan, flexDirection: "column", paddingLeft: 1, paddingRight: 1, width, marginRight: 1 },
+    const renderSidebar = (items: Array<{ title: string }>, index: number, focusRight: boolean, width: number, onSelect: (i: number) => void, onMove: (delta: 1 | -1) => void): RNode =>
+        h(box, { border: true, borderStyle: "rounded", borderColor: focusRight ? COL.gray : COL.cyan, flexDirection: "column", paddingLeft: 1, paddingRight: 1, width, marginRight: 1, ...wheel(onMove) },
             txt("MENU", { fg: COL.gray, attributes: BOLD }),
             ...items.map((it, i) => txt(` ${it.title} `, {
                 ...(!focusRight && i === index
                     ? { bg: SEL_BG, fg: SEL_FG, attributes: BOLD }
                     : { fg: i === index ? COL.cyan : undefined }),
+                truncate: true,
                 onMouseDown: () => onSelect(i),
             })));
 
@@ -147,7 +163,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         title: string; blurb: string; focused: boolean;
         items: Array<{ key: string; label: string; hint: string }>;
         cursor: number; checked: Record<string, boolean>;
-        onToggle: (i: number) => void;
+        onToggle: (i: number) => void; onMove: (delta: 1 | -1) => void;
     }): RNode =>
         panelBox(s.focused ? COL.cyan : COL.gray, [
             txt(s.title, { fg: COL.cyan, attributes: BOLD }),
@@ -160,54 +176,54 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
                         txt(` ${on ? "[x]" : "[ ]"} ${it.label} `, selStyle(selected)),
                         txt(`${it.hint}  `, { fg: COL.gray }));
                 })),
-        ]);
+        ], wheel(s.onMove));
 
-    const renderAccounts = (s: {
-        accounts: HubAccount[]; focused: boolean; cursor: number;
-        onSelect: (i: number) => void;
+    // Unified Accounts & profiles panel: both lists share one panel, split by
+    // visual section headers, and a single cursor walks the flat row list.
+    // Profiles keep their synthetic "(none)" first row (no active profile = each
+    // tool uses its own active account); keys act on the row kind under the cursor.
+    type IdRow =
+        | { kind: "account"; index: number; account: HubAccount }
+        | { kind: "profile"; index: number; name: string; label: string; active: boolean; summary: string };
+    const renderIdentity = (s: {
+        rows: IdRow[]; focused: boolean; cursor: number;
+        onSelect: (i: number) => void; onMove: (delta: 1 | -1) => void;
     }): RNode => {
-        const selectedAcc = s.accounts[s.cursor];
+        const items: RNode[] = [];
+        let lastKind: IdRow["kind"] | null = null;
+        s.rows.forEach((row, i) => {
+            if (row.kind !== lastKind) {
+                items.push(txt(row.kind === "account" ? "ACCOUNTS" : "PROFILES", { fg: COL.gray, attributes: BOLD, marginTop: lastKind ? 1 : 0 }));
+                lastKind = row.kind;
+            }
+            const selected = s.focused && i === s.cursor;
+            if (row.kind === "account") {
+                const a = row.account;
+                items.push(h(box, { flexDirection: "row", justifyContent: "space-between", onMouseDown: () => s.onSelect(i) },
+                    txt(` ${a.active ? "*" : " "} ${a.name} `, selStyle(selected, { fg: a.active ? COL.green : undefined, attributes: a.active ? BOLD : undefined })),
+                    txt(`${a.email ?? "not logged in"}   ${a.toolLabel}  `, { fg: a.email ? COL.gray : COL.yellow, truncate: true })));
+            } else {
+                items.push(h(box, { flexDirection: "row", justifyContent: "space-between", onMouseDown: () => s.onSelect(i) },
+                    txt(` ${row.active ? "*" : " "} ${row.label} `, selStyle(selected, { fg: row.active ? COL.green : undefined, attributes: row.active ? BOLD : undefined })),
+                    txt(`${row.summary}  `, { fg: COL.gray, truncate: true })));
+            }
+        });
+        const cur = s.rows[s.cursor];
         return panelBox(s.focused ? COL.cyan : COL.gray, [
-            txt("Accounts", { fg: COL.cyan, attributes: BOLD }),
-            txt("Switch login without logging out (per-account config dir)", { fg: COL.gray }),
-            h(box, { flexDirection: "column", marginTop: 1 },
-                ...s.accounts.map((a, i) => {
-                    const selected = s.focused && i === s.cursor;
-                    const identity = a.email ?? "not logged in";
-                    return h(box, { flexDirection: "row", justifyContent: "space-between", onMouseDown: () => s.onSelect(i) },
-                        txt(` ${a.active ? "*" : " "} ${a.name} `, selStyle(selected, { fg: a.active ? COL.green : undefined, attributes: a.active ? BOLD : undefined })),
-                        txt(`${identity}   ${a.toolLabel}  `, { fg: a.email ? COL.gray : COL.yellow, truncate: true }));
-                })),
+            txt("Accounts & profiles", { fg: COL.cyan, attributes: BOLD }),
+            txt("Per-tool logins; a profile pins one account per tool and drives launches", { fg: COL.gray }),
+            h(box, { flexDirection: "column", marginTop: 1 }, ...items),
             h(box, { flexGrow: 1 }),
-            txt(selectedAcc ? ` ${selectedAcc.dir}` : " ", { fg: COL.gray, truncate: true }),
-            txt("enter set active   c connect/login   a add   r rename   d remove", { fg: COL.gray, marginTop: 1, truncate: true }),
-        ]);
+            txt(cur?.kind === "account" ? ` ${cur.account.dir}` : " ", { fg: COL.gray, truncate: true }),
+            txt(cur?.kind === "profile"
+                ? "enter set active   a add   e edit accounts   r rename   d remove"
+                : "enter set active   c connect/login   a add   r rename   d remove", { fg: COL.gray, marginTop: 1, truncate: true }),
+        ], wheel(s.onMove));
     };
 
-    // Profiles panel: a synthetic "(none)" row first (no active profile = each
-    // tool uses its own active account), then one row per profile with its
-    // tool->account mappings. Creation/editing stays in `enigma profile`.
-    const renderProfiles = (s: {
-        rows: Array<{ name: string; label: string; active: boolean; summary: string }>;
-        focused: boolean; cursor: number; onSelect: (i: number) => void;
-    }): RNode =>
-        panelBox(s.focused ? COL.cyan : COL.gray, [
-            txt("Profiles", { fg: COL.cyan, attributes: BOLD }),
-            txt("One account per tool under a name; the active profile drives launches", { fg: COL.gray }),
-            h(box, { flexDirection: "column", marginTop: 1 },
-                ...s.rows.map((r, i) => {
-                    const selected = s.focused && i === s.cursor;
-                    return h(box, { flexDirection: "row", justifyContent: "space-between", onMouseDown: () => s.onSelect(i) },
-                        txt(` ${r.active ? "*" : " "} ${r.label} `, selStyle(selected, { fg: r.active ? COL.green : undefined, attributes: r.active ? BOLD : undefined })),
-                        txt(`${r.summary}  `, { fg: COL.gray, truncate: true }));
-                })),
-            h(box, { flexGrow: 1 }),
-            txt("enter set active   a add   e edit accounts   r rename   d remove", { fg: COL.gray, marginTop: 1, truncate: true }),
-        ]);
-
-    const renderRemoveConfirm = (message: string, index: number, onChoose: (i: number) => void): RNode =>
+    const renderRemoveConfirm = (message: string, index: number, onChoose: (i: number) => void, onMove: (delta: 1 | -1) => void): RNode =>
         h(box, { flexGrow: 1, justifyContent: "center", alignItems: "center" },
-            h(box, { border: true, borderStyle: "rounded", borderColor: COL.red, flexDirection: "column", paddingLeft: 2, paddingRight: 2, paddingTop: 1, paddingBottom: 1 },
+            h(box, { border: true, borderStyle: "rounded", borderColor: COL.red, flexDirection: "column", paddingLeft: 2, paddingRight: 2, paddingTop: 1, paddingBottom: 1, ...wheel(onMove) },
                 txt(message, { fg: COL.red, attributes: BOLD }),
                 h(box, { flexDirection: "column", marginTop: 1 },
                     ...["Remove", "Cancel"].map((o, i) => txt(` ${o} `, { ...selStyle(i === index), onMouseDown: () => onChoose(i) })))));
@@ -231,10 +247,10 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
     // the input never needs an onSubmit here.
     const renderSearchSelect = (s: {
         title: string; items: PickItem[]; cursor: number; error?: string;
-        onQuery: (value: string) => void; onPick: (i: number) => void;
+        onQuery: (value: string) => void; onPick: (i: number) => void; onMove: (delta: 1 | -1) => void;
     }): RNode =>
         h(box, { flexGrow: 1, justifyContent: "center", alignItems: "center" },
-            h(box, { border: true, borderStyle: "rounded", borderColor: COL.cyan, flexDirection: "column", paddingLeft: 2, paddingRight: 2, paddingTop: 1, paddingBottom: 1, width: 56 },
+            h(box, { border: true, borderStyle: "rounded", borderColor: COL.cyan, flexDirection: "column", paddingLeft: 2, paddingRight: 2, paddingTop: 1, paddingBottom: 1, width: 56, ...wheel(s.onMove) },
                 txt(s.title, { fg: COL.cyan, attributes: BOLD }),
                 h(box, { border: true, borderStyle: "rounded", borderColor: COL.gray, marginTop: 1 },
                     h(input, { focused: true, placeholder: "type to search...", maxLength: 64, onInput: s.onQuery })),
@@ -248,9 +264,9 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
                     ? txt(s.error, { fg: COL.red, marginTop: 1, truncate: true })
                     : txt("type to search   up/down move   enter select   esc cancel", { fg: COL.gray, marginTop: 1 })));
 
-    const renderConnectPrompt = (name: string, index: number, onChoose: (i: number) => void): RNode =>
+    const renderConnectPrompt = (name: string, index: number, onChoose: (i: number) => void, onMove: (delta: 1 | -1) => void): RNode =>
         h(box, { flexGrow: 1, justifyContent: "center", alignItems: "center" },
-            h(box, { border: true, borderStyle: "rounded", borderColor: COL.green, flexDirection: "column", paddingLeft: 2, paddingRight: 2, paddingTop: 1, paddingBottom: 1 },
+            h(box, { border: true, borderStyle: "rounded", borderColor: COL.green, flexDirection: "column", paddingLeft: 2, paddingRight: 2, paddingTop: 1, paddingBottom: 1, ...wheel(onMove) },
                 txt(`Account '${name}' created. Connect (log in) now?`, { fg: COL.green, attributes: BOLD }),
                 h(box, { flexDirection: "column", marginTop: 1 },
                     ...["Connect now", "Later"].map((o, i) => txt(` ${o} `, { ...selStyle(i === index), onMouseDown: () => onChoose(i) })))));
@@ -261,7 +277,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         valueOf: (setting: Setting, sc: Scope) => boolean;
         displayValue: (setting: Setting, sc: Scope) => string;
         isModified: (setting: Setting, sc: Scope) => boolean;
-        onSelect: (i: number) => void;
+        onSelect: (i: number) => void; onMove: (delta: 1 | -1) => void;
     }): RNode => {
         const focusedHint = s.category.settings[s.setIndex]!.hint;
         return panelBox(s.focusRight ? COL.cyan : COL.gray, [
@@ -279,12 +295,12 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
                 })),
             h(box, { flexGrow: 1 }),
             txt(focusedHint, { fg: COL.gray, marginTop: 1, truncate: true }),
-        ]);
+        ], wheel(s.onMove));
     };
 
-    const renderConfirm = (index: number, onChoose: (i: number) => void): RNode =>
+    const renderConfirm = (index: number, onChoose: (i: number) => void, onMove: (delta: 1 | -1) => void): RNode =>
         h(box, { flexGrow: 1, justifyContent: "center", alignItems: "center" },
-            h(box, { border: true, borderStyle: "rounded", borderColor: COL.yellow, flexDirection: "column", paddingLeft: 2, paddingRight: 2, paddingTop: 1, paddingBottom: 1 },
+            h(box, { border: true, borderStyle: "rounded", borderColor: COL.yellow, flexDirection: "column", paddingLeft: 2, paddingRight: 2, paddingTop: 1, paddingBottom: 1, ...wheel(onMove) },
                 txt("You have unsaved changes", { fg: COL.yellow, attributes: BOLD }),
                 h(box, { flexDirection: "column", marginTop: 1 },
                     ...EXIT_OPTIONS.map((o, i) => txt(` ${o} `, { ...selStyle(i === index), onMouseDown: () => onChoose(i) })))));
@@ -320,13 +336,11 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
     type SideItem =
         | { kind: "category"; catIndex: number; title: string }
         | { kind: "action"; action: "skills" | "security"; title: string; blurb: string }
-        | { kind: "accounts"; title: string }
-        | { kind: "profiles"; title: string };
+        | { kind: "identity"; title: string };
     const sideItems: SideItem[] = [
         ...CATEGORIES.map((c, i) => ({ kind: "category" as const, catIndex: i, title: c.title })),
         ...(showActions ? ACTION_ITEMS.map((a) => ({ kind: "action" as const, ...a })) : []),
-        ...(hasAccounts ? [{ kind: "accounts" as const, title: "Accounts" }] : []),
-        ...(hasProfiles ? [{ kind: "profiles" as const, title: "Profiles" }] : []),
+        ...(hasIdentity ? [{ kind: "identity" as const, title: "Accounts & profiles" }] : []),
     ];
     const actionItemKeys = (action: "skills" | "security"): string[] =>
         action === "security" ? protections.map((p) => p.value) : agents.map((a) => a.name);
@@ -353,7 +367,8 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         // Hides the first-run banner once a skills install succeeded in this session.
         const [setupDone, setSetupDone] = useState(false);
         const [accounts, setAccounts] = useState<HubAccount[]>(initialAccounts);
-        const [accCursor, setAccCursor] = useState(0);
+        // Single cursor over the unified Accounts & profiles rows (accounts first).
+        const [idCursor, setIdCursor] = useState(0);
         const [removeConfirm, setRemoveConfirm] = useState<{ tool: string; name: string; index: number } | null>(null);
         // Two-step add flow: pick the tool in a searchable selector, then type the
         // account name. `query`/`cursor` drive the tool step only.
@@ -364,7 +379,6 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         const [profRename, setProfRename] = useState<{ name: string; error?: string } | null>(null);
         const [connectPrompt, setConnectPrompt] = useState<{ tool: string; account: string; index: number } | null>(null);
         const [profiles, setProfiles] = useState<HubProfile[]>(initialProfiles);
-        const [profCursor, setProfCursor] = useState(0);
         // Profile management overlays: name input, two-step mapping editor
         // (searchable tool -> searchable account incl. "(unpin)"), remove confirm.
         const [profAdd, setProfAdd] = useState<{ error?: string } | null>(null);
@@ -374,13 +388,20 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         const current = sideItems[sideIndex]!;
         const category = current.kind === "category" ? CATEGORIES[current.catIndex]! : null;
         const action = current.kind === "action" ? current.action : null;
-        const accountsMode = current.kind === "accounts";
-        const profilesMode = current.kind === "profiles";
+        const identityMode = current.kind === "identity";
         // Profile rows: "(none)" deactivates (each tool falls back to its own active account).
         const profRows = [
             { name: "", label: "(none)", active: !profiles.some((p) => p.active), summary: "each tool uses its own active account" },
             ...profiles.map((p) => ({ name: p.name, label: p.name, active: p.active, summary: p.summary })),
         ];
+        // Flat rows of the unified panel: accounts first, then profile rows. The
+        // flat index of account i is i; of profile row i it is profFlat(i).
+        const idRows: IdRow[] = [
+            ...(hasAccounts ? accounts.map((account, index) => ({ kind: "account" as const, index, account })) : []),
+            ...(hasProfiles ? profRows.map((r, index) => ({ kind: "profile" as const, index, ...r })) : []),
+        ];
+        const profFlat = (profIndex: number): number => (hasAccounts ? accounts.length : 0) + profIndex;
+        const idRow = idRows[idCursor];
 
         // Settings render instantly from caches; when gh's background revalidation
         // finds a different real value, bust the read cache and re-render.
@@ -511,7 +532,8 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             if (i !== 0 || !target || !removeAccountFn) return;
             const next = removeAccountFn(target.tool, target.name);
             setAccounts(next);
-            setAccCursor((c) => Math.max(0, Math.min(c, next.length - 1)));
+            const total = next.length + (hasProfiles ? profRows.length : 0);
+            setIdCursor((c) => Math.max(0, Math.min(c, total - 1)));
         };
         // Connecting needs the tool's own login flow, which needs this terminal -
         // so exit the TUI with a connect action; cli.ts runs the login and reopens.
@@ -540,7 +562,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             setAccounts(res.accounts);
             setAdding(null);
             const idx = res.accounts.findIndex((a) => a.tool === tool && a.name === name);
-            setAccCursor(idx >= 0 ? idx : 0);
+            setIdCursor(idx >= 0 ? idx : 0);
             setConnectPrompt({ tool, account: name, index: 0 });
         };
         // Rename flow: only managed accounts (never a tool's built-in "default").
@@ -556,16 +578,18 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             setAccounts(res.accounts);
             setRenaming(null);
             const idx = res.accounts.findIndex((a) => a.tool === renaming.tool && a.name === newName);
-            setAccCursor(idx >= 0 ? idx : 0);
+            setIdCursor(idx >= 0 ? idx : 0);
         };
         const activateProfileRow = (i: number): void => {
             const row = profRows[i];
             if (!row || !activateProfileFn || row.active) return;
             setProfiles(activateProfileFn(row.name));
         };
-        const clickProfile = (i: number): void => {
-            if (focusRight && profCursor === i) activateProfileRow(i);
-            else { setFocusRight(true); setProfCursor(i); }
+        // Activate whatever the unified row under the cursor is (enter / second click).
+        const activateIdRow = (row: IdRow | undefined): void => {
+            if (!row) return;
+            if (row.kind === "account") activateSelected(row.index);
+            else activateProfileRow(row.index);
         };
         // Profile management: add (name input), edit (tool -> account selectors),
         // remove (confirm). Row 0 is the synthetic "(none)" and is never editable.
@@ -577,7 +601,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             setProfiles(res.profiles);
             setProfAdd(null);
             const idx = res.profiles.findIndex((p) => p.name === name);
-            setProfCursor(idx >= 0 ? idx + 1 : 0); // +1 for the "(none)" row
+            setIdCursor(profFlat(idx >= 0 ? idx + 1 : 0)); // +1 for the "(none)" row
         };
         const startProfEdit = (i: number): void => {
             const row = profRows[i];
@@ -617,7 +641,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             setProfiles(res.profiles);
             setProfRename(null);
             const idx = res.profiles.findIndex((p) => p.name === newName);
-            setProfCursor(idx >= 0 ? idx + 1 : 0); // +1 for the "(none)" row
+            setIdCursor(profFlat(idx >= 0 ? idx + 1 : 0)); // +1 for the "(none)" row
         };
         const requestProfRemove = (i: number): void => {
             const row = profRows[i];
@@ -629,21 +653,53 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             if (i !== 0 || !target || !removeProfileFn) return;
             const next = removeProfileFn(target.name);
             setProfiles(next);
-            setProfCursor((c) => Math.max(0, Math.min(c, next.length))); // rows = profiles + "(none)"
+            setIdCursor((c) => Math.max(0, Math.min(c, profFlat(next.length)))); // prof rows = profiles + "(none)"
         };
         const chooseConnectPrompt = (i: number): void => {
             const target = connectPrompt;
             setConnectPrompt(null);
             if (i === 0 && target) onExit({ type: "connect", tool: target.tool, account: target.account });
         };
-        const clickAccount = (i: number): void => {
-            if (focusRight && accCursor === i) activateSelected(i);
-            else { setFocusRight(true); setAccCursor(i); }
+        const clickIdentity = (i: number): void => {
+            if (focusRight && idCursor === i) activateIdRow(idRows[i]);
+            else { setFocusRight(true); setIdCursor(i); }
         };
         const scrollResult = (dir?: "up" | "down" | "left" | "right"): void => {
             if (dir === "up") setResultScroll((s) => Math.max(0, s - 1));
             else if (dir === "down") setResultScroll((s) => Math.min(maxResultScroll, s + 1));
         };
+        // Wheel movers - one per scrollable list, mirroring the arrow-key moves so the
+        // wheel and the arrows share the exact same state transitions.
+        const moveSide = (delta: 1 | -1): void => {
+            setSideIndex((i) => Math.max(0, Math.min(sideItems.length - 1, i + delta)));
+            setSetIndex(0); setFocusRight(false);
+        };
+        const moveSetting = (delta: 1 | -1): void => {
+            if (!category) return;
+            setFocusRight(true);
+            setSetIndex((i) => Math.max(0, Math.min(category.settings.length - 1, i + delta)));
+        };
+        const moveAct = (delta: 1 | -1): void => {
+            if (!action) return;
+            setFocusRight(true);
+            setActCursor((i) => Math.max(0, Math.min(actionItemKeys(action).length - 1, i + delta)));
+        };
+        const moveIdentity = (delta: 1 | -1): void => {
+            setFocusRight(true);
+            setIdCursor((i) => Math.max(0, Math.min(Math.max(0, idRows.length - 1), i + delta)));
+        };
+        const moveAddCursor = (delta: 1 | -1): void =>
+            setAdding((a) => {
+                if (!a || a.step !== "tool") return a;
+                const max = Math.max(0, filterItems(toolItems(), a.query).length - 1);
+                return { ...a, cursor: Math.max(0, Math.min(max, a.cursor + delta)) };
+            });
+        const moveProfEditCursor = (delta: 1 | -1): void =>
+            setProfEdit((s) => {
+                if (!s) return s;
+                const items = filterItems(s.step === "tool" ? toolItems() : profAccountItems(s.tool), s.query);
+                return { ...s, cursor: Math.max(0, Math.min(Math.max(0, items.length - 1), s.cursor + delta)) };
+            });
 
         useKeyboard((key) => {
             const name = key.name;
@@ -742,27 +798,36 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             if (tab) { setFocusRight((f) => !f); return; }
             if (left || ch === "h") { setFocusRight(false); return; }
             if (right || ch === "l") { setFocusRight(true); return; }
-            if (focusRight && accountsMode && ch === "d") { requestRemove(accCursor); return; }
-            if (focusRight && accountsMode && ch === "c") { connectSelected(accCursor); return; }
-            if (focusRight && accountsMode && ch === "a") { startAdd(); return; }
-            if (focusRight && accountsMode && ch === "r") { startRename(accCursor); return; }
-            if (focusRight && profilesMode && ch === "a") { if (addProfileFn) setProfAdd({}); return; }
-            if (focusRight && profilesMode && ch === "e") { startProfEdit(profCursor); return; }
-            if (focusRight && profilesMode && ch === "r") { startProfRename(profCursor); return; }
-            if (focusRight && profilesMode && ch === "d") { requestProfRemove(profCursor); return; }
+            // Unified panel keys act on the row kind under the cursor: section-specific
+            // keys (c connect, e edit) are ignored on the other section's rows.
+            if (focusRight && identityMode && ch === "a") {
+                if (idRow?.kind === "profile") { if (addProfileFn) setProfAdd({}); }
+                else startAdd();
+                return;
+            }
+            if (focusRight && identityMode && ch === "c") { if (idRow?.kind === "account") connectSelected(idRow.index); return; }
+            if (focusRight && identityMode && ch === "e") { if (idRow?.kind === "profile") startProfEdit(idRow.index); return; }
+            if (focusRight && identityMode && ch === "r") {
+                if (idRow?.kind === "account") startRename(idRow.index);
+                else if (idRow?.kind === "profile") startProfRename(idRow.index);
+                return;
+            }
+            if (focusRight && identityMode && ch === "d") {
+                if (idRow?.kind === "account") requestRemove(idRow.index);
+                else if (idRow?.kind === "profile") requestProfRemove(idRow.index);
+                return;
+            }
             if (up || ch === "k") {
                 if (focusRight && category) setSetIndex((i) => Math.max(0, i - 1));
                 else if (focusRight && action) setActCursor((i) => Math.max(0, i - 1));
-                else if (focusRight && accountsMode) setAccCursor((i) => Math.max(0, i - 1));
-                else if (focusRight && profilesMode) setProfCursor((i) => Math.max(0, i - 1));
+                else if (focusRight && identityMode) setIdCursor((i) => Math.max(0, i - 1));
                 else { setSideIndex((i) => Math.max(0, i - 1)); setSetIndex(0); setFocusRight(false); }
                 return;
             }
             if (down || ch === "j") {
                 if (focusRight && category) setSetIndex((i) => Math.min(category.settings.length - 1, i + 1));
                 else if (focusRight && action) setActCursor((i) => Math.min(actionItemKeys(action).length - 1, i + 1));
-                else if (focusRight && accountsMode) setAccCursor((i) => Math.min(accounts.length - 1, i + 1));
-                else if (focusRight && profilesMode) setProfCursor((i) => Math.min(profRows.length - 1, i + 1));
+                else if (focusRight && identityMode) setIdCursor((i) => Math.min(Math.max(0, idRows.length - 1), i + 1));
                 else { setSideIndex((i) => Math.min(sideItems.length - 1, i + 1)); setSetIndex(0); setFocusRight(false); }
                 return;
             }
@@ -773,8 +838,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             }
             if (enter || space) {
                 if (!focusRight) { setFocusRight(true); return; }
-                if (accountsMode) { activateSelected(accCursor); return; }
-                if (profilesMode) { activateProfileRow(profCursor); return; }
+                if (identityMode) { activateIdRow(idRow); return; }
                 if (action) { runChosen(action); return; }
                 stageNext(category!.settings[setIndex]!, scope);
             }
@@ -821,6 +885,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
                 cursor: Math.min(adding.cursor, Math.max(0, filtered.length - 1)),
                 onQuery: (value: string) => setAdding((a) => a && { ...a, query: value, cursor: 0 }),
                 onPick: pickTool,
+                onMove: moveAddCursor,
             });
         } else if (adding) {
             content = renderAddInput({ title: `New ${adding.toolLabel} account name`, placeholder: "e.g. work", error: adding.error, onSubmit: submitAdd });
@@ -841,27 +906,30 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
                 error: profEdit.error,
                 onQuery: (value: string) => setProfEdit((s) => s && { ...s, query: value, cursor: 0 }),
                 onPick: pickProfEdit,
+                onMove: moveProfEditCursor,
             });
         } else if (profRemove) {
-            content = renderRemoveConfirm(`Remove profile '${profRemove.name}'? (its accounts are kept)`, profRemove.index, chooseProfRemove);
+            content = renderRemoveConfirm(`Remove profile '${profRemove.name}'? (its accounts are kept)`, profRemove.index, chooseProfRemove,
+                (d) => setProfRemove((c) => c && { ...c, index: Math.max(0, Math.min(1, c.index + d)) }));
         } else if (connectPrompt) {
-            content = renderConnectPrompt(connectPrompt.account, connectPrompt.index, chooseConnectPrompt);
+            content = renderConnectPrompt(connectPrompt.account, connectPrompt.index, chooseConnectPrompt,
+                (d) => setConnectPrompt((c) => c && { ...c, index: Math.max(0, Math.min(1, c.index + d)) }));
         } else if (removeConfirm) {
-            content = renderRemoveConfirm(`Remove account '${removeConfirm.name}' and delete its config dir?`, removeConfirm.index, chooseRemove);
+            content = renderRemoveConfirm(`Remove account '${removeConfirm.name}' and delete its config dir?`, removeConfirm.index, chooseRemove,
+                (d) => setRemoveConfirm((c) => c && { ...c, index: Math.max(0, Math.min(1, c.index + d)) }));
         } else if (confirm) {
-            content = renderConfirm(confirm.index, chooseConfirm);
+            content = renderConfirm(confirm.index, chooseConfirm,
+                (d) => setConfirm((c) => c && { index: Math.max(0, Math.min(EXIT_OPTIONS.length - 1, c.index + d)) }));
         } else if (mode === "running") {
             content = renderRunning(busyTitle);
         } else if (mode === "result" && result) {
             content = renderResult(result, Math.min(resultScroll, maxResultScroll), resultRows, scrollResult);
         } else {
             const sidebarWidth = Math.min(28, Math.max(20, Math.floor(size.columns * 0.3)));
-            const panel = profilesMode
-                ? renderProfiles({ rows: profRows, focused: focusRight, cursor: profCursor, onSelect: clickProfile })
-                : accountsMode
-                ? renderAccounts({ accounts, focused: focusRight, cursor: accCursor, onSelect: clickAccount })
+            const panel = identityMode
+                ? renderIdentity({ rows: idRows, focused: focusRight, cursor: idCursor, onSelect: clickIdentity, onMove: moveIdentity })
                 : category
-                ? renderCategoryPanel({ category, scope, focusRight, setIndex, valueOf, displayValue, isModified, onSelect: clickSetting })
+                ? renderCategoryPanel({ category, scope, focusRight, setIndex, valueOf, displayValue, isModified, onSelect: clickSetting, onMove: moveSetting })
                 : renderChecklist({
                     title: actionTitle(action!),
                     blurb: action === "skills"
@@ -870,9 +938,9 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
                     items: action === "security"
                         ? protections.map((p) => ({ key: p.value, label: p.label, hint: p.hint }))
                         : agents.map((a) => ({ key: a.name, label: a.label, hint: a.installed ? "detected" : "not detected" })),
-                    cursor: actCursor, checked: actChecked, focused: focusRight, onToggle: clickActItem,
+                    cursor: actCursor, checked: actChecked, focused: focusRight, onToggle: clickActItem, onMove: moveAct,
                 });
-            content = h(box, { flexGrow: 1, flexDirection: "row" }, renderSidebar(sideItems, sideIndex, focusRight, sidebarWidth, selectSide), panel);
+            content = h(box, { flexGrow: 1, flexDirection: "row" }, renderSidebar(sideItems, sideIndex, focusRight, sidebarWidth, selectSide, moveSide), panel);
         }
 
         // footer. A single full-width hint line for overlays/transient modes; in the
@@ -880,17 +948,17 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         // right (split with space-between) so those are visible even while editing.
         const footerLine = (s: string): RNode =>
             h(box, { width: size.columns, paddingLeft: 1, paddingRight: 1 }, txt(s, { fg: COL.gray, attributes: DIM }));
-        const menuNav = focusRight && profilesMode
-            ? "up/down move   enter set active   a add   e edit   r rename   d remove   tab back"
-            : focusRight && accountsMode
-            ? "up/down move   enter set active   c connect   a add   r rename   d remove   tab back"
+        const menuNav = focusRight && identityMode
+            ? (idRow?.kind === "profile"
+                ? "up/down move   enter set active   a add   e edit   r rename   d remove   tab back"
+                : "up/down move   enter set active   c connect   a add   r rename   d remove   tab back")
             : focusRight && action
             ? (action === "skills"
                 ? "up/down move   space toggle   g scope   enter install   tab back"
                 : "up/down move   space toggle   enter apply   tab back")
             : focusRight && category
                 ? "up/down move   enter toggle/cycle   g scope   tab back"
-                : `up/down move   tab switch   enter ${action || accountsMode || profilesMode ? "edit" : "focus"}`;
+                : `up/down move   tab switch   enter ${action || identityMode ? "edit" : "focus"}`;
         let footer: RNode;
         if ((adding && adding.step === "tool") || profEdit) {
             footer = footerLine("type to search   up/down move   enter select   esc cancel");

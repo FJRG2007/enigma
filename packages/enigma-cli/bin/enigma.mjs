@@ -71,12 +71,15 @@ try {
 }
 
 // Tell the binary where the on-disk assets, guard, and version live (its own
-// __dirname points into Bun's virtual fs and cannot see these).
+// __dirname points into Bun's virtual fs and cannot see these). Always set them
+// from THIS launcher's package root: shells or tools spawned by an older enigma
+// (e.g. `enigma claude`) inherit the old values, and honoring them would make a
+// nested `enigma` report a stale version (and stale paths) after an update.
 const env = { ...process.env };
-env.ENIGMA_ASSETS_DIR ??= join(pkgRoot, "assets");
-env.ENIGMA_GUARD_PATH ??= join(pkgRoot, "dist", "guard.js");
+env.ENIGMA_ASSETS_DIR = join(pkgRoot, "assets");
+env.ENIGMA_GUARD_PATH = join(pkgRoot, "dist", "guard.js");
 try {
-    env.ENIGMA_VERSION ??= packageVersion();
+    env.ENIGMA_VERSION = packageVersion();
 } catch { /* version is best-effort */ }
 
 const child = spawn(binary, process.argv.slice(2), { stdio: "inherit", env });

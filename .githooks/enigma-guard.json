@@ -1,0 +1,8 @@
+{
+  "secrets": true,
+  "envFiles": true,
+  "depDirs": true,
+  "generatedDirs": true,
+  "junkFiles": true,
+  "largeFiles": true
+}

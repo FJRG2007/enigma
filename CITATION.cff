@@ -1,23 +1,19 @@
 cff-version: 1.2.0
-title: Snatch
-message: "\U0001F4E5 AI OSINT - Capture, download, and enjoy."
+title: Enigma
+message: "Everything you need to work with a coding agent, in one command."
 type: software
 authors:
   - given-names: FJRG2007
     email: fjrg2007@tpeoficial.com
-repository-code: 'https://github.com/FJRG2007/snatch'
+repository-code: 'https://github.com/FJRG2007/enigma'
 url: 'https://status.tpeoficial.com/development'
 abstract: >-
-  Snatch is a versatile tool crafted for cybersecurity and
-  hacking enthusiasts. Developed in Python and currently in
-  active development, Snatch aims to serve as a powerful
-  multipurpose tool for OSINT (Open Source Intelligence)
-  tasks, leveraging Artificial Intelligence to enhance task
-  efficiency and speed.
+  Everything you need to work with a coding agent, in one command.
 keywords:
-  - osint
   - artificial intelligence
-  - information gathering
-  - reconnaissance
-license: AGPL-3.0-or-later
-version: Coming Soon
+  - coding agent
+  - claude code
+  - harness
+  - skills
+license: Apache-2.0
+version: 1.10.1
