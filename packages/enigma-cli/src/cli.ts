@@ -16,7 +16,7 @@ import { discoverAgents } from "./agents";
 import { runGuardCli } from "./guard";
 import { runConfigCli } from "./settings";
 import { readConfig } from "./config";
-import { getAvailableUpdate, notifyUpdate, runUpdate } from "./update";
+import { getAvailableUpdate, notifyUpdate, performUpdateCheck, runUpdate } from "./update";
 import { buildIssueUrl, openUrl } from "./issue";
 import type { IssueKind } from "./issue";
 import {
@@ -395,6 +395,10 @@ function printStatusline(): void {
 }
 
 export async function run(argv: string[]): Promise<void> {
+    // Hidden internal command, handled before parsing: the detached background
+    // update check re-invokes the compiled binary with this argv (a Bun-compiled
+    // executable cannot run `node -e` scripts). Silent by contract.
+    if (argv[0] === "__update-check") { await performUpdateCheck(); return; }
     const opts = parseArgs(argv);
     const interactive = Boolean(process.stdout.isTTY) && !opts.yes;
     const version = process.env.ENIGMA_VERSION || PKG.version || "0.0.0";
