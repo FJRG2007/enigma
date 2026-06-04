@@ -238,6 +238,18 @@ function inspectMemory(agent: Agent): MemoryEntry[] {
 
 // --- maintenance: seal + check -------------------------------------------------
 
+// CITATION.cff at the monorepo root cites the published CLI version. It only exists
+// in a source checkout (the installed npm package has no monorepo root), so both
+// helpers no-op when the file (or its version line) is absent.
+const CITATION_PATH = resolve(PKG_ROOT, "..", "..", "CITATION.cff");
+
+/** The version currently cited in CITATION.cff, or null when there is nothing to sync. */
+function citationVersion(): string | null {
+    if (!existsSync(CITATION_PATH)) return null;
+    const m = readFileSync(CITATION_PATH, "utf8").match(/^version:[ \t]*(\S+)[ \t]*$/m);
+    return m ? m[1]! : null;
+}
+
 /** (Re)compute each source skill's content hash into its skill.json. */
 export function sealSources(): void {
     if (!isDir(SKILLS_ROOT)) { console.error(`No skills directory found at ${SKILLS_ROOT}.`); process.exit(1); }
@@ -258,6 +270,12 @@ export function sealSources(): void {
         writeFileSync(metaPath, serializeMeta(meta));
         console.log(`${changed ? "updated" : "ok     "}  ${name}  cli=${cli}  sha=${meta.sha.slice(0, 12)}`);
         sealed++;
+    }
+    const cited = citationVersion();
+    if (cited !== null && cited !== cli) {
+        const cff = readFileSync(CITATION_PATH, "utf8");
+        writeFileSync(CITATION_PATH, cff.replace(/^version:[ \t]*\S+[ \t]*$/m, `version: ${cli}`));
+        console.log(`updated  CITATION.cff  version ${cited} -> ${cli}`);
     }
     console.log(`\nSealed ${sealed} skill(s) at cliVersion ${cli}.`);
 }
@@ -292,6 +310,8 @@ export function checkSources(): void {
         if (!meta.sha) problems.push(`${name}: not sealed (run 'enigma seal')`);
         else if (meta.sha !== computeContentSha(dir)) problems.push(`${name}: stale sha - content changed since seal (run 'enigma seal')`);
     }
+    const cited = citationVersion();
+    if (cited !== null && cited !== cli) problems.push(`CITATION.cff: stale version (${cited} != ${cli}) - run 'enigma seal'`);
     if (problems.length) {
         console.error(`Integrity check FAILED (${problems.length} problem(s) across ${checked} skill(s)):`);
         for (const pr of problems) console.error(`  - ${pr}`);
