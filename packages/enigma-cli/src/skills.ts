@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 import * as p from "@clack/prompts";
 import { isDir, isNewer, readJson, listFilesRel, computeContentSha } from "./util";
-import { readConfig, setEnigmaValue, OUTPUT_STYLES } from "./config";
+import { readConfig, setEnigmaValue, setSkillDiscarded, OUTPUT_STYLES } from "./config";
 import type { OutputStyle } from "./config";
 import { MANAGED_PROVIDER, isManagedProvider, discoverAgents, runningStatus } from "./agents";
 import type { Agent, AgentTarget, DiscoveredAgent } from "./agents";
@@ -225,6 +225,38 @@ function inspectSkills(): SkillEntry[] {
         if (!bundled || isNewer(r.meta.version || "", bundled.meta.version || "")) byName.set(r.name, r);
     }
     return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** The set of skill names the user discarded (skipped by installs/updates, pruned everywhere). */
+function discardedSkillNames(): Set<string> {
+    return new Set(readConfig().config.discardedSkills);
+}
+
+export interface SkillInfo { name: string; version: string | null; description: string | null; discarded: boolean; }
+
+/**
+ * Every known skill (bundled + remote overlay, discarded included) with its
+ * discard state, for the hub's skills section and `enigma skills list`.
+ */
+export function listSkillsStatus(): SkillInfo[] {
+    const discarded = discardedSkillNames();
+    return inspectSkills().map((s) => ({
+        name: s.name,
+        version: s.meta.version || null,
+        description: s.meta.description || null,
+        discarded: discarded.has(s.name),
+    }));
+}
+
+/**
+ * Discard or restore a skill and apply it to disk immediately: the discard state
+ * is recorded in the global .enigma.json, then syncDeployed prunes the skill from
+ * every existing deployment (discard) or re-installs it there (restore). Returns
+ * the sync notices for display.
+ */
+export function discardSkill(name: string, discarded: boolean): string[] {
+    setSkillDiscarded(name, discarded);
+    return syncDeployed();
 }
 
 /**
@@ -466,12 +498,20 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
     // and the deployed content reflect it. Irrelevant when only skills are installed.
     if (!opts.skillsOnly) await resolveOutputStyle(opts, scope, interactive, reporter);
 
+    // Discarded skills never install or update; they are also pruned from every
+    // target below (even with --no-prune), so a discard reliably removes the skill.
+    const discarded = discardedSkillNames();
+    const requestedDiscarded = opts.skills.filter((n) => discarded.has(n));
+    if (requestedDiscarded.length) {
+        reporter.warn(`Skipping discarded skill(s): ${requestedDiscarded.join(", ")} (restore with 'enigma skills restore <name>').`);
+    }
+
     // --- build the plan per agent ---
     const plan: PlanItem[] = [];
     for (const agent of chosenAgents) {
         const target = agent.targets[scope];
         if (!target) { reporter.warn(`${agent.label} has no '${scope}' target - skipping.`); continue; }
-        const skills = inspectSkills();
+        const skills = inspectSkills().filter((s) => !discarded.has(s.name));
         const memory = inspectMemory(agent);
 
         let chosenSkills = skills;
@@ -495,9 +535,10 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
         const skillsWithStatus: PlannedSkill[] = (opts.memoryOnly ? [] : chosenSkills).map((s) => ({
             ...s, status: skillStatus(join(target.skills, s.name), s.meta), overwrite: true,
         }));
-        const prune = opts.prune && !opts.memoryOnly
-            ? computePrune(target.skills, skills.map((s) => s.name))
-            : [];
+        // Source names exclude discarded skills, so a deployed discarded skill shows
+        // up as an orphan; with --no-prune only those discard removals are kept.
+        const prune = opts.memoryOnly ? [] : computePrune(target.skills, skills.map((s) => s.name))
+            .filter((e) => opts.prune || discarded.has(e.name));
 
         plan.push({ agent, target, skills: skillsWithStatus, memory: opts.skillsOnly ? [] : memory, prune });
     }
@@ -548,7 +589,8 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
         for (const s of x.prune) {
             nRemove++;
             const ver = s.meta.version ? ` v${s.meta.version}` : "";
-            lines.push(`  ${"remove (orphaned)".padEnd(26)} skill   ${s.name}  [${s.meta.provider}${ver}]`);
+            const reason = discarded.has(s.name) ? "remove (discarded)" : "remove (orphaned)";
+            lines.push(`  ${reason.padEnd(26)} skill   ${s.name}  [${s.meta.provider}${ver}]`);
         }
     }
 
@@ -676,8 +718,8 @@ export function hasDeployment(agent: Agent, scope: "global" | "local"): boolean 
  * Silently bring EXISTING deployments up to date with the shipped assets, so a
  * package update applies without re-running `enigma install`. For every agent
  * (optionally filtered by name) and scope that already has a deployment: copy
- * new/updated/unsealed skills, prune orphaned managed skills, and re-render the
- * memory file. Locally-modified (tampered) skills are never overwritten, a memory
+ * new/updated/unsealed skills, prune orphaned and discarded managed skills, and
+ * re-render the memory file. Locally-modified (tampered) skills are never overwritten, a memory
  * file is only rewritten when it is byte-identical to what enigma last wrote
  * (isEnigmaWritten), and a first deployment is never created - all of those stay
  * explicit user decisions. Returns one human-readable line per agent+scope that
@@ -685,7 +727,10 @@ export function hasDeployment(agent: Agent, scope: "global" | "local"): boolean 
  */
 export function syncDeployed(agentNames?: string[]): string[] {
     const notices: string[] = [];
-    const skills = inspectSkills();
+    // Discarded skills are excluded from the source set, so the prune pass below
+    // removes any deployed copy of them (a discard propagates on every sync).
+    const discarded = discardedSkillNames();
+    const skills = inspectSkills().filter((s) => !discarded.has(s.name));
     for (const agent of discoverAgents()) {
         if (agentNames && !agentNames.includes(agent.name)) continue;
         for (const scope of ["global", "local"] as const) {

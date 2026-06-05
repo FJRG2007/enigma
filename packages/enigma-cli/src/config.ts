@@ -40,6 +40,8 @@ export interface EnigmaConfig {
     permissionBypass: boolean;
     /** Agents the user explicitly opted out of bypass; never auto-enabled even when permissionBypass is on. */
     bypassDisabled: string[];
+    /** Skills the user discarded: removed from deployments and skipped by installs/updates until restored. */
+    discardedSkills: string[];
 }
 
 /**
@@ -65,7 +67,7 @@ export interface EnigmaConfig {
  */
 export const CONFIG_DEFAULTS: EnigmaConfig = {
     commitEmoji: true, updateNotifier: true, fullscreen: true, parallelSubagents: false, outputStyle: "off",
-    autoSync: true, remoteSkills: true, permissionBypass: true, bypassDisabled: [],
+    autoSync: true, remoteSkills: true, permissionBypass: true, bypassDisabled: [], discardedSkills: [],
 };
 
 export type EnigmaConfigKey = keyof EnigmaConfig;
@@ -106,15 +108,34 @@ export function setEnigmaToggle(key: EnigmaConfigKey, value: boolean, scope: "gl
     return setEnigmaValue(key, value, scope);
 }
 
+/** Keys of EnigmaConfig holding a string list, maintained as a set in the global file. */
+type ListConfigKey = { [K in EnigmaConfigKey]: EnigmaConfig[K] extends string[] ? K : never }[EnigmaConfigKey];
+
+/**
+ * Add (include=true) or remove (false) an entry in one of the global .enigma.json
+ * string-list keys. Operates on the global file's own list, not the merged view,
+ * so a deliberate opt-out survives future installs.
+ */
+function updateGlobalList(key: ListConfigKey, name: string, include: boolean): void {
+    const set = new Set((readJson<Partial<EnigmaConfig>>(configPath("global")) || {})[key] || []);
+    if (include) set.add(name); else set.delete(name);
+    setEnigmaValue(key, [...set], "global");
+}
+
 /**
  * Record (disabled=true) or clear (false) a per-agent permission-bypass opt-out in
  * the global .enigma.json `bypassDisabled` list, so a deliberate "off" survives
- * future installs and is never auto-re-enabled. Operates on the global file's own
- * list, not the merged view.
+ * future installs and is never auto-re-enabled.
  */
 export function setBypassDisabled(name: string, disabled: boolean): void {
-    const path = configPath("global");
-    const set = new Set((readJson<Partial<EnigmaConfig>>(path) || {}).bypassDisabled || []);
-    if (disabled) set.add(name); else set.delete(name);
-    setEnigmaValue("bypassDisabled", [...set], "global");
+    updateGlobalList("bypassDisabled", name, disabled);
+}
+
+/**
+ * Record (discarded=true) or clear (false) a skill discard in the global
+ * .enigma.json `discardedSkills` list. A discarded skill is never installed or
+ * updated until restored; deployment cleanup lives in skills.ts (discardSkill).
+ */
+export function setSkillDiscarded(name: string, discarded: boolean): void {
+    updateGlobalList("discardedSkills", name, discarded);
 }

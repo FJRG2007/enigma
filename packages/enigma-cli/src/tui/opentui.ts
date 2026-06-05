@@ -19,7 +19,7 @@ import { CATEGORIES, ALL_SETTINGS, valueLabel, invalidateSettingReads } from "..
 import { applyMemoryToggles } from "../skills";
 import { onGhTelemetryChange } from "../github";
 import type { Scope, Setting } from "../settings-registry";
-import type { HubContext, HubAccount, HubExitAction, HubProfile, HubTool, ActionRequest, ActionResult } from "./types";
+import type { HubContext, HubAccount, HubExitAction, HubProfile, HubSkill, HubTool, ActionRequest, ActionResult } from "./types";
 
 /** Rendered tree node (React element or primitive child). */
 type RNode = import("react").ReactNode;
@@ -96,6 +96,8 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
     const renameAccountFn = opts.hub?.renameAccount;
     const update = opts.hub?.update ?? null;
     const firstRun = showActions && Boolean(opts.hub?.firstRun);
+    const initialSkills = opts.hub?.skills ?? [];
+    const setSkillDiscardedFn = opts.hub?.setSkillDiscarded;
     const tools: HubTool[] = opts.hub?.tools ?? [];
     const initialProfiles = opts.hub?.profiles ?? [];
     const activateProfileFn = opts.hub?.activateProfile;
@@ -161,22 +163,31 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
 
     const renderChecklist = (s: {
         title: string; blurb: string; focused: boolean;
-        items: Array<{ key: string; label: string; hint: string }>;
+        items: Array<{ key: string; label: string; hint: string; section?: string; hintColor?: string }>;
         cursor: number; checked: Record<string, boolean>;
         onToggle: (i: number) => void; onMove: (delta: 1 | -1) => void;
-    }): RNode =>
-        panelBox(s.focused ? COL.cyan : COL.gray, [
+    }): RNode => {
+        // Optional section headers (the identity-panel pattern): emitted whenever a
+        // row's `section` differs from the previous row's, so a flat cursor still works.
+        const rows: RNode[] = [];
+        let lastSection: string | undefined;
+        s.items.forEach((it, i) => {
+            if (it.section && it.section !== lastSection) {
+                rows.push(txt(it.section, { fg: COL.gray, attributes: BOLD, marginTop: lastSection ? 1 : 0 }));
+                lastSection = it.section;
+            }
+            const on = !!s.checked[it.key];
+            const selected = s.focused && i === s.cursor;
+            rows.push(h(box, { flexDirection: "row", justifyContent: "space-between", onMouseDown: () => s.onToggle(i) },
+                txt(` ${on ? "[x]" : "[ ]"} ${it.label} `, selStyle(selected)),
+                txt(`${it.hint}  `, { fg: it.hintColor ?? COL.gray })));
+        });
+        return panelBox(s.focused ? COL.cyan : COL.gray, [
             txt(s.title, { fg: COL.cyan, attributes: BOLD }),
             txt(s.blurb, { fg: COL.gray }),
-            h(box, { flexDirection: "column", marginTop: 1 },
-                ...s.items.map((it, i) => {
-                    const on = !!s.checked[it.key];
-                    const selected = s.focused && i === s.cursor;
-                    return h(box, { flexDirection: "row", justifyContent: "space-between", onMouseDown: () => s.onToggle(i) },
-                        txt(` ${on ? "[x]" : "[ ]"} ${it.label} `, selStyle(selected)),
-                        txt(`${it.hint}  `, { fg: COL.gray }));
-                })),
+            h(box, { flexDirection: "column", marginTop: 1 }, ...rows),
         ], wheel(s.onMove));
+    };
 
     // Unified Accounts & profiles panel: both lists share one panel, split by
     // visual section headers, and a single cursor walks the flat row list.
@@ -221,12 +232,12 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         ], wheel(s.onMove));
     };
 
-    const renderRemoveConfirm = (message: string, index: number, onChoose: (i: number) => void, onMove: (delta: 1 | -1) => void): RNode =>
+    const renderRemoveConfirm = (message: string, index: number, onChoose: (i: number) => void, onMove: (delta: 1 | -1) => void, confirmLabel = "Remove"): RNode =>
         h(box, { flexGrow: 1, justifyContent: "center", alignItems: "center" },
             h(box, { border: true, borderStyle: "rounded", borderColor: COL.red, flexDirection: "column", paddingLeft: 2, paddingRight: 2, paddingTop: 1, paddingBottom: 1, ...wheel(onMove) },
                 txt(message, { fg: COL.red, attributes: BOLD }),
                 h(box, { flexDirection: "column", marginTop: 1 },
-                    ...["Remove", "Cancel"].map((o, i) => txt(` ${o} `, { ...selStyle(i === index), onMouseDown: () => onChoose(i) })))));
+                    ...[confirmLabel, "Cancel"].map((o, i) => txt(` ${o} `, { ...selStyle(i === index), onMouseDown: () => onChoose(i) })))));
 
     // Name-input overlay for creating an account. The <input> is focused so the
     // renderer routes keystrokes to it; onSubmit fires on Enter. The global key
@@ -366,6 +377,10 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         const [resultScroll, setResultScroll] = useState(0);
         // Hides the first-run banner once a skills install succeeded in this session.
         const [setupDone, setSetupDone] = useState(false);
+        // Skills rows of the install panel; discarding asks for confirmation because
+        // it deletes the deployed copies and opts the skill out of installs/updates.
+        const [skills, setSkills] = useState<HubSkill[]>(initialSkills);
+        const [skillConfirm, setSkillConfirm] = useState<{ name: string; index: number } | null>(null);
         const [accounts, setAccounts] = useState<HubAccount[]>(initialAccounts);
         // Single cursor over the unified Accounts & profiles rows (accounts first).
         const [idCursor, setIdCursor] = useState(0);
@@ -389,6 +404,10 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         const category = current.kind === "category" ? CATEGORIES[current.catIndex]! : null;
         const action = current.kind === "action" ? current.action : null;
         const identityMode = current.kind === "identity";
+        // The install panel appends a SKILLS section under the agent checklist; one
+        // flat cursor walks both, so the action row count covers agents + skills.
+        const skillRows = action === "skills" && setSkillDiscardedFn ? skills : [];
+        const actCount = action ? actionItemKeys(action).length + skillRows.length : 0;
         // Profile rows: "(none)" deactivates (each tool falls back to its own active account).
         const profRows = [
             { name: "", label: "(none)", active: !profiles.some((p) => p.active), summary: "each tool uses its own active account" },
@@ -502,11 +521,32 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
                 stageNext(category.settings[i]!, scope);
             } else { setFocusRight(true); setSetIndex(i); }
         };
+        // Toggle the action row at `i`: an agent/protection checkbox, or a skill row.
+        // Unchecking a skill discards it (confirmed first - it deletes deployed copies);
+        // checking a discarded one restores it immediately (re-deployed by the sync).
+        const toggleActRow = (i: number): void => {
+            if (!action) return;
+            const keys = actionItemKeys(action);
+            if (i < keys.length) {
+                const k = keys[i]!;
+                setActChecked((c) => ({ ...c, [k]: !c[k] }));
+                return;
+            }
+            const skill = skillRows[i - keys.length];
+            if (!skill || !setSkillDiscardedFn) return;
+            if (skill.discarded) setSkills(setSkillDiscardedFn(skill.name, false));
+            else setSkillConfirm({ name: skill.name, index: 0 });
+        };
+        const chooseSkillDiscard = (i: number): void => {
+            const target = skillConfirm;
+            setSkillConfirm(null);
+            if (i !== 0 || !target || !setSkillDiscardedFn) return;
+            setSkills(setSkillDiscardedFn(target.name, true));
+        };
         const clickActItem = (i: number): void => {
             if (!action) return;
-            const k = actionItemKeys(action)[i]!;
             setFocusRight(true); setActCursor(i);
-            setActChecked((c) => ({ ...c, [k]: !c[k] }));
+            toggleActRow(i);
         };
         const chooseConfirm = (i: number): void => {
             setConfirm(null);
@@ -682,7 +722,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         const moveAct = (delta: 1 | -1): void => {
             if (!action) return;
             setFocusRight(true);
-            setActCursor((i) => Math.max(0, Math.min(actionItemKeys(action).length - 1, i + delta)));
+            setActCursor((i) => Math.max(0, Math.min(actCount - 1, i + delta)));
         };
         const moveIdentity = (delta: 1 | -1): void => {
             setFocusRight(true);
@@ -757,6 +797,15 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
                 return;
             }
 
+            if (skillConfirm) {
+                if (esc || ch === "n") { setSkillConfirm(null); return; }
+                if (up || ch === "k") { setSkillConfirm((c) => c && { ...c, index: Math.max(0, c.index - 1) }); return; }
+                if (down || ch === "j") { setSkillConfirm((c) => c && { ...c, index: Math.min(1, c.index + 1) }); return; }
+                if (ch === "y") { chooseSkillDiscard(0); return; }
+                if (enter || space) { chooseSkillDiscard(skillConfirm.index); return; }
+                return;
+            }
+
             if (removeConfirm) {
                 if (esc || ch === "n") { setRemoveConfirm(null); return; }
                 if (up || ch === "k") { setRemoveConfirm((c) => c && { ...c, index: Math.max(0, c.index - 1) }); return; }
@@ -826,16 +875,12 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             }
             if (down || ch === "j") {
                 if (focusRight && category) setSetIndex((i) => Math.min(category.settings.length - 1, i + 1));
-                else if (focusRight && action) setActCursor((i) => Math.min(actionItemKeys(action).length - 1, i + 1));
+                else if (focusRight && action) setActCursor((i) => Math.min(actCount - 1, i + 1));
                 else if (focusRight && identityMode) setIdCursor((i) => Math.min(Math.max(0, idRows.length - 1), i + 1));
                 else { setSideIndex((i) => Math.min(sideItems.length - 1, i + 1)); setSetIndex(0); setFocusRight(false); }
                 return;
             }
-            if (space && focusRight && action) {
-                const k = actionItemKeys(action)[actCursor]!;
-                setActChecked((c) => ({ ...c, [k]: !c[k] }));
-                return;
-            }
+            if (space && focusRight && action) { toggleActRow(actCursor); return; }
             if (enter || space) {
                 if (!focusRight) { setFocusRight(true); return; }
                 if (identityMode) { activateIdRow(idRow); return; }
@@ -861,6 +906,8 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             ? txt("connect?", { fg: COL.green })
             : removeConfirm
             ? txt("remove account", { fg: COL.red })
+            : skillConfirm
+            ? txt("discard skill", { fg: COL.red })
             : confirm
             ? txt("unsaved changes", { fg: COL.yellow })
             : mode === "running"
@@ -917,6 +964,10 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         } else if (removeConfirm) {
             content = renderRemoveConfirm(`Remove account '${removeConfirm.name}' and delete its config dir?`, removeConfirm.index, chooseRemove,
                 (d) => setRemoveConfirm((c) => c && { ...c, index: Math.max(0, Math.min(1, c.index + d)) }));
+        } else if (skillConfirm) {
+            content = renderRemoveConfirm(`Discard skill '${skillConfirm.name}'? It will be removed from all agents and skipped by future installs and updates.`,
+                skillConfirm.index, chooseSkillDiscard,
+                (d) => setSkillConfirm((c) => c && { ...c, index: Math.max(0, Math.min(1, c.index + d)) }), "Discard");
         } else if (confirm) {
             content = renderConfirm(confirm.index, chooseConfirm,
                 (d) => setConfirm((c) => c && { index: Math.max(0, Math.min(EXIT_OPTIONS.length - 1, c.index + d)) }));
@@ -933,12 +984,22 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
                 : renderChecklist({
                     title: actionTitle(action!),
                     blurb: action === "skills"
-                        ? `Scope ${scope} (g to change). Choose agents, then enter to install.`
+                        ? `Scope ${scope} (g to change). Choose agents, then enter to install; unchecking a skill discards it.`
                         : "Choose what the commit guard enforces, then enter to apply.",
                     items: action === "security"
                         ? protections.map((p) => ({ key: p.value, label: p.label, hint: p.hint }))
-                        : agents.map((a) => ({ key: a.name, label: a.label, hint: a.installed ? "detected" : "not detected" })),
-                    cursor: actCursor, checked: actChecked, focused: focusRight, onToggle: clickActItem, onMove: moveAct,
+                        : [
+                            ...agents.map((a) => ({ key: a.name, label: a.label, hint: a.installed ? "detected" : "not detected", section: skillRows.length ? "AGENTS" : undefined })),
+                            ...skillRows.map((s) => ({
+                                key: `skill:${s.name}`, label: s.name, section: "SKILLS",
+                                hint: s.discarded ? "discarded" : s.version ? `v${s.version}` : "",
+                                hintColor: s.discarded ? COL.yellow : undefined,
+                            })),
+                        ],
+                    cursor: actCursor,
+                    // Skill rows are not staged: checked mirrors the persisted discard state.
+                    checked: { ...actChecked, ...Object.fromEntries(skillRows.map((s) => [`skill:${s.name}`, !s.discarded])) },
+                    focused: focusRight, onToggle: clickActItem, onMove: moveAct,
                 });
             content = h(box, { flexGrow: 1, flexDirection: "row" }, renderSidebar(sideItems, sideIndex, focusRight, sidebarWidth, selectSide, moveSide), panel);
         }
@@ -953,9 +1014,11 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
                 ? "up/down move   enter set active   a add   e edit   r rename   d remove   tab back"
                 : "up/down move   enter set active   c connect   a add   r rename   d remove   tab back")
             : focusRight && action
-            ? (action === "skills"
-                ? "up/down move   space toggle   g scope   enter install   tab back"
-                : "up/down move   space toggle   enter apply   tab back")
+            ? (action !== "skills"
+                ? "up/down move   space toggle   enter apply   tab back"
+                : actCursor >= agents.length && skillRows.length
+                ? "up/down move   space discard/restore   enter install   tab back"
+                : "up/down move   space toggle   g scope   enter install   tab back")
             : focusRight && category
                 ? "up/down move   enter toggle/cycle   g scope   tab back"
                 : `up/down move   tab switch   enter ${action || identityMode ? "edit" : "focus"}`;
@@ -972,6 +1035,8 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             footer = footerLine("up/down move   enter select   esc later");
         } else if (removeConfirm) {
             footer = footerLine("y remove   n / esc cancel");
+        } else if (skillConfirm) {
+            footer = footerLine("y discard   n / esc cancel");
         } else if (confirm) {
             footer = footerLine("up/down move   enter select   esc cancel");
         } else if (mode === "running") {
@@ -986,7 +1051,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
 
         // A one-line "update available" banner under the title, shown only in the plain
         // menu view (not over an overlay or the result/running panels).
-        const noOverlay = !adding && !renaming && !profRename && !profAdd && !profEdit && !profRemove && !connectPrompt && !removeConfirm && !confirm;
+        const noOverlay = !adding && !renaming && !profRename && !profAdd && !profEdit && !profRemove && !connectPrompt && !removeConfirm && !skillConfirm && !confirm;
         const updateBanner = update && mode === "menu" && noOverlay
             ? h(box, { width: size.columns, flexDirection: "row", paddingLeft: 1, paddingRight: 1 },
                 txt(`Update available  ${update.current} -> ${update.latest}   `, { fg: COL.yellow, attributes: BOLD }),

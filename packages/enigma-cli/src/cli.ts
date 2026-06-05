@@ -9,7 +9,10 @@ import { fileURLToPath } from "node:url";
 import * as p from "@clack/prompts";
 import { readJson } from "./util";
 import { collectReporter } from "./reporter";
-import { installSkills, sealSources, checkSources, syncDeployed, hasDeployment, refreshSkillsFromGitHub, shouldCheckRemote } from "./skills";
+import {
+    checkSources, discardSkill, hasDeployment, installSkills, listSkillsStatus,
+    refreshSkillsFromGitHub, sealSources, shouldCheckRemote, syncDeployed,
+} from "./skills";
 import type { InstallOptions } from "./skills";
 import { setupGitHooks, GUARD_PROTECTIONS } from "./security";
 import { discoverAgents } from "./agents";
@@ -25,7 +28,7 @@ import {
     removeProfile, renameAccount, renameProfile, setActive, setActiveProfile,
     setProfileAccount, unsetProfileAccount,
 } from "./accounts";
-import type { HubAccount, HubExitAction, HubProfile } from "./tui/types";
+import type { HubAccount, HubExitAction, HubProfile, HubSkill } from "./tui/types";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 // In the compiled binary __dirname lives in Bun's virtual fs (no package.json on
@@ -36,7 +39,7 @@ const PKG = readJson<{ version?: string }>(join(__dirname, "..", "package.json")
 // Fixed commands plus one launch command per supported tool (e.g. `enigma claude`).
 const COMMANDS = new Set<string>([
     "install", "update", "security", "guard", "seal", "check", "config", "account", "accounts",
-    "profile", "profiles", "issue", "statusline", "help", "version",
+    "profile", "profiles", "skill", "skills", "issue", "statusline", "help", "version",
     ...TOOL_NAMES,
 ]);
 
@@ -66,7 +69,7 @@ function parseArgs(argv: string[]): CliOptions {
         const a = argv[i]!;
         const next = (): string => argv[++i]!;
         if (i === 0 && COMMANDS.has(a)) {
-            opts.command = a === "accounts" ? "account" : a === "profiles" ? "profile" : a;
+            opts.command = a === "accounts" ? "account" : a === "profiles" ? "profile" : a === "skill" ? "skills" : a;
             continue;
         }
         // Everything after a literal `--` is forwarded verbatim (e.g. to Claude Code).
@@ -137,6 +140,12 @@ Commands:
                          unset <name> <tool>        Drop a tool from the profile
                          rename <old> <new>         Rename a profile (mappings stay)
                          remove <name>              Delete a profile (accounts stay)
+  skills <subcommand>  List skills and manage discards (also in the hub's install panel):
+                         list                 List every skill (discarded marked)
+                         discard <name>       Remove a skill from every agent and skip
+                                              it in future installs and updates
+                         restore <name>       Re-enable a discarded skill (re-deploys
+                                              to existing installs on the next sync)
   issue [bug|feature]  Open a prefilled GitHub issue (OS, versions, terminal,
                        detected agents autocompleted; default: bug)
   seal                 Maintenance: (re)compute skill content hashes
@@ -389,6 +398,45 @@ async function runProfileCli(opts: CliOptions, interactive: boolean): Promise<nu
 }
 
 /**
+ * `enigma skills <list|discard|restore>` surface. Discarding removes the skill
+ * from every existing deployment and skips it in future installs and updates;
+ * restoring re-deploys it to existing installs immediately. Returns an exit code.
+ */
+function runSkillsCli(opts: CliOptions): number {
+    const [sub, name] = opts.positionals;
+    switch (sub) {
+        case undefined:
+        case "list":
+        case "ls": {
+            console.log("Skills:\n");
+            for (const s of listSkillsStatus()) {
+                const ver = s.version ? `v${s.version}` : "";
+                console.log(` ${s.discarded ? "-" : "*"} ${s.name.padEnd(26)} ${ver.padEnd(8)} ${s.discarded ? "discarded" : "active"}`);
+            }
+            console.log("\nDiscarded skills are removed from agents and skipped by installs/updates.");
+            console.log("Manage with: enigma skills <discard|restore> <name>.");
+            return 0;
+        }
+        case "discard":
+        case "restore": {
+            if (!name) { console.error(`Usage: enigma skills ${sub} <name>`); return 1; }
+            const skill = listSkillsStatus().find((s) => s.name === name);
+            if (!skill) { console.error(`Unknown skill '${name}'. See: enigma skills list.`); return 1; }
+            const discarded = sub === "discard";
+            if (skill.discarded === discarded) { console.log(`Skill '${name}' is already ${discarded ? "discarded" : "active"}.`); return 0; }
+            for (const notice of discardSkill(name, discarded)) console.log(`Synced ${notice}.`);
+            console.log(discarded
+                ? `Skill '${name}' discarded: removed from deployments and skipped by future installs and updates.`
+                : `Skill '${name}' restored: it deploys again on installs and syncs.`);
+            return 0;
+        }
+        default:
+            console.error(`Unknown skills subcommand: ${sub}. Try: list, discard, restore.`);
+            return 1;
+    }
+}
+
+/**
  * `enigma issue [bug|feature]` surface: print a GitHub new-issue URL with the
  * environment fields prefilled (OS, OS version, terminal, detected agents,
  * enigma version, install method) and offer to open it in the browser. The URL
@@ -452,6 +500,7 @@ export async function run(argv: string[]): Promise<void> {
     }
     if (opts.command === "account") { process.exit(await runAccountCli(opts, interactive)); }
     if (opts.command === "profile") { process.exit(await runProfileCli(opts, interactive)); }
+    if (opts.command === "skills") { process.exit(runSkillsCli(opts)); }
     if (opts.command === "issue") { process.exit(await runIssueCli(opts.positionals[0], version, interactive)); }
 
     if (opts.command === "update") {
@@ -501,6 +550,8 @@ export async function run(argv: string[]): Promise<void> {
             name: p.name, active: p.active,
             summary: Object.entries(p.accounts).map(([t, a]) => `${t}=${a}`).join("  ") || "(no accounts pinned)",
         }));
+    const hubSkills = (): HubSkill[] =>
+        listSkillsStatus().map((s) => ({ name: s.name, version: s.version, discarded: s.discarded }));
     const discovered = discoverAgents();
     const buildCtx = () => ({
         agents: discovered.map((a) => ({ name: a.name, label: a.label, installed: a.installed })),
@@ -509,6 +560,8 @@ export async function run(argv: string[]): Promise<void> {
         // and shows a setup banner so the first install is a couple of keystrokes.
         firstRun: !discovered.some((a) => hasDeployment(a, "global") || hasDeployment(a, "local")),
         update: getAvailableUpdate(version) ?? undefined,
+        skills: hubSkills(),
+        setSkillDiscarded: (name: string, discarded: boolean) => { discardSkill(name, discarded); return hubSkills(); },
         accounts: hubAccounts(),
         activateAccount: (tool: string, name: string) => { setActive(tool, name); return hubAccounts(); },
         removeAccount: (tool: string, name: string) => { removeAccount(tool, name); return hubAccounts(); },

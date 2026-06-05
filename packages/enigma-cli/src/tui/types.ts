@@ -24,6 +24,8 @@ export interface ActionResult {
 /** Minimal agent/protection shapes the hub needs (passed in to avoid heavy imports). */
 export interface HubAgent { name: string; label: string; installed: boolean; }
 export interface HubProtection { value: string; label: string; hint: string; }
+/** A skill row in the install panel's SKILLS section; discarded = never installed/updated. */
+export interface HubSkill { name: string; version: string | null; discarded: boolean; }
 /** A tool account row shown in the hub's Accounts panel. */
 export interface HubAccount {
     tool: string;
@@ -56,6 +58,10 @@ export interface HubContext {
     agents: HubAgent[];
     protections: HubProtection[];
     runAction: (req: ActionRequest) => Promise<ActionResult>;
+    /** All known skills for the install panel's SKILLS section (discarded included). */
+    skills?: HubSkill[];
+    /** Discard (remove everywhere + skip future installs/updates) or restore a skill. */
+    setSkillDiscarded?: (name: string, discarded: boolean) => HubSkill[];
     /** True when no agent has a skills deployment yet, so the hub guides first-time setup. */
     firstRun?: boolean;
     /** Present when a newer enigma-cli is available, so the hub can offer "update now". */

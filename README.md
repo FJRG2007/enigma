@@ -42,7 +42,7 @@ enigma                         # interactive hub: pick what to set up
 
 ### <img src="docs/images/enigma-logo.svg" width="20" height="20" alt="Enigma"/> Policy skills, everywhere
 
-12 engineering policy skills (security, testing, git, style, debugging...) authored once and deployed to **Claude Code, OpenAI Codex and OpenCode**, sealed with content hashes so tampering is detected.
+12 engineering policy skills (security, testing, git, style, debugging...) authored once and deployed to **Claude Code, OpenAI Codex and OpenCode**, sealed with content hashes so tampering is detected. Discard any skill you don't want (`enigma skills discard <name>` or the hub's SKILLS section): it is removed everywhere and skipped by installs/updates until restored.
 
 ```bash
 npx enigma-cli@latest install --all --yes
@@ -170,6 +170,8 @@ enigma config [k v]    Show or set runtime toggles (e.g. config commit-emoji off
 enigma <tool> [acct]   Launch claude | codex | opencode with an account's config
                        (explicit > active profile > tool active; auto-syncs first)
 enigma account ...     Manage per-tool accounts   enigma profile ...  Group them
+enigma skills ...      List skills, discard one (removed everywhere and skipped
+                       by installs/updates) or restore it (list/discard/restore)
 enigma issue [type]    Prefilled GitHub issue URL (OS, versions, terminal, agents)
 enigma seal            Maintenance: (re)compute skill content hashes
 enigma check           Integrity gate: verify skills are well-formed and sealed

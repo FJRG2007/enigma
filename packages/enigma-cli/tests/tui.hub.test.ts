@@ -19,17 +19,26 @@ Object.defineProperty(process.stdout, "isTTY", { value: true, configurable: true
 
 const { CATEGORIES } = await import("../src/settings-registry");
 const { runHomeTui } = await import("../src/tui/opentui");
-import type { HubAccount, HubProfile, HubContext } from "../src/tui/types";
+import type { HubAccount, HubProfile, HubSkill, HubContext } from "../src/tui/types";
 
 const accounts: HubAccount[] = [
     { tool: "claude", toolLabel: "Claude Code", name: "default", dir: "C:/fake/claude", email: "me@example.com", active: true, removable: false },
     { tool: "codex", toolLabel: "Codex", name: "work", dir: "C:/fake/codex-work", active: false, removable: true },
 ];
 const profiles: HubProfile[] = [{ name: "personal", active: false, summary: "claude=default" }];
+let skills: HubSkill[] = [
+    { name: "alpha-skill", version: "1.0.0", discarded: false },
+    { name: "beta-skill", version: "2.1.0", discarded: false },
+];
 const hub: HubContext = {
     agents: [{ name: "claude", label: "Claude Code", installed: true }],
     protections: [{ value: "secrets", label: "Secrets", hint: "block secrets" }],
     runAction: async () => ({ ok: true, title: "noop", lines: [] }),
+    skills,
+    setSkillDiscarded: (name, discarded) => {
+        skills = skills.map((s) => (s.name === name ? { ...s, discarded } : s));
+        return skills;
+    },
     accounts,
     activateAccount: () => accounts,
     removeAccount: () => accounts,
@@ -84,6 +93,31 @@ test("unified panel renders sections and the wheel mirrors the arrows", async ()
     // Wheel over the sidebar moves the menu selection back up (focus returns left).
     await setup.mockMouse.scroll(5, 4, "up");
     await until((f) => !f.includes("ACCOUNTS"), "sidebar wheel changes panel");
+
+    // Install panel: the SKILLS section lists every skill under the agents.
+    await setup.mockInput.pressKey("ARROW_UP"); // security -> skills action
+    const install = await until((f) => f.includes("AGENTS") && f.includes("SKILLS"), "install panel sections");
+    expect(install).toContain("alpha-skill");
+    expect(install).toContain("v2.1.0");
+
+    // Focus the panel and move past the single agent row onto the first skill row;
+    // space asks for confirmation, y discards (the row flips to unchecked/discarded).
+    await setup.mockInput.pressKey("RETURN");
+    await until((f) => f.includes("enter install"), "install panel focused");
+    await setup.mockInput.pressKey("ARROW_DOWN");
+    await until((f) => f.includes("space discard/restore"), "cursor on a skill row");
+    await setup.mockInput.pressKey(" ");
+    // The message wraps in the dialog, so match the header chip and the buttons.
+    await until((f) => f.includes("discard skill") && f.includes("Cancel"), "discard confirm overlay");
+    await setup.mockInput.pressKey("y");
+    const discardedFrame = await until((f) => f.includes("[ ] alpha-skill") && f.includes("discarded"), "skill discarded");
+    expect(skills[0]!.discarded).toBe(true);
+    expect(discardedFrame).toContain("[x] beta-skill");
+
+    // Space on a discarded skill restores it immediately (no confirmation).
+    await setup.mockInput.pressKey(" ");
+    await until((f) => f.includes("[x] alpha-skill"), "skill restored");
+    expect(skills[0]!.discarded).toBe(false);
 
     await setup.mockInput.pressKey("q");
     expect(await done).toBeNull();

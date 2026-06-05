@@ -70,6 +70,7 @@ enigma <tool> [acct]   Launch claude | codex | opencode with an account
                        auto-syncs deployed skills first
 enigma account ...     Manage per-tool accounts (list/add/use/login/remove)
 enigma profile ...     Group one account per tool (list/add/use/set/unset/remove)
+enigma skills ...      List skills and manage discards (list/discard/restore)
 enigma seal            Maintenance: (re)compute skill content hashes
 enigma check           Integrity gate: verify skills are well-formed and sealed
 enigma help | version
@@ -89,6 +90,12 @@ preselects them; `--all` targets every supported agent.
 | opencode    | global | `~/.config/opencode/skills/`  | `~/.config/opencode/AGENTS.md` |
 
 (`--local` installs into the current project instead.)
+
+Don't want one of the skills? Discard it from the hub's install panel (the
+SKILLS section lists every skill; unchecking one discards it) or with
+`enigma skills discard <name>`: it is removed from every agent and skipped by
+future installs, updates and auto-syncs until you restore it with
+`enigma skills restore <name>`.
 
 ## Auto-sync on launch
 
