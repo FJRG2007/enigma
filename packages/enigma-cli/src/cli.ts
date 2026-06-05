@@ -10,8 +10,9 @@ import * as p from "@clack/prompts";
 import { readJson } from "./util";
 import { collectReporter } from "./reporter";
 import {
-    checkSources, discardSkill, hasDeployment, installSkills, listSkillsStatus,
-    refreshSkillsFromGitHub, sealSources, shouldCheckRemote, syncDeployed,
+    checkSources, discardSkill, hasAccountDeployment, hasDeployment, installSkills,
+    listSkillsStatus, refreshSkillsFromGitHub, sealSources, shouldCheckRemote,
+    syncAccount, syncDeployed,
 } from "./skills";
 import type { InstallOptions } from "./skills";
 import { setupGitHooks, GUARD_PROTECTIONS } from "./security";
@@ -25,8 +26,8 @@ import type { IssueKind } from "./issue";
 import {
     DEFAULT_NAME, DEFAULT_TOOL, TOOL_NAMES, addAccount, addProfile, getActive, getTool,
     isToolName, launchTool, listAccounts, listProfiles, loginTool, removeAccount,
-    removeProfile, renameAccount, renameProfile, setActive, setActiveProfile,
-    setProfileAccount, unsetProfileAccount,
+    removeProfile, renameAccount, renameProfile, resolveConfigDir, resolveLaunchAccount,
+    setActive, setActiveProfile, setProfileAccount, unsetProfileAccount,
 } from "./accounts";
 import type { HubAccount, HubExitAction, HubProfile, HubSkill } from "./tui/types";
 
@@ -121,7 +122,9 @@ Commands:
                        'config <key> <on|off> [-g|-l]' sets one (e.g. config claude-attribution on)
   <tool> [account]     Launch a tool (claude | codex | opencode) with an account's
                        config (resolution: explicit > active profile > tool active);
-                       auto-syncs deployed skills first (see auto-sync config key);
+                       auto-syncs deployed skills first (see auto-sync config key) and
+                       keeps managed accounts stocked with skills, memory and the
+                       mirrored settings (bypass, attribution) of the default account;
                        pass args to the tool after '--' (e.g. claude work -- --version)
   account <subcommand> Manage tool accounts (multi-login without logging out).
                        Defaults to Claude Code; target another tool with --tool <name>:
@@ -200,19 +203,41 @@ Examples:
 }
 
 /**
- * Keep an existing skills deployment fresh before handing the terminal to a tool:
- * with autoSync on (default), silently re-deploys changed/new skills and the memory
- * file for the launched tool's agent (tool names match agent names). It never
- * creates a first deployment - that stays an explicit `enigma install` - and never
- * blocks the launch: any sync error is reported and ignored.
+ * Keep the launched tool's deployment fresh before handing it the terminal.
+ * Default account: with autoSync on (default), re-deploys changed/new skills and
+ * memory for the tool's agent; it never creates a first deployment there - that
+ * stays an explicit `enigma install`. Managed account: the tool reads everything
+ * from the account's enigma-created config dir, so a missing deployment is
+ * seeded even when autoSync is off (otherwise the account would never get
+ * skills/memory/bypass); refreshes respect the toggle. Never blocks the launch:
+ * any sync error is reported and ignored.
  */
-function autoSyncForLaunch(tool: string): void {
-    if (!readConfig().config.autoSync) return;
+function syncForLaunch(tool: string, account: string): void {
+    const auto = readConfig().config.autoSync;
     try {
-        for (const notice of syncDeployed([tool])) console.log(`enigma: synced ${notice}.`);
+        if (auto) for (const notice of syncDeployed([tool])) console.log(`enigma: synced ${notice}.`);
+        if (account === DEFAULT_NAME) return;
+        const dir = resolveConfigDir(tool, account);
+        if (!auto && hasAccountDeployment(tool, dir)) return;
+        for (const notice of syncAccount(tool, dir)) console.log(`enigma: synced ${notice}.`);
     } catch (err) {
         console.error(`enigma: skill auto-sync failed (${(err as Error).message}); launching anyway.`);
     }
+}
+
+/** Sync an account's deployment, then run the tool's login flow for it. */
+async function loginWithSync(tool: string, name: string): Promise<number> {
+    syncForLaunch(tool, name);
+    return loginTool(tool, name);
+}
+
+/**
+ * Best-effort first deployment into a freshly created account dir, so the account
+ * starts with skills, memory and the mirrored settings before its first launch.
+ * A failure is non-fatal: the next launch seeds it instead.
+ */
+function seedAccount(tool: string, dir: string): void {
+    try { syncAccount(tool, dir); } catch { /* seeded on first launch instead */ }
 }
 
 /**
@@ -274,7 +299,8 @@ async function runAccountCli(opts: CliOptions, interactive: boolean): Promise<nu
             if (!name) { console.error(`Usage: enigma account add <name> [--login] [--tool ${tool}]`); return 1; }
             try {
                 const account = addAccount(tool, name);
-                console.log(`Account '${account.name}' ready at ${account.dir}.`);
+                seedAccount(tool, account.dir);
+                console.log(`Account '${account.name}' ready at ${account.dir} (skills, memory and settings deployed).`);
                 if (opts.login) return loginTool(tool, account.name);
                 console.log(`Log in with: enigma account login ${account.name}${tool === DEFAULT_TOOL ? "" : ` --tool ${tool}`}.`);
                 return 0;
@@ -288,12 +314,12 @@ async function runAccountCli(opts: CliOptions, interactive: boolean): Promise<nu
         }
         case "login": {
             if (!name) { console.error("Usage: enigma account login <name>"); return 1; }
-            try { return await loginTool(tool, name); }
+            try { return await loginWithSync(tool, name); }
             catch (err) { console.error((err as Error).message); return 1; }
         }
         case "run": {
             if (!name) { console.error("Usage: enigma account run <name>"); return 1; }
-            try { autoSyncForLaunch(tool); return await launchTool(tool, name, opts.passthrough); }
+            try { syncForLaunch(tool, name); return await launchTool(tool, name, opts.passthrough); }
             catch (err) { console.error((err as Error).message); return 1; }
         }
         case "rename": {
@@ -495,8 +521,11 @@ export async function run(argv: string[]): Promise<void> {
     if (opts.command === "guard") { process.exit(runGuardCli(opts.all)); }
     if (opts.command === "config") { process.exit(await runConfigCli(opts.positionals, opts.scope, interactive)); }
     if (opts.command && isToolName(opts.command)) {
-        autoSyncForLaunch(opts.command);
-        process.exit(await launchTool(opts.command, opts.positionals[0] ?? null, opts.passthrough));
+        // Resolve the account up front (explicit > active profile > tool active) so
+        // the pre-launch sync targets the same config dir the tool will read.
+        const account = opts.positionals[0] ?? resolveLaunchAccount(opts.command);
+        syncForLaunch(opts.command, account);
+        process.exit(await launchTool(opts.command, account, opts.passthrough));
     }
     if (opts.command === "account") { process.exit(await runAccountCli(opts, interactive)); }
     if (opts.command === "profile") { process.exit(await runProfileCli(opts, interactive)); }
@@ -566,7 +595,11 @@ export async function run(argv: string[]): Promise<void> {
         activateAccount: (tool: string, name: string) => { setActive(tool, name); return hubAccounts(); },
         removeAccount: (tool: string, name: string) => { removeAccount(tool, name); return hubAccounts(); },
         addAccount: (tool: string, name: string) => {
-            try { addAccount(tool, name); return { ok: true, accounts: hubAccounts() }; }
+            try {
+                const account = addAccount(tool, name);
+                seedAccount(tool, account.dir);
+                return { ok: true, accounts: hubAccounts() };
+            }
             catch (err) { return { ok: false, error: (err as Error).message, accounts: hubAccounts() }; }
         },
         renameAccount: (tool: string, oldName: string, newName: string) => {
@@ -613,7 +646,7 @@ export async function run(argv: string[]): Promise<void> {
     // terminal the TUI owns; so the hub closes, we run the login here, then reopen.
     let action: HubExitAction | null = await runHomeTui(buildCtx());
     while (action?.type === "connect") {
-        await loginTool(action.tool, action.account);
+        await loginWithSync(action.tool, action.account);
         action = await runHomeTui(buildCtx());
     }
     // "Update now" from the hub: run the full update (skills + npm) in the freed

@@ -21,7 +21,9 @@ import { clackReporter } from "./reporter";
 import type { Reporter } from "./reporter";
 import { disableClaudeAttribution, enableClaudeStatusline } from "./claude";
 import { setGhTelemetry } from "./github";
-import { resolveBypassSelection, applyBypass } from "./permissions";
+import { resolveBypassSelection, applyBypass, mirrorAccountSettings } from "./permissions";
+import { getTool } from "./accounts";
+import type { AccountTarget } from "./accounts";
 import { cachedRemoteSkills, refreshRemoteSkills, shouldCheckRemote } from "./skills-remote";
 import type { RemoteRefreshResult } from "./skills-remote";
 
@@ -729,37 +731,95 @@ export function syncDeployed(agentNames?: string[]): string[] {
     const notices: string[] = [];
     // Discarded skills are excluded from the source set, so the prune pass below
     // removes any deployed copy of them (a discard propagates on every sync).
-    const discarded = discardedSkillNames();
-    const skills = inspectSkills().filter((s) => !discarded.has(s.name));
+    const skills = currentSkillSet();
     for (const agent of discoverAgents()) {
         if (agentNames && !agentNames.includes(agent.name)) continue;
         for (const scope of ["global", "local"] as const) {
             const target = agent.targets[scope];
             if (!target || !hasDeployment(agent, scope)) continue;
-            let changed = 0;
-            for (const sk of skills) {
-                const dest = join(target.skills, sk.name);
-                const kind = skillStatus(dest, sk.meta).kind;
-                if (kind === "identical" || kind === "tampered") continue;
-                mkdirSync(target.skills, { recursive: true });
-                cpSync(sk.src, dest, { recursive: true, force: true });
-                changed++;
-            }
-            for (const orphan of computePrune(target.skills, skills.map((s) => s.name))) {
-                rmSync(orphan.dir, { recursive: true, force: true });
-                changed++;
-            }
-            for (const m of inspectMemory(agent)) {
-                const dest = join(target.memory, m.name);
-                if (!existsSync(dest) || memoryStatus(m.src, dest) === "identical") continue;
-                // Only rewrite a memory file enigma wrote and the user has not
-                // touched since; a user-edited or user-authored file stays as-is.
-                if (!isEnigmaWritten(dest)) continue;
-                writeMemory(m.src, dest);
-                changed++;
-            }
+            const changed = syncTarget(target, inspectMemory(agent), skills, false);
             if (changed) notices.push(`${agent.label}: ${changed} item(s) updated (${scope})`);
         }
     }
     return notices;
+}
+
+/** The effective non-discarded skill set used by every sync. */
+function currentSkillSet(): SkillEntry[] {
+    const discarded = discardedSkillNames();
+    return inspectSkills().filter((s) => !discarded.has(s.name));
+}
+
+/**
+ * Bring one skills+memory destination up to date with the source set: copy
+ * new/updated/unsealed skills, prune orphaned and discarded managed skills, and
+ * re-render the memory file. Locally-modified (tampered) skills are never
+ * overwritten and an existing memory file is only rewritten when enigma wrote it
+ * last (isEnigmaWritten). `createMemory` additionally seeds a missing memory
+ * file - only safe for enigma-owned destinations (managed account dirs); the
+ * deployment-gated syncs pass false so a first deployment stays an explicit
+ * `enigma install`. Returns the number of changed items.
+ */
+function syncTarget(target: AccountTarget, memory: MemoryEntry[], skills: SkillEntry[], createMemory: boolean): number {
+    let changed = 0;
+    if (target.skills) {
+        for (const sk of skills) {
+            const dest = join(target.skills, sk.name);
+            const kind = skillStatus(dest, sk.meta).kind;
+            if (kind === "identical" || kind === "tampered") continue;
+            mkdirSync(target.skills, { recursive: true });
+            cpSync(sk.src, dest, { recursive: true, force: true });
+            changed++;
+        }
+        for (const orphan of computePrune(target.skills, skills.map((s) => s.name))) {
+            rmSync(orphan.dir, { recursive: true, force: true });
+            changed++;
+        }
+    }
+    for (const m of memory) {
+        const dest = join(target.memory, m.name);
+        if (existsSync(dest)) {
+            // Only rewrite a memory file enigma wrote and the user has not
+            // touched since; a user-edited or user-authored file stays as-is.
+            if (memoryStatus(m.src, dest) === "identical" || !isEnigmaWritten(dest)) continue;
+        } else if (!createMemory) {
+            continue;
+        }
+        mkdirSync(target.memory, { recursive: true });
+        writeMemory(m.src, dest);
+        changed++;
+    }
+    return changed;
+}
+
+/**
+ * True when a managed account's config dir already holds an enigma deployment:
+ * a managed-provider skill in its skills dir, or a memory file enigma recorded
+ * writing there. Mirrors `hasDeployment` for account dirs.
+ */
+export function hasAccountDeployment(toolName: string, dir: string): boolean {
+    const target = getTool(toolName).accountTarget(dir);
+    const agent = discoverAgents().find((a) => a.name === toolName);
+    const recorded = readSyncState().memory || {};
+    if (agent && inspectMemory(agent).some((m) => join(target.memory, m.name) in recorded && existsSync(join(target.memory, m.name)))) return true;
+    return Boolean(target.skills) && isDir(target.skills!) && readdirSync(target.skills!)
+        .some((e) => isManagedProvider(readSkillMeta(join(target.skills!, e)).provider));
+}
+
+/**
+ * Deploy or refresh enigma's skills, memory and managed agent-native settings
+ * into a managed account's config dir - the dir the tool resolves when enigma
+ * launches it with the account's config-dir env injected. The dir is
+ * enigma-created, so a missing memory file is seeded here (unlike syncDeployed);
+ * tampered skills and user-edited memory follow the same never-overwrite rules.
+ * Settings (bypass, attribution, statusline, ...) mirror the default account's
+ * current posture on every sync. Returns notice lines for display.
+ */
+export function syncAccount(toolName: string, dir: string): string[] {
+    const agent = discoverAgents().find((a) => a.name === toolName);
+    if (!agent) return [];
+    const target = getTool(toolName).accountTarget(dir);
+    const changed = syncTarget(target, inspectMemory(agent), currentSkillSet(), true);
+    mirrorAccountSettings(toolName, dir);
+    return changed ? [`${agent.label}: ${changed} item(s) updated (account)`] : [];
 }

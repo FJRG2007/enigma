@@ -77,7 +77,7 @@ Optional compression of the agent's chat prose (`off | lite | full | ultra`):
 
 ### <img src="docs/images/enigma-logo.svg" width="20" height="20" alt="Enigma"/> Multi-account + profiles
 
-Several logins per tool without logging out, each in its own config dir, switched OS-agnostically. Profiles pin one account per tool ("work" = claude:acme + codex:acme) and drive every launch.
+Several logins per tool without logging out, each in its own config dir, switched OS-agnostically. Every account inherits your skills, memory and managed settings (permission bypass, attribution) automatically. Profiles pin one account per tool ("work" = claude:acme + codex:acme) and drive every launch.
 
 ```bash
 enigma claude work

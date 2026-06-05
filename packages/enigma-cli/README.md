@@ -180,6 +180,16 @@ each tool's built-in `default` account (never deleted). New accounts live under
 `~/.enigma/<tool>/<name>/`. Bare `claude` / `codex` / `opencode` commands keep
 using your real environment as before.
 
+Managed accounts inherit your enigma setup automatically: because the tool reads
+everything from the account's config dir, enigma deploys the skills and memory
+file into it (seeded on `account add` and on launch) and mirrors the
+enigma-managed native settings from your default account on every launch -
+Claude's permission bypass, attribution overrides and statusline, Codex's
+`approval_policy`/`sandbox_mode`, opencode's `"*": "allow"` permission. Turning
+a knob off on the default account propagates too; per-account manual edits to
+those specific knobs are overwritten on the next launch, while every other
+account setting (theme, custom statusline, extra permissions) is left untouched.
+
 ### Profiles (one account per tool)
 
 A profile pins one account per tool under a single name - e.g. profile `work` =

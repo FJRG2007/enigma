@@ -20,7 +20,7 @@ import * as p from "@clack/prompts";
 import { AGENTS } from "./agents";
 import { isDir, readJson } from "./util";
 import { readConfig, setBypassDisabled } from "./config";
-import { enableClaudeBypass, getClaudeBypass, setClaudeBypass } from "./claude";
+import { enableClaudeBypass, getClaudeBypass, mirrorClaudeSettings, setClaudeBypass } from "./claude";
 import type { Agent } from "./agents";
 
 /** Agents that expose a permission-bypass switch. */
@@ -126,6 +126,50 @@ export function setBypass(name: string, scope: "global" | "local", on: boolean, 
     }
 }
 
+/**
+ * Mirror enigma-managed agent-native settings from the user's default/global
+ * config into a managed account's config dir, so `enigma <tool> <account>`
+ * behaves like the default account: Claude's settings.json knobs (attribution,
+ * bypass, statusline), Codex's approval_policy/sandbox_mode in config.toml, and
+ * opencode's "*" permission catch-all in opencode.json. Mirrors presence AND
+ * absence (turning a knob off propagates); every other account setting is kept.
+ */
+export function mirrorAccountSettings(toolName: string, accountDir: string): void {
+    switch (toolName) {
+        case "claude":
+            mirrorClaudeSettings(accountDir);
+            return;
+        case "codex":
+            mirrorCodexConfig(accountDir);
+            return;
+        case "opencode": {
+            const path = join(accountDir, "xdg-config", "opencode", "opencode.json");
+            if (getOpencodeBypass("global")) enableOpencodeBypassAt(path, false);
+            else disableOpencodeBypassAt(path, false);
+            return;
+        }
+        default:
+            return;
+    }
+}
+
+/** Mirror the bypass keys of ~/.codex/config.toml into an account's config.toml. */
+function mirrorCodexConfig(accountDir: string): void {
+    const global = existsSync(join(homedir(), ".codex", "config.toml"))
+        ? readFileSync(join(homedir(), ".codex", "config.toml"), "utf8")
+        : "";
+    const path = join(accountDir, "config.toml");
+    const before = existsSync(path) ? readFileSync(path, "utf8") : "";
+    let after = before;
+    for (const key of ["approval_policy", "sandbox_mode"]) {
+        const value = getTomlTopLevelKey(global, key);
+        after = value === null ? removeTomlTopLevelKey(after, key) : setTomlTopLevelKey(after, key, value);
+    }
+    if (after === before || (before === "" && after.trim() === "")) return;
+    mkdirSync(join(path, ".."), { recursive: true });
+    writeFileSync(path, after);
+}
+
 /** True when Codex's global config has the full-bypass knobs set. */
 function getCodexBypass(): boolean {
     const path = join(homedir(), ".codex", "config.toml");
@@ -150,7 +194,11 @@ function disableCodexBypass(dryRun: boolean): BypassWrite {
 
 /** True when opencode's config grants the `"*": "allow"` catch-all (or `"allow"`). */
 function getOpencodeBypass(scope: "global" | "local"): boolean {
-    const path = opencodeConfigPath(scope);
+    return opencodeBypassAt(opencodeConfigPath(scope));
+}
+
+/** Path-based variant of `getOpencodeBypass`, for managed account config files. */
+function opencodeBypassAt(path: string): boolean {
     const perm = (readJson<Record<string, unknown>>(path) || {}).permission;
     return perm === "allow"
         || (typeof perm === "object" && perm !== null && (perm as Record<string, unknown>)["*"] === "allow");
@@ -162,11 +210,14 @@ function getOpencodeBypass(scope: "global" | "local"): boolean {
  * `permission` key entirely if nothing else remains.
  */
 function disableOpencodeBypass(scope: "global" | "local", dryRun: boolean): BypassWrite {
-    const path = opencodeConfigPath(scope);
+    return disableOpencodeBypassAt(opencodeConfigPath(scope), dryRun);
+}
+
+function disableOpencodeBypassAt(path: string, dryRun: boolean): BypassWrite {
     const current = readJson<Record<string, unknown>>(path) || {};
     const perm = current.permission;
 
-    if (!getOpencodeBypass(scope)) return { path, changed: false };
+    if (!opencodeBypassAt(path)) return { path, changed: false };
     if (dryRun) return { path, changed: true };
 
     const next: Record<string, unknown> = { ...current };
@@ -223,13 +274,14 @@ function enableCodexBypass(dryRun: boolean): BypassWrite {
  * wins in opencode).
  */
 function enableOpencodeBypass(scope: "global" | "local", dryRun: boolean): BypassWrite {
-    const path = opencodeConfigPath(scope);
+    return enableOpencodeBypassAt(opencodeConfigPath(scope), dryRun);
+}
+
+function enableOpencodeBypassAt(path: string, dryRun: boolean): BypassWrite {
     const current = readJson<Record<string, unknown>>(path) || {};
     const perm = current.permission;
 
-    const alreadyAllowAll = perm === "allow"
-        || (typeof perm === "object" && perm !== null && (perm as Record<string, unknown>)["*"] === "allow");
-    if (alreadyAllowAll) return { path, changed: false };
+    if (opencodeBypassAt(path)) return { path, changed: false };
     if (dryRun) return { path, changed: true };
 
     const existing = (typeof perm === "object" && perm !== null) ? perm as Record<string, unknown> : {};

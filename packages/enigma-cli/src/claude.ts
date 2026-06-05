@@ -10,7 +10,7 @@
 
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { isDir, readJson } from "./util";
 
 /** Settings file Claude Code reads for a given scope. */
@@ -161,6 +161,65 @@ export function enableClaudeStatusline(scope: "global" | "local"): boolean {
     const current = readJson<Record<string, unknown>>(path) || {};
     if (current.statusLine !== undefined) return false;
     const next = { ...current, statusLine: { type: "command", command: "enigma statusline", padding: 0 } };
+    writeClaudeSettings(path, next);
+    return true;
+}
+
+/**
+ * Mirror the enigma-managed settings.json knobs from the user's global Claude
+ * settings into a managed account's config dir, so an account launched via
+ * `enigma claude <account>` behaves like the default one. Mirrored knobs:
+ * attribution overrides (commit/pr + includeCoAuthoredBy), permission bypass
+ * (permissions.defaultMode) and the enigma statusline (added only when the
+ * account has none - never clobbers a custom one). Every other account setting
+ * is preserved, and absence in the global file removes the matching override so
+ * turning a knob off propagates too. Returns true when the account file changed.
+ */
+export function mirrorClaudeSettings(accountDir: string): boolean {
+    const global = readJson<Record<string, unknown>>(claudeSettingsPath("global")) || {};
+    const path = join(accountDir, "settings.json");
+    const current = readJson<Record<string, unknown>>(path) || {};
+    const next: Record<string, unknown> = { ...current };
+
+    // Attribution: mirror exactly the disabling overrides enigma manages.
+    const globalAttr = (typeof global.attribution === "object" && global.attribution !== null)
+        ? global.attribution as Record<string, unknown>
+        : {};
+    const attr = (typeof next.attribution === "object" && next.attribution !== null)
+        ? { ...next.attribution as Record<string, unknown> }
+        : {};
+    for (const key of ["commit", "pr"] as const) {
+        if (globalAttr[key] === "") attr[key] = "";
+        else if (attr[key] === "") delete attr[key];
+    }
+    if (Object.keys(attr).length) next.attribution = attr;
+    else delete next.attribution;
+    if (global.includeCoAuthoredBy === false) next.includeCoAuthoredBy = false;
+    else if (next.includeCoAuthoredBy === false) delete next.includeCoAuthoredBy;
+
+    // Permission bypass: mirror only the bypass mode enigma manages; any other
+    // defaultMode the user set on the account is left alone.
+    const globalPerm = (typeof global.permissions === "object" && global.permissions !== null)
+        ? global.permissions as Record<string, unknown>
+        : {};
+    const perm = (typeof next.permissions === "object" && next.permissions !== null)
+        ? { ...next.permissions as Record<string, unknown> }
+        : {};
+    if (globalPerm.defaultMode === "bypassPermissions") perm.defaultMode = "bypassPermissions";
+    else if (perm.defaultMode === "bypassPermissions") delete perm.defaultMode;
+    if (Object.keys(perm).length) next.permissions = perm;
+    else delete next.permissions;
+
+    // Statusline: propagate enigma's statusline when the account has none.
+    const globalLine = global.statusLine as Record<string, unknown> | undefined;
+    if (next.statusLine === undefined && globalLine?.command === "enigma statusline") {
+        next.statusLine = { ...globalLine };
+    }
+
+    if (JSON.stringify(next) === JSON.stringify(current)) return false;
+    // Nothing to mirror into a file that does not exist yet: avoid creating an
+    // empty settings.json in a fresh account dir.
+    if (!existsSync(path) && Object.keys(next).length === 0) return false;
     writeClaudeSettings(path, next);
     return true;
 }

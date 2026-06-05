@@ -47,6 +47,13 @@ export interface ToolSpec {
     binEnv: string;
     defaultDir: string;
     envFor: (dir: string) => Record<string, string>;
+    /**
+     * Where enigma's deployment lives INSIDE a managed account's config dir, as
+     * the tool resolves paths with its config-dir env var injected. `skills` is
+     * omitted for tools that read skills from a shared, account-independent
+     * location (Codex reads ~/.agents/skills regardless of CODEX_HOME).
+     */
+    accountTarget: (dir: string) => AccountTarget;
     loginArgs?: string[];
     loginHint: string;
     /**
@@ -55,6 +62,12 @@ export interface ToolSpec {
      * fields when the account has not been authenticated yet.
      */
     accountInfo?: (dir: string) => { email?: string; displayName?: string };
+}
+
+/** Skills/memory destinations inside a managed account's config dir. */
+export interface AccountTarget {
+    skills?: string;
+    memory: string;
 }
 
 const OPENCODE_DEFAULT_DIR = join(homedir(), ".local", "share", "opencode");
@@ -68,6 +81,9 @@ const TOOLS: Record<string, ToolSpec> = {
         binEnv: "ENIGMA_CLAUDE_BIN",
         defaultDir: join(homedir(), ".claude"),
         envFor: (dir) => ({ CLAUDE_CONFIG_DIR: dir }),
+        // CLAUDE_CONFIG_DIR relocates ~/.claude entirely: skills, the CLAUDE.md
+        // user memory and settings.json are all read from the account dir.
+        accountTarget: (dir) => ({ skills: join(dir, "skills"), memory: dir }),
         loginHint: "Launching Claude Code - run /login inside it to authenticate this account.",
         // Claude Code records the signed-in account under oauthAccount in
         // <config-dir>/.claude.json (no tokens there - those live elsewhere).
@@ -83,6 +99,9 @@ const TOOLS: Record<string, ToolSpec> = {
         binEnv: "ENIGMA_CODEX_BIN",
         defaultDir: join(homedir(), ".codex"),
         envFor: (dir) => ({ CODEX_HOME: dir }),
+        // CODEX_HOME relocates AGENTS.md (and config.toml), but Codex discovers
+        // skills from the shared ~/.agents/skills location - no per-account copy.
+        accountTarget: (dir) => ({ memory: dir }),
         loginArgs: ["login"],
         loginHint: "Launching `codex login` to authenticate this account.",
         // Codex stores its OAuth tokens in <CODEX_HOME>/auth.json; the id_token is
@@ -116,6 +135,12 @@ const TOOLS: Record<string, ToolSpec> = {
         envFor: (dir): Record<string, string> => dir === OPENCODE_DEFAULT_DIR
             ? {}
             : { XDG_DATA_HOME: join(dir, "xdg-data"), XDG_CONFIG_HOME: join(dir, "xdg-config") },
+        // The injected XDG_CONFIG_HOME makes opencode read its config dir (skills,
+        // AGENTS.md, opencode.json) from <dir>/xdg-config/opencode.
+        accountTarget: (dir) => ({
+            skills: join(dir, "xdg-config", "opencode", "skills"),
+            memory: join(dir, "xdg-config", "opencode"),
+        }),
         loginArgs: ["auth", "login"],
         loginHint: "Launching `opencode auth login` to authenticate this account.",
         // opencode's auth.json maps provider ids to credentials; there is no email
