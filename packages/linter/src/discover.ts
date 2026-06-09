@@ -2,11 +2,12 @@
 
 import { join, extname } from "node:path";
 import { statSync, readdirSync } from "node:fs";
+import { SOURCE_EXTENSIONS } from "./languages";
 
-const SOURCE_EXT = new Set([".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"]);
 const SKIP_DIR = new Set([
-    "node_modules", "dist", "build", "out", "coverage",
+    "node_modules", "dist", "build", "out", "coverage", "target",
     ".next", ".nuxt", ".svelte-kit", ".turbo", ".git",
+    "__pycache__", ".venv", "venv", ".mypy_cache", ".ruff_cache",
 ]);
 
 /** Recursively collect lintable source files under the given paths. */
@@ -24,7 +25,7 @@ function walk(path: string, out: string[]): void {
             if (SKIP_DIR.has(entry)) continue;
             walk(join(path, entry), out);
         }
-    } else if (SOURCE_EXT.has(extname(path).toLowerCase())) {
+    } else if (SOURCE_EXTENSIONS.has(extname(path).toLowerCase())) {
         out.push(path);
     }
 }

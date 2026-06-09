@@ -2,15 +2,17 @@
 
 import ts from "typescript";
 import { locate } from "../parse";
+import { JS_TS } from "../languages";
 import type { Rule, Violation } from "../types";
 
 export const lengthSortedImports: Rule = {
     name: "length-sorted-imports",
     category: "style",
     severity: "warning",
+    languages: JS_TS,
     check(ctx) {
         const violations: Violation[] = [];
-        const { sourceFile } = ctx;
+        const sourceFile = ctx.sourceFile!;
         let group: ts.ImportDeclaration[] = [];
 
         const flush = (): void => {

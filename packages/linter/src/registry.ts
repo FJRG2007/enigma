@@ -8,6 +8,7 @@ import { requireSemicolons } from "./rules/requireSemicolons";
 import { preferDoubleQuotes } from "./rules/preferDoubleQuotes";
 import { noHardcodedSecrets } from "./rules/noHardcodedSecrets";
 import { lengthSortedImports } from "./rules/lengthSortedImports";
+import { noConsecutiveBlankLines } from "./rules/noConsecutiveBlankLines";
 
 export const RULES: Rule[] = [
     lengthSortedImports,
@@ -16,5 +17,6 @@ export const RULES: Rule[] = [
     requireSemicolons,
     noUrlImports,
     fileHygiene,
+    noConsecutiveBlankLines,
     noHardcodedSecrets,
 ];

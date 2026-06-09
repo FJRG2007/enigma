@@ -2,15 +2,17 @@
 
 import ts from "typescript";
 import { locate } from "../parse";
+import { JS_TS } from "../languages";
 import type { Rule, Violation } from "../types";
 
 export const noUselessConcat: Rule = {
     name: "no-useless-concat",
     category: "style",
     severity: "warning",
+    languages: JS_TS,
     check(ctx) {
         const violations: Violation[] = [];
-        const { sourceFile } = ctx;
+        const sourceFile = ctx.sourceFile!;
 
         function isStringConcat(node: ts.Node): node is ts.BinaryExpression {
             return ts.isBinaryExpression(node)

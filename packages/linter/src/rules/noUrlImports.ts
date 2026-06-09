@@ -2,6 +2,7 @@
 
 import ts from "typescript";
 import { locate } from "../parse";
+import { JS_TS } from "../languages";
 import type { Rule, Violation } from "../types";
 
 const URL_SPECIFIER = /^(https?:)?\/\//i;
@@ -10,9 +11,10 @@ export const noUrlImports: Rule = {
     name: "no-url-imports",
     category: "style",
     severity: "error",
+    languages: JS_TS,
     check(ctx) {
         const violations: Violation[] = [];
-        const { sourceFile } = ctx;
+        const sourceFile = ctx.sourceFile!;
 
         const visit = (node: ts.Node): void => {
             const specifier = moduleSpecifier(node);

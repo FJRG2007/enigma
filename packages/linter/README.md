@@ -1,11 +1,28 @@
 # @enigmax/linter
 
 A small, fast linter and security auditor that enforces the **Ciphera code style**
-and flags hardcoded secrets. It parses TypeScript/JavaScript with the TypeScript
-compiler API, so the checks are AST-accurate rather than regex guesses.
+and flags hardcoded secrets. JavaScript/TypeScript is parsed with the TypeScript
+compiler API, so its style checks are AST-accurate rather than regex guesses;
+Python, Rust, and Prisma get the language-agnostic checks (file hygiene, blank-line
+collapsing, and secret detection) with lightweight per-language lexing so blanks
+inside docstrings, block comments, and multi-line strings are left alone.
 
 It is meant to be run on demand - by a developer, by an agent as a self-check, or
 wired into a project's scripts/CI - not as an always-on background process.
+
+## Languages
+
+| Language | Extensions | Rules applied |
+| --- | --- | --- |
+| TypeScript / JavaScript | `.ts .tsx .mts .cts .js .jsx .mjs .cjs` | all style + audit rules |
+| Python | `.py .pyi` | `no-consecutive-blank-lines`, `file-hygiene`, `no-hardcoded-secrets` |
+| Rust | `.rs` | `no-consecutive-blank-lines`, `file-hygiene`, `no-hardcoded-secrets` |
+| Prisma | `.prisma` | `no-consecutive-blank-lines`, `file-hygiene`, `no-hardcoded-secrets` |
+
+The AST-based Ciphera style rules (length-sorted imports, double quotes, template
+literals, semicolons, URL imports) are JavaScript/TypeScript-only by design: they
+encode TS idioms and would misfire on other grammars (for example, Rust `'a'` char
+literals or Python's idiomatic single quotes).
 
 ## Usage
 
@@ -36,18 +53,22 @@ found (URL/CDN imports, hardcoded secrets), so it can gate a commit or CI step.
 | `length-sorted-imports` | imports not ordered by line length, shortest first |
 | `prefer-double-quotes` | single-quoted strings (where double would work) and no-interpolation template literals |
 | `no-useless-concat` | string concatenation with `+` that should be a template literal |
-| `require-semicolons` | statements missing a terminating semicolon |
+| `require-semicolons` | statements missing a terminating semicolon - declarations (`const`/`let`/`var`), imports, exports, directives like `"use strict"`, type aliases, and class fields (function/class declarations are exempt, as their body terminates them) |
 | `no-url-imports` | importing from a remote URL / CDN instead of a package name (error) |
-| `file-hygiene` | trailing whitespace, missing or extra final newline, leading blank line |
+| `no-consecutive-blank-lines` | two or more consecutive blank lines (collapse to one); ignores blanks inside strings/templates and block comments (all languages) |
+| `file-hygiene` | trailing whitespace, missing or extra final newline, leading blank line (all languages) |
 
 ### Audit (security)
 
 | Rule | What it flags |
 | --- | --- |
-| `no-hardcoded-secrets` | high-signal credential patterns - AWS keys, GitHub/Slack/Google/Stripe tokens, private-key blocks, and `secret/token/api_key = "..."` assignments (error) |
+| `no-hardcoded-secrets` | high-signal credential patterns - AWS keys, GitHub/Slack/Google/Stripe tokens, private-key blocks, and `secret/token/api_key = "..."` assignments (error, all languages) |
 
+To keep false positives low, a match is only reported when its random portion looks
+like a real credential: obvious placeholders (`your_api_key_here`, `changeme`, ...)
+and low-entropy fillers (`sk-proj-000000000000`, repeated characters) are ignored.
 Files named `*example*`, `*sample*`, `*template*`, `*fixture*`, `*.test.*`, and
-`*.spec.*` are exempt from the secret audit.
+`*.spec.*` are exempt from the secret audit entirely.
 
 ## Programmatic API
 

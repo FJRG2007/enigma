@@ -1,11 +1,13 @@
 /** File hygiene: no trailing whitespace, exactly one final newline, no leading blank line. */
 
+import { ALL_LANGUAGES } from "../languages";
 import type { Rule, Violation } from "../types";
 
 export const fileHygiene: Rule = {
     name: "file-hygiene",
     category: "style",
     severity: "warning",
+    languages: ALL_LANGUAGES,
     check(ctx) {
         const violations: Violation[] = [];
         const add = (line: number, message: string): void => {
