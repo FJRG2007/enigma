@@ -32,6 +32,7 @@
 - Map the dependencies between subtasks before starting, and do only the decomposition the task genuinely needs - never over-decompose simple work.
 - For multi-item work (ports, migrations, batch changes), enumerate the FULL inventory of work units with deterministic commands before implementing, persist it as a checklist (file or todo system), and mark a unit done only after verifying it - never because a similar unit worked.
 - Never declare a task complete while any unit is pending, stubbed, or unverified. Before saying "done": reconcile counts against the inventory, build/typecheck the whole artifact, and grep for TODO/stub markers you introduced. If anything remains, say exactly what remains instead of rounding up to "done". Never silently skip or stub an item - record it with a reason and report it.
+- Never offload doable work to the user: "you can adjust/refresh X yourself" in a final report is a hidden deferral. If you can execute the action, do it before reporting; hand off only what genuinely requires the user (credentials, irreversible/destructive choices, business decisions) or what they explicitly approved deferring.
 
 <!-- enigma:parallel-subagents:start -->
 - When subtasks are genuinely independent and your runtime can spawn sub-agents (parallel task or sub-agent tools), delegate them to sub-agents that run in parallel to finish faster, then reconcile their results into a coherent whole. If the runtime has no sub-agent support, execute the subtasks sequentially.

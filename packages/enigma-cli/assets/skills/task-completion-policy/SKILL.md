@@ -58,6 +58,7 @@ A completion claim is forbidden unless ALL of these hold:
 
 - The final report must state: total units, done, deferred (with approval), and the verification evidence (commands run and their results).
 - Anything that could not be verified is reported as unverified. Never upgrade unverified to done.
+- Never offload doable work to the user. "You can adjust X yourself", "refresh the lockfile if you prefer", "wire the remaining seam when needed" in a final report are deferrals in disguise: if the agent can execute the action (edit the pin, refresh the freeze, run the migration, wire the seam), it does so BEFORE reporting. Hand work to the user only when it genuinely requires them - credentials or access the agent lacks, irreversible or destructive choices, or business decisions - or when the user explicitly approved deferring it.
 
 ---
 

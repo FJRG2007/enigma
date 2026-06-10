@@ -1,6 +1,6 @@
 {
   "name": "task-completion-policy",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "provider": "FJRG2007/enigma",
   "description": "Exhaustive completion discipline for long/multi-item tasks - inventory, coverage ledger, verified done.",
   "cliVersion": "1.13.0",
