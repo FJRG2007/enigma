@@ -52,6 +52,14 @@ function stubFetch(skills: FakeSkill[]): { rawCalls: () => number } {
     }
     globalThis.fetch = (async (url: string | URL) => {
         const u = String(url);
+        // Discovery manifest endpoint: resolves the source back to this fake repo
+        // (so the rest of the suite exercises the default path). Not a raw download.
+        if (u.endsWith("/skills-manifest.json")) return Response.json({
+            schema: 1,
+            source: { repo: "FJRG2007/enigma", ref: "main", skillsPrefix: `${PREFIX}/` },
+            apiBase: "https://api.github.com",
+            rawBase: "https://raw.githubusercontent.com",
+        });
         if (u === "https://api.github.com/repos/FJRG2007/enigma/commits/main") return Response.json({ sha: COMMIT });
         if (u === `https://api.github.com/repos/FJRG2007/enigma/git/trees/${COMMIT}?recursive=1`) return Response.json({ tree });
         rawCalls++;
@@ -98,6 +106,31 @@ test("rejects a download whose content does not match its sealed sha", async () 
     expect(r.error).toBeNull();
     expect(r.updated).toEqual([]);
     expect(cachedRemoteSkills()).toEqual([]);
+});
+
+test("honors a discovery manifest that relocates the skills source", async () => {
+    // Manifest points at a renamed repo and a different in-repo prefix; the
+    // refresh must follow it (commit/tree/raw all served from the new location).
+    const newRepo = "OtherOrg/moved";
+    const newPrefix = "skills";
+    const { md, meta } = sealedSkill({ name: "alpha-policy", version: "2.0.0" });
+    const tree = [
+        { path: `${newPrefix}/alpha-policy/SKILL.md`, type: "blob", sha: "b1", size: md.length },
+        { path: `${newPrefix}/alpha-policy/skill.json`, type: "blob", sha: "b2", size: meta.length },
+    ];
+    globalThis.fetch = (async (url: string | URL) => {
+        const u = String(url);
+        if (u.endsWith("/skills-manifest.json")) return Response.json({ source: { repo: newRepo, skillsPrefix: `${newPrefix}/` } });
+        if (u === `https://api.github.com/repos/${newRepo}/commits/main`) return Response.json({ sha: COMMIT });
+        if (u === `https://api.github.com/repos/${newRepo}/git/trees/${COMMIT}?recursive=1`) return Response.json({ tree });
+        if (u === `https://raw.githubusercontent.com/${newRepo}/${COMMIT}/${newPrefix}/alpha-policy/SKILL.md`) return new Response(md);
+        if (u === `https://raw.githubusercontent.com/${newRepo}/${COMMIT}/${newPrefix}/alpha-policy/skill.json`) return new Response(meta);
+        return new Response("not found", { status: 404 });
+    }) as typeof fetch;
+    const r = await refreshRemoteSkills({ force: true, bundledVersions: { "alpha-policy": "1.0.0" } });
+    expect(r.error).toBeNull();
+    expect(r.updated).toEqual(["alpha-policy"]);
+    expect(cachedRemoteSkills()[0]!.meta.version).toBe("2.0.0");
 });
 
 test("degrades gracefully when the GitHub API is unreachable", async () => {

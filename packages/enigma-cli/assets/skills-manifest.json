@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "source": {
+    "kind": "github",
+    "repo": "FJRG2007/enigma",
+    "ref": "main",
+    "skillsPrefix": "packages/enigma-cli/assets/skills/"
+  },
+  "apiBase": "https://api.github.com",
+  "rawBase": "https://raw.githubusercontent.com",
+  "mirrors": [],
+  "minCliVersion": "1.12.0",
+  "deprecation": null
+}

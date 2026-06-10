@@ -29,21 +29,56 @@ import { readConfig } from "./config";
 import { isManagedProvider } from "./agents";
 import type { SkillMeta } from "./skills";
 
-const API_BASE = "https://api.github.com";
-const RAW_BASE = "https://raw.githubusercontent.com";
-const REPO = "FJRG2007/enigma";
-const SKILLS_PREFIX = "packages/enigma-cli/assets/skills/";
+// Baked-in defaults. These are the ONLY origin compiled into the binary; the
+// discovery manifest (below) can relocate every one of them WITHOUT an npm
+// release, so an already-installed CLI keeps updating after the repo moves.
+const DEFAULT_API_BASE = "https://api.github.com";
+const DEFAULT_RAW_BASE = "https://raw.githubusercontent.com";
+const DEFAULT_REPO = "FJRG2007/enigma";
+const DEFAULT_SKILLS_PREFIX = "packages/enigma-cli/assets/skills/";
 const CHECK_THROTTLE_MS = 10 * 60 * 1000; // skip re-checks for repeated runs (success AND failure)
 const FETCH_TIMEOUT_MS = 8000;
 const MAX_FILE_BYTES = 512 * 1024;
 const MAX_FILES_PER_SKILL = 32;
 const SKILL_NAME_RE = /^[a-z0-9][a-z0-9-]*$/;
+const REPO_SLUG_RE = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/;
+const REF_RE = /^[A-Za-z0-9._/-]+$/;
 
-/** Branch or commit to track; override is for development/testing only. */
-const skillsRef = (): string => process.env.ENIGMA_SKILLS_REF || "main";
+/**
+ * Discovery manifest: a small JSON file in the repo, fetched over raw (no API
+ * key, no rate limit) and redirect-following. It is the indirection layer - the
+ * skills source (repo/ref/prefix/host) is read from here, not hardcoded, so it
+ * can be relocated by editing one static file; GitHub's own rename redirects
+ * carry old clients to the new location until they read the updated manifest.
+ * Override for development, mirrors, or tests with ENIGMA_SKILLS_MANIFEST_URL.
+ */
+const DEFAULT_MANIFEST_URL = `${DEFAULT_RAW_BASE}/${DEFAULT_REPO}/main/packages/enigma-cli/assets/skills-manifest.json`;
+const manifestUrl = (): string => process.env.ENIGMA_SKILLS_MANIFEST_URL || DEFAULT_MANIFEST_URL;
 const cacheRoot = (): string => join(homedir(), ".enigma", "skills-cache");
 const cacheSkillsDir = (): string => join(cacheRoot(), "skills");
 const stampFile = (): string => join(cacheRoot(), "remote.json");
+const manifestFile = (): string => join(cacheRoot(), "manifest.json");
+
+/** Resolved skills origin after applying the discovery manifest over the defaults. */
+interface SkillSource {
+    apiBase: string;
+    rawBase: string;
+    repo: string;
+    skillsPrefix: string;
+    ref: string;
+}
+
+/**
+ * Discovery manifest shape. Every field is optional and validated before use;
+ * anything missing or malformed falls back to the baked-in default, so a partial
+ * or corrupt manifest can never break updates. Unknown keys (mirrors,
+ * minCliVersion, deprecation, ...) are reserved for forward compatibility.
+ */
+interface SkillsManifest {
+    source?: { repo?: string; ref?: string; skillsPrefix?: string };
+    apiBase?: string;
+    rawBase?: string;
+}
 
 /** One file of a remote skill, as listed by the git tree. */
 interface RemoteFile { rel: string; sha: string; }
@@ -91,6 +126,58 @@ function writeStamp(stamp: RemoteStamp): void {
         mkdirSync(cacheRoot(), { recursive: true });
         writeFileSync(stampFile(), JSON.stringify(stamp, null, 2) + "\n");
     } catch { /* best-effort: a missing stamp only costs an extra check */ }
+}
+
+const isHttpsUrl = (u: unknown): u is string => typeof u === "string" && /^https:\/\/[^/\s]+/.test(u);
+const stripTrailingSlash = (u: string): string => u.replace(/\/+$/, "");
+/** A repo-relative skills prefix: no leading slash, no traversal, normalized to a trailing slash. */
+const isSafePrefix = (p: unknown): p is string =>
+    typeof p === "string" && /^[A-Za-z0-9._/-]+$/.test(p) && !p.startsWith("/") && !p.split("/").includes("..");
+
+/** Fetch and cache the discovery manifest; null on any failure (caller falls back to cache/defaults). */
+async function fetchManifest(): Promise<SkillsManifest | null> {
+    try {
+        const res = await fetchWithTimeout(manifestUrl()); // fetch follows redirects, so GitHub renames resolve
+        if (!res.ok) return null;
+        const body = await res.text();
+        if (body.length > MAX_FILE_BYTES) return null;
+        const m = JSON.parse(body) as unknown;
+        if (!m || typeof m !== "object") return null;
+        try {
+            mkdirSync(cacheRoot(), { recursive: true });
+            writeFileSync(manifestFile(), JSON.stringify(m, null, 2) + "\n");
+        } catch { /* best-effort: a missing cache only costs a re-fetch */ }
+        return m as SkillsManifest;
+    } catch { return null; }
+}
+
+/** Overlay a validated manifest onto the default source; invalid fields are ignored, env ref always wins. */
+function applyManifest(base: SkillSource, m: SkillsManifest): SkillSource {
+    const out = { ...base };
+    if (isHttpsUrl(m.apiBase)) out.apiBase = stripTrailingSlash(m.apiBase);
+    if (isHttpsUrl(m.rawBase)) out.rawBase = stripTrailingSlash(m.rawBase);
+    const s = m.source || {};
+    if (typeof s.repo === "string" && REPO_SLUG_RE.test(s.repo)) out.repo = s.repo;
+    if (isSafePrefix(s.skillsPrefix)) out.skillsPrefix = s.skillsPrefix.endsWith("/") ? s.skillsPrefix : `${s.skillsPrefix}/`;
+    if (!process.env.ENIGMA_SKILLS_REF && typeof s.ref === "string" && REF_RE.test(s.ref)) out.ref = s.ref;
+    return out;
+}
+
+/**
+ * Resolve the skills origin: fetch the discovery manifest, fall back to the
+ * last cached manifest when offline, and to the baked-in defaults when neither
+ * is available. ENIGMA_SKILLS_REF (dev override) always pins the ref.
+ */
+async function resolveSource(): Promise<SkillSource> {
+    const base: SkillSource = {
+        apiBase: DEFAULT_API_BASE,
+        rawBase: DEFAULT_RAW_BASE,
+        repo: DEFAULT_REPO,
+        skillsPrefix: DEFAULT_SKILLS_PREFIX,
+        ref: process.env.ENIGMA_SKILLS_REF || "main",
+    };
+    const manifest = (await fetchManifest()) || readJson<SkillsManifest>(manifestFile());
+    return manifest ? applyManifest(base, manifest) : base;
 }
 
 /** Every path segment must be a plain filename - rejects traversal and absolute forms. */
@@ -148,11 +235,11 @@ export function cachedRemoteSkills(): CachedSkill[] {
 }
 
 /** Group the repo tree's blobs into per-skill file lists; oversized/invalid entries poison their skill. */
-function groupTreeBySkill(tree: Array<{ path?: string; type?: string; sha?: string; size?: number }>): Map<string, RemoteFile[] | null> {
+function groupTreeBySkill(tree: Array<{ path?: string; type?: string; sha?: string; size?: number }>, skillsPrefix: string): Map<string, RemoteFile[] | null> {
     const skills = new Map<string, RemoteFile[] | null>();
     for (const e of tree) {
-        if (e.type !== "blob" || !e.path?.startsWith(SKILLS_PREFIX) || !e.sha) continue;
-        const rel = e.path.slice(SKILLS_PREFIX.length);
+        if (e.type !== "blob" || !e.path?.startsWith(skillsPrefix) || !e.sha) continue;
+        const rel = e.path.slice(skillsPrefix.length);
         const slash = rel.indexOf("/");
         if (slash <= 0) continue;
         const name = rel.slice(0, slash);
@@ -173,13 +260,13 @@ function groupTreeBySkill(tree: Array<{ path?: string; type?: string; sha?: stri
  * atomically, so a partial download can never become the active cache entry.
  * Returns true when the cache entry was replaced.
  */
-async function downloadSkill(name: string, commit: string, files: RemoteFile[]): Promise<boolean> {
+async function downloadSkill(name: string, commit: string, files: RemoteFile[], source: SkillSource): Promise<boolean> {
     const dest = join(cacheSkillsDir(), name);
     const tmp = join(cacheSkillsDir(), `.tmp-${name}-${process.pid}`);
     rmSync(tmp, { recursive: true, force: true });
     try {
         await Promise.all(files.map(async (f) => {
-            const res = await fetchWithTimeout(`${RAW_BASE}/${REPO}/${commit}/${SKILLS_PREFIX}${name}/${f.rel}`);
+            const res = await fetchWithTimeout(`${source.rawBase}/${source.repo}/${commit}/${source.skillsPrefix}${name}/${f.rel}`);
             if (!res.ok) throw new Error(`HTTP ${res.status} for ${f.rel}`);
             const body = Buffer.from(await res.arrayBuffer());
             if (body.byteLength > MAX_FILE_BYTES) throw new Error(`${f.rel} exceeds size limit`);
@@ -229,16 +316,18 @@ export async function refreshRemoteSkills(opts: RefreshOptions): Promise<RemoteR
     writeStamp({ ...stamp, checkedAt: Date.now() });
     const fail = (error: string): RemoteRefreshResult => ({ checked: true, updated: [], error });
     try {
-        // Pin the ref to one commit, then list and fetch everything at that commit,
-        // so a push mid-refresh can never mix file versions.
-        const head = await fetchWithTimeout(`${API_BASE}/repos/${REPO}/commits/${skillsRef()}`);
+        // Resolve the (relocatable) origin from the discovery manifest, then pin
+        // the ref to one commit and list/fetch everything at that commit, so a
+        // push mid-refresh can never mix file versions.
+        const source = await resolveSource();
+        const head = await fetchWithTimeout(`${source.apiBase}/repos/${source.repo}/commits/${source.ref}`);
         if (!head.ok) return fail(`GitHub API ${head.status}`);
         const commit = String(((await head.json()) as { sha?: string }).sha || "");
         if (!/^[0-9a-f]{7,40}$/.test(commit)) return fail("unexpected GitHub API response");
-        const treeRes = await fetchWithTimeout(`${API_BASE}/repos/${REPO}/git/trees/${commit}?recursive=1`);
+        const treeRes = await fetchWithTimeout(`${source.apiBase}/repos/${source.repo}/git/trees/${commit}?recursive=1`);
         if (!treeRes.ok) return fail(`GitHub API ${treeRes.status}`);
         const tree = (await treeRes.json()) as { tree?: Array<{ path?: string; type?: string; sha?: string; size?: number }> };
-        const skills = groupTreeBySkill(tree.tree || []);
+        const skills = groupTreeBySkill(tree.tree || [], source.skillsPrefix);
         if (skills.size === 0) return fail("no skills found in the repo tree");
 
         const updated: string[] = [];
@@ -262,12 +351,12 @@ export async function refreshRemoteSkills(opts: RefreshOptions): Promise<RemoteR
                 }
                 // Version gate before downloading anything heavier than skill.json:
                 // adopt only a strictly newer release than what we already have.
-                const metaRes = await fetchWithTimeout(`${RAW_BASE}/${REPO}/${commit}/${SKILLS_PREFIX}${name}/skill.json`);
+                const metaRes = await fetchWithTimeout(`${source.rawBase}/${source.repo}/${commit}/${source.skillsPrefix}${name}/skill.json`);
                 if (!metaRes.ok) return;
                 const remoteMeta = JSON.parse(await metaRes.text()) as SkillMeta;
                 if (remoteMeta.name !== name || !remoteMeta.version || !remoteMeta.sha || !isManagedProvider(remoteMeta.provider)) return;
                 if (newestLocal && !isNewer(remoteMeta.version, newestLocal)) { dirs[name] = { sig, version: remoteMeta.version }; return; }
-                if (await downloadSkill(name, commit, files)) { dirs[name] = { sig, version: remoteMeta.version }; updated.push(name); }
+                if (await downloadSkill(name, commit, files, source)) { dirs[name] = { sig, version: remoteMeta.version }; updated.push(name); }
             } catch { /* this skill stays on its current version */ }
         }));
 
