@@ -120,6 +120,35 @@ Auto-sync is deliberately conservative:
   a file you authored or edited is never touched.
 - A sync failure never blocks the launch; the tool starts anyway.
 
+## Auto-lint on edit
+
+Opt-in. When on, enigma autonomously installs [`@enigmax/linter`](../linter) into a
+managed dir (`~/.enigma/linter`, in the background) and wires a post-write hook into
+each agent, so every file an agent writes is linted the moment the edit finishes:
+
+```bash
+enigma config auto-lint on    # installs the linter and wires the hooks
+enigma config auto-lint off   # removes the hooks
+```
+
+The hook is designed for minimum token cost: it auto-fixes the safe formatting rules
+(whitespace, blank lines, final newline) in place, and surfaces **only the unfixable
+findings** (hardcoded secrets, URL imports, style issues that need judgement) back to
+the agent. A clean file produces no output at all - zero added tokens.
+
+- **Claude Code**: a `PostToolUse` hook in `settings.json` (matcher
+  `Edit|Write|MultiEdit|NotebookEdit`). Unfixable findings come back via the hook's
+  stderr, which Claude feeds to the model.
+- **opencode**: an auto-loaded plugin in `~/.config/opencode/plugins/` whose
+  `tool.execute.after` runs the same check and appends the findings to the tool
+  output the model sees.
+
+Both invoke one shared runner (`~/.enigma/hooks/lint-hook.mjs`) that resolves the
+managed linter and no-ops cleanly until the background install lands (self-healing).
+The wiring is mirrored into managed account config dirs on sync, like the other
+managed settings. Default: **off** (it changes agent behavior and installs a
+package, so it stays an explicit choice).
+
 ## Git security hooks
 
 `enigma security` drops a portable, dependency-free commit guard into any repo:

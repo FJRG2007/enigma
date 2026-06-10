@@ -21,6 +21,7 @@ import { clackReporter } from "./reporter";
 import type { Reporter } from "./reporter";
 import { disableClaudeAttribution, enableClaudeStatusline } from "./claude";
 import { setGhTelemetry } from "./github";
+import { applyLintWiring, mirrorLintWiring } from "./lint";
 import { resolveBypassSelection, applyBypass, mirrorAccountSettings } from "./permissions";
 import { getTool } from "./accounts";
 import type { AccountTarget } from "./accounts";
@@ -496,6 +497,11 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
     const bypassAgents = await resolveBypassSelection(chosenAgents, opts, interactive);
     const applyBypassConfig = (): void => applyBypass(bypassAgents, scope, opts.dryRun);
 
+    // Auto-lint: re-assert the post-write hook wiring to match the toggle (adds it
+    // when on, removes it when off). No-op and cheap when off; on enable the linter
+    // install runs in the background. Skipped on a dry run (writes nothing).
+    const applyLintConfig = (): void => { if (!opts.dryRun) applyLintWiring(); };
+
     // Output-compression level (memory section). Resolved before the plan so memoryStatus
     // and the deployed content reflect it. Irrelevant when only skills are installed.
     if (!opts.skillsOnly) await resolveOutputStyle(opts, scope, interactive, reporter);
@@ -601,6 +607,7 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
         applyClaudeConfig();
         applyGhConfig();
         applyBypassConfig();
+        applyLintConfig();
         await maybeOfferGitHooks(interactive, opts);
         reporter.success(`Everything up-to-date - ${nSkip} item(s) unchanged${nKept ? `, ${nKept} kept modified` : ""} (${scope}).`);
         return;
@@ -657,6 +664,7 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
     applyClaudeConfig();
     applyGhConfig();
     applyBypassConfig();
+    applyLintConfig();
     await maybeOfferGitHooks(interactive, opts);
     reporter.success(`${nInstall} installed, ${nUpdate} updated/overwritten` +
         (nRemove ? `, ${nRemove} removed` : "") + (nSkip ? `, ${nSkip} unchanged` : "") +
@@ -821,5 +829,6 @@ export function syncAccount(toolName: string, dir: string): string[] {
     const target = getTool(toolName).accountTarget(dir);
     const changed = syncTarget(target, inspectMemory(agent), currentSkillSet(), true);
     mirrorAccountSettings(toolName, dir);
+    mirrorLintWiring(toolName, dir);
     return changed ? [`${agent.label}: ${changed} item(s) updated (account)`] : [];
 }

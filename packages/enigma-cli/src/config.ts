@@ -38,6 +38,8 @@ export interface EnigmaConfig {
     remoteSkills: boolean;
     /** Master switch for applying permission bypass on install (default on). */
     permissionBypass: boolean;
+    /** Auto-lint edited files via a post-write hook (opt-in; installs @enigmax/linter on enable). */
+    autoLint: boolean;
     /** Agents the user explicitly opted out of bypass; never auto-enabled even when permissionBypass is on. */
     bypassDisabled: string[];
     /** Skills the user discarded: removed from deployments and skipped by installs/updates until restored. */
@@ -64,10 +66,13 @@ export interface EnigmaConfig {
  * remoteSkills is on by default: `enigma install`/`enigma update` check the GitHub
  * repo for skills newer than the bundled ones and cache verified downloads, so
  * skill fixes reach users without waiting for an npm release (skills-remote.ts).
+ * autoLint is opt-in (off): enabling it autonomously installs @enigmax/linter and
+ * wires a post-write hook into each agent (auto-fix + surface only unfixable
+ * findings). It changes agent behavior and installs a package, so it stays explicit.
  */
 export const CONFIG_DEFAULTS: EnigmaConfig = {
     commitEmoji: true, updateNotifier: true, fullscreen: true, parallelSubagents: false, outputStyle: "off",
-    autoSync: true, remoteSkills: true, permissionBypass: true, bypassDisabled: [], discardedSkills: [],
+    autoSync: true, remoteSkills: true, permissionBypass: true, autoLint: false, bypassDisabled: [], discardedSkills: [],
 };
 
 export type EnigmaConfigKey = keyof EnigmaConfig;

@@ -10,6 +10,7 @@
  */
 
 import { AGENTS } from "./agents";
+import { isAutoLintOn, setAutoLint } from "./lint";
 import { readConfig, setEnigmaToggle, setEnigmaValue, OUTPUT_STYLES } from "./config";
 import { getClaudeAttribution, setClaudeAttribution } from "./claude";
 import { getGhTelemetryCached, setGhTelemetry } from "./github";
@@ -134,6 +135,13 @@ const RAW_CATEGORIES: Category[] = [
             enigmaToggle("fullscreen", "fullscreen", "Full-screen TUI", "clear the screen for a clean TUI view; off renders inline among existing output"),
             enigmaToggle("parallel-subagents", "parallelSubagents", "Parallel sub-agents", "let agents split long tasks across sub-agents running in parallel; edits the memory file - restart your agent to apply", true),
             enigmaChoice("output-style", "outputStyle", "Token-efficient output", "compress prose replies (off|lite|full|ultra); on = full; edits the memory file - restart your agent to apply", OUTPUT_STYLES, "full", true),
+            {
+                key: "auto-lint",
+                label: "Auto-lint on edit",
+                hint: "auto-fix edited files and surface only unfixable findings; on enable installs @enigmax/linter and wires a post-write hook (Claude + opencode); enigma default: off",
+                read: () => isAutoLintOn(),
+                write: (value, scope) => ({ path: setAutoLint(scope, value), changed: true }),
+            },
         ],
     },
     {

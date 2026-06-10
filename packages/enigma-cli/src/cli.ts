@@ -19,6 +19,7 @@ import { setupGitHooks, GUARD_PROTECTIONS } from "./security";
 import { discoverAgents } from "./agents";
 import { runGuardCli } from "./guard";
 import { runConfigCli } from "./settings";
+import { ensureLinterInstalled } from "./lint";
 import { readConfig } from "./config";
 import { checkLatestNow, getAvailableUpdate, notifyUpdate, performUpdateCheck, runUpdate } from "./update";
 import { buildIssueUrl, openUrl } from "./issue";
@@ -504,6 +505,9 @@ export async function run(argv: string[]): Promise<void> {
     // update check re-invokes the compiled binary with this argv (a Bun-compiled
     // executable cannot run `node -e` scripts). Silent by contract.
     if (argv[0] === "__update-check") { await performUpdateCheck(); return; }
+    // Hidden: the detached background linter install kicked off when auto-lint is
+    // enabled (spawnLinterInstall). Silent, best-effort; the runner self-heals.
+    if (argv[0] === "__lint-install") { ensureLinterInstalled(); return; }
     const opts = parseArgs(argv);
     const interactive = Boolean(process.stdout.isTTY) && !opts.yes;
     const version = process.env.ENIGMA_VERSION || PKG.version || "0.0.0";
