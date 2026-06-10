@@ -25,6 +25,17 @@ description: Commit, branch, and pull request standards - conventional commits, 
 
 ---
 
+## Cloning & Fetch Efficiency
+
+- When cloning or pulling a repository, do not fetch the full history unless it is actually needed. A shallow fetch saves disk space, bandwidth, and time.
+- Default to a shallow clone for one-off use (building, inspecting, running, or extracting current files): `git clone --depth=1 <url>`.
+- To narrow further, combine with `--single-branch` (one branch only) and `--no-tags` (skip tag refs).
+- The full history IS required (do not shallow-clone) when the task depends on it: bisecting, blame/log archaeology, rebasing/cherry-picking across many commits, generating changelogs/release notes, or any operation that walks past commits.
+- A shallow clone can be deepened later if history turns out to be needed: `git fetch --unshallow` (full) or `git fetch --depth=<n>` (more commits). Prefer this over re-cloning.
+- For huge repos where you only need part of the tree, consider `--filter=blob:none` (blobless partial clone) or sparse-checkout instead of a full clone.
+
+---
+
 ## Identity & Git Configuration Safety
 
 - Commits and pull requests must be authored SOLELY by the local user's configured Git identity (user.name / user.email). This is non-negotiable.
