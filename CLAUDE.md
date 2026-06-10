@@ -225,7 +225,7 @@ Non-obvious lessons for working in THIS repo. Keep this section concise; add onl
 - Wire it into the harness in `.../assets/skills/core-engineering-policy/SKILL.md`: add a trigger line under "Skill Activation Discipline" AND an ownership line under "Harness Map". Bump core's `version`.
 - Restate it in BOTH memory files (`.../assets/memory/AGENTS.md`, `.../assets/memory/CLAUDE.md`) under "Policy Skills" so it survives even when skills do not auto-load.
 - Reference sibling skills instead of duplicating their rules (e.g. security-policy defers input validation to validation-policy, encryption to database-expert, secret-in-commit to git-policy).
-- Run `npm run seal`, then `node --check` and the `--dry-run` preview. Current count: 12 skills.
+- Run `npm run seal`, then `node --check` and the `--dry-run` preview. Current count: 13 skills.
 
 ### Rules are persuasion, not enforcement (enterprise)
 

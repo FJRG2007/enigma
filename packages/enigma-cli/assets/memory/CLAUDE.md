@@ -15,6 +15,7 @@
 - security-policy: secrets, auth, permissions, crypto, untrusted/tool output, and AI-agent/MCP/tool-use safety.
 - dependency-policy: adding/upgrading/auditing dependencies, lockfiles, and supply-chain risk.
 - testing-policy, code-review-policy, debugging-policy, git-policy: tests, pre-delivery review, debugging, and commits/PRs.
+- task-completion-policy: long or multi-item tasks (1:1 ports, migrations, repo-wide changes) - work-unit inventory, persistent coverage ledger, and verified completion before any "done" claim.
 
 ### Always-On Rules (never skipped, even if no skill loads)
 
@@ -29,6 +30,8 @@
 
 - For long or complex tasks - or any task you judge to warrant it - break the work into smaller, well-scoped subtasks and complete them incrementally, validating each subtask before moving to the next.
 - Map the dependencies between subtasks before starting, and do only the decomposition the task genuinely needs - never over-decompose simple work.
+- For multi-item work (ports, migrations, batch changes), enumerate the FULL inventory of work units with deterministic commands before implementing, persist it as a checklist (file or todo system), and mark a unit done only after verifying it - never because a similar unit worked.
+- Never declare a task complete while any unit is pending, stubbed, or unverified. Before saying "done": reconcile counts against the inventory, build/typecheck the whole artifact, and grep for TODO/stub markers you introduced. If anything remains, say exactly what remains instead of rounding up to "done". Never silently skip or stub an item - record it with a reason and report it.
 
 <!-- enigma:parallel-subagents:start -->
 - When subtasks are genuinely independent and your runtime can spawn sub-agents (parallel task or sub-agent tools), delegate them to sub-agents that run in parallel to finish faster, then reconcile their results into a coherent whole. If the runtime has no sub-agent support, execute the subtasks sequentially.

@@ -38,6 +38,7 @@ description: Highest-authority engineering rules - priority hierarchy, modular a
   - Before declaring a change done, or when reviewing a diff/PR -> code-review-policy.
   - Any bug, crash, failing test, or unexpected behavior -> debugging-policy.
   - Any commit, branch, or pull request -> git-policy.
+  - Any long, multi-item, or porting/migration task (1:1 ports, "migrate all", repo-wide changes, work spanning many files or sessions) -> task-completion-policy.
 - When a task spans multiple domains, compose the relevant skills instead of re-deriving their rules.
 - Never duplicate a specialized skill's rules inside another skill; reference it.
 
@@ -85,6 +86,7 @@ This core policy owns orchestration, architecture, and the global rules. Each co
 - ciphera-style-policy: Ciphera code style conventions - formatting, naming, quotes, string interpolation, length-sorted imports, indentation, comments/JSDoc, and code-level anti-patterns (TypeScript-first, language-agnostic).
 - security-policy: application and AI-agent security - secrets, authn/authz (least privilege), OWASP Top 10, transport/crypto baseline, secure logging, and agent/MCP/tool-use safety. Owns runtime security; the core security baseline defers detail here.
 - dependency-policy: dependency and supply-chain security - lockfiles, reproducible installs, version pinning, vulnerability auditing, vetting/minimizing packages, vendoring, and SBOM/provenance.
+- task-completion-policy: exhaustive coverage for long/multi-item tasks - mechanical work-unit inventory, persistent coverage ledger, per-unit verification, and the evidence-based completion gate that must pass before any "done" claim.
 
 ---
 
@@ -101,6 +103,7 @@ This core policy owns orchestration, architecture, and the global rules. Each co
 
 - Do not over-decompose simple tasks.
 - Only apply multi-agent simulation when task complexity justifies it.
+- Inventory, coverage tracking, and completion claims for long or multi-item tasks live in task-completion-policy.
 
 ---
 
