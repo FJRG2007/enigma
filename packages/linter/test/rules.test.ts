@@ -9,7 +9,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { lintText } from "../src/index";
+import { fixText, lintText } from "../src/index";
 
 /** True if `text` produces a violation for `rule`. */
 function flags(text: string, rule: string): boolean {
@@ -276,4 +276,36 @@ test("vue: a default (no lang) script is linted as JavaScript", () => {
 test("container: a file with no embedded code yields no violations", () => {
     assert.equal(lintText("empty.vue", "<template>\n  <div/>\n</template>\n").length, 0);
     assert.equal(lintText("empty.astro", "<h1>static</h1>\n").length, 0);
+});
+
+// --- safe auto-fix ---
+
+test("fix: strips trailing whitespace and adds a final newline", () => {
+    assert.equal(fixText("a.ts", "const x = 1;  "), "const x = 1;\n");
+    assert.equal(fixText("a.ts", "const x = 1;\t\n"), "const x = 1;\n");
+});
+
+test("fix: collapses blank-line runs, drops leading and trailing blanks", () => {
+    assert.equal(fixText("a.ts", "const a = 1;\n\n\n\nconst b = 2;\n"), "const a = 1;\n\nconst b = 2;\n");
+    assert.equal(fixText("a.ts", "\n\nconst a = 1;\n"), "const a = 1;\n");
+    assert.equal(fixText("a.ts", "const a = 1;\n\n\n"), "const a = 1;\n");
+});
+
+test("fix: is idempotent and leaves clean text untouched", () => {
+    const clean = "const a = 1;\n\nconst b = 2;\n";
+    assert.equal(fixText("a.ts", clean), clean);
+    assert.equal(fixText("a.ts", fixText("a.ts", "x = 1;  \n\n\n\n")), fixText("a.ts", "x = 1;  \n\n\n\n"));
+});
+
+test("fix: does not collapse blank lines guarded by a docstring or comment", () => {
+    const py = "def f():\n    \"\"\"\n    a\n\n\n    b\n    \"\"\"\n    return 1\n";
+    assert.equal(fixText("a.py", py), py);
+});
+
+test("fix: leaves container files and unknown extensions untouched", () => {
+    const nb = "{\n  \"cells\": []   \n}\n";
+    assert.equal(fixText("a.ipynb", nb), nb);
+    assert.equal(fixText("a.vue", "<script>\nconst x = 1;  \n</script>\n"), "<script>\nconst x = 1;  \n</script>\n");
+    assert.equal(fixText("notes.txt", "x   \n\n\n"), "x   \n\n\n");
+    assert.equal(fixText("a.ts", ""), "");
 });

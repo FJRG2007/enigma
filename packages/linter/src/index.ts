@@ -1,15 +1,16 @@
 /** Programmatic API: lint in-memory source or files on disk. */
 
+import { fixText } from "./fix";
 import { RULES } from "./registry";
 import { extname } from "node:path";
 import { parseSource } from "./parse";
-import { readFileSync } from "node:fs";
 import { discoverFiles } from "./discover";
 import { extractEmbedded } from "./embedded";
+import { readFileSync, writeFileSync } from "node:fs";
 import { JS_TS, isContainer, languageFor } from "./languages";
 import type { Rule, Language, Category, Violation, RuleContext } from "./types";
 
-export { RULES };
+export { RULES, fixText };
 export type { Rule, Category, Language, Violation, Severity, RuleContext, EmbeddedBlock } from "./types";
 
 export interface LintOptions {
@@ -67,4 +68,21 @@ export function lintFiles(paths: string[], options: LintOptions = {}): Violation
         violations.push(...lintText(file, text, options));
     }
     return violations;
+}
+
+/**
+ * Apply the safe auto-fixes to every discovered file in place, returning the paths
+ * that changed. Files are read, fixed, and only rewritten when the content differs,
+ * so unchanged files are never touched (no spurious mtime churn).
+ */
+export function fixFiles(paths: string[]): string[] {
+    const changed: string[] = [];
+    for (const file of discoverFiles(paths)) {
+        let text: string;
+        try { text = readFileSync(file, "utf8"); } catch { continue; }
+        if (text.includes("\0")) continue; // skip binary
+        const fixed = fixText(file, text);
+        if (fixed !== text) { writeFileSync(file, fixed); changed.push(file); }
+    }
+    return changed;
 }

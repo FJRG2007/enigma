@@ -57,9 +57,18 @@ npx @enigmax/linter src test
 npx @enigmax/linter --audit-only
 npx @enigmax/linter --style-only
 
+# apply safe formatting fixes in place, then report what remains
+npx @enigmax/linter --fix
+
 # machine-readable output
 npx @enigmax/linter --json
 ```
+
+`--fix` rewrites only the mechanical formatting rules - trailing whitespace, blank
+lines (collapsed, with leading/trailing removed), and the final newline. The AST
+style rules (quotes, semicolons, imports) and the security audits are reported,
+never rewritten, since fixing them safely needs real judgement. Container formats
+(`.ipynb`, `.astro`, `.vue`, `.svelte`) are left untouched by `--fix`.
 
 The bin is `enigmax-lint`. It exits non-zero when any error-severity violation is
 found (URL/CDN imports, hardcoded secrets), so it can gate a commit or CI step.
