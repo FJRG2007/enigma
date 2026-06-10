@@ -8,6 +8,7 @@ const SKIP_DIR = new Set([
     "node_modules", "dist", "build", "out", "coverage", "target",
     ".next", ".nuxt", ".svelte-kit", ".turbo", ".git",
     "__pycache__", ".venv", "venv", ".mypy_cache", ".ruff_cache",
+    ".ipynb_checkpoints",
 ]);
 
 /** Recursively collect lintable source files under the given paths. */

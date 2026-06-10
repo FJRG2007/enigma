@@ -25,6 +25,18 @@ export interface RuleContext {
     language: Language;
     /** The parsed TypeScript AST. Only present for JavaScript/TypeScript files. */
     sourceFile?: ts.SourceFile;
+    /** True when `text` is a fragment extracted from a container file (notebook cell, SFC script,
+     *  Astro frontmatter), not a whole file. Rules that check file boundaries must skip them. */
+    embedded?: boolean;
+}
+
+/** A region of source extracted from a container file, with its lines mapped back to the file. */
+export interface EmbeddedBlock {
+    language: Language;
+    /** The extracted source for this block. */
+    text: string;
+    /** `lineMap[i]` is the 1-based physical file line of this block's line `i + 1`. */
+    lineMap: number[];
 }
 
 /** A lint rule: a name, its category, the languages it targets, and a pure check over one file. */

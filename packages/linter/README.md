@@ -7,6 +7,12 @@ Python, Rust, and Prisma get the language-agnostic checks (file hygiene, blank-l
 collapsing, and secret detection) with lightweight per-language lexing so blanks
 inside docstrings, block comments, and multi-line strings are left alone.
 
+Container formats - Jupyter notebooks (`.ipynb`), Astro (`.astro`), and Vue/Svelte
+single-file components (`.vue`, `.svelte`) - are understood structurally: the
+embedded code is extracted and linted as its real language, and the wrapper (JSON,
+HTML) is never fed to the rules. Violations are mapped back to the physical line in
+the original file.
+
 It is meant to be run on demand - by a developer, by an agent as a self-check, or
 wired into a project's scripts/CI - not as an always-on background process.
 
@@ -23,6 +29,20 @@ The AST-based Ciphera style rules (length-sorted imports, double quotes, templat
 literals, semicolons, URL imports) are JavaScript/TypeScript-only by design: they
 encode TS idioms and would misfire on other grammars (for example, Rust `'a'` char
 literals or Python's idiomatic single quotes).
+
+### Container formats (embedded code)
+
+| Format | Extensions | Embedded code linted as |
+| --- | --- | --- |
+| Jupyter notebook | `.ipynb` | each `code` cell as **Python** (markdown/raw cells and outputs ignored; non-Python kernels skipped) |
+| Astro | `.astro` | the `---` frontmatter as **TypeScript** plus every `<script>` block |
+| Vue / Svelte | `.vue .svelte` | every `<script>` block, typed **TS** or **JS** by its `lang` attribute |
+
+Only the code regions are linted - the surrounding JSON or HTML template is never
+checked. The file-boundary part of `file-hygiene` (final newline, leading/trailing
+blank line) is skipped for embedded fragments, since the container owns the file's
+physical shape; trailing whitespace inside the code is still flagged. Every
+violation's line number refers to the physical line in the original file.
 
 ## Usage
 

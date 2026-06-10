@@ -18,7 +18,9 @@ export const fileHygiene: Rule = {
             if (/[ \t]+$/.test(text)) add(i + 1, "trailing whitespace");
         });
 
-        if (ctx.text.length) {
+        // Final-newline, leading-blank, and end-blank checks describe the physical file boundary,
+        // which a container format (notebook JSON, SFC HTML) owns - not the embedded code fragment.
+        if (!ctx.embedded && ctx.text.length) {
             if (/^\s*\n/.test(ctx.text)) add(1, "remove the leading blank line");
             if (!ctx.text.endsWith("\n")) add(ctx.lines.length, "file must end with a newline");
             else if (/\n[ \t]*\n$/.test(ctx.text)) add(ctx.lines.length, "remove blank line(s) at end of file");

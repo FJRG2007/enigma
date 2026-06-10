@@ -145,6 +145,60 @@ test("prisma: universal rules run", () => {
     assert.ok(flagsIn("schema.prisma", `key = "${aws}"\n`, "no-hardcoded-secrets"));
 });
 
+test("notebook: lints python in code cells, ignores markdown, maps to physical lines", () => {
+    const aws = "AKIA" + "ABCDEFGHIJKLMNOP";
+    const nb = JSON.stringify({
+        cells: [
+            { cell_type: "markdown", source: ["# title\n"] },
+            { cell_type: "code", source: ["x = 1\n", "\n", "\n", `KEY = "${aws}"\n`] },
+        ],
+        metadata: { kernelspec: { language: "python" } },
+        nbformat: 4, nbformat_minor: 5,
+    }, null, 1);
+    const violations = lintText("nb.ipynb", nb);
+    assert.ok(violations.some((v) => v.rule === "no-consecutive-blank-lines"));
+    const secret = violations.find((v) => v.rule === "no-hardcoded-secrets");
+    assert.ok(secret, "secret in a code cell should be flagged");
+    // Cell-relative the secret is on line 4; a real mapping places it deeper in the JSON file.
+    assert.ok(secret!.line > 4, "violation line should map back to the physical .ipynb line");
+});
+
+test("notebook: JS/TS-only rules never run, non-python kernels are skipped", () => {
+    const code = JSON.stringify({
+        cells: [{ cell_type: "code", source: ["x = 'a'\n"] }],
+        metadata: { kernelspec: { language: "python" } },
+    });
+    assert.ok(!lintText("a.ipynb", code).some((v) => v.rule === "prefer-double-quotes"));
+    const julia = JSON.stringify({
+        cells: [{ cell_type: "code", source: ["x = 1\n\n\ny = 2\n"] }],
+        metadata: { kernelspec: { language: "julia" } },
+    });
+    assert.equal(lintText("b.ipynb", julia).length, 0);
+});
+
+test("astro: lints frontmatter and script blocks, maps lines, leaves markup alone", () => {
+    const src = "---\nimport a from \"https://esm.sh/a\"\nconst x = 1\n---\n<h1>hello</h1>\n<script>\nconst y = 'a'\n</script>\n";
+    const violations = lintText("page.astro", src);
+    const url = violations.find((v) => v.rule === "no-url-imports");
+    assert.equal(url?.line, 2, "the frontmatter URL import is on physical line 2");
+    assert.ok(violations.some((v) => v.rule === "require-semicolons"));
+    assert.ok(violations.some((v) => v.rule === "prefer-double-quotes"));
+});
+
+test("vue/svelte: lint the <script> block typed by its lang attribute", () => {
+    const vue = "<template>\n  <div>{{ x }}</div>\n</template>\n<script lang=\"ts\">\nconst x = 'a'\n</script>\n";
+    assert.ok(flagsIn("c.vue", vue, "prefer-double-quotes"));
+    assert.ok(flagsIn("c.vue", vue, "require-semicolons"));
+    const svelte = "<script>\nlet n = 1\n</script>\n<p>{n}</p>\n";
+    assert.ok(flagsIn("c.svelte", svelte, "require-semicolons"));
+});
+
+test("embedded: file-boundary hygiene does not misfire on a fragment", () => {
+    const vue = "<script>\nconst x = 1;\n</script>\n";
+    const hygiene = lintText("c.vue", vue).filter((v) => v.rule === "file-hygiene");
+    assert.ok(hygiene.every((v) => !/newline|blank line/.test(v.message)), "no file-boundary hygiene on a fragment");
+});
+
 test("categories option restricts the rule set", () => {
     const aws = "AKIA" + "ABCDEFGHIJKLMNOP";
     const text = `const a = 'x' + b\nconst c = "${aws}"\n`;
@@ -153,4 +207,73 @@ test("categories option restricts the rule set", () => {
     assert.ok(audit.some((v) => v.rule === "no-hardcoded-secrets"));
     const style = lintText("snippet.ts", text, { categories: ["style"] });
     assert.ok(style.every((v) => v.category === "style"));
+});
+
+// --- per-language coverage ---
+
+test("typescript: every TS extension is recognized and linted", () => {
+    for (const file of ["a.ts", "a.tsx", "a.mts", "a.cts"]) {
+        assert.ok(flagsIn(file, "const x = 1\n", "require-semicolons"), file);
+    }
+});
+
+test("javascript: AST style rules run on every JS extension", () => {
+    assert.ok(flagsIn("a.js", "const x = 'a';\n", "prefer-double-quotes"));
+    assert.ok(flagsIn("a.jsx", "const x = 1\n", "require-semicolons"));
+    assert.ok(flagsIn("a.mjs", "import a from \"https://esm.sh/a\";\n", "no-url-imports"));
+    assert.ok(flagsIn("a.cjs", "const x = \"a\" + b;\n", "no-useless-concat"));
+});
+
+test("python: .pyi stubs are linted like .py, AST rules stay off", () => {
+    assert.ok(flagsIn("a.pyi", "x = 1\n\n\ny = 2\n", "no-consecutive-blank-lines"));
+    assert.ok(!flagsIn("a.pyi", "x = 'a'\n", "prefer-double-quotes"));
+});
+
+test("rust: universal rules run, JS/TS-only rules do not", () => {
+    const aws = "AKIA" + "ABCDEFGHIJKLMNOP";
+    assert.ok(flagsIn("a.rs", `let k = "${aws}";\n`, "no-hardcoded-secrets"));
+    assert.ok(flagsIn("a.rs", "let x = 1; \n", "file-hygiene"));
+    assert.ok(!flagsIn("a.rs", "let x = 1\n", "require-semicolons"));
+});
+
+test("prisma: universal rules run, JS/TS-only rules do not", () => {
+    assert.ok(flagsIn("schema.prisma", "model A {\n\n\n  id Int @id\n}\n", "no-consecutive-blank-lines"));
+    assert.ok(!flagsIn("schema.prisma", "model A {\n  id Int @id\n}\n", "require-semicolons"));
+});
+
+// --- container-format edge cases ---
+
+test("notebook: minified JSON still detects secrets, mapped to line 1", () => {
+    const aws = "AKIA" + "ABCDEFGHIJKLMNOP";
+    const nb = JSON.stringify({ cells: [{ cell_type: "code", source: [`KEY = "${aws}"`] }], metadata: {} });
+    const secret = lintText("m.ipynb", nb).find((v) => v.rule === "no-hardcoded-secrets");
+    assert.ok(secret, "secret detected in a minified notebook");
+    assert.equal(secret!.line, 1);
+});
+
+test("notebook: a single-string source cell is supported", () => {
+    const aws = "AKIA" + "ABCDEFGHIJKLMNOP";
+    const nb = JSON.stringify({ cells: [{ cell_type: "code", source: `KEY = "${aws}"\n` }], metadata: {} });
+    assert.ok(lintText("s.ipynb", nb).some((v) => v.rule === "no-hardcoded-secrets"));
+});
+
+test("notebook: malformed or non-notebook JSON yields nothing", () => {
+    assert.equal(lintText("bad.ipynb", "{ not json").length, 0);
+    assert.equal(lintText("nocells.ipynb", "{}").length, 0);
+});
+
+test("astro: a file with no frontmatter lints only its scripts", () => {
+    const src = "<h1>hi</h1>\n<script>\nconst y = 'a'\n</script>\n";
+    const violations = lintText("p.astro", src);
+    assert.ok(violations.some((v) => v.rule === "prefer-double-quotes"));
+    assert.ok(!violations.some((v) => v.rule === "no-url-imports"));
+});
+
+test("vue: a default (no lang) script is linted as JavaScript", () => {
+    assert.ok(flagsIn("c.vue", "<script>\nconst x = 'a'\n</script>\n", "prefer-double-quotes"));
+});
+
+test("container: a file with no embedded code yields no violations", () => {
+    assert.equal(lintText("empty.vue", "<template>\n  <div/>\n</template>\n").length, 0);
+    assert.equal(lintText("empty.astro", "<h1>static</h1>\n").length, 0);
 });

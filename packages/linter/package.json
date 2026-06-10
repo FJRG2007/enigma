@@ -1,7 +1,7 @@
 {
   "name": "@enigmax/linter",
-  "version": "0.2.0",
-  "description": "Ciphera-style linter and security auditor for TypeScript/JavaScript, with file-hygiene, blank-line, and hardcoded-secret checks extending to Python, Rust, and Prisma.",
+  "version": "0.3.0",
+  "description": "Ciphera-style linter and security auditor for TypeScript/JavaScript, with file-hygiene, blank-line, and hardcoded-secret checks extending to Python, Rust, and Prisma, plus embedded-code extraction for Jupyter notebooks, Astro, Vue, and Svelte.",
   "type": "module",
   "bin": {
     "enigmax-lint": "dist/cli.js"
@@ -42,7 +42,12 @@
     "typescript",
     "python",
     "rust",
-    "prisma"
+    "prisma",
+    "jupyter",
+    "notebook",
+    "astro",
+    "vue",
+    "svelte"
   ],
   "license": "Apache-2.0",
   "author": "FJRG2007 <fjrg2007@tpeoficial.com>",

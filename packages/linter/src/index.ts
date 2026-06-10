@@ -5,11 +5,12 @@ import { extname } from "node:path";
 import { parseSource } from "./parse";
 import { readFileSync } from "node:fs";
 import { discoverFiles } from "./discover";
-import { JS_TS, languageFor } from "./languages";
-import type { Rule, Category, Violation, RuleContext } from "./types";
+import { extractEmbedded } from "./embedded";
+import { JS_TS, isContainer, languageFor } from "./languages";
+import type { Rule, Language, Category, Violation, RuleContext } from "./types";
 
 export { RULES };
-export type { Rule, Category, Language, Violation, Severity, RuleContext } from "./types";
+export type { Rule, Category, Language, Violation, Severity, RuleContext, EmbeddedBlock } from "./types";
 
 export interface LintOptions {
     /** Restrict to these rule categories (default: all). */
@@ -20,13 +21,40 @@ export interface LintOptions {
 
 /** Lint a single in-memory source and return its violations. Unknown extensions yield nothing. */
 export function lintText(file: string, text: string, options: LintOptions = {}): Violation[] {
+    if (isContainer(file)) return lintContainer(file, text, options);
     const language = languageFor(file);
     if (!language) return [];
+    return runRules(buildContext(file, text, language, extname(file).toLowerCase(), false), options);
+}
+
+/** Lint every embedded code block of a container file, mapping violations back to physical lines. */
+function lintContainer(file: string, text: string, options: LintOptions): Violation[] {
+    const violations: Violation[] = [];
+    for (const block of extractEmbedded(file, text)) {
+        const ctx = buildContext(file, block.text, block.language, scriptExtension(block.language), true);
+        for (const violation of runRules(ctx, options)) {
+            violations.push({ ...violation, line: block.lineMap[violation.line - 1] ?? violation.line });
+        }
+    }
+    return violations;
+}
+
+/** Run the (optionally filtered) rule set over one prepared context. */
+function runRules(ctx: RuleContext, options: LintOptions): Violation[] {
     const rules = (options.rules ?? RULES).filter((rule) =>
-        (!options.categories || options.categories.includes(rule.category)) && rule.languages.includes(language));
-    const sourceFile = JS_TS.includes(language) ? parseSource(file, text, extname(file).toLowerCase()) : undefined;
-    const ctx: RuleContext = { file, text, lines: text.split("\n"), language, sourceFile };
+        (!options.categories || options.categories.includes(rule.category)) && rule.languages.includes(ctx.language));
     return rules.flatMap((rule) => rule.check(ctx));
+}
+
+/** Prepare a rule context, parsing the AST for JavaScript/TypeScript sources. */
+function buildContext(file: string, text: string, language: Language, ext: string, embedded: boolean): RuleContext {
+    const sourceFile = JS_TS.includes(language) ? parseSource(file, text, ext) : undefined;
+    return { file, text, lines: text.split("\n"), language, sourceFile, embedded };
+}
+
+/** The parser extension to use for an embedded script block of the given language. */
+function scriptExtension(language: Language): string {
+    return language === "js" ? ".js" : ".ts";
 }
 
 /** Discover and lint every source file under the given paths. */
