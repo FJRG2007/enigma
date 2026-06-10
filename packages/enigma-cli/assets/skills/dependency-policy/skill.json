@@ -3,6 +3,6 @@
   "version": "1.0.0",
   "provider": "FJRG2007/enigma",
   "description": "Dependency and supply-chain security: lockfiles and reproducible installs, version pinning, vulnerability auditing, vetting/minimizing packages, vendoring, and SBOM/provenance.",
-  "cliVersion": "1.12.1",
+  "cliVersion": "1.12.2",
   "sha": "6375d835c2aef2c9bd31ce116444dc3d796f510f9970a213aa3ac4696d7e21b9"
 }
