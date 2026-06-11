@@ -3,6 +3,6 @@
   "version": "1.0.0",
   "provider": "FJRG2007/enigma",
   "description": "Expert test-suite organization: structure by test type and domain, mirrored source paths, naming conventions, and fixture/helper placement.",
-  "cliVersion": "1.13.1",
+  "cliVersion": "1.13.2",
   "sha": "09184beb8e423efd26fce0221cd374d41b6ba0bb3d223d7edce250d9d978767e"
 }
