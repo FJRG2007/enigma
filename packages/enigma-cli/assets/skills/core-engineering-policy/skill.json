@@ -1,8 +1,8 @@
 {
   "name": "core-engineering-policy",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "provider": "FJRG2007/enigma",
   "description": "Core engineering execution policy and harness orchestration (highest-authority rules).",
   "cliVersion": "1.13.1",
-  "sha": "e4e8be13e5923cb2d1f57e1bad6e78f54b02611e834e16af165c18c5478d9453"
+  "sha": "b44681bc21675fff949a2d9e1a67617bc7638dc5acec6270906f3ca0a9052a86"
 }

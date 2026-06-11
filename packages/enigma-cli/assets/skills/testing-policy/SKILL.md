@@ -9,6 +9,7 @@ description: Test strategy (test pyramid), coverage gates, deterministic tests, 
 
 - Apply whenever code is written, changed, or fixed, and whenever the user asks for tests.
 - Owns test strategy, coverage expectations, determinism, and test-first discipline.
+- Test file placement, suite layout, naming of test files, and fixture/helper organization live in test-organization-policy; apply it alongside this skill when creating or moving test files.
 
 ---
 

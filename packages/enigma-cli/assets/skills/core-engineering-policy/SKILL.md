@@ -34,6 +34,7 @@ description: Highest-authority engineering rules - priority hierarchy, modular a
   - Any UI, client state, data fetching, or client caching -> frontend-policy.
   - Any API endpoint, service, controller, or server request flow -> backend-policy.
   - Any new or changed code that needs verification -> testing-policy.
+  - Any test file created, moved, or renamed, or a test suite scaffolded/restructured -> test-organization-policy.
   - Any source code written, refactored, or reviewed (formatting, naming, language idioms) -> ciphera-style-policy.
   - Before declaring a change done, or when reviewing a diff/PR -> code-review-policy.
   - Any bug, crash, failing test, or unexpected behavior -> debugging-policy.
@@ -80,6 +81,7 @@ This core policy owns orchestration, architecture, and the global rules. Each co
 - frontend-policy: frontend structure, reusable components, abstraction threshold, client-side caching, optimistic UI and rollback.
 - backend-policy: API/service architecture, controller-service-repository layering, API/request optimization, server-side caching (Redis).
 - testing-policy: test strategy, coverage gates, deterministic tests, test/regression-first discipline.
+- test-organization-policy: test-suite layout - structure by test type and domain, mirrored source paths, file naming, fixture/helper/factory placement.
 - code-review-policy: self-review before delivery, review dimensions, change-quality gates.
 - debugging-policy: reproduce-isolate-fix methodology and root-cause discipline.
 - git-policy: commits, branches, and pull request standards.

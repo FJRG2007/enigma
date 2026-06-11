@@ -14,7 +14,7 @@
 - backend-policy, frontend-policy, database-expert, validation-policy: server, client, persistence, and input-validation work.
 - security-policy: secrets, auth, permissions, crypto, untrusted/tool output, and AI-agent/MCP/tool-use safety.
 - dependency-policy: adding/upgrading/auditing dependencies, lockfiles, and supply-chain risk.
-- testing-policy, code-review-policy, debugging-policy, git-policy: tests, pre-delivery review, debugging, and commits/PRs.
+- testing-policy, test-organization-policy, code-review-policy, debugging-policy, git-policy: tests, test-suite layout (structured subfolders, never a flat tests/ dump), pre-delivery review, debugging, and commits/PRs.
 - task-completion-policy: long or multi-item tasks (1:1 ports, migrations, repo-wide changes) - work-unit inventory, persistent coverage ledger, and verified completion before any "done" claim.
 
 ### Always-On Rules (never skipped, even if no skill loads)
