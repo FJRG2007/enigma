@@ -325,14 +325,14 @@ re-run `enigma install` once to wire it.
 The companion to token-efficient output: that compresses how the agent *talks*,
 this governs how it *builds*. It pushes the agent toward the laziest solution
 that works - YAGNI, the standard library and native platform features before
-custom code, one line before fifty. Off by default:
+custom code, one line before fifty. On by default at `full`:
 
 ```bash
 enigma config minimal-code lite     # build what's asked, name the lazier alternative
-enigma config minimal-code full     # YAGNI ladder enforced, shortest working diff
+enigma config minimal-code full     # YAGNI ladder enforced, shortest working diff (default)
 enigma config minimal-code ultra    # YAGNI extremist, deletion before addition
-enigma config minimal-code off      # no extra pressure (default)
-enigma install --minimal-code full  # set it during install
+enigma config minimal-code off      # opt out, no extra pressure
+enigma install --minimal-code lite  # set a different level during install
 ```
 
 `on`/`off` also work (`on` = `full`). Like token-efficient output it edits the

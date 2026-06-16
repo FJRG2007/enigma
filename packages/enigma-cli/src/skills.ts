@@ -422,9 +422,9 @@ async function resolveMinimalCode(opts: InstallOptions, scope: "global" | "local
         const r = await p.select({
             message: "Minimal-code discipline? (laziest solution that works; security/validation stay non-negotiable)",
             options: [
-                { value: "off", label: "Off", hint: "no extra anti-overengineering pressure (default)" },
+                { value: "off", label: "Off", hint: "no extra anti-overengineering pressure" },
                 { value: "lite", label: "Lite", hint: "build what's asked, name the lazier alternative" },
-                { value: "full", label: "Full", hint: "YAGNI ladder enforced - stdlib/native first, shortest diff" },
+                { value: "full", label: "Full", hint: "YAGNI ladder enforced - stdlib/native first, shortest diff (default)" },
                 { value: "ultra", label: "Ultra", hint: "YAGNI extremist - deletion before addition" },
             ],
             initialValue: readConfig().config.minimalCode,

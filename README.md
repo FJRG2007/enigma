@@ -226,18 +226,19 @@ reverts to full prose for security warnings and other safety-critical replies.
 You can also switch level mid-session just by asking ("be more terse", "ultra",
 "normal mode").
 
-### Minimal code (opt-in)
+### Minimal code (on by default)
 
 The companion to token-efficient output: where that compresses how the agent
 *talks*, this governs how it *builds*. It pushes the agent toward the laziest
 solution that works - YAGNI, the standard library and native platform features
-before custom code, one line before fifty. Chosen at install or via
-`enigma config minimal-code <off|lite|full|ultra>`; it writes a section into the
-agent's memory file, so **restart the agent** after changing it:
+before custom code, one line before fifty. It is **on by default at `full`**;
+tune it at install or via `enigma config minimal-code <off|lite|full|ultra>`. It
+writes a section into the agent's memory file, so **restart the agent** after
+changing it:
 
-- `off` - no extra anti-overengineering pressure (default).
+- `off` - no extra anti-overengineering pressure.
 - `lite` - builds what you asked, but names the lazier alternative in one line.
-- `full` - the YAGNI ladder enforced: stdlib/native first, shortest working diff.
+- `full` - the YAGNI ladder enforced: stdlib/native first, shortest working diff (default).
 - `ultra` - YAGNI extremist: deletion before addition, challenges the requirement.
 
 Security, input validation at trust boundaries, error handling that prevents

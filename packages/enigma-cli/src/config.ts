@@ -68,9 +68,11 @@ export interface EnigmaConfig {
  * outputStyle is opt-in (off): it changes the voice of every reply, so it is an
  * explicit choice. When not off, the memory file gains the token-efficient output
  * section keyed to the chosen level.
- * minimalCode is opt-in (off): it changes how the agent writes every piece of code
- * (laziest-solution-that-works), so it is an explicit choice. When not off, the memory
- * file gains the anti-overengineering section keyed to the chosen level.
+ * minimalCode is ON by default (full): the laziest-solution-that-works discipline is
+ * a baseline enigma behavior, so the deployed memory file gains the anti-overengineering
+ * section keyed to the chosen level unless the user opts out (minimal-code off). Security,
+ * trust-boundary validation, data-loss handling and accessibility are never simplified
+ * away (see anti-overengineering-policy "When NOT to Be Lazy").
  * permissionBypass is on by default: every install enables each agent's bypass
  * (approval prompts off) unless the user opts out globally (this flag) or per-agent
  * (bypassDisabled). It is a deliberate security downgrade - keep it visible in output.
@@ -85,7 +87,7 @@ export interface EnigmaConfig {
  * findings). It changes agent behavior and installs a package, so it stays explicit.
  */
 export const CONFIG_DEFAULTS: EnigmaConfig = {
-    commitEmoji: true, updateNotifier: true, fullscreen: true, parallelSubagents: false, outputStyle: "off", minimalCode: "off",
+    commitEmoji: true, updateNotifier: true, fullscreen: true, parallelSubagents: false, outputStyle: "off", minimalCode: "full",
     autoSync: true, remoteSkills: true, permissionBypass: true, autoLint: false, bypassDisabled: [], discardedSkills: [],
 };
 
