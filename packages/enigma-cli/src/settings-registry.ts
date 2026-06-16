@@ -11,7 +11,7 @@
 
 import { AGENTS } from "./agents";
 import { isAutoLintOn, setAutoLint } from "./lint";
-import { readConfig, setEnigmaToggle, setEnigmaValue, OUTPUT_STYLES } from "./config";
+import { readConfig, setEnigmaToggle, setEnigmaValue, OUTPUT_STYLES, MINIMAL_CODE_LEVELS } from "./config";
 import { getClaudeAttribution, setClaudeAttribution } from "./claude";
 import { getGhTelemetryCached, setGhTelemetry } from "./github";
 import { BYPASS_SUPPORTED, getBypass, setBypass } from "./permissions";
@@ -135,6 +135,7 @@ const RAW_CATEGORIES: Category[] = [
             enigmaToggle("fullscreen", "fullscreen", "Full-screen TUI", "clear the screen for a clean TUI view; off renders inline among existing output"),
             enigmaToggle("parallel-subagents", "parallelSubagents", "Parallel sub-agents", "let agents split long tasks across sub-agents running in parallel; edits the memory file - restart your agent to apply", true),
             enigmaChoice("output-style", "outputStyle", "Token-efficient output", "compress prose replies (off|lite|full|ultra); on = full; edits the memory file - restart your agent to apply", OUTPUT_STYLES, "full", true),
+            enigmaChoice("minimal-code", "minimalCode", "Minimal code (anti-overengineering)", "prefer the laziest solution that works (off|lite|full|ultra); on = full; edits the memory file - restart your agent to apply", MINIMAL_CODE_LEVELS, "full", true),
             {
                 key: "auto-lint",
                 label: "Auto-lint on edit",

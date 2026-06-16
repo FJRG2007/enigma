@@ -26,12 +26,23 @@ export const CONFIG_FILE = ".enigma.json";
 export type OutputStyle = "off" | "lite" | "full" | "ultra";
 export const OUTPUT_STYLES: readonly OutputStyle[] = ["off", "lite", "full", "ultra"];
 
+/**
+ * Minimal-code (anti-overengineering) intensity. "off" disables it; the rest grade how
+ * aggressively the agent prefers the laziest solution that works, deployed as a memory-file
+ * section (see skills.ts renderMemory) keyed to anti-overengineering-policy. "lite" only
+ * names a lazier alternative, "full" enforces the YAGNI ladder, "ultra" is YAGNI-extremist.
+ */
+export type MinimalCode = "off" | "lite" | "full" | "ultra";
+export const MINIMAL_CODE_LEVELS: readonly MinimalCode[] = ["off", "lite", "full", "ultra"];
+
 export interface EnigmaConfig {
     commitEmoji: boolean;
     updateNotifier: boolean;
     fullscreen: boolean;
     parallelSubagents: boolean;
     outputStyle: OutputStyle;
+    /** Anti-overengineering intensity for code the agent writes; deployed as a memory section. */
+    minimalCode: MinimalCode;
     /** Silently re-deploy updated skills/memory when launching a tool through enigma. */
     autoSync: boolean;
     /** Fetch newer skills from the GitHub repo (install/update) without a package update. */
@@ -57,6 +68,9 @@ export interface EnigmaConfig {
  * outputStyle is opt-in (off): it changes the voice of every reply, so it is an
  * explicit choice. When not off, the memory file gains the token-efficient output
  * section keyed to the chosen level.
+ * minimalCode is opt-in (off): it changes how the agent writes every piece of code
+ * (laziest-solution-that-works), so it is an explicit choice. When not off, the memory
+ * file gains the anti-overengineering section keyed to the chosen level.
  * permissionBypass is on by default: every install enables each agent's bypass
  * (approval prompts off) unless the user opts out globally (this flag) or per-agent
  * (bypassDisabled). It is a deliberate security downgrade - keep it visible in output.
@@ -71,7 +85,7 @@ export interface EnigmaConfig {
  * findings). It changes agent behavior and installs a package, so it stays explicit.
  */
 export const CONFIG_DEFAULTS: EnigmaConfig = {
-    commitEmoji: true, updateNotifier: true, fullscreen: true, parallelSubagents: false, outputStyle: "off",
+    commitEmoji: true, updateNotifier: true, fullscreen: true, parallelSubagents: false, outputStyle: "off", minimalCode: "off",
     autoSync: true, remoteSkills: true, permissionBypass: true, autoLint: false, bypassDisabled: [], discardedSkills: [],
 };
 

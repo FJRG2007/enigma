@@ -226,6 +226,37 @@ reverts to full prose for security warnings and other safety-critical replies.
 You can also switch level mid-session just by asking ("be more terse", "ultra",
 "normal mode").
 
+### Minimal code (opt-in)
+
+The companion to token-efficient output: where that compresses how the agent
+*talks*, this governs how it *builds*. It pushes the agent toward the laziest
+solution that works - YAGNI, the standard library and native platform features
+before custom code, one line before fifty. Chosen at install or via
+`enigma config minimal-code <off|lite|full|ultra>`; it writes a section into the
+agent's memory file, so **restart the agent** after changing it:
+
+- `off` - no extra anti-overengineering pressure (default).
+- `lite` - builds what you asked, but names the lazier alternative in one line.
+- `full` - the YAGNI ladder enforced: stdlib/native first, shortest working diff.
+- `ultra` - YAGNI extremist: deletion before addition, challenges the requirement.
+
+Security, input validation at trust boundaries, error handling that prevents
+data loss, and accessibility are never simplified away. The full discipline
+lives in the `anti-overengineering-policy` skill; you can switch level
+mid-session by asking ("be more lazy", "full", "stop minimal-code").
+
+A companion `anti-overengineering-review` skill runs the on-demand,
+complexity-only passes: ask to "review this for over-engineering", "audit the
+codebase for bloat", or "what can we delete" for a tagged list of cuts
+(`stdlib`/`native`/`yagni`/`delete`/`shrink`) with a `net: -N lines` score, or
+"list the deferred shortcuts" for a ledger of the `enigma:` markers. It only
+lists findings - it never applies them - and leaves correctness and security to
+a normal review.
+
+See [`docs/examples/`](docs/examples/README.md) for side-by-side "with vs
+without enigma" comparisons (sorting, email validation, date picker, caching,
+an API endpoint, and a review pass).
+
 ## Git security hooks
 
 `enigma security` drops a portable, dependency-free commit guard into **any** repo

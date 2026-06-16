@@ -36,6 +36,8 @@ description: Highest-authority engineering rules - priority hierarchy, modular a
   - Any new or changed code that needs verification -> testing-policy.
   - Any test file created, moved, or renamed, or a test suite scaffolded/restructured -> test-organization-policy.
   - Any source code written, refactored, or reviewed (formatting, naming, language idioms) -> ciphera-style-policy.
+  - Any implementation code being written or refactored, or any "be lazy"/"simplify"/over-engineering request -> anti-overengineering-policy.
+  - A one-shot complexity-only review/audit, "what can we delete", "find bloat", or an enigma: debt-marker ledger -> anti-overengineering-review.
   - Before declaring a change done, or when reviewing a diff/PR -> code-review-policy.
   - Any bug, crash, failing test, or unexpected behavior -> debugging-policy.
   - Any commit, branch, or pull request -> git-policy.
@@ -86,6 +88,8 @@ This core policy owns orchestration, architecture, and the global rules. Each co
 - debugging-policy: reproduce-isolate-fix methodology and root-cause discipline.
 - git-policy: commits, branches, and pull request standards.
 - ciphera-style-policy: Ciphera code style conventions - formatting, naming, quotes, string interpolation, length-sorted imports, indentation, comments/JSDoc, and code-level anti-patterns (TypeScript-first, language-agnostic).
+- anti-overengineering-policy: minimal-code discipline - the YAGNI ladder (stdlib/native/installed-dependency/one-line before custom code), deletion over addition, no unrequested abstractions, the enigma: shortcut-marking convention, and intensity via the minimal-code setting. Owns the detail behind the Anti-Overengineering Rule below.
+- anti-overengineering-review: on-demand complexity-only review - diff review, whole-repo audit, and the enigma: debt-marker ledger (tags delete/stdlib/native/yagni/shrink, line/dep scoring). Lists cuts, applies nothing; correctness/security/performance stay with code-review-policy.
 - security-policy: application and AI-agent security - secrets, authn/authz (least privilege), OWASP Top 10, transport/crypto baseline, secure logging, and agent/MCP/tool-use safety. Owns runtime security; the core security baseline defers detail here.
 - dependency-policy: dependency and supply-chain security - lockfiles, reproducible installs, version pinning, vulnerability auditing, vetting/minimizing packages, vendoring, and SBOM/provenance.
 - task-completion-policy: exhaustive coverage for long/multi-item tasks - mechanical work-unit inventory, persistent coverage ledger, per-unit verification, and the evidence-based completion gate that must pass before any "done" claim.
@@ -231,6 +235,7 @@ Each module must handle only one responsibility, such as:
   - Complexity increases
   - Domain separation is required
 
+- The YAGNI ladder, deletion-over-addition, and shortcut-marking detail live in anti-overengineering-policy.
 - Layer-specific structure rules live in backend-policy and frontend-policy.
 
 ---

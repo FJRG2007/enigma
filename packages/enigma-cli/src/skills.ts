@@ -11,8 +11,8 @@ import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 import * as p from "@clack/prompts";
 import { isDir, isNewer, readJson, listFilesRel, computeContentSha } from "./util";
-import { readConfig, setEnigmaValue, setSkillDiscarded, OUTPUT_STYLES } from "./config";
-import type { OutputStyle } from "./config";
+import { readConfig, setEnigmaValue, setSkillDiscarded, OUTPUT_STYLES, MINIMAL_CODE_LEVELS } from "./config";
+import type { OutputStyle, MinimalCode } from "./config";
 import { MANAGED_PROVIDER, isManagedProvider, discoverAgents, runningStatus } from "./agents";
 import type { Agent, AgentTarget, DiscoveredAgent } from "./agents";
 import { maybeOfferGitHooks } from "./security";
@@ -75,6 +75,8 @@ export interface InstallOptions extends SecurityOptions {
     noBypass: boolean;
     /** Output-compression level to set before deploying memory (off|lite|full|ultra), or null to leave/ask. */
     outputStyle: string | null;
+    /** Minimal-code level to set before deploying memory (off|lite|full|ultra), or null to leave/ask. */
+    minimalCode: string | null;
 }
 
 /** This CLI package's own version, stamped into skills at seal time. */
@@ -142,6 +144,8 @@ function stripMarkedBlock(content: string, id: string): string {
  * - parallelSubagents off -> strip the parallel sub-agent block (decomposition stays).
  * - outputStyle off -> strip the token-efficient output block; otherwise keep it and
  *   bind {{output-level}} to the chosen level (lite/full/ultra).
+ * - minimalCode off -> strip the anti-overengineering block; otherwise keep it and bind
+ *   {{minimal-level}} to the chosen level (lite/full/ultra).
  * Everything else is passed through verbatim, preserving the exact trailing newline.
  */
 function renderMemory(srcFile: string): string {
@@ -150,6 +154,8 @@ function renderMemory(srcFile: string): string {
     if (!cfg.parallelSubagents) out = stripMarkedBlock(out, "parallel-subagents");
     if (cfg.outputStyle === "off") out = stripMarkedBlock(out, "output-style");
     else out = out.replace(/\{\{output-level\}\}/g, cfg.outputStyle);
+    if (cfg.minimalCode === "off") out = stripMarkedBlock(out, "minimal-code");
+    else out = out.replace(/\{\{minimal-level\}\}/g, cfg.minimalCode);
     return out;
 }
 
@@ -401,6 +407,38 @@ async function resolveOutputStyle(opts: InstallOptions, scope: "global" | "local
 }
 
 /**
+ * Resolve the minimal-code (anti-overengineering) level (off|lite|full|ultra) for this
+ * install and persist it to .enigma.json at `scope`, so renderMemory bakes the matching
+ * section into the deployed memory file. Honors an explicit --minimal-code flag, otherwise
+ * asks once when interactive (defaulting to the current value). Never writes on a dry run.
+ */
+async function resolveMinimalCode(opts: InstallOptions, scope: "global" | "local", interactive: boolean, reporter: Reporter): Promise<void> {
+    let level = opts.minimalCode?.toLowerCase() ?? null;
+    if (level && !MINIMAL_CODE_LEVELS.includes(level as MinimalCode)) {
+        reporter.warn(`Ignoring --minimal-code '${opts.minimalCode}': use one of ${MINIMAL_CODE_LEVELS.join(", ")}.`);
+        level = null;
+    }
+    if (!level && interactive && !opts.dryRun) {
+        const r = await p.select({
+            message: "Minimal-code discipline? (laziest solution that works; security/validation stay non-negotiable)",
+            options: [
+                { value: "off", label: "Off", hint: "no extra anti-overengineering pressure (default)" },
+                { value: "lite", label: "Lite", hint: "build what's asked, name the lazier alternative" },
+                { value: "full", label: "Full", hint: "YAGNI ladder enforced - stdlib/native first, shortest diff" },
+                { value: "ultra", label: "Ultra", hint: "YAGNI extremist - deletion before addition" },
+            ],
+            initialValue: readConfig().config.minimalCode,
+        });
+        if (p.isCancel(r)) return;          // keep the current value; do not abort the whole install
+        level = r as string;
+    }
+    if (level && !opts.dryRun && level !== readConfig().config.minimalCode) {
+        setEnigmaValue("minimalCode", level, scope);
+        reporter.info(`Minimal-code discipline: ${level} (${scope}).`);
+    }
+}
+
+/**
  * Plan and apply a skills install. Progress is emitted through `reporter`:
  * clack for the CLI, or a buffering reporter when driven inline by the TUI.
  * Interactive prompts (scope/agent/skill selection) still use clack directly and
@@ -505,6 +543,7 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
     // Output-compression level (memory section). Resolved before the plan so memoryStatus
     // and the deployed content reflect it. Irrelevant when only skills are installed.
     if (!opts.skillsOnly) await resolveOutputStyle(opts, scope, interactive, reporter);
+    if (!opts.skillsOnly) await resolveMinimalCode(opts, scope, interactive, reporter);
 
     // Discarded skills never install or update; they are also pruned from every
     // target below (even with --no-prune), so a discard reliably removes the skill.

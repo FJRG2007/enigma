@@ -64,7 +64,7 @@ function parseArgs(argv: string[]): CliOptions {
         command: null, positionals: [], passthrough: [], tool: DEFAULT_TOOL,
         scope: null, agents: [], allAgents: false, skills: [],
         skillsOnly: false, memoryOnly: false, prune: true, keepModified: false,
-        bypass: null, noBypass: false, outputStyle: null,
+        bypass: null, noBypass: false, outputStyle: null, minimalCode: null,
         force: false, all: false, yes: false, login: false, dryRun: false, help: false, version: false,
     };
     for (let i = 0; i < argv.length; i++) {
@@ -90,6 +90,7 @@ function parseArgs(argv: string[]): CliOptions {
             case "--bypass": opts.bypass = (opts.bypass || []).concat(next().split(",")); break;
             case "--no-bypass": opts.noBypass = true; break;
             case "--output-style": opts.outputStyle = next(); break;
+            case "--minimal-code": opts.minimalCode = next(); break;
             case "--force": opts.force = true; break;
             case "--login": opts.login = true; break;
             case "-y": case "--yes": opts.yes = true; break;
@@ -158,7 +159,8 @@ Commands:
   help, version
 
 Config keys: commit-emoji, update-notifier, auto-sync, remote-skills, fullscreen,
-             parallel-subagents, output-style (off|lite|full|ultra), claude-attribution,
+             parallel-subagents, output-style (off|lite|full|ultra),
+             minimal-code (off|lite|full|ultra), claude-attribution,
              gh-telemetry, permission-bypass, bypass-claude, bypass-codex, bypass-opencode
 
 Install options:
@@ -172,6 +174,7 @@ Install options:
       --bypass <names> Force approval-prompt bypass (claude,codex,opencode | all | none)
       --no-bypass      Skip permission bypass for this run (on by default)
       --output-style <off|lite|full|ultra>  Token-efficient output level (asked if omitted)
+      --minimal-code <off|lite|full|ultra>  Anti-overengineering level (asked if omitted)
       --dry-run        Show the plan without writing
 
 Security options:

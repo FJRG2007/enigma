@@ -320,6 +320,38 @@ enigma wires this into `settings.json` during `enigma install`, only when you ha
 no status line configured (it never replaces your own). If you upgraded the package,
 re-run `enigma install` once to wire it.
 
+## Minimal code (anti-overengineering)
+
+The companion to token-efficient output: that compresses how the agent *talks*,
+this governs how it *builds*. It pushes the agent toward the laziest solution
+that works - YAGNI, the standard library and native platform features before
+custom code, one line before fifty. Off by default:
+
+```bash
+enigma config minimal-code lite     # build what's asked, name the lazier alternative
+enigma config minimal-code full     # YAGNI ladder enforced, shortest working diff
+enigma config minimal-code ultra    # YAGNI extremist, deletion before addition
+enigma config minimal-code off      # no extra pressure (default)
+enigma install --minimal-code full  # set it during install
+```
+
+`on`/`off` also work (`on` = `full`). Like token-efficient output it edits the
+memory file, so **restart your agent** after changing it. Security, input
+validation at trust boundaries, data-loss error handling, and accessibility are
+never simplified away. The full discipline lives in the
+`anti-overengineering-policy` skill, and the level is switchable mid-session by
+asking ("be more lazy", "full", "stop minimal-code").
+
+For the on-demand passes, the `anti-overengineering-review` skill reviews a diff,
+audits the whole repo, or harvests the `enigma:` shortcut markers into a debt
+ledger - ask to "review for over-engineering", "audit the codebase for bloat",
+"what can we delete", or "list the deferred shortcuts". It emits a tagged list of
+cuts (`stdlib`/`native`/`yagni`/`delete`/`shrink`) with a `net: -N lines` score
+and applies nothing; correctness and security stay with the normal review.
+
+Side-by-side "with vs without enigma" comparisons live in
+[`docs/examples/`](../../docs/examples/README.md).
+
 ## License
 
 [Apache-2.0](LICENSE).

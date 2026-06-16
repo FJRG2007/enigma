@@ -11,6 +11,8 @@
 
 - core-engineering-policy: start of any engineering task; orchestration, priority hierarchy, architecture, reuse, language and output rules.
 - ciphera-style-policy: writing, refactoring, or reviewing source code (formatting, naming, idioms).
+- anti-overengineering-policy: writing or refactoring implementation code, or any "be lazy"/"simplify"/over-engineering request - the YAGNI ladder and minimal-code discipline.
+- anti-overengineering-review: on-demand "what can we delete"/audit/over-engineering review or an enigma: debt-marker ledger - lists cuts, applies nothing.
 - backend-policy, frontend-policy, database-expert, validation-policy: server, client, persistence, and input-validation work.
 - security-policy: secrets, auth, permissions, crypto, untrusted/tool output, and AI-agent/MCP/tool-use safety.
 - dependency-policy: adding/upgrading/auditing dependencies, lockfiles, and supply-chain risk.
@@ -50,6 +52,18 @@
 - Auto-clarity: revert to full prose for security warnings, irreversible or destructive action confirmations, and any multi-step sequence where compression would make the order or meaning ambiguous. Resume after the critical part.
 - Boundaries: code, comments, commit messages, and PR text are always written normally - compression applies only to chat prose. Always respond in the user's language regardless of level.
 <!-- enigma:output-style:end -->
+
+<!-- enigma:minimal-code:start -->
+### Minimal Code (Anti-Overengineering)
+
+- Default to **{{minimal-level}}** minimal-code discipline (full detail in anti-overengineering-policy). The best code is the code never written; before writing any, stop at the first rung that holds: 1) Does this need to exist at all? (YAGNI) 2) Does the standard library do it? 3) Does a native platform feature cover it? 4) Does an already-installed dependency solve it? 5) Can it be one line? 6) Only then the minimum code that works.
+- No unrequested abstractions, no boilerplate "for later", deletion over addition, fewest files, shortest working diff. Mark deliberate shortcuts with an `enigma:` comment naming the ceiling and upgrade path.
+- Levels (the user can switch any time, e.g. "be more lazy", "full", "ultra", or "stop minimal-code" to turn it off):
+  - **lite** - build what was asked, but name the lazier alternative in one line; the user picks.
+  - **full** - the ladder enforced: stdlib and native first, shortest diff and explanation. The default when enabled.
+  - **ultra** - YAGNI extremist: deletion before addition, ship the one-liner and challenge the rest of the requirement in the same response.
+- Never simplify away: input validation at trust boundaries, error handling that prevents data loss, security, accessibility, hardware calibration, or anything explicitly requested. Non-trivial logic leaves ONE runnable check behind (testing-policy owns test strategy).
+<!-- enigma:minimal-code:end -->
 
 ---
 
