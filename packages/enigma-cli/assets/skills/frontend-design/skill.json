@@ -1,0 +1,8 @@
+{
+  "name": "frontend-design",
+  "version": "1.0.0",
+  "provider": "FJRG2007/enigma",
+  "description": "Guidance for distinctive, intentional visual design when building new UI or reshaping an existing one.",
+  "cliVersion": "1.15.1",
+  "sha": "431645565aec8a4ab4cd17247139f78c377a9bcfcfc4ee1d6f252199c332d86f"
+}
