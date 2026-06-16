@@ -120,6 +120,13 @@ only refreshes what you already installed - it never deploys to a new agent, nev
 overwrites skills you edited locally, and never rewrites a memory file
 (`CLAUDE.md` / `AGENTS.md`) that you authored or edited yourself.
 
+Install also deploys a built-in **`/improve` slash command** to every agent
+(Claude Code, opencode and Codex): run `/improve ui` (or `frontend`), `/improve
+security`, `/improve performance`, or `/improve seo` to improve that area of the
+current project. A same-named command that is not enigma's is replaced so `/improve`
+always resolves to enigma's. See the [package README](packages/enigma-cli/README.md#slash-commands)
+for details.
+
 Skills also update **without waiting for an npm release**: `enigma install` and
 `enigma update` check this repo on GitHub for newer sealed skills, download and
 verify them (content hash + provider), and cache them locally so installs and

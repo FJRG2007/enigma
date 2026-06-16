@@ -36,6 +36,7 @@ const PKG_ROOT = resolve(__dirname, "..");
 const ASSETS = process.env.ENIGMA_ASSETS_DIR ?? join(PKG_ROOT, "assets");
 export const SKILLS_ROOT = join(ASSETS, "skills");
 export const MEMORY_ROOT = join(ASSETS, "memory");
+export const COMMANDS_ROOT = join(ASSETS, "commands");
 
 export interface SkillMeta {
     name?: string;
@@ -53,12 +54,16 @@ interface SkillEntry { name: string; src: string; meta: SkillMeta; }
 interface PlannedSkill extends SkillEntry { status: SkillStatus; overwrite: boolean; }
 interface MemoryEntry { name: string; src: string; }
 interface PruneEntry { name: string; dir: string; meta: SkillMeta; }
+interface CommandEntry { name: string; src: string; }
+type CommandStatusKind = "install" | "identical" | "replace";
+interface PlannedCommand extends CommandEntry { status: CommandStatusKind; }
 interface PlanItem {
     agent: DiscoveredAgent;
     target: AgentTarget;
     skills: PlannedSkill[];
     memory: MemoryEntry[];
     prune: PruneEntry[];
+    commands: PlannedCommand[];
 }
 
 export interface InstallOptions extends SecurityOptions {
@@ -208,6 +213,30 @@ function computePrune(destSkillsDir: string, sourceNames: string[]): PruneEntry[
         .filter((e) => !sourceNames.includes(e))
         .map((e) => ({ name: e, dir: join(destSkillsDir, e), meta: readSkillMeta(join(destSkillsDir, e)) }))
         .filter((s) => isManagedProvider(s.meta.provider));
+}
+
+/**
+ * Slash commands bundled with this package: every *.md under assets/commands. Each
+ * is deployed verbatim to an agent's command dir (Claude commands, opencode command,
+ * codex prompts), where the file name (minus .md) becomes the command, e.g.
+ * improve.md -> /improve.
+ */
+function bundledCommands(): CommandEntry[] {
+    if (!isDir(COMMANDS_ROOT)) return [];
+    return readdirSync(COMMANDS_ROOT)
+        .filter((e) => e.endsWith(".md") && !isDir(join(COMMANDS_ROOT, e)))
+        .map((e) => ({ name: e, src: join(COMMANDS_ROOT, e) }));
+}
+
+/**
+ * Decide what should happen to a command at `dest`. Commands are enigma-managed and
+ * stateless: install (absent), identical (byte-equal, skip), or replace (present but
+ * different - an older enigma copy OR a foreign same-named command; both are
+ * overwritten so enigma's command always wins the name, per the conflict policy).
+ */
+function commandStatus(dest: string, src: string): CommandStatusKind {
+    if (!existsSync(dest)) return "install";
+    return readFileSync(dest, "utf8") === readFileSync(src, "utf8") ? "identical" : "replace";
 }
 
 /** Skills bundled with this package: every folder with a SKILL.md under assets/skills. */
@@ -587,7 +616,12 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
         const prune = opts.memoryOnly ? [] : computePrune(target.skills, skills.map((s) => s.name))
             .filter((e) => opts.prune || discarded.has(e.name));
 
-        plan.push({ agent, target, skills: skillsWithStatus, memory: opts.skillsOnly ? [] : memory, prune });
+        // Commands ride a full install only (neither --skills-only nor --memory-only)
+        // and only for agents whose target declares a command dir.
+        const commands: PlannedCommand[] = (opts.skillsOnly || opts.memoryOnly || !target.commands) ? []
+            : bundledCommands().map((c) => ({ ...c, status: commandStatus(join(target.commands!, c.name), c.src) }));
+
+        plan.push({ agent, target, skills: skillsWithStatus, memory: opts.skillsOnly ? [] : memory, prune, commands });
     }
 
     // --- locally-modified (tampered) skills ---
@@ -639,6 +673,12 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
             const reason = discarded.has(s.name) ? "remove (discarded)" : "remove (orphaned)";
             lines.push(`  ${reason.padEnd(26)} skill   ${s.name}  [${s.meta.provider}${ver}]`);
         }
+        for (const c of x.commands) {
+            const cmd = `/${c.name.replace(/\.md$/, "")}`;
+            if (c.status === "identical") { nSkip++; lines.push(`  ${"up-to-date (skip)".padEnd(26)} command ${cmd}`); }
+            else if (c.status === "install") { nInstall++; lines.push(`  ${"install".padEnd(26)} command ${cmd}`); }
+            else { nUpdate++; lines.push(`  ${"replace existing".padEnd(26)} command ${cmd}`); }
+        }
     }
 
     if (nInstall + nUpdate + nRemove === 0) {
@@ -673,7 +713,8 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
     const changedAgents = plan.filter((x) =>
         x.skills.some(willCopy) ||
         x.memory.some((m) => memoryStatus(m.src, join(x.target.memory, m.name)) !== "identical") ||
-        x.prune.length > 0
+        x.prune.length > 0 ||
+        x.commands.some((c) => c.status !== "identical")
     );
 
     const s = reporter.spinner();
@@ -692,6 +733,14 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
                 if (memoryStatus(m.src, join(x.target.memory, m.name)) === "identical") continue;
                 writeMemory(m.src, join(x.target.memory, m.name));
                 copied++;
+            }
+            if (x.target.commands) {
+                for (const c of x.commands) {
+                    if (c.status === "identical") continue;
+                    mkdirSync(x.target.commands, { recursive: true });
+                    writeFileSync(join(x.target.commands, c.name), readFileSync(c.src, "utf8"));
+                    copied++;
+                }
             }
             for (const pr of x.prune) rmSync(pr.dir, { recursive: true, force: true });
         }
@@ -779,12 +828,13 @@ export function syncDeployed(agentNames?: string[]): string[] {
     // Discarded skills are excluded from the source set, so the prune pass below
     // removes any deployed copy of them (a discard propagates on every sync).
     const skills = currentSkillSet();
+    const commands = bundledCommands();
     for (const agent of discoverAgents()) {
         if (agentNames && !agentNames.includes(agent.name)) continue;
         for (const scope of ["global", "local"] as const) {
             const target = agent.targets[scope];
             if (!target || !hasDeployment(agent, scope)) continue;
-            const changed = syncTarget(target, inspectMemory(agent), skills, false);
+            const changed = syncTarget(target, inspectMemory(agent), skills, commands, false);
             if (changed) notices.push(`${agent.label}: ${changed} item(s) updated (${scope})`);
         }
     }
@@ -807,7 +857,7 @@ function currentSkillSet(): SkillEntry[] {
  * deployment-gated syncs pass false so a first deployment stays an explicit
  * `enigma install`. Returns the number of changed items.
  */
-function syncTarget(target: AccountTarget, memory: MemoryEntry[], skills: SkillEntry[], createMemory: boolean): number {
+function syncTarget(target: AccountTarget, memory: MemoryEntry[], skills: SkillEntry[], commands: CommandEntry[], createMemory: boolean): number {
     let changed = 0;
     if (target.skills) {
         for (const sk of skills) {
@@ -835,6 +885,17 @@ function syncTarget(target: AccountTarget, memory: MemoryEntry[], skills: SkillE
         mkdirSync(target.memory, { recursive: true });
         writeMemory(m.src, dest);
         changed++;
+    }
+    // Commands are enigma-managed and always kept current (replace on drift), matching
+    // the conflict policy: a same-named command that is not byte-identical is overwritten.
+    if (target.commands) {
+        for (const c of commands) {
+            const dest = join(target.commands, c.name);
+            if (commandStatus(dest, c.src) === "identical") continue;
+            mkdirSync(target.commands, { recursive: true });
+            writeFileSync(dest, readFileSync(c.src, "utf8"));
+            changed++;
+        }
     }
     return changed;
 }
@@ -866,7 +927,7 @@ export function syncAccount(toolName: string, dir: string): string[] {
     const agent = discoverAgents().find((a) => a.name === toolName);
     if (!agent) return [];
     const target = getTool(toolName).accountTarget(dir);
-    const changed = syncTarget(target, inspectMemory(agent), currentSkillSet(), true);
+    const changed = syncTarget(target, inspectMemory(agent), currentSkillSet(), bundledCommands(), true);
     mirrorAccountSettings(toolName, dir);
     mirrorLintWiring(toolName, dir);
     return changed ? [`${agent.label}: ${changed} item(s) updated (account)`] : [];

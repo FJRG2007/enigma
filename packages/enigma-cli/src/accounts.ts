@@ -68,6 +68,8 @@ export interface ToolSpec {
 export interface AccountTarget {
     skills?: string;
     memory: string;
+    /** Custom-command dir inside the account config dir, when the tool supports it. */
+    commands?: string;
 }
 
 const OPENCODE_DEFAULT_DIR = join(homedir(), ".local", "share", "opencode");
@@ -83,7 +85,7 @@ const TOOLS: Record<string, ToolSpec> = {
         envFor: (dir) => ({ CLAUDE_CONFIG_DIR: dir }),
         // CLAUDE_CONFIG_DIR relocates ~/.claude entirely: skills, the CLAUDE.md
         // user memory and settings.json are all read from the account dir.
-        accountTarget: (dir) => ({ skills: join(dir, "skills"), memory: dir }),
+        accountTarget: (dir) => ({ skills: join(dir, "skills"), memory: dir, commands: join(dir, "commands") }),
         loginHint: "Launching Claude Code - run /login inside it to authenticate this account.",
         // Claude Code records the signed-in account under oauthAccount in
         // <config-dir>/.claude.json (no tokens there - those live elsewhere).
@@ -101,7 +103,8 @@ const TOOLS: Record<string, ToolSpec> = {
         envFor: (dir) => ({ CODEX_HOME: dir }),
         // CODEX_HOME relocates AGENTS.md (and config.toml), but Codex discovers
         // skills from the shared ~/.agents/skills location - no per-account copy.
-        accountTarget: (dir) => ({ memory: dir }),
+        // Custom prompts are per-CODEX_HOME, so they DO live in the account dir.
+        accountTarget: (dir) => ({ memory: dir, commands: join(dir, "prompts") }),
         loginArgs: ["login"],
         loginHint: "Launching `codex login` to authenticate this account.",
         // Codex stores its OAuth tokens in <CODEX_HOME>/auth.json; the id_token is
@@ -140,6 +143,7 @@ const TOOLS: Record<string, ToolSpec> = {
         accountTarget: (dir) => ({
             skills: join(dir, "xdg-config", "opencode", "skills"),
             memory: join(dir, "xdg-config", "opencode"),
+            commands: join(dir, "xdg-config", "opencode", "command"),
         }),
         loginArgs: ["auth", "login"],
         loginHint: "Launching `opencode auth login` to authenticate this account.",

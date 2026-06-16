@@ -18,6 +18,13 @@ const HOME = homedir();
 export interface AgentTarget {
     skills: string;
     memory: string;
+    /**
+     * Directory this agent reads custom slash commands from, when it supports
+     * them. Claude: <root>/.claude/commands; opencode: <root>/.opencode/command
+     * (and ~/.config/opencode/command); codex: <CODEX_HOME>/prompts (user scope
+     * only - codex has no project-local prompt dir, so its local target omits this).
+     */
+    commands?: string;
 }
 
 export interface AgentDef {
@@ -57,8 +64,8 @@ export const AGENTS: Record<string, AgentDef> = {
         memoryFile: "CLAUDE.md",
         detect: { bins: ["claude"], dirs: [join(HOME, ".claude")] },
         targets: {
-            global: { skills: join(HOME, ".claude", "skills"), memory: join(HOME, ".claude") },
-            local: { skills: join(process.cwd(), ".claude", "skills"), memory: process.cwd() },
+            global: { skills: join(HOME, ".claude", "skills"), memory: join(HOME, ".claude"), commands: join(HOME, ".claude", "commands") },
+            local: { skills: join(process.cwd(), ".claude", "skills"), memory: process.cwd(), commands: join(process.cwd(), ".claude", "commands") },
         },
     },
     codex: {
@@ -68,7 +75,9 @@ export const AGENTS: Record<string, AgentDef> = {
         // discovers skills from the shared `.agents/skills` location, not ~/.codex/skills.
         detect: { bins: ["codex"], dirs: [join(HOME, ".codex")] },
         targets: {
-            global: { skills: join(HOME, ".agents", "skills"), memory: join(HOME, ".codex") },
+            // Codex custom prompts live only in <CODEX_HOME>/prompts (top-level, user
+            // scope); there is no project-local prompt dir, so the local target has none.
+            global: { skills: join(HOME, ".agents", "skills"), memory: join(HOME, ".codex"), commands: join(HOME, ".codex", "prompts") },
             local: { skills: join(process.cwd(), ".agents", "skills"), memory: process.cwd() },
         },
     },
@@ -79,8 +88,10 @@ export const AGENTS: Record<string, AgentDef> = {
         // root (local); skills from ~/.config/opencode/skills and .opencode/skills.
         detect: { bins: ["opencode"], dirs: [join(HOME, ".config", "opencode"), join(HOME, ".opencode")] },
         targets: {
-            global: { skills: join(HOME, ".config", "opencode", "skills"), memory: join(HOME, ".config", "opencode") },
-            local: { skills: join(process.cwd(), ".opencode", "skills"), memory: process.cwd() },
+            // opencode reads custom commands from the `command` dir (singular form is
+            // accepted by current and older opencode; plural `commands` is newer-only).
+            global: { skills: join(HOME, ".config", "opencode", "skills"), memory: join(HOME, ".config", "opencode"), commands: join(HOME, ".config", "opencode", "command") },
+            local: { skills: join(process.cwd(), ".opencode", "skills"), memory: process.cwd(), commands: join(process.cwd(), ".opencode", "command") },
         },
     },
 };

@@ -97,6 +97,43 @@ SKILLS section lists every skill; unchecking one discards it) or with
 future installs, updates and auto-syncs until you restore it with
 `enigma skills restore <name>`.
 
+## Slash commands
+
+`enigma install` also deploys reusable slash commands to every selected agent (a
+full install only - `--skills-only` / `--memory-only` skip them). Each command is
+authored once and copied verbatim to the agent's command directory, where the file
+name becomes the command.
+
+| Agent       | Scope  | Command directory               |
+| ----------- | ------ | ------------------------------- |
+| Claude Code | global | `~/.claude/commands/`           |
+| opencode    | global | `~/.config/opencode/command/`   |
+| OpenAI Codex| global | `~/.codex/prompts/`             |
+
+(`--local` installs into the project's `.claude/commands/` and `.opencode/command/`.
+Codex has no project-local prompt directory, so it only receives commands at global
+scope.)
+
+Commands are enigma-managed: if a same-named command already exists and is not
+enigma's, **it is replaced** so enigma's command always wins the name. A command you
+have not changed is left untouched; auto-sync keeps it current on every launch.
+
+### `/improve <area>`
+
+Improve a focused area of the current project. Supported areas:
+
+| Invocation                       | What it does                                        |
+| -------------------------------- | --------------------------------------------------- |
+| `/improve ui` or `/improve frontend` | Visual design, components, accessibility, responsiveness (same workflow) |
+| `/improve security`              | Secrets, authz, input validation, OWASP, dependency audit |
+| `/improve performance`           | Profile hot paths, queries/indexes, caching, bundle/render |
+| `/improve seo`                   | Metadata, semantic HTML, structured data, crawlability, Core Web Vitals |
+
+It detects the project stack first, reuses existing code, applies the smallest
+change, follows any matching policy skill, and verifies with the project's
+build/lint/test before reporting. With no area (or an unknown one) it lists the
+supported areas and stops.
+
 ## Auto-sync on launch
 
 After the first `enigma install`, you never need to run it again: whenever you
