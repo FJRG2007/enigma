@@ -39,7 +39,8 @@ description: Backend/API architecture - controller-service-repository layering, 
 - Merge requests when possible; coalesce concurrent identical work.
 - Avoid N+1 queries; batch data access (delegate query specifics to database-expert).
 - Return only the fields the client needs; avoid overfetching.
-- Paginate large collections (prefer keyset/seek pagination per database-expert).
+- Paginate large collections (prefer keyset/seek pagination per database-expert); expose a cursor-based endpoint so the client can do virtualized infinite scroll or pagination (frontend-policy).
+- Do not block a whole response on one slow aggregate. Split independent data into separate endpoints, or fetch the parts in parallel server-side and return/stream each as it is ready, so the client can render progressively instead of waiting on the slowest query.
 
 ---
 

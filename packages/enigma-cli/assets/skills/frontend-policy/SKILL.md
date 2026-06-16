@@ -1,6 +1,6 @@
 ---
 name: frontend-policy
-description: Frontend architecture - reusable components, abstraction thresholds, state management, no-op save detection (skip mutations when the edited state equals the saved state), client-side caching (localStorage/sessionStorage to avoid redundant server calls and survive rate limits), optimistic UI with rollback, and periodic React code-health audits (react-doctor). Use when building or changing UI components, client state, forms/save flows, data fetching/caching, auditing React code, or any frontend structure.
+description: Frontend architecture - reusable components, abstraction thresholds, state management, no-op save detection (skip mutations when the edited state equals the saved state), client-side caching (localStorage/sessionStorage to avoid redundant server calls and survive rate limits), large-list rendering (virtualized infinite scroll vs pagination, skeletons, progressive/parallel loading, short-TTL caching), optimistic UI with rollback, and periodic React code-health audits (react-doctor). Use when building or changing UI components, client state, forms/save flows, data fetching/caching, lists that show lots of data, loading states, or any frontend structure.
 ---
 
 # Frontend Architecture Policy
@@ -122,6 +122,33 @@ Cache on the client to avoid redundant server round-trips and to keep the app us
 - Invalidate or update the client cache immediately after a mutation that changes the cached data.
 - Prefer stale-while-revalidate for non-critical data: serve cached, refresh in the background.
 - Never serve stale data for security-, money-, or correctness-critical reads.
+
+---
+
+## Large Lists & Progressive Loading
+
+Never render an unbounded or large dataset in one shot (no fetch-everything then map over thousands of rows). Lists of products, feeds, search results, logs, etc. must load incrementally and keep the rendered DOM bounded.
+
+### Choose a load strategy per case
+
+- Infinite scroll (default for feeds, large or unknown-size sets, and exploratory browsing): fetch one page at a time as the user nears the end, using keyset/cursor paging (per backend-policy / database-expert), not offset for deep lists.
+  - It MUST be virtualized/windowed once the list grows: render only the viewport plus a small buffer and recycle offscreen rows so a long session (a user scrolling for an hour) does not accumulate thousands of nodes and lag. Drop far-offscreen items from the DOM and restore them on scroll-back, preserving scroll position (the TikTok model: only a handful of items live in the DOM at once).
+  - Only start dropping/recycling once there is genuinely a lot rendered or the context demands it; do not over-engineer it for a small list.
+- Pagination (when users need to jump to or deep-link a specific page, the set is bounded, totals/position matter, or results must be SEO-indexable): classic page controls backed by efficient server paging.
+- Pick whichever fits; do not infinite-scroll a 30-row admin table or paginate a social feed. A short, bounded list needs neither - just render it (anti-overengineering-policy).
+
+### Skeletons while loading
+
+- Show skeleton placeholders that mirror the final layout while data loads, not bare spinners for content areas, and reserve the space so content does not shift in (avoid layout shift / CLS).
+- Empty and error states are still handled explicitly for every async view (see Accessibility & Resilience).
+
+### Progressive / parallel rendering
+
+- Never block the whole view on one slow aggregate request. Fetch independent sections in parallel and render each the moment its own data arrives (per-section skeletons; streaming/Suspense where the framework supports it), so the page becomes useful incrementally instead of waiting on the slowest query. Splitting the server work is owned by backend-policy.
+
+### Short-TTL caching for fetched pages
+
+- Cache fetched lists/pages briefly so quick navigations, the back button, and tab switches do not refetch. Tune the TTL to how fast the data changes - on the order of ~30s for typical lists, longer for stable catalogs, near-zero for fast-moving or correctness-critical data. Use the Client-Side Caching rules above (explicit TTL, stale-while-revalidate, invalidate on mutation, never serve stale money/security/correctness reads).
 
 ---
 
