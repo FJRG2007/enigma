@@ -3,6 +3,6 @@
   "version": "1.2.0",
   "provider": "FJRG2007/enigma",
   "description": "Frontend architecture: reusable components, abstraction thresholds, state management, no-op save detection, and optimistic UI with rollback.",
-  "cliVersion": "1.13.2",
+  "cliVersion": "1.14.0",
   "sha": "3766096616a9177ce66685bfaaaef66f7e8ceb62e2a6542e83dee713b9d1b56f"
 }
