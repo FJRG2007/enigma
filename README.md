@@ -121,11 +121,15 @@ overwrites skills you edited locally, and never rewrites a memory file
 (`CLAUDE.md` / `AGENTS.md`) that you authored or edited yourself.
 
 Install also deploys a built-in **`/improve` slash command** to every agent
-(Claude Code, opencode and Codex): run `/improve ui` (or `frontend`), `/improve
-security`, `/improve performance`, or `/improve seo` to improve that area of the
-current project. A same-named command that is not enigma's is replaced so `/improve`
-always resolves to enigma's. See the [package README](packages/enigma-cli/README.md#slash-commands)
-for details.
+(Claude Code, opencode and Codex). It has two modes: an **implement** mode that
+edits a focused area directly (`/improve ui`, `security`, `performance`, `seo`,
+`refactor`), and a read-only **advisor** mode (adapted from
+[shadcn/improve](https://github.com/shadcn/improve), MIT) that audits the codebase
+and writes self-contained plans into `plans/` for another agent to execute
+(`/improve audit`, `quick`/`deep`, `branch`, `next`, `plan`, `review-plan`,
+`execute`, `reconcile`, `--issues`). A same-named command that is not enigma's is
+replaced so `/improve` always resolves to enigma's. See the
+[package README](packages/enigma-cli/README.md#slash-commands) for details.
 
 Skills also update **without waiting for an npm release**: `enigma install` and
 `enigma update` check this repo on GitHub for newer sealed skills, download and

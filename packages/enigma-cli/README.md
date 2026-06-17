@@ -118,9 +118,21 @@ Commands are enigma-managed: if a same-named command already exists and is not
 enigma's, **it is replaced** so enigma's command always wins the name. A command you
 have not changed is left untouched; auto-sync keeps it current on every launch.
 
-### `/improve <area>`
+### `/improve`
 
-Improve a focused area of the current project. Supported areas:
+Two modes in one command. **Implement mode** edits a focused area directly;
+**Advisor mode** (adapted from [shadcn/improve](https://github.com/shadcn/improve),
+MIT) is strictly read-only and writes self-contained implementation plans into
+`plans/` for another (cheaper) agent to execute.
+
+The mode is resolved from the arguments: an advisor keyword (`audit`, `quick`,
+`deep`, `branch`, `next`, `plan`, `review-plan`, `execute`, `reconcile`) selects
+Advisor mode; otherwise an area token selects Implement mode. A bare `security`
+or `performance` runs Implement mode (edits code) for backward compatibility - to
+audit those read-only instead, prefix an advisor keyword (`audit security`,
+`quick perf`). With no argument (or an unknown one) it prints both usages and stops.
+
+**Implement mode** (`/improve <area>`):
 
 | Invocation                       | What it does                                        |
 | -------------------------------- | --------------------------------------------------- |
@@ -128,11 +140,31 @@ Improve a focused area of the current project. Supported areas:
 | `/improve security`              | Secrets, authz, input validation, OWASP, dependency audit |
 | `/improve performance`           | Profile hot paths, queries/indexes, caching, bundle/render |
 | `/improve seo`                   | Metadata, semantic HTML, structured data, crawlability, Core Web Vitals |
+| `/improve refactor` or `/improve refactorize` | Dedup and consistency: consolidate duplicate code/components and divergent implementations of one concept into a single source of truth, apply ciphera-style and minimal-code, remove dead code - without changing behavior |
 
 It detects the project stack first, reuses existing code, applies the smallest
 change, follows any matching policy skill, and verifies with the project's
-build/lint/test before reporting. With no area (or an unknown one) it lists the
-supported areas and stops.
+build/lint/test before reporting.
+
+**Advisor mode** (read-only; writes only to `plans/`):
+
+| Invocation                       | What it does                                        |
+| -------------------------------- | --------------------------------------------------- |
+| `/improve audit`                 | Full audit -> prioritized findings table -> plans you select |
+| `/improve quick` / `/improve deep` | Effort level for the audit (hotspots only / whole repo) |
+| `/improve audit <focus>`         | Focused audit (e.g. `security`, `perf`, `tests`, `bugs`) |
+| `/improve branch`                | Audit only what the current branch changes |
+| `/improve next`                  | Grounded feature/direction suggestions (also `features`, `roadmap`) |
+| `/improve plan <description>`    | Skip the audit, spec one thing as a single plan |
+| `/improve review-plan <file>`    | Critique and tighten an existing plan |
+| `/improve execute <plan>`        | Dispatch a cheaper executor in an isolated worktree, review its diff |
+| `/improve reconcile`             | Refresh the backlog: verify DONE, unblock, retire dead findings |
+| `... --issues`                   | Also publish each written plan as a GitHub issue via `gh` |
+
+Advisor mode never modifies source code, never mutates the working tree, and never
+reproduces secret values. Each plan is self-contained, stamps the commit it was
+written against, and carries machine-checkable done criteria and STOP conditions
+so a weaker executor can run it without this session's context.
 
 ## Auto-sync on launch
 

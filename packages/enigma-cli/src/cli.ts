@@ -41,7 +41,7 @@ const PKG = readJson<{ version?: string }>(join(__dirname, "..", "package.json")
 // Fixed commands plus one launch command per supported tool (e.g. `enigma claude`).
 const COMMANDS = new Set<string>([
     "install", "update", "security", "guard", "seal", "check", "config", "account", "accounts",
-    "profile", "profiles", "skill", "skills", "issue", "statusline", "help", "version",
+    "profile", "profiles", "skill", "skills", "issue", "improve", "statusline", "help", "version",
     ...TOOL_NAMES,
 ]);
 
@@ -153,6 +153,8 @@ Commands:
                                               to existing installs on the next sync)
   issue [bug|feature]  Open a prefilled GitHub issue (OS, versions, terminal,
                        detected agents autocompleted; default: bug)
+  improve [--help]     Explain the /improve slash command (it runs inside your
+                       agent - Claude Code, Codex, OpenCode - not in this CLI)
   seal                 Maintenance: (re)compute skill content hashes
   check                Integrity gate: verify skills are well-formed and sealed
   statusline           Print the [ENIGMA] badge for an agent status bar (shows the active level)
@@ -203,6 +205,49 @@ Examples:
   enigma profile set work codex acme  # ...and codex account 'acme'
   enigma profile use work             # now 'enigma claude'/'enigma codex' use them
   enigma issue                        # report a bug with your environment prefilled
+`);
+}
+
+/**
+ * `enigma improve` / `enigma improve --help`: /improve is a slash command that
+ * runs INSIDE the coding agent (Claude Code, Codex, OpenCode), not a CLI action -
+ * enigma only deploys it. This explains it so users who reach for the CLI find it.
+ */
+function printImproveHelp(): void {
+    console.log(`
+/improve - a slash command, not a CLI command
+
+  enigma deploys /improve into your coding agents (Claude Code, Codex, OpenCode);
+  you run it INSIDE the agent (type "/improve ..." there), not from this CLI.
+  There is nothing to run here - this is just the explanation.
+
+It has two modes:
+
+  Implement (edits code directly):
+    /improve ui | frontend      Visual design, components, a11y, responsiveness
+    /improve security           Secrets, authz, input validation, OWASP, dep audit
+    /improve performance        Hot paths, queries/indexes, caching, bundle/render
+    /improve seo                Metadata, semantic HTML, structured data, crawlability
+    /improve refactor           Dedup/consistency: one source of truth, no behavior change
+
+  Advisor (read-only; writes self-contained plans into plans/ for another agent):
+    /improve audit [focus]      Full audit -> findings -> plans (focus: security|perf|tests|bugs)
+    /improve quick | deep       Audit effort: hotspots only | whole repo
+    /improve branch             Audit only what the current branch changes
+    /improve next               Grounded feature/direction suggestions
+    /improve plan <description> Skip the audit, spec one thing as a single plan
+    /improve review-plan <file> Critique and tighten an existing plan
+    /improve execute <plan>     Dispatch a cheaper executor in a worktree, review its diff
+    /improve reconcile          Refresh the backlog: verify, unblock, retire
+    /improve ... --issues       Also publish each plan as a GitHub issue
+
+  A bare 'security' or 'performance' runs Implement mode (edits code); prefix an
+  advisor keyword to audit instead (e.g. /improve audit security, /improve quick perf).
+
+  Advisor mode never edits source, never mutates the working tree, and never prints
+  secret values. Adapted from shadcn/improve (https://github.com/shadcn/improve), MIT.
+
+  Make sure it is deployed:  enigma install
 `);
 }
 
@@ -518,6 +563,9 @@ export async function run(argv: string[]): Promise<void> {
     // update notice or other output. The Node launcher also short-circuits this before
     // spawning the binary, so it stays cheap on every status refresh.
     if (opts.command === "statusline") { printStatusline(); return; }
+    // /improve runs inside the agent, not the CLI; `enigma improve [--help]` only
+    // explains it. Handled before the generic --help so `improve --help` shows this.
+    if (opts.command === "improve") { printImproveHelp(); await notifyUpdate(version, interactive); return; }
     if (opts.help || opts.command === "help") { printHelp(); await notifyUpdate(version, interactive); return; }
     if (opts.version || opts.command === "version") { console.log(version); await notifyUpdate(version, interactive); return; }
 
