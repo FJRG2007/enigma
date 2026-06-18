@@ -12,7 +12,7 @@
 import { AGENTS } from "./agents";
 import { isAutoLintOn, setAutoLint } from "./lint";
 import { readConfig, setEnigmaToggle, setEnigmaValue, OUTPUT_STYLES, MINIMAL_CODE_LEVELS } from "./config";
-import { getClaudeAttribution, setClaudeAttribution } from "./claude";
+import { getClaudeAttribution, setClaudeAttribution, getClaudeFeedbackSurvey, setClaudeFeedbackSurvey } from "./claude";
 import { getGhTelemetryCached, setGhTelemetry } from "./github";
 import { BYPASS_SUPPORTED, getBypass, setBypass } from "./permissions";
 import type { EnigmaConfig, EnigmaConfigKey } from "./config";
@@ -156,6 +156,13 @@ const RAW_CATEGORIES: Category[] = [
                 hint: "let Claude Code commit as its own contributor (Co-Authored-By / PR footer); enigma default: off",
                 read: (scope) => getClaudeAttribution(scope),
                 write: (value, scope) => ({ changed: setClaudeAttribution(scope, value) }),
+            },
+            {
+                key: "claude-survey",
+                label: "Claude feedback survey",
+                hint: "let Claude Code show the 'How is Claude doing?' session quality survey; enigma default: off",
+                read: (scope) => getClaudeFeedbackSurvey(scope),
+                write: (value, scope) => ({ changed: setClaudeFeedbackSurvey(scope, value) }),
             },
             {
                 key: "gh-telemetry",

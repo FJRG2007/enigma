@@ -19,7 +19,7 @@ import { maybeOfferGitHooks } from "./security";
 import type { SecurityOptions } from "./security";
 import { clackReporter } from "./reporter";
 import type { Reporter } from "./reporter";
-import { disableClaudeAttribution, enableClaudeStatusline } from "./claude";
+import { disableClaudeAttribution, disableClaudeFeedbackSurvey, enableClaudeStatusline } from "./claude";
 import { setGhTelemetry } from "./github";
 import { applyLintWiring, mirrorLintWiring } from "./lint";
 import { resolveBypassSelection, applyBypass, mirrorAccountSettings } from "./permissions";
@@ -542,6 +542,9 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
         if (!claudeScope || opts.dryRun) return;
         if (disableClaudeAttribution(claudeScope)) {
             reporter.info("Claude Code: disabled Co-Authored-By and PR attribution in settings.json.");
+        }
+        if (disableClaudeFeedbackSurvey(claudeScope)) {
+            reporter.info("Claude Code: disabled the session feedback survey (re-enable with 'enigma config claude-survey on').");
         }
         if (enableClaudeStatusline(claudeScope)) {
             reporter.info("Claude Code: statusline shows an [ENIGMA] badge while token-efficient output is active.");

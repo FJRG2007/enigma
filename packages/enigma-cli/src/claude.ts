@@ -21,6 +21,13 @@ function claudeSettingsPath(scope: "global" | "local"): string {
 }
 
 /**
+ * Env var Claude Code reads to suppress the "How is Claude doing?" session-quality
+ * survey. Set under settings.json `env` so it persists regardless of the shell, the
+ * same deterministic mechanism Claude Code documents for the setting.
+ */
+const FEEDBACK_SURVEY_ENV = "CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY";
+
+/**
  * Merge the attribution-disabling keys into Claude's settings.json without
  * clobbering other settings. Sets the current `attribution` object (commit/pr
  * empty) and the legacy `includeCoAuthoredBy: false` for older versions.
@@ -90,6 +97,59 @@ export function setClaudeAttribution(scope: "global" | "local", enabled: boolean
     if (Object.keys(attribution).length) next.attribution = attribution;
     else delete next.attribution;
     delete next.includeCoAuthoredBy;
+
+    writeClaudeSettings(path, next);
+    return true;
+}
+
+/**
+ * Disable Claude Code's session feedback survey by setting
+ * env.CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY to "1" in settings.json, merging into any
+ * existing env block without clobbering other variables. Returns true if written.
+ */
+export function disableClaudeFeedbackSurvey(scope: "global" | "local"): boolean {
+    const path = claudeSettingsPath(scope);
+    const current = readJson<Record<string, unknown>>(path) || {};
+    const env = (typeof current.env === "object" && current.env !== null)
+        ? current.env as Record<string, unknown>
+        : {};
+    if (env[FEEDBACK_SURVEY_ENV] === "1") return false;
+
+    const next = { ...current, env: { ...env, [FEEDBACK_SURVEY_ENV]: "1" } };
+    writeClaudeSettings(path, next);
+    return true;
+}
+
+/**
+ * Read whether the Claude feedback survey is enabled for a scope. Returns true when
+ * Claude would show the survey (its default), false when enigma's disabling override
+ * is in place. Used by the config surface to show the current value.
+ */
+export function getClaudeFeedbackSurvey(scope: "global" | "local"): boolean {
+    const current = readJson<Record<string, unknown>>(claudeSettingsPath(scope)) || {};
+    const env = current.env as Record<string, unknown> | undefined;
+    return !(env && env[FEEDBACK_SURVEY_ENV] === "1");
+}
+
+/**
+ * Enable or disable the Claude feedback survey for a scope. Disabling delegates to
+ * `disableClaudeFeedbackSurvey`. Enabling removes the env override enigma wrote,
+ * leaving other env variables intact. Returns true if the file was written.
+ */
+export function setClaudeFeedbackSurvey(scope: "global" | "local", enabled: boolean): boolean {
+    if (!enabled) return disableClaudeFeedbackSurvey(scope);
+
+    const path = claudeSettingsPath(scope);
+    const current = readJson<Record<string, unknown>>(path) || {};
+    const env = (typeof current.env === "object" && current.env !== null)
+        ? { ...current.env as Record<string, unknown> }
+        : {};
+    if (env[FEEDBACK_SURVEY_ENV] !== "1") return false;
+
+    delete env[FEEDBACK_SURVEY_ENV];
+    const next: Record<string, unknown> = { ...current };
+    if (Object.keys(env).length) next.env = env;
+    else delete next.env;
 
     writeClaudeSettings(path, next);
     return true;
@@ -170,8 +230,9 @@ export function enableClaudeStatusline(scope: "global" | "local"): boolean {
  * settings into a managed account's config dir, so an account launched via
  * `enigma claude <account>` behaves like the default one. Mirrored knobs:
  * attribution overrides (commit/pr + includeCoAuthoredBy), permission bypass
- * (permissions.defaultMode) and the enigma statusline (added only when the
- * account has none - never clobbers a custom one). Every other account setting
+ * (permissions.defaultMode), the feedback-survey env override
+ * (env.CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY) and the enigma statusline (added only
+ * when the account has none - never clobbers a custom one). Every other account setting
  * is preserved, and absence in the global file removes the matching override so
  * turning a knob off propagates too. Returns true when the account file changed.
  */
@@ -209,6 +270,19 @@ export function mirrorClaudeSettings(accountDir: string): boolean {
     else if (perm.defaultMode === "bypassPermissions") delete perm.defaultMode;
     if (Object.keys(perm).length) next.permissions = perm;
     else delete next.permissions;
+
+    // Feedback survey: mirror only the disable override enigma manages; any other
+    // env vars the user set on the account are left alone.
+    const globalEnv = (typeof global.env === "object" && global.env !== null)
+        ? global.env as Record<string, unknown>
+        : {};
+    const env = (typeof next.env === "object" && next.env !== null)
+        ? { ...next.env as Record<string, unknown> }
+        : {};
+    if (globalEnv[FEEDBACK_SURVEY_ENV] === "1") env[FEEDBACK_SURVEY_ENV] = "1";
+    else if (env[FEEDBACK_SURVEY_ENV] === "1") delete env[FEEDBACK_SURVEY_ENV];
+    if (Object.keys(env).length) next.env = env;
+    else delete next.env;
 
     // Statusline: propagate enigma's statusline when the account has none.
     const globalLine = global.statusLine as Record<string, unknown> | undefined;

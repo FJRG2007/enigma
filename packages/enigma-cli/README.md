@@ -331,6 +331,20 @@ enigma config gh-telemetry on     # restore gh's default
 enigma config gh-telemetry off    # disable again
 ```
 
+## Claude feedback survey (default off)
+
+When Claude Code is a target, `enigma install` disables the periodic "How is
+Claude doing?" session-quality survey by setting
+`env.CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY` to `"1"` in Claude's `settings.json`.
+It is a recurring prompt with no functional value, so it is off by default.
+Re-enable any time:
+
+```bash
+enigma config claude-survey on        # restore Claude's survey
+enigma config claude-survey off       # disable again
+enigma config claude-survey off -g    # global (~/.claude/settings.json)
+```
+
 ## Commit emojis
 
 By default the policy skills make commit subjects carry a leading type emoji
