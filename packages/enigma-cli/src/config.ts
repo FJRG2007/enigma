@@ -51,6 +51,8 @@ export interface EnigmaConfig {
     permissionBypass: boolean;
     /** Auto-lint edited files via a post-write hook (opt-in; installs @enigmax/linter on enable). */
     autoLint: boolean;
+    /** Deploy the context-compression MCP server (enigma_compress/retrieve/stats) into managed agents (opt-in). */
+    compress: boolean;
     /** Agents the user explicitly opted out of bypass; never auto-enabled even when permissionBypass is on. */
     bypassDisabled: string[];
     /** Skills the user discarded: removed from deployments and skipped by installs/updates until restored. */
@@ -85,10 +87,14 @@ export interface EnigmaConfig {
  * autoLint is opt-in (off): enabling it autonomously installs @enigmax/linter and
  * wires a post-write hook into each agent (auto-fix + surface only unfixable
  * findings). It changes agent behavior and installs a package, so it stays explicit.
+ * compress is opt-in (off): when on, installs/syncs register enigma's compression
+ * MCP server (enigma_compress/retrieve/stats) in each managed agent's config so the
+ * agent can shrink large tool outputs. Adding an MCP server to the user's agents is
+ * a meaningful change, so it stays an explicit choice; turning it off removes the entry.
  */
 export const CONFIG_DEFAULTS: EnigmaConfig = {
     commitEmoji: true, updateNotifier: true, fullscreen: true, parallelSubagents: false, outputStyle: "off", minimalCode: "full",
-    autoSync: true, remoteSkills: true, permissionBypass: true, autoLint: false, bypassDisabled: [], discardedSkills: [],
+    autoSync: true, remoteSkills: true, permissionBypass: true, autoLint: false, compress: false, bypassDisabled: [], discardedSkills: [],
 };
 
 export type EnigmaConfigKey = keyof EnigmaConfig;

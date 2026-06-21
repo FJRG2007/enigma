@@ -71,6 +71,9 @@ enigma <tool> [acct]   Launch claude | codex | opencode with an account
 enigma account ...     Manage per-tool accounts (list/add/use/login/remove)
 enigma profile ...     Group one account per tool (list/add/use/set/unset/remove)
 enigma skills ...      List skills and manage discards (list/discard/restore)
+enigma compress [file] Compress JSON/logs/text to fewer tokens (reversible via CCR);
+                       --retrieve <hash> restores, --stats shows total savings
+enigma mcp             Run the context-compression MCP server over stdio
 enigma seal            Maintenance: (re)compute skill content hashes
 enigma check           Integrity gate: verify skills are well-formed and sealed
 enigma help | version
@@ -434,6 +437,48 @@ and applies nothing; correctness and security stay with the normal review.
 
 Side-by-side "with vs without enigma" comparisons live in
 [`docs/examples/`](../../docs/examples/README.md).
+
+## Context compression (opt-in)
+
+A native, dependency-free engine that shrinks large content before it reaches the
+model - same information, far fewer tokens. It detects the content type and routes
+it:
+
+- **JSON** arrays of records are compressed statistically: a representative,
+  schema-preserving sample is kept (head + stride samples + tail), and **error
+  rows, numeric anomalies and structural outliers are always preserved** - unique
+  entities with no signal are left intact so real data is never silently dropped.
+- **Logs** collapse by template (volatile timestamps/numbers/hashes are masked;
+  runs of similar lines fold into one + a count), keeping error/warning lines.
+- **Plain text** is truncated head+tail. Code, diffs and markdown pass through
+  untouched (no safe lossy transform without a parser).
+
+Compression is **reversible** (CCR - Compress-Cache-Retrieve): when rows or spans
+are dropped, the full original is cached under `~/.enigma/ccr` and the output
+carries a `<<enigma:ccr:HASH ...>>` marker. Pass the hash back to get the original.
+
+```bash
+cat tool-output.json | enigma compress     # compressed to stdout, savings to stderr
+enigma compress big.log                     # compress a file
+enigma compress --retrieve <hash>           # restore a cached original
+enigma compress --stats                     # cumulative token savings
+```
+
+### As an MCP server
+
+`enigma mcp` runs a stdio MCP server exposing three tools - `enigma_compress`,
+`enigma_retrieve`, `enigma_stats` - so an agent can compress large tool outputs
+itself and retrieve originals on demand. Enable deployment and it is registered in
+each managed agent's own config (Claude Code `mcpServers`, Codex
+`[mcp_servers.enigma]`, opencode `mcp`), preserving your other servers:
+
+```bash
+enigma config compress on     # register the MCP server on install/sync
+enigma config compress off    # remove it again
+```
+
+**Off by default** - adding an MCP server to your agents is an explicit choice.
+Everything runs locally; no data leaves your machine.
 
 ## License
 

@@ -1,0 +1,78 @@
+/**
+ * MCP deployment: with `compress` on, the enigma MCP server is registered in each
+ * tool's own config format (claude JSON mcpServers, codex [mcp_servers.enigma]
+ * TOML, opencode mcp JSON) while preserving other keys; with it off the entry is
+ * removed and unrelated keys survive. Temp HOME (set BEFORE import) isolates the
+ * global config files the deploy writes to.
+ */
+import { test, expect, afterAll } from "bun:test";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+const HOME = mkdtempSync(join(tmpdir(), "enigma-mcp-deploy-"));
+process.env.USERPROFILE = HOME;
+process.env.HOME = HOME;
+
+const { applyMcpForAgent, applyMcpForAccount } = await import("../src/mcp-deploy");
+const { setEnigmaValue } = await import("../src/config");
+
+afterAll(() => rmSync(HOME, { recursive: true, force: true }));
+
+const readJson = (p: string) => JSON.parse(readFileSync(p, "utf8")) as Record<string, any>;
+
+test("claude global: registers mcpServers.enigma, preserving existing keys", () => {
+    const file = join(HOME, ".claude.json");
+    writeFileSync(file, JSON.stringify({ numStartups: 7, mcpServers: { other: { type: "stdio", command: "x" } } }));
+    setEnigmaValue("compress", true, "global");
+
+    expect(applyMcpForAgent("claude", "global")).toBe(true);
+    const cfg = readJson(file);
+    expect(cfg.numStartups).toBe(7);                       // unrelated key preserved
+    expect(cfg.mcpServers.other.command).toBe("x");        // other server preserved
+    expect(cfg.mcpServers.enigma.args).toEqual(expect.arrayContaining(["mcp"]));
+});
+
+test("codex global: writes [mcp_servers.enigma] into config.toml", () => {
+    const file = join(HOME, ".codex", "config.toml");
+    mkdirSync(join(HOME, ".codex"), { recursive: true });
+    writeFileSync(file, "approval_policy = \"never\"\n");
+    setEnigmaValue("compress", true, "global");
+
+    expect(applyMcpForAgent("codex", "global")).toBe(true);
+    const toml = readFileSync(file, "utf8");
+    expect(toml).toContain("approval_policy = \"never\""); // existing key preserved
+    expect(toml).toContain("[mcp_servers.enigma]");
+    expect(toml).toMatch(/args = \[.*'mcp'.*\]/);
+});
+
+test("opencode account: writes mcp.enigma into the account opencode.json", () => {
+    const dir = join(HOME, ".enigma", "opencode", "work");
+    setEnigmaValue("compress", true, "global");
+    expect(applyMcpForAccount("opencode", dir)).toBe(true);
+    const cfg = readJson(join(dir, "xdg-config", "opencode", "opencode.json"));
+    expect(cfg.mcp.enigma.type).toBe("local");
+    expect(cfg.mcp.enigma.command).toEqual(expect.arrayContaining(["mcp"]));
+});
+
+test("turning compress off removes the entry but keeps other config", () => {
+    const file = join(HOME, ".claude.json");
+    setEnigmaValue("compress", false, "global");
+    expect(applyMcpForAgent("claude", "global")).toBe(true);
+    const cfg = readJson(file);
+    expect(cfg.mcpServers.enigma).toBeUndefined();
+    expect(cfg.mcpServers.other.command).toBe("x");        // unrelated server survives
+    expect(cfg.numStartups).toBe(7);
+});
+
+test("codex has no project-local config: local scope is a no-op", () => {
+    setEnigmaValue("compress", true, "global");
+    expect(applyMcpForAgent("codex", "local")).toBe(false);
+});
+
+test("disabling when no config file exists does not create one", () => {
+    const dir = join(HOME, ".enigma", "claude", "ghost");
+    setEnigmaValue("compress", false, "global");
+    expect(applyMcpForAccount("claude", dir)).toBe(false);
+    expect(existsSync(join(dir, ".claude.json"))).toBe(false);
+});

@@ -89,23 +89,25 @@ enigma profile use work
 <tr>
 <td>
 
-### <img src="docs/images/enigma-logo.svg" width="20" height="20" alt="Enigma"/> Interactive hub TUI
+### <img src="docs/images/enigma-logo.svg" width="20" height="20" alt="Enigma"/> Privacy & productivity defaults
 
-A full-screen hub (keyboard + mouse, wheel scroll included) to install skills, set up hooks, manage settings and the unified Accounts & profiles panel - plus auto-sync on every launch and an update notifier.
+Sensible privacy and security defaults applied at install: GitHub CLI telemetry **disabled**, Claude Code's feedback survey **off**, and the agent kept from attributing commits to itself. Tune any of it from the CLI or the interactive hub.
 
 ```bash
-enigma
+enigma config gh-telemetry disabled
+enigma config claude-survey off
 ```
 
 </td>
 <td>
 
-### <img src="docs/images/enigma-logo.svg" width="20" height="20" alt="Enigma"/> One-command bug reports
+### <img src="docs/images/enigma-logo.svg" width="20" height="20" alt="Enigma"/> Built-in `/improve` command
 
-Generates a GitHub issue URL with your environment prefilled - OS and version, terminal, detected agents, enigma version and install method - and opens it in the browser.
+A slash command deployed to every agent to improve your project: an **implement** mode that edits a focused area (`ui`, `security`, `performance`, `seo`, `refactor`) and a read-only **advisor** mode that audits the codebase and writes self-contained plans for another agent to execute.
 
 ```bash
-enigma issue
+/improve ui
+/improve audit
 ```
 
 </td>
@@ -137,6 +139,37 @@ verify them (content hash + provider), and cache them locally so installs and
 auto-sync deploy the freshest versions. The check is fully fault-tolerant - if the
 GitHub API is down, slow, or rate-limited, enigma silently keeps the bundled
 skills - and can be disabled with `enigma config remote-skills off`.
+
+## Context compression (opt-in)
+
+enigma ships a native, dependency-free context-compression engine that shrinks
+large tool outputs, logs and text before they reach the model - the same
+information in far fewer tokens. JSON arrays of records are compressed
+statistically (a representative, schema-preserving sample is kept, with error and
+outlier rows always preserved); repetitive logs collapse by template; long prose is
+truncated head+tail. Compression is **reversible**: whenever data is dropped the
+full original is cached locally and the output carries a `<<enigma:ccr:HASH ...>>`
+marker the model can pass back to retrieve the original on demand.
+
+Use it directly:
+
+```bash
+cat big-output.json | enigma compress      # compressed to stdout, savings to stderr
+enigma compress --retrieve <hash>          # restore a cached original
+enigma compress --stats                    # cumulative token savings
+```
+
+Or expose it to your agents as an MCP server. Turning the toggle on registers
+`enigma mcp` (tools `enigma_compress`, `enigma_retrieve`, `enigma_stats`) in each
+managed agent's config (Claude Code, Codex, opencode); turning it off removes it:
+
+```bash
+enigma config compress on
+enigma install        # (or the next auto-sync) deploys the MCP server
+```
+
+It is **off by default** - adding an MCP server to your agents is an explicit
+choice. Everything runs locally; no data leaves your machine.
 
 ## Requirements
 
@@ -184,6 +217,9 @@ enigma account ...     Manage per-tool accounts   enigma profile ...  Group them
 enigma skills ...      List skills, discard one (removed everywhere and skipped
                        by installs/updates) or restore it (list/discard/restore)
 enigma issue [type]    Prefilled GitHub issue URL (OS, versions, terminal, agents)
+enigma compress [file] Compress JSON/logs/text to fewer tokens (reversible);
+                       --retrieve <hash> restores, --stats shows total savings
+enigma mcp             Run the context-compression MCP server over stdio
 enigma seal            Maintenance: (re)compute skill content hashes
 enigma check           Integrity gate: verify skills are well-formed and sealed
 enigma help | version

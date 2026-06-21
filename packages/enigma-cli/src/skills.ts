@@ -23,6 +23,7 @@ import { disableClaudeAttribution, disableClaudeFeedbackSurvey, enableClaudeStat
 import { setGhTelemetry } from "./github";
 import { applyLintWiring, mirrorLintWiring } from "./lint";
 import { resolveBypassSelection, applyBypass, mirrorAccountSettings } from "./permissions";
+import { applyMcpForAgent, applyMcpForAccount } from "./mcp-deploy";
 import { getTool } from "./accounts";
 import type { AccountTarget } from "./accounts";
 import { cachedRemoteSkills, refreshRemoteSkills, shouldCheckRemote } from "./skills-remote";
@@ -572,6 +573,19 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
     // install runs in the background. Skipped on a dry run (writes nothing).
     const applyLintConfig = (): void => { if (!opts.dryRun) applyLintWiring(); };
 
+    // Context-compression MCP: register enigma's MCP server in each chosen agent's
+    // config when `compress` is on, remove it when off (mirror presence/absence).
+    // Same side-effect shape as the bypass/claude/gh/lint hooks; skipped on dry run.
+    const applyMcpConfig = (): void => {
+        if (opts.dryRun) return;
+        const enabled = readConfig().config.compress;
+        const changed: string[] = [];
+        for (const agent of chosenAgents) if (applyMcpForAgent(agent.name, scope)) changed.push(agent.label);
+        if (changed.length) {
+            reporter.info(`Context compression MCP ${enabled ? "registered in" : "removed from"} ${changed.join(", ")} (tools: enigma_compress/retrieve/stats).`);
+        }
+    };
+
     // Output-compression level (memory section). Resolved before the plan so memoryStatus
     // and the deployed content reflect it. Irrelevant when only skills are installed.
     if (!opts.skillsOnly) await resolveOutputStyle(opts, scope, interactive, reporter);
@@ -690,6 +704,7 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
         applyGhConfig();
         applyBypassConfig();
         applyLintConfig();
+        applyMcpConfig();
         await maybeOfferGitHooks(interactive, opts);
         reporter.success(`Everything up-to-date - ${nSkip} item(s) unchanged${nKept ? `, ${nKept} kept modified` : ""} (${scope}).`);
         return;
@@ -756,6 +771,7 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
     applyGhConfig();
     applyBypassConfig();
     applyLintConfig();
+    applyMcpConfig();
     await maybeOfferGitHooks(interactive, opts);
     reporter.success(`${nInstall} installed, ${nUpdate} updated/overwritten` +
         (nRemove ? `, ${nRemove} removed` : "") + (nSkip ? `, ${nSkip} unchanged` : "") +
@@ -838,7 +854,8 @@ export function syncDeployed(agentNames?: string[]): string[] {
             const target = agent.targets[scope];
             if (!target || !hasDeployment(agent, scope)) continue;
             const changed = syncTarget(target, inspectMemory(agent), skills, commands, false);
-            if (changed) notices.push(`${agent.label}: ${changed} item(s) updated (${scope})`);
+            const mcpChanged = applyMcpForAgent(agent.name, scope);
+            if (changed || mcpChanged) notices.push(`${agent.label}: ${changed + (mcpChanged ? 1 : 0)} item(s) updated (${scope})`);
         }
     }
     return notices;
@@ -933,5 +950,7 @@ export function syncAccount(toolName: string, dir: string): string[] {
     const changed = syncTarget(target, inspectMemory(agent), currentSkillSet(), bundledCommands(), true);
     mirrorAccountSettings(toolName, dir);
     mirrorLintWiring(toolName, dir);
-    return changed ? [`${agent.label}: ${changed} item(s) updated (account)`] : [];
+    const mcpChanged = applyMcpForAccount(toolName, dir);
+    const total = changed + (mcpChanged ? 1 : 0);
+    return total ? [`${agent.label}: ${total} item(s) updated (account)`] : [];
 }

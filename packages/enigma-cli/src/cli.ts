@@ -6,8 +6,11 @@
 
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { readFileSync } from "node:fs";
 import * as p from "@clack/prompts";
 import { readJson } from "./util";
+import { compress, retrieve, readStats } from "./compress";
+import type { ContentType } from "./compress";
 import { collectReporter } from "./reporter";
 import {
     checkSources, discardSkill, hasAccountDeployment, hasDeployment, installSkills,
@@ -41,7 +44,7 @@ const PKG = readJson<{ version?: string }>(join(__dirname, "..", "package.json")
 // Fixed commands plus one launch command per supported tool (e.g. `enigma claude`).
 const COMMANDS = new Set<string>([
     "install", "update", "security", "guard", "seal", "check", "config", "account", "accounts",
-    "profile", "profiles", "skill", "skills", "issue", "improve", "statusline", "help", "version",
+    "profile", "profiles", "skill", "skills", "issue", "improve", "compress", "mcp", "statusline", "help", "version",
     ...TOOL_NAMES,
 ]);
 
@@ -57,6 +60,12 @@ interface CliOptions extends InstallOptions {
     login: boolean;
     help: boolean;
     version: boolean;
+    /** `compress`: print cumulative savings instead of compressing. */
+    stats: boolean;
+    /** `compress`: retrieve the original behind a CCR hash instead of compressing. */
+    retrieve: string | null;
+    /** `compress`: force a content type instead of auto-detecting. */
+    compressType: string | null;
 }
 
 function parseArgs(argv: string[]): CliOptions {
@@ -66,6 +75,7 @@ function parseArgs(argv: string[]): CliOptions {
         skillsOnly: false, memoryOnly: false, prune: true, keepModified: false,
         bypass: null, noBypass: false, outputStyle: null, minimalCode: null,
         force: false, all: false, yes: false, login: false, dryRun: false, help: false, version: false,
+        stats: false, retrieve: null, compressType: null,
     };
     for (let i = 0; i < argv.length; i++) {
         const a = argv[i]!;
@@ -91,6 +101,9 @@ function parseArgs(argv: string[]): CliOptions {
             case "--no-bypass": opts.noBypass = true; break;
             case "--output-style": opts.outputStyle = next(); break;
             case "--minimal-code": opts.minimalCode = next(); break;
+            case "--stats": opts.stats = true; break;
+            case "--retrieve": opts.retrieve = next(); break;
+            case "--type": opts.compressType = next(); break;
             case "--force": opts.force = true; break;
             case "--login": opts.login = true; break;
             case "-y": case "--yes": opts.yes = true; break;
@@ -155,6 +168,12 @@ Commands:
                        detected agents autocompleted; default: bug)
   improve [--help]     Explain the /improve slash command (it runs inside your
                        agent - Claude Code, Codex, OpenCode - not in this CLI)
+  compress [file]      Compress JSON/logs/text to fewer tokens (reversible via CCR);
+                       reads a file or stdin. --retrieve <hash> restores an original,
+                       --stats shows cumulative savings, --type forces the content type
+  mcp                  Run the context-compression MCP server over stdio (tools:
+                       enigma_compress, enigma_retrieve, enigma_stats). Usually launched
+                       by an agent, not by hand; enable deployment with 'config compress on'
   seal                 Maintenance: (re)compute skill content hashes
   check                Integrity gate: verify skills are well-formed and sealed
   statusline           Print the [ENIGMA] badge for an agent status bar (shows the active level)
@@ -162,8 +181,9 @@ Commands:
 
 Config keys: commit-emoji, update-notifier, auto-sync, remote-skills, fullscreen,
              parallel-subagents, output-style (off|lite|full|ultra),
-             minimal-code (off|lite|full|ultra), claude-attribution, claude-survey,
-             gh-telemetry, permission-bypass, bypass-claude, bypass-codex, bypass-opencode
+             minimal-code (off|lite|full|ultra), compress, claude-attribution,
+             claude-survey, gh-telemetry, permission-bypass, bypass-claude,
+             bypass-codex, bypass-opencode
 
 Install options:
   -g, --global         Install at user level
@@ -533,6 +553,39 @@ async function runIssueCli(kindArg: string | undefined, version: string, interac
 }
 
 /**
+ * `enigma compress [file]` surface: compress content with the native engine and
+ * print the result to stdout (savings to stderr, so the output stays pipeable).
+ * Reads a file argument, or stdin when given `-` or nothing. `--retrieve <hash>`
+ * restores a CCR original; `--stats` prints cumulative savings. Returns an exit code.
+ */
+function runCompressCli(opts: CliOptions): number {
+    if (opts.retrieve) {
+        const original = retrieve(opts.retrieve);
+        if (original === null) { console.error(`No cached original for hash '${opts.retrieve}'.`); return 1; }
+        process.stdout.write(original);
+        return 0;
+    }
+    if (opts.stats) {
+        const s = readStats();
+        const pct = s.tokensBefore ? Math.round((s.tokensSaved / s.tokensBefore) * 100) : 0;
+        console.log(`calls: ${s.calls}\ntokens before: ${s.tokensBefore}\ntokens after: ${s.tokensAfter}\ntokens saved: ${s.tokensSaved} (${pct}%)`);
+        return 0;
+    }
+    const file = opts.positionals[0];
+    let content: string;
+    try { content = (!file || file === "-") ? readFileSync(0, "utf8") : readFileSync(file, "utf8"); }
+    catch (err) { console.error(`Cannot read input: ${(err as Error).message}`); return 1; }
+
+    const type = (opts.compressType as ContentType | null) ?? undefined;
+    const r = compress(content, { type });
+    process.stdout.write(r.compressed);
+    if (!r.compressed.endsWith("\n")) process.stdout.write("\n");
+    const pct = r.tokensBefore ? Math.round((r.tokensSaved / r.tokensBefore) * 100) : 0;
+    console.error(`enigma compress: ${r.contentType}, ${r.tokensBefore} -> ${r.tokensAfter} tokens (${pct}% saved${r.ccrHash ? `, retrieve with: enigma compress --retrieve ${r.ccrHash}` : ""}).`);
+    return 0;
+}
+
+/**
  * Print the [ENIGMA] status badge for an agent status bar (e.g. Claude Code's
  * statusLine). Always shows `[ENIGMA]`; when token-efficient output is active it
  * appends the level, e.g. `[ENIGMA:FULL]` / `[ENIGMA:ULTRA]`. Amber unless NO_COLOR.
@@ -556,6 +609,13 @@ export async function run(argv: string[]): Promise<void> {
     // Hidden: the detached background linter install kicked off when auto-lint is
     // enabled (spawnLinterInstall). Silent, best-effort; the runner self-heals.
     if (argv[0] === "__lint-install") { ensureLinterInstalled(); return; }
+    // MCP stdio server: stdout is the JSON-RPC channel, so dispatch BEFORE any clack
+    // intro/notice/parse noise and never print to stdout from here on.
+    if (argv[0] === "mcp") {
+        const { runMcpServer } = await import("./mcp");
+        await runMcpServer(process.env.ENIGMA_VERSION || PKG.version || "0.0.0");
+        return;
+    }
     const opts = parseArgs(argv);
     const interactive = Boolean(process.stdout.isTTY) && !opts.yes;
     const version = process.env.ENIGMA_VERSION || PKG.version || "0.0.0";
@@ -586,6 +646,7 @@ export async function run(argv: string[]): Promise<void> {
     if (opts.command === "profile") { process.exit(await runProfileCli(opts, interactive)); }
     if (opts.command === "skills") { process.exit(runSkillsCli(opts)); }
     if (opts.command === "issue") { process.exit(await runIssueCli(opts.positionals[0], version, interactive)); }
+    if (opts.command === "compress") { process.exit(runCompressCli(opts)); }
 
     if (opts.command === "update") {
         p.intro("enigma - update");

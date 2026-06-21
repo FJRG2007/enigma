@@ -136,6 +136,7 @@ const RAW_CATEGORIES: Category[] = [
             enigmaToggle("parallel-subagents", "parallelSubagents", "Parallel sub-agents", "let agents split long tasks across sub-agents running in parallel; edits the memory file - restart your agent to apply", true),
             enigmaChoice("output-style", "outputStyle", "Token-efficient output", "compress prose replies (off|lite|full|ultra); on = full; edits the memory file - restart your agent to apply", OUTPUT_STYLES, "full", true),
             enigmaChoice("minimal-code", "minimalCode", "Minimal code (anti-overengineering)", "prefer the laziest solution that works (off|lite|full|ultra); on = full; edits the memory file - restart your agent to apply", MINIMAL_CODE_LEVELS, "full", true),
+            enigmaToggle("compress", "compress", "Context compression MCP", "deploy enigma's token-compression MCP server (enigma_compress/retrieve/stats) into managed agents; off removes it; enigma default: off"),
             {
                 key: "auto-lint",
                 label: "Auto-lint on edit",
