@@ -545,21 +545,36 @@
             const reset = w.kind === "session"
                 ? (w.resetsAt ? "Resets " + fmtResetIn(w.resetsAt) : "No active session")
                 : (w.resetsAt ? fmtResetAt(w.resetsAt) : "");
-            let body;
-            if (sub === "weeklySonnet" && (w.used || 0) === 0) {
-                body = '<div class="wval muted">You haven\'t used Sonnet yet</div>';
-            } else if (w.pct != null) {
-                const p = Math.round(w.pct);
-                const col = w.pct >= 90 ? "var(--accent2)" : "var(--accent)";
-                body = '<div class="wval">' + p + '% used</div>'
-                    + '<div class="bar-track" style="margin-top:8px"><div class="bar-fill" style="width:' + Math.min(100, w.pct) + '%;background:' + col + '"></div></div>';
-            } else {
-                body = '<div class="wval">' + fmt(w.used || 0) + ' tok</div>'
-                    + '<div class="wset"><input type="number" min="0" class="wlimit" data-plan="' + sub + '" placeholder="set limit (tokens)">'
-                    + '<button type="button" class="laddb" data-plan="' + sub + '">Set</button></div>';
-            }
             const live = w.live ? ' <span class="tag meas">live</span>' : "";
-            return '<div class="wcard"><div class="wtitle">' + esc(w.label) + live + '</div><div class="wreset">' + esc(reset) + '</div>' + body + '</div>';
+            const span = w.kind === "session" ? 5 * 3600000 : 7 * 86400000;
+            const head = '<div class="wcard"><div class="wtitle">' + esc(w.label) + live + '</div><div class="wreset">' + esc(reset) + '</div>';
+            if (sub === "weeklySonnet" && (w.used || 0) === 0 && w.pct == null) {
+                return head + '<div class="wval muted">You haven\'t used Sonnet yet</div></div>';
+            }
+            // Every card shows a bar: the real usage % when known (live or vs a set limit),
+            // otherwise how much of the window has elapsed in time - so the weekly card has a
+            // bar even before the proxy has captured live limits.
+            let barPct, barCol, barNote, valLine;
+            if (w.pct != null) {
+                barPct = Math.min(100, w.pct);
+                barCol = w.pct >= 90 ? "var(--accent2)" : "var(--accent)";
+                barNote = (w.live ? "live · " : "") + fmt(w.used || 0) + " tok";
+                valLine = Math.round(w.pct) + "% used";
+            } else if (w.resetsAt) {
+                const start = w.resetsAt - span;
+                barPct = Math.max(0, Math.min(100, (Date.now() - start) / span * 100));
+                barCol = "var(--muted)";
+                barNote = "window " + Math.round(barPct) + "% elapsed";
+                valLine = fmt(w.used || 0) + " tok";
+            } else {
+                barPct = 0; barCol = "var(--muted)"; barNote = ""; valLine = fmt(w.used || 0) + " tok";
+            }
+            const bar = '<div class="bar-track" style="margin-top:8px"><div class="bar-fill" style="width:' + barPct + '%;background:' + barCol + '"></div></div>'
+                + (barNote ? '<div class="wreset" style="margin-top:4px">' + esc(barNote) + "</div>" : "");
+            const setter = w.pct == null
+                ? '<div class="wset"><input type="number" min="0" class="wlimit" data-plan="' + sub + '" placeholder="set limit for %"><button type="button" class="laddb" data-plan="' + sub + '">Set</button></div>'
+                : "";
+            return head + '<div class="wval">' + valLine + "</div>" + bar + setter + "</div>";
         }
         function renderWindows(u) {
             const w = u && u.windows;
