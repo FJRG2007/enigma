@@ -37,6 +37,9 @@ jobs:
       - name: Test usage observer
         run: bun test tests/usage.test.ts
         working-directory: packages/enigma-cli
+      - name: Test measuring proxy
+        run: bun test tests/proxy.test.ts
+        working-directory: packages/enigma-cli
 
       # The package must build (tsup) so dist is publishable.
       - name: Build

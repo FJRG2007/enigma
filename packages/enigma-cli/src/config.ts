@@ -69,6 +69,8 @@ export interface EnigmaConfig {
     tokenSpeed: number;
     /** Read the agent's own session transcripts for real token usage + cache savings (opt-in). */
     usageStats: boolean;
+    /** Experimental: route `enigma claude` through a local measuring proxy (opt-in, default off, Claude Code only). */
+    proxy: boolean;
     /** Agents the user explicitly opted out of bypass; never auto-enabled even when permissionBypass is on. */
     bypassDisabled: string[];
     /** Skills the user discarded: removed from deployments and skipped by installs/updates until restored. */
@@ -118,7 +120,7 @@ export interface EnigmaConfig {
  */
 export const CONFIG_DEFAULTS: EnigmaConfig = {
     commitEmoji: true, updateNotifier: true, fullscreen: true, parallelSubagents: false, outputStyle: "off", minimalCode: "full",
-    autoSync: true, remoteSkills: true, permissionBypass: true, autoLint: false, compress: false, dashboard: "off", tokenPrice: 0, tokenSpeed: 0, usageStats: false, bypassDisabled: [], discardedSkills: [],
+    autoSync: true, remoteSkills: true, permissionBypass: true, autoLint: false, compress: false, dashboard: "off", tokenPrice: 0, tokenSpeed: 0, usageStats: false, proxy: false, bypassDisabled: [], discardedSkills: [],
 };
 
 export type EnigmaConfigKey = keyof EnigmaConfig;

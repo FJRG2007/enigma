@@ -173,9 +173,13 @@
         </div>
 
         <div class="panel">
-            <h2 style="margin-bottom:4px">Enigma Systems <small>what's active - configuration, not savings</small></h2>
+            <div class="panel-head">
+                <h2>Enigma Systems <small>what's active - configuration, not savings</small></h2>
+                <div class="ctrls"><button id="updateBtn" type="button" class="toggle on">Check &amp; update</button></div>
+            </div>
             <div class="sub" style="margin-bottom:14px">Only Context Compression and (opt-in) real tool-usage are measured for savings below. The rest is shown as state: enigma can't measure their effect because they run inside the agent, not through enigma - so it reports their configuration honestly instead of inventing a number.</div>
             <div id="systems" class="sys-grid"><div class="empty" style="padding:16px 0">Loading...</div></div>
+            <div id="updateNote" class="set-note"></div>
         </div>
 
         <div class="panel">
@@ -721,16 +725,38 @@
             const skillTags = '<span class="tag">' + (sk.enigma || 0) + " enigma</span>"
                 + '<span class="tag ext">' + (sk.external || 0) + " external</span>"
                 + ((sk.disabled || 0) ? '<span class="tag">' + sk.disabled + " disabled</span>" : "");
+            const sec = s.security || {};
+            const ps = s.proxyStats || {};
+            const proxyMeasured = (ps.calls || 0) > 0
+                ? item("Proxy measured · real", '<span class="tag">' + fmt(ps.calls) + " calls</span><span class=\"tag\">"
+                    + fmt(ps.input) + " in</span><span class=\"tag\">" + fmt(ps.output) + " out</span><span class=\"tag\">" + fmt(ps.cacheRead) + " cache</span>")
+                : "";
+            const guard = (sec.guardProtects || []).map((p) => '<span class="tag">' + esc(p) + "</span>").join("");
             el.innerHTML =
                   item("Context compression (MCP) · measured", boolPill(s.compress))
                 + item("Real tool-usage stats · measured", boolPill(s.usageStats))
+                + item("Claude Code measuring proxy · experimental", boolPill(s.proxy))
+                + proxyMeasured
                 + item("Token-efficient output", levelPill(s.outputStyle))
                 + item("Minimal code", levelPill(s.minimalCode))
                 + item("Parallel sub-agents", boolPill(s.parallelSubagents))
                 + item("Auto-lint on edit", boolPill(s.autoLint))
                 + item("Commit emoji", boolPill(s.commitEmoji))
                 + item("Local dashboard", pill(s.dashboard === "off" ? "off" : "lvl", s.dashboard || "off"))
+                + item("Permission bypass (security)", boolPill(sec.permissionBypass))
+                + item("Commit guard blocks", guard || '<span class="tag">set up with enigma security</span>')
                 + item("Skills", skillTags);
+        }
+
+        async function runUpdate() {
+            $("updateNote").textContent = "Checking for updates...";
+            try {
+                const res = await fetch("/api/update", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+                const out = await res.json();
+                $("updateNote").textContent = out.ok ? (out.note || "Updated.") : ("Update failed: " + (out.error || "error"));
+                loadSystems();
+                if (skillsLoaded) loadSkills();
+            } catch { $("updateNote").textContent = "Could not reach the server to update."; }
         }
 
         async function loadSystems() {
@@ -854,6 +880,7 @@
         document.addEventListener("visibilitychange", () => { if (!document.hidden) poll(); });
         wireSettings();
         wireSkills();
+        $("updateBtn").addEventListener("click", runUpdate);
         window.addEventListener("hashchange", route);
         route();
     </script>

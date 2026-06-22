@@ -500,6 +500,23 @@ you never use the dashboard, that bundle is never downloaded. `enigma config das
 is a complete teardown: it stops any background daemon **and** removes the `enigma` hosts-file
 entry, so nothing is left behind. Re-enable it whenever you like with `on-demand` or `always`.
 
+The Savings page also shows an **Enigma Systems** overview (which systems are active and how
+they're configured - only Context Compression and the opt-in usage/proxy stats are *measured*;
+the rest is shown as state, never invented savings), a **Check & update** button (refreshes
+skills and the dashboard UI in place; a CLI bump still needs `enigma update` in a terminal),
+and the **Skills** subpage to view/edit/enable/disable/remove skills and check for updates.
+
+### Measuring proxy (experimental, opt-in, Claude Code only)
+
+`enigma config proxy on` makes `enigma claude` route Claude Code through a local loopback
+proxy that forwards every request verbatim to Anthropic and streams the response straight
+back, reading only the token usage to record **real** measurements (no estimates). It is
+**off by default** and deliberately conservative: a faithful pass-through (no content or
+cache rewriting), it never stores auth headers or message content, binds 127.0.0.1 only,
+and falls back to a direct launch if it can't start. It applies only to launches via
+`enigma claude` (it injects `ANTHROPIC_BASE_URL` for that process only) and only to Claude
+Code. Leave it off until you've confirmed it works for your setup.
+
 You can also configure enigma **from the dashboard itself**: the **Enigma Settings** panel
 exposes the same options as the terminal UI (`enigma config`), editable in the browser.
 Writes apply immediately at global scope; memory-affecting toggles prompt for an agent

@@ -10,6 +10,7 @@
 
 import { readConfig } from "./config";
 import { skillsReport } from "./skills";
+import { readProxyStats } from "./proxy";
 
 export interface SystemsStatus {
     /** Context-compression MCP deployed into agents. */
@@ -28,9 +29,18 @@ export interface SystemsStatus {
     dashboard: string;
     /** Commit-subject emoji. */
     commitEmoji: boolean;
+    /** Experimental Claude Code measuring proxy enabled. */
+    proxy: boolean;
+    /** Real token usage measured by the proxy so far (zeros when it has never run). */
+    proxyStats: { calls: number; input: number; output: number; cacheRead: number; cacheCreation: number };
+    /** Security posture: permission-bypass state + the commit guard's fixed protections. */
+    security: { permissionBypass: boolean; bypassDisabled: string[]; guardProtects: string[] };
     /** Skill counts across installed agents. */
     skills: { total: number; enigma: number; external: number; disabled: number };
 }
+
+/** What enigma's commit guard blocks from being committed (fixed behavior; per-repo opt-outs aside). */
+const GUARD_PROTECTS = ["API keys / tokens", "private keys (.pem)", ".env files", "node_modules"];
 
 /** Read the current configured state of every enigma system, plus skill counts. */
 export function systemsStatus(): SystemsStatus {
@@ -45,6 +55,9 @@ export function systemsStatus(): SystemsStatus {
         usageStats: c.usageStats,
         dashboard: c.dashboard,
         commitEmoji: c.commitEmoji,
+        proxy: c.proxy,
+        proxyStats: (() => { const p = readProxyStats(); return { calls: p.calls, input: p.input, output: p.output, cacheRead: p.cacheRead, cacheCreation: p.cacheCreation }; })(),
+        security: { permissionBypass: c.permissionBypass, bypassDisabled: c.bypassDisabled || [], guardProtects: GUARD_PROTECTS },
         skills: {
             total: skills.length,
             enigma: skills.filter((s) => s.source === "enigma").length,

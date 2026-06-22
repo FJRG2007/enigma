@@ -228,6 +228,27 @@ function writeSetting(req: import("node:http").IncomingMessage, res: import("nod
     });
 }
 
+/**
+ * Check for and apply updates that are safe to do in-process: refresh skills from GitHub,
+ * re-sync deployments, and refresh the dashboard UI bundle. The enigma-cli binary itself is
+ * NOT updated here (npm cannot replace a running binary on Windows) - the response reports
+ * the running version so the UI can point the user at `enigma update` for a CLI bump.
+ */
+function serveUpdate(res: import("node:http").ServerResponse): void {
+    Promise.all([import("./skills"), import("./dashboard-pkg")])
+        .then(async ([skills, pkg]) => {
+            const { updated, synced } = await skills.checkAndUpdateSkills();
+            pkg.refreshDashboardPkg();
+            const parts: string[] = [];
+            if (updated.length) parts.push(`skills updated: ${updated.join(", ")}`);
+            else if (synced.length) parts.push(`skills re-synced: ${synced.join(", ")}`);
+            parts.push("dashboard UI refreshed");
+            res.writeHead(200, JSON_HDR);
+            res.end(JSON.stringify({ ok: true, version: process.env.ENIGMA_VERSION || "", note: parts.join("; ") + ". For a CLI update run `enigma update` in a terminal." }));
+        })
+        .catch(() => { res.writeHead(500, JSON_HDR); res.end('{"ok":false,"error":"update failed"}'); });
+}
+
 /** Factual "what's active" overview (configured state of each enigma system + skill counts). */
 function serveStatus(res: import("node:http").ServerResponse): void {
     import("./dashboard-status")
@@ -273,6 +294,11 @@ function createDashboardServer(version: string): Server {
             if (!isLocalRequest(req)) { res.writeHead(403, JSON_HDR); res.end('{"error":"forbidden"}'); return; }
             if (method === "GET") { serveSkills(res); return; }
             if (method === "POST") { writeSkill(req, res); return; }
+            res.writeHead(405).end(); return;
+        }
+        if (url === "/api/update") {
+            if (!isLocalRequest(req)) { res.writeHead(403, JSON_HDR); res.end('{"error":"forbidden"}'); return; }
+            if (method === "POST") { serveUpdate(res); return; }
             res.writeHead(405).end(); return;
         }
         if (method !== "GET") { res.writeHead(405).end(); return; }

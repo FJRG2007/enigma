@@ -90,11 +90,14 @@ test("status API reports the configured state of each system", async () => {
     try {
         const res = await fetch(`${base}/api/status`);
         expect(res.status).toBe(200);
-        const data = await res.json() as { systems: { compress: boolean; outputStyle: string; minimalCode: string; skills: { enigma: number } } };
+        const data = await res.json() as { systems: { compress: boolean; outputStyle: string; minimalCode: string; proxy: boolean; proxyStats: { calls: number }; security: { guardProtects: string[] }; skills: { enigma: number } } };
         const s = data.systems;
         expect(typeof s.compress).toBe("boolean");
         expect(typeof s.outputStyle).toBe("string");
         expect(typeof s.minimalCode).toBe("string");
+        expect(typeof s.proxy).toBe("boolean");
+        expect(typeof s.proxyStats.calls).toBe("number");
+        expect(Array.isArray(s.security.guardProtects)).toBe(true);
         // The 17 bundled enigma skills are always known, even with no agents installed.
         expect(s.skills.enigma).toBeGreaterThanOrEqual(1);
     } finally {

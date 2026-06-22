@@ -192,6 +192,14 @@ const RAW_CATEGORIES: Category[] = [
                 read: () => readConfig().config.usageStats,
                 write: (value, scope) => ({ path: setEnigmaToggle("usageStats", value, scope), changed: true }),
             },
+            {
+                key: "proxy",
+                label: "Claude Code measuring proxy (experimental)",
+                hint: "route `enigma claude` through a local loopback proxy that forwards to Anthropic and measures real token usage; never stores auth or message content; Claude Code only; enigma default: off",
+                globalOnly: true,
+                read: () => readConfig().config.proxy,
+                write: (value, scope) => ({ path: setEnigmaToggle("proxy", value, scope), changed: true }),
+            },
         ],
     },
     {
