@@ -239,6 +239,9 @@ function serveUpdate(res: import("node:http").ServerResponse): void {
         .then(async ([skills, pkg]) => {
             const { updated, synced } = await skills.checkAndUpdateSkills();
             pkg.refreshDashboardPkg();
+            // The UI bundle may have changed; drop the in-memory cache so the next page load
+            // (the client reloads after a successful update) serves the new HTML/chart assets.
+            htmlCache = null; libCache = null;
             const parts: string[] = [];
             if (updated.length) parts.push(`skills updated: ${updated.join(", ")}`);
             else if (synced.length) parts.push(`skills re-synced: ${synced.join(", ")}`);

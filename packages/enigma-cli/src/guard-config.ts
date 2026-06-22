@@ -19,7 +19,7 @@ export interface GuardProtection { value: GuardKey; label: string; hint: string;
 
 /** All toggleable guard protections, in display order (shared by `enigma security`, the registry and the dashboard). */
 export const GUARD_PROTECTIONS: GuardProtection[] = [
-    { value: "secrets", label: "Block committed secrets", hint: "API keys, tokens, private keys" },
+    { value: "secrets", label: "Block committed secrets", hint: "API keys, tokens, and private-key / keystore files (.pem, .key, .p12, .pfx, .jks, id_rsa)" },
     { value: "envFiles", label: "Block .env files", hint: "allows .env.example / .sample / .template" },
     { value: "depDirs", label: "Block dependency/cache dirs", hint: "node_modules, __pycache__, venv" },
     { value: "generatedDirs", label: "Warn on generated dirs", hint: "dist, build, .next, coverage" },

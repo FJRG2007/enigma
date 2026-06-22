@@ -118,6 +118,8 @@
         }
         .tag.ext { color: var(--accent2); }
         .tag.warn { color: var(--accent); border-color: var(--accent); }
+        .tag.exp { color: var(--accent); border-color: var(--accent); background: rgba(224,164,88,0.10); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
+        .tag.meas { color: var(--good); border-color: var(--good); background: rgba(111,207,151,0.10); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
         .editor {
             width: 100%; min-height: 360px; resize: vertical; background: var(--surface2); color: var(--text);
             border: 1px solid var(--border); border-radius: 8px; padding: 12px;
@@ -669,6 +671,15 @@
         // --- settings subpage (mirrors the TUI registry over /api/settings) ---
         function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
 
+        // Turn "(experimental)" and " · measured/experimental" label suffixes into visual badges.
+        function labelWithBadges(text) {
+            let name = String(text);
+            const badges = [];
+            if (/\(experimental\)/i.test(name)) { name = name.replace(/\s*\(experimental\)/i, ""); badges.push(["experimental", "exp"]); }
+            name = name.replace(/\s*·\s*(measured|experimental)\b/gi, (_, w) => { badges.push([w.toLowerCase(), w.toLowerCase() === "experimental" ? "exp" : "meas"]); return ""; });
+            return esc(name) + badges.map(([t, c]) => ' <span class="tag ' + c + '">' + esc(t) + "</span>").join("");
+        }
+
         function settingRow(s) {
             const ctl = s.choices
                 ? '<select class="choice" data-skey="' + esc(s.key) + '">'
@@ -676,7 +687,7 @@
                     + "</select>"
                 : '<button type="button" class="toggle' + (s.value ? " on" : "") + '" data-skey="' + esc(s.key)
                     + '" data-kind="bool" data-on="' + (s.value ? 1 : 0) + '">' + (s.value ? "On" : "Off") + "</button>";
-            return '<div class="set-row"><div class="set-meta"><div class="set-name">' + esc(s.label) + "</div>"
+            return '<div class="set-row"><div class="set-meta"><div class="set-name">' + labelWithBadges(s.label) + "</div>"
                 + '<div class="set-hint">' + esc(s.hint) + (s.globalOnly ? " · global" : "") + "</div></div>"
                 + '<div class="set-ctl">' + ctl + "</div></div>";
         }
@@ -732,7 +743,7 @@
         function renderSystems(s) {
             const el = $("systems");
             if (!s) { el.innerHTML = '<div class="empty" style="padding:16px 0">Status unavailable.</div>'; return; }
-            const item = (k, v) => '<div class="sys-item"><span class="k">' + k + '</span><span class="v">' + v + "</span></div>";
+            const item = (k, v) => '<div class="sys-item"><span class="k">' + labelWithBadges(k) + '</span><span class="v">' + v + "</span></div>";
             const sk = s.skills || {};
             const skillTags = '<span class="tag">' + (sk.enigma || 0) + " enigma</span>"
                 + '<span class="tag ext">' + (sk.external || 0) + " external</span>"
@@ -765,9 +776,11 @@
             try {
                 const res = await fetch("/api/update", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
                 const out = await res.json();
-                $("updateNote").textContent = out.ok ? (out.note || "Updated.") : ("Update failed: " + (out.error || "error"));
-                loadSystems();
-                if (skillsLoaded) loadSkills();
+                if (!out.ok) { $("updateNote").textContent = "Update failed: " + (out.error || "error"); return; }
+                // The UI bundle may have been refreshed server-side; reload so the browser
+                // picks up the new dashboard and fresh data automatically.
+                $("updateNote").textContent = (out.note || "Updated.") + " Refreshing the dashboard...";
+                setTimeout(() => location.reload(), 1200);
             } catch { $("updateNote").textContent = "Could not reach the server to update."; }
         }
 

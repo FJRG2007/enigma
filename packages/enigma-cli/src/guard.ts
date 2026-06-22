@@ -42,6 +42,11 @@ const WARN_DIRS = [
 ];
 const WARN_FILES = [/\.log$/i, /(^|\/)\.DS_Store$/, /(^|\/)Thumbs\.db$/i];
 
+// Private-key / keystore files blocked by NAME (under the `secrets` protection), regardless
+// of content - catches text PEMs AND binary keystores (.p12/.pfx/.jks) that the content scan
+// skips as binary. Public material (.pub/.crt/.cer) is intentionally not blocked.
+const KEY_FILES = /(?:^|\/)(?:id_rsa|id_dsa|id_ecdsa|id_ed25519)$|\.(?:pem|key|p12|pfx|pkcs12|keystore|jks|ppk)$/i;
+
 const SECRET_SKIP_EXT = new Set([
     ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".pdf", ".zip", ".gz",
     ".woff", ".woff2", ".ttf", ".eot", ".mp4", ".mov", ".lock",
@@ -132,7 +137,11 @@ export function runGuard({ all = false }: { all?: boolean } = {}): GuardResult {
         }
         if (cfg.junkFiles && WARN_FILES.some((re) => re.test(file))) warns.push(`${file}  [log / OS junk file]`);
         if (cfg.largeFiles) { try { if (statSync(file).size > LARGE_FILE_BYTES) warns.push(`${file}  [larger than 5 MB]`); } catch { /* gone */ } }
-        if (cfg.secrets) scanSecrets(file, blocks);
+        if (cfg.secrets) {
+            // Key/keystore files are blocked by name; everything else is content-scanned.
+            if (KEY_FILES.test(file)) blocks.push(`${file}  [private key / keystore file - must not be committed]`);
+            else scanSecrets(file, blocks);
+        }
     }
     return { ok: blocks.length === 0, blocks, warns, count: files.length, all };
 }
