@@ -11,7 +11,9 @@
 
 import { AGENTS } from "./agents";
 import { isAutoLintOn, setAutoLint } from "./lint";
-import { readConfig, setEnigmaToggle, setEnigmaValue, OUTPUT_STYLES, MINIMAL_CODE_LEVELS } from "./config";
+import { readConfig, setEnigmaToggle, setEnigmaValue, OUTPUT_STYLES, MINIMAL_CODE_LEVELS, DASHBOARD_MODES } from "./config";
+import { applyDashboardMode } from "./dashboard";
+import type { DashboardMode } from "./config";
 import { getClaudeAttribution, setClaudeAttribution, getClaudeFeedbackSurvey, setClaudeFeedbackSurvey } from "./claude";
 import { getGhTelemetryCached, setGhTelemetry } from "./github";
 import { BYPASS_SUPPORTED, getBypass, setBypass } from "./permissions";
@@ -89,6 +91,13 @@ function enigmaChoice(
     };
 }
 
+/** Persist the dashboard mode and apply its side effects (hosts entry, daemon). */
+function setDashboard(value: string, scope: Scope): ApplyResult {
+    const path = setEnigmaValue("dashboard", value, scope);
+    applyDashboardMode(value as DashboardMode);
+    return { path, changed: true };
+}
+
 // --- render-speed read cache (SWR) ----------------------------------------------
 // The TUI re-reads every visible setting on every render (display value, dirty
 // diffing, save comparison), and each underlying read hits disk (or spawns gh).
@@ -143,6 +152,23 @@ const RAW_CATEGORIES: Category[] = [
                 hint: "auto-fix edited files and surface only unfixable findings; on enable installs @enigmax/linter and wires a post-write hook (Claude + opencode); enigma default: off",
                 read: () => isAutoLintOn(),
                 write: (value, scope) => ({ path: setAutoLint(scope, value), changed: true }),
+            },
+        ],
+    },
+    {
+        title: "Local dashboard",
+        blurb: "browser dashboard for the token savings of the compression engine",
+        settings: [
+            {
+                key: "dashboard",
+                label: "Local savings dashboard",
+                hint: "open it with 'enigma dashboard' at http://enigma; off | on-demand (runs only while open, no idle cost; default when enabled) | always (lightweight background daemon)",
+                choices: DASHBOARD_MODES,
+                offChoice: "off",
+                read: () => readConfig().config.dashboard !== "off",
+                write: (value, scope) => setDashboard(value ? "on-demand" : "off", scope),
+                readChoice: () => readConfig().config.dashboard,
+                writeChoice: (value, scope) => setDashboard(value, scope),
             },
         ],
     },

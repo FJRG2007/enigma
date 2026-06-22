@@ -27,6 +27,7 @@ import { readConfig } from "./config";
 import { checkLatestNow, getAvailableUpdate, notifyUpdate, performUpdateCheck, runUpdate } from "./update";
 import { buildIssueUrl, openUrl } from "./issue";
 import type { IssueKind } from "./issue";
+import { dashboardUrl, ensureHostsEntry, runningDaemon, serveDashboardDaemon, startDashboardServer } from "./dashboard";
 import {
     DEFAULT_NAME, DEFAULT_TOOL, TOOL_NAMES, addAccount, addProfile, getActive, getTool,
     isToolName, launchTool, listAccounts, listProfiles, loginTool, removeAccount,
@@ -44,7 +45,7 @@ const PKG = readJson<{ version?: string }>(join(__dirname, "..", "package.json")
 // Fixed commands plus one launch command per supported tool (e.g. `enigma claude`).
 const COMMANDS = new Set<string>([
     "install", "update", "security", "guard", "seal", "check", "config", "account", "accounts",
-    "profile", "profiles", "skill", "skills", "issue", "improve", "compress", "mcp", "statusline", "help", "version",
+    "profile", "profiles", "skill", "skills", "issue", "improve", "compress", "mcp", "dashboard", "dash", "statusline", "help", "version",
     ...TOOL_NAMES,
 ]);
 
@@ -73,7 +74,7 @@ function parseArgs(argv: string[]): CliOptions {
         command: null, positionals: [], passthrough: [], tool: DEFAULT_TOOL,
         scope: null, agents: [], allAgents: false, skills: [],
         skillsOnly: false, memoryOnly: false, prune: true, keepModified: false,
-        bypass: null, noBypass: false, outputStyle: null, minimalCode: null,
+        bypass: null, noBypass: false, outputStyle: null, minimalCode: null, dashboard: null,
         force: false, all: false, yes: false, login: false, dryRun: false, help: false, version: false,
         stats: false, retrieve: null, compressType: null,
     };
@@ -81,7 +82,7 @@ function parseArgs(argv: string[]): CliOptions {
         const a = argv[i]!;
         const next = (): string => argv[++i]!;
         if (i === 0 && COMMANDS.has(a)) {
-            opts.command = a === "accounts" ? "account" : a === "profiles" ? "profile" : a === "skill" ? "skills" : a;
+            opts.command = a === "accounts" ? "account" : a === "profiles" ? "profile" : a === "skill" ? "skills" : a === "dash" ? "dashboard" : a;
             continue;
         }
         // Everything after a literal `--` is forwarded verbatim (e.g. to Claude Code).
@@ -101,6 +102,7 @@ function parseArgs(argv: string[]): CliOptions {
             case "--no-bypass": opts.noBypass = true; break;
             case "--output-style": opts.outputStyle = next(); break;
             case "--minimal-code": opts.minimalCode = next(); break;
+            case "--dashboard": opts.dashboard = next(); break;
             case "--stats": opts.stats = true; break;
             case "--retrieve": opts.retrieve = next(); break;
             case "--type": opts.compressType = next(); break;
@@ -174,6 +176,9 @@ Commands:
   mcp                  Run the context-compression MCP server over stdio (tools:
                        enigma_compress, enigma_retrieve, enigma_stats). Usually launched
                        by an agent, not by hand; enable deployment with 'config compress on'
+  dashboard, dash      Open the local savings dashboard in your browser (http://enigma,
+                       or http://localhost:24282 if :80/hosts is unavailable). Runs only
+                       while open; 'config dashboard always' keeps a background daemon
   seal                 Maintenance: (re)compute skill content hashes
   check                Integrity gate: verify skills are well-formed and sealed
   statusline           Print the [ENIGMA] badge for an agent status bar (shows the active level)
@@ -586,6 +591,39 @@ function runCompressCli(opts: CliOptions): number {
 }
 
 /**
+ * `enigma dashboard` (alias `dash`): serve the local savings dashboard and open it in
+ * the browser. On-demand by default - the server lives only while this command runs, so
+ * it costs nothing when closed. In "always" mode it just opens the running daemon. Blocks
+ * until Ctrl+C. The dashboard config setting governs the daemon, not this command, which
+ * always works on request.
+ */
+async function runDashboardCli(version: string): Promise<number> {
+    const mode = readConfig().config.dashboard;
+    // Best-effort: map http://enigma -> loopback so the URL is pretty (falls back to
+    // localhost when hosts is unwritable). No-op when the entry already exists.
+    ensureHostsEntry();
+    if (mode === "always") {
+        const daemon = runningDaemon();
+        if (daemon) {
+            console.log(`enigma dashboard (always) -> ${daemon.url}`);
+            openUrl(daemon.url);
+            return 0;
+        }
+    }
+    let server: Awaited<ReturnType<typeof startDashboardServer>>;
+    try { server = await startDashboardServer(version); }
+    catch (err) { console.error(`Could not start the dashboard: ${(err as Error).message}`); return 1; }
+    console.log(`enigma dashboard -> ${server.url}`);
+    console.log("Press Ctrl+C to stop.");
+    openUrl(server.url);
+    return await new Promise<number>((resolveExit) => {
+        const stop = (): void => { server.close(); resolveExit(0); };
+        process.on("SIGINT", stop);
+        process.on("SIGTERM", stop);
+    });
+}
+
+/**
  * Print the [ENIGMA] status badge for an agent status bar (e.g. Claude Code's
  * statusLine). Always shows `[ENIGMA]`; when token-efficient output is active it
  * appends the level, e.g. `[ENIGMA:FULL]` / `[ENIGMA:ULTRA]`. Amber unless NO_COLOR.
@@ -609,6 +647,9 @@ export async function run(argv: string[]): Promise<void> {
     // Hidden: the detached background linter install kicked off when auto-lint is
     // enabled (spawnLinterInstall). Silent, best-effort; the runner self-heals.
     if (argv[0] === "__lint-install") { ensureLinterInstalled(); return; }
+    // Hidden: the detached dashboard daemon (dashboard=always). Serves the savings
+    // dashboard forever and publishes its pidfile. Silent by contract.
+    if (argv[0] === "__dashboard-serve") { await serveDashboardDaemon(process.env.ENIGMA_VERSION || PKG.version || "0.0.0"); return; }
     // MCP stdio server: stdout is the JSON-RPC channel, so dispatch BEFORE any clack
     // intro/notice/parse noise and never print to stdout from here on.
     if (argv[0] === "mcp") {
@@ -647,6 +688,7 @@ export async function run(argv: string[]): Promise<void> {
     if (opts.command === "skills") { process.exit(runSkillsCli(opts)); }
     if (opts.command === "issue") { process.exit(await runIssueCli(opts.positionals[0], version, interactive)); }
     if (opts.command === "compress") { process.exit(runCompressCli(opts)); }
+    if (opts.command === "dashboard") { process.exit(await runDashboardCli(version)); }
 
     if (opts.command === "update") {
         p.intro("enigma - update");

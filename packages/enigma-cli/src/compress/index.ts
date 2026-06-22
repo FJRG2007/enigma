@@ -18,7 +18,8 @@ import { estimateTokens } from "./tokens";
 import { ccrMarker, recordStats, retrieve, store } from "./ccr";
 
 export type { ContentType } from "./detect";
-export { retrieve, readStats } from "./ccr";
+export type { CcrStats, HistoryPoint } from "./ccr";
+export { retrieve, readStats, readHistory } from "./ccr";
 
 const MIN_LENGTH = 100;
 

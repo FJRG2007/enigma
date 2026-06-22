@@ -35,6 +35,14 @@ export const OUTPUT_STYLES: readonly OutputStyle[] = ["off", "lite", "full", "ul
 export type MinimalCode = "off" | "lite" | "full" | "ultra";
 export const MINIMAL_CODE_LEVELS: readonly MinimalCode[] = ["off", "lite", "full", "ultra"];
 
+/**
+ * Local savings dashboard run mode. "off" disables it; "on-demand" serves only while
+ * `enigma dashboard` runs (zero idle cost, the default when enabled); "always" keeps a
+ * lightweight background daemon so http://enigma is reachable any time.
+ */
+export type DashboardMode = "off" | "on-demand" | "always";
+export const DASHBOARD_MODES: readonly DashboardMode[] = ["off", "on-demand", "always"];
+
 export interface EnigmaConfig {
     commitEmoji: boolean;
     updateNotifier: boolean;
@@ -53,6 +61,8 @@ export interface EnigmaConfig {
     autoLint: boolean;
     /** Deploy the context-compression MCP server (enigma_compress/retrieve/stats) into managed agents (opt-in). */
     compress: boolean;
+    /** Local savings dashboard: off | on-demand (default when enabled) | always (background daemon). */
+    dashboard: DashboardMode;
     /** Agents the user explicitly opted out of bypass; never auto-enabled even when permissionBypass is on. */
     bypassDisabled: string[];
     /** Skills the user discarded: removed from deployments and skipped by installs/updates until restored. */
@@ -91,10 +101,13 @@ export interface EnigmaConfig {
  * MCP server (enigma_compress/retrieve/stats) in each managed agent's config so the
  * agent can shrink large tool outputs. Adding an MCP server to the user's agents is
  * a meaningful change, so it stays an explicit choice; turning it off removes the entry.
+ * dashboard is opt-in (off): enabling defaults to on-demand, which runs the local
+ * savings dashboard only while `enigma dashboard` is open (no idle cost). "always" keeps
+ * a background daemon, a deliberate trade for always-on reachability at http://enigma.
  */
 export const CONFIG_DEFAULTS: EnigmaConfig = {
     commitEmoji: true, updateNotifier: true, fullscreen: true, parallelSubagents: false, outputStyle: "off", minimalCode: "full",
-    autoSync: true, remoteSkills: true, permissionBypass: true, autoLint: false, compress: false, bypassDisabled: [], discardedSkills: [],
+    autoSync: true, remoteSkills: true, permissionBypass: true, autoLint: false, compress: false, dashboard: "off", bypassDisabled: [], discardedSkills: [],
 };
 
 export type EnigmaConfigKey = keyof EnigmaConfig;

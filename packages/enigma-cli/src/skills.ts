@@ -11,8 +11,9 @@ import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 import * as p from "@clack/prompts";
 import { isDir, isNewer, readJson, listFilesRel, computeContentSha } from "./util";
-import { readConfig, setEnigmaValue, setSkillDiscarded, OUTPUT_STYLES, MINIMAL_CODE_LEVELS } from "./config";
-import type { OutputStyle, MinimalCode } from "./config";
+import { readConfig, setEnigmaValue, setSkillDiscarded, OUTPUT_STYLES, MINIMAL_CODE_LEVELS, DASHBOARD_MODES } from "./config";
+import type { OutputStyle, MinimalCode, DashboardMode } from "./config";
+import { applyDashboardMode } from "./dashboard";
 import { MANAGED_PROVIDER, isManagedProvider, discoverAgents, runningStatus } from "./agents";
 import type { Agent, AgentTarget, DiscoveredAgent } from "./agents";
 import { maybeOfferGitHooks } from "./security";
@@ -83,6 +84,8 @@ export interface InstallOptions extends SecurityOptions {
     outputStyle: string | null;
     /** Minimal-code level to set before deploying memory (off|lite|full|ultra), or null to leave/ask. */
     minimalCode: string | null;
+    /** Local savings dashboard mode to set (off|on-demand|always), or null to leave/ask. */
+    dashboard: string | null;
 }
 
 /** This CLI package's own version, stamped into skills at seal time. */
@@ -469,6 +472,40 @@ async function resolveMinimalCode(opts: InstallOptions, scope: "global" | "local
 }
 
 /**
+ * Offer the local savings dashboard at install. Opt-in (default off): enabling defaults
+ * to on-demand (zero idle cost). Applies the mode side effects (hosts entry for
+ * http://enigma; background daemon for "always") and reports what needs manual admin.
+ */
+async function resolveDashboard(opts: InstallOptions, scope: "global" | "local", interactive: boolean, reporter: Reporter): Promise<void> {
+    let mode = opts.dashboard?.toLowerCase() ?? null;
+    if (mode && !DASHBOARD_MODES.includes(mode as DashboardMode)) {
+        reporter.warn(`Ignoring --dashboard '${opts.dashboard}': use one of ${DASHBOARD_MODES.join(", ")}.`);
+        mode = null;
+    }
+    if (!mode && interactive && !opts.dryRun) {
+        const r = await p.select({
+            message: "Local savings dashboard? (visualize token savings in your browser at http://enigma)",
+            options: [
+                { value: "off", label: "Off", hint: "no dashboard (default)" },
+                { value: "on-demand", label: "On-demand", hint: "runs only while 'enigma dashboard' is open - zero idle cost (recommended)" },
+                { value: "always", label: "Always on", hint: "lightweight background daemon, reachable any time" },
+            ],
+            initialValue: readConfig().config.dashboard,
+        });
+        if (p.isCancel(r)) return;          // keep the current value; do not abort the whole install
+        mode = r as string;
+    }
+    if (mode && !opts.dryRun && mode !== readConfig().config.dashboard) {
+        setEnigmaValue("dashboard", mode, scope);
+        const result = applyDashboardMode(mode as DashboardMode);
+        reporter.info(`Local dashboard: ${mode} (${scope}).`);
+        if (result.hosts?.needsAdmin) {
+            reporter.warn(`Could not map http://enigma (needs admin). Add this line to ${result.hosts.path} manually, or just use http://localhost:24282:\n  127.0.0.1 enigma`);
+        }
+    }
+}
+
+/**
  * Plan and apply a skills install. Progress is emitted through `reporter`:
  * clack for the CLI, or a buffering reporter when driven inline by the TUI.
  * Interactive prompts (scope/agent/skill selection) still use clack directly and
@@ -590,6 +627,7 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
     // and the deployed content reflect it. Irrelevant when only skills are installed.
     if (!opts.skillsOnly) await resolveOutputStyle(opts, scope, interactive, reporter);
     if (!opts.skillsOnly) await resolveMinimalCode(opts, scope, interactive, reporter);
+    if (!opts.skillsOnly) await resolveDashboard(opts, scope, interactive, reporter);
 
     // Discarded skills never install or update; they are also pruned from every
     // target below (even with --no-prune), so a discard reliably removes the skill.

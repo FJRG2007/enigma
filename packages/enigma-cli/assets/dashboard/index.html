@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>enigma - context savings</title>
+    <style>
+        :root {
+            --bg: #0b0e14; --surface: #151a23; --surface2: #1b2230; --border: #232a36;
+            --text: #e6e6e6; --muted: #8a93a3; --accent: #e0a458; --accent2: #d7875f; --good: #6fcf97;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0; background: var(--bg); color: var(--text);
+            font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+            -webkit-font-smoothing: antialiased; padding: 24px; max-width: 1000px; margin: 0 auto;
+        }
+        a { color: var(--accent2); }
+        header { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
+        .wordmark { font-size: 20px; font-weight: 700; letter-spacing: 0.5px; }
+        .wordmark span { color: var(--accent); }
+        .sub { color: var(--muted); font-size: 13px; }
+        .live { margin-left: auto; display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
+        .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--good); box-shadow: 0 0 8px var(--good); }
+        .dot.stale { background: var(--muted); box-shadow: none; }
+        .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+        .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
+        .card .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.6px; }
+        .card .value { font-size: 28px; font-weight: 700; margin-top: 6px; }
+        .card .value.accent { color: var(--accent); }
+        .card .value.good { color: var(--good); }
+        .card .foot { color: var(--muted); font-size: 12px; margin-top: 4px; }
+        .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 18px; margin-bottom: 20px; }
+        .panel h2 { font-size: 14px; font-weight: 600; margin: 0 0 14px; color: var(--text); }
+        .panel h2 small { color: var(--muted); font-weight: 400; margin-left: 8px; }
+        .chart { width: 100%; height: 200px; display: block; }
+        .bar-row { display: flex; align-items: center; gap: 12px; margin: 10px 0; font-size: 13px; }
+        .bar-row .name { width: 70px; color: var(--muted); }
+        .bar-track { flex: 1; height: 14px; background: var(--surface2); border-radius: 7px; overflow: hidden; }
+        .bar-fill { height: 100%; border-radius: 7px; }
+        .bar-row .num { width: 90px; text-align: right; font-variant-numeric: tabular-nums; }
+        .empty { color: var(--muted); font-size: 14px; text-align: center; padding: 40px 0; }
+        footer { color: var(--muted); font-size: 12px; line-height: 1.6; margin-top: 8px; }
+        code { background: var(--surface2); padding: 1px 6px; border-radius: 5px; color: var(--accent2); }
+        @media (max-width: 720px) { .grid { grid-template-columns: repeat(2, 1fr); } }
+    </style>
+</head>
+<body>
+    <header>
+        <div>
+            <div class="wordmark">enigma<span>.</span></div>
+            <div class="sub">context compression savings</div>
+        </div>
+        <div class="live"><span id="dot" class="dot stale"></span><span id="updated">connecting...</span></div>
+    </header>
+
+    <div class="grid">
+        <div class="card"><div class="label">Tokens saved</div><div id="saved" class="value good">-</div><div id="savedFoot" class="foot">across all compressions</div></div>
+        <div class="card"><div class="label">Savings rate</div><div id="rate" class="value accent">-</div><div class="foot">of input tokens removed</div></div>
+        <div class="card"><div class="label">Compressions</div><div id="calls" class="value">-</div><div class="foot">reversible via CCR</div></div>
+        <div class="card"><div class="label">In &rarr; Out</div><div id="inout" class="value" style="font-size:20px">-</div><div class="foot">total tokens</div></div>
+    </div>
+
+    <div class="panel">
+        <h2>Tokens saved per day <small id="rangeLabel"></small></h2>
+        <svg id="chart" class="chart" viewBox="0 0 600 200" preserveAspectRatio="none" role="img" aria-label="Daily tokens saved"></svg>
+        <div id="chartEmpty" class="empty" style="display:none">No compression activity recorded yet. Run <code>enigma compress &lt;file&gt;</code> or enable the compression MCP (<code>enigma config compress on</code>).</div>
+    </div>
+
+    <div class="panel">
+        <h2>Before vs after <small>cumulative tokens</small></h2>
+        <div class="bar-row"><span class="name">Before</span><div class="bar-track"><div id="barBefore" class="bar-fill" style="background:var(--accent2)"></div></div><span id="numBefore" class="num">-</span></div>
+        <div class="bar-row"><span class="name">After</span><div class="bar-track"><div id="barAfter" class="bar-fill" style="background:var(--good)"></div></div><span id="numAfter" class="num">-</span></div>
+    </div>
+
+    <footer>
+        Polling pauses automatically when this tab is hidden, and the server caches each snapshot - so an open dashboard costs almost nothing.
+        Data source: <code>~/.enigma/ccr/stats.json</code> + <code>history.jsonl</code>. enigma <span id="ver"></span>
+    </footer>
+
+    <script>
+        const POLL_MS = 5000;
+        const $ = (id) => document.getElementById(id);
+
+        function fmt(n) {
+            n = Number(n) || 0;
+            if (n >= 1e9) return (n / 1e9).toFixed(2) + "B";
+            if (n >= 1e6) return (n / 1e6).toFixed(2) + "M";
+            if (n >= 1e3) return (n / 1e3).toFixed(1) + "k";
+            return String(Math.round(n));
+        }
+
+        // Bucket history points into the last 30 calendar days of saved tokens.
+        function dailySaved(history) {
+            const DAY = 86400000;
+            const today = Math.floor(Date.now() / DAY);
+            const start = today - 29;
+            const buckets = new Array(30).fill(0);
+            for (const p of history || []) {
+                const day = Math.floor(p.t / DAY);
+                if (day < start || day > today) continue;
+                buckets[day - start] += Math.max(0, (p.b || 0) - (p.a || 0));
+            }
+            return buckets;
+        }
+
+        function renderChart(buckets) {
+            const svg = $("chart"), W = 600, H = 200, pad = 6;
+            const max = Math.max(1, ...buckets);
+            const n = buckets.length;
+            const x = (i) => pad + (i * (W - pad * 2)) / (n - 1);
+            const y = (v) => H - pad - (v / max) * (H - pad * 2);
+            const pts = buckets.map((v, i) => x(i) + "," + y(v));
+            const line = "M" + pts.join(" L");
+            const area = line + " L" + x(n - 1) + "," + (H - pad) + " L" + x(0) + "," + (H - pad) + " Z";
+            const hasData = buckets.some((v) => v > 0);
+            $("chartEmpty").style.display = hasData ? "none" : "block";
+            svg.style.display = hasData ? "block" : "none";
+            svg.innerHTML =
+                '<defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1">' +
+                '<stop offset="0%" stop-color="#e0a458" stop-opacity="0.35"/>' +
+                '<stop offset="100%" stop-color="#e0a458" stop-opacity="0"/></linearGradient></defs>' +
+                '<path d="' + area + '" fill="url(#g)"/>' +
+                '<path d="' + line + '" fill="none" stroke="#e0a458" stroke-width="2" vector-effect="non-scaling-stroke"/>';
+        }
+
+        function render(data) {
+            const s = data.stats || {};
+            const before = s.tokensBefore || 0, after = s.tokensAfter || 0, saved = s.tokensSaved || 0;
+            const rate = before ? Math.round((saved / before) * 100) : 0;
+            $("saved").textContent = fmt(saved);
+            $("savedFoot").textContent = saved ? "~" + saved.toLocaleString() + " tokens" : "across all compressions";
+            $("rate").textContent = rate + "%";
+            $("calls").textContent = fmt(s.calls || 0);
+            $("inout").textContent = fmt(before) + " → " + fmt(after);
+            $("numBefore").textContent = fmt(before);
+            $("numAfter").textContent = fmt(after);
+            const max = Math.max(1, before);
+            $("barBefore").style.width = (before / max * 100) + "%";
+            $("barAfter").style.width = (after / max * 100) + "%";
+            renderChart(dailySaved(data.history));
+            $("rangeLabel").textContent = "last 30 days";
+            $("ver").textContent = data.version ? "v" + data.version : "";
+            $("dot").classList.remove("stale");
+            $("updated").textContent = "updated " + new Date(data.generatedAt || Date.now()).toLocaleTimeString();
+        }
+
+        async function poll() {
+            // Headroom pattern: never hit the server while the tab is hidden.
+            if (document.hidden) return;
+            try {
+                const res = await fetch("/api/stats", { cache: "no-store" });
+                render(await res.json());
+            } catch {
+                $("dot").classList.add("stale");
+                $("updated").textContent = "disconnected";
+            }
+        }
+
+        poll();
+        setInterval(poll, POLL_MS);
+        document.addEventListener("visibilitychange", () => { if (!document.hidden) poll(); });
+    </script>
+</body>
+</html>
