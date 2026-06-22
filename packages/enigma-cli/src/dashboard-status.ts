@@ -11,6 +11,7 @@
 import { readConfig } from "./config";
 import { skillsReport } from "./skills";
 import { readProxyStats } from "./proxy";
+import { GUARD_PROTECTIONS, readGlobalGuard } from "./guard-config";
 
 export interface SystemsStatus {
     /** Context-compression MCP deployed into agents. */
@@ -39,13 +40,12 @@ export interface SystemsStatus {
     skills: { total: number; enigma: number; external: number; disabled: number };
 }
 
-/** What enigma's commit guard blocks from being committed (fixed behavior; per-repo opt-outs aside). */
-const GUARD_PROTECTS = ["API keys / tokens", "private keys (.pem)", ".env files", "node_modules"];
 
 /** Read the current configured state of every enigma system, plus skill counts. */
 export function systemsStatus(): SystemsStatus {
     const c = readConfig().config;
     const skills = skillsReport();
+    const guard = readGlobalGuard();
     return {
         compress: c.compress,
         outputStyle: c.outputStyle,
@@ -57,7 +57,12 @@ export function systemsStatus(): SystemsStatus {
         commitEmoji: c.commitEmoji,
         proxy: c.proxy,
         proxyStats: (() => { const p = readProxyStats(); return { calls: p.calls, input: p.input, output: p.output, cacheRead: p.cacheRead, cacheCreation: p.cacheCreation }; })(),
-        security: { permissionBypass: c.permissionBypass, bypassDisabled: c.bypassDisabled || [], guardProtects: GUARD_PROTECTS },
+        security: {
+            permissionBypass: c.permissionBypass,
+            bypassDisabled: c.bypassDisabled || [],
+            // The protections currently enabled in the user-wide guard config (configurable in Settings).
+            guardProtects: GUARD_PROTECTIONS.filter((p) => guard[p.value]).map((p) => p.label),
+        },
         skills: {
             total: skills.length,
             enigma: skills.filter((s) => s.source === "enigma").length,

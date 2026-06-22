@@ -20,6 +20,7 @@
  * Bypass once (use sparingly): git commit --no-verify
  */
 
+import { homedir } from "node:os";
 import { readFileSync, statSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { basename, extname, dirname, join } from "node:path";
@@ -69,15 +70,18 @@ interface GuardConfig {
     largeFiles: boolean;
 }
 
-/** Load the optional toggle config from next to this file; missing keys = on. */
+/**
+ * Effective toggle config, layered (missing keys = on): built-in defaults, overlaid by the
+ * user-wide ~/.enigma-guard.json (set from the TUI / dashboard), overlaid by the per-repo
+ * enigma-guard.json next to this guard. So a global toggle applies everywhere unless a repo
+ * overrides it. Self-contained: just two best-effort JSON reads, no enigma imports.
+ */
 function loadConfig(): GuardConfig {
     const defaults: GuardConfig = { secrets: true, envFiles: true, depDirs: true, generatedDirs: true, junkFiles: true, largeFiles: true };
-    try {
-        const raw = JSON.parse(readFileSync(join(SELF_DIR, "enigma-guard.json"), "utf8"));
-        return { ...defaults, ...raw };
-    } catch {
-        return defaults;
-    }
+    const layer = (path: string): Partial<GuardConfig> => {
+        try { return JSON.parse(readFileSync(path, "utf8")); } catch { return {}; }
+    };
+    return { ...defaults, ...layer(join(homedir(), ".enigma-guard.json")), ...layer(join(SELF_DIR, "enigma-guard.json")) };
 }
 
 function gitFiles(all: boolean): string[] {

@@ -32,21 +32,11 @@ function findGuardSrc(): string | null {
     return candidates.find((c) => existsSync(c)) ?? null;
 }
 
-export interface GuardProtection {
-    value: string;
-    label: string;
-    hint: string;
-}
-
-/** All toggleable guard protections, in display order. */
-export const GUARD_PROTECTIONS: GuardProtection[] = [
-    { value: "secrets", label: "Block committed secrets", hint: "API keys, tokens, private keys" },
-    { value: "envFiles", label: "Block .env files", hint: "allows .env.example / .sample / .template" },
-    { value: "depDirs", label: "Block dependency/cache dirs", hint: "node_modules, __pycache__, venv" },
-    { value: "generatedDirs", label: "Warn on generated dirs", hint: "dist, build, .next, coverage" },
-    { value: "junkFiles", label: "Warn on log / OS junk files", hint: ".log, .DS_Store, Thumbs.db" },
-    { value: "largeFiles", label: "Warn on files over 5 MB", hint: "oversized blobs" },
-];
+// The protection metadata + global guard config live in the light guard-config module so
+// the settings registry can surface them (TUI + dashboard) without importing this clack-heavy
+// module. Imported for local use here and re-exported for the existing `enigma security` call sites.
+import { GUARD_PROTECTIONS } from "./guard-config";
+export { GUARD_PROTECTIONS, type GuardProtection } from "./guard-config";
 
 export interface SecurityOptions {
     force?: boolean;

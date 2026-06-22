@@ -18,6 +18,7 @@ import type { DashboardMode } from "./config";
 import { getClaudeAttribution, setClaudeAttribution, getClaudeFeedbackSurvey, setClaudeFeedbackSurvey } from "./claude";
 import { getGhTelemetryCached, setGhTelemetry } from "./github";
 import { BYPASS_SUPPORTED, getBypass, setBypass } from "./permissions";
+import { GUARD_PROTECTIONS, readGlobalGuard, setGuardProtection } from "./guard-config";
 import type { EnigmaConfig, EnigmaConfigKey } from "./config";
 
 export type Scope = "global" | "local";
@@ -242,6 +243,18 @@ const RAW_CATEGORIES: Category[] = [
                 writeChoice: (value) => ({ changed: setGhTelemetry(value === "enabled") === true }),
             },
         ],
+    },
+    {
+        title: "Commit guard",
+        blurb: "what enigma's git commit guard blocks (user-wide default; per-repo .githooks/enigma-guard.json can override)",
+        settings: GUARD_PROTECTIONS.map((p): Setting => ({
+            key: `guard-${p.value}`,
+            label: p.label,
+            hint: `${p.hint}; applies to every repo with enigma's guard unless overridden per-repo`,
+            globalOnly: true,
+            read: () => readGlobalGuard()[p.value],
+            write: (value) => { setGuardProtection(p.value, value); return { changed: true }; },
+        })),
     },
     {
         title: "Permissions",
