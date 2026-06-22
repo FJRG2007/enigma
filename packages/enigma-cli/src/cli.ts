@@ -23,7 +23,7 @@ import { discoverAgents } from "./agents";
 import { runGuardCli } from "./guard";
 import { runConfigCli } from "./settings";
 import { ensureLinterInstalled } from "./lint";
-import { ensureDashboardPkgInstalled, isDashboardPkgInstalled, refreshDashboardPkg } from "./dashboard-pkg";
+import { ensureDashboardCurrent, isDashboardPkgCurrent, isDashboardPkgInstalled, refreshDashboardPkg } from "./dashboard-pkg";
 import { readConfig } from "./config";
 import { checkLatestNow, getAvailableUpdate, notifyUpdate, performUpdateCheck, runUpdate } from "./update";
 import { buildIssueUrl, openUrl } from "./issue";
@@ -620,9 +620,9 @@ async function runDashboardCli(version: string): Promise<number> {
     // The UI bundle (@enigmax/dashboard) ships separately and is fetched on demand. If it
     // is not present yet, install it now so the first open shows the real page, not the
     // fallback. Best-effort: offline just serves the fallback until a later run succeeds.
-    if (!isDashboardPkgInstalled()) {
-        console.log("Fetching the dashboard UI (@enigmax/dashboard)...");
-        if (!ensureDashboardPkgInstalled()) console.log("Could not fetch the UI bundle (offline?); serving a minimal page for now.");
+    if (!isDashboardPkgCurrent()) {
+        console.log(isDashboardPkgInstalled() ? "Updating the dashboard UI (@enigmax/dashboard)..." : "Fetching the dashboard UI (@enigmax/dashboard)...");
+        if (!ensureDashboardCurrent()) console.log("Could not fetch the UI bundle (offline?); serving what is available.");
     }
     // Best-effort: map http://enigma -> loopback so the URL is pretty (falls back to
     // localhost when hosts is unwritable). No-op when the entry already exists.
@@ -674,7 +674,7 @@ export async function run(argv: string[]): Promise<void> {
     if (argv[0] === "__lint-install") { ensureLinterInstalled(); return; }
     // Hidden: the detached background dashboard-UI install kicked off when the dashboard
     // is enabled (spawnDashboardPkgInstall). Silent, best-effort; server self-heals.
-    if (argv[0] === "__dashboard-install") { ensureDashboardPkgInstalled(); return; }
+    if (argv[0] === "__dashboard-install") { ensureDashboardCurrent(); return; }
     // Hidden: the detached dashboard daemon (dashboard=always). Serves the savings
     // dashboard forever and publishes its pidfile. Silent by contract.
     if (argv[0] === "__dashboard-serve") { await serveDashboardDaemon(process.env.ENIGMA_VERSION || PKG.version || "0.0.0"); return; }

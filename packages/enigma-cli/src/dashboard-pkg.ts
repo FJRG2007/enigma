@@ -19,7 +19,7 @@ import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { spawn, spawnSync } from "node:child_process";
 import { basename, dirname, join } from "node:path";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -34,6 +34,35 @@ function managedAssetsDir(): string {
 /** Whether the managed @enigmax/dashboard install is present. */
 export function isDashboardPkgInstalled(): boolean {
     return existsSync(join(DASHBOARD_INSTALL_DIR, "node_modules", "@enigmax", "dashboard", "package.json"));
+}
+
+/** Marker recording the enigma-cli version that last fetched the UI bundle. */
+function versionMarkerPath(): string {
+    return join(DASHBOARD_INSTALL_DIR, ".cli-version");
+}
+
+/** This launcher's enigma-cli version (set by the launcher); empty when unknown (dev). */
+function cliVersion(): string {
+    return process.env.ENIGMA_VERSION || "";
+}
+
+/** Record the current enigma-cli version next to the install, so staleness is detectable. */
+function markFetched(): void {
+    try { writeFileSync(versionMarkerPath(), cliVersion()); } catch { /* best-effort */ }
+}
+
+/**
+ * Whether the installed UI bundle is current for THIS enigma-cli version. The UI and the
+ * server share an evolving /api contract and ship together, so the bundle must be refreshed
+ * whenever enigma-cli changes - not merely when it is absent. Installing if missing alone
+ * left users on an old cached UI after a CLI update (the bug behind "the dashboard looks the
+ * same after updating"). An unknown CLI version (a source/dev run) never forces a refetch.
+ */
+export function isDashboardPkgCurrent(): boolean {
+    if (!isDashboardPkgInstalled()) return false;
+    const cli = cliVersion();
+    if (!cli) return true;
+    try { return readFileSync(versionMarkerPath(), "utf8").trim() === cli; } catch { return false; }
 }
 
 /**
@@ -67,15 +96,17 @@ function npmInstall(spec: string): void {
         spawnSync("npm", ["install", `@enigmax/dashboard@${spec}`, "--no-audit", "--no-fund", "--silent"], {
             cwd: DASHBOARD_INSTALL_DIR, shell: true, stdio: "ignore", timeout: 120000, windowsHide: true,
         });
+        if (isDashboardPkgInstalled()) markFetched();
     } catch { /* best-effort: a missing npm or no network just leaves the UI un-fetched */ }
 }
 
 /**
- * Best-effort synchronous install of @enigmax/dashboard into the managed dir if absent.
- * Returns true when the package is present afterwards.
+ * Ensure the UI bundle is present AND current for this enigma-cli version, installing or
+ * refreshing it as needed. Returns true when the package is present afterwards. This is the
+ * entry the dashboard open path uses, so a CLI update always pulls the matching UI.
  */
-export function ensureDashboardPkgInstalled(): boolean {
-    if (isDashboardPkgInstalled()) return true;
+export function ensureDashboardCurrent(): boolean {
+    if (isDashboardPkgCurrent()) return true;
     npmInstall("latest");
     return isDashboardPkgInstalled();
 }
@@ -86,11 +117,11 @@ export function refreshDashboardPkg(): void {
 }
 
 /**
- * Kick off the install in a detached background process (hidden `__dashboard-install`),
- * so enabling the dashboard never blocks. No-op when already installed.
+ * Kick off the install/refresh in a detached background process (hidden
+ * `__dashboard-install`), so enabling the dashboard never blocks. No-op when already current.
  */
 export function spawnDashboardPkgInstall(): void {
-    if (isDashboardPkgInstalled()) return;
+    if (isDashboardPkgCurrent()) return;
     try {
         // Same runtime dispatch as the lint-install/update-check children: a compiled
         // binary takes the hidden command directly; node/bun on source need argv[1] first.
