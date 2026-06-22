@@ -19,6 +19,8 @@ actually use (Claude Code, OpenAI Codex, opencode) and sets up portable **git
 security hooks** that block secrets, `.env` files, and dependency dirs from being
 committed.
 
+![ENIGMA PREVIEW](https://raw.githubusercontent.com/FJRG2007/enigma/refs/heads/main/docs/images/dashboard.png)
+
 ## Install
 
 Recommended - install the `enigma` command globally, then run the interactive hub:
