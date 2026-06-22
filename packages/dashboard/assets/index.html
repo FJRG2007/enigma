@@ -13,7 +13,7 @@
         body {
             margin: 0; background: var(--bg); color: var(--text);
             font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-            -webkit-font-smoothing: antialiased; padding: 24px; max-width: 1040px; margin: 0 auto;
+            -webkit-font-smoothing: antialiased; padding: 24px; max-width: 2200px; margin: 0 auto;
         }
         a { color: var(--accent2); }
         header { display: flex; align-items: center; gap: 20px; margin-bottom: 24px; flex-wrap: wrap; }
@@ -108,6 +108,10 @@
             border-radius: 7px; padding: 5px 10px; font-size: 12px; font-family: inherit; cursor: pointer;
         }
         .set-note { color: var(--accent); font-size: 12px; min-height: 16px; margin-top: 10px; }
+        /* Settings: two-column grid of rows on wide screens, so a long config list stays compact. */
+        .set-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 0 32px; }
+        .set-grid .set-row { padding: 10px 0; }
+        .panel > .set-cat-h { margin-top: 0; }
         .tag {
             display: inline-block; font-size: 11px; color: var(--muted); background: var(--surface2);
             border: 1px solid var(--border); border-radius: 6px; padding: 1px 7px; margin-left: 6px; vertical-align: middle;
@@ -175,7 +179,10 @@
         <div class="panel">
             <div class="panel-head">
                 <h2>Enigma Systems <small>what's active - configuration, not savings</small></h2>
-                <div class="ctrls"><button id="updateBtn" type="button" class="toggle on">Check &amp; update</button></div>
+                <div class="ctrls">
+                    <button id="refreshBtn" type="button" class="toggle">Refresh</button>
+                    <button id="updateBtn" type="button" class="toggle on">Check &amp; update</button>
+                </div>
             </div>
             <div class="sub" style="margin-bottom:14px">Only Context Compression and (opt-in) real tool-usage are measured for savings below. The rest is shown as state: enigma can't measure their effect because they run inside the agent, not through enigma - so it reports their configuration honestly instead of inventing a number.</div>
             <div id="systems" class="sys-grid"><div class="empty" style="padding:16px 0">Loading...</div></div>
@@ -293,11 +300,9 @@
         <div class="page-head">
             <h1>Settings</h1>
             <p>Everything you can configure with <code>enigma config</code> or the terminal UI, editable here. Changes apply at global scope and take effect immediately; toggles that change agent memory need an agent restart.</p>
-        </div>
-        <div class="panel">
-            <div id="settingsBody"><div class="empty" style="padding:24px 0">Loading settings...</div></div>
             <div id="settingsNote" class="set-note"></div>
         </div>
+        <div id="settingsBody"><div class="empty" style="padding:24px 0">Loading settings...</div></div>
     </section>
 
     <footer>
@@ -644,9 +649,14 @@
             $("updated").textContent = "Updated " + new Date(data.generatedAt || Date.now()).toLocaleTimeString();
         }
 
-        async function poll() {
-            // Headroom pattern: never hit the server while the tab is hidden.
+        // Auto-refresh is on by default while the tab is focused; `live` mirrors the
+        // dashboard-live config (read from /api/status). A forced refresh (button / view
+        // change) always runs so the user can refresh even with auto-refresh off.
+        let live = true;
+        async function poll(force) {
+            // Never hit the server while the tab is hidden, or when auto-refresh is off (unless forced).
             if (document.hidden) return;
+            if (!live && !force) return;
             try {
                 const res = await fetch("/api/stats", { cache: "no-store" });
                 render(await res.json());
@@ -674,9 +684,11 @@
         function renderSettings(cats) {
             const el = $("settingsBody");
             if (!cats.length) { el.innerHTML = '<div class="empty" style="padding:24px 0">No settings available.</div>'; return; }
-            el.innerHTML = cats.map((c) => '<div class="set-cat"><div class="set-cat-h">' + esc(c.title) + "</div>"
+            // One panel per category; settings laid out in a responsive 2-column grid so a
+            // long config list stays scannable on a wide screen.
+            el.innerHTML = cats.map((c) => '<div class="panel"><div class="set-cat-h">' + esc(c.title) + "</div>"
                 + (c.blurb ? '<div class="set-cat-b">' + esc(c.blurb) + "</div>" : "")
-                + c.settings.map(settingRow).join("") + "</div>").join("");
+                + '<div class="set-grid">' + c.settings.map(settingRow).join("") + "</div></div>").join("");
         }
 
         async function postSetting(key, value, ctl) {
@@ -759,12 +771,19 @@
             } catch { $("updateNote").textContent = "Could not reach the server to update."; }
         }
 
-        async function loadSystems() {
+        async function loadSystems(force) {
+            if (!live && !force) return;
             try {
                 const r = await fetch("/api/status", { cache: "no-store" });
-                renderSystems((await r.json()).systems);
+                const sys = (await r.json()).systems;
+                if (sys) live = sys.live !== false; // pick up the dashboard-live config
+                renderSystems(sys);
             } catch { $("systems").innerHTML = '<div class="empty" style="padding:16px 0">Status unavailable.</div>'; }
         }
+
+        function onSavings() { const h = (location.hash || "").replace(/^#\/?/, ""); return h !== "settings" && h !== "skills"; }
+        // One refresh of everything visible on the Savings view; `force` ignores auto-refresh-off.
+        function refreshAll(force) { poll(force); if (onSavings()) loadSystems(force); }
 
         // --- skills subpage (lists enigma + external skills over /api/skills) ---
         function skillRow(s) {
@@ -871,16 +890,17 @@
             if (v === "settings" && !settingsLoaded) { settingsLoaded = true; loadSettings(); }
             if (v === "skills" && !skillsLoaded) { skillsLoaded = true; loadSkills(); }
             // The chart was sized while its view may have been hidden; nudge it on return.
-            if (v === "savings") { loadSystems(); if (chart) { try { applyRange(); } catch { /* not ready */ } } }
+            if (v === "savings") { loadSystems(true); if (chart) { try { applyRange(); } catch { /* not ready */ } } }
         }
 
         initChart();
-        poll();
-        setInterval(poll, POLL_MS);
-        document.addEventListener("visibilitychange", () => { if (!document.hidden) poll(); });
+        poll(true);
+        setInterval(() => refreshAll(false), POLL_MS);
+        document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshAll(true); });
         wireSettings();
         wireSkills();
         $("updateBtn").addEventListener("click", runUpdate);
+        $("refreshBtn").addEventListener("click", () => refreshAll(true));
         window.addEventListener("hashchange", route);
         route();
     </script>

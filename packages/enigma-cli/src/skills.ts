@@ -617,6 +617,13 @@ async function resolveDashboard(opts: InstallOptions, scope: "global" | "local",
             reporter.warn(`Could not map http://enigma (needs admin). Add this line to ${result.hosts.path} manually, or just use http://localhost:24282:\n  127.0.0.1 enigma`);
         }
     }
+    // Choosing a dashboard turns on real tool-usage stats by default, so it actually reflects
+    // your Claude Code usage. It reads local transcripts on demand (no background process), so
+    // there is no idle cost; turn it off any time with `enigma config usage-stats off`.
+    if (mode && mode !== "off" && !opts.dryRun && !readConfig().config.usageStats) {
+        setEnigmaValue("usageStats", true, scope);
+        reporter.info("Enabled real tool-usage stats for the dashboard (off: enigma config usage-stats off).");
+    }
 }
 
 /**

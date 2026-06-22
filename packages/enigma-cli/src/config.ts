@@ -71,6 +71,8 @@ export interface EnigmaConfig {
     usageStats: boolean;
     /** Experimental: route `enigma claude` through a local measuring proxy (opt-in, default off, Claude Code only). */
     proxy: boolean;
+    /** Dashboard auto-refreshes its data while the tab is focused (default on; off = manual refresh only). */
+    dashboardLive: boolean;
     /** Agents the user explicitly opted out of bypass; never auto-enabled even when permissionBypass is on. */
     bypassDisabled: string[];
     /** Skills the user discarded: removed from deployments and skipped by installs/updates until restored. */
@@ -120,7 +122,7 @@ export interface EnigmaConfig {
  */
 export const CONFIG_DEFAULTS: EnigmaConfig = {
     commitEmoji: true, updateNotifier: true, fullscreen: true, parallelSubagents: false, outputStyle: "off", minimalCode: "full",
-    autoSync: true, remoteSkills: true, permissionBypass: true, autoLint: false, compress: false, dashboard: "off", tokenPrice: 0, tokenSpeed: 0, usageStats: false, proxy: false, bypassDisabled: [], discardedSkills: [],
+    autoSync: true, remoteSkills: true, permissionBypass: true, autoLint: false, compress: false, dashboard: "off", tokenPrice: 0, tokenSpeed: 0, usageStats: false, proxy: false, dashboardLive: true, bypassDisabled: [], discardedSkills: [],
 };
 
 export type EnigmaConfigKey = keyof EnigmaConfig;

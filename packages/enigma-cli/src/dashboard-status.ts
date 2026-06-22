@@ -30,6 +30,8 @@ export interface SystemsStatus {
     dashboard: string;
     /** Commit-subject emoji. */
     commitEmoji: boolean;
+    /** Dashboard auto-refreshes while focused (the HTML polls only when this is true). */
+    live: boolean;
     /** Experimental Claude Code measuring proxy enabled. */
     proxy: boolean;
     /** Real token usage measured by the proxy so far (zeros when it has never run). */
@@ -56,6 +58,7 @@ export function systemsStatus(): SystemsStatus {
         dashboard: c.dashboard,
         commitEmoji: c.commitEmoji,
         proxy: c.proxy,
+        live: c.dashboardLive,
         proxyStats: (() => { const p = readProxyStats(); return { calls: p.calls, input: p.input, output: p.output, cacheRead: p.cacheRead, cacheCreation: p.cacheCreation }; })(),
         security: {
             permissionBypass: c.permissionBypass,

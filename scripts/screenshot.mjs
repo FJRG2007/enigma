@@ -23,11 +23,9 @@ const ASSETS = join(ROOT, "packages", "dashboard", "assets");
 const OUT = join(ROOT, "docs", "images", "dashboard.png");
 const DAY = 86400000;
 
-// Wide-monitor capture (2558x1276, ~2:1). The dashboard is normally a 1040px centered
-// column; for a full ultrawide "everything at once" shot we widen the container so the
-// cards, systems panel and chart spread across and fill the frame.
+// Wide-monitor capture (2558x1276, ~2:1). The dashboard now fills the width on its own
+// (max-width 2200), so this frame shows it exactly as it looks on a wide monitor.
 const VIEW = { width: 2558, height: 1276 };
-const WIDEN_CSS = "body{max-width:2440px!important;padding:26px 40px!important}";
 
 // --- impressive mock data (shape matches the dashboard's /api responses) ---------------
 
@@ -43,8 +41,8 @@ function mockHistory() {
         const ramp = (60 - d) / 60; // 0..1 rising
         const perDay = 4 + ((60 - d) % 5);
         for (let i = 0; i < perDay; i++) {
-            const before = Math.round((9000 + ramp * 26000) * (0.85 + 0.3 * ((i % 3) / 3)));
-            const after = Math.round(before * (0.21 + 0.06 * ((i % 2))));
+            const before = Math.round((1_250_000 + ramp * 2_050_000) * (0.85 + 0.3 * ((i % 3) / 3)));
+            const after = Math.round(before * (0.18 + 0.05 * ((i % 2))));
             out.push({ t: t0 + i * 90000, b: before, a: after, s: sources[i % sources.length], c: types[i % types.length] });
         }
     }
@@ -72,19 +70,19 @@ const STATS = {
         tokensBefore: totalBefore,
         tokensAfter: totalAfter,
         tokensSaved: totalSaved,
-        best: 312000,
+        best: 3_120_000,
         bySource: { "claude-code": sourceBucket(0.62), "opencode": sourceBucket(0.26), "codex": sourceBucket(0.12) },
         byType: { json: sourceBucket(0.44), log: sourceBucket(0.3), code: sourceBucket(0.16), text: sourceBucket(0.1) },
     },
     history,
     cache: { count: 487, bytes: 268435456, cap: 500 },
     usage: {
-        pending: false, scannedFiles: 412, sessions: 358,
-        input: 9_400_000, output: 2_600_000, cacheRead: 184_000_000, cacheCreation: 7_300_000,
+        pending: false, scannedFiles: 712, sessions: 643,
+        input: 41_800_000, output: 12_400_000, cacheRead: 824_000_000, cacheCreation: 33_500_000,
         byModel: {
-            "claude-opus-4-8": { input: 6_100_000, output: 1_700_000, cacheRead: 132_000_000, messages: 21400 },
-            "claude-sonnet-4-6": { input: 2_300_000, output: 640_000, cacheRead: 41_000_000, messages: 8800 },
-            "claude-haiku-4-5": { input: 1_000_000, output: 260_000, cacheRead: 11_000_000, messages: 5200 },
+            "claude-opus-4-8": { input: 27_300_000, output: 8_100_000, cacheRead: 592_000_000, messages: 96400 },
+            "claude-sonnet-4-6": { input: 10_200_000, output: 3_000_000, cacheRead: 184_000_000, messages: 39800 },
+            "claude-haiku-4-5": { input: 4_300_000, output: 1_300_000, cacheRead: 48_000_000, messages: 22100 },
         },
     },
 };
@@ -93,8 +91,8 @@ const STATUS = {
     systems: {
         compress: true, usageStats: true, proxy: true,
         outputStyle: "full", minimalCode: "full", parallelSubagents: true, autoLint: true, commitEmoji: true,
-        dashboard: "always",
-        proxyStats: { calls: 1840, input: 12_700_000, output: 3_100_000, cacheRead: 58_000_000, cacheCreation: 2_400_000 },
+        dashboard: "always", live: true,
+        proxyStats: { calls: 9240, input: 96_000_000, output: 24_000_000, cacheRead: 412_000_000, cacheCreation: 18_500_000 },
         security: {
             permissionBypass: true, bypassDisabled: [],
             guardProtects: ["Block committed secrets", "Block .env files", "Block dependency/cache dirs", "Warn on generated dirs", "Warn on log / OS junk files", "Warn on files over 5 MB"],
@@ -131,7 +129,6 @@ server.listen(0, "127.0.0.1", async () => {
     try {
         const page = await browser.newPage({ viewport: VIEW, deviceScaleFactor: 2 });
         await page.goto(`http://127.0.0.1:${port}/`, { waitUntil: "networkidle" });
-        await page.addStyleTag({ content: WIDEN_CSS });
         await page.waitForTimeout(2000); // let the chart resize/draw and the cards fill in
         mkdirSync(dirname(OUT), { recursive: true });
         await page.screenshot({ path: OUT, clip: { x: 0, y: 0, ...VIEW } });

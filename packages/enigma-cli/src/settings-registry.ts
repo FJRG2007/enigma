@@ -193,6 +193,7 @@ const RAW_CATEGORIES: Category[] = [
                 read: () => readConfig().config.usageStats,
                 write: (value, scope) => ({ path: setEnigmaToggle("usageStats", value, scope), changed: true }),
             },
+            enigmaToggle("dashboard-live", "dashboardLive", "Live auto-refresh", "the dashboard refreshes its data automatically while the tab is focused; off = refresh only with the button"),
             {
                 key: "proxy",
                 label: "Claude Code measuring proxy (experimental)",
