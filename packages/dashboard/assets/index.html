@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Enigma - Context Savings</title>
+    <title>Enigma - Dashboard</title>
     <style>
         :root {
             --bg: #0b0e14; --surface: #151a23; --surface2: #1b2230; --border: #232a36;
@@ -13,13 +13,21 @@
         body {
             margin: 0; background: var(--bg); color: var(--text);
             font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-            -webkit-font-smoothing: antialiased; padding: 24px; max-width: 1000px; margin: 0 auto;
+            -webkit-font-smoothing: antialiased; padding: 24px; max-width: 1040px; margin: 0 auto;
         }
         a { color: var(--accent2); }
-        header { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
+        header { display: flex; align-items: center; gap: 20px; margin-bottom: 24px; flex-wrap: wrap; }
+        .brand { display: flex; flex-direction: column; }
         .wordmark { font-size: 20px; font-weight: 700; letter-spacing: 0.5px; }
         .wordmark span { color: var(--accent); }
         .sub { color: var(--muted); font-size: 13px; }
+        .tabs { display: flex; gap: 4px; }
+        .tabs .tab {
+            text-decoration: none; color: var(--muted); font-size: 13px; font-weight: 600;
+            padding: 7px 16px; border-radius: 8px; border: 1px solid transparent; transition: background .15s, color .15s, border-color .15s;
+        }
+        .tabs .tab:hover { color: var(--text); background: var(--surface); }
+        .tabs .tab.active { color: var(--accent); background: var(--surface); border-color: var(--border); }
         .live { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
         .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--good); box-shadow: 0 0 8px var(--good); }
         .dot.stale { background: var(--muted); box-shadow: none; }
@@ -76,6 +84,9 @@
         .stat-line b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
         footer { color: var(--muted); font-size: 12px; line-height: 1.6; margin-top: 8px; }
         code { background: var(--surface2); padding: 1px 6px; border-radius: 5px; color: var(--accent2); }
+        .page-head { margin-bottom: 18px; }
+        .page-head h1 { font-size: 18px; font-weight: 700; margin: 0 0 4px; }
+        .page-head p { color: var(--muted); font-size: 13px; margin: 0; max-width: 720px; line-height: 1.5; }
         .set-cat { margin-bottom: 18px; }
         .set-cat:last-child { margin-bottom: 0; }
         .set-cat-h { color: var(--accent); font-size: 12px; text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 4px; }
@@ -97,15 +108,19 @@
             border-radius: 7px; padding: 5px 10px; font-size: 12px; font-family: inherit; cursor: pointer;
         }
         .set-note { color: var(--accent); font-size: 12px; min-height: 16px; margin-top: 10px; }
-        @media (max-width: 720px) { .grid { grid-template-columns: repeat(2, 1fr); } }
+        @media (max-width: 720px) { .grid { grid-template-columns: repeat(2, 1fr); } header { gap: 12px; } }
     </style>
 </head>
 <body>
     <header>
-        <div>
+        <div class="brand">
             <div class="wordmark">Enigma<span>.</span></div>
-            <div class="sub">Context Compression Savings</div>
+            <div class="sub">Savings dashboard</div>
         </div>
+        <nav class="tabs">
+            <a href="#/" data-view="savings" class="tab active">Savings</a>
+            <a href="#/settings" data-view="settings" class="tab">Settings</a>
+        </nav>
         <div class="nav">
             <span class="live"><span id="dot" class="dot stale"></span><span id="updated">Connecting...</span></span>
             <nav class="links">
@@ -116,112 +131,118 @@
                     <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.317 4.3698a19.7913 19.7913 0 0 0-4.8851-1.5152.0741.0741 0 0 0-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 0 0-.0785-.037 19.7363 19.7363 0 0 0-4.8852 1.515.0699.0699 0 0 0-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 0 0 .0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 0 0 .0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 0 0-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 0 1-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 0 1 .0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 0 1 .0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 0 1-.0066.1276 12.2986 12.2986 0 0 1-1.873.8914.0766.0766 0 0 0-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 0 0 .0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 0 0 .0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 0 0-.0312-.0286ZM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1569 2.4189Zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9461 2.4189-2.1568 2.4189Z"/></svg>
                 </a>
                 <a href="https://ko-fi.com/fjrg2007" target="_blank" rel="noopener noreferrer" title="Support on Ko-fi" aria-label="Support on Ko-fi">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 8h1a4 4 0 1 1 0 8h-1"/><path d="M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4Z"/><line x1="6" y1="2" x2="6" y2="4"/><line x1="10" y1="2" x2="10" y2="4"/><line x1="14" y1="2" x2="14" y2="4"/></svg>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 8h1a4 4 0 1 1 0 8h-1"/><path d="M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4Z"/><line x1="6" y1="2" x2="6" y2="4"/><line x1="14" y1="2" x2="14" y2="4"/></svg>
                 </a>
             </nav>
         </div>
     </header>
 
-    <div class="grid">
-        <div class="card"><div class="label">Money Saved</div><div id="money" class="value good">-</div><div id="moneyFoot" class="foot">Estimated, by source</div></div>
-        <div class="card"><div class="label">Time Saved</div><div id="time" class="value accent">-</div><div id="timeFoot" class="foot">Estimated prefill time</div></div>
-        <div class="card"><div class="label">Tokens Saved</div><div id="saved" class="value">-</div><div id="savedFoot" class="foot">Across all compressions</div></div>
-        <div class="card"><div class="label">Savings Rate</div><div id="rate" class="value accent">-</div><div class="foot">Of input tokens removed</div></div>
-        <div class="card"><div class="label">Compressions</div><div id="calls" class="value">-</div><div class="foot">Reversible via CCR</div></div>
-        <div class="card"><div class="label">Avg / Compression</div><div id="avg" class="value">-</div><div class="foot">Tokens saved per call</div></div>
-        <div class="card"><div class="label">Best Compression</div><div id="best" class="value">-</div><div class="foot">Most saved in one call</div></div>
-    </div>
+    <main id="view-savings">
+        <div class="grid">
+            <div class="card"><div class="label">Money Saved</div><div id="money" class="value good">-</div><div id="moneyFoot" class="foot">Estimated, by source</div></div>
+            <div class="card"><div class="label">Time Saved</div><div id="time" class="value accent">-</div><div id="timeFoot" class="foot">Estimated prefill time</div></div>
+            <div class="card"><div class="label">Tokens Saved</div><div id="saved" class="value">-</div><div id="savedFoot" class="foot">Across all compressions</div></div>
+            <div class="card"><div class="label">Savings Rate</div><div id="rate" class="value accent">-</div><div class="foot">Of input tokens removed</div></div>
+            <div class="card"><div class="label">Compressions</div><div id="calls" class="value">-</div><div class="foot">Reversible via CCR</div></div>
+            <div class="card"><div class="label">Avg / Compression</div><div id="avg" class="value">-</div><div class="foot">Tokens saved per call</div></div>
+            <div class="card"><div class="label">Best Compression</div><div id="best" class="value">-</div><div class="foot">Most saved in one call</div></div>
+        </div>
 
-    <div class="panel">
-        <div class="panel-head">
-            <h2>Savings Per Day <small id="rangeLabel"></small></h2>
-            <div class="ctrls">
-                <div class="ranges" id="metricToggle">
-                    <button type="button" data-m="tokens" class="active">Tokens</button>
-                    <button type="button" data-m="usd">$</button>
-                </div>
-                <div class="ranges" id="modeToggle">
-                    <button type="button" data-o="daily" class="active">Daily</button>
-                    <button type="button" data-o="cumulative">Cumulative</button>
-                </div>
-                <div class="ranges" id="ranges">
-                    <button type="button" data-d="7">7D</button>
-                    <button type="button" data-d="30" class="active">30D</button>
-                    <button type="button" data-d="90">90D</button>
-                    <button type="button" data-d="0">All</button>
+        <div class="panel">
+            <div class="panel-head">
+                <h2>Savings Per Day <small id="rangeLabel"></small></h2>
+                <div class="ctrls">
+                    <div class="ranges" id="metricToggle">
+                        <button type="button" data-m="tokens" class="active">Tokens</button>
+                        <button type="button" data-m="usd">$</button>
+                    </div>
+                    <div class="ranges" id="modeToggle">
+                        <button type="button" data-o="daily" class="active">Daily</button>
+                        <button type="button" data-o="cumulative">Cumulative</button>
+                    </div>
+                    <div class="ranges" id="ranges">
+                        <button type="button" data-d="7">7D</button>
+                        <button type="button" data-d="30" class="active">30D</button>
+                        <button type="button" data-d="90">90D</button>
+                        <button type="button" data-d="0">All</button>
+                    </div>
                 </div>
             </div>
+            <div id="chartWrap" class="chartwrap"></div>
+            <div id="chartEmpty" class="empty" style="display:none">No compression activity recorded yet. Run <code>enigma compress &lt;file&gt;</code> or enable the compression MCP (<code>enigma config compress on</code>).</div>
         </div>
-        <div id="chartWrap" class="chartwrap"></div>
-        <div id="chartEmpty" class="empty" style="display:none">No compression activity recorded yet. Run <code>enigma compress &lt;file&gt;</code> or enable the compression MCP (<code>enigma config compress on</code>).</div>
-    </div>
 
-    <div class="panel" id="usagePanel" style="display:none">
-        <h2 style="margin-bottom:4px">Real Tool Usage <small id="usageSub">Claude Code transcripts</small></h2>
-        <div class="sub" style="margin-bottom:14px">Measured token consumption and real prompt-cache savings, read-only from your own session logs. Deliberately not attributed to skills or output-style: a transcript has no counterfactual baseline, so any such number would be invented.</div>
-        <div class="grid" style="margin-bottom:16px">
-            <div class="card"><div class="label">Cache Saved</div><div id="uCacheMoney" class="value good">-</div><div class="foot">Est. from prompt caching</div></div>
-            <div class="card"><div class="label">Cache Reads</div><div id="uCacheRead" class="value accent">-</div><div class="foot">Tokens served from cache</div></div>
-            <div class="card"><div class="label">Input Tokens</div><div id="uInput" class="value">-</div><div class="foot">Consumed across sessions</div></div>
-            <div class="card"><div class="label">Output Tokens</div><div id="uOutput" class="value">-</div><div class="foot">Generated by the agent</div></div>
-            <div class="card"><div class="label">Sessions</div><div id="uSessions" class="value">-</div><div id="uSessionsFoot" class="foot">Transcripts scanned</div></div>
+        <div class="panel" id="usagePanel" style="display:none">
+            <h2 style="margin-bottom:4px">Real Tool Usage <small id="usageSub">Claude Code transcripts</small></h2>
+            <div class="sub" style="margin-bottom:14px">Measured token consumption and real prompt-cache savings, read-only from your own session logs. Deliberately not attributed to skills or output-style: a transcript has no counterfactual baseline, so any such number would be invented.</div>
+            <div class="grid" style="margin-bottom:16px">
+                <div class="card"><div class="label">Cache Saved</div><div id="uCacheMoney" class="value good">-</div><div class="foot">Est. from prompt caching</div></div>
+                <div class="card"><div class="label">Cache Reads</div><div id="uCacheRead" class="value accent">-</div><div class="foot">Tokens served from cache</div></div>
+                <div class="card"><div class="label">Input Tokens</div><div id="uInput" class="value">-</div><div class="foot">Consumed across sessions</div></div>
+                <div class="card"><div class="label">Output Tokens</div><div id="uOutput" class="value">-</div><div class="foot">Generated by the agent</div></div>
+                <div class="card"><div class="label">Sessions</div><div id="uSessions" class="value">-</div><div id="uSessionsFoot" class="foot">Transcripts scanned</div></div>
+            </div>
+            <h2 style="margin:0 0 10px">By Model</h2>
+            <div id="uByModel"></div>
         </div>
-        <h2 style="margin:0 0 10px">By Model</h2>
-        <div id="uByModel"></div>
-    </div>
 
-    <div class="panel" id="usageHint" style="display:none">
-        <h2 style="margin-bottom:8px">Real Tool Usage <small>opt-in</small></h2>
-        <div class="sub">Show real token consumption and prompt-cache savings from your Claude Code sessions with <code>enigma config usage-stats on</code>. enigma reads only your local session transcripts; nothing is sent anywhere.</div>
-    </div>
+        <div class="panel" id="usageHint" style="display:none">
+            <h2 style="margin-bottom:8px">Real Tool Usage <small>opt-in</small></h2>
+            <div class="sub">Show real token consumption and prompt-cache savings from your Claude Code sessions in <a href="#/settings">Settings</a> (Real tool-usage stats). enigma reads only your local session transcripts; nothing is sent anywhere.</div>
+        </div>
 
-    <div class="panel">
-        <h2 style="margin-bottom:14px">Savings By Source <small>which app/CLI compressed</small></h2>
-        <div id="sources"></div>
-    </div>
+        <div class="panel">
+            <h2 style="margin-bottom:14px">Savings By Source <small>which app/CLI compressed</small></h2>
+            <div id="sources"></div>
+        </div>
 
-    <div class="panel">
-        <h2 style="margin-bottom:14px">Savings By Content Type <small>what enigma compressed</small></h2>
-        <div id="types"></div>
-    </div>
+        <div class="panel">
+            <h2 style="margin-bottom:14px">Savings By Content Type <small>what enigma compressed</small></h2>
+            <div id="types"></div>
+        </div>
 
-    <div class="panel">
-        <h2 style="margin-bottom:14px">Before vs. After <small id="ratioLabel">cumulative tokens</small></h2>
-        <div class="bar-row"><span class="name">Before</span><div class="bar-track"><div id="barBefore" class="bar-fill" style="background:var(--accent2)"></div></div><span id="numBefore" class="num">-</span></div>
-        <div class="bar-row"><span class="name">After</span><div class="bar-track"><div id="barAfter" class="bar-fill" style="background:var(--good)"></div></div><span id="numAfter" class="num">-</span></div>
-        <div class="stat-line" style="margin:14px 0 0"><div>Removed <b id="removed">-</b></div><div>Reduction <b id="reduction">-</b></div><div>Compression ratio <b id="ratio">-</b></div></div>
-    </div>
+        <div class="panel">
+            <h2 style="margin-bottom:14px">Before vs. After <small id="ratioLabel">cumulative tokens</small></h2>
+            <div class="bar-row"><span class="name">Before</span><div class="bar-track"><div id="barBefore" class="bar-fill" style="background:var(--accent2)"></div></div><span id="numBefore" class="num">-</span></div>
+            <div class="bar-row"><span class="name">After</span><div class="bar-track"><div id="barAfter" class="bar-fill" style="background:var(--good)"></div></div><span id="numAfter" class="num">-</span></div>
+            <div class="stat-line" style="margin:14px 0 0"><div>Removed <b id="removed">-</b></div><div>Reduction <b id="reduction">-</b></div><div>Compression ratio <b id="ratio">-</b></div></div>
+        </div>
 
-    <div class="panel">
-        <div class="panel-head">
-            <h2>Savings History <small id="histStats"></small></h2>
-            <div class="ctrls">
-                <div class="ranges" id="histToggle">
-                    <button type="button" data-p="day" class="active">Daily</button>
-                    <button type="button" data-p="week">Weekly</button>
-                    <button type="button" data-p="month">Monthly</button>
+        <div class="panel">
+            <div class="panel-head">
+                <h2>Savings History <small id="histStats"></small></h2>
+                <div class="ctrls">
+                    <div class="ranges" id="histToggle">
+                        <button type="button" data-p="day" class="active">Daily</button>
+                        <button type="button" data-p="week">Weekly</button>
+                        <button type="button" data-p="month">Monthly</button>
+                    </div>
                 </div>
             </div>
+            <div class="tbl-wrap"><div id="histBody"></div></div>
         </div>
-        <div class="tbl-wrap"><div id="histBody"></div></div>
-    </div>
 
-    <div class="panel">
-        <h2 style="margin-bottom:14px">Recent Compressions <small>newest first</small></h2>
-        <div class="tbl-wrap"><div id="recent"></div></div>
-    </div>
+        <div class="panel">
+            <h2 style="margin-bottom:14px">Recent Compressions <small>newest first</small></h2>
+            <div class="tbl-wrap"><div id="recent"></div></div>
+        </div>
 
-    <div class="panel">
-        <h2 style="margin-bottom:14px">Reversible Cache (CCR) <small>recoverable originals on disk</small></h2>
-        <div id="cache"></div>
-    </div>
+        <div class="panel">
+            <h2 style="margin-bottom:14px">Reversible Cache (CCR) <small>recoverable originals on disk</small></h2>
+            <div id="cache"></div>
+        </div>
+    </main>
 
-    <div class="panel">
-        <h2 style="margin-bottom:4px">Enigma Settings <small>same options as the terminal UI</small></h2>
-        <div class="sub" style="margin-bottom:14px">Everything configurable from <code>enigma config</code> / the TUI, editable here. Changes apply at global scope and take effect immediately; memory toggles need an agent restart. Numeric estimates use <code>enigma config token-price &lt;usd&gt;</code> and <code>enigma config token-speed &lt;tok/s&gt;</code>.</div>
-        <div id="settingsBody"><div class="empty" style="padding:24px 0">Loading settings...</div></div>
-        <div id="settingsNote" class="set-note"></div>
-    </div>
+    <section id="view-settings" style="display:none">
+        <div class="page-head">
+            <h1>Settings</h1>
+            <p>Everything you can configure with <code>enigma config</code> or the terminal UI, editable here. Changes apply at global scope and take effect immediately; toggles that change agent memory need an agent restart.</p>
+        </div>
+        <div class="panel">
+            <div id="settingsBody"><div class="empty" style="padding:24px 0">Loading settings...</div></div>
+            <div id="settingsNote" class="set-note"></div>
+        </div>
+    </section>
 
     <footer>
         Polling pauses automatically when this tab is hidden, and the server caches each snapshot - so an open dashboard costs almost nothing.
@@ -579,7 +600,7 @@
             }
         }
 
-        // --- settings panel (mirrors the TUI registry over /api/settings) ---
+        // --- settings subpage (mirrors the TUI registry over /api/settings) ---
         function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
 
         function settingRow(s) {
@@ -627,6 +648,7 @@
             });
         }
 
+        let settingsLoaded = false;
         async function loadSettings() {
             try {
                 const res = await fetch("/api/settings", { cache: "no-store" });
@@ -634,12 +656,24 @@
             } catch { $("settingsBody").innerHTML = '<div class="empty" style="padding:24px 0">Settings unavailable.</div>'; }
         }
 
+        // --- hash routing between the Savings and Settings subpages ---
+        function route() {
+            const v = (location.hash || "").replace(/^#\/?/, "") === "settings" ? "settings" : "savings";
+            $("view-savings").style.display = v === "savings" ? "" : "none";
+            $("view-settings").style.display = v === "settings" ? "" : "none";
+            document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.view === v));
+            if (v === "settings" && !settingsLoaded) { settingsLoaded = true; loadSettings(); }
+            // The chart was sized while its view may have been hidden; nudge it on return.
+            if (v === "savings" && chart) { try { applyRange(); } catch { /* not ready */ } }
+        }
+
         initChart();
         poll();
         setInterval(poll, POLL_MS);
         document.addEventListener("visibilitychange", () => { if (!document.hidden) poll(); });
         wireSettings();
-        loadSettings();
+        window.addEventListener("hashchange", route);
+        route();
     </script>
 </body>
 </html>
