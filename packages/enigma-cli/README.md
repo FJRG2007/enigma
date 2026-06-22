@@ -483,7 +483,11 @@ enigma compress --clear                     # wipe all dashboard data (stats/his
 
 <p align="center">
   <img src="https://github.com/FJRG2007/enigma/blob/main/docs/images/dashboard.png?raw=true" alt="enigma dashboard" width="100%">
-  <br><sub>The dashboard (auto-generated from the current UI; mock data shown).</sub>
+  <br><sub>Savings view (auto-generated from the current UI; mock data shown).</sub>
+</p>
+<p align="center">
+  <img src="https://github.com/FJRG2007/enigma/blob/main/docs/images/usage.png?raw=true" alt="enigma Claude usage" width="100%">
+  <br><sub>Claude usage view: real session/weekly windows, cost, and per-account/model breakdowns.</sub>
 </p>
 
 `enigma dashboard` (alias `dash`) serves a local, loopback-only browser dashboard

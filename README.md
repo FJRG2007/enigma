@@ -21,6 +21,10 @@ committed.
 
 ![ENIGMA PREVIEW](https://raw.githubusercontent.com/FJRG2007/enigma/refs/heads/main/docs/images/dashboard.png)
 
+Claude usage: real session/weekly windows, estimated cost, and per-account/model breakdowns.
+
+![ENIGMA USAGE](https://raw.githubusercontent.com/FJRG2007/enigma/refs/heads/main/docs/images/usage.png)
+
 ## Install
 
 Recommended - install the `enigma` command globally, then run the interactive hub:
