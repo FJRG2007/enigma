@@ -228,6 +228,13 @@ function writeSetting(req: import("node:http").IncomingMessage, res: import("nod
     });
 }
 
+/** Factual "what's active" overview (configured state of each enigma system + skill counts). */
+function serveStatus(res: import("node:http").ServerResponse): void {
+    import("./dashboard-status")
+        .then(({ systemsStatus }) => { res.writeHead(200, JSON_HDR); res.end(JSON.stringify({ systems: systemsStatus() })); })
+        .catch(() => { res.writeHead(500, JSON_HDR); res.end('{"error":"status unavailable"}'); });
+}
+
 /** List the user's skills (enigma's own + external) for the Skills subpage. */
 function serveSkills(res: import("node:http").ServerResponse): void {
     import("./dashboard-skills")
@@ -286,6 +293,7 @@ function createDashboardServer(version: string): Server {
             res.end(statsPayload(version));
             return;
         }
+        if (url === "/api/status") { serveStatus(res); return; }
         if (url === "/health") {
             res.writeHead(200, { "Content-Type": "application/json" });
             res.end(JSON.stringify({ status: "ok", version }));

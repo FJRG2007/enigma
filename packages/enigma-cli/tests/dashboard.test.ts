@@ -84,6 +84,24 @@ test("settings API reads the registry and writes a setting; cross-origin writes 
     }
 });
 
+test("status API reports the configured state of each system", async () => {
+    const server = await startDashboardServer("test-version");
+    const base = `http://127.0.0.1:${server.port}`;
+    try {
+        const res = await fetch(`${base}/api/status`);
+        expect(res.status).toBe(200);
+        const data = await res.json() as { systems: { compress: boolean; outputStyle: string; minimalCode: string; skills: { enigma: number } } };
+        const s = data.systems;
+        expect(typeof s.compress).toBe("boolean");
+        expect(typeof s.outputStyle).toBe("string");
+        expect(typeof s.minimalCode).toBe("string");
+        // The 17 bundled enigma skills are always known, even with no agents installed.
+        expect(s.skills.enigma).toBeGreaterThanOrEqual(1);
+    } finally {
+        server.close();
+    }
+});
+
 test("skills API lists enigma skills and disable/enable round-trips", async () => {
     const server = await startDashboardServer("test-version");
     const base = `http://127.0.0.1:${server.port}`;

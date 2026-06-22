@@ -124,6 +124,13 @@
             border-radius: 7px; padding: 5px 14px; font-size: 12px; cursor: pointer; font-family: inherit;
         }
         .btn-danger:hover { border-color: var(--accent2); }
+        .sys-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0 24px; }
+        .sys-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--surface2); font-size: 13px; }
+        .sys-item .k { color: var(--muted); }
+        .pill { font-size: 11px; border-radius: 6px; padding: 2px 9px; border: 1px solid var(--border); white-space: nowrap; }
+        .pill.on { color: #06210f; background: var(--good); border-color: var(--good); font-weight: 600; }
+        .pill.off { color: var(--muted); background: var(--surface2); }
+        .pill.lvl { color: #1a1206; background: var(--accent); border-color: var(--accent); font-weight: 600; }
         @media (max-width: 720px) { .grid { grid-template-columns: repeat(2, 1fr); } header { gap: 12px; } }
     </style>
 </head>
@@ -163,6 +170,12 @@
             <div class="card"><div class="label">Compressions</div><div id="calls" class="value">-</div><div class="foot">Reversible via CCR</div></div>
             <div class="card"><div class="label">Avg / Compression</div><div id="avg" class="value">-</div><div class="foot">Tokens saved per call</div></div>
             <div class="card"><div class="label">Best Compression</div><div id="best" class="value">-</div><div class="foot">Most saved in one call</div></div>
+        </div>
+
+        <div class="panel">
+            <h2 style="margin-bottom:4px">Enigma Systems <small>what's active - configuration, not savings</small></h2>
+            <div class="sub" style="margin-bottom:14px">Only Context Compression and (opt-in) real tool-usage are measured for savings below. The rest is shown as state: enigma can't measure their effect because they run inside the agent, not through enigma - so it reports their configuration honestly instead of inventing a number.</div>
+            <div id="systems" class="sys-grid"><div class="empty" style="padding:16px 0">Loading...</div></div>
         </div>
 
         <div class="panel">
@@ -695,6 +708,38 @@
             } catch { $("settingsBody").innerHTML = '<div class="empty" style="padding:24px 0">Settings unavailable.</div>'; }
         }
 
+        // --- "Enigma systems" overview (factual state, never invented savings) ---
+        function pill(state, text) { return '<span class="pill ' + state + '">' + esc(text) + "</span>"; }
+        function boolPill(b) { return b ? pill("on", "on") : pill("off", "off"); }
+        function levelPill(v) { return (!v || v === "off") ? pill("off", "off") : pill("lvl", v); }
+
+        function renderSystems(s) {
+            const el = $("systems");
+            if (!s) { el.innerHTML = '<div class="empty" style="padding:16px 0">Status unavailable.</div>'; return; }
+            const item = (k, v) => '<div class="sys-item"><span class="k">' + k + '</span><span class="v">' + v + "</span></div>";
+            const sk = s.skills || {};
+            const skillTags = '<span class="tag">' + (sk.enigma || 0) + " enigma</span>"
+                + '<span class="tag ext">' + (sk.external || 0) + " external</span>"
+                + ((sk.disabled || 0) ? '<span class="tag">' + sk.disabled + " disabled</span>" : "");
+            el.innerHTML =
+                  item("Context compression (MCP) · measured", boolPill(s.compress))
+                + item("Real tool-usage stats · measured", boolPill(s.usageStats))
+                + item("Token-efficient output", levelPill(s.outputStyle))
+                + item("Minimal code", levelPill(s.minimalCode))
+                + item("Parallel sub-agents", boolPill(s.parallelSubagents))
+                + item("Auto-lint on edit", boolPill(s.autoLint))
+                + item("Commit emoji", boolPill(s.commitEmoji))
+                + item("Local dashboard", pill(s.dashboard === "off" ? "off" : "lvl", s.dashboard || "off"))
+                + item("Skills", skillTags);
+        }
+
+        async function loadSystems() {
+            try {
+                const r = await fetch("/api/status", { cache: "no-store" });
+                renderSystems((await r.json()).systems);
+            } catch { $("systems").innerHTML = '<div class="empty" style="padding:16px 0">Status unavailable.</div>'; }
+        }
+
         // --- skills subpage (lists enigma + external skills over /api/skills) ---
         function skillRow(s) {
             const ver = s.version ? '<span class="tag">v' + esc(s.version) + "</span>" : "";
@@ -800,7 +845,7 @@
             if (v === "settings" && !settingsLoaded) { settingsLoaded = true; loadSettings(); }
             if (v === "skills" && !skillsLoaded) { skillsLoaded = true; loadSkills(); }
             // The chart was sized while its view may have been hidden; nudge it on return.
-            if (v === "savings" && chart) { try { applyRange(); } catch { /* not ready */ } }
+            if (v === "savings") { loadSystems(); if (chart) { try { applyRange(); } catch { /* not ready */ } } }
         }
 
         initChart();
