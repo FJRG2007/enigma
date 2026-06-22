@@ -228,15 +228,43 @@ function writeSetting(req: import("node:http").IncomingMessage, res: import("nod
     });
 }
 
+/** List the user's skills (enigma's own + external) for the Skills subpage. */
+function serveSkills(res: import("node:http").ServerResponse): void {
+    import("./dashboard-skills")
+        .then(({ listSkillsForDashboard }) => { res.writeHead(200, JSON_HDR); res.end(JSON.stringify({ skills: listSkillsForDashboard() })); })
+        .catch(() => { res.writeHead(500, JSON_HDR); res.end('{"error":"skills unavailable"}'); });
+}
+
+/** Apply a skill action from a POST body { name, action } (enable/disable/remove). */
+function writeSkill(req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse): void {
+    let body = "";
+    req.on("data", (chunk) => { body += chunk; if (body.length > 8192) req.destroy(); });
+    req.on("end", () => {
+        let parsed: { name?: unknown; action?: unknown };
+        try { parsed = JSON.parse(body || "{}"); } catch { res.writeHead(400, JSON_HDR); res.end('{"error":"bad json"}'); return; }
+        if (typeof parsed.name !== "string" || typeof parsed.action !== "string") { res.writeHead(400, JSON_HDR); res.end('{"error":"missing name/action"}'); return; }
+        import("./dashboard-skills")
+            .then(({ applySkillAction }) => applySkillAction(parsed.name as string, parsed.action as string))
+            .then((out) => { res.writeHead(out.ok ? 200 : 400, JSON_HDR); res.end(JSON.stringify(out)); })
+            .catch(() => { res.writeHead(500, JSON_HDR); res.end('{"error":"action failed"}'); });
+    });
+}
+
 function createDashboardServer(version: string): Server {
     return createServer((req, res) => {
         const url = (req.url || "/").split("?")[0];
         const method = req.method || "GET";
-        // Settings API: the only write surface, so it is origin-guarded (GET read, POST write).
+        // Settings + Skills APIs are the write surfaces, so they are origin-guarded.
         if (url === "/api/settings") {
             if (!isLocalRequest(req)) { res.writeHead(403, JSON_HDR); res.end('{"error":"forbidden"}'); return; }
             if (method === "GET") { serveSettings(res); return; }
             if (method === "POST") { writeSetting(req, res); return; }
+            res.writeHead(405).end(); return;
+        }
+        if (url === "/api/skills") {
+            if (!isLocalRequest(req)) { res.writeHead(403, JSON_HDR); res.end('{"error":"forbidden"}'); return; }
+            if (method === "GET") { serveSkills(res); return; }
+            if (method === "POST") { writeSkill(req, res); return; }
             res.writeHead(405).end(); return;
         }
         if (method !== "GET") { res.writeHead(405).end(); return; }

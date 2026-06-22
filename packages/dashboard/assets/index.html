@@ -108,6 +108,16 @@
             border-radius: 7px; padding: 5px 10px; font-size: 12px; font-family: inherit; cursor: pointer;
         }
         .set-note { color: var(--accent); font-size: 12px; min-height: 16px; margin-top: 10px; }
+        .tag {
+            display: inline-block; font-size: 11px; color: var(--muted); background: var(--surface2);
+            border: 1px solid var(--border); border-radius: 6px; padding: 1px 7px; margin-left: 6px; vertical-align: middle;
+        }
+        .tag.ext { color: var(--accent2); }
+        .btn-danger {
+            background: var(--surface2); color: var(--accent2); border: 1px solid var(--border);
+            border-radius: 7px; padding: 5px 14px; font-size: 12px; cursor: pointer; font-family: inherit;
+        }
+        .btn-danger:hover { border-color: var(--accent2); }
         @media (max-width: 720px) { .grid { grid-template-columns: repeat(2, 1fr); } header { gap: 12px; } }
     </style>
 </head>
@@ -119,6 +129,7 @@
         </div>
         <nav class="tabs">
             <a href="#/" data-view="savings" class="tab active">Savings</a>
+            <a href="#/skills" data-view="skills" class="tab">Skills</a>
             <a href="#/settings" data-view="settings" class="tab">Settings</a>
         </nav>
         <div class="nav">
@@ -232,6 +243,17 @@
             <div id="cache"></div>
         </div>
     </main>
+
+    <section id="view-skills" style="display:none">
+        <div class="page-head">
+            <h1>Skills</h1>
+            <p>The skills installed in your agents - enigma's own and any external ones you added. Disable an enigma skill to remove it from your agents (enable to restore it); remove an external skill to delete it from every agent that has it.</p>
+        </div>
+        <div class="panel">
+            <div id="skillsBody"><div class="empty" style="padding:24px 0">Loading skills...</div></div>
+            <div id="skillsNote" class="set-note"></div>
+        </div>
+    </section>
 
     <section id="view-settings" style="display:none">
         <div class="page-head">
@@ -656,13 +678,70 @@
             } catch { $("settingsBody").innerHTML = '<div class="empty" style="padding:24px 0">Settings unavailable.</div>'; }
         }
 
-        // --- hash routing between the Savings and Settings subpages ---
+        // --- skills subpage (lists enigma + external skills over /api/skills) ---
+        function skillRow(s) {
+            const ver = s.version ? '<span class="tag">v' + esc(s.version) + "</span>" : "";
+            const where = s.agents && s.agents.length ? '<span class="tag">' + s.agents.map(esc).join(", ") + "</span>"
+                : (s.discarded ? '<span class="tag">disabled</span>' : "");
+            const ext = s.source === "external" ? '<span class="tag ext">external</span>' : "";
+            const ctl = s.source === "enigma"
+                ? '<button type="button" class="toggle' + (s.discarded ? "" : " on") + '" data-name="' + esc(s.name)
+                    + '" data-action="' + (s.discarded ? "enable" : "disable") + '">' + (s.discarded ? "Disabled" : "Enabled") + "</button>"
+                : '<button type="button" class="btn-danger" data-name="' + esc(s.name) + '" data-action="remove">Remove</button>';
+            return '<div class="set-row"><div class="set-meta"><div class="set-name">' + esc(s.name) + ext + ver + where + "</div>"
+                + '<div class="set-hint">' + esc(s.description || "") + "</div></div><div class=\"set-ctl\">" + ctl + "</div></div>";
+        }
+
+        function renderSkills(skills) {
+            const enigma = skills.filter((s) => s.source === "enigma");
+            const ext = skills.filter((s) => s.source === "external");
+            const section = (title, blurb, list, emptyText) => '<div class="set-cat"><div class="set-cat-h">' + title + "</div>"
+                + '<div class="set-cat-b">' + blurb + "</div>"
+                + (list.length ? list.map(skillRow).join("") : '<div class="empty" style="padding:16px 0">' + emptyText + "</div>") + "</div>";
+            $("skillsBody").innerHTML =
+                section("Enigma skills", "Distributed and kept current by enigma. Disable to remove from your agents; enable to restore.", enigma, "No enigma skills.")
+                + section("External skills", "Skills enigma did not author, found in your agents. Remove deletes the skill from every agent that has it.", ext, "No external skills found.");
+        }
+
+        async function postSkill(name, action) {
+            $("skillsNote").textContent = "Working...";
+            try {
+                const res = await fetch("/api/skills", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, action }) });
+                const out = await res.json();
+                if (!out.ok) { $("skillsNote").textContent = "Could not " + action + " " + name + ": " + (out.error || "error"); return; }
+                if (out.skills) renderSkills(out.skills);
+                $("skillsNote").textContent = out.note || ("Done: " + name);
+            } catch { $("skillsNote").textContent = "Could not reach the server to change " + name + "."; }
+        }
+
+        function wireSkills() {
+            $("skillsBody").addEventListener("click", (e) => {
+                const b = e.target.closest("button[data-action]");
+                if (!b) return;
+                const { name, action } = b.dataset;
+                if (action === "remove" && !confirm('Remove the external skill "' + name + '" from all agents? This deletes it from disk.')) return;
+                postSkill(name, action);
+            });
+        }
+
+        let skillsLoaded = false;
+        async function loadSkills() {
+            try {
+                const res = await fetch("/api/skills", { cache: "no-store" });
+                renderSkills((await res.json()).skills || []);
+            } catch { $("skillsBody").innerHTML = '<div class="empty" style="padding:24px 0">Skills unavailable.</div>'; }
+        }
+
+        // --- hash routing between the Savings, Skills and Settings subpages ---
         function route() {
-            const v = (location.hash || "").replace(/^#\/?/, "") === "settings" ? "settings" : "savings";
+            const h = (location.hash || "").replace(/^#\/?/, "");
+            const v = (h === "settings" || h === "skills") ? h : "savings";
             $("view-savings").style.display = v === "savings" ? "" : "none";
+            $("view-skills").style.display = v === "skills" ? "" : "none";
             $("view-settings").style.display = v === "settings" ? "" : "none";
             document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.view === v));
             if (v === "settings" && !settingsLoaded) { settingsLoaded = true; loadSettings(); }
+            if (v === "skills" && !skillsLoaded) { skillsLoaded = true; loadSkills(); }
             // The chart was sized while its view may have been hidden; nudge it on return.
             if (v === "savings" && chart) { try { applyRange(); } catch { /* not ready */ } }
         }
@@ -672,6 +751,7 @@
         setInterval(poll, POLL_MS);
         document.addEventListener("visibilitychange", () => { if (!document.hidden) poll(); });
         wireSettings();
+        wireSkills();
         window.addEventListener("hashchange", route);
         route();
     </script>

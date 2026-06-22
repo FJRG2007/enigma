@@ -84,6 +84,38 @@ test("settings API reads the registry and writes a setting; cross-origin writes 
     }
 });
 
+test("skills API lists enigma skills and disable/enable round-trips", async () => {
+    const server = await startDashboardServer("test-version");
+    const base = `http://127.0.0.1:${server.port}`;
+    try {
+        const get = await fetch(`${base}/api/skills`);
+        expect(get.status).toBe(200);
+        const data = await get.json() as { skills: { name: string; source: string; discarded: boolean }[] };
+        const git = data.skills.find((s) => s.name === "git-policy");
+        expect(git).toBeDefined();
+        expect(git!.source).toBe("enigma");
+
+        // Disable then re-read: the skill comes back flagged discarded.
+        const post = await fetch(`${base}/api/skills`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: "git-policy", action: "disable" }),
+        });
+        expect(post.status).toBe(200);
+        const out = await post.json() as { ok: boolean; skills?: { name: string; discarded: boolean }[] };
+        expect(out.ok).toBe(true);
+        expect(out.skills?.find((s) => s.name === "git-policy")?.discarded).toBe(true);
+
+        // A cross-origin request to the skills write surface is refused.
+        const evil = await fetch(`${base}/api/skills`, {
+            method: "POST", headers: { "Content-Type": "application/json", "Origin": "http://evil.example" },
+            body: JSON.stringify({ name: "git-policy", action: "enable" }),
+        });
+        expect(evil.status).toBe(403);
+    } finally {
+        server.close();
+    }
+});
+
 test("removeHostsEntry strips only the enigma mapping and leaves other hosts intact", () => {
     const hostsPath = join(homedir(), "hosts-test");
     process.env.ENIGMA_HOSTS_FILE = hostsPath;
