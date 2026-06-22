@@ -90,10 +90,19 @@ test("skills API lists enigma skills and disable/enable round-trips", async () =
     try {
         const get = await fetch(`${base}/api/skills`);
         expect(get.status).toBe(200);
-        const data = await get.json() as { skills: { name: string; source: string; discarded: boolean }[] };
+        const data = await get.json() as { skills: { name: string; source: string; discarded: boolean; update: string | null }[] };
         const git = data.skills.find((s) => s.name === "git-policy");
         expect(git).toBeDefined();
         expect(git!.source).toBe("enigma");
+
+        // "read" returns the skill's SKILL.md content for the inline editor.
+        const read = await fetch(`${base}/api/skills`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: "git-policy", action: "read" }),
+        });
+        const rout = await read.json() as { ok: boolean; content?: string };
+        expect(rout.ok).toBe(true);
+        expect(rout.content).toContain("name: git-policy");
 
         // Disable then re-read: the skill comes back flagged discarded.
         const post = await fetch(`${base}/api/skills`, {

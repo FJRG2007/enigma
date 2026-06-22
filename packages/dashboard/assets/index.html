@@ -113,6 +113,12 @@
             border: 1px solid var(--border); border-radius: 6px; padding: 1px 7px; margin-left: 6px; vertical-align: middle;
         }
         .tag.ext { color: var(--accent2); }
+        .tag.warn { color: var(--accent); border-color: var(--accent); }
+        .editor {
+            width: 100%; min-height: 360px; resize: vertical; background: var(--surface2); color: var(--text);
+            border: 1px solid var(--border); border-radius: 8px; padding: 12px;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.5;
+        }
         .btn-danger {
             background: var(--surface2); color: var(--accent2); border: 1px solid var(--border);
             border-radius: 7px; padding: 5px 14px; font-size: 12px; cursor: pointer; font-family: inherit;
@@ -245,9 +251,20 @@
     </main>
 
     <section id="view-skills" style="display:none">
-        <div class="page-head">
-            <h1>Skills</h1>
-            <p>The skills installed in your agents - enigma's own and any external ones you added. Disable an enigma skill to remove it from your agents (enable to restore it); remove an external skill to delete it from every agent that has it.</p>
+        <div class="page-head" style="display:flex;align-items:flex-start;gap:16px">
+            <div style="flex:1">
+                <h1>Skills</h1>
+                <p>The skills installed in your agents - enigma's own and any external ones you added. Edit a skill's content, disable/enable or remove it, and check whether enigma's skills are up to date.</p>
+            </div>
+            <button id="skillsCheck" type="button" class="toggle on" style="white-space:nowrap">Check for updates</button>
+        </div>
+        <div id="skillEditor" class="panel" style="display:none">
+            <div class="panel-head"><h2>Editing <span id="seName"></span> <small id="seWarn"></small></h2></div>
+            <textarea id="seText" class="editor" spellcheck="false"></textarea>
+            <div style="margin-top:10px;display:flex;gap:8px">
+                <button id="seSave" type="button" class="toggle on">Save</button>
+                <button id="seCancel" type="button" class="toggle">Cancel</button>
+            </div>
         </div>
         <div class="panel">
             <div id="skillsBody"><div class="empty" style="padding:24px 0">Loading skills...</div></div>
@@ -682,14 +699,18 @@
         function skillRow(s) {
             const ver = s.version ? '<span class="tag">v' + esc(s.version) + "</span>" : "";
             const where = s.agents && s.agents.length ? '<span class="tag">' + s.agents.map(esc).join(", ") + "</span>"
-                : (s.discarded ? '<span class="tag">disabled</span>' : "");
+                : (s.discarded ? '<span class="tag">disabled</span>' : '<span class="tag">not deployed</span>');
             const ext = s.source === "external" ? '<span class="tag ext">external</span>' : "";
-            const ctl = s.source === "enigma"
+            const upd = s.source !== "enigma" ? ""
+                : s.update === "update" ? '<span class="tag warn">update available</span>'
+                : s.update === "modified" ? '<span class="tag ext">modified</span>' : "";
+            const edit = '<button type="button" class="toggle" data-name="' + esc(s.name) + '" data-action="edit" data-enigma="' + (s.source === "enigma" ? 1 : 0) + '">Edit</button>';
+            const main = s.source === "enigma"
                 ? '<button type="button" class="toggle' + (s.discarded ? "" : " on") + '" data-name="' + esc(s.name)
                     + '" data-action="' + (s.discarded ? "enable" : "disable") + '">' + (s.discarded ? "Disabled" : "Enabled") + "</button>"
                 : '<button type="button" class="btn-danger" data-name="' + esc(s.name) + '" data-action="remove">Remove</button>';
-            return '<div class="set-row"><div class="set-meta"><div class="set-name">' + esc(s.name) + ext + ver + where + "</div>"
-                + '<div class="set-hint">' + esc(s.description || "") + "</div></div><div class=\"set-ctl\">" + ctl + "</div></div>";
+            return '<div class="set-row"><div class="set-meta"><div class="set-name">' + esc(s.name) + ext + ver + upd + where + "</div>"
+                + '<div class="set-hint">' + esc(s.description || "") + '</div></div><div class="set-ctl" style="display:flex;gap:8px">' + edit + main + "</div></div>";
         }
 
         function renderSkills(skills) {
@@ -714,14 +735,50 @@
             } catch { $("skillsNote").textContent = "Could not reach the server to change " + name + "."; }
         }
 
+        // Inline SKILL.md editor (one skill at a time).
+        let editing = null;
+        async function openEditor(name, isEnigma) {
+            $("skillsNote").textContent = "Loading " + name + "...";
+            try {
+                const res = await fetch("/api/skills", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, action: "read" }) });
+                const out = await res.json();
+                if (!out.ok) { $("skillsNote").textContent = "Could not open " + name + ": " + (out.error || "error"); return; }
+                editing = name;
+                $("seName").textContent = name;
+                $("seWarn").textContent = isEnigma ? "managed by enigma - local edits revert on the next update/sync" : "external skill";
+                $("seText").value = out.content || "";
+                $("skillEditor").style.display = "";
+                $("skillsNote").textContent = "";
+                window.scrollTo({ top: 0, behavior: "smooth" });
+                $("seText").focus();
+            } catch { $("skillsNote").textContent = "Could not reach the server."; }
+        }
+        function closeEditor() { editing = null; $("skillEditor").style.display = "none"; }
+        async function saveEditor() {
+            if (!editing) return;
+            $("skillsNote").textContent = "Saving " + editing + "...";
+            try {
+                const res = await fetch("/api/skills", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: editing, action: "save", content: $("seText").value }) });
+                const out = await res.json();
+                if (!out.ok) { $("skillsNote").textContent = "Could not save " + editing + ": " + (out.error || "error"); return; }
+                if (out.skills) renderSkills(out.skills);
+                $("skillsNote").textContent = out.note || "Saved.";
+                closeEditor();
+            } catch { $("skillsNote").textContent = "Could not reach the server."; }
+        }
+
         function wireSkills() {
             $("skillsBody").addEventListener("click", (e) => {
                 const b = e.target.closest("button[data-action]");
                 if (!b) return;
                 const { name, action } = b.dataset;
+                if (action === "edit") { openEditor(name, b.dataset.enigma === "1"); return; }
                 if (action === "remove" && !confirm('Remove the external skill "' + name + '" from all agents? This deletes it from disk.')) return;
                 postSkill(name, action);
             });
+            $("seSave").addEventListener("click", saveEditor);
+            $("seCancel").addEventListener("click", closeEditor);
+            $("skillsCheck").addEventListener("click", () => postSkill("*", "check-updates"));
         }
 
         let skillsLoaded = false;

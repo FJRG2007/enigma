@@ -301,6 +301,120 @@ export function discardSkill(name: string, discarded: boolean): string[] {
     return syncDeployed();
 }
 
+/** A skill as seen across the user's installed agents, for the dashboard Skills subpage. */
+export interface SkillReport {
+    name: string;
+    source: "enigma" | "external";
+    version: string | null;
+    description: string | null;
+    provider: string | null;
+    /** enigma skills: true when the user disabled (discarded) it. */
+    discarded: boolean;
+    /** Labels of the installed agents whose global skills dir currently holds it. */
+    agents: string[];
+    /** enigma skills: deployment freshness; null for external (no canonical to compare). */
+    update: "up-to-date" | "update" | "modified" | "not-deployed" | null;
+}
+
+/** Worst-status escalation: modified beats update beats up-to-date. */
+function updateSeverity(u: SkillReport["update"]): number {
+    return u === "modified" ? 2 : u === "update" ? 1 : 0;
+}
+
+/**
+ * Every skill the user has across installed agents (global scope): enigma's own (the
+ * canonical bundled+remote set, disabled ones included) and any external/foreign skill
+ * found deployed. For enigma skills it also reports whether the deployed copies are
+ * up-to-date, have an update available, or were modified locally.
+ */
+export function skillsReport(): SkillReport[] {
+    const discarded = discardedSkillNames();
+    const canonical = new Map(inspectSkills().map((s) => [s.name, s]));
+    const byName = new Map<string, SkillReport>();
+
+    for (const [name, s] of canonical) {
+        byName.set(name, {
+            name, source: "enigma", version: s.meta.version || null, description: s.meta.description || null,
+            provider: MANAGED_PROVIDER, discarded: discarded.has(name), agents: [], update: "not-deployed",
+        });
+    }
+
+    for (const agent of discoverAgents()) {
+        const root = agent.targets.global.skills;
+        if (!isDir(root)) continue;
+        for (const e of readdirSync(root)) {
+            const sdir = join(root, e);
+            if (!isDir(sdir) || !existsSync(join(sdir, "SKILL.md"))) continue;
+            const canon = canonical.get(e);
+            const meta = readSkillMeta(sdir);
+            let entry = byName.get(e);
+            if (!entry) {
+                const enigma = isManagedProvider(meta.provider);
+                entry = {
+                    name: e, source: enigma ? "enigma" : "external", version: meta.version || null,
+                    description: meta.description || null, provider: meta.provider || null,
+                    discarded: false, agents: [], update: enigma ? "not-deployed" : null,
+                };
+                byName.set(e, entry);
+            }
+            if (!entry.agents.includes(agent.label)) entry.agents.push(agent.label);
+            if (entry.source === "enigma" && canon) {
+                const kind = skillStatus(sdir, canon.meta).kind;
+                const mapped = kind === "tampered" ? "modified" : kind === "update" ? "update" : "up-to-date";
+                if (entry.update === "not-deployed" || updateSeverity(mapped) > updateSeverity(entry.update)) entry.update = mapped;
+            }
+        }
+    }
+
+    return [...byName.values()].sort((a, b) =>
+        a.source === b.source ? a.name.localeCompare(b.name) : (a.source === "enigma" ? -1 : 1));
+}
+
+/** The SKILL.md content of `name`: a deployed agent copy if any, else the bundled source. */
+export function readSkillSource(name: string): string | null {
+    for (const agent of discoverAgents()) {
+        const f = join(agent.targets.global.skills, name, "SKILL.md");
+        if (existsSync(f)) { try { return readFileSync(f, "utf8"); } catch { /* try the next */ } }
+    }
+    const canon = inspectSkills().find((s) => s.name === name);
+    if (canon) { try { return readFileSync(join(canon.src, "SKILL.md"), "utf8"); } catch { /* none */ } }
+    return null;
+}
+
+/**
+ * Overwrite the SKILL.md of `name` in every installed agent that holds it (never creates a
+ * new deployment). Returns the agent labels written. Editing an enigma skill makes its copy
+ * "modified" and a later sync/update will revert it - the caller surfaces that.
+ */
+export function writeSkillEverywhere(name: string, content: string): string[] {
+    const out: string[] = [];
+    for (const agent of discoverAgents()) {
+        const file = join(agent.targets.global.skills, name, "SKILL.md");
+        if (!existsSync(file)) continue;
+        try { writeFileSync(file, content); out.push(agent.label); } catch { /* read-only */ }
+    }
+    return out;
+}
+
+/** Delete an external (non-managed) skill folder from every installed agent that holds it. */
+export function removeExternalSkill(name: string): string[] {
+    const out: string[] = [];
+    for (const agent of discoverAgents()) {
+        const dir = join(agent.targets.global.skills, name);
+        if (!existsSync(join(dir, "SKILL.md"))) continue;
+        if (isManagedProvider(readSkillMeta(dir).provider)) continue; // enigma skills use disable/enable
+        try { rmSync(dir, { recursive: true, force: true }); out.push(agent.label); } catch { /* busy/locked */ }
+    }
+    return out;
+}
+
+/** Check GitHub for newer enigma skills and re-sync deployments. Returns what changed. */
+export async function checkAndUpdateSkills(): Promise<{ updated: string[]; synced: string[] }> {
+    const r = await refreshSkillsFromGitHub(true);
+    const synced = syncDeployed();
+    return { updated: r.updated || [], synced };
+}
+
 /**
  * Refresh the GitHub remote-skill cache (see skills-remote.ts), feeding it this
  * package's bundled versions so only strictly newer releases are adopted. Safe

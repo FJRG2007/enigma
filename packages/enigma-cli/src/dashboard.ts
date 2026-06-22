@@ -235,16 +235,17 @@ function serveSkills(res: import("node:http").ServerResponse): void {
         .catch(() => { res.writeHead(500, JSON_HDR); res.end('{"error":"skills unavailable"}'); });
 }
 
-/** Apply a skill action from a POST body { name, action } (enable/disable/remove). */
+/** Apply a skill action from a POST body { name, action, content? } (read/save/enable/disable/remove/check-updates). */
 function writeSkill(req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse): void {
     let body = "";
-    req.on("data", (chunk) => { body += chunk; if (body.length > 8192) req.destroy(); });
+    // Larger cap than other writes: the "save" action carries a full SKILL.md document.
+    req.on("data", (chunk) => { body += chunk; if (body.length > 512 * 1024) req.destroy(); });
     req.on("end", () => {
-        let parsed: { name?: unknown; action?: unknown };
+        let parsed: { name?: unknown; action?: unknown; content?: unknown };
         try { parsed = JSON.parse(body || "{}"); } catch { res.writeHead(400, JSON_HDR); res.end('{"error":"bad json"}'); return; }
-        if (typeof parsed.name !== "string" || typeof parsed.action !== "string") { res.writeHead(400, JSON_HDR); res.end('{"error":"missing name/action"}'); return; }
+        if (typeof parsed.action !== "string") { res.writeHead(400, JSON_HDR); res.end('{"error":"missing action"}'); return; }
         import("./dashboard-skills")
-            .then(({ applySkillAction }) => applySkillAction(parsed.name as string, parsed.action as string))
+            .then(({ applySkillAction }) => applySkillAction(typeof parsed.name === "string" ? parsed.name : "", parsed.action as string, parsed.content))
             .then((out) => { res.writeHead(out.ok ? 200 : 400, JSON_HDR); res.end(JSON.stringify(out)); })
             .catch(() => { res.writeHead(500, JSON_HDR); res.end('{"error":"action failed"}'); });
     });
