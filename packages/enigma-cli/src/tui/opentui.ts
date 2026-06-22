@@ -411,6 +411,15 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
                 `5h block: ${fmtTok(b.tokens)} tok  ${usd(b.cost)}  burn ${fmtTok(b.burnRatePerMin)}/min  -> proj ${fmtTok(b.projectedTokens)}  ${b.active ? `(${remMin} min left)` : "(ended)"}`,
                 { fg: b.active ? COL.yellow : COL.gray, marginTop: 1 }));
         }
+        const accounts = Object.entries(u.byAccount || {}).sort((a, b) => b[1].cost - a[1].cost);
+        if (accounts.length) {
+            rows.push(txt("By account", { fg: COL.gray, attributes: BOLD, marginTop: 1 }));
+            for (const [acct, v] of accounts) {
+                rows.push(h(box, { flexDirection: "row", justifyContent: "space-between" },
+                    txt(` ${acct} `, { truncate: true }),
+                    txt(`${fmtTok(v.input + v.output)} tok   ${usd(v.cost)} `, { fg: COL.gray })));
+            }
+        }
         rows.push(txt("By model", { fg: COL.gray, attributes: BOLD, marginTop: 1 }));
         for (const [m, v] of models) {
             rows.push(h(box, { flexDirection: "row", justifyContent: "space-between" },
@@ -423,11 +432,13 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
                 txt(` ${r.project} `, { truncate: true }),
                 txt(`${r.model}   ${usd(r.cost)} `, { fg: COL.gray, truncate: true })));
         }
+        const provNote = (u.providers || []).map((p) => `${p.label}${p.available ? "" : " (no local usage)"}`).join("  ");
         return panelBox(COL.cyan, [
             txt("Claude usage", { fg: COL.cyan, attributes: BOLD }),
             txt(`Estimated cost from local transcripts${u.pending ? " (refreshing...)" : ""}`, { fg: COL.gray }),
             h(box, { flexDirection: "column" }, ...rows),
             h(box, { flexGrow: 1 }),
+            provNote ? txt(provNote, { fg: COL.gray, truncate: true }) : null,
         ]);
     };
 

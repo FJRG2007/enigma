@@ -136,6 +136,27 @@ test("overlays Anthropic's real rate-limit windows when the proxy captured them"
     }
 });
 
+test("reads every Claude account (default + managed) and reports provider coverage", () => {
+    // A managed account lives under ~/.enigma/claude/<name>/projects - it must be read too.
+    const managed = join(homedir(), ".enigma", "claude", "work", "projects", "proj-w");
+    mkdirSync(managed, { recursive: true });
+    writeFileSync(join(managed, "w1.jsonl"),
+        assistant("2026-06-03T10:00:00Z", "w_1", "claude-opus-4-8", { input_tokens: 11, output_tokens: 22, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }) + "\n");
+    try {
+        const r = buildUsage();
+        expect(Object.keys(r.byAccount).sort()).toEqual(["default", "work"]);
+        expect(r.byAccount.work.output).toBe(22);
+        expect(r.byAccount.default.output).toBeGreaterThan(0);
+        expect(r.recentSessions.some((s) => s.account === "work")).toBe(true);
+        const claude = r.providers.find((p) => p.tool === "claude")!;
+        const codex = r.providers.find((p) => p.tool === "codex")!;
+        expect(claude.available).toBe(true);
+        expect(codex.available).toBe(false);
+    } finally {
+        rmSync(join(homedir(), ".enigma", "claude", "work"), { recursive: true, force: true });
+    }
+});
+
 test("empty when there are no transcripts", () => {
     const empty = mkdtempSync(join(tmpdir(), "enigma-usage-empty-"));
     const prevHome = process.env.HOME, prevProfile = process.env.USERPROFILE, prevProjects = process.env.ENIGMA_CLAUDE_PROJECTS;

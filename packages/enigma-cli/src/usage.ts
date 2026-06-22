@@ -83,6 +83,8 @@ export interface UsageBucket {
 /** One recent session row (newest first) for the dashboard/TUI tables. */
 export interface SessionRow {
     id: string;
+    /** Which Claude account this session belongs to ("default" or a managed account name). */
+    account: string;
     project: string;
     lastActive: number;
     model: string;
@@ -144,6 +146,10 @@ export interface UsageReport extends UsageBucket {
     byModel: Record<string, UsageBucket>;
     /** Per-project totals, keyed by the ~/.claude/projects/<project> directory name. */
     byProject: Record<string, UsageBucket>;
+    /** Per-Claude-account totals ("default" + each managed account), so multiple logins are distinguished. */
+    byAccount: Record<string, UsageBucket>;
+    /** Which coding tools enigma can read local usage for, and the honest status of each. */
+    providers: ProviderCoverage[];
     /** Per-UTC-hour-of-day totals, keyed "00".."23" (an average-day distribution). */
     byHour: Record<string, UsageBucket>;
     /** The newest sessions (top-level files), newest first, capped. */
@@ -159,6 +165,9 @@ export interface UsageReport extends UsageBucket {
     /** epoch ms the report was built. */
     generatedAt: number;
 }
+
+/** Whether enigma can read a tool's local token usage, and why not when it cannot. */
+export interface ProviderCoverage { tool: string; label: string; available: boolean; note: string; }
 
 /** One timestamped activity sample used to reconstruct the 5-hour block locally. */
 interface UsageEvent { t: number; tok: number; cost: number; }
@@ -194,8 +203,41 @@ const FIVE_HOURS_MS = 5 * 60 * 60 * 1000;
 const EVENTS_PER_FILE = 400;
 const RECENT_SESSIONS = 20;
 
-function claudeProjectsDir(): string {
-    return process.env.ENIGMA_CLAUDE_PROJECTS || join(homedir(), ".claude", "projects");
+/** One Claude account's transcript source: its name and its projects directory. */
+interface ClaudeSource { account: string; dir: string; }
+
+/**
+ * Every Claude account's transcript directory: the default config dir plus each
+ * enigma-managed account under ~/.enigma/claude/<name>/projects. So usage reflects ALL
+ * logins, not just the default one (the dashboard was only ever showing `~/.claude`).
+ * ENIGMA_CLAUDE_PROJECTS overrides the default source (used by tests).
+ */
+function claudeSources(): ClaudeSource[] {
+    const out: ClaudeSource[] = [{ account: "default", dir: process.env.ENIGMA_CLAUDE_PROJECTS || join(homedir(), ".claude", "projects") }];
+    const base = join(homedir(), ".enigma", "claude");
+    try {
+        for (const e of readdirSync(base, { withFileTypes: true })) {
+            if (!e.isDirectory()) continue;
+            const dir = join(base, e.name, "projects");
+            if (existsSync(dir)) out.push({ account: e.name, dir });
+        }
+    } catch { /* no managed accounts */ }
+    return out;
+}
+
+/**
+ * Which tools enigma can read local token usage for. Only Claude Code writes a local
+ * per-message usage transcript; Codex and OpenCode do not expose one we can read, so they
+ * are reported as unavailable rather than silently omitted (never faked). A reader is added
+ * here if/when their local format is verified.
+ */
+function providerCoverage(accountCount: number): ProviderCoverage[] {
+    const opencodeStore = existsSync(join(homedir(), ".local", "share", "opencode")) || existsSync(join(homedir(), ".config", "opencode", "storage"));
+    return [
+        { tool: "claude", label: "Claude Code", available: true, note: `${accountCount} account${accountCount === 1 ? "" : "s"} - local transcripts` },
+        { tool: "codex", label: "Codex", available: false, note: "no local token-usage store" },
+        { tool: "opencode", label: "OpenCode", available: false, note: opencodeStore ? "store present; usage reader not yet wired" : "no local token-usage store" },
+    ];
 }
 
 function cacheFile(): string {
@@ -215,7 +257,7 @@ function emptyWindows(): UsageWindows {
 }
 
 function emptyReport(): UsageReport {
-    return { ...emptyBucket(), byDay: {}, byModel: {}, byProject: {}, byHour: {}, recentSessions: [], block: null, windows: emptyWindows(), sessions: 0, scannedFiles: 0, generatedAt: Date.now() };
+    return { ...emptyBucket(), byDay: {}, byModel: {}, byProject: {}, byAccount: {}, providers: providerCoverage(0), byHour: {}, recentSessions: [], block: null, windows: emptyWindows(), sessions: 0, scannedFiles: 0, generatedAt: Date.now() };
 }
 
 /** Add `b` into `a` in place. */
@@ -429,8 +471,7 @@ function computeWindows(byDayModel: Record<string, Record<string, UsageBucket>>,
  * it off the request path via readUsageCached.
  */
 export function buildUsage(): UsageReport {
-    const root = claudeProjectsDir();
-    const files = listJsonl(root);
+    const sources = claudeSources();
     const prev = readCache();
     const next: Record<string, FileAgg> = {};
     const report = emptyReport();
@@ -438,34 +479,40 @@ export function buildUsage(): UsageReport {
     const blockEvents: UsageEvent[] = [];
     const sessionRows: SessionRow[] = [];
     const byDayModel: Record<string, Record<string, UsageBucket>> = {};
-    for (const path of files) {
-        let st: import("node:fs").Stats;
-        try { st = statSync(path); } catch { continue; }
-        const sessionFile = !path.replace(/\\/g, "/").includes("/subagents/");
-        const hit = prev[path];
-        const agg: FileAgg = (hit && hit.mtime === st.mtimeMs && hit.size === st.size && Array.isArray(hit.events) && hit.byDayModel)
-            ? hit
-            : { mtime: st.mtimeMs, size: st.size, sessionFile, ...aggregateFile(path) };
-        next[path] = agg;
-        for (const [day, b] of Object.entries(agg.byDay)) { foldInto(report.byDay, day, b); foldBucket(report, b); }
-        for (const [model, b] of Object.entries(agg.byModel)) foldInto(report.byModel, model, b);
-        for (const [hour, b] of Object.entries(agg.byHour)) foldInto(report.byHour, hour, b);
-        for (const [day, fams] of Object.entries(agg.byDayModel)) for (const [fam, b] of Object.entries(fams)) foldInto((byDayModel[day] ??= {}), fam, b);
-        foldInto(report.byProject, projectOf(path, root + sep), agg.total);
-        report.scannedFiles++;
-        if (agg.sessionFile) {
-            report.sessions++;
-            if (agg.total.messages > 0) sessionRows.push({
-                id: path.split(/[\\/]/).pop()!.replace(/\.jsonl$/, ""),
-                project: projectOf(path, root + sep),
-                lastActive: agg.lastActive,
-                model: topModel(agg.byModel),
-                ...agg.total,
-            });
+    for (const src of sources) {
+        const root = src.dir + sep;
+        for (const path of listJsonl(src.dir)) {
+            let st: import("node:fs").Stats;
+            try { st = statSync(path); } catch { continue; }
+            const sessionFile = !path.replace(/\\/g, "/").includes("/subagents/");
+            const hit = prev[path];
+            const agg: FileAgg = (hit && hit.mtime === st.mtimeMs && hit.size === st.size && Array.isArray(hit.events) && hit.byDayModel)
+                ? hit
+                : { mtime: st.mtimeMs, size: st.size, sessionFile, ...aggregateFile(path) };
+            next[path] = agg;
+            for (const [day, b] of Object.entries(agg.byDay)) { foldInto(report.byDay, day, b); foldBucket(report, b); }
+            for (const [model, b] of Object.entries(agg.byModel)) foldInto(report.byModel, model, b);
+            for (const [hour, b] of Object.entries(agg.byHour)) foldInto(report.byHour, hour, b);
+            for (const [day, fams] of Object.entries(agg.byDayModel)) for (const [fam, b] of Object.entries(fams)) foldInto((byDayModel[day] ??= {}), fam, b);
+            foldInto(report.byProject, projectOf(path, root), agg.total);
+            foldInto(report.byAccount, src.account, agg.total);
+            report.scannedFiles++;
+            if (agg.sessionFile) {
+                report.sessions++;
+                if (agg.total.messages > 0) sessionRows.push({
+                    id: path.split(/[\\/]/).pop()!.replace(/\.jsonl$/, ""),
+                    account: src.account,
+                    project: projectOf(path, root),
+                    lastActive: agg.lastActive,
+                    model: topModel(agg.byModel),
+                    ...agg.total,
+                });
+            }
+            // Only recently-modified files can hold events inside the current 5h window.
+            if (st.mtimeMs > now - FIVE_HOURS_MS - 60 * 60 * 1000) blockEvents.push(...agg.events);
         }
-        // Only recently-modified files can hold events inside the current 5h window.
-        if (st.mtimeMs > now - FIVE_HOURS_MS - 60 * 60 * 1000) blockEvents.push(...agg.events);
     }
+    report.providers = providerCoverage(Object.keys(report.byAccount).length);
     writeCache(next);
     sessionRows.sort((a, b) => b.lastActive - a.lastActive);
     report.recentSessions = sessionRows.slice(0, RECENT_SESSIONS);

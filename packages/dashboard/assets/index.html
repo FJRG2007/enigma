@@ -306,6 +306,9 @@
                     <div>Projected <b id="uBlockProj">-</b></div>
                 </div>
             </div>
+            <div id="uProviders" class="sub" style="margin:4px 0 0"></div>
+            <h2 style="margin:18px 0 10px">By Account <small>per Claude login</small></h2>
+            <div id="uByAccount"></div>
             <h2 style="margin:18px 0 10px">By Model</h2>
             <div id="uByModel"></div>
             <h2 style="margin:18px 0 10px">By Project</h2>
@@ -599,10 +602,18 @@
         function renderRecentSessions(el, rows, pending) {
             rows = rows || [];
             if (!rows.length) { el.innerHTML = '<div class="empty" style="padding:16px 0">' + (pending ? "Scanning..." : "No sessions yet.") + "</div>"; return; }
-            el.innerHTML = '<table class="tbl"><thead><tr><th>Last active</th><th>Project</th><th>Model</th><th class="r">Input</th><th class="r">Output</th><th class="r">Cost</th></tr></thead><tbody>'
-                + rows.map((s) => '<tr><td>' + (s.lastActive ? new Date(s.lastActive).toLocaleString() : "-") + '</td><td>' + esc(shortProject(s.project)) + '</td><td>' + esc(s.model || "-")
+            el.innerHTML = '<table class="tbl"><thead><tr><th>Last active</th><th>Account</th><th>Project</th><th>Model</th><th class="r">Input</th><th class="r">Output</th><th class="r">Cost</th></tr></thead><tbody>'
+                + rows.map((s) => '<tr><td>' + (s.lastActive ? new Date(s.lastActive).toLocaleString() : "-") + '</td><td>' + esc(s.account || "default") + '</td><td>' + esc(shortProject(s.project)) + '</td><td>' + esc(s.model || "-")
                     + '</td><td class="r">' + fmt(s.input) + '</td><td class="r">' + fmt(s.output) + '</td><td class="r">' + fmtUsd(s.cost || 0) + "</td></tr>").join("")
                 + "</tbody></table>";
+        }
+
+        function renderProviders(list) {
+            list = list || [];
+            const el = $("uProviders");
+            if (!list.length) { el.innerHTML = ""; return; }
+            el.innerHTML = "Providers: " + list.map((p) =>
+                '<span class="tag ' + (p.available ? "meas" : "") + '">' + esc(p.label) + (p.available ? "" : " - " + esc(p.note)) + "</span>").join("");
         }
 
         function renderUsage(u) {
@@ -633,6 +644,8 @@
                 $("uBlockBurn").textContent = fmt(Math.round(b.burnRatePerMin || 0)) + " tok/min";
                 $("uBlockProj").textContent = fmt(b.projectedTokens || 0) + " · " + fmtUsd(b.projectedCost || 0);
             } else { bw.style.display = "none"; }
+            renderProviders(u.providers);
+            renderUsageTable($("uByAccount"), u.byAccount, u.pending, "Account");
             renderUsageTable($("uByModel"), u.byModel, u.pending, "Model");
             renderUsageTable($("uByProject"), u.byProject, u.pending, "Project");
             renderRecentSessions($("uRecent"), u.recentSessions, u.pending);

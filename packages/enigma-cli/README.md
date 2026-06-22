@@ -569,7 +569,11 @@ session transcripts (`~/.claude/projects/.../*.jsonl`) and reports:
 
 - **Estimated cost** in USD from a per-model price table (Opus/Sonnet/Haiku, incl. cache
   read/write rates), plus measured input/output/cache tokens.
-- **Breakdowns** by model, by project and a **recent sessions** table.
+- **Breakdowns** by model, by project, **by account** (every Claude login - default and
+  managed accounts, not just `~/.claude`), and a **recent sessions** table.
+- A **provider coverage** line: only Claude Code keeps a readable local usage store, so
+  Codex and OpenCode are shown as unavailable (no local token store) rather than faked. The
+  session/weekly windows are Claude-specific (they come from Anthropic's rate-limit headers).
 - A **current 5-hour block** computed locally from transcript timestamps: tokens + cost
   used in the open window, the **burn rate** (tokens/min) and a projected end-of-window
   total. (No Anthropic API is called - this is reconstructed from your local logs.)
