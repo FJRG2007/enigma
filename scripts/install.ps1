@@ -26,10 +26,23 @@
     Write-Host "enigma: clearing the npm cache (forces the latest version)..."
     cmd /c "npm cache clean --force >NUL 2>NUL"
 
+    # On Windows, a running enigma binary (e.g. the 'always' dashboard daemon) holds
+    # enigma-bin.exe open, so npm's update fails with EBUSY ("resource busy or locked,
+    # copyfile ... enigma-bin.exe"). If the first attempt fails, free the lock by stopping
+    # the binary and retry once.
     Write-Host "enigma: installing enigma-cli globally..."
-    cmd /c "npm install -g enigma-cli@latest"
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "enigma: npm install failed (exit $LASTEXITCODE). Your terminal stays open; fix the error above and re-run."
+    $installed = $false
+    foreach ($attempt in 1, 2) {
+        cmd /c "npm install -g enigma-cli@latest"
+        if ($LASTEXITCODE -eq 0) { $installed = $true; break }
+        if ($attempt -eq 1) {
+            Write-Host "enigma: install failed (exit $LASTEXITCODE) - a running enigma may be locking the binary. Stopping it and retrying once..."
+            Get-Process -Name "enigma-bin" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 2
+        }
+    }
+    if (-not $installed) {
+        Write-Host "enigma: npm install still failing (exit $LASTEXITCODE). Close any running 'enigma' (including a background dashboard) and re-run. Your terminal stays open."
         return
     }
 
