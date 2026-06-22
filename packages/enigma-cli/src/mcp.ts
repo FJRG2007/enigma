@@ -81,13 +81,13 @@ function textResult(text: string, isError = false): unknown {
 }
 
 /** Execute a single tool call and return its MCP result payload. */
-function callTool(name: string, args: Record<string, unknown>): unknown {
+function callTool(name: string, args: Record<string, unknown>, source?: string): unknown {
     switch (name) {
         case "enigma_compress": {
             const content = typeof args.content === "string" ? args.content : "";
             if (!content) return textResult("enigma_compress: 'content' is required.", true);
             const type = CONTENT_TYPES.includes(args.content_type as ContentType) ? (args.content_type as ContentType) : undefined;
-            const r = compress(content, { type });
+            const r = compress(content, { type, source });
             return textResult(r.compressed);
         }
         case "enigma_retrieve": {
@@ -102,12 +102,19 @@ function callTool(name: string, args: Record<string, unknown>): unknown {
     }
 }
 
+/** The MCP client name reported in an initialize request, or undefined. */
+export function clientNameOf(req: JsonRpcRequest): string | undefined {
+    const info = req.params?.clientInfo as { name?: unknown } | undefined;
+    return typeof info?.name === "string" && info.name ? info.name : undefined;
+}
+
 /**
  * Pure request handler. Returns a response object, or null for notifications
- * (which take no reply). Exported so the server can be driven in tests without a
- * real stdio pipe.
+ * (which take no reply). `source` is the connection's MCP client name, threaded in
+ * so a compress call is attributed to the calling app. Exported so the server can be
+ * driven in tests without a real stdio pipe.
  */
-export function handleMcpRequest(req: JsonRpcRequest, version: string): JsonRpcResponse | null {
+export function handleMcpRequest(req: JsonRpcRequest, version: string, source?: string): JsonRpcResponse | null {
     switch (req.method) {
         case "initialize":
             return ok(req.id, {
@@ -125,7 +132,7 @@ export function handleMcpRequest(req: JsonRpcRequest, version: string): JsonRpcR
         case "tools/call": {
             const name = String(req.params?.name ?? "");
             const args = (req.params?.arguments as Record<string, unknown>) ?? {};
-            try { return ok(req.id, callTool(name, args)); }
+            try { return ok(req.id, callTool(name, args, source)); }
             catch (e) { return err(req.id, -32603, `Tool error: ${(e as Error).message}`); }
         }
         default:
@@ -142,6 +149,9 @@ export function handleMcpRequest(req: JsonRpcRequest, version: string): JsonRpcR
 export function runMcpServer(version: string): Promise<void> {
     return new Promise((resolve) => {
         let buffer = "";
+        // Connection state: the client identifies itself once at initialize, and that
+        // name attributes every later compress call to the calling app.
+        let clientName: string | undefined;
         process.stdin.setEncoding("utf8");
         const emit = (res: JsonRpcResponse | null) => { if (res) process.stdout.write(JSON.stringify(res) + "\n"); };
         process.stdin.on("data", (chunk: string) => {
@@ -154,7 +164,8 @@ export function runMcpServer(version: string): Promise<void> {
                 let req: JsonRpcRequest;
                 try { req = JSON.parse(line); }
                 catch { emit(err(null, -32700, "Parse error")); continue; }
-                try { emit(handleMcpRequest(req, version)); }
+                if (req.method === "initialize") clientName = clientNameOf(req) ?? clientName;
+                try { emit(handleMcpRequest(req, version, clientName)); }
                 catch (e) { process.stderr.write(`enigma mcp: ${(e as Error).message}\n`); }
             }
         });

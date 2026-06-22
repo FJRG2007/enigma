@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>enigma - context savings</title>
+    <title>Enigma - Context Savings</title>
     <style>
         :root {
             --bg: #0b0e14; --surface: #151a23; --surface2: #1b2230; --border: #232a36;
@@ -31,9 +31,24 @@
         .card .value.good { color: var(--good); }
         .card .foot { color: var(--muted); font-size: 12px; margin-top: 4px; }
         .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 18px; margin-bottom: 20px; }
-        .panel h2 { font-size: 14px; font-weight: 600; margin: 0 0 14px; color: var(--text); }
+        .panel-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+        .panel h2 { font-size: 14px; font-weight: 600; margin: 0; color: var(--text); }
         .panel h2 small { color: var(--muted); font-weight: 400; margin-left: 8px; }
-        .chart { width: 100%; height: 200px; display: block; }
+        .ranges { margin-left: auto; display: flex; gap: 4px; }
+        .ranges button {
+            background: var(--surface2); color: var(--muted); border: 1px solid var(--border);
+            border-radius: 7px; padding: 4px 10px; font-size: 12px; cursor: pointer; font-family: inherit;
+        }
+        .ranges button:hover { color: var(--text); }
+        .ranges button.active { background: var(--accent); color: #1a1206; border-color: var(--accent); font-weight: 600; }
+        .chartwrap { position: relative; width: 100%; height: 280px; }
+        .tip {
+            position: absolute; pointer-events: none; z-index: 5; background: var(--surface2);
+            border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; font-size: 12px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.4); white-space: nowrap;
+        }
+        .tip .tip-d { color: var(--muted); }
+        .tip .tip-v { color: var(--accent); font-weight: 600; margin-top: 2px; }
         .bar-row { display: flex; align-items: center; gap: 12px; margin: 10px 0; font-size: 13px; }
         .bar-row .name { width: 70px; color: var(--muted); }
         .bar-track { flex: 1; height: 14px; background: var(--surface2); border-radius: 7px; overflow: hidden; }
@@ -48,38 +63,53 @@
 <body>
     <header>
         <div>
-            <div class="wordmark">enigma<span>.</span></div>
-            <div class="sub">context compression savings</div>
+            <div class="wordmark">Enigma<span>.</span></div>
+            <div class="sub">Context Compression Savings</div>
         </div>
-        <div class="live"><span id="dot" class="dot stale"></span><span id="updated">connecting...</span></div>
+        <div class="live"><span id="dot" class="dot stale"></span><span id="updated">Connecting...</span></div>
     </header>
 
     <div class="grid">
-        <div class="card"><div class="label">Tokens saved</div><div id="saved" class="value good">-</div><div id="savedFoot" class="foot">across all compressions</div></div>
-        <div class="card"><div class="label">Savings rate</div><div id="rate" class="value accent">-</div><div class="foot">of input tokens removed</div></div>
-        <div class="card"><div class="label">Compressions</div><div id="calls" class="value">-</div><div class="foot">reversible via CCR</div></div>
-        <div class="card"><div class="label">In &rarr; Out</div><div id="inout" class="value" style="font-size:20px">-</div><div class="foot">total tokens</div></div>
+        <div class="card"><div class="label">Tokens Saved</div><div id="saved" class="value good">-</div><div id="savedFoot" class="foot">Across all compressions</div></div>
+        <div class="card"><div class="label">Savings Rate</div><div id="rate" class="value accent">-</div><div class="foot">Of input tokens removed</div></div>
+        <div class="card"><div class="label">Compressions</div><div id="calls" class="value">-</div><div class="foot">Reversible via CCR</div></div>
+        <div class="card"><div class="label">In &rarr; Out</div><div id="inout" class="value" style="font-size:20px">-</div><div class="foot">Total tokens</div></div>
     </div>
 
     <div class="panel">
-        <h2>Tokens saved per day <small id="rangeLabel"></small></h2>
-        <svg id="chart" class="chart" viewBox="0 0 600 200" preserveAspectRatio="none" role="img" aria-label="Daily tokens saved"></svg>
+        <div class="panel-head">
+            <h2>Tokens Saved Per Day <small id="rangeLabel"></small></h2>
+            <div class="ranges" id="ranges">
+                <button type="button" data-d="7">7D</button>
+                <button type="button" data-d="30" class="active">30D</button>
+                <button type="button" data-d="90">90D</button>
+                <button type="button" data-d="0">All</button>
+            </div>
+        </div>
+        <div id="chartWrap" class="chartwrap"></div>
         <div id="chartEmpty" class="empty" style="display:none">No compression activity recorded yet. Run <code>enigma compress &lt;file&gt;</code> or enable the compression MCP (<code>enigma config compress on</code>).</div>
     </div>
 
     <div class="panel">
-        <h2>Before vs after <small>cumulative tokens</small></h2>
+        <h2 style="margin-bottom:14px">Savings By Source <small>which app/CLI compressed</small></h2>
+        <div id="sources"></div>
+    </div>
+
+    <div class="panel">
+        <h2 style="margin-bottom:14px">Before vs. After <small>cumulative tokens</small></h2>
         <div class="bar-row"><span class="name">Before</span><div class="bar-track"><div id="barBefore" class="bar-fill" style="background:var(--accent2)"></div></div><span id="numBefore" class="num">-</span></div>
         <div class="bar-row"><span class="name">After</span><div class="bar-track"><div id="barAfter" class="bar-fill" style="background:var(--good)"></div></div><span id="numAfter" class="num">-</span></div>
     </div>
 
     <footer>
         Polling pauses automatically when this tab is hidden, and the server caches each snapshot - so an open dashboard costs almost nothing.
-        Data source: <code>~/.enigma/ccr/stats.json</code> + <code>history.jsonl</code>. enigma <span id="ver"></span>
+        Data source: <code>~/.enigma/ccr/stats.json</code> + <code>history.jsonl</code>. Enigma <span id="ver"></span>
     </footer>
 
+    <script src="/lib/lightweight-charts.standalone.production.js"></script>
     <script>
         const POLL_MS = 5000;
+        const DAY = 86400000;
         const $ = (id) => document.getElementById(id);
 
         function fmt(n) {
@@ -90,38 +120,112 @@
             return String(Math.round(n));
         }
 
-        // Bucket history points into the last 30 calendar days of saved tokens.
-        function dailySaved(history) {
-            const DAY = 86400000;
-            const today = Math.floor(Date.now() / DAY);
-            const start = today - 29;
-            const buckets = new Array(30).fill(0);
-            for (const p of history || []) {
-                const day = Math.floor(p.t / DAY);
-                if (day < start || day > today) continue;
-                buckets[day - start] += Math.max(0, (p.b || 0) - (p.a || 0));
-            }
-            return buckets;
+        // Friendly names for known MCP clients; unknown sources show title-cased raw.
+        const SOURCE_LABELS = {
+            "claude-code": "Claude Code", "claude": "Claude Code", "claude-desktop": "Claude Desktop",
+            "opencode": "OpenCode", "codex": "Codex", "codex-cli": "Codex",
+            "cli": "CLI (enigma compress)", "unknown": "Unattributed",
+        };
+        function prettySource(k) {
+            return SOURCE_LABELS[k] || String(k).replace(/[-_]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
         }
 
-        function renderChart(buckets) {
-            const svg = $("chart"), W = 600, H = 200, pad = 6;
-            const max = Math.max(1, ...buckets);
-            const n = buckets.length;
-            const x = (i) => pad + (i * (W - pad * 2)) / (n - 1);
-            const y = (v) => H - pad - (v / max) * (H - pad * 2);
-            const pts = buckets.map((v, i) => x(i) + "," + y(v));
-            const line = "M" + pts.join(" L");
-            const area = line + " L" + x(n - 1) + "," + (H - pad) + " L" + x(0) + "," + (H - pad) + " Z";
-            const hasData = buckets.some((v) => v > 0);
-            $("chartEmpty").style.display = hasData ? "none" : "block";
-            svg.style.display = hasData ? "block" : "none";
-            svg.innerHTML =
-                '<defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1">' +
-                '<stop offset="0%" stop-color="#e0a458" stop-opacity="0.35"/>' +
-                '<stop offset="100%" stop-color="#e0a458" stop-opacity="0"/></linearGradient></defs>' +
-                '<path d="' + area + '" fill="url(#g)"/>' +
-                '<path d="' + line + '" fill="none" stroke="#e0a458" stroke-width="2" vector-effect="non-scaling-stroke"/>';
+        // One bar per origin (the calling app or the CLI), sorted by tokens saved.
+        function renderSources(bySource) {
+            const el = $("sources");
+            const entries = Object.entries(bySource || {}).sort((a, b) => (b[1].tokensSaved || 0) - (a[1].tokensSaved || 0));
+            if (!entries.length) {
+                el.innerHTML = '<div class="empty" style="padding:20px 0">No per-source data yet. Attribution starts with the next compression - the MCP tags the calling app (Claude Code, OpenCode, Codex...), the CLI tags itself.</div>';
+                return;
+            }
+            const max = Math.max(1, ...entries.map(([, v]) => v.tokensSaved || 0));
+            el.innerHTML = entries.map(([k, v]) => {
+                const saved = v.tokensSaved || 0, pct = Math.round(saved / max * 100);
+                return '<div class="bar-row"><span class="name" style="width:140px">' + prettySource(k)
+                    + '</span><div class="bar-track"><div class="bar-fill" style="width:' + pct + '%;background:var(--accent)"></div></div>'
+                    + '<span class="num">' + fmt(saved) + '</span>'
+                    + '<span class="foot" style="width:70px;text-align:right;margin:0">' + fmt(v.calls || 0) + ' calls</span></div>';
+            }).join("");
+        }
+
+        // A millisecond timestamp -> the UTC calendar day as the YYYY-MM-DD string the
+        // chart's time scale expects (matches the server's UTC-day history buckets).
+        function dayKey(ms) { return new Date(ms).toISOString().slice(0, 10); }
+
+        // Aggregate raw history points into one ascending {time, value} per day of saved
+        // tokens. Lightweight Charts requires unique, ascending times - so we sum per day.
+        function dailySeries(history) {
+            const byDay = new Map();
+            for (const p of history || []) {
+                const saved = Math.max(0, (p.b || 0) - (p.a || 0));
+                const key = dayKey(p.t);
+                byDay.set(key, (byDay.get(key) || 0) + saved);
+            }
+            return [...byDay.entries()].sort((a, b) => a[0] < b[0] ? -1 : 1).map(([time, value]) => ({ time, value }));
+        }
+
+        let chart = null, series = null, fullData = [], currentRange = 30;
+
+        function initChart() {
+            if (!window.LightweightCharts) return false;
+            const LC = window.LightweightCharts;
+            const el = $("chartWrap");
+            chart = LC.createChart(el, {
+                autoSize: true,
+                layout: { background: { type: "solid", color: "transparent" }, textColor: "#8a93a3", fontSize: 12 },
+                grid: { vertLines: { color: "rgba(35,42,54,0.5)" }, horzLines: { color: "rgba(35,42,54,0.5)" } },
+                rightPriceScale: { borderColor: "#232a36" },
+                timeScale: { borderColor: "#232a36", fixLeftEdge: true, fixRightEdge: true },
+                crosshair: {
+                    mode: LC.CrosshairMode.Magnet,
+                    vertLine: { color: "#3a4150", labelBackgroundColor: "#e0a458" },
+                    horzLine: { color: "#3a4150", labelBackgroundColor: "#e0a458" },
+                },
+            });
+            series = chart.addSeries(LC.AreaSeries, {
+                lineColor: "#e0a458", topColor: "rgba(224,164,88,0.35)", bottomColor: "rgba(224,164,88,0.02)",
+                lineWidth: 2, priceLineVisible: false, lastValueVisible: false,
+                priceFormat: { type: "custom", minMove: 1, formatter: fmt },
+            });
+            setupTooltip(el);
+            $("ranges").addEventListener("click", (e) => {
+                const b = e.target.closest("button");
+                if (!b) return;
+                for (const x of $("ranges").children) x.classList.toggle("active", x === b);
+                currentRange = Number(b.dataset.d);
+                applyRange();
+            });
+            return true;
+        }
+
+        // Floating crosshair tooltip: shows the hovered date and that day's saved tokens.
+        function setupTooltip(container) {
+            const tip = document.createElement("div");
+            tip.className = "tip";
+            tip.style.display = "none";
+            container.appendChild(tip);
+            chart.subscribeCrosshairMove((param) => {
+                if (!param.time || !param.point || param.point.x < 0 || param.point.y < 0) { tip.style.display = "none"; return; }
+                const d = param.seriesData.get(series);
+                if (!d) { tip.style.display = "none"; return; }
+                tip.innerHTML = '<div class="tip-d">' + param.time + '</div><div class="tip-v">' + fmt(d.value) + " tokens saved</div>";
+                tip.style.display = "block";
+                const left = Math.max(0, Math.min(param.point.x + 14, container.clientWidth - 150));
+                tip.style.left = left + "px";
+                tip.style.top = Math.max(0, param.point.y - 10) + "px";
+            });
+        }
+
+        // Constrain the visible window to the selected range (All = fit everything).
+        function applyRange() {
+            if (!chart || !fullData.length) return;
+            const ts = chart.timeScale();
+            if (currentRange === 0) { ts.fitContent(); $("rangeLabel").textContent = "all time"; return; }
+            const to = fullData[fullData.length - 1].time;
+            const from = dayKey(Date.now() - currentRange * DAY);
+            try { ts.setVisibleRange({ from, to }); }
+            catch { ts.fitContent(); }
+            $("rangeLabel").textContent = "last " + currentRange + " days";
         }
 
         function render(data) {
@@ -129,7 +233,7 @@
             const before = s.tokensBefore || 0, after = s.tokensAfter || 0, saved = s.tokensSaved || 0;
             const rate = before ? Math.round((saved / before) * 100) : 0;
             $("saved").textContent = fmt(saved);
-            $("savedFoot").textContent = saved ? "~" + saved.toLocaleString() + " tokens" : "across all compressions";
+            $("savedFoot").textContent = saved ? "~" + saved.toLocaleString() + " tokens" : "Across all compressions";
             $("rate").textContent = rate + "%";
             $("calls").textContent = fmt(s.calls || 0);
             $("inout").textContent = fmt(before) + " → " + fmt(after);
@@ -138,11 +242,17 @@
             const max = Math.max(1, before);
             $("barBefore").style.width = (before / max * 100) + "%";
             $("barAfter").style.width = (after / max * 100) + "%";
-            renderChart(dailySaved(data.history));
-            $("rangeLabel").textContent = "last 30 days";
+            renderSources(s.bySource);
+
+            fullData = dailySeries(data.history);
+            const has = fullData.length > 0 && !!series;
+            $("chartEmpty").style.display = has ? "none" : "block";
+            $("chartWrap").style.display = has ? "block" : "none";
+            if (has) { series.setData(fullData); applyRange(); }
+
             $("ver").textContent = data.version ? "v" + data.version : "";
             $("dot").classList.remove("stale");
-            $("updated").textContent = "updated " + new Date(data.generatedAt || Date.now()).toLocaleTimeString();
+            $("updated").textContent = "Updated " + new Date(data.generatedAt || Date.now()).toLocaleTimeString();
         }
 
         async function poll() {
@@ -153,10 +263,11 @@
                 render(await res.json());
             } catch {
                 $("dot").classList.add("stale");
-                $("updated").textContent = "disconnected";
+                $("updated").textContent = "Disconnected";
             }
         }
 
+        initChart();
         poll();
         setInterval(poll, POLL_MS);
         document.addEventListener("visibilitychange", () => { if (!document.hidden) poll(); });

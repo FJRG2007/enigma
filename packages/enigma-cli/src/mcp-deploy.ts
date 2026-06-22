@@ -153,3 +153,26 @@ export function applyMcpForAccount(tool: string, dir: string): boolean {
     if (!file) return false;
     return writeEntry(tool, file, readConfig().config.compress);
 }
+
+/** The agents whose own config can host the enigma MCP server. */
+const MANAGED_TOOLS = ["claude", "codex", "opencode"] as const;
+
+/**
+ * Apply the `compress` toggle's MCP side effect immediately across managed agents at
+ * `scope` - the on/off twin of dashboard's applyDashboardMode - so toggling the setting
+ * takes effect without re-running `enigma install`. Mirrors presence and absence, but to
+ * avoid creating config for a tool the user does not use, an ENABLE only touches an agent
+ * whose config file already exists; a DISABLE is already a no-op on an absent file.
+ * Returns the tools whose config changed.
+ */
+export function applyCompressToggle(scope: Scope): string[] {
+    const enabled = readConfig().config.compress;
+    const changed: string[] = [];
+    for (const tool of MANAGED_TOOLS) {
+        const file = mcpPath(tool, scope);
+        if (!file) continue;
+        if (enabled && !existsSync(file)) continue; // never create config for an unused tool
+        if (writeEntry(tool, file, enabled)) changed.push(tool);
+    }
+    return changed;
+}

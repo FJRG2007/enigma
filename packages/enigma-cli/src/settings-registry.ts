@@ -13,6 +13,7 @@ import { AGENTS } from "./agents";
 import { isAutoLintOn, setAutoLint } from "./lint";
 import { readConfig, setEnigmaToggle, setEnigmaValue, OUTPUT_STYLES, MINIMAL_CODE_LEVELS, DASHBOARD_MODES } from "./config";
 import { applyDashboardMode } from "./dashboard";
+import { applyCompressToggle } from "./mcp-deploy";
 import type { DashboardMode } from "./config";
 import { getClaudeAttribution, setClaudeAttribution, getClaudeFeedbackSurvey, setClaudeFeedbackSurvey } from "./claude";
 import { getGhTelemetryCached, setGhTelemetry } from "./github";
@@ -98,6 +99,13 @@ function setDashboard(value: string, scope: Scope): ApplyResult {
     return { path, changed: true };
 }
 
+/** Persist the compress toggle and deploy/remove the MCP server immediately. */
+function setCompress(on: boolean, scope: Scope): ApplyResult {
+    const path = setEnigmaToggle("compress", on, scope);
+    applyCompressToggle(scope);
+    return { path, changed: true };
+}
+
 // --- render-speed read cache (SWR) ----------------------------------------------
 // The TUI re-reads every visible setting on every render (display value, dirty
 // diffing, save comparison), and each underlying read hits disk (or spawns gh).
@@ -145,7 +153,13 @@ const RAW_CATEGORIES: Category[] = [
             enigmaToggle("parallel-subagents", "parallelSubagents", "Parallel sub-agents", "let agents split long tasks across sub-agents running in parallel; edits the memory file - restart your agent to apply", true),
             enigmaChoice("output-style", "outputStyle", "Token-efficient output", "compress prose replies (off|lite|full|ultra); on = full; edits the memory file - restart your agent to apply", OUTPUT_STYLES, "full", true),
             enigmaChoice("minimal-code", "minimalCode", "Minimal code (anti-overengineering)", "prefer the laziest solution that works (off|lite|full|ultra); on = full; edits the memory file - restart your agent to apply", MINIMAL_CODE_LEVELS, "full", true),
-            enigmaToggle("compress", "compress", "Context compression MCP", "deploy enigma's token-compression MCP server (enigma_compress/retrieve/stats) into managed agents; off removes it; enigma default: off"),
+            {
+                key: "compress",
+                label: "Context compression MCP",
+                hint: "deploy enigma's token-compression MCP server (enigma_compress/retrieve/stats) into managed agents; toggling applies immediately to already-deployed agents; off removes it; enigma default: off",
+                read: () => readConfig().config.compress,
+                write: (value, scope) => setCompress(value, scope),
+            },
             {
                 key: "auto-lint",
                 label: "Auto-lint on edit",

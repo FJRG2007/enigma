@@ -13,7 +13,8 @@ const HOME = mkdtempSync(join(tmpdir(), "enigma-mcp-"));
 process.env.USERPROFILE = HOME;
 process.env.HOME = HOME;
 
-const { handleMcpRequest } = await import("../src/mcp");
+const { handleMcpRequest, clientNameOf } = await import("../src/mcp");
+const { readStats } = await import("../src/compress");
 
 afterAll(() => rmSync(HOME, { recursive: true, force: true }));
 
@@ -53,4 +54,21 @@ test("tools/call enigma_compress compresses and enigma_retrieve restores", () =>
 test("unknown method returns JSON-RPC method-not-found", () => {
     const res = call("does/notExist");
     expect(res?.error?.code).toBe(-32601);
+});
+
+test("clientNameOf reads the initialize clientInfo name", () => {
+    expect(clientNameOf({ method: "initialize", params: { clientInfo: { name: "claude-code", version: "1" } } })).toBe("claude-code");
+    expect(clientNameOf({ method: "initialize", params: {} })).toBeUndefined();
+});
+
+test("a compress call is attributed to the connection's client source", () => {
+    const arr: Record<string, unknown>[] = Array.from({ length: 200 }, (_, i) => ({ id: i, status: "ok", msg: "handled" }));
+    arr.push({ id: 200, status: "error", msg: "connection refused" });
+    const content = JSON.stringify({ results: arr });
+    // The server loop passes the captured client name as the 3rd arg.
+    handleMcpRequest({ jsonrpc: "2.0", id: 9, method: "tools/call", params: { name: "enigma_compress", arguments: { content } } }, "9.9.9", "opencode");
+    const stats = readStats();
+    expect(stats.bySource?.opencode).toBeDefined();
+    expect(stats.bySource!.opencode!.calls).toBeGreaterThanOrEqual(1);
+    expect(stats.bySource!.opencode!.tokensSaved).toBeGreaterThan(0);
 });

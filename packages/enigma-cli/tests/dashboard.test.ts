@@ -28,6 +28,12 @@ test("serves the HTML shell, a stats payload, and 404s the rest", async () => {
         expect(html.headers.get("content-type")).toContain("text/html");
         expect(await html.text()).toContain("<!doctype html>");
 
+        // The vendored chart library is served from the loopback server (no CDN).
+        const lib = await fetch(`${base}/lib/lightweight-charts.standalone.production.js`);
+        expect(lib.status).toBe(200);
+        expect(lib.headers.get("content-type")).toContain("javascript");
+        expect(await lib.text()).toContain("TradingView");
+
         const api = await fetch(`${base}/api/stats`);
         expect(api.status).toBe(200);
         const payload = await api.json() as { version: string; stats: { calls: number; tokensSaved: number } };

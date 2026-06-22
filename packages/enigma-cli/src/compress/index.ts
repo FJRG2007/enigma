@@ -18,7 +18,7 @@ import { estimateTokens } from "./tokens";
 import { ccrMarker, recordStats, retrieve, store } from "./ccr";
 
 export type { ContentType } from "./detect";
-export type { CcrStats, HistoryPoint } from "./ccr";
+export type { CcrStats, SourceStats, HistoryPoint } from "./ccr";
 export { retrieve, readStats, readHistory } from "./ccr";
 
 const MIN_LENGTH = 100;
@@ -28,6 +28,8 @@ export interface CompressOptions {
     type?: ContentType;
     /** Skip recording cumulative stats (used by read-only callers/tests). */
     noStats?: boolean;
+    /** Origin of this call for per-source attribution (MCP client name, or "cli"). */
+    source?: string;
 }
 
 export interface CompressResult {
@@ -61,7 +63,7 @@ export function compress(content: string, opts: CompressOptions = {}): CompressR
 
     if (offloaded === 0 || compressed === content) {
         const r = passthrough(type);
-        if (!opts.noStats) recordStats(tokensBefore, tokensBefore);
+        if (!opts.noStats) recordStats(tokensBefore, tokensBefore, opts.source);
         return r;
     }
 
@@ -69,7 +71,7 @@ export function compress(content: string, opts: CompressOptions = {}): CompressR
     const ccrHash = store(content);
     compressed = `${compressed}\n${ccrMarker(ccrHash, offloaded)}`;
     const tokensAfter = estimateTokens(compressed);
-    if (!opts.noStats) recordStats(tokensBefore, tokensAfter);
+    if (!opts.noStats) recordStats(tokensBefore, tokensAfter, opts.source);
     return {
         compressed, contentType: type, tokensBefore, tokensAfter,
         tokensSaved: Math.max(0, tokensBefore - tokensAfter),

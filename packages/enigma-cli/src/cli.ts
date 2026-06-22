@@ -582,7 +582,7 @@ function runCompressCli(opts: CliOptions): number {
     catch (err) { console.error(`Cannot read input: ${(err as Error).message}`); return 1; }
 
     const type = (opts.compressType as ContentType | null) ?? undefined;
-    const r = compress(content, { type });
+    const r = compress(content, { type, source: "cli" });
     process.stdout.write(r.compressed);
     if (!r.compressed.endsWith("\n")) process.stdout.write("\n");
     const pct = r.tokensBefore ? Math.round((r.tokensSaved / r.tokensBefore) * 100) : 0;

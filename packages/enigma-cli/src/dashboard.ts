@@ -12,6 +12,10 @@
  *
  * Idle cost is controlled the headroom way: the browser pauses polling while the tab is
  * hidden (the HTML asset) and the server serves a short-TTL cached stats snapshot.
+ *
+ * Charts are drawn with TradingView Lightweight Charts (Apache-2.0), vendored as a static
+ * asset under assets/dashboard/lib and served from this loopback server - never a CDN at
+ * runtime and not an npm runtime dependency, so the zero-dependency posture holds.
  */
 
 import { homedir } from "node:os";
@@ -27,6 +31,9 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const PKG_ROOT = resolve(__dirname, "..");
 const ASSETS = process.env.ENIGMA_ASSETS_DIR ?? join(PKG_ROOT, "assets");
 const HTML_PATH = join(ASSETS, "dashboard", "index.html");
+/** Vendored TradingView Lightweight Charts standalone build (served, not bundled). */
+const LIB_FILE = "lightweight-charts.standalone.production.js";
+const LIB_PATH = join(ASSETS, "dashboard", "lib", LIB_FILE);
 
 /** Loopback only: the dashboard exposes local savings data and is never network-facing. */
 const HOST = "127.0.0.1";
@@ -98,7 +105,16 @@ function dashboardHtml(): string {
     return htmlCache;
 }
 
-const FALLBACK_HTML = "<!doctype html><meta charset=utf-8><title>enigma</title><body style=\"font-family:sans-serif;background:#0b0e14;color:#e6e6e6;padding:2rem\"><h1>enigma dashboard</h1><p>Dashboard asset not found. Fetch live numbers at <a style=color:#d7875f href=\"/api/stats\">/api/stats</a>.</p>";
+let libCache: string | null = null;
+
+/** The vendored chart library JS, or null if the asset is missing (cards still render). */
+function dashboardLib(): string | null {
+    if (libCache !== null) return libCache || null;
+    try { libCache = readFileSync(LIB_PATH, "utf8"); } catch { libCache = ""; }
+    return libCache || null;
+}
+
+const FALLBACK_HTML = "<!doctype html><meta charset=utf-8><title>Enigma</title><body style=\"font-family:sans-serif;background:#0b0e14;color:#e6e6e6;padding:2rem\"><h1>Enigma dashboard</h1><p>Dashboard asset not found. Fetch live numbers at <a style=color:#d7875f href=\"/api/stats\">/api/stats</a>.</p>";
 
 let snapshot: { payload: string; expires: number } | null = null;
 const SNAPSHOT_TTL_MS = 1000;
@@ -119,6 +135,13 @@ function createDashboardServer(version: string): Server {
         if (url === "/" || url === "/index.html") {
             res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
             res.end(dashboardHtml());
+            return;
+        }
+        if (url === "/lib/" + LIB_FILE) {
+            const js = dashboardLib();
+            if (js === null) { res.writeHead(404).end(); return; }
+            res.writeHead(200, { "Content-Type": "text/javascript; charset=utf-8", "Cache-Control": "max-age=86400" });
+            res.end(js);
             return;
         }
         if (url === "/api/stats") {

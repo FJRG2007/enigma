@@ -21,12 +21,24 @@ const MARKER_RE = /<<enigma:ccr:([0-9a-f]{6,}) (\d+)_rows_offloaded>>/;
 // access-time eviction only if the cache ever needs to scale past a dev machine.
 const MAX_ENTRIES = 500;
 
-export interface CcrStats {
+/** Cumulative token counts for one origin (an MCP client or the CLI). */
+export interface SourceStats {
     calls: number;
     tokensBefore: number;
     tokensAfter: number;
     tokensSaved: number;
 }
+
+export interface CcrStats extends SourceStats {
+    /**
+     * Per-origin breakdown keyed by source (e.g. "claude-code", "opencode", "codex",
+     * "cli"). Absent on stats files written before attribution existed.
+     */
+    bySource?: Record<string, SourceStats>;
+}
+
+/** The source label used when a caller records without naming its origin. */
+const UNKNOWN_SOURCE = "unknown";
 
 /** One compress call's savings stamped in time, for the dashboard's over-time graph. */
 export interface HistoryPoint {
@@ -112,14 +124,30 @@ export function readStats(): CcrStats {
     try { return { ...EMPTY_STATS, ...JSON.parse(readFileSync(path, "utf8")) }; } catch { return { ...EMPTY_STATS }; }
 }
 
-/** Fold one compress call's token counts into the cumulative stats file. */
-export function recordStats(tokensBefore: number, tokensAfter: number): void {
+/** Add one call's counts to a running per-source tally. */
+function foldSource(prev: SourceStats | undefined, tokensBefore: number, tokensAfter: number): SourceStats {
+    const base = prev ?? { calls: 0, tokensBefore: 0, tokensAfter: 0, tokensSaved: 0 };
+    return {
+        calls: base.calls + 1,
+        tokensBefore: base.tokensBefore + tokensBefore,
+        tokensAfter: base.tokensAfter + tokensAfter,
+        tokensSaved: base.tokensSaved + Math.max(0, tokensBefore - tokensAfter),
+    };
+}
+
+/**
+ * Fold one compress call's token counts into the cumulative stats file, attributing
+ * it to `source` (the MCP client name, e.g. "claude-code"/"opencode"/"codex", or "cli"
+ * for the direct CLI). The grand totals and the per-source breakdown advance together.
+ */
+export function recordStats(tokensBefore: number, tokensAfter: number, source: string = UNKNOWN_SOURCE): void {
     const cur = readStats();
+    const key = source || UNKNOWN_SOURCE;
+    const bySource = { ...(cur.bySource ?? {}) };
+    bySource[key] = foldSource(bySource[key], tokensBefore, tokensAfter);
     const next: CcrStats = {
-        calls: cur.calls + 1,
-        tokensBefore: cur.tokensBefore + tokensBefore,
-        tokensAfter: cur.tokensAfter + tokensAfter,
-        tokensSaved: cur.tokensSaved + Math.max(0, tokensBefore - tokensAfter),
+        ...foldSource(cur, tokensBefore, tokensAfter),
+        bySource,
     };
     const dir = ccrDir();
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });

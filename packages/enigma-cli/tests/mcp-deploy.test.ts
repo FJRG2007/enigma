@@ -14,7 +14,7 @@ const HOME = mkdtempSync(join(tmpdir(), "enigma-mcp-deploy-"));
 process.env.USERPROFILE = HOME;
 process.env.HOME = HOME;
 
-const { applyMcpForAgent, applyMcpForAccount } = await import("../src/mcp-deploy");
+const { applyMcpForAgent, applyMcpForAccount, applyCompressToggle } = await import("../src/mcp-deploy");
 const { setEnigmaValue } = await import("../src/config");
 
 afterAll(() => rmSync(HOME, { recursive: true, force: true }));
@@ -75,4 +75,30 @@ test("disabling when no config file exists does not create one", () => {
     setEnigmaValue("compress", false, "global");
     expect(applyMcpForAccount("claude", dir)).toBe(false);
     expect(existsSync(join(dir, ".claude.json"))).toBe(false);
+});
+
+test("compress toggle applies immediately, only to tools with an existing config", () => {
+    const home2 = mkdtempSync(join(tmpdir(), "enigma-mcp-toggle-"));
+    const prev = process.env.USERPROFILE;
+    process.env.USERPROFILE = home2;
+    process.env.HOME = home2;
+    try {
+        const claudeCfg = join(home2, ".claude.json");
+        writeFileSync(claudeCfg, JSON.stringify({ numStartups: 1 }));   // claude is used
+        // codex/opencode have NO config here -> an enable must not create them.
+        setEnigmaValue("compress", true, "global");
+        const on = applyCompressToggle("global");
+        expect(on).toEqual(["claude"]);
+        expect(readJson(claudeCfg).mcpServers.enigma.args).toEqual(expect.arrayContaining(["mcp"]));
+        expect(existsSync(join(home2, ".codex", "config.toml"))).toBe(false);
+
+        setEnigmaValue("compress", false, "global");
+        const off = applyCompressToggle("global");
+        expect(off).toEqual(["claude"]);
+        expect(readJson(claudeCfg).mcpServers?.enigma).toBeUndefined();
+    } finally {
+        process.env.USERPROFILE = prev;
+        process.env.HOME = prev;
+        rmSync(home2, { recursive: true, force: true });
+    }
 });
