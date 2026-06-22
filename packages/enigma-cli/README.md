@@ -139,8 +139,7 @@ have not changed is left untouched; auto-sync keeps it current on every launch.
 ### `/improve`
 
 Two modes in one command. **Implement mode** edits a focused area directly;
-**Advisor mode** (adapted from [shadcn/improve](https://github.com/shadcn/improve),
-MIT) is strictly read-only and writes self-contained implementation plans into
+**Advisor mode** is strictly read-only and writes self-contained implementation plans into
 `plans/` for another (cheaper) agent to execute.
 
 The mode is resolved from the arguments: an advisor keyword (`audit`, `quick`,
@@ -491,9 +490,44 @@ table, and reversible-cache (CCR) stats. It runs only while open; `enigma config
 dashboard always` keeps a lightweight background daemon, and `enigma compress --clear`
 resets the data.
 
+The dashboard is fully modular - if you don't want it (e.g. on a server), you never need
+it, and you can add or remove it at any time. Its browser UI (the page plus a ~196 KB chart
+library) is **not** bundled in `enigma-cli`: it ships as a separate package,
+[`@enigmax/dashboard`](https://www.npmjs.com/package/@enigmax/dashboard), that enigma fetches
+on demand the first time you open or enable the dashboard, into `~/.enigma/dashboard`. enigma
+keeps it current on `enigma update`, so it is enigma's dependency to maintain, not yours. If
+you never use the dashboard, that bundle is never downloaded. `enigma config dashboard off`
+is a complete teardown: it stops any background daemon **and** removes the `enigma` hosts-file
+entry, so nothing is left behind. Re-enable it whenever you like with `on-demand` or `always`.
+
+You can also configure enigma **from the dashboard itself**: the **Enigma Settings** panel
+exposes the same options as the terminal UI (`enigma config`), editable in the browser.
+Writes apply immediately at global scope; memory-affecting toggles prompt for an agent
+restart. The settings write endpoint is loopback-only and origin-guarded (cross-site and
+DNS-rebinding requests are refused), and the server never binds anything but 127.0.0.1.
+
 The money figure is an estimate: enigma isn't a proxy, so it can't see the model -
 it prices saved tokens per source with sensible defaults. Override the rate with
 `enigma config token-price <usd-per-1M-input-tokens>` (0 restores the defaults).
+
+The time figure is likewise an estimate: it converts saved input tokens into saved
+prefill time at a default model speed. Override it with `enigma config token-speed
+<tokens-per-second>` (0 restores the default rate).
+
+#### Real tool-usage stats (opt-in)
+
+`enigma config usage-stats on` adds a **Real Tool Usage** panel that reads your own
+Claude Code session transcripts (`~/.claude/projects/.../*.jsonl`) to report **measured**
+token consumption and the **real prompt-cache savings** the tool already achieved -
+input/output tokens, cache reads, per-model breakdown. It is read-only and loopback-only;
+nothing is sent anywhere. It is off by default because it reads your session logs, which
+are broader than enigma's own compression data.
+
+Honesty note: this reports only what the transcripts actually record. It deliberately does
+**not** attribute savings to skills or to token-efficient output, because a transcript has
+no counterfactual baseline (what a session would have cost *without* them), so any such
+figure would be invented. Only Claude Code is read today; Codex/OpenCode use absent or
+undocumented local session stores and are not guessed.
 
 ### As an MCP server
 

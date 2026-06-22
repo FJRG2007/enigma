@@ -65,6 +65,10 @@ export interface EnigmaConfig {
     dashboard: DashboardMode;
     /** Dashboard money estimate: USD per 1M input tokens; 0 = use per-source defaults. */
     tokenPrice: number;
+    /** Dashboard time estimate: model prefill speed in tokens/sec; 0 = use the default rate. */
+    tokenSpeed: number;
+    /** Read the agent's own session transcripts for real token usage + cache savings (opt-in). */
+    usageStats: boolean;
     /** Agents the user explicitly opted out of bypass; never auto-enabled even when permissionBypass is on. */
     bypassDisabled: string[];
     /** Skills the user discarded: removed from deployments and skipped by installs/updates until restored. */
@@ -106,10 +110,15 @@ export interface EnigmaConfig {
  * dashboard is opt-in (off): enabling defaults to on-demand, which runs the local
  * savings dashboard only while `enigma dashboard` is open (no idle cost). "always" keeps
  * a background daemon, a deliberate trade for always-on reachability at http://enigma.
+ * usageStats is opt-in (off): when on, the dashboard reads the agent's own session
+ * transcripts (Claude Code only today) to show REAL token consumption and REAL prompt-cache
+ * savings. These are the user's own session logs, broader than enigma's CCR data, so
+ * reading them stays an explicit choice; it never attributes savings to a skill (a
+ * transcript has no counterfactual baseline - see usage.ts).
  */
 export const CONFIG_DEFAULTS: EnigmaConfig = {
     commitEmoji: true, updateNotifier: true, fullscreen: true, parallelSubagents: false, outputStyle: "off", minimalCode: "full",
-    autoSync: true, remoteSkills: true, permissionBypass: true, autoLint: false, compress: false, dashboard: "off", tokenPrice: 0, bypassDisabled: [], discardedSkills: [],
+    autoSync: true, remoteSkills: true, permissionBypass: true, autoLint: false, compress: false, dashboard: "off", tokenPrice: 0, tokenSpeed: 0, usageStats: false, bypassDisabled: [], discardedSkills: [],
 };
 
 export type EnigmaConfigKey = keyof EnigmaConfig;

@@ -23,6 +23,7 @@ import { discoverAgents } from "./agents";
 import { runGuardCli } from "./guard";
 import { runConfigCli } from "./settings";
 import { ensureLinterInstalled } from "./lint";
+import { ensureDashboardPkgInstalled, isDashboardPkgInstalled, refreshDashboardPkg } from "./dashboard-pkg";
 import { readConfig } from "./config";
 import { checkLatestNow, getAvailableUpdate, notifyUpdate, performUpdateCheck, runUpdate } from "./update";
 import { buildIssueUrl, openUrl } from "./issue";
@@ -274,7 +275,7 @@ It has two modes:
   advisor keyword to audit instead (e.g. /improve audit security, /improve quick perf).
 
   Advisor mode never edits source, never mutates the working tree, and never prints
-  secret values. Adapted from shadcn/improve (https://github.com/shadcn/improve), MIT.
+  secret values.
 
   Make sure it is deployed:  enigma install
 `);
@@ -339,6 +340,14 @@ async function runUpdateCli(version: string): Promise<void> {
         for (const notice of syncDeployed()) p.log.info(`Synced ${notice}.`);
     } catch (err) {
         p.log.warn(`Skill sync failed: ${(err as Error).message}`);
+    }
+    // Keep the on-demand dashboard UI current - it is enigma's dependency to maintain.
+    // Only when the user uses the dashboard (it is installed); never fetch it otherwise.
+    if (isDashboardPkgInstalled()) {
+        const ds = p.spinner();
+        ds.start("Updating the dashboard UI (@enigmax/dashboard)...");
+        refreshDashboardPkg();
+        ds.stop("Dashboard UI is up to date.");
     }
     const s = p.spinner();
     s.start("Checking npm for a newer enigma-cli...");
@@ -608,6 +617,13 @@ function runCompressCli(opts: CliOptions): number {
  */
 async function runDashboardCli(version: string): Promise<number> {
     const mode = readConfig().config.dashboard;
+    // The UI bundle (@enigmax/dashboard) ships separately and is fetched on demand. If it
+    // is not present yet, install it now so the first open shows the real page, not the
+    // fallback. Best-effort: offline just serves the fallback until a later run succeeds.
+    if (!isDashboardPkgInstalled()) {
+        console.log("Fetching the dashboard UI (@enigmax/dashboard)...");
+        if (!ensureDashboardPkgInstalled()) console.log("Could not fetch the UI bundle (offline?); serving a minimal page for now.");
+    }
     // Best-effort: map http://enigma -> loopback so the URL is pretty (falls back to
     // localhost when hosts is unwritable). No-op when the entry already exists.
     ensureHostsEntry();
@@ -656,6 +672,9 @@ export async function run(argv: string[]): Promise<void> {
     // Hidden: the detached background linter install kicked off when auto-lint is
     // enabled (spawnLinterInstall). Silent, best-effort; the runner self-heals.
     if (argv[0] === "__lint-install") { ensureLinterInstalled(); return; }
+    // Hidden: the detached background dashboard-UI install kicked off when the dashboard
+    // is enabled (spawnDashboardPkgInstall). Silent, best-effort; server self-heals.
+    if (argv[0] === "__dashboard-install") { ensureDashboardPkgInstalled(); return; }
     // Hidden: the detached dashboard daemon (dashboard=always). Serves the savings
     // dashboard forever and publishes its pidfile. Silent by contract.
     if (argv[0] === "__dashboard-serve") { await serveDashboardDaemon(process.env.ENIGMA_VERSION || PKG.version || "0.0.0"); return; }

@@ -60,9 +60,25 @@ export async function runConfigCli(positionals: string[], scope: Scope | null, i
         return 0;
     }
 
+    // token-speed is a numeric dashboard setting (model prefill speed in tokens/sec),
+    // outside the boolean/choice registry. 0 restores the default rate. It drives the
+    // "Time Saved" estimate (savedTokens / speed); enigma is not a proxy, so it cannot
+    // know the real model and the figure is explicitly an estimate.
+    if (rawKey === "token-speed") {
+        const n = Number(rawValue);
+        if (rawValue === undefined || !Number.isFinite(n) || n < 0) {
+            console.error("Missing/invalid value for 'token-speed'. Usage: enigma config token-speed <tokens-per-second> (e.g. 3000, or 0 for the default rate) [-g|-l]");
+            return 1;
+        }
+        const target: Scope = scope || "global";
+        const path = setEnigmaValue("tokenSpeed", n, target);
+        console.log(`Set token-speed = ${n} tok/s (${target})${path ? ` in ${path}` : ""}.`);
+        return 0;
+    }
+
     const setting = ALL_SETTINGS.find((s) => s.key === rawKey);
     if (!setting) {
-        console.error(`Unknown config key: ${rawKey}. Known keys: ${ALL_SETTINGS.map((s) => s.key).join(", ")}, token-price.`);
+        console.error(`Unknown config key: ${rawKey}. Known keys: ${ALL_SETTINGS.map((s) => s.key).join(", ")}, token-price, token-speed.`);
         return 1;
     }
     const usage = setting.choices ? `<${setting.choices.join("|")}> (or on|off)` : "<on|off>";

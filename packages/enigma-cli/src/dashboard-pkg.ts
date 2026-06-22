@@ -1,0 +1,101 @@
+/**
+ * On-demand delivery of the dashboard UI bundle (@enigmax/dashboard). The browser page
+ * and its ~196 KB charting library are NOT shipped in the base enigma-cli package: a user
+ * who never opens the dashboard never downloads them. They are installed into a managed
+ * dir (~/.enigma/dashboard) the first time the dashboard is enabled or opened, and enigma
+ * keeps the package current on `enigma update` - so the UI is enigma's dependency to
+ * maintain, not the user's.
+ *
+ * Mirrors the @enigmax/linter delivery pattern in lint.ts: a managed install dir, a
+ * synchronous best-effort installer, a detached background installer (hidden
+ * `__dashboard-install` command), and a runtime resolver that self-heals - if the package
+ * is absent the server falls back to a minimal built-in page until the install lands.
+ *
+ * Node-builtins + nothing else (no agent-module imports) so it stays cheap to load and
+ * free of import cycles (dashboard.ts imports this; this imports nothing of enigma's).
+ */
+
+import { homedir } from "node:os";
+import { fileURLToPath } from "node:url";
+import { spawn, spawnSync } from "node:child_process";
+import { basename, dirname, join } from "node:path";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
+/** Managed dir where @enigmax/dashboard is installed on demand. */
+export const DASHBOARD_INSTALL_DIR = process.env.ENIGMA_DASHBOARD_DIR || join(homedir(), ".enigma", "dashboard");
+
+/** The package's installed asset dir (its package.json lives one level up). */
+function managedAssetsDir(): string {
+    return join(DASHBOARD_INSTALL_DIR, "node_modules", "@enigmax", "dashboard", "assets");
+}
+
+/** Whether the managed @enigmax/dashboard install is present. */
+export function isDashboardPkgInstalled(): boolean {
+    return existsSync(join(DASHBOARD_INSTALL_DIR, "node_modules", "@enigmax", "dashboard", "package.json"));
+}
+
+/**
+ * Resolve the dashboard UI asset dir (the folder holding index.html and lib/), or null if
+ * it cannot be found. Order: explicit override (tests/dev) -> managed on-demand install ->
+ * the workspace package when running from source in the monorepo. The compiled binary's
+ * virtual __dirname makes the dev path miss, so it uses the managed install or the override.
+ */
+export function dashboardAssetsDir(): string | null {
+    if (process.env.ENIGMA_DASHBOARD_ASSETS) return process.env.ENIGMA_DASHBOARD_ASSETS;
+    const managed = managedAssetsDir();
+    if (existsSync(join(managed, "index.html"))) return managed;
+    const dev = join(__dirname, "..", "..", "dashboard", "assets");
+    if (existsSync(join(dev, "index.html"))) return dev;
+    return null;
+}
+
+/** Ensure the managed host dir exists with a private manifest so npm installs there. */
+function ensureHostDir(): void {
+    mkdirSync(DASHBOARD_INSTALL_DIR, { recursive: true });
+    const manifest = join(DASHBOARD_INSTALL_DIR, "package.json");
+    if (!existsSync(manifest)) writeFileSync(manifest, JSON.stringify({ name: "enigma-dashboard-host", private: true }, null, 2) + "\n");
+}
+
+/** Run `npm install @enigmax/dashboard@<spec>` in the managed dir. Best-effort, never throws. */
+function npmInstall(spec: string): void {
+    try {
+        ensureHostDir();
+        // shell:true so Windows resolves npm.cmd; output suppressed to keep installs quiet.
+        spawnSync("npm", ["install", `@enigmax/dashboard@${spec}`, "--no-audit", "--no-fund", "--silent"], {
+            cwd: DASHBOARD_INSTALL_DIR, shell: true, stdio: "ignore", timeout: 120000,
+        });
+    } catch { /* best-effort: a missing npm or no network just leaves the UI un-fetched */ }
+}
+
+/**
+ * Best-effort synchronous install of @enigmax/dashboard into the managed dir if absent.
+ * Returns true when the package is present afterwards.
+ */
+export function ensureDashboardPkgInstalled(): boolean {
+    if (isDashboardPkgInstalled()) return true;
+    npmInstall("latest");
+    return isDashboardPkgInstalled();
+}
+
+/** Force-refresh the UI bundle to the latest published version (used by `enigma update`). */
+export function refreshDashboardPkg(): void {
+    npmInstall("latest");
+}
+
+/**
+ * Kick off the install in a detached background process (hidden `__dashboard-install`),
+ * so enabling the dashboard never blocks. No-op when already installed.
+ */
+export function spawnDashboardPkgInstall(): void {
+    if (isDashboardPkgInstalled()) return;
+    try {
+        // Same runtime dispatch as the lint-install/update-check children: a compiled
+        // binary takes the hidden command directly; node/bun on source need argv[1] first.
+        const exe = basename(process.execPath).toLowerCase();
+        const dev = exe === "node" || exe === "node.exe" || exe === "bun" || exe === "bun.exe";
+        const args = dev ? [process.argv[1]!, "__dashboard-install"] : ["__dashboard-install"];
+        spawn(process.execPath, args, { detached: true, stdio: "ignore", windowsHide: true }).unref();
+    } catch { /* best-effort */ }
+}

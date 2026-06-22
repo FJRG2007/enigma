@@ -13,29 +13,37 @@
  * Idle cost is controlled the headroom way: the browser pauses polling while the tab is
  * hidden (the HTML asset) and the server serves a short-TTL cached stats snapshot.
  *
- * The chart is rendered by a charting library vendored as a static asset under
- * assets/dashboard/lib and served from this loopback server - never a CDN at runtime and
- * not an npm runtime dependency, so the zero-dependency posture holds. (Apache-2.0; its
- * license notice is retained inside the asset, and the attribution logo is suppressed.)
+ * The UI bundle (page + vendored charting library) is NOT shipped in the base enigma-cli
+ * package: it lives in @enigmax/dashboard, installed on demand into ~/.enigma/dashboard the
+ * first time the dashboard is enabled or opened (see dashboard-pkg.ts). This server resolves
+ * and serves those files; until the install lands it serves a minimal built-in fallback page.
+ * So a user who never opens the dashboard never downloads its ~196 KB of assets. The chart
+ * library is served from this loopback server, never a CDN, so the zero-runtime-dependency
+ * posture holds. (Apache-2.0; its license notice is retained inside the asset, logo hidden.)
  */
 
 import { homedir } from "node:os";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { createServer, type Server } from "node:http";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { readStats, readHistory, ccrCacheStats } from "./compress";
+import { dashboardAssetsDir, spawnDashboardPkgInstall } from "./dashboard-pkg";
+import { readUsageCached } from "./usage";
 import { readConfig } from "./config";
 import { resolveBin } from "./util";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const PKG_ROOT = resolve(__dirname, "..");
-const ASSETS = process.env.ENIGMA_ASSETS_DIR ?? join(PKG_ROOT, "assets");
-const HTML_PATH = join(ASSETS, "dashboard", "index.html");
-/** Vendored charting library (standalone build), served locally - not bundled. */
+
+/** The vendored charting library file name, served locally - never a CDN. */
 const LIB_FILE = "chart.min.js";
-const LIB_PATH = join(ASSETS, "dashboard", "lib", LIB_FILE);
+
+/** Absolute path to an installed UI asset, or null when the on-demand package is absent. */
+function assetPath(...parts: string[]): string | null {
+    const dir = dashboardAssetsDir();
+    return dir ? join(dir, ...parts) : null;
+}
 
 /** Loopback only: the dashboard exposes local savings data and is never network-facing. */
 const HOST = "127.0.0.1";
@@ -48,6 +56,7 @@ const HOSTS_MARKER = "# enigma-dashboard (managed by enigma; remove to disable h
 // --- hosts file -----------------------------------------------------------------
 
 function hostsFilePath(): string {
+    if (process.env.ENIGMA_HOSTS_FILE) return process.env.ENIGMA_HOSTS_FILE;
     return process.platform === "win32"
         ? join(process.env.SystemRoot || "C:\\Windows", "System32", "drivers", "etc", "hosts")
         : "/etc/hosts";
@@ -91,6 +100,38 @@ export function ensureHostsEntry(): HostsResult {
     }
 }
 
+/**
+ * Idempotently REMOVE the `enigma` -> loopback mapping (and our marker) from the hosts
+ * file, so turning the dashboard off leaves no trace (matters on a server). Drops a line
+ * that maps only `enigma`; if the line maps other names too, only `enigma` is stripped.
+ * Needs admin/root like the write; reports needsAdmin on a permission error. Never throws.
+ */
+export function removeHostsEntry(): HostsResult {
+    const path = hostsFilePath();
+    let content: string;
+    try { content = readFileSync(path, "utf8"); } catch { return { ok: true, alreadyPresent: false, needsAdmin: false, path }; }
+    if (!parseHostsHasEnigma(content)) return { ok: true, alreadyPresent: false, needsAdmin: false, path };
+    const kept: string[] = [];
+    for (const line of content.split("\n")) {
+        const trimmed = line.trim();
+        if (trimmed === HOSTS_MARKER) continue;
+        const tokens = trimmed.split(/\s+/);
+        if (!trimmed.startsWith("#") && (tokens[0] === "127.0.0.1" || tokens[0] === "::1") && tokens.slice(1).includes(HOSTNAME)) {
+            const rest = tokens.slice(1).filter((t) => t !== HOSTNAME);
+            if (rest.length) kept.push(`${tokens[0]} ${rest.join(" ")}`);
+            continue;
+        }
+        kept.push(line);
+    }
+    try {
+        writeFileSync(path, kept.join("\n"));
+        return { ok: true, alreadyPresent: true, needsAdmin: false, path };
+    } catch (err) {
+        const needsAdmin = ["EACCES", "EPERM"].includes((err as NodeJS.ErrnoException).code || "");
+        return { ok: false, alreadyPresent: true, needsAdmin, path };
+    }
+}
+
 /** The URL a user should open for a server bound to `port`, given hosts availability. */
 export function dashboardUrl(port: number): string {
     const host = hasHostsEntry() ? HOSTNAME : "localhost";
@@ -101,22 +142,29 @@ export function dashboardUrl(port: number): string {
 
 let htmlCache: string | null = null;
 
+/**
+ * The dashboard page from the on-demand @enigmax/dashboard package. Only a successful read
+ * is cached, so once the background install lands the real page replaces the fallback
+ * without needing a server restart.
+ */
 function dashboardHtml(): string {
     if (htmlCache !== null) return htmlCache;
-    try { htmlCache = readFileSync(HTML_PATH, "utf8"); } catch { htmlCache = FALLBACK_HTML; }
-    return htmlCache;
+    const path = assetPath("index.html");
+    if (path) { try { return (htmlCache = readFileSync(path, "utf8")); } catch { /* not installed yet */ } }
+    return FALLBACK_HTML;
 }
 
 let libCache: string | null = null;
 
 /** The vendored chart library JS, or null if the asset is missing (cards still render). */
 function dashboardLib(): string | null {
-    if (libCache !== null) return libCache || null;
-    try { libCache = readFileSync(LIB_PATH, "utf8"); } catch { libCache = ""; }
-    return libCache || null;
+    if (libCache) return libCache;
+    const path = assetPath("lib", LIB_FILE);
+    if (path) { try { return (libCache = readFileSync(path, "utf8")); } catch { /* not installed yet */ } }
+    return null;
 }
 
-const FALLBACK_HTML = "<!doctype html><meta charset=utf-8><title>Enigma</title><body style=\"font-family:sans-serif;background:#0b0e14;color:#e6e6e6;padding:2rem\"><h1>Enigma dashboard</h1><p>Dashboard asset not found. Fetch live numbers at <a style=color:#d7875f href=\"/api/stats\">/api/stats</a>.</p>";
+const FALLBACK_HTML = "<!doctype html><meta charset=utf-8><title>Enigma</title><meta http-equiv=refresh content=5><body style=\"font-family:sans-serif;background:#0b0e14;color:#e6e6e6;padding:2rem\"><h1>Enigma dashboard</h1><p>Fetching the dashboard UI (<code>@enigmax/dashboard</code>) - this page refreshes automatically. If it persists, run <code>enigma dashboard</code> once with network access. Live numbers are available now at <a style=color:#d7875f href=\"/api/stats\">/api/stats</a>.</p>";
 
 let snapshot: { payload: string; expires: number } | null = null;
 const SNAPSHOT_TTL_MS = 1000;
@@ -125,15 +173,73 @@ const SNAPSHOT_TTL_MS = 1000;
 function statsPayload(version: string): string {
     const now = Date.now();
     if (snapshot && now < snapshot.expires) return snapshot.payload;
-    const payload = JSON.stringify({ version, generatedAt: now, priceOverride: readConfig().config.tokenPrice, stats: readStats(), history: readHistory(), cache: ccrCacheStats() });
+    const cfg = readConfig().config;
+    const payload = JSON.stringify({
+        version, generatedAt: now,
+        priceOverride: cfg.tokenPrice, speedOverride: cfg.tokenSpeed,
+        stats: readStats(), history: readHistory(), cache: ccrCacheStats(),
+        usage: cfg.usageStats ? readUsageCached() : null,
+    });
     snapshot = { payload, expires: now + SNAPSHOT_TTL_MS };
     return payload;
+}
+
+/** Hostnames a same-machine request may legitimately use (the server binds 127.0.0.1 only). */
+const LOCAL_HOSTS = new Set(["enigma", "localhost", "127.0.0.1", "::1"]);
+
+/** Strip scheme/port/path from a Host or Origin header, leaving the bare hostname. */
+function hostOnly(h: string | undefined): string {
+    return (h || "").replace(/^https?:\/\//, "").replace(/^\[|\]$/g, "").split("/")[0].split(":")[0].toLowerCase();
+}
+
+/**
+ * Guard for the settings WRITE surface: accept only same-machine requests and reject any
+ * cross-origin caller. The server is already loopback-bound (unreachable from the network),
+ * and this also blocks DNS-rebinding / CSRF from a malicious web page on the same machine.
+ */
+function isLocalRequest(req: import("node:http").IncomingMessage): boolean {
+    if (!LOCAL_HOSTS.has(hostOnly(req.headers.host))) return false;
+    const origin = req.headers.origin;
+    if (origin && !LOCAL_HOSTS.has(hostOnly(origin))) return false;
+    return true;
+}
+
+const JSON_HDR = { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" } as const;
+
+/** Serve the current value of every configurable setting (mirrors the TUI registry). */
+function serveSettings(res: import("node:http").ServerResponse): void {
+    import("./dashboard-settings")
+        .then(({ serializeSettings }) => { res.writeHead(200, JSON_HDR); res.end(JSON.stringify({ categories: serializeSettings("global") })); })
+        .catch(() => { res.writeHead(500, JSON_HDR); res.end('{"error":"settings unavailable"}'); });
+}
+
+/** Apply a single setting write from a POST body { key, value }. Bounded body, global scope. */
+function writeSetting(req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse): void {
+    let body = "";
+    req.on("data", (chunk) => { body += chunk; if (body.length > 8192) req.destroy(); });
+    req.on("end", () => {
+        let parsed: { key?: unknown; value?: unknown };
+        try { parsed = JSON.parse(body || "{}"); } catch { res.writeHead(400, JSON_HDR); res.end('{"error":"bad json"}'); return; }
+        if (typeof parsed.key !== "string") { res.writeHead(400, JSON_HDR); res.end('{"error":"missing key"}'); return; }
+        import("./dashboard-settings")
+            .then(({ applySetting }) => applySetting(parsed.key as string, parsed.value, "global"))
+            .then((out) => { snapshot = null; res.writeHead(out.ok ? 200 : 400, JSON_HDR); res.end(JSON.stringify(out)); })
+            .catch(() => { res.writeHead(500, JSON_HDR); res.end('{"error":"write failed"}'); });
+    });
 }
 
 function createDashboardServer(version: string): Server {
     return createServer((req, res) => {
         const url = (req.url || "/").split("?")[0];
-        if (req.method !== "GET") { res.writeHead(405).end(); return; }
+        const method = req.method || "GET";
+        // Settings API: the only write surface, so it is origin-guarded (GET read, POST write).
+        if (url === "/api/settings") {
+            if (!isLocalRequest(req)) { res.writeHead(403, JSON_HDR); res.end('{"error":"forbidden"}'); return; }
+            if (method === "GET") { serveSettings(res); return; }
+            if (method === "POST") { writeSetting(req, res); return; }
+            res.writeHead(405).end(); return;
+        }
+        if (method !== "GET") { res.writeHead(405).end(); return; }
         if (url === "/" || url === "/index.html") {
             res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
             res.end(dashboardHtml());
@@ -275,12 +381,15 @@ export interface DashboardApplyResult { hosts: HostsResult | null; daemon: "star
 
 /**
  * Apply the side effects of a dashboard mode change. Idempotent and best-effort:
- * - off:       stop any daemon (the hosts entry is harmless and left in place).
+ * - off:       full teardown - stop any daemon AND remove the hosts entry, so the
+ *              dashboard leaves no trace (it can be added back any time by re-enabling).
  * - on-demand: ensure the hosts entry; stop a daemon left over from "always".
  * - always:    ensure the hosts entry; start the background daemon.
  */
 export function applyDashboardMode(mode: "off" | "on-demand" | "always"): DashboardApplyResult {
-    if (mode === "off") { stopDashboardDaemon(); return { hosts: null, daemon: "stopped" }; }
+    if (mode === "off") { stopDashboardDaemon(); return { hosts: removeHostsEntry(), daemon: "stopped" }; }
+    // Enabling fetches the UI bundle in the background (no-op if already installed).
+    spawnDashboardPkgInstall();
     const hosts = ensureHostsEntry();
     if (mode === "always") { spawnDashboardDaemon(); return { hosts, daemon: "started" }; }
     stopDashboardDaemon();

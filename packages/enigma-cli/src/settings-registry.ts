@@ -184,6 +184,14 @@ const RAW_CATEGORIES: Category[] = [
                 readChoice: () => readConfig().config.dashboard,
                 writeChoice: (value, scope) => setDashboard(value, scope),
             },
+            {
+                key: "usage-stats",
+                label: "Real tool-usage stats",
+                hint: "let the dashboard read the agent's own session transcripts (Claude Code) for real token usage + prompt-cache savings; reads your own session logs; enigma default: off",
+                globalOnly: true,
+                read: () => readConfig().config.usageStats,
+                write: (value, scope) => ({ path: setEnigmaToggle("usageStats", value, scope), changed: true }),
+            },
         ],
     },
     {

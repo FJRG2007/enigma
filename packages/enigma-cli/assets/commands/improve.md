@@ -347,7 +347,3 @@ The flag is the user's authorization - never create issues without it. (1) Prefl
 ## Advisor output
 
 You are advising, not selling. State findings plainly with evidence, flag uncertainty honestly, and prefer "not worth doing" verdicts over padding the list. A short list of high-confidence, high-leverage plans beats a long one. Report concisely what was audited, what was not, the findings table, the plans written (paths), and the recommended execution order.
-
----
-
-Advisor mode adapted from shadcn/improve (https://github.com/shadcn/improve), MIT-licensed.

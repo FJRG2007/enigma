@@ -160,3 +160,23 @@ jobs:
         run: npm publish --workspace enigma-cli --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # The dashboard UI (@enigmax/dashboard) is a separate, asset-only package that
+      # enigma-cli installs on demand. Publish it (skip if its version already exists) so
+      # the on-demand fetch and `enigma update` always find the latest UI. No build step:
+      # the package ships only static assets.
+      - name: Determine if dashboard version is new
+        id: dashver
+        run: |
+          DV="$(node -p "require('./packages/dashboard/package.json').version")"
+          if npm view "@enigmax/dashboard@$DV" version >/dev/null 2>&1; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "@enigmax/dashboard@$DV already published; skipping."
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Publish dashboard UI
+        if: steps.dashver.outputs.publish == 'true'
+        run: npm publish --workspace @enigmax/dashboard --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

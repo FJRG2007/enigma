@@ -5,7 +5,7 @@
  * Temp HOME (set BEFORE import) isolates ~/.enigma, resolved lazily per call.
  */
 import { test, expect, afterAll } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir, homedir } from "node:os";
 import { join } from "node:path";
 
@@ -13,7 +13,7 @@ const HOME = mkdtempSync(join(tmpdir(), "enigma-dash-"));
 process.env.USERPROFILE = HOME;
 process.env.HOME = HOME;
 
-const { startDashboardServer, dashboardUrl, runningDaemon } = await import("../src/dashboard");
+const { startDashboardServer, dashboardUrl, runningDaemon, removeHostsEntry } = await import("../src/dashboard");
 const { recordStats } = await import("../src/compress/ccr");
 
 afterAll(() => rmSync(HOME, { recursive: true, force: true }));
@@ -47,6 +47,63 @@ test("serves the HTML shell, a stats payload, and 404s the rest", async () => {
         expect((await fetch(`${base}/nope`)).status).toBe(404);
     } finally {
         server.close();
+    }
+});
+
+test("settings API reads the registry and writes a setting; cross-origin writes are refused", async () => {
+    const server = await startDashboardServer("test-version");
+    const base = `http://127.0.0.1:${server.port}`;
+    try {
+        // GET returns the same categories the TUI registry exposes.
+        const get = await fetch(`${base}/api/settings`);
+        expect(get.status).toBe(200);
+        const data = await get.json() as { categories: { settings: { key: string; value: boolean }[] }[] };
+        const all = data.categories.flatMap((c) => c.settings);
+        const commit = all.find((s) => s.key === "commit-emoji");
+        expect(commit).toBeDefined();
+
+        // POST toggles a boolean setting and the change is reflected back.
+        const next = !commit!.value;
+        const post = await fetch(`${base}/api/settings`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ key: "commit-emoji", value: next }),
+        });
+        expect(post.status).toBe(200);
+        const out = await post.json() as { ok: boolean; setting?: { value: boolean } };
+        expect(out.ok).toBe(true);
+        expect(out.setting?.value).toBe(next);
+
+        // A cross-origin POST (CSRF / DNS-rebind) is rejected before any write.
+        const evil = await fetch(`${base}/api/settings`, {
+            method: "POST", headers: { "Content-Type": "application/json", "Origin": "http://evil.example" },
+            body: JSON.stringify({ key: "commit-emoji", value: true }),
+        });
+        expect(evil.status).toBe(403);
+    } finally {
+        server.close();
+    }
+});
+
+test("removeHostsEntry strips only the enigma mapping and leaves other hosts intact", () => {
+    const hostsPath = join(homedir(), "hosts-test");
+    process.env.ENIGMA_HOSTS_FILE = hostsPath;
+    try {
+        writeFileSync(hostsPath, [
+            "127.0.0.1 localhost",
+            "# enigma-dashboard (managed by enigma; remove to disable http://enigma)",
+            "127.0.0.1 enigma",
+            "10.0.0.5 internal.example",
+        ].join("\n") + "\n");
+        const r = removeHostsEntry();
+        expect(r.ok).toBe(true);
+        const after = readFileSync(hostsPath, "utf8");
+        expect(after).not.toContain("enigma");
+        expect(after).toContain("127.0.0.1 localhost");
+        expect(after).toContain("10.0.0.5 internal.example");
+        // Idempotent: a second removal is a no-op.
+        expect(removeHostsEntry().ok).toBe(true);
+    } finally {
+        delete process.env.ENIGMA_HOSTS_FILE;
     }
 });
 
