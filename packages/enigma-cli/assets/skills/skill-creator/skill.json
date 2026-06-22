@@ -3,6 +3,6 @@
   "version": "1.0.0",
   "provider": "FJRG2007/enigma",
   "description": "Create new skills, modify and improve existing skills, and measure skill performance with evals and benchmarks.",
-  "cliVersion": "1.16.0",
+  "cliVersion": "1.16.1",
   "sha": "699586cce82ec0a5458288b598ee7e5ebdddb3dfcf19db354d8bc5e85e47c1c7"
 }
