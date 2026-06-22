@@ -1,7 +1,7 @@
 #!/bin/sh
 # enigma installer - always fetches the latest enigma-cli, then deploys it.
 #
-#   curl -fsSL https://raw.githubusercontent.com/FJRG2007/enigma/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/FJRG2007/enigma/main/scripts/install.sh | sh
 #
 # It clears the npm cache first (so you always get the newest published version),
 # installs the `enigma` command globally, and runs `enigma install` for you.

@@ -20,10 +20,10 @@ runs `enigma install` for you - handy where npm `postinstall` scripts are disabl
 
 ```bash
 # macOS / Linux
-curl -fsSL https://raw.githubusercontent.com/FJRG2007/enigma/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/FJRG2007/enigma/main/scripts/install.sh | sh
 
 # Windows (PowerShell)
-irm https://raw.githubusercontent.com/FJRG2007/enigma/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/FJRG2007/enigma/main/scripts/install.ps1 | iex
 ```
 
 Or one-shot, no global install, no prompts - deploy the skills to every supported
