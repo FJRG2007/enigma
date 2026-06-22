@@ -9,7 +9,7 @@ import { createServer } from "node:http";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseUsage, startMeasuringProxy, readProxyStats } from "../src/proxy";
+import { parseUsage, startMeasuringProxy, readProxyStats, readProxyLimits } from "../src/proxy";
 
 const SSE = [
     'event: message_start',
@@ -132,6 +132,43 @@ test("prompt secret guard in reject mode blocks the request before it reaches Cl
         expect(body.error?.message).toContain("Anthropic API key");
         expect(upstreamHit).toBe(false);                     // nothing reached Claude
         expect(readProxyStats().rejected).toBeGreaterThan(0);
+    } finally {
+        proxy.close(); upstream.close();
+        process.env.HOME = prev.home; process.env.USERPROFILE = prev.profile;
+        if (prev.up === undefined) delete process.env.ENIGMA_PROXY_UPSTREAM; else process.env.ENIGMA_PROXY_UPSTREAM = prev.up;
+        rmSync(HOME, { recursive: true, force: true });
+    }
+});
+
+test("captures Anthropic's unified rate-limit headers (the real usage windows)", async () => {
+    const HOME = mkdtempSync(join(tmpdir(), "enigma-proxy-"));
+    const prev = { home: process.env.HOME, profile: process.env.USERPROFILE, up: process.env.ENIGMA_PROXY_UPSTREAM };
+    process.env.HOME = HOME; process.env.USERPROFILE = HOME;
+
+    const reset5h = Math.floor(Date.now() / 1000) + 3600;
+    const reset7d = Math.floor(Date.now() / 1000) + 5 * 86400;
+    const upstream = createServer((req, res) => {
+        res.writeHead(200, {
+            "content-type": "text/event-stream",
+            "anthropic-ratelimit-unified-5h-utilization": "0.33",
+            "anthropic-ratelimit-unified-5h-reset": String(reset5h),
+            "anthropic-ratelimit-unified-7d-utilization": "0.09",
+            "anthropic-ratelimit-unified-7d-reset": String(reset7d),
+        });
+        res.end(SSE);
+    });
+    await new Promise<void>((r) => upstream.listen(0, "127.0.0.1", () => r()));
+    process.env.ENIGMA_PROXY_UPSTREAM = `http://127.0.0.1:${(upstream.address() as { port: number }).port}`;
+
+    const proxy = await startMeasuringProxy();
+    try {
+        await (await fetch(proxy.url + "/v1/messages", { method: "POST", body: "{}" })).text();
+        await new Promise((res) => setTimeout(res, 50));
+        const lim = readProxyLimits();
+        expect(lim).not.toBeNull();
+        expect(lim!.session!.utilization).toBe(0.33);
+        expect(lim!.weekly!.utilization).toBe(0.09);
+        expect(lim!.session!.resetsAt).toBe(reset5h * 1000);
     } finally {
         proxy.close(); upstream.close();
         process.env.HOME = prev.home; process.env.USERPROFILE = prev.profile;

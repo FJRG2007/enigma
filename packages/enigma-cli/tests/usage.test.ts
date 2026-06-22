@@ -7,7 +7,7 @@
  */
 import { test, expect, afterAll } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { tmpdir, homedir } from "node:os";
 import { join } from "node:path";
 
 const HOME = mkdtempSync(join(tmpdir(), "enigma-usage-"));
@@ -111,6 +111,28 @@ test("builds Claude-style usage windows with % against configured plan limits", 
         expect(r.windows.weeklySonnet.pct).toBe(0);
     } finally {
         for (const k of ["planSessionLimit", "planWeeklyLimit", "planWeeklySonnetLimit"] as const) setEnigmaValue(k, 0, "global");
+    }
+});
+
+test("overlays Anthropic's real rate-limit windows when the proxy captured them", () => {
+    // The proxy persists captured limits here; usage overlays them as the live %/reset.
+    const proxyDir = join(homedir(), ".enigma", "proxy");
+    mkdirSync(proxyDir, { recursive: true });
+    const limPath = join(proxyDir, "limits.json");
+    writeFileSync(limPath, JSON.stringify({
+        session: { utilization: 0.33, resetsAt: Date.now() + 3600_000 },
+        weekly: { utilization: 0.09, resetsAt: Date.now() + 5 * 86400_000 },
+        weeklyOpus: null, weeklySonnet: null, capturedAt: Date.now(),
+    }));
+    try {
+        const r = buildUsage();
+        expect(r.windows.session.live).toBe(true);
+        expect(r.windows.session.pct).toBeCloseTo(33, 1); // 0.33 -> 33%, no plan limit needed
+        expect(r.windows.weeklyAll.live).toBe(true);
+        expect(r.windows.weeklyAll.pct).toBeCloseTo(9, 1);
+        expect(r.windows.weeklyAll.resetsAt).toBeGreaterThan(Date.now());
+    } finally {
+        rmSync(limPath, { force: true });
     }
 });
 

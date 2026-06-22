@@ -76,6 +76,64 @@ export function readProxyStats(): ProxyUsage {
     try { return { ...EMPTY, ...JSON.parse(readFileSync(statsPath(), "utf8")) }; } catch { return { ...EMPTY }; }
 }
 
+/** One rate-limit window from Anthropic's response headers: utilization (0..1) + reset (ms). */
+export interface ProxyLimitWindow { utilization: number; resetsAt: number; }
+
+/**
+ * The REAL usage limits Anthropic reports in `/v1/messages` response headers - the same
+ * numbers Claude Code's own UI shows. Captured by the proxy from genuine traffic (no extra
+ * API call). Per-model (opus/sonnet) windows are only present when Anthropic sends them.
+ */
+export interface ProxyLimits {
+    session: ProxyLimitWindow | null;
+    weekly: ProxyLimitWindow | null;
+    weeklyOpus: ProxyLimitWindow | null;
+    weeklySonnet: ProxyLimitWindow | null;
+    capturedAt: number;
+}
+
+function limitsPath(): string {
+    return join(homedir(), ".enigma", "proxy", "limits.json");
+}
+
+/** The last captured real rate-limit windows, or null if none seen yet. */
+export function readProxyLimits(): ProxyLimits | null {
+    try { return JSON.parse(readFileSync(limitsPath(), "utf8")) as ProxyLimits; } catch { return null; }
+}
+
+/**
+ * Capture Anthropic's `anthropic-ratelimit-unified-*` headers from a response and persist
+ * them (merging with the previous snapshot so a response missing a window keeps the last
+ * known value). Best-effort; never throws and never affects the forwarded response.
+ */
+function recordLimits(headers: import("node:http").IncomingHttpHeaders): void {
+    try {
+        const num = (k: string): number | null => {
+            const v = headers[k];
+            if (v == null) return null;
+            const n = Number(Array.isArray(v) ? v[0] : v);
+            return Number.isFinite(n) ? n : null;
+        };
+        const win = (u: number | null, r: number | null): ProxyLimitWindow | null => u == null ? null : { utilization: u, resetsAt: r != null && r > 0 ? r * 1000 : 0 };
+        const session = win(num("anthropic-ratelimit-unified-5h-utilization"), num("anthropic-ratelimit-unified-5h-reset"));
+        const weekly = win(num("anthropic-ratelimit-unified-7d-utilization"), num("anthropic-ratelimit-unified-7d-reset"));
+        const weeklyOpus = win(num("anthropic-ratelimit-unified-7d-opus-utilization"), num("anthropic-ratelimit-unified-7d-opus-reset"));
+        const weeklySonnet = win(num("anthropic-ratelimit-unified-7d-sonnet-utilization"), num("anthropic-ratelimit-unified-7d-sonnet-reset"));
+        if (!session && !weekly && !weeklyOpus && !weeklySonnet) return; // no rate-limit headers on this response
+        const prev = readProxyLimits();
+        const next: ProxyLimits = {
+            session: session ?? prev?.session ?? null,
+            weekly: weekly ?? prev?.weekly ?? null,
+            weeklyOpus: weeklyOpus ?? prev?.weeklyOpus ?? null,
+            weeklySonnet: weeklySonnet ?? prev?.weeklySonnet ?? null,
+            capturedAt: Date.now(),
+        };
+        const dir = join(homedir(), ".enigma", "proxy");
+        if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+        writeFileSync(limitsPath(), JSON.stringify(next, null, 2) + "\n");
+    } catch { /* best-effort */ }
+}
+
 interface OneCall { model: string; input: number; output: number; cacheRead: number; cacheCreation: number; }
 
 /** Fold one measured call into the cumulative store. Best-effort; never throws. */
@@ -174,6 +232,8 @@ export function startMeasuringProxy(options: ProxyOptions = {}): Promise<Running
             { host: up.host, port: up.port, method: req.method, path: req.url, headers },
             (upRes) => {
                 res.writeHead(upRes.statusCode || 502, upRes.headers);
+                // Capture Anthropic's real rate-limit windows (the numbers Claude's UI shows).
+                recordLimits(upRes.headers);
                 const path = req.url || "";
                 const chunks: Buffer[] = [];
                 let captured = 0;

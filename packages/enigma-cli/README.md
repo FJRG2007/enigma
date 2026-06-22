@@ -574,11 +574,17 @@ session transcripts (`~/.claude/projects/.../*.jsonl`) and reports:
   used in the open window, the **burn rate** (tokens/min) and a projected end-of-window
   total. (No Anthropic API is called - this is reconstructed from your local logs.)
 - The **same usage windows Claude Code shows** as gauges: **Current session**, **Weekly -
-  All models**, and **Weekly - Sonnet only**, each with its reset time. The **% used**
-  needs your plan limit, which you set on the card (dashboard) or with
-  `enigma config plan-weekly-limit <tokens>` / `plan-session-limit` / `plan-weekly-sonnet-limit`;
-  the weekly reset day/time is `enigma config plan-weekly-reset "mon 11:00"`. Until a limit
-  is set the card honestly shows tokens used instead of a fabricated percentage.
+  All models**, and **Weekly - Sonnet only**, each with its reset time and **% used**.
+  - **Live (recommended):** with the proxy on (`enigma config proxy on`) and launching via
+    `enigma claude`, enigma reads Anthropic's real `anthropic-ratelimit-unified-*` response
+    headers from your traffic and shows the **exact %/reset Claude's own UI shows** - no plan
+    limit needed. Cards backed by this are marked **live**. (This is how usage trackers get
+    the numbers; enigma gets them for free from traffic you already make, with no extra API
+    call or token handling.)
+  - **Fallback:** before the proxy has seen a request, the card shows tokens used, or a %
+    against a plan limit you set on the card or with `enigma config plan-weekly-limit <tokens>`
+    / `plan-session-limit` / `plan-weekly-sonnet-limit` (weekly reset via
+    `enigma config plan-weekly-reset "mon 11:00"`). enigma never fabricates a percentage.
 
 It is read-only and loopback-only; nothing is sent anywhere. Off by default because it
 reads your session logs, which are broader than enigma's own compression data.

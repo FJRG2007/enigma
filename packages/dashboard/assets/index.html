@@ -286,7 +286,7 @@
         </div>
         <div class="panel" id="usagePanel" style="display:none">
             <h2 style="margin:0 0 4px">Usage limits <small>same windows Claude Code shows</small></h2>
-            <div class="sub" style="margin-bottom:12px">Reset times and tokens are measured from your transcripts; the <b>% used</b> needs your plan limit (set it on a card, or with <code>enigma config plan-weekly-limit &lt;tokens&gt;</code>). The weekly reset day/time is <code>enigma config plan-weekly-reset "mon 11:00"</code>.</div>
+            <div class="sub" style="margin-bottom:12px">Cards marked <span class="tag meas">live</span> show the <b>real % and reset</b> Anthropic reports (the same as Claude's own UI), captured by the local proxy from your <code>enigma claude</code> traffic - no plan limit needed. Until the proxy has seen a request, the card falls back to tokens used, or a % against a plan limit you set (on the card, or <code>enigma config plan-weekly-limit &lt;tokens&gt;</code>). Per-model live data appears only when Anthropic sends it.</div>
             <div id="uWindows"></div>
             <div class="grid" style="margin-bottom:16px">
                 <div class="card"><div class="label">Est. Cost</div><div id="uCost" class="value accent">-</div><div class="foot">All sessions, per-model pricing</div></div>
@@ -555,7 +555,8 @@
                     + '<div class="wset"><input type="number" min="0" class="wlimit" data-plan="' + sub + '" placeholder="set limit (tokens)">'
                     + '<button type="button" class="laddb" data-plan="' + sub + '">Set</button></div>';
             }
-            return '<div class="wcard"><div class="wtitle">' + esc(w.label) + '</div><div class="wreset">' + esc(reset) + '</div>' + body + '</div>';
+            const live = w.live ? ' <span class="tag meas">live</span>' : "";
+            return '<div class="wcard"><div class="wtitle">' + esc(w.label) + live + '</div><div class="wreset">' + esc(reset) + '</div>' + body + '</div>';
         }
         function renderWindows(u) {
             const w = u && u.windows;

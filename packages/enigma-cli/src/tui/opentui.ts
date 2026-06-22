@@ -385,11 +385,11 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         };
         const winLine = (w: UsageReport["windows"]["session"], sonnet: boolean): RNode => {
             const reset = w.kind === "session" ? (w.resetsAt ? `resets ${relMin(w.resetsAt)}` : "no active session") : (w.resetsAt ? `resets ${atLabel(w.resetsAt)}` : "");
-            const val = sonnet && (w.used || 0) === 0 ? "not used yet"
-                : w.pct != null ? `${Math.round(w.pct)}% used`
+            const val = w.pct != null ? `${Math.round(w.pct)}% used`
+                : sonnet && (w.used || 0) === 0 ? "not used yet"
                 : `${fmtTok(w.used)} tok`;
             return h(box, { flexDirection: "row", justifyContent: "space-between" },
-                txt(` ${w.label} `, {}),
+                txt(` ${w.label}${w.live ? " (live)" : ""} `, {}),
                 txt(`${val}   ${reset} `, { fg: w.pct != null && w.pct >= 90 ? COL.red : COL.gray }));
         };
         const rows: RNode[] = [

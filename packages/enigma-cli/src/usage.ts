@@ -26,6 +26,7 @@ import { homedir } from "node:os";
 import { join, sep } from "node:path";
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { readConfig } from "./config";
+import { readProxyLimits } from "./proxy";
 
 /** Per-model price in USD per MILLION tokens. Ported from references/repos/claude-usage. */
 export interface ModelPrice { input: number; output: number; cacheRead: number; cacheWrite: number; }
@@ -110,6 +111,8 @@ export interface UsageWindow {
     pct: number | null;
     /** epoch ms the window resets; 0 = no active window. */
     resetsAt: number;
+    /** True when pct/reset came from Anthropic's real rate-limit headers (via the proxy). */
+    live: boolean;
 }
 
 export interface UsageWindows { session: UsageWindow; weeklyAll: UsageWindow; weeklySonnet: UsageWindow; }
@@ -204,7 +207,7 @@ function emptyBucket(): UsageBucket {
 }
 
 function emptyWindow(label: string, kind: "session" | "weekly"): UsageWindow {
-    return { label, kind, used: 0, cost: 0, limit: 0, pct: null, resetsAt: 0 };
+    return { label, kind, used: 0, cost: 0, limit: 0, pct: null, resetsAt: 0, live: false };
 }
 
 function emptyWindows(): UsageWindows {
@@ -383,6 +386,7 @@ function computeWindows(byDayModel: Record<string, Record<string, UsageBucket>>,
         limit: cfg.planSessionLimit || 0,
         pct: pctOf(block ? block.tokens : 0, cfg.planSessionLimit || 0),
         resetsAt: block && block.active ? block.endsAt : 0,
+        live: false,
     };
     const { startDay, nextMs } = weeklyAnchor(cfg.planWeeklyReset, now);
     let allTok = 0, allCost = 0, sonTok = 0, sonCost = 0;
@@ -394,11 +398,29 @@ function computeWindows(byDayModel: Record<string, Record<string, UsageBucket>>,
             if (fam === "sonnet") { sonTok += t; sonCost += b.cost; }
         }
     }
-    return {
+    const windows: UsageWindows = {
         session,
-        weeklyAll: { label: "All models", kind: "weekly", used: allTok, cost: allCost, limit: cfg.planWeeklyLimit || 0, pct: pctOf(allTok, cfg.planWeeklyLimit || 0), resetsAt: nextMs },
-        weeklySonnet: { label: "Sonnet only", kind: "weekly", used: sonTok, cost: sonCost, limit: cfg.planWeeklySonnetLimit || 0, pct: pctOf(sonTok, cfg.planWeeklySonnetLimit || 0), resetsAt: nextMs },
+        weeklyAll: { label: "All models", kind: "weekly", used: allTok, cost: allCost, limit: cfg.planWeeklyLimit || 0, pct: pctOf(allTok, cfg.planWeeklyLimit || 0), resetsAt: nextMs, live: false },
+        weeklySonnet: { label: "Sonnet only", kind: "weekly", used: sonTok, cost: sonCost, limit: cfg.planWeeklySonnetLimit || 0, pct: pctOf(sonTok, cfg.planWeeklySonnetLimit || 0), resetsAt: nextMs, live: false },
     };
+
+    // Overlay Anthropic's REAL rate-limit windows when the proxy has captured them - the
+    // exact %/reset Claude's own UI shows, so the bars appear without a manual plan limit.
+    // utilization is a 0..1 fraction; a passed reset means the window has rolled over (0%).
+    const lim = readProxyLimits();
+    if (lim) {
+        const apply = (w: UsageWindow, src: { utilization: number; resetsAt: number } | null): void => {
+            if (!src) return;
+            const expired = src.resetsAt > 0 && src.resetsAt < now;
+            w.pct = expired ? 0 : Math.min(100, src.utilization <= 1 ? src.utilization * 100 : src.utilization);
+            if (src.resetsAt > 0) w.resetsAt = src.resetsAt;
+            w.live = true;
+        };
+        apply(windows.session, lim.session);
+        apply(windows.weeklyAll, lim.weekly);
+        apply(windows.weeklySonnet, lim.weeklySonnet);
+    }
+    return windows;
 }
 
 /**
