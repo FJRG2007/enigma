@@ -13,6 +13,9 @@ import { join } from "node:path";
 const HOME = mkdtempSync(join(tmpdir(), "enigma-usage-"));
 process.env.USERPROFILE = HOME;
 process.env.HOME = HOME;
+// Pin the transcript dir explicitly: under bun on Linux os.homedir() does not reflect a
+// runtime-reassigned $HOME, so the override (not homedir()) makes the test deterministic.
+process.env.ENIGMA_CLAUDE_PROJECTS = join(HOME, ".claude", "projects");
 
 const { buildUsage } = await import("../src/usage");
 
@@ -63,15 +66,16 @@ test("aggregates real usage, dedupes by id, and splits sessions from subagents",
 
 test("empty when there are no transcripts", () => {
     const empty = mkdtempSync(join(tmpdir(), "enigma-usage-empty-"));
-    const prevHome = process.env.HOME, prevProfile = process.env.USERPROFILE;
+    const prevHome = process.env.HOME, prevProfile = process.env.USERPROFILE, prevProjects = process.env.ENIGMA_CLAUDE_PROJECTS;
     process.env.HOME = empty; process.env.USERPROFILE = empty;
+    process.env.ENIGMA_CLAUDE_PROJECTS = join(empty, ".claude", "projects");
     try {
         const r = buildUsage();
         expect(r.scannedFiles).toBe(0);
         expect(r.input).toBe(0);
         expect(Object.keys(r.byModel)).toHaveLength(0);
     } finally {
-        process.env.HOME = prevHome; process.env.USERPROFILE = prevProfile;
+        process.env.HOME = prevHome; process.env.USERPROFILE = prevProfile; process.env.ENIGMA_CLAUDE_PROJECTS = prevProjects;
         rmSync(empty, { recursive: true, force: true });
     }
 });

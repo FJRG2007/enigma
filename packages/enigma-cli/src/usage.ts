@@ -59,7 +59,7 @@ interface FileAgg {
 const USAGE_TTL_MS = 20_000;
 
 function claudeProjectsDir(): string {
-    return join(homedir(), ".claude", "projects");
+    return process.env.ENIGMA_CLAUDE_PROJECTS || join(homedir(), ".claude", "projects");
 }
 
 function cacheFile(): string {
