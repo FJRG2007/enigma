@@ -18,6 +18,9 @@
 import { CATEGORIES, ALL_SETTINGS, valueLabel, invalidateSettingReads } from "../settings-registry";
 import { applyMemoryToggles } from "../skills";
 import { onGhTelemetryChange } from "../github";
+import { readUsageCached } from "../usage";
+import { readConfig } from "../config";
+import type { UsageReport } from "../usage";
 import type { Scope, Setting } from "../settings-registry";
 import type { HubContext, HubAccount, HubExitAction, HubProfile, HubSkill, HubTool, ActionRequest, ActionResult } from "./types";
 
@@ -282,6 +285,24 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
                 h(box, { flexDirection: "column", marginTop: 1 },
                     ...["Connect now", "Later"].map((o, i) => txt(` ${o} `, { ...selStyle(i === index), onMouseDown: () => onChoose(i) })))));
 
+    // List-setting editor overlay (guard block/allow globs, custom secret patterns).
+    // A plain list view (no focused input) so single-letter keys work: 'a' opens the
+    // add-input overlay, 'd' removes the selected entry. Items also remove on click.
+    const renderListEditor = (s: {
+        title: string; hint: string; items: string[]; cursor: number;
+        onRemove: (i: number) => void; onMove: (delta: 1 | -1) => void;
+    }): RNode =>
+        h(box, { flexGrow: 1, justifyContent: "center", alignItems: "center" },
+            h(box, { border: true, borderStyle: "rounded", borderColor: COL.cyan, flexDirection: "column", paddingLeft: 2, paddingRight: 2, paddingTop: 1, paddingBottom: 1, width: 66, ...wheel(s.onMove) },
+                txt(s.title, { fg: COL.cyan, attributes: BOLD }),
+                txt(s.hint, { fg: COL.gray, truncate: true }),
+                h(box, { flexDirection: "column", marginTop: 1 },
+                    ...(s.items.length
+                        ? s.items.map((it, i) => h(box, { flexDirection: "row", onMouseDown: () => s.onRemove(i) },
+                            txt(` ${it} `, selStyle(i === s.cursor))))
+                        : [txt(" (none - using the built-in defaults) ", { fg: COL.gray })])),
+                txt("a add   d remove   enter / esc done", { fg: COL.gray, marginTop: 1 })));
+
     const renderCategoryPanel = (s: {
         category: { title: string; blurb: string; settings: Setting[] };
         scope: Scope; focusRight: boolean; setIndex: number;
@@ -323,6 +344,68 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             h(box, { flexGrow: 1 }),
         ]);
 
+    // Compact token formatter for the usage panel (e.g. 12.3M, 4.5K).
+    const fmtTok = (n: number): string => {
+        n = n || 0;
+        if (n >= 1e9) return (n / 1e9).toFixed(2) + "B";
+        if (n >= 1e6) return (n / 1e6).toFixed(2) + "M";
+        if (n >= 1e3) return (n / 1e3).toFixed(1) + "K";
+        return String(Math.round(n));
+    };
+    const usd = (n: number): string => "$" + (n || 0).toFixed(2);
+
+    /** Read-only Claude usage panel: cost + tokens + the 5h block + top models/sessions. */
+    const renderUsagePanel = (s: { usageOn: boolean; report: (UsageReport & { pending: boolean }) | null }): RNode => {
+        if (!s.usageOn) return panelBox(COL.gray, [
+            txt("Claude usage", { fg: COL.cyan, attributes: BOLD }),
+            txt("Real tool-usage stats are off.", { fg: COL.yellow, marginTop: 1 }),
+            txt("Turn it on to read your Claude Code sessions here:", { fg: COL.gray, marginTop: 1 }),
+            txt("  enigma config usage-stats on", { fg: COL.cyan }),
+            txt("Only your local session transcripts are read; nothing is sent anywhere.", { fg: COL.gray, marginTop: 1 }),
+            h(box, { flexGrow: 1 }),
+        ]);
+        const u = s.report;
+        if (!u || (u.pending && u.messages === 0)) return panelBox(COL.cyan, [
+            txt("Claude usage", { fg: COL.cyan, attributes: BOLD }),
+            txt(u?.pending ? "Scanning session transcripts..." : "No usage recorded yet.", { fg: COL.gray, marginTop: 1 }),
+            h(box, { flexGrow: 1 }),
+        ]);
+        const models = Object.entries(u.byModel).sort((a, b) => b[1].cost - a[1].cost).slice(0, 6);
+        const rows: RNode[] = [
+            h(box, { flexDirection: "row", marginTop: 1 },
+                txt(`Est. cost ${usd(u.cost)}`, { fg: COL.green, attributes: BOLD }),
+                txt(`   in ${fmtTok(u.input)}`, { fg: COL.gray }),
+                txt(`   out ${fmtTok(u.output)}`, { fg: COL.gray }),
+                txt(`   cache ${fmtTok(u.cacheRead)}`, { fg: COL.gray }),
+                txt(`   ${u.sessions} sessions`, { fg: COL.gray })),
+        ];
+        if (u.block) {
+            const b = u.block;
+            const remMin = Math.max(0, Math.round((b.endsAt - Date.now()) / 60000));
+            rows.push(txt(
+                `5h block: ${fmtTok(b.tokens)} tok  ${usd(b.cost)}  burn ${fmtTok(b.burnRatePerMin)}/min  -> proj ${fmtTok(b.projectedTokens)}  ${b.active ? `(${remMin} min left)` : "(ended)"}`,
+                { fg: b.active ? COL.yellow : COL.gray, marginTop: 1 }));
+        }
+        rows.push(txt("By model", { fg: COL.gray, attributes: BOLD, marginTop: 1 }));
+        for (const [m, v] of models) {
+            rows.push(h(box, { flexDirection: "row", justifyContent: "space-between" },
+                txt(` ${m} `, { truncate: true }),
+                txt(`${fmtTok(v.input + v.output)} tok   ${usd(v.cost)} `, { fg: COL.gray })));
+        }
+        rows.push(txt("Recent sessions", { fg: COL.gray, attributes: BOLD, marginTop: 1 }));
+        for (const r of u.recentSessions.slice(0, 6)) {
+            rows.push(h(box, { flexDirection: "row", justifyContent: "space-between" },
+                txt(` ${r.project} `, { truncate: true }),
+                txt(`${r.model}   ${usd(r.cost)} `, { fg: COL.gray, truncate: true })));
+        }
+        return panelBox(COL.cyan, [
+            txt("Claude usage", { fg: COL.cyan, attributes: BOLD }),
+            txt(`Estimated cost from local transcripts${u.pending ? " (refreshing...)" : ""}`, { fg: COL.gray }),
+            h(box, { flexDirection: "column" }, ...rows),
+            h(box, { flexGrow: 1 }),
+        ]);
+    };
+
     const renderResult = (res: ActionResult, scroll: number, maxRows: number, onScroll: (dir?: "up" | "down" | "left" | "right") => void): RNode => {
         const windowed = maxRows > 0 && res.lines.length > maxRows;
         const start = windowed ? Math.max(0, Math.min(scroll, res.lines.length - maxRows)) : 0;
@@ -347,9 +430,12 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
     type SideItem =
         | { kind: "category"; catIndex: number; title: string }
         | { kind: "action"; action: "skills" | "security"; title: string; blurb: string }
-        | { kind: "identity"; title: string };
+        | { kind: "identity"; title: string }
+        | { kind: "usage"; title: string };
     const sideItems: SideItem[] = [
         ...CATEGORIES.map((c, i) => ({ kind: "category" as const, catIndex: i, title: c.title })),
+        // The usage view only makes sense in the full hub (it reads session transcripts).
+        ...(showActions ? [{ kind: "usage" as const, title: "Claude usage" }] : []),
         ...(showActions ? ACTION_ITEMS.map((a) => ({ kind: "action" as const, ...a })) : []),
         ...(hasIdentity ? [{ kind: "identity" as const, title: "Accounts & profiles" }] : []),
     ];
@@ -399,11 +485,18 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         const [profAdd, setProfAdd] = useState<{ error?: string } | null>(null);
         const [profEdit, setProfEdit] = useState<{ profile: string; step: "tool" | "account"; tool: string; toolLabel: string; query: string; cursor: number; error?: string } | null>(null);
         const [profRemove, setProfRemove] = useState<{ name: string; index: number } | null>(null);
+        // List-setting editor (guard globs / custom secret patterns): the list view, plus
+        // a nested add-input overlay (listAdd) that takes precedence while open.
+        const [listEdit, setListEdit] = useState<{ key: string; cursor: number } | null>(null);
+        const [listAdd, setListAdd] = useState<{ key: string; error?: string } | null>(null);
 
         const current = sideItems[sideIndex]!;
         const category = current.kind === "category" ? CATEGORIES[current.catIndex]! : null;
         const action = current.kind === "action" ? current.action : null;
         const identityMode = current.kind === "identity";
+        const usageMode = current.kind === "usage";
+        const [usage, setUsage] = useState<(UsageReport & { pending: boolean }) | null>(null);
+        const usageOn = usageMode ? readConfig().config.usageStats : false;
         // The install panel appends a SKILLS section under the agent checklist; one
         // flat cursor walks both, so the action row count covers agents + skills.
         const skillRows = action === "skills" && setSkillDiscardedFn ? skills : [];
@@ -426,6 +519,20 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         // finds a different real value, bust the read cache and re-render.
         const [, setGhTick] = useState(0);
         useEffect(() => onGhTelemetryChange(() => { invalidateSettingReads(); setGhTick((t) => t + 1); }), []);
+
+        // Load the usage report when the usage view is open (SWR: re-read while it builds).
+        useEffect(() => {
+            if (!usageMode || !usageOn) { setUsage(null); return; }
+            let cancelled = false;
+            const tick = (): void => {
+                const u = readUsageCached();
+                if (cancelled) return;
+                setUsage(u);
+                if (u.pending) setTimeout(tick, 800);
+            };
+            tick();
+            return () => { cancelled = true; };
+        }, [usageMode, usageOn]);
 
         useEffect(() => {
             if (!action) return;
@@ -458,13 +565,16 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         };
         /** On/off face: drives row color and the boolean settings. */
         const valueOf = (setting: Setting, sc: Scope): boolean => {
+            if (setting.kind === "list") return setting.listValues ? setting.listValues(sc).length > 0 : false;
             const st = stagedOf(setting, sc);
             if (st === undefined) return setting.read(sc);
             return setting.choices ? st !== (setting.offChoice ?? "off") : Boolean(st);
         };
-        /** Text shown in the row: the level for choice settings, on/off otherwise. */
-        const displayValue = (setting: Setting, sc: Scope): string =>
-            setting.choices ? choiceOf(setting, sc) : valueLabel(valueOf(setting, sc));
+        /** Text shown in the row: the count for list settings, the level for choice settings, on/off otherwise. */
+        const displayValue = (setting: Setting, sc: Scope): string => {
+            if (setting.kind === "list") { const n = setting.listValues ? setting.listValues(sc).length : 0; return n === 0 ? "edit" : `${n} set`; }
+            return setting.choices ? choiceOf(setting, sc) : valueLabel(valueOf(setting, sc));
+        };
         const isModified = (setting: Setting, sc: Scope): boolean => {
             const st = stagedOf(setting, sc);
             return st !== undefined && st !== savedOf(setting, sc);
@@ -517,9 +627,32 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         const selectSide = (i: number): void => { setSideIndex(i); setSetIndex(0); setFocusRight(false); };
         const clickSetting = (i: number): void => {
             if (!category) return;
+            const setting = category.settings[i]!;
             if (focusRight && setIndex === i) {
-                stageNext(category.settings[i]!, scope);
+                if (setting.kind === "list") { setListEdit({ key: setting.key, cursor: 0 }); return; }
+                stageNext(setting, scope);
             } else { setFocusRight(true); setSetIndex(i); }
+        };
+        // List editor: items read fresh (cache busted on write) so the view always
+        // reflects disk. Global scope - every list setting is globalOnly.
+        const listItemsOf = (key: string): string[] => {
+            const s = SETTING_BY_KEY.get(key);
+            return s?.listValues ? s.listValues("global") : [];
+        };
+        const removeListItem = (key: string, i: number): void => {
+            const s = SETTING_BY_KEY.get(key);
+            const items = listItemsOf(key);
+            const it = items[i];
+            if (it && s?.removeItem) { s.removeItem(it, "global"); invalidateSettingReads(); }
+            setListEdit((e) => e && { ...e, cursor: Math.max(0, Math.min(e.cursor, Math.max(0, items.length - 2))) });
+        };
+        const submitListAdd = (value: string): void => {
+            const item = value.trim();
+            const target = listAdd;
+            if (!target || !item) { setListAdd(null); return; }
+            const s = SETTING_BY_KEY.get(target.key);
+            if (s?.addItem) { s.addItem(item, "global"); invalidateSettingReads(); }
+            setListAdd(null); // back to the still-open list editor, now showing the new item
         };
         // Toggle the action row at `i`: an agent/protection checkbox, or a skill row.
         // Unchecking a skill discards it (confirmed first - it deletes deployed copies);
@@ -769,6 +902,19 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             if (renaming) { if (esc) setRenaming(null); return; }
             if (profRename) { if (esc) setProfRename(null); return; }
 
+            // List add-input overlay (precedes the list editor): focused input owns typing.
+            if (listAdd) { if (esc) setListAdd(null); return; }
+            // List editor: no focused input, so single-letter keys work directly.
+            if (listEdit) {
+                const items = listItemsOf(listEdit.key);
+                if (esc || enter) { setListEdit(null); return; }
+                if (up || ch === "k") { setListEdit({ ...listEdit, cursor: Math.max(0, listEdit.cursor - 1) }); return; }
+                if (down || ch === "j") { setListEdit({ ...listEdit, cursor: Math.min(Math.max(0, items.length - 1), listEdit.cursor + 1) }); return; }
+                if (ch === "a") { setListAdd({ key: listEdit.key }); return; }
+                if (ch === "d" || name === "delete" || name === "backspace") { removeListItem(listEdit.key, listEdit.cursor); return; }
+                return;
+            }
+
             // Profile overlays mirror the add-account flow: the focused input owns
             // typing; the global handler only navigates, selects and cancels.
             if (profAdd) { if (esc) setProfAdd(null); return; }
@@ -885,7 +1031,9 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
                 if (!focusRight) { setFocusRight(true); return; }
                 if (identityMode) { activateIdRow(idRow); return; }
                 if (action) { runChosen(action); return; }
-                stageNext(category!.settings[setIndex]!, scope);
+                const setting = category!.settings[setIndex]!;
+                if (setting.kind === "list") { setListEdit({ key: setting.key, cursor: 0 }); return; }
+                stageNext(setting, scope);
             }
         });
 
@@ -904,6 +1052,10 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             ? txt("remove profile", { fg: COL.red })
             : connectPrompt
             ? txt("connect?", { fg: COL.green })
+            : listAdd
+            ? txt("add entry", { fg: COL.cyan })
+            : listEdit
+            ? txt("edit list", { fg: COL.cyan })
             : removeConfirm
             ? txt("remove account", { fg: COL.red })
             : skillConfirm
@@ -968,6 +1120,20 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             content = renderRemoveConfirm(`Discard skill '${skillConfirm.name}'? It will be removed from all agents and skipped by future installs and updates.`,
                 skillConfirm.index, chooseSkillDiscard,
                 (d) => setSkillConfirm((c) => c && { ...c, index: Math.max(0, Math.min(1, c.index + d)) }), "Discard");
+        } else if (listAdd) {
+            const s = SETTING_BY_KEY.get(listAdd.key);
+            content = renderAddInput({ title: `Add to ${s?.label ?? listAdd.key}`, placeholder: s?.itemHint ?? "new entry", error: listAdd.error, onSubmit: submitListAdd });
+        } else if (listEdit) {
+            const s = SETTING_BY_KEY.get(listEdit.key);
+            const items = listItemsOf(listEdit.key);
+            content = renderListEditor({
+                title: s?.label ?? listEdit.key,
+                hint: s?.hint ?? "",
+                items,
+                cursor: Math.min(listEdit.cursor, Math.max(0, items.length - 1)),
+                onRemove: (i) => removeListItem(listEdit.key, i),
+                onMove: (d) => setListEdit((e) => e && { ...e, cursor: Math.max(0, Math.min(Math.max(0, items.length - 1), e.cursor + d)) }),
+            });
         } else if (confirm) {
             content = renderConfirm(confirm.index, chooseConfirm,
                 (d) => setConfirm((c) => c && { index: Math.max(0, Math.min(EXIT_OPTIONS.length - 1, c.index + d)) }));
@@ -977,7 +1143,9 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             content = renderResult(result, Math.min(resultScroll, maxResultScroll), resultRows, scrollResult);
         } else {
             const sidebarWidth = Math.min(28, Math.max(20, Math.floor(size.columns * 0.3)));
-            const panel = identityMode
+            const panel = usageMode
+                ? renderUsagePanel({ usageOn, report: usage })
+                : identityMode
                 ? renderIdentity({ rows: idRows, focused: focusRight, cursor: idCursor, onSelect: clickIdentity, onMove: moveIdentity })
                 : category
                 ? renderCategoryPanel({ category, scope, focusRight, setIndex, valueOf, displayValue, isModified, onSelect: clickSetting, onMove: moveSetting })
@@ -1029,6 +1197,10 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             footer = footerLine("type a name   enter create   esc cancel");
         } else if (renaming || profRename) {
             footer = footerLine("type the new name   enter rename   esc cancel");
+        } else if (listAdd) {
+            footer = footerLine("type an entry   enter add   esc cancel");
+        } else if (listEdit) {
+            footer = footerLine("up/down move   a add   d remove   enter / esc done");
         } else if (profRemove) {
             footer = footerLine("y remove   n / esc cancel");
         } else if (connectPrompt) {
@@ -1051,7 +1223,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
 
         // A one-line "update available" banner under the title, shown only in the plain
         // menu view (not over an overlay or the result/running panels).
-        const noOverlay = !adding && !renaming && !profRename && !profAdd && !profEdit && !profRemove && !connectPrompt && !removeConfirm && !skillConfirm && !confirm;
+        const noOverlay = !adding && !renaming && !profRename && !profAdd && !profEdit && !profRemove && !connectPrompt && !removeConfirm && !skillConfirm && !confirm && !listAdd && !listEdit;
         const updateBanner = update && mode === "menu" && noOverlay
             ? h(box, { width: size.columns, flexDirection: "row", paddingLeft: 1, paddingRight: 1 },
                 txt(`Update available  ${update.current} -> ${update.latest}   `, { fg: COL.yellow, attributes: BOLD }),

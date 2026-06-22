@@ -27,11 +27,32 @@ export const GUARD_PROTECTIONS: GuardProtection[] = [
     { value: "largeFiles", label: "Warn on files over 5 MB", hint: "oversized blobs" },
 ];
 
-export type GuardConfig = Record<GuardKey, boolean>;
+/** User-supplied lists that refine the guard beyond the built-in protections. */
+export interface GuardLists {
+    /** Extra glob patterns to BLOCK from commits (on top of the built-in rules). */
+    blockPaths: string[];
+    /** Glob patterns the guard never flags, even if they look risky (an allowlist). */
+    allowPaths: string[];
+    /** Extra regular-expression sources treated as secrets (JS regex source, no slashes). */
+    secretPatterns: string[];
+}
 
-/** Defaults: every protection on (matches the standalone guard's missing-key behavior). */
+export type GuardListKey = keyof GuardLists;
+
+export interface GuardListMeta { field: GuardListKey; value: string; label: string; hint: string; placeholder: string; }
+
+/** Metadata for the user-editable guard lists (shared by the registry, TUI and dashboard). */
+export const GUARD_LISTS: GuardListMeta[] = [
+    { field: "blockPaths", value: "block-paths", label: "Extra blocked paths", hint: "additional glob patterns to block from commits (e.g. secrets/*.json, *.local.env)", placeholder: "e.g. secrets/*.json" },
+    { field: "allowPaths", value: "allow-paths", label: "Excluded paths (allowlist)", hint: "glob patterns the guard never flags, even if risky (e.g. tests/fixtures/**)", placeholder: "e.g. tests/fixtures/**" },
+    { field: "secretPatterns", value: "secret-patterns", label: "Custom secret patterns", hint: "extra regex sources treated as secrets (e.g. mycorp_[a-z0-9]{32})", placeholder: "e.g. mycorp_[a-z0-9]{32}" },
+];
+
+export interface GuardConfig extends Record<GuardKey, boolean>, GuardLists {}
+
+/** Defaults: every protection on (matches the standalone guard's missing-key behavior); lists empty. */
 function defaults(): GuardConfig {
-    return { secrets: true, envFiles: true, depDirs: true, generatedDirs: true, junkFiles: true, largeFiles: true };
+    return { secrets: true, envFiles: true, depDirs: true, generatedDirs: true, junkFiles: true, largeFiles: true, blockPaths: [], allowPaths: [], secretPatterns: [] };
 }
 
 /** The user-wide guard config file enigma's guard reads as its base layer. */
@@ -41,16 +62,34 @@ export function globalGuardPath(): string {
 
 /** Read the global guard config (defaults overlaid by ~/.enigma-guard.json). */
 export function readGlobalGuard(): GuardConfig {
-    try { return { ...defaults(), ...JSON.parse(readFileSync(globalGuardPath(), "utf8")) }; }
-    catch { return defaults(); }
+    try {
+        const raw = JSON.parse(readFileSync(globalGuardPath(), "utf8"));
+        const cfg = { ...defaults(), ...raw };
+        // Defend against a hand-edited file: list fields must stay string arrays.
+        for (const l of GUARD_LISTS) if (!Array.isArray(cfg[l.field])) cfg[l.field] = [];
+        return cfg;
+    } catch { return defaults(); }
 }
 
-/** Set one protection on/off in the global guard config, preserving the others. */
+/** Write the full guard config back in canonical order (protections then lists). */
+function writeGuard(cfg: GuardConfig): void {
+    const out: Partial<GuardConfig> = {};
+    for (const p of GUARD_PROTECTIONS) out[p.value] = cfg[p.value];
+    for (const l of GUARD_LISTS) out[l.field] = cfg[l.field];
+    writeFileSync(globalGuardPath(), JSON.stringify(out, null, 2) + "\n");
+}
+
+/** Set one protection on/off in the global guard config, preserving the others (and the lists). */
 export function setGuardProtection(key: GuardKey, on: boolean): void {
     const cur = readGlobalGuard();
     cur[key] = on;
-    // Persist only the known keys, in canonical order, so the file stays clean.
-    const out: Partial<GuardConfig> = {};
-    for (const p of GUARD_PROTECTIONS) out[p.value] = cur[p.value];
-    writeFileSync(globalGuardPath(), JSON.stringify(out, null, 2) + "\n");
+    writeGuard(cur);
+}
+
+/** Replace one of the guard's user lists (block/allow/secret patterns), deduped and trimmed. */
+export function setGuardList(key: GuardListKey, values: string[]): void {
+    const cur = readGlobalGuard();
+    const seen = new Set<string>();
+    cur[key] = values.map((v) => v.trim()).filter((v) => v && !seen.has(v) && (seen.add(v), true));
+    writeGuard(cur);
 }

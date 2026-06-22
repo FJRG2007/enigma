@@ -511,7 +511,7 @@ the rest is shown as state, never invented savings), a **Check & update** button
 skills and the dashboard UI in place; a CLI bump still needs `enigma update` in a terminal),
 and the **Skills** subpage to view/edit/enable/disable/remove skills and check for updates.
 
-### Measuring proxy (experimental, opt-in, Claude Code only)
+### Proxy (experimental, opt-in, Claude Code only)
 
 `enigma config proxy on` makes `enigma claude` route Claude Code through a local loopback
 proxy that forwards every request verbatim to Anthropic and streams the response straight
@@ -521,6 +521,31 @@ cache rewriting), it never stores auth headers or message content, binds 127.0.0
 and falls back to a direct launch if it can't start. It applies only to launches via
 `enigma claude` (it injects `ANTHROPIC_BASE_URL` for that process only) and only to Claude
 Code. Leave it off until you've confirmed it works for your setup.
+
+### Secret protection (commit guard + prompt guard)
+
+enigma's commit guard already blocks committed secrets, `.env` files and dependency dirs.
+You can now tailor it **granularly** - and not just for git:
+
+- **Granular file rules.** On top of the built-in protections, add your own **blocked
+  paths** (extra globs to refuse, e.g. `secrets/*.json`), **excluded paths** (an allowlist
+  the guard never flags, e.g. `tests/fixtures/**`), and **custom secret patterns** (extra
+  regexes). Edit them visually in the dashboard **Enigma Settings** panel or the terminal
+  UI (`enigma config`), or from the CLI:
+  `enigma config guard-block-paths add "secrets/*.json"`,
+  `enigma config guard-allow-paths add "tests/fixtures/**"`,
+  `enigma config guard-secret-patterns add "mycorp_[a-z0-9]{32}"` (and `... remove <entry>`,
+  or the key alone to list). Defaults are unchanged; these only refine them. They live in
+  `~/.enigma-guard.json` and a repo can override per-`.githooks/enigma-guard.json`.
+
+- **Prompt secret guard (opt-in, off by default, Claude Code only).** Turn on
+  `enigma config prompt-secret-guard on` and `enigma claude` routes through the local proxy,
+  scanning each outgoing chat message for credentials **before they reach the model**. On a
+  hit it either **redacts** the secret (default - replaces it with `[REDACTED: ...]` so the
+  key never leaves your machine but the turn still works) or **rejects** the whole request
+  (`enigma config prompt-secret-mode reject` - nothing reaches Claude). It uses the same
+  patterns as the commit guard plus your custom ones. The dashboard's **Enigma Systems**
+  panel shows the guard's state and how many prompts it has actually redacted/rejected.
 
 You can also configure enigma **from the dashboard itself**: the **Enigma Settings** panel
 exposes the same options as the terminal UI (`enigma config`), editable in the browser.
@@ -536,20 +561,46 @@ The time figure is likewise an estimate: it converts saved input tokens into sav
 prefill time at a default model speed. Override it with `enigma config token-speed
 <tokens-per-second>` (0 restores the default rate).
 
-#### Real tool-usage stats (opt-in)
+#### Claude usage (opt-in)
 
-`enigma config usage-stats on` adds a **Real Tool Usage** panel that reads your own
-Claude Code session transcripts (`~/.claude/projects/.../*.jsonl`) to report **measured**
-token consumption and the **real prompt-cache savings** the tool already achieved -
-input/output tokens, cache reads, per-model breakdown. It is read-only and loopback-only;
-nothing is sent anywhere. It is off by default because it reads your session logs, which
-are broader than enigma's own compression data.
+`enigma config usage-stats on` unlocks a full **Usage** view - in the dashboard (its own
+tab) **and** the terminal UI (a "Claude usage" entry) - that reads your own Claude Code
+session transcripts (`~/.claude/projects/.../*.jsonl`) and reports:
 
-Honesty note: this reports only what the transcripts actually record. It deliberately does
-**not** attribute savings to skills or to token-efficient output, because a transcript has
-no counterfactual baseline (what a session would have cost *without* them), so any such
-figure would be invented. Only Claude Code is read today; Codex/OpenCode use absent or
+- **Estimated cost** in USD from a per-model price table (Opus/Sonnet/Haiku, incl. cache
+  read/write rates), plus measured input/output/cache tokens.
+- **Breakdowns** by model, by project and a **recent sessions** table.
+- A **current 5-hour block** computed locally from transcript timestamps: tokens + cost
+  used in the open window, the **burn rate** (tokens/min) and a projected end-of-window
+  total. (No Anthropic API is called - this is reconstructed from your local logs.)
+
+It is read-only and loopback-only; nothing is sent anywhere. Off by default because it
+reads your session logs, which are broader than enigma's own compression data.
+
+Honesty note: cost is an **estimate** (Anthropic does not record per-message cost in the
+transcript; real spend is billed by Anthropic). Token counts and prompt-cache reads are
+measured facts. enigma deliberately does **not** attribute savings to skills or to
+token-efficient output - a transcript has no counterfactual baseline, so any such figure
+would be invented. Only Claude Code is read today; Codex/OpenCode use absent or
 undocumented local session stores and are not guessed.
+
+#### Manage accounts & profiles from the dashboard
+
+The dashboard **Accounts** tab does everything the terminal UI does: switch the active
+account, add / rename / remove managed accounts, and create profiles that pin one account
+per tool. Logging an account **in** still happens in a terminal (the browser cannot host a
+tool's interactive login), so the panel shows the exact command to run, e.g.
+`enigma claude work`.
+
+#### Export / import your config
+
+The **Settings** tab has **Export config** and **Import config**. Export downloads a
+single JSON bundle - your `.enigma.json`, the commit-guard config, and your account/profile
+**structure** (names + tool->account mappings). It is **secret-free**: no auth tokens or
+credentials are ever included, so the file is safe to move between machines or commit.
+Importing recreates the structure (seeding fresh account dirs); you then log each account
+in per machine. Both use the browser's native file dialogs, so you always choose where to
+save or which file to import.
 
 ### As an MCP server
 

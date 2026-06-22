@@ -282,6 +282,49 @@ function writeSkill(req: import("node:http").IncomingMessage, res: import("node:
     });
 }
 
+/** List tool accounts + profiles for the Accounts panel. */
+function serveAccounts(res: import("node:http").ServerResponse): void {
+    import("./dashboard-accounts")
+        .then(({ serializeAccounts }) => { res.writeHead(200, JSON_HDR); res.end(JSON.stringify(serializeAccounts())); })
+        .catch(() => { res.writeHead(500, JSON_HDR); res.end('{"error":"accounts unavailable"}'); });
+}
+
+/** Apply one account/profile mutation from a POST body { op, ...payload }. */
+function writeAccount(req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse): void {
+    let body = "";
+    req.on("data", (chunk) => { body += chunk; if (body.length > 16 * 1024) req.destroy(); });
+    req.on("end", () => {
+        let parsed: { op?: unknown } & Record<string, unknown>;
+        try { parsed = JSON.parse(body || "{}"); } catch { res.writeHead(400, JSON_HDR); res.end('{"error":"bad json"}'); return; }
+        if (typeof parsed.op !== "string") { res.writeHead(400, JSON_HDR); res.end('{"error":"missing op"}'); return; }
+        import("./dashboard-accounts")
+            .then(({ applyAccountAction }) => applyAccountAction(parsed.op as string, parsed as import("./dashboard-accounts").AccountActionPayload))
+            .then((out) => { res.writeHead(out.ok ? 200 : 400, JSON_HDR); res.end(JSON.stringify(out)); })
+            .catch(() => { res.writeHead(500, JSON_HDR); res.end('{"error":"account action failed"}'); });
+    });
+}
+
+/** Build and return the secret-free config bundle for download. */
+function serveConfigExport(res: import("node:http").ServerResponse): void {
+    import("./dashboard-config-io")
+        .then(({ exportBundle }) => { res.writeHead(200, JSON_HDR); res.end(JSON.stringify(exportBundle(), null, 2)); })
+        .catch(() => { res.writeHead(500, JSON_HDR); res.end('{"error":"export unavailable"}'); });
+}
+
+/** Apply an uploaded config bundle from the POST body (the whole JSON file). */
+function writeConfigImport(req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse): void {
+    let body = "";
+    req.on("data", (chunk) => { body += chunk; if (body.length > 1024 * 1024) req.destroy(); });
+    req.on("end", () => {
+        let parsed: unknown;
+        try { parsed = JSON.parse(body || "{}"); } catch { res.writeHead(400, JSON_HDR); res.end('{"error":"bad json"}'); return; }
+        import("./dashboard-config-io")
+            .then(({ importBundle }) => importBundle(parsed))
+            .then((out) => { snapshot = null; res.writeHead(out.ok ? 200 : 400, JSON_HDR); res.end(JSON.stringify(out)); })
+            .catch(() => { res.writeHead(500, JSON_HDR); res.end('{"error":"import failed"}'); });
+    });
+}
+
 function createDashboardServer(version: string): Server {
     return createServer((req, res) => {
         const url = (req.url || "/").split("?")[0];
@@ -302,6 +345,23 @@ function createDashboardServer(version: string): Server {
         if (url === "/api/update") {
             if (!isLocalRequest(req)) { res.writeHead(403, JSON_HDR); res.end('{"error":"forbidden"}'); return; }
             if (method === "POST") { serveUpdate(res); return; }
+            res.writeHead(405).end(); return;
+        }
+        // Accounts/profiles management + config import/export are write/structure surfaces, origin-guarded.
+        if (url === "/api/accounts") {
+            if (!isLocalRequest(req)) { res.writeHead(403, JSON_HDR); res.end('{"error":"forbidden"}'); return; }
+            if (method === "GET") { serveAccounts(res); return; }
+            if (method === "POST") { writeAccount(req, res); return; }
+            res.writeHead(405).end(); return;
+        }
+        if (url === "/api/config-export") {
+            if (!isLocalRequest(req)) { res.writeHead(403, JSON_HDR); res.end('{"error":"forbidden"}'); return; }
+            if (method === "GET") { serveConfigExport(res); return; }
+            res.writeHead(405).end(); return;
+        }
+        if (url === "/api/config-import") {
+            if (!isLocalRequest(req)) { res.writeHead(403, JSON_HDR); res.end('{"error":"forbidden"}'); return; }
+            if (method === "POST") { writeConfigImport(req, res); return; }
             res.writeHead(405).end(); return;
         }
         if (method !== "GET") { res.writeHead(405).end(); return; }

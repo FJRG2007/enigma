@@ -86,6 +86,8 @@ export interface InstallOptions extends SecurityOptions {
     minimalCode: string | null;
     /** Local savings dashboard mode to set (off|on-demand|always), or null to leave/ask. */
     dashboard: string | null;
+    /** Enable the prompt secret guard at install (opt-in, default off); null to leave/ask. */
+    promptSecretGuard: boolean | null;
 }
 
 /** This CLI package's own version, stamped into skills at seal time. */
@@ -627,6 +629,27 @@ async function resolveDashboard(opts: InstallOptions, scope: "global" | "local",
 }
 
 /**
+ * Offer the prompt secret guard at install (opt-in, default OFF per the user's choice).
+ * When on, `enigma claude` routes through the local proxy and blocks credentials in chat
+ * messages before they reach the model. Claude Code only. Honors --prompt-secret-guard.
+ */
+async function resolveSecretGuard(opts: InstallOptions, scope: "global" | "local", interactive: boolean, reporter: Reporter): Promise<void> {
+    let enable = opts.promptSecretGuard;
+    if (enable === null && interactive && !opts.dryRun && !readConfig().config.promptSecretGuard) {
+        const r = await p.confirm({
+            message: "Enable the prompt secret guard? Blocks API keys/secrets pasted into Claude Code chat before they reach the model (Claude Code only, via a local proxy). Default: off.",
+            initialValue: false,
+        });
+        if (p.isCancel(r)) return;          // keep current value; do not abort the install
+        enable = r;
+    }
+    if (enable && !opts.dryRun && !readConfig().config.promptSecretGuard) {
+        setEnigmaValue("promptSecretGuard", true, scope);
+        reporter.info(`Prompt secret guard: on (mode ${readConfig().config.promptSecretMode}); applies when you launch 'enigma claude'. Off: enigma config prompt-secret-guard off.`);
+    }
+}
+
+/**
  * Plan and apply a skills install. Progress is emitted through `reporter`:
  * clack for the CLI, or a buffering reporter when driven inline by the TUI.
  * Interactive prompts (scope/agent/skill selection) still use clack directly and
@@ -749,6 +772,7 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
     if (!opts.skillsOnly) await resolveOutputStyle(opts, scope, interactive, reporter);
     if (!opts.skillsOnly) await resolveMinimalCode(opts, scope, interactive, reporter);
     if (!opts.skillsOnly) await resolveDashboard(opts, scope, interactive, reporter);
+    if (!opts.skillsOnly) await resolveSecretGuard(opts, scope, interactive, reporter);
 
     // Discarded skills never install or update; they are also pruned from every
     // target below (even with --no-prune), so a discard reliably removes the skill.

@@ -43,6 +43,15 @@ export const MINIMAL_CODE_LEVELS: readonly MinimalCode[] = ["off", "lite", "full
 export type DashboardMode = "off" | "on-demand" | "always";
 export const DASHBOARD_MODES: readonly DashboardMode[] = ["off", "on-demand", "always"];
 
+/**
+ * What the prompt secret guard does when it finds a credential in a chat message on
+ * its way to Claude (via the proxy). "redact" replaces the secret with a placeholder
+ * so the key never reaches the model but the turn still works; "reject" blocks the
+ * whole request so nothing reaches Claude.
+ */
+export type PromptSecretMode = "redact" | "reject";
+export const PROMPT_SECRET_MODES: readonly PromptSecretMode[] = ["redact", "reject"];
+
 export interface EnigmaConfig {
     commitEmoji: boolean;
     updateNotifier: boolean;
@@ -71,6 +80,15 @@ export interface EnigmaConfig {
     usageStats: boolean;
     /** Experimental: route `enigma claude` through a local measuring proxy (opt-in, default off, Claude Code only). */
     proxy: boolean;
+    /**
+     * Block secrets in chat prompts before they reach the agent (opt-in, default off,
+     * Claude Code only). When on, `enigma claude` routes through the proxy and scans
+     * outgoing messages for credentials. A deliberate security feature that inspects
+     * request bodies, so it stays an explicit choice.
+     */
+    promptSecretGuard: boolean;
+    /** What the prompt secret guard does on a hit: redact (default) or reject the request. */
+    promptSecretMode: PromptSecretMode;
     /** Dashboard auto-refreshes its data while the tab is focused (default on; off = manual refresh only). */
     dashboardLive: boolean;
     /** Agents the user explicitly opted out of bypass; never auto-enabled even when permissionBypass is on. */
@@ -122,7 +140,7 @@ export interface EnigmaConfig {
  */
 export const CONFIG_DEFAULTS: EnigmaConfig = {
     commitEmoji: true, updateNotifier: true, fullscreen: true, parallelSubagents: false, outputStyle: "off", minimalCode: "full",
-    autoSync: true, remoteSkills: true, permissionBypass: true, autoLint: false, compress: false, dashboard: "off", tokenPrice: 0, tokenSpeed: 0, usageStats: false, proxy: false, dashboardLive: true, bypassDisabled: [], discardedSkills: [],
+    autoSync: true, remoteSkills: true, permissionBypass: true, autoLint: false, compress: false, dashboard: "off", tokenPrice: 0, tokenSpeed: 0, usageStats: false, proxy: false, promptSecretGuard: false, promptSecretMode: "redact", dashboardLive: true, bypassDisabled: [], discardedSkills: [],
 };
 
 export type EnigmaConfigKey = keyof EnigmaConfig;

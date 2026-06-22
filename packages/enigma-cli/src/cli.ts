@@ -77,7 +77,7 @@ function parseArgs(argv: string[]): CliOptions {
         command: null, positionals: [], passthrough: [], tool: DEFAULT_TOOL,
         scope: null, agents: [], allAgents: false, skills: [],
         skillsOnly: false, memoryOnly: false, prune: true, keepModified: false,
-        bypass: null, noBypass: false, outputStyle: null, minimalCode: null, dashboard: null,
+        bypass: null, noBypass: false, outputStyle: null, minimalCode: null, dashboard: null, promptSecretGuard: null,
         force: false, all: false, yes: false, login: false, dryRun: false, help: false, version: false,
         stats: false, retrieve: null, compressType: null, clear: false,
     };
@@ -106,6 +106,7 @@ function parseArgs(argv: string[]): CliOptions {
             case "--output-style": opts.outputStyle = next(); break;
             case "--minimal-code": opts.minimalCode = next(); break;
             case "--dashboard": opts.dashboard = next(); break;
+            case "--prompt-secret-guard": opts.promptSecretGuard = true; break;
             case "--stats": opts.stats = true; break;
             case "--retrieve": opts.retrieve = next(); break;
             case "--type": opts.compressType = next(); break;
@@ -207,6 +208,7 @@ Install options:
       --no-bypass      Skip permission bypass for this run (on by default)
       --output-style <off|lite|full|ultra>  Token-efficient output level (asked if omitted)
       --minimal-code <off|lite|full|ultra>  Anti-overengineering level (asked if omitted)
+      --prompt-secret-guard  Block secrets in Claude chat prompts (opt-in; off by default)
       --dry-run        Show the plan without writing
 
 Security options:

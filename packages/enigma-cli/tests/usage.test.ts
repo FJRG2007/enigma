@@ -17,7 +17,7 @@ process.env.HOME = HOME;
 // runtime-reassigned $HOME, so the override (not homedir()) makes the test deterministic.
 process.env.ENIGMA_CLAUDE_PROJECTS = join(HOME, ".claude", "projects");
 
-const { buildUsage } = await import("../src/usage");
+const { buildUsage, costOf, priceFor } = await import("../src/usage");
 
 afterAll(() => rmSync(HOME, { recursive: true, force: true }));
 
@@ -62,6 +62,32 @@ test("aggregates real usage, dedupes by id, and splits sessions from subagents",
     expect(r.byDay["2026-06-02"].output).toBe(10 + 3);
     expect(r.byModel["claude-opus-4-8"].input).toBe(107);
     expect(r.byModel["claude-sonnet-4-6"].input).toBe(50);
+});
+
+test("prices per model and reconstructs an active 5-hour block from recent activity", () => {
+    expect(priceFor("claude-opus-4-8")!.input).toBe(5);
+    expect(priceFor("claude-sonnet-4-6")!.output).toBe(15);
+    expect(priceFor("totally-unknown-model")).toBeNull();
+    // 1M input tokens of Opus at $5/1M = $5.
+    expect(costOf("claude-opus-4-8", { input: 1_000_000, output: 0, cacheRead: 0, cacheCreation: 0 })).toBeCloseTo(5, 5);
+
+    const now = Date.now();
+    const iso = (ms: number): string => new Date(ms).toISOString();
+    const recent = join(HOME, ".claude", "projects", "proj-recent");
+    mkdirSync(recent, { recursive: true });
+    writeFileSync(join(recent, "live.jsonl"),
+        assistant(iso(now - 30 * 60 * 1000), "r1", "claude-opus-4-8", { input_tokens: 1000, output_tokens: 500, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }) + "\n"
+        + assistant(iso(now - 5 * 60 * 1000), "r2", "claude-opus-4-8", { input_tokens: 2000, output_tokens: 800, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }) + "\n");
+
+    const r = buildUsage();
+    expect(r.cost).toBeGreaterThan(0);
+    expect(r.byProject["proj-recent"].output).toBe(1300);
+    expect(r.recentSessions.some((s) => s.id === "live")).toBe(true);
+    expect(r.block).not.toBeNull();
+    expect(r.block!.active).toBe(true);
+    // The huge gap to the old June fixtures resets the block to just the two recent events.
+    expect(r.block!.tokens).toBe(1000 + 500 + 2000 + 800);
+    expect(r.block!.burnRatePerMin).toBeGreaterThan(0);
 });
 
 test("empty when there are no transcripts", () => {

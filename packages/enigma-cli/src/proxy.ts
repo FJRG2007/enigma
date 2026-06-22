@@ -15,15 +15,19 @@
  *  - Auth headers and message content are NEVER stored - only token counts and the model id.
  *  - Loopback bind only (127.0.0.1); upstream is hardcoded to api.anthropic.com over HTTPS.
  *
- * Node builtins only. This is deliberately a faithful relay, NOT headroom's transforming
- * proxy (no compression/cache rewriting) - measurement must not change what Claude receives.
+ * By default this is a faithful relay (no compression/cache rewriting) - measurement must
+ * not change what Claude receives. The ONE opt-in exception is the prompt secret guard
+ * (off by default): when enabled it buffers POST /v1/messages bodies and redacts or rejects
+ * detected credentials before forwarding, so a secret pasted into chat never reaches the
+ * model. Everything else still streams through verbatim. Detection reuses guard.ts.
  */
 
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { createServer, request as httpRequest, type Server } from "node:http";
+import { createServer, request as httpRequest, type Server, type IncomingMessage, type ServerResponse } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { buildSecretMatchers, findSecrets, redactSecrets, type SecretMatcher } from "./guard";
 
 const UPSTREAM_HOST = "api.anthropic.com";
 
@@ -50,10 +54,18 @@ export interface ProxyUsage {
     output: number;
     cacheRead: number;
     cacheCreation: number;
+    /** Epoch ms of the last measured request to Claude; 0 if the proxy has never recorded one. */
+    lastRequestAt: number;
+    /** Prompt secret guard: how many outgoing messages had a secret redacted out. */
+    redacted: number;
+    /** Prompt secret guard: how many outgoing requests were rejected entirely. */
+    rejected: number;
+    /** Epoch ms of the last time the prompt secret guard acted (redact or reject). */
+    lastBlockedAt: number;
     byModel: Record<string, { calls: number; input: number; output: number; cacheRead: number; cacheCreation: number }>;
 }
 
-const EMPTY: ProxyUsage = { calls: 0, input: 0, output: 0, cacheRead: 0, cacheCreation: 0, byModel: {} };
+const EMPTY: ProxyUsage = { calls: 0, input: 0, output: 0, cacheRead: 0, cacheCreation: 0, lastRequestAt: 0, redacted: 0, rejected: 0, lastBlockedAt: 0, byModel: {} };
 
 function statsPath(): string {
     return join(homedir(), ".enigma", "proxy", "stats.json");
@@ -72,7 +84,20 @@ function recordCall(c: OneCall): void {
         const cur = readProxyStats();
         const m = (cur.byModel[c.model] ??= { calls: 0, input: 0, output: 0, cacheRead: 0, cacheCreation: 0 });
         cur.calls++; cur.input += c.input; cur.output += c.output; cur.cacheRead += c.cacheRead; cur.cacheCreation += c.cacheCreation;
+        cur.lastRequestAt = Date.now();
         m.calls++; m.input += c.input; m.output += c.output; m.cacheRead += c.cacheRead; m.cacheCreation += c.cacheCreation;
+        const dir = join(homedir(), ".enigma", "proxy");
+        if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+        writeFileSync(statsPath(), JSON.stringify(cur, null, 2) + "\n");
+    } catch { /* stats are best-effort */ }
+}
+
+/** Record one prompt secret guard action (a redaction or a full rejection). Best-effort. */
+function recordBlock(mode: "redact" | "reject"): void {
+    try {
+        const cur = readProxyStats();
+        if (mode === "redact") cur.redacted++; else cur.rejected++;
+        cur.lastBlockedAt = Date.now();
         const dir = join(homedir(), ".enigma", "proxy");
         if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
         writeFileSync(statsPath(), JSON.stringify(cur, null, 2) + "\n");
@@ -104,19 +129,47 @@ export function parseUsage(path: string, body: string): OneCall | null {
 
 export interface RunningProxy { url: string; port: number; close: () => void; }
 
+/** Prompt secret guard options. Omitted/off = byte-faithful pass-through (unchanged behavior). */
+export interface ProxyOptions {
+    /** Scan outgoing POST /v1/messages bodies for secrets and act on them. */
+    scanPrompts?: boolean;
+    /** On a hit: "redact" (default) strips each secret; "reject" blocks the whole request. */
+    mode?: "redact" | "reject";
+    /** Extra user secret regex sources to detect on top of the built-in patterns. */
+    extraPatterns?: string[];
+}
+
 /**
- * Start the loopback measuring proxy and resolve once it is listening. The caller injects
- * its url as ANTHROPIC_BASE_URL for the Claude Code launch and closes it when Claude exits.
+ * Start the loopback proxy and resolve once it is listening. The caller injects its url
+ * as ANTHROPIC_BASE_URL for the Claude Code launch and closes it when Claude exits.
+ *
+ * With no options it is a byte-faithful measuring relay (behavior unchanged). When
+ * `scanPrompts` is on, POST /v1/messages bodies are buffered and scanned for secrets
+ * before forwarding: "redact" replaces each secret with a placeholder so the key never
+ * reaches Claude but the turn still works; "reject" blocks the request with an
+ * Anthropic-style 400 so nothing reaches Claude. Every other request, and the response,
+ * is still forwarded verbatim, and usage is measured exactly as before.
  */
-export function startMeasuringProxy(): Promise<RunningProxy> {
-    const server: Server = createServer((req, res) => {
+export function startMeasuringProxy(options: ProxyOptions = {}): Promise<RunningProxy> {
+    const scanPrompts = !!options.scanPrompts;
+    const mode: "redact" | "reject" = options.mode === "reject" ? "reject" : "redact";
+    const matchers: SecretMatcher[] = scanPrompts ? buildSecretMatchers(options.extraPatterns || []) : [];
+
+    // Forward one request to Anthropic and stream the response back, measuring usage.
+    // `body` non-null = send that exact buffer (a scanned/redacted body); null = stream
+    // the original request through unchanged (the faithful pass-through path).
+    const forward = (req: IncomingMessage, res: ServerResponse, body: Buffer | null): void => {
         const up = upstream();
         const headers = { ...req.headers };
         headers.host = up.host;
         // Ask upstream for an un-encoded body so usage is readable; the client still gets a
         // complete, correct response (just not gzip-compressed).
         delete headers["accept-encoding"];
-
+        if (body) {
+            // A rewritten body has a new length and is no longer chunked.
+            headers["content-length"] = String(body.length);
+            delete headers["transfer-encoding"];
+        }
         const upReq = up.request(
             { host: up.host, port: up.port, method: req.method, path: req.url, headers },
             (upRes) => {
@@ -143,7 +196,38 @@ export function startMeasuringProxy(): Promise<RunningProxy> {
         // If Claude Code disconnects (its own timeout, Ctrl+C, etc.), tear down the upstream
         // request so the proxy never leaks a hung socket waiting on Anthropic.
         res.on("close", () => { try { upReq.destroy(); } catch { /* already gone */ } });
-        req.pipe(upReq);
+        if (body) upReq.end(body); else req.pipe(upReq);
+    };
+
+    const server: Server = createServer((req, res) => {
+        const path = req.url || "";
+        const isMessages = req.method === "POST" && path.includes("/v1/messages");
+        // Fast path: faithful pass-through unless there is a prompt to scan.
+        if (!scanPrompts || !isMessages) { forward(req, res, null); return; }
+        // Buffer the request body so we can scan/redact it before forwarding.
+        const chunks: Buffer[] = [];
+        req.on("data", (c: Buffer) => chunks.push(c));
+        req.on("error", () => { try { if (!res.headersSent) res.writeHead(400); res.end(); } catch { /* already closed */ } });
+        req.on("end", () => {
+            const original = Buffer.concat(chunks).toString("utf8");
+            const found = findSecrets(original, matchers);
+            if (found.length === 0) { forward(req, res, Buffer.from(original, "utf8")); return; }
+            if (mode === "reject") {
+                recordBlock("reject");
+                const payload = JSON.stringify({
+                    type: "error",
+                    error: {
+                        type: "invalid_request_error",
+                        message: `enigma prompt secret guard blocked this request: ${found.join(", ")} detected in the message. Remove the credential, or run 'enigma config prompt-secret-mode redact' to strip it automatically instead.`,
+                    },
+                });
+                try { res.writeHead(400, { "content-type": "application/json" }); res.end(payload); } catch { /* already closed */ }
+                return;
+            }
+            const { text } = redactSecrets(original, matchers);
+            recordBlock("redact");
+            forward(req, res, Buffer.from(text, "utf8"));
+        });
     });
 
     return new Promise((resolve, reject) => {

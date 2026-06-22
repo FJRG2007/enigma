@@ -69,7 +69,99 @@ test("forwards to the upstream verbatim and records the measured usage", async (
         expect(stats.calls).toBe(1);
         expect(stats.input).toBe(100);
         expect(stats.output).toBe(250);
+        expect(stats.lastRequestAt).toBeGreaterThan(0);
         expect(stats.byModel["claude-opus-4-8"].calls).toBe(1);
+    } finally {
+        proxy.close(); upstream.close();
+        process.env.HOME = prev.home; process.env.USERPROFILE = prev.profile;
+        if (prev.up === undefined) delete process.env.ENIGMA_PROXY_UPSTREAM; else process.env.ENIGMA_PROXY_UPSTREAM = prev.up;
+        rmSync(HOME, { recursive: true, force: true });
+    }
+});
+
+// Built at runtime by concatenation so this test file does not itself trip enigma's
+// own commit guard (which scans tracked files for literal credential patterns).
+const KEY = "sk-ant-" + "api03-" + "A1B2C3D4E5F6G7H8I9J0K1L2M3N4O5P6";
+
+test("prompt secret guard redacts a secret out of the outgoing message body", async () => {
+    const HOME = mkdtempSync(join(tmpdir(), "enigma-proxy-"));
+    const prev = { home: process.env.HOME, profile: process.env.USERPROFILE, up: process.env.ENIGMA_PROXY_UPSTREAM };
+    process.env.HOME = HOME; process.env.USERPROFILE = HOME;
+
+    let received = "";
+    const upstream = createServer((req, res) => {
+        const chunks: Buffer[] = [];
+        req.on("data", (c) => chunks.push(c));
+        req.on("end", () => { received = Buffer.concat(chunks).toString("utf8"); res.writeHead(200, { "content-type": "text/event-stream" }); res.end(SSE); });
+    });
+    await new Promise<void>((r) => upstream.listen(0, "127.0.0.1", () => r()));
+    process.env.ENIGMA_PROXY_UPSTREAM = `http://127.0.0.1:${(upstream.address() as { port: number }).port}`;
+
+    const proxy = await startMeasuringProxy({ scanPrompts: true, mode: "redact" });
+    try {
+        const r = await fetch(proxy.url + "/v1/messages", { method: "POST", body: JSON.stringify({ messages: [{ role: "user", content: `my key is ${KEY}` }] }) });
+        expect(r.status).toBe(200);                          // the turn still works
+        await new Promise((res) => setTimeout(res, 50));
+        expect(received).not.toContain(KEY);                 // the secret never reached upstream
+        expect(received).toContain("[REDACTED");             // a placeholder took its place
+        expect(readProxyStats().redacted).toBeGreaterThan(0);
+    } finally {
+        proxy.close(); upstream.close();
+        process.env.HOME = prev.home; process.env.USERPROFILE = prev.profile;
+        if (prev.up === undefined) delete process.env.ENIGMA_PROXY_UPSTREAM; else process.env.ENIGMA_PROXY_UPSTREAM = prev.up;
+        rmSync(HOME, { recursive: true, force: true });
+    }
+});
+
+test("prompt secret guard in reject mode blocks the request before it reaches Claude", async () => {
+    const HOME = mkdtempSync(join(tmpdir(), "enigma-proxy-"));
+    const prev = { home: process.env.HOME, profile: process.env.USERPROFILE, up: process.env.ENIGMA_PROXY_UPSTREAM };
+    process.env.HOME = HOME; process.env.USERPROFILE = HOME;
+
+    let upstreamHit = false;
+    const upstream = createServer((req, res) => { upstreamHit = true; res.writeHead(200); res.end(SSE); });
+    await new Promise<void>((r) => upstream.listen(0, "127.0.0.1", () => r()));
+    process.env.ENIGMA_PROXY_UPSTREAM = `http://127.0.0.1:${(upstream.address() as { port: number }).port}`;
+
+    const proxy = await startMeasuringProxy({ scanPrompts: true, mode: "reject" });
+    try {
+        const r = await fetch(proxy.url + "/v1/messages", { method: "POST", body: JSON.stringify({ messages: [{ role: "user", content: KEY }] }) });
+        const body = await r.json() as { type?: string; error?: { message?: string } };
+        expect(r.status).toBe(400);
+        expect(body.type).toBe("error");
+        expect(body.error?.message).toContain("Anthropic API key");
+        expect(upstreamHit).toBe(false);                     // nothing reached Claude
+        expect(readProxyStats().rejected).toBeGreaterThan(0);
+    } finally {
+        proxy.close(); upstream.close();
+        process.env.HOME = prev.home; process.env.USERPROFILE = prev.profile;
+        if (prev.up === undefined) delete process.env.ENIGMA_PROXY_UPSTREAM; else process.env.ENIGMA_PROXY_UPSTREAM = prev.up;
+        rmSync(HOME, { recursive: true, force: true });
+    }
+});
+
+test("a clean message passes through untouched when the guard is on", async () => {
+    const HOME = mkdtempSync(join(tmpdir(), "enigma-proxy-"));
+    const prev = { home: process.env.HOME, profile: process.env.USERPROFILE, up: process.env.ENIGMA_PROXY_UPSTREAM };
+    process.env.HOME = HOME; process.env.USERPROFILE = HOME;
+
+    let received = "";
+    const upstream = createServer((req, res) => {
+        const chunks: Buffer[] = [];
+        req.on("data", (c) => chunks.push(c));
+        req.on("end", () => { received = Buffer.concat(chunks).toString("utf8"); res.writeHead(200); res.end(SSE); });
+    });
+    await new Promise<void>((r) => upstream.listen(0, "127.0.0.1", () => r()));
+    process.env.ENIGMA_PROXY_UPSTREAM = `http://127.0.0.1:${(upstream.address() as { port: number }).port}`;
+
+    const proxy = await startMeasuringProxy({ scanPrompts: true, mode: "redact" });
+    try {
+        const clean = JSON.stringify({ messages: [{ role: "user", content: "hello, no secrets here" }] });
+        const r = await fetch(proxy.url + "/v1/messages", { method: "POST", body: clean });
+        expect(r.status).toBe(200);
+        await new Promise((res) => setTimeout(res, 50));
+        expect(received).toBe(clean);                        // forwarded byte-for-byte
+        expect(readProxyStats().redacted).toBe(0);
     } finally {
         proxy.close(); upstream.close();
         process.env.HOME = prev.home; process.env.USERPROFILE = prev.profile;

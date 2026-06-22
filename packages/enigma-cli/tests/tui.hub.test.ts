@@ -72,7 +72,7 @@ test("unified panel renders sections and the wheel mirrors the arrows", async ()
     expect(first).not.toMatch(/ Profiles {2}/); // no separate Profiles entry
 
     // Navigate the sidebar to the identity entry (last item) and focus the panel.
-    const identityIndex = CATEGORIES.length + 2; // categories + 2 actions
+    const identityIndex = CATEGORIES.length + 3; // categories + usage + 2 actions
     await setup.mockInput.pressKeys(Array(identityIndex).fill("ARROW_DOWN"));
     await setup.mockInput.pressKey("RETURN");
     const panel = await until((f) => f.includes("ACCOUNTS") && f.includes("PROFILES"), "identity sections");

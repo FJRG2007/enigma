@@ -27,6 +27,12 @@ export interface UiSetting {
     choice: string | null;
     /** The choice value that counts as "off". */
     offChoice: string;
+    /** "list" for a managed string list (chips editor), else null (toggle/select). */
+    kind: "list" | null;
+    /** Current items for a list setting, else null. */
+    items: string[] | null;
+    /** Placeholder/help for a list setting's add input, else null. */
+    itemHint: string | null;
 }
 
 export interface UiCategory { title: string; blurb: string; settings: UiSetting[]; }
@@ -53,6 +59,9 @@ export function serializeSettings(scope: Scope = "global"): UiCategory[] {
                 choices: s.choices ? [...s.choices] : null,
                 choice: s.readChoice ? s.readChoice(eff) : null,
                 offChoice: s.offChoice ?? "off",
+                kind: s.kind === "list" ? "list" : null,
+                items: s.kind === "list" && s.listValues ? s.listValues(eff) : null,
+                itemHint: s.kind === "list" ? (s.itemHint ?? null) : null,
             };
         }),
     }));
@@ -78,6 +87,18 @@ export async function applySetting(key: string, value: unknown, scope: Scope = "
     const setting = ALL_SETTINGS.find((s) => s.key === key);
     if (!setting) return { ok: false, error: `unknown setting: ${key}` };
     const target = scopeFor(setting.globalOnly, scope);
+
+    // List settings: value is { op: "add" | "remove", item: string }.
+    if (setting.kind === "list") {
+        const op = value && typeof value === "object" ? value as { op?: string; item?: unknown } : null;
+        const item = typeof op?.item === "string" ? op.item.trim() : "";
+        if (!op || (op.op !== "add" && op.op !== "remove")) return { ok: false, error: `list setting ${key} needs { op: "add"|"remove", item }` };
+        if (!item) return { ok: false, error: "empty item" };
+        if (op.op === "add" && setting.addItem) setting.addItem(item, target);
+        else if (op.op === "remove" && setting.removeItem) setting.removeItem(item, target);
+        const updatedList = serializeSettings(target).flatMap((c) => c.settings).find((s) => s.key === key);
+        return { ok: true, key, setting: updatedList };
+    }
 
     if (setting.choices && setting.writeChoice && typeof value === "string" && setting.choices.includes(value)) {
         setting.writeChoice(value, target);

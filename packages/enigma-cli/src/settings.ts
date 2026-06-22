@@ -15,7 +15,9 @@ function printEffective(): void {
     for (const category of CATEGORIES) {
         console.log(`${category.title}:`);
         for (const s of category.settings) {
-            const shown = s.choices && s.readChoice ? s.readChoice("global") : valueLabel(s.read("global"));
+            const shown = s.kind === "list"
+                ? `[${(s.listValues ? s.listValues("global") : []).join(", ")}]`
+                : s.choices && s.readChoice ? s.readChoice("global") : valueLabel(s.read("global"));
             console.log(`  ${s.key}: ${shown}`);
         }
         console.log("");
@@ -81,6 +83,29 @@ export async function runConfigCli(positionals: string[], scope: Scope | null, i
         console.error(`Unknown config key: ${rawKey}. Known keys: ${ALL_SETTINGS.map((s) => s.key).join(", ")}, token-price, token-speed.`);
         return 1;
     }
+
+    // List settings (guard block/allow globs, custom secret patterns): add/remove/list one
+    // entry. `enigma config <key>` with no op prints the current items; `<key> add|remove <item>`.
+    if (setting.kind === "list") {
+        const target: Scope = setting.globalOnly ? "global" : (scope || "global");
+        const op = rawValue?.toLowerCase();
+        const item = positionals.slice(2).join(" ").trim();
+        const current = setting.listValues ? setting.listValues(target) : [];
+        if (!op || op === "list") {
+            console.log(`${rawKey} (${target}): ${current.length ? current.join(", ") : "(none - using built-in defaults)"}`);
+            return 0;
+        }
+        if ((op !== "add" && op !== "remove") || !item) {
+            console.error(`Usage: enigma config ${rawKey} <add|remove> <entry>   (or '${rawKey}' alone to list)`);
+            return 1;
+        }
+        if (op === "add" && setting.addItem) setting.addItem(item, target);
+        else if (op === "remove" && setting.removeItem) setting.removeItem(item, target);
+        const after = setting.listValues ? setting.listValues(target) : [];
+        console.log(`${op === "add" ? "Added to" : "Removed from"} ${rawKey} (${target}). Now: ${after.length ? after.join(", ") : "(none)"}.`);
+        return 0;
+    }
+
     const usage = setting.choices ? `<${setting.choices.join("|")}> (or on|off)` : "<on|off>";
     if (rawValue === undefined) {
         console.error(`Missing value for '${rawKey}'. Usage: enigma config ${rawKey} ${usage} [-g|-l]`);

@@ -11,14 +11,15 @@
 
 import { AGENTS } from "./agents";
 import { isAutoLintOn, setAutoLint } from "./lint";
-import { readConfig, setEnigmaToggle, setEnigmaValue, OUTPUT_STYLES, MINIMAL_CODE_LEVELS, DASHBOARD_MODES } from "./config";
+import { readConfig, setEnigmaToggle, setEnigmaValue, OUTPUT_STYLES, MINIMAL_CODE_LEVELS, DASHBOARD_MODES, PROMPT_SECRET_MODES } from "./config";
 import { applyDashboardMode } from "./dashboard";
 import { applyCompressToggle } from "./mcp-deploy";
 import type { DashboardMode } from "./config";
 import { getClaudeAttribution, setClaudeAttribution, getClaudeFeedbackSurvey, setClaudeFeedbackSurvey } from "./claude";
 import { getGhTelemetryCached, setGhTelemetry } from "./github";
 import { BYPASS_SUPPORTED, getBypass, setBypass } from "./permissions";
-import { GUARD_PROTECTIONS, readGlobalGuard, setGuardProtection } from "./guard-config";
+import { GUARD_PROTECTIONS, GUARD_LISTS, readGlobalGuard, setGuardProtection, setGuardList } from "./guard-config";
+import type { GuardListMeta } from "./guard-config";
 import type { EnigmaConfig, EnigmaConfigKey } from "./config";
 
 export type Scope = "global" | "local";
@@ -58,6 +59,19 @@ export interface Setting {
     offChoice?: string;
     readChoice?(scope: Scope): string;
     writeChoice?(value: string, scope: Scope): ApplyResult;
+    /**
+     * Present only on list settings (a managed string list, e.g. guard block/allow
+     * globs and custom secret patterns). `listValues` reads the current items;
+     * `addItem`/`removeItem` mutate one entry. The boolean face (`read`) reports
+     * whether the list is non-empty so the on/off surfaces still render a sensible
+     * value, and `write` is a no-op (lists are edited through add/remove only).
+     */
+    kind?: "list";
+    /** Placeholder/help shown by the add-item input. */
+    itemHint?: string;
+    listValues?(scope: Scope): string[];
+    addItem?(item: string, scope: Scope): ApplyResult;
+    removeItem?(item: string, scope: Scope): ApplyResult;
 }
 
 export interface Category {
@@ -139,7 +153,25 @@ function withReadCache(s: Setting): Setting {
     };
     if (s.readChoice) wrapped.readChoice = (scope) => swrRead(`${s.key}/${scope}/choice`, () => s.readChoice!(scope));
     if (s.writeChoice) wrapped.writeChoice = (value, scope) => { const r = s.writeChoice!(value, scope); invalidateSettingReads(); return r; };
+    if (s.kind === "list" && s.listValues) {
+        wrapped.listValues = (scope) => JSON.parse(swrRead(`${s.key}/${scope}/list`, () => JSON.stringify(s.listValues!(scope)))) as string[];
+        if (s.addItem) wrapped.addItem = (item, scope) => { const r = s.addItem!(item, scope); invalidateSettingReads(); return r; };
+        if (s.removeItem) wrapped.removeItem = (item, scope) => { const r = s.removeItem!(item, scope); invalidateSettingReads(); return r; };
+    }
     return wrapped;
+}
+
+/** Declare a guard user-list (block/allow globs, custom secret patterns) as a list setting. */
+function guardListSetting(meta: GuardListMeta): Setting {
+    return {
+        key: `guard-${meta.value}`, label: meta.label, hint: meta.hint, globalOnly: true, kind: "list", itemHint: meta.placeholder,
+        read: () => readGlobalGuard()[meta.field].length > 0,
+        // Lists are edited via add/remove; a boolean write is a no-op so on/off surfaces stay inert.
+        write: () => ({ changed: false }),
+        listValues: () => readGlobalGuard()[meta.field],
+        addItem: (item) => { setGuardList(meta.field, [...readGlobalGuard()[meta.field], item]); return { changed: true }; },
+        removeItem: (item) => { setGuardList(meta.field, readGlobalGuard()[meta.field].filter((x) => x !== item)); return { changed: true }; },
+    };
 }
 
 const RAW_CATEGORIES: Category[] = [
@@ -196,7 +228,7 @@ const RAW_CATEGORIES: Category[] = [
             enigmaToggle("dashboard-live", "dashboardLive", "Live auto-refresh", "the dashboard refreshes its data automatically while the tab is focused; off = refresh only with the button"),
             {
                 key: "proxy",
-                label: "Claude Code measuring proxy (experimental)",
+                label: "Claude Code proxy (experimental)",
                 hint: "route `enigma claude` through a local loopback proxy that forwards to Anthropic and measures real token usage; never stores auth or message content; Claude Code only; enigma default: off",
                 globalOnly: true,
                 read: () => readConfig().config.proxy,
@@ -248,14 +280,34 @@ const RAW_CATEGORIES: Category[] = [
     {
         title: "Commit guard",
         blurb: "what enigma's git commit guard blocks (user-wide default; per-repo .githooks/enigma-guard.json can override)",
-        settings: GUARD_PROTECTIONS.map((p): Setting => ({
-            key: `guard-${p.value}`,
-            label: p.label,
-            hint: `${p.hint}; applies to every repo with enigma's guard unless overridden per-repo`,
-            globalOnly: true,
-            read: () => readGlobalGuard()[p.value],
-            write: (value) => { setGuardProtection(p.value, value); return { changed: true }; },
-        })),
+        settings: [
+            ...GUARD_PROTECTIONS.map((p): Setting => ({
+                key: `guard-${p.value}`,
+                label: p.label,
+                hint: `${p.hint}; applies to every repo with enigma's guard unless overridden per-repo`,
+                globalOnly: true,
+                read: () => readGlobalGuard()[p.value],
+                write: (value) => { setGuardProtection(p.value, value); return { changed: true }; },
+            })),
+            ...GUARD_LISTS.map(guardListSetting),
+        ],
+    },
+    {
+        title: "Prompt secret guard",
+        blurb: "block credentials in chat prompts before they reach the agent (Claude Code, via the local proxy; opt-in)",
+        settings: [
+            {
+                key: "prompt-secret-guard",
+                label: "Prompt secret guard (experimental)",
+                hint: "scan outgoing chat messages and block secrets (API keys, tokens) before they reach Claude; routes `enigma claude` through the local proxy; uses the same patterns as the commit guard, plus your custom secret patterns; Claude Code only; enigma default: off",
+                globalOnly: true,
+                read: () => readConfig().config.promptSecretGuard,
+                write: (value, scope) => ({ path: setEnigmaToggle("promptSecretGuard", value, scope), changed: true }),
+            },
+            enigmaChoice("prompt-secret-mode", "promptSecretMode", "Prompt guard action",
+                "what to do on a hit: redact (strip the secret, keep the turn working) or reject (block the whole request); only applies when the prompt secret guard is on",
+                PROMPT_SECRET_MODES, "reject", false, "redact"),
+        ],
     },
     {
         title: "Permissions",

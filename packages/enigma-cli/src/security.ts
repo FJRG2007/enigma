@@ -146,6 +146,6 @@ export async function maybeOfferGitHooks(interactive: boolean, opts: SecurityOpt
     const root = findGitRoot(process.cwd());
     if (!root) return;
     if (currentHooksPath(root) === ".githooks") return; // already guarded
-    const ok = await p.confirm({ message: "Set up git security hooks here too (block secrets, .env, node_modules)?" });
+    const ok = await p.confirm({ message: "Set up git security hooks here too (block committed secrets, .env, node_modules)? (recommended)", initialValue: true });
     if (!p.isCancel(ok) && ok) await setupGitHooks({ ...opts, protections: undefined }, interactive);
 }

@@ -32,10 +32,18 @@ export interface SystemsStatus {
     commitEmoji: boolean;
     /** Dashboard auto-refreshes while focused (the HTML polls only when this is true). */
     live: boolean;
-    /** Experimental Claude Code measuring proxy enabled. */
+    /** Experimental Claude Code proxy enabled. */
     proxy: boolean;
-    /** Real token usage measured by the proxy so far (zeros when it has never run). */
-    proxyStats: { calls: number; input: number; output: number; cacheRead: number; cacheCreation: number };
+    /** Prompt secret guard enabled (blocks credentials in chat prompts via the proxy). */
+    promptSecretGuard: boolean;
+    /** What the prompt guard does on a hit: "redact" or "reject". */
+    promptSecretMode: string;
+    /**
+     * Real token usage measured by the proxy so far (zeros when it has never run);
+     * `lastRequestAt` is epoch ms of the last measured request, `redacted`/`rejected`/
+     * `lastBlockedAt` track the prompt secret guard (0 = none yet).
+     */
+    proxyStats: { calls: number; input: number; output: number; cacheRead: number; cacheCreation: number; lastRequestAt: number; redacted: number; rejected: number; lastBlockedAt: number };
     /** Security posture: permission-bypass state + the commit guard's fixed protections. */
     security: { permissionBypass: boolean; bypassDisabled: string[]; guardProtects: string[] };
     /** Skill counts across installed agents. */
@@ -58,8 +66,10 @@ export function systemsStatus(): SystemsStatus {
         dashboard: c.dashboard,
         commitEmoji: c.commitEmoji,
         proxy: c.proxy,
+        promptSecretGuard: c.promptSecretGuard,
+        promptSecretMode: c.promptSecretMode,
         live: c.dashboardLive,
-        proxyStats: (() => { const p = readProxyStats(); return { calls: p.calls, input: p.input, output: p.output, cacheRead: p.cacheRead, cacheCreation: p.cacheCreation }; })(),
+        proxyStats: (() => { const p = readProxyStats(); return { calls: p.calls, input: p.input, output: p.output, cacheRead: p.cacheRead, cacheCreation: p.cacheCreation, lastRequestAt: p.lastRequestAt, redacted: p.redacted, rejected: p.rejected, lastBlockedAt: p.lastBlockedAt }; })(),
         security: {
             permissionBypass: c.permissionBypass,
             bypassDisabled: c.bypassDisabled || [],

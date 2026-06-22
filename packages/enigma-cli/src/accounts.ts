@@ -32,6 +32,7 @@ import { join, resolve, sep } from "node:path";
 import { mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { isDir, readJson, resolveBin } from "./util";
 import { readConfig } from "./config";
+import { readGlobalGuard } from "./guard-config";
 import { startMeasuringProxy } from "./proxy";
 
 /**
@@ -585,14 +586,21 @@ export async function launchTool(toolName: string, name: string | null, passthro
 
     touchLastUsed(toolName, account);
 
-    // Experimental measuring proxy (opt-in, default off, Claude Code only): front Claude Code
-    // with a loopback proxy for THIS launch by pointing ANTHROPIC_BASE_URL at it, and close it
-    // when Claude exits. Best-effort and non-breaking: if the proxy cannot start we launch
-    // directly, and a user-set ANTHROPIC_BASE_URL (their own gateway) is never overridden.
+    // Experimental loopback proxy (opt-in, default off, Claude Code only): front Claude Code
+    // with a proxy for THIS launch by pointing ANTHROPIC_BASE_URL at it, and close it when
+    // Claude exits. It runs when EITHER the measuring proxy OR the prompt secret guard is on
+    // (the guard needs the proxy to inspect outgoing messages). Best-effort and non-breaking:
+    // if it cannot start we launch directly, and a user-set ANTHROPIC_BASE_URL is never
+    // overridden. When the guard is on, the proxy scans/redacts secrets in chat prompts.
     let proxy: Awaited<ReturnType<typeof startMeasuringProxy>> | null = null;
-    if (toolName === "claude" && readConfig().config.proxy && !env.ANTHROPIC_BASE_URL) {
-        try { proxy = await startMeasuringProxy(); env.ANTHROPIC_BASE_URL = proxy.url; }
-        catch { proxy = null; }
+    const cfg = readConfig().config;
+    if (toolName === "claude" && (cfg.proxy || cfg.promptSecretGuard) && !env.ANTHROPIC_BASE_URL) {
+        try {
+            proxy = await startMeasuringProxy(cfg.promptSecretGuard
+                ? { scanPrompts: true, mode: cfg.promptSecretMode, extraPatterns: readGlobalGuard().secretPatterns }
+                : {});
+            env.ANTHROPIC_BASE_URL = proxy.url;
+        } catch { proxy = null; }
     }
     try {
         return await spawnInherit(binary, passthrough, env);
