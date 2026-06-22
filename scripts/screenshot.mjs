@@ -13,14 +13,21 @@
  */
 
 import { createServer } from "node:http";
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { chromium } from "playwright";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const ASSETS = join(ROOT, "packages", "dashboard", "assets");
+const OUT = join(ROOT, "docs", "images", "dashboard.png");
 const DAY = 86400000;
+
+// Wide-monitor capture (2558x1276, ~2:1). The dashboard is normally a 1040px centered
+// column; for a full ultrawide "everything at once" shot we widen the container so the
+// cards, systems panel and chart spread across and fill the frame.
+const VIEW = { width: 2558, height: 1276 };
+const WIDEN_CSS = "body{max-width:2440px!important;padding:26px 40px!important}";
 
 // --- impressive mock data (shape matches the dashboard's /api responses) ---------------
 
@@ -122,11 +129,13 @@ server.listen(0, "127.0.0.1", async () => {
     const port = (server.address()).port;
     const browser = await chromium.launch();
     try {
-        const page = await browser.newPage({ viewport: { width: 1200, height: 1080 }, deviceScaleFactor: 2 });
+        const page = await browser.newPage({ viewport: VIEW, deviceScaleFactor: 2 });
         await page.goto(`http://127.0.0.1:${port}/`, { waitUntil: "networkidle" });
-        await page.waitForTimeout(2000); // let the chart draw and the cards fill in
-        await page.screenshot({ path: join(ROOT, "dashboard-preview.png"), clip: { x: 0, y: 0, width: 1200, height: 1080 } });
-        console.log("wrote dashboard-preview.png");
+        await page.addStyleTag({ content: WIDEN_CSS });
+        await page.waitForTimeout(2000); // let the chart resize/draw and the cards fill in
+        mkdirSync(dirname(OUT), { recursive: true });
+        await page.screenshot({ path: OUT, clip: { x: 0, y: 0, ...VIEW } });
+        console.log("wrote", OUT);
     } finally {
         await browser.close();
         server.close();

@@ -482,8 +482,8 @@ enigma compress --clear                     # wipe all dashboard data (stats/his
 ### Savings dashboard
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/FJRG2007/enigma/media/dashboard-preview.png" alt="enigma dashboard preview" width="900">
-  <br><sub>The live dashboard (auto-generated from the current UI; mock data shown).</sub>
+  <img src="https://github.com/FJRG2007/enigma/blob/main/docs/images/dashboard.png?raw=true" alt="enigma dashboard" width="100%">
+  <br><sub>The dashboard (auto-generated from the current UI; mock data shown).</sub>
 </p>
 
 `enigma dashboard` (alias `dash`) serves a local, loopback-only browser dashboard

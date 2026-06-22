@@ -1,12 +1,10 @@
 name: Dashboard preview
 
-# Regenerate the README's dashboard preview whenever the dashboard UI or its version
-# changes. Renders the REAL shipped assets with mock data (scripts/screenshot.mjs) using a
-# headless browser, then publishes the PNG to the unprotected `media` branch - so the README
-# (which references the raw URL on `media`) always shows the current dashboard, automatically.
-#
-# Publishing to `media` (not main) avoids main's branch protection; the image is a generated
-# artifact, so it does not belong in the source history anyway.
+# Regenerate the README's dashboard preview whenever the dashboard UI or its version changes.
+# Renders the REAL shipped assets with mock data (scripts/screenshot.mjs) via a headless
+# browser at a wide 2558x1276 frame, then commits docs/images/dashboard.png to main (the
+# README references that path). The PNG is also uploaded as a build artifact so the latest
+# render is always retrievable even if the commit step is blocked by branch protection.
 
 on:
   push:
@@ -43,15 +41,20 @@ jobs:
       - name: Render dashboard preview
         run: node scripts/screenshot.mjs
 
-      - name: Publish preview to the media branch
+      # Always retrievable, even if the commit-to-main step is blocked by branch protection.
+      - name: Upload preview artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dashboard-preview
+          path: docs/images/dashboard.png
+          if-no-files-found: error
+
+      - name: Commit preview to main
         run: |
-          test -f dashboard-preview.png
-          cp dashboard-preview.png "$RUNNER_TEMP/dashboard-preview.png"
+          test -f docs/images/dashboard.png
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git checkout --orphan media
-          git rm -rf . >/dev/null 2>&1 || true
-          cp "$RUNNER_TEMP/dashboard-preview.png" dashboard-preview.png
-          git add dashboard-preview.png
-          git commit -m "chore: dashboard preview [skip ci]"
-          git push -f origin media
+          git add docs/images/dashboard.png
+          if git diff --cached --quiet; then echo "preview unchanged"; exit 0; fi
+          git commit -m "chore: refresh dashboard preview [skip ci]"
+          git push origin HEAD:main
