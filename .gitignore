@@ -3,6 +3,8 @@ dist/
 dist-bin/
 # Generated at publish time from the release binaries; ships in the npm tarball only.
 packages/enigma-cli/bin/checksums.json
+# Downloaded per-host at install time (binary + its sha256 sidecar); never committed.
+packages/enigma-cli/bin/enigma-bin*
 .dev-home/
 *.log
 .DS_Store

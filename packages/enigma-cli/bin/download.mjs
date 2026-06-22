@@ -13,7 +13,7 @@
  */
 import { dirname } from "node:path";
 import { createHash } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 
 import {
     ARCH,
@@ -47,10 +47,36 @@ function assetUrl(asset) {
     return url;
 };
 
-/** Returns the installed binary path if already present, else null. */
+/** Sidecar recording the sha256 of the currently-installed binary (next to the binary). */
+function sidecarPath() {
+    return `${binTargetPath()}.sha256`;
+};
+
+/** The sha256 this package version expects for the host's asset, or null if none is known. */
+function expectedSha() {
+    const choice = selectAsset();
+    return choice ? choice.sha256 : null;
+};
+
+/**
+ * Returns the installed binary path only if it is present AND matches the sha256 this
+ * package version expects (recorded in the sidecar at download time). Returns null when
+ * the binary is missing, has no sidecar, or the sidecar does not match - i.e. it is stale
+ * after a package update - so the caller re-downloads the correct one. This is what makes
+ * `npm install -g enigma-cli@latest` actually swap a binary that npm left in place (the
+ * binary is not in the tarball; npm does not track or remove it on update). When there are
+ * no checksums (a source checkout / workspace install), trust whatever binary is present.
+ */
 export function installedBinary() {
     const target = binTargetPath();
-    return existsSync(target) ? target : null;
+    if (!existsSync(target)) return null;
+    const expected = expectedSha();
+    if (!expected) return target;
+    try {
+        return readFileSync(sidecarPath(), "utf8").trim() === expected ? target : null;
+    } catch {
+        return null;
+    }
 };
 
 /**
@@ -86,6 +112,10 @@ export async function downloadBinary({ log = () => {} } = {}) {
     // rename is atomic on POSIX; on Windows it fails over an existing file, so drop it first.
     if (existsSync(target)) try { unlinkSync(target); } catch { /* in use; rename will surface the error */ }
     renameSync(tmp, target);
+    // Record the installed sha so installedBinary() can detect a stale binary after an
+    // update without re-hashing the whole file on every launch. Best-effort: a missing
+    // sidecar just triggers one extra re-download next time.
+    try { writeFileSync(sidecarPath(), choice.sha256); } catch { /* sidecar is best-effort */ }
     log(`Installed ${choice.asset} -> ${target}`);
     return target;
 };
