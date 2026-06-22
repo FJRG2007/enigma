@@ -3,6 +3,6 @@
   "version": "1.0.0",
   "provider": "FJRG2007/enigma",
   "description": "Strict frontend + backend schema validation, schema consistency, and safe client-facing error handling.",
-  "cliVersion": "1.16.7",
+  "cliVersion": "1.16.8",
   "sha": "a33622a2f810ee4cea39824cb1a7ca34b355a917d4224025df50d77dd74f0b3a"
 }
