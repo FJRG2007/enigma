@@ -67,8 +67,13 @@ export interface ProxyUsage {
 
 const EMPTY: ProxyUsage = { calls: 0, input: 0, output: 0, cacheRead: 0, cacheCreation: 0, lastRequestAt: 0, redacted: 0, rejected: 0, lastBlockedAt: 0, byModel: {} };
 
+/** Directory for the proxy's stats/limits files. `ENIGMA_PROXY_DIR` overrides it (tests). */
+function proxyDir(): string {
+    return process.env.ENIGMA_PROXY_DIR || join(homedir(), ".enigma", "proxy");
+}
+
 function statsPath(): string {
-    return join(homedir(), ".enigma", "proxy", "stats.json");
+    return join(proxyDir(), "stats.json");
 }
 
 /** Cumulative token usage measured by the proxy so far. */
@@ -93,7 +98,7 @@ export interface ProxyLimits {
 }
 
 function limitsPath(): string {
-    return join(homedir(), ".enigma", "proxy", "limits.json");
+    return join(proxyDir(), "limits.json");
 }
 
 /** The last captured real rate-limit windows, or null if none seen yet. */
@@ -128,7 +133,7 @@ function recordLimits(headers: import("node:http").IncomingHttpHeaders): void {
             weeklySonnet: weeklySonnet ?? prev?.weeklySonnet ?? null,
             capturedAt: Date.now(),
         };
-        const dir = join(homedir(), ".enigma", "proxy");
+        const dir = proxyDir();
         if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
         writeFileSync(limitsPath(), JSON.stringify(next, null, 2) + "\n");
     } catch { /* best-effort */ }
@@ -144,7 +149,7 @@ function recordCall(c: OneCall): void {
         cur.calls++; cur.input += c.input; cur.output += c.output; cur.cacheRead += c.cacheRead; cur.cacheCreation += c.cacheCreation;
         cur.lastRequestAt = Date.now();
         m.calls++; m.input += c.input; m.output += c.output; m.cacheRead += c.cacheRead; m.cacheCreation += c.cacheCreation;
-        const dir = join(homedir(), ".enigma", "proxy");
+        const dir = proxyDir();
         if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
         writeFileSync(statsPath(), JSON.stringify(cur, null, 2) + "\n");
     } catch { /* stats are best-effort */ }
@@ -156,7 +161,7 @@ function recordBlock(mode: "redact" | "reject"): void {
         const cur = readProxyStats();
         if (mode === "redact") cur.redacted++; else cur.rejected++;
         cur.lastBlockedAt = Date.now();
-        const dir = join(homedir(), ".enigma", "proxy");
+        const dir = proxyDir();
         if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
         writeFileSync(statsPath(), JSON.stringify(cur, null, 2) + "\n");
     } catch { /* stats are best-effort */ }

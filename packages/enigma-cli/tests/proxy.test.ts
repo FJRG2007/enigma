@@ -48,6 +48,7 @@ test("forwards to the upstream verbatim and records the measured usage", async (
     const HOME = mkdtempSync(join(tmpdir(), "enigma-proxy-"));
     const prev = { home: process.env.HOME, profile: process.env.USERPROFILE, up: process.env.ENIGMA_PROXY_UPSTREAM };
     process.env.HOME = HOME; process.env.USERPROFILE = HOME;
+    process.env.ENIGMA_PROXY_DIR = join(HOME, ".enigma", "proxy"); // isolate stats/limits (bun-linux homedir() ignores $HOME)
 
     // A fake "Anthropic": echoes the request path back in an SSE messages body with usage.
     const upstream = createServer((req, res) => {
@@ -73,7 +74,7 @@ test("forwards to the upstream verbatim and records the measured usage", async (
         expect(stats.byModel["claude-opus-4-8"].calls).toBe(1);
     } finally {
         proxy.close(); upstream.close();
-        process.env.HOME = prev.home; process.env.USERPROFILE = prev.profile;
+        process.env.HOME = prev.home; process.env.USERPROFILE = prev.profile; delete process.env.ENIGMA_PROXY_DIR;
         if (prev.up === undefined) delete process.env.ENIGMA_PROXY_UPSTREAM; else process.env.ENIGMA_PROXY_UPSTREAM = prev.up;
         rmSync(HOME, { recursive: true, force: true });
     }
@@ -87,6 +88,7 @@ test("prompt secret guard redacts a secret out of the outgoing message body", as
     const HOME = mkdtempSync(join(tmpdir(), "enigma-proxy-"));
     const prev = { home: process.env.HOME, profile: process.env.USERPROFILE, up: process.env.ENIGMA_PROXY_UPSTREAM };
     process.env.HOME = HOME; process.env.USERPROFILE = HOME;
+    process.env.ENIGMA_PROXY_DIR = join(HOME, ".enigma", "proxy"); // isolate stats/limits (bun-linux homedir() ignores $HOME)
 
     let received = "";
     const upstream = createServer((req, res) => {
@@ -107,7 +109,7 @@ test("prompt secret guard redacts a secret out of the outgoing message body", as
         expect(readProxyStats().redacted).toBeGreaterThan(0);
     } finally {
         proxy.close(); upstream.close();
-        process.env.HOME = prev.home; process.env.USERPROFILE = prev.profile;
+        process.env.HOME = prev.home; process.env.USERPROFILE = prev.profile; delete process.env.ENIGMA_PROXY_DIR;
         if (prev.up === undefined) delete process.env.ENIGMA_PROXY_UPSTREAM; else process.env.ENIGMA_PROXY_UPSTREAM = prev.up;
         rmSync(HOME, { recursive: true, force: true });
     }
@@ -117,6 +119,7 @@ test("prompt secret guard in reject mode blocks the request before it reaches Cl
     const HOME = mkdtempSync(join(tmpdir(), "enigma-proxy-"));
     const prev = { home: process.env.HOME, profile: process.env.USERPROFILE, up: process.env.ENIGMA_PROXY_UPSTREAM };
     process.env.HOME = HOME; process.env.USERPROFILE = HOME;
+    process.env.ENIGMA_PROXY_DIR = join(HOME, ".enigma", "proxy"); // isolate stats/limits (bun-linux homedir() ignores $HOME)
 
     let upstreamHit = false;
     const upstream = createServer((req, res) => { upstreamHit = true; res.writeHead(200); res.end(SSE); });
@@ -134,7 +137,7 @@ test("prompt secret guard in reject mode blocks the request before it reaches Cl
         expect(readProxyStats().rejected).toBeGreaterThan(0);
     } finally {
         proxy.close(); upstream.close();
-        process.env.HOME = prev.home; process.env.USERPROFILE = prev.profile;
+        process.env.HOME = prev.home; process.env.USERPROFILE = prev.profile; delete process.env.ENIGMA_PROXY_DIR;
         if (prev.up === undefined) delete process.env.ENIGMA_PROXY_UPSTREAM; else process.env.ENIGMA_PROXY_UPSTREAM = prev.up;
         rmSync(HOME, { recursive: true, force: true });
     }
@@ -144,6 +147,7 @@ test("captures Anthropic's unified rate-limit headers (the real usage windows)",
     const HOME = mkdtempSync(join(tmpdir(), "enigma-proxy-"));
     const prev = { home: process.env.HOME, profile: process.env.USERPROFILE, up: process.env.ENIGMA_PROXY_UPSTREAM };
     process.env.HOME = HOME; process.env.USERPROFILE = HOME;
+    process.env.ENIGMA_PROXY_DIR = join(HOME, ".enigma", "proxy"); // isolate stats/limits (bun-linux homedir() ignores $HOME)
 
     const reset5h = Math.floor(Date.now() / 1000) + 3600;
     const reset7d = Math.floor(Date.now() / 1000) + 5 * 86400;
@@ -171,7 +175,7 @@ test("captures Anthropic's unified rate-limit headers (the real usage windows)",
         expect(lim!.session!.resetsAt).toBe(reset5h * 1000);
     } finally {
         proxy.close(); upstream.close();
-        process.env.HOME = prev.home; process.env.USERPROFILE = prev.profile;
+        process.env.HOME = prev.home; process.env.USERPROFILE = prev.profile; delete process.env.ENIGMA_PROXY_DIR;
         if (prev.up === undefined) delete process.env.ENIGMA_PROXY_UPSTREAM; else process.env.ENIGMA_PROXY_UPSTREAM = prev.up;
         rmSync(HOME, { recursive: true, force: true });
     }
@@ -181,6 +185,7 @@ test("a clean message passes through untouched when the guard is on", async () =
     const HOME = mkdtempSync(join(tmpdir(), "enigma-proxy-"));
     const prev = { home: process.env.HOME, profile: process.env.USERPROFILE, up: process.env.ENIGMA_PROXY_UPSTREAM };
     process.env.HOME = HOME; process.env.USERPROFILE = HOME;
+    process.env.ENIGMA_PROXY_DIR = join(HOME, ".enigma", "proxy"); // isolate stats/limits (bun-linux homedir() ignores $HOME)
 
     let received = "";
     const upstream = createServer((req, res) => {
@@ -201,7 +206,7 @@ test("a clean message passes through untouched when the guard is on", async () =
         expect(readProxyStats().redacted).toBe(0);
     } finally {
         proxy.close(); upstream.close();
-        process.env.HOME = prev.home; process.env.USERPROFILE = prev.profile;
+        process.env.HOME = prev.home; process.env.USERPROFILE = prev.profile; delete process.env.ENIGMA_PROXY_DIR;
         if (prev.up === undefined) delete process.env.ENIGMA_PROXY_UPSTREAM; else process.env.ENIGMA_PROXY_UPSTREAM = prev.up;
         rmSync(HOME, { recursive: true, force: true });
     }

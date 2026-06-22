@@ -57,4 +57,15 @@ jobs:
           git add docs/images/dashboard.png
           if git diff --cached --quiet; then echo "preview unchanged"; exit 0; fi
           git commit -m "chore: refresh dashboard preview [skip ci]"
-          git push origin HEAD:main
+          # main has branch protection, so the bot's push may be rejected (GH013). That is
+          # expected and must NOT fail the workflow - the rendered PNG is uploaded as an
+          # artifact above and can be committed manually. Only a real (non-protection) error
+          # should fail the job.
+          if git push origin HEAD:main 2>push.log; then
+            echo "preview pushed"
+          elif grep -qiE "GH013|protected|rule violation|not permitted|denied" push.log; then
+            echo "::warning::Preview push blocked by branch protection - download the dashboard-preview artifact and commit docs/images/dashboard.png manually."
+            cat push.log
+          else
+            echo "::error::Unexpected push failure"; cat push.log; exit 1
+          fi

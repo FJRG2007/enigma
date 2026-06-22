@@ -16,6 +16,8 @@ process.env.HOME = HOME;
 // Pin the transcript dir explicitly: under bun on Linux os.homedir() does not reflect a
 // runtime-reassigned $HOME, so the override (not homedir()) makes the test deterministic.
 process.env.ENIGMA_CLAUDE_PROJECTS = join(HOME, ".claude", "projects");
+// Isolate the proxy stats/limits dir too (bun-linux os.homedir() ignores a runtime $HOME).
+process.env.ENIGMA_PROXY_DIR = join(HOME, ".enigma", "proxy");
 
 const { buildUsage, costOf, priceFor } = await import("../src/usage");
 const { setEnigmaValue } = await import("../src/config");
@@ -116,7 +118,7 @@ test("builds Claude-style usage windows with % against configured plan limits", 
 
 test("overlays Anthropic's real rate-limit windows when the proxy captured them", () => {
     // The proxy persists captured limits here; usage overlays them as the live %/reset.
-    const proxyDir = join(homedir(), ".enigma", "proxy");
+    const proxyDir = join(HOME, ".enigma", "proxy"); // == ENIGMA_PROXY_DIR set above
     mkdirSync(proxyDir, { recursive: true });
     const limPath = join(proxyDir, "limits.json");
     writeFileSync(limPath, JSON.stringify({
