@@ -28,7 +28,9 @@ if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }
 
-Write-Host "enigma: deploying skills and memory..."
-cmd /c "enigma install --all --yes"
+Write-Host "enigma: setting up your agents (answer the prompts)..."
+# Interactive: cmd /c keeps the real console attached, so enigma's prompts work even
+# though this script arrived over `irm ... | iex`.
+cmd /c "enigma install"
 
-Write-Host "enigma: done. Run 'enigma' for the interactive hub."
+Write-Host "enigma: done. Run 'enigma' anytime for the interactive hub."

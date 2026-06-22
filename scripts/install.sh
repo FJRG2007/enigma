@@ -18,7 +18,14 @@ npm cache clean --force >/dev/null 2>&1 || true
 echo "enigma: installing enigma-cli globally..."
 npm install -g enigma-cli@latest
 
-echo "enigma: deploying skills and memory..."
-enigma install --all --yes
+echo "enigma: setting up your agents (answer the prompts)..."
+# Read prompts from the controlling terminal, not the curl pipe (rustup's trick); fall
+# back to a no-prompt default deploy when there is no terminal (CI / headless).
+if [ -e /dev/tty ]; then
+  enigma install </dev/tty
+else
+  echo "enigma: no terminal detected - deploying defaults (run 'enigma' later to customize)."
+  enigma install --all --yes
+fi
 
-echo "enigma: done. Run 'enigma' for the interactive hub."
+echo "enigma: done. Run 'enigma' anytime for the interactive hub."

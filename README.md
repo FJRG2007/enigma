@@ -29,7 +29,8 @@ enigma                             # interactive hub: pick what to set up
 ```
 
 Or via the install script (clears the npm cache, installs the latest version, then
-runs `enigma install` for you - handy where npm `postinstall` scripts are disabled):
+runs `enigma install` **interactively** so you choose what to set up - handy where npm
+`postinstall` scripts are disabled):
 
 ```bash
 # macOS / Linux
