@@ -1,0 +1,57 @@
+name: Dashboard preview
+
+# Regenerate the README's dashboard preview whenever the dashboard UI or its version
+# changes. Renders the REAL shipped assets with mock data (scripts/screenshot.mjs) using a
+# headless browser, then publishes the PNG to the unprotected `media` branch - so the README
+# (which references the raw URL on `media`) always shows the current dashboard, automatically.
+#
+# Publishing to `media` (not main) avoids main's branch protection; the image is a generated
+# artifact, so it does not belong in the source history anyway.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/dashboard/assets/**"
+      - "packages/dashboard/package.json"
+      - "scripts/screenshot.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: dashboard-preview
+  cancel-in-progress: true
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # Playwright is CI-only and never a package dependency: install it ephemerally.
+      - name: Install Playwright + Chromium
+        run: |
+          npm install --no-save playwright
+          npx playwright install --with-deps chromium
+
+      - name: Render dashboard preview
+        run: node scripts/screenshot.mjs
+
+      - name: Publish preview to the media branch
+        run: |
+          test -f dashboard-preview.png
+          cp dashboard-preview.png "$RUNNER_TEMP/dashboard-preview.png"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout --orphan media
+          git rm -rf . >/dev/null 2>&1 || true
+          cp "$RUNNER_TEMP/dashboard-preview.png" dashboard-preview.png
+          git add dashboard-preview.png
+          git commit -m "chore: dashboard preview [skip ci]"
+          git push -f origin media

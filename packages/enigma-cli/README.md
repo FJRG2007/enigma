@@ -481,6 +481,11 @@ enigma compress --clear                     # wipe all dashboard data (stats/his
 
 ### Savings dashboard
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/FJRG2007/enigma/media/dashboard-preview.png" alt="enigma dashboard preview" width="900">
+  <br><sub>The live dashboard (auto-generated from the current UI; mock data shown).</sub>
+</p>
+
 `enigma dashboard` (alias `dash`) serves a local, loopback-only browser dashboard
 of the token savings - totals, **estimated money saved**, average/best per call, a
 per-day graph (toggle tokens/$ and daily/cumulative), breakdowns by the app that
