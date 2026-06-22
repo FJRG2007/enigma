@@ -89,6 +89,12 @@ export interface EnigmaConfig {
     promptSecretGuard: boolean;
     /** What the prompt secret guard does on a hit: redact (default) or reject the request. */
     promptSecretMode: PromptSecretMode;
+    /** Plan token limits for the usage windows (Claude-style gauges); 0 = unset (show tokens, no %). */
+    planSessionLimit: number;
+    planWeeklyLimit: number;
+    planWeeklySonnetLimit: number;
+    /** Weekly window reset anchor as "<weekday> HH:MM" in local time (e.g. "mon 11:00"). */
+    planWeeklyReset: string;
     /** Dashboard auto-refreshes its data while the tab is focused (default on; off = manual refresh only). */
     dashboardLive: boolean;
     /** Agents the user explicitly opted out of bypass; never auto-enabled even when permissionBypass is on. */
@@ -140,7 +146,9 @@ export interface EnigmaConfig {
  */
 export const CONFIG_DEFAULTS: EnigmaConfig = {
     commitEmoji: true, updateNotifier: true, fullscreen: true, parallelSubagents: false, outputStyle: "off", minimalCode: "full",
-    autoSync: true, remoteSkills: true, permissionBypass: true, autoLint: false, compress: false, dashboard: "off", tokenPrice: 0, tokenSpeed: 0, usageStats: false, proxy: false, promptSecretGuard: false, promptSecretMode: "redact", dashboardLive: true, bypassDisabled: [], discardedSkills: [],
+    autoSync: true, remoteSkills: true, permissionBypass: true, autoLint: false, compress: false, dashboard: "off", tokenPrice: 0, tokenSpeed: 0, usageStats: false, proxy: false, promptSecretGuard: false, promptSecretMode: "redact",
+    planSessionLimit: 0, planWeeklyLimit: 0, planWeeklySonnetLimit: 0, planWeeklyReset: "mon 00:00",
+    dashboardLive: true, bypassDisabled: [], discardedSkills: [],
 };
 
 export type EnigmaConfigKey = keyof EnigmaConfig;

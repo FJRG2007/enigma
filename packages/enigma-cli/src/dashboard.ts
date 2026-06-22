@@ -31,7 +31,7 @@ import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "
 import { readStats, readHistory, ccrCacheStats } from "./compress";
 import { dashboardAssetsDir, spawnDashboardPkgInstall } from "./dashboard-pkg";
 import { readUsageCached } from "./usage";
-import { readConfig } from "./config";
+import { readConfig, setEnigmaValue } from "./config";
 import { resolveBin } from "./util";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -325,6 +325,30 @@ function writeConfigImport(req: import("node:http").IncomingMessage, res: import
     });
 }
 
+/** Plan window keys settable from the dashboard cards -> their .enigma.json fields. */
+const PLAN_FIELDS = { session: "planSessionLimit", weekly: "planWeeklyLimit", weeklySonnet: "planWeeklySonnetLimit", weeklyReset: "planWeeklyReset" } as const;
+
+/** Set one plan limit / the weekly-reset anchor from a POST body { key, value }. */
+function writePlan(req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse): void {
+    let body = "";
+    req.on("data", (chunk) => { body += chunk; if (body.length > 4096) req.destroy(); });
+    req.on("end", () => {
+        let parsed: { key?: unknown; value?: unknown };
+        try { parsed = JSON.parse(body || "{}"); } catch { res.writeHead(400, JSON_HDR); res.end('{"error":"bad json"}'); return; }
+        const field = typeof parsed.key === "string" ? PLAN_FIELDS[parsed.key as keyof typeof PLAN_FIELDS] : undefined;
+        if (!field) { res.writeHead(400, JSON_HDR); res.end('{"error":"unknown plan key"}'); return; }
+        if (field === "planWeeklyReset") {
+            setEnigmaValue("planWeeklyReset", String(parsed.value || "mon 00:00"), "global");
+        } else {
+            const n = Number(parsed.value);
+            if (!Number.isFinite(n) || n < 0) { res.writeHead(400, JSON_HDR); res.end('{"error":"bad number"}'); return; }
+            setEnigmaValue(field, n, "global");
+        }
+        snapshot = null; // force the next /api/stats to recompute the windows with the new limit
+        res.writeHead(200, JSON_HDR); res.end('{"ok":true}');
+    });
+}
+
 function createDashboardServer(version: string): Server {
     return createServer((req, res) => {
         const url = (req.url || "/").split("?")[0];
@@ -362,6 +386,11 @@ function createDashboardServer(version: string): Server {
         if (url === "/api/config-import") {
             if (!isLocalRequest(req)) { res.writeHead(403, JSON_HDR); res.end('{"error":"forbidden"}'); return; }
             if (method === "POST") { writeConfigImport(req, res); return; }
+            res.writeHead(405).end(); return;
+        }
+        if (url === "/api/plan") {
+            if (!isLocalRequest(req)) { res.writeHead(403, JSON_HDR); res.end('{"error":"forbidden"}'); return; }
+            if (method === "POST") { writePlan(req, res); return; }
             res.writeHead(405).end(); return;
         }
         if (method !== "GET") { res.writeHead(405).end(); return; }

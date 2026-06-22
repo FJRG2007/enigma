@@ -78,9 +78,37 @@ export async function runConfigCli(positionals: string[], scope: Scope | null, i
         return 0;
     }
 
+    // Plan window limits (numeric, USD-free token caps) + the weekly reset anchor. These
+    // drive the Claude-style usage gauges and sit outside the boolean/choice registry, like
+    // token-price/token-speed. 0 = unset (the gauge shows tokens instead of a %).
+    const PLAN_NUMERIC: Record<string, "planSessionLimit" | "planWeeklyLimit" | "planWeeklySonnetLimit"> = {
+        "plan-session-limit": "planSessionLimit", "plan-weekly-limit": "planWeeklyLimit", "plan-weekly-sonnet-limit": "planWeeklySonnetLimit",
+    };
+    if (rawKey in PLAN_NUMERIC) {
+        const n = Number(rawValue);
+        if (rawValue === undefined || !Number.isFinite(n) || n < 0) {
+            console.error(`Missing/invalid value for '${rawKey}'. Usage: enigma config ${rawKey} <tokens> (e.g. 1000000, or 0 to unset) [-g|-l]`);
+            return 1;
+        }
+        const target: Scope = scope || "global";
+        const path = setEnigmaValue(PLAN_NUMERIC[rawKey]!, n, target);
+        console.log(`Set ${rawKey} = ${n} tokens (${target})${path ? ` in ${path}` : ""}.`);
+        return 0;
+    }
+    if (rawKey === "plan-weekly-reset") {
+        if (rawValue === undefined || !/^[a-z]{3}\s+\d{1,2}:\d{2}$/i.test(rawValue)) {
+            console.error("Missing/invalid value for 'plan-weekly-reset'. Usage: enigma config plan-weekly-reset \"<weekday> HH:MM\" (e.g. \"mon 11:00\") [-g|-l]");
+            return 1;
+        }
+        const target: Scope = scope || "global";
+        const path = setEnigmaValue("planWeeklyReset", rawValue.toLowerCase(), target);
+        console.log(`Set plan-weekly-reset = ${rawValue.toLowerCase()} (${target})${path ? ` in ${path}` : ""}.`);
+        return 0;
+    }
+
     const setting = ALL_SETTINGS.find((s) => s.key === rawKey);
     if (!setting) {
-        console.error(`Unknown config key: ${rawKey}. Known keys: ${ALL_SETTINGS.map((s) => s.key).join(", ")}, token-price, token-speed.`);
+        console.error(`Unknown config key: ${rawKey}. Known keys: ${ALL_SETTINGS.map((s) => s.key).join(", ")}, token-price, token-speed, plan-session-limit, plan-weekly-limit, plan-weekly-sonnet-limit, plan-weekly-reset.`);
         return 1;
     }
 

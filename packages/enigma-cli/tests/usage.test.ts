@@ -18,6 +18,7 @@ process.env.HOME = HOME;
 process.env.ENIGMA_CLAUDE_PROJECTS = join(HOME, ".claude", "projects");
 
 const { buildUsage, costOf, priceFor } = await import("../src/usage");
+const { setEnigmaValue } = await import("../src/config");
 
 afterAll(() => rmSync(HOME, { recursive: true, force: true }));
 
@@ -88,6 +89,29 @@ test("prices per model and reconstructs an active 5-hour block from recent activ
     // The huge gap to the old June fixtures resets the block to just the two recent events.
     expect(r.block!.tokens).toBe(1000 + 500 + 2000 + 800);
     expect(r.block!.burnRatePerMin).toBeGreaterThan(0);
+});
+
+test("builds Claude-style usage windows with % against configured plan limits", () => {
+    // The recent 'live.jsonl' (2 Opus messages, 4300 tokens) drives the active session +
+    // this week's all-models window; the old June fixtures fall outside the weekly window.
+    setEnigmaValue("planSessionLimit", 10000, "global");
+    setEnigmaValue("planWeeklyLimit", 100000, "global");
+    setEnigmaValue("planWeeklySonnetLimit", 50000, "global");
+    setEnigmaValue("planWeeklyReset", "mon 00:00", "global");
+    try {
+        const r = buildUsage();
+        expect(r.windows.session.limit).toBe(10000);
+        expect(r.windows.session.used).toBe(4300);
+        expect(r.windows.session.pct).toBeCloseTo(43, 1);
+        expect(r.windows.weeklyAll.used).toBeGreaterThan(0);
+        expect(r.windows.weeklyAll.pct).toBeCloseTo(r.windows.weeklyAll.used / 100000 * 100, 3);
+        expect(r.windows.weeklyAll.resetsAt).toBeGreaterThan(Date.now());
+        // No recent Sonnet activity -> the Sonnet window is empty (the UI shows "not used yet").
+        expect(r.windows.weeklySonnet.used).toBe(0);
+        expect(r.windows.weeklySonnet.pct).toBe(0);
+    } finally {
+        for (const k of ["planSessionLimit", "planWeeklyLimit", "planWeeklySonnetLimit"] as const) setEnigmaValue(k, 0, "global");
+    }
 });
 
 test("empty when there are no transcripts", () => {

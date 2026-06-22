@@ -371,6 +371,27 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             h(box, { flexGrow: 1 }),
         ]);
         const models = Object.entries(u.byModel).sort((a, b) => b[1].cost - a[1].cost).slice(0, 6);
+        // Reset labels: relative for the session, weekday+time for the weekly windows.
+        const relMin = (ms: number): string => {
+            const d = ms - Date.now();
+            if (d <= 0) return "now";
+            const hh = Math.floor(d / 3600000), mm = Math.round((d % 3600000) / 60000);
+            return hh ? `in ${hh}h ${mm}m` : `in ${mm}m`;
+        };
+        const atLabel = (ms: number): string => {
+            const dt = new Date(ms);
+            const wd = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][dt.getDay()];
+            return `${wd} ${String(dt.getHours()).padStart(2, "0")}:${String(dt.getMinutes()).padStart(2, "0")}`;
+        };
+        const winLine = (w: UsageReport["windows"]["session"], sonnet: boolean): RNode => {
+            const reset = w.kind === "session" ? (w.resetsAt ? `resets ${relMin(w.resetsAt)}` : "no active session") : (w.resetsAt ? `resets ${atLabel(w.resetsAt)}` : "");
+            const val = sonnet && (w.used || 0) === 0 ? "not used yet"
+                : w.pct != null ? `${Math.round(w.pct)}% used`
+                : `${fmtTok(w.used)} tok`;
+            return h(box, { flexDirection: "row", justifyContent: "space-between" },
+                txt(` ${w.label} `, {}),
+                txt(`${val}   ${reset} `, { fg: w.pct != null && w.pct >= 90 ? COL.red : COL.gray }));
+        };
         const rows: RNode[] = [
             h(box, { flexDirection: "row", marginTop: 1 },
                 txt(`Est. cost ${usd(u.cost)}`, { fg: COL.green, attributes: BOLD }),
@@ -378,6 +399,10 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
                 txt(`   out ${fmtTok(u.output)}`, { fg: COL.gray }),
                 txt(`   cache ${fmtTok(u.cacheRead)}`, { fg: COL.gray }),
                 txt(`   ${u.sessions} sessions`, { fg: COL.gray })),
+            txt("Usage windows (Claude limits)", { fg: COL.gray, attributes: BOLD, marginTop: 1 }),
+            winLine(u.windows.session, false),
+            winLine(u.windows.weeklyAll, false),
+            winLine(u.windows.weeklySonnet, true),
         ];
         if (u.block) {
             const b = u.block;

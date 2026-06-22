@@ -25,6 +25,7 @@
 import { homedir } from "node:os";
 import { join, sep } from "node:path";
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { readConfig } from "./config";
 
 /** Per-model price in USD per MILLION tokens. Ported from references/repos/claude-usage. */
 export interface ModelPrice { input: number; output: number; cacheRead: number; cacheWrite: number; }
@@ -92,6 +93,27 @@ export interface SessionRow {
     cost: number;
 }
 
+/**
+ * One usage "window" mirroring Claude Code's own UI gauges: the current session (5h),
+ * the weekly all-models window, and the weekly per-model (Sonnet) window. `pct` is null
+ * when no plan limit is configured (we read transcripts, not Anthropic's API, so we never
+ * fabricate a percentage - the card shows tokens used instead).
+ */
+export interface UsageWindow {
+    label: string;
+    kind: "session" | "weekly";
+    used: number;
+    cost: number;
+    /** Configured plan token limit, 0 = unset. */
+    limit: number;
+    /** used/limit*100 (capped 100), or null when limit is unset. */
+    pct: number | null;
+    /** epoch ms the window resets; 0 = no active window. */
+    resetsAt: number;
+}
+
+export interface UsageWindows { session: UsageWindow; weeklyAll: UsageWindow; weeklySonnet: UsageWindow; }
+
 /** The current Claude billing-style 5-hour block, computed locally from transcript timestamps. */
 export interface UsageBlock {
     /** True while now < endsAt (the window is still open). */
@@ -125,6 +147,8 @@ export interface UsageReport extends UsageBucket {
     recentSessions: SessionRow[];
     /** The current 5-hour block, or null when there is no recent activity. */
     block: UsageBlock | null;
+    /** Claude-style usage gauges: current session + weekly (all models / Sonnet only). */
+    windows: UsageWindows;
     /** Number of top-level session files scanned (subagent files excluded from the count). */
     sessions: number;
     /** Total JSONL files aggregated (including subagent transcripts, which consume tokens too). */
@@ -143,11 +167,22 @@ interface FileAgg {
     byDay: Record<string, UsageBucket>;
     byModel: Record<string, UsageBucket>;
     byHour: Record<string, UsageBucket>;
+    /** Per-day, per-model-family buckets (for the weekly per-model windows). */
+    byDayModel: Record<string, Record<string, UsageBucket>>;
     total: UsageBucket;
     lastActive: number;
     /** Recent activity samples (capped) for the 5-hour-block reconstruction. */
     events: UsageEvent[];
     sessionFile: boolean;
+}
+
+/** Coarse model family for the per-model weekly window (opus covers fable/mythos). */
+function familyOf(model: string): string {
+    const m = model.toLowerCase();
+    if (m.includes("opus") || m.includes("fable") || m.includes("mythos")) return "opus";
+    if (m.includes("sonnet")) return "sonnet";
+    if (m.includes("haiku")) return "haiku";
+    return "other";
 }
 
 const USAGE_TTL_MS = 20_000;
@@ -168,8 +203,16 @@ function emptyBucket(): UsageBucket {
     return { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, messages: 0, cost: 0 };
 }
 
+function emptyWindow(label: string, kind: "session" | "weekly"): UsageWindow {
+    return { label, kind, used: 0, cost: 0, limit: 0, pct: null, resetsAt: 0 };
+}
+
+function emptyWindows(): UsageWindows {
+    return { session: emptyWindow("Current session", "session"), weeklyAll: emptyWindow("All models", "weekly"), weeklySonnet: emptyWindow("Sonnet only", "weekly") };
+}
+
 function emptyReport(): UsageReport {
-    return { ...emptyBucket(), byDay: {}, byModel: {}, byProject: {}, byHour: {}, recentSessions: [], block: null, sessions: 0, scannedFiles: 0, generatedAt: Date.now() };
+    return { ...emptyBucket(), byDay: {}, byModel: {}, byProject: {}, byHour: {}, recentSessions: [], block: null, windows: emptyWindows(), sessions: 0, scannedFiles: 0, generatedAt: Date.now() };
 }
 
 /** Add `b` into `a` in place. */
@@ -222,11 +265,12 @@ function aggregateFile(path: string): Omit<FileAgg, "mtime" | "size" | "sessionF
     const byDay: Record<string, UsageBucket> = {};
     const byModel: Record<string, UsageBucket> = {};
     const byHour: Record<string, UsageBucket> = {};
+    const byDayModel: Record<string, Record<string, UsageBucket>> = {};
     const total = emptyBucket();
     const events: UsageEvent[] = [];
     let lastActive = 0;
     let raw: string;
-    try { raw = readFileSync(path, "utf8"); } catch { return { byDay, byModel, byHour, total, lastActive, events }; }
+    try { raw = readFileSync(path, "utf8"); } catch { return { byDay, byModel, byHour, byDayModel, total, lastActive, events }; }
     const seen = new Set<string>();
     for (const line of raw.split("\n")) {
         // Cheap pre-filter: only assistant lines carry usage; skip the rest before parsing.
@@ -255,6 +299,7 @@ function aggregateFile(path: string): Omit<FileAgg, "mtime" | "size" | "sessionF
         foldInto(byDay, day, b);
         foldInto(byModel, model, b);
         if (hour !== "??") foldInto(byHour, hour, b);
+        foldInto((byDayModel[day] ??= {}), familyOf(model), b);
         foldBucket(total, b);
         const tms = ts ? Date.parse(ts) : NaN;
         if (!Number.isNaN(tms)) {
@@ -264,7 +309,7 @@ function aggregateFile(path: string): Omit<FileAgg, "mtime" | "size" | "sessionF
     }
     // Keep only the most recent events (the block reconstruction only needs the tail).
     if (events.length > EVENTS_PER_FILE) { events.sort((a, c) => a.t - c.t); events.splice(0, events.length - EVENTS_PER_FILE); }
-    return { byDay, byModel, byHour, total, lastActive, events };
+    return { byDay, byModel, byHour, byDayModel, total, lastActive, events };
 }
 
 function readCache(): Record<string, FileAgg> {
@@ -303,6 +348,59 @@ function computeBlock(events: UsageEvent[], now: number): UsageBlock | null {
     return { active, startedAt: start, endsAt, tokens, cost, burnRatePerMin: burn, projectedTokens, projectedCost: cost + costPerTok * burn * remainMin };
 }
 
+const WEEKDAYS: Record<string, number> = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 };
+
+/**
+ * The current weekly window from a "<weekday> HH:MM" local-time spec (e.g. "mon 11:00"):
+ * the most recent past occurrence of that weekday/time, plus the next one (the reset). The
+ * start date string is local, compared against the UTC day keys of byDay - a sub-day skew
+ * at the boundary is acceptable for a weekly gauge.
+ */
+function weeklyAnchor(spec: string, now: number): { startDay: string; nextMs: number } {
+    const m = /^([a-z]{3})\s+(\d{1,2}):(\d{2})$/.exec((spec || "").trim().toLowerCase());
+    const wd = m && m[1]! in WEEKDAYS ? WEEKDAYS[m[1]!]! : 1;
+    const hh = m ? Math.min(23, Number(m[2])) : 0;
+    const mm = m ? Math.min(59, Number(m[3])) : 0;
+    const start = new Date(now);
+    start.setHours(hh, mm, 0, 0);
+    start.setDate(start.getDate() - ((start.getDay() - wd + 7) % 7));
+    if (start.getTime() > now) start.setDate(start.getDate() - 7);
+    const next = new Date(start.getTime());
+    next.setDate(next.getDate() + 7);
+    const pad = (n: number): string => String(n).padStart(2, "0");
+    const startDay = `${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}`;
+    return { startDay, nextMs: next.getTime() };
+}
+
+/** Build the Claude-style usage gauges from the per-day-family map, the block and the config. */
+function computeWindows(byDayModel: Record<string, Record<string, UsageBucket>>, block: UsageBlock | null, now: number): UsageWindows {
+    const cfg = readConfig().config;
+    const pctOf = (used: number, limit: number): number | null => limit > 0 ? Math.min(100, used / limit * 100) : null;
+    const session: UsageWindow = {
+        label: "Current session", kind: "session",
+        used: block ? block.tokens : 0,
+        cost: block ? block.cost : 0,
+        limit: cfg.planSessionLimit || 0,
+        pct: pctOf(block ? block.tokens : 0, cfg.planSessionLimit || 0),
+        resetsAt: block && block.active ? block.endsAt : 0,
+    };
+    const { startDay, nextMs } = weeklyAnchor(cfg.planWeeklyReset, now);
+    let allTok = 0, allCost = 0, sonTok = 0, sonCost = 0;
+    for (const [day, fams] of Object.entries(byDayModel)) {
+        if (day < startDay) continue; // only days within the current weekly window
+        for (const [fam, b] of Object.entries(fams)) {
+            const t = b.input + b.output + b.cacheRead + b.cacheCreation;
+            allTok += t; allCost += b.cost;
+            if (fam === "sonnet") { sonTok += t; sonCost += b.cost; }
+        }
+    }
+    return {
+        session,
+        weeklyAll: { label: "All models", kind: "weekly", used: allTok, cost: allCost, limit: cfg.planWeeklyLimit || 0, pct: pctOf(allTok, cfg.planWeeklyLimit || 0), resetsAt: nextMs },
+        weeklySonnet: { label: "Sonnet only", kind: "weekly", used: sonTok, cost: sonCost, limit: cfg.planWeeklySonnetLimit || 0, pct: pctOf(sonTok, cfg.planWeeklySonnetLimit || 0), resetsAt: nextMs },
+    };
+}
+
 /**
  * Build the usage report from scratch (re-reading only files whose mtime/size changed
  * since the last build). Synchronous and potentially heavy on a cold cache; callers run
@@ -317,18 +415,20 @@ export function buildUsage(): UsageReport {
     const now = Date.now();
     const blockEvents: UsageEvent[] = [];
     const sessionRows: SessionRow[] = [];
+    const byDayModel: Record<string, Record<string, UsageBucket>> = {};
     for (const path of files) {
         let st: import("node:fs").Stats;
         try { st = statSync(path); } catch { continue; }
         const sessionFile = !path.replace(/\\/g, "/").includes("/subagents/");
         const hit = prev[path];
-        const agg: FileAgg = (hit && hit.mtime === st.mtimeMs && hit.size === st.size && Array.isArray(hit.events))
+        const agg: FileAgg = (hit && hit.mtime === st.mtimeMs && hit.size === st.size && Array.isArray(hit.events) && hit.byDayModel)
             ? hit
             : { mtime: st.mtimeMs, size: st.size, sessionFile, ...aggregateFile(path) };
         next[path] = agg;
         for (const [day, b] of Object.entries(agg.byDay)) { foldInto(report.byDay, day, b); foldBucket(report, b); }
         for (const [model, b] of Object.entries(agg.byModel)) foldInto(report.byModel, model, b);
         for (const [hour, b] of Object.entries(agg.byHour)) foldInto(report.byHour, hour, b);
+        for (const [day, fams] of Object.entries(agg.byDayModel)) for (const [fam, b] of Object.entries(fams)) foldInto((byDayModel[day] ??= {}), fam, b);
         foldInto(report.byProject, projectOf(path, root + sep), agg.total);
         report.scannedFiles++;
         if (agg.sessionFile) {
@@ -348,6 +448,7 @@ export function buildUsage(): UsageReport {
     sessionRows.sort((a, b) => b.lastActive - a.lastActive);
     report.recentSessions = sessionRows.slice(0, RECENT_SESSIONS);
     report.block = computeBlock(blockEvents, now);
+    report.windows = computeWindows(byDayModel, report.block, now);
     report.generatedAt = now;
     return report;
 }

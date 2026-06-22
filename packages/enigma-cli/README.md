@@ -573,6 +573,12 @@ session transcripts (`~/.claude/projects/.../*.jsonl`) and reports:
 - A **current 5-hour block** computed locally from transcript timestamps: tokens + cost
   used in the open window, the **burn rate** (tokens/min) and a projected end-of-window
   total. (No Anthropic API is called - this is reconstructed from your local logs.)
+- The **same usage windows Claude Code shows** as gauges: **Current session**, **Weekly -
+  All models**, and **Weekly - Sonnet only**, each with its reset time. The **% used**
+  needs your plan limit, which you set on the card (dashboard) or with
+  `enigma config plan-weekly-limit <tokens>` / `plan-session-limit` / `plan-weekly-sonnet-limit`;
+  the weekly reset day/time is `enigma config plan-weekly-reset "mon 11:00"`. Until a limit
+  is set the card honestly shows tokens used instead of a fabricated percentage.
 
 It is read-only and loopback-only; nothing is sent anywhere. Off by default because it
 reads your session logs, which are broader than enigma's own compression data.

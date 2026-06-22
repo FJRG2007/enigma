@@ -141,6 +141,15 @@
         .linput { flex: 1; min-width: 0; background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-radius: 7px; padding: 5px 10px; font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
         .laddb { background: var(--surface2); color: var(--accent); border: 1px solid var(--border); border-radius: 7px; padding: 5px 14px; font-size: 12px; cursor: pointer; font-family: inherit; }
         .laddb:hover { border-color: var(--accent); }
+        /* Claude-style usage window gauges (current session / weekly all / weekly Sonnet). */
+        .wgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin-bottom: 18px; }
+        .wcard { background: var(--surface2); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
+        .wtitle { font-size: 13px; font-weight: 600; color: var(--text); }
+        .wreset { font-size: 12px; color: var(--muted); margin-top: 2px; }
+        .wval { font-size: 22px; font-weight: 600; color: var(--accent); margin-top: 12px; }
+        .wval.muted { font-size: 14px; font-weight: 500; color: var(--muted); }
+        .wset { display: flex; gap: 6px; margin-top: 10px; }
+        .wlimit { flex: 1; min-width: 0; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 7px; padding: 4px 8px; font-size: 12px; }
         .sys-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0 24px; }
         .sys-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--surface2); font-size: 13px; }
         .sys-item .k { color: var(--muted); }
@@ -276,6 +285,9 @@
             <p>Measured token consumption and estimated cost, read-only from your own Claude Code session transcripts (<code>~/.claude/projects</code>). Cost is an estimate from a per-model price table; real spend is billed by Anthropic. Nothing is sent anywhere.</p>
         </div>
         <div class="panel" id="usagePanel" style="display:none">
+            <h2 style="margin:0 0 4px">Usage limits <small>same windows Claude Code shows</small></h2>
+            <div class="sub" style="margin-bottom:12px">Reset times and tokens are measured from your transcripts; the <b>% used</b> needs your plan limit (set it on a card, or with <code>enigma config plan-weekly-limit &lt;tokens&gt;</code>). The weekly reset day/time is <code>enigma config plan-weekly-reset "mon 11:00"</code>.</div>
+            <div id="uWindows"></div>
             <div class="grid" style="margin-bottom:16px">
                 <div class="card"><div class="label">Est. Cost</div><div id="uCost" class="value accent">-</div><div class="foot">All sessions, per-model pricing</div></div>
                 <div class="card"><div class="label">Cache Saved</div><div id="uCacheMoney" class="value good">-</div><div class="foot">Est. from prompt caching</div></div>
@@ -515,6 +527,63 @@
         // Real tool-usage panel (Claude Code transcripts). null = the opt-in flag is off.
         function shortProject(p) { p = String(p || ""); return p.length > 44 ? "..." + p.slice(-41) : p; }
 
+        // --- Claude-style usage windows (current session / weekly all / weekly Sonnet) ---
+        function fmtResetIn(ms) {
+            const d = ms - Date.now();
+            if (d <= 0) return "now";
+            const h = Math.floor(d / 3600000), m = Math.round((d % 3600000) / 60000);
+            return h ? ("in " + h + " hr " + m + " min") : ("in " + m + " min");
+        }
+        function fmtResetAt(ms) {
+            const dt = new Date(ms);
+            return "Resets " + dt.toLocaleDateString([], { weekday: "short" }) + " " + dt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+        }
+        function windowCard(w, sub) {
+            const reset = w.kind === "session"
+                ? (w.resetsAt ? "Resets " + fmtResetIn(w.resetsAt) : "No active session")
+                : (w.resetsAt ? fmtResetAt(w.resetsAt) : "");
+            let body;
+            if (sub === "weeklySonnet" && (w.used || 0) === 0) {
+                body = '<div class="wval muted">You haven\'t used Sonnet yet</div>';
+            } else if (w.pct != null) {
+                const p = Math.round(w.pct);
+                const col = w.pct >= 90 ? "var(--accent2)" : "var(--accent)";
+                body = '<div class="wval">' + p + '% used</div>'
+                    + '<div class="bar-track" style="margin-top:8px"><div class="bar-fill" style="width:' + Math.min(100, w.pct) + '%;background:' + col + '"></div></div>';
+            } else {
+                body = '<div class="wval">' + fmt(w.used || 0) + ' tok</div>'
+                    + '<div class="wset"><input type="number" min="0" class="wlimit" data-plan="' + sub + '" placeholder="set limit (tokens)">'
+                    + '<button type="button" class="laddb" data-plan="' + sub + '">Set</button></div>';
+            }
+            return '<div class="wcard"><div class="wtitle">' + esc(w.label) + '</div><div class="wreset">' + esc(reset) + '</div>' + body + '</div>';
+        }
+        function renderWindows(u) {
+            const w = u && u.windows;
+            if (!w) { $("uWindows").innerHTML = ""; return; }
+            $("uWindows").innerHTML = '<div class="wgrid">'
+                + windowCard(w.session, "session")
+                + windowCard(w.weeklyAll, "weekly")
+                + windowCard(w.weeklySonnet, "weeklySonnet")
+                + "</div>";
+        }
+        async function planSet(key, value) {
+            try { await fetch("/api/plan", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key, value: Number(value) }) }); refreshAll(true); }
+            catch { /* leave as-is */ }
+        }
+        function wireUsage() {
+            const el = $("uWindows");
+            el.addEventListener("click", (e) => {
+                const b = e.target.closest("button[data-plan]"); if (!b) return;
+                const inp = el.querySelector('input.wlimit[data-plan="' + b.dataset.plan + '"]');
+                if (inp && inp.value) planSet(b.dataset.plan, inp.value);
+            });
+            el.addEventListener("keydown", (e) => {
+                if (e.key !== "Enter") return;
+                const inp = e.target.closest("input.wlimit");
+                if (inp && inp.value) planSet(inp.dataset.plan, inp.value);
+            });
+        }
+
         // One token/cost breakdown table (By Model / By Project), sorted by cost then tokens.
         function renderUsageTable(el, map, pending, label) {
             const entries = Object.entries(map || {}).sort((a, b) => ((b[1].cost || 0) - (a[1].cost || 0)) || ((b[1].input + b[1].output) - (a[1].input + a[1].output)));
@@ -540,6 +609,7 @@
             if (!u) { panel.style.display = "none"; hint.style.display = "block"; return; }
             hint.style.display = "none";
             panel.style.display = "block";
+            renderWindows(u);
             $("uCost").textContent = fmtUsd(u.cost || 0);
             $("uCacheMoney").textContent = fmtUsd(cacheMoney(u.cacheRead || 0));
             $("uCacheRead").textContent = fmt(u.cacheRead || 0);
@@ -1180,6 +1250,7 @@
         wireSettings();
         wireSkills();
         wireAccounts();
+        wireUsage();
         $("cfgExport").addEventListener("click", exportConfig);
         $("cfgImport").addEventListener("click", importConfig);
         $("updateBtn").addEventListener("click", runUpdate);
