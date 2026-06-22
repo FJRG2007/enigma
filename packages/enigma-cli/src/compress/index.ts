@@ -19,7 +19,7 @@ import { ccrMarker, recordStats, retrieve, store } from "./ccr";
 
 export type { ContentType } from "./detect";
 export type { CcrStats, SourceStats, HistoryPoint } from "./ccr";
-export { retrieve, readStats, readHistory } from "./ccr";
+export { retrieve, readStats, readHistory, clearCcr, ccrCacheStats } from "./ccr";
 
 const MIN_LENGTH = 100;
 
@@ -63,7 +63,7 @@ export function compress(content: string, opts: CompressOptions = {}): CompressR
 
     if (offloaded === 0 || compressed === content) {
         const r = passthrough(type);
-        if (!opts.noStats) recordStats(tokensBefore, tokensBefore, opts.source);
+        if (!opts.noStats) recordStats(tokensBefore, tokensBefore, opts.source, type);
         return r;
     }
 
@@ -71,7 +71,7 @@ export function compress(content: string, opts: CompressOptions = {}): CompressR
     const ccrHash = store(content);
     compressed = `${compressed}\n${ccrMarker(ccrHash, offloaded)}`;
     const tokensAfter = estimateTokens(compressed);
-    if (!opts.noStats) recordStats(tokensBefore, tokensAfter, opts.source);
+    if (!opts.noStats) recordStats(tokensBefore, tokensAfter, opts.source, type);
     return {
         compressed, contentType: type, tokensBefore, tokensAfter,
         tokensSaved: Math.max(0, tokensBefore - tokensAfter),

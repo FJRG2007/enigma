@@ -16,12 +16,15 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { existsSync, readFileSync } from "node:fs";
 
-// npm/Node "os" identifiers (win32, not "windows"); kept stable across the toolchain.
-const PLATFORMS = { win32: "win32", darwin: "darwin", linux: "linux" };
-const ARCHES = { x64: "x64", arm64: "arm64" };
+// Allowlists of the npm/Node "os" identifiers we publish binaries for (win32, not
+// "windows"). An unsupported host resolves to undefined, which platformKeys() turns
+// into "no binary for this host" rather than guessing a non-existent asset name.
+const SUPPORTED_PLATFORMS = new Set(["win32", "darwin", "linux"]);
+const SUPPORTED_ARCHES = new Set(["x64", "arm64"]);
+const allowed = (set, value) => (set.has(value) ? value : undefined);
 
-export const PLATFORM = PLATFORMS[os.platform()];
-export const ARCH = ARCHES[os.arch()];
+export const PLATFORM = allowed(SUPPORTED_PLATFORMS, os.platform());
+export const ARCH = allowed(SUPPORTED_ARCHES, os.arch());
 export const isWindows = PLATFORM === "win32";
 
 /** This package's root (the directory holding package.json), i.e. <pkg>/bin/.. */

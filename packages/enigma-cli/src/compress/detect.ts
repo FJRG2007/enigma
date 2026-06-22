@@ -36,9 +36,7 @@ export function detect(content: string): Detection {
     const stripped = content.trim();
 
     // JSON: confirmed by a real parse so it is authoritative.
-    if (stripped.startsWith("{") || stripped.startsWith("[")) {
-        try { JSON.parse(stripped); return { type: "json", confidence: 1 }; } catch { /* not JSON */ }
-    }
+    if (stripped.startsWith("{") || stripped.startsWith("[")) try { JSON.parse(stripped); return { type: "json", confidence: 1 }; } catch { /* not JSON */ }
     if (looksLikeDiff(content)) return { type: "diff", confidence: 0.8 };
     // Logs: a timestamped line or a recognizable level token, common in tool output.
     if (TIMESTAMP_LINE.test(content) || LOG_LEVELS.test(content)) return { type: "log", confidence: 0.7 };

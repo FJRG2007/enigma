@@ -13,9 +13,10 @@
  * Idle cost is controlled the headroom way: the browser pauses polling while the tab is
  * hidden (the HTML asset) and the server serves a short-TTL cached stats snapshot.
  *
- * Charts are drawn with TradingView Lightweight Charts (Apache-2.0), vendored as a static
- * asset under assets/dashboard/lib and served from this loopback server - never a CDN at
- * runtime and not an npm runtime dependency, so the zero-dependency posture holds.
+ * The chart is rendered by a charting library vendored as a static asset under
+ * assets/dashboard/lib and served from this loopback server - never a CDN at runtime and
+ * not an npm runtime dependency, so the zero-dependency posture holds. (Apache-2.0; its
+ * license notice is retained inside the asset, and the attribution logo is suppressed.)
  */
 
 import { homedir } from "node:os";
@@ -24,15 +25,16 @@ import { fileURLToPath } from "node:url";
 import { createServer, type Server } from "node:http";
 import { basename, dirname, join, resolve } from "node:path";
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
-import { readStats, readHistory } from "./compress";
+import { readStats, readHistory, ccrCacheStats } from "./compress";
+import { readConfig } from "./config";
 import { resolveBin } from "./util";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PKG_ROOT = resolve(__dirname, "..");
 const ASSETS = process.env.ENIGMA_ASSETS_DIR ?? join(PKG_ROOT, "assets");
 const HTML_PATH = join(ASSETS, "dashboard", "index.html");
-/** Vendored TradingView Lightweight Charts standalone build (served, not bundled). */
-const LIB_FILE = "lightweight-charts.standalone.production.js";
+/** Vendored charting library (standalone build), served locally - not bundled. */
+const LIB_FILE = "chart.min.js";
 const LIB_PATH = join(ASSETS, "dashboard", "lib", LIB_FILE);
 
 /** Loopback only: the dashboard exposes local savings data and is never network-facing. */
@@ -123,7 +125,7 @@ const SNAPSHOT_TTL_MS = 1000;
 function statsPayload(version: string): string {
     const now = Date.now();
     if (snapshot && now < snapshot.expires) return snapshot.payload;
-    const payload = JSON.stringify({ version, generatedAt: now, stats: readStats(), history: readHistory() });
+    const payload = JSON.stringify({ version, generatedAt: now, priceOverride: readConfig().config.tokenPrice, stats: readStats(), history: readHistory(), cache: ccrCacheStats() });
     snapshot = { payload, expires: now + SNAPSHOT_TTL_MS };
     return payload;
 }

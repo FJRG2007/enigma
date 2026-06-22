@@ -21,19 +21,29 @@ committed.
 
 ## Install
 
-One command, no global install, no prompts - deploy the skills to every supported
+Recommended - install the `enigma` command globally, then run the interactive hub:
+
+```bash
+npm install -g enigma-cli@latest   # provides the `enigma` command
+enigma                             # interactive hub: pick what to set up
+```
+
+Or via the install script (clears the npm cache, installs the latest version, then
+runs `enigma install` for you - handy where npm `postinstall` scripts are disabled):
+
+```bash
+# macOS / Linux
+curl -fsSL https://raw.githubusercontent.com/FJRG2007/enigma/main/install.sh | sh
+
+# Windows (PowerShell)
+irm https://raw.githubusercontent.com/FJRG2007/enigma/main/install.ps1 | iex
+```
+
+Or one-shot, no global install, no prompts - deploy the skills to every supported
 agent at user level:
 
 ```bash
 npx enigma-cli@latest install --all --yes
-```
-
-Or install the command and pick interactively:
-
-```bash
-npm install -g enigma-cli      # provides the `enigma` command
-enigma install
-enigma                         # interactive hub: pick what to set up
 ```
 
 <table>
@@ -157,6 +167,7 @@ Use it directly:
 cat big-output.json | enigma compress      # compressed to stdout, savings to stderr
 enigma compress --retrieve <hash>          # restore a cached original
 enigma compress --stats                    # cumulative token savings
+enigma compress --clear                    # wipe all dashboard data (stats/history/cache)
 ```
 
 Or expose it to your agents as an MCP server. Turning the toggle on registers
@@ -218,8 +229,11 @@ enigma skills ...      List skills, discard one (removed everywhere and skipped
                        by installs/updates) or restore it (list/discard/restore)
 enigma issue [type]    Prefilled GitHub issue URL (OS, versions, terminal, agents)
 enigma compress [file] Compress JSON/logs/text to fewer tokens (reversible);
-                       --retrieve <hash> restores, --stats shows total savings
+                       --retrieve <hash> restores, --stats shows total savings,
+                       --clear wipes all dashboard data (stats/history/cache)
 enigma mcp             Run the context-compression MCP server over stdio
+enigma dashboard|dash  Open the local savings dashboard in your browser (http://enigma,
+                       or http://localhost:24282 if :80/hosts is unavailable)
 enigma seal            Maintenance: (re)compute skill content hashes
 enigma check           Integrity gate: verify skills are well-formed and sealed
 enigma help | version

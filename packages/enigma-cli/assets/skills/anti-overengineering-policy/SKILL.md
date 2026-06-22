@@ -28,6 +28,7 @@ higher one and move on. The first lazy solution that works is the right one.
 ## Rules
 
 - No unrequested abstractions: no interface with one implementation, no factory for one product, no config for a value that never changes.
+- No passthrough indirection: a lookup table whose keys equal its values (`{ win32: "win32" }`), a wrapper that only forwards its arguments, a constant aliasing another constant, a variable used once. If a construct maps a thing to itself, delete it - use the value directly, or a `Set` when the real intent is an allowlist/membership test.
 - No boilerplate or scaffolding "for later"; later can scaffold for itself.
 - Deletion over addition. Boring over clever - clever is what someone decodes at 3am.
 - Fewest files possible. The shortest working diff wins.

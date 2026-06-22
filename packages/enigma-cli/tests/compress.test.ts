@@ -14,7 +14,7 @@ const HOME = mkdtempSync(join(tmpdir(), "enigma-compress-"));
 process.env.USERPROFILE = HOME;
 process.env.HOME = HOME;
 
-const { compress, retrieve } = await import("../src/compress");
+const { compress, retrieve, readStats, readHistory, clearCcr } = await import("../src/compress");
 const { detect } = await import("../src/compress/detect");
 const { markerHash } = await import("../src/compress/ccr");
 
@@ -84,4 +84,25 @@ test("code passes through (no blind lossy transform)", () => {
     expect(r.contentType).toBe("code");
     expect(r.compressed).toBe(code);
     expect(r.offloaded).toBe(0);
+});
+
+test("records a per-content-type breakdown and the best single saving", () => {
+    clearCcr();
+    const r = compress(rows(200), { source: "cli" }); // a big JSON compression
+    const s = readStats();
+    expect(s.byType?.json).toBeDefined();
+    expect(s.byType!.json!.tokensSaved).toBeGreaterThan(0);
+    expect(s.best).toBe(r.tokensSaved); // single call -> best equals its saving
+    // The history point carries source + content type for the recent-compressions table.
+    const last = readHistory().at(-1)!;
+    expect(last.s).toBe("cli");
+    expect(last.c).toBe("json");
+});
+
+test("clearCcr wipes recorded data and resets the stats", () => {
+    compress(rows(200));                        // record some stats + cache an original
+    expect(readStats().calls).toBeGreaterThan(0);
+    const { files } = clearCcr();
+    expect(files).toBeGreaterThan(0);           // stats.json + history.jsonl + cache file(s)
+    expect(readStats().calls).toBe(0);          // back to the empty baseline
 });

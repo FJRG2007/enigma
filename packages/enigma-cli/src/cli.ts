@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { readFileSync } from "node:fs";
 import * as p from "@clack/prompts";
 import { readJson } from "./util";
-import { compress, retrieve, readStats } from "./compress";
+import { compress, retrieve, readStats, clearCcr } from "./compress";
 import type { ContentType } from "./compress";
 import { collectReporter } from "./reporter";
 import {
@@ -67,6 +67,8 @@ interface CliOptions extends InstallOptions {
     retrieve: string | null;
     /** `compress`: force a content type instead of auto-detecting. */
     compressType: string | null;
+    /** `compress`: delete all CCR data (stats, history, cache) and reset the dashboard. */
+    clear: boolean;
 }
 
 function parseArgs(argv: string[]): CliOptions {
@@ -76,7 +78,7 @@ function parseArgs(argv: string[]): CliOptions {
         skillsOnly: false, memoryOnly: false, prune: true, keepModified: false,
         bypass: null, noBypass: false, outputStyle: null, minimalCode: null, dashboard: null,
         force: false, all: false, yes: false, login: false, dryRun: false, help: false, version: false,
-        stats: false, retrieve: null, compressType: null,
+        stats: false, retrieve: null, compressType: null, clear: false,
     };
     for (let i = 0; i < argv.length; i++) {
         const a = argv[i]!;
@@ -106,6 +108,7 @@ function parseArgs(argv: string[]): CliOptions {
             case "--stats": opts.stats = true; break;
             case "--retrieve": opts.retrieve = next(); break;
             case "--type": opts.compressType = next(); break;
+            case "--clear": opts.clear = true; break;
             case "--force": opts.force = true; break;
             case "--login": opts.login = true; break;
             case "-y": case "--yes": opts.yes = true; break;
@@ -172,7 +175,8 @@ Commands:
                        agent - Claude Code, Codex, OpenCode - not in this CLI)
   compress [file]      Compress JSON/logs/text to fewer tokens (reversible via CCR);
                        reads a file or stdin. --retrieve <hash> restores an original,
-                       --stats shows cumulative savings, --type forces the content type
+                       --stats shows cumulative savings, --clear wipes all dashboard
+                       data (stats/history/cache), --type forces the content type
   mcp                  Run the context-compression MCP server over stdio (tools:
                        enigma_compress, enigma_retrieve, enigma_stats). Usually launched
                        by an agent, not by hand; enable deployment with 'config compress on'
@@ -574,6 +578,11 @@ function runCompressCli(opts: CliOptions): number {
         const s = readStats();
         const pct = s.tokensBefore ? Math.round((s.tokensSaved / s.tokensBefore) * 100) : 0;
         console.log(`calls: ${s.calls}\ntokens before: ${s.tokensBefore}\ntokens after: ${s.tokensAfter}\ntokens saved: ${s.tokensSaved} (${pct}%)`);
+        return 0;
+    }
+    if (opts.clear) {
+        const { files, bytes } = clearCcr();
+        console.log(`Cleared all compression data: ${files} file(s) removed, ${(bytes / 1024).toFixed(1)} KB freed. The dashboard is now reset.`);
         return 0;
     }
     const file = opts.positionals[0];

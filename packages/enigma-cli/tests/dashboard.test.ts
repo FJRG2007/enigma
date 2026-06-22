@@ -26,13 +26,16 @@ test("serves the HTML shell, a stats payload, and 404s the rest", async () => {
         const html = await fetch(`${base}/`);
         expect(html.status).toBe(200);
         expect(html.headers.get("content-type")).toContain("text/html");
-        expect(await html.text()).toContain("<!doctype html>");
+        const page = await html.text();
+        expect(page).toContain("<!doctype html>");
+        // The chart library's attribution logo is suppressed in our own CSS.
+        expect(page).toContain("#tv-attr-logo { display: none");
 
         // The vendored chart library is served from the loopback server (no CDN).
-        const lib = await fetch(`${base}/lib/lightweight-charts.standalone.production.js`);
+        const lib = await fetch(`${base}/lib/chart.min.js`);
         expect(lib.status).toBe(200);
         expect(lib.headers.get("content-type")).toContain("javascript");
-        expect(await lib.text()).toContain("TradingView");
+        expect(await lib.text()).toContain("createChart");
 
         const api = await fetch(`${base}/api/stats`);
         expect(api.status).toBe(200);

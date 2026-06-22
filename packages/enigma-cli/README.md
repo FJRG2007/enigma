@@ -8,18 +8,29 @@ committed.
 
 ## Install
 
-One command, no global install, no prompts - deploy the skills to every supported
+Recommended - install the `enigma` command globally, then run the interactive hub:
+
+```bash
+npm install -g enigma-cli@latest   # provides the `enigma` command
+enigma                             # interactive hub: pick what to set up
+```
+
+Or via the install script (clears the npm cache, installs the latest version, then
+runs `enigma install` for you - handy where npm `postinstall` scripts are disabled):
+
+```bash
+# macOS / Linux
+curl -fsSL https://raw.githubusercontent.com/FJRG2007/enigma/main/install.sh | sh
+
+# Windows (PowerShell)
+irm https://raw.githubusercontent.com/FJRG2007/enigma/main/install.ps1 | iex
+```
+
+Or one-shot, no global install, no prompts - deploy the skills to every supported
 agent at user level:
 
 ```bash
 npx enigma-cli@latest install --all --yes
-```
-
-Or install the command and pick interactively:
-
-```bash
-npm install -g enigma-cli      # provides the `enigma` command
-enigma                         # interactive hub: pick what to set up
 ```
 
 That first install is the only one you ever need to run by hand: afterwards,
@@ -72,8 +83,11 @@ enigma account ...     Manage per-tool accounts (list/add/use/login/remove)
 enigma profile ...     Group one account per tool (list/add/use/set/unset/remove)
 enigma skills ...      List skills and manage discards (list/discard/restore)
 enigma compress [file] Compress JSON/logs/text to fewer tokens (reversible via CCR);
-                       --retrieve <hash> restores, --stats shows total savings
+                       --retrieve <hash> restores, --stats shows total savings,
+                       --clear wipes all dashboard data (stats/history/cache)
 enigma mcp             Run the context-compression MCP server over stdio
+enigma dashboard|dash  Open the local savings dashboard in your browser (http://enigma,
+                       or http://localhost:24282 if :80/hosts is unavailable)
 enigma seal            Maintenance: (re)compute skill content hashes
 enigma check           Integrity gate: verify skills are well-formed and sealed
 enigma help | version
@@ -462,7 +476,23 @@ cat tool-output.json | enigma compress     # compressed to stdout, savings to st
 enigma compress big.log                     # compress a file
 enigma compress --retrieve <hash>           # restore a cached original
 enigma compress --stats                     # cumulative token savings
+enigma compress --clear                     # wipe all dashboard data (stats/history/cache)
 ```
+
+### Savings dashboard
+
+`enigma dashboard` (alias `dash`) serves a local, loopback-only browser dashboard
+of the token savings - totals, **estimated money saved**, average/best per call, a
+per-day graph (toggle tokens/$ and daily/cumulative), breakdowns by the app that
+requested each compression (Claude Code, OpenCode, Codex, or the CLI) and by content
+type (JSON/logs/text...), a daily/weekly/monthly savings history, a recent-compressions
+table, and reversible-cache (CCR) stats. It runs only while open; `enigma config
+dashboard always` keeps a lightweight background daemon, and `enigma compress --clear`
+resets the data.
+
+The money figure is an estimate: enigma isn't a proxy, so it can't see the model -
+it prices saved tokens per source with sensible defaults. Override the rate with
+`enigma config token-price <usd-per-1M-input-tokens>` (0 restores the defaults).
 
 ### As an MCP server
 

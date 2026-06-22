@@ -5,7 +5,7 @@
  * <on|off>` it sets one option via the shared registry (settings-registry.ts).
  */
 
-import { readConfig } from "./config";
+import { readConfig, setEnigmaValue } from "./config";
 import { ALL_SETTINGS, CATEGORIES, parseBool, valueLabel } from "./settings-registry";
 import type { ApplyResult, Scope } from "./settings-registry";
 
@@ -46,9 +46,23 @@ export async function runConfigCli(positionals: string[], scope: Scope | null, i
         return 0;
     }
 
+    // token-price is a numeric dashboard setting (USD per 1M input tokens), outside the
+    // boolean/choice registry. 0 restores the per-source default prices.
+    if (rawKey === "token-price") {
+        const n = Number(rawValue);
+        if (rawValue === undefined || !Number.isFinite(n) || n < 0) {
+            console.error("Missing/invalid value for 'token-price'. Usage: enigma config token-price <usd-per-1M-input-tokens> (e.g. 3, or 0 for per-source defaults) [-g|-l]");
+            return 1;
+        }
+        const target: Scope = scope || "global";
+        const path = setEnigmaValue("tokenPrice", n, target);
+        console.log(`Set token-price = ${n} USD/1M (${target})${path ? ` in ${path}` : ""}.`);
+        return 0;
+    }
+
     const setting = ALL_SETTINGS.find((s) => s.key === rawKey);
     if (!setting) {
-        console.error(`Unknown config key: ${rawKey}. Known keys: ${ALL_SETTINGS.map((s) => s.key).join(", ")}.`);
+        console.error(`Unknown config key: ${rawKey}. Known keys: ${ALL_SETTINGS.map((s) => s.key).join(", ")}, token-price.`);
         return 1;
     }
     const usage = setting.choices ? `<${setting.choices.join("|")}> (or on|off)` : "<on|off>";

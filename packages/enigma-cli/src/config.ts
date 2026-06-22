@@ -63,6 +63,8 @@ export interface EnigmaConfig {
     compress: boolean;
     /** Local savings dashboard: off | on-demand (default when enabled) | always (background daemon). */
     dashboard: DashboardMode;
+    /** Dashboard money estimate: USD per 1M input tokens; 0 = use per-source defaults. */
+    tokenPrice: number;
     /** Agents the user explicitly opted out of bypass; never auto-enabled even when permissionBypass is on. */
     bypassDisabled: string[];
     /** Skills the user discarded: removed from deployments and skipped by installs/updates until restored. */
@@ -107,7 +109,7 @@ export interface EnigmaConfig {
  */
 export const CONFIG_DEFAULTS: EnigmaConfig = {
     commitEmoji: true, updateNotifier: true, fullscreen: true, parallelSubagents: false, outputStyle: "off", minimalCode: "full",
-    autoSync: true, remoteSkills: true, permissionBypass: true, autoLint: false, compress: false, dashboard: "off", bypassDisabled: [], discardedSkills: [],
+    autoSync: true, remoteSkills: true, permissionBypass: true, autoLint: false, compress: false, dashboard: "off", tokenPrice: 0, bypassDisabled: [], discardedSkills: [],
 };
 
 export type EnigmaConfigKey = keyof EnigmaConfig;
@@ -133,7 +135,7 @@ export function readConfig(): { config: EnigmaConfig; sources: string[] } {
  * already present. Accepts boolean toggles and string-valued settings alike.
  * Returns the written file path.
  */
-export function setEnigmaValue(key: EnigmaConfigKey, value: boolean | string | string[], scope: "global" | "local"): string {
+export function setEnigmaValue(key: EnigmaConfigKey, value: boolean | number | string | string[], scope: "global" | "local"): string {
     const path = configPath(scope);
     const current = readJson<Record<string, unknown>>(path) || {};
     const next = { ...current, [key]: value };

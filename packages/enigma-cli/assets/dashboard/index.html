@@ -20,10 +20,10 @@
         .wordmark { font-size: 20px; font-weight: 700; letter-spacing: 0.5px; }
         .wordmark span { color: var(--accent); }
         .sub { color: var(--muted); font-size: 13px; }
-        .live { margin-left: auto; display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
+        .live { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
         .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--good); box-shadow: 0 0 8px var(--good); }
         .dot.stale { background: var(--muted); box-shadow: none; }
-        .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 20px; }
         .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
         .card .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.6px; }
         .card .value { font-size: 28px; font-weight: 700; margin-top: 6px; }
@@ -34,7 +34,8 @@
         .panel-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
         .panel h2 { font-size: 14px; font-weight: 600; margin: 0; color: var(--text); }
         .panel h2 small { color: var(--muted); font-weight: 400; margin-left: 8px; }
-        .ranges { margin-left: auto; display: flex; gap: 4px; }
+        .ctrls { margin-left: auto; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+        .ranges { display: flex; gap: 4px; }
         .ranges button {
             background: var(--surface2); color: var(--muted); border: 1px solid var(--border);
             border-radius: 7px; padding: 4px 10px; font-size: 12px; cursor: pointer; font-family: inherit;
@@ -42,6 +43,13 @@
         .ranges button:hover { color: var(--text); }
         .ranges button.active { background: var(--accent); color: #1a1206; border-color: var(--accent); font-weight: 600; }
         .chartwrap { position: relative; width: 100%; height: 280px; }
+        /* Suppress the charting library's attribution logo. */
+        #tv-attr-logo { display: none !important; }
+        .nav { margin-left: auto; display: flex; align-items: center; gap: 18px; }
+        .links { display: flex; gap: 14px; align-items: center; }
+        .links a { color: var(--muted); display: inline-flex; transition: color 0.15s; }
+        .links a:hover { color: var(--accent); }
+        .links svg { width: 19px; height: 19px; display: block; }
         .tip {
             position: absolute; pointer-events: none; z-index: 5; background: var(--surface2);
             border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; font-size: 12px;
@@ -54,7 +62,18 @@
         .bar-track { flex: 1; height: 14px; background: var(--surface2); border-radius: 7px; overflow: hidden; }
         .bar-fill { height: 100%; border-radius: 7px; }
         .bar-row .num { width: 90px; text-align: right; font-variant-numeric: tabular-nums; }
+        .bar-row .money { width: 78px; text-align: right; color: var(--good); font-variant-numeric: tabular-nums; }
         .empty { color: var(--muted); font-size: 14px; text-align: center; padding: 40px 0; }
+        .tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+        .tbl th { text-align: left; color: var(--muted); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; padding: 6px 10px; border-bottom: 1px solid var(--border); }
+        .tbl td { padding: 7px 10px; border-bottom: 1px solid var(--surface2); font-variant-numeric: tabular-nums; }
+        .tbl tr:last-child td { border-bottom: none; }
+        .tbl .r { text-align: right; }
+        .tbl .good { color: var(--good); }
+        .tbl-wrap { max-height: 320px; overflow-y: auto; }
+        .stat-line { display: flex; gap: 24px; margin-bottom: 12px; flex-wrap: wrap; }
+        .stat-line div { font-size: 13px; color: var(--muted); }
+        .stat-line b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
         footer { color: var(--muted); font-size: 12px; line-height: 1.6; margin-top: 8px; }
         code { background: var(--surface2); padding: 1px 6px; border-radius: 5px; color: var(--accent2); }
         @media (max-width: 720px) { .grid { grid-template-columns: repeat(2, 1fr); } }
@@ -66,24 +85,49 @@
             <div class="wordmark">Enigma<span>.</span></div>
             <div class="sub">Context Compression Savings</div>
         </div>
-        <div class="live"><span id="dot" class="dot stale"></span><span id="updated">Connecting...</span></div>
+        <div class="nav">
+            <span class="live"><span id="dot" class="dot stale"></span><span id="updated">Connecting...</span></span>
+            <nav class="links">
+                <a href="https://github.com/FJRG2007/enigma" target="_blank" rel="noopener noreferrer" title="GitHub repository" aria-label="GitHub repository">
+                    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.52 11.52 0 0 1 12 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222 0 1.606-.014 2.898-.014 3.293 0 .322.216.694.825.576C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>
+                </a>
+                <a href="https://tpe.li/dsc" target="_blank" rel="noopener noreferrer" title="Discord" aria-label="Discord">
+                    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.317 4.3698a19.7913 19.7913 0 0 0-4.8851-1.5152.0741.0741 0 0 0-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 0 0-.0785-.037 19.7363 19.7363 0 0 0-4.8852 1.515.0699.0699 0 0 0-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 0 0 .0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 0 0 .0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 0 0-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 0 1-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 0 1 .0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 0 1 .0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 0 1-.0066.1276 12.2986 12.2986 0 0 1-1.873.8914.0766.0766 0 0 0-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 0 0 .0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 0 0 .0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 0 0-.0312-.0286ZM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1569 2.4189Zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9461 2.4189-2.1568 2.4189Z"/></svg>
+                </a>
+                <a href="https://ko-fi.com/fjrg2007" target="_blank" rel="noopener noreferrer" title="Support on Ko-fi" aria-label="Support on Ko-fi">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 8h1a4 4 0 1 1 0 8h-1"/><path d="M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4Z"/><line x1="6" y1="2" x2="6" y2="4"/><line x1="10" y1="2" x2="10" y2="4"/><line x1="14" y1="2" x2="14" y2="4"/></svg>
+                </a>
+            </nav>
+        </div>
     </header>
 
     <div class="grid">
-        <div class="card"><div class="label">Tokens Saved</div><div id="saved" class="value good">-</div><div id="savedFoot" class="foot">Across all compressions</div></div>
+        <div class="card"><div class="label">Money Saved</div><div id="money" class="value good">-</div><div id="moneyFoot" class="foot">Estimated, by source</div></div>
+        <div class="card"><div class="label">Tokens Saved</div><div id="saved" class="value">-</div><div id="savedFoot" class="foot">Across all compressions</div></div>
         <div class="card"><div class="label">Savings Rate</div><div id="rate" class="value accent">-</div><div class="foot">Of input tokens removed</div></div>
         <div class="card"><div class="label">Compressions</div><div id="calls" class="value">-</div><div class="foot">Reversible via CCR</div></div>
-        <div class="card"><div class="label">In &rarr; Out</div><div id="inout" class="value" style="font-size:20px">-</div><div class="foot">Total tokens</div></div>
+        <div class="card"><div class="label">Avg / Compression</div><div id="avg" class="value">-</div><div class="foot">Tokens saved per call</div></div>
+        <div class="card"><div class="label">Best Compression</div><div id="best" class="value">-</div><div class="foot">Most saved in one call</div></div>
     </div>
 
     <div class="panel">
         <div class="panel-head">
-            <h2>Tokens Saved Per Day <small id="rangeLabel"></small></h2>
-            <div class="ranges" id="ranges">
-                <button type="button" data-d="7">7D</button>
-                <button type="button" data-d="30" class="active">30D</button>
-                <button type="button" data-d="90">90D</button>
-                <button type="button" data-d="0">All</button>
+            <h2>Savings Per Day <small id="rangeLabel"></small></h2>
+            <div class="ctrls">
+                <div class="ranges" id="metricToggle">
+                    <button type="button" data-m="tokens" class="active">Tokens</button>
+                    <button type="button" data-m="usd">$</button>
+                </div>
+                <div class="ranges" id="modeToggle">
+                    <button type="button" data-o="daily" class="active">Daily</button>
+                    <button type="button" data-o="cumulative">Cumulative</button>
+                </div>
+                <div class="ranges" id="ranges">
+                    <button type="button" data-d="7">7D</button>
+                    <button type="button" data-d="30" class="active">30D</button>
+                    <button type="button" data-d="90">90D</button>
+                    <button type="button" data-d="0">All</button>
+                </div>
             </div>
         </div>
         <div id="chartWrap" class="chartwrap"></div>
@@ -96,17 +140,47 @@
     </div>
 
     <div class="panel">
-        <h2 style="margin-bottom:14px">Before vs. After <small>cumulative tokens</small></h2>
+        <h2 style="margin-bottom:14px">Savings By Content Type <small>what enigma compressed</small></h2>
+        <div id="types"></div>
+    </div>
+
+    <div class="panel">
+        <h2 style="margin-bottom:14px">Before vs. After <small id="ratioLabel">cumulative tokens</small></h2>
         <div class="bar-row"><span class="name">Before</span><div class="bar-track"><div id="barBefore" class="bar-fill" style="background:var(--accent2)"></div></div><span id="numBefore" class="num">-</span></div>
         <div class="bar-row"><span class="name">After</span><div class="bar-track"><div id="barAfter" class="bar-fill" style="background:var(--good)"></div></div><span id="numAfter" class="num">-</span></div>
+        <div class="stat-line" style="margin:14px 0 0"><div>Removed <b id="removed">-</b></div><div>Reduction <b id="reduction">-</b></div><div>Compression ratio <b id="ratio">-</b></div></div>
+    </div>
+
+    <div class="panel">
+        <div class="panel-head">
+            <h2>Savings History <small id="histStats"></small></h2>
+            <div class="ctrls">
+                <div class="ranges" id="histToggle">
+                    <button type="button" data-p="day" class="active">Daily</button>
+                    <button type="button" data-p="week">Weekly</button>
+                    <button type="button" data-p="month">Monthly</button>
+                </div>
+            </div>
+        </div>
+        <div class="tbl-wrap"><div id="histBody"></div></div>
+    </div>
+
+    <div class="panel">
+        <h2 style="margin-bottom:14px">Recent Compressions <small>newest first</small></h2>
+        <div class="tbl-wrap"><div id="recent"></div></div>
+    </div>
+
+    <div class="panel">
+        <h2 style="margin-bottom:14px">Reversible Cache (CCR) <small>recoverable originals on disk</small></h2>
+        <div id="cache"></div>
     </div>
 
     <footer>
         Polling pauses automatically when this tab is hidden, and the server caches each snapshot - so an open dashboard costs almost nothing.
-        Data source: <code>~/.enigma/ccr/stats.json</code> + <code>history.jsonl</code>. Enigma <span id="ver"></span>
+        Data source: <code>~/.enigma/ccr/stats.json</code> + <code>history.jsonl</code> - reset it with <code>enigma compress --clear</code>. Enigma <span id="ver"></span>
     </footer>
 
-    <script src="/lib/lightweight-charts.standalone.production.js"></script>
+    <script src="/lib/chart.min.js"></script>
     <script>
         const POLL_MS = 5000;
         const DAY = 86400000;
@@ -119,32 +193,56 @@
             if (n >= 1e3) return (n / 1e3).toFixed(1) + "k";
             return String(Math.round(n));
         }
+        function fmtUsd(n) {
+            n = Number(n) || 0;
+            if (n >= 1e3) return "$" + (n / 1e3).toFixed(2) + "k";
+            if (n >= 1) return "$" + n.toFixed(2);
+            return "$" + n.toFixed(n >= 0.1 ? 2 : 3);
+        }
+        function fmtBytes(n) {
+            n = Number(n) || 0;
+            if (n >= 1048576) return (n / 1048576).toFixed(1) + " MB";
+            if (n >= 1024) return (n / 1024).toFixed(1) + " KB";
+            return n + " B";
+        }
 
-        // Friendly names for known MCP clients; unknown sources show title-cased raw.
+        // Estimated price per 1M INPUT tokens, by source. enigma is not a proxy, so it
+        // can't know the real model - these are sensible defaults, overridable globally
+        // with `enigma config token-price <usd>` (priceOverride from the payload).
+        const PRICE_1M = {
+            "claude-code": 3, "claude": 3, "claude-desktop": 3,
+            "opencode": 3, "codex": 2.5, "codex-cli": 2.5, "cli": 3, "unknown": 3,
+        };
+        const DEFAULT_PRICE_1M = 3;
+        let priceOverride = 0;
+        function priceFor(source) { return priceOverride > 0 ? priceOverride : (PRICE_1M[source] ?? DEFAULT_PRICE_1M); }
+        function moneyOf(source, savedTokens) { return savedTokens * priceFor(source) / 1e6; }
+
+        // Friendly names for known MCP clients / content types; unknown -> title-cased raw.
         const SOURCE_LABELS = {
             "claude-code": "Claude Code", "claude": "Claude Code", "claude-desktop": "Claude Desktop",
             "opencode": "OpenCode", "codex": "Codex", "codex-cli": "Codex",
             "cli": "CLI (enigma compress)", "unknown": "Unattributed",
         };
-        function prettySource(k) {
-            return SOURCE_LABELS[k] || String(k).replace(/[-_]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-        }
+        function prettySource(k) { return SOURCE_LABELS[k] || String(k).replace(/[-_]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()); }
+        const TYPE_LABELS = { json: "JSON", log: "Logs", text: "Text", code: "Code", diff: "Diffs", markdown: "Markdown", unknown: "Other" };
+        function prettyType(k) { return TYPE_LABELS[k] || String(k).replace(/\b\w/g, (c) => c.toUpperCase()); }
 
-        // One bar per origin (the calling app or the CLI), sorted by tokens saved.
-        function renderSources(bySource) {
-            const el = $("sources");
-            const entries = Object.entries(bySource || {}).sort((a, b) => (b[1].tokensSaved || 0) - (a[1].tokensSaved || 0));
+        // One bar per key (source or type), sorted by tokens saved, with an optional $ column.
+        function renderBreakdown(el, map, label, money) {
+            const entries = Object.entries(map || {}).sort((a, b) => (b[1].tokensSaved || 0) - (a[1].tokensSaved || 0));
             if (!entries.length) {
-                el.innerHTML = '<div class="empty" style="padding:20px 0">No per-source data yet. Attribution starts with the next compression - the MCP tags the calling app (Claude Code, OpenCode, Codex...), the CLI tags itself.</div>';
+                el.innerHTML = '<div class="empty" style="padding:20px 0">No data yet - this fills in as compressions are recorded.</div>';
                 return;
             }
             const max = Math.max(1, ...entries.map(([, v]) => v.tokensSaved || 0));
             el.innerHTML = entries.map(([k, v]) => {
                 const saved = v.tokensSaved || 0, pct = Math.round(saved / max * 100);
-                return '<div class="bar-row"><span class="name" style="width:140px">' + prettySource(k)
+                const m = money ? '<span class="money">' + fmtUsd(moneyOf(k, saved)) + '</span>' : '';
+                return '<div class="bar-row"><span class="name" style="width:140px">' + label(k)
                     + '</span><div class="bar-track"><div class="bar-fill" style="width:' + pct + '%;background:var(--accent)"></div></div>'
-                    + '<span class="num">' + fmt(saved) + '</span>'
-                    + '<span class="foot" style="width:70px;text-align:right;margin:0">' + fmt(v.calls || 0) + ' calls</span></div>';
+                    + '<span class="num">' + fmt(saved) + '</span>' + m
+                    + '<span class="foot" style="width:64px;text-align:right;margin:0">' + fmt(v.calls || 0) + ' calls</span></div>';
             }).join("");
         }
 
@@ -152,19 +250,99 @@
         // chart's time scale expects (matches the server's UTC-day history buckets).
         function dayKey(ms) { return new Date(ms).toISOString().slice(0, 10); }
 
-        // Aggregate raw history points into one ascending {time, value} per day of saved
-        // tokens. Lightweight Charts requires unique, ascending times - so we sum per day.
+        const savedOf = (p) => Math.max(0, (p.b || 0) - (p.a || 0));
+
+        // Recent compressions table (newest first), one row per history point.
+        function renderRecent(history) {
+            const rows = (history || []).slice(-20).reverse();
+            const el = $("recent");
+            if (!rows.length) { el.innerHTML = '<div class="empty" style="padding:24px 0">No compressions recorded yet.</div>'; return; }
+            el.innerHTML = '<table class="tbl"><thead><tr><th>Time</th><th>Type</th><th>Source</th>'
+                + '<th class="r">Before</th><th class="r">After</th><th class="r">Saved</th></tr></thead><tbody>'
+                + rows.map((p) => {
+                    const saved = savedOf(p), pct = p.b ? Math.round(saved / p.b * 100) : 0;
+                    return '<tr><td>' + new Date(p.t).toLocaleString() + '</td><td>' + prettyType(p.c || "unknown")
+                        + '</td><td>' + prettySource(p.s || "unknown") + '</td><td class="r">' + fmt(p.b || 0)
+                        + '</td><td class="r">' + fmt(p.a || 0) + '</td><td class="r good">' + fmt(saved) + " (" + pct + "%)</td></tr>";
+                }).join("") + "</tbody></table>";
+        }
+
+        // ISO-ish period key for grouping (day = YYYY-MM-DD, week = YYYY-Www, month = YYYY-MM).
+        function periodKey(t, period) {
+            const d = new Date(t);
+            if (period === "month") return d.toISOString().slice(0, 7);
+            if (period === "week") {
+                const onejan = Date.UTC(d.getUTCFullYear(), 0, 1);
+                const week = Math.ceil(((d.getTime() - onejan) / DAY + 1) / 7);
+                return d.getUTCFullYear() + "-W" + String(week).padStart(2, "0");
+            }
+            return dayKey(t);
+        }
+
+        let histPeriod = "day";
+        function renderHistory(history) {
+            const hist = history || [];
+            const days = new Set(hist.map((p) => dayKey(p.t))).size;
+            const total = hist.reduce((s, p) => s + savedOf(p), 0);
+            $("histStats").textContent = days ? days + " active day" + (days === 1 ? "" : "s") + " · avg " + fmt(Math.round(total / days)) + "/day" : "";
+            const byP = new Map();
+            for (const p of hist) {
+                const k = periodKey(p.t, histPeriod);
+                const cur = byP.get(k) || { tokens: 0, usd: 0, calls: 0 };
+                cur.tokens += savedOf(p);
+                cur.usd += moneyOf(p.s || "unknown", savedOf(p));
+                cur.calls++;
+                byP.set(k, cur);
+            }
+            const rows = [...byP.entries()].sort((a, b) => a[0] < b[0] ? 1 : -1);
+            const el = $("histBody");
+            if (!rows.length) { el.innerHTML = '<div class="empty" style="padding:24px 0">No history yet.</div>'; return; }
+            el.innerHTML = '<table class="tbl"><thead><tr><th>Period</th><th class="r">Compressions</th>'
+                + '<th class="r">Tokens Saved</th><th class="r">$ Saved</th></tr></thead><tbody>'
+                + rows.map(([k, v]) => '<tr><td>' + k + '</td><td class="r">' + v.calls + '</td><td class="r good">'
+                    + fmt(v.tokens) + '</td><td class="r">' + fmtUsd(v.usd) + "</td></tr>").join("") + "</tbody></table>";
+        }
+
+        function renderCache(c) {
+            const el = $("cache");
+            if (!c) { el.innerHTML = '<div class="empty" style="padding:20px 0">No cache data.</div>'; return; }
+            const pct = c.cap ? Math.round((c.count || 0) / c.cap * 100) : 0;
+            el.innerHTML = '<div class="bar-row"><span class="name" style="width:170px">Cached originals</span>'
+                + '<div class="bar-track"><div class="bar-fill" style="width:' + pct + '%;background:var(--accent)"></div></div>'
+                + '<span class="num">' + fmt(c.count || 0) + " / " + fmt(c.cap || 0) + '</span></div>'
+                + '<div class="stat-line" style="margin-top:6px"><div>On disk <b>' + fmtBytes(c.bytes || 0) + '</b></div>'
+                + '<div>Retention <b>newest ' + fmt(c.cap || 0) + '</b></div>'
+                + '<div>Restore <b>enigma compress --retrieve &lt;hash&gt;</b></div></div>';
+        }
+
+        // Aggregate raw history points into one {time, tokens, usd} per day (ascending,
+        // unique times). $ per point uses that point's recorded source price.
         function dailySeries(history) {
             const byDay = new Map();
             for (const p of history || []) {
                 const saved = Math.max(0, (p.b || 0) - (p.a || 0));
                 const key = dayKey(p.t);
-                byDay.set(key, (byDay.get(key) || 0) + saved);
+                const cur = byDay.get(key) || { tokens: 0, usd: 0 };
+                cur.tokens += saved;
+                cur.usd += moneyOf(p.s || "unknown", saved);
+                byDay.set(key, cur);
             }
-            return [...byDay.entries()].sort((a, b) => a[0] < b[0] ? -1 : 1).map(([time, value]) => ({ time, value }));
+            return [...byDay.entries()].sort((a, b) => a[0] < b[0] ? -1 : 1)
+                .map(([time, v]) => ({ time, tokens: v.tokens, usd: v.usd }));
         }
 
-        let chart = null, series = null, fullData = [], currentRange = 30;
+        let chart = null, series = null, dailyData = [], lastHistory = [], currentRange = 30, metric = "tokens", mode = "daily";
+        const metricFmt = (v) => metric === "usd" ? fmtUsd(v) : fmt(v);
+
+        // Map the per-day data to LC {time, value} for the active metric and mode.
+        function seriesValues() {
+            let cum = 0;
+            return dailyData.map((d) => {
+                const base = metric === "usd" ? d.usd : d.tokens;
+                if (mode === "cumulative") { cum += base; return { time: d.time, value: cum }; }
+                return { time: d.time, value: base };
+            });
+        }
 
         function initChart() {
             if (!window.LightweightCharts) return false;
@@ -185,20 +363,24 @@
             series = chart.addSeries(LC.AreaSeries, {
                 lineColor: "#e0a458", topColor: "rgba(224,164,88,0.35)", bottomColor: "rgba(224,164,88,0.02)",
                 lineWidth: 2, priceLineVisible: false, lastValueVisible: false,
-                priceFormat: { type: "custom", minMove: 1, formatter: fmt },
+                priceFormat: { type: "custom", minMove: 1, formatter: metricFmt },
             });
             setupTooltip(el);
-            $("ranges").addEventListener("click", (e) => {
+            // Button groups: select one, restyle siblings, run the picker.
+            const group = (id, onPick) => $(id).addEventListener("click", (e) => {
                 const b = e.target.closest("button");
                 if (!b) return;
-                for (const x of $("ranges").children) x.classList.toggle("active", x === b);
-                currentRange = Number(b.dataset.d);
-                applyRange();
+                for (const x of $(id).children) x.classList.toggle("active", x === b);
+                onPick(b);
             });
+            group("ranges", (b) => { currentRange = Number(b.dataset.d); applyRange(); });
+            group("metricToggle", (b) => { metric = b.dataset.m; redraw(); });
+            group("modeToggle", (b) => { mode = b.dataset.o; redraw(); });
+            group("histToggle", (b) => { histPeriod = b.dataset.p; renderHistory(lastHistory); });
             return true;
         }
 
-        // Floating crosshair tooltip: shows the hovered date and that day's saved tokens.
+        // Floating crosshair tooltip: hovered date + that point's value (tokens or $).
         function setupTooltip(container) {
             const tip = document.createElement("div");
             tip.className = "tip";
@@ -208,47 +390,77 @@
                 if (!param.time || !param.point || param.point.x < 0 || param.point.y < 0) { tip.style.display = "none"; return; }
                 const d = param.seriesData.get(series);
                 if (!d) { tip.style.display = "none"; return; }
-                tip.innerHTML = '<div class="tip-d">' + param.time + '</div><div class="tip-v">' + fmt(d.value) + " tokens saved</div>";
+                const suffix = (metric === "usd" ? " saved" : " tokens saved") + (mode === "cumulative" ? " (total)" : "");
+                tip.innerHTML = '<div class="tip-d">' + param.time + '</div><div class="tip-v">' + metricFmt(d.value) + suffix + "</div>";
                 tip.style.display = "block";
-                const left = Math.max(0, Math.min(param.point.x + 14, container.clientWidth - 150));
+                const left = Math.max(0, Math.min(param.point.x + 14, container.clientWidth - 160));
                 tip.style.left = left + "px";
                 tip.style.top = Math.max(0, param.point.y - 10) + "px";
             });
         }
 
+        // Push the active metric/mode data into the series and reformat the axis.
+        function redraw() {
+            if (!series) return;
+            series.applyOptions({ priceFormat: { type: "custom", minMove: metric === "usd" ? 0.0001 : 1, formatter: metricFmt } });
+            const has = dailyData.length > 0;
+            $("chartEmpty").style.display = has ? "none" : "block";
+            $("chartWrap").style.display = has ? "block" : "none";
+            if (has) { series.setData(seriesValues()); applyRange(); }
+        }
+
         // Constrain the visible window to the selected range (All = fit everything).
         function applyRange() {
-            if (!chart || !fullData.length) return;
+            if (!chart || !dailyData.length) return;
             const ts = chart.timeScale();
             if (currentRange === 0) { ts.fitContent(); $("rangeLabel").textContent = "all time"; return; }
-            const to = fullData[fullData.length - 1].time;
+            const to = dailyData[dailyData.length - 1].time;
             const from = dayKey(Date.now() - currentRange * DAY);
             try { ts.setVisibleRange({ from, to }); }
             catch { ts.fitContent(); }
             $("rangeLabel").textContent = "last " + currentRange + " days";
         }
 
+        // Total estimated $ saved: sum each source's saved tokens at its price (legacy
+        // data with no attribution falls back to the default price).
+        function totalMoney(s) {
+            const bs = s.bySource || {};
+            const keys = Object.keys(bs);
+            if (keys.length) return keys.reduce((sum, k) => sum + moneyOf(k, bs[k].tokensSaved || 0), 0);
+            return moneyOf("unknown", s.tokensSaved || 0);
+        }
+
         function render(data) {
+            priceOverride = Number(data.priceOverride) || 0;
             const s = data.stats || {};
-            const before = s.tokensBefore || 0, after = s.tokensAfter || 0, saved = s.tokensSaved || 0;
+            const before = s.tokensBefore || 0, after = s.tokensAfter || 0, saved = s.tokensSaved || 0, calls = s.calls || 0;
             const rate = before ? Math.round((saved / before) * 100) : 0;
+            $("money").textContent = fmtUsd(totalMoney(s));
+            $("moneyFoot").textContent = priceOverride > 0 ? "~$" + priceOverride + "/1M tokens" : "Estimated, by source";
             $("saved").textContent = fmt(saved);
             $("savedFoot").textContent = saved ? "~" + saved.toLocaleString() + " tokens" : "Across all compressions";
             $("rate").textContent = rate + "%";
-            $("calls").textContent = fmt(s.calls || 0);
-            $("inout").textContent = fmt(before) + " → " + fmt(after);
+            $("calls").textContent = fmt(calls);
+            $("avg").textContent = calls ? fmt(Math.round(saved / calls)) : "0";
+            $("best").textContent = fmt(s.best || 0);
             $("numBefore").textContent = fmt(before);
             $("numAfter").textContent = fmt(after);
             const max = Math.max(1, before);
             $("barBefore").style.width = (before / max * 100) + "%";
             $("barAfter").style.width = (after / max * 100) + "%";
-            renderSources(s.bySource);
+            $("removed").textContent = fmt(saved) + " (" + rate + "%)";
+            $("reduction").textContent = before ? (100 - rate) + "% of input sent" : "-";
+            $("ratio").textContent = after ? "~" + (before / after).toFixed(1) + ":1" : "-";
+            renderBreakdown($("sources"), s.bySource, prettySource, true);
+            renderBreakdown($("types"), s.byType, prettyType, false);
 
-            fullData = dailySeries(data.history);
-            const has = fullData.length > 0 && !!series;
-            $("chartEmpty").style.display = has ? "none" : "block";
-            $("chartWrap").style.display = has ? "block" : "none";
-            if (has) { series.setData(fullData); applyRange(); }
+            lastHistory = data.history || [];
+            renderRecent(lastHistory);
+            renderHistory(lastHistory);
+            renderCache(data.cache);
+
+            dailyData = dailySeries(data.history);
+            redraw();
 
             $("ver").textContent = data.version ? "v" + data.version : "";
             $("dot").classList.remove("stale");

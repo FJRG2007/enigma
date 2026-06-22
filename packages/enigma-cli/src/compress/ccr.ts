@@ -35,6 +35,10 @@ export interface CcrStats extends SourceStats {
      * "cli"). Absent on stats files written before attribution existed.
      */
     bySource?: Record<string, SourceStats>;
+    /** Per-content-type breakdown (json/log/text/code/diff/markdown). */
+    byType?: Record<string, SourceStats>;
+    /** Most tokens saved in a single compression. */
+    best?: number;
 }
 
 /** The source label used when a caller records without naming its origin. */
@@ -48,6 +52,10 @@ export interface HistoryPoint {
     b: number;
     /** tokens after */
     a: number;
+    /** source (MCP client / "cli"); absent on points written before attribution. */
+    s?: string;
+    /** content type (json/log/text/...); absent on points written before this existed. */
+    c?: string;
 }
 
 const EMPTY_STATS: CcrStats = { calls: 0, tokensBefore: 0, tokensAfter: 0, tokensSaved: 0 };
@@ -140,27 +148,34 @@ function foldSource(prev: SourceStats | undefined, tokensBefore: number, tokensA
  * it to `source` (the MCP client name, e.g. "claude-code"/"opencode"/"codex", or "cli"
  * for the direct CLI). The grand totals and the per-source breakdown advance together.
  */
-export function recordStats(tokensBefore: number, tokensAfter: number, source: string = UNKNOWN_SOURCE): void {
+export function recordStats(tokensBefore: number, tokensAfter: number, source: string = UNKNOWN_SOURCE, type: string = UNKNOWN_SOURCE): void {
     const cur = readStats();
-    const key = source || UNKNOWN_SOURCE;
+    const sKey = source || UNKNOWN_SOURCE;
+    const tKey = type || UNKNOWN_SOURCE;
     const bySource = { ...(cur.bySource ?? {}) };
-    bySource[key] = foldSource(bySource[key], tokensBefore, tokensAfter);
+    bySource[sKey] = foldSource(bySource[sKey], tokensBefore, tokensAfter);
+    const byType = { ...(cur.byType ?? {}) };
+    byType[tKey] = foldSource(byType[tKey], tokensBefore, tokensAfter);
     const next: CcrStats = {
         ...foldSource(cur, tokensBefore, tokensAfter),
         bySource,
+        byType,
+        best: Math.max(cur.best ?? 0, Math.max(0, tokensBefore - tokensAfter)),
     };
     const dir = ccrDir();
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
     try { writeFileSync(statsPath(), JSON.stringify(next, null, 2) + "\n"); } catch { /* stats are best-effort */ }
-    recordHistory(tokensBefore, tokensAfter);
+    recordHistory(tokensBefore, tokensAfter, sKey, tKey);
 }
 
 /** Append one timestamped savings point, trimming the log when it grows too large. */
-export function recordHistory(tokensBefore: number, tokensAfter: number): void {
+export function recordHistory(tokensBefore: number, tokensAfter: number, source?: string, type?: string): void {
     const dir = ccrDir();
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
     const path = historyPath();
     const point: HistoryPoint = { t: Date.now(), b: tokensBefore, a: tokensAfter };
+    if (source) point.s = source;
+    if (type) point.c = type;
     try {
         appendFileSync(path, JSON.stringify(point) + "\n");
         if (statSync(path).size > HISTORY_MAX_BYTES) trimHistory(path);
@@ -176,6 +191,35 @@ function trimHistory(path: string): void {
     } catch { /* trim is best-effort */ }
 }
 
+/** Reversible-cache stats: how many originals are cached, their disk size, and the cap. */
+export function ccrCacheStats(): { count: number; bytes: number; cap: number } {
+    const dir = ccrDir();
+    let count = 0, bytes = 0;
+    try {
+        for (const f of readdirSync(dir)) {
+            if (!f.endsWith(".txt")) continue;
+            try { bytes += statSync(join(dir, f)).size; count++; } catch { /* skip a busy file */ }
+        }
+    } catch { /* no cache dir yet */ }
+    return { count, bytes, cap: MAX_ENTRIES };
+}
+
+/**
+ * Delete all recorded CCR data - cumulative stats, the over-time history, and every
+ * cached original - to reset the dashboard and reclaim disk. Returns what was freed.
+ */
+export function clearCcr(): { files: number; bytes: number } {
+    const dir = ccrDir();
+    let files = 0, bytes = 0;
+    let names: string[];
+    try { names = readdirSync(dir); } catch { return { files, bytes }; }
+    for (const name of names) {
+        const p = join(dir, name);
+        try { bytes += statSync(p).size; unlinkSync(p); files++; } catch { /* skip a busy/locked file */ }
+    }
+    return { files, bytes };
+}
+
 /** Read all retained savings points (newest last), skipping any corrupt line. */
 export function readHistory(): HistoryPoint[] {
     let raw: string;
@@ -185,7 +229,12 @@ export function readHistory(): HistoryPoint[] {
         if (!line) continue;
         try {
             const p = JSON.parse(line) as HistoryPoint;
-            if (typeof p.t === "number" && typeof p.b === "number" && typeof p.a === "number") out.push(p);
+            if (typeof p.t === "number" && typeof p.b === "number" && typeof p.a === "number") {
+                const pt: HistoryPoint = { t: p.t, b: p.b, a: p.a };
+                if (typeof p.s === "string") pt.s = p.s;
+                if (typeof p.c === "string") pt.c = p.c;
+                out.push(pt);
+            }
         } catch { /* skip a corrupt line */ }
     }
     return out;
