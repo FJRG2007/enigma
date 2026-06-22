@@ -5,9 +5,13 @@
 # Clears the npm cache first (so you always get the newest published version),
 # installs the `enigma` command globally, and runs `enigma install` for you.
 #
-# We deliberately do NOT set `$ErrorActionPreference = "Stop"`: npm writes its warnings
-# (e.g. "using --force") to stderr, which PowerShell 5.1 would otherwise turn into a
-# terminating NativeCommandError. We check exit codes explicitly instead.
+# npm writes warnings/progress to stderr. In a session where $ErrorActionPreference is
+# "Stop" (common, and inherited when this runs via `irm ... | iex`), PowerShell 5.1 turns
+# native-command stderr into a terminating NativeCommandError. Two safeguards: force
+# "Continue" for this run, and invoke npm through `cmd /c` so its stderr is handled by cmd
+# and never enters PowerShell's error stream. Exit codes are checked explicitly.
+
+$ErrorActionPreference = "Continue"
 
 if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
     Write-Host "enigma: npm not found. Install Node.js first: https://nodejs.org"
@@ -15,16 +19,16 @@ if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
 }
 
 Write-Host "enigma: clearing the npm cache (forces the latest version)..."
-npm cache clean --force 2>$null
+cmd /c "npm cache clean --force >NUL 2>NUL"
 
 Write-Host "enigma: installing enigma-cli globally..."
-npm install -g enigma-cli@latest
+cmd /c "npm install -g enigma-cli@latest"
 if ($LASTEXITCODE -ne 0) {
     Write-Host "enigma: npm install failed (exit $LASTEXITCODE)."
     exit $LASTEXITCODE
 }
 
 Write-Host "enigma: deploying skills and memory..."
-enigma install --all --yes
+cmd /c "enigma install --all --yes"
 
 Write-Host "enigma: done. Run 'enigma' for the interactive hub."
