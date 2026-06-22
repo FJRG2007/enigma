@@ -62,9 +62,10 @@ function ensureHostDir(): void {
 function npmInstall(spec: string): void {
     try {
         ensureHostDir();
-        // shell:true so Windows resolves npm.cmd; output suppressed to keep installs quiet.
+        // shell:true so Windows resolves npm.cmd; windowsHide so the cmd.exe it spawns never
+        // flashes a console window; output suppressed to keep the install quiet.
         spawnSync("npm", ["install", `@enigmax/dashboard@${spec}`, "--no-audit", "--no-fund", "--silent"], {
-            cwd: DASHBOARD_INSTALL_DIR, shell: true, stdio: "ignore", timeout: 120000,
+            cwd: DASHBOARD_INSTALL_DIR, shell: true, stdio: "ignore", timeout: 120000, windowsHide: true,
         });
     } catch { /* best-effort: a missing npm or no network just leaves the UI un-fetched */ }
 }

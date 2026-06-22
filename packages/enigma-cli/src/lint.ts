@@ -54,9 +54,10 @@ export function ensureLinterInstalled(): boolean {
         mkdirSync(LINT_INSTALL_DIR, { recursive: true });
         const manifest = join(LINT_INSTALL_DIR, "package.json");
         if (!existsSync(manifest)) writeFileSync(manifest, JSON.stringify({ name: "enigma-linter-host", private: true }, null, 2) + "\n");
-        // shell:true so Windows resolves npm.cmd; output suppressed to keep installs quiet.
+        // shell:true so Windows resolves npm.cmd; windowsHide so the cmd.exe it spawns never
+        // flashes a console window; output suppressed to keep installs quiet.
         spawnSync("npm", ["install", "@enigmax/linter@latest", "--no-audit", "--no-fund", "--silent"], {
-            cwd: LINT_INSTALL_DIR, shell: true, stdio: "ignore", timeout: 120000,
+            cwd: LINT_INSTALL_DIR, shell: true, stdio: "ignore", timeout: 120000, windowsHide: true,
         });
     } catch { /* best-effort */ }
     return isLinterInstalled();
