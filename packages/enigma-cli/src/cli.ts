@@ -35,6 +35,7 @@ import {
     removeProfile, renameAccount, renameProfile, resolveConfigDir, resolveLaunchAccount,
     setActive, setActiveProfile, setProfileAccount, unsetProfileAccount,
 } from "./accounts";
+import { fixToolPath, toolPathStatuses } from "./tool-path";
 import type { HubAccount, HubExitAction, HubProfile, HubSkill } from "./tui/types";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -46,7 +47,7 @@ const PKG = readJson<{ version?: string }>(join(__dirname, "..", "package.json")
 // Fixed commands plus one launch command per supported tool (e.g. `enigma claude`).
 const COMMANDS = new Set<string>([
     "install", "update", "security", "guard", "seal", "check", "config", "account", "accounts",
-    "profile", "profiles", "skill", "skills", "issue", "improve", "compress", "mcp", "dashboard", "dash", "statusline", "help", "version",
+    "profile", "profiles", "skill", "skills", "issue", "improve", "compress", "mcp", "dashboard", "dash", "fix-path", "statusline", "help", "version",
     ...TOOL_NAMES,
 ]);
 
@@ -185,6 +186,8 @@ Commands:
   dashboard, dash      Open the local savings dashboard in your browser (http://enigma,
                        or http://localhost:24282 if :80/hosts is unavailable). Runs only
                        while open; 'config dashboard always' keeps a background daemon
+  fix-path [tool]      Detect a tool's install path (OS-agnostic, even off PATH) and
+                       repair its launch command so 'enigma <tool>' works; no tool fixes all
   seal                 Maintenance: (re)compute skill content hashes
   check                Integrity gate: verify skills are well-formed and sealed
   statusline           Print the [ENIGMA] badge for an agent status bar (shows the active level)
@@ -356,6 +359,27 @@ async function runUpdateCli(version: string): Promise<void> {
     const latest = await checkLatestNow(version);
     s.stop(latest ? `Update available: ${version} -> ${latest}.` : `enigma-cli ${version} is up to date.`);
     if (latest) runUpdate();
+}
+
+/**
+ * `enigma fix-path [tool]` surface. Detects each tool's install path (OS-agnostic,
+ * even when it is not on PATH) and persists a launch path so `enigma <tool>` works.
+ * No argument fixes every supported tool. Returns 0 when every target is launchable.
+ */
+function runFixPathCli(tool: string | undefined, scope: "global" | "local" | null): number {
+    const targets = tool ? [tool] : TOOL_NAMES;
+    let allOk = true;
+    for (const t of targets) {
+        if (!isToolName(t)) {
+            console.error(`Unknown tool '${t}'. Known tools: ${TOOL_NAMES.join(", ")}.`);
+            allOk = false;
+            continue;
+        }
+        const result = fixToolPath(t, scope ?? "global");
+        console.log(`${result.ok ? "ok" : "--"}  ${result.message}`);
+        if (!result.ok) allOk = false;
+    }
+    return allOk ? 0 : 1;
 }
 
 /**
@@ -719,6 +743,7 @@ export async function run(argv: string[]): Promise<void> {
     if (opts.command === "issue") { process.exit(await runIssueCli(opts.positionals[0], version, interactive)); }
     if (opts.command === "compress") { process.exit(runCompressCli(opts)); }
     if (opts.command === "dashboard") { process.exit(await runDashboardCli(version)); }
+    if (opts.command === "fix-path") { process.exit(runFixPathCli(opts.positionals[0], opts.scope)); }
 
     if (opts.command === "update") {
         p.intro("enigma - update");
@@ -795,6 +820,7 @@ export async function run(argv: string[]): Promise<void> {
             catch (err) { return { ok: false, error: (err as Error).message, accounts: hubAccounts() }; }
         },
         tools: TOOL_NAMES.map((t) => ({ name: t, label: getTool(t).label })),
+        toolPaths: toolPathStatuses().map((t) => ({ name: t.name, label: t.label, status: t.status })),
         profiles: hubProfiles(),
         activateProfile: (name: string) => { setActiveProfile(name || null); return hubProfiles(); },
         addProfile: (name: string) => {
@@ -813,13 +839,23 @@ export async function run(argv: string[]): Promise<void> {
                 return { ok: true, profiles: hubProfiles() };
             } catch (err) { return { ok: false, error: (err as Error).message, profiles: hubProfiles() }; }
         },
-        runAction: async (req: { action: "skills" | "security"; scope?: "global" | "local"; agents?: string[]; protections?: string[] }) => {
+        runAction: async (req: { action: "skills" | "security" | "fix-path"; scope?: "global" | "local"; agents?: string[]; protections?: string[] }) => {
             const reporter = collectReporter();
-            const title = req.action === "skills" ? "Install agent skills" : "Git security hooks";
+            const title = req.action === "skills" ? "Install agent skills" : req.action === "fix-path" ? "Fix tool paths" : "Git security hooks";
             try {
                 if (req.action === "skills") {
                     await installSkills({ ...opts, scope: req.scope ?? opts.scope, agents: req.agents ?? [], allAgents: !(req.agents && req.agents.length) }, false, reporter);
                     return { ok: true, title, lines: reporter.lines };
+                }
+                if (req.action === "fix-path") {
+                    // No selection means every supported tool; persist to the global config.
+                    const tools = req.agents && req.agents.length ? req.agents : TOOL_NAMES;
+                    let ok = true;
+                    for (const t of tools) {
+                        const result = fixToolPath(t, req.scope ?? "global");
+                        if (result.ok) reporter.success(result.message); else { reporter.warn(result.message); ok = false; }
+                    }
+                    return { ok, title, lines: reporter.lines };
                 }
                 const done = await setupGitHooks({ ...opts, protections: req.protections, force: true }, false, reporter);
                 return { ok: done, title, lines: reporter.lines };

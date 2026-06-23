@@ -22,6 +22,28 @@ export function readJson<T = Record<string, unknown>>(file: string): T | null {
     try { return JSON.parse(readFileSync(file, "utf8").replace(/^\uFEFF/, "")) as T; } catch { return null; }
 }
 
+/** Executable extensions to try for a bare name: PATHEXT on Windows, none elsewhere. */
+function execExtensions(): string[] {
+    return sep === "\\"
+        ? (process.env.PATHEXT || ".EXE;.CMD;.BAT;.COM").split(";").map((e) => e.toLowerCase())
+        : [""];
+}
+
+/**
+ * First existing `bin` (with each executable extension) found under any of `dirs`,
+ * or null. Cross-platform, no spawn - the directory-scoped core shared by resolveBin
+ * (which searches PATH) and the off-PATH discovery in tool-path.ts.
+ */
+export function resolveBinIn(bin: string, dirs: string[]): string | null {
+    for (const d of dirs) {
+        for (const ext of execExtensions()) {
+            const candidate = join(d, bin + ext);
+            if (existsSync(candidate)) return candidate;
+        }
+    }
+    return null;
+}
+
 /**
  * Resolve the full path of an executable named `bin` on the user's PATH, or null
  * if not found (cross-platform, no spawn). On Windows each PATHEXT extension is
@@ -30,16 +52,7 @@ export function readJson<T = Record<string, unknown>>(file: string): T | null {
  */
 export function resolveBin(bin: string): string | null {
     const dirs = (process.env.PATH || process.env.Path || "").split(sep === "\\" ? ";" : ":").filter(Boolean);
-    const exts = sep === "\\"
-        ? (process.env.PATHEXT || ".EXE;.CMD;.BAT;.COM").split(";").map((e) => e.toLowerCase())
-        : [""];
-    for (const d of dirs) {
-        for (const ext of exts) {
-            const candidate = join(d, bin + ext);
-            if (existsSync(candidate)) return candidate;
-        }
-    }
-    return null;
+    return resolveBinIn(bin, dirs);
 }
 
 /** Is an executable named `bin` resolvable on the user's PATH? (cross-platform, no spawn) */

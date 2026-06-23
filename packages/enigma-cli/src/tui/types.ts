@@ -6,10 +6,11 @@
 
 import type { Scope } from "../settings-registry";
 
-/** A skill-install or git-hook action requested from its right-panel checklist. */
+/** A skill-install, git-hook, or fix-path action requested from its right-panel checklist. */
 export interface ActionRequest {
-    action: "skills" | "security";
+    action: "skills" | "security" | "fix-path";
     scope?: Scope;
+    /** Selected agent names (skills) or tool names (fix-path). */
     agents?: string[];
     protections?: string[];
 }
@@ -80,6 +81,11 @@ export interface HubContext {
     renameAccount?: (tool: string, oldName: string, newName: string) => { ok: boolean; error?: string; accounts: HubAccount[] };
     /** Supported tools, for the add-account searchable selector. */
     tools?: HubTool[];
+    /**
+     * Per-tool launch-path status for the "Fix tool paths" action checklist: each
+     * tool's name, label and a one-line status hint (on PATH / off PATH / not installed).
+     */
+    toolPaths?: Array<{ name: string; label: string; status: string }>;
     /** Profiles (one account per tool under a name) and activation; "" deactivates. */
     profiles?: HubProfile[];
     activateProfile?: (name: string) => HubProfile[];

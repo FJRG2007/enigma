@@ -205,6 +205,7 @@
                 <h2>Enigma Systems <small>what's active - configuration, not savings</small></h2>
                 <div class="ctrls">
                     <button id="refreshBtn" type="button" class="toggle">Refresh</button>
+                    <button id="fixPathBtn" type="button" class="toggle">Fix tool paths</button>
                     <button id="updateBtn" type="button" class="toggle on">Check &amp; update</button>
                 </div>
             </div>
@@ -1009,7 +1010,17 @@
                 + item("Local dashboard", pill(s.dashboard === "off" ? "off" : "lvl", s.dashboard || "off"))
                 + item("Permission bypass (security)", boolPill(sec.permissionBypass))
                 + item("Commit guard blocks", guard || '<span class="tag">set up with enigma security</span>')
-                + item("Skills", skillTags);
+                + item("Skills", skillTags)
+                + item("Tool launch paths", toolPathTags(s.tools));
+        }
+
+        // Per-tool launch-path status: green when launchable, yellow when off PATH, red when missing.
+        function toolPathTags(tools) {
+            if (!tools || !tools.length) return '<span class="tag">unknown</span>';
+            return tools.map((t) => {
+                const cls = t.status === "not installed" ? "warn" : (t.status === "installed, off PATH" ? "ext" : "");
+                return '<span class="tag ' + cls + '">' + esc(t.label) + ": " + esc(t.status) + "</span>";
+            }).join("");
         }
 
         async function runUpdate() {
@@ -1023,6 +1034,18 @@
                 $("updateNote").textContent = (out.note || "Updated.") + " Refreshing the dashboard...";
                 setTimeout(() => location.reload(), 1200);
             } catch { $("updateNote").textContent = "Could not reach the server to update."; }
+        }
+
+        // Detect & repair every tool's launch path; the server persists any off-PATH
+        // binary so `enigma <tool>` works, and returns the refreshed status.
+        async function runFixPath() {
+            $("updateNote").textContent = "Detecting tool paths...";
+            try {
+                const res = await fetch("/api/fix-path", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+                const out = await res.json();
+                $("updateNote").textContent = (out.lines || []).join("  ") || (out.ok ? "Tool paths OK." : "Could not fix all tools.");
+                loadSystems(true);
+            } catch { $("updateNote").textContent = "Could not reach the server to fix tool paths."; }
         }
 
         async function loadSystems(force) {
@@ -1283,6 +1306,7 @@
         $("cfgExport").addEventListener("click", exportConfig);
         $("cfgImport").addEventListener("click", importConfig);
         $("updateBtn").addEventListener("click", runUpdate);
+        $("fixPathBtn").addEventListener("click", runFixPath);
         $("refreshBtn").addEventListener("click", () => refreshAll(true));
         window.addEventListener("hashchange", route);
         route();

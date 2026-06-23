@@ -45,6 +45,7 @@ const hub: HubContext = {
     addAccount: () => ({ ok: true, accounts }),
     renameAccount: () => ({ ok: true, accounts }),
     tools: [{ name: "claude", label: "Claude Code" }, { name: "codex", label: "Codex" }],
+    toolPaths: [{ name: "claude", label: "Claude Code", status: "on PATH" }, { name: "codex", label: "Codex", status: "not installed" }],
     profiles,
     activateProfile: () => profiles,
     addProfile: () => ({ ok: true, profiles }),
@@ -72,7 +73,7 @@ test("unified panel renders sections and the wheel mirrors the arrows", async ()
     expect(first).not.toMatch(/ Profiles {2}/); // no separate Profiles entry
 
     // Navigate the sidebar to the identity entry (last item) and focus the panel.
-    const identityIndex = CATEGORIES.length + 3; // categories + usage + 2 actions
+    const identityIndex = CATEGORIES.length + 4; // categories + usage + 3 actions (skills, security, fix-path)
     await setup.mockInput.pressKeys(Array(identityIndex).fill("ARROW_DOWN"));
     await setup.mockInput.pressKey("RETURN");
     const panel = await until((f) => f.includes("ACCOUNTS") && f.includes("PROFILES"), "identity sections");
@@ -94,8 +95,9 @@ test("unified panel renders sections and the wheel mirrors the arrows", async ()
     await setup.mockMouse.scroll(5, 4, "up");
     await until((f) => !f.includes("ACCOUNTS"), "sidebar wheel changes panel");
 
-    // Install panel: the SKILLS section lists every skill under the agents.
-    await setup.mockInput.pressKey("ARROW_UP"); // security -> skills action
+    // Install panel: the SKILLS section lists every skill under the agents. The wheel
+    // up landed on the fix-path action; step up past security to the skills action.
+    await setup.mockInput.pressKeys(["ARROW_UP", "ARROW_UP"]); // fix-path -> security -> skills action
     const install = await until((f) => f.includes("AGENTS") && f.includes("SKILLS"), "install panel sections");
     expect(install).toContain("alpha-skill");
     expect(install).toContain("v2.1.0");

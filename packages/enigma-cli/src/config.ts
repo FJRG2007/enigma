@@ -97,6 +97,13 @@ export interface EnigmaConfig {
     planWeeklyReset: string;
     /** Dashboard auto-refreshes its data while the tab is focused (default on; off = manual refresh only). */
     dashboardLive: boolean;
+    /**
+     * Persisted absolute launch path per tool, keyed by tool name (e.g. claude).
+     * Set by `enigma fix-path` when a tool is installed but not on PATH; consumed by
+     * launchTool (accounts.ts) between the ENIGMA_<TOOL>_BIN env override and a plain
+     * PATH lookup, so `enigma <tool>` works even when the shell PATH does not find it.
+     */
+    toolPaths: Record<string, string>;
     /** Agents the user explicitly opted out of bypass; never auto-enabled even when permissionBypass is on. */
     bypassDisabled: string[];
     /** Skills the user discarded: removed from deployments and skipped by installs/updates until restored. */
@@ -148,7 +155,7 @@ export const CONFIG_DEFAULTS: EnigmaConfig = {
     commitEmoji: true, updateNotifier: true, fullscreen: true, parallelSubagents: false, outputStyle: "off", minimalCode: "full",
     autoSync: true, remoteSkills: true, permissionBypass: true, autoLint: false, compress: false, dashboard: "off", tokenPrice: 0, tokenSpeed: 0, usageStats: false, proxy: false, promptSecretGuard: false, promptSecretMode: "redact",
     planSessionLimit: 0, planWeeklyLimit: 0, planWeeklySonnetLimit: 0, planWeeklyReset: "mon 00:00",
-    dashboardLive: true, bypassDisabled: [], discardedSkills: [],
+    dashboardLive: true, toolPaths: {}, bypassDisabled: [], discardedSkills: [],
 };
 
 export type EnigmaConfigKey = keyof EnigmaConfig;
@@ -187,6 +194,22 @@ export function setEnigmaValue(key: EnigmaConfigKey, value: boolean | number | s
 /** Boolean-toggle convenience over setEnigmaValue, for the on/off settings. */
 export function setEnigmaToggle(key: EnigmaConfigKey, value: boolean, scope: "global" | "local"): string {
     return setEnigmaValue(key, value, scope);
+}
+
+/**
+ * Persist `binPath` as the launch path for `tool` in the chosen scope's
+ * .enigma.json, merging into the existing toolPaths map so other tools' fixes are
+ * preserved. Returns the written file path. Used by `enigma fix-path`.
+ */
+export function setToolPath(tool: string, binPath: string, scope: "global" | "local" = "global"): string {
+    const path = configPath(scope);
+    const current = readJson<Record<string, unknown>>(path) || {};
+    const existing = (current.toolPaths && typeof current.toolPaths === "object") ? current.toolPaths as Record<string, string> : {};
+    const next = { ...current, toolPaths: { ...existing, [tool]: binPath } };
+    const dir = join(path, "..");
+    if (!isDir(dir)) mkdirSync(dir, { recursive: true });
+    writeFileSync(path, JSON.stringify(next, null, 2) + "\n");
+    return path;
 }
 
 /** Keys of EnigmaConfig holding a string list, maintained as a set in the global file. */

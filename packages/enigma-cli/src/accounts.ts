@@ -581,7 +581,11 @@ export async function launchTool(toolName: string, name: string | null, passthro
     const account = name ?? resolveLaunchAccount(toolName);
     const dir = resolveConfigDir(toolName, account);
 
-    const binary = process.env[tool.binEnv] || resolveBin(tool.bin) || tool.bin;
+    const cfg = readConfig().config;
+    // Resolution order: explicit env override > the path persisted by `enigma fix-path`
+    // (toolPaths) > a plain PATH lookup > a bare command name. The toolPaths entry is what
+    // makes `enigma <tool>` work when the tool is installed but not on the shell PATH.
+    const binary = process.env[tool.binEnv] || cfg.toolPaths?.[toolName] || resolveBin(tool.bin) || tool.bin;
     const env = { ...process.env, ...tool.envFor(dir) };
 
     touchLastUsed(toolName, account);
@@ -593,7 +597,6 @@ export async function launchTool(toolName: string, name: string | null, passthro
     // if it cannot start we launch directly, and a user-set ANTHROPIC_BASE_URL is never
     // overridden. When the guard is on, the proxy scans/redacts secrets in chat prompts.
     let proxy: Awaited<ReturnType<typeof startMeasuringProxy>> | null = null;
-    const cfg = readConfig().config;
     if (toolName === "claude" && (cfg.proxy || cfg.promptSecretGuard) && !env.ANTHROPIC_BASE_URL) {
         try {
             proxy = await startMeasuringProxy(cfg.promptSecretGuard

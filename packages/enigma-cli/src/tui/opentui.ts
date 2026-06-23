@@ -53,11 +53,13 @@ const parseStageKey = (composite: string): { key: string; scope: Scope } => {
     return { scope: composite.slice(0, i) as Scope, key: composite.slice(i + 1) };
 };
 
-const ACTION_ITEMS: Array<{ action: "skills" | "security"; title: string; blurb: string }> = [
+type ActionKind = "skills" | "security" | "fix-path";
+const ACTION_ITEMS: Array<{ action: ActionKind; title: string; blurb: string }> = [
     { action: "skills", title: "Install agent skills", blurb: "Claude Code, Codex, OpenCode" },
     { action: "security", title: "Git security hooks", blurb: "block secrets, .env, node_modules on commit" },
+    { action: "fix-path", title: "Fix tool paths", blurb: "detect & repair claude/codex/opencode launch path" },
 ];
-const actionTitle = (action: "skills" | "security"): string =>
+const actionTitle = (action: ActionKind): string =>
     ACTION_ITEMS.find((a) => a.action === action)!.title;
 const EXIT_OPTIONS = ["Save & exit", "Exit without saving", "Cancel"] as const;
 
@@ -125,6 +127,8 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         return [...starts, ...rest];
     };
     const toolItems = (): PickItem[] => tools.map((t) => ({ value: t.name, label: t.label, hint: t.name }));
+    // Per-tool launch-path rows for the "Fix tool paths" action checklist.
+    const toolPathRows = opts.hub?.toolPaths ?? [];
     // No-op fallback for the settings-only TUI, where no action can be invoked.
     const runAction = opts.hub?.runAction
         ?? (async (): Promise<ActionResult> => ({ ok: false, title: "", lines: [] }));
@@ -465,7 +469,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
     type Mode = "menu" | "running" | "result";
     type SideItem =
         | { kind: "category"; catIndex: number; title: string }
-        | { kind: "action"; action: "skills" | "security"; title: string; blurb: string }
+        | { kind: "action"; action: ActionKind; title: string; blurb: string }
         | { kind: "identity"; title: string }
         | { kind: "usage"; title: string };
     const sideItems: SideItem[] = [
@@ -475,8 +479,10 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         ...(showActions ? ACTION_ITEMS.map((a) => ({ kind: "action" as const, ...a })) : []),
         ...(hasIdentity ? [{ kind: "identity" as const, title: "Accounts & profiles" }] : []),
     ];
-    const actionItemKeys = (action: "skills" | "security"): string[] =>
-        action === "security" ? protections.map((p) => p.value) : agents.map((a) => a.name);
+    const actionItemKeys = (action: ActionKind): string[] =>
+        action === "security" ? protections.map((p) => p.value)
+        : action === "fix-path" ? toolPathRows.map((t) => t.name)
+        : agents.map((a) => a.name);
     // On a first run the install action starts selected, so setup is enter + enter.
     const initialSideIndex = firstRun
         ? Math.max(0, sideItems.findIndex((it) => it.kind === "action" && it.action === "skills"))
@@ -575,6 +581,8 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             setActCursor(0);
             if (action === "security") {
                 setActChecked(Object.fromEntries(protections.map((p) => [p.value, true])));
+            } else if (action === "fix-path") {
+                setActChecked(Object.fromEntries(toolPathRows.map((t) => [t.name, true])));
             } else {
                 const detected = agents.filter((a) => a.installed);
                 const preselect = detected.length ? detected : agents;
@@ -643,8 +651,9 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             for (const sc of memoryScopes) applyMemoryToggles(sc);
         };
 
-        const runChosen = (act: "skills" | "security"): void => {
+        const runChosen = (act: ActionKind): void => {
             const chosen = actionItemKeys(act).filter((k) => actChecked[k]);
+            // skills + fix-path both select by name (agents/tools); security selects protections.
             const req: ActionRequest = act === "security"
                 ? { action: act, protections: chosen }
                 : { action: act, scope, agents: chosen };
@@ -1189,9 +1198,13 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
                     title: actionTitle(action!),
                     blurb: action === "skills"
                         ? `Scope ${scope} (g to change). Choose agents, then enter to install; unchecking a skill discards it.`
+                        : action === "fix-path"
+                        ? "Detect each tool's install path (even off PATH) and repair its launch command. Choose tools, then enter."
                         : "Choose what the commit guard enforces, then enter to apply.",
                     items: action === "security"
                         ? protections.map((p) => ({ key: p.value, label: p.label, hint: p.hint }))
+                        : action === "fix-path"
+                        ? toolPathRows.map((t) => ({ key: t.name, label: t.label, hint: t.status }))
                         : [
                             ...agents.map((a) => ({ key: a.name, label: a.label, hint: a.installed ? "detected" : "not detected", section: skillRows.length ? "AGENTS" : undefined })),
                             ...skillRows.map((s) => ({

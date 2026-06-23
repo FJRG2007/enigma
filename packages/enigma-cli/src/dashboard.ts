@@ -252,6 +252,36 @@ function serveUpdate(res: import("node:http").ServerResponse): void {
         .catch(() => { res.writeHead(500, JSON_HDR); res.end('{"ok":false,"error":"update failed"}'); });
 }
 
+/**
+ * Detect and repair tool launch paths from a POST body { tool? }. With no tool it
+ * fixes every supported tool, persisting any discovered off-PATH binary to the
+ * global config so `enigma <tool>` works. Returns { ok, lines, tools } so the
+ * dashboard can refresh its status panel without a second request.
+ */
+function serveFixPath(req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse): void {
+    let body = "";
+    req.on("data", (chunk) => { body += chunk; if (body.length > 4096) req.destroy(); });
+    req.on("end", () => {
+        let parsed: { tool?: unknown };
+        try { parsed = JSON.parse(body || "{}"); } catch { res.writeHead(400, JSON_HDR); res.end('{"error":"bad json"}'); return; }
+        const tool = typeof parsed.tool === "string" && parsed.tool ? parsed.tool : null;
+        Promise.all([import("./tool-path"), import("./accounts")])
+            .then(([tp, acc]) => {
+                const targets = tool ? [tool] : acc.TOOL_NAMES;
+                let ok = true;
+                const lines = targets.map((t) => {
+                    if (!acc.isToolName(t)) { ok = false; return `Unknown tool '${t}'.`; }
+                    const result = tp.fixToolPath(t, "global");
+                    if (!result.ok) ok = false;
+                    return result.message;
+                });
+                res.writeHead(200, JSON_HDR);
+                res.end(JSON.stringify({ ok, lines, tools: tp.toolPathStatuses().map((t) => ({ name: t.name, label: t.label, status: t.status })) }));
+            })
+            .catch(() => { res.writeHead(500, JSON_HDR); res.end('{"ok":false,"error":"fix-path failed"}'); });
+    });
+}
+
 /** Factual "what's active" overview (configured state of each enigma system + skill counts). */
 function serveStatus(res: import("node:http").ServerResponse): void {
     import("./dashboard-status")
@@ -369,6 +399,11 @@ function createDashboardServer(version: string): Server {
         if (url === "/api/update") {
             if (!isLocalRequest(req)) { res.writeHead(403, JSON_HDR); res.end('{"error":"forbidden"}'); return; }
             if (method === "POST") { serveUpdate(res); return; }
+            res.writeHead(405).end(); return;
+        }
+        if (url === "/api/fix-path") {
+            if (!isLocalRequest(req)) { res.writeHead(403, JSON_HDR); res.end('{"error":"forbidden"}'); return; }
+            if (method === "POST") { serveFixPath(req, res); return; }
             res.writeHead(405).end(); return;
         }
         // Accounts/profiles management + config import/export are write/structure surfaces, origin-guarded.

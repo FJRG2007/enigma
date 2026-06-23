@@ -43,6 +43,9 @@ jobs:
       - name: Test guard config
         run: bun test tests/guard-config.test.ts
         working-directory: packages/enigma-cli
+      - name: Test tool-path repair
+        run: bun test tests/tool-path.test.ts
+        working-directory: packages/enigma-cli
 
       # The package must build (tsup) so dist is publishable.
       - name: Build
