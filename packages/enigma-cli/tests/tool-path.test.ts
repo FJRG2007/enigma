@@ -15,6 +15,8 @@ const OFF_PATH_DIR = join(HOME, ".local", "bin");
 process.env.USERPROFILE = HOME;
 process.env.HOME = HOME;
 delete process.env.ENIGMA_CLAUDE_BIN;
+// Never let a test mutate the real user PATH (the launchable path step is gated on this).
+process.env.ENIGMA_NO_PATH_EDIT = "1";
 // Pin discovery to one controlled dir (empty until a case creates a fake binary in it)
 // and empty PATH, so neither depends on what the host has installed.
 process.env.ENIGMA_TOOL_PATH_DIRS = OFF_PATH_DIR;

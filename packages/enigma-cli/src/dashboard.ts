@@ -271,7 +271,7 @@ function serveFixPath(req: import("node:http").IncomingMessage, res: import("nod
                 let ok = true;
                 const lines = targets.map((t) => {
                     if (!acc.isToolName(t)) { ok = false; return `Unknown tool '${t}'.`; }
-                    const result = tp.fixToolPath(t, "global");
+                    const result = tp.ensureLaunchable(t, "global");
                     if (!result.ok) ok = false;
                     return result.message;
                 });

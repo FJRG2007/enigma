@@ -13,11 +13,12 @@
  * place that knows the candidate install directories; adding one is a single edge.
  */
 
-import { join } from "node:path";
 import { homedir } from "node:os";
 import { existsSync } from "node:fs";
+import { join, dirname } from "node:path";
 import { resolveBin, resolveBinIn } from "./util";
 import { readConfig, setToolPath } from "./config";
+import { isDirOnPath, addDirToUserPath } from "./path-env";
 import { getTool, TOOL_NAMES, type ToolSpec } from "./accounts";
 
 /** Where a tool's binary was found, and what the launcher will actually use right now. */
@@ -162,9 +163,33 @@ export function fixToolPath(toolName: string, scope: "global" | "local" = "globa
     return { ...base, ok: false, changed: false, installed: false, path: null, message: `${loc.label} not found. Install it, then run 'enigma fix-path ${loc.command}'.` };
 }
 
-/** Fix the launch path for every supported tool (used by the TUI/dashboard "fix all"). */
-export function fixAllToolPaths(scope: "global" | "local" = "global"): FixResult[] {
-    return TOOL_NAMES.map((t) => fixToolPath(t, scope));
+/** A FixResult plus the outcome of making the bare command runnable on PATH. */
+export interface LaunchableResult extends FixResult {
+    /** A persistent PATH entry was written this call (the bare command now works in new terminals). */
+    pathChanged: boolean;
+    /** Where the PATH entry lives (registry scope or profile file), when one was added. */
+    pathWhere?: string;
+}
+
+/**
+ * Make a tool fully launchable: persist its path for `enigma <tool>` (fixToolPath),
+ * AND, when the binary's directory is not on PATH, add it to the persistent user PATH
+ * so the bare command (e.g. `claude`) works in any new terminal. Best-effort on the
+ * PATH step - a failure leaves the config-level fix intact. The message tells the user
+ * a new terminal is needed (PATH changes do not affect the current shell).
+ */
+export function ensureLaunchable(toolName: string, scope: "global" | "local" = "global"): LaunchableResult {
+    const fixed = fixToolPath(toolName, scope);
+    if (!fixed.installed || !fixed.path) return { ...fixed, pathChanged: false };
+
+    const binDir = dirname(fixed.path);
+    if (isDirOnPath(binDir)) return { ...fixed, pathChanged: false };
+
+    const path = addDirToUserPath(binDir);
+    const suffix = path.changed
+        ? ` ${path.note} Open a NEW terminal to run '${fixed.command}' directly.`
+        : ` ${path.note}`;
+    return { ...fixed, pathChanged: path.changed, pathWhere: path.where, message: fixed.message + suffix };
 }
 
 /** Per-tool launch-path status for listings: name, label and a one-line description. */

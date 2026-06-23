@@ -35,7 +35,7 @@ import {
     removeProfile, renameAccount, renameProfile, resolveConfigDir, resolveLaunchAccount,
     setActive, setActiveProfile, setProfileAccount, unsetProfileAccount,
 } from "./accounts";
-import { fixToolPath, toolPathStatuses } from "./tool-path";
+import { ensureLaunchable, toolPathStatuses } from "./tool-path";
 import type { HubAccount, HubExitAction, HubProfile, HubSkill } from "./tui/types";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -375,7 +375,7 @@ function runFixPathCli(tool: string | undefined, scope: "global" | "local" | nul
             allOk = false;
             continue;
         }
-        const result = fixToolPath(t, scope ?? "global");
+        const result = ensureLaunchable(t, scope ?? "global");
         console.log(`${result.ok ? "ok" : "--"}  ${result.message}`);
         if (!result.ok) allOk = false;
     }
@@ -848,11 +848,11 @@ export async function run(argv: string[]): Promise<void> {
                     return { ok: true, title, lines: reporter.lines };
                 }
                 if (req.action === "fix-path") {
-                    // No selection means every supported tool; persist to the global config.
+                    // No selection means every supported tool; persist config + PATH globally.
                     const tools = req.agents && req.agents.length ? req.agents : TOOL_NAMES;
                     let ok = true;
                     for (const t of tools) {
-                        const result = fixToolPath(t, req.scope ?? "global");
+                        const result = ensureLaunchable(t, req.scope ?? "global");
                         if (result.ok) reporter.success(result.message); else { reporter.warn(result.message); ok = false; }
                     }
                     return { ok, title, lines: reporter.lines };
