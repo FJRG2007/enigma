@@ -63,24 +63,22 @@ test("finds an off-PATH install, persists it, and is idempotent", () => {
 });
 
 test("leaves the config untouched when the tool is on PATH", () => {
-    // Fresh home so the previous test's persisted toolPaths does not interfere.
-    const home2 = mkdtempSync(join(tmpdir(), "enigma-toolpath2-"));
-    process.env.USERPROFILE = home2;
-    process.env.HOME = home2;
-    const binDir = join(home2, "pathbin");
-    const file = fakeBin(binDir, "claude");
+    // Use a tool that was never fixed (codex) so its config entry stays absent; this
+    // keeps the same HOME (os.homedir() does not reliably re-read $HOME mid-process on
+    // POSIX, so switching it would be unreliable across platforms).
+    const binDir = join(HOME, "pathbin");
+    const file = fakeBin(binDir, "codex");
     process.env.PATH = binDir;
     process.env.Path = binDir;
 
-    const loc = locateToolBinary("claude");
+    const loc = locateToolBinary("codex");
     expect(loc.onPath).toBe(file);
 
-    const result = fixToolPath("claude");
+    const result = fixToolPath("codex");
     expect(result.ok).toBe(true);
     expect(result.changed).toBe(false);
-    expect(readConfig().config.toolPaths.claude).toBeUndefined();
+    expect(readConfig().config.toolPaths.codex).toBeUndefined();
 
-    rmSync(home2, { recursive: true, force: true });
     process.env.PATH = "";
     process.env.Path = "";
 });
