@@ -1,21 +1,23 @@
 /**
  * OS-agnostic tool-path discovery and repair. Temp HOME (set BEFORE import) isolates
- * the config and the home-based candidate dirs (config.ts + tool-path.ts resolve the
- * home lazily per call). PATH and the env-derived candidate dirs are neutralized so
- * a real local install of claude/codex on the dev machine never leaks into a case.
+ * the config (config.ts resolves the home lazily per call). ENIGMA_TOOL_PATH_DIRS
+ * pins the off-PATH search to a controlled dir and PATH is emptied, so the result is
+ * hermetic - a real install of claude/codex on the host (CI or dev) never leaks in.
  * Must run under Bun: bun test tests/tool-path.test.ts
  */
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { test, expect, afterAll } from "bun:test";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 
 const HOME = mkdtempSync(join(tmpdir(), "enigma-toolpath-"));
+const OFF_PATH_DIR = join(HOME, ".local", "bin");
 process.env.USERPROFILE = HOME;
 process.env.HOME = HOME;
 delete process.env.ENIGMA_CLAUDE_BIN;
-// Drop every env-derived candidate dir so only the temp-HOME dirs are searched.
-for (const k of ["APPDATA", "LOCALAPPDATA", "ProgramFiles", "ProgramW6432", "NVM_BIN"]) delete process.env[k];
+// Pin discovery to one controlled dir (empty until a case creates a fake binary in it)
+// and empty PATH, so neither depends on what the host has installed.
+process.env.ENIGMA_TOOL_PATH_DIRS = OFF_PATH_DIR;
 process.env.PATH = "";
 process.env.Path = "";
 

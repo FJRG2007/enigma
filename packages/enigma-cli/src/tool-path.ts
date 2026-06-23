@@ -13,8 +13,8 @@
  * place that knows the candidate install directories; adding one is a single edge.
  */
 
-import { homedir } from "node:os";
 import { join } from "node:path";
+import { homedir } from "node:os";
 import { existsSync } from "node:fs";
 import { resolveBin, resolveBinIn } from "./util";
 import { readConfig, setToolPath } from "./config";
@@ -67,6 +67,12 @@ function existingFile(path: string | undefined | null): string | null {
  * generic toolchain dir.
  */
 function candidateBinDirs(): string[] {
+    // Explicit override (path-delimited) replaces discovery entirely: lets a power
+    // user point at a custom install dir, and lets tests run hermetically without
+    // depending on whatever the host happens to have in /usr/bin or %APPDATA%.
+    const override = process.env.ENIGMA_TOOL_PATH_DIRS;
+    if (override) return override.split(process.platform === "win32" ? ";" : ":").filter(Boolean);
+
     const home = homedir();
     const dirs: string[] = [];
     if (process.platform === "win32") {
