@@ -269,14 +269,17 @@ function serveFixPath(req: import("node:http").IncomingMessage, res: import("nod
             .then(([tp, acc]) => {
                 const targets = tool ? [tool] : acc.TOOL_NAMES;
                 let ok = true;
-                const lines = targets.map((t) => {
-                    if (!acc.isToolName(t)) { ok = false; return `Unknown tool '${t}'.`; }
-                    const result = tp.ensureLaunchable(t, "global");
-                    if (!result.ok) ok = false;
-                    return result.message;
+                // Structured per-tool outcomes so the dashboard can render clean rows
+                // (status dot + badge + path) instead of one cramped line of text.
+                const results = targets.map((t) => {
+                    if (!acc.isToolName(t)) { ok = false; return { tool: t, label: t, command: t, ok: false, changed: false, installed: false, path: null, message: `Unknown tool '${t}'.` }; }
+                    const r = tp.ensureLaunchable(t, "global");
+                    if (!r.ok) ok = false;
+                    return { tool: r.tool, label: r.label, command: r.command, ok: r.ok, changed: r.changed, installed: r.installed, path: r.path, message: r.message };
                 });
+                const lines = results.map((r) => r.message);
                 res.writeHead(200, JSON_HDR);
-                res.end(JSON.stringify({ ok, lines, tools: tp.toolPathStatuses().map((t) => ({ name: t.name, label: t.label, status: t.status })) }));
+                res.end(JSON.stringify({ ok, results, lines, tools: tp.toolPathStatuses().map((t) => ({ name: t.name, label: t.label, status: t.status })) }));
             })
             .catch(() => { res.writeHead(500, JSON_HDR); res.end('{"ok":false,"error":"fix-path failed"}'); });
     });

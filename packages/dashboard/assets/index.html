@@ -150,6 +150,22 @@
         .wval.muted { font-size: 14px; font-weight: 500; color: var(--muted); }
         .wset { display: flex; gap: 6px; margin-top: 10px; }
         .wlimit { flex: 1; min-width: 0; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 7px; padding: 4px 8px; font-size: 12px; }
+        /* Fix-path result: per-tool rows with a status dot, badge, reason and resolved path. */
+        .fixres { margin-top: 12px; display: none; }
+        .fixres.show { display: block; }
+        .fixres-head { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+        .fixres-head.ok { color: var(--good); }
+        .fixres-head.fixed { color: var(--accent); }
+        .fixres-head.bad { color: var(--accent2); }
+        .fxrow { display: flex; align-items: flex-start; gap: 10px; padding: 9px 0; border-top: 1px solid var(--surface2); }
+        .fxdot { width: 8px; height: 8px; border-radius: 50%; margin-top: 5px; flex: 0 0 auto; }
+        .fxdot.ok { background: var(--good); }
+        .fxdot.fixed { background: var(--accent); }
+        .fxdot.bad { background: var(--accent2); }
+        .fxmain { min-width: 0; flex: 1; }
+        .fxtitle { font-size: 13px; display: flex; align-items: center; gap: 8px; }
+        .fxmsg { color: var(--muted); font-size: 12px; margin-top: 2px; }
+        .fxpath { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; color: var(--muted); margin-top: 3px; word-break: break-all; }
         .sys-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0 24px; }
         .sys-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--surface2); font-size: 13px; }
         .sys-item .k { color: var(--muted); }
@@ -212,6 +228,7 @@
             <div class="sub" style="margin-bottom:14px">Only Context Compression and (opt-in) real tool-usage are measured for savings below. The rest is shown as state: enigma can't measure their effect because they run inside the agent, not through enigma - so it reports their configuration honestly instead of inventing a number.</div>
             <div id="systems" class="sys-grid"><div class="empty" style="padding:16px 0">Loading...</div></div>
             <div id="updateNote" class="set-note"></div>
+            <div id="fixPathResult" class="fixres"></div>
         </div>
 
         <div class="panel">
@@ -1039,13 +1056,56 @@
         // Detect & repair every tool's launch path; the server persists any off-PATH
         // binary so `enigma <tool>` works, and returns the refreshed status.
         async function runFixPath() {
+            const btn = $("fixPathBtn");
+            $("fixPathResult").className = "fixres";
             $("updateNote").textContent = "Detecting tool paths...";
+            if (btn) { btn.disabled = true; }
             try {
                 const res = await fetch("/api/fix-path", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
                 const out = await res.json();
-                $("updateNote").textContent = (out.lines || []).join("  ") || (out.ok ? "Tool paths OK." : "Could not fix all tools.");
+                $("updateNote").textContent = "";
+                renderFixPath(out);
                 loadSystems(true);
-            } catch { $("updateNote").textContent = "Could not reach the server to fix tool paths."; }
+            } catch {
+                $("updateNote").textContent = "";
+                $("fixPathResult").className = "fixres show";
+                $("fixPathResult").innerHTML = '<div class="fixres-head bad">Could not reach the server to fix tool paths.</div>';
+            } finally { if (btn) { btn.disabled = false; } }
+        }
+
+        // Short, non-redundant reason per tool (the resolved path is shown separately below).
+        function fixReason(r) {
+            if (!r.installed) return "Not installed. Install it, then run fix-path again.";
+            if (r.changed) return "Found off PATH and saved - 'enigma " + esc(r.command) + "' now launches it.";
+            return "Launchable - '" + esc(r.command) + "' works.";
+        }
+
+        // Render the fix-path outcome as one row per tool: status dot + badge + reason + path.
+        function renderFixPath(out) {
+            const box = $("fixPathResult");
+            const results = out.results || [];
+            box.className = "fixres show";
+            if (!results.length) {
+                box.innerHTML = '<div class="fxmsg">' + esc((out.lines || []).join(" ") || (out.ok ? "Tool paths OK." : "Could not fix tools.")) + "</div>";
+                return;
+            }
+            const fixedN = results.filter((r) => r.changed).length;
+            const badN = results.filter((r) => !r.ok).length;
+            let head, hc;
+            if (badN) { head = badN + " of " + results.length + " tools need attention"; hc = "bad"; }
+            else if (fixedN) { head = "Repaired " + fixedN + " of " + results.length + " tools - all launchable now"; hc = "fixed"; }
+            else { head = "All " + results.length + " tools launchable"; hc = "ok"; }
+            const rows = results.map((r) => {
+                const cls = !r.ok ? "bad" : (r.changed ? "fixed" : "ok");
+                const badge = !r.ok ? '<span class="pill off">not found</span>'
+                    : (r.changed ? '<span class="pill lvl">fixed</span>' : '<span class="pill on">ok</span>');
+                return '<div class="fxrow"><span class="fxdot ' + cls + '"></span><div class="fxmain">'
+                    + '<div class="fxtitle">' + esc(r.label) + " " + badge + "</div>"
+                    + '<div class="fxmsg">' + fixReason(r) + "</div>"
+                    + (r.path ? '<div class="fxpath">' + esc(r.path) + "</div>" : "")
+                    + "</div></div>";
+            }).join("");
+            box.innerHTML = '<div class="fixres-head ' + hc + '">' + esc(head) + "</div>" + rows;
         }
 
         async function loadSystems(force) {
