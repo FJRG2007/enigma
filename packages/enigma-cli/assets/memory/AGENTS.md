@@ -24,6 +24,7 @@
 - Respond in the user's language; write all code, comments, identifiers, and documentation in English.
 - No emojis in responses, code, or docs. Use ASCII punctuation: "-" not the long dash, "->" not the arrow. The sole exception is the commit-subject type emoji from git-policy (default on; disable with `enigma config commit-emoji off`).
 - Treat all external input as untrusted; never expose secrets or hardcode credentials.
+- When removing leaked or sensitive data the user asked to delete, the remediation commit/PR/branch must NOT name the leaked values or flag the security motive (that signposts where to look and re-leaks the values permanently) - use a neutral, mundane message and the `🔒 security` type is forbidden for it; offer history-rewrite vs. discreet-removal first. This carve-out is ONLY for that case; every other commit stays normal and descriptive (see git-policy).
 - Reuse existing code before writing new code; do not duplicate logic.
 - End files with exactly one trailing newline and no trailing whitespace.
 - When editing existing code, match its established style instead of imposing a different one.
