@@ -359,7 +359,7 @@
             <div class="panel-head">
                 <h2>Enigma Systems <small>what's active - configuration, not savings</small></h2>
                 <div class="ctrls">
-                    <button id="refreshBtn" type="button" class="toggle">Refresh</button>
+                    <button id="refreshBtn" type="button" class="iconbtn" title="Refresh" aria-label="Refresh"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg></button>
                     <button id="fixPathBtn" type="button" class="toggle">Fix tool paths</button>
                     <button id="updateBtn" type="button" class="toggle on">Check &amp; update</button>
                 </div>
@@ -449,7 +449,7 @@
         </div>
         <div class="panel" id="usagePanel" style="display:none">
             <h2 style="margin:0 0 4px">Usage limits <small>same windows Claude Code shows</small></h2>
-            <div class="sub" style="margin-bottom:12px">Cards marked <span class="tag meas">live</span> show the <b>real % and reset</b> Anthropic reports (the same as Claude's own UI), captured by the local proxy from your <code>enigma claude</code> traffic - no plan limit needed. Until the proxy has seen a request, the card falls back to tokens used, or a % against a plan limit you set (on the card, or <code>enigma config plan-weekly-limit &lt;tokens&gt;</code>). Per-model live data appears only when Anthropic sends it.</div>
+            <div class="sub" style="margin-bottom:12px">Cards marked <span class="tag meas">live</span> show the <b>real % and reset</b> Anthropic reports (the same as Claude's own UI). Turn on <code>enigma config usage-api on</code> to fetch them with your local Claude Code login - no proxy or plan limit needed. (The proxy also captures them from <code>enigma claude</code> traffic.) Until live data lands, the card falls back to tokens used, or a % against a plan limit you set (on the card, or <code>enigma config plan-weekly-limit &lt;tokens&gt;</code>). Per-model live data appears only when Anthropic sends it.</div>
             <div id="uWindows"></div>
             <div class="grid" style="margin-bottom:16px">
                 <div class="card"><div class="label">Est. Cost</div><div id="uCost" class="value accent">-</div><div class="foot">All sessions, per-model pricing</div></div>
@@ -1772,7 +1772,8 @@ export {
                 $("uBlockBar").style.width = pct + "%";
                 $("uBlockState").textContent = b.active ? "active" : "window elapsed";
                 const remMin = Math.max(0, Math.round((b.endsAt - now) / 60000));
-                $("uBlockTime").textContent = b.active ? (remMin + " min left") : "ended";
+                const remLabel = remMin >= 60 ? Math.floor(remMin / 60) + "h " + (remMin % 60) + "m left" : remMin + "m left";
+                $("uBlockTime").textContent = b.active ? remLabel : "ended";
                 $("uBlockTokens").textContent = fmt(b.tokens || 0);
                 $("uBlockCost").textContent = fmtUsd(b.cost || 0);
                 $("uBlockBurn").textContent = fmt(Math.round(b.burnRatePerMin || 0)) + " tok/min";
