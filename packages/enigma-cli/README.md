@@ -87,7 +87,7 @@ enigma compress [file] Compress JSON/logs/text to fewer tokens (reversible via C
                        --retrieve <hash> restores, --stats shows total savings,
                        --clear wipes all dashboard data (stats/history/cache)
 enigma mcp             Run the context-compression MCP server over stdio
-enigma dashboard|dash  Open the local savings dashboard in your browser (http://enigma,
+enigma dashboard|dash  Open the local dashboard (manage enigma; see savings) in your browser (http://enigma,
                        or http://localhost:24282 if :80/hosts is unavailable)
 enigma seal            Maintenance: (re)compute skill content hashes
 enigma check           Integrity gate: verify skills are well-formed and sealed
@@ -479,21 +479,22 @@ enigma compress --stats                     # cumulative token savings
 enigma compress --clear                     # wipe all dashboard data (stats/history/cache)
 ```
 
-### Savings dashboard
+### Dashboard (manage enigma + see savings)
 
 <p align="center">
   <img src="https://github.com/FJRG2007/enigma/blob/main/assets/images/dashboard.png?raw=true" alt="enigma dashboard" width="100%">
-  <br><sub>Savings view (auto-generated from the current UI; mock data shown).</sub>
+  <br><sub>The dashboard (savings view shown; auto-generated from the current UI, mock data).</sub>
 </p>
 
-`enigma dashboard` (alias `dash`) serves a local, loopback-only browser dashboard
-of the token savings - totals, **estimated money saved**, average/best per call, a
-per-day graph (toggle tokens/$ and daily/cumulative), breakdowns by the app that
-requested each compression (Claude Code, OpenCode, Codex, or the CLI) and by content
-type (JSON/logs/text...), a daily/weekly/monthly savings history, a recent-compressions
-table, and reversible-cache (CCR) stats. It runs only while open; `enigma config
-dashboard always` keeps a lightweight background daemon, and `enigma compress --clear`
-resets the data.
+`enigma dashboard` (alias `dash`) serves a local, loopback-only browser dashboard to
+**manage all of enigma** - switch accounts and profiles, enable or edit skills per app,
+change any setting, and free up your machine (kill a port, shut down WSL, quit Docker).
+It also surfaces real Claude usage and the compression savings enigma can measure: totals,
+**estimated money saved**, a per-day graph (tokens/$ and daily/cumulative), breakdowns by
+the app that requested each compression and by content type, a savings history, a
+recent-compressions table and reversible-cache (CCR) stats. It runs only while open;
+`enigma config dashboard always` keeps a lightweight background daemon, and
+`enigma compress --clear` resets the savings data.
 
 The dashboard is fully modular - if you don't want it (e.g. on a server), you never need
 it, and you can add or remove it at any time. Its browser UI (the page plus a ~196 KB chart

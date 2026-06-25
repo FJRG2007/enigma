@@ -148,7 +148,7 @@
             <div class="cmd"><h3>enigma mcp</h3><p>Run the context-compression MCP server over stdio (used by the agents when <code>compress</code> is on).</p></div>
 
             <h2 id="dashboard">dashboard</h2>
-            <p>A loopback-only browser dashboard of measured token savings and real Claude usage. Nothing leaves your machine.</p>
+            <p>A loopback-only browser control panel for all of enigma - accounts, skills, settings, system cleanup - that also shows real Claude usage and measured savings. Nothing leaves your machine.</p>
             <div class="cmd"><h3>enigma dashboard</h3><p>Alias <code>enigma dash</code>. Runs while open by default; <code>enigma config dashboard always</code> keeps a lightweight background daemon.</p><div class="ex"><b>$</b> enigma dashboard</div></div>
 
             <h2 id="misc">fix-path &amp; issue</h2>
@@ -174,7 +174,7 @@
                     <tr><td><code>parallel-subagents</code></td><td>on / off</td><td class="def">off</td><td class="w">Allow the agent to fan out sub-agents in parallel.</td></tr>
                     <tr><td><code>auto-lint</code></td><td>on / off</td><td class="def">off</td><td class="w">Lint edited files via a post-write hook.</td></tr>
                     <tr><td><code>compress</code></td><td>on / off</td><td class="def">off</td><td class="w">Register the context-compression MCP server in your agents.</td></tr>
-                    <tr><td><code>dashboard</code></td><td>off / on-demand / always</td><td class="def">off</td><td class="w">Local savings dashboard mode.</td></tr>
+                    <tr><td><code>dashboard</code></td><td>off / on-demand / always</td><td class="def">off</td><td class="w">Local management dashboard mode.</td></tr>
                     <tr><td><code>proxy</code></td><td>on / off</td><td class="def">off</td><td class="w">Route <code>enigma claude</code> through a local measuring proxy.</td></tr>
                     <tr><td><code>prompt-secret-guard</code></td><td>on / off</td><td class="def">off</td><td class="w">Scan outgoing prompts for secrets (via the proxy).</td></tr>
                     <tr><td><code>prompt-secret-mode</code></td><td>redact / reject</td><td class="def">redact</td><td class="w">What the guard does on a detected secret.</td></tr>

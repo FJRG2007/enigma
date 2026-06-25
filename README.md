@@ -237,7 +237,7 @@ enigma compress [file] Compress JSON/logs/text to fewer tokens (reversible);
                        --retrieve <hash> restores, --stats shows total savings,
                        --clear wipes all dashboard data (stats/history/cache)
 enigma mcp             Run the context-compression MCP server over stdio
-enigma dashboard|dash  Open the local savings dashboard in your browser (http://enigma,
+enigma dashboard|dash  Open the local dashboard (manage enigma; see savings) in your browser (http://enigma,
                        or http://localhost:24282 if :80/hosts is unavailable)
 enigma seal            Maintenance: (re)compute skill content hashes
 enigma check           Integrity gate: verify skills are well-formed and sealed
