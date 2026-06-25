@@ -8,40 +8,67 @@
         :root {
             --bg: #0b0e14; --surface: #151a23; --surface2: #1b2230; --border: #232a36;
             --text: #e6e6e6; --muted: #8a93a3; --accent: #e0a458; --accent2: #d7875f; --good: #6fcf97;
+            /* Type roles: a monospace "machine readout" face carries the brand, headings,
+               labels and numeric data (this is a CLI tool's dashboard); sans carries prose. */
+            --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+            --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+            --ring: rgba(224,164,88,0.6);
         }
         * { box-sizing: border-box; }
         body {
             margin: 0; background: var(--bg); color: var(--text);
-            font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+            font-family: var(--sans);
             -webkit-font-smoothing: antialiased; padding: 24px; max-width: 2200px; margin: 0 auto;
         }
         a { color: var(--accent2); }
+        /* Quality floor: one visible keyboard-focus ring for every interactive control
+           (the custom-styled buttons/tabs/links carry no native outline otherwise). */
+        a:focus-visible, button:focus-visible, select:focus-visible,
+        input:focus-visible, [tabindex]:focus-visible {
+            outline: 2px solid var(--ring); outline-offset: 2px; border-radius: 6px;
+        }
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after {
+                animation-duration: 0.01ms !important; animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+            }
+        }
         header { display: flex; align-items: center; gap: 20px; margin-bottom: 24px; flex-wrap: wrap; }
-        .brand { display: flex; flex-direction: column; }
-        .wordmark { font-size: 20px; font-weight: 700; letter-spacing: 0.5px; }
-        .wordmark span { color: var(--accent); }
-        .sub { color: var(--muted); font-size: 13px; }
+        .brand { display: flex; flex-direction: column; gap: 3px; }
+        .wordmark {
+            font-family: var(--mono); font-size: 19px; font-weight: 600; letter-spacing: 0.5px;
+            display: inline-flex; align-items: center;
+        }
+        /* Signature: a blinking block caret turns the wordmark into a live terminal prompt. */
+        .wordmark span {
+            display: inline-block; width: 0.46em; height: 1.05em; margin-left: 4px;
+            background: var(--accent); transform: translateY(1px); text-indent: -9999px; overflow: hidden;
+            animation: caret 1.1s steps(1, end) infinite;
+        }
+        @keyframes caret { 0%, 50% { opacity: 1; } 50.01%, 100% { opacity: 0; } }
+        .sub { font-family: var(--mono); color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 1.4px; }
         .tabs { display: flex; gap: 4px; }
         .tabs .tab {
-            text-decoration: none; color: var(--muted); font-size: 13px; font-weight: 600;
-            padding: 7px 16px; border-radius: 8px; border: 1px solid transparent; transition: background .15s, color .15s, border-color .15s;
+            font-family: var(--mono); text-decoration: none; color: var(--muted); font-size: 12px; font-weight: 600;
+            padding: 7px 14px; border-radius: 8px; border: 1px solid transparent; transition: background .15s, color .15s, border-color .15s;
         }
         .tabs .tab:hover { color: var(--text); background: var(--surface); }
         .tabs .tab.active { color: var(--accent); background: var(--surface); border-color: var(--border); }
-        .live { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
+        .live { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; font-family: var(--mono); }
         .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--good); box-shadow: 0 0 8px var(--good); }
         .dot.stale { background: var(--muted); box-shadow: none; }
         .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 20px; }
-        .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
-        .card .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.6px; }
-        .card .value { font-size: 28px; font-weight: 700; margin-top: 6px; }
+        .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px; transition: border-color .15s; }
+        .card:hover { border-color: var(--surface2); }
+        .card .label { font-family: var(--mono); color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.7px; }
+        .card .value { font-family: var(--mono); font-size: 28px; font-weight: 600; margin-top: 8px; font-variant-numeric: tabular-nums; letter-spacing: -0.5px; }
         .card .value.accent { color: var(--accent); }
         .card .value.good { color: var(--good); }
         .card .foot { color: var(--muted); font-size: 12px; margin-top: 4px; }
         .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 18px; margin-bottom: 20px; }
         .panel-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
-        .panel h2 { font-size: 14px; font-weight: 600; margin: 0; color: var(--text); }
-        .panel h2 small { color: var(--muted); font-weight: 400; margin-left: 8px; }
+        .panel h2 { font-family: var(--mono); font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; margin: 0; color: var(--text); }
+        .panel h2 small { font-family: var(--sans); color: var(--muted); font-weight: 400; font-size: 12px; text-transform: none; letter-spacing: 0; margin-left: 8px; }
         .ctrls { margin-left: auto; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
         .ranges { display: flex; gap: 4px; }
         .ranges button {
@@ -85,11 +112,11 @@
         footer { color: var(--muted); font-size: 12px; line-height: 1.6; margin-top: 8px; }
         code { background: var(--surface2); padding: 1px 6px; border-radius: 5px; color: var(--accent2); }
         .page-head { margin-bottom: 18px; }
-        .page-head h1 { font-size: 18px; font-weight: 700; margin: 0 0 4px; }
+        .page-head h1 { font-family: var(--mono); font-size: 18px; font-weight: 600; letter-spacing: 0.3px; margin: 0 0 4px; }
         .page-head p { color: var(--muted); font-size: 13px; margin: 0; max-width: 720px; line-height: 1.5; }
         .set-cat { margin-bottom: 18px; }
         .set-cat:last-child { margin-bottom: 0; }
-        .set-cat-h { color: var(--accent); font-size: 12px; text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 4px; }
+        .set-cat-h { font-family: var(--mono); color: var(--accent); font-size: 12px; text-transform: uppercase; letter-spacing: 0.7px; margin-bottom: 4px; }
         .set-cat-b { color: var(--muted); font-size: 12px; margin-bottom: 8px; }
         .set-row { display: flex; align-items: center; gap: 14px; padding: 9px 0; border-bottom: 1px solid var(--surface2); }
         .set-row:last-child { border-bottom: none; }
@@ -173,13 +200,20 @@
         .pill.on { color: #06210f; background: var(--good); border-color: var(--good); font-weight: 600; }
         .pill.off { color: var(--muted); background: var(--surface2); }
         .pill.lvl { color: #1a1206; background: var(--accent); border-color: var(--accent); font-weight: 600; }
-        @media (max-width: 720px) { .grid { grid-template-columns: repeat(2, 1fr); } header { gap: 12px; } }
+        @media (max-width: 720px) {
+            body { padding: 16px; }
+            .grid { grid-template-columns: repeat(2, 1fr); }
+            header { gap: 12px; }
+            .tabs { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+            .tabs .tab { white-space: nowrap; }
+            .nav { margin-left: 0; }
+        }
     </style>
 </head>
 <body>
     <header>
         <div class="brand">
-            <div class="wordmark">Enigma<span>.</span></div>
+            <div class="wordmark">Enigma<span aria-hidden="true">.</span></div>
             <div class="sub">Savings dashboard</div>
         </div>
         <nav class="tabs">

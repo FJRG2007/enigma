@@ -1,16 +1,20 @@
 /**
- * Render realistic previews of the dashboard for the README. Serves the REAL dashboard
+ * Render a realistic preview of the dashboard for the README. Serves the REAL dashboard
  * assets (packages/dashboard/assets) from a tiny local server, stubs the /api/* endpoints
- * with impressive mock data, and screenshots BOTH the Savings view (dashboard.png) and the
- * Usage view (usage.png) with a headless browser.
+ * with fully synthetic mock data, and screenshots the Savings view (dashboard.png) with a
+ * headless browser.
  *
  * It renders the actual shipped UI, so the preview always matches the current dashboard
  * version - regenerate it whenever the dashboard package changes (see the screenshot
  * workflow). CI-only: Playwright is installed ephemerally, never a package dependency.
  *
+ * The Usage view is intentionally NOT screenshotted: it renders per-project / per-account
+ * names, and any realistic mock for it risks embedding real, private project identifiers
+ * in a public image. Keep all mock data here generic and non-identifying.
+ *
  *   npm i --no-save playwright && npx playwright install chromium && node scripts/screenshot.mjs
  *
- * Output: docs/images/dashboard.png (Savings) and docs/images/usage.png (Usage).
+ * Output: docs/images/dashboard.png (Savings).
  */
 
 import { createServer } from "node:http";
@@ -22,7 +26,6 @@ import { chromium } from "playwright";
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const ASSETS = join(ROOT, "packages", "dashboard", "assets");
 const OUT = join(ROOT, "docs", "images", "dashboard.png");
-const OUT_USAGE = join(ROOT, "docs", "images", "usage.png");
 const DAY = 86400000;
 
 // Wide-monitor capture (2558x1276, ~2:1). The dashboard now fills the width on its own
@@ -62,63 +65,6 @@ function sourceBucket(frac) {
     return { calls: Math.round(history.length * frac), tokensBefore: before, tokensAfter: before - saved, tokensSaved: saved };
 }
 
-/** The next Monday 11:00 (local), strictly after `now` - the weekly window reset. */
-function nextMonday11(now) {
-    const d = new Date(now);
-    d.setHours(11, 0, 0, 0);
-    while (d.getDay() !== 1 || d.getTime() <= now) d.setDate(d.getDate() + 1);
-    return d.getTime();
-}
-
-/** Rich mock for the Usage view: live windows, cost, per-account/model/project, sessions. */
-function mockUsage() {
-    const now = Date.now();
-    const week = nextMonday11(now);
-    const b = (input, output, cacheRead, messages, cost) => ({ input, output, cacheRead, cacheCreation: Math.round(cacheRead * 0.04), messages, cost });
-    const sess = (mins, account, project, model, input, output, cost) => ({
-        id: "sess", account, project, model, lastActive: now - mins * 60000, input, output, cacheRead: input * 180, cacheCreation: input * 8, messages: 40, cost,
-    });
-    return {
-        pending: false, scannedFiles: 712, sessions: 643,
-        input: 41_800_000, output: 12_400_000, cacheRead: 824_000_000, cacheCreation: 33_500_000, messages: 158300, cost: 6340,
-        windows: {
-            session: { label: "Current session", kind: "session", used: 61_740_000, cost: 34.61, limit: 0, pct: 62, resetsAt: now + (3 * 60 + 48) * 60000, live: true },
-            weeklyAll: { label: "All models", kind: "weekly", used: 422_440_000, cost: 1820, limit: 0, pct: 41, resetsAt: week, live: true },
-            weeklySonnet: { label: "Sonnet only", kind: "weekly", used: 38_000_000, cost: 210, limit: 0, pct: 9, resetsAt: week, live: true },
-        },
-        block: { active: true, startedAt: now - 72 * 60000, endsAt: now + 228 * 60000, tokens: 61_740_000, cost: 34.61, burnRatePerMin: 895800, projectedTokens: 266_280_000, projectedCost: 149.29 },
-        byAccount: {
-            "default": b(28_900_000, 9_100_000, 640_000_000, 110000, 4850),
-            "ByteHide": b(12_900_000, 3_300_000, 184_000_000, 48300, 1490),
-        },
-        byModel: {
-            "claude-opus-4-8": b(27_300_000, 8_100_000, 592_000_000, 96400, 5210),
-            "claude-opus-4-7": b(2_900_000, 1_000_000, 84_000_000, 12000, 931),
-            "claude-sonnet-4-6": b(10_200_000, 3_000_000, 184_000_000, 39800, 170),
-            "claude-haiku-4-5": b(1_400_000, 300_000, 48_000_000, 22100, 34),
-        },
-        byProject: {
-            "C--Users-admin-Documents-DEV-TPEOficial-cerberus": b(9_440_000, 11_010_000, 2_930_000_000, 11200, 1890),
-            "C--Users-admin-Documents-DEV-FJRG2007-orphion": b(4_660_000, 6_050_000, 1_760_000_000, 6200, 1100),
-            "C--Users-admin-Documents-DEV-FJRG2007-ai": b(5_050_000, 6_290_000, 1_200_000_000, 5000, 916),
-            "C--Users-admin-Documents-DEV-ByteHide-ai-gateway": b(5_580_000, 4_780_000, 1_180_000_000, 4200, 788),
-            "C--Users-admin-Documents-DEV-TPEOficial-dymo-api": b(2_490_000, 3_870_000, 945_000_000, 3000, 622),
-        },
-        providers: [
-            { tool: "claude", label: "Claude Code", available: true, note: "2 accounts - local transcripts" },
-            { tool: "codex", label: "Codex", available: false, note: "no local token-usage store" },
-            { tool: "opencode", label: "OpenCode", available: false, note: "no local token-usage store" },
-        ],
-        recentSessions: [
-            sess(3, "default", "C--Users-admin-Documents-DEV-FJRG2007-ai", "claude-opus-4-8", 16200, 338100, 72.30),
-            sess(174, "default", "C--Users-admin-Documents-DEV-FJRG2007-ai", "claude-opus-4-8", 11500, 543300, 113.73),
-            sess(201, "ByteHide", "C--Users-admin-Documents-DEV-ByteHide-ai-gateway", "claude-opus-4-8", 5200, 4700, 0.97),
-            sess(320, "default", "C--Users-admin-Documents-DEV-TPEOficial-cerberus", "claude-opus-4-8", 39900, 478200, 75.63),
-            sess(540, "ByteHide", "C--Users-admin-Documents-DEV-ByteHide-bytehide-monitor-python", "claude-sonnet-4-6", 8500, 110400, 9.24),
-        ],
-    };
-}
-
 const STATS = {
     version: "0.1.x",
     generatedAt: Date.now(),
@@ -135,7 +81,9 @@ const STATS = {
     },
     history,
     cache: { count: 487, bytes: 268435456, cap: 500 },
-    usage: mockUsage(),
+    // No `usage` block: the Usage view renders per-project/account identifiers, so it is
+    // never screenshotted (see the header note). The Savings view does not read usage.
+    usage: null,
 };
 
 const STATUS = {
@@ -184,14 +132,6 @@ server.listen(0, "127.0.0.1", async () => {
         mkdirSync(dirname(OUT), { recursive: true });
         await page.screenshot({ path: OUT, clip: { x: 0, y: 0, ...VIEW } });
         console.log("wrote", OUT);
-
-        // Usage view (the cost/windows/breakdowns tab) - taller, captured top-down.
-        const USAGE_H = 1760;
-        await page.setViewportSize({ width: VIEW.width, height: USAGE_H });
-        await page.click('a[data-view="usage"]');
-        await page.waitForTimeout(1500); // let the usage panels + window bars render
-        await page.screenshot({ path: OUT_USAGE, clip: { x: 0, y: 0, width: VIEW.width, height: USAGE_H } });
-        console.log("wrote", OUT_USAGE);
     } finally {
         await browser.close();
         server.close();
