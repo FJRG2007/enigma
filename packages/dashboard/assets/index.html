@@ -2567,7 +2567,11 @@ export {
                 + (a.loggedIn ? "" : btn("login", "Log in..."))
                 + (a.removable ? btn("rename", "Rename") + removeBtn : "")
                 + "</div>";
-            return '<div class="set-row"><div class="set-meta"><div class="set-name">' + esc(a.name) + ' <span class="tag ext">' + esc(a.toolLabel) + "</span> " + badges
+            const toolIc = agentSvg(a.tool);
+            const toolBadge = toolIc
+                ? '<span class="aicon set-ic" title="' + esc(a.toolLabel) + '" aria-label="' + esc(a.toolLabel) + '">' + toolIc + "</span>"
+                : '<span class="tag ext">' + esc(a.toolLabel) + "</span> ";
+            return '<div class="set-row"><div class="set-meta"><div class="set-name">' + esc(a.name) + " " + toolBadge + badges
                 + '</div><div class="set-hint">' + esc(a.dir) + "</div></div>" + acts + "</div>";
         }
         function profileRow(p, tools, accounts) {
@@ -2575,7 +2579,9 @@ export {
                 const cur = p.accounts[t.name] || "";
                 const opts = ['<option value="">(none)</option>'].concat(accounts.filter((a) => a.tool === t.name)
                     .map((a) => '<option value="' + esc(a.name) + '"' + (a.name === cur ? " selected" : "") + ">" + esc(a.name) + "</option>")).join("");
-                return '<label style="font-size:12px;color:var(--muted);display:inline-flex;align-items:center;gap:6px;margin:0 12px 6px 0">' + esc(t.label)
+                const ic = agentSvg(t.name);
+                const lbl = ic ? '<span class="aicon" title="' + esc(t.label) + '" aria-label="' + esc(t.label) + '">' + ic + "</span>" : esc(t.label);
+                return '<label style="font-size:12px;color:var(--muted);display:inline-flex;align-items:center;gap:6px;margin:0 12px 6px 0">' + lbl
                     + ' <select class="choice" data-prof-tool="' + esc(t.name) + '" data-prof="' + esc(p.name) + '">' + opts + "</select></label>";
             }).join("");
             const acts = '<div class="set-ctl" style="display:flex;gap:6px;align-items:center">'

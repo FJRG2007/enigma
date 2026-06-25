@@ -62,6 +62,20 @@
         .def { color: var(--good); }
 
         footer { border-top: 1px solid var(--border-soft); margin-top: 40px; padding: 24px; text-align: center; color: var(--muted); font-size: 13px; }
+
+        /* One page shown at a time (driven by the sidebar), with a fuzzy search over all of them. */
+        aside a.active { color: var(--accent); }
+        .doc-page[hidden] { display: none; }
+        .search { position: relative; margin-bottom: 18px; }
+        .search input { width: 100%; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text); font-family: var(--mono); font-size: 13px; padding: 8px 10px; }
+        .search input:focus { outline: none; border-color: var(--accent); }
+        .results { position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 30; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: 0 12px 30px rgba(0,0,0,0.45); max-height: 60vh; overflow-y: auto; }
+        .results a { display: block; padding: 8px 11px; border-bottom: 1px solid var(--border-soft); color: var(--text); }
+        .results a:last-child { border-bottom: 0; }
+        .results a:hover, .results a.sel { background: var(--surface2); }
+        .results a b { display: block; font-family: var(--mono); font-size: 12.5px; color: var(--text); }
+        .results a span { display: block; font-size: 11.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .results .nores { padding: 10px 11px; color: var(--muted); font-size: 12.5px; }
         @media (max-width: 820px) { .layout { grid-template-columns: 1fr; } aside { position: static; padding: 16px 0 0; } }
     </style>
 </head>
@@ -70,27 +84,23 @@
 
     <div class="layout">
         <aside>
-            <div class="grp">Start</div>
-            <a href="#install">Install</a>
-            <a href="#first-run">First run</a>
-            <div class="grp">Commands</div>
-            <a href="#install-cmd">install / update</a>
-            <a href="#launch">Launch a tool</a>
-            <a href="#accounts">accounts / profiles</a>
-            <a href="#skills">skills</a>
-            <a href="#security">security / guard</a>
-            <a href="#compress">compress</a>
-            <a href="#dashboard">dashboard</a>
-            <a href="#misc">fix-path / issue</a>
-            <div class="grp">Reference</div>
-            <a href="#config">Configuration</a>
-            <a href="#improve">/improve</a>
+            <div class="search">
+                <input id="docsearch" type="search" placeholder="Search docs..." autocomplete="off" aria-label="Search the documentation">
+                <div id="docresults" class="results" hidden></div>
+            </div>
+            <div class="grp">Docs</div>
+            <a href="#" data-page="start">Getting started</a>
+            <a href="#" data-page="commands">Commands</a>
+            <a href="#" data-page="config">Configuration</a>
+            <a href="#" data-page="troubleshooting">Troubleshooting</a>
+            <a href="#" data-page="contributing">Contributing</a>
         </aside>
 
         <main>
             <h1>Documentation</h1>
-            <p class="sub">The <code>enigma</code> command reference and every configuration key. Run <code>enigma help</code> for the same list in your terminal.</p>
+            <p class="sub">The <code>enigma</code> command reference and every configuration key. Run <code>enigma help</code> for the same list in your terminal, or search above.</p>
 
+            <section class="doc-page" data-page="start">
             <h2 id="install">Install</h2>
             <p>Pick one. The install script and <code>npx</code> run the interactive install themselves; the global package managers install the binary, then run <code>enigma install</code>.</p>
             <pre class="term"><span class="c">$ </span>curl -fsSL https://raw.githubusercontent.com/FJRG2007/enigma/main/scripts/install.sh | sh   <span class="x"># macOS / Linux (recommended)</span>
@@ -104,6 +114,9 @@
             <pre class="term"><span class="c">$ </span>enigma            <span class="x"># interactive hub</span>
 <span class="c">$ </span>enigma install --all --yes   <span class="x"># non-interactive, every supported agent</span></pre>
 
+            </section>
+
+            <section class="doc-page" data-page="commands" hidden>
             <h2 id="install-cmd">install &amp; update</h2>
             <div class="cmd"><h3>enigma install</h3><p>Install or update the policy skills, memory and slash commands into the agents you select. Auto-detects installed agents; <code>--all</code> targets every supported one, <code>--local</code> installs into the current project instead of user level.</p><div class="ex"><b>$</b> enigma install --all --yes</div></div>
             <div class="cmd"><h3>enigma update</h3><p>Fetch the latest skills from GitHub (no package release needed), sync every deployment, and self-update the <code>enigma-cli</code> package.</p><div class="ex"><b>$</b> enigma update</div></div>
@@ -141,6 +154,9 @@
             <div class="cmd"><h3>enigma fix-path [tool]</h3><p>Find a tool installed but not on PATH and make <code>enigma &lt;tool&gt;</code> (and the bare command) launch it.</p><div class="ex"><b>$</b> enigma fix-path claude</div></div>
             <div class="cmd"><h3>enigma issue [bug|feature]</h3><p>Open a prefilled GitHub issue with your environment autocompleted.</p><div class="ex"><b>$</b> enigma issue bug</div></div>
 
+            </section>
+
+            <section class="doc-page" data-page="config" hidden>
             <h2 id="config">Configuration</h2>
             <p>Settings live in <code>.enigma.json</code> (global <code>~/.enigma.json</code>, overridden by a repo-local one). Set them with <code>enigma config &lt;key&gt; &lt;value&gt;</code>, the interactive menu (<code>enigma config</code>), or the dashboard. Add <code>-g</code> / <code>-l</code> to target global or local.</p>
             <table>
@@ -152,6 +168,8 @@
                     <tr><td><code>permission-bypass</code></td><td>on / off</td><td class="def">on</td><td class="w">Skip the agent's approval prompts (a deliberate security downgrade).</td></tr>
                     <tr><td><code>auto-sync</code></td><td>on / off</td><td class="def">on</td><td class="w">Refresh deployed skills when launching a tool through enigma.</td></tr>
                     <tr><td><code>remote-skills</code></td><td>on / off</td><td class="def">on</td><td class="w">Fetch skills newer than the bundled set from GitHub.</td></tr>
+                    <tr><td><code>skill-update-policy</code></td><td>overwrite / keep</td><td class="def">overwrite</td><td class="w">On update, replace a skill you edited locally, or keep your edits.</td></tr>
+                    <tr><td><code>usage-api</code></td><td>on / off</td><td class="def">off</td><td class="w">Fetch the real usage %/reset from Anthropic via your local Claude Code login.</td></tr>
                     <tr><td><code>parallel-subagents</code></td><td>on / off</td><td class="def">off</td><td class="w">Allow the agent to fan out sub-agents in parallel.</td></tr>
                     <tr><td><code>auto-lint</code></td><td>on / off</td><td class="def">off</td><td class="w">Lint edited files via a post-write hook.</td></tr>
                     <tr><td><code>compress</code></td><td>on / off</td><td class="def">off</td><td class="w">Register the context-compression MCP server in your agents.</td></tr>
@@ -173,9 +191,120 @@
             <p>A slash command deployed to every agent (it runs inside the agent, not the CLI). Two modes: <b>implement</b> edits a focused area, <b>advisor</b> is read-only and writes self-contained plans for another agent to execute.</p>
             <pre class="term"><span class="x">/</span>improve ui          <span class="x"># implement: ui | security | performance | seo | refactor</span>
 <span class="x">/</span>improve audit       <span class="x"># advisor (read-only): audit | quick | deep | branch | next | plan ...</span></pre>
+            </section>
+
+            <section class="doc-page" data-page="troubleshooting" hidden>
+            <h2 id="ts-path"><code>enigma &lt;tool&gt;</code> can't find the tool</h2>
+            <p>The tool is installed but not on your shell PATH. Run <code>enigma fix-path</code> (or <code>enigma fix-path claude</code>) - it locates the binary, persists its path, and adds it to your user PATH for new terminals. The bare command works in any terminal opened after that.</p>
+            <div class="cmd"><div class="ex"><b>$</b> enigma fix-path</div></div>
+
+            <h2 id="ts-skills">My agent doesn't seem to use the skills</h2>
+            <p>Skills load at startup, so restart the agent after an install. Confirm they're deployed with <code>enigma skills list</code>, and that the skill isn't disabled globally or for that app (the dashboard Skills tab shows per-app state). If you launch through <code>enigma claude</code>, auto-sync keeps them current.</p>
+
+            <h2 id="ts-edits">My skill edits disappeared after an update</h2>
+            <p>That is the default: <code>skill-update-policy</code> is <code>overwrite</code>, so an update replaces a skill you edited. Set it to <code>keep</code> to preserve local edits, from the dashboard Skills tab or the CLI.</p>
+            <div class="cmd"><div class="ex"><b>$</b> enigma config skill-update-policy keep</div></div>
+
+            <h2 id="ts-dashboard">The dashboard shows the old version / won't open</h2>
+            <p>It serves at <code>http://localhost</code> (or <code>http://localhost:24282</code> if port 80 is taken). A running dashboard picks up an update on the next refresh; if it still looks stale, run <code>enigma update</code> and hard-reload (Ctrl+Shift+R). The server is loopback-only and never network-facing.</p>
+
+            <h2 id="ts-usage">Live usage % isn't showing</h2>
+            <p>Turn on both <code>usage-stats</code> and <code>usage-api</code>. The probe reads your local Claude Code login, so it needs a recent <code>claude</code> session (the token refreshes when Claude runs). Until then the card falls back to tokens used or a plan limit you set.</p>
+
+            <h2 id="ts-update">Update didn't change anything</h2>
+            <p><code>enigma update</code> pulls the latest published versions; if you are already on them, nothing changes. Skills can update from GitHub between releases when <code>remote-skills</code> is on. Re-run <code>enigma update</code> after a release lands on npm.</p>
+
+            <h2 id="ts-bug">Report a bug</h2>
+            <p><code>enigma issue bug</code> opens a prefilled GitHub issue with your environment autocompleted. See <a href="#" data-page="contributing">Contributing</a> for every way to reach us.</p>
+            </section>
+
+            <section class="doc-page" data-page="contributing" hidden>
+            <h2 id="cn-skills">Improve a skill</h2>
+            <p>Skills are plain Markdown in the repo under <code>packages/enigma-cli/assets/skills/&lt;name&gt;/SKILL.md</code>. The dashboard's <b>Propose an improvement</b> button (Skills tab) opens the exact file on GitHub - edit it there and open a pull request. It is reviewed, sealed and shipped to everyone.</p>
+            <div class="cmd"><div class="ex"><b><a href="https://github.com/FJRG2007/enigma/tree/main/packages/enigma-cli/assets/skills" target="_blank" rel="noopener noreferrer">github.com/FJRG2007/enigma</a></b> /packages/enigma-cli/assets/skills</div></div>
+
+            <h2 id="cn-pr">Open a pull request</h2>
+            <p>Fork, branch, and open a PR against <code>main</code>. CI runs typecheck, the integrity check (skills sealed) and the test suite; keep changes atomic and follow the existing style. Run <code>enigma seal</code> after editing a skill so its content hash and last-edited date are stamped.</p>
+
+            <h2 id="cn-issue">File an issue</h2>
+            <p>Not ready to write code? <a href="https://github.com/FJRG2007/enigma/issues/new/choose" target="_blank" rel="noopener noreferrer">Open an issue</a> describing the bug or idea - or run <code>enigma issue bug</code> / <code>enigma issue feature</code> to prefill it with your environment.</p>
+
+            <h2 id="cn-discord">Chat on Discord</h2>
+            <p>Discuss ideas, ask questions, or sanity-check an approach before building on <a href="https://tpe.li/dsc" target="_blank" rel="noopener noreferrer">Discord</a>.</p>
+            </section>
         </main>
     </div>
 
     <footer>Enigma - <a href="https://github.com/FJRG2007/enigma" target="_blank" rel="noopener noreferrer">GitHub</a> - Apache-2.0</footer>
+
+    <script src="lib/fuse.min.js"></script>
+    <script>
+        (function () {
+            const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+            const pages = [...document.querySelectorAll(".doc-page")];
+            const links = [...document.querySelectorAll("aside a[data-page]")];
+            function showPage(name) {
+                if (!pages.some((p) => p.dataset.page === name)) name = "start";
+                pages.forEach((p) => { p.hidden = p.dataset.page !== name; });
+                links.forEach((a) => a.classList.toggle("active", a.dataset.page === name));
+            }
+            // Any element carrying data-page switches the visible page (sidebar + inline links).
+            document.addEventListener("click", (e) => {
+                const a = e.target.closest("[data-page]");
+                if (!a || a.closest("#docresults")) return;
+                e.preventDefault();
+                showPage(a.dataset.page);
+                window.scrollTo({ top: 0, behavior: "smooth" });
+            });
+
+            // Build a fuzzy index from every section heading and its body text.
+            const records = [];
+            pages.forEach((pg) => {
+                pg.querySelectorAll("h2[id]").forEach((h) => {
+                    let text = "", n = h.nextElementSibling;
+                    while (n && n.tagName !== "H2") { text += " " + n.textContent; n = n.nextElementSibling; }
+                    records.push({ page: pg.dataset.page, id: h.id, title: h.textContent.replace(/\s+/g, " ").trim(), text: text.replace(/\s+/g, " ").trim() });
+                });
+            });
+            const input = document.getElementById("docsearch"), box = document.getElementById("docresults");
+            const fuse = window.Fuse ? new Fuse(records, { keys: [{ name: "title", weight: 2 }, { name: "text", weight: 1 }], threshold: 0.4, ignoreLocation: true, minMatchCharLength: 2 }) : null;
+            let current = [], sel = -1;
+            function render(hits) {
+                current = hits; sel = -1;
+                box.hidden = false;
+                box.innerHTML = hits.length
+                    ? hits.map((h, i) => '<a href="#' + esc(h.id) + '" data-i="' + i + '"><b>' + esc(h.title) + "</b><span>" + esc(h.text.slice(0, 90)) + "</span></a>").join("")
+                    : '<div class="nores">No matches</div>';
+            }
+            function go(rec) {
+                if (!rec) return;
+                showPage(rec.page); box.hidden = true; input.value = "";
+                const el = document.getElementById(rec.id);
+                if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+            }
+            if (input && fuse) {
+                input.addEventListener("input", () => {
+                    const q = input.value.trim();
+                    if (!q) { box.hidden = true; box.innerHTML = ""; return; }
+                    render(fuse.search(q).slice(0, 8).map((r) => r.item));
+                });
+                input.addEventListener("keydown", (e) => {
+                    if (box.hidden) return;
+                    if (e.key === "ArrowDown") { e.preventDefault(); sel = Math.min(current.length - 1, sel + 1); }
+                    else if (e.key === "ArrowUp") { e.preventDefault(); sel = Math.max(0, sel - 1); }
+                    else if (e.key === "Enter") { e.preventDefault(); go(current[sel < 0 ? 0 : sel]); return; }
+                    else if (e.key === "Escape") { box.hidden = true; return; }
+                    [...box.querySelectorAll("a")].forEach((a, i) => a.classList.toggle("sel", i === sel));
+                });
+                box.addEventListener("click", (e) => { const a = e.target.closest("a[data-i]"); if (a) { e.preventDefault(); go(current[Number(a.dataset.i)]); } });
+                document.addEventListener("click", (e) => { if (!e.target.closest(".search")) box.hidden = true; });
+            }
+            // Deep link: a section id opens its page and scrolls; a bare page name opens that page.
+            const hash = (location.hash || "").replace(/^#/, "");
+            const rec = records.find((r) => r.id === hash);
+            if (rec) { showPage(rec.page); const el = document.getElementById(rec.id); if (el) setTimeout(() => el.scrollIntoView(), 60); }
+            else showPage(pages.some((p) => p.dataset.page === hash) ? hash : "start");
+        })();
+    </script>
 </body>
 </html>
