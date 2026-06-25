@@ -108,6 +108,12 @@ export interface EnigmaConfig {
     bypassDisabled: string[];
     /** Skills the user discarded: removed from deployments and skipped by installs/updates until restored. */
     discardedSkills: string[];
+    /**
+     * Per-agent skill opt-outs: skillName -> agent names to skip for that skill. A skill
+     * deploys to an agent unless it is globally discarded OR that agent is listed here, so
+     * you can keep a skill for Claude Code but not OpenCode, for example.
+     */
+    skillAgentsOff: Record<string, string[]>;
 }
 
 /**
@@ -155,7 +161,7 @@ export const CONFIG_DEFAULTS: EnigmaConfig = {
     commitEmoji: true, updateNotifier: true, fullscreen: true, parallelSubagents: false, outputStyle: "off", minimalCode: "full",
     autoSync: true, remoteSkills: true, permissionBypass: true, autoLint: false, compress: false, dashboard: "off", tokenPrice: 0, tokenSpeed: 0, usageStats: false, proxy: false, promptSecretGuard: false, promptSecretMode: "redact",
     planSessionLimit: 0, planWeeklyLimit: 0, planWeeklySonnetLimit: 0, planWeeklyReset: "mon 00:00",
-    dashboardLive: true, toolPaths: {}, bypassDisabled: [], discardedSkills: [],
+    dashboardLive: true, toolPaths: {}, bypassDisabled: [], discardedSkills: [], skillAgentsOff: {},
 };
 
 export type EnigmaConfigKey = keyof EnigmaConfig;
@@ -242,4 +248,23 @@ export function setBypassDisabled(name: string, disabled: boolean): void {
  */
 export function setSkillDiscarded(name: string, discarded: boolean): void {
     updateGlobalList("discardedSkills", name, discarded);
+}
+
+/**
+ * Turn a skill off (`off=true`) or back on for ONE agent in the global
+ * `skillAgentsOff` map. An empty agent list is removed so the map stays clean.
+ * Deployment cleanup (prune from that agent) lives in skills.ts.
+ */
+export function setSkillAgentOff(skill: string, agent: string, off: boolean): void {
+    const path = configPath("global");
+    const current = readJson<Record<string, unknown>>(path) || {};
+    const existing = (current.skillAgentsOff && typeof current.skillAgentsOff === "object") ? current.skillAgentsOff as Record<string, string[]> : {};
+    const list = new Set(Array.isArray(existing[skill]) ? existing[skill] : []);
+    if (off) list.add(agent); else list.delete(agent);
+    const nextMap = { ...existing };
+    if (list.size) nextMap[skill] = [...list]; else delete nextMap[skill];
+    const next = { ...current, skillAgentsOff: nextMap };
+    const dir = join(path, "..");
+    if (!isDir(dir)) mkdirSync(dir, { recursive: true });
+    writeFileSync(path, JSON.stringify(next, null, 2) + "\n");
 }

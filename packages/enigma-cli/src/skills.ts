@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 import * as p from "@clack/prompts";
 import { isDir, isNewer, readJson, listFilesRel, computeContentSha } from "./util";
-import { readConfig, setEnigmaValue, setSkillDiscarded, OUTPUT_STYLES, MINIMAL_CODE_LEVELS, DASHBOARD_MODES } from "./config";
+import { readConfig, setEnigmaValue, setSkillDiscarded, setSkillAgentOff, OUTPUT_STYLES, MINIMAL_CODE_LEVELS, DASHBOARD_MODES } from "./config";
 import type { OutputStyle, MinimalCode, DashboardMode } from "./config";
 import { applyDashboardMode } from "./dashboard";
 import { MANAGED_PROVIDER, isManagedProvider, discoverAgents, runningStatus } from "./agents";
@@ -276,19 +276,31 @@ function discardedSkillNames(): Set<string> {
     return new Set(readConfig().config.discardedSkills);
 }
 
-export interface SkillInfo { name: string; version: string | null; description: string | null; discarded: boolean; }
+/** skillName -> agents it is turned off for (per-agent opt-out, on top of the global discard). */
+function skillAgentsOffMap(): Record<string, string[]> {
+    return readConfig().config.skillAgentsOff || {};
+}
+
+/** True when `skill` is turned off for `agentName` (per-agent opt-out). */
+function isSkillOffForAgent(skill: string, agentName: string, map = skillAgentsOffMap()): boolean {
+    return (map[skill] || []).includes(agentName);
+}
+
+export interface SkillInfo { name: string; version: string | null; description: string | null; discarded: boolean; agentsOff: string[]; }
 
 /**
- * Every known skill (bundled + remote overlay, discarded included) with its
- * discard state, for the hub's skills section and `enigma skills list`.
+ * Every known skill (bundled + remote overlay, discarded included) with its discard
+ * state and per-agent opt-outs, for the hub's skills section and `enigma skills list`.
  */
 export function listSkillsStatus(): SkillInfo[] {
     const discarded = discardedSkillNames();
+    const offMap = skillAgentsOffMap();
     return inspectSkills().map((s) => ({
         name: s.name,
         version: s.meta.version || null,
         description: s.meta.description || null,
         discarded: discarded.has(s.name),
+        agentsOff: offMap[s.name] || [],
     }));
 }
 
@@ -301,6 +313,16 @@ export function listSkillsStatus(): SkillInfo[] {
 export function discardSkill(name: string, discarded: boolean): string[] {
     setSkillDiscarded(name, discarded);
     return syncDeployed();
+}
+
+/**
+ * Turn a skill on/off for ONE agent and apply it immediately: record the per-agent
+ * opt-out in the global config, then re-sync so the skill is pruned from (off) or
+ * re-deployed to (on) that agent's existing deployments. Returns sync notices.
+ */
+export function setSkillAgent(name: string, agentName: string, off: boolean): string[] {
+    setSkillAgentOff(name, agentName, off);
+    return syncDeployed([agentName]);
 }
 
 /** A skill as seen across the user's installed agents, for the dashboard Skills subpage. */
@@ -787,7 +809,7 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
     for (const agent of chosenAgents) {
         const target = agent.targets[scope];
         if (!target) { reporter.warn(`${agent.label} has no '${scope}' target - skipping.`); continue; }
-        const skills = inspectSkills().filter((s) => !discarded.has(s.name));
+        const skills = inspectSkills().filter((s) => !discarded.has(s.name) && !isSkillOffForAgent(s.name, agent.name));
         const memory = inspectMemory(agent);
 
         let chosenSkills = skills;
@@ -814,7 +836,7 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
         // Source names exclude discarded skills, so a deployed discarded skill shows
         // up as an orphan; with --no-prune only those discard removals are kept.
         const prune = opts.memoryOnly ? [] : computePrune(target.skills, skills.map((s) => s.name))
-            .filter((e) => opts.prune || discarded.has(e.name));
+            .filter((e) => opts.prune || discarded.has(e.name) || isSkillOffForAgent(e.name, agent.name));
 
         // Commands ride a full install only (neither --skills-only nor --memory-only)
         // and only for agents whose target declares a command dir.
@@ -870,7 +892,8 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
         for (const s of x.prune) {
             nRemove++;
             const ver = s.meta.version ? ` v${s.meta.version}` : "";
-            const reason = discarded.has(s.name) ? "remove (discarded)" : "remove (orphaned)";
+            const reason = discarded.has(s.name) ? "remove (discarded)"
+                : isSkillOffForAgent(s.name, x.agent.name) ? "remove (off for agent)" : "remove (orphaned)";
             lines.push(`  ${reason.padEnd(26)} skill   ${s.name}  [${s.meta.provider}${ver}]`);
         }
         for (const c of x.commands) {
@@ -1027,12 +1050,12 @@ export function hasDeployment(agent: Agent, scope: "global" | "local"): boolean 
  */
 export function syncDeployed(agentNames?: string[]): string[] {
     const notices: string[] = [];
-    // Discarded skills are excluded from the source set, so the prune pass below
-    // removes any deployed copy of them (a discard propagates on every sync).
-    const skills = currentSkillSet();
+    // Discarded and per-agent-off skills are excluded from each agent's source set, so the
+    // prune pass in syncTarget removes any deployed copy of them (propagates on every sync).
     const commands = bundledCommands();
     for (const agent of discoverAgents()) {
         if (agentNames && !agentNames.includes(agent.name)) continue;
+        const skills = currentSkillSet(agent.name);
         for (const scope of ["global", "local"] as const) {
             const target = agent.targets[scope];
             if (!target || !hasDeployment(agent, scope)) continue;
@@ -1044,10 +1067,14 @@ export function syncDeployed(agentNames?: string[]): string[] {
     return notices;
 }
 
-/** The effective non-discarded skill set used by every sync. */
-function currentSkillSet(): SkillEntry[] {
+/**
+ * The skill set to deploy to one agent: every skill except globally-discarded ones and
+ * those turned off for this agent. Omit `agentName` for the global non-discarded set.
+ */
+function currentSkillSet(agentName?: string): SkillEntry[] {
     const discarded = discardedSkillNames();
-    return inspectSkills().filter((s) => !discarded.has(s.name));
+    const offMap = skillAgentsOffMap();
+    return inspectSkills().filter((s) => !discarded.has(s.name) && !(agentName && isSkillOffForAgent(s.name, agentName, offMap)));
 }
 
 /**
@@ -1130,7 +1157,7 @@ export function syncAccount(toolName: string, dir: string): string[] {
     const agent = discoverAgents().find((a) => a.name === toolName);
     if (!agent) return [];
     const target = getTool(toolName).accountTarget(dir);
-    const changed = syncTarget(target, inspectMemory(agent), currentSkillSet(), bundledCommands(), true);
+    const changed = syncTarget(target, inspectMemory(agent), currentSkillSet(toolName), bundledCommands(), true);
     mirrorAccountSettings(toolName, dir);
     mirrorLintWiring(toolName, dir);
     const mcpChanged = applyMcpForAccount(toolName, dir);
