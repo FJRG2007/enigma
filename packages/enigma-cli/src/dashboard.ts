@@ -242,16 +242,18 @@ function serveUpdate(res: import("node:http").ServerResponse): void {
     Promise.all([import("./skills"), import("./dashboard-pkg")])
         .then(async ([skills, pkg]) => {
             const { updated, synced } = await skills.checkAndUpdateSkills();
-            pkg.refreshDashboardPkg();
-            // The UI bundle may have changed; drop the in-memory cache so the next page load
-            // (the client reloads after a successful update) serves the new HTML/chart assets.
-            htmlCache = null; libCache = null;
+            const uiChanged = pkg.refreshDashboardPkg();
+            // Only drop the asset cache when the bundle actually changed, so an unchanged
+            // run does not force a needless page reload.
+            if (uiChanged) { htmlCache = null; libCache = null; }
             const parts: string[] = [];
             if (updated.length) parts.push(`skills updated: ${updated.join(", ")}`);
             else if (synced.length) parts.push(`skills re-synced: ${synced.join(", ")}`);
-            parts.push("dashboard UI refreshed");
+            if (uiChanged) parts.push("dashboard UI updated");
+            const changed = parts.length > 0;
+            const note = (changed ? parts.join("; ") : "Already up to date") + ". For a CLI update run `enigma update` in a terminal.";
             res.writeHead(200, JSON_HDR);
-            res.end(JSON.stringify({ ok: true, version: process.env.ENIGMA_VERSION || "", note: parts.join("; ") + ". For a CLI update run `enigma update` in a terminal." }));
+            res.end(JSON.stringify({ ok: true, changed, version: process.env.ENIGMA_VERSION || "", note }));
         })
         .catch(() => { res.writeHead(500, JSON_HDR); res.end('{"ok":false,"error":"update failed"}'); });
 }

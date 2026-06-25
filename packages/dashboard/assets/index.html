@@ -2183,10 +2183,13 @@ export {
                 const res = await fetch("/api/update", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
                 const out = await res.json();
                 if (!out.ok) { $("updateNote").textContent = "Update failed: " + (out.error || "error"); return; }
-                // The UI bundle may have been refreshed server-side; reload so the browser
-                // picks up the new dashboard and fresh data automatically.
-                $("updateNote").textContent = (out.note || "Updated.") + " Refreshing the dashboard...";
-                setTimeout(() => location.reload(), 1200);
+                // Only reload when something actually changed; an up-to-date check just reports.
+                if (out.changed) {
+                    $("updateNote").textContent = (out.note || "Updated.") + " Refreshing the dashboard...";
+                    setTimeout(() => location.reload(), 1200);
+                } else {
+                    $("updateNote").textContent = out.note || "Already up to date.";
+                }
             } catch { $("updateNote").textContent = "Could not reach the server to update."; }
         }
 
