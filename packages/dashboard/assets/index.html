@@ -340,7 +340,7 @@
     <header>
         <div class="brand">
             <div class="wordmark">Enigma<span aria-hidden="true">.</span></div>
-            <div class="sub">Savings dashboard</div>
+            <div class="sub">Control panel</div>
         </div>
         <nav class="tabs">
             <a href="#/" data-view="savings" class="tab active">Savings</a>
@@ -2181,6 +2181,8 @@ export {
 
         function renderSettings(cats) {
             const el = $("settingsBody");
+            // Skill-related settings live in the Skills tab; drop them here so they aren't shown twice.
+            cats = (cats || []).map((c) => ({ ...c, settings: (c.settings || []).filter((s) => SKILL_SETTING_KEYS.indexOf(s.key) === -1) })).filter((c) => c.settings.length);
             if (!cats.length) { el.innerHTML = '<div class="empty" style="padding:24px 0">No settings available.</div>'; return; }
             // One panel per category; settings laid out in a responsive 2-column grid so a
             // long config list stays scannable on a wide screen.

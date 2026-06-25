@@ -216,12 +216,12 @@ const RAW_CATEGORIES: Category[] = [
     },
     {
         title: "Local dashboard",
-        blurb: "browser dashboard for the token savings of the compression engine",
+        blurb: "browser dashboard to manage enigma - accounts, skills, settings, system resources - and see its measured savings",
         settings: [
             {
                 key: "dashboard",
-                label: "Local savings dashboard",
-                hint: "open it with 'enigma dashboard' at http://enigma; off | on-demand (runs only while open, no idle cost; default when enabled) | always (lightweight background daemon)",
+                label: "Local dashboard",
+                hint: "manage enigma (accounts, skills, settings, resources) and see savings; open with 'enigma dashboard' at http://enigma; off | on-demand (runs only while open, no idle cost; default when enabled) | always (lightweight background daemon)",
                 choices: DASHBOARD_MODES,
                 offChoice: "off",
                 read: () => readConfig().config.dashboard !== "off",

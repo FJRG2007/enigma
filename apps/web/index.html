@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="icon" type="image/svg+xml" href="logos/enigma-logo.svg">
     <title>Enigma - everything you need to work with a coding agent, in one command</title>
-    <meta name="description" content="Enigma installs shared engineering policy skills into Claude Code, OpenAI Codex and opencode, sets up portable git security hooks, and ships a local savings dashboard - all from one command.">
+    <meta name="description" content="Enigma installs shared engineering policy skills into Claude Code, OpenAI Codex and opencode, sets up portable git security hooks, and ships a local dashboard to manage it all - all from one command.">
     <meta property="og:title" content="Enigma">
     <meta property="og:description" content="Everything you need to work with a coding agent, in one command.">
     <meta property="og:image" content="https://raw.githubusercontent.com/FJRG2007/enigma/main/assets/images/dashboard.png">
@@ -173,7 +173,7 @@
         <div class="wrap">
             <span class="eyebrow">One command. Every agent.</span>
             <h1>Everything you need to work with a coding agent</h1>
-            <p class="lede">Enigma installs shared engineering policy skills into the agents you actually use, sets up portable git security hooks, and ships a local savings dashboard - all from one command.</p>
+            <p class="lede">Enigma installs shared engineering policy skills into the agents you actually use, sets up portable git security hooks, and ships a local dashboard to manage it all - all from one command.</p>
 
             <div class="install" id="install">
                 <div class="tabs" role="tablist">
@@ -212,7 +212,7 @@
                 <div class="card"><h3>Policy skills, everywhere</h3><p>Engineering policy skills (security, testing, git, style, debugging, anti-overengineering...) installed into Claude Code, Codex and opencode, sealed with content hashes so tampering is detected.</p></div>
                 <div class="card"><h3>Per-agent scoping</h3><p>Keep a skill for Claude Code but not opencode. Turn any skill on or off per agent, from the CLI, the TUI or the dashboard.</p></div>
                 <div class="card"><h3>Git security hooks</h3><p>A portable, dependency-free commit guard for any repo: blocks secrets, <code>.env</code> files and dependency dirs before they are committed. Set it up once and the whole team inherits it.</p></div>
-                <div class="card"><h3>Local savings dashboard</h3><p>A loopback browser dashboard of measured token savings and real Claude usage - cost, windows, breakdowns. Nothing leaves your machine.</p></div>
+                <div class="card"><h3>Local dashboard</h3><p>A loopback browser control panel for all of enigma - accounts, skills, settings, system cleanup - that also shows real Claude usage and measured savings. Nothing leaves your machine.</p></div>
                 <div class="card"><h3>Multi-account + profiles</h3><p>Several logins per tool without logging out, each in its own config dir, switched OS-agnostically. Profiles pin one account per tool and drive every launch.</p></div>
                 <div class="card"><h3>Context compression</h3><p>A native, dependency-free engine that shrinks large tool outputs, logs and text before they reach the model - the same information in far fewer tokens, reversibly.</p></div>
                 <div class="card"><h3>Privacy defaults</h3><p>Sensible defaults at install: GitHub CLI telemetry off, the agent kept from attributing commits to itself, and an opt-in prompt secret guard.</p></div>
@@ -253,11 +253,11 @@
     <section id="dashboard">
         <div class="wrap">
             <div class="s-head">
-                <span class="eyebrow">Measured, not invented</span>
-                <h2>See what you actually save</h2>
-                <p>Token and money savings from compression, plus real Claude usage read from your own session transcripts. Honest by design - enigma reports only what it can measure.</p>
+                <span class="eyebrow">One place for everything</span>
+                <h2>Manage enigma from your browser</h2>
+                <p>A local control panel for the whole thing: switch accounts and profiles, enable or edit skills per app, change any setting, and free up your machine (kill a port, shut down WSL, quit Docker). It also shows real Claude usage and the savings enigma can measure - honest by design.</p>
             </div>
-            <div class="shot"><img src="dashboard.png" alt="The Enigma savings dashboard" loading="lazy"></div>
+            <div class="shot"><img src="dashboard.png" alt="The Enigma dashboard" loading="lazy"></div>
         </div>
     </section>
 
@@ -275,7 +275,7 @@
                         <tr><td>Skills kept current</td><td class="yes">Auto-sync + GitHub updates</td><td class="no">Manual re-copy</td></tr>
                         <tr><td>Per-agent skill selection</td><td class="yes">Built in</td><td class="no">Not available</td></tr>
                         <tr><td>Commit secret/.env guard</td><td class="yes">Portable, team-shareable</td><td class="no">Ad-hoc scripts</td></tr>
-                        <tr><td>Token-savings + usage dashboard</td><td class="yes">Local, loopback-only</td><td class="no">None</td></tr>
+                        <tr><td>Dashboard to manage it all</td><td class="yes">Local, loopback-only</td><td class="no">None</td></tr>
                         <tr><td>Multi-account switching</td><td class="yes">OS-agnostic, no aliases</td><td class="no">Shell hacks</td></tr>
                     </tbody>
                 </table>
