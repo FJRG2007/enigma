@@ -167,7 +167,11 @@ export const CONFIG_DEFAULTS: EnigmaConfig = {
 export type EnigmaConfigKey = keyof EnigmaConfig;
 
 function configPath(scope: "global" | "local"): string {
-    return scope === "global" ? join(homedir(), CONFIG_FILE) : join(process.cwd(), CONFIG_FILE);
+    // Global lives in the home dir; ENIGMA_CONFIG_HOME overrides it (used by tests, since
+    // bun on Linux does not reflect a runtime-reassigned $HOME via os.homedir()). Local is
+    // the nearest repo .enigma.json (current working directory).
+    if (scope === "local") return join(process.cwd(), CONFIG_FILE);
+    return join(process.env.ENIGMA_CONFIG_HOME || homedir(), CONFIG_FILE);
 }
 
 /** Effective config plus the files that contributed, nearest (local) last. */

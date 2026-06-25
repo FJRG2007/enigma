@@ -12,6 +12,9 @@ import { join } from "node:path";
 const HOME = mkdtempSync(join(tmpdir(), "enigma-skill-scope-"));
 process.env.USERPROFILE = HOME;
 process.env.HOME = HOME;
+// bun on Linux ignores a runtime-reassigned $HOME via os.homedir(), so point the global
+// config explicitly at the temp dir (configPath honors ENIGMA_CONFIG_HOME).
+process.env.ENIGMA_CONFIG_HOME = HOME;
 
 const { syncAccount } = await import("../src/skills");
 const CFG = join(HOME, ".enigma.json");
