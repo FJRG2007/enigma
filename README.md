@@ -7,6 +7,8 @@
   <a href="https://ko-fi.com/fjrg2007"> <img alt="Kofi" src="https://img.shields.io/badge/Ko--fi-purple?style=for-the-badge&logo=ko-fi&logoColor=white"></a>
   <br />
   <br />
+  <a href="https://fjrg2007.github.io/enigma/">Website</a>
+  <span>&nbsp;&nbsp;•&nbsp;&nbsp;</span>
   <a href="#">Quickstart</a>
   <span>&nbsp;&nbsp;•&nbsp;&nbsp;</span>
   <a href="https://tpe.li/dsc">Discord</a>
