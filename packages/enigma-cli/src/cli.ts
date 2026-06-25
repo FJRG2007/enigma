@@ -14,7 +14,7 @@ import type { ContentType } from "./compress";
 import { collectReporter } from "./reporter";
 import {
     checkSources, discardSkill, hasAccountDeployment, hasDeployment, installSkills,
-    listSkillsStatus, refreshSkillsFromGitHub, sealSources, shouldCheckRemote,
+    listSkillsStatus, refreshSkillsFromGitHub, sealSources, setSkillAgent, shouldCheckRemote,
     syncAccount, syncDeployed,
 } from "./skills";
 import type { InstallOptions } from "./skills";
@@ -166,12 +166,11 @@ Commands:
                          unset <name> <tool>        Drop a tool from the profile
                          rename <old> <new>         Rename a profile (mappings stay)
                          remove <name>              Delete a profile (accounts stay)
-  skills <subcommand>  List skills and manage discards (also in the hub's install panel):
-                         list                 List every skill (discarded marked)
-                         discard <name>       Remove a skill from every agent and skip
-                                              it in future installs and updates
-                         restore <name>       Re-enable a discarded skill (re-deploys
-                                              to existing installs on the next sync)
+  skills <subcommand>  List skills and choose where each deploys (also in the hub):
+                         list                 List every skill with its state
+                         disable <name>       Remove from every agent, skip in installs
+                         disable <name> <agent>   Turn off for one agent only (e.g. opencode)
+                         enable  <name> [agent]   Re-deploy globally, or to one agent
   issue [bug|feature]  Open a prefilled GitHub issue (OS, versions, terminal,
                        detected agents autocompleted; default: bug)
   improve [--help]     Explain the /improve slash command (it runs inside your
@@ -542,7 +541,7 @@ async function runProfileCli(opts: CliOptions, interactive: boolean): Promise<nu
  * restoring re-deploys it to existing installs immediately. Returns an exit code.
  */
 function runSkillsCli(opts: CliOptions): number {
-    const [sub, name] = opts.positionals;
+    const [sub, name, agent] = opts.positionals;
     switch (sub) {
         case undefined:
         case "list":
@@ -550,27 +549,42 @@ function runSkillsCli(opts: CliOptions): number {
             console.log("Skills:\n");
             for (const s of listSkillsStatus()) {
                 const ver = s.version ? `v${s.version}` : "";
-                console.log(` ${s.discarded ? "-" : "*"} ${s.name.padEnd(26)} ${ver.padEnd(8)} ${s.discarded ? "discarded" : "active"}`);
+                const state = s.discarded ? "discarded" : s.agentsOff.length ? `off for ${s.agentsOff.join(", ")}` : "active";
+                console.log(` ${s.discarded ? "-" : s.agentsOff.length ? "~" : "*"} ${s.name.padEnd(26)} ${ver.padEnd(8)} ${state}`);
             }
-            console.log("\nDiscarded skills are removed from agents and skipped by installs/updates.");
-            console.log("Manage with: enigma skills <discard|restore> <name>.");
+            console.log("\nDiscard removes a skill from every agent; per-agent off keeps it elsewhere.");
+            console.log("Manage with: enigma skills <disable|enable> <name> [agent].");
             return 0;
         }
         case "discard":
-        case "restore": {
-            if (!name) { console.error(`Usage: enigma skills ${sub} <name>`); return 1; }
+        case "restore":
+        case "disable":
+        case "enable": {
+            if (!name) { console.error(`Usage: enigma skills ${sub} <name> [agent]`); return 1; }
             const skill = listSkillsStatus().find((s) => s.name === name);
             if (!skill) { console.error(`Unknown skill '${name}'. See: enigma skills list.`); return 1; }
-            const discarded = sub === "discard";
-            if (skill.discarded === discarded) { console.log(`Skill '${name}' is already ${discarded ? "discarded" : "active"}.`); return 0; }
-            for (const notice of discardSkill(name, discarded)) console.log(`Synced ${notice}.`);
-            console.log(discarded
-                ? `Skill '${name}' discarded: removed from deployments and skipped by future installs and updates.`
+            const off = sub === "discard" || sub === "disable";
+
+            // With an agent argument: per-agent opt-out. Without: the global discard.
+            if (agent) {
+                if (!isToolName(agent)) { console.error(`Unknown agent '${agent}'. Use one of: ${TOOL_NAMES.join(", ")}.`); return 1; }
+                if (skill.discarded) { console.log(`Skill '${name}' is globally discarded; restore it first (enigma skills enable ${name}).`); return 0; }
+                const already = skill.agentsOff.includes(agent);
+                if (already === off) { console.log(`Skill '${name}' is already ${off ? "off" : "on"} for ${agent}.`); return 0; }
+                for (const notice of setSkillAgent(name, agent, off)) console.log(`Synced ${notice}.`);
+                console.log(`Skill '${name}' is now ${off ? "off" : "on"} for ${agent} (${off ? "removed from" : "deployed to"} that agent).`);
+                return 0;
+            }
+
+            if (skill.discarded === off) { console.log(`Skill '${name}' is already ${off ? "discarded" : "active"}.`); return 0; }
+            for (const notice of discardSkill(name, off)) console.log(`Synced ${notice}.`);
+            console.log(off
+                ? `Skill '${name}' discarded: removed from every agent and skipped by future installs and updates.`
                 : `Skill '${name}' restored: it deploys again on installs and syncs.`);
             return 0;
         }
         default:
-            console.error(`Unknown skills subcommand: ${sub}. Try: list, discard, restore.`);
+            console.error(`Unknown skills subcommand: ${sub}. Try: list, disable, enable [agent].`);
             return 1;
     }
 }

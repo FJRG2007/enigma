@@ -46,6 +46,9 @@ jobs:
       - name: Test tool-path repair
         run: bun test tests/tool-path.test.ts
         working-directory: packages/enigma-cli
+      - name: Test per-agent skill scoping
+        run: bun test tests/skill-agent-scope.test.ts
+        working-directory: packages/enigma-cli
 
       # The package must build (tsup) so dist is publishable.
       - name: Build
