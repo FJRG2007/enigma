@@ -40,6 +40,7 @@ description: Highest-authority engineering rules - priority hierarchy, modular a
   - Before declaring a change done, or when reviewing a diff/PR -> code-review-policy.
   - Any bug, crash, failing test, or unexpected behavior -> debugging-policy.
   - Any commit, branch, or pull request -> git-policy.
+  - Any user-facing copy (UI labels, descriptions, hints, empty/error states, panel intros, README/doc prose) -> technical-writing-policy.
   - Any long, multi-item, or porting/migration task (1:1 ports, "migrate all", repo-wide changes, work spanning many files or sessions) -> task-completion-policy.
 - When a task spans multiple domains, compose the relevant skills instead of re-deriving their rules.
 - Never duplicate a specialized skill's rules inside another skill; reference it.
@@ -85,6 +86,7 @@ This core policy owns orchestration, architecture, and the global rules. Each co
 - code-review-policy: self-review before delivery, review dimensions, change-quality gates.
 - debugging-policy: reproduce-isolate-fix methodology and root-cause discipline.
 - git-policy: commits, branches, and pull request standards.
+- technical-writing-policy: concise, realistic user-facing copy - UI microcopy, labels, descriptions, hints, empty/error states, panel intros, and README/doc prose that informs without over-explaining, restating the obvious, or leaking implementation detail.
 - ciphera-style-policy: Ciphera code style conventions - formatting, naming, quotes, string interpolation, length-sorted imports, indentation, comments/JSDoc, and code-level anti-patterns (TypeScript-first, language-agnostic).
 - anti-overengineering-policy: minimal-code discipline - the YAGNI ladder (stdlib/native/installed-dependency/one-line before custom code), deletion over addition, no unrequested abstractions, the enigma: shortcut-marking convention, and intensity via the minimal-code setting. Owns the detail behind the Anti-Overengineering Rule below.
 - anti-overengineering-review: on-demand complexity-only review - diff review, whole-repo audit, and the enigma: debt-marker ledger (tags delete/stdlib/native/yagni/shrink, line/dep scoring). Lists cuts, applies nothing; correctness/security/performance stay with code-review-policy.

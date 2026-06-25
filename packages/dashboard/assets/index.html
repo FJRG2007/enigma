@@ -181,6 +181,10 @@
         .toggle[data-kind="bool"]:hover { border-color: #2f3744; }
         .toggle[data-kind="bool"].on { background: var(--good); border-color: var(--good); }
         .toggle[data-kind="bool"].on::after { left: 23px; background: #06210f; }
+        /* Compact icon-only button (e.g. Edit), instead of a text button. */
+        .iconbtn { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 30px; padding: 0; background: var(--surface2); color: var(--muted); border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; transition: color .15s, border-color .15s; }
+        .iconbtn:hover { color: var(--accent); border-color: #2f3744; }
+        .iconbtn svg { width: 15px; height: 15px; display: block; }
         select.choice {
             background: var(--surface2); color: var(--text); border: 1px solid var(--border);
             border-radius: var(--radius-sm); padding: 6px 10px; font-size: 12px; font-family: var(--mono); cursor: pointer;
@@ -495,7 +499,7 @@
         <div class="page-head" style="display:flex;align-items:flex-start;gap:16px">
             <div style="flex:1">
                 <h1>Skills</h1>
-                <p>The skills installed in your agents - enigma's own and any external ones you added. Edit a skill's content, disable/enable or remove it, and check whether enigma's skills are up to date.</p>
+                <p>Engineering policy skills deployed to your agents - enigma's own, kept current automatically, plus any external skills found in your agent directories.</p>
             </div>
             <button id="skillsCheck" type="button" class="toggle on" style="white-space:nowrap">Check for updates</button>
         </div>
@@ -2264,7 +2268,8 @@ export {
             const upd = s.source !== "enigma" ? ""
                 : s.update === "update" ? '<span class="tag warn">update available</span>'
                 : s.update === "modified" ? '<span class="tag ext">modified</span>' : "";
-            const edit = '<button type="button" class="toggle" data-name="' + esc(s.name) + '" data-action="edit" data-enigma="' + (s.source === "enigma" ? 1 : 0) + '">Edit</button>';
+            const edit = '<button type="button" class="iconbtn" title="Edit" aria-label="Edit" data-name="' + esc(s.name) + '" data-action="edit" data-enigma="' + (s.source === "enigma" ? 1 : 0) + '">'
+                + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>';
             const main = s.source === "enigma"
                 ? '<button type="button" class="toggle' + (s.discarded ? "" : " on") + '" data-kind="bool" title="'
                     + (s.discarded ? "Disabled - click to enable" : "Enabled - click to disable") + '" data-name="' + esc(s.name)

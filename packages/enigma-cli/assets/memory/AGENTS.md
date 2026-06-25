@@ -17,6 +17,7 @@
 - security-policy: secrets, auth, permissions, crypto, untrusted/tool output, and AI-agent/MCP/tool-use safety.
 - dependency-policy: adding/upgrading/auditing dependencies, lockfiles, and supply-chain risk.
 - testing-policy, code-review-policy, debugging-policy, git-policy: tests and test-suite layout (structured subfolders, never a flat tests/ dump), pre-delivery review, debugging, and commits/PRs.
+- technical-writing-policy: any user-facing copy - UI labels, descriptions, hints, empty/error states, panel intros, README/doc prose - concise and realistic, no over-explaining or restating the obvious.
 - task-completion-policy: long or multi-item tasks (1:1 ports, migrations, repo-wide changes) - work-unit inventory, persistent coverage ledger, and verified completion before any "done" claim.
 
 ### Always-On Rules (never skipped, even if no skill loads)
