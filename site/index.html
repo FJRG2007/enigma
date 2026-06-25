@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Enigma - everything you need to work with a coding agent, in one command</title>
+    <meta name="description" content="Enigma installs shared engineering policy skills into Claude Code, OpenAI Codex and opencode, sets up portable git security hooks, and ships a local savings dashboard - all from one command.">
+    <meta property="og:title" content="Enigma">
+    <meta property="og:description" content="Everything you need to work with a coding agent, in one command.">
+    <meta property="og:image" content="https://raw.githubusercontent.com/FJRG2007/enigma/main/docs/images/dashboard.png">
+    <meta name="twitter:card" content="summary_large_image">
+    <style>
+        :root {
+            --bg: #080a10; --surface: #12161f; --surface2: #1a1f2b; --border: #232a36; --border-soft: #1b212d;
+            --text: #eceef2; --muted: #8a93a3; --accent: #e0a458; --accent2: #d7875f; --good: #6fcf97;
+            --accent-weak: rgba(224,164,88,0.13);
+            --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+            --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+            --radius: 16px; --radius-sm: 10px;
+            --shadow-1: 0 1px 2px rgba(0,0,0,0.4); --shadow-2: 0 18px 40px -22px rgba(0,0,0,0.75);
+            --max: 1080px;
+        }
+        * { box-sizing: border-box; }
+        html { scroll-behavior: smooth; }
+        body {
+            margin: 0; color: var(--text); font-family: var(--sans); line-height: 1.6;
+            background:
+                radial-gradient(1100px 620px at 80% -10%, rgba(224,164,88,0.10), transparent 58%),
+                radial-gradient(820px 520px at 4% 2%, rgba(111,207,151,0.05), transparent 52%),
+                var(--bg);
+            background-attachment: fixed; -webkit-font-smoothing: antialiased;
+        }
+        a { color: var(--accent2); text-decoration: none; }
+        a:hover { color: var(--accent); }
+        .wrap { max-width: var(--max); margin: 0 auto; padding: 0 24px; }
+        a:focus-visible, button:focus-visible { outline: 2px solid rgba(224,164,88,0.6); outline-offset: 3px; border-radius: 6px; }
+        @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } html { scroll-behavior: auto; } }
+
+        /* Nav */
+        nav { position: sticky; top: 0; z-index: 20; backdrop-filter: blur(10px); background: rgba(8,10,16,0.72); border-bottom: 1px solid var(--border-soft); }
+        nav .wrap { display: flex; align-items: center; gap: 18px; height: 60px; }
+        .brand { font-family: var(--mono); font-size: 18px; font-weight: 600; letter-spacing: 0.5px; color: var(--text); display: inline-flex; align-items: center; }
+        .brand .caret { display: inline-block; width: 0.46em; height: 1.05em; margin-left: 4px; background: var(--accent); transform: translateY(1px); animation: caret 1.1s steps(1, end) infinite; }
+        @keyframes caret { 0%,50% { opacity: 1; } 50.01%,100% { opacity: 0; } }
+        nav .links { margin-left: auto; display: flex; gap: 20px; align-items: center; font-family: var(--mono); font-size: 13px; }
+        nav .links a { color: var(--muted); }
+        nav .links a:hover { color: var(--text); }
+        nav .cta { color: #1a1206 !important; background: var(--accent); padding: 7px 14px; border-radius: 9px; font-weight: 600; }
+
+        /* Hero */
+        header.hero { padding: 80px 0 40px; text-align: center; }
+        .eyebrow { font-family: var(--mono); font-size: 12px; text-transform: uppercase; letter-spacing: 2px; color: var(--accent); }
+        h1 { font-family: var(--mono); font-size: clamp(34px, 6vw, 58px); line-height: 1.05; font-weight: 600; letter-spacing: -1px; margin: 16px auto 0; max-width: 14ch; }
+        .lede { color: var(--muted); font-size: clamp(16px, 2.4vw, 20px); max-width: 56ch; margin: 18px auto 0; }
+
+        /* Install block */
+        .install { max-width: 620px; margin: 36px auto 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-2); overflow: hidden; text-align: left; }
+        .tabs { display: flex; gap: 2px; padding: 8px; background: rgba(0,0,0,0.25); border-bottom: 1px solid var(--border-soft); }
+        .tabs button { font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--muted); background: transparent; border: 1px solid transparent; border-radius: 8px; padding: 7px 14px; cursor: pointer; transition: color .15s, background .15s; }
+        .tabs button:hover { color: var(--text); }
+        .tabs button.active { color: var(--accent); background: var(--surface2); border-color: var(--border); }
+        .cmd { display: flex; align-items: flex-start; gap: 12px; padding: 16px 18px; }
+        .cmd pre { margin: 0; flex: 1; min-width: 0; overflow-x: auto; font-family: var(--mono); font-size: 13px; line-height: 1.7; color: var(--text); }
+        .cmd .pfx { color: var(--good); user-select: none; }
+        .copy { flex: 0 0 auto; font-family: var(--mono); font-size: 11px; color: var(--muted); background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; cursor: pointer; transition: color .15s, border-color .15s; }
+        .copy:hover { color: var(--accent); border-color: #2f3744; }
+        .copy.done { color: var(--good); border-color: var(--good); }
+
+        .works { margin: 30px auto 0; display: flex; align-items: center; justify-content: center; gap: 22px; flex-wrap: wrap; color: var(--muted); font-family: var(--mono); font-size: 12px; }
+        .works img { width: 26px; height: 26px; opacity: .9; }
+        .works .row { display: flex; align-items: center; gap: 16px; }
+
+        /* Sections */
+        section { padding: 64px 0; }
+        .s-head { text-align: center; max-width: 60ch; margin: 0 auto 36px; }
+        .s-head .eyebrow { display: block; }
+        h2 { font-family: var(--mono); font-size: clamp(24px, 4vw, 34px); font-weight: 600; letter-spacing: -0.5px; margin: 10px 0 0; }
+        .s-head p { color: var(--muted); margin: 12px auto 0; }
+
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 16px; }
+        .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 22px; box-shadow: var(--shadow-1); transition: border-color .18s, transform .18s; }
+        .card:hover { border-color: #2f3744; transform: translateY(-2px); }
+        .card h3 { font-family: var(--mono); font-size: 15px; font-weight: 600; margin: 0; display: flex; align-items: center; gap: 9px; }
+        .card h3::before { content: ""; width: 3px; height: 14px; border-radius: 2px; background: var(--accent); }
+        .card p { color: var(--muted); font-size: 14px; margin: 10px 0 0; }
+        .card code { font-family: var(--mono); font-size: 12px; color: var(--accent2); background: var(--surface2); padding: 1px 6px; border-radius: 5px; }
+
+        /* Dashboard shot */
+        .shot { margin: 8px auto 0; max-width: var(--max); }
+        .shot img { width: 100%; border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-2); display: block; }
+
+        /* Comparison */
+        .compare { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow-1); }
+        table { width: 100%; border-collapse: collapse; font-size: 14px; }
+        th, td { text-align: left; padding: 13px 18px; border-bottom: 1px solid var(--border-soft); }
+        th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); }
+        thead th:nth-child(2) { color: var(--accent); }
+        tbody tr:last-child td { border-bottom: none; }
+        td:first-child { color: var(--muted); }
+        .yes { color: var(--good); } .no { color: var(--accent2); }
+
+        /* Bottom CTA */
+        .bottom { text-align: center; }
+        .bottom h2 { margin-bottom: 8px; }
+        .btn { display: inline-block; font-family: var(--mono); font-size: 14px; font-weight: 600; color: #1a1206; background: var(--accent); padding: 12px 24px; border-radius: 11px; margin-top: 22px; }
+        .btn.ghost { color: var(--text); background: var(--surface2); border: 1px solid var(--border); margin-left: 10px; }
+
+        footer { border-top: 1px solid var(--border-soft); padding: 30px 0; color: var(--muted); font-size: 13px; }
+        footer .wrap { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+        footer .links { margin-left: auto; display: flex; gap: 18px; }
+        @media (max-width: 640px) { nav .links a.hide-sm { display: none; } header.hero { padding: 56px 0 28px; } }
+    </style>
+</head>
+<body>
+    <nav>
+        <div class="wrap">
+            <span class="brand">Enigma<span class="caret" aria-hidden="true"></span></span>
+            <span class="links">
+                <a href="#features" class="hide-sm">Features</a>
+                <a href="#dashboard" class="hide-sm">Dashboard</a>
+                <a href="#compare" class="hide-sm">Why</a>
+                <a href="https://github.com/FJRG2007/enigma" target="_blank" rel="noopener">GitHub</a>
+                <a href="#install" class="cta">Install</a>
+            </span>
+        </div>
+    </nav>
+
+    <header class="hero">
+        <div class="wrap">
+            <span class="eyebrow">One command. Every agent.</span>
+            <h1>Everything you need to work with a coding agent</h1>
+            <p class="lede">Enigma installs shared engineering policy skills into the agents you actually use, sets up portable git security hooks, and ships a local savings dashboard - all from one command.</p>
+
+            <div class="install" id="install">
+                <div class="tabs" role="tablist">
+                    <button class="active" data-cmd="script" role="tab">Install script</button>
+                    <button data-cmd="npm" role="tab">npm global</button>
+                    <button data-cmd="npx" role="tab">npx (one-shot)</button>
+                </div>
+                <div class="cmd">
+                    <pre id="cmd"><span class="pfx">$ </span><span id="cmdtext">curl -fsSL https://raw.githubusercontent.com/FJRG2007/enigma/main/scripts/install.sh | sh</span></pre>
+                    <button class="copy" id="copy" type="button">Copy</button>
+                </div>
+            </div>
+
+            <div class="works">
+                <span>Works with</span>
+                <span class="row"><img src="logos/claude.svg" alt="Claude Code"> Claude Code</span>
+                <span class="row"><img src="logos/openai.svg" alt="OpenAI Codex"> Codex</span>
+                <span class="row"><img src="logos/opencode.svg" alt="opencode"> opencode</span>
+            </div>
+        </div>
+    </header>
+
+    <section id="features">
+        <div class="wrap">
+            <div class="s-head">
+                <span class="eyebrow">What you get</span>
+                <h2>Production engineering, deployed into your agent</h2>
+                <p>Authored once, deployed to every agent you select - and kept current automatically.</p>
+            </div>
+            <div class="grid">
+                <div class="card"><h3>Policy skills, everywhere</h3><p>Engineering policy skills (security, testing, git, style, debugging, anti-overengineering...) installed into Claude Code, Codex and opencode, sealed with content hashes so tampering is detected.</p></div>
+                <div class="card"><h3>Per-agent scoping</h3><p>Keep a skill for Claude Code but not opencode. Turn any skill on or off per agent, from the CLI, the TUI or the dashboard.</p></div>
+                <div class="card"><h3>Git security hooks</h3><p>A portable, dependency-free commit guard for any repo: blocks secrets, <code>.env</code> files and dependency dirs before they are committed. Commit <code>.githooks/</code> and the whole team inherits it.</p></div>
+                <div class="card"><h3>Local savings dashboard</h3><p>A loopback browser dashboard of measured token savings and real Claude usage - cost, windows, breakdowns - served at <code>http://enigma</code>. Nothing leaves your machine.</p></div>
+                <div class="card"><h3>Multi-account + profiles</h3><p>Several logins per tool without logging out, each in its own config dir, switched OS-agnostically. Profiles pin one account per tool and drive every launch.</p></div>
+                <div class="card"><h3>Context compression</h3><p>A native, dependency-free engine that shrinks large tool outputs, logs and text before they reach the model - the same information in far fewer tokens, reversibly.</p></div>
+                <div class="card"><h3>Privacy defaults</h3><p>Sensible defaults at install: GitHub CLI telemetry off, the agent kept from attributing commits to itself, and an opt-in prompt secret guard.</p></div>
+                <div class="card"><h3>Built-in <code>/improve</code></h3><p>A slash command on every agent: an implement mode that edits a focused area (ui, security, performance...) and a read-only advisor mode that audits and writes plans for another agent to execute.</p></div>
+            </div>
+        </div>
+    </section>
+
+    <section id="dashboard">
+        <div class="wrap">
+            <div class="s-head">
+                <span class="eyebrow">Measured, not invented</span>
+                <h2>See what you actually save</h2>
+                <p>Token and money savings from compression, plus real Claude usage read from your own session transcripts. Honest by design - enigma reports only what it can measure.</p>
+            </div>
+            <div class="shot"><img src="dashboard.png" alt="The Enigma savings dashboard" loading="lazy"></div>
+        </div>
+    </section>
+
+    <section id="compare">
+        <div class="wrap">
+            <div class="s-head">
+                <span class="eyebrow">Why Enigma</span>
+                <h2>One install instead of a dozen</h2>
+            </div>
+            <div class="compare">
+                <table>
+                    <thead><tr><th>Setup task</th><th>With Enigma</th><th>By hand</th></tr></thead>
+                    <tbody>
+                        <tr><td>Shared skills across Claude Code, Codex, opencode</td><td class="yes">One command</td><td class="no">Per-agent, by hand</td></tr>
+                        <tr><td>Skills kept current</td><td class="yes">Auto-sync + GitHub updates</td><td class="no">Manual re-copy</td></tr>
+                        <tr><td>Per-agent skill selection</td><td class="yes">Built in</td><td class="no">Not available</td></tr>
+                        <tr><td>Commit secret/.env guard</td><td class="yes">Portable, team-shareable</td><td class="no">Ad-hoc scripts</td></tr>
+                        <tr><td>Token-savings + usage dashboard</td><td class="yes">Local, loopback-only</td><td class="no">None</td></tr>
+                        <tr><td>Multi-account switching</td><td class="yes">OS-agnostic, no aliases</td><td class="no">Shell hacks</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <section class="bottom">
+        <div class="wrap">
+            <span class="eyebrow">Ready in one line</span>
+            <h2>Install Enigma</h2>
+            <p class="lede" style="margin-top:8px">Free and open source. Apache-2.0.</p>
+            <a class="btn" href="#install">Get the command</a>
+            <a class="btn ghost" href="https://github.com/FJRG2007/enigma" target="_blank" rel="noopener">View on GitHub</a>
+        </div>
+    </section>
+
+    <footer>
+        <div class="wrap">
+            <span class="brand" style="font-size:15px">Enigma<span class="caret" aria-hidden="true"></span></span>
+            <span>Apache-2.0</span>
+            <span class="links">
+                <a href="https://github.com/FJRG2007/enigma" target="_blank" rel="noopener">GitHub</a>
+                <a href="https://tpe.li/dsc" target="_blank" rel="noopener">Discord</a>
+                <a href="https://ko-fi.com/fjrg2007" target="_blank" rel="noopener">Ko-fi</a>
+            </span>
+        </div>
+    </footer>
+
+    <script>
+        // Install command tabs (mac/linux script shown; the npm/npx forms are cross-platform).
+        const COMMANDS = {
+            script: "curl -fsSL https://raw.githubusercontent.com/FJRG2007/enigma/main/scripts/install.sh | sh",
+            npm: "npm install -g enigma-cli@latest && enigma",
+            npx: "npx enigma-cli@latest install --all --yes",
+        };
+        const tabs = document.querySelectorAll(".tabs button");
+        const cmdText = document.getElementById("cmdtext");
+        const copyBtn = document.getElementById("copy");
+        tabs.forEach((b) => b.addEventListener("click", () => {
+            tabs.forEach((x) => x.classList.toggle("active", x === b));
+            cmdText.textContent = COMMANDS[b.dataset.cmd];
+            copyBtn.textContent = "Copy"; copyBtn.classList.remove("done");
+        }));
+        copyBtn.addEventListener("click", async () => {
+            try { await navigator.clipboard.writeText(cmdText.textContent); copyBtn.textContent = "Copied"; copyBtn.classList.add("done"); setTimeout(() => { copyBtn.textContent = "Copy"; copyBtn.classList.remove("done"); }, 1800); }
+            catch { /* clipboard blocked; user can select manually */ }
+        });
+    </script>
+</body>
+</html>
