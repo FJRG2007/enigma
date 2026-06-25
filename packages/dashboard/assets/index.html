@@ -232,6 +232,7 @@
         .aicons { display: inline-flex; gap: 5px; align-items: center; vertical-align: middle; }
         .aicon { display: inline-flex; align-items: center; color: var(--muted); }
         .aicon svg { width: 14px; height: 14px; display: block; }
+        .set-ic { vertical-align: middle; margin-right: 7px; }
         /* List settings (guard block/allow globs, custom secret patterns): chips + add input. A list row spans the full grid width. */
         .set-row.list { grid-column: 1 / -1; align-items: stretch; flex-direction: column; }
         .lchips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
@@ -2101,6 +2102,17 @@ export {
             return esc(name) + badges.map(([t, c]) => ' <span class="tag ' + c + '">' + esc(t) + "</span>").join("");
         }
 
+        // App-specific settings (per-agent approval bypass) get the app's logo prefixed to
+        // the label, so the Permissions list reads at a glance. AGENT_ICONS is defined below
+        // but only referenced at render time, so it is initialised by then.
+        const AGENT_LABEL_BY_NAME = { claude: "Claude Code", codex: "OpenAI Codex", opencode: "OpenCode" };
+        function settingIcon(key) {
+            const m = /^bypass-(claude|codex|opencode)$/.exec(key || "");
+            if (!m) return "";
+            const ic = (typeof AGENT_ICONS !== "undefined" && AGENT_ICONS[m[1]]) || "";
+            return ic ? '<span class="aicon set-ic" title="' + esc(AGENT_LABEL_BY_NAME[m[1]]) + '" aria-hidden="true">' + ic + "</span>" : "";
+        }
+
         function settingRow(s) {
             if (s.kind === "list") {
                 const items = s.items || [];
@@ -2111,7 +2123,7 @@ export {
                 const adder = '<div class="ladd"><input type="text" class="linput" data-skey="' + esc(s.key)
                     + '" placeholder="' + esc(s.itemHint || "add an entry...") + '">'
                     + '<button type="button" class="laddb" data-skey="' + esc(s.key) + '">Add</button></div>';
-                return '<div class="set-row list"><div class="set-meta"><div class="set-name">' + labelWithBadges(s.label) + "</div>"
+                return '<div class="set-row list"><div class="set-meta"><div class="set-name">' + settingIcon(s.key) + labelWithBadges(s.label) + "</div>"
                     + '<div class="set-hint">' + esc(s.hint) + (s.globalOnly ? " · global" : "") + "</div>"
                     + chips + adder + "</div></div>";
             }
@@ -2124,7 +2136,7 @@ export {
                     + "</select>"
                 : '<button type="button" class="toggle' + (s.value ? " on" : "") + '" data-skey="' + esc(s.key)
                     + '" data-kind="bool" data-on="' + (s.value ? 1 : 0) + '">' + (s.value ? "On" : "Off") + "</button>";
-            return '<div class="set-row"><div class="set-meta"><div class="set-name">' + labelWithBadges(s.label) + "</div>"
+            return '<div class="set-row"><div class="set-meta"><div class="set-name">' + settingIcon(s.key) + labelWithBadges(s.label) + "</div>"
                 + '<div class="set-hint">' + esc(s.hint) + (s.globalOnly ? " · global" : "") + "</div></div>"
                 + '<div class="set-ctl">' + ctl + "</div></div>";
         }
