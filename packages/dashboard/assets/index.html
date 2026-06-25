@@ -1500,14 +1500,12 @@
         }
 
         // --- hash routing between the subpages ---
+        // Single source of truth for the subpage ids (savings is the default/fallback).
+        const VIEWS = ["savings", "usage", "accounts", "skills", "settings"];
         function route() {
             const h = (location.hash || "").replace(/^#\/?/, "");
-            const v = ["usage", "accounts", "settings", "skills"].includes(h) ? h : "savings";
-            $("view-savings").style.display = v === "savings" ? "" : "none";
-            $("view-usage").style.display = v === "usage" ? "" : "none";
-            $("view-accounts").style.display = v === "accounts" ? "" : "none";
-            $("view-skills").style.display = v === "skills" ? "" : "none";
-            $("view-settings").style.display = v === "settings" ? "" : "none";
+            const v = VIEWS.includes(h) ? h : "savings";
+            VIEWS.forEach((view) => { $("view-" + view).style.display = view === v ? "" : "none"; });
             document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.view === v));
             if (v === "settings" && !settingsLoaded) { settingsLoaded = true; loadSettings(); }
             if (v === "skills" && !skillsLoaded) { skillsLoaded = true; loadSkills(); }
