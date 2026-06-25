@@ -1,0 +1,28 @@
+---
+title: Contributing
+description: Improve a skill and share it back, whichever way suits you.
+group: Docs
+order: 5
+---
+
+## Improve a skill
+
+Skills are plain Markdown in the repo under `packages/enigma-cli/assets/skills/<name>/SKILL.md`. The dashboard's **Propose an improvement** button (Skills tab) opens the exact file on GitHub - edit it there and open a pull request. It is reviewed, sealed and shipped to everyone.
+
+The skills directory: [github.com/FJRG2007/enigma](https://github.com/FJRG2007/enigma/tree/main/packages/enigma-cli/assets/skills).
+
+## Open a pull request
+
+Fork, branch, and open a PR against `main`. CI runs typecheck, the integrity check (skills sealed) and the test suite; keep changes atomic and follow the existing style. Run `enigma seal` after editing a skill so its content hash and last-edited date are stamped.
+
+```bash
+enigma seal
+```
+
+## File an issue
+
+Not ready to write code? [Open an issue](https://github.com/FJRG2007/enigma/issues/new/choose) describing the bug or idea - or run `enigma issue bug` / `enigma issue feature` to prefill it with your environment.
+
+## Chat on Discord
+
+Discuss ideas, ask questions, or sanity-check an approach before building on [Discord](https://tpe.li/dsc).

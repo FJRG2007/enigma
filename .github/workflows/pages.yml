@@ -1,8 +1,9 @@
 name: Landing page
 
-# Build and deploy the static presentation site (apps/web/index.html) to GitHub Pages.
-# Assets are pulled from their single source of truth so logos/screenshots are not
-# duplicated: logos from assets/logos, the dashboard preview from assets/images.
+# Build and deploy the static presentation + docs site (apps/web, Astro + MDX) to GitHub
+# Pages. Brand assets are pulled from their single source of truth at build (apps/web's
+# prebuild copies assets/logos + assets/images/dashboard.png into public/), so nothing is
+# duplicated in the web app.
 
 on:
   push:
@@ -27,20 +28,24 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      ASTRO_TELEMETRY_DISABLED: "1"
+    defaults:
+      run:
+        working-directory: apps/web
     steps:
       - uses: actions/checkout@v4
-      - name: Assemble site
-        run: |
-          mkdir -p _site/logos
-          cp apps/web/*.html _site/
-          cp assets/logos/*.svg _site/logos/
-          cp assets/images/dashboard.png _site/dashboard.png
-          # Bypass Jekyll so files/dirs are served verbatim.
-          touch _site/.nojekyll
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm ci
+      - name: Build site
+        run: npm run build
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: _site
+          path: apps/web/dist
 
   deploy:
     needs: build

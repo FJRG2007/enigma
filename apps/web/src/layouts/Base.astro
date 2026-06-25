@@ -1,0 +1,29 @@
+---
+import "../styles/global.css";
+import { url } from "../lib/url";
+
+interface Props {
+    title: string;
+    description: string;
+    ogImage?: string;
+}
+const { title, description, ogImage } = Astro.props;
+const og = ogImage ?? "https://raw.githubusercontent.com/FJRG2007/enigma/main/assets/images/dashboard.png";
+---
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" type="image/svg+xml" href={url("logos/enigma-logo.svg")} />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:image" content={og} />
+    <meta name="twitter:card" content="summary_large_image" />
+</head>
+<body>
+    <slot />
+</body>
+</html>

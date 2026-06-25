@@ -1,0 +1,89 @@
+---
+title: Commands
+description: The enigma command reference. Run enigma help for the same list in your terminal.
+group: Docs
+order: 2
+---
+import Cmd from "../../components/Cmd.astro";
+
+## install & update
+
+<Cmd name="enigma install" ex="enigma install --all --yes">
+Install or update the policy skills, memory and slash commands into the agents you select. Auto-detects installed agents; `--all` targets every supported one, `--local` installs into the current project instead of user level.
+</Cmd>
+
+<Cmd name="enigma update" ex="enigma update">
+Fetch the latest skills from GitHub (no package release needed), sync every deployment, and self-update the `enigma-cli` package.
+</Cmd>
+
+## Launch a tool
+
+Run a coding agent through enigma so it gets your skills, memory and managed settings. Resolution order: explicit account &gt; active profile &gt; the tool's active account. Pass args to the tool after `--`.
+
+```bash
+enigma claude              # launch Claude Code (default account)
+enigma claude work         # a named account
+enigma codex -- --version  # forward args to the tool
+```
+
+## accounts & profiles
+
+Several logins per tool without logging out, each in its own config dir. A profile pins one account per tool and drives every launch.
+
+<Cmd name="enigma account <list|add|use|login|rename|remove>" ex={["enigma account add work --login", "enigma account use work --tool codex"]}>
+Manage tool accounts. Defaults to Claude Code; target another with `--tool <name>`.
+</Cmd>
+
+<Cmd name="enigma profile <list|add|use|set|unset|rename|remove>" ex={["enigma profile add work", "enigma profile set work claude acme", "enigma profile use work"]}>
+Group one account per tool under a profile. `use none` deactivates.
+</Cmd>
+
+## skills
+
+List skills and choose where each one deploys. A skill can be off everywhere (discarded) or off for one agent only - keep a skill for Claude Code but not opencode.
+
+<Cmd name="enigma skills <list|disable|enable> [agent]" ex={["enigma skills list", "enigma skills disable testing-policy opencode", "enigma skills enable testing-policy opencode"]}>
+No agent argument is the global on/off; with an agent it scopes to that agent.
+</Cmd>
+
+## security & guard
+
+A portable, dependency-free commit guard that blocks secrets, `.env` files and dependency dirs. Set it up once per repo and the whole team inherits it.
+
+<Cmd name="enigma security" ex="enigma security">
+Install the git security hooks into the current repo.
+</Cmd>
+
+<Cmd name="enigma guard [--all]" ex="enigma guard --all">
+Run the commit guard over staged files, or `--all` for every tracked file.
+</Cmd>
+
+## compress
+
+Shrink JSON, logs or text to fewer tokens, reversibly (the original is cached and recoverable via its hash). Reads a file or stdin.
+
+<Cmd name="enigma compress [file]" ex={["cat big.json | enigma compress", "enigma compress --stats"]}>
+`--retrieve <hash>` restores an original, `--stats` shows cumulative savings, `--clear` wipes all dashboard data, `--type` forces the content type.
+</Cmd>
+
+<Cmd name="enigma mcp">
+Run the context-compression MCP server over stdio (used by the agents when `compress` is on).
+</Cmd>
+
+## dashboard
+
+A loopback-only browser control panel for all of enigma - accounts, skills, settings, system cleanup - that also shows real Claude usage and measured savings. Nothing leaves your machine.
+
+<Cmd name="enigma dashboard" ex="enigma dashboard">
+Alias `enigma dash`. Runs while open by default; `enigma config dashboard always` keeps a lightweight background daemon.
+</Cmd>
+
+## fix-path & issue
+
+<Cmd name="enigma fix-path [tool]" ex="enigma fix-path claude">
+Find a tool installed but not on PATH and make `enigma <tool>` (and the bare command) launch it.
+</Cmd>
+
+<Cmd name="enigma issue [bug|feature]" ex="enigma issue bug">
+Open a prefilled GitHub issue with your environment autocompleted.
+</Cmd>

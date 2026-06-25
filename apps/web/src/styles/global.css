@@ -1,0 +1,34 @@
+:root {
+    --bg: #080a10; --surface: #12161f; --surface2: #1a1f2b; --border: #232a36; --border-soft: #1b212d;
+    --text: #eceef2; --muted: #8a93a3; --accent: #e0a458; --accent2: #d7875f; --good: #6fcf97;
+    --accent-weak: rgba(224, 164, 88, 0.13);
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --radius: 16px; --radius-sm: 10px;
+    --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4); --shadow-2: 0 18px 40px -22px rgba(0, 0, 0, 0.75);
+    --max: 1080px;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+    margin: 0; color: var(--text); font-family: var(--sans); line-height: 1.6;
+    background: var(--bg); -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent2); text-decoration: none; }
+a:hover { color: var(--accent); }
+a:focus-visible, button:focus-visible {
+    outline: 2px solid rgba(224, 164, 88, 0.6); outline-offset: 3px; border-radius: 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+    html { scroll-behavior: auto; }
+}
+
+/* Themed scrollbars matching the design. */
+* { scrollbar-width: thin; scrollbar-color: #2b3340 transparent; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #2b3340; border-radius: 999px; }
+::-webkit-scrollbar-thumb:hover { background: #3a4150; }

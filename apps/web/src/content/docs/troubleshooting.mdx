@@ -1,0 +1,43 @@
+---
+title: Troubleshooting
+description: Fixes for the most common issues.
+group: Docs
+order: 4
+---
+import { docHref } from "../../lib/url";
+
+## `enigma <tool>` can't find the tool
+
+The tool is installed but not on your shell PATH. Run `enigma fix-path` (or `enigma fix-path claude`) - it locates the binary, persists its path, and adds it to your user PATH for new terminals. The bare command works in any terminal opened after that.
+
+```bash
+enigma fix-path
+```
+
+## My agent doesn't seem to use the skills
+
+Skills load at startup, so restart the agent after an install. Confirm they're deployed with `enigma skills list`, and that the skill isn't disabled globally or for that app (the dashboard Skills tab shows per-app state). If you launch through `enigma claude`, auto-sync keeps them current.
+
+## My skill edits disappeared after an update
+
+That is the default: `skill-update-policy` is `overwrite`, so an update replaces a skill you edited. Set it to `keep` to preserve local edits, from the dashboard Skills tab or the CLI.
+
+```bash
+enigma config skill-update-policy keep
+```
+
+## The dashboard shows the old version / won't open
+
+It serves at `http://localhost` (or `http://localhost:24282` if port 80 is taken). A running dashboard picks up an update on the next refresh; if it still looks stale, run `enigma update` and hard-reload (Ctrl+Shift+R). The server is loopback-only and never network-facing.
+
+## Live usage % isn't showing
+
+Turn on both `usage-stats` and `usage-api`. The probe reads your local Claude Code login, so it needs a recent `claude` session (the token refreshes when Claude runs). Until then the card falls back to tokens used or a plan limit you set.
+
+## Update didn't change anything
+
+`enigma update` pulls the latest published versions; if you are already on them, nothing changes. Skills can update from GitHub between releases when `remote-skills` is on. Re-run `enigma update` after a release lands on npm.
+
+## Report a bug
+
+`enigma issue bug` opens a prefilled GitHub issue with your environment autocompleted. See <a href={docHref("contributing")}>Contributing</a> for every way to reach us.
