@@ -161,6 +161,24 @@
         }
         .toggle:hover { color: var(--text); border-color: #2f3744; }
         .toggle.on { background: var(--good); color: #06210f; border-color: var(--good); font-weight: 600; }
+        /* Boolean settings render as a sliding switch. Only the bool controls carry
+           data-kind="bool" - action buttons reuse .toggle and stay buttons. The On/Off
+           text is kept for screen readers but pushed off-screen; the knob is drawn with
+           ::after, and the .on class (toggled by the same JS) slides it and greens the track. */
+        .toggle[data-kind="bool"] {
+            position: relative; width: 46px; min-width: 46px; height: 26px; padding: 0;
+            border-radius: 999px; background: var(--surface2); border: 1px solid var(--border);
+            color: transparent; overflow: hidden; text-indent: -999px;
+            transition: background .18s, border-color .18s;
+        }
+        .toggle[data-kind="bool"]::after {
+            content: ""; position: absolute; top: 50%; left: 3px; transform: translateY(-50%);
+            width: 18px; height: 18px; border-radius: 50%; background: #cdd2da;
+            transition: left .18s, background .18s;
+        }
+        .toggle[data-kind="bool"]:hover { border-color: #2f3744; }
+        .toggle[data-kind="bool"].on { background: var(--good); border-color: var(--good); }
+        .toggle[data-kind="bool"].on::after { left: 23px; background: #06210f; }
         select.choice {
             background: var(--surface2); color: var(--text); border: 1px solid var(--border);
             border-radius: var(--radius-sm); padding: 6px 10px; font-size: 12px; font-family: var(--mono); cursor: pointer;
