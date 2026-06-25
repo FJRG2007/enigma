@@ -62,16 +62,18 @@
 
         /* Install block */
         .install { max-width: 620px; margin: 36px auto 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-2); overflow: hidden; text-align: left; }
-        .tabs { display: flex; gap: 2px; padding: 8px; background: rgba(0,0,0,0.25); border-bottom: 1px solid var(--border-soft); }
+        .tabs { display: flex; flex-wrap: wrap; gap: 2px; padding: 8px; background: rgba(0,0,0,0.25); border-bottom: 1px solid var(--border-soft); }
         .tabs button { font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--muted); background: transparent; border: 1px solid transparent; border-radius: 8px; padding: 7px 14px; cursor: pointer; transition: color .15s, background .15s; }
         .tabs button:hover { color: var(--text); }
         .tabs button.active { color: var(--accent); background: var(--surface2); border-color: var(--border); }
+        .tabs button .rec { color: var(--good); font-size: 9px; margin-left: 6px; vertical-align: middle; text-transform: uppercase; letter-spacing: 0.5px; }
         .cmd { display: flex; align-items: flex-start; gap: 12px; padding: 16px 18px; }
         .cmd pre { margin: 0; flex: 1; min-width: 0; overflow-x: auto; font-family: var(--mono); font-size: 13px; line-height: 1.7; color: var(--text); }
         .cmd .pfx { color: var(--good); user-select: none; }
-        .copy { flex: 0 0 auto; font-family: var(--mono); font-size: 11px; color: var(--muted); background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; cursor: pointer; transition: color .15s, border-color .15s; }
+        .copy { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; color: var(--muted); background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 8px; cursor: pointer; transition: color .15s, border-color .15s; }
         .copy:hover { color: var(--accent); border-color: #2f3744; }
         .copy.done { color: var(--good); border-color: var(--good); }
+        .copy svg { width: 15px; height: 15px; display: block; }
 
         .works { margin: 30px auto 0; display: flex; align-items: center; justify-content: center; gap: 22px; flex-wrap: wrap; color: var(--muted); font-family: var(--mono); font-size: 12px; }
         .works img { width: 26px; height: 26px; opacity: .9; }
@@ -157,13 +159,18 @@
 
             <div class="install" id="install">
                 <div class="tabs" role="tablist">
-                    <button class="active" data-cmd="script" role="tab">Install script</button>
-                    <button data-cmd="npm" role="tab">npm global</button>
-                    <button data-cmd="npx" role="tab">npx (one-shot)</button>
+                    <button class="active" data-cmd="curl" role="tab">curl<span class="rec">recommended</span></button>
+                    <button data-cmd="npm" role="tab">npm</button>
+                    <button data-cmd="pnpm" role="tab">pnpm</button>
+                    <button data-cmd="yarn" role="tab">yarn</button>
+                    <button data-cmd="bun" role="tab">bun</button>
+                    <button data-cmd="npx" role="tab">npx</button>
                 </div>
                 <div class="cmd">
                     <pre id="cmd"><span class="pfx">$ </span><span id="cmdtext">curl -fsSL https://raw.githubusercontent.com/FJRG2007/enigma/main/scripts/install.sh | sh</span></pre>
-                    <button class="copy" id="copy" type="button">Copy</button>
+                    <button class="copy" id="copy" type="button" title="Copy command" aria-label="Copy command">
+                        <svg class="ico-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                    </button>
                 </div>
             </div>
 
@@ -258,23 +265,33 @@
     </footer>
 
     <script>
-        // Install command tabs (mac/linux script shown; the npm/npx forms are cross-platform).
+        // Install methods. curl (the script) is recommended; npm is preferred among the
+        // package managers, with pnpm/yarn/bun for those who use them; npx is one-shot.
         const COMMANDS = {
-            script: "curl -fsSL https://raw.githubusercontent.com/FJRG2007/enigma/main/scripts/install.sh | sh",
-            npm: "npm install -g enigma-cli@latest && enigma",
+            curl: "curl -fsSL https://raw.githubusercontent.com/FJRG2007/enigma/main/scripts/install.sh | sh",
+            npm: "npm install -g enigma-cli@latest",
+            pnpm: "pnpm add -g enigma-cli@latest",
+            yarn: "yarn global add enigma-cli@latest",
+            bun: "bun add -g enigma-cli@latest",
             npx: "npx enigma-cli@latest install --all --yes",
         };
         const tabs = document.querySelectorAll(".tabs button");
         const cmdText = document.getElementById("cmdtext");
         const copyBtn = document.getElementById("copy");
+        const COPY_ICON = copyBtn.innerHTML;
+        const CHECK_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>';
+        const resetCopy = () => { copyBtn.innerHTML = COPY_ICON; copyBtn.classList.remove("done"); copyBtn.title = "Copy command"; };
         tabs.forEach((b) => b.addEventListener("click", () => {
             tabs.forEach((x) => x.classList.toggle("active", x === b));
             cmdText.textContent = COMMANDS[b.dataset.cmd];
-            copyBtn.textContent = "Copy"; copyBtn.classList.remove("done");
+            resetCopy();
         }));
         copyBtn.addEventListener("click", async () => {
-            try { await navigator.clipboard.writeText(cmdText.textContent); copyBtn.textContent = "Copied"; copyBtn.classList.add("done"); setTimeout(() => { copyBtn.textContent = "Copy"; copyBtn.classList.remove("done"); }, 1800); }
-            catch { /* clipboard blocked; user can select manually */ }
+            try {
+                await navigator.clipboard.writeText(cmdText.textContent);
+                copyBtn.innerHTML = CHECK_ICON; copyBtn.classList.add("done"); copyBtn.title = "Copied";
+                setTimeout(resetCopy, 1800);
+            } catch { /* clipboard blocked; user can select manually */ }
         });
 
         // Live GitHub star count (unauthenticated, CORS-open; rate-limited per IP). Leaves the

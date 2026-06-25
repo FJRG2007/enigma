@@ -1,6 +1,6 @@
 name: Landing page
 
-# Build and deploy the static presentation site (site/index.html) to GitHub Pages.
+# Build and deploy the static presentation site (apps/web/index.html) to GitHub Pages.
 # Assets are pulled from their single source of truth so logos/screenshots are not
 # duplicated: logos from assets/logos, the dashboard preview from docs/images.
 
@@ -8,7 +8,7 @@ on:
   push:
     branches: [main]
     paths:
-      - "site/**"
+      - "apps/web/**"
       - "assets/logos/**"
       - "docs/images/dashboard.png"
       - ".github/workflows/pages.yml"
@@ -32,7 +32,7 @@ jobs:
       - name: Assemble site
         run: |
           mkdir -p _site/logos
-          cp site/index.html _site/index.html
+          cp apps/web/index.html _site/index.html
           cp assets/logos/*.svg _site/logos/
           cp docs/images/dashboard.png _site/dashboard.png
           # Bypass Jekyll so files/dirs are served verbatim.
