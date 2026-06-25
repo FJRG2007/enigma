@@ -19,6 +19,7 @@ import { CATEGORIES, ALL_SETTINGS, valueLabel, invalidateSettingReads } from "..
 import { applyMemoryToggles } from "../skills";
 import { onGhTelemetryChange } from "../github";
 import { readUsageCached } from "../usage";
+import { resourceStatus, runResourceAction, type ResourceStatus } from "../resources";
 import { readConfig } from "../config";
 import type { UsageReport } from "../usage";
 import type { Scope, Setting } from "../settings-registry";
@@ -466,6 +467,27 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         ]);
     };
 
+    const renderResourcePanel = (s: { status: ResourceStatus | null; cursor: number; note: string; rows: { op: string; value?: number; label: string }[]; focused: boolean }): RNode => {
+        if (!s.status) return panelBox(COL.cyan, [
+            txt("Resources", { fg: COL.cyan, attributes: BOLD }),
+            txt("Loading system snapshot...", { fg: COL.gray, marginTop: 1 }),
+            h(box, { flexGrow: 1 }),
+        ]);
+        const st = s.status, mb = (b: number): number => Math.round(b / 1048576);
+        const maxRows = 18;
+        const start = Math.max(0, Math.min(s.cursor - (maxRows >> 1), Math.max(0, s.rows.length - maxRows)));
+        const slice = s.rows.slice(start, start + maxRows);
+        return panelBox(s.focused ? COL.cyan : COL.gray, [
+            txt("Resources", { fg: COL.cyan, attributes: BOLD }),
+            txt(`Memory ${mb(st.totalMem - st.freeMem)}/${mb(st.totalMem)} MB   WSL ${st.wslAvailable ? (st.vmmemRunning ? "running" : "idle") : "n/a"}   Docker ${st.dockerRunning ? "running" : "off"}`, { fg: COL.gray }),
+            s.note ? txt(s.note, { fg: COL.green, marginTop: 1 }) : txt("Every action is destructive and confirms first.", { fg: COL.gray, marginTop: 1 }),
+            h(box, { flexDirection: "column", marginTop: 1, flexGrow: 1 },
+                ...(s.rows.length
+                    ? slice.map((r, i) => txt(` ${r.label} `, { key: String(start + i), truncate: true, ...selStyle(start + i === s.cursor) }))
+                    : [txt(" Nothing to act on. ", { fg: COL.gray })])),
+        ]);
+    };
+
     const renderResult = (res: ActionResult, scroll: number, maxRows: number, onScroll: (dir?: "up" | "down" | "left" | "right") => void): RNode => {
         const windowed = maxRows > 0 && res.lines.length > maxRows;
         const start = windowed ? Math.max(0, Math.min(scroll, res.lines.length - maxRows)) : 0;
@@ -491,11 +513,13 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         | { kind: "category"; catIndex: number; title: string }
         | { kind: "action"; action: ActionKind; title: string; blurb: string }
         | { kind: "identity"; title: string }
-        | { kind: "usage"; title: string };
+        | { kind: "usage"; title: string }
+        | { kind: "resources"; title: string };
     const sideItems: SideItem[] = [
         ...CATEGORIES.map((c, i) => ({ kind: "category" as const, catIndex: i, title: c.title })),
         // The usage view only makes sense in the full hub (it reads session transcripts).
         ...(showActions ? [{ kind: "usage" as const, title: "Claude usage" }] : []),
+        ...(showActions ? [{ kind: "resources" as const, title: "Resources" }] : []),
         ...(showActions ? ACTION_ITEMS.map((a) => ({ kind: "action" as const, ...a })) : []),
         ...(hasIdentity ? [{ kind: "identity" as const, title: "Accounts & profiles" }] : []),
     ];
@@ -559,8 +583,22 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         const action = current.kind === "action" ? current.action : null;
         const identityMode = current.kind === "identity";
         const usageMode = current.kind === "usage";
+        const resourceMode = current.kind === "resources";
         const [usage, setUsage] = useState<(UsageReport & { pending: boolean }) | null>(null);
         const usageOn = usageMode ? readConfig().config.usageStats : false;
+        // Resources panel: a snapshot of killable processes/ports + WSL/Docker, with a cursor
+        // over an action list (named actions first, then ports, then processes) and a confirm.
+        const [resStatus, setResStatus] = useState<ResourceStatus | null>(null);
+        const [resCursor, setResCursor] = useState(0);
+        const [resConfirm, setResConfirm] = useState<{ label: string; op: string; value?: number; index: number } | null>(null);
+        const [resNote, setResNote] = useState("");
+        const resRows: { op: string; value?: number; label: string }[] = [];
+        if (resStatus) {
+            if (resStatus.wslAvailable) resRows.push({ op: "wsl-shutdown", label: `Shut down WSL${resStatus.vmmemRunning ? " - vmmemWSL running, eating RAM" : ""}` });
+            if (resStatus.dockerRunning) resRows.push({ op: "docker-quit", label: "Quit Docker Desktop (and WSL backend)" });
+            for (const p of resStatus.ports) resRows.push({ op: "free-port", value: p.port, label: `Free port :${p.port}  (${p.name || "pid " + p.pid})` });
+            for (const p of resStatus.topProcesses) resRows.push({ op: "kill", value: p.pid, label: `Kill ${p.name}  (pid ${p.pid}, ${Math.round(p.memKB / 1024)} MB)` });
+        }
         // The install panel appends a SKILLS section under the agent checklist; one
         // flat cursor walks both, so the action row count covers agents + skills.
         const skillRows = action === "skills" && setSkillDiscardedFn ? skills : [];
@@ -597,6 +635,21 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             tick();
             return () => { cancelled = true; };
         }, [usageMode, usageOn]);
+
+        // Load a fresh resource snapshot whenever the Resources panel opens.
+        useEffect(() => {
+            if (!resourceMode) { setResStatus(null); return; }
+            let cancelled = false;
+            try { const s = resourceStatus(); if (!cancelled) { setResStatus(s); setResCursor(0); } } catch { /* leave null */ }
+            return () => { cancelled = true; };
+        }, [resourceMode]);
+        const reloadResources = (): void => { try { setResStatus(resourceStatus()); } catch { /* */ } };
+        const runRes = (op: string, value: number | undefined): void => {
+            const r = runResourceAction(op, value);
+            setResNote(r.message);
+            reloadResources();
+            setResCursor(0);
+        };
 
         useEffect(() => {
             if (!action) return;
@@ -742,6 +795,11 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             setSkillConfirm(null);
             if (i !== 0 || !target || !setSkillDiscardedFn) return;
             setSkills(setSkillDiscardedFn(target.name, true));
+        };
+        const chooseRes = (i: number): void => {
+            const c = resConfirm;
+            setResConfirm(null);
+            if (i === 0 && c) runRes(c.op, c.value);
         };
         // Open the per-agent overlay for the skill under the action cursor (no-op off a skill row).
         const openSkillAgents = (): void => {
@@ -1042,6 +1100,15 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
                 return;
             }
 
+            if (resConfirm) {
+                if (esc || ch === "n") { setResConfirm(null); return; }
+                if (up || ch === "k") { setResConfirm((c) => c && { ...c, index: Math.max(0, c.index - 1) }); return; }
+                if (down || ch === "j") { setResConfirm((c) => c && { ...c, index: Math.min(1, c.index + 1) }); return; }
+                if (ch === "y") { chooseRes(0); return; }
+                if (enter || space) { chooseRes(resConfirm.index); return; }
+                return;
+            }
+
             if (removeConfirm) {
                 if (esc || ch === "n") { setRemoveConfirm(null); return; }
                 if (up || ch === "k") { setRemoveConfirm((c) => c && { ...c, index: Math.max(0, c.index - 1) }); return; }
@@ -1104,10 +1171,12 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
                 else if (idRow?.kind === "profile") requestProfRemove(idRow.index);
                 return;
             }
+            if (focusRight && resourceMode && (ch === "r" || ch === "R")) { reloadResources(); setResNote("Refreshed."); return; }
             if (up || ch === "k") {
                 if (focusRight && category) setSetIndex((i) => Math.max(0, i - 1));
                 else if (focusRight && action) setActCursor((i) => Math.max(0, i - 1));
                 else if (focusRight && identityMode) setIdCursor((i) => Math.max(0, i - 1));
+                else if (focusRight && resourceMode) setResCursor((i) => Math.max(0, i - 1));
                 else { setSideIndex((i) => Math.max(0, i - 1)); setSetIndex(0); setFocusRight(false); }
                 return;
             }
@@ -1115,12 +1184,14 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
                 if (focusRight && category) setSetIndex((i) => Math.min(category.settings.length - 1, i + 1));
                 else if (focusRight && action) setActCursor((i) => Math.min(actCount - 1, i + 1));
                 else if (focusRight && identityMode) setIdCursor((i) => Math.min(Math.max(0, idRows.length - 1), i + 1));
+                else if (focusRight && resourceMode) setResCursor((i) => Math.min(Math.max(0, resRows.length - 1), i + 1));
                 else { setSideIndex((i) => Math.min(sideItems.length - 1, i + 1)); setSetIndex(0); setFocusRight(false); }
                 return;
             }
             if (space && focusRight && action) { toggleActRow(actCursor); return; }
             if (enter || space) {
                 if (!focusRight) { setFocusRight(true); return; }
+                if (resourceMode) { const r = resRows[resCursor]; if (r) setResConfirm({ label: r.label, op: r.op, value: r.value, index: 1 }); return; }
                 if (identityMode) { activateIdRow(idRow); return; }
                 if (action) { runChosen(action); return; }
                 const setting = category!.settings[setIndex]!;
@@ -1214,6 +1285,9 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             content = renderRemoveConfirm(`Discard skill '${skillConfirm.name}'? It will be removed from all agents and skipped by future installs and updates.`,
                 skillConfirm.index, chooseSkillDiscard,
                 (d) => setSkillConfirm((c) => c && { ...c, index: Math.max(0, Math.min(1, c.index + d)) }), "Discard");
+        } else if (resConfirm) {
+            content = renderRemoveConfirm(`${resConfirm.label}? This is destructive.`, resConfirm.index, chooseRes,
+                (d) => setResConfirm((c) => c && { ...c, index: Math.max(0, Math.min(1, c.index + d)) }), "Run");
         } else if (skillAgents) {
             const skill = skills.find((s) => s.name === skillAgents.name);
             const cursor = Math.min(skillAgents.cursor, Math.max(0, agents.length - 1));
@@ -1249,6 +1323,8 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             const sidebarWidth = Math.min(28, Math.max(20, Math.floor(size.columns * 0.3)));
             const panel = usageMode
                 ? renderUsagePanel({ usageOn, report: usage })
+                : resourceMode
+                ? renderResourcePanel({ status: resStatus, cursor: resCursor, note: resNote, rows: resRows, focused: focusRight })
                 : identityMode
                 ? renderIdentity({ rows: idRows, focused: focusRight, cursor: idCursor, onSelect: clickIdentity, onMove: moveIdentity })
                 : category
@@ -1285,7 +1361,9 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         // right (split with space-between) so those are visible even while editing.
         const footerLine = (s: string): RNode =>
             h(box, { width: size.columns, paddingLeft: 1, paddingRight: 1 }, txt(s, { fg: COL.gray, attributes: DIM }));
-        const menuNav = focusRight && identityMode
+        const menuNav = focusRight && resourceMode
+            ? "up/down move   enter run (confirm)   r refresh   tab back"
+            : focusRight && identityMode
             ? (idRow?.kind === "profile"
                 ? "up/down move   enter set active   a add   e edit   r rename   d remove   tab back"
                 : "up/down move   enter set active   c connect   a add   r rename   d remove   tab back")
@@ -1333,7 +1411,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
 
         // A one-line "update available" banner under the title, shown only in the plain
         // menu view (not over an overlay or the result/running panels).
-        const noOverlay = !adding && !renaming && !profRename && !profAdd && !profEdit && !profRemove && !connectPrompt && !removeConfirm && !skillConfirm && !skillAgents && !confirm && !listAdd && !listEdit;
+        const noOverlay = !adding && !renaming && !profRename && !profAdd && !profEdit && !profRemove && !connectPrompt && !removeConfirm && !skillConfirm && !skillAgents && !resConfirm && !confirm && !listAdd && !listEdit;
         const updateBanner = update && mode === "menu" && noOverlay
             ? h(box, { width: size.columns, flexDirection: "row", paddingLeft: 1, paddingRight: 1 },
                 txt(`Update available  ${update.current} -> ${update.latest}   `, { fg: COL.yellow, attributes: BOLD }),

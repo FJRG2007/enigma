@@ -348,6 +348,7 @@
             <a href="#/accounts" data-view="accounts" class="tab">Accounts</a>
             <a href="#/skills" data-view="skills" class="tab">Skills</a>
             <a href="#/settings" data-view="settings" class="tab">Settings</a>
+            <a href="#/resources" data-view="resources" class="tab">Resources</a>
         </nav>
         <div class="nav">
             <span class="live"><span id="dot" class="dot stale"></span><span id="updated">Connecting...</span></span>
@@ -564,6 +565,24 @@
         </div>
         <div id="settingsNote" class="set-note"></div>
         <div id="settingsBody"><div class="empty" style="padding:24px 0">Loading settings...</div></div>
+    </section>
+
+    <section id="view-resources" style="display:none">
+        <div class="page-head" style="display:flex;align-items:flex-start;gap:16px">
+            <div style="flex:1">
+                <h1>Resources</h1>
+                <p>Free up your machine: shut down WSL (the <code>vmmemWSL</code> RAM hog), quit Docker Desktop when it won't, free a stuck port, or kill any process. These actions are destructive and ask before running.</p>
+            </div>
+            <button id="resRefresh" type="button" class="iconbtn" title="Refresh" aria-label="Refresh"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg></button>
+        </div>
+        <div id="resNote" class="set-note"></div>
+        <div class="panel"><div class="set-cat-h">System</div><div id="resSystem" class="set-grid"></div></div>
+        <div class="panel">
+            <div class="set-cat-h">Free a port</div>
+            <div class="ladd" style="max-width:320px"><input id="resPort" class="linput" type="number" min="1" max="65535" placeholder="port number, e.g. 3000"><button id="resFreePort" type="button" class="toggle on">Free</button></div>
+        </div>
+        <div class="panel"><div class="set-cat-h">Listening ports</div><div id="resPorts"><div class="empty" style="padding:12px 0">Loading...</div></div></div>
+        <div class="panel"><div class="set-cat-h">Processes <small>by memory</small></div><div id="resProcs"><div class="empty" style="padding:12px 0">Loading...</div></div></div>
     </section>
 
     <footer>
@@ -2683,7 +2702,7 @@ export {
 
         // --- hash routing between the subpages ---
         // Single source of truth for the subpage ids (savings is the default/fallback).
-        const VIEWS = ["savings", "usage", "accounts", "skills", "settings"];
+        const VIEWS = ["savings", "usage", "accounts", "skills", "settings", "resources"];
         function route() {
             const h = (location.hash || "").replace(/^#\/?/, "");
             const v = VIEWS.includes(h) ? h : "savings";
@@ -2692,8 +2711,64 @@ export {
             if (v === "settings" && !settingsLoaded) { settingsLoaded = true; loadSettings(); }
             if (v === "skills" && !skillsLoaded) { skillsLoaded = true; loadSkills(); }
             if (v === "accounts" && !accountsLoaded) { accountsLoaded = true; loadAccounts(); }
+            if (v === "resources") loadResources();
             // The chart was sized while its view may have been hidden; nudge it on return.
             if (v === "savings") { loadSystems(true); if (chart) { try { applyRange(); } catch { /* not ready */ } } }
+        }
+
+        // --- resources subpage (system cleanup; destructive, origin-guarded) ---
+        function fmtMB(kb) { return kb >= 1048576 ? (kb / 1048576).toFixed(1) + " GB" : Math.round(kb / 1024) + " MB"; }
+        function renderResources(s) {
+            s = s || {};
+            const mem = s.totalMem ? Math.round((s.totalMem - s.freeMem) / 1048576) + " / " + Math.round(s.totalMem / 1048576) + " MB used" : "-";
+            const wsl = s.wslAvailable
+                ? '<button type="button" class="btn-danger" data-res="wsl-shutdown">Shut down WSL</button>'
+                : '<span class="tag">not available</span>';
+            const dock = s.dockerRunning ? '<button type="button" class="btn-danger" data-res="docker-quit">Quit Docker</button>' : '<span class="tag">not running</span>';
+            $("resSystem").innerHTML =
+                '<div class="set-row"><div class="set-meta"><div class="set-name">Memory</div><div class="set-hint">' + esc(mem) + "</div></div></div>"
+                + '<div class="set-row"><div class="set-meta"><div class="set-name">WSL / vmmemWSL</div><div class="set-hint">' + (s.vmmemRunning ? "running - eating RAM; shut down to free it" : "not running") + '</div></div><div class="set-ctl">' + wsl + "</div></div>"
+                + '<div class="set-row"><div class="set-meta"><div class="set-name">Docker Desktop</div><div class="set-hint">' + (s.dockerRunning ? "running" : "not running") + '</div></div><div class="set-ctl">' + dock + "</div></div>";
+            const ports = s.ports || [];
+            $("resPorts").innerHTML = ports.length
+                ? ports.map((p) => '<div class="set-row"><div class="set-meta"><div class="set-name">:' + p.port + ' <span class="tag">' + esc(p.name || "pid " + p.pid) + '</span></div><div class="set-hint">pid ' + p.pid + " · " + esc(p.proto) + '</div></div><div class="set-ctl"><button type="button" class="btn-danger" data-res="free-port" data-value="' + p.port + '">Free</button></div></div>').join("")
+                : '<div class="empty" style="padding:12px 0">No listening ports found.</div>';
+            const procs = s.topProcesses || [];
+            $("resProcs").innerHTML = procs.length
+                ? procs.map((p) => '<div class="set-row"><div class="set-meta"><div class="set-name">' + esc(p.name) + ' <span class="tag">' + fmtMB(p.memKB) + '</span></div><div class="set-hint">pid ' + p.pid + '</div></div><div class="set-ctl"><button type="button" class="btn-danger" data-res="kill" data-value="' + p.pid + '">Kill</button></div></div>').join("")
+                : '<div class="empty" style="padding:12px 0">No processes found.</div>';
+        }
+        async function loadResources() {
+            $("resNote").textContent = "";
+            try { renderResources(await (await fetch("/api/resources", { cache: "no-store" })).json()); }
+            catch { $("resSystem").innerHTML = '<div class="empty" style="padding:12px 0">Resources unavailable.</div>'; }
+        }
+        async function resAction(op, value, confirmMsg) {
+            if (confirmMsg && !(await askConfirm("Confirm", confirmMsg, true))) return;
+            $("resNote").textContent = "Running...";
+            try {
+                const out = await (await fetch("/api/resources", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ op, value }) })).json();
+                $("resNote").textContent = out.message || (out.ok ? "Done." : "Failed.");
+                if (out.status) renderResources(out.status);
+            } catch { $("resNote").textContent = "Could not reach the server."; }
+        }
+        function wireResources() {
+            $("resRefresh").addEventListener("click", loadResources);
+            $("resFreePort").addEventListener("click", () => {
+                const port = Number($("resPort").value);
+                if (!port) { $("resNote").textContent = "Enter a port number."; return; }
+                resAction("free-port", port, "Kill whatever is listening on port " + port + "?");
+            });
+            $("view-resources").addEventListener("click", (e) => {
+                const b = e.target.closest("button[data-res]");
+                if (!b) return;
+                const op = b.dataset.res, value = b.dataset.value ? Number(b.dataset.value) : undefined;
+                const msg = op === "wsl-shutdown" ? "Shut down WSL? This stops every WSL distro and frees vmmemWSL."
+                    : op === "docker-quit" ? "Force-quit Docker Desktop and its WSL backend?"
+                    : op === "free-port" ? "Kill the process listening on port " + value + "?"
+                    : op === "kill" ? "Force-kill process " + value + "?" : "Run this action?";
+                resAction(op, value, msg);
+            });
         }
 
         initChart();
@@ -2708,6 +2783,7 @@ export {
         wireSkills();
         wireAccounts();
         wireUsage();
+        wireResources();
         $("cfgExport").addEventListener("click", exportConfig);
         $("cfgImport").addEventListener("click", importConfig);
         $("updateBtn").addEventListener("click", runUpdate);
