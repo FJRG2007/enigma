@@ -482,7 +482,7 @@ enigma compress --clear                     # wipe all dashboard data (stats/his
 ### Savings dashboard
 
 <p align="center">
-  <img src="https://github.com/FJRG2007/enigma/blob/main/docs/images/dashboard.png?raw=true" alt="enigma dashboard" width="100%">
+  <img src="https://github.com/FJRG2007/enigma/blob/main/assets/images/dashboard.png?raw=true" alt="enigma dashboard" width="100%">
   <br><sub>Savings view (auto-generated from the current UI; mock data shown).</sub>
 </p>
 

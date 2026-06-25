@@ -14,7 +14,7 @@
  *
  *   npm i --no-save playwright && npx playwright install chromium && node scripts/screenshot.mjs
  *
- * Output: docs/images/dashboard.png (Savings).
+ * Output: assets/images/dashboard.png (Savings).
  */
 
 import { createServer } from "node:http";
@@ -25,7 +25,7 @@ import { chromium } from "playwright";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const ASSETS = join(ROOT, "packages", "dashboard", "assets");
-const OUT = join(ROOT, "docs", "images", "dashboard.png");
+const OUT = join(ROOT, "assets", "images", "dashboard.png");
 const DAY = 86400000;
 
 // Capture frame sized to the dashboard's own max-width (1560) plus side margins, so the

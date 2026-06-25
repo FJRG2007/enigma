@@ -2,7 +2,7 @@ name: Landing page
 
 # Build and deploy the static presentation site (apps/web/index.html) to GitHub Pages.
 # Assets are pulled from their single source of truth so logos/screenshots are not
-# duplicated: logos from assets/logos, the dashboard preview from docs/images.
+# duplicated: logos from assets/logos, the dashboard preview from assets/images.
 
 on:
   push:
@@ -10,7 +10,7 @@ on:
     paths:
       - "apps/web/**"
       - "assets/logos/**"
-      - "docs/images/dashboard.png"
+      - "assets/images/dashboard.png"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
@@ -34,7 +34,7 @@ jobs:
           mkdir -p _site/logos
           cp apps/web/*.html _site/
           cp assets/logos/*.svg _site/logos/
-          cp docs/images/dashboard.png _site/dashboard.png
+          cp assets/images/dashboard.png _site/dashboard.png
           # Bypass Jekyll so files/dirs are served verbatim.
           touch _site/.nojekyll
       - uses: actions/configure-pages@v5
