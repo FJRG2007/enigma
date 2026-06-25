@@ -1,0 +1,53 @@
+name: Landing page
+
+# Build and deploy the static presentation site (site/index.html) to GitHub Pages.
+# Assets are pulled from their single source of truth so logos/screenshots are not
+# duplicated: logos from assets/logos, the dashboard preview from docs/images.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - "assets/logos/**"
+      - "docs/images/dashboard.png"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deploy at a time; let an in-progress run finish.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assemble site
+        run: |
+          mkdir -p _site/logos
+          cp site/index.html _site/index.html
+          cp assets/logos/*.svg _site/logos/
+          cp docs/images/dashboard.png _site/dashboard.png
+          # Bypass Jekyll so files/dirs are served verbatim.
+          touch _site/.nojekyll
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
