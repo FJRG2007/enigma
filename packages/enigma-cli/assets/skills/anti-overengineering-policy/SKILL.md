@@ -35,6 +35,39 @@ higher one and move on. The first lazy solution that works is the right one.
 - Complex request? Ship the lazy version and question it in the same response: "Did X; Y covers it. Need full X? Say so." Never stall on an answer you can default.
 - Two stdlib options the same size? Take the one that is correct on edge cases. Lazy means writing less code, not picking the flimsier algorithm.
 
+## Collapsing Repetition (DRY) and the Optimization Ladder
+
+Sibling statements that differ only by a value are duplication waiting to drift.
+Collapse them into one data-driven loop over a single list - that is deletion, the
+core minimal-code move, not an added abstraction:
+
+```js
+// Before: five lines that must stay in lockstep (and the id list is duplicated
+// in the validity check above them).
+$("view-savings").style.display = v === "savings" ? "" : "none";
+$("view-usage").style.display   = v === "usage"   ? "" : "none";
+// ...three more
+
+// After: one source of truth, one loop. Adding a view becomes a one-word edit.
+const VIEWS = ["savings", "usage", "accounts", "skills", "settings"];
+VIEWS.forEach((view) => { $("view-" + view).style.display = view === v ? "" : "none"; });
+```
+
+Hoist the list to ONE constant whenever more than one place needs it (here the
+membership check and the loop), so the set can never disagree with itself.
+
+Then climb the optimization ladder only as far as the call frequency earns:
+
+1. Collapse the repetition (above). Always worth it - fewer lines, one source of truth.
+2. Hoist invariant work out of the hot path: build the constant array/regex once at module
+   scope, not on every call.
+3. Precompute or cache only when the path is genuinely hot - a render loop, per-frame,
+   per-item at scale, or a profiler pointing at it. Caching DOM lookups, memoizing, or
+   building a lookup map for code that runs on a user action (navigation, a click, a form
+   submit) is premature: the saving is unmeasurable and the cache is state you must keep in
+   sync. `full` means the shortest correct diff, NOT a speculative cache - stop at the rung
+   the frequency justifies, and if you knowingly skip a real optimization, mark it `enigma:`.
+
 ## Marking Deliberate Shortcuts
 
 Mark intentional simplifications with an `enigma:` comment so a simple read is

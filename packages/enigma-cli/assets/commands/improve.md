@@ -40,6 +40,8 @@ Disambiguation: a bare `security` or `performance` runs Implement mode and edits
 
 Make the smallest change that achieves the improvement; do not rewrite working code without a concrete reason. Apply changes incrementally, keep them reviewable, and explain each briefly. Never trade away security, accessibility, or correctness to gain another goal. After editing, run the project's build, lint, and test commands when they exist and report the results - do not claim success without verification.
 
+Verify a change the way its effect actually shows: a UI change by rendering the screen and looking at it (take a screenshot if the environment can), a behavior change by exercising the path - a green build/lint/test does not prove a visual or behavioral fix. Then close the loop: if the change feeds an artifact the repo keeps in sync (a committed preview/screenshot, a built bundle, a versioned/published asset), regenerate or ship it instead of leaving it stale; only hand back steps that genuinely need the user (credentials, irreversible or destructive choices). When the same kind of request keeps recurring, fix the root once rather than re-patching each instance.
+
 ### ui | frontend
 
 Improve the visual design and frontend quality of the project.
