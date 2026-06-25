@@ -28,9 +28,9 @@ const ASSETS = join(ROOT, "packages", "dashboard", "assets");
 const OUT = join(ROOT, "docs", "images", "dashboard.png");
 const DAY = 86400000;
 
-// Wide-monitor capture (2558x1276, ~2:1). The dashboard now fills the width on its own
-// (max-width 2200), so this frame shows it exactly as it looks on a wide monitor.
-const VIEW = { width: 2558, height: 1276 };
+// Capture frame sized to the dashboard's own max-width (1560) plus side margins, so the
+// preview shows the centered, intentional layout - not a stretched ultrawide column.
+const VIEW = { width: 1680, height: 1380 };
 
 // --- impressive mock data (shape matches the dashboard's /api responses) ---------------
 
