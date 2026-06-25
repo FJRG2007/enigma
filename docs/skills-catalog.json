@@ -1,0 +1,151 @@
+{
+  "generator": "enigma seal",
+  "cliVersion": "1.17.0",
+  "count": 18,
+  "skills": [
+    {
+      "name": "anti-overengineering-policy",
+      "version": "1.2.0",
+      "description": "Minimal-code discipline - YAGNI ladder, deletion over addition, no unrequested abstractions, and the enigma: shortcut-marking convention; intensity via the minimal-code setting.",
+      "provider": "FJRG2007/enigma",
+      "updated": "2026-06-25T17:21:31+02:00",
+      "sha": "b9517e7d520e83a9f881fb1917ca2d4cec4aea4f2c5e753ea02641d9bc06c6b6"
+    },
+    {
+      "name": "anti-overengineering-review",
+      "version": "1.0.0",
+      "description": "On-demand over-engineering review - diff review, whole-repo audit, and enigma: debt-marker ledger (tags delete/stdlib/native/yagni/shrink, line/dep scoring); lists cuts, applies nothing.",
+      "provider": "FJRG2007/enigma",
+      "updated": "2026-06-16T11:24:30+02:00",
+      "sha": "f742a2be3f328b9ea1ff9a35a449177c2cbec35ad16e46f7054b7a873a2ab017"
+    },
+    {
+      "name": "backend-policy",
+      "version": "1.1.0",
+      "description": "Backend/API architecture: controller-service-repository layering, API and request optimization, server-side caching (Redis), and Zod boundary validation.",
+      "provider": "FJRG2007/enigma",
+      "updated": "2026-06-16T12:06:06+02:00",
+      "sha": "a46c3cd00aa5f47adb1e7907f1d2bc6f5562f7a272890dee9b1121976ac04ae1"
+    },
+    {
+      "name": "ciphera-style-policy",
+      "version": "1.1.1",
+      "description": "Ciphera code style conventions (formatting, naming, imports, comments, code-level anti-patterns; TypeScript-first, language-agnostic).",
+      "provider": "FJRG2007/enigma",
+      "updated": "2026-06-01T08:05:40-04:00",
+      "sha": "74f638aec13e8c93257fe1ad604c28b07e9a7c456796a4ceefcc99217d9e7039"
+    },
+    {
+      "name": "code-review-policy",
+      "version": "1.0.0",
+      "description": "Pre-delivery self-review gate, prioritized review dimensions, and change-quality criteria.",
+      "provider": "FJRG2007/enigma",
+      "updated": "2026-06-01T00:45:28+02:00",
+      "sha": "3d3bbe0602d5bbb4afe37648fe3c2fa39376b1bcbac5d8c441f01fad1e866ed0"
+    },
+    {
+      "name": "core-engineering-policy",
+      "version": "1.10.0",
+      "description": "Core engineering execution policy and harness orchestration (highest-authority rules).",
+      "provider": "FJRG2007/enigma",
+      "updated": "2026-06-25T17:54:55+02:00",
+      "sha": "5e68e2a25c8e3dac6251562062f7fe4c57143baaaee8fd6de83adca9ec24a6e6"
+    },
+    {
+      "name": "database-expert",
+      "version": "1.1.0",
+      "description": "Senior database architecture policy: query optimization, anti-duplication/normalization, scalability, and RGPD/GDPR encryption.",
+      "provider": "FJRG2007/enigma",
+      "updated": "2026-06-03T14:19:50+02:00",
+      "sha": "2883bcecb3202683ae6f81b073c3d6a9cec9c55029e011bdd06ba7ac3537297e"
+    },
+    {
+      "name": "debugging-policy",
+      "version": "1.0.0",
+      "description": "Reproduce-isolate-fix debugging methodology with root-cause discipline and regression verification.",
+      "provider": "FJRG2007/enigma",
+      "updated": "2026-06-01T00:45:28+02:00",
+      "sha": "14b0064c8b33a0dc85e51464b05005cf5801c756b1101789a6924b9548420f6b"
+    },
+    {
+      "name": "dependency-policy",
+      "version": "1.0.0",
+      "description": "Dependency and supply-chain security: lockfiles and reproducible installs, version pinning, vulnerability auditing, vetting/minimizing packages, vendoring, and SBOM/provenance.",
+      "provider": "FJRG2007/enigma",
+      "updated": "2026-06-01T00:45:28+02:00",
+      "sha": "6375d835c2aef2c9bd31ce116444dc3d796f510f9970a213aa3ac4696d7e21b9"
+    },
+    {
+      "name": "frontend-design",
+      "version": "1.3.0",
+      "description": "Guidance for distinctive, intentional visual design when building new UI or reshaping an existing one.",
+      "provider": "FJRG2007/enigma",
+      "updated": "2026-06-25T14:56:23-04:00",
+      "sha": "c515f8406368ad3b2a4a8acf979fab34def2a94b1a7a4ffc7d6d47a4ac079ee6"
+    },
+    {
+      "name": "frontend-policy",
+      "version": "1.3.0",
+      "description": "Frontend architecture: reusable components, abstraction thresholds, state management, no-op save detection, large-list rendering (infinite scroll/pagination, virtualization, skeletons, progressive loading), and optimistic UI with rollback.",
+      "provider": "FJRG2007/enigma",
+      "updated": "2026-06-16T12:06:06+02:00",
+      "sha": "26962db5a8b607e95098a6d88977aee59a10bd14e03afe97245f2b013fd21a9a"
+    },
+    {
+      "name": "git-policy",
+      "version": "1.4.0",
+      "description": "Git & contribution policy (senior engineering standards).",
+      "provider": "FJRG2007/enigma",
+      "updated": "2026-06-25T17:14:54+02:00",
+      "sha": "9298bf572c6186de65bfae5cc008af247731fac3e07d9320ddfc12fe886d6afe"
+    },
+    {
+      "name": "security-policy",
+      "version": "1.0.0",
+      "description": "Application and AI-agent security: secrets, authn/authz (least privilege), OWASP Top 10, transport/crypto baseline, secure logging, and agent/MCP/tool-use safety.",
+      "provider": "FJRG2007/enigma",
+      "updated": "2026-06-01T00:45:28+02:00",
+      "sha": "9971e9d9127397d0152e89d24aad3191e2935e55a8483db7fd15f5d4d7a60e7a"
+    },
+    {
+      "name": "skill-creator",
+      "version": "1.0.0",
+      "description": "Create new skills, modify and improve existing skills, and measure skill performance with evals and benchmarks.",
+      "provider": "FJRG2007/enigma",
+      "updated": "2026-06-16T16:39:13+02:00",
+      "sha": "699586cce82ec0a5458288b598ee7e5ebdddb3dfcf19db354d8bc5e85e47c1c7"
+    },
+    {
+      "name": "task-completion-policy",
+      "version": "1.1.0",
+      "description": "Exhaustive completion discipline for long/multi-item tasks - inventory, coverage ledger, verified done.",
+      "provider": "FJRG2007/enigma",
+      "updated": "2026-06-10T22:11:09+02:00",
+      "sha": "6e3facba307eb2b55cefbab2e4b2a346a2b82f93c3ef47e11ebeb78c3c9453a8"
+    },
+    {
+      "name": "technical-writing-policy",
+      "version": "1.0.0",
+      "description": "Concise, realistic technical copy - UI microcopy, descriptions, hints, empty/error states, and README/doc prose that informs without over-explaining or restating the obvious.",
+      "provider": "FJRG2007/enigma",
+      "updated": "2026-06-25T17:54:55+02:00",
+      "sha": "647a896d9e6178cd109c475aae91cb98f465c2fae5e4e1eeaab951829832ac4c"
+    },
+    {
+      "name": "testing-policy",
+      "version": "1.2.0",
+      "description": "Test strategy, coverage gates, deterministic tests, mocking discipline, regression-first bug fixing, and test-suite organization (layout by type/domain, mirrored paths, file naming, fixture/helper placement).",
+      "provider": "FJRG2007/enigma",
+      "updated": "2026-06-16T17:11:49+02:00",
+      "sha": "3bdf591057b760f674fb2b1425f63acb426cda2c4f042e1a74c5a5d3807df664"
+    },
+    {
+      "name": "validation-policy",
+      "version": "1.0.0",
+      "description": "Strict frontend + backend schema validation, schema consistency, and safe client-facing error handling.",
+      "provider": "FJRG2007/enigma",
+      "updated": "2026-06-01T00:45:28+02:00",
+      "sha": "a33622a2f810ee4cea39824cb1a7ca34b355a917d4224025df50d77dd74f0b3a"
+    }
+  ]
+}

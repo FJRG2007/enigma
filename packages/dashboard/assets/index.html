@@ -2347,6 +2347,9 @@ export {
 
         function skillRow(s) {
             const ver = s.version ? '<span class="tag">v' + esc(s.version) + "</span>" : "";
+            // Last-edited date (from skill.json), shown relative via the vendored <relative-time>.
+            const edited = s.updated ? '<span class="tag" title="Last edited ' + esc(new Date(s.updated).toLocaleString()) + '">edited '
+                + rtime(new Date(s.updated).getTime(), 'format="relative"', new Date(s.updated).toLocaleDateString()) + "</span>" : "";
             // Show one app icon per agent that holds the skill (name in the tooltip), not the names.
             const where = s.agents && s.agents.length
                 ? '<span class="aicons">' + s.agents.map((l) => {
@@ -2376,7 +2379,7 @@ export {
                     + (a.deployed ? esc(a.label) + " - on, click to disable" : esc(a.label) + " - off, click to enable")
                     + '">' + (agentSvg(a.name) || esc(a.label)) + "</button>").join("") + "</div>"
                 : "";
-            return '<div class="set-row"><div class="set-meta"><div class="set-name">' + esc(s.name) + ext + ver + upd + where + "</div>"
+            return '<div class="set-row"><div class="set-meta"><div class="set-name">' + esc(s.name) + ext + ver + edited + upd + where + "</div>"
                 + '<div class="set-hint">' + esc(s.description || "") + "</div>" + agentChips + '</div><div class="set-ctl" style="display:flex;gap:8px">' + edit + main + "</div></div>";
         }
 
