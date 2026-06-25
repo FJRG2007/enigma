@@ -127,65 +127,39 @@ A slash command deployed to every agent to improve your project: an **implement*
 
 </td>
 </tr>
+<tr>
+<td>
+
+### <img src="assets/logos/enigma-logo.svg" width="20" height="20" alt="Enigma"/> Minimal code
+
+On by default. Pushes the agent toward the laziest solution that works - standard library and native platform features before custom code, the shortest working diff. Tune `off | lite | full | ultra`; security and trust-boundary validation are never simplified away.
+
+</td>
+<td>
+
+### <img src="assets/logos/enigma-logo.svg" width="20" height="20" alt="Enigma"/> Context compression
+
+Opt-in. A native, dependency-free engine that shrinks large tool outputs, logs and text to far fewer tokens before they reach the model - reversibly. Use `enigma compress`, or register it as an MCP server for your agents.
+
+</td>
+</tr>
 </table>
 
-That first install is the only one you ever need to run by hand: afterwards,
-launching a tool through enigma (e.g. `enigma claude`) **auto-syncs** the deployed
-skills and memory with the installed package version, so updates apply without
-re-running `enigma install`. Opt out with `enigma config auto-sync off`. Auto-sync
-only refreshes what you already installed - it never deploys to a new agent, never
-overwrites skills you edited locally, and never rewrites a memory file
-(`CLAUDE.md` / `AGENTS.md`) that you authored or edited yourself.
+The first install is the only one you run by hand: launching a tool through enigma
+(e.g. `enigma claude`) **auto-syncs** the deployed skills and memory to the
+installed version, so updates apply without re-running `enigma install` (opt out
+with `enigma config auto-sync off`). It never deploys to a new agent on its own,
+never overwrites skills you edited, and never rewrites a memory file you authored.
+Skills also update straight from this repo between npm releases, verified by content
+hash (`enigma config remote-skills off` to disable).
 
-Install also deploys a built-in **`/improve` slash command** to every agent
-(Claude Code, opencode and Codex). It has two modes: an **implement** mode that
-edits a focused area directly (`/improve ui`, `security`, `performance`, `seo`,
-`refactor`), and a read-only **advisor** mode (adapted from
-[shadcn/improve](https://github.com/shadcn/improve), MIT) that audits the codebase
-and writes self-contained plans into `plans/` for another agent to execute
-(`/improve audit`, `quick`/`deep`, `branch`, `next`, `plan`, `review-plan`,
-`execute`, `reconcile`, `--issues`). A same-named command that is not enigma's is
-replaced so `/improve` always resolves to enigma's. See the
-[package README](packages/enigma-cli/README.md#slash-commands) for details.
+## Configuration
 
-Skills also update **without waiting for an npm release**: `enigma install` and
-`enigma update` check this repo on GitHub for newer sealed skills, download and
-verify them (content hash + provider), and cache them locally so installs and
-auto-sync deploy the freshest versions. The check is fully fault-tolerant - if the
-GitHub API is down, slow, or rate-limited, enigma silently keeps the bundled
-skills - and can be disabled with `enigma config remote-skills off`.
-
-## Context compression (opt-in)
-
-enigma ships a native, dependency-free context-compression engine that shrinks
-large tool outputs, logs and text before they reach the model - the same
-information in far fewer tokens. JSON arrays of records are compressed
-statistically (a representative, schema-preserving sample is kept, with error and
-outlier rows always preserved); repetitive logs collapse by template; long prose is
-truncated head+tail. Compression is **reversible**: whenever data is dropped the
-full original is cached locally and the output carries a `<<enigma:ccr:HASH ...>>`
-marker the model can pass back to retrieve the original on demand.
-
-Use it directly:
-
-```bash
-cat big-output.json | enigma compress      # compressed to stdout, savings to stderr
-enigma compress --retrieve <hash>          # restore a cached original
-enigma compress --stats                    # cumulative token savings
-enigma compress --clear                    # wipe all dashboard data (stats/history/cache)
-```
-
-Or expose it to your agents as an MCP server. Turning the toggle on registers
-`enigma mcp` (tools `enigma_compress`, `enigma_retrieve`, `enigma_stats`) in each
-managed agent's config (Claude Code, Codex, opencode); turning it off removes it:
-
-```bash
-enigma config compress on
-enigma install        # (or the next auto-sync) deploys the MCP server
-```
-
-It is **off by default** - adding an MCP server to your agents is an explicit
-choice. Everything runs locally; no data leaves your machine.
+Most features are opt-in or tunable. Configure them from the interactive hub
+(`enigma`), the local **dashboard** (`enigma dashboard`), or the CLI
+(`enigma config <key> <value>`) - whichever you prefer. For the full list of keys,
+their defaults, and per-feature details, see the
+[documentation](https://fjrg2007.github.io/enigma/docs/configuration/).
 
 ## Requirements
 
@@ -256,73 +230,6 @@ enigma help | version
     --output-style <off|lite|full|ultra>  Token-efficient output level (asked if omitted)
     --skills-only / --memory-only / --no-prune / --keep-modified / --dry-run
 ```
-
-### Permission bypass (default on)
-
-By default every install lets each agent (Claude Code, Codex, opencode) skip its
-per-action approval prompts, so it stops asking before each edit or command - and
-an agent you install later (e.g. Codex after enigma) picks it up on the next
-install. This is a deliberate security trade-off, and enigma says so loudly each
-time it enables it. Turn it off:
-
-```bash
-enigma config permission-bypass off    # disable the default for every agent
-enigma config bypass-codex off         # disable one agent (sticks across installs)
-enigma install --no-bypass             # skip it for a single run
-```
-
-opencode is included but is the least reliable without the approval gate, so use
-`enigma config bypass-opencode off` if you want to keep its gate. Your existing
-deny rules and other settings are always preserved.
-
-### Token-efficient output (opt-in)
-
-Optionally have the agent compress its chat prose to save output tokens - drop
-filler and pleasantries, keep every technical fact. It is chosen at install (or
-`enigma config output-style <off|lite|full|ultra>`) and writes a section into the
-agent's memory file, so **restart the agent** after changing it:
-
-- `off` - normal full prose (default).
-- `lite` - professional and tight: drops filler, keeps grammar and your language.
-- `full` - shorter, drops articles and uses fragments.
-- `ultra` - telegraphic, maximum compression.
-
-Code, comments, commits, and PRs are always written normally, and the agent
-reverts to full prose for security warnings and other safety-critical replies.
-You can also switch level mid-session just by asking ("be more terse", "ultra",
-"normal mode").
-
-### Minimal code (on by default)
-
-The companion to token-efficient output: where that compresses how the agent
-*talks*, this governs how it *builds*. It pushes the agent toward the laziest
-solution that works - YAGNI, the standard library and native platform features
-before custom code, one line before fifty. It is **on by default at `full`**;
-tune it at install or via `enigma config minimal-code <off|lite|full|ultra>`. It
-writes a section into the agent's memory file, so **restart the agent** after
-changing it:
-
-- `off` - no extra anti-overengineering pressure.
-- `lite` - builds what you asked, but names the lazier alternative in one line.
-- `full` - the YAGNI ladder enforced: stdlib/native first, shortest working diff (default).
-- `ultra` - YAGNI extremist: deletion before addition, challenges the requirement.
-
-Security, input validation at trust boundaries, error handling that prevents
-data loss, and accessibility are never simplified away. The full discipline
-lives in the `anti-overengineering-policy` skill; you can switch level
-mid-session by asking ("be more lazy", "full", "stop minimal-code").
-
-A companion `anti-overengineering-review` skill runs the on-demand,
-complexity-only passes: ask to "review this for over-engineering", "audit the
-codebase for bloat", or "what can we delete" for a tagged list of cuts
-(`stdlib`/`native`/`yagni`/`delete`/`shrink`) with a `net: -N lines` score, or
-"list the deferred shortcuts" for a ledger of the `enigma:` markers. It only
-lists findings - it never applies them - and leaves correctness and security to
-a normal review.
-
-See [`docs/examples/`](docs/examples/README.md) for side-by-side "with vs
-without enigma" comparisons (sorting, email validation, date picker, caching,
-an API endpoint, and a review pass).
 
 ## Git security hooks
 
