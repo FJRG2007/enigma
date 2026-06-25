@@ -257,6 +257,35 @@
             .tabs .tab { white-space: nowrap; }
             .nav { margin-left: 0; }
         }
+        /* Pretty scrollbars across the whole dashboard (thin, rounded, themed). */
+        * { scrollbar-width: thin; scrollbar-color: #2b3340 transparent; }
+        ::-webkit-scrollbar { width: 10px; height: 10px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-corner { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #2b3340; border-radius: 999px; }
+        ::-webkit-scrollbar-thumb:hover { background: #3a4150; }
+        /* Animated modal dialog - replaces native alert/prompt/confirm so dialogs keep the design. */
+        .modal-back {
+            position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center;
+            padding: 20px; background: rgba(4,6,10,0.62); backdrop-filter: blur(3px);
+            opacity: 0; transition: opacity .18s ease;
+        }
+        .modal-back.show { opacity: 1; }
+        .modal {
+            width: 100%; max-width: 420px; background: var(--surface); border: 1px solid var(--border);
+            border-radius: var(--radius); box-shadow: var(--shadow-2); padding: 22px;
+            transform: translateY(10px) scale(.98); opacity: 0; transition: transform .18s ease, opacity .18s ease;
+        }
+        .modal-back.show .modal { transform: none; opacity: 1; }
+        .modal-title { font-family: var(--mono); font-size: 14px; font-weight: 600; color: var(--text); }
+        .modal-msg { color: var(--muted); font-size: 13px; line-height: 1.5; margin-top: 8px; word-break: break-word; }
+        .modal-input {
+            width: 100%; margin-top: 14px; background: var(--surface2); color: var(--text);
+            border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 9px 12px; font-size: 13px; font-family: var(--mono);
+        }
+        .modal-input:focus { outline: none; border-color: var(--accent); }
+        .modal-acts { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+        .modal-ok.danger { background: var(--accent2); border-color: var(--accent2); color: #2a0f08; }
     </style>
 </head>
 <body>
@@ -956,6 +985,50 @@
         // --- settings subpage (mirrors the TUI registry over /api/settings) ---
         function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
 
+        // Capitalize a choice value for display ("on-demand" -> "On demand"), keeping the raw
+        // value as the option's value so the server still receives the exact token.
+        function prettyChoice(c) { c = String(c).replace(/[-_]/g, " "); return c.charAt(0).toUpperCase() + c.slice(1); }
+
+        // Animated modal replacing native alert/prompt/confirm (keeps the design). Returns a
+        // Promise: a prompt resolves to the entered string or null; a confirm resolves a boolean.
+        function openModal({ title, message, field, danger, okLabel }) {
+            return new Promise((resolve) => {
+                const back = document.createElement("div");
+                back.className = "modal-back";
+                let inner = "";
+                if (field && field.options) {
+                    inner = '<select class="modal-input">' + field.options.map((o) =>
+                        '<option value="' + esc(o.value) + '"' + (o.value === field.value ? " selected" : "") + ">" + esc(o.label || o.value) + "</option>").join("") + "</select>";
+                } else if (field) {
+                    inner = '<input class="modal-input" type="text" value="' + esc(field.value || "") + '" placeholder="' + esc(field.placeholder || "") + '">';
+                }
+                back.innerHTML = '<div class="modal" role="dialog" aria-modal="true">'
+                    + '<div class="modal-title">' + esc(title) + "</div>"
+                    + (message ? '<div class="modal-msg">' + esc(message) + "</div>" : "")
+                    + inner
+                    + '<div class="modal-acts"><button type="button" class="toggle modal-cancel">Cancel</button>'
+                    + '<button type="button" class="toggle on modal-ok' + (danger ? " danger" : "") + '">' + esc(okLabel || "OK") + "</button></div></div>";
+                document.body.appendChild(back);
+                requestAnimationFrame(() => back.classList.add("show"));
+                const inp = back.querySelector(".modal-input");
+                let done = false;
+                const close = (val) => { if (done) return; done = true; back.classList.remove("show"); setTimeout(() => back.remove(), 200); resolve(val); };
+                const ok = () => close(field ? (inp ? inp.value : true) : true);
+                const cancel = () => close(field ? null : false);
+                back.querySelector(".modal-ok").addEventListener("click", ok);
+                back.querySelector(".modal-cancel").addEventListener("click", cancel);
+                back.addEventListener("mousedown", (e) => { if (e.target === back) cancel(); });
+                back.addEventListener("keydown", (e) => {
+                    if (e.key === "Escape") { e.preventDefault(); cancel(); }
+                    else if (e.key === "Enter" && (!inp || inp.tagName !== "TEXTAREA")) { e.preventDefault(); ok(); }
+                });
+                if (inp) { inp.focus(); if (inp.select) inp.select(); } else back.querySelector(".modal-ok").focus();
+            });
+        }
+        const askText = (title, value, message) => openModal({ title, message, field: { value: value || "" } }).then((v) => (v == null ? null : String(v).trim()));
+        const askChoice = (title, options, value, message) => openModal({ title, message, field: { options, value } });
+        const askConfirm = (title, message, danger) => openModal({ title, message, danger, okLabel: danger ? "Remove" : "OK" }).then(Boolean);
+
         // Turn "(experimental)" and " · measured/experimental" label suffixes into visual badges.
         function labelWithBadges(text) {
             let name = String(text);
@@ -979,9 +1052,12 @@
                     + '<div class="set-hint">' + esc(s.hint) + (s.globalOnly ? " · global" : "") + "</div>"
                     + chips + adder + "</div></div>";
             }
-            const ctl = s.choices
+            // A 2-value choice whose "off" is one of the two values is really a boolean, so
+            // render it as a switch (like a pure bool); 3+ values stay a select with pretty labels.
+            const asSwitch = !s.choices || (s.choices.length === 2 && s.choices.indexOf(s.offChoice) !== -1);
+            const ctl = !asSwitch
                 ? '<select class="choice" data-skey="' + esc(s.key) + '">'
-                    + s.choices.map((c) => '<option value="' + esc(c) + '"' + (c === s.choice ? " selected" : "") + ">" + esc(c) + "</option>").join("")
+                    + s.choices.map((c) => '<option value="' + esc(c) + '"' + (c === s.choice ? " selected" : "") + ">" + esc(prettyChoice(c)) + "</option>").join("")
                     + "</select>"
                 : '<button type="button" class="toggle' + (s.value ? " on" : "") + '" data-skey="' + esc(s.key)
                     + '" data-kind="bool" data-on="' + (s.value ? 1 : 0) + '">' + (s.value ? "On" : "Off") + "</button>";
@@ -1278,12 +1354,12 @@
         }
 
         function wireSkills() {
-            $("skillsBody").addEventListener("click", (e) => {
+            $("skillsBody").addEventListener("click", async (e) => {
                 const b = e.target.closest("button[data-action]");
                 if (!b) return;
                 const { name, action } = b.dataset;
                 if (action === "edit") { openEditor(name, b.dataset.enigma === "1"); return; }
-                if (action === "remove" && !confirm('Remove the external skill "' + name + '" from all agents? This deletes it from disk.')) return;
+                if (action === "remove" && !(await askConfirm("Remove skill", 'Remove the external skill "' + name + '" from all agents? This deletes it from disk.', true))) return;
                 postSkill(name, action);
             });
             $("seSave").addEventListener("click", saveEditor);
@@ -1351,27 +1427,28 @@
             } catch { $("accountsNote").textContent = "Could not reach the server."; }
         }
         function wireAccounts() {
-            $("accAdd").addEventListener("click", () => {
-                const tool = accTools.length === 1 ? accTools[0].name : prompt("Which tool? (" + accTools.map((t) => t.name).join(" / ") + ")", accTools[0] ? accTools[0].name : "");
+            $("accAdd").addEventListener("click", async () => {
+                const tool = accTools.length === 1 ? accTools[0].name
+                    : await askChoice("Add account", accTools.map((t) => ({ value: t.name, label: t.label || t.name })), accTools[0] ? accTools[0].name : "", "Which tool is this account for?");
                 if (!tool) return;
-                const name = prompt("New account name (e.g. work):", "");
+                const name = await askText("Add account", "", "New account name (e.g. work):");
                 if (name) accAction("account.add", { tool, name });
             });
-            $("profAdd").addEventListener("click", () => { const name = prompt("New profile name:", ""); if (name) accAction("profile.add", { name }); });
-            $("accountsBody").addEventListener("click", (e) => {
+            $("profAdd").addEventListener("click", async () => { const name = await askText("Add profile", "", "New profile name:"); if (name) accAction("profile.add", { name }); });
+            $("accountsBody").addEventListener("click", async (e) => {
                 const b = e.target.closest("button[data-acc]"); if (!b) return;
                 const op = b.dataset.acc, tool = b.dataset.tool, name = b.dataset.name;
                 if (op === "activate") accAction("account.activate", { tool, name });
-                else if (op === "remove") { if (confirm("Remove account '" + name + "' and delete its local config dir?")) accAction("account.remove", { tool, name }); }
-                else if (op === "rename") { const nn = prompt("Rename '" + name + "' to:", name); if (nn && nn !== name) accAction("account.rename", { tool, name, newName: nn }); }
+                else if (op === "remove") { if (await askConfirm("Remove account", "Remove account '" + name + "' and delete its local config dir?", true)) accAction("account.remove", { tool, name }); }
+                else if (op === "rename") { const nn = await askText("Rename account", name, "Rename '" + name + "' to:"); if (nn && nn !== name) accAction("account.rename", { tool, name, newName: nn }); }
                 else if (op === "login") { $("accountsNote").textContent = "To log in, run this in a terminal:  enigma " + tool + " " + name; }
             });
-            $("profilesBody").addEventListener("click", (e) => {
+            $("profilesBody").addEventListener("click", async (e) => {
                 const b = e.target.closest("button[data-prof-act]"); if (!b) return;
                 const op = b.dataset.profAct, name = b.dataset.name;
                 if (op === "activate") accAction("profile.activate", { name });
-                else if (op === "remove") { if (confirm("Remove profile '" + name + "'? (its accounts are kept)")) accAction("profile.remove", { name }); }
-                else if (op === "rename") { const nn = prompt("Rename profile '" + name + "' to:", name); if (nn && nn !== name) accAction("profile.rename", { name, newName: nn }); }
+                else if (op === "remove") { if (await askConfirm("Remove profile", "Remove profile '" + name + "'? (its accounts are kept)", true)) accAction("profile.remove", { name }); }
+                else if (op === "rename") { const nn = await askText("Rename profile", name, "Rename profile '" + name + "' to:"); if (nn && nn !== name) accAction("profile.rename", { name, newName: nn }); }
             });
             $("profilesBody").addEventListener("change", (e) => {
                 const sel = e.target.closest("select[data-prof-tool]"); if (!sel) return;
