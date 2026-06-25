@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="docs/images/enigma-logo.svg" width="120" />
+  <img src="assets/logos/enigma-logo.svg" width="120" />
   <h1>Enigma</h1>
   <h3>Everything you need to work with a coding agent, in one command.</h3>
   <img src="https://img.shields.io/badge/TypeScript-blue?style=for-the-badge&logo=typescript&logoColor=white"/> 
@@ -21,7 +21,7 @@ actually use (Claude Code, OpenAI Codex, opencode) and sets up portable **git
 security hooks** that block secrets, `.env` files, and dependency dirs from being
 committed.
 
-![ENIGMA PREVIEW](https://raw.githubusercontent.com/FJRG2007/enigma/refs/heads/main/docs/images/dashboard.png)
+![ENIGMA PREVIEW](https://raw.githubusercontent.com/FJRG2007/enigma/refs/heads/main/assets/images/dashboard.png)
 
 ## Install
 
@@ -55,7 +55,7 @@ npx enigma-cli@latest install --all --yes
 <tr>
 <td width="50%">
 
-### <img src="docs/images/enigma-logo.svg" width="20" height="20" alt="Enigma"/> Policy skills, everywhere
+### <img src="assets/logos/enigma-logo.svg" width="20" height="20" alt="Enigma"/> Policy skills, everywhere
 
 12 engineering policy skills (security, testing, git, style, debugging...) authored once and deployed to **Claude Code, OpenAI Codex and OpenCode**, sealed with content hashes so tampering is detected. Discard any skill you don't want (`enigma skills discard <name>` or the hub's SKILLS section): it is removed everywhere and skipped by installs/updates until restored.
 
@@ -66,7 +66,7 @@ npx enigma-cli@latest install --all --yes
 </td>
 <td width="50%">
 
-### <img src="docs/images/enigma-logo.svg" width="20" height="20" alt="Enigma"/> Git security hooks
+### <img src="assets/logos/enigma-logo.svg" width="20" height="20" alt="Enigma"/> Git security hooks
 
 A portable, dependency-free commit guard for **any** repo: blocks secrets, `.env` files and `node_modules` before they are committed. Set it up once and the whole team inherits it.
 
@@ -79,7 +79,7 @@ enigma security
 <tr>
 <td>
 
-### <img src="docs/images/enigma-logo.svg" width="20" height="20" alt="Enigma"/> Token-efficient output
+### <img src="assets/logos/enigma-logo.svg" width="20" height="20" alt="Enigma"/> Token-efficient output
 
 Optional compression of the agent's chat prose (`off | lite | full | ultra`):
 
@@ -90,7 +90,7 @@ Optional compression of the agent's chat prose (`off | lite | full | ultra`):
 </td>
 <td>
 
-### <img src="docs/images/enigma-logo.svg" width="20" height="20" alt="Enigma"/> Multi-account + profiles
+### <img src="assets/logos/enigma-logo.svg" width="20" height="20" alt="Enigma"/> Multi-account + profiles
 
 Several logins per tool without logging out, each in its own config dir, switched OS-agnostically. Every account inherits your skills, memory and managed settings (permission bypass, attribution) automatically. Profiles pin one account per tool ("work" = claude:acme + codex:acme) and drive every launch.
 
@@ -104,7 +104,7 @@ enigma profile use work
 <tr>
 <td>
 
-### <img src="docs/images/enigma-logo.svg" width="20" height="20" alt="Enigma"/> Privacy & productivity defaults
+### <img src="assets/logos/enigma-logo.svg" width="20" height="20" alt="Enigma"/> Privacy & productivity defaults
 
 Sensible privacy and security defaults applied at install: GitHub CLI telemetry **disabled**, Claude Code's feedback survey **off**, and the agent kept from attributing commits to itself. Tune any of it from the CLI or the interactive hub.
 
@@ -116,7 +116,7 @@ enigma config claude-survey off
 </td>
 <td>
 
-### <img src="docs/images/enigma-logo.svg" width="20" height="20" alt="Enigma"/> Built-in `/improve` command
+### <img src="assets/logos/enigma-logo.svg" width="20" height="20" alt="Enigma"/> Built-in `/improve` command
 
 A slash command deployed to every agent to improve your project: an **implement** mode that edits a focused area (`ui`, `security`, `performance`, `seo`, `refactor`) and a read-only **advisor** mode that audits the codebase and writes self-contained plans for another agent to execute.
 
