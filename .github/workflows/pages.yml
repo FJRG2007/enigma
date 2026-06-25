@@ -32,7 +32,7 @@ jobs:
       - name: Assemble site
         run: |
           mkdir -p _site/logos
-          cp apps/web/index.html _site/index.html
+          cp apps/web/*.html _site/
           cp assets/logos/*.svg _site/logos/
           cp docs/images/dashboard.png _site/dashboard.png
           # Bypass Jekyll so files/dirs are served verbatim.
