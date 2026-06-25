@@ -169,13 +169,17 @@ const FALLBACK_HTML = "<!doctype html><meta charset=utf-8><title>Enigma</title><
 let snapshot: { payload: string; expires: number } | null = null;
 const SNAPSHOT_TTL_MS = 1000;
 
+// Identifies this server process. The page reloads when it sees this change, so a tab left
+// open from a previous `enigma dashboard` self-heals after a restart/UI update.
+const SERVER_BOOT = Date.now();
+
 /** JSON stats payload, served from a short-TTL cache so polling never rebuilds it twice. */
 function statsPayload(version: string): string {
     const now = Date.now();
     if (snapshot && now < snapshot.expires) return snapshot.payload;
     const cfg = readConfig().config;
     const payload = JSON.stringify({
-        version, generatedAt: now,
+        version, generatedAt: now, boot: SERVER_BOOT,
         priceOverride: cfg.tokenPrice, speedOverride: cfg.tokenSpeed,
         stats: readStats(), history: readHistory(), cache: ccrCacheStats(),
         usage: cfg.usageStats ? readUsageCached() : null,

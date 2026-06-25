@@ -923,7 +923,16 @@
             return moneyOf("unknown", s.tokensSaved || 0);
         }
 
+        // The server's process-boot id this tab first loaded against. A change means the
+        // dashboard server was restarted (e.g. you re-ran `enigma dashboard` after an
+        // update), so the served UI may be newer than this tab - reload once so a tab you
+        // left open self-heals instead of showing stale markup.
+        let loadedBoot = null;
         function render(data) {
+            if (data.boot != null) {
+                if (loadedBoot === null) loadedBoot = data.boot;
+                else if (data.boot !== loadedBoot) { location.reload(); return; }
+            }
             priceOverride = Number(data.priceOverride) || 0;
             speedOverride = Number(data.speedOverride) || 0;
             const s = data.stats || {};
