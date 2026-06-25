@@ -289,6 +289,17 @@
         const COPY_ICON = copyBtn.innerHTML;
         const CHECK_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>';
         const resetCopy = () => { copyBtn.innerHTML = COPY_ICON; copyBtn.classList.remove("done"); copyBtn.title = "Copy command"; };
+        // On Windows the recommended script is the PowerShell one - `curl ... | sh` has no
+        // `sh`. Adapt the "curl" method to the visitor's OS so the recommended one-liner runs.
+        const isWindows = /win/i.test((navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || navigator.userAgent || "");
+        if (isWindows) {
+            COMMANDS.curl = "irm https://raw.githubusercontent.com/FJRG2007/enigma/main/scripts/install.ps1 | iex";
+            const t = document.querySelector('.tabs button[data-cmd="curl"]');
+            if (t && t.firstChild) t.firstChild.textContent = "powershell";
+        }
+        // Render the active tab's command on load (so the OS-adapted recommended one shows).
+        const activeTab = document.querySelector(".tabs button.active");
+        cmdText.textContent = COMMANDS[(activeTab && activeTab.dataset.cmd) || "curl"];
         tabs.forEach((b) => b.addEventListener("click", () => {
             tabs.forEach((x) => x.classList.toggle("active", x === b));
             cmdText.textContent = COMMANDS[b.dataset.cmd];
