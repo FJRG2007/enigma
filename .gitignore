@@ -21,5 +21,9 @@ packages/enigma-cli/bin/enigma-bin*
 # Local reference clones (third-party repos kept only for study; never committed or published)
 /references/
 
+# Scratch dirs for temporary files (never committed)
+/temp/
+/tmp/
+
 # Claude Code local runtime state (not project content)
 /.claude/scheduled_tasks.lock

@@ -112,8 +112,19 @@ export function ensureDashboardCurrent(): boolean {
 }
 
 /** Force-refresh the UI bundle to the latest published version (used by `enigma update`). */
-export function refreshDashboardPkg(): void {
+/** The version of the installed UI bundle, or null when it is not installed/readable. */
+export function installedDashboardVersion(): string | null {
+    try {
+        const pkg = JSON.parse(readFileSync(join(DASHBOARD_INSTALL_DIR, "node_modules", "@enigmax", "dashboard", "package.json"), "utf8"));
+        return typeof pkg.version === "string" ? pkg.version : null;
+    } catch { return null; }
+}
+
+/** Force-fetch the latest UI bundle; returns true only if the installed version changed. */
+export function refreshDashboardPkg(): boolean {
+    const before = installedDashboardVersion();
     npmInstall("latest");
+    return installedDashboardVersion() !== before;
 }
 
 /**

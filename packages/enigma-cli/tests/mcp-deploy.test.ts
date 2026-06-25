@@ -46,6 +46,15 @@ test("codex global: writes [mcp_servers.enigma] into config.toml", () => {
     expect(toml).toMatch(/args = \[.*'mcp'.*\]/);
 });
 
+test("codex MCP entry is idempotent across repeated syncs (no phantom 'updated')", () => {
+    const file = join(HOME, ".codex", "config.toml");
+    writeFileSync(file, "approval_policy = \"never\"\n");
+    setEnigmaValue("compress", true, "global");
+    expect(applyMcpForAgent("codex", "global")).toBe(true);   // first write registers it
+    expect(applyMcpForAgent("codex", "global")).toBe(false);  // re-running changes nothing
+    expect(applyMcpForAgent("codex", "global")).toBe(false);  // ...and stays a fixed point
+});
+
 test("opencode account: writes mcp.enigma into the account opencode.json", () => {
     const dir = join(HOME, ".enigma", "opencode", "work");
     setEnigmaValue("compress", true, "global");

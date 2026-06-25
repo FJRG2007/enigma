@@ -108,13 +108,18 @@ function applyCodexEntry(file: string, command: string | null, args: string[]): 
     const fileExists = existsSync(file);
     if (!fileExists && command === null) return false;
     const before = fileExists ? readFileSync(file, "utf8") : "";
-    let after = removeTomlTable(before, "mcp_servers.enigma");
+    // Rebuild deterministically so the transform is a fixed point: take the config without
+    // our table, strip trailing whitespace, then re-append the block with exactly one blank
+    // line before it. The previous version toggled that blank line between syncs (removeTomlTable
+    // drops the trailing newline inconsistently), so every "Check & update" rewrote the file
+    // and reported a phantom change.
+    const head = removeTomlTable(before, "mcp_servers.enigma").replace(/\s*$/, "");
+    let after: string;
     if (command !== null) {
         const block = `[mcp_servers.enigma]\ncommand = ${tomlLiteral(command)}\nargs = [${args.map(tomlLiteral).join(", ")}]\n`;
-        const lead = after.trim() ? (after.endsWith("\n") ? "\n" : "\n\n") : "";
-        after = after.trim() ? after.replace(/\n*$/, "\n") + lead.replace(/^\n/, "") + block : block;
+        after = head ? `${head}\n\n${block}` : block;
     } else {
-        after = after.replace(/\n{3,}/g, "\n\n");
+        after = head ? `${head}\n` : "";
     }
     if (after === before) return false;
     mkdirSync(join(file, ".."), { recursive: true });
