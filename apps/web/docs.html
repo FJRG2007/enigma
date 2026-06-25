@@ -124,7 +124,7 @@
             <div class="cmd"><h3>enigma skills &lt;list|disable|enable&gt; [agent]</h3><p>No agent argument is the global on/off; with an agent it scopes to that agent.</p><div class="ex"><b>$</b> enigma skills list<br><b>$</b> enigma skills disable testing-policy opencode<br><b>$</b> enigma skills enable testing-policy opencode</div></div>
 
             <h2 id="security">security &amp; guard</h2>
-            <p>A portable, dependency-free commit guard that blocks secrets, <code>.env</code> files and dependency dirs. Set it up once per repo; commit <code>.githooks/</code> and the team inherits it.</p>
+            <p>A portable, dependency-free commit guard that blocks secrets, <code>.env</code> files and dependency dirs. Set it up once per repo and the whole team inherits it.</p>
             <div class="cmd"><h3>enigma security</h3><p>Install the git security hooks into the current repo.</p><div class="ex"><b>$</b> enigma security</div></div>
             <div class="cmd"><h3>enigma guard [--all]</h3><p>Run the commit guard over staged files, or <code>--all</code> for every tracked file.</p><div class="ex"><b>$</b> enigma guard --all</div></div>
 
@@ -134,7 +134,7 @@
             <div class="cmd"><h3>enigma mcp</h3><p>Run the context-compression MCP server over stdio (used by the agents when <code>compress</code> is on).</p></div>
 
             <h2 id="dashboard">dashboard</h2>
-            <p>A loopback-only browser dashboard of measured token savings and real Claude usage. Served at <code>http://enigma</code> (or <code>http://localhost:24282</code>). Nothing leaves your machine.</p>
+            <p>A loopback-only browser dashboard of measured token savings and real Claude usage. Nothing leaves your machine.</p>
             <div class="cmd"><h3>enigma dashboard</h3><p>Alias <code>enigma dash</code>. Runs while open by default; <code>enigma config dashboard always</code> keeps a lightweight background daemon.</p><div class="ex"><b>$</b> enigma dashboard</div></div>
 
             <h2 id="misc">fix-path &amp; issue</h2>
