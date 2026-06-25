@@ -159,8 +159,15 @@
         .toggle {
             background: var(--surface2); color: var(--muted); border: 1px solid var(--border);
             border-radius: var(--radius-sm); padding: 6px 16px; font-size: 12px; cursor: pointer; font-family: var(--mono); min-width: 56px; text-decoration: none;
-            transition: color .15s, background .15s, border-color .15s;
+            transition: color .15s, background .15s, border-color .15s, transform .1s;
         }
+        /* Click feedback so every button visibly reacts: a quick press, plus a spin while
+           an icon action (Refresh) is actually running, and icon+label for import/export. */
+        .toggle:active, .iconbtn:active, .btn-danger:active, .achip:active { transform: scale(0.93); }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .iconbtn.spinning svg { animation: spin .7s linear infinite; }
+        .toggle.with-icon { display: inline-flex; align-items: center; gap: 6px; }
+        .toggle.with-icon svg { width: 14px; height: 14px; display: block; }
         .toggle:hover { color: var(--text); border-color: #2f3744; }
         .toggle.on { background: var(--good); color: #06210f; border-color: var(--good); font-weight: 600; }
         /* Boolean settings render as a sliding switch. Only the bool controls carry
@@ -182,7 +189,7 @@
         .toggle[data-kind="bool"].on { background: var(--good); border-color: var(--good); }
         .toggle[data-kind="bool"].on::after { left: 23px; background: #06210f; }
         /* Compact icon-only button (e.g. Edit), instead of a text button. */
-        .iconbtn { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 30px; padding: 0; background: var(--surface2); color: var(--muted); border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; transition: color .15s, border-color .15s; }
+        .iconbtn { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 30px; padding: 0; background: var(--surface2); color: var(--muted); border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; transition: color .15s, border-color .15s, transform .1s; }
         .iconbtn:hover { color: var(--accent); border-color: #2f3744; }
         .iconbtn svg { width: 15px; height: 15px; display: block; }
         select.choice {
@@ -537,8 +544,8 @@
                 <p>Everything you can configure with <code>enigma config</code> or the terminal UI, editable here. Changes apply at global scope and take effect immediately; toggles that change agent memory need an agent restart.</p>
             </div>
             <div style="display:flex;gap:8px;white-space:nowrap">
-                <button id="cfgExport" type="button" class="toggle">Export config</button>
-                <button id="cfgImport" type="button" class="toggle">Import config</button>
+                <button id="cfgExport" type="button" class="toggle with-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export config</button>
+                <button id="cfgImport" type="button" class="toggle with-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>Import config</button>
             </div>
         </div>
         <div id="settingsNote" class="set-note"></div>
@@ -2331,7 +2338,7 @@ export {
 
         function onSavings() { const h = (location.hash || "").replace(/^#\/?/, ""); return h !== "settings" && h !== "skills"; }
         // One refresh of everything visible on the Savings view; `force` ignores auto-refresh-off.
-        function refreshAll(force) { poll(force); if (onSavings()) loadSystems(force); }
+        function refreshAll(force) { return Promise.all([poll(force), onSavings() ? loadSystems(force) : null]); }
 
         // --- skills subpage (lists enigma + external skills over /api/skills) ---
         // App logos (Claude, OpenAI/Codex, OpenCode), recoloured to currentColor so a chip's
@@ -2616,7 +2623,14 @@ export {
         $("cfgImport").addEventListener("click", importConfig);
         $("updateBtn").addEventListener("click", runUpdate);
         $("fixPathBtn").addEventListener("click", runFixPath);
-        $("refreshBtn").addEventListener("click", () => refreshAll(true));
+        $("refreshBtn").addEventListener("click", async () => {
+            const b = $("refreshBtn");
+            if (b.classList.contains("spinning")) return; // already refreshing
+            b.classList.add("spinning");
+            // Spin until the refresh settles, but at least one full turn so a fast refresh still reads.
+            try { await Promise.all([refreshAll(true), new Promise((r) => setTimeout(r, 700))]); }
+            finally { b.classList.remove("spinning"); }
+        });
         window.addEventListener("hashchange", route);
         route();
     </script>
