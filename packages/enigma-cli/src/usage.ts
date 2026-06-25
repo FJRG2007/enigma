@@ -27,6 +27,7 @@ import { join, sep } from "node:path";
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { readConfig } from "./config";
 import { readProxyLimits } from "./proxy";
+import { maybeProbeUsage } from "./claude-usage-api";
 
 /** Per-model price in USD per MILLION tokens. Ported from references/repos/claude-usage. */
 export interface ModelPrice { input: number; output: number; cacheRead: number; cacheWrite: number; }
@@ -117,7 +118,7 @@ export interface UsageWindow {
     live: boolean;
 }
 
-export interface UsageWindows { session: UsageWindow; weeklyAll: UsageWindow; weeklySonnet: UsageWindow; }
+export interface UsageWindows { session: UsageWindow; weeklyAll: UsageWindow; weeklyOpus: UsageWindow; weeklySonnet: UsageWindow; }
 
 /** The current Claude billing-style 5-hour block, computed locally from transcript timestamps. */
 export interface UsageBlock {
@@ -253,7 +254,7 @@ function emptyWindow(label: string, kind: "session" | "weekly"): UsageWindow {
 }
 
 function emptyWindows(): UsageWindows {
-    return { session: emptyWindow("Current session", "session"), weeklyAll: emptyWindow("All models", "weekly"), weeklySonnet: emptyWindow("Sonnet only", "weekly") };
+    return { session: emptyWindow("Current session", "session"), weeklyAll: emptyWindow("All models", "weekly"), weeklyOpus: emptyWindow("Opus only", "weekly"), weeklySonnet: emptyWindow("Sonnet only", "weekly") };
 }
 
 function emptyReport(): UsageReport {
@@ -431,18 +432,20 @@ function computeWindows(byDayModel: Record<string, Record<string, UsageBucket>>,
         live: false,
     };
     const { startDay, nextMs } = weeklyAnchor(cfg.planWeeklyReset, now);
-    let allTok = 0, allCost = 0, sonTok = 0, sonCost = 0;
+    let allTok = 0, allCost = 0, opusTok = 0, opusCost = 0, sonTok = 0, sonCost = 0;
     for (const [day, fams] of Object.entries(byDayModel)) {
         if (day < startDay) continue; // only days within the current weekly window
         for (const [fam, b] of Object.entries(fams)) {
             const t = b.input + b.output + b.cacheRead + b.cacheCreation;
             allTok += t; allCost += b.cost;
+            if (fam === "opus") { opusTok += t; opusCost += b.cost; }
             if (fam === "sonnet") { sonTok += t; sonCost += b.cost; }
         }
     }
     const windows: UsageWindows = {
         session,
         weeklyAll: { label: "All models", kind: "weekly", used: allTok, cost: allCost, limit: cfg.planWeeklyLimit || 0, pct: pctOf(allTok, cfg.planWeeklyLimit || 0), resetsAt: nextMs, live: false },
+        weeklyOpus: { label: "Opus only", kind: "weekly", used: opusTok, cost: opusCost, limit: cfg.planWeeklyOpusLimit || 0, pct: pctOf(opusTok, cfg.planWeeklyOpusLimit || 0), resetsAt: nextMs, live: false },
         weeklySonnet: { label: "Sonnet only", kind: "weekly", used: sonTok, cost: sonCost, limit: cfg.planWeeklySonnetLimit || 0, pct: pctOf(sonTok, cfg.planWeeklySonnetLimit || 0), resetsAt: nextMs, live: false },
     };
 
@@ -460,6 +463,7 @@ function computeWindows(byDayModel: Record<string, Record<string, UsageBucket>>,
         };
         apply(windows.session, lim.session);
         apply(windows.weeklyAll, lim.weekly);
+        apply(windows.weeklyOpus, lim.weeklyOpus);
         apply(windows.weeklySonnet, lim.weeklySonnet);
     }
     return windows;
@@ -471,6 +475,9 @@ function computeWindows(byDayModel: Record<string, Record<string, UsageBucket>>,
  * it off the request path via readUsageCached.
  */
 export function buildUsage(): UsageReport {
+    // Fire a throttled background probe (when usageApi is on) so the next build's windows
+    // carry Anthropic's real %/reset even without the proxy. Non-blocking, best-effort.
+    maybeProbeUsage();
     const sources = claudeSources();
     const prev = readCache();
     const next: Record<string, FileAgg> = {};

@@ -111,7 +111,7 @@ export function readProxyLimits(): ProxyLimits | null {
  * them (merging with the previous snapshot so a response missing a window keeps the last
  * known value). Best-effort; never throws and never affects the forwarded response.
  */
-function recordLimits(headers: import("node:http").IncomingHttpHeaders): void {
+export function recordLimits(headers: import("node:http").IncomingHttpHeaders): void {
     try {
         const num = (k: string): number | null => {
             const v = headers[k];

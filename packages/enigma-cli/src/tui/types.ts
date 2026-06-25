@@ -25,8 +25,12 @@ export interface ActionResult {
 /** Minimal agent/protection shapes the hub needs (passed in to avoid heavy imports). */
 export interface HubAgent { name: string; label: string; installed: boolean; }
 export interface HubProtection { value: string; label: string; hint: string; }
-/** A skill row in the install panel's SKILLS section; discarded = never installed/updated. */
-export interface HubSkill { name: string; version: string | null; discarded: boolean; }
+/**
+ * A skill row in the install panel's SKILLS section; discarded = never installed/updated.
+ * agentsOff lists the agent names the skill is turned off for (the per-agent opt-out), so the
+ * hub can enable/disable a skill app-by-app on top of the global discard.
+ */
+export interface HubSkill { name: string; version: string | null; discarded: boolean; agentsOff: string[]; }
 /** A tool account row shown in the hub's Accounts panel. */
 export interface HubAccount {
     tool: string;
@@ -63,6 +67,8 @@ export interface HubContext {
     skills?: HubSkill[];
     /** Discard (remove everywhere + skip future installs/updates) or restore a skill. */
     setSkillDiscarded?: (name: string, discarded: boolean) => HubSkill[];
+    /** Turn a skill on/off for ONE agent (per-app opt-out); returns the refreshed list. */
+    setSkillAgent?: (name: string, agent: string, off: boolean) => HubSkill[];
     /** True when no agent has a skills deployment yet, so the hub guides first-time setup. */
     firstRun?: boolean;
     /** Present when a newer enigma-cli is available, so the hub can offer "update now". */

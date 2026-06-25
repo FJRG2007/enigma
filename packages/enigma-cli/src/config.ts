@@ -81,6 +81,13 @@ export interface EnigmaConfig {
     /** Experimental: route `enigma claude` through a local measuring proxy (opt-in, default off, Claude Code only). */
     proxy: boolean;
     /**
+     * Actively probe Anthropic for the REAL usage windows (the %/reset Claude's own UI shows),
+     * using the local Claude Code OAuth token, so the dashboard shows live percentages without
+     * the proxy or live traffic (opt-in, default off, Claude Code only). It makes one throttled
+     * network call with the user's token and consumes a tiny amount of quota - see claude-usage-api.ts.
+     */
+    usageApi: boolean;
+    /**
      * Block secrets in chat prompts before they reach the agent (opt-in, default off,
      * Claude Code only). When on, `enigma claude` routes through the proxy and scans
      * outgoing messages for credentials. A deliberate security feature that inspects
@@ -93,6 +100,7 @@ export interface EnigmaConfig {
     planSessionLimit: number;
     planWeeklyLimit: number;
     planWeeklySonnetLimit: number;
+    planWeeklyOpusLimit: number;
     /** Weekly window reset anchor as "<weekday> HH:MM" in local time (e.g. "mon 11:00"). */
     planWeeklyReset: string;
     /** Dashboard auto-refreshes its data while the tab is focused (default on; off = manual refresh only). */
@@ -159,8 +167,8 @@ export interface EnigmaConfig {
  */
 export const CONFIG_DEFAULTS: EnigmaConfig = {
     commitEmoji: true, updateNotifier: true, fullscreen: true, parallelSubagents: false, outputStyle: "off", minimalCode: "full",
-    autoSync: true, remoteSkills: true, permissionBypass: true, autoLint: false, compress: false, dashboard: "off", tokenPrice: 0, tokenSpeed: 0, usageStats: false, proxy: false, promptSecretGuard: false, promptSecretMode: "redact",
-    planSessionLimit: 0, planWeeklyLimit: 0, planWeeklySonnetLimit: 0, planWeeklyReset: "mon 00:00",
+    autoSync: true, remoteSkills: true, permissionBypass: true, autoLint: false, compress: false, dashboard: "off", tokenPrice: 0, tokenSpeed: 0, usageStats: false, proxy: false, usageApi: false, promptSecretGuard: false, promptSecretMode: "redact",
+    planSessionLimit: 0, planWeeklyLimit: 0, planWeeklySonnetLimit: 0, planWeeklyOpusLimit: 0, planWeeklyReset: "mon 00:00",
     dashboardLive: true, toolPaths: {}, bypassDisabled: [], discardedSkills: [], skillAgentsOff: {},
 };
 

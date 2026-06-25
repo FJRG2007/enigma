@@ -35,6 +35,8 @@ export interface SystemsStatus {
     live: boolean;
     /** Experimental Claude Code proxy enabled. */
     proxy: boolean;
+    /** Live usage probe enabled (fetch real usage windows via the local Claude Code login). */
+    usageApi: boolean;
     /** Prompt secret guard enabled (blocks credentials in chat prompts via the proxy). */
     promptSecretGuard: boolean;
     /** What the prompt guard does on a hit: "redact" or "reject". */
@@ -69,6 +71,7 @@ export function systemsStatus(): SystemsStatus {
         dashboard: c.dashboard,
         commitEmoji: c.commitEmoji,
         proxy: c.proxy,
+        usageApi: c.usageApi,
         promptSecretGuard: c.promptSecretGuard,
         promptSecretMode: c.promptSecretMode,
         live: c.dashboardLive,

@@ -39,14 +39,39 @@ test("serves the HTML shell, a stats payload, and 404s the rest", async () => {
 
         const api = await fetch(`${base}/api/stats`);
         expect(api.status).toBe(200);
-        const payload = await api.json() as { version: string; stats: { calls: number; tokensSaved: number } };
+        const payload = await api.json() as { version: string; ui: string | null; stats: { calls: number; tokensSaved: number } };
         expect(payload.version).toBe("test-version");
+        // The served UI bundle version drives the browser's auto-reload-on-update; the key is
+        // always present (null when no on-demand bundle is installed, as in this test).
+        expect("ui" in payload).toBe(true);
         expect(payload.stats.calls).toBeGreaterThanOrEqual(1);
         expect(payload.stats.tokensSaved).toBeGreaterThanOrEqual(750);
 
         expect((await fetch(`${base}/nope`)).status).toBe(404);
     } finally {
         server.close();
+    }
+});
+
+test("re-reads the page when the bundle changes on disk (external enigma update)", async () => {
+    // Point the server at a controlled assets dir so we can mutate index.html under it,
+    // simulating `enigma update` swapping the @enigmax/dashboard bundle in another process.
+    const assets = join(HOME, "dash-assets");
+    mkdirSync(assets, { recursive: true });
+    const page = join(assets, "index.html");
+    writeFileSync(page, "<!doctype html><title>x</title>PAGE_ONE");
+    process.env.ENIGMA_DASHBOARD_ASSETS = assets;
+    const server = await startDashboardServer("v");
+    const base = `http://127.0.0.1:${server.port}`;
+    try {
+        expect(await (await fetch(`${base}/`)).text()).toContain("PAGE_ONE");
+        // Different content AND size so the (mtime,size) cache key always changes, even if the
+        // filesystem's mtime resolution is too coarse to differ between two fast writes.
+        writeFileSync(page, "<!doctype html><title>x</title>PAGE_TWO_AFTER_UPDATE");
+        expect(await (await fetch(`${base}/`)).text()).toContain("PAGE_TWO_AFTER_UPDATE");
+    } finally {
+        server.close();
+        delete process.env.ENIGMA_DASHBOARD_ASSETS;
     }
 });
 

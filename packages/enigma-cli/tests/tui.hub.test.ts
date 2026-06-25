@@ -27,8 +27,8 @@ const accounts: HubAccount[] = [
 ];
 const profiles: HubProfile[] = [{ name: "personal", active: false, summary: "claude=default" }];
 let skills: HubSkill[] = [
-    { name: "alpha-skill", version: "1.0.0", discarded: false },
-    { name: "beta-skill", version: "2.1.0", discarded: false },
+    { name: "alpha-skill", version: "1.0.0", discarded: false, agentsOff: [] },
+    { name: "beta-skill", version: "2.1.0", discarded: false, agentsOff: [] },
 ];
 const hub: HubContext = {
     agents: [{ name: "claude", label: "Claude Code", installed: true }],
@@ -37,6 +37,12 @@ const hub: HubContext = {
     skills,
     setSkillDiscarded: (name, discarded) => {
         skills = skills.map((s) => (s.name === name ? { ...s, discarded } : s));
+        return skills;
+    },
+    setSkillAgent: (name, agent, off) => {
+        skills = skills.map((s) => (s.name === name
+            ? { ...s, agentsOff: off ? [...new Set([...s.agentsOff, agent])] : s.agentsOff.filter((a) => a !== agent) }
+            : s));
         return skills;
     },
     accounts,
@@ -121,6 +127,18 @@ test("unified panel renders sections and the wheel mirrors the arrows", async ()
     await until((f) => f.includes("[x] alpha-skill"), "skill restored");
     expect(skills[0]!.discarded).toBe(false);
 
-    await setup.mockInput.pressKey("q");
+    // 'a' on the skill row opens the per-app overlay; space toggles the skill off for
+    // Claude Code, recording the per-agent opt-out via the setSkillAgent callback.
+    await setup.mockInput.pressKey("a");
+    const overlay = await until((f) => f.includes("skill per app") && f.includes("Claude Code"), "per-app overlay");
+    expect(overlay).toContain(" on "); // the only app starts enabled
+    await setup.mockInput.pressKey(" ");
+    await until(() => skills[0]!.agentsOff.includes("claude"), "skill off for claude");
+    // The overlay re-renders the app as off.
+    await until((f) => f.includes("skill per app") && f.includes(" off "), "app shown off");
+
+    // Quit with Ctrl+C, which exits unconditionally even with the overlay open (a lone ESC
+    // byte is buffered by the key parser in this headless harness, so it cannot drive close).
+    await setup.mockInput.pressKey("\x03");
     expect(await done).toBeNull();
 }, 30000);
