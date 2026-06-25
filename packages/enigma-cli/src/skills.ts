@@ -436,9 +436,10 @@ export function readSkillSource(name: string): string | null {
  * new deployment). Returns the agent labels written. Editing an enigma skill makes its copy
  * "modified" and a later sync/update will revert it - the caller surfaces that.
  */
-export function writeSkillEverywhere(name: string, content: string): string[] {
+export function writeSkillEverywhere(name: string, content: string, agentNames?: string[]): string[] {
     const out: string[] = [];
     for (const agent of discoverAgents()) {
+        if (agentNames && !agentNames.includes(agent.name)) continue; // per-app save: only the chosen agents
         const file = join(agent.targets.global.skills, name, "SKILL.md");
         if (!existsSync(file)) continue;
         try { writeFileSync(file, content); out.push(agent.label); } catch { /* read-only */ }
@@ -1154,11 +1155,15 @@ function currentSkillSet(agentName?: string): SkillEntry[] {
  */
 function syncTarget(target: AccountTarget, memory: MemoryEntry[], skills: SkillEntry[], commands: CommandEntry[], createMemory: boolean): number {
     let changed = 0;
+    // skillUpdatePolicy governs a locally-edited (tampered) skill on update: "overwrite"
+    // (default) replaces it with the shipped version; "keep" preserves the user's edits.
+    const keepEdited = readConfig().config.skillUpdatePolicy === "keep";
     if (target.skills) {
         for (const sk of skills) {
             const dest = join(target.skills, sk.name);
             const kind = skillStatus(dest, sk.meta).kind;
-            if (kind === "identical" || kind === "tampered") continue;
+            if (kind === "identical") continue;
+            if (kind === "tampered" && keepEdited) continue;
             mkdirSync(target.skills, { recursive: true });
             cpSync(sk.src, dest, { recursive: true, force: true });
             changed++;
