@@ -36,6 +36,13 @@
         a:focus-visible, button:focus-visible { outline: 2px solid rgba(224,164,88,0.6); outline-offset: 3px; border-radius: 6px; }
         @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } html { scroll-behavior: auto; } }
 
+        /* Themed scrollbars (e.g. the overflowing install command), matching the design. */
+        * { scrollbar-width: thin; scrollbar-color: #2b3340 transparent; }
+        ::-webkit-scrollbar { width: 10px; height: 10px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #2b3340; border-radius: 999px; }
+        ::-webkit-scrollbar-thumb:hover { background: #3a4150; }
+
         /* Nav */
         nav { position: sticky; top: 0; z-index: 20; backdrop-filter: blur(10px); background: rgba(8,10,16,0.72); border-bottom: 1px solid var(--border-soft); }
         nav .wrap { display: flex; align-items: center; gap: 18px; height: 60px; }
