@@ -1292,7 +1292,8 @@
                 : s.update === "modified" ? '<span class="tag ext">modified</span>' : "";
             const edit = '<button type="button" class="toggle" data-name="' + esc(s.name) + '" data-action="edit" data-enigma="' + (s.source === "enigma" ? 1 : 0) + '">Edit</button>';
             const main = s.source === "enigma"
-                ? '<button type="button" class="toggle' + (s.discarded ? "" : " on") + '" data-name="' + esc(s.name)
+                ? '<button type="button" class="toggle' + (s.discarded ? "" : " on") + '" data-kind="bool" title="'
+                    + (s.discarded ? "Disabled - click to enable" : "Enabled - click to disable") + '" data-name="' + esc(s.name)
                     + '" data-action="' + (s.discarded ? "enable" : "disable") + '">' + (s.discarded ? "Disabled" : "Enabled") + "</button>"
                 : '<button type="button" class="btn-danger" data-name="' + esc(s.name) + '" data-action="remove">Remove</button>';
             return '<div class="set-row"><div class="set-meta"><div class="set-name">' + esc(s.name) + ext + ver + upd + where + "</div>"
