@@ -40,6 +40,9 @@ jobs:
       - name: Test measuring proxy
         run: bun test tests/proxy.test.ts
         working-directory: packages/enigma-cli
+      - name: Test live usage probe
+        run: bun test tests/claude-usage-api.test.ts
+        working-directory: packages/enigma-cli
       - name: Test guard config
         run: bun test tests/guard-config.test.ts
         working-directory: packages/enigma-cli

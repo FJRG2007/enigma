@@ -234,6 +234,14 @@ const RAW_CATEGORIES: Category[] = [
                 read: () => readConfig().config.proxy,
                 write: (value, scope) => ({ path: setEnigmaToggle("proxy", value, scope), changed: true }),
             },
+            {
+                key: "usage-api",
+                label: "Live usage windows",
+                hint: "show the real usage %/reset Claude's UI shows by probing Anthropic with your local Claude Code login (no proxy needed); reads your OAuth token, never stores it, and uses a tiny bit of quota; needs real tool-usage stats on; Claude Code only; enigma default: off",
+                globalOnly: true,
+                read: () => readConfig().config.usageApi,
+                write: (value, scope) => ({ path: setEnigmaToggle("usageApi", value, scope), changed: true }),
+            },
         ],
     },
     {

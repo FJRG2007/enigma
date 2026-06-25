@@ -81,8 +81,8 @@ export async function runConfigCli(positionals: string[], scope: Scope | null, i
     // Plan window limits (numeric, USD-free token caps) + the weekly reset anchor. These
     // drive the Claude-style usage gauges and sit outside the boolean/choice registry, like
     // token-price/token-speed. 0 = unset (the gauge shows tokens instead of a %).
-    const PLAN_NUMERIC: Record<string, "planSessionLimit" | "planWeeklyLimit" | "planWeeklySonnetLimit"> = {
-        "plan-session-limit": "planSessionLimit", "plan-weekly-limit": "planWeeklyLimit", "plan-weekly-sonnet-limit": "planWeeklySonnetLimit",
+    const PLAN_NUMERIC: Record<string, "planSessionLimit" | "planWeeklyLimit" | "planWeeklySonnetLimit" | "planWeeklyOpusLimit"> = {
+        "plan-session-limit": "planSessionLimit", "plan-weekly-limit": "planWeeklyLimit", "plan-weekly-sonnet-limit": "planWeeklySonnetLimit", "plan-weekly-opus-limit": "planWeeklyOpusLimit",
     };
     if (rawKey in PLAN_NUMERIC) {
         const n = Number(rawValue);
@@ -108,7 +108,7 @@ export async function runConfigCli(positionals: string[], scope: Scope | null, i
 
     const setting = ALL_SETTINGS.find((s) => s.key === rawKey);
     if (!setting) {
-        console.error(`Unknown config key: ${rawKey}. Known keys: ${ALL_SETTINGS.map((s) => s.key).join(", ")}, token-price, token-speed, plan-session-limit, plan-weekly-limit, plan-weekly-sonnet-limit, plan-weekly-reset.`);
+        console.error(`Unknown config key: ${rawKey}. Known keys: ${ALL_SETTINGS.map((s) => s.key).join(", ")}, token-price, token-speed, plan-session-limit, plan-weekly-limit, plan-weekly-sonnet-limit, plan-weekly-opus-limit, plan-weekly-reset.`);
         return 1;
     }
 

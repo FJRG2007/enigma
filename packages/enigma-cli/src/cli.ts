@@ -807,7 +807,7 @@ export async function run(argv: string[]): Promise<void> {
             summary: Object.entries(p.accounts).map(([t, a]) => `${t}=${a}`).join("  ") || "(no accounts pinned)",
         }));
     const hubSkills = (): HubSkill[] =>
-        listSkillsStatus().map((s) => ({ name: s.name, version: s.version, discarded: s.discarded }));
+        listSkillsStatus().map((s) => ({ name: s.name, version: s.version, discarded: s.discarded, agentsOff: s.agentsOff }));
     const discovered = discoverAgents();
     const buildCtx = () => ({
         agents: discovered.map((a) => ({ name: a.name, label: a.label, installed: a.installed })),
@@ -818,6 +818,7 @@ export async function run(argv: string[]): Promise<void> {
         update: getAvailableUpdate(version) ?? undefined,
         skills: hubSkills(),
         setSkillDiscarded: (name: string, discarded: boolean) => { discardSkill(name, discarded); return hubSkills(); },
+        setSkillAgent: (name: string, agent: string, off: boolean) => { setSkillAgent(name, agent, off); return hubSkills(); },
         accounts: hubAccounts(),
         activateAccount: (tool: string, name: string) => { setActive(tool, name); return hubAccounts(); },
         removeAccount: (tool: string, name: string) => { removeAccount(tool, name); return hubAccounts(); },

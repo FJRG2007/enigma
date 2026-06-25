@@ -17,6 +17,8 @@ process.env.HOME = HOME;
 process.env.ENIGMA_CONFIG_HOME = HOME;
 
 const { syncAccount } = await import("../src/skills");
+const { applySkillAction } = await import("../src/dashboard-skills");
+const { readConfig } = await import("../src/config");
 const CFG = join(HOME, ".enigma.json");
 const skillsDir = (dir: string) => join(dir, "skills");
 
@@ -45,4 +47,20 @@ test("a skill turned off for an agent is pruned from that agent only", async () 
     writeFileSync(CFG, JSON.stringify({ skillAgentsOff: { "frontend-policy": ["opencode"] } }) + "\n");
     syncAccount("claude", claude);
     expect(existsSync(join(skillsDir(claude), "frontend-policy"))).toBe(true);
+});
+
+test("the dashboard agent-toggle action records and clears a per-agent opt-out", async () => {
+    writeFileSync(CFG, "{}\n");
+
+    const offRes = await applySkillAction("frontend-policy", "agent-toggle", { agent: "codex", off: true });
+    expect(offRes.ok).toBe(true);
+    expect(readConfig().config.skillAgentsOff["frontend-policy"]).toContain("codex");
+
+    const onRes = await applySkillAction("frontend-policy", "agent-toggle", { agent: "codex", off: false });
+    expect(onRes.ok).toBe(true);
+    expect(readConfig().config.skillAgentsOff["frontend-policy"] || []).not.toContain("codex");
+
+    // A missing agent is rejected, not silently written.
+    const bad = await applySkillAction("frontend-policy", "agent-toggle", { off: true });
+    expect(bad.ok).toBe(false);
 });

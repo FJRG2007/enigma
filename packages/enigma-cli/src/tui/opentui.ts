@@ -103,6 +103,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
     const firstRun = showActions && Boolean(opts.hub?.firstRun);
     const initialSkills = opts.hub?.skills ?? [];
     const setSkillDiscardedFn = opts.hub?.setSkillDiscarded;
+    const setSkillAgentFn = opts.hub?.setSkillAgent;
     const tools: HubTool[] = opts.hub?.tools ?? [];
     const initialProfiles = opts.hub?.profiles ?? [];
     const activateProfileFn = opts.hub?.activateProfile;
@@ -307,6 +308,24 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
                         : [txt(" (none - using the built-in defaults) ", { fg: COL.gray })])),
                 txt("a add   d remove   enter / esc done", { fg: COL.gray, marginTop: 1 })));
 
+    // Per-agent skill editor: one row per installed app, green "on" / grey "off", toggled with
+    // enter/space (or a click). Mirrors the dashboard's per-app chips for `#/skills`.
+    const renderSkillAgentEditor = (s: {
+        title: string; rows: Array<{ label: string; on: boolean }>; cursor: number;
+        onToggle: (i: number) => void; onMove: (delta: 1 | -1) => void;
+    }): RNode =>
+        h(box, { flexGrow: 1, justifyContent: "center", alignItems: "center" },
+            h(box, { border: true, borderStyle: "rounded", borderColor: COL.cyan, flexDirection: "column", paddingLeft: 2, paddingRight: 2, paddingTop: 1, paddingBottom: 1, width: 66, ...wheel(s.onMove) },
+                txt(`Skill '${s.title}' per app`, { fg: COL.cyan, attributes: BOLD }),
+                txt("turn this skill on or off for each installed app", { fg: COL.gray, truncate: true }),
+                h(box, { flexDirection: "column", marginTop: 1 },
+                    ...(s.rows.length
+                        ? s.rows.map((r, i) => h(box, { flexDirection: "row", justifyContent: "space-between", onMouseDown: () => s.onToggle(i) },
+                            txt(` ${r.label} `, selStyle(i === s.cursor)),
+                            txt(r.on ? " on " : " off ", { fg: r.on ? COL.green : COL.gray })))
+                        : [txt(" (no installed apps detected) ", { fg: COL.gray })])),
+                txt("up/down move   enter / space toggle   esc done", { fg: COL.gray, marginTop: 1 })));
+
     const renderCategoryPanel = (s: {
         category: { title: string; blurb: string; settings: Setting[] };
         scope: Scope; focusRight: boolean; setIndex: number;
@@ -406,6 +425,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             txt("Usage windows (Claude limits)", { fg: COL.gray, attributes: BOLD, marginTop: 1 }),
             winLine(u.windows.session, false),
             winLine(u.windows.weeklyAll, false),
+            ...(u.windows.weeklyOpus ? [winLine(u.windows.weeklyOpus, false)] : []),
             winLine(u.windows.weeklySonnet, true),
         ];
         if (u.block) {
@@ -509,6 +529,8 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         // it deletes the deployed copies and opts the skill out of installs/updates.
         const [skills, setSkills] = useState<HubSkill[]>(initialSkills);
         const [skillConfirm, setSkillConfirm] = useState<{ name: string; index: number } | null>(null);
+        // Per-agent skill overlay (enable/disable a skill app-by-app), opened with 'a' on a skill row.
+        const [skillAgents, setSkillAgents] = useState<{ name: string; cursor: number } | null>(null);
         const [accounts, setAccounts] = useState<HubAccount[]>(initialAccounts);
         // Single cursor over the unified Accounts & profiles rows (accounts first).
         const [idCursor, setIdCursor] = useState(0);
@@ -720,6 +742,21 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             setSkillConfirm(null);
             if (i !== 0 || !target || !setSkillDiscardedFn) return;
             setSkills(setSkillDiscardedFn(target.name, true));
+        };
+        // Open the per-agent overlay for the skill under the action cursor (no-op off a skill row).
+        const openSkillAgents = (): void => {
+            if (!action || !setSkillAgentFn) return;
+            const skill = skillRows[actCursor - actionItemKeys(action).length];
+            if (skill) setSkillAgents({ name: skill.name, cursor: 0 });
+        };
+        // Flip one app's on/off state for the overlay's skill; keeps the overlay open.
+        const toggleSkillAgentRow = (agentIndex: number): void => {
+            if (!skillAgents || !setSkillAgentFn) return;
+            const agent = agents[agentIndex];
+            const skill = skills.find((s) => s.name === skillAgents.name);
+            if (!agent || !skill) return;
+            const currentlyOff = skill.agentsOff.includes(agent.name);
+            setSkills(setSkillAgentFn(skillAgents.name, agent.name, !currentlyOff));
         };
         const clickActItem = (i: number): void => {
             if (!action) return;
@@ -997,6 +1034,14 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
                 return;
             }
 
+            if (skillAgents) {
+                if (esc) { setSkillAgents(null); return; }
+                if (up || ch === "k") { setSkillAgents((c) => c && { ...c, cursor: Math.max(0, c.cursor - 1) }); return; }
+                if (down || ch === "j") { setSkillAgents((c) => c && { ...c, cursor: Math.min(Math.max(0, agents.length - 1), c.cursor + 1) }); return; }
+                if (enter || space) { toggleSkillAgentRow(skillAgents.cursor); return; }
+                return;
+            }
+
             if (removeConfirm) {
                 if (esc || ch === "n") { setRemoveConfirm(null); return; }
                 if (up || ch === "k") { setRemoveConfirm((c) => c && { ...c, index: Math.max(0, c.index - 1) }); return; }
@@ -1045,6 +1090,8 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
                 else startAdd();
                 return;
             }
+            // On a skill row in the install panel, 'a' opens the per-app on/off overlay.
+            if (focusRight && action === "skills" && ch === "a" && actCursor >= agents.length) { openSkillAgents(); return; }
             if (focusRight && identityMode && ch === "c") { if (idRow?.kind === "account") connectSelected(idRow.index); return; }
             if (focusRight && identityMode && ch === "e") { if (idRow?.kind === "profile") startProfEdit(idRow.index); return; }
             if (focusRight && identityMode && ch === "r") {
@@ -1105,6 +1152,8 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             ? txt("remove account", { fg: COL.red })
             : skillConfirm
             ? txt("discard skill", { fg: COL.red })
+            : skillAgents
+            ? txt("skill per app", { fg: COL.cyan })
             : confirm
             ? txt("unsaved changes", { fg: COL.yellow })
             : mode === "running"
@@ -1165,6 +1214,16 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             content = renderRemoveConfirm(`Discard skill '${skillConfirm.name}'? It will be removed from all agents and skipped by future installs and updates.`,
                 skillConfirm.index, chooseSkillDiscard,
                 (d) => setSkillConfirm((c) => c && { ...c, index: Math.max(0, Math.min(1, c.index + d)) }), "Discard");
+        } else if (skillAgents) {
+            const skill = skills.find((s) => s.name === skillAgents.name);
+            const cursor = Math.min(skillAgents.cursor, Math.max(0, agents.length - 1));
+            content = renderSkillAgentEditor({
+                title: skillAgents.name,
+                rows: agents.map((a) => ({ label: a.label, on: !(skill?.agentsOff || []).includes(a.name) })),
+                cursor,
+                onToggle: toggleSkillAgentRow,
+                onMove: (d) => setSkillAgents((c) => c && { ...c, cursor: Math.max(0, Math.min(Math.max(0, agents.length - 1), c.cursor + d)) }),
+            });
         } else if (listAdd) {
             const s = SETTING_BY_KEY.get(listAdd.key);
             content = renderAddInput({ title: `Add to ${s?.label ?? listAdd.key}`, placeholder: s?.itemHint ?? "new entry", error: listAdd.error, onSubmit: submitListAdd });
@@ -1234,7 +1293,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             ? (action !== "skills"
                 ? "up/down move   space toggle   enter apply   tab back"
                 : actCursor >= agents.length && skillRows.length
-                ? "up/down move   space discard/restore   enter install   tab back"
+                ? (setSkillAgentFn ? "up/down move   space discard/restore   a per-app   enter install   tab back" : "up/down move   space discard/restore   enter install   tab back")
                 : "up/down move   space toggle   g scope   enter install   tab back")
             : focusRight && category
                 ? "up/down move   enter toggle/cycle   g scope   tab back"
@@ -1256,6 +1315,8 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             footer = footerLine("up/down move   enter select   esc later");
         } else if (removeConfirm) {
             footer = footerLine("y remove   n / esc cancel");
+        } else if (skillAgents) {
+            footer = footerLine("up/down move   enter / space toggle   esc done");
         } else if (skillConfirm) {
             footer = footerLine("y discard   n / esc cancel");
         } else if (confirm) {
@@ -1272,7 +1333,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
 
         // A one-line "update available" banner under the title, shown only in the plain
         // menu view (not over an overlay or the result/running panels).
-        const noOverlay = !adding && !renaming && !profRename && !profAdd && !profEdit && !profRemove && !connectPrompt && !removeConfirm && !skillConfirm && !confirm && !listAdd && !listEdit;
+        const noOverlay = !adding && !renaming && !profRename && !profAdd && !profEdit && !profRemove && !connectPrompt && !removeConfirm && !skillConfirm && !skillAgents && !confirm && !listAdd && !listEdit;
         const updateBanner = update && mode === "menu" && noOverlay
             ? h(box, { width: size.columns, flexDirection: "row", paddingLeft: 1, paddingRight: 1 },
                 txt(`Update available  ${update.current} -> ${update.latest}   `, { fg: COL.yellow, attributes: BOLD }),

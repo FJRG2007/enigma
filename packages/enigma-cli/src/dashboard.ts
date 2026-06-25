@@ -27,9 +27,9 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { createServer, type Server } from "node:http";
 import { basename, dirname, join } from "node:path";
-import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { readStats, readHistory, ccrCacheStats } from "./compress";
-import { dashboardAssetsDir, spawnDashboardPkgInstall } from "./dashboard-pkg";
+import { dashboardAssetsDir, installedDashboardVersion, spawnDashboardPkgInstall } from "./dashboard-pkg";
 import { readUsageCached } from "./usage";
 import { readConfig, setEnigmaValue } from "./config";
 import { resolveBin } from "./util";
@@ -140,28 +140,49 @@ export function dashboardUrl(port: number): string {
 
 // --- server ---------------------------------------------------------------------
 
-let htmlCache: string | null = null;
-
 /**
- * The dashboard page from the on-demand @enigmax/dashboard package. Only a successful read
- * is cached, so once the background install lands the real page replaces the fallback
- * without needing a server restart.
+ * A read-through cache keyed by the asset file's (mtime, size). This is what lets a running
+ * dashboard pick up an EXTERNAL update: `enigma update` (a different process) reinstalls the
+ * @enigmax/dashboard bundle on disk, changing the files' mtime/size; the next request here
+ * sees the new key and re-reads, instead of serving the page cached at server start forever.
+ * `fallback` is returned (and not cached) until the asset exists.
  */
-function dashboardHtml(): string {
-    if (htmlCache !== null) return htmlCache;
-    const path = assetPath("index.html");
-    if (path) { try { return (htmlCache = readFileSync(path, "utf8")); } catch { /* not installed yet */ } }
-    return FALLBACK_HTML;
+function readAssetCached(cache: { text: string; key: string } | null, path: string | null, fallback: string): { value: string; cache: { text: string; key: string } | null } {
+    if (path) {
+        try {
+            const st = statSync(path);
+            const key = `${st.mtimeMs}:${st.size}`;
+            if (cache && cache.key === key) return { value: cache.text, cache };
+            const text = readFileSync(path, "utf8");
+            return { value: text, cache: { text, key } };
+        } catch { /* not installed yet: fall through to the fallback */ }
+    }
+    return { value: fallback, cache };
 }
 
-let libCache: string | null = null;
+let htmlCache: { text: string; key: string } | null = null;
+
+/**
+ * The dashboard page from the on-demand @enigmax/dashboard package. Re-read whenever the file
+ * changes on disk (e.g. after `enigma update` swaps the bundle), so a long-running server or
+ * daemon serves the current UI rather than the one cached when it booted.
+ */
+function dashboardHtml(): string {
+    const r = readAssetCached(htmlCache, assetPath("index.html"), FALLBACK_HTML);
+    htmlCache = r.cache;
+    return r.value;
+}
+
+let libCache: { text: string; key: string } | null = null;
 
 /** The vendored chart library JS, or null if the asset is missing (cards still render). */
 function dashboardLib(): string | null {
-    if (libCache) return libCache;
     const path = assetPath("lib", LIB_FILE);
-    if (path) { try { return (libCache = readFileSync(path, "utf8")); } catch { /* not installed yet */ } }
-    return null;
+    if (!path) return null;
+    const r = readAssetCached(libCache, path, "");
+    libCache = r.cache;
+    // An empty value means the read failed and no cache exists yet -> treat as missing.
+    return r.cache ? r.cache.text : null;
 }
 
 const FALLBACK_HTML = "<!doctype html><meta charset=utf-8><title>Enigma</title><meta http-equiv=refresh content=5><body style=\"font-family:sans-serif;background:#0b0e14;color:#e6e6e6;padding:2rem\"><h1>Enigma dashboard</h1><p>Fetching the dashboard UI (<code>@enigmax/dashboard</code>) - this page refreshes automatically. If it persists, run <code>enigma dashboard</code> once with network access. Live numbers are available now at <a style=color:#d7875f href=\"/api/stats\">/api/stats</a>.</p>";
@@ -180,6 +201,9 @@ function statsPayload(version: string): string {
     const cfg = readConfig().config;
     const payload = JSON.stringify({
         version, generatedAt: now, boot: SERVER_BOOT,
+        // Version of the served UI bundle (@enigmax/dashboard). The page reloads when this
+        // changes, so a background update to a newer bundle swaps the UI without a restart.
+        ui: installedDashboardVersion(),
         priceOverride: cfg.tokenPrice, speedOverride: cfg.tokenSpeed,
         stats: readStats(), history: readHistory(), cache: ccrCacheStats(),
         usage: cfg.usageStats ? readUsageCached() : null,
@@ -365,7 +389,7 @@ function writeConfigImport(req: import("node:http").IncomingMessage, res: import
 }
 
 /** Plan window keys settable from the dashboard cards -> their .enigma.json fields. */
-const PLAN_FIELDS = { session: "planSessionLimit", weekly: "planWeeklyLimit", weeklySonnet: "planWeeklySonnetLimit", weeklyReset: "planWeeklyReset" } as const;
+const PLAN_FIELDS = { session: "planSessionLimit", weekly: "planWeeklyLimit", weeklyOpus: "planWeeklyOpusLimit", weeklySonnet: "planWeeklySonnetLimit", weeklyReset: "planWeeklyReset" } as const;
 
 /** Set one plan limit / the weekly-reset anchor from a POST body { key, value }. */
 function writePlan(req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse): void {

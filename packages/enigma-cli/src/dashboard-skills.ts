@@ -9,7 +9,7 @@
  */
 
 import {
-    skillsReport, discardSkill, removeExternalSkill, readSkillSource, writeSkillEverywhere,
+    skillsReport, discardSkill, setSkillAgent, removeExternalSkill, readSkillSource, writeSkillEverywhere,
     checkAndUpdateSkills, type SkillReport,
 } from "./skills";
 
@@ -33,6 +33,7 @@ export interface SkillActionResult {
  *  - read          : return the SKILL.md content (for the editor).
  *  - save          : overwrite the SKILL.md across every agent that holds the skill.
  *  - disable/enable : discard / restore an enigma skill across all deployments.
+ *  - agent-toggle  : turn an enigma skill on/off for ONE agent (content = { agent, off }).
  *  - remove        : delete an external skill from every agent that holds it.
  *  - check-updates : refresh enigma skills from GitHub and re-sync deployments.
  */
@@ -61,6 +62,15 @@ export async function applySkillAction(name: string, action: string, content?: u
         const changed = discardSkill(name, action === "disable");
         const verb = action === "disable" ? "Disabled" : "Enabled";
         return { ok: true, note: changed.length ? `${verb} ${name} (${changed.join(", ")}).` : `${verb} ${name}.`, skills: skillsReport() };
+    }
+    if (action === "agent-toggle") {
+        const p = (content && typeof content === "object" ? content : {}) as { agent?: unknown; off?: unknown };
+        const agent = typeof p.agent === "string" ? p.agent : "";
+        if (!agent) return { ok: false, error: "missing agent" };
+        const off = !!p.off;
+        const notices = setSkillAgent(name, agent, off);
+        const verb = off ? "Disabled" : "Enabled";
+        return { ok: true, note: `${verb} ${name} for ${agent}${notices.length ? ` (${notices.join(", ")})` : ""}.`, skills: skillsReport() };
     }
     if (action === "remove") {
         const removed = removeExternalSkill(name);

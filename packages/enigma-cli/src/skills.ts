@@ -338,6 +338,12 @@ export interface SkillReport {
     agents: string[];
     /** enigma skills: deployment freshness; null for external (no canonical to compare). */
     update: "up-to-date" | "update" | "modified" | "not-deployed" | null;
+    /**
+     * enigma skills: per installed agent (Claude Code, Codex, OpenCode...), whether this skill
+     * is deployed there and whether the user turned it off for that agent (the per-agent
+     * opt-out). Lets the UI enable/disable a skill app-by-app. Empty for external skills.
+     */
+    agentStates: { name: string; label: string; deployed: boolean; off: boolean }[];
 }
 
 /** Worst-status escalation: modified beats update beats up-to-date. */
@@ -353,17 +359,19 @@ function updateSeverity(u: SkillReport["update"]): number {
  */
 export function skillsReport(): SkillReport[] {
     const discarded = discardedSkillNames();
+    const offMap = skillAgentsOffMap();
+    const agents = discoverAgents();
     const canonical = new Map(inspectSkills().map((s) => [s.name, s]));
     const byName = new Map<string, SkillReport>();
 
     for (const [name, s] of canonical) {
         byName.set(name, {
             name, source: "enigma", version: s.meta.version || null, description: s.meta.description || null,
-            provider: MANAGED_PROVIDER, discarded: discarded.has(name), agents: [], update: "not-deployed",
+            provider: MANAGED_PROVIDER, discarded: discarded.has(name), agents: [], update: "not-deployed", agentStates: [],
         });
     }
 
-    for (const agent of discoverAgents()) {
+    for (const agent of agents) {
         const root = agent.targets.global.skills;
         if (!isDir(root)) continue;
         for (const e of readdirSync(root)) {
@@ -377,7 +385,7 @@ export function skillsReport(): SkillReport[] {
                 entry = {
                     name: e, source: enigma ? "enigma" : "external", version: meta.version || null,
                     description: meta.description || null, provider: meta.provider || null,
-                    discarded: false, agents: [], update: enigma ? "not-deployed" : null,
+                    discarded: false, agents: [], update: enigma ? "not-deployed" : null, agentStates: [],
                 };
                 byName.set(e, entry);
             }
@@ -388,6 +396,19 @@ export function skillsReport(): SkillReport[] {
                 if (entry.update === "not-deployed" || updateSeverity(mapped) > updateSeverity(entry.update)) entry.update = mapped;
             }
         }
+    }
+
+    // Per-agent state for enigma skills: across every installed agent, whether this skill is
+    // currently on disk there and whether the user opted it out for that agent. External skills
+    // are foreign (not enigma-managed), so they get no per-agent controls.
+    for (const entry of byName.values()) {
+        if (entry.source !== "enigma") continue;
+        entry.agentStates = agents.map((a) => ({
+            name: a.name,
+            label: a.label,
+            deployed: entry.agents.includes(a.label) && !isSkillOffForAgent(entry.name, a.name, offMap),
+            off: isSkillOffForAgent(entry.name, a.name, offMap),
+        }));
     }
 
     return [...byName.values()].sort((a, b) =>

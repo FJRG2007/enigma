@@ -158,7 +158,7 @@
         .set-ctl { flex-shrink: 0; }
         .toggle {
             background: var(--surface2); color: var(--muted); border: 1px solid var(--border);
-            border-radius: var(--radius-sm); padding: 6px 16px; font-size: 12px; cursor: pointer; font-family: var(--mono); min-width: 56px;
+            border-radius: var(--radius-sm); padding: 6px 16px; font-size: 12px; cursor: pointer; font-family: var(--mono); min-width: 56px; text-decoration: none;
             transition: color .15s, background .15s, border-color .15s;
         }
         .toggle:hover { color: var(--text); border-color: #2f3744; }
@@ -215,6 +215,11 @@
         .btn-danger.icon { display: inline-flex; align-items: center; justify-content: center; padding: 6px 9px; }
         .btn-danger.icon:hover { color: var(--bad); border-color: var(--bad); }
         .btn-danger svg { width: 15px; height: 15px; display: block; }
+        /* Per-agent skill toggles: one pill per app (Claude Code, Codex, OpenCode), green when the skill is on for it. */
+        .set-agents { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+        .achip { font-family: var(--mono); font-size: 11px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface2); color: var(--muted); cursor: pointer; text-decoration: none; transition: color .15s, background .15s, border-color .15s; }
+        .achip:hover { border-color: #2f3744; color: var(--text); }
+        .achip.on { background: var(--good); color: #06210f; border-color: var(--good); font-weight: 600; }
         /* List settings (guard block/allow globs, custom secret patterns): chips + add input. A list row spans the full grid width. */
         .set-row.list { grid-column: 1 / -1; align-items: stretch; flex-direction: column; }
         .lchips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
@@ -1677,6 +1682,7 @@ export {
             $("uWindows").innerHTML = '<div class="wgrid">'
                 + windowCard(w.session, "session")
                 + windowCard(w.weeklyAll, "weekly")
+                + (w.weeklyOpus ? windowCard(w.weeklyOpus, "weeklyOpus") : "")
                 + windowCard(w.weeklySonnet, "weeklySonnet")
                 + "</div>";
         }
@@ -1911,10 +1917,18 @@ export {
         // update), so the served UI may be newer than this tab - reload once so a tab you
         // left open self-heals instead of showing stale markup.
         let loadedBoot = null;
+        // The UI bundle version this tab loaded against. A change means the served
+        // @enigmax/dashboard bundle was swapped underneath us (a background update found a
+        // newer version) - reload once so the tab picks up the new markup/scripts.
+        let loadedUi = null;
         function render(data) {
             if (data.boot != null) {
                 if (loadedBoot === null) loadedBoot = data.boot;
                 else if (data.boot !== loadedBoot) { location.reload(); return; }
+            }
+            if (data.ui != null) {
+                if (loadedUi === null) loadedUi = data.ui;
+                else if (data.ui !== loadedUi) { location.reload(); return; }
             }
             priceOverride = Number(data.priceOverride) || 0;
             speedOverride = Number(data.speedOverride) || 0;
@@ -1972,6 +1986,50 @@ export {
                 $("dot").classList.add("stale");
                 $("updated").textContent = "Disconnected";
             }
+        }
+
+        // --- dashboard self-update -------------------------------------------------
+        // Where the latest published dashboard version lives: the raw package.json on the
+        // repo's main branch (no API, no auth, no rate limit). A repo rename 404s here and is
+        // handled like any other failure - the check simply no-ops until the URL resolves again.
+        const DASH_PKG_URL = "https://raw.githubusercontent.com/FJRG2007/enigma/main/packages/dashboard/package.json";
+        const UPDATE_CHECK_MS = 15 * 60 * 1000; // every 15 min; the dashboard rarely ships
+        let updating = false; // one in-flight update at a time; reload happens via the ui-version change
+
+        // Numeric semver-ish compare: true when `a` is strictly newer than `b` (e.g. "0.2.0" > "0.1.9").
+        function isNewer(a, b) {
+            const pa = String(a).split(".").map(Number), pb = String(b).split(".").map(Number);
+            for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+                const x = pa[i] || 0, y = pb[i] || 0;
+                if (x !== y) return x > y;
+            }
+            return false;
+        }
+
+        // Ask GitHub whether a newer dashboard bundle was published; if so, tell the local
+        // server to fetch it (the ui-version change in /api/stats then reloads the page).
+        // Fully fault-tolerant: an 8s timeout plus try/catch swallow offline/timeout/parse/CORS
+        // failures, and it simply retries on the next interval. Skipped while the tab is hidden.
+        async function checkDashboardUpdate() {
+            if (document.hidden || updating || loadedUi == null) return;
+            let latest;
+            try {
+                const ctrl = new AbortController();
+                const t = setTimeout(() => ctrl.abort(), 8000);
+                let res;
+                try { res = await fetch(DASH_PKG_URL, { cache: "no-store", signal: ctrl.signal }); }
+                finally { clearTimeout(t); }
+                if (!res.ok) return;
+                latest = (await res.json()).version;
+            } catch { return; } // offline, timeout, blocked, or bad JSON: try again next interval
+            if (!latest || !isNewer(latest, loadedUi)) return;
+            // A newer bundle exists: have the local server fetch it. The reload is driven by the
+            // ui-version change in the stats poll, so an npm lag (changed:false) just retries later.
+            updating = true;
+            try {
+                await fetch("/api/update", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+            } catch { /* server unreachable: retry next interval */ }
+            finally { updating = false; }
         }
 
         // --- settings subpage (mirrors the TUI registry over /api/settings) ---
@@ -2168,6 +2226,7 @@ export {
                   item("Context compression (MCP) · measured", boolPill(s.compress))
                 + item("Real tool-usage stats · measured", boolPill(s.usageStats))
                 + item("Claude Code proxy · experimental", boolPill(s.proxy))
+                + item("Live usage windows · real", boolPill(s.usageApi))
                 + proxyMeasured
                 + proxyLast
                 + promptGuard
@@ -2284,8 +2343,18 @@ export {
                     + (s.discarded ? "Disabled - click to enable" : "Enabled - click to disable") + '" data-name="' + esc(s.name)
                     + '" data-action="' + (s.discarded ? "enable" : "disable") + '">' + (s.discarded ? "Disabled" : "Enabled") + "</button>"
                 : '<button type="button" class="btn-danger" data-name="' + esc(s.name) + '" data-action="remove">Remove</button>';
+            // Per-app on/off chips (Claude Code, Codex, OpenCode...). Only for an enabled enigma
+            // skill: when the whole skill is disabled the per-agent state is moot. data-off is the
+            // value to SET on click (turn off if currently on, on if currently off).
+            const agentChips = (s.source === "enigma" && !s.discarded && s.agentStates && s.agentStates.length)
+                ? '<div class="set-agents">' + s.agentStates.map((a) =>
+                    '<button type="button" class="achip' + (a.deployed ? " on" : "") + '" data-action="agent-toggle" data-name="' + esc(s.name)
+                    + '" data-agent="' + esc(a.name) + '" data-off="' + (a.deployed ? 1 : 0) + '" title="'
+                    + (a.deployed ? "On for " + esc(a.label) + " - click to disable" : "Off for " + esc(a.label) + " - click to enable")
+                    + '">' + esc(a.label) + (a.deployed ? " on" : " off") + "</button>").join("") + "</div>"
+                : "";
             return '<div class="set-row"><div class="set-meta"><div class="set-name">' + esc(s.name) + ext + ver + upd + where + "</div>"
-                + '<div class="set-hint">' + esc(s.description || "") + '</div></div><div class="set-ctl" style="display:flex;gap:8px">' + edit + main + "</div></div>";
+                + '<div class="set-hint">' + esc(s.description || "") + "</div>" + agentChips + '</div><div class="set-ctl" style="display:flex;gap:8px">' + edit + main + "</div></div>";
         }
 
         function renderSkills(skills) {
@@ -2299,10 +2368,10 @@ export {
                 + section("External skills", "Skills enigma did not author, found in your agents. Remove deletes the skill from every agent that has it.", ext, "No external skills found.");
         }
 
-        async function postSkill(name, action) {
+        async function postSkill(name, action, content) {
             $("skillsNote").textContent = "Working...";
             try {
-                const res = await fetch("/api/skills", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, action }) });
+                const res = await fetch("/api/skills", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, action, content }) });
                 const out = await res.json();
                 if (!out.ok) { $("skillsNote").textContent = "Could not " + action + " " + name + ": " + (out.error || "error"); return; }
                 if (out.skills) renderSkills(out.skills);
@@ -2348,6 +2417,7 @@ export {
                 if (!b) return;
                 const { name, action } = b.dataset;
                 if (action === "edit") { openEditor(name, b.dataset.enigma === "1"); return; }
+                if (action === "agent-toggle") { postSkill(name, action, { agent: b.dataset.agent, off: b.dataset.off === "1" }); return; }
                 if (action === "remove" && !(await askConfirm("Remove skill", 'Remove the external skill "' + name + '" from all agents? This deletes it from disk.', true))) return;
                 postSkill(name, action);
             });
@@ -2507,9 +2577,11 @@ export {
         initChart();
         poll(true);
         loadClaudeStatus();
+        checkDashboardUpdate();
         setInterval(() => refreshAll(false), POLL_MS);
         setInterval(loadClaudeStatus, 60000);
-        document.addEventListener("visibilitychange", () => { if (!document.hidden) { refreshAll(true); loadClaudeStatus(); } });
+        setInterval(checkDashboardUpdate, UPDATE_CHECK_MS);
+        document.addEventListener("visibilitychange", () => { if (!document.hidden) { refreshAll(true); loadClaudeStatus(); checkDashboardUpdate(); } });
         wireSettings();
         wireSkills();
         wireAccounts();
