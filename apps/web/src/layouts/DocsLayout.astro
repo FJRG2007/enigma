@@ -1,0 +1,167 @@
+---
+import { getCollection } from "astro:content";
+import Base from "./Base.astro";
+import CommandPalette from "../components/CommandPalette.astro";
+import { buildSearchIndex } from "../lib/search";
+import { url, docHref } from "../lib/url";
+
+interface Props {
+    title: string;
+    description: string;
+    slug: string;
+}
+const { title, description, slug } = Astro.props;
+
+const docs = (await getCollection("docs")).sort((a, b) => a.data.order - b.data.order);
+const index = await buildSearchIndex();
+
+// Group the sidebar entries by their `group` frontmatter, preserving order.
+const groups: { name: string; items: typeof docs }[] = [];
+for (const d of docs) {
+    let g = groups.find((x) => x.name === d.data.group);
+    if (!g) { g = { name: d.data.group, items: [] }; groups.push(g); }
+    g.items.push(d);
+}
+---
+<Base title={`${title} - Enigma docs`} description={description}>
+    <nav>
+        <div class="in">
+            <a href={url("")} class="brand">Enigma<span class="c"></span></a>
+            <a class="home" href={url("")}>&larr; Home</a>
+        </div>
+    </nav>
+
+    <div class="layout">
+        <aside>
+            <button class="docsearch" data-search-open type="button" aria-label="Search the documentation">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+                <span>Search docs</span>
+                <kbd>&#8984;K</kbd>
+            </button>
+            {groups.map((g) => (
+                <>
+                    <div class="grp">{g.name}</div>
+                    {g.items.map((d) => (
+                        <a href={docHref(d.id)} class={d.id === slug ? "active" : ""}>{d.data.title}</a>
+                    ))}
+                </>
+            ))}
+        </aside>
+
+        <main>
+            <h1>{title}</h1>
+            <p class="sub">{description}</p>
+            <article class="doc">
+                <slot />
+            </article>
+        </main>
+    </div>
+
+    <footer>
+        Enigma - <a href="https://github.com/FJRG2007/enigma" target="_blank" rel="noopener noreferrer">GitHub</a> - Apache-2.0
+    </footer>
+
+    <CommandPalette index={index} />
+</Base>
+
+<style is:global>
+    nav { position: sticky; top: 0; z-index: 20; backdrop-filter: blur(10px); background: rgba(8, 10, 16, 0.72); border-bottom: 1px solid var(--border-soft); }
+    nav .in { max-width: 1180px; margin: 0 auto; padding: 0 24px; display: flex; align-items: center; gap: 18px; height: 56px; }
+    .brand { font-family: var(--mono); font-size: 17px; font-weight: 600; letter-spacing: 0.5px; color: var(--text); }
+    .brand .c { display: inline-block; width: 0.46em; height: 1.05em; margin-left: 4px; background: var(--accent); transform: translateY(2px); }
+    nav .in a.home { margin-left: auto; font-family: var(--mono); font-size: 13px; color: var(--muted); }
+    nav .in a.home:hover { color: var(--text); }
+
+    .layout { max-width: 1180px; margin: 0 auto; padding: 0 24px; display: grid; grid-template-columns: 210px 1fr; gap: 40px; }
+    aside { position: sticky; top: 72px; align-self: start; height: max-content; padding: 28px 0; }
+    aside .grp { font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.7px; color: var(--accent); margin: 18px 0 8px; }
+    aside a { display: block; color: var(--muted); font-size: 13px; padding: 4px 0; }
+    aside a:hover { color: var(--text); }
+    aside a.active { color: var(--accent); }
+
+    .docsearch {
+        display: flex; align-items: center; gap: 8px; width: 100%; margin-bottom: 8px; cursor: pointer;
+        background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
+        color: var(--muted); font-family: var(--mono); font-size: 12.5px; padding: 8px 10px;
+        transition: border-color .15s, color .15s;
+    }
+    .docsearch:hover { border-color: var(--accent); color: var(--text); }
+    .docsearch svg { width: 14px; height: 14px; flex: 0 0 auto; }
+    .docsearch span { flex: 1; text-align: left; }
+    .docsearch kbd { font-family: var(--mono); font-size: 10.5px; background: var(--surface2); border: 1px solid var(--border); border-radius: 5px; padding: 1px 5px; }
+
+    main { padding: 28px 0 80px; min-width: 0; }
+    main > h1 { font-family: var(--mono); font-size: 28px; font-weight: 600; letter-spacing: -0.5px; margin: 0; }
+    main > .sub { color: var(--muted); margin: 8px 0 0; }
+
+    /* MDX content (slotted, so these are global selectors scoped under .doc). */
+    .doc h2 { font-family: var(--mono); font-size: 18px; font-weight: 600; margin: 48px 0 4px; scroll-margin-top: 72px; display: flex; align-items: center; gap: 9px; }
+    .doc h2::before { content: ""; width: 3px; height: 16px; border-radius: 2px; background: var(--accent); flex: 0 0 auto; }
+    .doc h2 + p { color: var(--muted); margin-top: 6px; }
+    .doc p { line-height: 1.65; }
+    .doc code { font-family: var(--mono); font-size: 0.86em; color: var(--accent2); background: var(--surface2); padding: 1px 6px; border-radius: 5px; }
+    .doc a { color: var(--accent2); }
+    .doc a:hover { color: var(--accent); }
+
+    /* Code blocks: theme the Shiki output to the surface palette and host the copy button. */
+    .doc pre { position: relative; background: var(--surface) !important; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px 16px; overflow-x: auto; font-size: 13px; line-height: 1.7; margin: 14px 0; }
+    .doc pre code { background: transparent; color: inherit; padding: 0; font-size: 13px; }
+    .doc .code-copy {
+        position: absolute; top: 8px; right: 8px; display: inline-flex; align-items: center; justify-content: center;
+        color: var(--muted); background: var(--surface2); border: 1px solid var(--border); border-radius: 7px;
+        padding: 6px; cursor: pointer; opacity: 0; transition: opacity .14s, color .14s, border-color .14s;
+    }
+    .doc pre:hover .code-copy, .doc .code-copy:focus-visible { opacity: 1; }
+    .doc .code-copy:hover { color: var(--accent); border-color: #2f3744; }
+    .doc .code-copy.done { color: var(--good); border-color: var(--good); opacity: 1; }
+    .doc .code-copy svg { width: 14px; height: 14px; display: block; }
+
+    .doc table { width: 100%; border-collapse: collapse; font-size: 13.5px; margin: 14px 0; display: block; overflow-x: auto; }
+    .doc th, .doc td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--border-soft); white-space: nowrap; }
+    .doc th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); }
+    .doc td:first-child code { color: var(--accent); }
+    .doc td.w { white-space: normal; min-width: 240px; }
+    .doc .def { color: var(--good); }
+
+    footer { border-top: 1px solid var(--border-soft); margin-top: 40px; padding: 24px; text-align: center; color: var(--muted); font-size: 13px; }
+
+    @media (max-width: 820px) { .layout { grid-template-columns: 1fr; } aside { position: static; padding: 16px 0 0; } }
+</style>
+
+<script>
+    // Add a hover copy button to every docs code block. Uses the async Clipboard API with a
+    // synchronous execCommand fallback for when it is unavailable or blocked (e.g. a browser
+    // clipboard-guard extension that breaks navigator.clipboard.writeText).
+    const COPY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
+    const CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+
+    function fallbackCopy(text: string): boolean {
+        try {
+            const ta = document.createElement("textarea");
+            ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+            document.body.appendChild(ta); ta.focus(); ta.select();
+            const ok = document.execCommand("copy");
+            ta.remove();
+            return ok;
+        } catch { return false; }
+    }
+
+    document.querySelectorAll<HTMLPreElement>(".doc pre").forEach((pre) => {
+        const code = pre.querySelector("code") ?? pre;
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "code-copy";
+        btn.setAttribute("aria-label", "Copy code");
+        btn.innerHTML = COPY;
+        btn.addEventListener("click", async () => {
+            const text = (code as HTMLElement).innerText;
+            let ok = false;
+            try { await navigator.clipboard.writeText(text); ok = true; }
+            catch { ok = fallbackCopy(text); }
+            if (!ok) return;
+            btn.innerHTML = CHECK; btn.classList.add("done");
+            setTimeout(() => { btn.innerHTML = COPY; btn.classList.remove("done"); }, 1600);
+        });
+        pre.appendChild(btn);
+    });
+</script>

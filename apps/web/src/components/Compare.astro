@@ -1,0 +1,94 @@
+---
+// One before/after comparison rendered as two framed "editor windows" (traffic-light bar +
+// filename + verdict chip) separated by a transformation arrow. The winning (With Enigma)
+// window carries an accent glow. Panes are filled by named slots: icon / without / with.
+interface Props {
+    topic: string;
+    note?: string;
+    badFile?: string;
+    goodFile?: string;
+}
+const { topic, note, badFile = "before", goodFile = "after" } = Astro.props;
+---
+<div class="cmp">
+    <div class="cmp-head">
+        <span class="cmp-ico"><slot name="icon" /></span>
+        <span class="cmp-topic">{topic}</span>
+    </div>
+    <div class="cmp-row">
+        <div class="cmp-win bad">
+            <div class="cmp-bar">
+                <span class="cmp-dots"><i></i><i></i><i></i></span>
+                <span class="cmp-file">{badFile}</span>
+                <span class="cmp-chip bad">Without</span>
+            </div>
+            <div class="cmp-body"><slot name="without" /></div>
+        </div>
+        <div class="cmp-mid" aria-hidden="true">
+            <span class="cmp-arrow">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+            </span>
+        </div>
+        <div class="cmp-win good">
+            <div class="cmp-bar">
+                <span class="cmp-dots"><i></i><i></i><i></i></span>
+                <span class="cmp-file">{goodFile}</span>
+                <span class="cmp-chip good">With Enigma</span>
+            </div>
+            <div class="cmp-body"><slot name="with" /></div>
+        </div>
+    </div>
+    {note && <div class="cmp-note">{note}</div>}
+</div>
+
+<style>
+    .cmp { margin: 0; }
+    .cmp + .cmp { margin-top: 26px; }
+
+    .cmp-head { display: flex; align-items: center; gap: 11px; margin-bottom: 14px; }
+    .cmp-ico { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 9px; background: var(--accent-weak); border: 1px solid rgba(224, 164, 88, 0.22); flex: 0 0 auto; }
+    .cmp-ico :global(svg) { width: 15px; height: 15px; color: var(--accent); }
+    .cmp-topic { font-family: var(--mono); font-size: 15px; font-weight: 600; color: var(--text); letter-spacing: -0.2px; }
+
+    .cmp-row { display: grid; grid-template-columns: 1fr 54px 1fr; align-items: stretch; }
+
+    /* Each side is a framed window. */
+    .cmp-win { position: relative; border: 1px solid var(--border); border-radius: 13px; background: var(--surface); overflow: hidden; transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease; }
+    /* Gradient hairline along the top edge for depth. */
+    .cmp-win::after { content: ""; position: absolute; inset: 0; border-radius: inherit; padding: 1px; pointer-events: none;
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.10), transparent 32%);
+        -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; }
+    .cmp-win.bad { background: linear-gradient(180deg, rgba(224, 86, 79, 0.05), transparent 60%), var(--surface); }
+    .cmp-win.good { background: linear-gradient(180deg, rgba(111, 207, 151, 0.07), transparent 60%), var(--surface); border-color: rgba(111, 207, 151, 0.32);
+        box-shadow: 0 0 0 1px rgba(111, 207, 151, 0.06), 0 24px 60px -34px rgba(111, 207, 151, 0.55); }
+    .cmp:hover .cmp-win.good { transform: translateY(-3px); box-shadow: 0 0 0 1px rgba(111, 207, 151, 0.12), 0 30px 70px -30px rgba(111, 207, 151, 0.7); }
+    .cmp:hover .cmp-win.bad { transform: translateY(-1px); border-color: #2f3744; }
+
+    /* Window title bar. */
+    .cmp-bar { display: flex; align-items: center; gap: 10px; padding: 9px 13px; background: rgba(0, 0, 0, 0.24); border-bottom: 1px solid var(--border-soft); }
+    .cmp-dots { display: inline-flex; gap: 6px; flex: 0 0 auto; }
+    .cmp-dots i { width: 9px; height: 9px; border-radius: 50%; background: #333b48; }
+    .cmp-file { font-family: var(--mono); font-size: 11.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .cmp-chip { margin-left: auto; font-family: var(--mono); font-size: 9.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.6px; padding: 3px 9px; border-radius: 999px; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; flex: 0 0 auto; }
+    .cmp-chip::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; box-shadow: 0 0 7px currentColor; }
+    .cmp-chip.bad { color: #e0564f; background: rgba(224, 86, 79, 0.10); border: 1px solid rgba(224, 86, 79, 0.26); }
+    .cmp-chip.good { color: var(--good); background: rgba(111, 207, 151, 0.10); border: 1px solid rgba(111, 207, 151, 0.30); }
+
+    .cmp-body { padding: 16px; }
+
+    /* Transformation node between the two windows. */
+    .cmp-mid { position: relative; display: flex; align-items: center; justify-content: center; }
+    .cmp-mid::before { content: ""; position: absolute; top: 14px; bottom: 14px; width: 1px; background: linear-gradient(180deg, transparent, var(--border) 30%, var(--border) 70%, transparent); }
+    .cmp-arrow { position: relative; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: var(--surface2); border: 1px solid var(--border); color: var(--accent); box-shadow: 0 6px 18px -8px rgba(0, 0, 0, 0.8); }
+    .cmp-arrow svg { width: 15px; height: 15px; }
+
+    .cmp-note { font-family: var(--mono); font-size: 11.5px; line-height: 1.5; color: var(--muted); margin-top: 13px; padding-left: 2px; display: flex; gap: 8px; }
+    .cmp-note::before { content: ""; flex: 0 0 auto; width: 3px; border-radius: 2px; background: var(--accent); opacity: .5; }
+
+    @media (max-width: 720px) {
+        .cmp-row { grid-template-columns: 1fr; }
+        .cmp-mid { height: 44px; }
+        .cmp-mid::before { top: 0; bottom: 0; left: 0; right: 0; width: auto; height: 1px; margin: auto; background: linear-gradient(90deg, transparent, var(--border) 30%, var(--border) 70%, transparent); }
+        .cmp-arrow { transform: rotate(90deg); }
+    }
+</style>

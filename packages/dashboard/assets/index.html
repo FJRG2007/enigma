@@ -334,6 +334,8 @@
         .modal-input:focus { outline: none; border-color: var(--accent); }
         .modal-acts { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
         .modal-ok.danger { background: var(--accent2); border-color: var(--accent2); color: #2a0f08; }
+        .modal-ok:disabled { opacity: .45; cursor: not-allowed; }
+        .modal-err { color: var(--bad); font-size: 12px; margin-top: 8px; }
     </style>
 </head>
 <body>
@@ -565,6 +567,19 @@
         </div>
         <div id="settingsNote" class="set-note"></div>
         <div id="settingsBody"><div class="empty" style="padding:24px 0">Loading settings...</div></div>
+        <div class="panel" id="dashPortPanel">
+            <div class="set-cat-h">Dashboard port</div>
+            <div class="set-cat-b">the port this dashboard binds. Leave 0 for auto (tries 80, then 24282, then an ephemeral port). Changing it needs a dashboard restart.</div>
+            <div class="set-grid">
+                <div class="set-row">
+                    <div class="set-meta"><div class="set-name">Preferred port</div><div class="set-hint" id="dashPortHint">loopback only; never network-facing</div></div>
+                    <div class="set-ctl" style="display:flex;gap:8px;align-items:center">
+                        <input id="dashPortInput" type="number" min="0" max="65535" step="1" class="choice" style="width:120px" inputmode="numeric" />
+                        <button id="dashPortSave" type="button" class="toggle on">Save</button>
+                    </div>
+                </div>
+            </div>
+        </div>
     </section>
 
     <section id="view-resources" style="display:none">
@@ -2096,7 +2111,8 @@ export {
                     inner = '<select class="modal-input">' + field.options.map((o) =>
                         '<option value="' + esc(o.value) + '"' + (o.value === field.value ? " selected" : "") + ">" + esc(o.label || o.value) + "</option>").join("") + "</select>";
                 } else if (field) {
-                    inner = '<input class="modal-input" type="text" value="' + esc(field.value || "") + '" placeholder="' + esc(field.placeholder || "") + '">';
+                    inner = '<input class="modal-input" type="text" value="' + esc(field.value || "") + '" placeholder="' + esc(field.placeholder || "") + '">'
+                        + (field.validate ? '<div class="modal-err" role="alert"></div>' : "");
                 }
                 back.innerHTML = '<div class="modal" role="dialog" aria-modal="true">'
                     + '<div class="modal-title">' + esc(title) + "</div>"
@@ -2107,21 +2123,32 @@ export {
                 document.body.appendChild(back);
                 requestAnimationFrame(() => back.classList.add("show"));
                 const inp = back.querySelector(".modal-input");
+                const okBtn = back.querySelector(".modal-ok");
+                const validate = field && field.validate, errEl = back.querySelector(".modal-err");
+                let invalid = false;
+                const runValidate = () => {
+                    if (!validate || !inp) return;
+                    const v = String(inp.value).trim(), msg = v ? validate(v) : null;
+                    invalid = !!msg || v === ""; // empty is incomplete (block submit) but shows no error text
+                    if (errEl) errEl.textContent = msg || "";
+                    okBtn.disabled = invalid;
+                };
                 let done = false;
                 const close = (val) => { if (done) return; done = true; back.classList.remove("show"); setTimeout(() => back.remove(), 200); resolve(val); };
-                const ok = () => close(field ? (inp ? inp.value : true) : true);
+                const ok = () => { if (invalid) return; close(field ? (inp ? inp.value : true) : true); };
                 const cancel = () => close(field ? null : false);
-                back.querySelector(".modal-ok").addEventListener("click", ok);
+                okBtn.addEventListener("click", ok);
+                if (inp && validate) { inp.addEventListener("input", runValidate); runValidate(); }
                 back.querySelector(".modal-cancel").addEventListener("click", cancel);
                 back.addEventListener("mousedown", (e) => { if (e.target === back) cancel(); });
                 back.addEventListener("keydown", (e) => {
                     if (e.key === "Escape") { e.preventDefault(); cancel(); }
                     else if (e.key === "Enter" && (!inp || inp.tagName !== "TEXTAREA")) { e.preventDefault(); ok(); }
                 });
-                if (inp) { inp.focus(); if (inp.select) inp.select(); } else back.querySelector(".modal-ok").focus();
+                if (inp) { inp.focus(); if (inp.select) inp.select(); } else okBtn.focus();
             });
         }
-        const askText = (title, value, message) => openModal({ title, message, field: { value: value || "" } }).then((v) => (v == null ? null : String(v).trim()));
+        const askText = (title, value, message, validate) => openModal({ title, message, field: { value: value || "", validate } }).then((v) => (v == null ? null : String(v).trim()));
         const askChoice = (title, options, value, message) => openModal({ title, message, field: { options, value } });
         const askConfirm = (title, message, danger) => openModal({ title, message, danger, okLabel: danger ? "Remove" : "OK" }).then(Boolean);
 
@@ -2241,14 +2268,37 @@ export {
                 const inp = e.target.closest("input.linput");
                 if (inp) { e.preventDefault(); postListOp(inp.dataset.skey, "add", inp.value); inp.value = ""; }
             });
+            const save = $("dashPortSave"), portInp = $("dashPortInput");
+            if (save) save.addEventListener("click", saveDashPort);
+            if (portInp) portInp.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); saveDashPort(); } });
         }
 
         let settingsLoaded = false;
         async function loadSettings() {
             try {
-                const res = await fetch("/api/settings", { cache: "no-store" });
-                renderSettings((await res.json()).categories || []);
+                const data = await (await fetch("/api/settings", { cache: "no-store" })).json();
+                renderSettings(data.categories || []);
+                renderDashPort(data);
             } catch { $("settingsBody").innerHTML = '<div class="empty" style="padding:24px 0">Settings unavailable.</div>'; }
+        }
+
+        // Numeric dashboard-port control (outside the boolean/choice registry, like token-price).
+        function renderDashPort(data) {
+            const inp = $("dashPortInput");
+            if (!inp) return;
+            inp.value = data && data.dashboardPort ? data.dashboardPort : "";
+            const running = data && data.runningPort;
+            $("dashPortHint").textContent = running ? ("currently running on port " + running + " - loopback only") : "loopback only; never network-facing";
+        }
+        async function saveDashPort() {
+            const raw = $("dashPortInput").value.trim();
+            const value = raw === "" ? 0 : Number(raw);
+            if (!Number.isInteger(value) || value < 0 || value > 65535) { $("settingsNote").textContent = "Port must be 0 (auto) or 1-65535."; return; }
+            $("settingsNote").textContent = "Saving dashboard port...";
+            try {
+                const out = await (await fetch("/api/dashboard-port", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ value }) })).json();
+                $("settingsNote").textContent = out.ok ? (out.restartNote || ("Saved dashboard port = " + (value || "auto") + ".")) : ("Could not save: " + (out.error || "error"));
+            } catch { $("settingsNote").textContent = "Could not reach the server to set the port."; }
         }
 
         // --- "Enigma systems" overview (factual state, never invented savings) ---
@@ -2573,7 +2623,19 @@ export {
 
         // --- accounts & profiles subpage (mirrors the TUI hub over /api/accounts) ---
         let accountsLoaded = false;
-        let accTools = [];
+        let accTools = [], accAccounts = [], accProfiles = [];
+        // Real-time name validator mirroring the server (accounts.ts validateAccountName + the
+        // duplicate checks), so the modal blocks an invalid or already-used name as the user types.
+        // `taken` = names already in scope (per-tool for accounts, global for profiles); `current`
+        // = the name being renamed (allowed to keep itself), or null when adding.
+        function nameValidator(taken, current) {
+            return (v) => {
+                if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/.test(v)) return "Use letters, digits, '.', '_' or '-' (max 64).";
+                if (v === "default") return "'default' is a reserved name.";
+                if (v !== current && taken.indexOf(v) !== -1) return "That name is already in use.";
+                return null;
+            };
+        }
         async function loadAccounts() {
             try { const r = await fetch("/api/accounts", { cache: "no-store" }); renderAccounts(await r.json()); }
             catch { $("accountsBody").innerHTML = '<div class="empty" style="padding:24px 0">Accounts unavailable.</div>'; }
@@ -2616,7 +2678,7 @@ export {
         function renderAccounts(d) {
             d = d || {};
             const accounts = d.accounts || [], profiles = d.profiles || [], tools = d.tools || [];
-            accTools = tools;
+            accTools = tools; accAccounts = accounts; accProfiles = profiles;
             $("accountsBody").innerHTML = accounts.length ? accounts.map(accountRow).join("") : '<div class="empty" style="padding:20px 0">No accounts.</div>';
             $("profilesBody").innerHTML = profiles.length ? profiles.map((p) => profileRow(p, tools, accounts)).join("")
                 : '<div class="empty" style="padding:20px 0">No profiles yet. Add one to pin an account per tool.</div>';
@@ -2635,16 +2697,17 @@ export {
                 const tool = accTools.length === 1 ? accTools[0].name
                     : await askChoice("Add account", accTools.map((t) => ({ value: t.name, label: t.label || t.name })), accTools[0] ? accTools[0].name : "", "Which tool is this account for?");
                 if (!tool) return;
-                const name = await askText("Add account", "", "New account name (e.g. work):");
+                const taken = accAccounts.filter((a) => a.tool === tool).map((a) => a.name);
+                const name = await askText("Add account", "", "New account name (e.g. work):", nameValidator(taken, null));
                 if (name) accAction("account.add", { tool, name });
             });
-            $("profAdd").addEventListener("click", async () => { const name = await askText("Add profile", "", "New profile name:"); if (name) accAction("profile.add", { name }); });
+            $("profAdd").addEventListener("click", async () => { const name = await askText("Add profile", "", "New profile name:", nameValidator(accProfiles.map((p) => p.name), null)); if (name) accAction("profile.add", { name }); });
             $("accountsBody").addEventListener("click", async (e) => {
                 const b = e.target.closest("button[data-acc]"); if (!b) return;
                 const op = b.dataset.acc, tool = b.dataset.tool, name = b.dataset.name;
                 if (op === "activate") accAction("account.activate", { tool, name });
                 else if (op === "remove") { if (await askConfirm("Remove account", "Remove account '" + name + "' and delete its local config dir?", true)) accAction("account.remove", { tool, name }); }
-                else if (op === "rename") { const nn = await askText("Rename account", name, "Rename '" + name + "' to:"); if (nn && nn !== name) accAction("account.rename", { tool, name, newName: nn }); }
+                else if (op === "rename") { const taken = accAccounts.filter((a) => a.tool === tool).map((a) => a.name); const nn = await askText("Rename account", name, "Rename '" + name + "' to:", nameValidator(taken, name)); if (nn && nn !== name) accAction("account.rename", { tool, name, newName: nn }); }
                 else if (op === "login") { $("accountsNote").textContent = "To log in, run this in a terminal:  enigma " + tool + " " + name; }
             });
             $("profilesBody").addEventListener("click", async (e) => {
@@ -2652,7 +2715,7 @@ export {
                 const op = b.dataset.profAct, name = b.dataset.name;
                 if (op === "activate") accAction("profile.activate", { name });
                 else if (op === "remove") { if (await askConfirm("Remove profile", "Remove profile '" + name + "'? (its accounts are kept)", true)) accAction("profile.remove", { name }); }
-                else if (op === "rename") { const nn = await askText("Rename profile", name, "Rename profile '" + name + "' to:"); if (nn && nn !== name) accAction("profile.rename", { name, newName: nn }); }
+                else if (op === "rename") { const nn = await askText("Rename profile", name, "Rename profile '" + name + "' to:", nameValidator(accProfiles.map((p) => p.name), name)); if (nn && nn !== name) accAction("profile.rename", { name, newName: nn }); }
             });
             $("profilesBody").addEventListener("change", (e) => {
                 const sel = e.target.closest("select[data-prof-tool]"); if (!sel) return;

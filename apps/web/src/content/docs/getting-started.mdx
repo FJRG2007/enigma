@@ -1,0 +1,27 @@
+---
+title: Getting started
+description: Install enigma and run it for the first time.
+group: Docs
+order: 1
+---
+
+## Install
+
+Pick one. The install script and `npx` run the interactive install themselves; the global package managers install the binary, then run `enigma install`.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/FJRG2007/enigma/main/scripts/install.sh | sh   # macOS / Linux (recommended)
+irm https://raw.githubusercontent.com/FJRG2007/enigma/main/scripts/install.ps1 | iex   # Windows (PowerShell)
+npm install -g enigma-cli@latest && enigma install
+pnpm add -g enigma-cli@latest && enigma install
+npx enigma-cli@latest install --all --yes   # one-shot, no global install
+```
+
+## First run
+
+Run `enigma` with no arguments for the interactive hub: choose which agents to set up, toggle features, and manage accounts. After the first install, launching a tool through enigma (e.g. `enigma claude`) auto-syncs your skills, so updates apply without re-running install.
+
+```bash
+enigma            # interactive hub
+enigma install --all --yes   # non-interactive, every supported agent
+```

@@ -1,6 +1,6 @@
 {
   "generator": "enigma seal",
-  "cliVersion": "1.20.0",
+  "cliVersion": "1.21.0",
   "count": 18,
   "skills": [
     {
@@ -141,11 +141,11 @@
     },
     {
       "name": "validation-policy",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "description": "Strict frontend + backend schema validation, schema consistency, and safe client-facing error handling.",
       "provider": "FJRG2007/enigma",
       "updated": "2026-06-01T00:45:28+02:00",
-      "sha": "a33622a2f810ee4cea39824cb1a7ca34b355a917d4224025df50d77dd74f0b3a"
+      "sha": "50349f5b3c55cc337f828dd510c163550614832acb28714871210a7c115a1501"
     }
   ]
 }

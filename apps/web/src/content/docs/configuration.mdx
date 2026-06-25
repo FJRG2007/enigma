@@ -1,0 +1,51 @@
+---
+title: Configuration
+description: Every configuration key, its values and what it does.
+group: Docs
+order: 3
+---
+
+## Configuration
+
+Settings live in `.enigma.json` (global `~/.enigma.json`, overridden by a repo-local one). Set them with `enigma config <key> <value>`, the interactive menu (`enigma config`), or the dashboard. Add `-g` / `-l` to target global or local.
+
+<table>
+<thead><tr><th>Key</th><th>Values</th><th>Default</th><th class="w">What it does</th></tr></thead>
+<tbody>
+<tr><td><code>commit-emoji</code></td><td>on / off</td><td class="def">on</td><td class="w">Leading gitmoji on commit subjects.</td></tr>
+<tr><td><code>output-style</code></td><td>off / lite / full / ultra</td><td class="def">off</td><td class="w">Compress the agent's chat prose (memory-file section; restart the agent).</td></tr>
+<tr><td><code>minimal-code</code></td><td>off / lite / full / ultra</td><td class="def">full</td><td class="w">Anti-overengineering intensity for code the agent writes.</td></tr>
+<tr><td><code>permission-bypass</code></td><td>on / off</td><td class="def">on</td><td class="w">Skip the agent's approval prompts (a deliberate security downgrade).</td></tr>
+<tr><td><code>auto-sync</code></td><td>on / off</td><td class="def">on</td><td class="w">Refresh deployed skills when launching a tool through enigma.</td></tr>
+<tr><td><code>remote-skills</code></td><td>on / off</td><td class="def">on</td><td class="w">Fetch skills newer than the bundled set from GitHub.</td></tr>
+<tr><td><code>skill-update-policy</code></td><td>overwrite / keep</td><td class="def">overwrite</td><td class="w">On update, replace a skill you edited locally, or keep your edits.</td></tr>
+<tr><td><code>usage-api</code></td><td>on / off</td><td class="def">off</td><td class="w">Fetch the real usage %/reset from Anthropic via your local Claude Code login.</td></tr>
+<tr><td><code>parallel-subagents</code></td><td>on / off</td><td class="def">off</td><td class="w">Allow the agent to fan out sub-agents in parallel.</td></tr>
+<tr><td><code>auto-lint</code></td><td>on / off</td><td class="def">off</td><td class="w">Lint edited files via a post-write hook.</td></tr>
+<tr><td><code>compress</code></td><td>on / off</td><td class="def">off</td><td class="w">Register the context-compression MCP server in your agents.</td></tr>
+<tr><td><code>dashboard</code></td><td>off / on-demand / always</td><td class="def">off</td><td class="w">Local management dashboard mode.</td></tr>
+<tr><td><code>dashboard-port</code></td><td>&lt;0-65535&gt;</td><td class="def">0</td><td class="w">Preferred dashboard port (0 = auto: 80, then 24282). Restart the dashboard to apply.</td></tr>
+<tr><td><code>proxy</code></td><td>on / off</td><td class="def">off</td><td class="w">Route `enigma claude` through a local measuring proxy.</td></tr>
+<tr><td><code>prompt-secret-guard</code></td><td>on / off</td><td class="def">off</td><td class="w">Scan outgoing prompts for secrets (via the proxy).</td></tr>
+<tr><td><code>prompt-secret-mode</code></td><td>redact / reject</td><td class="def">redact</td><td class="w">What the guard does on a detected secret.</td></tr>
+<tr><td><code>usage-stats</code></td><td>on / off</td><td class="def">off</td><td class="w">Read your Claude Code transcripts for real token usage and cost.</td></tr>
+<tr><td><code>gh-telemetry</code></td><td>enabled / disabled</td><td class="def">disabled</td><td class="w">GitHub CLI usage analytics.</td></tr>
+<tr><td><code>token-price</code></td><td>&lt;usd&gt;</td><td class="def">0</td><td class="w">$ per 1M input tokens for dashboard money estimates (0 = per-source defaults).</td></tr>
+<tr><td><code>token-speed</code></td><td>&lt;tok/s&gt;</td><td class="def">0</td><td class="w">Prefill speed for dashboard time estimates (0 = default).</td></tr>
+</tbody>
+</table>
+
+```bash
+enigma config compress on
+enigma config minimal-code ultra
+enigma config dashboard always
+```
+
+## /improve
+
+A slash command deployed to every agent (it runs inside the agent, not the CLI). Two modes: **implement** edits a focused area, **advisor** is read-only and writes self-contained plans for another agent to execute.
+
+```text
+/improve ui          # implement: ui | security | performance | seo | refactor
+/improve audit       # advisor (read-only): audit | quick | deep | branch | next | plan ...
+```

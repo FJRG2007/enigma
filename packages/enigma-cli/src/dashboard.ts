@@ -236,9 +236,31 @@ const JSON_HDR = { "Content-Type": "application/json; charset=utf-8", "Cache-Con
 
 /** Serve the current value of every configurable setting (mirrors the TUI registry). */
 function serveSettings(res: import("node:http").ServerResponse): void {
+    // `dashboardPort` is the configured preference (0 = auto); `runningPort` is what the
+    // live server actually bound, so the UI can show "currently on :N" - both sit outside
+    // the boolean/choice registry (numeric), like token-price/token-speed and the plan limits.
     import("./dashboard-settings")
-        .then(({ serializeSettings }) => { res.writeHead(200, JSON_HDR); res.end(JSON.stringify({ categories: serializeSettings("global") })); })
+        .then(({ serializeSettings }) => {
+            const payload = { categories: serializeSettings("global"), dashboardPort: readConfig().config.dashboardPort, runningPort: boundPort };
+            res.writeHead(200, JSON_HDR); res.end(JSON.stringify(payload));
+        })
         .catch(() => { res.writeHead(500, JSON_HDR); res.end('{"error":"settings unavailable"}'); });
+}
+
+/** Persist the preferred dashboard port (0 = auto, else 1-65535). Needs a restart to rebind. */
+function writeDashboardPort(req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse): void {
+    let body = "";
+    req.on("data", (chunk) => { body += chunk; if (body.length > 1024) req.destroy(); });
+    req.on("end", () => {
+        let parsed: { value?: unknown };
+        try { parsed = JSON.parse(body || "{}"); } catch { res.writeHead(400, JSON_HDR); res.end('{"error":"bad json"}'); return; }
+        const n = Number(parsed.value);
+        if (!Number.isInteger(n) || n < 0 || n > 65535) { res.writeHead(400, JSON_HDR); res.end('{"error":"port must be 0 (auto) or 1-65535"}'); return; }
+        setEnigmaValue("dashboardPort", n, "global");
+        const restartNote = n === boundPort || (n === 0 && [80, 24282].includes(boundPort))
+            ? "" : "Restart the dashboard (enigma dashboard) to bind the new port.";
+        res.writeHead(200, JSON_HDR); res.end(JSON.stringify({ ok: true, dashboardPort: n, runningPort: boundPort, restartNote }));
+    });
 }
 
 /** Apply a single setting write from a POST body { key, value }. Bounded body, global scope. */
@@ -494,6 +516,11 @@ function createDashboardServer(version: string): Server {
             if (method === "POST") { writePlan(req, res); return; }
             res.writeHead(405).end(); return;
         }
+        if (url === "/api/dashboard-port") {
+            if (!isLocalRequest(req)) { res.writeHead(403, JSON_HDR); res.end('{"error":"forbidden"}'); return; }
+            if (method === "POST") { writeDashboardPort(req, res); return; }
+            res.writeHead(405).end(); return;
+        }
         if (method !== "GET") { res.writeHead(405).end(); return; }
         if (url === "/" || url === "/index.html") {
             res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
@@ -533,10 +560,20 @@ function tryListen(server: Server, port: number): Promise<void> {
     });
 }
 
-/** Bind the first available port (80 -> 24282 -> ephemeral). Returns the bound port. */
+/** The port the running server actually bound, surfaced to the settings UI. 0 until listening. */
+let boundPort = 0;
+
+/**
+ * Bind a port for the dashboard. A user-configured `dashboardPort` (1-65535) is tried first;
+ * otherwise (or if it is busy) it falls back to 80 -> 24282 -> an ephemeral port, so the
+ * dashboard always opens. Returns the bound port.
+ */
 async function listenWithFallback(server: Server): Promise<number> {
-    for (const port of [...PORTS, 0]) {
-        try { await tryListen(server, port); return (server.address() as { port: number }).port; }
+    const preferred = readConfig().config.dashboardPort;
+    const valid = Number.isInteger(preferred) && preferred > 0 && preferred <= 65535;
+    const candidates = [...(valid ? [preferred] : []), ...PORTS, 0].filter((p, i, a) => a.indexOf(p) === i);
+    for (const port of candidates) {
+        try { await tryListen(server, port); boundPort = (server.address() as { port: number }).port; return boundPort; }
         catch { /* port busy or privileged: try the next */ }
     }
     throw new Error("could not bind any port for the dashboard");

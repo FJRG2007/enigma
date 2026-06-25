@@ -1,0 +1,8 @@
+# Astro build output and cache
+dist/
+.astro/
+node_modules/
+
+# Mirrored from the repo's assets/ by scripts/sync-assets.mjs (single source of truth).
+public/logos/
+public/dashboard.png

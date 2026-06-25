@@ -1,0 +1,30 @@
+---
+// A documentation command card: a name, a description (children), and optional example
+// invocation lines. Reused across every docs page in place of repeated markup.
+interface Props {
+    name: string;
+    ex?: string | string[];
+}
+const { name, ex } = Astro.props;
+const examples = ex == null ? [] : Array.isArray(ex) ? ex : [ex];
+---
+<div class="cmd-card">
+    <h3>{name}</h3>
+    <p><slot /></p>
+    {examples.length > 0 && (
+        <div class="cmd-ex">
+            {examples.map((e) => (<div><b>$</b> {e}</div>))}
+        </div>
+    )}
+</div>
+
+<style>
+    .cmd-card {
+        border: 1px solid var(--border-soft); border-radius: var(--radius-sm);
+        padding: 14px 16px; margin: 12px 0; background: var(--surface);
+    }
+    .cmd-card h3 { font-family: var(--mono); font-size: 14px; margin: 0; color: var(--text); }
+    .cmd-card p { color: var(--muted); font-size: 14px; margin: 6px 0 0; }
+    .cmd-ex { font-family: var(--mono); font-size: 12.5px; color: var(--muted); margin-top: 8px; }
+    .cmd-ex b { color: var(--good); font-weight: 400; }
+</style>
