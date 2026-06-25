@@ -212,6 +212,9 @@
             border-radius: 7px; padding: 5px 14px; font-size: 12px; cursor: pointer; font-family: inherit;
         }
         .btn-danger:hover { border-color: var(--accent2); }
+        .btn-danger.icon { display: inline-flex; align-items: center; justify-content: center; padding: 6px 9px; }
+        .btn-danger.icon:hover { color: var(--bad); border-color: var(--bad); }
+        .btn-danger svg { width: 15px; height: 15px; display: block; }
         /* List settings (guard block/allow globs, custom secret patterns): chips + add input. A list row spans the full grid width. */
         .set-row.list { grid-column: 1 / -1; align-items: stretch; flex-direction: column; }
         .lchips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
@@ -1652,8 +1655,11 @@ export {
             } else if (w.resetsAt) {
                 const start = w.resetsAt - span;
                 barPct = Math.max(0, Math.min(100, (Date.now() - start) / span * 100));
-                barCol = "var(--muted)";
-                barNote = "window " + Math.round(barPct) + "% elapsed";
+                // No usage % available (no live rate-limit headers, no plan limit): the bar
+                // shows window time-elapsed. Use the brand accent, not dead grey. The green/
+                // yellow/orange/red consumption scale needs a real % (set a limit, or live data).
+                barCol = "var(--accent)";
+                barNote = "window " + Math.round(barPct) + "% elapsed - set a limit for usage %";
                 valLine = fmt(w.used || 0) + " tok";
             } else {
                 barPct = 0; barCol = "var(--muted)"; barNote = ""; valLine = fmt(w.used || 0) + " tok";
@@ -2365,14 +2371,16 @@ export {
             try { const r = await fetch("/api/accounts", { cache: "no-store" }); renderAccounts(await r.json()); }
             catch { $("accountsBody").innerHTML = '<div class="empty" style="padding:24px 0">Accounts unavailable.</div>'; }
         }
+        const TRASH_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>';
         function accountRow(a) {
             const badges = (a.active ? '<span class="tag meas">active</span>' : "")
                 + (a.loggedIn ? '<span class="tag">' + esc(a.email || "logged in") + "</span>" : '<span class="tag warn">not logged in</span>');
             const btn = (act, label, cls) => '<button type="button" class="' + (cls || "toggle") + '" data-acc="' + act + '" data-tool="' + esc(a.tool) + '" data-name="' + esc(a.name) + '">' + label + "</button>";
-            const acts = '<div class="set-ctl" style="display:flex;gap:6px;flex-wrap:wrap">'
+            const removeBtn = '<button type="button" class="btn-danger icon" title="Remove" aria-label="Remove account ' + esc(a.name) + '" data-acc="remove" data-tool="' + esc(a.tool) + '" data-name="' + esc(a.name) + '">' + TRASH_ICON + "</button>";
+            const acts = '<div class="set-ctl" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">'
                 + (a.active ? "" : btn("activate", "Use"))
                 + (a.loggedIn ? "" : btn("login", "Log in..."))
-                + (a.removable ? btn("rename", "Rename") + btn("remove", "Remove", "btn-danger") : "")
+                + (a.removable ? btn("rename", "Rename") + removeBtn : "")
                 + "</div>";
             return '<div class="set-row"><div class="set-meta"><div class="set-name">' + esc(a.name) + ' <span class="tag ext">' + esc(a.toolLabel) + "</span> " + badges
                 + '</div><div class="set-hint">' + esc(a.dir) + "</div></div>" + acts + "</div>";
@@ -2385,10 +2393,10 @@ export {
                 return '<label style="font-size:12px;color:var(--muted);display:inline-flex;align-items:center;gap:6px;margin:0 12px 6px 0">' + esc(t.label)
                     + ' <select class="choice" data-prof-tool="' + esc(t.name) + '" data-prof="' + esc(p.name) + '">' + opts + "</select></label>";
             }).join("");
-            const acts = '<div class="set-ctl" style="display:flex;gap:6px">'
+            const acts = '<div class="set-ctl" style="display:flex;gap:6px;align-items:center">'
                 + (p.active ? "" : '<button type="button" class="toggle" data-prof-act="activate" data-name="' + esc(p.name) + '">Use</button>')
                 + '<button type="button" class="toggle" data-prof-act="rename" data-name="' + esc(p.name) + '">Rename</button>'
-                + '<button type="button" class="btn-danger" data-prof-act="remove" data-name="' + esc(p.name) + '">Remove</button></div>';
+                + '<button type="button" class="btn-danger icon" title="Remove" aria-label="Remove profile ' + esc(p.name) + '" data-prof-act="remove" data-name="' + esc(p.name) + '">' + TRASH_ICON + "</button></div>";
             return '<div class="set-row"><div class="set-meta"><div class="set-name">' + esc(p.name) + (p.active ? ' <span class="tag meas">active</span>' : "")
                 + '</div><div class="set-hint" style="margin-top:6px">' + maps + "</div></div>" + acts + "</div>";
         }
