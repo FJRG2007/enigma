@@ -93,7 +93,8 @@
 
             <h2 id="install">Install</h2>
             <p>Pick one. The install script and <code>npx</code> run the interactive install themselves; the global package managers install the binary, then run <code>enigma install</code>.</p>
-            <pre class="term"><span class="c">$ </span>curl -fsSL https://raw.githubusercontent.com/FJRG2007/enigma/main/scripts/install.sh | sh   <span class="x"># recommended</span>
+            <pre class="term"><span class="c">$ </span>curl -fsSL https://raw.githubusercontent.com/FJRG2007/enigma/main/scripts/install.sh | sh   <span class="x"># macOS / Linux (recommended)</span>
+<span class="c">$ </span>irm https://raw.githubusercontent.com/FJRG2007/enigma/main/scripts/install.ps1 | iex   <span class="x"># Windows (PowerShell)</span>
 <span class="c">$ </span>npm install -g enigma-cli@latest && enigma install
 <span class="c">$ </span>pnpm add -g enigma-cli@latest && enigma install
 <span class="c">$ </span>npx enigma-cli@latest install --all --yes   <span class="x"># one-shot, no global install</span></pre>
