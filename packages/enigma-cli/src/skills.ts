@@ -9,6 +9,7 @@ import { dirname, join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import * as p from "@clack/prompts";
 import { isDir, isNewer, readJson, listFilesRel, computeContentSha } from "./util";
 import { readConfig, setEnigmaValue, setSkillDiscarded, setSkillAgentOff, OUTPUT_STYLES, MINIMAL_CODE_LEVELS, DASHBOARD_MODES } from "./config";
@@ -45,6 +46,8 @@ export interface SkillMeta {
     version?: string;
     provider?: string;
     description?: string;
+    /** ISO date of the last commit that changed this skill, stamped by seal (the catalog "last edited"). */
+    updated?: string;
     cliVersion?: string;
     sha?: string;
 }
@@ -101,7 +104,7 @@ function cliVersion(): string {
  */
 function serializeMeta(meta: SkillMeta): string {
     const ordered: Record<string, unknown> = {};
-    for (const k of ["name", "version", "provider", "description", "cliVersion", "sha"] as const) {
+    for (const k of ["name", "version", "provider", "description", "updated", "cliVersion", "sha"] as const) {
         if (meta[k] !== undefined) ordered[k] = meta[k];
     }
     for (const k of Object.keys(meta)) if (!(k in ordered)) ordered[k] = (meta as Record<string, unknown>)[k];
@@ -338,6 +341,8 @@ export interface SkillReport {
     agents: string[];
     /** enigma skills: deployment freshness; null for external (no canonical to compare). */
     update: "up-to-date" | "update" | "modified" | "not-deployed" | null;
+    /** ISO date the skill was last edited (last commit), from skill.json; null if unsealed. */
+    updated: string | null;
     /**
      * enigma skills: per installed agent (Claude Code, Codex, OpenCode...), whether this skill
      * is deployed there and whether the user turned it off for that agent (the per-agent
@@ -367,7 +372,7 @@ export function skillsReport(): SkillReport[] {
     for (const [name, s] of canonical) {
         byName.set(name, {
             name, source: "enigma", version: s.meta.version || null, description: s.meta.description || null,
-            provider: MANAGED_PROVIDER, discarded: discarded.has(name), agents: [], update: "not-deployed", agentStates: [],
+            provider: MANAGED_PROVIDER, discarded: discarded.has(name), agents: [], update: "not-deployed", updated: s.meta.updated || null, agentStates: [],
         });
     }
 
@@ -385,7 +390,7 @@ export function skillsReport(): SkillReport[] {
                 entry = {
                     name: e, source: enigma ? "enigma" : "external", version: meta.version || null,
                     description: meta.description || null, provider: meta.provider || null,
-                    discarded: false, agents: [], update: enigma ? "not-deployed" : null, agentStates: [],
+                    discarded: false, agents: [], update: enigma ? "not-deployed" : null, updated: meta.updated || null, agentStates: [],
                 };
                 byName.set(e, entry);
             }
@@ -494,11 +499,46 @@ function citationVersion(): string | null {
     return m ? m[1]! : null;
 }
 
+/**
+ * ISO date of the last commit that changed a skill's CONTENT, or null outside a git checkout.
+ * Excludes skill.json: every release reseals it (cliVersion bump), so including it would stamp
+ * the same release date on every skill and hide when the content (SKILL.md, references) actually
+ * changed. `name` is the skill dir relative to SKILLS_ROOT (the git pathspec base).
+ */
+function gitLastCommitISO(name: string): string | null {
+    try {
+        const out = execFileSync(
+            "git",
+            ["log", "-1", "--format=%cI", "--", name, `:(exclude)${name}/skill.json`],
+            { cwd: SKILLS_ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
+        ).trim();
+        return out || null;
+    } catch { return null; }
+}
+
+/** One official-skill catalog entry written to docs/skills-catalog.json by seal. */
+interface CatalogEntry { name: string; version: string | null; description: string | null; provider: string; updated: string | null; sha: string | null; }
+
+/** The single source of truth the web (and anyone) reads to list official skills. */
+const CATALOG_PATH = resolve(PKG_ROOT, "..", "..", "docs", "skills-catalog.json");
+
+/** Write the catalog only in a source checkout (docs/ exists); the installed package has no docs/. */
+function writeCatalog(entries: CatalogEntry[], cli: string): void {
+    if (!isDir(resolve(PKG_ROOT, "..", ".."))) return;
+    const docsDir = resolve(PKG_ROOT, "..", "..", "docs");
+    if (!isDir(docsDir)) return;
+    const sorted = [...entries].sort((a, b) => a.name.localeCompare(b.name));
+    const catalog = { generator: "enigma seal", cliVersion: cli, count: sorted.length, skills: sorted };
+    writeFileSync(CATALOG_PATH, JSON.stringify(catalog, null, 2) + "\n");
+    console.log(`updated  docs/skills-catalog.json  ${sorted.length} skill(s)`);
+}
+
 /** (Re)compute each source skill's content hash into its skill.json. */
 export function sealSources(): void {
     if (!isDir(SKILLS_ROOT)) { console.error(`No skills directory found at ${SKILLS_ROOT}.`); process.exit(1); }
     const cli = cliVersion();
     let sealed = 0;
+    const catalog: CatalogEntry[] = [];
     for (const name of readdirSync(SKILLS_ROOT)) {
         const dir = join(SKILLS_ROOT, name);
         if (!isDir(dir) || !existsSync(join(dir, "SKILL.md"))) continue;
@@ -506,15 +546,19 @@ export function sealSources(): void {
         const meta = readJson<SkillMeta>(metaPath) || { name };
         const before = JSON.stringify(meta);
         // Auto-managed fields (never hand-written): canonical provider, the version
-        // of the CLI doing the seal, and the content hash.
+        // of the CLI doing the seal, the content hash, and the last-edited date (the
+        // last commit that touched the skill; kept if git is unavailable).
         meta.provider = MANAGED_PROVIDER;
         meta.cliVersion = cli;
         meta.sha = computeContentSha(dir);
+        meta.updated = gitLastCommitISO(name) || meta.updated || new Date().toISOString();
         const changed = JSON.stringify(meta) !== before;
         writeFileSync(metaPath, serializeMeta(meta));
         console.log(`${changed ? "updated" : "ok     "}  ${name}  cli=${cli}  sha=${meta.sha.slice(0, 12)}`);
+        catalog.push({ name: meta.name || name, version: meta.version || null, description: meta.description || null, provider: meta.provider, updated: meta.updated || null, sha: meta.sha || null });
         sealed++;
     }
+    writeCatalog(catalog, cli);
     const cited = citationVersion();
     if (cited !== null && cited !== cli) {
         const cff = readFileSync(CITATION_PATH, "utf8");
