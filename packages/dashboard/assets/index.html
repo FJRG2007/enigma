@@ -12,6 +12,8 @@
             --border: #232a36; --border-soft: #1b212d;
             --text: #eceef2; --muted: #8a93a3; --accent: #e0a458; --accent2: #d7875f; --good: #6fcf97;
             --accent-weak: rgba(224,164,88,0.13); --good-weak: rgba(111,207,151,0.12);
+            /* Usage/consumption thresholds: green -> yellow -> orange (--accent) -> red. */
+            --warn: #e3c14e; --bad: #e0564f;
             /* Type roles: a monospace "machine readout" face carries the brand, headings,
                labels and numeric data (this is a CLI tool's dashboard); sans carries prose. */
             --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
@@ -245,10 +247,23 @@
         .sys-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0 24px; }
         .sys-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--surface2); font-size: 13px; }
         .sys-item .k { color: var(--muted); }
+        /* Rows whose value is a list of chips span the full width and let the chips wrap with
+           even spacing, instead of cramming many tags into one compact half-column cell. */
+        .sys-item.wide { grid-column: 1 / -1; flex-direction: column; align-items: stretch; gap: 8px; }
+        .sys-item.wide .v { display: flex; flex-wrap: wrap; gap: 6px; }
+        .sys-item.wide .v .tag { margin-left: 0; }
         .pill { font-size: 11px; border-radius: 6px; padding: 2px 9px; border: 1px solid var(--border); white-space: nowrap; }
         .pill.on { color: #06210f; background: var(--good); border-color: var(--good); font-weight: 600; }
         .pill.off { color: var(--muted); background: var(--surface2); }
         .pill.lvl { color: #1a1206; background: var(--accent); border-color: var(--accent); font-weight: 600; }
+        /* Claude operational-status pill (status.claude.com). */
+        .cstatus { display: inline-flex; align-items: center; gap: 7px; font-family: var(--mono); font-size: 12px; color: var(--muted); padding: 5px 11px; background: rgba(0,0,0,0.25); border: 1px solid var(--border-soft); border-radius: 999px; white-space: nowrap; }
+        .cdot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: 0 0 auto; }
+        .cstatus.ok .cdot { background: var(--good); box-shadow: 0 0 8px var(--good); }
+        .cstatus.ok { color: var(--text); }
+        .cstatus.warn .cdot { background: var(--warn); }
+        .cstatus.orange .cdot { background: var(--accent); }
+        .cstatus.bad .cdot { background: var(--bad); box-shadow: 0 0 8px var(--bad); }
         @media (max-width: 720px) {
             body { padding: 16px; }
             .grid { grid-template-columns: repeat(2, 1fr); }
@@ -410,9 +425,15 @@
     </main>
 
     <section id="view-usage" style="display:none">
-        <div class="page-head">
-            <h1>Claude Usage</h1>
-            <p>Measured token consumption and estimated cost, read-only from your own Claude Code session transcripts (<code>~/.claude/projects</code>). Cost is an estimate from a per-model price table; real spend is billed by Anthropic. Nothing is sent anywhere.</p>
+        <div class="page-head" style="display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap">
+            <div style="flex:1;min-width:280px">
+                <h1>Claude Usage</h1>
+                <p>Measured token consumption and estimated cost, read-only from your own Claude Code session transcripts (<code>~/.claude/projects</code>). Cost is an estimate from a per-model price table; real spend is billed by Anthropic. Nothing is sent anywhere.</p>
+            </div>
+            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px">
+                <span id="claudeStatus" class="cstatus"><span class="cdot"></span><span class="ctext">Checking Claude status...</span></span>
+                <a href="https://claude.ai/settings/usage" target="_blank" rel="noopener noreferrer" class="toggle" style="white-space:nowrap">View in Claude -&gt;</a>
+            </div>
         </div>
         <div class="panel" id="usagePanel" style="display:none">
             <h2 style="margin:0 0 4px">Usage limits <small>same windows Claude Code shows</small></h2>
@@ -456,7 +477,7 @@
         <div class="page-head" style="display:flex;align-items:flex-start;gap:16px">
             <div style="flex:1">
                 <h1>Accounts &amp; Profiles</h1>
-                <p>Manage per-tool logins and profiles (a profile pins one account per tool and drives launches), the same as the terminal UI. Logging an account IN happens in a terminal - the browser shows the command to run.</p>
+                <p>Manage per-tool logins and profiles. A profile pins one account per tool and drives every launch. Logging an account in happens in a terminal - the browser shows you the command to run.</p>
             </div>
         </div>
         <div class="panel">
@@ -512,6 +533,931 @@
         Data source: <code>~/.enigma/ccr/stats.json</code> + <code>history.jsonl</code> - reset it with <code>enigma compress --clear</code>. Enigma <span id="ver"></span>
     </footer>
 
+    <!-- Vendored @github/relative-time-element v5.2.0 (MIT) - inlined so there is no CDN and no extra server route; defines <relative-time>. -->
+    <script type="module">
+/*! @github/relative-time-element v5.2.0 | (c) GitHub, Inc. | MIT License | https://github.com/github/relative-time-element */
+var __defProp = Object.defineProperty;
+var __name = (target, value) => __defProp(target, "name", { value, configurable: true });
+
+// dist/duration-format-ponyfill.js
+var __classPrivateFieldSet = function(receiver, state, value, kind, f) {
+  if (kind === "m") throw new TypeError("Private method is not writable");
+  if (kind === "a" && !f) throw new TypeError("Private accessor was defined without a setter");
+  if (typeof state === "function" ? receiver !== state || !f : !state.has(receiver)) throw new TypeError("Cannot write private member to an object whose class did not declare it");
+  return kind === "a" ? f.call(receiver, value) : f ? f.value = value : state.set(receiver, value), value;
+};
+var __classPrivateFieldGet = function(receiver, state, kind, f) {
+  if (kind === "a" && !f) throw new TypeError("Private accessor was defined without a getter");
+  if (typeof state === "function" ? receiver !== state || !f : !state.has(receiver)) throw new TypeError("Cannot read private member from an object whose class did not declare it");
+  return kind === "m" ? f : kind === "a" ? f.call(receiver) : f ? f.value : state.get(receiver);
+};
+var _DurationFormat_options;
+var ListFormatPonyFill = class {
+  static {
+    __name(this, "ListFormatPonyFill");
+  }
+  formatToParts(members) {
+    const parts = [];
+    for (const value of members) {
+      parts.push({ type: "element", value });
+      parts.push({ type: "literal", value: ", " });
+    }
+    return parts.slice(0, -1);
+  }
+};
+var ListFormat = typeof Intl !== "undefined" && Intl.ListFormat || ListFormatPonyFill;
+var partsTable = [
+  ["years", "year"],
+  ["months", "month"],
+  ["weeks", "week"],
+  ["days", "day"],
+  ["hours", "hour"],
+  ["minutes", "minute"],
+  ["seconds", "second"],
+  ["milliseconds", "millisecond"]
+];
+var twoDigitFormatOptions = { minimumIntegerDigits: 2 };
+var DurationFormat = class {
+  static {
+    __name(this, "DurationFormat");
+  }
+  constructor(locale, options = {}) {
+    _DurationFormat_options.set(this, void 0);
+    let style = String(options.style || "short");
+    if (style !== "long" && style !== "short" && style !== "narrow" && style !== "digital")
+      style = "short";
+    let prevStyle = style === "digital" ? "numeric" : style;
+    const hours = options.hours || prevStyle;
+    prevStyle = hours === "2-digit" ? "numeric" : hours;
+    const minutes = options.minutes || prevStyle;
+    prevStyle = minutes === "2-digit" ? "numeric" : minutes;
+    const seconds = options.seconds || prevStyle;
+    prevStyle = seconds === "2-digit" ? "numeric" : seconds;
+    const milliseconds = options.milliseconds || prevStyle;
+    __classPrivateFieldSet(this, _DurationFormat_options, {
+      locale,
+      style,
+      years: options.years || style === "digital" ? "short" : style,
+      yearsDisplay: options.yearsDisplay === "always" ? "always" : "auto",
+      months: options.months || style === "digital" ? "short" : style,
+      monthsDisplay: options.monthsDisplay === "always" ? "always" : "auto",
+      weeks: options.weeks || style === "digital" ? "short" : style,
+      weeksDisplay: options.weeksDisplay === "always" ? "always" : "auto",
+      days: options.days || style === "digital" ? "short" : style,
+      daysDisplay: options.daysDisplay === "always" ? "always" : "auto",
+      hours,
+      hoursDisplay: options.hoursDisplay === "always" ? "always" : style === "digital" ? "always" : "auto",
+      minutes,
+      minutesDisplay: options.minutesDisplay === "always" ? "always" : style === "digital" ? "always" : "auto",
+      seconds,
+      secondsDisplay: options.secondsDisplay === "always" ? "always" : style === "digital" ? "always" : "auto",
+      milliseconds,
+      millisecondsDisplay: options.millisecondsDisplay === "always" ? "always" : "auto"
+    }, "f");
+  }
+  resolvedOptions() {
+    return __classPrivateFieldGet(this, _DurationFormat_options, "f");
+  }
+  formatToParts(duration) {
+    const list = [];
+    const options = __classPrivateFieldGet(this, _DurationFormat_options, "f");
+    const style = options.style;
+    const locale = options.locale;
+    for (const [unit, nfUnit] of partsTable) {
+      const value = duration[unit];
+      if (options[`${unit}Display`] === "auto" && !value)
+        continue;
+      const unitStyle = options[unit];
+      const nfOpts = unitStyle === "2-digit" ? twoDigitFormatOptions : unitStyle === "numeric" ? {} : { style: "unit", unit: nfUnit, unitDisplay: unitStyle };
+      let formattedValue = new Intl.NumberFormat(locale, nfOpts).format(value);
+      if (unit === "months" && (unitStyle === "narrow" || style === "narrow" && formattedValue.endsWith("m"))) {
+        formattedValue = formattedValue.replace(/(\d+)m$/, "$1mo");
+      }
+      list.push(formattedValue);
+    }
+    return new ListFormat(locale, {
+      type: "unit",
+      style: style === "digital" ? "short" : style
+    }).formatToParts(list);
+  }
+  format(duration) {
+    return this.formatToParts(duration).map((p) => p.value).join("");
+  }
+};
+_DurationFormat_options = /* @__PURE__ */ new WeakMap();
+
+// dist/duration.js
+var durationRe = /^[-+]?P(?:(\d+)Y)?(?:(\d+)M)?(?:(\d+)W)?(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/;
+var unitNames = ["year", "month", "week", "day", "hour", "minute", "second", "millisecond"];
+var isDuration = /* @__PURE__ */ __name((str) => durationRe.test(str), "isDuration");
+var Duration = class _Duration {
+  static {
+    __name(this, "Duration");
+  }
+  constructor(years = 0, months = 0, weeks = 0, days = 0, hours = 0, minutes = 0, seconds = 0, milliseconds = 0) {
+    this.years = years;
+    this.months = months;
+    this.weeks = weeks;
+    this.days = days;
+    this.hours = hours;
+    this.minutes = minutes;
+    this.seconds = seconds;
+    this.milliseconds = milliseconds;
+    this.years || (this.years = 0);
+    this.sign || (this.sign = Math.sign(this.years));
+    this.months || (this.months = 0);
+    this.sign || (this.sign = Math.sign(this.months));
+    this.weeks || (this.weeks = 0);
+    this.sign || (this.sign = Math.sign(this.weeks));
+    this.days || (this.days = 0);
+    this.sign || (this.sign = Math.sign(this.days));
+    this.hours || (this.hours = 0);
+    this.sign || (this.sign = Math.sign(this.hours));
+    this.minutes || (this.minutes = 0);
+    this.sign || (this.sign = Math.sign(this.minutes));
+    this.seconds || (this.seconds = 0);
+    this.sign || (this.sign = Math.sign(this.seconds));
+    this.milliseconds || (this.milliseconds = 0);
+    this.sign || (this.sign = Math.sign(this.milliseconds));
+    this.blank = this.sign === 0;
+  }
+  abs() {
+    return new _Duration(Math.abs(this.years), Math.abs(this.months), Math.abs(this.weeks), Math.abs(this.days), Math.abs(this.hours), Math.abs(this.minutes), Math.abs(this.seconds), Math.abs(this.milliseconds));
+  }
+  static from(durationLike) {
+    var _a;
+    if (typeof durationLike === "string") {
+      const str = String(durationLike).trim();
+      const factor = str.startsWith("-") ? -1 : 1;
+      const parsed = (_a = str.match(durationRe)) === null || _a === void 0 ? void 0 : _a.slice(1).map((x) => (Number(x) || 0) * factor);
+      if (!parsed)
+        return new _Duration();
+      return new _Duration(...parsed);
+    } else if (typeof durationLike === "object") {
+      const { years, months, weeks, days, hours, minutes, seconds, milliseconds } = durationLike;
+      return new _Duration(years, months, weeks, days, hours, minutes, seconds, milliseconds);
+    }
+    throw new RangeError("invalid duration");
+  }
+  static compare(one, two) {
+    const now = Date.now();
+    const oneApplied = Math.abs(applyDuration(now, _Duration.from(one)).getTime() - now);
+    const twoApplied = Math.abs(applyDuration(now, _Duration.from(two)).getTime() - now);
+    return oneApplied > twoApplied ? -1 : oneApplied < twoApplied ? 1 : 0;
+  }
+  toLocaleString(locale, opts) {
+    return new DurationFormat(locale, opts).format(this);
+  }
+};
+function applyDuration(date, duration) {
+  const r = new Date(date);
+  if (duration.sign < 0) {
+    r.setUTCSeconds(r.getUTCSeconds() + duration.seconds);
+    r.setUTCMinutes(r.getUTCMinutes() + duration.minutes);
+    r.setUTCHours(r.getUTCHours() + duration.hours);
+    r.setUTCDate(r.getUTCDate() + duration.weeks * 7 + duration.days);
+    r.setUTCMonth(r.getUTCMonth() + duration.months);
+    r.setUTCFullYear(r.getUTCFullYear() + duration.years);
+  } else {
+    r.setUTCFullYear(r.getUTCFullYear() + duration.years);
+    r.setUTCMonth(r.getUTCMonth() + duration.months);
+    r.setUTCDate(r.getUTCDate() + duration.weeks * 7 + duration.days);
+    r.setUTCHours(r.getUTCHours() + duration.hours);
+    r.setUTCMinutes(r.getUTCMinutes() + duration.minutes);
+    r.setUTCSeconds(r.getUTCSeconds() + duration.seconds);
+  }
+  return r;
+}
+__name(applyDuration, "applyDuration");
+function elapsedTime(date, precision = "second", now = Date.now()) {
+  const delta = date.getTime() - now;
+  if (delta === 0)
+    return new Duration();
+  const sign = Math.sign(delta);
+  const ms = Math.abs(delta);
+  const sec = Math.floor(ms / 1e3);
+  const min = Math.floor(sec / 60);
+  const hr = Math.floor(min / 60);
+  const day = Math.floor(hr / 24);
+  const month = Math.floor(day / 30);
+  const year = Math.floor(month / 12);
+  const i = unitNames.indexOf(precision) || unitNames.length;
+  return new Duration(i >= 0 ? year * sign : 0, i >= 1 ? (month - year * 12) * sign : 0, 0, i >= 3 ? (day - month * 30) * sign : 0, i >= 4 ? (hr - day * 24) * sign : 0, i >= 5 ? (min - hr * 60) * sign : 0, i >= 6 ? (sec - min * 60) * sign : 0, i >= 7 ? (ms - sec * 1e3) * sign : 0);
+}
+__name(elapsedTime, "elapsedTime");
+function roundToSingleUnit(duration, { relativeTo = Date.now() } = {}) {
+  relativeTo = new Date(relativeTo);
+  if (duration.blank)
+    return duration;
+  const sign = duration.sign;
+  let years = Math.abs(duration.years);
+  let months = Math.abs(duration.months);
+  let weeks = Math.abs(duration.weeks);
+  let days = Math.abs(duration.days);
+  let hours = Math.abs(duration.hours);
+  let minutes = Math.abs(duration.minutes);
+  let seconds = Math.abs(duration.seconds);
+  let milliseconds = Math.abs(duration.milliseconds);
+  if (milliseconds >= 900)
+    seconds += Math.round(milliseconds / 1e3);
+  if (seconds || minutes || hours || days || weeks || months || years) {
+    milliseconds = 0;
+  }
+  if (seconds >= 55)
+    minutes += Math.round(seconds / 60);
+  if (minutes || hours || days || weeks || months || years)
+    seconds = 0;
+  if (minutes >= 55)
+    hours += Math.round(minutes / 60);
+  if (hours || days || weeks || months || years)
+    minutes = 0;
+  if (days && hours >= 12)
+    days += Math.round(hours / 24);
+  if (!days && hours >= 21)
+    days += Math.round(hours / 24);
+  if (days || weeks || months || years)
+    hours = 0;
+  const currentYear = relativeTo.getFullYear();
+  const currentMonth = relativeTo.getMonth();
+  const currentDate = relativeTo.getDate();
+  if (days >= 27 || years + months + days) {
+    const newMonthDate = new Date(relativeTo);
+    newMonthDate.setDate(1);
+    newMonthDate.setMonth(currentMonth + months * sign + 1);
+    newMonthDate.setDate(0);
+    const monthDateCorrection = Math.max(0, currentDate - newMonthDate.getDate());
+    const newDate = new Date(relativeTo);
+    newDate.setFullYear(currentYear + years * sign);
+    newDate.setDate(currentDate - monthDateCorrection);
+    newDate.setMonth(currentMonth + months * sign);
+    newDate.setDate(currentDate - monthDateCorrection + days * sign);
+    const yearDiff = newDate.getFullYear() - relativeTo.getFullYear();
+    const monthDiff = newDate.getMonth() - relativeTo.getMonth();
+    const daysDiff = Math.abs(Math.round((Number(newDate) - Number(relativeTo)) / 864e5)) + monthDateCorrection;
+    const monthsDiff = Math.abs(yearDiff * 12 + monthDiff);
+    if (daysDiff < 27) {
+      if (days >= 6) {
+        weeks += Math.round(days / 7);
+        days = 0;
+      } else {
+        days = daysDiff;
+      }
+      months = years = 0;
+    } else if (monthsDiff <= 11) {
+      months = monthsDiff;
+      years = 0;
+    } else {
+      months = 0;
+      years = yearDiff * sign;
+    }
+    if (months || years)
+      days = 0;
+  }
+  if (years)
+    months = 0;
+  if (weeks >= 4)
+    months += Math.round(weeks / 4);
+  if (months || years)
+    weeks = 0;
+  if (days && weeks && !months && !years) {
+    weeks += Math.round(days / 7);
+    days = 0;
+  }
+  return new Duration(years * sign, months * sign, weeks * sign, days * sign, hours * sign, minutes * sign, seconds * sign, milliseconds * sign);
+}
+__name(roundToSingleUnit, "roundToSingleUnit");
+function getRelativeTimeUnit(duration, opts) {
+  const rounded = roundToSingleUnit(duration, opts);
+  if (rounded.blank)
+    return [0, "second"];
+  for (const unit of unitNames) {
+    if (unit === "millisecond")
+      continue;
+    const val = rounded[`${unit}s`];
+    if (val)
+      return [val, unit];
+  }
+  return [0, "second"];
+}
+__name(getRelativeTimeUnit, "getRelativeTimeUnit");
+
+// dist/relative-time-element.js
+var __classPrivateFieldGet2 = function(receiver, state, kind, f) {
+  if (kind === "a" && !f) throw new TypeError("Private accessor was defined without a getter");
+  if (typeof state === "function" ? receiver !== state || !f : !state.has(receiver)) throw new TypeError("Cannot read private member from an object whose class did not declare it");
+  return kind === "m" ? f : kind === "a" ? f.call(receiver) : f ? f.value : state.get(receiver);
+};
+var __classPrivateFieldSet2 = function(receiver, state, value, kind, f) {
+  if (kind === "m") throw new TypeError("Private method is not writable");
+  if (kind === "a" && !f) throw new TypeError("Private accessor was defined without a setter");
+  if (typeof state === "function" ? receiver !== state || !f : !state.has(receiver)) throw new TypeError("Cannot write private member to an object whose class did not declare it");
+  return kind === "a" ? f.call(receiver, value) : f ? f.value = value : state.set(receiver, value), value;
+};
+var _RelativeTimeElement_instances;
+var _RelativeTimeElement_customTitle;
+var _RelativeTimeElement_updating;
+var _RelativeTimeElement_lang_get;
+var _RelativeTimeElement_renderRoot;
+var _RelativeTimeElement_getFormattedTitle;
+var _RelativeTimeElement_getExplicitThreshold;
+var _RelativeTimeElement_resolveFormat;
+var _RelativeTimeElement_getMicroDuration;
+var _RelativeTimeElement_getMicroRelativeFormat;
+var _RelativeTimeElement_getDurationFormat;
+var _RelativeTimeElement_getRelativeFormat;
+var _RelativeTimeElement_getDateTimeFormat;
+var _RelativeTimeElement_isToday;
+var _RelativeTimeElement_isCurrentYear;
+var _RelativeTimeElement_getUserPreferredAbsoluteTimeFormat;
+var _RelativeTimeElement_updateRenderRootContent;
+var _RelativeTimeElement_shouldDisplayUserPreferredAbsoluteTime;
+var _RelativeTimeElement_onRelativeTimeUpdated;
+var HTMLElement = globalThis.HTMLElement || null;
+var emptyDuration = new Duration();
+var microEmptyDuration = new Duration(0, 0, 0, 0, 0, 1);
+var RelativeTimeUpdatedEvent = class extends Event {
+  static {
+    __name(this, "RelativeTimeUpdatedEvent");
+  }
+  constructor(oldText, newText, oldTitle, newTitle) {
+    super("relative-time-updated", { bubbles: true, composed: true });
+    this.oldText = oldText;
+    this.newText = newText;
+    this.oldTitle = oldTitle;
+    this.newTitle = newTitle;
+  }
+};
+function getUnitFactor(el) {
+  const date = el.date;
+  if (!date)
+    return Infinity;
+  const now = Date.now();
+  if (el.format === "duration" || el.format === "elapsed") {
+    const precision = el.precision;
+    if (precision === "second") {
+      return 1e3;
+    } else if (precision === "minute") {
+      return 60 * 1e3;
+    }
+  }
+  const ms = Math.abs(now - date.getTime());
+  let factor = 60 * 60 * 1e3;
+  if (ms < 60 * 1e3) {
+    factor = 1e3;
+  } else if (ms < 60 * 60 * 1e3) {
+    factor = 60 * 1e3;
+  }
+  const threshold = getExplicitThreshold(el);
+  if (el.format === "micro" && threshold) {
+    const thresholdDuration = Duration.from(threshold);
+    const signedThresholdDuration = date.getTime() > now ? negateDuration(thresholdDuration) : thresholdDuration;
+    const thresholdTime = applyDuration(date, signedThresholdDuration).getTime();
+    const msUntilThreshold = thresholdTime - now;
+    if (msUntilThreshold > 0)
+      factor = Math.min(factor, msUntilThreshold);
+  }
+  return factor;
+}
+__name(getUnitFactor, "getUnitFactor");
+function negateDuration(duration) {
+  return new Duration(-duration.years, -duration.months, -duration.weeks, -duration.days, -duration.hours, -duration.minutes, -duration.seconds, -duration.milliseconds);
+}
+__name(negateDuration, "negateDuration");
+function getExplicitThreshold(el) {
+  const threshold = el.getAttribute("threshold");
+  return threshold && isDuration(threshold) ? threshold : null;
+}
+__name(getExplicitThreshold, "getExplicitThreshold");
+function isBrowser12hCycle() {
+  try {
+    return new Intl.DateTimeFormat([], { hour: "numeric" }).resolvedOptions().hour12 === true;
+  } catch (_a) {
+    return false;
+  }
+}
+__name(isBrowser12hCycle, "isBrowser12hCycle");
+var dateObserver = new class {
+  constructor() {
+    this.elements = /* @__PURE__ */ new Set();
+    this.time = Infinity;
+    this.updating = false;
+    this.timer = -1;
+  }
+  observe(element) {
+    this.elements.add(element);
+    if (this.updating)
+      return;
+    const date = element.date;
+    if (date && date.getTime()) {
+      const ms = getUnitFactor(element);
+      const time = Date.now() + ms;
+      if (time < this.time || this.time <= Date.now()) {
+        clearTimeout(this.timer);
+        this.timer = setTimeout(() => this.update(), ms);
+        this.time = time;
+      }
+    }
+  }
+  unobserve(element) {
+    if (!this.elements.has(element))
+      return;
+    this.elements.delete(element);
+  }
+  update() {
+    clearTimeout(this.timer);
+    if (!this.elements.size)
+      return;
+    let nearestDistance = Infinity;
+    this.updating = true;
+    try {
+      for (const timeEl of this.elements) {
+        nearestDistance = Math.min(nearestDistance, getUnitFactor(timeEl));
+        timeEl.update();
+      }
+    } finally {
+      this.updating = false;
+    }
+    this.time = Math.min(60 * 60 * 1e3, nearestDistance);
+    this.timer = setTimeout(() => this.update(), this.time);
+    this.time += Date.now();
+  }
+}();
+var RelativeTimeElement = class extends HTMLElement {
+  static {
+    __name(this, "RelativeTimeElement");
+  }
+  constructor() {
+    super(...arguments);
+    _RelativeTimeElement_instances.add(this);
+    _RelativeTimeElement_customTitle.set(this, false);
+    _RelativeTimeElement_updating.set(this, false);
+    _RelativeTimeElement_renderRoot.set(this, this.shadowRoot ? this.shadowRoot : this.attachShadow ? this.attachShadow({ mode: "open" }) : this);
+    _RelativeTimeElement_onRelativeTimeUpdated.set(this, null);
+  }
+  static define(tag = "relative-time", registry = customElements) {
+    registry.define(tag, this);
+    return this;
+  }
+  get timeZone() {
+    var _a;
+    const tz = ((_a = this.closest("[time-zone]")) === null || _a === void 0 ? void 0 : _a.getAttribute("time-zone")) || this.ownerDocument.documentElement.getAttribute("time-zone");
+    return tz || void 0;
+  }
+  get hourCycle() {
+    var _a;
+    const hc = ((_a = this.closest("[hour-cycle]")) === null || _a === void 0 ? void 0 : _a.getAttribute("hour-cycle")) || this.ownerDocument.documentElement.getAttribute("hour-cycle");
+    if (hc === "h11" || hc === "h12" || hc === "h23" || hc === "h24")
+      return hc;
+    return isBrowser12hCycle() ? "h12" : "h23";
+  }
+  static get observedAttributes() {
+    return [
+      "second",
+      "minute",
+      "hour",
+      "weekday",
+      "day",
+      "month",
+      "year",
+      "time-zone-name",
+      "prefix",
+      "threshold",
+      "tense",
+      "precision",
+      "format",
+      "format-style",
+      "no-title",
+      "datetime",
+      "lang",
+      "title",
+      "aria-hidden",
+      "time-zone",
+      "hour-cycle"
+    ];
+  }
+  get onRelativeTimeUpdated() {
+    return __classPrivateFieldGet2(this, _RelativeTimeElement_onRelativeTimeUpdated, "f");
+  }
+  set onRelativeTimeUpdated(listener) {
+    if (__classPrivateFieldGet2(this, _RelativeTimeElement_onRelativeTimeUpdated, "f")) {
+      this.removeEventListener("relative-time-updated", __classPrivateFieldGet2(this, _RelativeTimeElement_onRelativeTimeUpdated, "f"));
+    }
+    __classPrivateFieldSet2(this, _RelativeTimeElement_onRelativeTimeUpdated, typeof listener === "object" || typeof listener === "function" ? listener : null, "f");
+    if (typeof listener === "function") {
+      this.addEventListener("relative-time-updated", listener);
+    }
+  }
+  get second() {
+    const second = this.getAttribute("second");
+    if (second === "numeric" || second === "2-digit")
+      return second;
+  }
+  set second(value) {
+    this.setAttribute("second", value || "");
+  }
+  get minute() {
+    const minute = this.getAttribute("minute");
+    if (minute === "numeric" || minute === "2-digit")
+      return minute;
+  }
+  set minute(value) {
+    this.setAttribute("minute", value || "");
+  }
+  get hour() {
+    const hour = this.getAttribute("hour");
+    if (hour === "numeric" || hour === "2-digit")
+      return hour;
+  }
+  set hour(value) {
+    this.setAttribute("hour", value || "");
+  }
+  get weekday() {
+    const weekday = this.getAttribute("weekday");
+    if (weekday === "long" || weekday === "short" || weekday === "narrow") {
+      return weekday;
+    }
+    if (this.format === "datetime" && weekday !== "")
+      return this.formatStyle;
+  }
+  set weekday(value) {
+    this.setAttribute("weekday", value || "");
+  }
+  get day() {
+    var _a;
+    const day = (_a = this.getAttribute("day")) !== null && _a !== void 0 ? _a : "numeric";
+    if (day === "numeric" || day === "2-digit")
+      return day;
+  }
+  set day(value) {
+    this.setAttribute("day", value || "");
+  }
+  get month() {
+    const format = this.format;
+    let month = this.getAttribute("month");
+    if (month === "")
+      return;
+    month !== null && month !== void 0 ? month : month = format === "datetime" ? this.formatStyle : "short";
+    if (month === "numeric" || month === "2-digit" || month === "short" || month === "long" || month === "narrow") {
+      return month;
+    }
+  }
+  set month(value) {
+    this.setAttribute("month", value || "");
+  }
+  get year() {
+    var _a;
+    const year = this.getAttribute("year");
+    if (year === "numeric" || year === "2-digit")
+      return year;
+    if (!this.hasAttribute("year") && (/* @__PURE__ */ new Date()).getUTCFullYear() !== ((_a = this.date) === null || _a === void 0 ? void 0 : _a.getUTCFullYear())) {
+      return "numeric";
+    }
+  }
+  set year(value) {
+    this.setAttribute("year", value || "");
+  }
+  get timeZoneName() {
+    const name = this.getAttribute("time-zone-name");
+    if (name === "long" || name === "short" || name === "shortOffset" || name === "longOffset" || name === "shortGeneric" || name === "longGeneric") {
+      return name;
+    }
+  }
+  set timeZoneName(value) {
+    this.setAttribute("time-zone-name", value || "");
+  }
+  get prefix() {
+    var _a;
+    return (_a = this.getAttribute("prefix")) !== null && _a !== void 0 ? _a : this.format === "datetime" ? "" : "on";
+  }
+  set prefix(value) {
+    this.setAttribute("prefix", value);
+  }
+  get threshold() {
+    const threshold = this.getAttribute("threshold");
+    return threshold && isDuration(threshold) ? threshold : "P30D";
+  }
+  set threshold(value) {
+    this.setAttribute("threshold", value);
+  }
+  get tense() {
+    const tense = this.getAttribute("tense");
+    if (tense === "past")
+      return "past";
+    if (tense === "future")
+      return "future";
+    return "auto";
+  }
+  set tense(value) {
+    this.setAttribute("tense", value);
+  }
+  get precision() {
+    const precision = this.getAttribute("precision");
+    if (unitNames.includes(precision))
+      return precision;
+    if (this.format === "micro")
+      return "minute";
+    return "second";
+  }
+  set precision(value) {
+    this.setAttribute("precision", value);
+  }
+  get format() {
+    const format = this.getAttribute("format");
+    if (format === "datetime")
+      return "datetime";
+    if (format === "relative")
+      return "relative";
+    if (format === "duration")
+      return "duration";
+    if (format === "micro")
+      return "micro";
+    if (format === "elapsed")
+      return "elapsed";
+    return "auto";
+  }
+  set format(value) {
+    this.setAttribute("format", value);
+  }
+  get formatStyle() {
+    const formatStyle = this.getAttribute("format-style");
+    if (formatStyle === "long")
+      return "long";
+    if (formatStyle === "short")
+      return "short";
+    if (formatStyle === "narrow")
+      return "narrow";
+    const format = this.format;
+    if (format === "elapsed" || format === "micro")
+      return "narrow";
+    if (format === "datetime")
+      return "short";
+    return "long";
+  }
+  set formatStyle(value) {
+    this.setAttribute("format-style", value);
+  }
+  get noTitle() {
+    return this.hasAttribute("no-title");
+  }
+  set noTitle(value) {
+    this.toggleAttribute("no-title", value);
+  }
+  get datetime() {
+    return this.getAttribute("datetime") || "";
+  }
+  set datetime(value) {
+    this.setAttribute("datetime", value);
+  }
+  get date() {
+    const parsed = Date.parse(this.datetime);
+    return Number.isNaN(parsed) ? null : new Date(parsed);
+  }
+  set date(value) {
+    this.datetime = (value === null || value === void 0 ? void 0 : value.toISOString()) || "";
+  }
+  connectedCallback() {
+    this.update();
+  }
+  disconnectedCallback() {
+    dateObserver.unobserve(this);
+  }
+  attributeChangedCallback(attrName, oldValue, newValue) {
+    if (oldValue === newValue)
+      return;
+    if (attrName === "title") {
+      __classPrivateFieldSet2(this, _RelativeTimeElement_customTitle, newValue !== null && (this.date && __classPrivateFieldGet2(this, _RelativeTimeElement_instances, "m", _RelativeTimeElement_getFormattedTitle).call(this, this.date)) !== newValue, "f");
+    }
+    if (!__classPrivateFieldGet2(this, _RelativeTimeElement_updating, "f") && !(attrName === "title" && __classPrivateFieldGet2(this, _RelativeTimeElement_customTitle, "f"))) {
+      __classPrivateFieldSet2(this, _RelativeTimeElement_updating, (async () => {
+        await Promise.resolve();
+        this.update();
+        __classPrivateFieldSet2(this, _RelativeTimeElement_updating, false, "f");
+      })(), "f");
+    }
+  }
+  update() {
+    const oldText = __classPrivateFieldGet2(this, _RelativeTimeElement_renderRoot, "f").textContent || this.textContent || "";
+    const oldTitle = this.getAttribute("title") || "";
+    let newTitle = oldTitle;
+    const date = this.date;
+    if (typeof Intl === "undefined" || !Intl.DateTimeFormat || !date) {
+      __classPrivateFieldGet2(this, _RelativeTimeElement_renderRoot, "f").textContent = oldText;
+      return;
+    }
+    const now = Date.now();
+    if (!__classPrivateFieldGet2(this, _RelativeTimeElement_customTitle, "f")) {
+      newTitle = __classPrivateFieldGet2(this, _RelativeTimeElement_instances, "m", _RelativeTimeElement_getFormattedTitle).call(this, date) || "";
+      if (newTitle && !this.noTitle)
+        this.setAttribute("title", newTitle);
+    }
+    const duration = elapsedTime(date, this.precision, now);
+    const format = __classPrivateFieldGet2(this, _RelativeTimeElement_instances, "m", _RelativeTimeElement_resolveFormat).call(this, duration, elapsedTime(date, "millisecond", now));
+    let newText = oldText;
+    const displayUserPreferredAbsoluteTime = __classPrivateFieldGet2(this, _RelativeTimeElement_instances, "m", _RelativeTimeElement_shouldDisplayUserPreferredAbsoluteTime).call(this, format);
+    if (displayUserPreferredAbsoluteTime) {
+      newText = __classPrivateFieldGet2(this, _RelativeTimeElement_instances, "m", _RelativeTimeElement_getUserPreferredAbsoluteTimeFormat).call(this, date);
+    } else {
+      if (format === "duration") {
+        if (this.format === "micro" && this.tense !== "auto" && Intl.RelativeTimeFormat) {
+          newText = __classPrivateFieldGet2(this, _RelativeTimeElement_instances, "m", _RelativeTimeElement_getMicroRelativeFormat).call(this, duration);
+        } else {
+          newText = __classPrivateFieldGet2(this, _RelativeTimeElement_instances, "m", _RelativeTimeElement_getDurationFormat).call(this, duration);
+        }
+      } else if (format === "relative") {
+        newText = __classPrivateFieldGet2(this, _RelativeTimeElement_instances, "m", _RelativeTimeElement_getRelativeFormat).call(this, duration);
+      } else {
+        newText = __classPrivateFieldGet2(this, _RelativeTimeElement_instances, "m", _RelativeTimeElement_getDateTimeFormat).call(this, date);
+      }
+    }
+    if (newText) {
+      __classPrivateFieldGet2(this, _RelativeTimeElement_instances, "m", _RelativeTimeElement_updateRenderRootContent).call(this, newText);
+    } else if (this.shadowRoot === __classPrivateFieldGet2(this, _RelativeTimeElement_renderRoot, "f") && this.textContent) {
+      __classPrivateFieldGet2(this, _RelativeTimeElement_instances, "m", _RelativeTimeElement_updateRenderRootContent).call(this, this.textContent);
+    }
+    if (newText !== oldText || newTitle !== oldTitle) {
+      this.dispatchEvent(new RelativeTimeUpdatedEvent(oldText, newText, oldTitle, newTitle));
+    }
+    const shouldObserve = !displayUserPreferredAbsoluteTime && (format === "relative" || format === "duration") || this.format === "micro" && Boolean(__classPrivateFieldGet2(this, _RelativeTimeElement_instances, "m", _RelativeTimeElement_getExplicitThreshold).call(this)) && date.getTime() > now || displayUserPreferredAbsoluteTime && (__classPrivateFieldGet2(this, _RelativeTimeElement_instances, "m", _RelativeTimeElement_isToday).call(this, date) || __classPrivateFieldGet2(this, _RelativeTimeElement_instances, "m", _RelativeTimeElement_isCurrentYear).call(this, date));
+    if (shouldObserve) {
+      dateObserver.observe(this);
+    } else {
+      dateObserver.unobserve(this);
+    }
+  }
+};
+_RelativeTimeElement_customTitle = /* @__PURE__ */ new WeakMap(), _RelativeTimeElement_updating = /* @__PURE__ */ new WeakMap(), _RelativeTimeElement_renderRoot = /* @__PURE__ */ new WeakMap(), _RelativeTimeElement_onRelativeTimeUpdated = /* @__PURE__ */ new WeakMap(), _RelativeTimeElement_instances = /* @__PURE__ */ new WeakSet(), _RelativeTimeElement_lang_get = /* @__PURE__ */ __name(function _RelativeTimeElement_lang_get2() {
+  var _a;
+  const lang = ((_a = this.closest("[lang]")) === null || _a === void 0 ? void 0 : _a.getAttribute("lang")) || this.ownerDocument.documentElement.getAttribute("lang");
+  try {
+    return new Intl.Locale(lang !== null && lang !== void 0 ? lang : "").toString();
+  } catch (_b) {
+    return "default";
+  }
+}, "_RelativeTimeElement_lang_get"), _RelativeTimeElement_getFormattedTitle = /* @__PURE__ */ __name(function _RelativeTimeElement_getFormattedTitle2(date) {
+  return new Intl.DateTimeFormat(__classPrivateFieldGet2(this, _RelativeTimeElement_instances, "a", _RelativeTimeElement_lang_get), {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZoneName: "short",
+    timeZone: this.timeZone,
+    hourCycle: this.hourCycle
+  }).format(date);
+}, "_RelativeTimeElement_getFormattedTitle"), _RelativeTimeElement_getExplicitThreshold = /* @__PURE__ */ __name(function _RelativeTimeElement_getExplicitThreshold2() {
+  return getExplicitThreshold(this);
+}, "_RelativeTimeElement_getExplicitThreshold"), _RelativeTimeElement_resolveFormat = /* @__PURE__ */ __name(function _RelativeTimeElement_resolveFormat2(duration, thresholdDuration = duration) {
+  const format = this.format;
+  if (format === "datetime")
+    return "datetime";
+  if (format === "duration")
+    return "duration";
+  if (format === "elapsed")
+    return "duration";
+  if (format === "micro") {
+    const threshold = __classPrivateFieldGet2(this, _RelativeTimeElement_instances, "m", _RelativeTimeElement_getExplicitThreshold).call(this);
+    if (threshold && Duration.compare(thresholdDuration, threshold) === -1)
+      return "datetime";
+    return "duration";
+  }
+  if ((format === "auto" || format === "relative") && typeof Intl !== "undefined" && Intl.RelativeTimeFormat) {
+    const tense = this.tense;
+    if (tense === "past" || tense === "future")
+      return "relative";
+    if (Duration.compare(duration, this.threshold) === 1)
+      return "relative";
+  }
+  return "datetime";
+}, "_RelativeTimeElement_resolveFormat"), _RelativeTimeElement_getMicroDuration = /* @__PURE__ */ __name(function _RelativeTimeElement_getMicroDuration2(duration) {
+  duration = roundToSingleUnit(duration);
+  if (duration.months === 0 && (this.tense === "past" && duration.sign !== -1 || this.tense === "future" && duration.sign !== 1)) {
+    return microEmptyDuration;
+  }
+  return duration;
+}, "_RelativeTimeElement_getMicroDuration"), _RelativeTimeElement_getMicroRelativeFormat = /* @__PURE__ */ __name(function _RelativeTimeElement_getMicroRelativeFormat2(duration) {
+  const relativeFormat = new Intl.RelativeTimeFormat(__classPrivateFieldGet2(this, _RelativeTimeElement_instances, "a", _RelativeTimeElement_lang_get), {
+    numeric: "always",
+    style: "narrow"
+  });
+  duration = __classPrivateFieldGet2(this, _RelativeTimeElement_instances, "m", _RelativeTimeElement_getMicroDuration).call(this, duration);
+  const [int, unit] = getRelativeTimeUnit(duration.blank ? microEmptyDuration : duration);
+  return relativeFormat.format(Math.abs(int) * (this.tense === "past" ? -1 : 1), unit);
+}, "_RelativeTimeElement_getMicroRelativeFormat"), _RelativeTimeElement_getDurationFormat = /* @__PURE__ */ __name(function _RelativeTimeElement_getDurationFormat2(duration) {
+  const locale = __classPrivateFieldGet2(this, _RelativeTimeElement_instances, "a", _RelativeTimeElement_lang_get);
+  const format = this.format;
+  const style = this.formatStyle;
+  const tense = this.tense;
+  let empty = emptyDuration;
+  if (format === "micro") {
+    duration = __classPrivateFieldGet2(this, _RelativeTimeElement_instances, "m", _RelativeTimeElement_getMicroDuration).call(this, duration);
+    empty = microEmptyDuration;
+  } else if (tense === "past" && duration.sign !== -1 || tense === "future" && duration.sign !== 1) {
+    duration = empty;
+  }
+  const display = `${this.precision}sDisplay`;
+  if (duration.blank) {
+    return empty.toLocaleString(locale, { style, [display]: "always" });
+  }
+  return duration.abs().toLocaleString(locale, { style });
+}, "_RelativeTimeElement_getDurationFormat"), _RelativeTimeElement_getRelativeFormat = /* @__PURE__ */ __name(function _RelativeTimeElement_getRelativeFormat2(duration) {
+  const relativeFormat = new Intl.RelativeTimeFormat(__classPrivateFieldGet2(this, _RelativeTimeElement_instances, "a", _RelativeTimeElement_lang_get), {
+    numeric: "auto",
+    style: this.formatStyle
+  });
+  const tense = this.tense;
+  if (tense === "future" && duration.sign !== 1)
+    duration = emptyDuration;
+  if (tense === "past" && duration.sign !== -1)
+    duration = emptyDuration;
+  const [int, unit] = getRelativeTimeUnit(duration);
+  if (unit === "second" && int < 10) {
+    return relativeFormat.format(0, this.precision === "millisecond" ? "second" : this.precision);
+  }
+  return relativeFormat.format(int, unit);
+}, "_RelativeTimeElement_getRelativeFormat"), _RelativeTimeElement_getDateTimeFormat = /* @__PURE__ */ __name(function _RelativeTimeElement_getDateTimeFormat2(date) {
+  const formatter = new Intl.DateTimeFormat(__classPrivateFieldGet2(this, _RelativeTimeElement_instances, "a", _RelativeTimeElement_lang_get), {
+    second: this.second,
+    minute: this.minute,
+    hour: this.hour,
+    weekday: this.weekday,
+    day: this.day,
+    month: this.month,
+    year: this.year,
+    timeZoneName: this.timeZoneName,
+    timeZone: this.timeZone,
+    hourCycle: this.hourCycle
+  });
+  return `${this.prefix} ${formatter.format(date)}`.trim();
+}, "_RelativeTimeElement_getDateTimeFormat"), _RelativeTimeElement_isToday = /* @__PURE__ */ __name(function _RelativeTimeElement_isToday2(date) {
+  const now = /* @__PURE__ */ new Date();
+  const formatter = new Intl.DateTimeFormat(__classPrivateFieldGet2(this, _RelativeTimeElement_instances, "a", _RelativeTimeElement_lang_get), {
+    timeZone: this.timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  });
+  return formatter.format(now) === formatter.format(date);
+}, "_RelativeTimeElement_isToday"), _RelativeTimeElement_isCurrentYear = /* @__PURE__ */ __name(function _RelativeTimeElement_isCurrentYear2(date) {
+  const now = /* @__PURE__ */ new Date();
+  const formatter = new Intl.DateTimeFormat(__classPrivateFieldGet2(this, _RelativeTimeElement_instances, "a", _RelativeTimeElement_lang_get), {
+    timeZone: this.timeZone,
+    year: "numeric"
+  });
+  return formatter.format(now) === formatter.format(date);
+}, "_RelativeTimeElement_isCurrentYear"), _RelativeTimeElement_getUserPreferredAbsoluteTimeFormat = /* @__PURE__ */ __name(function _RelativeTimeElement_getUserPreferredAbsoluteTimeFormat2(date) {
+  const timeOnlyOptions = {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZoneName: "short",
+    timeZone: this.timeZone,
+    hourCycle: this.hourCycle
+  };
+  if (__classPrivateFieldGet2(this, _RelativeTimeElement_instances, "m", _RelativeTimeElement_isToday).call(this, date)) {
+    const relativeFormatter = new Intl.RelativeTimeFormat(__classPrivateFieldGet2(this, _RelativeTimeElement_instances, "a", _RelativeTimeElement_lang_get), { numeric: "auto" });
+    let todayText = relativeFormatter.format(0, "day");
+    todayText = todayText.charAt(0).toLocaleUpperCase(__classPrivateFieldGet2(this, _RelativeTimeElement_instances, "a", _RelativeTimeElement_lang_get)) + todayText.slice(1);
+    const timeOnly = new Intl.DateTimeFormat(__classPrivateFieldGet2(this, _RelativeTimeElement_instances, "a", _RelativeTimeElement_lang_get), timeOnlyOptions).format(date);
+    return `${todayText} ${timeOnly}`;
+  }
+  const timeAndDateOptions = Object.assign(Object.assign({}, timeOnlyOptions), { day: "numeric", month: "short" });
+  if (__classPrivateFieldGet2(this, _RelativeTimeElement_instances, "m", _RelativeTimeElement_isCurrentYear).call(this, date)) {
+    return new Intl.DateTimeFormat(__classPrivateFieldGet2(this, _RelativeTimeElement_instances, "a", _RelativeTimeElement_lang_get), timeAndDateOptions).format(date);
+  }
+  return new Intl.DateTimeFormat(__classPrivateFieldGet2(this, _RelativeTimeElement_instances, "a", _RelativeTimeElement_lang_get), Object.assign(Object.assign({}, timeAndDateOptions), { year: "numeric" })).format(date);
+}, "_RelativeTimeElement_getUserPreferredAbsoluteTimeFormat"), _RelativeTimeElement_updateRenderRootContent = /* @__PURE__ */ __name(function _RelativeTimeElement_updateRenderRootContent2(content) {
+  const span = document.createElement("span");
+  span.setAttribute("part", "root");
+  if (this.hasAttribute("aria-hidden") && this.getAttribute("aria-hidden") === "true") {
+    span.setAttribute("aria-hidden", "true");
+  }
+  span.textContent = content;
+  __classPrivateFieldGet2(this, _RelativeTimeElement_renderRoot, "f").replaceChildren(span);
+}, "_RelativeTimeElement_updateRenderRootContent"), _RelativeTimeElement_shouldDisplayUserPreferredAbsoluteTime = /* @__PURE__ */ __name(function _RelativeTimeElement_shouldDisplayUserPreferredAbsoluteTime2(format) {
+  var _a;
+  if (format === "duration" && this.format !== "micro")
+    return false;
+  return this.ownerDocument.documentElement.getAttribute("data-prefers-absolute-time") === "true" || ((_a = this.ownerDocument.body) === null || _a === void 0 ? void 0 : _a.getAttribute("data-prefers-absolute-time")) === "true";
+}, "_RelativeTimeElement_shouldDisplayUserPreferredAbsoluteTime");
+
+// dist/relative-time-element-define.js
+var root = typeof globalThis !== "undefined" ? globalThis : window;
+try {
+  root.RelativeTimeElement = RelativeTimeElement.define();
+} catch (e) {
+  if (!(root.DOMException && e instanceof DOMException && e.name === "NotSupportedError") && !(e instanceof ReferenceError)) {
+    throw e;
+  }
+}
+var relative_time_element_define_default = RelativeTimeElement;
+
+// dist/index.js
+var index_default = relative_time_element_define_default;
+export {
+  relative_time_element_define_default as RelativeTimeElement,
+  RelativeTimeUpdatedEvent,
+  index_default as default
+};
+    </script>
     <script src="/lib/chart.min.js"></script>
     <script>
         const POLL_MS = 5000;
@@ -671,13 +1617,22 @@
             const dt = new Date(ms);
             return "Resets " + dt.toLocaleDateString([], { weekday: "short" }) + " " + dt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
         }
+        // 4-tier consumption color: green < 50, yellow < 75, orange (--accent) < 90, red >= 90.
+        function usageColor(pct) { return pct >= 90 ? "var(--bad)" : pct >= 75 ? "var(--accent)" : pct >= 50 ? "var(--warn)" : "var(--good)"; }
+
+        // A vendored, auto-updating <relative-time> with a pre-formatted fallback string, so the
+        // time still reads if the custom element has not upgraded (or the script failed to load).
+        function rtime(ms, attrs, fallback) {
+            if (!ms) return esc(fallback || "");
+            return '<relative-time datetime="' + new Date(ms).toISOString() + '" ' + attrs + '>' + esc(fallback || "") + "</relative-time>";
+        }
         function windowCard(w, sub) {
             const reset = w.kind === "session"
-                ? (w.resetsAt ? "Resets " + fmtResetIn(w.resetsAt) : "No active session")
-                : (w.resetsAt ? fmtResetAt(w.resetsAt) : "");
+                ? (w.resetsAt ? "Resets " + rtime(w.resetsAt, 'tense="future" precision="minute" format="relative"', fmtResetIn(w.resetsAt)) : "No active session")
+                : (w.resetsAt ? "Resets " + rtime(w.resetsAt, 'format="datetime" weekday="short" hour="numeric" minute="2-digit"', fmtResetAt(w.resetsAt).replace(/^Resets /, "")) : "");
             const live = w.live ? ' <span class="tag meas">live</span>' : "";
             const span = w.kind === "session" ? 5 * 3600000 : 7 * 86400000;
-            const head = '<div class="wcard"><div class="wtitle">' + esc(w.label) + live + '</div><div class="wreset">' + esc(reset) + '</div>';
+            const head = '<div class="wcard"><div class="wtitle">' + esc(w.label) + live + '</div><div class="wreset">' + reset + '</div>';
             if (sub === "weeklySonnet" && (w.used || 0) === 0 && w.pct == null) {
                 return head + '<div class="wval muted">You haven\'t used Sonnet yet</div></div>';
             }
@@ -687,7 +1642,7 @@
             let barPct, barCol, barNote, valLine;
             if (w.pct != null) {
                 barPct = Math.min(100, w.pct);
-                barCol = w.pct >= 90 ? "var(--accent2)" : "var(--accent)";
+                barCol = usageColor(w.pct);
                 barNote = (w.live ? "live · " : "") + fmt(w.used || 0) + " tok";
                 valLine = Math.round(w.pct) + "% used";
             } else if (w.resetsAt) {
@@ -714,6 +1669,24 @@
                 + windowCard(w.weeklyAll, "weekly")
                 + windowCard(w.weeklySonnet, "weeklySonnet")
                 + "</div>";
+        }
+
+        // Claude operational status from the public statuspage (CORS-open, no auth). Maps the
+        // indicator to a colored dot; degrades quietly to "unavailable" if the fetch is blocked.
+        async function loadClaudeStatus() {
+            const el = $("claudeStatus");
+            if (!el || document.hidden) return;
+            try {
+                const r = await fetch("https://status.claude.com/api/v2/status.json", { cache: "no-store" });
+                const d = await r.json();
+                const ind = (d.status && d.status.indicator) || "unknown";
+                const desc = (d.status && d.status.description) || "Status unknown";
+                el.className = "cstatus " + (ind === "none" ? "ok" : ind === "minor" ? "warn" : ind === "major" ? "orange" : ind === "critical" ? "bad" : "");
+                el.querySelector(".ctext").textContent = desc;
+            } catch {
+                el.className = "cstatus";
+                el.querySelector(".ctext").textContent = "Claude status unavailable";
+            }
         }
         async function planSet(key, value) {
             try { await fetch("/api/plan", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key, value: Number(value) }) }); refreshAll(true); }
@@ -1153,6 +2126,8 @@
             const el = $("systems");
             if (!s) { el.innerHTML = '<div class="empty" style="padding:16px 0">Status unavailable.</div>'; return; }
             const item = (k, v) => '<div class="sys-item"><span class="k">' + labelWithBadges(k) + '</span><span class="v">' + v + "</span></div>";
+            // Full-width row for values that are a list of chips (keeps them from cramming).
+            const itemWide = (k, v) => '<div class="sys-item wide"><span class="k">' + labelWithBadges(k) + '</span><span class="v">' + v + "</span></div>";
             const sk = s.skills || {};
             const skillTags = '<span class="tag">' + (sk.enigma || 0) + " enigma</span>"
                 + '<span class="tag ext">' + (sk.external || 0) + " external</span>"
@@ -1160,11 +2135,11 @@
             const sec = s.security || {};
             const ps = s.proxyStats || {};
             const proxyMeasured = (ps.calls || 0) > 0
-                ? item("Proxy measured · real", '<span class="tag">' + fmt(ps.calls) + " calls</span><span class=\"tag\">"
+                ? itemWide("Proxy measured · real", '<span class="tag">' + fmt(ps.calls) + " calls</span><span class=\"tag\">"
                     + fmt(ps.input) + " in</span><span class=\"tag\">" + fmt(ps.output) + " out</span><span class=\"tag\">" + fmt(ps.cacheRead) + " cache</span>")
                 : "";
             const proxyLast = (ps.lastRequestAt || 0) > 0
-                ? item("Proxy last request · real", '<span class="tag">' + esc(fmtDuration((Date.now() - ps.lastRequestAt) / 1000) + " ago")
+                ? itemWide("Proxy last request · real", '<span class="tag">' + esc(fmtDuration((Date.now() - ps.lastRequestAt) / 1000) + " ago")
                     + '</span><span class="tag">' + esc(new Date(ps.lastRequestAt).toLocaleString()) + "</span>")
                 : "";
             // Prompt secret guard: configured state + what it has actually blocked (measured).
@@ -1174,7 +2149,7 @@
             const promptGuard = item("Prompt secret guard · experimental", guardState);
             const blockedTotal = (ps.redacted || 0) + (ps.rejected || 0);
             const promptBlocked = blockedTotal > 0
-                ? item("Prompt secrets blocked · real", '<span class="tag">' + fmt(ps.redacted || 0) + " redacted</span><span class=\"tag\">"
+                ? itemWide("Prompt secrets blocked · real", '<span class="tag">' + fmt(ps.redacted || 0) + " redacted</span><span class=\"tag\">"
                     + fmt(ps.rejected || 0) + " rejected</span>"
                     + ((ps.lastBlockedAt || 0) > 0 ? '<span class="tag">' + esc(fmtDuration((Date.now() - ps.lastBlockedAt) / 1000) + " ago") + "</span>" : ""))
                 : "";
@@ -1194,18 +2169,8 @@
                 + item("Commit emoji", boolPill(s.commitEmoji))
                 + item("Local dashboard", pill(s.dashboard === "off" ? "off" : "lvl", s.dashboard || "off"))
                 + item("Permission bypass (security)", boolPill(sec.permissionBypass))
-                + item("Commit guard blocks", guard || '<span class="tag">set up with enigma security</span>')
                 + item("Skills", skillTags)
-                + item("Tool launch paths", toolPathTags(s.tools));
-        }
-
-        // Per-tool launch-path status: green when launchable, yellow when off PATH, red when missing.
-        function toolPathTags(tools) {
-            if (!tools || !tools.length) return '<span class="tag">unknown</span>';
-            return tools.map((t) => {
-                const cls = t.status === "not installed" ? "warn" : (t.status === "installed, off PATH" ? "ext" : "");
-                return '<span class="tag ' + cls + '">' + esc(t.label) + ": " + esc(t.status) + "</span>";
-            }).join("");
+                + itemWide("Commit guard blocks", guard || '<span class="tag">set up with enigma security</span>');
         }
 
         async function runUpdate() {
@@ -1525,8 +2490,10 @@
 
         initChart();
         poll(true);
+        loadClaudeStatus();
         setInterval(() => refreshAll(false), POLL_MS);
-        document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshAll(true); });
+        setInterval(loadClaudeStatus, 60000);
+        document.addEventListener("visibilitychange", () => { if (!document.hidden) { refreshAll(true); loadClaudeStatus(); } });
         wireSettings();
         wireSkills();
         wireAccounts();
