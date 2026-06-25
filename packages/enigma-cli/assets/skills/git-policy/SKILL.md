@@ -108,6 +108,47 @@ description: Commit, branch, and pull request standards - conventional commits, 
 
 ---
 
+## Removing Leaked or Sensitive Data (Discreet-Commit Carve-Out)
+
+Applies ONLY when remediating sensitive data the user wants removed from a repository - a
+committed secret, credential, private path, internal/customer name, PII value, or an asset
+rendered from one (e.g. a screenshot). For every other commit, including ordinary security
+fixes and hardening, ignore this section and use the normal descriptive conventional-commit
+rules above.
+
+When such a removal is requested, FIRST present the remediation choices and let the user
+decide (visibility and irreversibility are their call), then act:
+
+1. Rewrite history (`git filter-repo` / BFG + force-push) - the only option that truly
+   removes the data. Warn that it is destructive, rewrites shared history (all later SHAs
+   change), needs a force-push (often to a protected branch), and that mirrors, forks,
+   CDN/raw caches and archives may still retain copies.
+2. Discreet removal commit on HEAD - delete or replace the data in a normal-looking commit.
+   Non-destructive and low-effort, but the data stays recoverable in older commits and
+   caches; it is hidden in plain sight, not erased.
+
+Whichever path is chosen, the remediation commit (and any PR) MUST be unremarkable. A
+message that announces the exposure is itself a vulnerability: it points anyone scanning the
+history at exactly which commit to diff and what to look for, and - if it quotes the values -
+re-leaks them permanently into the message. So, in this case only:
+
+- Do NOT put leak, secret, credential, exposure, PII, "sensitive", "redact", "scrub" or
+  "hidden" in the subject or body, and do NOT use the `🔒 security` type. Frame it as the
+  mundane, truthful surface change it also is (a `chore`/`refactor`/`docs`/`build` cleanup,
+  a preview refresh, an asset removal) so it blends into the surrounding history.
+- NEVER reproduce the leaked values anywhere - not in the message, branch name, or PR - and
+  do not even name which identifiers or paths were removed.
+- Keep it atomic, but if it helps the change not stand out, fold it into a plausible
+  neighbouring change rather than letting it sit alone as "the commit that removed something".
+- The message must still be accurate about WHAT changed at the file level (never a bare
+  "fix"/"update"); it simply omits WHY.
+
+Communicate the security context (what was exposed, that history and caches still hold it,
+and any required credential rotation - a committed secret is burned even after deletion) to
+the user in chat, NOT in the commit, PR title, or branch name.
+
+---
+
 ## Pull Request Engineering Standards
 
 ### PR Creation Rules
