@@ -344,32 +344,12 @@ Each protection is individually toggleable: the interactive setup uses a
 multiselect, and the choices are saved to `.githooks/enigma-guard.json`. Bypass
 once with `git commit --no-verify`.
 
-## Quality gates and publishing
+## Contributing
 
-This repo gates itself mechanically (it is a tooling distributor, so there is no
-app test suite):
-
-```bash
-npm run typecheck # tsc --noEmit (tsup does not typecheck)
-npm run check     # every skill well-formed and SEALED
-npm run guard     # scan all tracked files for secrets, .env, node_modules, ...
-npm run verify    # typecheck + check + guard (used by CI)
-npm run build     # build dist with tsup (enigma.js + guard.js)
-```
-
-- **CI** (`.github/workflows/ci.yml`) runs `npm ci` + `npm run verify` + `npm run
-  build` on every push and pull request.
-- **Publish** (`.github/workflows/publish.yml`) publishes `enigma-cli` to npm with
-  provenance when a GitHub Release is published (or via manual dispatch). It
-  requires the `NPM_TOKEN` repo secret and checks that the release tag matches the
-  package version.
-- **Pre-commit** for this repo: `git config core.hooksPath .githooks`.
-
-Full contributor guide (dev loop, build internals, release flow, local testing):
-[`docs/developers/`](docs/developers/README.md).
-
-#### Contributors
-To contribute to the project visit the requirements at [`CONTRIBUTING`](./docs/developers/CONTRIBUTING.md).
+Contributions are welcome. The development loop, build internals, release flow,
+the mechanical quality gates (`verify`, `check`, `guard`, `seal`) and local
+testing all live in the [developer guide](docs/developers/README.md) - start with
+[`CONTRIBUTING`](./docs/developers/CONTRIBUTING.md).
 
 ## License
 
