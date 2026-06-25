@@ -46,18 +46,15 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: dashboard-preview
-          path: |
-            docs/images/dashboard.png
-            docs/images/usage.png
+          path: docs/images/dashboard.png
           if-no-files-found: error
 
       - name: Commit preview to main
         run: |
           test -f docs/images/dashboard.png
-          test -f docs/images/usage.png
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add docs/images/dashboard.png docs/images/usage.png
+          git add docs/images/dashboard.png
           if git diff --cached --quiet; then echo "preview unchanged"; exit 0; fi
           git commit -m "chore: refresh dashboard preview [skip ci]"
           # main has branch protection, so the bot's push may be rejected (GH013). That is
