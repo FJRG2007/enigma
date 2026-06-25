@@ -5,7 +5,7 @@
  * BEFORE importing - skills.ts resolves some paths at import time.
  */
 import { test, expect, afterAll } from "bun:test";
-import { mkdirSync, mkdtempSync, existsSync, writeFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, existsSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -63,4 +63,24 @@ test("the dashboard agent-toggle action records and clears a per-agent opt-out",
     // A missing agent is rejected, not silently written.
     const bad = await applySkillAction("frontend-policy", "agent-toggle", { off: true });
     expect(bad.ok).toBe(false);
+});
+
+test("skillUpdatePolicy decides whether a locally-edited skill survives a sync", () => {
+    writeFileSync(CFG, "{}\n");
+    const claude = join(HOME, ".enigma", "claude", "policy");
+    mkdirSync(claude, { recursive: true });
+    syncAccount("claude", claude);
+    const skMd = join(skillsDir(claude), "frontend-policy", "SKILL.md");
+    expect(existsSync(skMd)).toBe(true);
+
+    // keep -> a local edit (tampered) is preserved across the next sync.
+    writeFileSync(skMd, "EDITED BY USER\n");
+    writeFileSync(CFG, JSON.stringify({ skillUpdatePolicy: "keep" }) + "\n");
+    syncAccount("claude", claude);
+    expect(readFileSync(skMd, "utf8")).toContain("EDITED BY USER");
+
+    // overwrite (default) -> the local edit is replaced by the shipped content.
+    writeFileSync(CFG, JSON.stringify({ skillUpdatePolicy: "overwrite" }) + "\n");
+    syncAccount("claude", claude);
+    expect(readFileSync(skMd, "utf8")).not.toContain("EDITED BY USER");
 });

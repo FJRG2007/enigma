@@ -52,6 +52,14 @@ export const DASHBOARD_MODES: readonly DashboardMode[] = ["off", "on-demand", "a
 export type PromptSecretMode = "redact" | "reject";
 export const PROMPT_SECRET_MODES: readonly PromptSecretMode[] = ["redact", "reject"];
 
+/**
+ * What a skill update does to a skill the user edited locally (a "tampered" copy).
+ * "overwrite" (default) replaces it with the new shipped version - local edits are lost;
+ * "keep" preserves the user's edited copy and skips the update for it.
+ */
+export type SkillUpdatePolicy = "overwrite" | "keep";
+export const SKILL_UPDATE_POLICIES: readonly SkillUpdatePolicy[] = ["overwrite", "keep"];
+
 export interface EnigmaConfig {
     commitEmoji: boolean;
     updateNotifier: boolean;
@@ -64,6 +72,8 @@ export interface EnigmaConfig {
     autoSync: boolean;
     /** Fetch newer skills from the GitHub repo (install/update) without a package update. */
     remoteSkills: boolean;
+    /** On update, overwrite (default) or keep a skill the user edited locally. */
+    skillUpdatePolicy: SkillUpdatePolicy;
     /** Master switch for applying permission bypass on install (default on). */
     permissionBypass: boolean;
     /** Auto-lint edited files via a post-write hook (opt-in; installs @enigmax/linter on enable). */
@@ -167,7 +177,7 @@ export interface EnigmaConfig {
  */
 export const CONFIG_DEFAULTS: EnigmaConfig = {
     commitEmoji: true, updateNotifier: true, fullscreen: true, parallelSubagents: false, outputStyle: "off", minimalCode: "full",
-    autoSync: true, remoteSkills: true, permissionBypass: true, autoLint: false, compress: false, dashboard: "off", tokenPrice: 0, tokenSpeed: 0, usageStats: false, proxy: false, usageApi: false, promptSecretGuard: false, promptSecretMode: "redact",
+    autoSync: true, remoteSkills: true, skillUpdatePolicy: "overwrite", permissionBypass: true, autoLint: false, compress: false, dashboard: "off", tokenPrice: 0, tokenSpeed: 0, usageStats: false, proxy: false, usageApi: false, promptSecretGuard: false, promptSecretMode: "redact",
     planSessionLimit: 0, planWeeklyLimit: 0, planWeeklySonnetLimit: 0, planWeeklyOpusLimit: 0, planWeeklyReset: "mon 00:00",
     dashboardLive: true, toolPaths: {}, bypassDisabled: [], discardedSkills: [], skillAgentsOff: {},
 };

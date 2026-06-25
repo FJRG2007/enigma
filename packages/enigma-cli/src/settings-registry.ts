@@ -11,7 +11,7 @@
 
 import { AGENTS } from "./agents";
 import { isAutoLintOn, setAutoLint } from "./lint";
-import { readConfig, setEnigmaToggle, setEnigmaValue, OUTPUT_STYLES, MINIMAL_CODE_LEVELS, DASHBOARD_MODES, PROMPT_SECRET_MODES } from "./config";
+import { readConfig, setEnigmaToggle, setEnigmaValue, OUTPUT_STYLES, MINIMAL_CODE_LEVELS, DASHBOARD_MODES, PROMPT_SECRET_MODES, SKILL_UPDATE_POLICIES } from "./config";
 import { applyDashboardMode } from "./dashboard";
 import { applyCompressToggle } from "./mcp-deploy";
 import type { DashboardMode } from "./config";
@@ -182,6 +182,18 @@ const RAW_CATEGORIES: Category[] = [
             enigmaToggle("update-notifier", "updateNotifier", "Update notifications", "notify when a newer enigma-cli is published"),
             enigmaToggle("auto-sync", "autoSync", "Auto-sync on launch", "refresh already-deployed skills/memory when launching a tool via enigma (e.g. enigma claude)"),
             enigmaToggle("remote-skills", "remoteSkills", "Remote skill updates", "fetch newer skills from the GitHub repo on install/update, without waiting for a package release"),
+            {
+                key: "skill-update-policy",
+                label: "Customized-skill updates",
+                hint: "when a skill you edited is updated: overwrite (replace with the new version) or keep (preserve your local edits); enigma default: overwrite",
+                globalOnly: true,
+                // No offChoice in the choice list, so this renders as a select (overwrite/keep), not a switch.
+                choices: SKILL_UPDATE_POLICIES,
+                read: () => readConfig().config.skillUpdatePolicy === "overwrite",
+                write: (value, scope) => ({ path: setEnigmaValue("skillUpdatePolicy", value ? "overwrite" : "keep", scope), changed: true }),
+                readChoice: () => readConfig().config.skillUpdatePolicy,
+                writeChoice: (value, scope) => ({ path: setEnigmaValue("skillUpdatePolicy", value, scope), changed: true }),
+            },
             enigmaToggle("fullscreen", "fullscreen", "Full-screen TUI", "clear the screen for a clean TUI view; off renders inline among existing output"),
             enigmaToggle("parallel-subagents", "parallelSubagents", "Parallel sub-agents", "let agents split long tasks across sub-agents running in parallel; edits the memory file - restart your agent to apply", true),
             enigmaChoice("output-style", "outputStyle", "Token-efficient output", "compress prose replies (off|lite|full|ultra); on = full; edits the memory file - restart your agent to apply", OUTPUT_STYLES, "full", true),

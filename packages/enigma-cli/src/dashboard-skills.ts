@@ -52,8 +52,18 @@ export async function applySkillAction(name: string, action: string, content?: u
         return c === null ? { ok: false, error: "skill content not found" } : { ok: true, content: c };
     }
     if (action === "save") {
-        if (typeof content !== "string") return { ok: false, error: "missing content" };
-        const written = writeSkillEverywhere(name, content);
+        // content is either the SKILL.md string (write to every app that holds it) or
+        // { text, agents } to write only to the chosen apps (per-app editing).
+        let text: unknown = content;
+        let agents: string[] | undefined;
+        if (content && typeof content === "object") {
+            text = (content as { text?: unknown }).text;
+            const a = (content as { agents?: unknown }).agents;
+            if (Array.isArray(a)) agents = a.filter((x): x is string => typeof x === "string");
+        }
+        if (typeof text !== "string") return { ok: false, error: "missing content" };
+        if (agents && agents.length === 0) return { ok: false, error: "pick at least one app to save to" };
+        const written = writeSkillEverywhere(name, text, agents);
         return written.length
             ? { ok: true, note: `Saved ${name} to ${written.join(", ")}.`, skills: skillsReport() }
             : { ok: false, error: "no deployed copy to write" };
