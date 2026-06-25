@@ -1,0 +1,43 @@
+name: Publish dashboard
+
+# Fast, asset-only publish of @enigmax/dashboard. The main publish.yml compiles a Bun
+# binary per OS (slow, queues runners) - pointless for the dashboard package, which ships
+# only static assets. This runs on a dashboard version bump and publishes just that package,
+# so a UI release reaches users via `enigma update` without waiting on the binary build.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/dashboard/package.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: publish-dashboard
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+      - name: Install dependencies
+        run: npm ci || npm install
+      - name: Publish @enigmax/dashboard if the version is new
+        run: |
+          DV="$(node -p "require('./packages/dashboard/package.json').version")"
+          if npm view "@enigmax/dashboard@$DV" version >/dev/null 2>&1; then
+            echo "@enigmax/dashboard@$DV already published; nothing to do."
+            exit 0
+          fi
+          npm publish --workspace @enigmax/dashboard --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
