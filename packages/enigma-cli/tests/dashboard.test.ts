@@ -109,6 +109,39 @@ test("settings API reads the registry and writes a setting; cross-origin writes 
     }
 });
 
+test("settings expose the dashboard port; the port API validates and persists it", async () => {
+    const server = await startDashboardServer("test-version");
+    const base = `http://127.0.0.1:${server.port}`;
+    try {
+        // The settings payload carries the numeric port knobs (outside the bool/choice registry).
+        const data = await (await fetch(`${base}/api/settings`)).json() as {
+            dashboardPort: number; runningPort: number;
+            categories: { settings: { key: string; choices: string[] | null; offChoice: string }[] }[];
+        };
+        expect(typeof data.dashboardPort).toBe("number");
+        expect(data.runningPort).toBe(server.port); // the live bound port is surfaced
+
+        // prompt-secret-mode is a two-value SELECT (redact/reject), not a switch: its offChoice
+        // must NOT be one of the choices, or the UI renders it as a toggle.
+        const mode = data.categories.flatMap((c) => c.settings).find((s) => s.key === "prompt-secret-mode");
+        expect(mode?.choices).toEqual(["redact", "reject"]);
+        expect(mode!.choices!.indexOf(mode!.offChoice)).toBe(-1);
+
+        // A valid port persists; the next GET reflects it.
+        const ok = await fetch(`${base}/api/dashboard-port`, {
+            method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ value: 8137 }),
+        });
+        expect(ok.status).toBe(200);
+        expect((await (await fetch(`${base}/api/settings`)).json() as { dashboardPort: number }).dashboardPort).toBe(8137);
+
+        // Out-of-range is rejected, and a cross-origin write is refused before any change.
+        expect((await fetch(`${base}/api/dashboard-port`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ value: 99999 }) })).status).toBe(400);
+        expect((await fetch(`${base}/api/dashboard-port`, { method: "POST", headers: { "Content-Type": "application/json", "Origin": "http://evil.example" }, body: JSON.stringify({ value: 3000 }) })).status).toBe(403);
+    } finally {
+        server.close();
+    }
+});
+
 test("status API reports the configured state of each system", async () => {
     const server = await startDashboardServer("test-version");
     const base = `http://127.0.0.1:${server.port}`;

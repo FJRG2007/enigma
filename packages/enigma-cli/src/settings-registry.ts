@@ -324,9 +324,19 @@ const RAW_CATEGORIES: Category[] = [
                 read: () => readConfig().config.promptSecretGuard,
                 write: (value, scope) => ({ path: setEnigmaToggle("promptSecretGuard", value, scope), changed: true }),
             },
-            enigmaChoice("prompt-secret-mode", "promptSecretMode", "Prompt guard action",
-                "what to do on a hit: redact (strip the secret, keep the turn working) or reject (block the whole request); only applies when the prompt secret guard is on",
-                PROMPT_SECRET_MODES, "reject", false, "redact"),
+            {
+                key: "prompt-secret-mode",
+                label: "Prompt guard action",
+                hint: "what to do on a hit: redact (strip the secret, keep the turn working) or reject (block the whole request); only applies when the prompt secret guard is on; enigma default: redact",
+                globalOnly: true,
+                // No offChoice: redact/reject are two equal actions, not on/off, so this
+                // renders as a select (not a switch). The boolean face is a fallback only.
+                choices: PROMPT_SECRET_MODES,
+                read: () => readConfig().config.promptSecretMode === "reject",
+                write: (value, scope) => ({ path: setEnigmaValue("promptSecretMode", value ? "reject" : "redact", scope), changed: true }),
+                readChoice: () => readConfig().config.promptSecretMode,
+                writeChoice: (value, scope) => ({ path: setEnigmaValue("promptSecretMode", value, scope), changed: true }),
+            },
         ],
     },
     {

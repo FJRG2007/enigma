@@ -78,6 +78,20 @@ export async function runConfigCli(positionals: string[], scope: Scope | null, i
         return 0;
     }
 
+    // dashboard-port is a numeric setting (the local dashboard's preferred port), outside the
+    // boolean/choice registry. 0 = auto (80, then 24282, then ephemeral). Needs a restart.
+    if (rawKey === "dashboard-port") {
+        const n = Number(rawValue);
+        if (rawValue === undefined || !Number.isInteger(n) || n < 0 || n > 65535) {
+            console.error("Missing/invalid value for 'dashboard-port'. Usage: enigma config dashboard-port <0-65535> (0 = auto: 80, then 24282) [-g|-l]");
+            return 1;
+        }
+        const target: Scope = scope || "global";
+        const path = setEnigmaValue("dashboardPort", n, target);
+        console.log(`Set dashboard-port = ${n === 0 ? "auto" : n} (${target})${path ? ` in ${path}` : ""}. Restart the dashboard to apply.`);
+        return 0;
+    }
+
     // Plan window limits (numeric, USD-free token caps) + the weekly reset anchor. These
     // drive the Claude-style usage gauges and sit outside the boolean/choice registry, like
     // token-price/token-speed. 0 = unset (the gauge shows tokens instead of a %).
@@ -108,7 +122,7 @@ export async function runConfigCli(positionals: string[], scope: Scope | null, i
 
     const setting = ALL_SETTINGS.find((s) => s.key === rawKey);
     if (!setting) {
-        console.error(`Unknown config key: ${rawKey}. Known keys: ${ALL_SETTINGS.map((s) => s.key).join(", ")}, token-price, token-speed, plan-session-limit, plan-weekly-limit, plan-weekly-sonnet-limit, plan-weekly-opus-limit, plan-weekly-reset.`);
+        console.error(`Unknown config key: ${rawKey}. Known keys: ${ALL_SETTINGS.map((s) => s.key).join(", ")}, token-price, token-speed, dashboard-port, plan-session-limit, plan-weekly-limit, plan-weekly-sonnet-limit, plan-weekly-opus-limit, plan-weekly-reset.`);
         return 1;
     }
 

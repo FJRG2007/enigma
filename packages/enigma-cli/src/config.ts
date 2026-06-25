@@ -116,6 +116,12 @@ export interface EnigmaConfig {
     /** Dashboard auto-refreshes its data while the tab is focused (default on; off = manual refresh only). */
     dashboardLive: boolean;
     /**
+     * Preferred port for the local dashboard server. 0 = auto (try 80, then 24282, then an
+     * ephemeral port). When set (1-65535) it is tried first, falling back to the defaults if
+     * busy, so the dashboard always opens. Changing it needs a dashboard restart to rebind.
+     */
+    dashboardPort: number;
+    /**
      * Persisted absolute launch path per tool, keyed by tool name (e.g. claude).
      * Set by `enigma fix-path` when a tool is installed but not on PATH; consumed by
      * launchTool (accounts.ts) between the ENIGMA_<TOOL>_BIN env override and a plain
@@ -179,7 +185,7 @@ export const CONFIG_DEFAULTS: EnigmaConfig = {
     commitEmoji: true, updateNotifier: true, fullscreen: true, parallelSubagents: false, outputStyle: "off", minimalCode: "full",
     autoSync: true, remoteSkills: true, skillUpdatePolicy: "overwrite", permissionBypass: true, autoLint: false, compress: false, dashboard: "off", tokenPrice: 0, tokenSpeed: 0, usageStats: false, proxy: false, usageApi: false, promptSecretGuard: false, promptSecretMode: "redact",
     planSessionLimit: 0, planWeeklyLimit: 0, planWeeklySonnetLimit: 0, planWeeklyOpusLimit: 0, planWeeklyReset: "mon 00:00",
-    dashboardLive: true, toolPaths: {}, bypassDisabled: [], discardedSkills: [], skillAgentsOff: {},
+    dashboardLive: true, dashboardPort: 0, toolPaths: {}, bypassDisabled: [], discardedSkills: [], skillAgentsOff: {},
 };
 
 export type EnigmaConfigKey = keyof EnigmaConfig;

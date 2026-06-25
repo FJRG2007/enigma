@@ -70,8 +70,8 @@ export function exportBundle(): ConfigBundle {
 
 export interface ImportResult { ok: boolean; error?: string; applied: string[]; skipped: string[]; }
 
-/** Allowed config keys = exactly what the settings registry + the two numeric knobs manage. */
-const NUMERIC_KEYS = new Set(["tokenPrice", "tokenSpeed"]);
+/** Allowed config keys = the settings registry + the numeric knobs outside it. */
+const NUMERIC_KEYS = new Set(["tokenPrice", "tokenSpeed", "dashboardPort"]);
 function isImportableConfigKey(key: string): boolean {
     return NUMERIC_KEYS.has(key) || ALL_SETTINGS.some((s) => s.key.replace(/-/g, "") === key.toLowerCase());
 }
