@@ -68,7 +68,7 @@ npx enigma-cli@latest install --all --yes
 
 ### <img src="docs/images/enigma-logo.svg" width="20" height="20" alt="Enigma"/> Git security hooks
 
-A portable, dependency-free commit guard for **any** repo: blocks secrets, `.env` files and `node_modules` before they are committed. Commit `.githooks/` and the whole team inherits it.
+A portable, dependency-free commit guard for **any** repo: blocks secrets, `.env` files and `node_modules` before they are committed. Set it up once and the whole team inherits it.
 
 ```bash
 enigma security
