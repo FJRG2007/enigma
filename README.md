@@ -23,16 +23,9 @@ committed.
 
 ## Install
 
-Recommended - install the `enigma` command globally, then run the interactive hub:
-
-```bash
-npm install -g enigma-cli@latest   # provides the `enigma` command
-enigma                             # interactive hub: pick what to set up
-```
-
-Or via the install script (clears the npm cache, installs the latest version, then
-runs `enigma install` **interactively** so you choose what to set up - handy where npm
-`postinstall` scripts are disabled):
+Recommended - run the install script (clears the npm cache, installs the latest
+version, then runs `enigma install` **interactively** so you choose what to set up -
+handy where npm `postinstall` scripts are disabled):
 
 ```bash
 # macOS / Linux
@@ -40,6 +33,13 @@ curl -fsSL https://raw.githubusercontent.com/FJRG2007/enigma/main/scripts/instal
 
 # Windows (PowerShell)
 irm https://raw.githubusercontent.com/FJRG2007/enigma/main/scripts/install.ps1 | iex
+```
+
+Or install the `enigma` command globally, then run the interactive hub:
+
+```bash
+npm install -g enigma-cli@latest   # provides the `enigma` command
+enigma                             # interactive hub: pick what to set up
 ```
 
 Or one-shot, no global install, no prompts - deploy the skills to every supported
