@@ -315,6 +315,32 @@ function serveFixPath(req: import("node:http").IncomingMessage, res: import("nod
     });
 }
 
+/** System resources snapshot (processes, ports, WSL/Docker state) for the Resources tab. */
+function serveResources(res: import("node:http").ServerResponse): void {
+    import("./resources")
+        .then(({ resourceStatus }) => { res.writeHead(200, JSON_HDR); res.end(JSON.stringify(resourceStatus())); })
+        .catch(() => { res.writeHead(500, JSON_HDR); res.end('{"error":"resources unavailable"}'); });
+}
+
+/** Run a DESTRUCTIVE resource action from a POST body { op, value? } (kill/free-port/wsl/docker). */
+function writeResources(req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse): void {
+    let body = "";
+    req.on("data", (chunk) => { body += chunk; if (body.length > 4096) req.destroy(); });
+    req.on("end", () => {
+        let parsed: { op?: unknown; value?: unknown };
+        try { parsed = JSON.parse(body || "{}"); } catch { res.writeHead(400, JSON_HDR); res.end('{"error":"bad json"}'); return; }
+        if (typeof parsed.op !== "string") { res.writeHead(400, JSON_HDR); res.end('{"error":"missing op"}'); return; }
+        const value = typeof parsed.value === "number" ? parsed.value : undefined;
+        import("./resources")
+            .then(({ runResourceAction, resourceStatus }) => {
+                const out = runResourceAction(parsed.op as string, value);
+                res.writeHead(out.ok ? 200 : 400, JSON_HDR);
+                res.end(JSON.stringify({ ...out, status: resourceStatus() }));
+            })
+            .catch(() => { res.writeHead(500, JSON_HDR); res.end('{"ok":false,"error":"action failed"}'); });
+    });
+}
+
 /** Factual "what's active" overview (configured state of each enigma system + skill counts). */
 function serveStatus(res: import("node:http").ServerResponse): void {
     import("./dashboard-status")
@@ -437,6 +463,13 @@ function createDashboardServer(version: string): Server {
         if (url === "/api/fix-path") {
             if (!isLocalRequest(req)) { res.writeHead(403, JSON_HDR); res.end('{"error":"forbidden"}'); return; }
             if (method === "POST") { serveFixPath(req, res); return; }
+            res.writeHead(405).end(); return;
+        }
+        if (url === "/api/resources") {
+            // Destructive (kill processes / shut down WSL / quit Docker), so origin-guarded.
+            if (!isLocalRequest(req)) { res.writeHead(403, JSON_HDR); res.end('{"error":"forbidden"}'); return; }
+            if (method === "GET") { serveResources(res); return; }
+            if (method === "POST") { writeResources(req, res); return; }
             res.writeHead(405).end(); return;
         }
         // Accounts/profiles management + config import/export are write/structure surfaces, origin-guarded.

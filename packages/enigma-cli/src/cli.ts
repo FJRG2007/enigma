@@ -47,7 +47,7 @@ const PKG = readJson<{ version?: string }>(join(__dirname, "..", "package.json")
 // Fixed commands plus one launch command per supported tool (e.g. `enigma claude`).
 const COMMANDS = new Set<string>([
     "install", "update", "security", "guard", "seal", "check", "config", "account", "accounts",
-    "profile", "profiles", "skill", "skills", "issue", "improve", "compress", "mcp", "dashboard", "dash", "fix-path", "statusline", "help", "version",
+    "profile", "profiles", "skill", "skills", "issue", "improve", "compress", "mcp", "dashboard", "dash", "fix-path", "resources", "statusline", "help", "version",
     ...TOOL_NAMES,
 ]);
 
@@ -187,6 +187,8 @@ Commands:
                        while open; 'config dashboard always' keeps a background daemon
   fix-path [tool]      Detect a tool's install path (OS-agnostic, even off PATH) and
                        repair its launch command so 'enigma <tool>' works; no tool fixes all
+  resources [action]   System cleanup: status, or wsl | docker | free-port PORT | kill PID
+                       (shut down WSL/vmmemWSL, quit Docker, free a port, kill a process)
   seal                 Maintenance: (re)compute skill content hashes
   check                Integrity gate: verify skills are well-formed and sealed
   statusline           Print the [ENIGMA] badge for an agent status bar (shows the active level)
@@ -379,6 +381,36 @@ function runFixPathCli(tool: string | undefined, scope: "global" | "local" | nul
         if (!result.ok) allOk = false;
     }
     return allOk ? 0 : 1;
+}
+
+/**
+ * `enigma resources [wsl|docker|free-port PORT|kill PID]` - system cleanup. With no
+ * subcommand it prints a status snapshot; the subcommands run DESTRUCTIVE actions (typing
+ * the command is the confirmation; the dashboard/TUI confirm interactively instead).
+ */
+async function runResourcesCli(args: string[]): Promise<number> {
+    const { resourceStatus, freePort, killPid, shutdownWsl, quitDocker } = await import("./resources");
+    const [sub, arg] = args;
+    const mb = (bytes: number): number => Math.round(bytes / 1048576);
+    if (!sub) {
+        const s = resourceStatus();
+        console.log(`Platform: ${s.platform}   Memory: ${mb(s.totalMem - s.freeMem)}/${mb(s.totalMem)} MB used`);
+        console.log(`WSL: ${s.wslAvailable ? (s.vmmemRunning ? "running (vmmemWSL active - eating RAM)" : "available") : "n/a"}   Docker Desktop: ${s.dockerRunning ? "running" : "not running"}`);
+        console.log("\nTop processes by memory:");
+        for (const p of s.topProcesses.slice(0, 12)) console.log(`  ${String(p.pid).padStart(7)}  ${String(mb(p.memKB * 1024)).padStart(5)} MB  ${p.name}`);
+        console.log("\nListening ports:");
+        for (const p of s.ports.slice(0, 20)) console.log(`  :${String(p.port).padEnd(6)} pid ${String(p.pid).padEnd(7)} ${p.name}`);
+        console.log("\nActions: enigma resources <wsl | docker | free-port PORT | kill PID>");
+        return 0;
+    }
+    const r = sub === "wsl" ? shutdownWsl()
+        : sub === "docker" ? quitDocker()
+        : sub === "free-port" ? freePort(Number(arg))
+        : sub === "kill" ? killPid(Number(arg))
+        : null;
+    if (!r) { console.error(`Unknown subcommand '${sub}'. Use: enigma resources <wsl | docker | free-port PORT | kill PID>`); return 1; }
+    console.log(r.message);
+    return r.ok ? 0 : 1;
 }
 
 /**
@@ -758,6 +790,7 @@ export async function run(argv: string[]): Promise<void> {
     if (opts.command === "compress") { process.exit(runCompressCli(opts)); }
     if (opts.command === "dashboard") { process.exit(await runDashboardCli(version)); }
     if (opts.command === "fix-path") { process.exit(runFixPathCli(opts.positionals[0], opts.scope)); }
+    if (opts.command === "resources") { process.exit(await runResourcesCli(opts.positionals)); }
 
     if (opts.command === "update") {
         p.intro("enigma - update");
