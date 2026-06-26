@@ -1,6 +1,6 @@
 {
   "generator": "enigma seal",
-  "cliVersion": "1.21.1",
+  "cliVersion": "1.21.2",
   "count": 18,
   "skills": [
     {
@@ -88,7 +88,7 @@
       "version": "1.4.0",
       "description": "Frontend architecture: reusable components, abstraction thresholds, state management, no-op save detection, large-list rendering (infinite scroll/pagination, virtualization, skeletons, progressive loading), and optimistic UI with rollback.",
       "provider": "FJRG2007/enigma",
-      "updated": "2026-06-16T12:06:06+02:00",
+      "updated": "2026-06-26T13:57:02+02:00",
       "sha": "41cb938c9022efcdadc3056417cc7d442511adee40b09a141f11bb5fd9d56514"
     },
     {
