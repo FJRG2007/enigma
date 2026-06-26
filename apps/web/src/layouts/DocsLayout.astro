@@ -1,9 +1,9 @@
 ---
-import { getCollection } from "astro:content";
 import Base from "./Base.astro";
-import CommandPalette from "../components/CommandPalette.astro";
-import { buildSearchIndex } from "../lib/search";
 import { url, docHref } from "../lib/url";
+import { getCollection } from "astro:content";
+import { buildSearchIndex } from "../lib/search";
+import CommandPalette from "../components/CommandPalette.astro";
 
 interface Props {
     title: string;
@@ -58,7 +58,7 @@ for (const d of docs) {
     </div>
 
     <footer>
-        Enigma - <a href="https://github.com/FJRG2007/enigma" target="_blank" rel="noopener noreferrer">GitHub</a> - Apache-2.0
+        Enigma - <a href="https://github.com/FJRG2007/enigma" target="_blank" rel="noopener noreferrer">GitHub</a> - <a href="https://github.com/FJRG2007/enigma/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">Apache-2.0</a>
     </footer>
 
     <CommandPalette index={index} />
