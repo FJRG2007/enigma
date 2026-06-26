@@ -14,6 +14,9 @@
     "use strict";
     var DAY = 86400000;
     var now = Date.now();
+    // Real fixtures injected by the build (sync-assets.mjs): all skills from the catalog, the
+    // full settings registry, and a real-shaped usage report. Absent in dev -> inline defaults.
+    var FX = (typeof window !== "undefined" && window.__DEMO_FIXTURES__) || {};
 
     // Per-day savings history. Generated so the chart, "recent" and "history" panels all
     // have realistic, varied data without a giant literal. saved = before - after.
@@ -49,7 +52,7 @@
                 "markdown": { calls: 16, tokensBefore: 600000, tokensAfter: 400000, tokensSaved: 200000 }
             }
         },
-        usage: null,
+        usage: FX.usage || null,
         history: history,
         cache: { count: 487, bytes: 12865000, max: 500 }
     };
@@ -57,7 +60,7 @@
     var STATUS = {
         systems: {
             compress: true, outputStyle: "full", minimalCode: "full", parallelSubagents: false,
-            autoLint: true, usageStats: false, dashboard: "on-demand", commitEmoji: true,
+            autoLint: true, usageStats: !!FX.usage, dashboard: "on-demand", commitEmoji: true,
             proxy: false, usageApi: false, promptSecretGuard: false, promptSecretMode: "redact", live: true,
             proxyStats: { calls: 0, input: 0, output: 0, cacheRead: 0, cacheCreation: 0, lastRequestAt: 0, redacted: 0, rejected: 0, lastBlockedAt: 0 },
             security: { permissionBypass: true, bypassDisabled: [], guardProtects: ["API keys", ".pem files", ".env files", "node_modules"] },
@@ -81,7 +84,7 @@
             itemHint: opts.kind === "list" ? (opts.itemHint || null) : null
         };
     }
-    var SETTINGS = {
+    var SETTINGS = FX.settings || {
         dashboardPort: 0, runningPort: 80,
         categories: [
             {
@@ -143,7 +146,7 @@
     }
     var ALL_AGENTS = ["Claude Code", "Codex", "opencode"];
     var SKILLS = {
-        skills: [
+        skills: FX.skills || [
             skill("core-engineering-policy", "Highest-authority engineering rules - priority hierarchy, architecture, reuse and the harness map.", "1.21.0", "enigma", ALL_AGENTS),
             skill("security-policy", "Application and AI-agent security - secrets, auth, OWASP, transport/crypto and tool-use safety.", "1.10.0", "enigma", ALL_AGENTS),
             skill("ciphera-style-policy", "Code style conventions - naming, quotes, imports, indentation and code-level anti-patterns.", "1.8.0", "enigma", ALL_AGENTS),
@@ -195,12 +198,33 @@
         return { ok: true, key: s.key, setting: s };
     }
 
+    // Skills tab: viewing is read-only and toggles reset on reload (no persistence) - the
+    // user asked for "looks real, edits do nothing". Enable/disable and per-app toggles mutate
+    // the in-memory list so the row re-renders; a page reload restores the originals.
+    function applySkillPost(body) {
+        var sk = body && SKILLS.skills.filter(function (x) { return x.name === body.name; })[0];
+        var action = body && body.action;
+        if (action === "read") {
+            var text = `---\nname: ${body.name}\ndescription: ${(sk && sk.description) || ""}\n---\n\nThis is a static demo - the full SKILL.md lives in the repo and editing here does nothing.\n`;
+            return { ok: true, content: text };
+        }
+        if (action === "save") return { ok: true, note: "Demo - edits are not saved." };
+        if (!sk) return { ok: true, skills: SKILLS.skills };
+        if (action === "disable") sk.discarded = true;
+        if (action === "enable") sk.discarded = false;
+        if (action === "agent-toggle" && body.content) {
+            var a = (sk.agentStates || []).filter(function (x) { return x.name === body.content.agent; })[0];
+            if (a) { a.off = !!body.content.off; a.deployed = !a.off; }
+        }
+        return { ok: true, skills: SKILLS.skills };
+    }
+
     function route(path, method, body) {
         if (path.indexOf("/api/stats") !== -1) { STATS.generatedAt = Date.now(); return STATS; }
         if (path.indexOf("/api/status") !== -1) return STATUS;
         if (path.indexOf("/api/settings") !== -1) return method === "POST" ? applySettingPost(body) : SETTINGS;
         if (path.indexOf("/api/accounts") !== -1) return method === "POST" ? { ok: true, data: ACCOUNTS } : ACCOUNTS;
-        if (path.indexOf("/api/skills") !== -1) return method === "POST" ? { ok: true, skills: SKILLS.skills } : SKILLS;
+        if (path.indexOf("/api/skills") !== -1) return method === "POST" ? applySkillPost(body) : SKILLS;
         if (path.indexOf("/api/resources") !== -1) return method === "POST" ? { ok: true, message: "Demo - no action taken.", status: RESOURCES } : RESOURCES;
         if (path.indexOf("/api/update") !== -1) return { ok: true, changed: false, version: STATS.version, note: "This is a static demo." };
         if (path.indexOf("/api/fix-path") !== -1) return { ok: true, message: "Demo - nothing to fix." };
