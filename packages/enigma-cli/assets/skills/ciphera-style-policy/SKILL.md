@@ -134,3 +134,9 @@ if (REGEX_EMAIL.test(inputData)) {
 ```
 
 - Prefer specific, tailored solutions over cross-platform abstractions when the latter measurably degrade performance.
+
+---
+
+## Self-Check (Before Declaring Done)
+
+- These rules are mechanically checkable, so do not trust memory. Before reporting code work complete, lint the files you changed and fix the findings: run the project's lint gate if it has one (an `npm run lint` / `lint:*` script or its pre-commit hook), otherwise `npx @enigmax/linter --strict <changed files>`.

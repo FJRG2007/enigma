@@ -1,0 +1,77 @@
+---
+title: /improve
+description: The /improve slash command - implement a focused area, or run a read-only senior audit that writes execution-ready plans.
+group: Slash commands
+order: 20
+---
+
+`/improve` is a slash command enigma deploys into your coding agents. It improves **the current project** in one of two modes - it either edits a focused area directly, or audits the codebase read-only and writes execution-ready plans for another agent to run.
+
+It is deployed to **Claude Code**, **OpenAI Codex** and **opencode** (authored once, copied into each app's command/prompt directory). Run it inside the agent as `/improve <args>`. The mode is resolved from the arguments.
+
+> Looking for the CLI subcommands (`enigma install`, `enigma autoskills`, ...)? Those are in [Commands](/enigma/docs/commands/). `/improve` runs *inside the agent*, not the `enigma` binary - though `enigma improve --help` prints the same reference.
+
+## Two modes
+
+| Mode | What it does | Touches your code? |
+|---|---|---|
+| **Implement** | Edits a focused area to improve it, then runs build/lint/tests and reports. | Yes |
+| **Advisor** | Audits the repo like a senior advisor and writes self-contained plans under `plans/`. Never edits source. | No |
+
+The mode is chosen from the arguments: an **advisor keyword anywhere** picks Advisor; otherwise a **first-token area** picks Implement; anything else prints both usages and stops (it never guesses).
+
+## Implement mode
+
+`/improve <area>` - makes the smallest change that achieves the improvement, applies it incrementally, then verifies (a UI change by looking at the screen, a behavior change by exercising the path - a green build alone is not proof) and reports what changed and why.
+
+| Area | Aliases | Focus |
+|---|---|---|
+| `ui` | `frontend` | Visual design, components, states, accessibility, responsiveness. |
+| `security` | | Secrets, authn/authz, input validation, OWASP Top 10, transport/crypto, dependency audit. |
+| `performance` | `perf` | Measure first, then N+1s, indexes, caching, bundle size, payloads - re-measured. |
+| `seo` | | Metadata, semantic HTML, structured data, crawlability, Core Web Vitals. |
+| `refactor` | `refactorize` | DRY/consistency pass: one concept, one implementation - no behavior change. |
+
+```bash
+/improve ui
+/improve security
+/improve refactor
+```
+
+## Advisor mode (read-only)
+
+The advisor never modifies source. It maps the repo, audits across nine categories (correctness, security, performance, tests, tech debt, dependencies, DX, docs, direction), vets every finding against the actual code, then writes self-contained plans a less-capable executor can follow.
+
+| Variant | What it does |
+|---|---|
+| `audit [focus]` | The full workflow. With a focus (e.g. `audit security`) it audits only that category. |
+| `quick` / `deep` | Effort level for the audit - composes with anything (`quick perf`, `deep security`). |
+| `branch` | Audit only the current branch's changes vs the default branch. |
+| `next` (`features`, `roadmap`) | Forward-looking: grounded direction/feature suggestions, each citing repo evidence. |
+| `plan <description>` | Skip the audit; write a single plan for exactly what you describe. |
+| `review-plan <file>` | Critique and tighten an existing plan in `plans/`. |
+| `execute <plan>` | Dispatch a cheaper executor on one plan (isolated worktree), then review the diff like a tech lead. |
+| `reconcile` | Process what changed since last session: verify done, refresh drifted, retire dead plans. |
+| `--issues` | Modifier on any planning invocation: also publish each plan as a GitHub issue via `gh`. |
+
+```bash
+/improve audit
+/improve quick security
+/improve next
+/improve plan add rate limiting to the public API
+/improve execute 003
+```
+
+Plans land in `plans/` (a `README.md` index plus one numbered file per plan), each stamped with the commit it was written against for drift detection, and each written to be executed from the plan file and the repo alone - no memory of the audit required.
+
+## Disambiguation
+
+A bare `security` or `performance` runs **Implement** (it edits code - backward compatible). To audit those read-only instead, prefix an advisor keyword: `audit security`, `quick perf`, `deep security`.
+
+## From the CLI
+
+`/improve` runs inside the agent, but the same reference is one command away in your terminal:
+
+```bash
+enigma improve --help
+```

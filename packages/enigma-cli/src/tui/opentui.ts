@@ -549,6 +549,9 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         const [resultScroll, setResultScroll] = useState(0);
         // Hides the first-run banner once a skills install succeeded in this session.
         const [setupDone, setSetupDone] = useState(false);
+        // Outcome of the last settings save, shown as a banner so a failed write is never
+        // silent (the whole point: a write can fail - permissions - and must be surfaced).
+        const [saveStatus, setSaveStatus] = useState<{ kind: "ok" | "err"; msg: string } | null>(null);
         // Skills rows of the install panel; discarding asks for confirmation because
         // it deletes the deployed copies and opts the skill out of installs/updates.
         const [skills, setSkills] = useState<HubSkill[]>(initialSkills);
@@ -709,21 +712,51 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             const i = setting.choices.indexOf(choiceOf(setting, sc));
             return setting.choices[(i + 1) % setting.choices.length]!;
         };
-        const stageNext = (setting: Setting, sc: Scope): void =>
+        const stageNext = (setting: Setting, sc: Scope): void => {
+            setSaveStatus(null); // a new edit supersedes the last save outcome
             setPending((p) => ({ ...p, [stageKey(setting.key, sc)]: nextStaged(setting, sc) }));
-        const persistPending = (): void => {
+        };
+        // Write every staged setting, collecting per-setting failures instead of letting one
+        // throw abort the rest or crash the render. Returns the failures + memory restart notes.
+        const persistPending = (): { errors: string[]; notes: string[] } => {
             const memoryScopes = new Set<Scope>();
+            const errors: string[] = [];
             for (const [k, v] of Object.entries(pending)) {
                 const { key, scope: sc } = parseStageKey(k);
                 const setting = SETTING_BY_KEY.get(key);
                 if (!setting || savedOf(setting, sc) === v) continue;
-                if (setting.choices && typeof v === "string" && setting.writeChoice) setting.writeChoice(v, sc);
-                else setting.write(Boolean(v), sc);
-                if (setting.affectsMemory) memoryScopes.add(sc);
+                try {
+                    if (setting.choices && typeof v === "string" && setting.writeChoice) setting.writeChoice(v, sc);
+                    else setting.write(Boolean(v), sc);
+                    if (setting.affectsMemory) memoryScopes.add(sc);
+                } catch (err) { errors.push(`${setting.label}: ${(err as Error).message}`); }
             }
             // Memory-affecting settings must re-render the deployed memory file; restart the
             // agent to pick it up (memory loads at startup).
-            for (const sc of memoryScopes) applyMemoryToggles(sc);
+            const notes: string[] = [];
+            for (const sc of memoryScopes) {
+                try {
+                    const changed = applyMemoryToggles(sc);
+                    if (changed.length) notes.push(`memory updated for ${changed.map((a) => a.label).join(", ")} - restart to apply`);
+                } catch (err) { errors.push(`memory: ${(err as Error).message}`); }
+            }
+            return { errors, notes };
+        };
+        // Persist, surface the outcome as a banner, and clear staged edits only on success
+        // (a failed save keeps them staged so the user can retry). Returns whether it succeeded.
+        const commitPending = (): boolean => {
+            if (Object.keys(pending).length === 0) return true;
+            const { errors, notes } = persistPending();
+            if (errors.length) { setSaveStatus({ kind: "err", msg: `Save failed - ${errors.join("; ")}` }); return false; }
+            setPending({});
+            setSaveStatus({ kind: "ok", msg: notes.length ? notes.join("  ") : "Saved." });
+            return true;
+        };
+        // Apply an optimistic skill-list change (discard/restore, per-app toggle); a failing
+        // callback surfaces as the save banner instead of throwing inside an event handler.
+        const applySkillChange = (fn: () => HubSkill[], desc: string): void => {
+            try { setSkills(fn()); setSaveStatus(null); }
+            catch (err) { setSaveStatus({ kind: "err", msg: `${desc} failed - ${(err as Error).message}` }); }
         };
 
         const runChosen = (act: ActionKind): void => {
@@ -732,7 +765,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             const req: ActionRequest = act === "security"
                 ? { action: act, protections: chosen }
                 : { action: act, scope, agents: chosen };
-            persistPending(); setPending({});
+            commitPending();
             setBusyTitle(actionTitle(act));
             setResult(null);
             setResultScroll(0);
@@ -787,14 +820,14 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             }
             const skill = skillRows[i - keys.length];
             if (!skill || !setSkillDiscardedFn) return;
-            if (skill.discarded) setSkills(setSkillDiscardedFn(skill.name, false));
+            if (skill.discarded) applySkillChange(() => setSkillDiscardedFn(skill.name, false), `Restore ${skill.name}`);
             else setSkillConfirm({ name: skill.name, index: 0 });
         };
         const chooseSkillDiscard = (i: number): void => {
             const target = skillConfirm;
             setSkillConfirm(null);
             if (i !== 0 || !target || !setSkillDiscardedFn) return;
-            setSkills(setSkillDiscardedFn(target.name, true));
+            applySkillChange(() => setSkillDiscardedFn(target.name, true), `Discard ${target.name}`);
         };
         const chooseRes = (i: number): void => {
             const c = resConfirm;
@@ -814,7 +847,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             const skill = skills.find((s) => s.name === skillAgents.name);
             if (!agent || !skill) return;
             const currentlyOff = skill.agentsOff.includes(agent.name);
-            setSkills(setSkillAgentFn(skillAgents.name, agent.name, !currentlyOff));
+            applySkillChange(() => setSkillAgentFn(skillAgents.name, agent.name, !currentlyOff), `Toggle ${skillAgents.name} for ${agent.label}`);
         };
         const clickActItem = (i: number): void => {
             if (!action) return;
@@ -822,9 +855,10 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             toggleActRow(i);
         };
         const chooseConfirm = (i: number): void => {
+            if (i === 2) { setConfirm(null); return; }
+            // Save & exit: if the save fails, stay open so the error banner is seen.
+            if (i === 0 && !commitPending()) { setConfirm(null); return; }
             setConfirm(null);
-            if (i === 2) return;
-            if (i === 0) persistPending();
             setPending({});
             onExit();
         };
@@ -1124,9 +1158,10 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
                 if (down || ch === "j") { setConfirm((c) => c && { index: Math.min(EXIT_OPTIONS.length - 1, c.index + 1) }); return; }
                 if (enter || space) {
                     const index = confirm.index;
+                    if (index === 2) { setConfirm(null); return; }
+                    // Save & exit: stay open if the save fails so the error banner is seen.
+                    if (index === 0 && !commitPending()) { setConfirm(null); return; }
                     setConfirm(null);
-                    if (index === 2) return;
-                    if (index === 0) persistPending();
                     setPending({});
                     onExit();
                 }
@@ -1144,8 +1179,8 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
 
             if (update && ch === "u") { onExit({ type: "update" }); return; }
             if (ch === "q" || esc) { dirty ? setConfirm({ index: 0 }) : onExit(); return; }
-            if (ch === "s") { persistPending(); setPending({}); return; }
-            if (ch === "x") { persistPending(); setPending({}); onExit(); return; }
+            if (ch === "s") { commitPending(); return; }
+            if (ch === "x") { if (commitPending()) onExit(); return; }
             if (ch === "g") { setScope((s) => (s === "global" ? "local" : "global")); return; }
             if (tab) { setFocusRight((f) => !f); return; }
             if (left || ch === "h") { setFocusRight(false); return; }
@@ -1424,8 +1459,14 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
                 txt("First run - no agent skills deployed yet.   ", { fg: COL.yellow, attributes: BOLD }),
                 txt("'Install agent skills' is selected: press enter to pick agents, enter again to install", { fg: COL.gray }))
             : null;
+        // Save outcome banner: green on success, red when a write failed (never silent).
+        const saveBanner = saveStatus && mode === "menu" && noOverlay
+            ? h(box, { width: size.columns, flexDirection: "row", paddingLeft: 1, paddingRight: 1 },
+                txt(saveStatus.kind === "err" ? "Save failed   " : "Saved   ", { fg: saveStatus.kind === "err" ? COL.red : COL.green, attributes: BOLD }),
+                txt(saveStatus.msg, { fg: COL.gray, truncate: true }))
+            : null;
 
-        return h(box, { width: size.columns, height: size.rows, flexDirection: "column" }, titleBar, updateBanner, setupBanner, content, footer);
+        return h(box, { width: size.columns, height: size.rows, flexDirection: "column" }, titleBar, updateBanner, setupBanner, saveBanner, content, footer);
     }
 
     // Warp does not fully support the alternate screen buffer: leaving it on exit can

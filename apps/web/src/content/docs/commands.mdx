@@ -1,10 +1,11 @@
 ---
 title: Commands
 description: The enigma command reference. Run enigma help for the same list in your terminal.
-group: Docs
-order: 2
+group: Reference
+order: 10
 ---
 import Cmd from "../../components/Cmd.astro";
+import { docHref } from "../../lib/url";
 
 ## install & update
 
@@ -44,6 +45,14 @@ List skills and choose where each one deploys. A skill can be off everywhere (di
 
 <Cmd name="enigma skills <list|disable|enable> [agent]" ex={["enigma skills list", "enigma skills disable testing-policy opencode", "enigma skills enable testing-policy opencode"]}>
 No agent argument is the global on/off; with an agent it scopes to that agent.
+</Cmd>
+
+## autoskills
+
+Detect the project's tech stack and install the matching community skills, kept separate from the policy skills. See <a href={docHref("autoskills")}>Autoskills</a> for detail.
+
+<Cmd name="enigma autoskills [path]" ex={["enigma autoskills", "enigma autoskills --dry-run"]}>
+Scans packages, config files, file types and gems; installs the matched, hash-verified skills into the project. `--dry-run` previews; `-a <agent>` limits targets.
 </Cmd>
 
 ## security & guard

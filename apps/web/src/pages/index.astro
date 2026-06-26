@@ -4,7 +4,7 @@ import Compare from "../components/Compare.astro";
 import { url, docHref } from "../lib/url";
 
 const title = "Enigma - everything you need to work with a coding agent, in one command";
-const description = "Enigma installs shared engineering policy skills into Claude Code, OpenAI Codex and opencode, sets up portable git security hooks, and ships a local dashboard to manage it all - all from one command.";
+const description = "Enigma makes your coding agent ship more optimal, secure and scalable code - in less time, fewer tokens and fewer iterations. Dynamic Skills for Claude Code, OpenAI Codex and opencode, portable git security hooks, and a local dashboard to manage and measure it all - from one command.";
 
 // Before/after artifacts for the comparison section. Rendered with set:html (controlled,
 // no user input) so literal braces in code don't collide with Astro's expression syntax.
@@ -78,10 +78,10 @@ const termGood = `<span class="k">$</span> git add .env
     <header class="hero">
         <div class="wrap">
             <span class="eyebrow">One command. Every agent.</span>
-            <h1>Everything you need to work with a coding agent</h1>
-            <p class="lede">Enigma installs shared engineering policy skills into the agents you actually use, sets up portable git security hooks, and ships a local dashboard to manage it all - all from one command.</p>
+            <h1>Ship better code with your coding agent</h1>
+            <p class="lede">Enigma makes your agent produce more optimal, secure and scalable code - in less time, fewer tokens and fewer iterations. Dynamic Skills that adapt to each agent, portable git security hooks, and a local dashboard to manage and measure it all - from one command.</p>
 
-            <div class="install" id="install" data-next={url("start/")}>
+            <div class="install" id="install">
                 <div class="tabs" role="tablist">
                     <button class="active" data-cmd="curl" role="tab">curl<span class="rec">recommended</span></button>
                     <button data-cmd="npm" role="tab">npm</button>
@@ -128,7 +128,7 @@ const termGood = `<span class="k">$</span> git add .env
                 <div class="card"><h3>Local dashboard</h3><p>A loopback browser control panel for all of enigma - accounts, skills, settings, system cleanup - that also shows real Claude usage and measured savings. Nothing leaves your machine.</p></div>
                 <div class="card"><h3>Multi-account + profiles</h3><p>Several logins per tool without logging out, each in its own config dir, switched OS-agnostically. Profiles pin one account per tool and drive every launch.</p></div>
                 <div class="card"><h3>Context compression</h3><p>A native, dependency-free engine that shrinks large tool outputs, logs and text before they reach the model - the same information in far fewer tokens, reversibly.</p></div>
-                <div class="card"><h3>Privacy defaults</h3><p>Sensible defaults at install: GitHub CLI telemetry off, the agent kept from attributing commits to itself, and an opt-in prompt secret guard.</p></div>
+                <div class="card"><h3>Auto-detect skills by stack</h3><p><code>enigma autoskills</code> scans your project (packages, config files, gems) and installs the matching community skills for your stack - React, Next.js, Astro, Prisma, Rails and ~90 more - hash-verified and kept separate from the policy skills.</p></div>
                 <div class="card"><h3>Built-in <code>/improve</code></h3><p>A slash command on every agent: an implement mode that edits a focused area (ui, security, performance...) and a read-only advisor mode that audits and writes plans for another agent to execute.</p></div>
             </div>
         </div>
@@ -202,9 +202,9 @@ const termGood = `<span class="k">$</span> git add .env
     <section id="skills">
         <div class="wrap">
             <div class="s-head">
-                <span class="eyebrow">Official catalog</span>
-                <h2>Every skill, kept current</h2>
-                <p>The engineering policy skills enigma installs into Claude Code, Codex and opencode - sealed, versioned, and updated straight from the repo. Newest edits first.</p>
+                <span class="eyebrow">Dynamic Skills</span>
+                <h2>Skills that adapt, not just deploy</h2>
+                <p>Unlike a static skill, each enigma skill adapts to the app that runs it, re-renders from your config, and loads by context - sealed, versioned, and updated straight from the repo. <a href={docHref("dynamic-skills")}>How Dynamic Skills work &rarr;</a> Newest edits first.</p>
             </div>
             <div class="grid" id="skillsGrid"><p class="muted">Loading skills...</p></div>
         </div>
@@ -431,18 +431,11 @@ const termGood = `<span class="k">$</span> git add .env
 </style>
 
 <script>
-    import { highlightShell, copyText } from "../lib/shell";
+    import { highlightShell, copyText, INSTALL_METHODS, isWindows, saveInstallMethod } from "../lib/shell";
 
-    // Install methods. curl (the script) is recommended; npm is preferred among the package
-    // managers, with pnpm/yarn/bun for those who use them; npx is one-shot.
-    const COMMANDS: Record<string, string> = {
-        curl: "curl -fsSL https://raw.githubusercontent.com/FJRG2007/enigma/main/scripts/install.sh | sh",
-        npm: "npm install -g enigma-cli@latest && enigma install",
-        pnpm: "pnpm add -g enigma-cli@latest && enigma install",
-        yarn: "yarn global add enigma-cli@latest && enigma install",
-        bun: "bun add -g enigma-cli@latest && enigma install",
-        npx: "npx enigma-cli@latest install --all --yes",
-    };
+    // Install methods come from the shared lib (single source of truth with /start). Clone so the
+    // Windows curl->PowerShell swap below stays local and never mutates the shared map.
+    const COMMANDS: Record<string, string> = { ...INSTALL_METHODS };
     const tabs = document.querySelectorAll<HTMLButtonElement>(".tabs button");
     const cmdText = document.getElementById("cmdtext")!;
 
@@ -456,29 +449,28 @@ const termGood = `<span class="k">$</span> git add .env
 
     // On Windows the recommended script is the PowerShell one (`curl ... | sh` has no `sh`),
     // so adapt the "curl" method to the visitor's OS.
-    const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
-    const isWindows = /win/i.test(nav.userAgentData?.platform || navigator.platform || navigator.userAgent || "");
-    if (isWindows) {
+    if (isWindows()) {
         COMMANDS.curl = "irm https://raw.githubusercontent.com/FJRG2007/enigma/main/scripts/install.ps1 | iex";
         const t = document.querySelector<HTMLButtonElement>('.tabs button[data-cmd="curl"]');
         if (t && t.firstChild) t.firstChild.textContent = "powershell";
     }
     const activeTab = document.querySelector<HTMLButtonElement>(".tabs button.active");
-    setCmd(COMMANDS[(activeTab && activeTab.dataset.cmd) || "curl"]);
+    const initial = (activeTab && activeTab.dataset.cmd) || "curl";
+    setCmd(COMMANDS[initial]);
+    saveInstallMethod(initial);
     tabs.forEach((b) => b.addEventListener("click", () => {
         tabs.forEach((x) => x.classList.toggle("active", x === b));
         setCmd(COMMANDS[b.dataset.cmd!]);
+        saveInstallMethod(b.dataset.cmd!); // so /start shows the method they picked
         resetCopy();
     }));
 
-    // After copying the install command, send the visitor to the guided steps page (run it,
-    // then open the dashboard). The next-steps URL is injected server-side (base-path aware).
-    const nextUrl = document.getElementById("install")?.dataset.next || "";
+    // Copy just copies - no navigation. (The nav "Install" button is the way to the guided
+    // steps page; it reads the method saved above so it opens with the same command.)
     copyBtn.addEventListener("click", async () => {
         if (!(await copyText(cmdText.textContent || ""))) return;
         copyBtn.innerHTML = CHECK_ICON; copyBtn.classList.add("done"); copyBtn.title = "Copied";
-        if (nextUrl) setTimeout(() => { window.location.href = nextUrl; }, 600);
-        else setTimeout(resetCopy, 1800);
+        setTimeout(resetCopy, 1800);
     });
 
     // Skills marketplace: the official catalog is generated by `enigma seal` into

@@ -52,6 +52,9 @@ jobs:
       - name: Test per-agent skill scoping
         run: bun test tests/skill-agent-scope.test.ts
         working-directory: packages/enigma-cli
+      - name: Test autoskills detection
+        run: bun test tests/autoskills.test.ts
+        working-directory: packages/enigma-cli
 
       # The package must build (tsup) so dist is publishable.
       - name: Build
@@ -61,6 +64,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history so the changed-files diff below resolves
 
       - uses: actions/setup-node@v4
         with:
@@ -79,3 +84,20 @@ jobs:
       # Dogfood: audit the repo's source for hardcoded secrets with the linter.
       - name: Secret audit (enigmax-lint)
         run: node packages/linter/dist/cli.js --audit-only packages
+
+      # Ciphera-style gate on the ADDED/MODIFIED lines of the diff only (a ratchet,
+      # mirroring the pre-commit hook): new/edited lines must be clean; a file's
+      # pre-existing warnings do not block. The whole-repo backlog is fixed
+      # opportunistically, not gated.
+      - name: Ciphera-style lint (changed lines)
+        run: |
+          if [ -n "${{ github.base_ref }}" ]; then
+            git fetch --depth=1 origin "${{ github.base_ref }}"
+            range="origin/${{ github.base_ref }}...HEAD"
+          elif git rev-parse --verify -q "${{ github.event.before }}" >/dev/null; then
+            range="${{ github.event.before }}...HEAD"
+          else
+            range="HEAD~1...HEAD"
+          fi
+          echo "Diff range: $range"
+          npm run -s lint:changed -- --range "$range"

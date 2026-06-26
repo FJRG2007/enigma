@@ -252,6 +252,8 @@
         .aicons { display: inline-flex; gap: 5px; align-items: center; vertical-align: middle; margin-left: 6px; }
         .aicon { display: inline-flex; align-items: center; color: var(--muted); }
         .aicon svg { width: 14px; height: 14px; display: block; }
+        /* Brand icon + label, reused by the savings breakdowns and the recent-compressions table. */
+        .srctag { display: inline-flex; align-items: center; gap: 7px; }
         .set-ic { vertical-align: middle; margin-right: 7px; }
         /* List settings (guard block/allow globs, custom secret patterns): chips + add input. A list row spans the full grid width. */
         .set-row.list { grid-column: 1 / -1; align-items: stretch; flex-direction: column; }
@@ -505,7 +507,7 @@
             </div>
         </div>
         <div class="useg-controls" style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-bottom:16px">
-            <label class="useg-pick"><span>Provider</span><select id="uProvider" class="modal-input"></select></label>
+            <label class="useg-pick"><span>Provider</span><span id="uProviderIcon" class="aicon" aria-hidden="true"></span><select id="uProvider" class="modal-input"></select></label>
             <label class="useg-pick" id="uAccountWrap"><span>Account</span><select id="uAccount" class="modal-input"></select></label>
         </div>
         <div class="panel" id="usagePanel" style="display:none">
@@ -616,8 +618,8 @@
             <div class="set-grid">
                 <div class="set-row">
                     <div class="set-meta"><div class="set-name">Preferred port</div><div class="set-hint" id="dashPortHint">loopback only; never network-facing</div></div>
-                    <div class="set-ctl" style="display:flex;gap:8px;align-items:center">
-                        <input id="dashPortInput" type="number" min="0" max="65535" step="1" class="choice" style="width:120px" inputmode="numeric" />
+                    <div class="set-ctl ladd" style="align-items:center">
+                        <input id="dashPortInput" type="number" min="0" max="65535" step="1" class="linput" style="flex:none;width:120px" inputmode="numeric" />
                         <button id="dashPortSave" type="button" class="toggle on">Save</button>
                     </div>
                 </div>
@@ -1644,7 +1646,7 @@ export {
         function prettyType(k) { return TYPE_LABELS[k] || String(k).replace(/\b\w/g, (c) => c.toUpperCase()); }
 
         // One bar per key (source or type), sorted by tokens saved, with an optional $ column.
-        function renderBreakdown(el, map, label, money) {
+        function renderBreakdown(el, map, label, money, iconFn) {
             const entries = Object.entries(map || {}).sort((a, b) => (b[1].tokensSaved || 0) - (a[1].tokensSaved || 0));
             if (!entries.length) {
                 el.innerHTML = '<div class="empty" style="padding:20px 0">No data yet - this fills in as compressions are recorded.</div>';
@@ -1654,7 +1656,7 @@ export {
             el.innerHTML = entries.map(([k, v]) => {
                 const saved = v.tokensSaved || 0, pct = Math.round(saved / max * 100);
                 const m = money ? '<span class="money">' + fmtUsd(moneyOf(k, saved)) + '</span>' : '';
-                return '<div class="bar-row"><span class="name" style="width:140px">' + label(k)
+                return '<div class="bar-row"><span class="name" style="width:140px">' + iconLabel(iconFn ? iconFn(k) : "", label(k))
                     + '</span><div class="bar-track"><div class="bar-fill" style="width:' + pct + '%;background:var(--accent)"></div></div>'
                     + '<span class="num">' + fmt(saved) + '</span>' + m
                     + '<span class="foot" style="width:64px;text-align:right;margin:0">' + fmt(v.calls || 0) + ' calls</span></div>';
@@ -1676,8 +1678,9 @@ export {
                 + '<th class="r">Before</th><th class="r">After</th><th class="r">Saved</th></tr></thead><tbody>'
                 + rows.map((p) => {
                     const saved = savedOf(p), pct = p.b ? Math.round(saved / p.b * 100) : 0;
+                    const src = p.s || "unknown";
                     return '<tr><td>' + new Date(p.t).toLocaleString() + '</td><td>' + prettyType(p.c || "unknown")
-                        + '</td><td>' + prettySource(p.s || "unknown") + '</td><td class="r">' + fmt(p.b || 0)
+                        + '</td><td>' + iconLabel(sourceSvg(src), prettySource(src)) + '</td><td class="r">' + fmt(p.b || 0)
                         + '</td><td class="r">' + fmt(p.a || 0) + '</td><td class="r good">' + fmt(saved) + " (" + pct + "%)</td></tr>";
                 }).join("") + "</tbody></table>";
         }
@@ -1851,10 +1854,17 @@ export {
             el.onclick = null; el.style.cursor = ""; el.title = ""; // clear any prior incident affordance
             let ind = "unknown", desc = p.label + " status unavailable";
             try {
-                const r = await fetch(p.status, { cache: "no-store" });
-                const d = await r.json();
-                ind = (d.status && d.status.indicator) || "unknown";
-                desc = (d.status && d.status.description) || "Status unknown";
+                // Prefer the same-origin server proxy: the browser's direct cross-origin fetch is
+                // unreliable in the field (blockers/MITM proxies/captive portals returned a stub
+                // 200 -> a bogus "Status unknown"). Fall back to direct if the server predates it.
+                let s = null;
+                try {
+                    const rp = await fetch("/api/provider-status?provider=" + encodeURIComponent(usageProvider), { cache: "no-store" });
+                    if (rp.ok) { const dp = await rp.json(); if (!dp.error) s = dp; }
+                } catch { /* fall through to the direct statuspage */ }
+                if (!s) { const d = await (await fetch(p.status, { cache: "no-store" })).json(); s = d.status || {}; }
+                ind = s.indicator || "unknown";
+                desc = s.description || "Status unknown";
             } catch { ind = "unknown"; }
             // Claude Code only: overlay the community incident signal. It elevates an otherwise
             // green/unknown pill to a warning; an official major/critical statuspage state wins.
@@ -1992,6 +2002,7 @@ export {
         // measurable local store; the others show an honest "no local usage" panel instead.
         function applyUsageView() {
             const p = USAGE_PROVIDERS[usageProvider] || USAGE_PROVIDERS.claude;
+            $("uProviderIcon").innerHTML = agentSvg(usageProvider);
             $("usageTitle").textContent = p.label + " Usage";
             const link = $("usageViewLink");
             link.href = p.viewHref; link.textContent = p.viewLabel + " ->";
@@ -2201,7 +2212,7 @@ export {
             $("removed").textContent = fmt(saved) + " (" + rate + "%)";
             $("reduction").textContent = before ? (100 - rate) + "% of input sent" : "-";
             $("ratio").textContent = after ? "~" + (before / after).toFixed(1) + ":1" : "-";
-            renderBreakdown($("sources"), s.bySource, prettySource, true);
+            renderBreakdown($("sources"), s.bySource, prettySource, true, sourceSvg);
             renderBreakdown($("types"), s.byType, prettyType, false);
 
             renderUsage(data.usage);
@@ -2687,6 +2698,14 @@ export {
         // App label -> internal name, so the "where deployed" tag (which carries labels) maps to icons.
         const AGENT_NAME_BY_LABEL = { "Claude Code": "claude", "OpenAI Codex": "codex", "OpenCode": "opencode" };
         const agentSvg = (name) => AGENT_ICONS[name] || "";
+
+        // Compression sources -> a brand icon. Reuses the app icons; the CLI source is enigma itself
+        // (the monochrome cube mark, recoloured to currentColor so it sits uniformly in the tables).
+        const ENIGMA_ICON = '<svg viewBox="0 0 2187.36 2500.37" fill="currentColor" aria-hidden="true"><path d="m2152.75 605.14c-2.56-1.46-5.13-2.93-8.06-4.76q-254.23-145.51-507.76-291.38-266.32-152.69-532.28-305.34l-6.23-3.66-6.59 2.56a202.53 202.53 0 0 0 -29.28 13.55q-231.73 135.63-463.1 270.89c-191.83 112.4-384.03 224.42-574.39 336.44-23.8 11-23.07 35.88-22.7 50.89 0 3.29.37 7 0 10.62q-.55 426.12-1.46 852.24l-.74 316.3c-1.46 19 7 35.15 21.24 41.74q330 187.24 660.05 375.23l389.15 221.54c8.79 5.49 17.57 8.42 25.63 8.42a29.12 29.12 0 0 0 18.3-6.23l564.47-325.13c160.35-92.26 320.7-184.88 479.94-276.4 17.94-8.05 28.56-26 26.36-42.83l1.83-1197.1c2.56-27.46-20.5-40.27-34.41-47.59m-1058.32 75.41 464.19 270.17-463.46 267.28-157.79-89.33q-155.94-88.41-311.9-176.45l469-271.64m527.52 233.57-504.1-293.24c-13.91-9.88-32.21-9.88-45.39-1.1l-510.73 295.77-463.83-262.12 323.62-189.26q336.62-197.15 673.6-393.55 309.15 178.47 618.68 355.47 188.91 108.74 377.8 217.09l-469.69 270.91m-1555.86-205.74 461.63 261.38 9.52 576.59c-1.1 17.93 7.69 34 21.6 40.27q153.19 88.38 307.19 176.45l197 113.12-.36 538.51-998.78-568.16zm525.7 297.62 471.88 266.88-.73 530.46-462.36-265.78zm534.85 870.56 197.32-113.12c101-58.21 202.45-116 304.22-174.63l2.93-1.83c5.49-3.29 12.81-7.69 17.93-15l2.93-4v-4.76c-1.09-127-1.09-256.63-.73-381.83 0-70.29.37-140.58 0-210.87l472.25-272.36-.73 464.56-1.1 678.36q-316.29 181.76-633 364.25l-362.79 209 .73-537.78m0-72.86.37-530.82 464.93-268v531.92q-232.29 132.89-465.3 266.87"/></svg>';
+        const SOURCE_ICON_KEY = { "claude-code": "claude", "claude": "claude", "claude-desktop": "claude", "opencode": "opencode", "codex": "codex", "codex-cli": "codex" };
+        function sourceSvg(k) { return k === "cli" ? ENIGMA_ICON : (AGENT_ICONS[SOURCE_ICON_KEY[k]] || ""); }
+        // Brand icon + text in one inline tag; the icon is omitted when there is none (e.g. content types).
+        function iconLabel(ic, text) { return '<span class="srctag">' + (ic ? '<span class="aicon">' + ic + '</span>' : '') + esc(text) + '</span>'; }
 
         function skillRow(s) {
             const ver = s.version ? '<span class="tag">v' + esc(s.version) + "</span>" : "";

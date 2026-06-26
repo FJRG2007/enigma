@@ -12,6 +12,7 @@ function main(argv: string[]): number {
     const paths: string[] = [];
     let json = false;
     let fix = false;
+    let strict = false;
     let categories: Category[] | undefined;
 
     for (const arg of argv) {
@@ -19,6 +20,7 @@ function main(argv: string[]): number {
             case "-h": case "--help": printHelp(); return 0;
             case "--json": json = true; break;
             case "--fix": fix = true; break;
+            case "--strict": strict = true; break;
             case "--style-only": categories = ["style"]; break;
             case "--audit-only": categories = ["audit"]; break;
             default:
@@ -37,7 +39,9 @@ function main(argv: string[]): number {
         console.log(formatReport(violations));
     }
 
-    return violations.some((v) => v.severity === "error") ? 1 : 0;
+    // Default: fail only on error-severity (URL imports, secrets). --strict also fails on
+    // warnings (the Ciphera style rules), so a changed-files gate can block style drift.
+    return violations.some((v) => v.severity === "error" || (strict && v.severity === "warning")) ? 1 : 0;
 }
 
 function printHelp(): void {
@@ -49,13 +53,15 @@ Usage:
 
 Options:
   --fix            Apply safe formatting fixes in place before reporting
+  --strict         Exit non-zero on warnings too, not just errors
   --style-only     Only run Ciphera style rules
   --audit-only     Only run security audits (e.g. hardcoded secrets)
   --json           Output violations as JSON
   -h, --help       Show this help
 
 Default path is the current directory. Exits non-zero on any error-severity
-violation (URL/CDN imports, hardcoded secrets). --fix only touches the mechanical
+violation (URL/CDN imports, hardcoded secrets); add --strict to also fail on
+warning-severity Ciphera style findings. --fix only touches the mechanical
 formatting rules (whitespace, blank lines, final newline); style and audit rules
 are reported, never rewritten.
 `);

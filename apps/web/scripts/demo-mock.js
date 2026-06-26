@@ -60,7 +60,7 @@
     var STATUS = {
         systems: {
             compress: true, outputStyle: "full", minimalCode: "full", parallelSubagents: false,
-            autoLint: true, usageStats: !!FX.usage, dashboard: "on-demand", commitEmoji: true,
+            autoLint: true, usageStats: !!FX.usage, dashboard: "always", commitEmoji: true,
             proxy: false, usageApi: false, promptSecretGuard: false, promptSecretMode: "redact", live: true,
             proxyStats: { calls: 0, input: 0, output: 0, cacheRead: 0, cacheCreation: 0, lastRequestAt: 0, redacted: 0, rejected: 0, lastBlockedAt: 0 },
             security: { permissionBypass: true, bypassDisabled: [], guardProtects: ["API keys", ".pem files", ".env files", "node_modules"] },
@@ -110,7 +110,7 @@
             },
             {
                 title: "Local dashboard", blurb: "This control panel.", settings: [
-                    setting("dashboard", "Dashboard", "Off, on-demand, or a background daemon.", { choices: ["off", "on-demand", "always"], choice: "on-demand", globalOnly: true }),
+                    setting("dashboard", "Dashboard", "Off, on-demand, or a background daemon.", { choices: ["off", "on-demand", "always"], choice: "always", globalOnly: true }),
                     setting("compress", "Context compression", "Register the compression MCP in your agents.", { value: true, globalOnly: true }),
                     setting("usage-stats", "Real tool-usage stats", "Read your own Claude Code transcripts (opt-in).", { value: false, globalOnly: true })
                 ]

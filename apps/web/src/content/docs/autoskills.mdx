@@ -1,0 +1,35 @@
+---
+title: Autoskills
+description: Detect your project's tech stack and install the matching community skills, separate from enigma's policy skills.
+group: Concepts
+order: 31
+---
+import Cmd from "../../components/Cmd.astro";
+
+`enigma autoskills` looks at the project in the current directory, figures out which technologies it uses, and installs the agent skills that match - so Claude Code (and the other agents) get React, Next.js, Astro, Prisma, FastAPI, Rails and other stack-specific guidance on top of enigma's always-on policy skills.
+
+These stack skills are kept **separate** from the policy skills: they install into the project (not user-global), are tracked in `.enigma/autoskills-lock.json`, and carry no enigma provider - so `enigma install`, sync and prune never touch them.
+
+## Usage
+
+<Cmd name="enigma autoskills [path]" ex={["enigma autoskills", "enigma autoskills --dry-run", "enigma autoskills -a claude-code"]}>
+Detect the stack in `path` (default: the current directory) and install the matching skills. `--dry-run` prints what would be installed without writing anything; `-a <agent>` limits the target agents.
+</Cmd>
+
+## How detection works
+
+enigma ships a bundled detection map (≈90 technologies and cross-tech combos) and scans for:
+
+- **Packages** - `dependencies`/`devDependencies` in `package.json`, plus `npm:`/`jsr:` imports in `deno.json`.
+- **Config files** - `next.config.*`, `astro.config.*`, `Cargo.toml`, `go.mod`, `tsconfig.json`, and many more.
+- **File content** - patterns inside `pyproject.toml`, `pom.xml`, Gradle and .NET project files (e.g. `fastapi`, `spring-boot-starter`).
+- **File types** - extensions like `.sh`, plus web frontend files for the design/accessibility/SEO bonus skills.
+- **Ruby gems** - entries in your `Gemfile`.
+
+Monorepo workspaces (npm/pnpm/deno) are scanned too, and cross-tech **combos** (e.g. Next.js + Supabase) add extra skills.
+
+## Where the skills come from
+
+Skill content is fetched on demand from a curated, security-reviewed registry. Every file is verified against a recorded SHA-256 hash (and the whole skill against a bundle hash) before it is written, and downloads are cached under `~/.enigma/autoskills` so a re-run works offline. Nothing is installed that fails the integrity check.
+
+The detection map is bundled with enigma; only the matched skill content is downloaded - and only when you run the command.

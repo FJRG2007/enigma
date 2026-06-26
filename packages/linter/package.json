@@ -1,6 +1,6 @@
 {
   "name": "@enigmax/linter",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Ciphera-style linter and security auditor for TypeScript/JavaScript, with file-hygiene, blank-line, and hardcoded-secret checks extending to Python, Rust, and Prisma, plus embedded-code extraction for Jupyter notebooks, Astro, Vue, and Svelte.",
   "type": "module",
   "bin": {

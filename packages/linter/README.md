@@ -62,7 +62,14 @@ npx @enigmax/linter --fix
 
 # machine-readable output
 npx @enigmax/linter --json
+
+# fail on warnings too (e.g. a changed-files commit/CI gate)
+npx @enigmax/linter --strict
 ```
+
+By default the CLI exits non-zero only on error-severity findings (URL/CDN imports,
+hardcoded secrets). `--strict` also fails on warning-severity Ciphera style findings,
+which is what a pre-commit or CI gate over changed files wants.
 
 `--fix` rewrites only the mechanical formatting rules - trailing whitespace, blank
 lines (collapsed, with leading/trailing removed), and the final newline. The AST

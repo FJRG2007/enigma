@@ -36,3 +36,45 @@ export async function copyText(text: string): Promise<boolean> {
     try { await navigator.clipboard.writeText(text); return true; }
     catch { return fallbackCopy(text); }
 }
+
+// ── Install command (shared by the landing hero and /start) ──────────────────────────
+
+// curl is the recommended script; npm is the preferred package manager, with pnpm/yarn/bun
+// for those who use them; npx is one-shot. Single source of truth for both pages.
+export const INSTALL_METHODS: Record<string, string> = {
+    curl: "curl -fsSL https://raw.githubusercontent.com/FJRG2007/enigma/main/scripts/install.sh | sh",
+    npm: "npm install -g enigma-cli@latest && enigma install",
+    pnpm: "pnpm add -g enigma-cli@latest && enigma install",
+    yarn: "yarn global add enigma-cli@latest && enigma install",
+    bun: "bun add -g enigma-cli@latest && enigma install",
+    npx: "npx enigma-cli@latest install --all --yes",
+};
+const INSTALL_PS = "irm https://raw.githubusercontent.com/FJRG2007/enigma/main/scripts/install.ps1 | iex";
+// The visitor's last-chosen method, so /start shows the same one they picked on the landing.
+export const INSTALL_STORE_KEY = "enigma-install-method";
+
+export function isWindows(): boolean {
+    const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
+    return /win/i.test(nav.userAgentData?.platform || navigator.platform || navigator.userAgent || "");
+}
+
+/**
+ * Resolve a method id to its command and a short label. The `curl` script has no `sh` on
+ * Windows, so it becomes the PowerShell one-liner there; package-manager methods are OS-agnostic.
+ */
+export function resolveInstall(method?: string | null): { id: string; command: string; label: string } {
+    const id = method && method in INSTALL_METHODS ? method : "curl";
+    if (id === "curl") {
+        return isWindows()
+            ? { id, command: INSTALL_PS, label: "Windows (PowerShell)" }
+            : { id, command: INSTALL_METHODS.curl, label: "macOS / Linux" };
+    }
+    return { id, command: INSTALL_METHODS[id], label: id };
+}
+
+export function savedInstallMethod(): string | null {
+    try { return localStorage.getItem(INSTALL_STORE_KEY); } catch { return null; }
+}
+export function saveInstallMethod(id: string): void {
+    try { localStorage.setItem(INSTALL_STORE_KEY, id); } catch { /* storage may be blocked */ }
+}

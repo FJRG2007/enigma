@@ -16,10 +16,12 @@
   <hr />
 </div>
 
-`enigma` installs a shared set of engineering **policy skills** into the agents you
-actually use (Claude Code, OpenAI Codex, opencode) and sets up portable **git
-security hooks** that block secrets, `.env` files, and dependency dirs from being
-committed.
+`enigma` makes your coding agent ship **more optimal, secure and scalable code** -
+in less time, fewer tokens and fewer iterations. It installs a shared set of
+**Dynamic Skills** (senior-engineering policies that adapt to each agent and to your
+config) into the agents you actually use (Claude Code, OpenAI Codex, opencode), sets
+up portable **git security hooks** that block secrets, `.env` files and dependency
+dirs from being committed, and ships a local dashboard to manage and measure it all.
 
 ![ENIGMA PREVIEW](https://raw.githubusercontent.com/FJRG2007/enigma/refs/heads/main/assets/images/dashboard.png)
 
@@ -55,9 +57,9 @@ npx enigma-cli@latest install --all --yes
 <tr>
 <td width="50%">
 
-### <img src="assets/logos/enigma-logo.svg" width="20" height="20" alt="Enigma"/> Policy skills, everywhere
+### <img src="assets/logos/enigma-logo.svg" width="20" height="20" alt="Enigma"/> Dynamic Skills, everywhere
 
-12 engineering policy skills (security, testing, git, style, debugging...) authored once and deployed to **Claude Code, OpenAI Codex and OpenCode**, sealed with content hashes so tampering is detected. Discard any skill you don't want (`enigma skills discard <name>` or the hub's SKILLS section): it is removed everywhere and skipped by installs/updates until restored.
+Engineering policy skills (security, testing, git, style, debugging...) authored once and deployed to **Claude Code, OpenAI Codex and opencode**. Unlike a static skill, these are **dynamic**: each adapts to the app that runs it, re-renders from your enigma config, loads by context (progressive disclosure), and stays current automatically - sealed with content hashes so tampering is detected. Discard any skill you don't want (`enigma skills discard <name>` or the hub's SKILLS section): it is removed everywhere and skipped by installs/updates until restored.
 
 ```bash
 npx enigma-cli@latest install --all --yes
@@ -104,13 +106,13 @@ enigma profile use work
 <tr>
 <td>
 
-### <img src="assets/logos/enigma-logo.svg" width="20" height="20" alt="Enigma"/> Privacy & productivity defaults
+### <img src="assets/logos/enigma-logo.svg" width="20" height="20" alt="Enigma"/> Auto-detect skills by stack
 
-Sensible privacy and security defaults applied at install: GitHub CLI telemetry **disabled**, Claude Code's feedback survey **off**, and the agent kept from attributing commits to itself. Tune any of it from the CLI or the interactive hub.
+`enigma autoskills` scans your project (npm/deno packages, config files, Gemfile, file types) and installs the matching community skills for your stack - React, Next.js, Astro, Prisma, FastAPI, Rails, and ~90 more - kept separate from the policy skills. Content comes from the curated, content-hash-verified registry; `--dry-run` previews first.
 
 ```bash
-enigma config gh-telemetry disabled
-enigma config claude-survey off
+enigma autoskills
+enigma autoskills --dry-run
 ```
 
 </td>

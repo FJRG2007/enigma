@@ -122,18 +122,14 @@ const description = "Install enigma, then open the dashboard with `enigma dash` 
 </style>
 
 <script>
-    import { highlightShell, copyText } from "../lib/shell";
+    import { highlightShell, copyText, resolveInstall, savedInstallMethod } from "../lib/shell";
 
     const cmdText = document.getElementById("cmdtext")!;
-    const CURL = "curl -fsSL https://raw.githubusercontent.com/FJRG2007/enigma/main/scripts/install.sh | sh";
-    const PS = "irm https://raw.githubusercontent.com/FJRG2007/enigma/main/scripts/install.ps1 | iex";
-
-    // On Windows the recommended one-liner is the PowerShell script (no `sh`).
-    const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
-    const isWindows = /win/i.test(nav.userAgentData?.platform || navigator.platform || navigator.userAgent || "");
-    const command = isWindows ? PS : CURL;
+    // Show the method the visitor picked on the landing page; fall back to the OS-appropriate
+    // script (Windows -> PowerShell, else the curl one-liner) when there's no saved choice.
+    const { command, label } = resolveInstall(savedInstallMethod());
     cmdText.innerHTML = highlightShell(command);
-    if (isWindows) document.getElementById("cmdos")!.textContent = "Windows (PowerShell)";
+    document.getElementById("cmdos")!.textContent = label;
 
     const copyBtn = document.getElementById("copy")!;
     const COPY_ICON = copyBtn.innerHTML;

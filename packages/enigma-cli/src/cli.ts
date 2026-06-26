@@ -4,7 +4,7 @@
  * disable each one. Subcommands run a single feature non-interactively.
  */
 
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFileSync } from "node:fs";
 import * as p from "@clack/prompts";
@@ -47,7 +47,7 @@ const PKG = readJson<{ version?: string }>(join(__dirname, "..", "package.json")
 // Fixed commands plus one launch command per supported tool (e.g. `enigma claude`).
 const COMMANDS = new Set<string>([
     "install", "update", "security", "guard", "seal", "check", "config", "account", "accounts",
-    "profile", "profiles", "skill", "skills", "issue", "improve", "compress", "mcp", "dashboard", "dash", "fix-path", "resources", "statusline", "help", "version",
+    "profile", "profiles", "skill", "skills", "issue", "improve", "compress", "mcp", "dashboard", "dash", "fix-path", "resources", "autoskills", "statusline", "help", "version",
     ...TOOL_NAMES,
 ]);
 
@@ -189,6 +189,8 @@ Commands:
                        repair its launch command so 'enigma <tool>' works; no tool fixes all
   resources [action]   System cleanup: status, or wsl | docker | free-port PORT | kill PID
                        (shut down WSL/vmmemWSL, quit Docker, free a port, kill a process)
+  autoskills [path]    Detect the project's tech stack and install matching agent skills
+                       (separate from the policy skills; --dry-run to preview)
   seal                 Maintenance: (re)compute skill content hashes
   check                Integrity gate: verify skills are well-formed and sealed
   statusline           Print the [ENIGMA] badge for an agent status bar (shows the active level)
@@ -411,6 +413,44 @@ async function runResourcesCli(args: string[]): Promise<number> {
     if (!r) { console.error(`Unknown subcommand '${sub}'. Use: enigma resources <wsl | docker | free-port PORT | kill PID>`); return 1; }
     console.log(r.message);
     return r.ok ? 0 : 1;
+}
+
+/**
+ * `enigma autoskills [path]`: detect the project's tech stack and install the matching
+ * agent skills (separate from enigma's own policy skills). `--dry-run` only reports.
+ */
+async function runAutoskillsCli(opts: CliOptions, interactive: boolean): Promise<number> {
+    const { detectTechnologies, collectSkills, detectAgents } = await import("./autoskills");
+    const projectDir = resolve(opts.positionals[0] ?? process.cwd());
+    const result = detectTechnologies(projectDir);
+
+    if (result.detected.length === 0 && !result.isFrontend) {
+        console.log("No supported technologies detected. Run this inside a project directory.");
+        return 0;
+    }
+
+    const withSkills = result.detected.filter((t) => t.skills.length > 0).map((t) => t.name);
+    const withoutSkills = result.detected.filter((t) => t.skills.length === 0).map((t) => t.name);
+    console.log(`Detected: ${[...withSkills, ...withoutSkills].join(", ") || "(web frontend)"}`);
+    if (result.combos.length) console.log(`Combos:   ${result.combos.map((c) => c.name).join(", ")}`);
+    if (result.isFrontend) console.log("Frontend: yes (adds design/accessibility/SEO skills)");
+
+    const skills = collectSkills(result);
+    if (skills.length === 0) {
+        console.log("\nNo skills available for this stack yet.");
+        return 0;
+    }
+    console.log(`\nSkills to install (${skills.length}):`);
+    for (const s of skills) console.log(`  - ${s.skill}   ${s.sources.length ? `(${s.sources.join(", ")})` : ""}`.trimEnd());
+
+    if (opts.dryRun) { console.log("\n--dry-run: nothing was installed."); return 0; }
+
+    const agents = opts.agents.length ? opts.agents : detectAgents();
+    const { installStackSkills } = await import("./autoskills-install");
+    const res = await installStackSkills(skills, projectDir, agents, { yes: opts.yes, interactive });
+    console.log(`\n${res.installed} installed, ${res.skipped} skipped, ${res.failed} failed (agents: ${res.agents.join(", ")}).`);
+    if (res.errors.length) for (const e of res.errors) console.error(`  ! ${e}`);
+    return res.failed > 0 ? 1 : 0;
 }
 
 /**
@@ -791,6 +831,7 @@ export async function run(argv: string[]): Promise<void> {
     if (opts.command === "dashboard") { process.exit(await runDashboardCli(version)); }
     if (opts.command === "fix-path") { process.exit(runFixPathCli(opts.positionals[0], opts.scope)); }
     if (opts.command === "resources") { process.exit(await runResourcesCli(opts.positionals)); }
+    if (opts.command === "autoskills") { process.exit(await runAutoskillsCli(opts, interactive)); }
 
     if (opts.command === "update") {
         p.intro("enigma - update");

@@ -76,6 +76,26 @@ const { serializeSettings } = await importTs("packages/enigma-cli/src/dashboard-
 const usage = buildUsage();
 const settings = serializeSettings("global");
 
+// The registry is read at a clean HOME, so a few values reflect the PRE-enigma state instead
+// of what enigma actually applies. Override them to the real enigma defaults / a representative
+// demo state (the install-time effects the generator does not run):
+//  - claude-attribution / claude-survey: enigma turns these OFF at install (privacy defaults).
+//  - bypass-*: permission-bypass is on by default, so every supported agent is bypassed.
+//  - dashboard: show it running ("always") so the preview demonstrates the live dashboard.
+const DEMO_OVERRIDES = {
+    "claude-attribution": { value: false },
+    "claude-survey": { value: false },
+    "bypass-claude": { value: true },
+    "bypass-codex": { value: true },
+    "bypass-opencode": { value: true },
+    "dashboard": { value: true, choice: "always" },
+};
+for (const cat of settings) {
+    for (const s of cat.settings) {
+        if (DEMO_OVERRIDES[s.key]) Object.assign(s, DEMO_OVERRIDES[s.key]);
+    }
+}
+
 writeFileSync(join(here, "demo-usage.json"), JSON.stringify(usage));
 writeFileSync(join(here, "demo-settings.json"), JSON.stringify(settings));
 

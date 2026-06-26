@@ -150,6 +150,16 @@ test("reads every Claude account (default + managed) and reports provider covera
         expect(r.byAccount.work.output).toBe(22);
         expect(r.byAccount.default.output).toBeGreaterThan(0);
         expect(r.recentSessions.some((s) => s.account === "work")).toBe(true);
+
+        // Per-account drill-down: each login gets a self-contained sub-report scoped to its
+        // own transcripts (totals, models, sessions), not the global figures.
+        expect(Object.keys(r.accounts).sort()).toEqual(["default", "work"]);
+        expect(r.accounts.work.output).toBe(22);
+        expect(r.accounts.work.input).toBe(11);
+        expect(r.accounts.work.byModel["claude-opus-4-8"].output).toBe(22);
+        expect(r.accounts.work.recentSessions.every((s) => s.account === "work")).toBe(true);
+        // The work account alone is far smaller than the global total.
+        expect(r.accounts.work.output).toBeLessThan(r.output);
         const claude = r.providers.find((p) => p.tool === "claude")!;
         const codex = r.providers.find((p) => p.tool === "codex")!;
         expect(claude.available).toBe(true);

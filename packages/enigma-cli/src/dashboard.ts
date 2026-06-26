@@ -363,6 +363,34 @@ function writeResources(req: import("node:http").IncomingMessage, res: import("n
     });
 }
 
+// Provider statuspages (Atlassian Statuspage shape). Proxied SERVER-SIDE because the browser's
+// cross-origin fetch is unreliable in the field (privacy/tracker blockers, corporate MITM proxies
+// and captive portals can return a stub 200, which surfaced as a bogus "Status unknown" pill);
+// the loopback server reaches the endpoint cleanly. opencode has no public statuspage.
+const PROVIDER_STATUS_URLS: Record<string, string> = {
+    claude: "https://status.claude.com/api/v2/status.json",
+    codex: "https://status.openai.com/api/v2/status.json",
+};
+
+/** Same-origin proxy for a provider's statuspage: returns { indicator, description } or { error }. */
+async function serveProviderStatus(req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse): Promise<void> {
+    res.writeHead(200, JSON_HDR);
+    const provider = new URL(req.url || "/", "http://x").searchParams.get("provider") || "claude";
+    const target = PROVIDER_STATUS_URLS[provider];
+    if (!target) { res.end('{"error":"unsupported"}'); return; }
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 8000);
+    try {
+        const r = await fetch(target, { signal: ctrl.signal, headers: { "User-Agent": "enigma-dashboard", Accept: "application/json" } });
+        const d = (await r.json()) as { status?: { indicator?: string; description?: string } };
+        res.end(JSON.stringify({ indicator: d?.status?.indicator || "unknown", description: d?.status?.description || "Status unknown" }));
+    } catch {
+        res.end('{"error":"unreachable"}');
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
 /** Factual "what's active" overview (configured state of each enigma system + skill counts). */
 function serveStatus(res: import("node:http").ServerResponse): void {
     import("./dashboard-status")
@@ -540,6 +568,7 @@ function createDashboardServer(version: string): Server {
             return;
         }
         if (url === "/api/status") { serveStatus(res); return; }
+        if (url === "/api/provider-status") { void serveProviderStatus(req, res); return; }
         if (url === "/health") {
             res.writeHead(200, { "Content-Type": "application/json" });
             res.end(JSON.stringify({ status: "ok", version }));

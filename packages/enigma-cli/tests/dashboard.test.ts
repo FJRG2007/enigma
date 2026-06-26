@@ -163,6 +163,19 @@ test("status API reports the configured state of each system", async () => {
     }
 });
 
+test("provider-status proxy rejects a provider with no statuspage", async () => {
+    const server = await startDashboardServer("test-version");
+    const base = `http://127.0.0.1:${server.port}`;
+    try {
+        // opencode has no public statuspage -> deterministic, no network involved.
+        const res = await fetch(`${base}/api/provider-status?provider=opencode`);
+        expect(res.status).toBe(200);
+        expect(await res.json()).toEqual({ error: "unsupported" });
+    } finally {
+        server.close();
+    }
+});
+
 test("skills API lists enigma skills and disable/enable round-trips", async () => {
     const server = await startDashboardServer("test-version");
     const base = `http://127.0.0.1:${server.port}`;

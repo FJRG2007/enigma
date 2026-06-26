@@ -24,10 +24,10 @@
 
 import { homedir } from "node:os";
 import { join, sep } from "node:path";
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { readConfig } from "./config";
 import { readProxyLimits } from "./proxy";
 import { maybeProbeUsage } from "./claude-usage-api";
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 
 /** Per-model price in USD per MILLION tokens. Ported from references/repos/claude-usage. */
 export interface ModelPrice { input: number; output: number; cacheRead: number; cacheWrite: number; }
@@ -120,6 +120,22 @@ export interface UsageWindow {
 
 export interface UsageWindows { session: UsageWindow; weeklyAll: UsageWindow; weeklyOpus: UsageWindow; weeklySonnet: UsageWindow; }
 
+/**
+ * One account's drill-down usage: the same panel the dashboard shows for the whole report,
+ * scoped to a single Claude login. The windows here are transcript ESTIMATES only - the
+ * live rate-limit overlay (from the proxy) is global to whichever account ran `enigma claude`,
+ * so attributing it to one specific account would be misleading.
+ */
+export interface AccountUsage extends UsageBucket {
+    byModel: Record<string, UsageBucket>;
+    byProject: Record<string, UsageBucket>;
+    recentSessions: SessionRow[];
+    block: UsageBlock | null;
+    windows: UsageWindows;
+    sessions: number;
+    scannedFiles: number;
+}
+
 /** The current Claude billing-style 5-hour block, computed locally from transcript timestamps. */
 export interface UsageBlock {
     /** True while now < endsAt (the window is still open). */
@@ -149,6 +165,8 @@ export interface UsageReport extends UsageBucket {
     byProject: Record<string, UsageBucket>;
     /** Per-Claude-account totals ("default" + each managed account), so multiple logins are distinguished. */
     byAccount: Record<string, UsageBucket>;
+    /** Per-account drill-down sub-reports, so the dashboard can show one Claude login at a time. */
+    accounts: Record<string, AccountUsage>;
     /** Which coding tools enigma can read local usage for, and the honest status of each. */
     providers: ProviderCoverage[];
     /** Per-UTC-hour-of-day totals, keyed "00".."23" (an average-day distribution). */
@@ -258,7 +276,7 @@ function emptyWindows(): UsageWindows {
 }
 
 function emptyReport(): UsageReport {
-    return { ...emptyBucket(), byDay: {}, byModel: {}, byProject: {}, byAccount: {}, providers: providerCoverage(0), byHour: {}, recentSessions: [], block: null, windows: emptyWindows(), sessions: 0, scannedFiles: 0, generatedAt: Date.now() };
+    return { ...emptyBucket(), byDay: {}, byModel: {}, byProject: {}, byAccount: {}, accounts: {}, providers: providerCoverage(0), byHour: {}, recentSessions: [], block: null, windows: emptyWindows(), sessions: 0, scannedFiles: 0, generatedAt: Date.now() };
 }
 
 /** Add `b` into `a` in place. */
@@ -418,8 +436,12 @@ function weeklyAnchor(spec: string, now: number): { startDay: string; nextMs: nu
     return { startDay, nextMs: next.getTime() };
 }
 
-/** Build the Claude-style usage gauges from the per-day-family map, the block and the config. */
-function computeWindows(byDayModel: Record<string, Record<string, UsageBucket>>, block: UsageBlock | null, now: number): UsageWindows {
+/**
+ * Build the Claude-style usage gauges from the per-day-family map, the block and the config.
+ * `live` overlays Anthropic's real rate-limit windows (proxy-captured) for the whole-report
+ * gauges; per-account gauges pass live=false (the captured limits are not account-specific).
+ */
+function computeWindows(byDayModel: Record<string, Record<string, UsageBucket>>, block: UsageBlock | null, now: number, live = true): UsageWindows {
     const cfg = readConfig().config;
     const pctOf = (used: number, limit: number): number | null => limit > 0 ? Math.min(100, used / limit * 100) : null;
     const session: UsageWindow = {
@@ -452,7 +474,7 @@ function computeWindows(byDayModel: Record<string, Record<string, UsageBucket>>,
     // Overlay Anthropic's REAL rate-limit windows when the proxy has captured them - the
     // exact %/reset Claude's own UI shows, so the bars appear without a manual plan limit.
     // utilization is a 0..1 fraction; a passed reset means the window has rolled over (0%).
-    const lim = readProxyLimits();
+    const lim = live ? readProxyLimits() : null;
     if (lim) {
         const apply = (w: UsageWindow, src: { utilization: number; resetsAt: number } | null): void => {
             if (!src) return;
@@ -470,6 +492,55 @@ function computeWindows(byDayModel: Record<string, Record<string, UsageBucket>>,
 }
 
 /**
+ * Mutable accumulator for one scope (the whole report, or a single account). Holds the raw
+ * folds; computeBlock/computeWindows/recentSessions are derived from it at finalize time.
+ */
+interface Accum {
+    total: UsageBucket;
+    byDay: Record<string, UsageBucket>;
+    byModel: Record<string, UsageBucket>;
+    byProject: Record<string, UsageBucket>;
+    byHour: Record<string, UsageBucket>;
+    byDayModel: Record<string, Record<string, UsageBucket>>;
+    blockEvents: UsageEvent[];
+    sessionRows: SessionRow[];
+    sessions: number;
+    scannedFiles: number;
+}
+
+function newAccum(): Accum {
+    return { total: emptyBucket(), byDay: {}, byModel: {}, byProject: {}, byHour: {}, byDayModel: {}, blockEvents: [], sessionRows: [], sessions: 0, scannedFiles: 0 };
+}
+
+/** Fold one already-aggregated file into a scope accumulator (global or per-account). */
+function foldFile(acc: Accum, agg: FileAgg, path: string, root: string, account: string, now: number): void {
+    for (const [day, b] of Object.entries(agg.byDay)) { foldInto(acc.byDay, day, b); foldBucket(acc.total, b); }
+    for (const [model, b] of Object.entries(agg.byModel)) foldInto(acc.byModel, model, b);
+    for (const [hour, b] of Object.entries(agg.byHour)) foldInto(acc.byHour, hour, b);
+    for (const [day, fams] of Object.entries(agg.byDayModel)) for (const [fam, b] of Object.entries(fams)) foldInto((acc.byDayModel[day] ??= {}), fam, b);
+    foldInto(acc.byProject, projectOf(path, root), agg.total);
+    acc.scannedFiles++;
+    if (agg.sessionFile) {
+        acc.sessions++;
+        if (agg.total.messages > 0) acc.sessionRows.push({
+            id: path.split(/[\\/]/).pop()!.replace(/\.jsonl$/, ""),
+            account,
+            project: projectOf(path, root),
+            lastActive: agg.lastActive,
+            model: topModel(agg.byModel),
+            ...agg.total,
+        });
+    }
+    // Only recently-modified files can hold events inside the current 5h window.
+    if (agg.mtime > now - FIVE_HOURS_MS - 60 * 60 * 1000) acc.blockEvents.push(...agg.events);
+}
+
+/** The newest session rows for a scope (does not mutate the accumulator). */
+function recentOf(acc: Accum): SessionRow[] {
+    return acc.sessionRows.slice().sort((a, b) => b.lastActive - a.lastActive).slice(0, RECENT_SESSIONS);
+}
+
+/**
  * Build the usage report from scratch (re-reading only files whose mtime/size changed
  * since the last build). Synchronous and potentially heavy on a cold cache; callers run
  * it off the request path via readUsageCached.
@@ -481,13 +552,13 @@ export function buildUsage(): UsageReport {
     const sources = claudeSources();
     const prev = readCache();
     const next: Record<string, FileAgg> = {};
-    const report = emptyReport();
     const now = Date.now();
-    const blockEvents: UsageEvent[] = [];
-    const sessionRows: SessionRow[] = [];
-    const byDayModel: Record<string, Record<string, UsageBucket>> = {};
+    const global = newAccum();
+    const perAccount = new Map<string, Accum>();
     for (const src of sources) {
         const root = src.dir + sep;
+        let acct = perAccount.get(src.account);
+        if (!acct) { acct = newAccum(); perAccount.set(src.account, acct); }
         for (const path of listJsonl(src.dir)) {
             let st: import("node:fs").Stats;
             try { st = statSync(path); } catch { continue; }
@@ -497,34 +568,41 @@ export function buildUsage(): UsageReport {
                 ? hit
                 : { mtime: st.mtimeMs, size: st.size, sessionFile, ...aggregateFile(path) };
             next[path] = agg;
-            for (const [day, b] of Object.entries(agg.byDay)) { foldInto(report.byDay, day, b); foldBucket(report, b); }
-            for (const [model, b] of Object.entries(agg.byModel)) foldInto(report.byModel, model, b);
-            for (const [hour, b] of Object.entries(agg.byHour)) foldInto(report.byHour, hour, b);
-            for (const [day, fams] of Object.entries(agg.byDayModel)) for (const [fam, b] of Object.entries(fams)) foldInto((byDayModel[day] ??= {}), fam, b);
-            foldInto(report.byProject, projectOf(path, root), agg.total);
-            foldInto(report.byAccount, src.account, agg.total);
-            report.scannedFiles++;
-            if (agg.sessionFile) {
-                report.sessions++;
-                if (agg.total.messages > 0) sessionRows.push({
-                    id: path.split(/[\\/]/).pop()!.replace(/\.jsonl$/, ""),
-                    account: src.account,
-                    project: projectOf(path, root),
-                    lastActive: agg.lastActive,
-                    model: topModel(agg.byModel),
-                    ...agg.total,
-                });
-            }
-            // Only recently-modified files can hold events inside the current 5h window.
-            if (st.mtimeMs > now - FIVE_HOURS_MS - 60 * 60 * 1000) blockEvents.push(...agg.events);
+            foldFile(global, agg, path, root, src.account, now);
+            foldFile(acct, agg, path, root, src.account, now);
         }
     }
-    report.providers = providerCoverage(Object.keys(report.byAccount).length);
     writeCache(next);
-    sessionRows.sort((a, b) => b.lastActive - a.lastActive);
-    report.recentSessions = sessionRows.slice(0, RECENT_SESSIONS);
-    report.block = computeBlock(blockEvents, now);
-    report.windows = computeWindows(byDayModel, report.block, now);
+
+    const report = emptyReport();
+    foldBucket(report, global.total);
+    report.byDay = global.byDay;
+    report.byModel = global.byModel;
+    report.byProject = global.byProject;
+    report.byHour = global.byHour;
+    report.sessions = global.sessions;
+    report.scannedFiles = global.scannedFiles;
+    report.block = computeBlock(global.blockEvents, now);
+    report.windows = computeWindows(global.byDayModel, report.block, now, true);
+    report.recentSessions = recentOf(global);
+
+    // Per-account drill-down: totals (byAccount, kept for the existing table/tests) plus a
+    // self-contained sub-report so the dashboard can scope the panel to one login.
+    for (const [name, acc] of perAccount) {
+        report.byAccount[name] = { ...acc.total };
+        const block = computeBlock(acc.blockEvents, now);
+        report.accounts[name] = {
+            ...acc.total,
+            byModel: acc.byModel,
+            byProject: acc.byProject,
+            recentSessions: recentOf(acc),
+            block,
+            windows: computeWindows(acc.byDayModel, block, now, false),
+            sessions: acc.sessions,
+            scannedFiles: acc.scannedFiles,
+        };
+    }
+    report.providers = providerCoverage(perAccount.size);
     report.generatedAt = now;
     return report;
 }

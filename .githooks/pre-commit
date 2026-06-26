@@ -1,4 +1,13 @@
 #!/bin/sh
-# Managed by enigma (enigma-cli) - blocks committed secrets, .env files, and dependency dirs.
-# Toggle protections in .githooks/enigma-guard.json. Bypass once: git commit --no-verify
-exec node "$(git rev-parse --show-toplevel)/.githooks/guard.mjs" "$@"
+# This repo's pre-commit gate (two deterministic layers - they catch what the
+# Ciphera/security skills only persuade the agent to do):
+#   1. enigma guard - blocks committed secrets, .env files, and dependency dirs.
+#      Toggle protections in .githooks/enigma-guard.json.
+#   2. Ciphera-style lint on the ADDED/MODIFIED lines of staged files (a ratchet):
+#      new or edited lines must be clean; a file's pre-existing warnings do not block.
+# Bypass once (both layers): git commit --no-verify
+root="$(git rev-parse --show-toplevel)"
+
+node "$root/.githooks/guard.mjs" "$@" || exit 1
+
+npm --prefix "$root" run -s lint:changed -- --staged || exit 1

@@ -1,6 +1,6 @@
 {
   "generator": "enigma seal",
-  "cliVersion": "1.21.0",
+  "cliVersion": "1.21.1",
   "count": 18,
   "skills": [
     {
@@ -29,11 +29,11 @@
     },
     {
       "name": "ciphera-style-policy",
-      "version": "1.1.1",
+      "version": "1.1.2",
       "description": "Ciphera code style conventions (formatting, naming, imports, comments, code-level anti-patterns; TypeScript-first, language-agnostic).",
       "provider": "FJRG2007/enigma",
       "updated": "2026-06-01T08:05:40-04:00",
-      "sha": "74f638aec13e8c93257fe1ad604c28b07e9a7c456796a4ceefcc99217d9e7039"
+      "sha": "dc9ceb784004b05a0117c464e4bed05946835a04acea282586c0b735ee7c2284"
     },
     {
       "name": "code-review-policy",
@@ -144,7 +144,7 @@
       "version": "1.1.0",
       "description": "Strict frontend + backend schema validation, schema consistency, and safe client-facing error handling.",
       "provider": "FJRG2007/enigma",
-      "updated": "2026-06-01T00:45:28+02:00",
+      "updated": "2026-06-25T18:21:50-04:00",
       "sha": "50349f5b3c55cc337f828dd510c163550614832acb28714871210a7c115a1501"
     }
   ]

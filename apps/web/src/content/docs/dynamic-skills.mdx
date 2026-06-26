@@ -1,0 +1,36 @@
+---
+title: Dynamic Skills
+description: Why enigma's skills are dynamic - they adapt to the app that runs them, to your configuration, and to the task at hand, instead of being one fixed file.
+group: Concepts
+order: 30
+---
+
+A normal agent skill is **static**: one Markdown file, dropped into one tool, identical for everyone, changed only by editing the file. enigma's policy skills are **dynamic** - the same source adapts to where it runs, to how you've configured enigma, and to what you're doing.
+
+## Static vs dynamic
+
+| | Static skill | Dynamic skill (enigma) |
+|---|---|---|
+| Targets | One tool, by hand | Claude Code, Codex and opencode from one source |
+| Per-app control | None | On/off per app |
+| Reacts to your settings | No | Re-rendered from your enigma config |
+| Loaded | Always, in full | By context (progressive disclosure) |
+| Kept current | Manual re-copy | Auto-synced + updated from the repo |
+
+## Adapts to the app
+
+A skill is authored once and deployed into each agent in **that agent's own format and location** - Claude Code, Codex and opencode each read skills and memory differently, and enigma handles the translation. You can keep a skill on for one app and off for another (`enigma skills disable testing-policy opencode`), and managed accounts inherit the right deployment automatically.
+
+## Adapts to your configuration
+
+This is what makes them dynamic rather than just portable. The instructions enigma deploys are **re-rendered from your settings**, not copied verbatim. Turn on token-efficient output, change the minimal-code intensity, toggle commit-message emoji or parallel sub-agents - and the next sync rewrites the deployed memory and policy so the agent follows *your* chosen behavior. Change a setting, relaunch, and the guidance changes with it.
+
+## Loads by context
+
+Only each skill's name and one-line description sit in the agent's context at all times. The full skill body loads **when the task matches** - via progressive disclosure - so a security task pulls in the security policy and a commit pulls in the git policy, without paying the token cost of every skill on every turn.
+
+## Stays current
+
+Launching a tool through enigma (e.g. `enigma claude`) auto-syncs the deployed skills and memory to the latest version, and skills update straight from the repo between releases - every update verified by content hash. You install once; they keep themselves current.
+
+See [Configuration](/enigma/docs/configuration/) for the settings that drive the re-rendering, and [Commands](/enigma/docs/commands/) for `enigma skills` and `enigma install`.
