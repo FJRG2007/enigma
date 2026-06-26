@@ -32,7 +32,7 @@
       "version": "1.1.2",
       "description": "Ciphera code style conventions (formatting, naming, imports, comments, code-level anti-patterns; TypeScript-first, language-agnostic).",
       "provider": "FJRG2007/enigma",
-      "updated": "2026-06-01T08:05:40-04:00",
+      "updated": "2026-06-26T13:40:52+02:00",
       "sha": "dc9ceb784004b05a0117c464e4bed05946835a04acea282586c0b735ee7c2284"
     },
     {
@@ -85,11 +85,11 @@
     },
     {
       "name": "frontend-policy",
-      "version": "1.3.0",
+      "version": "1.4.0",
       "description": "Frontend architecture: reusable components, abstraction thresholds, state management, no-op save detection, large-list rendering (infinite scroll/pagination, virtualization, skeletons, progressive loading), and optimistic UI with rollback.",
       "provider": "FJRG2007/enigma",
       "updated": "2026-06-16T12:06:06+02:00",
-      "sha": "26962db5a8b607e95098a6d88977aee59a10bd14e03afe97245f2b013fd21a9a"
+      "sha": "41cb938c9022efcdadc3056417cc7d442511adee40b09a141f11bb5fd9d56514"
     },
     {
       "name": "git-policy",

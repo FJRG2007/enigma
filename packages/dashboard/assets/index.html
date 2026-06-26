@@ -354,6 +354,19 @@
         /* Usage view provider/account pickers. */
         .useg-pick { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
         .useg-pick select { width: auto; min-width: 170px; }
+        /* Icon dropdown: a native <select> can't render icons in its <option>s, so the provider
+           picker is a custom listbox - the logo shows on the button AND inside every option. */
+        .dd { position: relative; }
+        .dd-btn { display: inline-flex; align-items: center; gap: 8px; min-width: 170px; background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 6px 10px; font-size: 12px; font-family: var(--mono); cursor: pointer; }
+        .dd-btn:hover { border-color: #2f3744; }
+        .dd-btn .dd-label { flex: 1; text-align: left; }
+        .dd-btn .dd-caret { width: 13px; height: 13px; flex: 0 0 auto; color: var(--muted); }
+        .dd-ic { display: inline-flex; align-items: center; }
+        .dd-ic svg { width: 14px; height: 14px; display: block; }
+        .dd-menu { position: absolute; top: calc(100% + 4px); left: 0; min-width: 100%; margin: 0; padding: 4px; list-style: none; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: var(--shadow-2); z-index: 50; }
+        .dd-opt { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; font-size: 12px; color: var(--text); white-space: nowrap; cursor: pointer; }
+        .dd-opt:hover, .dd-opt:focus { background: var(--surface2); outline: none; }
+        .dd-opt.sel { color: var(--accent); }
         /* Icon picker: clickable app cards (a native <select> can't render SVG in options). */
         .modal-picker { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
         .pick-card {
@@ -507,7 +520,12 @@
             </div>
         </div>
         <div class="useg-controls" style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-bottom:16px">
-            <label class="useg-pick"><span>Provider</span><span id="uProviderIcon" class="aicon" aria-hidden="true"></span><select id="uProvider" class="modal-input"></select></label>
+            <div class="useg-pick"><span>Provider</span>
+                <div class="dd" id="uProviderDD">
+                    <button type="button" class="dd-btn" aria-haspopup="listbox" aria-expanded="false"><span class="dd-ic"></span><span class="dd-label"></span><svg class="dd-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
+                    <ul class="dd-menu" role="listbox" aria-label="Provider" hidden></ul>
+                </div>
+            </div>
             <label class="useg-pick" id="uAccountWrap"><span>Account</span><select id="uAccount" class="modal-input"></select></label>
         </div>
         <div class="panel" id="usagePanel" style="display:none">
@@ -1886,12 +1904,44 @@ export {
             try { await fetch("/api/plan", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key, value: Number(value) }) }); refreshAll(true); }
             catch { /* leave as-is */ }
         }
+        // Accessible icon dropdown (a native <select> can't render icons in its <option>s). The
+        // button shows the selected entry's icon + label; the listbox shows every entry with its
+        // icon. entries: [{ value, label, icon }]; getVal()/onPick(value) bind it to state.
+        function iconDropdown(rootId, entries, getVal, onPick) {
+            const root = $(rootId), btn = root.querySelector(".dd-btn"), menu = root.querySelector(".dd-menu");
+            const btnIc = btn.querySelector(".dd-ic"), btnLabel = btn.querySelector(".dd-label");
+            const opts = () => [...menu.querySelectorAll(".dd-opt")];
+            const render = () => {
+                const cur = getVal(), e = entries.find((x) => x.value === cur) || entries[0];
+                btnIc.innerHTML = e.icon || ""; btnLabel.textContent = e.label;
+                menu.innerHTML = entries.map((x) => '<li class="dd-opt' + (x.value === cur ? " sel" : "")
+                    + '" role="option" tabindex="-1" data-val="' + esc(x.value) + '" aria-selected="' + (x.value === cur)
+                    + '"><span class="dd-ic">' + (x.icon || "") + "</span><span>" + esc(x.label) + "</span></li>").join("");
+            };
+            const close = () => { menu.hidden = true; btn.setAttribute("aria-expanded", "false"); };
+            const open = () => { menu.hidden = false; btn.setAttribute("aria-expanded", "true"); (menu.querySelector(".sel") || opts()[0]) && (menu.querySelector(".sel") || opts()[0]).focus(); };
+            const pick = (li) => { close(); btn.focus(); if (li && li.dataset.val) onPick(li.dataset.val); };
+            btn.addEventListener("click", (e) => { e.stopPropagation(); menu.hidden ? open() : close(); });
+            btn.addEventListener("keydown", (e) => { if (e.key === "ArrowDown" || e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } });
+            menu.addEventListener("click", (e) => pick(e.target.closest(".dd-opt")));
+            menu.addEventListener("keydown", (e) => {
+                const list = opts(), i = list.indexOf(document.activeElement);
+                if (e.key === "Escape") { e.preventDefault(); close(); btn.focus(); }
+                else if (e.key === "ArrowDown") { e.preventDefault(); (list[i + 1] || list[0]).focus(); }
+                else if (e.key === "ArrowUp") { e.preventDefault(); (list[i - 1] || list[list.length - 1]).focus(); }
+                else if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(document.activeElement); }
+            });
+            document.addEventListener("click", close);
+            render();
+            return { render };
+        }
+        let providerDD = null;
         function wireUsage() {
-            // Provider + account selectors drive a client-side re-render from the cached report.
-            const ps = $("uProvider");
-            ps.innerHTML = Object.entries(USAGE_PROVIDERS).map(([k, v]) => '<option value="' + k + '">' + esc(v.label) + "</option>").join("");
-            ps.value = usageProvider;
-            ps.addEventListener("change", () => { usageProvider = ps.value; usageAccount = "__all__"; applyUsageView(); loadProviderStatus(); });
+            // The provider picker is a custom icon dropdown; the account one stays a native select.
+            providerDD = iconDropdown("uProviderDD",
+                Object.entries(USAGE_PROVIDERS).map(([k, v]) => ({ value: k, label: v.label, icon: agentSvg(k) })),
+                () => usageProvider,
+                (val) => { if (val === usageProvider) return; usageProvider = val; usageAccount = "__all__"; applyUsageView(); loadProviderStatus(); });
             $("uAccount").addEventListener("change", () => { usageAccount = $("uAccount").value; applyUsageView(); });
             const el = $("uWindows");
             el.addEventListener("click", (e) => {
@@ -2002,7 +2052,7 @@ export {
         // measurable local store; the others show an honest "no local usage" panel instead.
         function applyUsageView() {
             const p = USAGE_PROVIDERS[usageProvider] || USAGE_PROVIDERS.claude;
-            $("uProviderIcon").innerHTML = agentSvg(usageProvider);
+            if (providerDD) providerDD.render();
             $("usageTitle").textContent = p.label + " Usage";
             const link = $("usageViewLink");
             link.href = p.viewHref; link.textContent = p.viewLabel + " ->";

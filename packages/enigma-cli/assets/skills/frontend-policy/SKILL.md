@@ -44,6 +44,12 @@ description: Frontend architecture - reusable components, abstraction thresholds
 - Apply the same rule to every primitive (Modal, Card, Select, Badge, ...): one component, configurable behavior.
 - This keeps the design system small, consistent, and scalable: a change to the primitive propagates everywhere automatically.
 
+### Select with icons / rich options
+
+- A native HTML `<select>`/`<option>` renders option content as PLAIN TEXT only: it cannot show an icon, image, or any markup inside an option. Putting an icon next to the `<select>` is not the same as an icon inside each option.
+- When options need per-option icons/logos or rich content, build a custom accessible dropdown: a trigger button (showing the selected option's icon + label) plus a popup `role="listbox"` of `role="option"` items, each carrying its icon. Keep full keyboard support (Up/Down to move, Enter/Space to choose, Escape to close, focus returns to the trigger) and close on outside click - the keyboard/ARIA behavior is the part a native select gives you for free and must be re-implemented.
+- Make it ONE reusable component driven by an options array (`{ value, label, icon }`) plus value/onChange, not a bespoke dropdown per use. The experimental customizable `<select>` (`appearance: base-select`) is not yet cross-browser, so do not rely on it.
+
 ---
 
 ## Frontend Abstraction Threshold
