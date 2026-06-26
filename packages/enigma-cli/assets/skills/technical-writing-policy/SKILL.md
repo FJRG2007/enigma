@@ -37,6 +37,12 @@ microcopy - the reader shouldn't have to study it.
    order to". Plain verbs and concrete nouns instead.
 5. **Restating the heading.** A panel titled "Accounts" whose intro begins "Manage your
    accounts" wastes the first line. Add information the title does not already carry.
+6. **Over-explaining a feature.** A feature card or list item sells the outcome in one or
+   two lines, then stops. Cut the mechanism, config internals, every flag, and the edge
+   cases out of the pitch - lead with what the reader gets, name the command or show the
+   one example that proves it, and leave the rest for the docs. A landing/README feature
+   list whose job is to make the reader *want* it still obeys this: punchy beats thorough.
+   Three padded sentences hide the hook that one tight sentence would land.
 
 ## Rules
 
@@ -45,7 +51,9 @@ microcopy - the reader shouldn't have to study it.
 - Be specific over clever: "Resets Monday 11:00" beats "Resets soon".
 - Match length to the slot: a setting hint is one line; a panel/page intro is one sentence
   of orientation plus, only if needed, one of consequence (a caveat, a default, a cost).
-  An empty state is one line that invites the next action.
+  An empty state is one line that invites the next action. A feature card leads with the
+  benefit in the first clause, runs one or two sentences, and lets the command or example
+  carry the proof - never a how-it-works paragraph.
 - Active voice, present tense, sentence case. The control names the exact action ("Save
   changes", not "Submit"); the same verb survives the whole flow (Publish -> "Published").
 - Errors say what went wrong and how to fix it, in the interface's voice - never vague,

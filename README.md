@@ -9,19 +9,21 @@
   <br />
   <a href="https://fjrg2007.github.io/enigma/">Website</a>
   <span>&nbsp;&nbsp;•&nbsp;&nbsp;</span>
-  <a href="#">Quickstart</a>
+  <a href="#install">Quickstart</a>
+  <span>&nbsp;&nbsp;•&nbsp;&nbsp;</span>
+  <a href="https://fjrg2007.github.io/enigma/">Install</a>
   <span>&nbsp;&nbsp;•&nbsp;&nbsp;</span>
   <a href="https://tpe.li/dsc">Discord</a>
   <br />
   <hr />
 </div>
 
-`enigma` makes your coding agent ship **more optimal, secure and scalable code** -
-in less time, fewer tokens and fewer iterations. It installs a shared set of
-**Dynamic Skills** (senior-engineering policies that adapt to each agent and to your
-config) into the agents you actually use (Claude Code, OpenAI Codex, opencode), sets
-up portable **git security hooks** that block secrets, `.env` files and dependency
-dirs from being committed, and ships a local dashboard to manage and measure it all.
+`enigma` gives your coding agent a senior engineer's standards, in one command. It
+installs shared **Dynamic Skills** - security, testing, git, style, debugging - into
+Claude Code, OpenAI Codex and opencode, each adapting to the agent and your config.
+It adds portable **git hooks** that stop secrets and `.env` files reaching a commit,
+and a local dashboard to manage and measure everything. Fewer wrong turns, fewer
+re-prompts, cleaner output.
 
 ![ENIGMA PREVIEW](https://raw.githubusercontent.com/FJRG2007/enigma/refs/heads/main/assets/images/dashboard.png)
 
@@ -59,7 +61,7 @@ npx enigma-cli@latest install --all --yes
 
 ### <img src="assets/logos/enigma-logo.svg" width="20" height="20" alt="Enigma"/> Dynamic Skills, everywhere
 
-Engineering policy skills (security, testing, git, style, debugging...) authored once and deployed to **Claude Code, OpenAI Codex and opencode**. Unlike a static skill, these are **dynamic**: each adapts to the app that runs it, re-renders from your enigma config, loads by context (progressive disclosure), and stays current automatically - sealed with content hashes so tampering is detected. Discard any skill you don't want (`enigma skills discard <name>` or the hub's SKILLS section): it is removed everywhere and skipped by installs/updates until restored.
+Senior-engineering policies (security, testing, git, style, debugging...) on **Claude Code, OpenAI Codex and opencode**. Unlike a static skill, each one adapts to the agent, re-renders from your config, loads only when the task needs it, and updates itself. Discard any you don't want - it's gone everywhere until you restore it.
 
 ```bash
 npx enigma-cli@latest install --all --yes
@@ -70,7 +72,7 @@ npx enigma-cli@latest install --all --yes
 
 ### <img src="assets/logos/enigma-logo.svg" width="20" height="20" alt="Enigma"/> Git security hooks
 
-A portable, dependency-free commit guard for **any** repo: blocks secrets, `.env` files and `node_modules` before they are committed. Set it up once and the whole team inherits it.
+A portable commit guard for **any** repo: blocks secrets, `.env` files and `node_modules` before they're committed. Set it up once; the whole team inherits it.
 
 ```bash
 enigma security
@@ -83,7 +85,7 @@ enigma security
 
 ### <img src="assets/logos/enigma-logo.svg" width="20" height="20" alt="Enigma"/> Token-efficient output
 
-Optional compression of the agent's chat prose (`off | lite | full | ultra`):
+Same answer, fewer tokens. Compress the agent's chat replies (`off | lite | full | ultra`):
 
 > Normal (69 tokens): "The reason your React component is re-rendering is likely because you're creating a new object reference on each render cycle..."
 
@@ -94,7 +96,7 @@ Optional compression of the agent's chat prose (`off | lite | full | ultra`):
 
 ### <img src="assets/logos/enigma-logo.svg" width="20" height="20" alt="Enigma"/> Multi-account + profiles
 
-Several logins per tool without logging out, each in its own config dir, switched OS-agnostically. Every account inherits your skills, memory and managed settings (permission bypass, attribution) automatically. Profiles pin one account per tool ("work" = claude:acme + codex:acme) and drive every launch.
+Multiple logins per tool, each isolated, switched without logging out. Every account inherits your skills, memory and settings. Profiles pin one account per tool ("work" = claude:acme + codex:acme) and drive every launch.
 
 ```bash
 enigma claude work
@@ -108,7 +110,7 @@ enigma profile use work
 
 ### <img src="assets/logos/enigma-logo.svg" width="20" height="20" alt="Enigma"/> Auto-detect skills by stack
 
-`enigma autoskills` scans your project (npm/deno packages, config files, Gemfile, file types) and installs the matching community skills for your stack - React, Next.js, Astro, Prisma, FastAPI, Rails, and ~90 more - kept separate from the policy skills. Content comes from the curated, content-hash-verified registry; `--dry-run` previews first.
+`enigma autoskills` reads your stack and installs the matching community skills - React, Next.js, Astro, Prisma, FastAPI, Rails and ~90 more - kept separate from the policy skills. `--dry-run` previews first.
 
 ```bash
 enigma autoskills
@@ -120,7 +122,7 @@ enigma autoskills --dry-run
 
 ### <img src="assets/logos/enigma-logo.svg" width="20" height="20" alt="Enigma"/> Built-in `/improve` command
 
-A slash command deployed to every agent to improve your project: an **implement** mode that edits a focused area (`ui`, `security`, `performance`, `seo`, `refactor`) and a read-only **advisor** mode that audits the codebase and writes self-contained plans for another agent to execute.
+A slash command on every agent. **Implement** mode edits a focused area (`ui`, `security`, `performance`, `seo`, `refactor`); **advisor** mode audits read-only and writes execution-ready plans for another agent to run.
 
 ```bash
 /improve ui
@@ -134,14 +136,14 @@ A slash command deployed to every agent to improve your project: an **implement*
 
 ### <img src="assets/logos/enigma-logo.svg" width="20" height="20" alt="Enigma"/> Minimal code
 
-On by default. Pushes the agent toward the laziest solution that works - standard library and native platform features before custom code, the shortest working diff. Tune `off | lite | full | ultra`; security and trust-boundary validation are never simplified away.
+On by default. Pushes the agent toward the simplest solution that works - stdlib and platform features before custom code, the shortest diff. Tune `off | lite | full | ultra`; security and validation are never cut.
 
 </td>
 <td>
 
 ### <img src="assets/logos/enigma-logo.svg" width="20" height="20" alt="Enigma"/> Context compression
 
-Opt-in. A native, dependency-free engine that shrinks large tool outputs, logs and text to far fewer tokens before they reach the model - reversibly. Use `enigma compress`, or register it as an MCP server for your agents.
+Opt-in. Shrinks large tool outputs, logs and text to far fewer tokens before they reach the model - reversibly. Use `enigma compress`, or register it as an MCP server.
 
 </td>
 </tr>
