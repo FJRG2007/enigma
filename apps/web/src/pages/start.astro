@@ -1,0 +1,156 @@
+---
+import Base from "../layouts/Base.astro";
+import { url, docHref } from "../lib/url";
+
+const title = "Get started - Enigma";
+const description = "Install enigma, then open the dashboard with `enigma dash` to set up skills, accounts and settings from your browser.";
+---
+<Base title={title} description={description}>
+    <nav>
+        <div class="wrap">
+            <a href={url("")} class="brand">Enigma<span class="caret" aria-hidden="true"></span></a>
+            <span class="links">
+                <a href={url("demo/")} class="hide-sm">Demo</a>
+                <a href={docHref("getting-started")} class="hide-sm">Docs</a>
+                <a href={url("")}>&larr; Home</a>
+            </span>
+        </div>
+    </nav>
+
+    <header class="hero">
+        <div class="wrap">
+            <span class="eyebrow">Get started</span>
+            <h1>Install Enigma, then open the dashboard</h1>
+            <p class="lede">Two commands: one to install, one to open the control panel. The dashboard is the comfortable way to set everything up.</p>
+
+            <div class="install">
+                <div class="bar"><span class="dotrow"><i></i><i></i><i></i></span><span class="cmd-os" id="cmdos">macOS / Linux</span></div>
+                <div class="cmd">
+                    <pre><span class="pfx">$ </span><span id="cmdtext">curl -fsSL https://raw.githubusercontent.com/FJRG2007/enigma/main/scripts/install.sh | sh</span></pre>
+                    <button class="copy" id="copy" type="button" title="Copy command" aria-label="Copy command">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                    </button>
+                </div>
+            </div>
+            <p class="alt">Prefer a package manager? <a href={docHref("getting-started")}>npm, pnpm, yarn, bun and npx</a> work too.</p>
+
+            <ol class="steps">
+                <li>
+                    <span class="step-n">1</span>
+                    <div class="step-b">
+                        <h3>Run the command</h3>
+                        <p>Paste it into your terminal and run it. The CLI installs and deploys the engineering skills to every agent you select.</p>
+                    </div>
+                </li>
+                <li>
+                    <span class="step-n">2</span>
+                    <div class="step-b">
+                        <h3>Open the dashboard</h3>
+                        <p>Run <button class="chip" type="button" data-copy="enigma dash">enigma dash</button> (or <button class="chip" type="button" data-copy="enigma dashboard">enigma dashboard</button>) to open the local control panel in your browser and set up skills, accounts and every setting comfortably.</p>
+                        <p class="hint"><a href={url("demo/")}>See a live demo of the dashboard -&gt;</a></p>
+                    </div>
+                </li>
+                <li>
+                    <span class="step-n">3</span>
+                    <div class="step-b">
+                        <h3>Or stay in the terminal</h3>
+                        <p>The same controls live in <button class="chip" type="button" data-copy="enigma">enigma</button> (the interactive hub) and the <code>enigma config</code> CLI - handy, just less comfortable than the dashboard.</p>
+                    </div>
+                </li>
+            </ol>
+        </div>
+    </header>
+</Base>
+
+<style is:global>
+    body {
+        background:
+            radial-gradient(1100px 620px at 80% -10%, rgba(224, 164, 88, 0.10), transparent 58%),
+            radial-gradient(820px 520px at 4% 2%, rgba(111, 207, 151, 0.05), transparent 52%),
+            var(--bg);
+        background-attachment: fixed;
+    }
+</style>
+
+<style>
+    .wrap { max-width: 760px; margin: 0 auto; padding: 0 24px; }
+    nav { position: sticky; top: 0; z-index: 20; backdrop-filter: blur(10px); background: rgba(8, 10, 16, 0.72); border-bottom: 1px solid var(--border-soft); }
+    nav .wrap { display: flex; align-items: center; gap: 18px; height: 60px; max-width: 1080px; }
+    .brand { font-family: var(--mono); font-size: 18px; font-weight: 600; letter-spacing: 0.5px; color: var(--text); display: inline-flex; align-items: center; }
+    .brand .caret { display: inline-block; width: 0.46em; height: 1.05em; margin-left: 4px; background: var(--accent); transform: translateY(1px); animation: caret 1.1s steps(1, end) infinite; }
+    @keyframes caret { 0%, 50% { opacity: 1; } 50.01%, 100% { opacity: 0; } }
+    nav .links { margin-left: auto; display: flex; gap: 20px; align-items: center; font-family: var(--mono); font-size: 13px; }
+    nav .links a { color: var(--muted); }
+    nav .links a:hover { color: var(--text); }
+
+    .hero { padding: 64px 0 80px; }
+    .eyebrow { font-family: var(--mono); font-size: 12px; text-transform: uppercase; letter-spacing: 2px; color: var(--accent); }
+    h1 { font-family: var(--mono); font-size: clamp(28px, 5vw, 40px); line-height: 1.1; font-weight: 600; letter-spacing: -0.5px; margin: 14px 0 0; }
+    .lede { color: var(--muted); font-size: 17px; max-width: 56ch; margin: 14px 0 0; }
+
+    .install { margin: 28px 0 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-2); overflow: hidden; }
+    .bar { display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: rgba(0, 0, 0, 0.25); border-bottom: 1px solid var(--border-soft); }
+    .dotrow { display: inline-flex; gap: 6px; }
+    .dotrow i { width: 11px; height: 11px; border-radius: 50%; background: var(--surface2); border: 1px solid var(--border); }
+    .cmd-os { font-family: var(--mono); font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; }
+    .cmd { display: flex; align-items: flex-start; gap: 12px; padding: 16px 18px; }
+    .cmd pre { margin: 0; flex: 1; min-width: 0; overflow-x: auto; font-family: var(--mono); font-size: 13px; line-height: 1.7; color: var(--text); }
+    .cmd .pfx { color: var(--good); user-select: none; }
+    .cmd .t-cmd { color: var(--accent); }
+    .cmd .t-flag { color: var(--accent2); }
+    .cmd .t-url { color: var(--good); }
+    .cmd .t-op { color: var(--muted); }
+    .copy { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; color: var(--muted); background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 8px; cursor: pointer; transition: color .15s, border-color .15s; }
+    .copy:hover { color: var(--accent); border-color: #2f3744; }
+    .copy.done { color: var(--good); border-color: var(--good); }
+    .copy svg { width: 15px; height: 15px; display: block; }
+    .alt { color: var(--muted); font-size: 13px; margin: 12px 0 0; }
+    .alt a { color: var(--accent2); }
+
+    .steps { margin: 32px 0 0; list-style: none; padding: 0; display: grid; gap: 12px; }
+    .steps li { display: flex; gap: 14px; align-items: flex-start; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px 20px; box-shadow: var(--shadow-1); }
+    .step-n { flex: 0 0 auto; width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; font-family: var(--mono); font-size: 14px; font-weight: 600; color: #1a1206; background: var(--accent); border-radius: 999px; }
+    .step-b h3 { font-family: var(--mono); font-size: 15px; font-weight: 600; margin: 3px 0 0; }
+    .step-b p { color: var(--muted); font-size: 14px; margin: 7px 0 0; line-height: 1.6; }
+    .step-b p.hint { margin-top: 9px; font-size: 13px; }
+    .step-b code { font-family: var(--mono); font-size: 12px; color: var(--accent2); background: var(--surface2); padding: 1px 6px; border-radius: 5px; }
+    .chip { font-family: var(--mono); font-size: 12px; color: var(--accent); background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 2px 8px; cursor: pointer; transition: color .15s, border-color .15s; }
+    .chip:hover { color: var(--text); border-color: #2f3744; }
+    .chip.done { color: var(--good); border-color: var(--good); }
+
+    @media (max-width: 640px) { nav .links a.hide-sm { display: none; } .hero { padding: 44px 0 56px; } }
+</style>
+
+<script>
+    import { highlightShell, copyText } from "../lib/shell";
+
+    const cmdText = document.getElementById("cmdtext")!;
+    const CURL = "curl -fsSL https://raw.githubusercontent.com/FJRG2007/enigma/main/scripts/install.sh | sh";
+    const PS = "irm https://raw.githubusercontent.com/FJRG2007/enigma/main/scripts/install.ps1 | iex";
+
+    // On Windows the recommended one-liner is the PowerShell script (no `sh`).
+    const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
+    const isWindows = /win/i.test(nav.userAgentData?.platform || navigator.platform || navigator.userAgent || "");
+    const command = isWindows ? PS : CURL;
+    cmdText.innerHTML = highlightShell(command);
+    if (isWindows) document.getElementById("cmdos")!.textContent = "Windows (PowerShell)";
+
+    const copyBtn = document.getElementById("copy")!;
+    const COPY_ICON = copyBtn.innerHTML;
+    const CHECK_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+    copyBtn.addEventListener("click", async () => {
+        if (!(await copyText(cmdText.textContent || ""))) return;
+        copyBtn.innerHTML = CHECK_ICON; copyBtn.classList.add("done"); copyBtn.title = "Copied";
+        setTimeout(() => { copyBtn.innerHTML = COPY_ICON; copyBtn.classList.remove("done"); copyBtn.title = "Copy command"; }, 1800);
+    });
+
+    // Each `enigma ...` chip copies its own command on click.
+    document.querySelectorAll<HTMLButtonElement>(".chip[data-copy]").forEach((chip) => {
+        chip.addEventListener("click", async () => {
+            if (!(await copyText(chip.dataset.copy || ""))) return;
+            const label = chip.textContent;
+            chip.textContent = "copied"; chip.classList.add("done");
+            setTimeout(() => { chip.textContent = label; chip.classList.remove("done"); }, 1200);
+        });
+    });
+</script>
