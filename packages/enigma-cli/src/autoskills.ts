@@ -478,11 +478,16 @@ export function parseSkillRef(skill: string): { repo: string; skillName: string;
     return { repo: parts.slice(0, 2).join("/"), skillName: parts.slice(2).join("/"), full: skill };
 }
 
+// Stack skills enigma already ships as a global policy skill - never install a community
+// duplicate. enigma bundles its own (better) frontend-design, so skip the autoskills one.
+const ENIGMA_PROVIDED = new Set(["anthropics/skills/frontend-design"]);
+
 /** Flatten detected technologies, combos and the frontend bonus into a deduped skill list. */
 export function collectSkills(result: DetectResult): SkillEntry[] {
     const map = loadSkillsMap();
     const bySkill = new Map<string, SkillEntry>();
     const add = (skill: string, source: string): void => {
+        if (ENIGMA_PROVIDED.has(skill)) return; // enigma already deploys this as a policy skill
         const existing = bySkill.get(skill);
         if (!existing) bySkill.set(skill, { skill, sources: [source] });
         else if (!existing.sources.includes(source)) existing.sources.push(source);

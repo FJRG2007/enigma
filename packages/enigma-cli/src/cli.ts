@@ -422,34 +422,58 @@ async function runResourcesCli(args: string[]): Promise<number> {
 async function runAutoskillsCli(opts: CliOptions, interactive: boolean): Promise<number> {
     const { detectTechnologies, collectSkills, detectAgents } = await import("./autoskills");
     const projectDir = resolve(opts.positionals[0] ?? process.cwd());
+
+    // ANSI styling (NO_COLOR-aware; ASCII only, no emojis per the engineering policy).
+    const useColor = !("NO_COLOR" in process.env) && (process.stdout.isTTY || "FORCE_COLOR" in process.env);
+    const sgr = (code: string, s: string): string => (useColor ? `\x1b[${code}m${s}\x1b[0m` : s);
+    const bold = (s: string): string => sgr("1", s), dim = (s: string): string => sgr("2", s);
+    const cyan = (s: string): string => sgr("36", s), green = (s: string): string => sgr("32", s);
+    const red = (s: string): string => sgr("31", s), amber = (s: string): string => sgr("38;5;172", s);
+    const pad = (s: string, w: number): string => s + " ".repeat(Math.max(0, w - s.length));
+
     const result = detectTechnologies(projectDir);
+    console.log(`\n  ${amber(bold("autoskills"))}${dim(`  ${projectDir}`)}`);
 
     if (result.detected.length === 0 && !result.isFrontend) {
-        console.log("No supported technologies detected. Run this inside a project directory.");
+        console.log(`\n  ${dim("No supported technologies detected. Run this inside a project directory.")}\n`);
         return 0;
     }
 
-    const withSkills = result.detected.filter((t) => t.skills.length > 0).map((t) => t.name);
-    const withoutSkills = result.detected.filter((t) => t.skills.length === 0).map((t) => t.name);
-    console.log(`Detected: ${[...withSkills, ...withoutSkills].join(", ") || "(web frontend)"}`);
-    if (result.combos.length) console.log(`Combos:   ${result.combos.map((c) => c.name).join(", ")}`);
-    if (result.isFrontend) console.log("Frontend: yes (adds design/accessibility/SEO skills)");
+    // Detected technologies in 3 columns; those with skills brighter than those without.
+    const techs = [...result.detected].sort((a, b) => Number(b.skills.length > 0) - Number(a.skills.length > 0));
+    console.log(`\n  ${bold("Detected technologies")}`);
+    const colW = Math.max(0, ...techs.map((t) => t.name.length)) + 4;
+    for (let i = 0; i < techs.length; i += 3) {
+        const row = techs.slice(i, i + 3).map((t) => (t.skills.length > 0 ? cyan(pad(t.name, colW)) : dim(pad(t.name, colW)))).join("");
+        console.log(`    ${row.trimEnd()}`);
+    }
+    if (result.isFrontend) console.log(`  ${dim("Web frontend - adds design, accessibility and SEO skills")}`);
+    if (result.combos.length) {
+        console.log(`\n  ${bold("Combos")}`);
+        for (const combo of result.combos) console.log(`    ${cyan(combo.name)}`);
+    }
 
     const skills = collectSkills(result);
-    if (skills.length === 0) {
-        console.log("\nNo skills available for this stack yet.");
-        return 0;
-    }
-    console.log(`\nSkills to install (${skills.length}):`);
-    for (const s of skills) console.log(`  - ${s.skill}   ${s.sources.length ? `(${s.sources.join(", ")})` : ""}`.trimEnd());
+    if (skills.length === 0) { console.log(`\n  ${dim("No skills available for this stack yet.")}\n`); return 0; }
 
-    if (opts.dryRun) { console.log("\n--dry-run: nothing was installed."); return 0; }
+    console.log(`\n  ${bold("Skills to install")}${dim(` (${skills.length})`)}`);
+    const refW = Math.max(...skills.map((s) => s.skill.length));
+    skills.forEach((s, i) => {
+        const parts = s.skill.split("/");
+        const ref = parts.length === 3 ? dim(`${parts.slice(0, 2).join("/")}/`) + cyan(parts[2]) : cyan(s.skill);
+        const gap = " ".repeat(refW - s.skill.length + 2);
+        console.log(`    ${dim(`${String(i + 1).padStart(2)}.`)} ${ref}${gap}${dim(s.sources.join(", "))}`);
+    });
+
+    if (opts.dryRun) { console.log(`\n  ${dim("--dry-run: nothing was installed.")}\n`); return 0; }
 
     const agents = opts.agents.length ? opts.agents : detectAgents();
+    console.log(`\n  ${dim(`Installing into: ${agents.join(", ")}`)}`);
     const { installStackSkills } = await import("./autoskills-install");
     const res = await installStackSkills(skills, projectDir, agents, { yes: opts.yes, interactive });
-    console.log(`\n${res.installed} installed, ${res.skipped} skipped, ${res.failed} failed (agents: ${res.agents.join(", ")}).`);
-    if (res.errors.length) for (const e of res.errors) console.error(`  ! ${e}`);
+    const tail = res.failed ? red(`${res.failed} failed`) : dim("0 failed");
+    console.log(`\n  ${green(`${res.installed} installed`)}${dim(`, ${res.skipped} skipped, `)}${tail}\n`);
+    if (res.errors.length) for (const e of res.errors) console.error(`  ${red("!")} ${dim(e)}`);
     return res.failed > 0 ? 1 : 0;
 }
 

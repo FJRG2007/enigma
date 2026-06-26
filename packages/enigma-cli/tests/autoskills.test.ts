@@ -34,9 +34,11 @@ test("detects a Next.js + Supabase stack from package.json and the combo", () =>
         expect(ids).toContain("supabase");
         expect(r.isFrontend).toBe(true);
         expect(r.combos.map((c) => c.id)).toContain("nextjs-supabase");
-        // Frontend bonus skills are folded in for a frontend project.
+        // Frontend bonus skills are folded in for a frontend project, but enigma's own
+        // frontend-design replaces the community one, so it is excluded.
         const skills = collectSkills(r).map((s) => s.skill);
-        expect(skills).toContain("anthropics/skills/frontend-design");
+        expect(skills).toContain("addyosmani/web-quality-skills/accessibility");
+        expect(skills).not.toContain("anthropics/skills/frontend-design");
     } finally {
         rmSync(dir, { recursive: true, force: true });
     }
