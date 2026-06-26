@@ -61,7 +61,7 @@ const termGood = `<span class="k">$</span> git add .env
                 <a href="#contribute" class="hide-sm">Contribute</a>
                 <a href="#dashboard" class="hide-sm">Dashboard</a>
                 <a href="#compare" class="hide-sm">Why</a>
-                <a href={url("demo")} class="hide-sm">Demo</a>
+                <a href={url("demo/")} class="hide-sm">Demo</a>
                 <a href={docHref("getting-started")} class="hide-sm">Docs</a>
                 <span class="ghb">
                     <a class="ghb-btn" href="https://github.com/FJRG2007/enigma" target="_blank" rel="noopener noreferrer" aria-label="Star FJRG2007/enigma on GitHub">
@@ -70,7 +70,7 @@ const termGood = `<span class="k">$</span> git add .env
                     </a>
                     <a class="ghb-count" href="https://github.com/FJRG2007/enigma/stargazers" target="_blank" rel="noopener noreferrer" aria-label="enigma stargazers"><span id="stars">&middot;</span></a>
                 </span>
-                <a href="#install" class="cta">Install</a>
+                <a href={url("start/")} class="cta">Install</a>
             </span>
         </div>
     </nav>
@@ -81,7 +81,7 @@ const termGood = `<span class="k">$</span> git add .env
             <h1>Everything you need to work with a coding agent</h1>
             <p class="lede">Enigma installs shared engineering policy skills into the agents you actually use, sets up portable git security hooks, and ships a local dashboard to manage it all - all from one command.</p>
 
-            <div class="install" id="install">
+            <div class="install" id="install" data-next={url("start/")}>
                 <div class="tabs" role="tablist">
                     <button class="active" data-cmd="curl" role="tab">curl<span class="rec">recommended</span></button>
                     <button data-cmd="npm" role="tab">npm</button>
@@ -98,30 +98,6 @@ const termGood = `<span class="k">$</span> git add .env
                 </div>
             </div>
 
-            <ol class="steps" id="steps">
-                <li>
-                    <span class="step-n">1</span>
-                    <div class="step-b">
-                        <h3>Run the command</h3>
-                        <p>Copy it above and run it in your terminal. The CLI installs and deploys the skills to every agent you select.</p>
-                    </div>
-                </li>
-                <li>
-                    <span class="step-n">2</span>
-                    <div class="step-b">
-                        <h3>Open the dashboard</h3>
-                        <p>Run <button class="chip" type="button" data-copy="enigma dash">enigma dash</button> (or <button class="chip" type="button" data-copy="enigma dashboard">enigma dashboard</button>) to open the local control panel in your browser and set up skills, accounts and every setting comfortably.</p>
-                    </div>
-                </li>
-                <li>
-                    <span class="step-n">3</span>
-                    <div class="step-b">
-                        <h3>Or stay in the terminal</h3>
-                        <p>The same controls live in <button class="chip" type="button" data-copy="enigma">enigma</button> (the interactive hub) and the <code>enigma config</code> CLI - handy, just less comfortable than the dashboard.</p>
-                    </div>
-                </li>
-            </ol>
-
             <div class="works">
                 <span>Works with</span>
                 <span class="row"><img src={url("logos/claude.svg")} alt="Claude Code" /> Claude Code</span>
@@ -130,7 +106,7 @@ const termGood = `<span class="k">$</span> git add .env
             </div>
 
             <div class="hero-cta">
-                <a class="btn ghost" href={url("demo")}>
+                <a class="btn ghost" href={url("demo/")}>
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
                     See a live demo of the dashboard
                 </a>
@@ -242,7 +218,7 @@ const termGood = `<span class="k">$</span> git add .env
                 <p>A local control panel for the whole thing: switch accounts and profiles, enable or edit skills per app, change any setting, and free up your machine (kill a port, shut down WSL, quit Docker). It also shows real Claude usage and the savings enigma can measure - honest by design.</p>
             </div>
             <div class="shot"><img src={url("dashboard.png")} alt="The Enigma dashboard" loading="lazy" /></div>
-            <div class="dash-cta"><a class="btn" href={url("demo")}>Explore the live demo</a></div>
+            <div class="dash-cta"><a class="btn" href={url("demo/")}>Explore the live demo</a></div>
         </div>
     </section>
 
@@ -288,8 +264,8 @@ const termGood = `<span class="k">$</span> git add .env
             <span class="eyebrow">Ready in one line</span>
             <h2>Install Enigma</h2>
             <p class="lede" style="margin-top:8px">Free and open source. <a href="https://github.com/FJRG2007/enigma/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">Apache-2.0</a>.</p>
-            <a class="btn" href="#install">Get the command</a>
-            <a class="btn ghost" href={url("demo")}>Live demo</a>
+            <a class="btn" href={url("start/")}>Get the command</a>
+            <a class="btn ghost" href={url("demo/")}>Live demo</a>
             <a class="btn ghost" href="https://github.com/FJRG2007/enigma" target="_blank" rel="noopener">View on GitHub</a>
         </div>
     </section>
@@ -299,7 +275,7 @@ const termGood = `<span class="k">$</span> git add .env
             <span class="brand" style="font-size:15px">Enigma<span class="caret" aria-hidden="true"></span></span>
             <nav class="foot-links">
                 <a href={docHref("getting-started")}>Docs</a>
-                <a href={url("demo")}>Demo</a>
+                <a href={url("demo/")}>Demo</a>
                 <a href="https://github.com/FJRG2007/enigma" target="_blank" rel="noopener noreferrer">Repository</a>
                 <a href="https://github.com/FJRG2007/enigma/issues/new/choose" target="_blank" rel="noopener noreferrer">Create issue</a>
                 <a href="https://github.com/FJRG2007/enigma/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">License</a>
@@ -367,18 +343,6 @@ const termGood = `<span class="k">$</span> git add .env
     .copy:hover { color: var(--accent); border-color: #2f3744; }
     .copy.done { color: var(--good); border-color: var(--good); }
     .copy svg { width: 15px; height: 15px; display: block; }
-
-    .steps { max-width: 620px; margin: 18px auto 0; list-style: none; padding: 0; display: grid; gap: 10px; text-align: left; }
-    .steps li { display: flex; gap: 14px; align-items: flex-start; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; box-shadow: var(--shadow-1); }
-    .step-n { flex: 0 0 auto; width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; font-family: var(--mono); font-size: 13px; font-weight: 600; color: #1a1206; background: var(--accent); border-radius: 999px; }
-    .step-b h3 { font-family: var(--mono); font-size: 14px; font-weight: 600; margin: 2px 0 0; }
-    .step-b p { color: var(--muted); font-size: 13.5px; margin: 6px 0 0; line-height: 1.6; }
-    .step-b code { font-family: var(--mono); font-size: 12px; color: var(--accent2); background: var(--surface2); padding: 1px 6px; border-radius: 5px; }
-    .chip { font-family: var(--mono); font-size: 12px; color: var(--accent); background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 2px 8px; cursor: pointer; transition: color .15s, border-color .15s; }
-    .chip:hover { color: var(--text); border-color: #2f3744; }
-    .chip.done { color: var(--good); border-color: var(--good); }
-    @keyframes stepsPulse { 0%, 100% { box-shadow: var(--shadow-1); } 30% { box-shadow: 0 0 0 2px var(--accent); } }
-    .steps.flash li { animation: stepsPulse 1.2s ease-out; }
 
     .works { margin: 30px auto 0; display: flex; align-items: center; justify-content: center; gap: 22px; flex-wrap: wrap; color: var(--muted); font-family: var(--mono); font-size: 12px; }
     .works img { width: 26px; height: 26px; opacity: .9; }
@@ -467,6 +431,8 @@ const termGood = `<span class="k">$</span> git add .env
 </style>
 
 <script>
+    import { highlightShell, copyText } from "../lib/shell";
+
     // Install methods. curl (the script) is recommended; npm is preferred among the package
     // managers, with pnpm/yarn/bun for those who use them; npx is one-shot.
     const COMMANDS: Record<string, string> = {
@@ -480,21 +446,8 @@ const termGood = `<span class="k">$</span> git add .env
     const tabs = document.querySelectorAll<HTMLButtonElement>(".tabs button");
     const cmdText = document.getElementById("cmdtext")!;
 
-    // Lightweight, dependency-free highlighter for the shell install commands: colors the
-    // program names, flags, URLs and operators. setCmd keeps the raw text in `textContent`
-    // (spans strip out), so the copy button still copies the plain command.
-    const esc = (s: string) => s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]!));
-    function highlightShell(cmd: string): string {
-        let cmdPos = true; // the next word is a program name (start, or after a pipe/&&/;)
-        return cmd.split(/(\s+)/).map((tok) => {
-            if (/^\s+$/.test(tok) || tok === "") return tok;
-            if (/^[|&;]+$/.test(tok)) { cmdPos = true; return `<span class="t-op">${esc(tok)}</span>`; }
-            if (/:\/\//.test(tok)) { cmdPos = false; return `<span class="t-url">${esc(tok)}</span>`; }
-            if (tok.startsWith("-")) { cmdPos = false; return `<span class="t-flag">${esc(tok)}</span>`; }
-            if (cmdPos) { cmdPos = false; return `<span class="t-cmd">${esc(tok)}</span>`; }
-            return esc(tok);
-        }).join("");
-    }
+    // setCmd keeps the raw text in `textContent` (highlight spans strip out), so the copy
+    // button still copies the plain command.
     const setCmd = (cmd: string) => { cmdText.innerHTML = highlightShell(cmd); };
     const copyBtn = document.getElementById("copy")!;
     const COPY_ICON = copyBtn.innerHTML;
@@ -518,50 +471,14 @@ const termGood = `<span class="k">$</span> git add .env
         resetCopy();
     }));
 
-    function fallbackCopy(text: string): boolean {
-        try {
-            const ta = document.createElement("textarea");
-            ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
-            document.body.appendChild(ta); ta.focus(); ta.select();
-            const ok = document.execCommand("copy");
-            ta.remove();
-            return ok;
-        } catch { return false; }
-    }
-    async function copyText(text: string): Promise<boolean> {
-        try { await navigator.clipboard.writeText(text); return true; }
-        catch { return fallbackCopy(text); }
-    }
-
-    // Copying the install command reveals the next steps (open the dashboard, etc.).
-    const steps = document.getElementById("steps");
-    const flashSteps = () => {
-        if (!steps) return;
-        steps.scrollIntoView({ behavior: "smooth", block: "nearest" });
-        steps.classList.remove("flash");
-        void steps.offsetWidth; // restart the animation
-        steps.classList.add("flash");
-    };
+    // After copying the install command, send the visitor to the guided steps page (run it,
+    // then open the dashboard). The next-steps URL is injected server-side (base-path aware).
+    const nextUrl = document.getElementById("install")?.dataset.next || "";
     copyBtn.addEventListener("click", async () => {
         if (!(await copyText(cmdText.textContent || ""))) return;
         copyBtn.innerHTML = CHECK_ICON; copyBtn.classList.add("done"); copyBtn.title = "Copied";
-        setTimeout(resetCopy, 1800);
-        flashSteps();
-    });
-
-    // The Install buttons land on the command, then nudge the steps into view.
-    document.querySelectorAll<HTMLAnchorElement>('a[href="#install"]').forEach((link) => {
-        link.addEventListener("click", () => setTimeout(flashSteps, 450));
-    });
-
-    // Each `enigma ...` chip in the steps copies its own command on click.
-    document.querySelectorAll<HTMLButtonElement>(".chip[data-copy]").forEach((chip) => {
-        chip.addEventListener("click", async () => {
-            if (!(await copyText(chip.dataset.copy || ""))) return;
-            const label = chip.textContent;
-            chip.textContent = "copied"; chip.classList.add("done");
-            setTimeout(() => { chip.textContent = label; chip.classList.remove("done"); }, 1200);
-        });
+        if (nextUrl) setTimeout(() => { window.location.href = nextUrl; }, 600);
+        else setTimeout(resetCopy, 1800);
     });
 
     // Skills marketplace: the official catalog is generated by `enigma seal` into

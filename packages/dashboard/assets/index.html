@@ -198,6 +198,18 @@
             border-radius: var(--radius-sm); padding: 6px 10px; font-size: 12px; font-family: var(--mono); cursor: pointer;
         }
         .set-note { color: var(--accent); font-size: 12px; min-height: 16px; margin-top: 10px; }
+        /* A note must read as success vs. failure at a glance, not the same accent for both. */
+        .set-note.ok { color: var(--good); }
+        .set-note.err { color: var(--bad); }
+        /* Toasts: failures are easy to miss in a small inline note, so every error is also
+           raised here - fixed, coloured, and self-dismissing - so a failed action is unmissable. */
+        #toasts { position: fixed; right: 18px; bottom: 18px; display: flex; flex-direction: column; gap: 8px; z-index: 9999; max-width: 360px; }
+        .toast { padding: 11px 14px; border-radius: 10px; font-size: 13px; line-height: 1.35; color: var(--text);
+            background: var(--surface2); border: 1px solid var(--border); box-shadow: var(--shadow-1); animation: toastIn 0.18s ease-out; }
+        .toast.err { border-color: var(--bad); }
+        .toast.ok { border-color: var(--good); }
+        .toast.hide { opacity: 0; transition: opacity 0.3s; }
+        @keyframes toastIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
         /* Settings: two-column grid of rows on wide screens, so a long config list stays compact. */
         .set-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 0 32px; }
         .set-grid .set-row { padding: 10px 0; }
@@ -277,13 +289,18 @@
         .fxtitle { font-size: 13px; display: flex; align-items: center; gap: 8px; }
         .fxmsg { color: var(--muted); font-size: 12px; margin-top: 2px; }
         .fxpath { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; color: var(--muted); margin-top: 3px; word-break: break-all; }
-        .sys-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0 24px; }
-        .sys-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--surface2); font-size: 13px; }
-        .sys-item .k { color: var(--muted); }
+        /* Each system reads as its own lit chip-card (name left, state pill right) in a grid,
+           rather than a dense list of underlined rows - easier to scan at a glance. */
+        .sys-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(232px, 1fr)); gap: 10px; }
+        .sys-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 14px; font-size: 13px; background: var(--surface2); border: 1px solid var(--border-soft); border-radius: var(--radius-sm); }
+        .sys-item .k { color: var(--text); }
+        .sys-item .v { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; flex: 0 0 auto; }
+        /* On a surface2 card the surface2 "off" pill would vanish - keep it outlined instead. */
+        .sys-item .pill.off { background: transparent; }
         /* Rows whose value is a list of chips span the full width and let the chips wrap with
            even spacing, instead of cramming many tags into one compact half-column cell. */
         .sys-item.wide { grid-column: 1 / -1; flex-direction: column; align-items: stretch; gap: 8px; }
-        .sys-item.wide .v { display: flex; flex-wrap: wrap; gap: 6px; }
+        .sys-item.wide .v { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-start; }
         .sys-item.wide .v .tag { margin-left: 0; }
         .pill { font-size: 11px; border-radius: 6px; padding: 2px 9px; border: 1px solid var(--border); white-space: nowrap; }
         .pill.on { color: #06210f; background: var(--good); border-color: var(--good); font-weight: 600; }
@@ -332,6 +349,22 @@
             border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 9px 12px; font-size: 13px; font-family: var(--mono);
         }
         .modal-input:focus { outline: none; border-color: var(--accent); }
+        /* Usage view provider/account pickers. */
+        .useg-pick { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+        .useg-pick select { width: auto; min-width: 170px; }
+        /* Icon picker: clickable app cards (a native <select> can't render SVG in options). */
+        .modal-picker { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+        .pick-card {
+            display: flex; align-items: center; gap: 11px; width: 100%; text-align: left; cursor: pointer;
+            background: var(--surface2); color: var(--text); border: 1px solid var(--border);
+            border-radius: var(--radius-sm); padding: 11px 13px; font-size: 13px; font-family: var(--mono);
+            transition: border-color .15s, background .15s, transform .1s;
+        }
+        .pick-card:hover { border-color: #2f3744; }
+        .pick-card:active { transform: scale(0.98); }
+        .pick-card.sel { border-color: var(--accent); }
+        .pick-card svg { width: 20px; height: 20px; display: block; flex: none; color: var(--muted); }
+        .pick-card.sel svg, .pick-card:hover svg { color: var(--text); }
         .modal-acts { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
         .modal-ok.danger { background: var(--accent2); border-color: var(--accent2); color: #2a0f08; }
         .modal-ok:disabled { opacity: .45; cursor: not-allowed; }
@@ -463,13 +496,17 @@
     <section id="view-usage" style="display:none">
         <div class="page-head" style="display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap">
             <div style="flex:1;min-width:280px">
-                <h1>Claude Usage</h1>
-                <p>Measured token consumption and estimated cost, read-only from your own Claude Code session transcripts (<code>~/.claude/projects</code>). Cost is an estimate from a per-model price table; real spend is billed by Anthropic. Nothing is sent anywhere.</p>
+                <h1 id="usageTitle">Claude Usage</h1>
+                <p id="usageDesc">Measured token consumption and estimated cost, read-only from your own Claude Code session transcripts (<code>~/.claude/projects</code>). Cost is an estimate from a per-model price table; real spend is billed by Anthropic. Nothing is sent anywhere.</p>
             </div>
             <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px">
-                <span id="claudeStatus" class="cstatus"><span class="cdot"></span><span class="ctext">Checking Claude status...</span></span>
-                <a href="https://claude.ai/settings/usage" target="_blank" rel="noopener noreferrer" class="toggle" style="white-space:nowrap">View in Claude -&gt;</a>
+                <span id="claudeStatus" class="cstatus"><span class="cdot"></span><span class="ctext">Checking status...</span></span>
+                <a id="usageViewLink" href="https://claude.ai/settings/usage" target="_blank" rel="noopener noreferrer" class="toggle" style="white-space:nowrap">View in Claude -&gt;</a>
             </div>
+        </div>
+        <div class="useg-controls" style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-bottom:16px">
+            <label class="useg-pick"><span>Provider</span><select id="uProvider" class="modal-input"></select></label>
+            <label class="useg-pick" id="uAccountWrap"><span>Account</span><select id="uAccount" class="modal-input"></select></label>
         </div>
         <div class="panel" id="usagePanel" style="display:none">
             <h2 style="margin:0 0 4px">Usage limits <small>same windows Claude Code shows</small></h2>
@@ -494,8 +531,10 @@
                 </div>
             </div>
             <div id="uProviders" class="sub" style="margin:4px 0 0"></div>
-            <h2 style="margin:18px 0 10px">By Account <small>per Claude login</small></h2>
-            <div id="uByAccount"></div>
+            <div id="uByAccountWrap">
+                <h2 style="margin:18px 0 10px">By Account <small>per Claude login</small></h2>
+                <div id="uByAccount"></div>
+            </div>
             <h2 style="margin:18px 0 10px">By Model</h2>
             <div id="uByModel"></div>
             <h2 style="margin:18px 0 10px">By Project</h2>
@@ -506,6 +545,10 @@
         <div class="panel" id="usageHint" style="display:none">
             <h2 style="margin-bottom:8px">Real tool usage <small>opt-in</small></h2>
             <div class="sub">Turn on <b>Real tool-usage stats</b> in <a href="#/settings">Settings</a> to read your Claude Code sessions for token consumption and cost. enigma reads only your local session transcripts; nothing is sent anywhere.</div>
+        </div>
+        <div class="panel" id="usageUnavail" style="display:none">
+            <h2 id="unavailTitle" style="margin-bottom:8px">No local usage data</h2>
+            <div class="sub" id="unavailBody"></div>
         </div>
     </section>
 
@@ -1678,6 +1721,22 @@ export {
         // Real tool-usage panel (Claude Code transcripts). null = the opt-in flag is off.
         function shortProject(p) { p = String(p || ""); return p.length > 44 ? "..." + p.slice(-41) : p; }
 
+        // --- provider / account scoping for the Usage view ---------------------------------
+        // Only Claude Code keeps a local per-message usage log enigma can read; Codex/OpenCode
+        // are honestly reported as having no readable store. The header (title, status pill,
+        // "View in ..." link) adapts to the selected provider.
+        const CLAUDE_USAGE_DESC = $("usageDesc").innerHTML; // preserve the rich Claude copy
+        const USAGE_PROVIDERS = {
+            claude:   { label: "Claude Code", status: "https://status.claude.com/api/v2/status.json", viewHref: "https://claude.ai/settings/usage", viewLabel: "View in Claude" },
+            codex:    { label: "Codex",       status: "https://status.openai.com/api/v2/status.json", viewHref: "https://platform.openai.com/usage", viewLabel: "View in OpenAI" },
+            opencode: { label: "OpenCode",    status: null,                                           viewHref: "https://opencode.ai", viewLabel: "View OpenCode" },
+        };
+        let usageData = null;            // the latest /api/stats usage report (null when opt-in is off)
+        let usageProvider = "claude";
+        let usageAccount = "__all__";    // "__all__" or a Claude account name
+        let usageAccountsMeta = [];      // claude accounts from /api/accounts, for email labels
+        let usageAccountsLoaded = false;
+
         // --- Claude-style usage windows (current session / weekly all / weekly Sonnet) ---
         function fmtResetIn(ms) {
             const d = ms - Date.now();
@@ -1747,28 +1806,83 @@ export {
                 + "</div>";
         }
 
-        // Claude operational status from the public statuspage (CORS-open, no auth). Maps the
-        // indicator to a colored dot; degrades quietly to "unavailable" if the fetch is blocked.
-        async function loadClaudeStatus() {
+        // Community incident signal for Claude Code: even when the official statuspage reads
+        // green, a sudden cluster of freshly-opened "500/529 server error" issues on the
+        // claude-code repo is an early outage indicator (the statuspage usually lags a live
+        // incident by many minutes). Browser-side, unauthenticated GitHub API (CORS-open,
+        // 60 req/hr per IP) - throttled to one query / 5 min to stay well under the limit.
+        const CLAUDE_ISSUES_API = "https://api.github.com/repos/anthropics/claude-code/issues?state=open&sort=created&direction=desc&per_page=30";
+        const CLAUDE_ISSUES_VIEW = "https://github.com/anthropics/claude-code/issues?q=is%3Aissue+is%3Aopen+500";
+        // A title is a server-error report when it carries an HTTP 500/529 AND error wording
+        // ("API Error: 500", "500 errors", "Internal Server Error (500)", "API Error 529 and 500"...).
+        const SERVER_ERR_NUM_RE = /\b(500|529)\b/;
+        const SERVER_ERR_WORD_RE = /error|internal server/i;
+        const INCIDENT_WINDOW_MS = 30 * 60 * 1000; // only issues opened in the last 30 minutes
+        const INCIDENT_MIN = 2;                     // need a small cluster, not a single one-off
+        const INCIDENT_TTL_MS = 5 * 60 * 1000;      // re-query GitHub at most every 5 minutes
+        let claudeIncidents = { at: 0, count: 0 };  // last GitHub probe (cached count)
+        async function checkClaudeIncidents() {
+            if (Date.now() - claudeIncidents.at < INCIDENT_TTL_MS) return claudeIncidents.count;
+            try {
+                const r = await fetch(CLAUDE_ISSUES_API, { cache: "no-store", headers: { Accept: "application/vnd.github+json" } });
+                if (!r.ok) throw 0;
+                const list = await r.json();
+                const cut = Date.now() - INCIDENT_WINDOW_MS;
+                const count = (Array.isArray(list) ? list : []).filter((it) => {
+                    if (!it || it.pull_request) return false; // the issues endpoint also returns PRs
+                    if (new Date(it.created_at).getTime() < cut) return false;
+                    const t = it.title || "";
+                    return SERVER_ERR_NUM_RE.test(t) && SERVER_ERR_WORD_RE.test(t);
+                }).length;
+                claudeIncidents = { at: Date.now(), count };
+            } catch { /* keep last known count; a probe failure must never break the pill */ }
+            return claudeIncidents.count;
+        }
+
+        // Operational status for the selected provider, from its public statuspage (CORS-open,
+        // no auth; same Atlassian Statuspage shape for Claude and OpenAI). Maps the indicator to
+        // a colored dot; degrades quietly to "unavailable", and hides for providers with no page.
+        async function loadProviderStatus() {
             const el = $("claudeStatus");
             if (!el || document.hidden) return;
+            const p = USAGE_PROVIDERS[usageProvider] || USAGE_PROVIDERS.claude;
+            if (!p.status) { el.style.display = "none"; return; }
+            el.style.display = "";
+            el.onclick = null; el.style.cursor = ""; el.title = ""; // clear any prior incident affordance
+            let ind = "unknown", desc = p.label + " status unavailable";
             try {
-                const r = await fetch("https://status.claude.com/api/v2/status.json", { cache: "no-store" });
+                const r = await fetch(p.status, { cache: "no-store" });
                 const d = await r.json();
-                const ind = (d.status && d.status.indicator) || "unknown";
-                const desc = (d.status && d.status.description) || "Status unknown";
-                el.className = "cstatus " + (ind === "none" ? "ok" : ind === "minor" ? "warn" : ind === "major" ? "orange" : ind === "critical" ? "bad" : "");
-                el.querySelector(".ctext").textContent = desc;
-            } catch {
-                el.className = "cstatus";
-                el.querySelector(".ctext").textContent = "Claude status unavailable";
+                ind = (d.status && d.status.indicator) || "unknown";
+                desc = (d.status && d.status.description) || "Status unknown";
+            } catch { ind = "unknown"; }
+            // Claude Code only: overlay the community incident signal. It elevates an otherwise
+            // green/unknown pill to a warning; an official major/critical statuspage state wins.
+            if (usageProvider === "claude" && ind !== "major" && ind !== "critical") {
+                const n = await checkClaudeIncidents();
+                if (n >= INCIDENT_MIN) {
+                    el.className = "cstatus orange";
+                    el.querySelector(".ctext").textContent = n + " recent 500/529 reports (30 min)";
+                    el.title = "Possible Anthropic API incident: " + n + " open claude-code issues reporting 500/529 errors in the last 30 minutes. Click to view.";
+                    el.style.cursor = "pointer";
+                    el.onclick = () => window.open(CLAUDE_ISSUES_VIEW, "_blank", "noopener");
+                    return;
+                }
             }
+            el.className = "cstatus " + (ind === "none" ? "ok" : ind === "minor" ? "warn" : ind === "major" ? "orange" : ind === "critical" ? "bad" : "");
+            el.querySelector(".ctext").textContent = desc;
         }
         async function planSet(key, value) {
             try { await fetch("/api/plan", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key, value: Number(value) }) }); refreshAll(true); }
             catch { /* leave as-is */ }
         }
         function wireUsage() {
+            // Provider + account selectors drive a client-side re-render from the cached report.
+            const ps = $("uProvider");
+            ps.innerHTML = Object.entries(USAGE_PROVIDERS).map(([k, v]) => '<option value="' + k + '">' + esc(v.label) + "</option>").join("");
+            ps.value = usageProvider;
+            ps.addEventListener("change", () => { usageProvider = ps.value; usageAccount = "__all__"; applyUsageView(); loadProviderStatus(); });
+            $("uAccount").addEventListener("change", () => { usageAccount = $("uAccount").value; applyUsageView(); });
             const el = $("uWindows");
             el.addEventListener("click", (e) => {
                 const b = e.target.closest("button[data-plan]"); if (!b) return;
@@ -1810,21 +1924,48 @@ export {
                 '<span class="tag ' + (p.available ? "meas" : "") + '">' + esc(p.label) + (p.available ? "" : " - " + esc(p.note)) + "</span>").join("");
         }
 
-        function renderUsage(u) {
-            const panel = $("usagePanel"), hint = $("usageHint");
-            if (!u) { panel.style.display = "none"; hint.style.display = "block"; return; }
-            hint.style.display = "none";
-            panel.style.display = "block";
-            renderWindows(u);
-            $("uCost").textContent = fmtUsd(u.cost || 0);
-            $("uCacheMoney").textContent = fmtUsd(cacheMoney(u.cacheRead || 0));
-            $("uCacheRead").textContent = fmt(u.cacheRead || 0);
-            $("uInput").textContent = fmt(u.input || 0);
-            $("uOutput").textContent = fmt(u.output || 0);
-            $("uSessions").textContent = fmt(u.sessions || 0);
-            $("uSessionsFoot").textContent = u.pending ? "scanning sessions..." : fmt(u.scannedFiles || 0) + " files scanned";
+        // The Claude account names that have usage, default first then alphabetical.
+        function usageAccountNames() {
+            const names = Object.keys((usageData && usageData.accounts) || {});
+            return names.sort((a, b) => (a === "default" ? -1 : b === "default" ? 1 : a < b ? -1 : a > b ? 1 : 0));
+        }
+        function accountEmail(name) {
+            const a = usageAccountsMeta.find((x) => x.name === name);
+            return a && a.email ? a.email : "";
+        }
+        function accountLabel(name) {
+            const display = name === "default" ? "Default" : name;
+            const email = accountEmail(name);
+            return email ? display + " · " + email : display;
+        }
+        // Rebuild the account <select> only when the account set/labels actually changed, so a
+        // routine poll never resets an open dropdown or the current selection.
+        function buildAccountOptions() {
+            const sel = $("uAccount");
+            const names = usageAccountNames();
+            const sig = names.join("|") + "::" + usageAccountsMeta.map((a) => a.name + ":" + (a.email || "")).join(",");
+            if (usageAccount !== "__all__" && !names.includes(usageAccount)) usageAccount = "__all__";
+            if (sel.dataset.sig !== sig) {
+                sel.dataset.sig = sig;
+                sel.innerHTML = '<option value="__all__">All accounts</option>'
+                    + names.map((n) => '<option value="' + esc(n) + '">' + esc(accountLabel(n)) + "</option>").join("");
+            }
+            sel.value = usageAccount;
+        }
+
+        // Fill the panel from one scope: the whole report (isAll) or one account's sub-report.
+        // The Providers line and By Account table are only meaningful for the whole report.
+        function renderUsageScoped(x, isAll, pending) {
+            renderWindows(x);
+            $("uCost").textContent = fmtUsd(x.cost || 0);
+            $("uCacheMoney").textContent = fmtUsd(cacheMoney(x.cacheRead || 0));
+            $("uCacheRead").textContent = fmt(x.cacheRead || 0);
+            $("uInput").textContent = fmt(x.input || 0);
+            $("uOutput").textContent = fmt(x.output || 0);
+            $("uSessions").textContent = fmt(x.sessions || 0);
+            $("uSessionsFoot").textContent = pending ? "scanning sessions..." : fmt(x.scannedFiles || 0) + " files scanned";
             // Current 5-hour block (computed locally from transcript timestamps).
-            const b = u.block, bw = $("uBlockWrap");
+            const b = x.block, bw = $("uBlockWrap");
             if (b && b.startedAt) {
                 bw.style.display = "block";
                 const now = Date.now(), total = 5 * 3600 * 1000;
@@ -1839,11 +1980,57 @@ export {
                 $("uBlockBurn").textContent = fmt(Math.round(b.burnRatePerMin || 0)) + " tok/min";
                 $("uBlockProj").textContent = fmt(b.projectedTokens || 0) + " · " + fmtUsd(b.projectedCost || 0);
             } else { bw.style.display = "none"; }
-            renderProviders(u.providers);
-            renderUsageTable($("uByAccount"), u.byAccount, u.pending, "Account");
-            renderUsageTable($("uByModel"), u.byModel, u.pending, "Model");
-            renderUsageTable($("uByProject"), u.byProject, u.pending, "Project");
-            renderRecentSessions($("uRecent"), u.recentSessions, u.pending);
+            $("uByAccountWrap").style.display = isAll ? "" : "none";
+            if (isAll) { renderProviders(x.providers); renderUsageTable($("uByAccount"), x.byAccount, pending, "Account"); }
+            else { $("uProviders").innerHTML = ""; }
+            renderUsageTable($("uByModel"), x.byModel, pending, "Model");
+            renderUsageTable($("uByProject"), x.byProject, pending, "Project");
+            renderRecentSessions($("uRecent"), x.recentSessions, pending);
+        }
+
+        // Adapt the header to the selected provider, then render its scope. Only Claude has a
+        // measurable local store; the others show an honest "no local usage" panel instead.
+        function applyUsageView() {
+            const p = USAGE_PROVIDERS[usageProvider] || USAGE_PROVIDERS.claude;
+            $("usageTitle").textContent = p.label + " Usage";
+            const link = $("usageViewLink");
+            link.href = p.viewHref; link.textContent = p.viewLabel + " ->";
+            $("uAccountWrap").style.display = (usageProvider === "claude" && usageData) ? "" : "none";
+            const panel = $("usagePanel"), hint = $("usageHint"), unavail = $("usageUnavail");
+            if (usageProvider !== "claude") {
+                panel.style.display = "none"; hint.style.display = "none"; unavail.style.display = "block";
+                $("usageDesc").textContent = p.label + " token usage. enigma can only measure usage for tools that keep a local per-message log it can read.";
+                const cov = ((usageData && usageData.providers) || []).find((x) => x.tool === usageProvider);
+                const note = (cov && cov.note) || "no local token-usage store";
+                $("unavailTitle").textContent = "No local usage data for " + p.label;
+                $("unavailBody").innerHTML = "<b>" + esc(p.label) + "</b>: " + esc(note) + "."
+                    + " enigma measures token usage only for tools that keep a local per-message log it can read - today that is Claude Code."
+                    + " Switch the provider to <b>Claude Code</b> for measured usage, or open " + esc(p.label) + "'s own dashboard via the link above.";
+                return;
+            }
+            $("usageDesc").innerHTML = CLAUDE_USAGE_DESC;
+            unavail.style.display = "none";
+            if (!usageData) { panel.style.display = "none"; hint.style.display = "block"; return; }
+            hint.style.display = "none"; panel.style.display = "block";
+            buildAccountOptions();
+            const isAll = usageAccount === "__all__";
+            const scoped = isAll ? usageData : ((usageData.accounts && usageData.accounts[usageAccount]) || usageData);
+            renderUsageScoped(scoped, isAll, usageData.pending);
+        }
+
+        // Entry point from the stats poll: cache the report, then render the active scope.
+        function renderUsage(u) {
+            usageData = u || null;
+            applyUsageView();
+        }
+
+        // Claude account identities (for the email labels), fetched once when the view opens.
+        async function loadUsageAccounts() {
+            try {
+                const d = await (await fetch("/api/accounts", { cache: "no-store" })).json();
+                usageAccountsMeta = (d.accounts || []).filter((a) => a.tool === "claude");
+                if (usageProvider === "claude" && usageData) applyUsageView();
+            } catch { /* labels fall back to account names */ }
         }
 
         function renderCache(c) {
@@ -2096,6 +2283,26 @@ export {
         // --- settings subpage (mirrors the TUI registry over /api/settings) ---
         function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
 
+        // A self-dismissing notification so a failed action can't slip by unseen. Errors
+        // linger longer than confirmations; both auto-clear so they never pile up.
+        function toast(msg, kind) {
+            let wrap = $("toasts");
+            if (!wrap) { wrap = document.createElement("div"); wrap.id = "toasts"; document.body.appendChild(wrap); }
+            const el = document.createElement("div");
+            el.className = "toast " + (kind === "err" ? "err" : kind === "ok" ? "ok" : "");
+            el.setAttribute("role", kind === "err" ? "alert" : "status");
+            el.textContent = msg;
+            wrap.appendChild(el);
+            setTimeout(() => { el.classList.add("hide"); setTimeout(() => el.remove(), 320); }, kind === "err" ? 6000 : 3000);
+        }
+        // Set a status note's text and ok/err styling in one place. Errors are also toasted
+        // (the inline note alone is easy to miss), so callers just call setNote(el, msg, "err").
+        function setNote(el, msg, kind) {
+            if (typeof el === "string") el = $(el);
+            if (el) { el.textContent = msg; el.classList.toggle("ok", kind === "ok"); el.classList.toggle("err", kind === "err"); }
+            if (kind === "err") toast(msg, "err");
+        }
+
         // Capitalize a choice value for display ("on-demand" -> "On demand"), keeping the raw
         // value as the option's value so the server still receives the exact token.
         function prettyChoice(c) { c = String(c).replace(/[-_]/g, " "); return c.charAt(0).toUpperCase() + c.slice(1); }
@@ -2107,7 +2314,12 @@ export {
                 const back = document.createElement("div");
                 back.className = "modal-back";
                 let inner = "";
-                if (field && field.options) {
+                if (field && field.iconOptions) {
+                    // Clickable app cards with logos; a native <select> can't render SVG options.
+                    inner = '<div class="modal-picker">' + field.iconOptions.map((o) =>
+                        '<button type="button" class="pick-card' + (o.value === field.value ? " sel" : "") + '" data-pick="' + esc(o.value) + '">'
+                        + (o.icon ? '<span class="pick-ic">' + o.icon + "</span>" : "") + "<span>" + esc(o.label || o.value) + "</span></button>").join("") + "</div>";
+                } else if (field && field.options) {
                     inner = '<select class="modal-input">' + field.options.map((o) =>
                         '<option value="' + esc(o.value) + '"' + (o.value === field.value ? " selected" : "") + ">" + esc(o.label || o.value) + "</option>").join("") + "</select>";
                 } else if (field) {
@@ -2138,6 +2350,10 @@ export {
                 const ok = () => { if (invalid) return; close(field ? (inp ? inp.value : true) : true); };
                 const cancel = () => close(field ? null : false);
                 okBtn.addEventListener("click", ok);
+                if (field && field.iconOptions) {
+                    okBtn.style.display = "none"; // a card click is the confirm
+                    back.querySelectorAll(".pick-card").forEach((c) => c.addEventListener("click", () => close(c.dataset.pick)));
+                }
                 if (inp && validate) { inp.addEventListener("input", runValidate); runValidate(); }
                 back.querySelector(".modal-cancel").addEventListener("click", cancel);
                 back.addEventListener("mousedown", (e) => { if (e.target === back) cancel(); });
@@ -2145,11 +2361,13 @@ export {
                     if (e.key === "Escape") { e.preventDefault(); cancel(); }
                     else if (e.key === "Enter" && (!inp || inp.tagName !== "TEXTAREA")) { e.preventDefault(); ok(); }
                 });
-                if (inp) { inp.focus(); if (inp.select) inp.select(); } else okBtn.focus();
+                if (inp) { inp.focus(); if (inp.select) inp.select(); }
+                else { const c = back.querySelector(".pick-card.sel") || back.querySelector(".pick-card") || okBtn; c.focus(); }
             });
         }
         const askText = (title, value, message, validate) => openModal({ title, message, field: { value: value || "", validate } }).then((v) => (v == null ? null : String(v).trim()));
         const askChoice = (title, options, value, message) => openModal({ title, message, field: { options, value } });
+        const askIconChoice = (title, iconOptions, value, message) => openModal({ title, message, field: { iconOptions, value } });
         const askConfirm = (title, message, danger) => openModal({ title, message, danger, okLabel: danger ? "Remove" : "OK" }).then(Boolean);
 
         // Turn "(experimental)" and " · measured/experimental" label suffixes into visual badges.
@@ -2196,7 +2414,7 @@ export {
             // render it as a switch (like a pure bool); 3+ values stay a select with pretty labels.
             const asSwitch = !s.choices || (s.choices.length === 2 && s.choices.indexOf(s.offChoice) !== -1);
             const ctl = !asSwitch
-                ? '<select class="choice" data-skey="' + esc(s.key) + '">'
+                ? '<select class="choice" data-skey="' + esc(s.key) + '" data-prev="' + esc(s.choice) + '">'
                     + s.choices.map((c) => '<option value="' + esc(c) + '"' + (c === s.choice ? " selected" : "") + ">" + esc(prettyChoice(c)) + "</option>").join("")
                     + "</select>"
                 : '<button type="button" class="toggle' + (s.value ? " on" : "") + '" data-skey="' + esc(s.key)
@@ -2218,32 +2436,44 @@ export {
                 + '<div class="set-grid">' + c.settings.map(settingRow).join("") + "</div></div>").join("");
         }
 
+        function applyBool(ctl, on) { ctl.classList.toggle("on", on); ctl.textContent = on ? "On" : "Off"; ctl.dataset.on = on ? 1 : 0; }
+
+        // Optimistic: flip the control immediately, then reconcile with the server. On any
+        // failure - rejected write, unreachable server, OR a write that silently did not take
+        // effect (returned value != requested) - roll the control back and surface the error.
         async function postSetting(key, value, ctl, noteEl) {
-            const note = noteEl || $("settingsNote");
-            note.textContent = "Saving " + key + "...";
+            const el = noteEl || $("settingsNote");
+            const isBool = ctl.dataset.kind === "bool";
+            const want = isBool ? (value === true || value === 1) : String(value);
+            const prevBool = ctl.dataset.on === "1";
+            const prevChoice = ctl.dataset.prev != null ? ctl.dataset.prev : ctl.value; // <select> already changed natively
+            const rollback = () => { if (isBool) applyBool(ctl, prevBool); else ctl.value = prevChoice; };
+            if (isBool) applyBool(ctl, want);
+            setNote(el, "Saving " + key + "...");
             try {
                 const res = await fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key, value }) });
                 const out = await res.json();
-                if (!out.ok) { note.textContent = "Could not change " + key + ": " + (out.error || "error"); return; }
+                if (!out.ok) { rollback(); setNote(el, "Could not change " + key + ": " + (out.error || "error"), "err"); return; }
                 const s = out.setting;
-                if (s && ctl.dataset.kind === "bool") { ctl.classList.toggle("on", s.value); ctl.textContent = s.value ? "On" : "Off"; ctl.dataset.on = s.value ? 1 : 0; }
-                else if (s) { ctl.value = s.choice; }
-                note.textContent = out.restartNote || ("Saved " + key + ".");
-            } catch { note.textContent = "Could not reach the server to change " + key + "."; }
+                if (s && isBool) applyBool(ctl, s.value);
+                else if (s) { ctl.value = s.choice; ctl.dataset.prev = s.choice; }
+                if (s && (isBool ? s.value !== want : String(s.choice) !== want)) { setNote(el, key + " did not change (the write had no effect).", "err"); return; }
+                setNote(el, out.restartNote || ("Saved " + key + "."), "ok");
+            } catch { rollback(); setNote(el, "Could not reach the server to change " + key + ".", "err"); }
         }
 
         // List settings: add/remove one entry, then reload so the chips reflect disk truth.
         async function postListOp(key, op, item) {
             item = (item || "").trim();
             if (!item) return;
-            $("settingsNote").textContent = (op === "add" ? "Adding to " : "Removing from ") + key + "...";
+            setNote("settingsNote", (op === "add" ? "Adding to " : "Removing from ") + key + "...");
             try {
                 const res = await fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key, value: { op, item } }) });
                 const out = await res.json();
-                if (!out.ok) { $("settingsNote").textContent = "Could not change " + key + ": " + (out.error || "error"); return; }
-                $("settingsNote").textContent = "Saved " + key + ".";
+                if (!out.ok) { setNote("settingsNote", "Could not change " + key + ": " + (out.error || "error"), "err"); return; }
+                setNote("settingsNote", "Saved " + key + ".", "ok");
                 await loadSettings();
-            } catch { $("settingsNote").textContent = "Could not reach the server to change " + key + "."; }
+            } catch { setNote("settingsNote", "Could not reach the server to change " + key + ".", "err"); }
         }
 
         function wireSettings() {
@@ -2293,12 +2523,13 @@ export {
         async function saveDashPort() {
             const raw = $("dashPortInput").value.trim();
             const value = raw === "" ? 0 : Number(raw);
-            if (!Number.isInteger(value) || value < 0 || value > 65535) { $("settingsNote").textContent = "Port must be 0 (auto) or 1-65535."; return; }
-            $("settingsNote").textContent = "Saving dashboard port...";
+            if (!Number.isInteger(value) || value < 0 || value > 65535) { setNote("settingsNote", "Port must be 0 (auto) or 1-65535.", "err"); return; }
+            setNote("settingsNote", "Saving dashboard port...");
             try {
                 const out = await (await fetch("/api/dashboard-port", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ value }) })).json();
-                $("settingsNote").textContent = out.ok ? (out.restartNote || ("Saved dashboard port = " + (value || "auto") + ".")) : ("Could not save: " + (out.error || "error"));
-            } catch { $("settingsNote").textContent = "Could not reach the server to set the port."; }
+                if (out.ok) setNote("settingsNote", out.restartNote || ("Saved dashboard port = " + (value || "auto") + "."), "ok");
+                else setNote("settingsNote", "Could not save: " + (out.error || "error"), "err");
+            } catch { setNote("settingsNote", "Could not reach the server to set the port.", "err"); }
         }
 
         // --- "Enigma systems" overview (factual state, never invented savings) ---
@@ -2359,19 +2590,19 @@ export {
         }
 
         async function runUpdate() {
-            $("updateNote").textContent = "Checking for updates...";
+            setNote("updateNote", "Checking for updates...");
             try {
                 const res = await fetch("/api/update", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
                 const out = await res.json();
-                if (!out.ok) { $("updateNote").textContent = "Update failed: " + (out.error || "error"); return; }
+                if (!out.ok) { setNote("updateNote", "Update failed: " + (out.error || "error"), "err"); return; }
                 // Only reload when something actually changed; an up-to-date check just reports.
                 if (out.changed) {
-                    $("updateNote").textContent = (out.note || "Updated.") + " Refreshing the dashboard...";
+                    setNote("updateNote", (out.note || "Updated.") + " Refreshing the dashboard...", "ok");
                     setTimeout(() => location.reload(), 1200);
                 } else {
-                    $("updateNote").textContent = out.note || "Already up to date.";
+                    setNote("updateNote", out.note || "Already up to date.", "ok");
                 }
-            } catch { $("updateNote").textContent = "Could not reach the server to update."; }
+            } catch { setNote("updateNote", "Could not reach the server to update.", "err"); }
         }
 
         // Detect & repair every tool's launch path; the server persists any off-PATH
@@ -2387,10 +2618,12 @@ export {
                 $("updateNote").textContent = "";
                 renderFixPath(out);
                 loadSystems(true);
+                if (!out.ok) toast("Some tools could not be fixed - see the details below.", "err");
             } catch {
                 $("updateNote").textContent = "";
                 $("fixPathResult").className = "fixres show";
                 $("fixPathResult").innerHTML = '<div class="fixres-head bad">Could not reach the server to fix tool paths.</div>';
+                toast("Could not reach the server to fix tool paths.", "err");
             } finally { if (btn) { btn.disabled = false; } }
         }
 
@@ -2512,24 +2745,24 @@ export {
         }
 
         async function postSkill(name, action, content) {
-            $("skillsNote").textContent = "Working...";
+            setNote("skillsNote", "Working...");
             try {
                 const res = await fetch("/api/skills", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, action, content }) });
                 const out = await res.json();
-                if (!out.ok) { $("skillsNote").textContent = "Could not " + action + " " + name + ": " + (out.error || "error"); return; }
+                if (!out.ok) { setNote("skillsNote", "Could not " + action + " " + name + ": " + (out.error || "error"), "err"); return; }
                 if (out.skills) renderSkills(out.skills);
-                $("skillsNote").textContent = out.note || ("Done: " + name);
-            } catch { $("skillsNote").textContent = "Could not reach the server to change " + name + "."; }
+                setNote("skillsNote", out.note || ("Done: " + name), "ok");
+            } catch { setNote("skillsNote", "Could not reach the server to change " + name + ".", "err"); }
         }
 
         // Inline SKILL.md editor (one skill at a time).
         let editing = null;
         async function openEditor(name, isEnigma) {
-            $("skillsNote").textContent = "Loading " + name + "...";
+            setNote("skillsNote", "Loading " + name + "...");
             try {
                 const res = await fetch("/api/skills", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, action: "read" }) });
                 const out = await res.json();
-                if (!out.ok) { $("skillsNote").textContent = "Could not open " + name + ": " + (out.error || "error"); return; }
+                if (!out.ok) { setNote("skillsNote", "Could not open " + name + ": " + (out.error || "error"), "err"); return; }
                 editing = name;
                 $("seName").textContent = name;
                 $("seWarn").textContent = isEnigma ? "managed by enigma - see Customized-skill updates below for whether edits survive an update" : "external skill";
@@ -2539,7 +2772,7 @@ export {
                 $("skillsNote").textContent = "";
                 window.scrollTo({ top: 0, behavior: "smooth" });
                 $("seText").focus();
-            } catch { $("skillsNote").textContent = "Could not reach the server."; }
+            } catch { setNote("skillsNote", "Could not reach the server.", "err"); }
         }
         function closeEditor() { editing = null; $("skillEditor").style.display = "none"; }
         // Render per-app save targets (one checkbox per app that holds the skill), only when
@@ -2559,18 +2792,18 @@ export {
             let content = $("seText").value;
             if (agEl.dataset.has === "1") {
                 const agents = [...agEl.querySelectorAll("input[type=checkbox]:checked")].map((i) => i.dataset.agent);
-                if (!agents.length) { $("skillsNote").textContent = "Pick at least one app to save to."; return; }
+                if (!agents.length) { setNote("skillsNote", "Pick at least one app to save to.", "err"); return; }
                 content = { text: $("seText").value, agents }; // per-app save
             }
-            $("skillsNote").textContent = "Saving " + editing + "...";
+            setNote("skillsNote", "Saving " + editing + "...");
             try {
                 const res = await fetch("/api/skills", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: editing, action: "save", content }) });
                 const out = await res.json();
-                if (!out.ok) { $("skillsNote").textContent = "Could not save " + editing + ": " + (out.error || "error"); return; }
+                if (!out.ok) { setNote("skillsNote", "Could not save " + editing + ": " + (out.error || "error"), "err"); return; }
                 if (out.skills) renderSkills(out.skills);
-                $("skillsNote").textContent = out.note || "Saved.";
+                setNote("skillsNote", out.note || "Saved.", "ok");
                 closeEditor();
-            } catch { $("skillsNote").textContent = "Could not reach the server."; }
+            } catch { setNote("skillsNote", "Could not reach the server.", "err"); }
         }
 
         function wireSkills() {
@@ -2666,7 +2899,7 @@ export {
                 const ic = agentSvg(t.name);
                 const lbl = ic ? '<span class="aicon" title="' + esc(t.label) + '" aria-label="' + esc(t.label) + '">' + ic + "</span>" : esc(t.label);
                 return '<label style="font-size:12px;color:var(--muted);display:inline-flex;align-items:center;gap:6px;margin:0 12px 6px 0">' + lbl
-                    + ' <select class="choice" data-prof-tool="' + esc(t.name) + '" data-prof="' + esc(p.name) + '">' + opts + "</select></label>";
+                    + ' <select class="choice" data-prof-tool="' + esc(t.name) + '" data-prof="' + esc(p.name) + '" data-prev="' + esc(cur) + '">' + opts + "</select></label>";
             }).join("");
             const acts = '<div class="set-ctl" style="display:flex;gap:6px;align-items:center">'
                 + (p.active ? "" : '<button type="button" class="toggle" data-prof-act="activate" data-name="' + esc(p.name) + '">Use</button>')
@@ -2683,19 +2916,24 @@ export {
             $("profilesBody").innerHTML = profiles.length ? profiles.map((p) => profileRow(p, tools, accounts)).join("")
                 : '<div class="empty" style="padding:20px 0">No profiles yet. Add one to pin an account per tool.</div>';
         }
-        async function accAction(op, payload) {
-            $("accountsNote").textContent = "Working...";
+        // `rollback` (optional) restores an optimistically-changed control (e.g. a profile
+        // <select>) when the server rejects or is unreachable, so the UI never shows a value
+        // that was not saved. A successful action re-renders from out.data (authoritative).
+        async function accAction(op, payload, rollback) {
+            setNote("accountsNote", "Working...");
             try {
                 const r = await fetch("/api/accounts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.assign({ op }, payload)) });
                 const out = await r.json();
-                $("accountsNote").textContent = out.ok ? "Saved." : ("Error: " + (out.error || "failed"));
                 if (out.data) renderAccounts(out.data);
-            } catch { $("accountsNote").textContent = "Could not reach the server."; }
+                if (out.ok) { setNote("accountsNote", "Saved.", "ok"); return; }
+                if (rollback && !out.data) rollback();
+                setNote("accountsNote", "Error: " + (out.error || "failed"), "err");
+            } catch { if (rollback) rollback(); setNote("accountsNote", "Could not reach the server.", "err"); }
         }
         function wireAccounts() {
             $("accAdd").addEventListener("click", async () => {
                 const tool = accTools.length === 1 ? accTools[0].name
-                    : await askChoice("Add account", accTools.map((t) => ({ value: t.name, label: t.label || t.name })), accTools[0] ? accTools[0].name : "", "Which tool is this account for?");
+                    : await askIconChoice("Add account", accTools.map((t) => ({ value: t.name, label: t.label || t.name, icon: agentSvg(t.name) })), accTools[0] ? accTools[0].name : "", "Which tool is this account for?");
                 if (!tool) return;
                 const taken = accAccounts.filter((a) => a.tool === tool).map((a) => a.name);
                 const name = await askText("Add account", "", "New account name (e.g. work):", nameValidator(taken, null));
@@ -2708,7 +2946,7 @@ export {
                 if (op === "activate") accAction("account.activate", { tool, name });
                 else if (op === "remove") { if (await askConfirm("Remove account", "Remove account '" + name + "' and delete its local config dir?", true)) accAction("account.remove", { tool, name }); }
                 else if (op === "rename") { const taken = accAccounts.filter((a) => a.tool === tool).map((a) => a.name); const nn = await askText("Rename account", name, "Rename '" + name + "' to:", nameValidator(taken, name)); if (nn && nn !== name) accAction("account.rename", { tool, name, newName: nn }); }
-                else if (op === "login") { $("accountsNote").textContent = "To log in, run this in a terminal:  enigma " + tool + " " + name; }
+                else if (op === "login") { setNote("accountsNote", "To log in, run this in a terminal:  enigma " + tool + " " + name); }
             });
             $("profilesBody").addEventListener("click", async (e) => {
                 const b = e.target.closest("button[data-prof-act]"); if (!b) return;
@@ -2719,27 +2957,28 @@ export {
             });
             $("profilesBody").addEventListener("change", (e) => {
                 const sel = e.target.closest("select[data-prof-tool]"); if (!sel) return;
-                accAction("profile.setAccount", { profile: sel.dataset.prof, tool: sel.dataset.profTool, account: sel.value || null });
+                const prev = sel.dataset.prev != null ? sel.dataset.prev : "";
+                accAction("profile.setAccount", { profile: sel.dataset.prof, tool: sel.dataset.profTool, account: sel.value || null }, () => { sel.value = prev; });
             });
         }
 
         // --- config import / export (the browser file picker is what "asks where") ---
         async function exportConfig() {
-            $("settingsNote").textContent = "Exporting...";
+            setNote("settingsNote", "Exporting...");
             let text;
             try { text = await (await fetch("/api/config-export", { cache: "no-store" })).text(); }
-            catch { $("settingsNote").textContent = "Export failed."; return; }
+            catch { setNote("settingsNote", "Export failed.", "err"); return; }
             const name = "enigma-config-" + new Date().toISOString().slice(0, 10) + ".json";
             if (window.showSaveFilePicker) {
                 try {
                     const h = await window.showSaveFilePicker({ suggestedName: name, types: [{ description: "JSON", accept: { "application/json": [".json"] } }] });
                     const w = await h.createWritable(); await w.write(text); await w.close();
-                    $("settingsNote").textContent = "Exported (no secrets included)."; return;
-                } catch (e) { if (e && e.name === "AbortError") { $("settingsNote").textContent = "Export cancelled."; return; } }
+                    setNote("settingsNote", "Exported (no secrets included).", "ok"); return;
+                } catch (e) { if (e && e.name === "AbortError") { setNote("settingsNote", "Export cancelled."); return; } }
             }
             const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
             const a = document.createElement("a"); a.href = url; a.download = name; a.click(); URL.revokeObjectURL(url);
-            $("settingsNote").textContent = "Exported to your downloads (no secrets included).";
+            setNote("settingsNote", "Exported to your downloads (no secrets included).", "ok");
         }
         async function importConfig() {
             let text = null;
@@ -2755,14 +2994,14 @@ export {
                 });
                 if (text === null) return;
             }
-            let body; try { body = JSON.parse(text); } catch { $("settingsNote").textContent = "That file is not valid JSON."; return; }
-            $("settingsNote").textContent = "Importing...";
+            let body; try { body = JSON.parse(text); } catch { setNote("settingsNote", "That file is not valid JSON.", "err"); return; }
+            setNote("settingsNote", "Importing...");
             try {
                 const out = await (await fetch("/api/config-import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })).json();
-                if (!out.ok) { $("settingsNote").textContent = "Import failed: " + (out.error || "error"); return; }
-                $("settingsNote").textContent = "Imported: " + (out.applied || []).join(", ") + ((out.skipped && out.skipped.length) ? ("  ·  skipped: " + out.skipped.join(", ")) : "");
+                if (!out.ok) { setNote("settingsNote", "Import failed: " + (out.error || "error"), "err"); return; }
+                setNote("settingsNote", "Imported: " + (out.applied || []).join(", ") + ((out.skipped && out.skipped.length) ? ("  ·  skipped: " + out.skipped.join(", ")) : ""), "ok");
                 settingsLoaded = false; loadSettings(); accountsLoaded = false;
-            } catch { $("settingsNote").textContent = "Could not reach the server to import."; }
+            } catch { setNote("settingsNote", "Could not reach the server to import.", "err"); }
         }
 
         // --- hash routing between the subpages ---
@@ -2776,6 +3015,7 @@ export {
             if (v === "settings" && !settingsLoaded) { settingsLoaded = true; loadSettings(); }
             if (v === "skills" && !skillsLoaded) { skillsLoaded = true; loadSkills(); }
             if (v === "accounts" && !accountsLoaded) { accountsLoaded = true; loadAccounts(); }
+            if (v === "usage") { loadProviderStatus(); if (!usageAccountsLoaded) { usageAccountsLoaded = true; loadUsageAccounts(); } }
             if (v === "resources") loadResources();
             // The chart was sized while its view may have been hidden; nudge it on return.
             if (v === "savings") { loadSystems(true); if (chart) { try { applyRange(); } catch { /* not ready */ } } }
@@ -2810,12 +3050,12 @@ export {
         }
         async function resAction(op, value, confirmMsg) {
             if (confirmMsg && !(await askConfirm("Confirm", confirmMsg, true))) return;
-            $("resNote").textContent = "Running...";
+            setNote("resNote", "Running...");
             try {
                 const out = await (await fetch("/api/resources", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ op, value }) })).json();
-                $("resNote").textContent = out.message || (out.ok ? "Done." : "Failed.");
                 if (out.status) renderResources(out.status);
-            } catch { $("resNote").textContent = "Could not reach the server."; }
+                setNote("resNote", out.message || (out.ok ? "Done." : "Action failed."), out.ok ? "ok" : "err");
+            } catch { setNote("resNote", "Could not reach the server.", "err"); }
         }
         function wireResources() {
             $("resRefresh").addEventListener("click", loadResources);
@@ -2838,12 +3078,12 @@ export {
 
         initChart();
         poll(true);
-        loadClaudeStatus();
+        loadProviderStatus();
         checkDashboardUpdate();
         setInterval(() => refreshAll(false), POLL_MS);
-        setInterval(loadClaudeStatus, 60000);
+        setInterval(loadProviderStatus, 60000);
         setInterval(checkDashboardUpdate, UPDATE_CHECK_MS);
-        document.addEventListener("visibilitychange", () => { if (!document.hidden) { refreshAll(true); loadClaudeStatus(); checkDashboardUpdate(); } });
+        document.addEventListener("visibilitychange", () => { if (!document.hidden) { refreshAll(true); loadProviderStatus(); checkDashboardUpdate(); } });
         wireSettings();
         wireSkills();
         wireAccounts();

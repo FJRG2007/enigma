@@ -6,3 +6,6 @@ node_modules/
 # Mirrored from the repo's assets/ by scripts/sync-assets.mjs (single source of truth).
 public/logos/
 public/dashboard.png
+
+# Built by scripts/sync-assets.mjs from the @enigmax/dashboard package.
+public/demo/
