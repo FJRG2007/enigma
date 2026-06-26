@@ -29,11 +29,18 @@ function parseArgs(argv) {
     return { staged, range };
 }
 
+/**
+ * Path prefixes excluded from the style gate: vendored third-party content that
+ * enigma commits verbatim and does not own the style of (the autoskills registry).
+ */
+const IGNORE_PREFIXES = ["assets/skills-registry/"];
+
 /** The changed source files (added/copied/modified) for the selected diff. */
 function changedFiles({ staged, range }) {
     const base = staged ? ["diff", "--cached"] : ["diff", ...(range ? [range] : [])];
     const out = git([...base, "--name-only", "--diff-filter=ACM"]);
     return out.split("\n").map((f) => f.trim()).filter(Boolean)
+        .filter((f) => !IGNORE_PREFIXES.some((p) => f.startsWith(p)))
         .filter((f) => EXTENSIONS.some((e) => f.toLowerCase().endsWith(e)));
 }
 

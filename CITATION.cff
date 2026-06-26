@@ -1,6 +1,6 @@
 cff-version: 1.2.0
 title: Enigma
-message: "Everything you need to work with a coding agent, in one command."
+message: "Ship better code with your coding agent."
 type: software
 authors:
   - given-names: FJRG2007
@@ -8,7 +8,7 @@ authors:
 repository-code: 'https://github.com/FJRG2007/enigma'
 url: 'https://status.tpeoficial.com/development'
 abstract: >-
-  Everything you need to work with a coding agent, in one command.
+  Ship better code with your coding agent.
 keywords:
   - artificial intelligence
   - coding agent
@@ -16,4 +16,4 @@ keywords:
   - harness
   - skills
 license: Apache-2.0
-version: 1.21.2
+version: 1.22.0

@@ -80,6 +80,8 @@ export interface EnigmaConfig {
     autoLint: boolean;
     /** Deploy the context-compression MCP server (enigma_compress/retrieve/stats) into managed agents (opt-in). */
     compress: boolean;
+    /** EXPERIMENTAL, default off: the local AI quality gate. Enabling deploys the /gate command so agents can drive it; nothing runs until you `enigma gate init` a repo. */
+    gate: boolean;
     /** Local savings dashboard: off | on-demand (default when enabled) | always (background daemon). */
     dashboard: DashboardMode;
     /** Dashboard money estimate: USD per 1M input tokens; 0 = use per-source defaults. */
@@ -183,7 +185,7 @@ export interface EnigmaConfig {
  */
 export const CONFIG_DEFAULTS: EnigmaConfig = {
     commitEmoji: true, updateNotifier: true, fullscreen: true, parallelSubagents: false, outputStyle: "off", minimalCode: "full",
-    autoSync: true, remoteSkills: true, skillUpdatePolicy: "overwrite", permissionBypass: true, autoLint: false, compress: false, dashboard: "off", tokenPrice: 0, tokenSpeed: 0, usageStats: false, proxy: false, usageApi: false, promptSecretGuard: false, promptSecretMode: "redact",
+    autoSync: true, remoteSkills: true, skillUpdatePolicy: "overwrite", permissionBypass: true, autoLint: false, compress: false, gate: false, dashboard: "off", tokenPrice: 0, tokenSpeed: 0, usageStats: false, proxy: false, usageApi: false, promptSecretGuard: false, promptSecretMode: "redact",
     planSessionLimit: 0, planWeeklyLimit: 0, planWeeklySonnetLimit: 0, planWeeklyOpusLimit: 0, planWeeklyReset: "mon 00:00",
     dashboardLive: true, dashboardPort: 0, toolPaths: {}, bypassDisabled: [], discardedSkills: [], skillAgentsOff: {},
 };

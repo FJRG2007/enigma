@@ -15,13 +15,33 @@
  */
 import { homedir } from "node:os";
 import { createHash } from "node:crypto";
-import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseSkillRef } from "./autoskills";
 import type { SkillEntry } from "./autoskills";
+import { join, dirname, resolve } from "node:path";
 import { existsSync, mkdirSync, writeFileSync, readFileSync, rmSync, readdirSync, copyFileSync, statSync } from "node:fs";
 
-const REGISTRY_MAIN = "https://raw.githubusercontent.com/midudev/autoskills/main/packages/autoskills/skills-registry";
+// Community skills are now vendored into enigma's OWN repo (assets/skills-registry),
+// not pulled from a third-party registry. The CLI reads a bundled in-repo copy
+// offline-first (when present under ASSETS/skills-registry), otherwise fetches from
+// enigma's raw URL. Override the origin with ENIGMA_AUTOSKILLS_REGISTRY.
+const SKILLS_ROOT = process.env.ENIGMA_ASSETS_DIR ?? join(resolve(dirname(fileURLToPath(import.meta.url)), ".."), "assets");
+const REGISTRY_MAIN = process.env.ENIGMA_AUTOSKILLS_REGISTRY
+    ?? "https://raw.githubusercontent.com/FJRG2007/enigma/main/assets/skills-registry";
 const FETCH_TIMEOUT_MS = 15000;
+
+/** In-repo vendored registry dir, used offline-first when present (binary or dev). */
+function bundledRegistryDir(): string | null {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const candidates = [
+        join(SKILLS_ROOT, "skills-registry"), // ENIGMA_ASSETS_DIR (binary) or package assets
+        join(resolve(here, "..", "..", ".."), "assets", "skills-registry") // repo-root source of truth (dev)
+    ];
+    for (const dir of candidates) {
+        if (existsSync(join(dir, "registry.json"))) return dir;
+    }
+    return null;
+}
 
 interface RegistryEntry {
     source: string;
@@ -64,6 +84,14 @@ async function fetchBuf(url: string): Promise<Buffer | null> {
 
 /** Fetch the upstream registry index (cached for the day) so we know each skill's files+hashes. */
 async function loadRegistry(): Promise<Registry | null> {
+    // Offline-first: a bundled in-repo registry needs no network.
+    const bundled = bundledRegistryDir();
+    if (bundled) {
+        try {
+            const reg = JSON.parse(readFileSync(join(bundled, "registry.json"), "utf-8")) as Registry;
+            if (reg.skills && Object.keys(reg.skills).length > 0) return reg;
+        } catch { /* fall through to network */ }
+    }
     const cached = join(cacheRoot(), "index.json");
     const fresh = (): Registry | null => {
         try {
@@ -102,6 +130,13 @@ function copyDir(src: string, dest: string): void {
 
 /** Download + verify a skill's files into the cache (keyed by bundleHash); returns the dir or null. */
 async function fetchSkillToCache(skillName: string, entry: RegistryEntry): Promise<string | null> {
+    // Offline-first: serve the vendored in-repo copy directly (read-only; the caller
+    // copies it into the project's skill dirs).
+    const bundled = bundledRegistryDir();
+    if (bundled) {
+        const bdir = join(bundled, skillName);
+        if (entry.files.every((rel) => existsSync(join(bdir, ...rel.split(/[\\/]/))))) return bdir;
+    }
     const skillDir = join(cacheRoot(), "cache", entry.bundleHash, skillName);
     // Already cached and complete -> reuse (offline).
     if (entry.files.every((rel) => existsSync(join(skillDir, ...rel.split(/[\\/]/))))) return skillDir;

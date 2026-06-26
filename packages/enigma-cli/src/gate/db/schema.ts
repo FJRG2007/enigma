@@ -1,0 +1,85 @@
+/**
+ * SQLite schema and additive migrations for the gate database. Faithful port of
+ * no-mistakes' `internal/db/schema.go`; the SQL is kept byte-identical.
+ */
+
+/** Full schema, applied idempotently via `CREATE TABLE IF NOT EXISTS`. */
+export const schemaSQL = `
+CREATE TABLE IF NOT EXISTS repos (
+    id             TEXT PRIMARY KEY,
+    working_path   TEXT NOT NULL UNIQUE,
+    upstream_url   TEXT NOT NULL,
+    fork_url       TEXT,
+    default_branch TEXT NOT NULL DEFAULT 'main',
+    created_at     INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS runs (
+    id                   TEXT PRIMARY KEY,
+    repo_id              TEXT NOT NULL REFERENCES repos(id) ON DELETE CASCADE,
+    branch               TEXT NOT NULL,
+    head_sha             TEXT NOT NULL,
+    base_sha             TEXT NOT NULL,
+    status               TEXT NOT NULL DEFAULT 'pending',
+    pr_url               TEXT,
+    error                TEXT,
+    awaiting_agent_since INTEGER,
+    created_at           INTEGER NOT NULL,
+    updated_at           INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS step_results (
+    id            TEXT PRIMARY KEY,
+    run_id        TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+    step_name     TEXT NOT NULL,
+    step_order    INTEGER NOT NULL,
+    status        TEXT NOT NULL DEFAULT 'pending',
+    exit_code     INTEGER,
+    duration_ms   INTEGER,
+    log_path      TEXT,
+    findings_json TEXT,
+    error         TEXT,
+    started_at    INTEGER,
+    completed_at  INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS step_rounds (
+    id                   TEXT PRIMARY KEY,
+    step_result_id       TEXT NOT NULL REFERENCES step_results(id) ON DELETE CASCADE,
+    round                INTEGER NOT NULL,
+    trigger_type         TEXT NOT NULL,
+    findings_json        TEXT,
+    user_findings_json   TEXT,
+    selected_finding_ids TEXT,
+    selection_source     TEXT,
+    fix_summary          TEXT,
+    duration_ms          INTEGER NOT NULL,
+    created_at           INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS intent_cache (
+    cache_key   TEXT PRIMARY KEY,
+    summary     TEXT NOT NULL,
+    agent_name  TEXT NOT NULL,
+    session_id  TEXT NOT NULL,
+    created_at  INTEGER NOT NULL
+);
+`;
+
+/**
+ * Additive schema changes applied to databases created before the referenced
+ * columns existed. Each statement is idempotent because its error is tolerated
+ * (duplicate column name) when the column already exists.
+ */
+export const migrationStatements: string[] = [
+    "ALTER TABLE repos ADD COLUMN fork_url TEXT",
+    "ALTER TABLE step_rounds ADD COLUMN selected_finding_ids TEXT",
+    "ALTER TABLE step_rounds ADD COLUMN selection_source TEXT",
+    "ALTER TABLE step_rounds ADD COLUMN fix_summary TEXT",
+    "ALTER TABLE step_rounds ADD COLUMN user_findings_json TEXT",
+    "ALTER TABLE runs ADD COLUMN intent TEXT",
+    "ALTER TABLE runs ADD COLUMN intent_source TEXT",
+    "ALTER TABLE runs ADD COLUMN intent_session_id TEXT",
+    "ALTER TABLE runs ADD COLUMN intent_score REAL",
+    "ALTER TABLE runs ADD COLUMN awaiting_agent_since INTEGER"
+];

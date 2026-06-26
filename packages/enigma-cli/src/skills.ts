@@ -232,8 +232,13 @@ function computePrune(destSkillsDir: string, sourceNames: string[]): PruneEntry[
  */
 function bundledCommands(): CommandEntry[] {
     if (!isDir(COMMANDS_ROOT)) return [];
+    // /gate is experimental and off by default: only deploy it to agents once the
+    // user opts in with `enigma config gate on`, so enigma never surfaces the gate
+    // to the agent without consent.
+    const gateOn = readConfig().config.gate;
     return readdirSync(COMMANDS_ROOT)
         .filter((e) => e.endsWith(".md") && !isDir(join(COMMANDS_ROOT, e)))
+        .filter((e) => e !== "gate.md" || gateOn)
         .map((e) => ({ name: e, src: join(COMMANDS_ROOT, e) }));
 }
 

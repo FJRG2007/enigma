@@ -3,7 +3,7 @@
   "version": "1.1.0",
   "provider": "FJRG2007/enigma",
   "description": "Concise, realistic technical copy - UI microcopy, descriptions, hints, empty/error states, and README/doc prose that informs without over-explaining or restating the obvious.",
-  "updated": "2026-06-25T17:54:55+02:00",
-  "cliVersion": "1.21.2",
+  "updated": "2026-06-26T14:09:06+02:00",
+  "cliVersion": "1.22.0",
   "sha": "e750988b8de51d8a69be621673dceca5413ebad7e1a48e40acd18aad526d9928"
 }

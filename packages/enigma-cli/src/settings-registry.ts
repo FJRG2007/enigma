@@ -205,6 +205,7 @@ const RAW_CATEGORIES: Category[] = [
                 read: () => readConfig().config.compress,
                 write: (value, scope) => setCompress(value, scope),
             },
+            enigmaToggle("gate", "gate", "AI quality gate (experimental)", "EXPERIMENTAL, off by default: deploy the /gate command so agents can validate changes through the gate pipeline (review/test/lint/PR/CI); nothing runs until you `enigma gate init` a repo; takes effect on the next install/sync"),
             {
                 key: "auto-lint",
                 label: "Auto-lint on edit",

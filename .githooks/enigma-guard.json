@@ -4,5 +4,8 @@
   "depDirs": true,
   "generatedDirs": true,
   "junkFiles": true,
-  "largeFiles": true
+  "largeFiles": true,
+  "allowPaths": [
+    "assets/skills-registry/**"
+  ]
 }

@@ -47,7 +47,7 @@ const PKG = readJson<{ version?: string }>(join(__dirname, "..", "package.json")
 // Fixed commands plus one launch command per supported tool (e.g. `enigma claude`).
 const COMMANDS = new Set<string>([
     "install", "update", "security", "guard", "seal", "check", "config", "account", "accounts",
-    "profile", "profiles", "skill", "skills", "issue", "improve", "compress", "mcp", "dashboard", "dash", "fix-path", "resources", "autoskills", "statusline", "help", "version",
+    "profile", "profiles", "skill", "skills", "issue", "improve", "compress", "mcp", "gate", "dashboard", "dash", "fix-path", "resources", "autoskills", "statusline", "help", "version",
     ...TOOL_NAMES,
 ]);
 
@@ -801,6 +801,16 @@ function printStatusline(): void {
 }
 
 export async function run(argv: string[]): Promise<void> {
+    // Hidden: the detached gate daemon. Its detached re-exec carries
+    // ENIGMA_GATE_DAEMON=1 (the compiled binary runs with no argv, dev re-runs
+    // the script), so detect the marker first and hand off to the daemon. Delete
+    // the marker immediately so daemon-spawned children never re-enter daemon mode.
+    if (process.env.ENIGMA_GATE_DAEMON === "1") {
+        delete process.env.ENIGMA_GATE_DAEMON;
+        const { run: runGateDaemon } = await import("./gate/daemon/daemon");
+        await runGateDaemon();
+        return;
+    }
     // Hidden internal command, handled before parsing: the detached background
     // update check re-invokes the compiled binary with this argv (a Bun-compiled
     // executable cannot run `node -e` scripts). Silent by contract.
@@ -820,6 +830,19 @@ export async function run(argv: string[]): Promise<void> {
         const { runMcpServer } = await import("./mcp");
         await runMcpServer(process.env.ENIGMA_VERSION || PKG.version || "0.0.0");
         return;
+    }
+    // Hidden: the gate post-receive hook invokes this to notify the daemon of a
+    // push. Non-blocking by the hook's contract; must not print to stdout noise.
+    if (argv[0] === "__gate-notify") {
+        const { runGateNotify } = await import("./gate/cli");
+        await runGateNotify(argv.slice(1));
+        return;
+    }
+    // The gate subsystem (init/status/runs/rerun/doctor/eject/daemon/axi). Dispatched
+    // early by argv so the gate's own flags never reach enigma's argument parser.
+    if (argv[0] === "gate") {
+        const { runGateCli } = await import("./gate/cli");
+        process.exit(await runGateCli(argv.slice(1)));
     }
     const opts = parseArgs(argv);
     const interactive = Boolean(process.stdout.isTTY) && !opts.yes;
