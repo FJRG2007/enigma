@@ -7,13 +7,12 @@
  * actually installed on this machine.
  */
 
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { existsSync } from "node:fs";
+import { isOnPath, enigmaHome } from "./util";
 import { execFileSync } from "node:child_process";
-import { isOnPath } from "./util";
 
-const HOME = homedir();
+const HOME = enigmaHome();
 
 export interface AgentTarget {
     skills: string;

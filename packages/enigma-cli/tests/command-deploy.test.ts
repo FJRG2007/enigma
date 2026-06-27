@@ -1,7 +1,8 @@
 /**
  * The `gate` toggle deploys/removes the /gate command immediately, without a full
- * `enigma install`. Temp HOME (set BEFORE import, so agents.ts resolves its command
- * dirs there and config.ts reads the temp .enigma.json) keeps it hermetic.
+ * `enigma install`. ENIGMA_CONFIG_HOME (set BEFORE import) anchors BOTH config.ts and
+ * agents.ts to the temp dir via enigmaHome() - os.homedir() ignores a runtime $HOME on
+ * bun/Linux, so $HOME alone is not enough to isolate the agent command dirs.
  * Must run under Bun: bun test tests/command-deploy.test.ts
  */
 import { join } from "node:path";
@@ -10,6 +11,7 @@ import { test, expect, afterAll } from "bun:test";
 import { mkdtempSync, mkdirSync, existsSync, rmSync } from "node:fs";
 
 const HOME = mkdtempSync(join(tmpdir(), "enigma-gate-"));
+process.env.ENIGMA_CONFIG_HOME = HOME;
 process.env.USERPROFILE = HOME;
 process.env.HOME = HOME;
 

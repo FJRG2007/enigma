@@ -3,13 +3,25 @@
  * can import them without pulling in heavier concerns.
  */
 
-import { existsSync, statSync, readFileSync, readdirSync } from "node:fs";
-import { join, relative, sep } from "node:path";
+import { homedir } from "node:os";
 import { createHash } from "node:crypto";
+import { join, relative, sep } from "node:path";
+import { existsSync, statSync, readFileSync, readdirSync } from "node:fs";
 
 /** True if `pth` exists and is a directory. */
 export function isDir(pth: string): boolean {
     try { return statSync(pth).isDirectory(); } catch { return false; }
+}
+
+/**
+ * The home directory enigma anchors its config and managed agent dirs to.
+ * ENIGMA_CONFIG_HOME overrides it - required because bun on Linux does not reflect
+ * a runtime-reassigned $HOME via os.homedir(), so tests (and advanced users) cannot
+ * rely on resetting $HOME. Both config.ts and agents.ts resolve home through here so
+ * the config file and the agent skill/memory/command dirs never disagree.
+ */
+export function enigmaHome(): string {
+    return process.env.ENIGMA_CONFIG_HOME || homedir();
 }
 
 /**
