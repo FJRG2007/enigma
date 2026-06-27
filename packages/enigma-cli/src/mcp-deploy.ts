@@ -143,35 +143,45 @@ function writeEntry(tool: string, file: string, enabled: boolean): boolean {
 }
 
 /**
- * Register or remove the enigma MCP server for `agent` at `scope`, following the
- * `compress` toggle. Returns whether the agent's config changed.
+ * Whether the enigma MCP server should be registered: when compression OR recall is on
+ * (both expose tools through the same server - enigma_compress/retrieve/stats and
+ * enigma_recall*). Either feature alone is enough for the agent to need the server.
+ */
+function mcpEnabled(): boolean {
+    const cfg = readConfig().config;
+    return cfg.compress || cfg.recall;
+}
+
+/**
+ * Register or remove the enigma MCP server for `agent` at `scope`, following the MCP
+ * toggle (compress or recall). Returns whether the agent's config changed.
  */
 export function applyMcpForAgent(agent: string, scope: Scope): boolean {
     const file = mcpPath(agent, scope);
     if (!file) return false;
-    return writeEntry(agent, file, readConfig().config.compress);
+    return writeEntry(agent, file, mcpEnabled());
 }
 
 /** Register or remove the enigma MCP server in a managed account's config dir. */
 export function applyMcpForAccount(tool: string, dir: string): boolean {
     const file = mcpAccountPath(tool, dir);
     if (!file) return false;
-    return writeEntry(tool, file, readConfig().config.compress);
+    return writeEntry(tool, file, mcpEnabled());
 }
 
 /** The agents whose own config can host the enigma MCP server. */
 const MANAGED_TOOLS = ["claude", "codex", "opencode"] as const;
 
 /**
- * Apply the `compress` toggle's MCP side effect immediately across managed agents at
- * `scope` - the on/off twin of dashboard's applyDashboardMode - so toggling the setting
- * takes effect without re-running `enigma install`. Mirrors presence and absence, but to
- * avoid creating config for a tool the user does not use, an ENABLE only touches an agent
- * whose config file already exists; a DISABLE is already a no-op on an absent file.
- * Returns the tools whose config changed.
+ * Apply the MCP toggle's side effect immediately across managed agents at `scope` (driven by
+ * the compress OR recall setting) - the on/off twin of dashboard's applyDashboardMode - so
+ * toggling either setting takes effect without re-running `enigma install`. Mirrors presence
+ * and absence, but to avoid creating config for a tool the user does not use, an ENABLE only
+ * touches an agent whose config file already exists; a DISABLE is already a no-op on an absent
+ * file. Returns the tools whose config changed.
  */
-export function applyCompressToggle(scope: Scope): string[] {
-    const enabled = readConfig().config.compress;
+export function applyMcpToggle(scope: Scope): string[] {
+    const enabled = mcpEnabled();
     const changed: string[] = [];
     for (const tool of MANAGED_TOOLS) {
         const file = mcpPath(tool, scope);

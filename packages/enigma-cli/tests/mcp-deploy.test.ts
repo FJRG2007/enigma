@@ -14,7 +14,7 @@ const HOME = mkdtempSync(join(tmpdir(), "enigma-mcp-deploy-"));
 process.env.USERPROFILE = HOME;
 process.env.HOME = HOME;
 
-const { applyMcpForAgent, applyMcpForAccount, applyCompressToggle } = await import("../src/mcp-deploy");
+const { applyMcpForAgent, applyMcpForAccount, applyMcpToggle } = await import("../src/mcp-deploy");
 const { setEnigmaValue } = await import("../src/config");
 
 afterAll(() => rmSync(HOME, { recursive: true, force: true }));
@@ -96,13 +96,13 @@ test("compress toggle applies immediately, only to tools with an existing config
         writeFileSync(claudeCfg, JSON.stringify({ numStartups: 1 }));   // claude is used
         // codex/opencode have NO config here -> an enable must not create them.
         setEnigmaValue("compress", true, "global");
-        const on = applyCompressToggle("global");
+        const on = applyMcpToggle("global");
         expect(on).toEqual(["claude"]);
         expect(readJson(claudeCfg).mcpServers.enigma.args).toEqual(expect.arrayContaining(["mcp"]));
         expect(existsSync(join(home2, ".codex", "config.toml"))).toBe(false);
 
         setEnigmaValue("compress", false, "global");
-        const off = applyCompressToggle("global");
+        const off = applyMcpToggle("global");
         expect(off).toEqual(["claude"]);
         expect(readJson(claudeCfg).mcpServers?.enigma).toBeUndefined();
     } finally {

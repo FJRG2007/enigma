@@ -10,10 +10,10 @@
  */
 
 import { AGENTS } from "./agents";
+import { applyMcpToggle } from "./mcp-deploy";
 import { isAutoLintOn, setAutoLint } from "./lint";
 import { readConfig, setEnigmaToggle, setEnigmaValue, OUTPUT_STYLES, MINIMAL_CODE_LEVELS, DASHBOARD_MODES, PROMPT_SECRET_MODES, SKILL_UPDATE_POLICIES } from "./config";
 import { applyDashboardMode } from "./dashboard";
-import { applyCompressToggle } from "./mcp-deploy";
 import { applyGateToggle } from "./command-deploy";
 import type { DashboardMode } from "./config";
 import { getClaudeAttribution, setClaudeAttribution, getClaudeFeedbackSurvey, setClaudeFeedbackSurvey } from "./claude";
@@ -118,7 +118,26 @@ function setDashboard(value: string, scope: Scope): ApplyResult {
 /** Persist the compress toggle and deploy/remove the MCP server immediately. */
 function setCompress(on: boolean, scope: Scope): ApplyResult {
     const path = setEnigmaToggle("compress", on, scope);
-    applyCompressToggle(scope);
+    applyMcpToggle(scope);
+    return { path, changed: true };
+}
+
+/**
+ * Persist the recall toggle, deploy/remove the MCP server (so the agent can reach the
+ * enigma_recall tools), and on enable kick a background sync so memory appears without a
+ * manual `enigma recall sync`. Memory-affecting: the agent's instruction file gains a
+ * "use recall" note when on (stripped when off), so a restart is needed to pick it up.
+ */
+function setRecall(on: boolean, scope: Scope): ApplyResult {
+    const path = setEnigmaToggle("recall", on, scope);
+    applyMcpToggle(scope);
+    if (on) {
+        // Deferred, best-effort: build the store from existing transcripts right away.
+        // Dynamic import keeps this light module free of the bun:sqlite-heavy recall code.
+        setTimeout(() => {
+            import("./recall").then(async (r) => { try { r.syncRecall(); await r.enrichRecall(); } catch { /* best-effort */ } }).catch(() => { /* recall unavailable */ });
+        }, 0);
+    }
     return { path, changed: true };
 }
 
@@ -272,10 +291,11 @@ const RAW_CATEGORIES: Category[] = [
             {
                 key: "recall",
                 label: "Session memory (recall)",
-                hint: "build a searchable local memory of your coding sessions from transcripts (Claude Code), browsable here and exposed to agents via MCP; reads your own session logs and stays on this machine; build it with 'enigma recall sync'; enigma default: off",
+                hint: "build a searchable local memory of your coding sessions from transcripts (Claude Code), exposed to agents via MCP; reads your own session logs and stays on this machine; enabling syncs it and tells the agent to use it; enigma default: off",
                 globalOnly: true,
+                affectsMemory: true,
                 read: () => readConfig().config.recall,
-                write: (value, scope) => ({ path: setEnigmaToggle("recall", value, scope), changed: true }),
+                write: (value, scope) => setRecall(value, scope),
             },
             {
                 key: "recall-llm",
