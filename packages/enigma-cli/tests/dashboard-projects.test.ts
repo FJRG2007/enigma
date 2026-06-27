@@ -10,7 +10,7 @@
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { test, expect, afterAll } from "bun:test";
-import { mkdtempSync, mkdirSync, existsSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, existsSync, rmSync, writeFileSync } from "node:fs";
 
 const HOME = mkdtempSync(join(tmpdir(), "enigma-projects-"));
 process.env.ENIGMA_CONFIG_HOME = HOME;
@@ -95,6 +95,22 @@ test("detail/action refuse an unregistered path", async () => {
     expect("error" in projectDetail(stray)).toBe(true);
     expect((await applyProjectAction(stray, { op: "config-set", key: "gate", value: true })).ok).toBe(false);
     rmSync(stray, { recursive: true, force: true });
+});
+
+test("autoskills-detect lists the stack's skills; install only accepts detected refs", async () => {
+    const proj = mkdtempSync(join(tmpdir(), "enigma-as-"));
+    writeFileSync(join(proj, "package.json"), JSON.stringify({ dependencies: { react: "^18" } }));
+    addProject(proj, "Stack");
+    const det = await applyProjectAction(proj, { op: "autoskills-detect" });
+    expect(det.ok).toBe(true);
+    expect(Array.isArray(det.skills)).toBe(true);
+    expect((det.skills || []).length).toBeGreaterThan(0);
+    expect((det.detected || "").toLowerCase()).toContain("react");
+    // A ref the project's stack did not produce is never installed (re-derived server-side).
+    expect((await applyProjectAction(proj, { op: "autoskills-install", skills: ["evil/owner/backdoor"] })).ok).toBe(false);
+    // An empty selection is rejected too.
+    expect((await applyProjectAction(proj, { op: "autoskills-install", skills: [] })).ok).toBe(false);
+    rmSync(proj, { recursive: true, force: true });
 });
 
 test("removeProject drops it from the registry", () => {

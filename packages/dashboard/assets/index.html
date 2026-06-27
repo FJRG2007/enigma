@@ -361,6 +361,13 @@
         }
         .modal-back.show .modal { transform: none; opacity: 1; }
         .modal.wide { max-width: 900px; }
+        .as-top { display: flex; gap: 8px; margin: 14px 0 6px; }
+        .as-list { max-height: 50vh; overflow: auto; border: 1px solid var(--border); border-radius: 8px; padding: 4px 12px; }
+        .as-row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--surface2); cursor: pointer; }
+        .as-row:last-child { border-bottom: none; }
+        .as-row input { accent-color: var(--accent); width: 15px; height: 15px; flex-shrink: 0; }
+        .as-name { font-size: 13px; color: var(--text); font-family: var(--mono); }
+        .as-src { margin-left: auto; display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
         .modal-title { font-family: var(--mono); font-size: 14px; font-weight: 600; color: var(--text); }
         .modal-msg { color: var(--muted); font-size: 13px; line-height: 1.5; margin-top: 8px; word-break: break-word; }
         .modal-input {
@@ -2950,7 +2957,7 @@ export {
                 $("skillsBody").innerHTML =
                     '<div class="panel"><div class="set-cat-h">Auto-detect skills by stack</div>'
                     + '<div class="set-cat-b">Scan this project (packages, config files, gems) and install the matching community skills for its stack - hash-verified and kept separate from the policy skills below.</div>'
-                    + '<div class="ladd"><button type="button" class="toggle on with-icon" data-proj-autoskills><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>Detect &amp; install</button></div></div>'
+                    + '<div class="ladd"><button type="button" class="toggle on with-icon" data-proj-autoskills><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>Detect skills</button></div></div>'
                     + section("Policy skills", "Deploy enigma's policy skills into this project, per app. A green chip means the skill is in that app's project folder.", skills, "No skills.");
                 return;
             }
@@ -3495,6 +3502,60 @@ export {
                 loadProjectsList(); // refresh selector badges
             } catch { setNote(activeView === "skills" ? "skillsNote" : "settingsNote", "Could not reach the server.", "err"); }
         }
+        // Autoskills: detect the project's stack, let the user pick which community skills to
+        // install (all checked by default), then install the selected ones - or cancel.
+        async function autoskillsFlow() {
+            if (!isProjectScope()) return;
+            setNote("skillsNote", "Detecting your stack...");
+            let out;
+            try { out = await (await fetch("/api/projects/action", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: currentScope, op: "autoskills-detect" }) })).json(); }
+            catch { setNote("skillsNote", "Could not reach the server.", "err"); return; }
+            if (!out.ok) { setNote("skillsNote", out.error || "Detection failed.", "err"); return; }
+            const skills = out.skills || [];
+            if (!skills.length) { setNote("skillsNote", (out.detected ? "Detected " + out.detected + " - " : "") + "no matching community skills.", "ok"); return; }
+            setNote("skillsNote", out.detected ? ("Detected " + out.detected + ".") : "");
+            const selected = await openAutoskillsModal(out.detected, skills);
+            if (selected == null) { setNote("skillsNote", "Cancelled."); return; }
+            if (!selected.length) { setNote("skillsNote", "Nothing selected.", "err"); return; }
+            setNote("skillsNote", "Installing " + selected.length + " skill(s)...");
+            try {
+                const ins = await (await fetch("/api/projects/action", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: currentScope, op: "autoskills-install", skills: selected }) })).json();
+                if (ins.ok) { setNote("skillsNote", ins.note || "Installed.", "ok"); loadProjectSkills(); loadProjectsList(); }
+                else setNote("skillsNote", ins.error || ins.note || "Install failed.", "err");
+            } catch { setNote("skillsNote", "Could not reach the server.", "err"); }
+        }
+
+        // Selection modal: one checkbox per detected skill (all checked), Select all / Clear, and
+        // Install selected / Cancel. Resolves to the chosen refs, or null when cancelled.
+        function openAutoskillsModal(detected, skills) {
+            return new Promise((resolve) => {
+                const back = document.createElement("div");
+                back.className = "modal-back";
+                const rows = skills.map((s, i) =>
+                    '<label class="as-row"><input type="checkbox" checked data-as="' + i + '">'
+                    + '<span class="as-name">' + esc(s.name) + "</span>"
+                    + '<span class="as-src">' + (s.sources || []).map((x) => '<span class="tag">' + esc(x) + "</span>").join("") + "</span></label>").join("");
+                back.innerHTML = '<div class="modal wide" role="dialog" aria-modal="true">'
+                    + '<div class="modal-title">Install stack skills</div>'
+                    + '<div class="modal-msg">' + (detected ? "Detected " + esc(detected) + ". " : "") + esc(skills.length + " matching community skill(s)") + " - pick which to install. They are hash-verified and kept separate from the policy skills.</div>"
+                    + '<div class="as-top"><button type="button" class="toggle" data-as-all>Select all</button><button type="button" class="toggle" data-as-none>Clear</button></div>'
+                    + '<div class="as-list">' + rows + "</div>"
+                    + '<div class="modal-acts"><button type="button" class="toggle modal-cancel">Cancel</button>'
+                    + '<button type="button" class="toggle on modal-ok">Install selected</button></div></div>';
+                document.body.appendChild(back);
+                requestAnimationFrame(() => back.classList.add("show"));
+                let done = false;
+                const close = (val) => { if (done) return; done = true; back.classList.remove("show"); setTimeout(() => back.remove(), 200); resolve(val); };
+                const boxes = () => Array.from(back.querySelectorAll("input[data-as]"));
+                back.querySelector("[data-as-all]").addEventListener("click", () => boxes().forEach((b) => { b.checked = true; }));
+                back.querySelector("[data-as-none]").addEventListener("click", () => boxes().forEach((b) => { b.checked = false; }));
+                back.querySelector(".modal-cancel").addEventListener("click", () => close(null));
+                back.addEventListener("mousedown", (e) => { if (e.target === back) close(null); });
+                back.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); close(null); } });
+                back.querySelector(".modal-ok").addEventListener("click", () => close(boxes().filter((b) => b.checked).map((b) => skills[Number(b.dataset.as)].ref)));
+            });
+        }
+
         async function forgetProject() {
             if (!isProjectScope()) return;
             if (!(await askConfirm("Forget project", "Stop managing " + scopeLabel() + "? Its files are not touched.", false))) return;
@@ -3506,7 +3567,7 @@ export {
         }
         function onProjectControlClick(e) {
             if (!isProjectScope()) return;
-            if (e.target.closest("[data-proj-autoskills]")) { projAction({ op: "autoskills" }, "Scan this project and install the matching community skills for its stack?"); return; }
+            if (e.target.closest("[data-proj-autoskills]")) { autoskillsFlow(); return; }
             const chip = e.target.closest("[data-pskill]"); // per-app deploy chip in the Skills view
             if (chip) { projAction({ op: "skill", name: chip.dataset.pskill, agent: chip.dataset.pagent, on: chip.dataset.poff !== "1" }); return; }
             const sk = e.target.closest("[data-proj-skill]");

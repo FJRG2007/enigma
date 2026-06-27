@@ -318,7 +318,7 @@ export function projectDetail(path: string): ProjectDetail | { error: string } {
 }
 
 export interface ProjectActionPayload {
-    op: "skill" | "config-set" | "config-unset" | "hooks" | "gate" | "autoskills";
+    op: "skill" | "config-set" | "config-unset" | "hooks" | "gate" | "autoskills" | "autoskills-detect" | "autoskills-install";
     name?: string;
     on?: boolean;
     agent?: string;
@@ -326,30 +326,46 @@ export interface ProjectActionPayload {
     value?: boolean | string;
     gateOp?: "init" | "eject";
     dryRun?: boolean;
+    /** For autoskills-install: the skill refs (owner/repo/skill) the user chose to install. */
+    skills?: string[];
 }
 
-/** Detect the project's stack and install the matching community (stack) skills - the dashboard
- *  twin of `enigma autoskills`. Kept separate from enigma's policy skills. Never throws. */
-async function runAutoskills(projectDir: string, dryRun: boolean): Promise<ActionResult> {
-    const { detectTechnologies, collectSkills, detectAgents } = await import("./autoskills");
+/** One detected community skill offered for installation, with the technologies that matched it. */
+export interface AutoskillItem { ref: string; name: string; sources: string[]; }
+
+/** Detect the project's stack and return the matching community skills (no install) - the user
+ *  picks which to install. Kept separate from enigma's policy skills. Never throws. */
+async function runAutoskillsDetect(projectDir: string): Promise<ActionResult & { detected?: string; skills?: AutoskillItem[] }> {
+    const { detectTechnologies, collectSkills, parseSkillRef } = await import("./autoskills");
     const det = detectTechnologies(projectDir);
-    const skills = collectSkills(det);
     const stack = det.detected.map((t) => t.name).join(", ");
-    if (!skills.length) return { ok: true, note: stack ? `Detected ${stack} - no matching community skills.` : "No known technologies detected." };
-    if (dryRun) return { ok: true, note: `Detected ${stack || "your stack"} - ${skills.length} matching skill(s) available.` };
+    const items = collectSkills(det)
+        .map((e): AutoskillItem => ({ ref: e.skill, name: parseSkillRef(e.skill).skillName || e.skill, sources: e.sources }))
+        .filter((s) => s.name && !s.ref.startsWith("http")); // bare URLs are not in the registry
+    return { ok: true, detected: stack, skills: items };
+}
+
+/** Install only the user-selected stack skills. The selection is re-derived from a fresh detect,
+ *  so a client can never inject a skill ref the project's stack did not actually match. */
+async function runAutoskillsInstall(projectDir: string, selected: string[]): Promise<ActionResult> {
+    if (!selected.length) return { ok: false, error: "No skills selected." };
+    const { detectTechnologies, collectSkills, detectAgents } = await import("./autoskills");
+    const want = new Set(selected);
+    const skills = collectSkills(detectTechnologies(projectDir)).filter((e) => want.has(e.skill));
+    if (!skills.length) return { ok: false, error: "None of the selected skills match this project's stack." };
     const { installStackSkills } = await import("./autoskills-install");
     const res = await installStackSkills(skills, projectDir, detectAgents(), { yes: true, interactive: false });
     const parts = [`${res.installed} installed`];
     if (res.skipped) parts.push(`${res.skipped} skipped`);
     if (res.failed) parts.push(`${res.failed} failed`);
-    return { ok: res.failed === 0, error: res.failed ? res.errors.join("; ") : undefined, note: `Autoskills (${stack || "stack"}): ${parts.join(", ")}.` };
+    return { ok: res.failed === 0, error: res.failed ? res.errors.join("; ") : undefined, note: `Autoskills: ${parts.join(", ")}.` };
 }
 
-export async function applyProjectAction(path: string, payload: ProjectActionPayload): Promise<ActionResult & { detail?: ProjectDetail | { error: string } }> {
+export async function applyProjectAction(path: string, payload: ProjectActionPayload): Promise<ActionResult & { detail?: ProjectDetail | { error: string }; detected?: string; skills?: AutoskillItem[] }> {
     if (!isRegistered(path)) return { ok: false, error: "Project is not registered." };
     const norm = normalize(path);
     if (!isDir(norm)) return { ok: false, error: "Project directory no longer exists." };
-    let result: ActionResult;
+    let result: ActionResult & { detected?: string; skills?: AutoskillItem[] };
     switch (payload.op) {
         case "skill":
             result = payload.name ? setProjectSkill(norm, payload.name, Boolean(payload.on), payload.agent) : { ok: false, error: "Missing skill name." };
@@ -363,8 +379,11 @@ export async function applyProjectAction(path: string, payload: ProjectActionPay
             if (payload.key && PROJECT_SETTING_KEYS.includes(payload.key)) { unsetEnigmaValueAt(norm, configField(payload.key)); result = { ok: true }; }
             else result = { ok: false, error: "Missing or invalid key." };
             break;
-        case "autoskills":
-            result = await runAutoskills(norm, Boolean(payload.dryRun));
+        case "autoskills-detect":
+            result = await runAutoskillsDetect(norm);
+            break;
+        case "autoskills-install":
+            result = await runAutoskillsInstall(norm, Array.isArray(payload.skills) ? payload.skills.filter((s): s is string => typeof s === "string") : []);
             break;
         case "hooks":
             result = await runEnigma(norm, ["security", "-y"]);
