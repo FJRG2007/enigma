@@ -299,8 +299,8 @@ const RAW_CATEGORIES: Category[] = [
             },
             {
                 key: "recall-llm",
-                label: "Recall LLM enrichment",
-                hint: "rewrite recall observations into richer summaries using an LLM via your local Claude login; Claude Code only, uses a little quota, runs in the background; needs recall on; enigma default: off",
+                label: "Recall LLM curation",
+                hint: "use an LLM (via your local Claude login) to curate recall: it keeps only the observations worth remembering and discards trivial ones, like claude-mem; runs in the background, needs recall on; with no login it falls back to the deterministic heuristic; enigma default: on",
                 globalOnly: true,
                 read: () => readConfig().config.recallLlm,
                 write: (value, scope) => ({ path: setEnigmaToggle("recallLlm", value, scope), changed: true }),

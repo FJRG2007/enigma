@@ -264,6 +264,11 @@ export function markSessionEnriched(sessionId: string, db: RecallDb = openDb()):
     db.run("UPDATE observations SET enriched = 1 WHERE session_id = ?", sessionId);
 }
 
+/** Delete one observation (the FTS row and vector follow via trigger/cascade). */
+export function deleteObservation(id: number, db: RecallDb = openDb()): void {
+    db.run("DELETE FROM observations WHERE id = ?", id);
+}
+
 /** Vector-only ranking: cosine of the query embedding against candidate observation vectors. */
 function vectorSearch(query: string, opts: QueryOptions, limit: number, db: RecallDb): { id: number; score: number }[] {
     const qv = localEmbed(query);

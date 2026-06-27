@@ -179,7 +179,7 @@ test("sessions list and prune retention", () => {
     expect(store.recallStats(db).observations).toBe(2);
 });
 
-test("LLM enrichment is off by default and the timeline MCP tool appears when recall is on", async () => {
+test("LLM enrichment is gated by the recall-llm setting; the timeline MCP tool appears when recall is on", async () => {
     setEnigmaValue("recall", false, "global");
     setEnigmaValue("recallLlm", false, "global");
     expect((await enrichRecall({ force: true })).enabled).toBe(false);
