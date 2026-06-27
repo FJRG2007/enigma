@@ -26,7 +26,8 @@ const methods = Object.keys(INSTALL_METHODS); // curl, npm, pnpm, yarn, bun, npx
     <div class="it-row">
         <code class="it-text">{INSTALL_METHODS.curl}</code>
         <button class="it-copy" type="button" title="Copy command" aria-label="Copy command">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+            <svg class="ic-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+            <svg class="ic-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>
         </button>
     </div>
 </div>
@@ -49,12 +50,15 @@ const methods = Object.keys(INSTALL_METHODS); // curl, npm, pnpm, yarn, bun, npx
     .it-copy:hover { color: var(--accent); border-color: #2f3744; }
     .it-copy.done { color: var(--good); border-color: var(--good); }
     .it-copy svg { width: 15px; height: 15px; display: block; }
+    /* Both icons live in the DOM; toggle by class. Injecting the check via innerHTML left an
+       SVG that did not paint (the "green box with no check" bug), so swap with CSS instead. */
+    .it-copy .ic-check { display: none; }
+    .it-copy.done .ic-copy { display: none; }
+    .it-copy.done .ic-check { display: block; }
 </style>
 
 <script>
     import { highlightShell, copyText, INSTALL_METHODS, isWindows, saveInstallMethod } from "../lib/shell";
-
-    const CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>';
 
     // Wire every instance on the page (the component may appear more than once).
     document.querySelectorAll<HTMLElement>(".install-tabs").forEach((root) => {
@@ -71,9 +75,8 @@ const methods = Object.keys(INSTALL_METHODS); // curl, npm, pnpm, yarn, bun, npx
             if (t && t.firstChild) t.firstChild.textContent = "powershell";
         }
 
-        const copyIcon = copyBtn.innerHTML;
         const setCmd = (cmd: string) => { text.innerHTML = highlightShell(cmd); };
-        const resetCopy = () => { copyBtn.innerHTML = copyIcon; copyBtn.classList.remove("done"); copyBtn.title = "Copy command"; };
+        const resetCopy = () => { copyBtn.classList.remove("done"); copyBtn.title = "Copy command"; };
 
         const initial = (root.querySelector<HTMLButtonElement>(".it-tabs button.active")?.dataset.cmd) || "curl";
         setCmd(commands[initial]);
@@ -88,7 +91,7 @@ const methods = Object.keys(INSTALL_METHODS); // curl, npm, pnpm, yarn, bun, npx
 
         copyBtn.addEventListener("click", async () => {
             if (!(await copyText(text.textContent || ""))) return;
-            copyBtn.innerHTML = CHECK; copyBtn.classList.add("done"); copyBtn.title = "Copied";
+            copyBtn.classList.add("done"); copyBtn.title = "Copied";
             if (next) setTimeout(() => { window.location.href = next; }, 500);
             else setTimeout(resetCopy, 1800);
         });
