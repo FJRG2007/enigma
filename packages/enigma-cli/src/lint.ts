@@ -55,12 +55,23 @@ export function ensureLinterInstalled(): boolean {
         const manifest = join(LINT_INSTALL_DIR, "package.json");
         if (!existsSync(manifest)) writeFileSync(manifest, JSON.stringify({ name: "enigma-linter-host", private: true }, null, 2) + "\n");
         // shell:true so Windows resolves npm.cmd; windowsHide so the cmd.exe it spawns never
-        // flashes a console window; output suppressed to keep installs quiet.
-        spawnSync("npm", ["install", "@enigmax/linter@latest", "--no-audit", "--no-fund", "--silent"], {
+        // flashes a console window; output suppressed to keep installs quiet. --prefer-online
+        // revalidates the registry so a stale npm cache never pins an old @latest.
+        spawnSync("npm", ["install", "@enigmax/linter@latest", "--no-audit", "--no-fund", "--silent", "--prefer-online"], {
             cwd: LINT_INSTALL_DIR, shell: true, stdio: "ignore", timeout: 120000, windowsHide: true,
         });
     } catch { /* best-effort */ }
     return isLinterInstalled();
+}
+
+/** Force-refresh @enigmax/linter to the latest published version (used by `enigma update`). */
+export function refreshLinterPkg(): void {
+    if (!isLinterInstalled()) return;
+    try {
+        spawnSync("npm", ["install", "@enigmax/linter@latest", "--no-audit", "--no-fund", "--silent", "--prefer-online"], {
+            cwd: LINT_INSTALL_DIR, shell: true, stdio: "ignore", timeout: 120000, windowsHide: true,
+        });
+    } catch { /* best-effort */ }
 }
 
 /**
