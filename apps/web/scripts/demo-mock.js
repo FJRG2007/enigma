@@ -224,12 +224,12 @@
     // the same SETTINGS registry subset the real server exposes, and skills from SKILLS.
     var PROJECT_CFG_KEYS = ["gate", "auto-sync", "compress", "output-style", "minimal-code", "parallel-subagents", "skill-update-policy"];
     var PROJECTS = [
-        { path: "/home/you/api-server", label: "api-server", exists: true, isGitRepo: true, hooks: true, gate: false, skillsOn: ["git-policy", "backend-policy", "security-policy"], cfg: { gate: true } },
-        { path: "/home/you/web-app", label: "web-app", exists: true, isGitRepo: true, hooks: false, gate: true, skillsOn: ["frontend-policy", "ciphera-style-policy"], cfg: {} }
+        { path: "/home/you/api-server", label: "api-server", description: "REST API + workers", exists: true, isGitRepo: true, hooks: true, gate: false, skillsOn: ["git-policy", "backend-policy", "security-policy"], cfg: { gate: true } },
+        { path: "/home/you/web-app", label: "web-app", description: "", exists: true, isGitRepo: true, hooks: false, gate: true, skillsOn: ["frontend-policy", "ciphera-style-policy"], cfg: {} }
     ];
     function projFind(p) { return PROJECTS.filter(function (x) { return x.path === p; })[0]; }
     function projStatus(x) {
-        return { path: x.path, label: x.label, exists: x.exists !== false, isGitRepo: !!x.isGitRepo, skills: (x.skillsOn || []).length, hasLocalConfig: !!(x.cfg && Object.keys(x.cfg).length), hooks: !!x.hooks, gate: !!x.gate };
+        return { path: x.path, label: x.label, description: x.description || undefined, exists: x.exists !== false, isGitRepo: !!x.isGitRepo, skills: (x.skillsOn || []).length, hasLocalConfig: !!(x.cfg && Object.keys(x.cfg).length), hooks: !!x.hooks, gate: !!x.gate };
     }
     function projList() { return { projects: PROJECTS.map(projStatus) }; }
     function projDetail(x) {
@@ -249,14 +249,38 @@
         st.agents = agents; st.available = available; st.config = config;
         return st;
     }
-    function projValidate(p) { return /^(\/|[A-Za-z]:[\\/]|\\\\)/.test(p || ""); }
+    function projBase(p) { return String(p || "").trim().replace(/[\\/]+$/, "").split(/[\\/]/).pop() || ""; }
+    // Mirrors the server's checkProject. The static demo has no filesystem, so an absolute path
+    // is assumed to exist; the real dashboard verifies the folder on disk.
+    function projCheck(path, name, exceptPath) {
+        var raw = String(path || "").trim(), pathError = null, nameError = null;
+        if (exceptPath === undefined) {
+            if (!raw) pathError = "Enter a path.";
+            else if (!/^(\/|[A-Za-z]:[\\/]|\\\\)/.test(raw)) pathError = "Enter an absolute path (e.g. /home/you/app or C:\\path).";
+            else if (PROJECTS.some(function (p) { return p.path === raw; })) pathError = "This folder is already an enigma project.";
+        }
+        var nm = String(name || "").trim();
+        if (!nm) nameError = "Enter a name.";
+        else if (PROJECTS.some(function (p) { return p.path !== exceptPath && p.label.toLowerCase() === nm.toLowerCase(); })) nameError = "A project with this name already exists.";
+        return { pathError: pathError, nameError: nameError };
+    }
     function applyProjectsPost(body) {
+        if (body.op === "validate") { var c = projCheck(body.path, body.name || ""); return { ok: true, pathError: c.pathError, nameError: c.nameError }; }
         if (body.op === "add") {
-            if (!projValidate(body.path)) return { ok: false, error: "Enter an absolute path (e.g. /home/you/app).", projects: projList().projects };
-            if (!projFind(body.path)) {
-                var base = String(body.path).replace(/[\\/]+$/, "").split(/[\\/]/).pop() || body.path;
-                PROJECTS.push({ path: body.path, label: body.label || base, exists: true, isGitRepo: true, hooks: false, gate: false, skillsOn: [], cfg: {} });
+            var nm = String(body.name || "").trim() || projBase(body.path);
+            var v = projCheck(body.path, nm);
+            if (v.pathError || v.nameError) return { ok: false, error: v.pathError || v.nameError, projects: projList().projects };
+            PROJECTS.push({ path: String(body.path).trim(), label: nm, description: String(body.description || "").trim() || undefined, exists: true, isGitRepo: true, hooks: false, gate: false, skillsOn: [], cfg: {} });
+            return { ok: true, projects: projList().projects };
+        }
+        if (body.op === "update") {
+            var x = projFind(body.path); if (!x) return { ok: false, error: "Project is not registered.", projects: projList().projects };
+            if (body.name !== undefined) {
+                var nv = projCheck(body.path, body.name, body.path);
+                if (nv.nameError) return { ok: false, error: nv.nameError, projects: projList().projects };
+                x.label = String(body.name).trim();
             }
+            if (body.description !== undefined) x.description = String(body.description).trim() || undefined;
             return { ok: true, projects: projList().projects };
         }
         if (body.op === "remove") { PROJECTS = PROJECTS.filter(function (x) { return x.path !== body.path; }); return { ok: true, projects: projList().projects }; }

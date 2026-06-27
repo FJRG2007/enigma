@@ -20,13 +20,13 @@ import type { EnigmaConfigKey } from "./config";
 import { ALL_SETTINGS } from "./settings-registry";
 import { inspectSkills, readSkillMeta } from "./skills";
 import { execFile, execFileSync } from "node:child_process";
-import { dirname, join, resolve, basename } from "node:path";
+import { dirname, join, resolve, basename, isAbsolute } from "node:path";
 import { isDir, readJson, resolveBin, enigmaHome } from "./util";
 import { localTargetsAt, discoverAgents, isManagedProvider } from "./agents";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, cpSync, rmSync } from "node:fs";
 import { CONFIG_FILE, readConfigAt, readProjectConfig, setEnigmaValueAt, unsetEnigmaValueAt } from "./config";
 
-export interface ProjectEntry { path: string; label: string; }
+export interface ProjectEntry { path: string; label: string; description?: string; }
 
 export interface ProjectStatus extends ProjectEntry {
     exists: boolean;
@@ -73,7 +73,7 @@ interface Registry { projects: ProjectEntry[]; }
 function readRegistry(): Registry {
     const r = readJson<Registry>(registryPath());
     if (!r || !Array.isArray(r.projects)) return { projects: [] };
-    return { projects: r.projects.filter((p) => p && typeof p.path === "string").map((p) => ({ path: p.path, label: typeof p.label === "string" ? p.label : basename(p.path) })) };
+    return { projects: r.projects.filter((p) => p && typeof p.path === "string").map((p) => ({ path: p.path, label: typeof p.label === "string" ? p.label : basename(p.path), description: typeof p.description === "string" ? p.description : undefined })) };
 }
 
 function writeRegistry(reg: Registry): void {
@@ -135,6 +135,7 @@ function statusOf(entry: ProjectEntry): ProjectStatus {
     return {
         path,
         label: entry.label || basename(path),
+        description: entry.description,
         exists,
         isGitRepo: exists && existsSync(join(path, ".git")),
         skills: skillNames.size,
@@ -150,14 +151,51 @@ export function listProjects(): ProjectStatus[] {
 
 // --- project registry mutations ------------------------------------------------
 
-export function addProject(path: string, label?: string): { ok: boolean; error?: string; projects: ProjectStatus[] } {
-    const norm = normalize(path || "");
-    if (!norm || !isDir(norm)) return { ok: false, error: "Path is not an existing directory.", projects: listProjects() };
-    const reg = readRegistry();
-    if (!reg.projects.some((p) => normalize(p.path) === norm)) {
-        reg.projects.push({ path: norm, label: label?.trim() || basename(norm) });
-        writeRegistry(reg);
+/** Per-field validation for the create form, mirrored client-side for real-time feedback.
+ *  `exceptPath` excludes one project (a rename validating against the others). */
+export function checkProject(path: string, name: string, exceptPath?: string): { pathError: string | null; nameError: string | null } {
+    const reg = readRegistry().projects;
+    const exNorm = exceptPath ? normalize(exceptPath) : null;
+    const raw = (path || "").trim();
+    const norm = normalize(raw);
+    let pathError: string | null = null;
+    if (exceptPath === undefined) { // path is fixed when renaming - only validate it on create
+        if (!raw) pathError = "Enter a path.";
+        else if (!isAbsolute(raw)) pathError = "Enter an absolute path (e.g. /home/you/app or C:\\path).";
+        else if (!isDir(norm)) pathError = "That folder does not exist.";
+        else if (reg.some((p) => normalize(p.path) === norm)) pathError = "This folder is already an enigma project.";
     }
+    const nm = (name || "").trim();
+    let nameError: string | null = null;
+    if (!nm) nameError = "Enter a name.";
+    else if (reg.some((p) => normalize(p.path) !== exNorm && p.label.toLowerCase() === nm.toLowerCase())) nameError = "A project with this name already exists.";
+    return { pathError, nameError };
+}
+
+export function addProject(path: string, name?: string, description?: string): { ok: boolean; error?: string; projects: ProjectStatus[] } {
+    const norm = normalize((path || "").trim());
+    const nm = (name || "").trim() || basename(norm);
+    const { pathError, nameError } = checkProject(path, nm);
+    if (pathError || nameError) return { ok: false, error: pathError || nameError || "Invalid input.", projects: listProjects() };
+    const reg = readRegistry();
+    reg.projects.push({ path: norm, label: nm, description: (description || "").trim() || undefined });
+    writeRegistry(reg);
+    return { ok: true, projects: listProjects() };
+}
+
+/** Rename a project and/or change its description (path is the immutable key). */
+export function updateProject(path: string, name?: string, description?: string): { ok: boolean; error?: string; projects: ProjectStatus[] } {
+    const norm = normalize(path || "");
+    const reg = readRegistry();
+    const p = reg.projects.find((x) => normalize(x.path) === norm);
+    if (!p) return { ok: false, error: "Project is not registered.", projects: listProjects() };
+    if (name !== undefined) {
+        const { nameError } = checkProject(path, name, path);
+        if (nameError) return { ok: false, error: nameError, projects: listProjects() };
+        p.label = name.trim();
+    }
+    if (description !== undefined) p.description = description.trim() || undefined;
+    writeRegistry(reg);
     return { ok: true, projects: listProjects() };
 }
 
@@ -263,7 +301,8 @@ function runEnigma(cwd: string, args: string[]): Promise<ActionResult> {
 export function projectDetail(path: string): ProjectDetail | { error: string } {
     if (!isRegistered(path)) return { error: "Project is not registered." };
     const norm = normalize(path);
-    const base = statusOf({ path: norm, label: readRegistry().projects.find((p) => normalize(p.path) === norm)?.label || basename(norm) });
+    const entry = readRegistry().projects.find((p) => normalize(p.path) === norm);
+    const base = statusOf({ path: norm, label: entry?.label || basename(norm), description: entry?.description });
     const deployed = base.exists ? deployedSkills(norm) : {};
     const agents: ProjectAgentInfo[] = discoverAgents()
         .filter((a) => localTargetsAt(norm)[a.name]?.skills)

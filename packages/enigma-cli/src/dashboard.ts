@@ -501,9 +501,15 @@ function writeProjects(req: import("node:http").IncomingMessage, res: import("no
         let parsed: Record<string, unknown>;
         try { parsed = JSON.parse(body || "{}"); } catch { res.writeHead(400, JSON_HDR); res.end('{"error":"bad json"}'); return; }
         if (typeof parsed.op !== "string" || typeof parsed.path !== "string") { res.writeHead(400, JSON_HDR); res.end('{"error":"missing op/path"}'); return; }
+        const str = (v: unknown) => typeof v === "string" ? v : undefined;
         import("./dashboard-projects").then((m) => {
             if (parsed.op === "add") {
-                const out = m.addProject(parsed.path as string, typeof parsed.label === "string" ? parsed.label : undefined);
+                const out = m.addProject(parsed.path as string, str(parsed.name), str(parsed.description));
+                res.writeHead(out.ok ? 200 : 400, JSON_HDR); res.end(JSON.stringify(out)); return;
+            }
+            if (parsed.op === "validate") { res.writeHead(200, JSON_HDR); res.end(JSON.stringify({ ok: true, ...m.checkProject(parsed.path as string, str(parsed.name) || "") })); return; }
+            if (parsed.op === "update") {
+                const out = m.updateProject(parsed.path as string, str(parsed.name), str(parsed.description));
                 res.writeHead(out.ok ? 200 : 400, JSON_HDR); res.end(JSON.stringify(out)); return;
             }
             if (parsed.op === "remove") { res.writeHead(200, JSON_HDR); res.end(JSON.stringify({ ok: true, ...m.removeProject(parsed.path as string) })); return; }

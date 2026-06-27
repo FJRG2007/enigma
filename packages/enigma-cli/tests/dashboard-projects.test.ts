@@ -20,11 +20,14 @@ process.env.HOME = HOME;
 mkdirSync(join(HOME, ".claude"), { recursive: true });
 
 const PROJECT = mkdtempSync(join(tmpdir(), "enigma-proj-"));
+const PROJECT2 = mkdtempSync(join(tmpdir(), "enigma-proj2-"));
 
-const { listProjects, addProject, removeProject, projectDetail, applyProjectAction } = await import("../src/dashboard-projects");
+const { listProjects, addProject, removeProject, projectDetail, applyProjectAction, checkProject, updateProject } = await import("../src/dashboard-projects");
 const { readProjectConfig } = await import("../src/config");
 
-afterAll(() => { rmSync(HOME, { recursive: true, force: true }); rmSync(PROJECT, { recursive: true, force: true }); });
+afterAll(() => { rmSync(HOME, { recursive: true, force: true }); rmSync(PROJECT, { recursive: true, force: true }); rmSync(PROJECT2, { recursive: true, force: true }); });
+
+const { basename } = await import("node:path");
 
 test("addProject rejects a non-directory and accepts a real one (idempotent)", () => {
     expect(addProject(join(HOME, "does-not-exist")).ok).toBe(false);
@@ -33,6 +36,29 @@ test("addProject rejects a non-directory and accepts a real one (idempotent)", (
     expect(out.projects.some((p) => p.path === PROJECT && p.label === "My Project")).toBe(true);
     addProject(PROJECT); // dedupe
     expect(listProjects().filter((p) => p.path === PROJECT).length).toBe(1);
+});
+
+test("checkProject flags a bad path, a duplicate path and a duplicate name in real time", () => {
+    expect(checkProject("relative/path", "x").pathError).toBeTruthy();
+    expect(checkProject(join(HOME, "nope"), "x").pathError).toBeTruthy();   // does not exist
+    expect(checkProject(PROJECT, "x").pathError).toBeTruthy();              // PROJECT already added above
+    expect(checkProject(PROJECT2, "My Project").nameError).toBeTruthy();    // name taken by PROJECT
+    expect(checkProject(PROJECT2, "Fresh Name")).toMatchObject({ pathError: null, nameError: null });
+});
+
+test("addProject defaults the name to the folder's basename and stores a description", () => {
+    const out = addProject(PROJECT2, "", "a demo project");
+    expect(out.ok).toBe(true);
+    const p = out.projects.find((x) => x.path === PROJECT2);
+    expect(p?.label).toBe(basename(PROJECT2));
+    expect((projectDetail(PROJECT2) as { description?: string }).description).toBe("a demo project");
+});
+
+test("updateProject renames + sets description, and rejects a duplicate name", () => {
+    expect(updateProject(PROJECT2, "Renamed", "new desc").ok).toBe(true);
+    expect(listProjects().find((p) => p.path === PROJECT2)?.label).toBe("Renamed");
+    expect(updateProject(PROJECT2, "My Project").ok).toBe(false); // clashes with PROJECT's name
+    removeProject(PROJECT2);
 });
 
 test("project-local config writes to the project's .enigma.json and can be unset", async () => {

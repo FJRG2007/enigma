@@ -363,6 +363,9 @@
             border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 9px 12px; font-size: 13px; font-family: var(--mono);
         }
         .modal-input:focus { outline: none; border-color: var(--accent); }
+        .modal-fl { display: block; margin-top: 14px; margin-bottom: 5px; font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+        .modal-fl .modal-opt { text-transform: none; letter-spacing: 0; opacity: .75; }
+        .modal-fl + .modal-input { margin-top: 0; }
         /* Usage view provider/account pickers. */
         .useg-pick { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
         .useg-pick select { width: auto; min-width: 170px; }
@@ -3208,21 +3211,74 @@ export {
             catch { projectsCache = []; }
             populateScopeSelector();
         }
-        async function openCreateProject() {
-            const path = await askText("Create new project", "", "Absolute path to the project folder (its name becomes the label):",
-                (v) => /^(\/|[A-Za-z]:[\\/]|\\\\)/.test(v) ? null : "Enter an absolute path, e.g. /home/you/app or C:\\path\\to\\app.");
-            if (!path) return;
-            const before = new Set(projectsCache.map((p) => p.path));
-            let out;
-            try { out = await (await fetch("/api/projects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ op: "add", path }) })).json(); }
-            catch { await openModal({ title: "Could not add project", message: "Could not reach the server." }); return; }
-            if (!out.ok) { await openModal({ title: "Could not add project", message: out.error || "That path could not be added." }); return; }
-            projectsCache = out.projects || projectsCache;
-            const added = projectsCache.find((p) => !before.has(p.path)) || projectsCache[projectsCache.length - 1];
-            currentScope = added ? added.path : "global";
-            try { localStorage.setItem("enigmaScope", currentScope); } catch { /* */ }
-            populateScopeSelector();
-            location.hash = "#/settings"; route();
+        function baseName(p) { return (p || "").trim().replace(/[\\/]+$/, "").split(/[\\/]/).pop() || ""; }
+        function openCreateProject() {
+            const back = document.createElement("div");
+            back.className = "modal-back";
+            back.innerHTML =
+                '<div class="modal" role="dialog" aria-modal="true">'
+                + '<div class="modal-title">Create new project</div>'
+                + '<label class="modal-fl">Path</label><input class="modal-input" data-f="path" placeholder="/home/you/project" autocomplete="off" spellcheck="false">'
+                + '<div class="modal-err" data-e="path"></div>'
+                + '<label class="modal-fl">Name</label><input class="modal-input" data-f="name" placeholder="project name" autocomplete="off" spellcheck="false">'
+                + '<div class="modal-err" data-e="name"></div>'
+                + '<label class="modal-fl">Description <span class="modal-opt">(optional)</span></label><input class="modal-input" data-f="desc" placeholder="what this project is" autocomplete="off">'
+                + '<div class="modal-acts"><button type="button" class="toggle modal-cancel">Cancel</button><button type="button" class="toggle on modal-ok" disabled>Create</button></div></div>';
+            document.body.appendChild(back);
+            requestAnimationFrame(() => back.classList.add("show"));
+            const $f = (s) => back.querySelector(s);
+            const pathInp = $f('[data-f="path"]'), nameInp = $f('[data-f="name"]'), descInp = $f('[data-f="desc"]');
+            const pathErr = $f('[data-e="path"]'), nameErr = $f('[data-e="name"]'), okBtn = $f(".modal-ok");
+            let nameEdited = false, pathOk = false, nameOk = false, reqId = 0, debounce;
+            let done = false;
+            const close = () => { if (done) return; done = true; back.classList.remove("show"); setTimeout(() => back.remove(), 200); };
+            const refreshOk = () => { okBtn.disabled = !(pathOk && nameOk); };
+            // Name: required + not a duplicate (checked live against the loaded list; the server re-checks on add).
+            const checkName = () => {
+                const nm = nameInp.value.trim();
+                if (!nm) { nameErr.textContent = "Enter a name."; nameOk = false; }
+                else if (projectsCache.some((p) => p.label.toLowerCase() === nm.toLowerCase())) { nameErr.textContent = "A project with this name already exists."; nameOk = false; }
+                else { nameErr.textContent = ""; nameOk = true; }
+                refreshOk();
+            };
+            // Path: client format check, then a debounced server check (exists on disk + not already a project).
+            const validatePath = async () => {
+                const myId = ++reqId, path = pathInp.value.trim();
+                try {
+                    const out = await (await fetch("/api/projects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ op: "validate", path }) })).json();
+                    if (myId !== reqId) return; // a newer keystroke superseded this
+                    pathErr.textContent = out.pathError || ""; pathOk = !out.pathError; refreshOk();
+                } catch { /* keep the client-side state */ }
+            };
+            const onPath = () => {
+                const path = pathInp.value.trim();
+                if (!nameEdited) { nameInp.value = baseName(path); checkName(); }
+                if (!path) { pathErr.textContent = "Enter a path."; pathOk = false; refreshOk(); return; }
+                if (!/^(\/|[A-Za-z]:[\\/]|\\\\)/.test(path)) { pathErr.textContent = "Enter an absolute path (e.g. /home/you/app or C:\\path)."; pathOk = false; refreshOk(); return; }
+                pathErr.textContent = "Checking..."; pathOk = false; refreshOk();
+                clearTimeout(debounce); debounce = setTimeout(validatePath, 300);
+            };
+            pathInp.addEventListener("input", onPath);
+            nameInp.addEventListener("input", () => { nameEdited = true; checkName(); });
+            back.querySelector(".modal-cancel").addEventListener("click", close);
+            back.addEventListener("mousedown", (e) => { if (e.target === back) close(); });
+            back.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); close(); } else if (e.key === "Enter" && !okBtn.disabled) { e.preventDefault(); okBtn.click(); } });
+            okBtn.addEventListener("click", async () => {
+                if (okBtn.disabled) return;
+                const before = new Set(projectsCache.map((p) => p.path));
+                let out;
+                try { out = await (await fetch("/api/projects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ op: "add", path: pathInp.value.trim(), name: nameInp.value.trim(), description: descInp.value.trim() }) })).json(); }
+                catch { pathErr.textContent = "Could not reach the server."; return; }
+                if (!out.ok) { pathErr.textContent = out.error || "Could not add the project."; pathOk = false; refreshOk(); return; }
+                projectsCache = out.projects || projectsCache;
+                const added = projectsCache.find((p) => !before.has(p.path)) || projectsCache[projectsCache.length - 1];
+                currentScope = added ? added.path : "global";
+                try { localStorage.setItem("enigmaScope", currentScope); } catch { /* */ }
+                populateScopeSelector();
+                close();
+                location.hash = "#/settings"; route();
+            });
+            pathInp.focus();
         }
         function wireScope() {
             const sel = $("scopeSel");
@@ -3262,13 +3318,31 @@ export {
             const hooks = d.hooks ? '<span class="tag">installed</span>' : (d.isGitRepo ? '<button type="button" class="toggle on" data-proj-act="hooks">Install git hooks</button>' : '<span class="tag">not a git repo</span>');
             const gate = d.gate ? '<span class="tag">initialized</span> <button type="button" class="toggle" data-proj-act="gate-eject">Eject</button>' : '<button type="button" class="toggle on" data-proj-act="gate-init">Initialize gate</button>';
             const cfg = (d.config || []).map(projConfigRow).join("") || '<div class="empty" style="padding:8px 0">No project settings.</div>';
+            const descLine = d.description ? " &middot; " + esc(d.description) : "";
             el.innerHTML =
-                '<div class="scope-banner">Editing <b>' + esc(d.label) + "</b> &middot; " + esc(d.path) + " &middot; " + agentsLine + "</div>"
+                '<div class="scope-banner">Editing <b>' + esc(d.label) + "</b> &middot; " + esc(d.path) + descLine + " &middot; " + agentsLine + "</div>"
                 + '<div class="panel"><div class="set-cat-h">Setup</div><div class="set-grid">'
                 + '<div class="set-row"><div class="set-meta"><div class="set-name">Git hooks</div><div class="set-hint">commit secret guard for this repo</div></div><div class="set-ctl">' + hooks + "</div></div>"
                 + '<div class="set-row"><div class="set-meta"><div class="set-name">AI quality gate</div><div class="set-hint">validate changes through the gate pipeline before push (needs the gate feature enabled)</div></div><div class="set-ctl">' + gate + "</div></div></div></div>"
                 + '<div class="panel"><div class="set-cat-h">Project config</div><div class="set-cat-b">applies only to this project (its .enigma.json). Settings not shown here are global-only - switch Scope to Global for those.</div><div class="set-grid">' + cfg + "</div></div>"
-                + '<div class="panel"><div class="set-cat-h">Manage</div><div class="set-grid"><div class="set-row"><div class="set-meta"><div class="set-name">Forget project</div><div class="set-hint">remove it from the dashboard list - its files are not touched</div></div><div class="set-ctl"><button type="button" class="toggle" data-proj-forget>Forget</button></div></div></div></div>';
+                + '<div class="panel"><div class="set-cat-h">Manage</div><div class="set-grid">'
+                + '<div class="set-row"><div class="set-meta"><div class="set-name">Name</div><div class="set-hint">display name for this project (must be unique)</div></div><div class="set-ctl"><input class="linput" data-proj-name value="' + esc(d.label) + '" spellcheck="false" style="width:200px"></div></div>'
+                + '<div class="set-row"><div class="set-meta"><div class="set-name">Description</div><div class="set-hint">optional note shown in the header</div></div><div class="set-ctl ladd" style="align-items:center"><input class="linput" data-proj-desc value="' + esc(d.description || "") + '" placeholder="optional" style="flex:none;width:240px"><button type="button" class="toggle on" data-proj-save-meta>Save</button></div></div>'
+                + '<div class="set-row"><div class="set-meta"><div class="set-name">Forget project</div><div class="set-hint">remove it from the dashboard list - its files are not touched</div></div><div class="set-ctl"><button type="button" class="toggle" data-proj-forget>Forget</button></div></div>'
+                + "</div></div>";
+        }
+        async function saveProjectMeta() {
+            if (!isProjectScope()) return;
+            const nameInp = document.querySelector("[data-proj-name]"), descInp = document.querySelector("[data-proj-desc]");
+            const name = nameInp ? nameInp.value.trim() : undefined, description = descInp ? descInp.value.trim() : "";
+            try {
+                const out = await (await fetch("/api/projects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ op: "update", path: currentScope, name, description }) })).json();
+                if (!out.ok) { setNote("settingsNote", out.error || "Could not save.", "err"); return; }
+                projectsCache = out.projects || projectsCache;
+                populateScopeSelector(); // reflect the renamed project in the selector
+                setNote("settingsNote", "Saved.", "ok");
+                loadProjectSettings();
+            } catch { setNote("settingsNote", "Could not reach the server.", "err"); }
         }
         async function loadProjectSkills() {
             const el = $("skillsBody");
@@ -3314,6 +3388,7 @@ export {
             if (cb) { projAction({ op: "config-set", key: cb.dataset.projCfgBool, value: cb.dataset.on !== "1" }); return; }
             const rs = e.target.closest("[data-proj-cfg-reset]");
             if (rs) { projAction({ op: "config-unset", key: rs.dataset.projCfgReset }); return; }
+            if (e.target.closest("[data-proj-save-meta]")) { saveProjectMeta(); return; }
             if (e.target.closest("[data-proj-forget]")) { forgetProject(); return; }
             const act = e.target.closest("[data-proj-act]");
             if (act) {
