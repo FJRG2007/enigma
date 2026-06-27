@@ -83,7 +83,7 @@ const termGood = `<span class="k">$</span> git add .env
             <p class="lede">Enigma makes your agent produce more optimal, secure and scalable code - in less time, fewer tokens and fewer iterations. Dynamic Skills that adapt to each agent, portable git security hooks, and a local dashboard to manage and measure it all - from one command.</p>
 
             <div class="install-wrap">
-                <InstallTabs next={url("start/")} />
+                <InstallTabs />
             </div>
 
             <div class="works">
@@ -94,6 +94,10 @@ const termGood = `<span class="k">$</span> git add .env
             </div>
 
             <div class="hero-cta">
+                <a class="btn" href={url("start/")}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"></path><path d="M12 5l7 7-7 7"></path></svg>
+                    Get started
+                </a>
                 <a class="btn ghost" href={url("demo/")}>
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
                     See a live demo of the dashboard

@@ -1,5 +1,6 @@
 ---
 import Base from "../layouts/Base.astro";
+import InstallTabs from "../components/InstallTabs.astro";
 import { url, docHref } from "../lib/url";
 
 const title = "Get started - Enigma";
@@ -23,16 +24,7 @@ const description = "Install enigma, then open the dashboard with `enigma dash` 
             <h1>Install Enigma, then open the dashboard</h1>
             <p class="lede">Two commands: one to install, one to open the control panel. The dashboard is the comfortable way to set everything up.</p>
 
-            <div class="install">
-                <div class="bar"><span class="dotrow"><i></i><i></i><i></i></span><span class="cmd-os" id="cmdos">macOS / Linux</span></div>
-                <div class="cmd">
-                    <pre><span class="pfx">$ </span><span id="cmdtext">curl -fsSL https://raw.githubusercontent.com/FJRG2007/enigma/main/scripts/install.sh | sh</span></pre>
-                    <button class="copy" id="copy" type="button" title="Copy command" aria-label="Copy command">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-                    </button>
-                </div>
-            </div>
-            <p class="alt">Prefer a package manager? <a href={docHref("getting-started/introduction")}>npm, pnpm, yarn, bun and npx</a> work too.</p>
+            <InstallTabs />
 
             <ol class="steps">
                 <li>
@@ -88,25 +80,6 @@ const description = "Install enigma, then open the dashboard with `enigma dash` 
     h1 { font-family: var(--mono); font-size: clamp(28px, 5vw, 40px); line-height: 1.1; font-weight: 600; letter-spacing: -0.5px; margin: 14px 0 0; }
     .lede { color: var(--muted); font-size: 17px; max-width: 56ch; margin: 14px 0 0; }
 
-    .install { margin: 28px 0 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-2); overflow: hidden; }
-    .bar { display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: rgba(0, 0, 0, 0.25); border-bottom: 1px solid var(--border-soft); }
-    .dotrow { display: inline-flex; gap: 6px; }
-    .dotrow i { width: 11px; height: 11px; border-radius: 50%; background: var(--surface2); border: 1px solid var(--border); }
-    .cmd-os { font-family: var(--mono); font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; }
-    .cmd { display: flex; align-items: flex-start; gap: 12px; padding: 16px 18px; }
-    .cmd pre { margin: 0; flex: 1; min-width: 0; overflow-x: auto; font-family: var(--mono); font-size: 13px; line-height: 1.7; color: var(--text); }
-    .cmd .pfx { color: var(--good); user-select: none; }
-    .cmd .t-cmd { color: var(--accent); }
-    .cmd .t-flag { color: var(--accent2); }
-    .cmd .t-url { color: var(--good); }
-    .cmd .t-op { color: var(--muted); }
-    .copy { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; color: var(--muted); background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 8px; cursor: pointer; transition: color .15s, border-color .15s; }
-    .copy:hover { color: var(--accent); border-color: #2f3744; }
-    .copy.done { color: var(--good); border-color: var(--good); }
-    .copy svg { width: 15px; height: 15px; display: block; }
-    .alt { color: var(--muted); font-size: 13px; margin: 12px 0 0; }
-    .alt a { color: var(--accent2); }
-
     .steps { margin: 32px 0 0; list-style: none; padding: 0; display: grid; gap: 12px; }
     .steps li { display: flex; gap: 14px; align-items: flex-start; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px 20px; box-shadow: var(--shadow-1); }
     .step-n { flex: 0 0 auto; width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; font-family: var(--mono); font-size: 14px; font-weight: 600; color: #1a1206; background: var(--accent); border-radius: 999px; }
@@ -122,25 +95,10 @@ const description = "Install enigma, then open the dashboard with `enigma dash` 
 </style>
 
 <script>
-    import { highlightShell, copyText, resolveInstall, savedInstallMethod } from "../lib/shell";
+    import { copyText } from "../lib/shell";
 
-    const cmdText = document.getElementById("cmdtext")!;
-    // Show the method the visitor picked on the landing page; fall back to the OS-appropriate
-    // script (Windows -> PowerShell, else the curl one-liner) when there's no saved choice.
-    const { command, label } = resolveInstall(savedInstallMethod());
-    cmdText.innerHTML = highlightShell(command);
-    document.getElementById("cmdos")!.textContent = label;
-
-    const copyBtn = document.getElementById("copy")!;
-    const COPY_ICON = copyBtn.innerHTML;
-    const CHECK_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>';
-    copyBtn.addEventListener("click", async () => {
-        if (!(await copyText(cmdText.textContent || ""))) return;
-        copyBtn.innerHTML = CHECK_ICON; copyBtn.classList.add("done"); copyBtn.title = "Copied";
-        setTimeout(() => { copyBtn.innerHTML = COPY_ICON; copyBtn.classList.remove("done"); copyBtn.title = "Copy command"; }, 1800);
-    });
-
-    // Each `enigma ...` chip copies its own command on click.
+    // The install command + tabs + copy live in InstallTabs (which also restores the method the
+    // visitor picked on the landing). Here we only wire the `enigma ...` chips to copy themselves.
     document.querySelectorAll<HTMLButtonElement>(".chip[data-copy]").forEach((chip) => {
         chip.addEventListener("click", async () => {
             if (!(await copyText(chip.dataset.copy || ""))) return;
