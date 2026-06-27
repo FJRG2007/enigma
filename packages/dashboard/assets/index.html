@@ -2892,16 +2892,16 @@ export {
         let skillScope = "global"; // "global" | "project" - the same rows render in both
         function skillRow(s) {
             const ver = s.version ? '<span class="tag">v' + esc(s.version) + "</span>" : "";
-            // Project scope: same row, but the per-app chips toggle deployment INTO this project
-            // (data-pskill, handled by the scope delegate) and the global-only controls are hidden.
+            // Project scope: same row, but policy skills are managed globally - the per-app chips are
+            // read-only here (show presence only) and the global-only controls are hidden.
             if (skillScope === "project") {
-                const chips = (s.agentStates || []).map((a) => {
-                    // An app that is not installed on this machine can't be a deploy target - show
-                    // its chip disabled rather than letting a click create a dir for an unused agent.
-                    if (a.installed === false) return '<button type="button" class="achip" disabled aria-label="' + esc(a.label) + '" title="' + esc(a.label) + ' - not installed">' + (agentSvg(a.name) || esc(a.label)) + "</button>";
-                    return '<button type="button" class="achip' + (a.deployed ? " on" : "") + '" data-pskill="' + esc(s.name) + '" data-pagent="' + esc(a.name) + '" data-poff="' + (a.deployed ? 1 : 0) + '" aria-label="' + esc(a.label) + '" title="'
-                        + (a.deployed ? esc(a.label) + " - deployed, click to remove" : esc(a.label) + " - not deployed, click to deploy") + '">' + (agentSvg(a.name) || esc(a.label)) + "</button>";
-                }).join("");
+                // Policy (enigma) skills are managed at GLOBAL scope - deploying one per-project is
+                // redundant (an agent reads both global and project skills). So in project scope the
+                // per-app chips are READ-ONLY: they show where the skill is present but never toggle
+                // (no data-pskill). Switch Scope to Global to enable/disable a policy skill.
+                const chips = (s.agentStates || []).map((a) =>
+                    '<button type="button" class="achip' + (a.deployed ? " on" : "") + '" disabled aria-label="' + esc(a.label) + '" title="'
+                    + esc(a.label) + (a.installed === false ? " - not installed" : " - policy skills are managed at Global scope") + '">' + (agentSvg(a.name) || esc(a.label)) + "</button>").join("");
                 return '<div class="set-row"><div class="set-meta"><div class="set-name">' + esc(s.name) + ver + "</div>"
                     + '<div class="set-hint">' + esc(s.description || "") + "</div>"
                     + '<div class="set-agents">' + (chips || '<span class="tag">no agents</span>') + "</div></div></div>";
@@ -2962,7 +2962,7 @@ export {
                     '<div class="panel"><div class="set-cat-h">Auto-detect skills by stack</div>'
                     + '<div class="set-cat-b">Scan this project (packages, config files, gems) and install the matching community skills for its stack - hash-verified and kept separate from the policy skills below.</div>'
                     + '<div class="ladd"><button type="button" class="toggle on with-icon" data-proj-autoskills><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>Detect skills</button></div></div>'
-                    + section("Policy skills", "Deploy enigma's policy skills into this project, per app. A green chip means the skill is in that app's project folder.", skills, "No skills.");
+                    + section("Policy skills", "enigma's policy skills are managed at Global scope (an agent reads them in every project). Shown here read-only - a green app logo means the skill is also present in this project's folder. Switch Scope to Global to enable or disable a policy skill.", skills, "No skills.");
                 return;
             }
             const enigma = skills.filter((s) => s.source === "enigma");
@@ -3572,8 +3572,6 @@ export {
         function onProjectControlClick(e) {
             if (!isProjectScope()) return;
             if (e.target.closest("[data-proj-autoskills]")) { autoskillsFlow(); return; }
-            const chip = e.target.closest("[data-pskill]"); // per-app deploy chip in the Skills view
-            if (chip) { projAction({ op: "skill", name: chip.dataset.pskill, agent: chip.dataset.pagent, on: chip.dataset.poff !== "1" }); return; }
             const sk = e.target.closest("[data-proj-skill]");
             if (sk) { projAction({ op: "skill", name: sk.dataset.projSkill, on: sk.dataset.on !== "1" }); return; }
             const cb = e.target.closest("[data-proj-cfg-bool]");
