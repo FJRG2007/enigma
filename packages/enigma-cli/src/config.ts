@@ -89,6 +89,10 @@ export interface EnigmaConfig {
     tokenSpeed: number;
     /** Read the agent's own session transcripts for real token usage + cache savings (opt-in). */
     usageStats: boolean;
+    /** Build a local session-memory store from transcripts (recall), searchable + MCP-exposed (opt-in). */
+    recall: boolean;
+    /** Enrich recall observations with an LLM via your local Claude login (opt-in; uses a little quota). */
+    recallLlm: boolean;
     /** Experimental: route `enigma claude` through a local measuring proxy (opt-in, default off, Claude Code only). */
     proxy: boolean;
     /**
@@ -184,7 +188,7 @@ export interface EnigmaConfig {
  */
 export const CONFIG_DEFAULTS: EnigmaConfig = {
     commitEmoji: true, updateNotifier: true, fullscreen: true, parallelSubagents: false, outputStyle: "off", minimalCode: "full",
-    autoSync: true, remoteSkills: true, skillUpdatePolicy: "overwrite", permissionBypass: true, autoLint: false, compress: false, gate: false, dashboard: "off", tokenPrice: 0, tokenSpeed: 0, usageStats: false, proxy: false, usageApi: false, promptSecretGuard: false, promptSecretMode: "redact",
+    autoSync: true, remoteSkills: true, skillUpdatePolicy: "overwrite", permissionBypass: true, autoLint: false, compress: false, gate: false, dashboard: "off", tokenPrice: 0, tokenSpeed: 0, usageStats: false, recall: false, recallLlm: false, proxy: false, usageApi: false, promptSecretGuard: false, promptSecretMode: "redact",
     planSessionLimit: 0, planWeeklyLimit: 0, planWeeklySonnetLimit: 0, planWeeklyOpusLimit: 0, planWeeklyReset: "mon 00:00",
     dashboardLive: true, dashboardPort: 0, toolPaths: {}, bypassDisabled: [], discardedSkills: [], skillAgentsOff: {},
 };

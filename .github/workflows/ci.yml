@@ -64,6 +64,9 @@ jobs:
       - name: Test agent memory editor
         run: bun test tests/memory-edit.test.ts
         working-directory: packages/enigma-cli
+      - name: Test recall session memory
+        run: bun test tests/recall.test.ts
+        working-directory: packages/enigma-cli
 
       # The package must build (tsup) so dist is publishable.
       - name: Build

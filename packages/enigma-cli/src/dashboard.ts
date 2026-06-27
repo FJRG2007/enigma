@@ -391,6 +391,33 @@ async function serveProviderStatus(req: import("node:http").IncomingMessage, res
     }
 }
 
+/** Serialize the recall session-memory view (status + recent/searched observations). */
+function serveRecall(req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse): void {
+    const u = new URL(req.url || "/", "http://x").searchParams;
+    const timeline = u.get("timeline");
+    import("./dashboard-recall")
+        .then((m) => {
+            if (timeline) { res.writeHead(200, JSON_HDR); res.end(JSON.stringify({ items: m.recallTimelineView(Number(timeline)) })); return; }
+            const view = m.recallDashboard({ q: u.get("q") || undefined, project: u.get("project") || undefined, type: u.get("type") || undefined });
+            res.writeHead(200, JSON_HDR); res.end(JSON.stringify(view));
+        })
+        .catch(() => { res.writeHead(500, JSON_HDR); res.end('{"error":"recall unavailable"}'); });
+}
+
+/** Apply a recall action from a POST body { op } (sync | clear). */
+function writeRecall(req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse): void {
+    let body = "";
+    req.on("data", (chunk) => { body += chunk; if (body.length > 4096) req.destroy(); });
+    req.on("end", () => {
+        let parsed: { op?: unknown };
+        try { parsed = JSON.parse(body || "{}"); } catch { res.writeHead(400, JSON_HDR); res.end('{"error":"bad json"}'); return; }
+        if (typeof parsed.op !== "string") { res.writeHead(400, JSON_HDR); res.end('{"error":"missing op"}'); return; }
+        import("./dashboard-recall")
+            .then(({ applyRecallAction }) => { const out = applyRecallAction(parsed.op as string); res.writeHead(out.ok ? 200 : 400, JSON_HDR); res.end(JSON.stringify(out)); })
+            .catch(() => { res.writeHead(500, JSON_HDR); res.end('{"ok":false,"error":"action failed"}'); });
+    });
+}
+
 /** Factual "what's active" overview (configured state of each enigma system + skill counts). */
 function serveStatus(res: import("node:http").ServerResponse): void {
     import("./dashboard-status")
@@ -622,6 +649,13 @@ function createDashboardServer(version: string): Server {
             if (!isLocalRequest(req)) { res.writeHead(403, JSON_HDR); res.end('{"error":"forbidden"}'); return; }
             if (method === "GET") { serveResources(res); return; }
             if (method === "POST") { writeResources(req, res); return; }
+            res.writeHead(405).end(); return;
+        }
+        // Recall reads your own session memory and can sync/clear it, so it is origin-guarded.
+        if (url === "/api/recall") {
+            if (!isLocalRequest(req)) { res.writeHead(403, JSON_HDR); res.end('{"error":"forbidden"}'); return; }
+            if (method === "GET") { serveRecall(req, res); return; }
+            if (method === "POST") { writeRecall(req, res); return; }
             res.writeHead(405).end(); return;
         }
         // Accounts/profiles management + config import/export are write/structure surfaces, origin-guarded.

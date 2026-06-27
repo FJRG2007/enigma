@@ -47,7 +47,7 @@ const PKG = readJson<{ version?: string }>(join(__dirname, "..", "package.json")
 // Fixed commands plus one launch command per supported tool (e.g. `enigma claude`).
 const COMMANDS = new Set<string>([
     "install", "update", "security", "guard", "seal", "check", "config", "account", "accounts",
-    "profile", "profiles", "skill", "skills", "issue", "improve", "compress", "mcp", "gate", "dashboard", "dash", "fix-path", "resources", "autoskills", "statusline", "help", "version",
+    "profile", "profiles", "skill", "skills", "issue", "improve", "compress", "mcp", "gate", "dashboard", "dash", "fix-path", "resources", "recall", "autoskills", "statusline", "help", "version",
     ...TOOL_NAMES,
 ]);
 
@@ -189,6 +189,9 @@ Commands:
                        repair its launch command so 'enigma <tool>' works; no tool fixes all
   resources [action]   System cleanup: status, or wsl | docker | free-port PORT | kill PID
                        (shut down WSL/vmmemWSL, quit Docker, free a port, kill a process)
+  recall [action]      Local session memory from transcripts: status, sync, search <q>,
+                       list, show <id>, timeline <id>, sessions, context, prune, clear
+                       (hybrid keyword+vector search; opt-in; reads your own logs)
   autoskills [path]    Detect the project's tech stack and install matching agent skills
                        (separate from the policy skills; --dry-run to preview)
   seal                 Maintenance: (re)compute skill content hashes
@@ -310,6 +313,16 @@ function syncForLaunch(tool: string, account: string): void {
     } catch (err) {
         console.error(`enigma: skill auto-sync failed (${(err as Error).message}); launching anyway.`);
     }
+    // Capture session memory in the background (opt-in) so recall stays fresh without a manual
+    // sync - the automatic-ingestion role. Deferred so it never delays the launch; silent and
+    // best-effort. syncRecall is incremental, so repeat launches are cheap.
+    if (readConfig().config.recall) {
+        setTimeout(() => {
+            import("./recall")
+                .then(async (r) => { try { r.syncRecall(); await r.enrichRecall(); } catch { /* best-effort */ } })
+                .catch(() => { /* recall unavailable */ });
+        }, 0);
+    }
 }
 
 /** Sync an account's deployment, then run the tool's login flow for it. */
@@ -413,6 +426,123 @@ async function runResourcesCli(args: string[]): Promise<number> {
     if (!r) { console.error(`Unknown subcommand '${sub}'. Use: enigma resources <wsl | docker | free-port PORT | kill PID>`); return 1; }
     console.log(r.message);
     return r.ok ? 0 : 1;
+}
+
+/**
+ * `enigma recall [status|sync|search|list|show|context|clear]`: the local session-memory
+ * store built from coding-agent transcripts. `sync` reads transcripts into the store; the
+ * other subcommands query it. Reading transcripts is the consent action, so `sync` reports
+ * what it scanned and where data lives.
+ */
+async function runRecallCli(args: string[]): Promise<number> {
+    const recall = await import("./recall");
+    if (!recall.recallAvailable()) {
+        console.error("recall needs the enigma binary (bun:sqlite is unavailable under Node).");
+        return 1;
+    }
+    const useColor = !("NO_COLOR" in process.env) && (process.stdout.isTTY || "FORCE_COLOR" in process.env);
+    const sgr = (code: string, s: string): string => (useColor ? `\x1b[${code}m${s}\x1b[0m` : s);
+    const bold = (s: string): string => sgr("1", s), dim = (s: string): string => sgr("2", s), cyan = (s: string): string => sgr("36", s);
+    const [sub, ...rest] = args;
+
+    if (!sub || sub === "status") {
+        const st = recall.recallStatus();
+        const s = st.stats!;
+        console.log(`\n  ${bold("recall")}  ${dim("local session memory")}`);
+        console.log(`  observations ${cyan(String(s.observations))}   sessions ${cyan(String(s.sessions))}   projects ${cyan(String(s.projects))}   ${dim(`${Math.round(s.dbBytes / 1024)} KB`)}`);
+        if (st.lastSync) console.log(`  last sync ${dim(new Date(st.lastSync).toLocaleString())}`);
+        const types = Object.entries(s.byType).map(([t, n]) => `${t} ${n}`).join("   ");
+        if (types) console.log(`  ${dim(types)}`);
+        if (!s.observations) console.log(`\n  ${dim("Empty. Build it with:")} ${cyan("enigma recall sync")}`);
+        console.log("");
+        return 0;
+    }
+    if (sub === "sync") {
+        console.log(dim("  Reading local session transcripts..."));
+        const r = recall.syncRecall();
+        console.log(`  scanned ${cyan(String(r.scanned))}   changed ${cyan(String(r.changed))}   +${cyan(String(r.observations))} observations from ${cyan(String(r.sessions))} sessions`);
+        console.log(dim("  Stored locally; never leaves this machine."));
+        const en = await recall.enrichRecall({ force: true });
+        if (en.enabled && en.hasLogin) console.log(`  enriched ${cyan(String(en.observations))} observations in ${cyan(String(en.sessions))} sessions (LLM)`);
+        else if (en.enabled) console.log(dim("  LLM enrichment is on but no local Claude login was found; kept deterministic."));
+        return 0;
+    }
+    if (sub === "enrich") {
+        const en = await recall.enrichRecall({ force: true, maxSessions: Number(rest[0]) || 8 });
+        if (!en.enabled) { console.log(dim("  LLM enrichment is off. Turn it on: enigma config recall-llm on")); return 0; }
+        if (!en.hasLogin) { console.error("  No local Claude login found (log in with `enigma claude` or Claude Code)."); return 1; }
+        console.log(`  Enriched ${cyan(String(en.observations))} observations across ${cyan(String(en.sessions))} sessions.`);
+        return 0;
+    }
+    if (sub === "search") {
+        const query = rest.join(" ").trim();
+        if (!query) { console.error("Usage: enigma recall search <query>"); return 1; }
+        const hits = recall.searchRecall(query, { limit: 20 });
+        if (!hits.length) { console.log(dim("  No matches.")); return 0; }
+        for (const o of hits) {
+            const files = o.filesModified.length ? dim(`  (${o.filesModified.slice(0, 3).join(", ")})`) : "";
+            console.log(`  ${dim(`#${o.id}`)} ${cyan(o.type.padEnd(9))} ${o.title}${files}`);
+        }
+        return 0;
+    }
+    if (sub === "list") {
+        const project = rest[0];
+        const hits = recall.recentObservations({ project, limit: 25 });
+        if (!hits.length) { console.log(dim("  Nothing recorded yet.")); return 0; }
+        for (const o of hits) console.log(`  ${dim(`#${o.id}`)} ${dim(new Date(o.createdAt).toISOString().slice(0, 10))} ${cyan(o.type.padEnd(9))} ${o.title}  ${dim(o.project)}`);
+        return 0;
+    }
+    if (sub === "show") {
+        const ids = rest.map(Number).filter((n) => Number.isInteger(n) && n > 0);
+        if (!ids.length) { console.error("Usage: enigma recall show <id> [id...]"); return 1; }
+        for (const o of recall.getObservations(ids)) {
+            console.log(`\n  ${bold(`#${o.id}`)} ${cyan(o.type)}  ${o.title}`);
+            if (o.subtitle) console.log(`  ${dim(o.subtitle)}`);
+            if (o.narrative) console.log(`  ${o.narrative}`);
+            if (o.facts.length) console.log(`  ${dim(`facts: ${o.facts.join("; ")}`)}`);
+            if (o.filesModified.length) console.log(`  ${dim(`modified: ${o.filesModified.join(", ")}`)}`);
+            console.log(`  ${dim(`${o.project} - ${new Date(o.createdAt).toLocaleString()}`)}`);
+        }
+        console.log("");
+        return 0;
+    }
+    if (sub === "context") {
+        const text = recall.recallContext({ project: rest[0], limit: 20 });
+        console.log(text || dim("  No memory for this project yet."));
+        return 0;
+    }
+    if (sub === "timeline") {
+        const id = Number(rest[0]);
+        if (!Number.isInteger(id) || id <= 0) { console.error("Usage: enigma recall timeline <id>"); return 1; }
+        const rows = recall.recallTimeline({ id });
+        if (!rows.length) { console.log(dim("  No timeline for that observation.")); return 0; }
+        for (const o of rows) {
+            const marker = o.id === id ? cyan(">") : " ";
+            console.log(`  ${marker} ${dim(`#${o.id}`)} ${dim(new Date(o.createdAt).toISOString().slice(0, 16).replace("T", " "))} ${o.type.padEnd(9)} ${o.title}`);
+        }
+        return 0;
+    }
+    if (sub === "sessions") {
+        const sessions = recall.recallSessions({ project: rest[0], limit: 30 });
+        if (!sessions.length) { console.log(dim("  No sessions recorded yet.")); return 0; }
+        for (const s of sessions) console.log(`  ${dim(new Date(s.endedAt).toISOString().slice(0, 10))} ${cyan(String(s.observations).padStart(3))} obs  ${s.title || dim("(session)")}  ${dim(s.project)}`);
+        return 0;
+    }
+    if (sub === "prune") {
+        const opts = rest[0] === "days" ? { maxAgeDays: Number(rest[1]) } : { maxRows: Number(rest[0]) };
+        const target = "maxAgeDays" in opts ? opts.maxAgeDays : opts.maxRows;
+        if (!Number.isFinite(target) || (target ?? 0) <= 0) { console.error("Usage: enigma recall prune <maxRows> | enigma recall prune days <n>"); return 1; }
+        const deleted = recall.pruneRecall(opts);
+        console.log(`  Pruned ${cyan(String(deleted))} observation${deleted === 1 ? "" : "s"}.`);
+        return 0;
+    }
+    if (sub === "clear") {
+        recall.resetRecall();
+        console.log("  Recall store cleared.");
+        return 0;
+    }
+    console.error(`Unknown subcommand '${sub}'. Use: enigma recall <status | sync | search <q> | list | show <id> | timeline <id> | sessions | context | enrich | prune <n> | clear>`);
+    return 1;
 }
 
 /**
@@ -878,6 +1008,7 @@ export async function run(argv: string[]): Promise<void> {
     if (opts.command === "dashboard") { process.exit(await runDashboardCli(version)); }
     if (opts.command === "fix-path") { process.exit(runFixPathCli(opts.positionals[0], opts.scope)); }
     if (opts.command === "resources") { process.exit(await runResourcesCli(opts.positionals)); }
+    if (opts.command === "recall") { process.exit(await runRecallCli(opts.positionals)); }
     if (opts.command === "autoskills") { process.exit(await runAutoskillsCli(opts, interactive)); }
 
     if (opts.command === "update") {

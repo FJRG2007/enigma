@@ -19,6 +19,7 @@ import { CATEGORIES, ALL_SETTINGS, valueLabel, invalidateSettingReads } from "..
 import { applyMemoryToggles } from "../skills";
 import { onGhTelemetryChange } from "../github";
 import { readUsageCached } from "../usage";
+import { recallDashboard, type RecallView } from "../dashboard-recall";
 import { resourceStatus, runResourceAction, type ResourceStatus } from "../resources";
 import { readConfig } from "../config";
 import type { UsageReport } from "../usage";
@@ -467,6 +468,47 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         ]);
     };
 
+    const renderRecallPanel = (s: { recallOn: boolean; view: RecallView | null }): RNode => {
+        if (!s.recallOn) return panelBox(COL.gray, [
+            txt("Recall memory", { fg: COL.cyan, attributes: BOLD }),
+            txt("Session memory is off.", { fg: COL.yellow, marginTop: 1 }),
+            txt("Turn it on to build searchable memory from your sessions:", { fg: COL.gray, marginTop: 1 }),
+            txt("  enigma config recall on", { fg: COL.cyan }),
+            txt("Only your local transcripts are read; nothing is sent anywhere.", { fg: COL.gray, marginTop: 1 }),
+            h(box, { flexGrow: 1 }),
+        ]);
+        const v = s.view;
+        if (!v || !v.available) return panelBox(COL.cyan, [
+            txt("Recall memory", { fg: COL.cyan, attributes: BOLD }),
+            txt(v && !v.available ? "Recall needs the enigma binary." : "Loading session memory...", { fg: COL.gray, marginTop: 1 }),
+            h(box, { flexGrow: 1 }),
+        ]);
+        const st = v.stats;
+        const rows: RNode[] = [
+            h(box, { flexDirection: "row", marginTop: 1 },
+                txt(`${st?.observations ?? 0} observations`, { fg: COL.green, attributes: BOLD }),
+                txt(`   ${st?.sessions ?? 0} sessions`, { fg: COL.gray }),
+                txt(`   ${st?.projects ?? 0} projects`, { fg: COL.gray }),
+                txt(`   ${Math.round((st?.dbBytes ?? 0) / 1024)} KB`, { fg: COL.gray })),
+        ];
+        const types = Object.entries(st?.byType ?? {});
+        if (types.length) rows.push(txt(types.map(([t, n]) => `${t} ${n}`).join("   "), { fg: COL.gray, marginTop: 1, truncate: true }));
+        rows.push(txt("Recent observations", { fg: COL.gray, attributes: BOLD, marginTop: 1 }));
+        if (!v.items.length) rows.push(txt(" Nothing recorded yet - run 'enigma recall sync'.", { fg: COL.gray }));
+        for (const o of v.items.slice(0, 12)) {
+            rows.push(h(box, { flexDirection: "row", justifyContent: "space-between" },
+                txt(` ${o.type.padEnd(9)} ${o.title} `, { truncate: true }),
+                txt(`${o.project} `, { fg: COL.gray, truncate: true })));
+        }
+        return panelBox(COL.cyan, [
+            txt("Recall memory", { fg: COL.cyan, attributes: BOLD }),
+            txt(`Local session memory${v.lastSync ? ` - synced ${new Date(v.lastSync).toLocaleDateString()}` : ""}`, { fg: COL.gray }),
+            h(box, { flexDirection: "column" }, ...rows),
+            h(box, { flexGrow: 1 }),
+            txt("Search it: enigma recall search <query>   Agents query it over MCP (enigma_recall).", { fg: COL.gray, truncate: true }),
+        ]);
+    };
+
     const renderResourcePanel = (s: { status: ResourceStatus | null; cursor: number; note: string; rows: { op: string; value?: number; label: string }[]; focused: boolean }): RNode => {
         if (!s.status) return panelBox(COL.cyan, [
             txt("Resources", { fg: COL.cyan, attributes: BOLD }),
@@ -514,11 +556,13 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         | { kind: "action"; action: ActionKind; title: string; blurb: string }
         | { kind: "identity"; title: string }
         | { kind: "usage"; title: string }
+        | { kind: "recall"; title: string }
         | { kind: "resources"; title: string };
     const sideItems: SideItem[] = [
         ...CATEGORIES.map((c, i) => ({ kind: "category" as const, catIndex: i, title: c.title })),
         // The usage view only makes sense in the full hub (it reads session transcripts).
         ...(showActions ? [{ kind: "usage" as const, title: "Claude usage" }] : []),
+        ...(showActions ? [{ kind: "recall" as const, title: "Recall memory" }] : []),
         ...(showActions ? [{ kind: "resources" as const, title: "Resources" }] : []),
         ...(showActions ? ACTION_ITEMS.map((a) => ({ kind: "action" as const, ...a })) : []),
         ...(hasIdentity ? [{ kind: "identity" as const, title: "Accounts & profiles" }] : []),
@@ -586,9 +630,12 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         const action = current.kind === "action" ? current.action : null;
         const identityMode = current.kind === "identity";
         const usageMode = current.kind === "usage";
+        const recallMode = current.kind === "recall";
         const resourceMode = current.kind === "resources";
         const [usage, setUsage] = useState<(UsageReport & { pending: boolean }) | null>(null);
         const usageOn = usageMode ? readConfig().config.usageStats : false;
+        const [recall, setRecall] = useState<RecallView | null>(null);
+        const recallOn = recallMode ? readConfig().config.recall : false;
         // Resources panel: a snapshot of killable processes/ports + WSL/Docker, with a cursor
         // over an action list (named actions first, then ports, then processes) and a confirm.
         const [resStatus, setResStatus] = useState<ResourceStatus | null>(null);
@@ -638,6 +685,16 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             tick();
             return () => { cancelled = true; };
         }, [usageMode, usageOn]);
+
+        // Load the recall view when the Recall panel opens (the bridge runs a throttled
+        // background sync; re-read once shortly after so a fresh sync's rows appear).
+        useEffect(() => {
+            if (!recallMode || !recallOn) { setRecall(null); return; }
+            let cancelled = false;
+            try { if (!cancelled) setRecall(recallDashboard({})); } catch { /* leave null */ }
+            const t = setTimeout(() => { try { if (!cancelled) setRecall(recallDashboard({})); } catch { /* */ } }, 1200);
+            return () => { cancelled = true; clearTimeout(t); };
+        }, [recallMode, recallOn]);
 
         // Load a fresh resource snapshot whenever the Resources panel opens.
         useEffect(() => {
@@ -1358,6 +1415,8 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             const sidebarWidth = Math.min(28, Math.max(20, Math.floor(size.columns * 0.3)));
             const panel = usageMode
                 ? renderUsagePanel({ usageOn, report: usage })
+                : recallMode
+                ? renderRecallPanel({ recallOn, view: recall })
                 : resourceMode
                 ? renderResourcePanel({ status: resStatus, cursor: resCursor, note: resNote, rows: resRows, focused: focusRight })
                 : identityMode

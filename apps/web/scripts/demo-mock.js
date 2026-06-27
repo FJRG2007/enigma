@@ -172,6 +172,19 @@
         ]
     };
 
+    var RECALL = {
+        available: true, enabled: true,
+        stats: { observations: 128, summaries: 22, sessions: 22, projects: 3, byType: { change: 41, discovery: 33, feature: 28, bugfix: 14, refactor: 8, decision: 3, security: 1 }, dbBytes: 196608, lastObservationAt: Date.now() },
+        lastSync: Date.now() - 3600000,
+        projects: ["enigma", "ai-gateway", "cerberus"],
+        query: "",
+        items: [
+            { id: 128, type: "feature", title: "Add recall session-memory store", project: "enigma", source: "claude", files: ["src/recall/db.ts", "src/recall/store.ts"], filesRead: ["src/usage.ts"], facts: ["Modified 2 files", "Added FTS5 + vectors"], concepts: ["recall", "sqlite"], narrative: "Wired a bun:sqlite + FTS5 store with a native vector half for hybrid search.", createdAt: Date.now() - 3600000 },
+            { id: 127, type: "bugfix", title: "Fix token refresh in auth flow", project: "ai-gateway", source: "codex", files: ["src/auth.ts"], filesRead: [], facts: ["root cause: TTL was 0"], concepts: ["auth"], narrative: "The token TTL was zero so sessions expired instantly.", createdAt: Date.now() - 7200000 },
+            { id: 126, type: "discovery", title: "Map the transcript extraction pipeline", project: "enigma", source: "opencode", files: [], filesRead: ["src/recall/extract.ts"], facts: [], concepts: ["extraction"], narrative: "Observations are derived per user turn.", createdAt: Date.now() - 9000000 }
+        ]
+    };
+
     function json(obj, status) {
         return new Response(JSON.stringify(obj), { status: status || 200, headers: { "Content-Type": "application/json" } });
     }
@@ -342,6 +355,10 @@
         if (path.indexOf("/api/projects/action") !== -1) return applyProjectActionPost(body);
         if (path.indexOf("/api/projects") !== -1) return method === "POST" ? applyProjectsPost(body) : projList();
         if (path.indexOf("/api/resources") !== -1) return method === "POST" ? { ok: true, message: "Demo - no action taken.", status: RESOURCES } : RESOURCES;
+        if (path.indexOf("/api/recall") !== -1) {
+            if (method !== "POST" && path.indexOf("timeline=") !== -1) return { items: RECALL.items };
+            return method === "POST" ? { ok: true, view: RECALL } : RECALL;
+        }
         if (path.indexOf("/api/update") !== -1) return { ok: true, changed: false, version: STATS.version, note: "This is a static demo." };
         if (path.indexOf("/api/fix-path") !== -1) return { ok: true, message: "Demo - nothing to fix." };
         if (path.indexOf("/api/plan") !== -1) return { ok: true };
