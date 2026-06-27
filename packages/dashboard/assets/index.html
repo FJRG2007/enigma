@@ -397,6 +397,7 @@
             <a href="#/usage" data-view="usage" class="tab">Usage</a>
             <a href="#/accounts" data-view="accounts" class="tab">Accounts</a>
             <a href="#/skills" data-view="skills" class="tab">Skills</a>
+            <a href="#/projects" data-view="projects" class="tab">Projects</a>
             <a href="#/settings" data-view="settings" class="tab">Settings</a>
             <a href="#/resources" data-view="resources" class="tab">Resources</a>
         </nav>
@@ -661,6 +662,23 @@
         </div>
         <div class="panel"><div class="set-cat-h">Listening ports</div><div id="resPorts"><div class="empty" style="padding:12px 0">Loading...</div></div></div>
         <div class="panel"><div class="set-cat-h">Processes <small>by memory</small></div><div id="resProcs"><div class="empty" style="padding:12px 0">Loading...</div></div></div>
+    </section>
+
+    <section id="view-projects" style="display:none">
+        <div class="page-head" style="display:flex;align-items:flex-start;gap:16px">
+            <div style="flex:1">
+                <h1>Projects</h1>
+                <p>Manage enigma per project folder: its deployed skills, project-local config, git hooks and the AI quality gate. Add a project by path; changes apply only to that project. Global config stays in <a href="#/settings">Settings</a>.</p>
+            </div>
+            <button id="projRefresh" type="button" class="iconbtn" title="Refresh" aria-label="Refresh"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg></button>
+        </div>
+        <div id="projNote" class="set-note"></div>
+        <div class="panel">
+            <div class="set-cat-h">Add a project</div>
+            <div class="ladd"><input id="projPath" class="linput" type="text" placeholder="absolute path to a project folder"><input id="projLabel" class="linput" type="text" style="flex:none;width:160px" placeholder="label (optional)"><button id="projAdd" type="button" class="toggle on">Add</button></div>
+        </div>
+        <div class="panel"><div class="set-cat-h">Projects</div><div id="projList"><div class="empty" style="padding:12px 0">Loading...</div></div></div>
+        <div id="projDetail" class="panel" style="display:none"></div>
     </section>
 
     <footer>
@@ -2745,8 +2763,12 @@ export {
             codex: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.872zm16.5963 3.8558L13.1038 8.364 15.1192 7.2a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.407-.667zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.459a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654l2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997Z"/></svg>',
             opencode: '<svg viewBox="0 0 240 300" fill="currentColor" aria-hidden="true"><path d="M180 240H60V120H180V240Z" opacity=".55"/><path fill-rule="evenodd" d="M180 60H60V240H180V60ZM240 300H0V0H240V300Z"/></svg>',
         };
-        // App label -> internal name, so the "where deployed" tag (which carries labels) maps to icons.
-        const AGENT_NAME_BY_LABEL = { "Claude Code": "claude", "OpenAI Codex": "codex", "OpenCode": "opencode" };
+        // App label -> internal name. Normalized (substring match) so every label variant maps
+        // to an icon: "Claude Code", "Codex"/"OpenAI Codex", "opencode"/"OpenCode".
+        const agentName = (label) => {
+            const s = String(label || "").toLowerCase();
+            return s.includes("claude") ? "claude" : s.includes("opencode") ? "opencode" : s.includes("codex") ? "codex" : "";
+        };
         const agentSvg = (name) => AGENT_ICONS[name] || "";
 
         // Compression sources -> a brand icon. Reuses the app icons; the CLI source is enigma itself
@@ -2762,14 +2784,18 @@ export {
             // Last-edited date (from skill.json), shown relative via the vendored <relative-time>.
             const edited = s.updated ? '<span class="tag" title="Last edited ' + esc(new Date(s.updated).toLocaleString()) + '">edited '
                 + rtime(new Date(s.updated).getTime(), 'format="relative"', new Date(s.updated).toLocaleDateString()) + "</span>" : "";
-            // Show one app icon per agent that holds the skill (name in the tooltip), not the names.
-            const where = s.agents && s.agents.length
-                ? '<span class="aicons">' + s.agents.map((l) => {
-                    const ic = agentSvg(AGENT_NAME_BY_LABEL[l]);
-                    return ic ? '<span class="aicon" title="' + esc(l) + '" aria-label="' + esc(l) + '">' + ic + "</span>"
-                        : '<span class="tag">' + esc(l) + "</span>";
-                }).join("") + "</span>"
-                : (s.discarded ? '<span class="tag">disabled</span>' : '<span class="tag">not deployed</span>');
+            // Per-app deployment is shown by the on/off chips below (one per CLI) for an enabled
+            // enigma skill, so the static "where deployed" icons would be redundant there - only
+            // show them when there are no chips (external or disabled skills).
+            const hasChips = s.source === "enigma" && !s.discarded && s.agentStates && s.agentStates.length;
+            const where = hasChips ? ""
+                : s.agents && s.agents.length
+                    ? '<span class="aicons">' + s.agents.map((l) => {
+                        const ic = agentSvg(agentName(l));
+                        return ic ? '<span class="aicon" title="' + esc(l) + '" aria-label="' + esc(l) + '">' + ic + "</span>"
+                            : '<span class="tag">' + esc(l) + "</span>";
+                    }).join("") + "</span>"
+                    : (s.discarded ? '<span class="tag">disabled</span>' : '<span class="tag">not deployed</span>');
             const ext = s.source === "external" ? '<span class="tag ext">external</span>' : "";
             const upd = s.source !== "enigma" ? ""
                 : s.update === "update" ? '<span class="tag warn">update available</span>'
@@ -2789,7 +2815,7 @@ export {
             // Per-app on/off chips (Claude Code, Codex, OpenCode...). Only for an enabled enigma
             // skill: when the whole skill is disabled the per-agent state is moot. data-off is the
             // value to SET on click (turn off if currently on, on if currently off).
-            const agentChips = (s.source === "enigma" && !s.discarded && s.agentStates && s.agentStates.length)
+            const agentChips = hasChips
                 ? '<div class="set-agents">' + s.agentStates.map((a) =>
                     '<button type="button" class="achip' + (a.deployed ? " on" : "") + '" data-action="agent-toggle" data-name="' + esc(s.name)
                     + '" data-agent="' + esc(a.name) + '" data-off="' + (a.deployed ? 1 : 0) + '" aria-label="' + esc(a.label) + '" title="'
@@ -3075,7 +3101,7 @@ export {
 
         // --- hash routing between the subpages ---
         // Single source of truth for the subpage ids (savings is the default/fallback).
-        const VIEWS = ["savings", "usage", "accounts", "skills", "settings", "resources"];
+        const VIEWS = ["savings", "usage", "accounts", "skills", "projects", "settings", "resources"];
         function route() {
             const h = (location.hash || "").replace(/^#\/?/, "");
             const v = VIEWS.includes(h) ? h : "savings";
@@ -3086,6 +3112,7 @@ export {
             if (v === "accounts" && !accountsLoaded) { accountsLoaded = true; loadAccounts(); }
             if (v === "usage") { loadProviderStatus(); if (!usageAccountsLoaded) { usageAccountsLoaded = true; loadUsageAccounts(); } }
             if (v === "resources") loadResources();
+            if (v === "projects") loadProjects();
             // The chart was sized while its view may have been hidden; nudge it on return.
             if (v === "savings") { loadSystems(true); if (chart) { try { applyRange(); } catch { /* not ready */ } } }
         }
@@ -3145,6 +3172,129 @@ export {
             });
         }
 
+        // --- projects subpage (per-project skills / config / hooks / gate, origin-guarded) ---
+        let projOpen = null;
+        function renderProjectList(projects) {
+            const el = $("projList");
+            if (!projects || !projects.length) { el.innerHTML = '<div class="empty" style="padding:12px 0">No projects yet. Add one above.</div>'; return; }
+            el.innerHTML = projects.map((p) => {
+                const badges = [];
+                if (!p.exists) badges.push('<span class="tag">missing</span>');
+                if (p.isGitRepo) badges.push('<span class="tag">git</span>');
+                badges.push('<span class="tag">' + p.skills + " skill" + (p.skills === 1 ? "" : "s") + "</span>");
+                if (p.hooks) badges.push('<span class="tag">hooks</span>');
+                if (p.gate) badges.push('<span class="tag">gate</span>');
+                return '<div class="set-row"><div class="set-meta"><div class="set-name">' + esc(p.label) + " " + badges.join(" ") + '</div><div class="set-hint">' + esc(p.path) + "</div></div>"
+                    + '<div class="set-ctl ladd" style="align-items:center"><button type="button" class="toggle on" data-proj-open="' + esc(p.path) + '">Manage</button>'
+                    + '<button type="button" class="toggle" data-proj-remove="' + esc(p.path) + '">Remove</button></div></div>';
+            }).join("");
+        }
+        function projConfigRow(c) {
+            const asSwitch = !c.choices || (c.choices.length === 2 && c.choices.indexOf(c.offChoice) !== -1);
+            const ctl = !asSwitch
+                ? '<select class="choice" data-proj-cfg="' + esc(c.key) + '">' + c.choices.map((x) => '<option value="' + esc(x) + '"' + (x === c.choice ? " selected" : "") + ">" + esc(prettyChoice(x)) + "</option>").join("") + "</select>"
+                : '<button type="button" class="toggle' + (c.value ? " on" : "") + '" data-proj-cfg-bool="' + esc(c.key) + '" data-on="' + (c.value ? 1 : 0) + '">' + (c.value ? "On" : "Off") + "</button>";
+            const reset = c.overridden ? ' <button type="button" class="iconbtn" data-proj-cfg-reset="' + esc(c.key) + '" title="Inherit global">reset</button>' : "";
+            const badge = c.overridden ? ' <span class="tag">project</span>' : ' <span class="tag">inherited</span>';
+            return '<div class="set-row"><div class="set-meta"><div class="set-name">' + esc(c.label) + badge + '</div><div class="set-hint">' + esc(c.hint) + "</div></div>"
+                + '<div class="set-ctl ladd" style="align-items:center">' + ctl + reset + "</div></div>";
+        }
+        function renderProjectDetail(d) {
+            const el = $("projDetail");
+            if (!d || d.error) { el.style.display = "none"; projOpen = null; if (d && d.error) setNote("projNote", d.error, "err"); return; }
+            projOpen = d.path;
+            const deployed = new Set();
+            (d.agents || []).forEach((a) => (a.deployed || []).forEach((s) => deployed.add(s)));
+            const agentsLine = (d.agents || []).map((a) => esc(a.label) + (a.installed ? "" : " (not installed)")).join(", ") || "no agents detected";
+            const cfg = (d.config || []).map(projConfigRow).join("");
+            const skills = (d.available || []).map((s) => {
+                const on = deployed.has(s.name);
+                return '<div class="set-row"><div class="set-meta"><div class="set-name">' + esc(s.name) + '</div><div class="set-hint">' + esc(s.description || "") + "</div></div>"
+                    + '<div class="set-ctl"><button type="button" class="toggle' + (on ? " on" : "") + '" data-proj-skill="' + esc(s.name) + '" data-on="' + (on ? 1 : 0) + '">' + (on ? "On" : "Off") + "</button></div></div>";
+            }).join("");
+            const hooks = d.hooks ? '<span class="tag">installed</span>' : (d.isGitRepo ? '<button type="button" class="toggle on" data-proj-act="hooks">Install git hooks</button>' : '<span class="tag">not a git repo</span>');
+            const gate = d.gate
+                ? '<span class="tag">initialized</span> <button type="button" class="toggle" data-proj-act="gate-eject">Eject</button>'
+                : '<button type="button" class="toggle on" data-proj-act="gate-init">Initialize gate</button>';
+            el.style.display = "";
+            el.innerHTML =
+                '<div class="panel-head" style="display:flex;justify-content:space-between;align-items:center"><h2>' + esc(d.label) + '</h2><button type="button" class="iconbtn" data-proj-close title="Close" aria-label="Close">x</button></div>'
+                + '<div class="set-hint" style="margin-bottom:10px">' + esc(d.path) + " &middot; " + agentsLine + "</div>"
+                + '<div class="set-cat-h">Setup</div><div class="set-grid">'
+                + '<div class="set-row"><div class="set-meta"><div class="set-name">Git hooks</div><div class="set-hint">commit secret guard for this repo</div></div><div class="set-ctl">' + hooks + "</div></div>"
+                + '<div class="set-row"><div class="set-meta"><div class="set-name">AI quality gate</div><div class="set-hint">validate changes through the gate pipeline before push (needs the gate feature enabled)</div></div><div class="set-ctl">' + gate + "</div></div></div>"
+                + '<div class="set-cat-h" style="margin-top:14px">Project config</div><div class="set-grid">' + (cfg || '<div class="empty" style="padding:8px 0">No project settings.</div>') + "</div>"
+                + '<div class="set-cat-h" style="margin-top:14px">Skills</div><div class="set-grid">' + (skills || '<div class="empty" style="padding:8px 0">No skills.</div>') + "</div>";
+        }
+        async function loadProjects() {
+            try { renderProjectList(((await (await fetch("/api/projects", { cache: "no-store" })).json()).projects) || []); }
+            catch { $("projList").innerHTML = '<div class="empty" style="padding:12px 0">Projects unavailable.</div>'; }
+        }
+        async function openProject(path) {
+            setNote("projNote", "Loading...");
+            try {
+                const d = await (await fetch("/api/projects/detail?path=" + encodeURIComponent(path), { cache: "no-store" })).json();
+                renderProjectDetail(d);
+                if (!d.error) setNote("projNote", "");
+            } catch { setNote("projNote", "Could not load the project.", "err"); }
+        }
+        async function projAction(payload, confirmMsg) {
+            if (!projOpen) return;
+            if (confirmMsg && !(await askConfirm("Confirm", confirmMsg, true))) return;
+            setNote("projNote", "Working...");
+            try {
+                const out = await (await fetch("/api/projects/action", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: projOpen, ...payload }) })).json();
+                if (out.detail) renderProjectDetail(out.detail);
+                setNote("projNote", out.note || (out.ok ? "Done." : (out.error || "Action failed.")), out.ok ? "ok" : "err");
+                loadProjects();
+            } catch { setNote("projNote", "Could not reach the server.", "err"); }
+        }
+        async function addProjectUI() {
+            const path = $("projPath").value.trim();
+            if (!path) { setNote("projNote", "Enter a path.", "err"); return; }
+            const label = $("projLabel").value.trim();
+            try {
+                const out = await (await fetch("/api/projects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ op: "add", path, label }) })).json();
+                if (out.ok) { $("projPath").value = ""; $("projLabel").value = ""; setNote("projNote", "Added.", "ok"); renderProjectList(out.projects); }
+                else setNote("projNote", out.error || "Could not add.", "err");
+            } catch { setNote("projNote", "Could not reach the server.", "err"); }
+        }
+        function wireProjects() {
+            $("projAdd").addEventListener("click", addProjectUI);
+            $("projRefresh").addEventListener("click", loadProjects);
+            $("projPath").addEventListener("keydown", (e) => { if (e.key === "Enter") addProjectUI(); });
+            $("projList").addEventListener("click", async (e) => {
+                const open = e.target.closest("[data-proj-open]"), rem = e.target.closest("[data-proj-remove]");
+                if (open) { openProject(open.dataset.projOpen); return; }
+                if (rem) {
+                    const path = rem.dataset.projRemove;
+                    if (!(await askConfirm("Remove project", "Stop managing " + path + "? (its files are not touched)", false))) return;
+                    try { const out = await (await fetch("/api/projects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ op: "remove", path }) })).json(); renderProjectList(out.projects || []); if (projOpen === path) { $("projDetail").style.display = "none"; projOpen = null; } }
+                    catch { setNote("projNote", "Could not reach the server.", "err"); }
+                }
+            });
+            $("projDetail").addEventListener("click", (e) => {
+                if (e.target.closest("[data-proj-close]")) { $("projDetail").style.display = "none"; projOpen = null; return; }
+                const skill = e.target.closest("[data-proj-skill]");
+                if (skill) { projAction({ op: "skill", name: skill.dataset.projSkill, on: skill.dataset.on !== "1" }); return; }
+                const cfgBool = e.target.closest("[data-proj-cfg-bool]");
+                if (cfgBool) { projAction({ op: "config-set", key: cfgBool.dataset.projCfgBool, value: cfgBool.dataset.on !== "1" }); return; }
+                const reset = e.target.closest("[data-proj-cfg-reset]");
+                if (reset) { projAction({ op: "config-unset", key: reset.dataset.projCfgReset }); return; }
+                const act = e.target.closest("[data-proj-act]");
+                if (act) {
+                    const a = act.dataset.projAct;
+                    if (a === "hooks") projAction({ op: "hooks" }, "Install enigma git hooks in this repo?");
+                    else if (a === "gate-init") projAction({ op: "gate", gateOp: "init" }, "Initialize the AI quality gate for this project?");
+                    else if (a === "gate-eject") projAction({ op: "gate", gateOp: "eject" }, "Eject the gate from this project?");
+                }
+            });
+            $("projDetail").addEventListener("change", (e) => {
+                const sel = e.target.closest("select[data-proj-cfg]");
+                if (sel) projAction({ op: "config-set", key: sel.dataset.projCfg, value: sel.value });
+            });
+        }
+
         initChart();
         poll(true);
         loadProviderStatus();
@@ -3158,6 +3308,7 @@ export {
         wireAccounts();
         wireUsage();
         wireResources();
+        wireProjects();
         $("cfgExport").addEventListener("click", exportConfig);
         $("cfgImport").addEventListener("click", importConfig);
         $("updateBtn").addEventListener("click", runUpdate);

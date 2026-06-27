@@ -57,6 +57,24 @@ export function isManagedProvider(provider: unknown): boolean {
     return provider === MANAGED_PROVIDER || (typeof provider === "string" && LEGACY_PROVIDERS.includes(provider));
 }
 
+/**
+ * Per-agent project-local (skills/memory/commands) target dirs rooted at `root`.
+ * Single source of the local layout, so AGENTS.*.targets.local and the dashboard's
+ * by-path project management (which operates on a project that is not process.cwd())
+ * never drift. Codex has no project-local prompt dir, so it omits `commands`.
+ */
+export function localTargetsAt(root: string): Record<string, AgentTarget> {
+    return {
+        claude: { skills: join(root, ".claude", "skills"), memory: root, commands: join(root, ".claude", "commands") },
+        // Codex discovers skills from the shared `.agents/skills` location, not ~/.codex/skills.
+        codex: { skills: join(root, ".agents", "skills"), memory: root },
+        // opencode's command dir is the singular `command` (accepted by current + older opencode).
+        opencode: { skills: join(root, ".opencode", "skills"), memory: root, commands: join(root, ".opencode", "command") },
+    };
+}
+
+const CWD_LOCAL = localTargetsAt(process.cwd());
+
 export const AGENTS: Record<string, AgentDef> = {
     claude: {
         label: "Claude Code",
@@ -64,7 +82,7 @@ export const AGENTS: Record<string, AgentDef> = {
         detect: { bins: ["claude"], dirs: [join(HOME, ".claude")] },
         targets: {
             global: { skills: join(HOME, ".claude", "skills"), memory: join(HOME, ".claude"), commands: join(HOME, ".claude", "commands") },
-            local: { skills: join(process.cwd(), ".claude", "skills"), memory: process.cwd(), commands: join(process.cwd(), ".claude", "commands") },
+            local: CWD_LOCAL.claude,
         },
     },
     codex: {
@@ -74,10 +92,9 @@ export const AGENTS: Record<string, AgentDef> = {
         // discovers skills from the shared `.agents/skills` location, not ~/.codex/skills.
         detect: { bins: ["codex"], dirs: [join(HOME, ".codex")] },
         targets: {
-            // Codex custom prompts live only in <CODEX_HOME>/prompts (top-level, user
-            // scope); there is no project-local prompt dir, so the local target has none.
+            // Codex custom prompts live only in <CODEX_HOME>/prompts (top-level, user scope).
             global: { skills: join(HOME, ".agents", "skills"), memory: join(HOME, ".codex"), commands: join(HOME, ".codex", "prompts") },
-            local: { skills: join(process.cwd(), ".agents", "skills"), memory: process.cwd() },
+            local: CWD_LOCAL.codex,
         },
     },
     opencode: {
@@ -87,10 +104,8 @@ export const AGENTS: Record<string, AgentDef> = {
         // root (local); skills from ~/.config/opencode/skills and .opencode/skills.
         detect: { bins: ["opencode"], dirs: [join(HOME, ".config", "opencode"), join(HOME, ".opencode")] },
         targets: {
-            // opencode reads custom commands from the `command` dir (singular form is
-            // accepted by current and older opencode; plural `commands` is newer-only).
             global: { skills: join(HOME, ".config", "opencode", "skills"), memory: join(HOME, ".config", "opencode"), commands: join(HOME, ".config", "opencode", "command") },
-            local: { skills: join(process.cwd(), ".opencode", "skills"), memory: process.cwd(), commands: join(process.cwd(), ".opencode", "command") },
+            local: CWD_LOCAL.opencode,
         },
     },
 };

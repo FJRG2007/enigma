@@ -58,6 +58,9 @@ jobs:
       - name: Test gate command deploy toggle
         run: bun test tests/command-deploy.test.ts
         working-directory: packages/enigma-cli
+      - name: Test per-project dashboard management
+        run: bun test tests/dashboard-projects.test.ts
+        working-directory: packages/enigma-cli
 
       # The package must build (tsup) so dist is publishable.
       - name: Build

@@ -55,7 +55,7 @@ export interface SkillMeta {
 type StatusKind = "install" | "update" | "identical" | "tampered" | "reinstall";
 interface SkillStatus { kind: StatusKind; from: string | null; to: string | null; }
 
-interface SkillEntry { name: string; src: string; meta: SkillMeta; }
+export interface SkillEntry { name: string; src: string; meta: SkillMeta; }
 interface PlannedSkill extends SkillEntry { status: SkillStatus; overwrite: boolean; }
 interface MemoryEntry { name: string; src: string; }
 interface PruneEntry { name: string; dir: string; meta: SkillMeta; }
@@ -111,7 +111,7 @@ function serializeMeta(meta: SkillMeta): string {
     return JSON.stringify(ordered, null, 2) + "\n";
 }
 
-function readSkillMeta(skillDir: string): SkillMeta {
+export function readSkillMeta(skillDir: string): SkillMeta {
     return readJson<SkillMeta>(join(skillDir, "skill.json")) || {};
 }
 
@@ -267,7 +267,7 @@ function bundledSkills(): SkillEntry[] {
  * skills-remote.ts). The overlay also surfaces skills published to the repo
  * that this package version does not bundle yet.
  */
-function inspectSkills(): SkillEntry[] {
+export function inspectSkills(): SkillEntry[] {
     const skills = bundledSkills();
     const remote = cachedRemoteSkills();
     if (!remote.length) return skills;

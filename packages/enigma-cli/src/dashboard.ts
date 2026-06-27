@@ -488,6 +488,52 @@ function writePlan(req: import("node:http").IncomingMessage, res: import("node:h
     });
 }
 
+function serveProjects(res: import("node:http").ServerResponse): void {
+    import("./dashboard-projects")
+        .then(({ listProjects }) => { res.writeHead(200, JSON_HDR); res.end(JSON.stringify({ projects: listProjects() })); })
+        .catch(() => { res.writeHead(500, JSON_HDR); res.end('{"error":"projects unavailable"}'); });
+}
+
+function writeProjects(req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse): void {
+    let body = "";
+    req.on("data", (chunk) => { body += chunk; if (body.length > 8 * 1024) req.destroy(); });
+    req.on("end", () => {
+        let parsed: Record<string, unknown>;
+        try { parsed = JSON.parse(body || "{}"); } catch { res.writeHead(400, JSON_HDR); res.end('{"error":"bad json"}'); return; }
+        if (typeof parsed.op !== "string" || typeof parsed.path !== "string") { res.writeHead(400, JSON_HDR); res.end('{"error":"missing op/path"}'); return; }
+        import("./dashboard-projects").then((m) => {
+            if (parsed.op === "add") {
+                const out = m.addProject(parsed.path as string, typeof parsed.label === "string" ? parsed.label : undefined);
+                res.writeHead(out.ok ? 200 : 400, JSON_HDR); res.end(JSON.stringify(out)); return;
+            }
+            if (parsed.op === "remove") { res.writeHead(200, JSON_HDR); res.end(JSON.stringify({ ok: true, ...m.removeProject(parsed.path as string) })); return; }
+            res.writeHead(400, JSON_HDR); res.end('{"error":"unknown op"}');
+        }).catch(() => { res.writeHead(500, JSON_HDR); res.end('{"error":"projects action failed"}'); });
+    });
+}
+
+function serveProjectDetail(req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse): void {
+    const path = new URL(req.url || "/", "http://x").searchParams.get("path") || "";
+    if (!path) { res.writeHead(400, JSON_HDR); res.end('{"error":"missing path"}'); return; }
+    import("./dashboard-projects")
+        .then(({ projectDetail }) => { const d = projectDetail(path); res.writeHead("error" in d ? 404 : 200, JSON_HDR); res.end(JSON.stringify(d)); })
+        .catch(() => { res.writeHead(500, JSON_HDR); res.end('{"error":"detail unavailable"}'); });
+}
+
+function writeProjectAction(req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse): void {
+    let body = "";
+    req.on("data", (chunk) => { body += chunk; if (body.length > 16 * 1024) req.destroy(); });
+    req.on("end", () => {
+        let parsed: Record<string, unknown>;
+        try { parsed = JSON.parse(body || "{}"); } catch { res.writeHead(400, JSON_HDR); res.end('{"error":"bad json"}'); return; }
+        if (typeof parsed.path !== "string" || typeof parsed.op !== "string") { res.writeHead(400, JSON_HDR); res.end('{"error":"missing path/op"}'); return; }
+        import("./dashboard-projects")
+            .then(({ applyProjectAction }) => applyProjectAction(parsed.path as string, parsed as unknown as import("./dashboard-projects").ProjectActionPayload))
+            .then((out) => { res.writeHead(out.ok ? 200 : 400, JSON_HDR); res.end(JSON.stringify(out)); })
+            .catch(() => { res.writeHead(500, JSON_HDR); res.end('{"error":"project action failed"}'); });
+    });
+}
+
 function createDashboardServer(version: string): Server {
     return createServer((req, res) => {
         const url = (req.url || "/").split("?")[0];
@@ -547,6 +593,24 @@ function createDashboardServer(version: string): Server {
         if (url === "/api/dashboard-port") {
             if (!isLocalRequest(req)) { res.writeHead(403, JSON_HDR); res.end('{"error":"forbidden"}'); return; }
             if (method === "POST") { writeDashboardPort(req, res); return; }
+            res.writeHead(405).end(); return;
+        }
+        // Per-project management: registers project folders and manages each by path
+        // (skills, local config, git hooks, gate). Operates only on registered projects.
+        if (url === "/api/projects") {
+            if (!isLocalRequest(req)) { res.writeHead(403, JSON_HDR); res.end('{"error":"forbidden"}'); return; }
+            if (method === "GET") { serveProjects(res); return; }
+            if (method === "POST") { writeProjects(req, res); return; }
+            res.writeHead(405).end(); return;
+        }
+        if (url === "/api/projects/detail") {
+            if (!isLocalRequest(req)) { res.writeHead(403, JSON_HDR); res.end('{"error":"forbidden"}'); return; }
+            if (method === "GET") { serveProjectDetail(req, res); return; }
+            res.writeHead(405).end(); return;
+        }
+        if (url === "/api/projects/action") {
+            if (!isLocalRequest(req)) { res.writeHead(403, JSON_HDR); res.end('{"error":"forbidden"}'); return; }
+            if (method === "POST") { writeProjectAction(req, res); return; }
             res.writeHead(405).end(); return;
         }
         if (method !== "GET") { res.writeHead(405).end(); return; }

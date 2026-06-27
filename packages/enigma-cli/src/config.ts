@@ -198,16 +198,43 @@ function configPath(scope: "global" | "local"): string {
     return join(enigmaHome(), CONFIG_FILE);
 }
 
-/** Effective config plus the files that contributed, nearest (local) last. */
-export function readConfig(): { config: EnigmaConfig; sources: string[] } {
+/** Merge the given .enigma.json files in order (nearest last), over the defaults. */
+function mergeConfigFiles(paths: string[]): { config: EnigmaConfig; sources: string[] } {
     const sources: string[] = [];
     let config: EnigmaConfig = { ...CONFIG_DEFAULTS };
-    for (const scope of ["global", "local"] as const) {
-        const path = configPath(scope);
+    for (const path of paths) {
         const raw = existsSync(path) ? readJson<Partial<EnigmaConfig>>(path) : null;
         if (raw) { config = { ...config, ...raw }; sources.push(path); }
     }
     return { config, sources };
+}
+
+/** Effective config plus the files that contributed, nearest (local) last. */
+export function readConfig(): { config: EnigmaConfig; sources: string[] } {
+    return mergeConfigFiles([configPath("global"), configPath("local")]);
+}
+
+/**
+ * Effective config as seen from a specific project dir: global then that project's
+ * own .enigma.json. Used by the dashboard to manage a project by path (its cwd is
+ * the dashboard's, not the project's), so it never relies on process.cwd().
+ */
+export function readConfigAt(projectDir: string): EnigmaConfig {
+    return mergeConfigFiles([configPath("global"), join(projectDir, CONFIG_FILE)]).config;
+}
+
+/** Only the keys a project's own .enigma.json sets (no global merge), for "what is overridden here". */
+export function readProjectConfig(projectDir: string): Partial<EnigmaConfig> {
+    const path = join(projectDir, CONFIG_FILE);
+    return (existsSync(path) ? readJson<Partial<EnigmaConfig>>(path) : null) || {};
+}
+
+/** Write the merged object to `path`, creating its dir. Shared by every config writer. */
+function writeConfigFile(path: string, next: Record<string, unknown>): string {
+    const dir = join(path, "..");
+    if (!isDir(dir)) mkdirSync(dir, { recursive: true });
+    writeFileSync(path, `${JSON.stringify(next, null, 2)}\n`);
+    return path;
 }
 
 /**
@@ -217,12 +244,21 @@ export function readConfig(): { config: EnigmaConfig; sources: string[] } {
  */
 export function setEnigmaValue(key: EnigmaConfigKey, value: boolean | number | string | string[], scope: "global" | "local"): string {
     const path = configPath(scope);
+    return writeConfigFile(path, { ...(readJson<Record<string, unknown>>(path) || {}), [key]: value });
+}
+
+/** Set a key in a specific project's .enigma.json (path-scoped twin of setEnigmaValue local). */
+export function setEnigmaValueAt(projectDir: string, key: EnigmaConfigKey, value: boolean | number | string | string[]): string {
+    const path = join(projectDir, CONFIG_FILE);
+    return writeConfigFile(path, { ...(readJson<Record<string, unknown>>(path) || {}), [key]: value });
+}
+
+/** Remove a key from a project's .enigma.json so it inherits the global value again. Returns the path. */
+export function unsetEnigmaValueAt(projectDir: string, key: EnigmaConfigKey): string {
+    const path = join(projectDir, CONFIG_FILE);
     const current = readJson<Record<string, unknown>>(path) || {};
-    const next = { ...current, [key]: value };
-    const dir = join(path, "..");
-    if (!isDir(dir)) mkdirSync(dir, { recursive: true });
-    writeFileSync(path, JSON.stringify(next, null, 2) + "\n");
-    return path;
+    delete current[key];
+    return writeConfigFile(path, current);
 }
 
 /** Boolean-toggle convenience over setEnigmaValue, for the on/off settings. */
