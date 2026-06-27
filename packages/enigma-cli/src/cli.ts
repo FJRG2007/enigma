@@ -22,7 +22,7 @@ import { setupGitHooks, GUARD_PROTECTIONS } from "./security";
 import { discoverAgents } from "./agents";
 import { runGuardCli } from "./guard";
 import { runConfigCli } from "./settings";
-import { ensureLinterInstalled } from "./lint";
+import { ensureLinterInstalled, isLinterInstalled, refreshLinterPkg } from "./lint";
 import { ensureDashboardCurrent, isDashboardPkgCurrent, isDashboardPkgInstalled, refreshDashboardPkg } from "./dashboard-pkg";
 import { readConfig } from "./config";
 import { checkLatestNow, getAvailableUpdate, notifyUpdate, performUpdateCheck, runUpdate } from "./update";
@@ -362,19 +362,29 @@ async function runUpdateCli(version: string): Promise<void> {
     } catch (err) {
         p.log.warn(`Skill sync failed: ${(err as Error).message}`);
     }
-    // Keep the on-demand dashboard UI current - it is enigma's dependency to maintain.
-    // Only when the user uses the dashboard (it is installed); never fetch it otherwise.
+    // Keep every on-demand enigma package the user actually has current - they are enigma's
+    // own dependencies to maintain. Only when installed (never fetch one the user doesn't use);
+    // the refreshers force @latest with --prefer-online so a stale npm cache can't pin an old build.
     if (isDashboardPkgInstalled()) {
         const ds = p.spinner();
         ds.start("Updating the dashboard UI (@enigmax/dashboard)...");
         refreshDashboardPkg();
-        ds.stop("Dashboard UI is up to date.");
+        ds.stop("Dashboard UI updated to latest.");
     }
+    if (isLinterInstalled()) {
+        const ls = p.spinner();
+        ls.start("Updating the linter (@enigmax/linter)...");
+        refreshLinterPkg();
+        ls.stop("Linter updated to latest.");
+    }
+    // Self-update: ALWAYS reinstall enigma-cli@latest on an explicit `enigma update`, rather
+    // than gating on a cached "is newer" check that a stale registry cache could get wrong.
+    // runUpdate() runs `npm cache clean --force` first, so the install ignores the npm cache.
     const s = p.spinner();
-    s.start("Checking npm for a newer enigma-cli...");
+    s.start("Checking npm for the latest enigma-cli...");
     const latest = await checkLatestNow(version);
-    s.stop(latest ? `Update available: ${version} -> ${latest}.` : `enigma-cli ${version} is up to date.`);
-    if (latest) runUpdate();
+    s.stop(latest ? `Newer enigma-cli available: ${version} -> ${latest}. Installing...` : `enigma-cli ${version}: reinstalling the latest to be sure...`);
+    runUpdate();
 }
 
 /**
