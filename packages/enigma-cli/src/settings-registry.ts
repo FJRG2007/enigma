@@ -12,7 +12,7 @@
 import { AGENTS } from "./agents";
 import { applyMcpToggle } from "./mcp-deploy";
 import { isAutoLintOn, setAutoLint } from "./lint";
-import { readConfig, setEnigmaToggle, setEnigmaValue, OUTPUT_STYLES, MINIMAL_CODE_LEVELS, DASHBOARD_MODES, PROMPT_SECRET_MODES, SKILL_UPDATE_POLICIES } from "./config";
+import { readConfig, setEnigmaToggle, setEnigmaValue, setRecallApiKey, RECALL_PROVIDERS, OUTPUT_STYLES, MINIMAL_CODE_LEVELS, DASHBOARD_MODES, PROMPT_SECRET_MODES, SKILL_UPDATE_POLICIES } from "./config";
 import { applyDashboardMode } from "./dashboard";
 import { applyGateToggle } from "./command-deploy";
 import type { DashboardMode } from "./config";
@@ -67,9 +67,20 @@ export interface Setting {
      * whether the list is non-empty so the on/off surfaces still render a sensible
      * value, and `write` is a no-op (lists are edited through add/remove only).
      */
-    kind?: "list";
-    /** Placeholder/help shown by the add-item input. */
+    /**
+     * Present only on free-text "value" settings (a single string, e.g. a model id, API base
+     * URL or API key). `readValue` returns the current string (a secret setting returns a
+     * non-empty sentinel, never the real value); `writeValue` persists it (empty clears).
+     * `secret: true` marks a credential so surfaces show "(set)" instead of the value and the
+     * TUI never echoes it. The boolean face (`read`) reports whether the value is non-empty.
+     */
+    kind?: "list" | "value";
+    secret?: boolean;
+    /** Placeholder/help shown by the add-item input (list) or value input. */
     itemHint?: string;
+    valueHint?: string;
+    readValue?(scope: Scope): string;
+    writeValue?(value: string, scope: Scope): ApplyResult;
     listValues?(scope: Scope): string[];
     addItem?(item: string, scope: Scope): ApplyResult;
     removeItem?(item: string, scope: Scope): ApplyResult;
@@ -304,6 +315,57 @@ const RAW_CATEGORIES: Category[] = [
                 globalOnly: true,
                 read: () => readConfig().config.recallLlm,
                 write: (value, scope) => ({ path: setEnigmaToggle("recallLlm", value, scope), changed: true }),
+            },
+            {
+                key: "recall-provider",
+                label: "Recall LLM provider",
+                hint: `which model curates recall memory: ${RECALL_PROVIDERS.join(" | ")} (claude-local reuses your Claude Code login, anthropic/openai need an API key); enigma default: claude-local`,
+                globalOnly: true,
+                choices: RECALL_PROVIDERS,
+                // No off state - a provider is always set; the boolean face stays "on" so the row reads green.
+                offChoice: "__none__",
+                read: () => true,
+                write: () => ({ changed: false }),
+                readChoice: () => readConfig().config.recallProvider,
+                writeChoice: (value, scope) => ({ path: setEnigmaValue("recallProvider", value, scope), changed: true }),
+            },
+            {
+                key: "recall-model",
+                label: "Recall model",
+                hint: "model id for recall curation; blank = the provider's default",
+                globalOnly: true,
+                kind: "value",
+                valueHint: "model id (blank = provider default)",
+                read: () => !!readConfig().config.recallModel,
+                write: () => ({ changed: false }),
+                readValue: () => readConfig().config.recallModel,
+                writeValue: (value, scope) => ({ path: setEnigmaValue("recallModel", value.trim(), scope), changed: true }),
+            },
+            {
+                key: "recall-api-base",
+                label: "Recall API base URL",
+                hint: "base URL for the anthropic/openai-compatible provider; blank = the provider's default",
+                globalOnly: true,
+                kind: "value",
+                valueHint: "https://... (blank = provider default)",
+                read: () => !!readConfig().config.recallApiBase,
+                write: () => ({ changed: false }),
+                readValue: () => readConfig().config.recallApiBase,
+                writeValue: (value, scope) => ({ path: setEnigmaValue("recallApiBase", value.trim(), scope), changed: true }),
+            },
+            {
+                key: "recall-api-key",
+                label: "Recall API key",
+                hint: "API key for the anthropic/openai provider; stored encrypted at rest; ENIGMA_RECALL_API_KEY overrides it",
+                globalOnly: true,
+                kind: "value",
+                secret: true,
+                valueHint: "paste API key (blank to clear)",
+                read: () => !!readConfig().config.recallApiKey,
+                write: () => ({ changed: false }),
+                // Never expose the stored key: report only whether one is set.
+                readValue: () => readConfig().config.recallApiKey ? "set" : "",
+                writeValue: (value, scope) => ({ path: setRecallApiKey(value.trim(), scope), changed: true }),
             },
         ],
     },

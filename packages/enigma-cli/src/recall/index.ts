@@ -10,10 +10,12 @@ import { readConfig } from "../config";
 import { extractSession } from "./extract";
 import { buildSecretMatchers } from "../guard";
 import { readGlobalGuard } from "../guard-config";
-import { enrichSession, enrichAvailable } from "./enrich";
+import { createHash, randomUUID } from "node:crypto";
+import { OBSERVATION_TYPES } from "./types";
+import { enrichSession, enrichAvailable, generateObservationFields } from "./enrich";
 import { claudeProjectsDirs, listJsonl } from "../claude-transcripts";
 import { recallDir, recallAvailable, recallDbBytes, openDb } from "./db";
-import type { ObservationHit, RecallStats, SessionSummary } from "./types";
+import type { Observation, ObservationHit, ObservationType, RecallStats, SessionSummary } from "./types";
 import { statSync, readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { insertObservation, insertSession, insertSummary, recallStats, searchObservations, hybridSearch, recentObservations, listSummaries, listProjects, getObservations, clearRecall, backfillVectors, timelineAround, listSessions, prune, sessionsNeedingEnrichment, observationsOfSession, applyEnrichment, markSessionEnriched, deleteObservation, type QueryOptions, type SessionRow } from "./store";
 
@@ -181,6 +183,67 @@ export function resetRecall(): void {
     if (!recallAvailable()) return;
     clearRecall();
     writeState({ files: {}, lastSync: 0 });
+}
+
+/** Delete one stored memory by id (its FTS row and vector follow via trigger/cascade). */
+export function deleteRecallObservation(id: number): void {
+    if (!recallAvailable() || !Number.isInteger(id) || id <= 0) return;
+    deleteObservation(id, openDb());
+}
+
+/** Fields for a user-authored ("manual") memory; only the title is required. */
+export interface ManualObservationInput {
+    type?: string;
+    title: string;
+    project?: string;
+    narrative?: string;
+    facts?: string[];
+    concepts?: string[];
+}
+
+/** Build a manual observation from user input, or null when it has no usable title. */
+function buildManualObservation(input: ManualObservationInput): Observation | null {
+    const title = (input.title || "").trim().slice(0, 200);
+    if (!title) return null;
+    const type = (OBSERVATION_TYPES as readonly string[]).includes(input.type || "") ? input.type as ObservationType : "decision";
+    const createdAt = Date.now();
+    const clean = (a?: string[]): string[] => (a || []).map((s) => String(s).trim()).filter(Boolean).slice(0, 20);
+    const facts = clean(input.facts);
+    const concepts = clean(input.concepts);
+    const narrative = input.narrative ? String(input.narrative).trim().slice(0, 2000) : undefined;
+    const contentHash = createHash("sha256").update([title, narrative ?? "", facts.join("|"), concepts.join("|"), createdAt].join(" ")).digest("hex");
+    return {
+        // A fresh session id per manual memory keeps each one distinct (UNIQUE session_id+hash).
+        sessionId: `manual-${randomUUID()}`,
+        project: (input.project || "").trim() || "manual",
+        source: "manual",
+        type, title, narrative, facts, concepts,
+        filesRead: [], filesModified: [],
+        contentHash, createdAt,
+    };
+}
+
+/** Insert a user-authored memory. Returns true when stored. */
+export function createObservation(input: ManualObservationInput): boolean {
+    if (!recallAvailable()) return false;
+    const obs = buildManualObservation(input);
+    return obs ? insertObservation(obs, openDb()) : false;
+}
+
+/** Outcome of an LLM generation request. */
+export interface GenerateResult { ok: boolean; error?: string }
+
+/**
+ * Generate one memory from a free-text note via the configured LLM provider, then store it.
+ * Fails cleanly (no throw) when no provider is configured or the model returns nothing usable.
+ */
+export async function generateObservation(note: string, project?: string): Promise<GenerateResult> {
+    if (!recallAvailable()) return { ok: false, error: "recall needs the enigma binary" };
+    if (!(note || "").trim()) return { ok: false, error: "write a short note to generate from" };
+    if (!enrichAvailable()) return { ok: false, error: "no LLM provider is configured - set a provider/key first" };
+    const fields = await generateObservationFields(note);
+    if (!fields) return { ok: false, error: "the model returned nothing usable" };
+    return { ok: createObservation({ ...fields, project }), error: undefined };
 }
 
 /**

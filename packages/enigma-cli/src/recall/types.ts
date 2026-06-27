@@ -5,8 +5,8 @@
  * the agent-memory editor (CLAUDE.md/AGENTS.md), which is unrelated instruction content.
  */
 
-/** Which coding agent a memory came from. Used to scope retrieval so sources do not bleed. */
-export type RecallSource = "claude" | "codex" | "opencode";
+/** Which coding agent a memory came from (or "manual" for a user-created memory). Used to scope retrieval so sources do not bleed. */
+export type RecallSource = "claude" | "codex" | "opencode" | "manual";
 
 /**
  * Observation categories: a small, durable taxonomy of what a coding turn did. The two

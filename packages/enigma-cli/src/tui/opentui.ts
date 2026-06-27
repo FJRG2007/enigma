@@ -252,12 +252,12 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
     // Name-input overlay for creating an account. The <input> is focused so the
     // renderer routes keystrokes to it; onSubmit fires on Enter. The global key
     // handler short-circuits while this is open so typing does not trigger nav.
-    const renderAddInput = (s: { title: string; placeholder: string; error?: string; onSubmit: (value: string) => void }): RNode =>
+    const renderAddInput = (s: { title: string; placeholder: string; error?: string; maxLength?: number; onSubmit: (value: string) => void }): RNode =>
         h(box, { flexGrow: 1, justifyContent: "center", alignItems: "center" },
             h(box, { border: true, borderStyle: "rounded", borderColor: COL.cyan, flexDirection: "column", paddingLeft: 2, paddingRight: 2, paddingTop: 1, paddingBottom: 1, width: 52 },
                 txt(s.title, { fg: COL.cyan, attributes: BOLD }),
                 h(box, { border: true, borderStyle: "rounded", borderColor: COL.gray, marginTop: 1 },
-                    h(input, { focused: true, placeholder: s.placeholder, maxLength: 64, onSubmit: s.onSubmit })),
+                    h(input, { focused: true, placeholder: s.placeholder, maxLength: s.maxLength ?? 64, onSubmit: s.onSubmit })),
                 s.error
                     ? txt(s.error, { fg: COL.red, marginTop: 1, truncate: true })
                     : txt("enter confirm   esc cancel", { fg: COL.gray, marginTop: 1 })));
@@ -624,6 +624,9 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         // a nested add-input overlay (listAdd) that takes precedence while open.
         const [listEdit, setListEdit] = useState<{ key: string; cursor: number } | null>(null);
         const [listAdd, setListAdd] = useState<{ key: string; error?: string } | null>(null);
+        // Free-text value editor (recall model/base/key): a focused input overlay; on submit it
+        // writes the setting immediately (like list add) rather than staging it.
+        const [valueEdit, setValueEdit] = useState<{ key: string; scope: Scope } | null>(null);
 
         const current = sideItems[sideIndex]!;
         const category = current.kind === "category" ? CATEGORIES[current.catIndex]! : null;
@@ -752,6 +755,10 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         /** Text shown in the row: the count for list settings, the level for choice settings, on/off otherwise. */
         const displayValue = (setting: Setting, sc: Scope): string => {
             if (setting.kind === "list") { const n = setting.listValues ? setting.listValues(sc).length : 0; return n === 0 ? "edit" : `${n} set`; }
+            if (setting.kind === "value") {
+                const cur = setting.readValue ? setting.readValue(sc) : "";
+                return setting.secret ? (cur ? "set" : "not set") : (cur || "default");
+            }
             return setting.choices ? choiceOf(setting, sc) : valueLabel(valueOf(setting, sc));
         };
         const isModified = (setting: Setting, sc: Scope): boolean => {
@@ -840,6 +847,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             const setting = category.settings[i]!;
             if (focusRight && setIndex === i) {
                 if (setting.kind === "list") { setListEdit({ key: setting.key, cursor: 0 }); return; }
+                if (setting.kind === "value") { setValueEdit({ key: setting.key, scope: setting.globalOnly ? "global" : scope }); return; }
                 stageNext(setting, scope);
             } else { setFocusRight(true); setSetIndex(i); }
         };
@@ -863,6 +871,17 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             const s = SETTING_BY_KEY.get(target.key);
             if (s?.addItem) { s.addItem(item, "global"); invalidateSettingReads(); }
             setListAdd(null); // back to the still-open list editor, now showing the new item
+        };
+        // Write a free-text value setting immediately (a blank value clears it), then close.
+        const submitValueEdit = (value: string): void => {
+            const target = valueEdit;
+            if (!target) return;
+            const s = SETTING_BY_KEY.get(target.key);
+            if (s?.writeValue) {
+                try { s.writeValue(value.trim(), target.scope); invalidateSettingReads(); setSaveStatus({ kind: "ok", msg: `${s.label} updated.` }); }
+                catch (err) { setSaveStatus({ kind: "err", msg: `${s.label}: ${(err as Error).message}` }); }
+            }
+            setValueEdit(null);
         };
         // Toggle the action row at `i`: an agent/protection checkbox, or a skill row.
         // Unchecking a skill discards it (confirmed first - it deletes deployed copies);
@@ -1135,6 +1154,8 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
 
             // List add-input overlay (precedes the list editor): focused input owns typing.
             if (listAdd) { if (esc) setListAdd(null); return; }
+            // Value-edit overlay: focused input owns typing; only Escape cancels.
+            if (valueEdit) { if (esc) setValueEdit(null); return; }
             // List editor: no focused input, so single-letter keys work directly.
             if (listEdit) {
                 const items = listItemsOf(listEdit.key);
@@ -1288,6 +1309,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
                 if (action) { runChosen(action); return; }
                 const setting = category!.settings[setIndex]!;
                 if (setting.kind === "list") { setListEdit({ key: setting.key, cursor: 0 }); return; }
+                if (setting.kind === "value") { setValueEdit({ key: setting.key, scope: setting.globalOnly ? "global" : scope }); return; }
                 stageNext(setting, scope);
             }
         });
@@ -1309,6 +1331,8 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             ? txt("connect?", { fg: COL.green })
             : listAdd
             ? txt("add entry", { fg: COL.cyan })
+            : valueEdit
+            ? txt("set value", { fg: COL.cyan })
             : listEdit
             ? txt("edit list", { fg: COL.cyan })
             : removeConfirm
@@ -1393,6 +1417,9 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         } else if (listAdd) {
             const s = SETTING_BY_KEY.get(listAdd.key);
             content = renderAddInput({ title: `Add to ${s?.label ?? listAdd.key}`, placeholder: s?.itemHint ?? "new entry", error: listAdd.error, onSubmit: submitListAdd });
+        } else if (valueEdit) {
+            const s = SETTING_BY_KEY.get(valueEdit.key);
+            content = renderAddInput({ title: `Set ${s?.label ?? valueEdit.key}`, placeholder: s?.valueHint ?? "value (blank to clear)", maxLength: 256, onSubmit: submitValueEdit });
         } else if (listEdit) {
             const s = SETTING_BY_KEY.get(listEdit.key);
             const items = listItemsOf(listEdit.key);
@@ -1479,6 +1506,8 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             footer = footerLine("type the new name   enter rename   esc cancel");
         } else if (listAdd) {
             footer = footerLine("type an entry   enter add   esc cancel");
+        } else if (valueEdit) {
+            footer = footerLine("type a value   enter save   esc cancel   (blank clears)");
         } else if (listEdit) {
             footer = footerLine("up/down move   a add   d remove   enter / esc done");
         } else if (profRemove) {
@@ -1505,7 +1534,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
 
         // A one-line "update available" banner under the title, shown only in the plain
         // menu view (not over an overlay or the result/running panels).
-        const noOverlay = !adding && !renaming && !profRename && !profAdd && !profEdit && !profRemove && !connectPrompt && !removeConfirm && !skillConfirm && !skillAgents && !resConfirm && !confirm && !listAdd && !listEdit;
+        const noOverlay = !adding && !renaming && !profRename && !profAdd && !profEdit && !profRemove && !connectPrompt && !removeConfirm && !skillConfirm && !skillAgents && !resConfirm && !confirm && !listAdd && !listEdit && !valueEdit;
         const updateBanner = update && mode === "menu" && noOverlay
             ? h(box, { width: size.columns, flexDirection: "row", paddingLeft: 1, paddingRight: 1 },
                 txt(`Update available  ${update.current} -> ${update.latest}   `, { fg: COL.yellow, attributes: BOLD }),

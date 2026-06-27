@@ -12,7 +12,7 @@
  * deterministic observations: this never throws and never blocks a sync.
  */
 
-import { readConfig } from "../config";
+import { readConfig, getRecallApiKey } from "../config";
 import { OBSERVATION_TYPES } from "./types";
 import type { ObservationHit } from "./types";
 import { readOAuthToken } from "../claude-usage-api";
@@ -42,7 +42,7 @@ function resolveProvider(): Provider | null {
         const tok = readOAuthToken();
         return tok ? { kind: "anthropic-oauth", base: "https://api.anthropic.com", key: tok.token, model: c.recallModel || DEFAULT_CLAUDE_MODEL } : null;
     }
-    const key = envKey || c.recallApiKey || "";
+    const key = envKey || getRecallApiKey(c);
     if (!key) return null;
     if (provider === "anthropic") return { kind: "anthropic-key", base: c.recallApiBase || "https://api.anthropic.com", key, model: c.recallModel || DEFAULT_CLAUDE_MODEL };
     return { kind: "openai", base: c.recallApiBase || "https://api.openai.com/v1", key, model: c.recallModel || DEFAULT_OPENAI_MODEL };
@@ -123,6 +123,40 @@ function parseEnrich(text: string): EnrichResult | null {
 /** Whether enrichment can run here (the configured provider has usable credentials). */
 export function enrichAvailable(): boolean {
     return resolveProvider() !== null;
+}
+
+/** One synthetic observation generated from a free-text note (the manual "generate" path). */
+export interface GeneratedObservation { type: string; title: string; narrative?: string; facts: string[]; concepts: string[]; }
+
+const GENERATE_PROMPT_HEAD = `You turn a developer's short note into ONE durable coding-memory observation, like a senior engineer recording what is worth remembering later. Be faithful to the note; do not invent specifics it does not state.
+Allowed types: ${TYPES.join(", ")}.
+Return STRICT JSON ONLY (no prose, no code fence) of the shape:
+{"type":"<type>","title":"<short>","narrative":"<1-3 sentences>","facts":["..."],"concepts":["..."]}`;
+
+/**
+ * Generate a single structured observation from a free-text note via the configured provider.
+ * Returns null when no provider/credentials are available or the model returns nothing usable;
+ * never throws.
+ */
+export async function generateObservationFields(note: string): Promise<GeneratedObservation | null> {
+    const provider = resolveProvider();
+    if (!provider || !note.trim()) return null;
+    const text = await callProvider(provider, `${GENERATE_PROMPT_HEAD}\n\nNote: ${note.trim()}`);
+    if (!text) return null;
+    const start = text.indexOf("{");
+    const end = text.lastIndexOf("}");
+    if (start < 0 || end <= start) return null;
+    let r: Record<string, unknown>;
+    try { r = JSON.parse(text.slice(start, end + 1)); } catch { return null; }
+    const title = typeof r.title === "string" && r.title.trim() ? r.title.trim().slice(0, 120) : "";
+    if (!title) return null;
+    return {
+        type: typeof r.type === "string" && TYPES.includes(r.type) ? r.type : "discovery",
+        title,
+        narrative: typeof r.narrative === "string" && r.narrative.trim() ? r.narrative.trim().slice(0, 800) : undefined,
+        facts: strArray(r.facts),
+        concepts: strArray(r.concepts),
+    };
 }
 
 /**

@@ -8,9 +8,9 @@
  * shape usage.ts uses), so the user rarely needs the manual "Sync now" button.
  */
 
-import { readConfig, setEnigmaValue, RECALL_PROVIDERS, type RecallProvider } from "./config";
+import { readConfig, setEnigmaValue, setRecallApiKey, RECALL_PROVIDERS, type RecallProvider } from "./config";
 import type { ObservationHit, RecallStats } from "./recall";
-import { recallAvailable, recallStatus, searchRecall, recentObservations, resetRecall, syncRecall, recallTimeline } from "./recall";
+import { recallAvailable, recallStatus, searchRecall, recentObservations, resetRecall, syncRecall, recallTimeline, deleteRecallObservation, createObservation, generateObservation } from "./recall";
 
 /** One observation row as the dashboard renders it (full fields, so the detail view needs no refetch). */
 export interface RecallItem {
@@ -114,14 +114,39 @@ export function recallTimelineView(id: number): RecallItem[] {
     return recallTimeline({ id }).map(toItem);
 }
 
-/** Payload for the set-provider action (key omitted leaves the stored key unchanged). */
-export interface RecallProviderPayload { provider?: string; model?: string; base?: string; key?: string; llm?: boolean; }
+/**
+ * Payload for Recall actions: set-provider fields (key omitted leaves the stored key unchanged),
+ * an observation id (delete), manual-memory fields (create), and a free-text note (generate).
+ */
+export interface RecallActionPayload {
+    provider?: string; model?: string; base?: string; key?: string; llm?: boolean;
+    id?: number;
+    type?: string; title?: string; project?: string; narrative?: string; facts?: string[]; concepts?: string[];
+    prompt?: string;
+}
 
 /** Apply a Recall action and return the refreshed view. */
-export function applyRecallAction(op: string, payload: RecallProviderPayload = {}): { ok: boolean; error?: string; view?: RecallView } {
+export async function applyRecallAction(op: string, payload: RecallActionPayload = {}): Promise<{ ok: boolean; error?: string; view?: RecallView }> {
     if (!recallAvailable()) return { ok: false, error: "recall needs the enigma binary" };
     if (op === "sync") { syncRecall(); return { ok: true, view: recallDashboard() }; }
     if (op === "clear") { resetRecall(); return { ok: true, view: recallDashboard() }; }
+    if (op === "delete") {
+        if (typeof payload.id !== "number") return { ok: false, error: "missing memory id" };
+        deleteRecallObservation(payload.id);
+        return { ok: true, view: recallDashboard() };
+    }
+    if (op === "create") {
+        if (!payload.title || !payload.title.trim()) return { ok: false, error: "a title is required" };
+        const ok = createObservation({
+            type: payload.type, title: payload.title, project: payload.project,
+            narrative: payload.narrative, facts: payload.facts, concepts: payload.concepts,
+        });
+        return ok ? { ok: true, view: recallDashboard() } : { ok: false, error: "could not store the memory" };
+    }
+    if (op === "generate") {
+        const out = await generateObservation(payload.prompt || "", payload.project);
+        return out.ok ? { ok: true, view: recallDashboard() } : { ok: false, error: out.error };
+    }
     if (op === "set-provider") {
         if (payload.provider !== undefined) {
             if (!RECALL_PROVIDERS.includes(payload.provider as RecallProvider)) return { ok: false, error: "unknown provider" };
@@ -130,7 +155,8 @@ export function applyRecallAction(op: string, payload: RecallProviderPayload = {
         if (typeof payload.model === "string") setEnigmaValue("recallModel", payload.model.trim(), "global");
         if (typeof payload.base === "string") setEnigmaValue("recallApiBase", payload.base.trim(), "global");
         // Empty string clears the key; undefined leaves it as-is (so the UI never has to echo it).
-        if (typeof payload.key === "string") setEnigmaValue("recallApiKey", payload.key, "global");
+        // Stored encrypted at rest (secret-box.ts).
+        if (typeof payload.key === "string") setRecallApiKey(payload.key, "global");
         if (typeof payload.llm === "boolean") setEnigmaValue("recallLlm", payload.llm, "global");
         return { ok: true, view: recallDashboard() };
     }
