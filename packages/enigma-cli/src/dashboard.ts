@@ -404,23 +404,36 @@ function serveRecall(req: import("node:http").IncomingMessage, res: import("node
         .catch(() => { res.writeHead(500, JSON_HDR); res.end('{"error":"recall unavailable"}'); });
 }
 
-/** Apply a recall action from a POST body { op, ... } (sync | clear | set-provider). */
+/** Apply a recall action from a POST body { op, ... } (sync | clear | set-provider | delete | create | generate). */
 function writeRecall(req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse): void {
     let body = "";
-    req.on("data", (chunk) => { body += chunk; if (body.length > 8192) req.destroy(); });
+    req.on("data", (chunk) => { body += chunk; if (body.length > 16384) req.destroy(); });
     req.on("end", () => {
-        let parsed: { op?: unknown; provider?: unknown; model?: unknown; base?: unknown; key?: unknown; llm?: unknown };
+        let parsed: {
+            op?: unknown; provider?: unknown; model?: unknown; base?: unknown; key?: unknown; llm?: unknown;
+            id?: unknown; type?: unknown; title?: unknown; project?: unknown; narrative?: unknown; facts?: unknown; concepts?: unknown; prompt?: unknown;
+        };
         try { parsed = JSON.parse(body || "{}"); } catch { res.writeHead(400, JSON_HDR); res.end('{"error":"bad json"}'); return; }
         if (typeof parsed.op !== "string") { res.writeHead(400, JSON_HDR); res.end('{"error":"missing op"}'); return; }
+        const strList = (v: unknown): string[] | undefined => Array.isArray(v) ? v.map(String) : undefined;
         const payload = {
             provider: typeof parsed.provider === "string" ? parsed.provider : undefined,
             model: typeof parsed.model === "string" ? parsed.model : undefined,
             base: typeof parsed.base === "string" ? parsed.base : undefined,
             key: typeof parsed.key === "string" ? parsed.key : undefined,
             llm: typeof parsed.llm === "boolean" ? parsed.llm : undefined,
+            id: typeof parsed.id === "number" ? parsed.id : undefined,
+            type: typeof parsed.type === "string" ? parsed.type : undefined,
+            title: typeof parsed.title === "string" ? parsed.title : undefined,
+            project: typeof parsed.project === "string" ? parsed.project : undefined,
+            narrative: typeof parsed.narrative === "string" ? parsed.narrative : undefined,
+            facts: strList(parsed.facts),
+            concepts: strList(parsed.concepts),
+            prompt: typeof parsed.prompt === "string" ? parsed.prompt : undefined,
         };
         import("./dashboard-recall")
-            .then(({ applyRecallAction }) => { const out = applyRecallAction(parsed.op as string, payload); res.writeHead(out.ok ? 200 : 400, JSON_HDR); res.end(JSON.stringify(out)); })
+            .then(({ applyRecallAction }) => applyRecallAction(parsed.op as string, payload))
+            .then((out) => { res.writeHead(out.ok ? 200 : 400, JSON_HDR); res.end(JSON.stringify(out)); })
             .catch(() => { res.writeHead(500, JSON_HDR); res.end('{"ok":false,"error":"action failed"}'); });
     });
 }

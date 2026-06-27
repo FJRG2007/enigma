@@ -13,6 +13,7 @@
 
 import { join } from "node:path";
 import { isDir, readJson, enigmaHome } from "./util";
+import { decryptSecret, encryptSecret } from "./secret-box";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 
 export const CONFIG_FILE = ".enigma.json";
@@ -285,6 +286,20 @@ export function unsetEnigmaValueAt(projectDir: string, key: EnigmaConfigKey): st
 /** Boolean-toggle convenience over setEnigmaValue, for the on/off settings. */
 export function setEnigmaToggle(key: EnigmaConfigKey, value: boolean, scope: "global" | "local"): string {
     return setEnigmaValue(key, value, scope);
+}
+
+/**
+ * The recall provider API key, decrypted (empty when unset). The stored field is encrypted at
+ * rest (see secret-box.ts); decryptSecret passes through any legacy plain-text value unchanged.
+ * ENIGMA_RECALL_API_KEY still takes precedence and is read by the caller, not here.
+ */
+export function getRecallApiKey(config: EnigmaConfig): string {
+    return decryptSecret(config.recallApiKey || "");
+}
+
+/** Persist the recall API key encrypted at rest (empty clears it). Returns the written path. */
+export function setRecallApiKey(value: string, scope: "global" | "local"): string {
+    return setEnigmaValue("recallApiKey", value ? encryptSecret(value) : "", scope);
 }
 
 /**

@@ -5,7 +5,7 @@
  * <on|off>` it sets one option via the shared registry (settings-registry.ts).
  */
 
-import { readConfig, setEnigmaValue, RECALL_PROVIDERS } from "./config";
+import { readConfig, setEnigmaValue } from "./config";
 import { ALL_SETTINGS, CATEGORIES, parseBool, valueLabel } from "./settings-registry";
 import type { ApplyResult, Scope } from "./settings-registry";
 
@@ -17,6 +17,8 @@ function printEffective(): void {
         for (const s of category.settings) {
             const shown = s.kind === "list"
                 ? `[${(s.listValues ? s.listValues("global") : []).join(", ")}]`
+                : s.kind === "value"
+                ? (s.secret ? (s.readValue && s.readValue("global") ? "(set)" : "(not set)") : ((s.readValue ? s.readValue("global") : "") || "(default)"))
                 : s.choices && s.readChoice ? s.readChoice("global") : valueLabel(s.read("global"));
             console.log(`  ${s.key}: ${shown}`);
         }
@@ -120,32 +122,25 @@ export async function runConfigCli(positionals: string[], scope: Scope | null, i
         return 0;
     }
 
-    // Recall LLM provider knobs (string/enum), outside the boolean/choice registry like the numeric ones.
-    if (rawKey === "recall-provider") {
-        if (rawValue === undefined || !RECALL_PROVIDERS.includes(rawValue as (typeof RECALL_PROVIDERS)[number])) {
-            console.error(`Missing/invalid value for 'recall-provider'. Usage: enigma config recall-provider <${RECALL_PROVIDERS.join(" | ")}> [-g|-l]`);
-            return 1;
-        }
-        const target: Scope = scope || "global";
-        const path = setEnigmaValue("recallProvider", rawValue, target);
-        console.log(`Set recall-provider = ${rawValue} (${target})${path ? ` in ${path}` : ""}.`);
-        return 0;
-    }
-    const RECALL_STRINGS: Record<string, "recallModel" | "recallApiBase" | "recallApiKey"> = {
-        "recall-model": "recallModel", "recall-api-base": "recallApiBase", "recall-api-key": "recallApiKey",
-    };
-    if (rawKey in RECALL_STRINGS) {
-        const target: Scope = scope || "global";
-        const path = setEnigmaValue(RECALL_STRINGS[rawKey]!, rawValue ?? "", target);
-        const shown = rawKey === "recall-api-key" ? (rawValue ? "(set)" : "(cleared)") : (rawValue ?? "(cleared)");
-        console.log(`Set ${rawKey} = ${shown} (${target})${path ? ` in ${path}` : ""}.`);
-        return 0;
-    }
-
     const setting = ALL_SETTINGS.find((s) => s.key === rawKey);
     if (!setting) {
-        console.error(`Unknown config key: ${rawKey}. Known keys: ${ALL_SETTINGS.map((s) => s.key).join(", ")}, token-price, token-speed, dashboard-port, plan-session-limit, plan-weekly-limit, plan-weekly-sonnet-limit, plan-weekly-opus-limit, plan-weekly-reset, recall-provider, recall-model, recall-api-base, recall-api-key.`);
+        console.error(`Unknown config key: ${rawKey}. Known keys: ${ALL_SETTINGS.map((s) => s.key).join(", ")}, token-price, token-speed, dashboard-port, plan-session-limit, plan-weekly-limit, plan-weekly-sonnet-limit, plan-weekly-opus-limit, plan-weekly-reset.`);
         return 1;
+    }
+
+    // Free-text value settings (recall model/base/key). `<key>` alone prints the current value
+    // (a secret only as "(set)"/"(not set)"); `<key> <value>` sets it (blank value clears it).
+    if (setting.kind === "value") {
+        const target: Scope = setting.globalOnly ? "global" : (scope || "global");
+        if (rawValue === undefined) {
+            const cur = setting.readValue ? setting.readValue(target) : "";
+            console.log(`${rawKey} (${target}): ${setting.secret ? (cur ? "(set)" : "(not set)") : (cur || "(default)")}`);
+            return 0;
+        }
+        const res = setting.writeValue ? setting.writeValue(rawValue, target) : { changed: false };
+        const shown = setting.secret ? (rawValue ? "(set, encrypted)" : "(cleared)") : (rawValue || "(cleared)");
+        console.log(`Set ${rawKey} = ${shown} (${target})${res.path ? ` in ${res.path}` : ""}.`);
+        return 0;
     }
 
     // List settings (guard block/allow globs, custom secret patterns): add/remove/list one
