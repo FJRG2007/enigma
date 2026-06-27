@@ -160,6 +160,8 @@ function stripMarkedBlock(content: string, id: string): string {
  *   bind {{output-level}} to the chosen level (lite/full/ultra).
  * - minimalCode off -> strip the anti-overengineering block; otherwise keep it and bind
  *   {{minimal-level}} to the chosen level (lite/full/ultra).
+ * - recall off -> strip the "use session memory" block; kept when on so the agent is told
+ *   to query the enigma_recall MCP tools.
  * Everything else is passed through verbatim, preserving the exact trailing newline.
  */
 function renderMemory(srcFile: string): string {
@@ -170,6 +172,7 @@ function renderMemory(srcFile: string): string {
     else out = out.replace(/\{\{output-level\}\}/g, cfg.outputStyle);
     if (cfg.minimalCode === "off") out = stripMarkedBlock(out, "minimal-code");
     else out = out.replace(/\{\{minimal-level\}\}/g, cfg.minimalCode);
+    if (!cfg.recall) out = stripMarkedBlock(out, "recall");
     return out;
 }
 
@@ -971,11 +974,12 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
     // Same side-effect shape as the bypass/claude/gh/lint hooks; skipped on dry run.
     const applyMcpConfig = (): void => {
         if (opts.dryRun) return;
-        const enabled = readConfig().config.compress;
+        const cfg = readConfig().config;
+        const enabled = cfg.compress || cfg.recall;
         const changed: string[] = [];
         for (const agent of chosenAgents) if (applyMcpForAgent(agent.name, scope)) changed.push(agent.label);
         if (changed.length) {
-            reporter.info(`Context compression MCP ${enabled ? "registered in" : "removed from"} ${changed.join(", ")} (tools: enigma_compress/retrieve/stats).`);
+            reporter.info(`enigma MCP server ${enabled ? "registered in" : "removed from"} ${changed.join(", ")} (tools: compress${cfg.recall ? " + recall" : ""}).`);
         }
     };
 
