@@ -632,6 +632,11 @@
             <div class="set-cat-h">Skill settings</div>
             <div id="skillSettings" class="set-grid"></div>
         </div>
+        <div class="panel" id="memPanel">
+            <div class="set-cat-h">Agent memory</div>
+            <div class="set-cat-b">Customize the instruction files enigma deploys to each agent (CLAUDE.md / AGENTS.md). Your edits follow the Customized-skill updates policy on the next sync: overwrite restores the managed version, keep preserves them.</div>
+            <div id="memBody" class="set-grid"><div class="empty" style="padding:12px 0">Loading...</div></div>
+        </div>
         <div class="panel">
             <div id="skillsBody"><div class="empty" style="padding:24px 0">Loading skills...</div></div>
             <div id="skillsNote" class="set-note"></div>
@@ -663,11 +668,6 @@
                     </div>
                 </div>
             </div>
-        </div>
-        <div class="panel" id="memPanel">
-            <div class="set-cat-h">Agent memory</div>
-            <div class="set-cat-b">Customize the instruction files enigma deploys to each agent (CLAUDE.md / AGENTS.md). Your edits follow the Customized-skill updates policy on the next sync: overwrite restores the managed version, keep preserves them.</div>
-            <div id="memBody" class="set-grid"><div class="empty" style="padding:12px 0">Loading...</div></div>
         </div>
     </section>
 
@@ -2596,12 +2596,10 @@ export {
         async function loadSettings() {
             if (isProjectScope()) return loadProjectSettings();
             const port = $("dashPortPanel"); if (port) port.style.display = ""; // global-only panel
-            const mp = $("memPanel"); if (mp) mp.style.display = "";
             try {
                 const data = await (await fetch("/api/settings", { cache: "no-store" })).json();
                 renderSettings(data.categories || []);
                 renderDashPort(data);
-                loadMemory();
             } catch { $("settingsBody").innerHTML = '<div class="empty" style="padding:24px 0">Settings unavailable.</div>'; }
         }
 
@@ -2650,7 +2648,7 @@ export {
         }
 
         async function loadMemory(project) {
-            const el = project ? $("projMemBody") : $("memBody");
+            const el = $("memBody"); // global + project share this panel (one scope shown at a time)
             if (!el) return;
             try {
                 const q = project ? "/api/memory?path=" + encodeURIComponent(project) : "/api/memory";
@@ -2703,8 +2701,8 @@ export {
             } catch { toast("Could not reach the server.", "err"); }
         }
 
-        // Edit/reset buttons live in both the global panel (#memBody) and the project view
-        // (#projMemBody, mutually exclusive by scope); one document-level delegate covers both.
+        // The memory editor lives in the Skills tab (#memBody, scope-aware via memProject());
+        // a document-level delegate handles its edit/reset buttons in global and project scope.
         document.addEventListener("click", (e) => {
             const ed = e.target.closest && e.target.closest("[data-mem-edit]");
             if (ed) { openMemoryEditor(ed.dataset.memEdit, memProject()); return; }
@@ -3069,6 +3067,7 @@ export {
             if (isProjectScope()) return loadProjectSkills();
             skillScope = "global";
             loadSkillSettings();
+            loadMemory();
             try {
                 const res = await fetch("/api/skills", { cache: "no-store" });
                 renderSkills((await res.json()).skills || []);
@@ -3434,7 +3433,6 @@ export {
         async function loadProjectSettings() {
             const el = $("settingsBody");
             const port = $("dashPortPanel"); if (port) port.style.display = "none"; // global-only
-            const mp = $("memPanel"); if (mp) mp.style.display = "none"; // global panel; project memory is rendered inline below
             el.innerHTML = '<div class="empty" style="padding:24px 0">Loading...</div>';
             let d; try { d = await fetchProjectDetail(); } catch { el.innerHTML = '<div class="empty" style="padding:24px 0">Project unavailable.</div>'; return; }
             if (d.error) { el.innerHTML = '<div class="empty" style="padding:24px 0">' + esc(d.error) + "</div>"; return; }
@@ -3449,13 +3447,11 @@ export {
                 + '<div class="set-row"><div class="set-meta"><div class="set-name">Git hooks</div><div class="set-hint">commit secret guard for this repo</div></div><div class="set-ctl">' + hooks + "</div></div>"
                 + '<div class="set-row"><div class="set-meta"><div class="set-name">AI quality gate</div><div class="set-hint">validate changes through the gate pipeline before push (needs the gate feature enabled)</div></div><div class="set-ctl">' + gate + "</div></div></div></div>"
                 + '<div class="panel"><div class="set-cat-h">Project config</div><div class="set-cat-b">applies only to this project (its .enigma.json). Settings not shown here are global-only - switch Scope to Global for those.</div><div class="set-grid">' + cfg + "</div></div>"
-                + '<div class="panel"><div class="set-cat-h">Agent memory</div><div class="set-cat-b">Customize this project\'s instruction files (CLAUDE.md / AGENTS.md). Edits follow the Customized-skill updates policy on the next sync.</div><div id="projMemBody" class="set-grid"><div class="empty" style="padding:12px 0">Loading...</div></div></div>'
                 + '<div class="panel"><div class="set-cat-h">Manage</div><div class="set-grid">'
                 + '<div class="set-row"><div class="set-meta"><div class="set-name">Name</div><div class="set-hint">display name for this project (must be unique)</div></div><div class="set-ctl"><input class="linput" data-proj-name value="' + esc(d.label) + '" spellcheck="false" style="width:200px"></div></div>'
                 + '<div class="set-row"><div class="set-meta"><div class="set-name">Description</div><div class="set-hint">optional note shown in the header</div></div><div class="set-ctl ladd" style="align-items:center"><input class="linput" data-proj-desc value="' + esc(d.description || "") + '" placeholder="optional" style="flex:none;width:240px"><button type="button" class="toggle on" data-proj-save-meta>Save</button></div></div>'
                 + '<div class="set-row"><div class="set-meta"><div class="set-name">Forget project</div><div class="set-hint">remove it from the dashboard list - its files are not touched</div></div><div class="set-ctl"><button type="button" class="toggle" data-proj-forget>Forget</button></div></div>'
                 + "</div></div>";
-            loadMemory(currentScope);
         }
         async function saveProjectMeta() {
             if (!isProjectScope()) return;
@@ -3474,6 +3470,7 @@ export {
             skillScope = "project";
             const el = $("skillsBody");
             const ss = $("skillSettings"); if (ss) ss.innerHTML = '<div class="set-cat-b" style="padding:0 0 4px">Skill settings are global - switch Scope to Global to change them.</div>';
+            loadMemory(currentScope);
             el.innerHTML = '<div class="empty" style="padding:24px 0">Loading...</div>';
             let d; try { d = await fetchProjectDetail(); } catch { el.innerHTML = '<div class="empty" style="padding:24px 0">Project unavailable.</div>'; return; }
             if (d.error) { el.innerHTML = '<div class="empty" style="padding:24px 0">' + esc(d.error) + "</div>"; return; }
