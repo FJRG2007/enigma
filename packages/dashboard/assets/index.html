@@ -2644,7 +2644,11 @@ export {
         }
 
         function memoryRow(g) {
-            const apps = (g.agents || []).map((a) => '<span class="tag">' + esc(a.label) + "</span>").join(" ");
+            // Apps are shown as brand logos (see AGENT_ICONS), never text - the label is the tooltip.
+            const apps = '<span class="aicons">' + (g.agents || []).map((a) => {
+                const ic = agentSvg(a.name);
+                return ic ? '<span class="aicon" title="' + esc(a.label) + '" aria-label="' + esc(a.label) + '">' + ic + "</span>" : esc(a.label);
+            }).join("") + "</span>";
             const state = !g.deployed ? '<span class="tag">not deployed</span>'
                 : g.edited ? '<span class="tag exp">edited</span>'
                 : g.managed ? '<span class="tag meas">managed</span>' : '<span class="tag">custom</span>';
