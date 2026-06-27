@@ -65,10 +65,11 @@ function callAnthropic(token: string, body: string): Promise<string | null> {
     });
 }
 
-const PROMPT_HEAD = `You improve a developer's coding-session memory. Given mechanical observations from one session, rewrite each into a clear, durable memory and write a short session summary. Keep ids. Be concise and factual; do not invent work that is not implied by the data.
+const PROMPT_HEAD = `You curate a developer's coding-session memory like a senior engineer noting only what is worth remembering later. You are given mechanical observations from one session. Return ONLY the ones that are durable and useful (a real change, fix, refactor, decision or genuine discovery), rewritten into clear, factual memories. OMIT anything trivial, redundant, or chatter - omitted observations are permanently discarded. Keep the id of each one you keep. Do not invent work that is not implied by the data.
 Allowed types: ${TYPES.join(", ")}.
 Return STRICT JSON ONLY (no prose, no code fence) of the shape:
-{"observations":[{"id":<number>,"type":"<type>","title":"<short>","narrative":"<1-3 sentences>","facts":["..."],"concepts":["..."]}],"summary":{"request":"...","learned":"...","completed":"...","next_steps":"..."}}`;
+{"observations":[{"id":<number>,"type":"<type>","title":"<short>","narrative":"<1-3 sentences>","facts":["..."],"concepts":["..."]}],"summary":{"request":"...","learned":"...","completed":"...","next_steps":"..."}}
+If nothing in the session is worth remembering, return an empty observations array (still fill the summary).`;
 
 /** Coerce an unknown value to a string array (the LLM may return strings or arrays). */
 function strArray(v: unknown): string[] {

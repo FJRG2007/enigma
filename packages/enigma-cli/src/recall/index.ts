@@ -15,7 +15,7 @@ import { claudeProjectsDirs, listJsonl } from "../claude-transcripts";
 import { recallDir, recallAvailable, recallDbBytes, openDb } from "./db";
 import type { ObservationHit, RecallStats, SessionSummary } from "./types";
 import { statSync, readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
-import { insertObservation, insertSession, insertSummary, recallStats, searchObservations, hybridSearch, recentObservations, listSummaries, listProjects, getObservations, clearRecall, backfillVectors, timelineAround, listSessions, prune, sessionsNeedingEnrichment, observationsOfSession, applyEnrichment, markSessionEnriched, type QueryOptions, type SessionRow } from "./store";
+import { insertObservation, insertSession, insertSummary, recallStats, searchObservations, hybridSearch, recentObservations, listSummaries, listProjects, getObservations, clearRecall, backfillVectors, timelineAround, listSessions, prune, sessionsNeedingEnrichment, observationsOfSession, applyEnrichment, markSessionEnriched, deleteObservation, type QueryOptions, type SessionRow } from "./store";
 
 export type { Observation, ObservationHit, RecallStats, RecallSource, SessionSummary, ObservationType } from "./types";
 export { recallAvailable, RecallUnavailableError } from "./db";
@@ -140,9 +140,13 @@ export async function enrichRecall(opts: { maxSessions?: number; force?: boolean
         const project = obs[0]!.project;
         const result = await enrichSession(project, obs);
         if (!result) continue; // transient failure: retry next pass
+        // The LLM returns only the observations worth keeping (curated + rewritten); any it
+        // omits are judged trivial and discarded, the same selectivity claude-mem gets from
+        // its <skip_summary>. The per-session summary below still records the session.
         for (const o of obs) {
             const f = result.perId[o.id!];
             if (f) { applyEnrichment(o.id!, f, db); out.observations++; }
+            else { deleteObservation(o.id!, db); }
         }
         markSessionEnriched(sid, db);
         if (result.summary) insertSummary({
