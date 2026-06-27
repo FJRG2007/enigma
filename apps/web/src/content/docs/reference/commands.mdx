@@ -55,6 +55,14 @@ Detect the project's tech stack and install the matching community skills, kept 
 Scans packages, config files, file types and gems; installs the matched, hash-verified skills into the project. `--dry-run` previews; `-a <agent>` limits targets.
 </Cmd>
 
+## recall
+
+Local, searchable memory of your coding sessions, built from your own transcripts and exposed to agents over MCP. Off by default. See <a href={docHref("concepts/recall")}>Recall</a> for detail.
+
+<Cmd name="enigma recall <status|sync|search|list|show|timeline|sessions|context|enrich|prune|clear>" ex={["enigma config recall on", "enigma recall sync", "enigma recall search auth refresh", "enigma recall timeline 42", "enigma recall prune 5000"]}>
+`sync` reads transcripts into the store; `search` (hybrid keyword+vector)/`list`/`show`/`timeline`/`sessions`/`context` query it; `enrich` runs optional LLM enrichment; `prune` bounds it; `clear` wipes it. Reads only your own local logs.
+</Cmd>
+
 ## security & guard
 
 A portable, dependency-free commit guard that blocks secrets, `.env` files and dependency dirs. Set it up once per repo and the whole team inherits it.

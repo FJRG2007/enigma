@@ -27,7 +27,8 @@ import { join, sep } from "node:path";
 import { readConfig } from "./config";
 import { readProxyLimits } from "./proxy";
 import { maybeProbeUsage } from "./claude-usage-api";
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { claudeProjectsDirs, listJsonl, projectOf } from "./claude-transcripts";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 
 /** Per-model price in USD per MILLION tokens. Ported from references/repos/claude-usage. */
 export interface ModelPrice { input: number; output: number; cacheRead: number; cacheWrite: number; }
@@ -222,28 +223,6 @@ const FIVE_HOURS_MS = 5 * 60 * 60 * 1000;
 const EVENTS_PER_FILE = 400;
 const RECENT_SESSIONS = 20;
 
-/** One Claude account's transcript source: its name and its projects directory. */
-interface ClaudeSource { account: string; dir: string; }
-
-/**
- * Every Claude account's transcript directory: the default config dir plus each
- * enigma-managed account under ~/.enigma/claude/<name>/projects. So usage reflects ALL
- * logins, not just the default one (the dashboard was only ever showing `~/.claude`).
- * ENIGMA_CLAUDE_PROJECTS overrides the default source (used by tests).
- */
-function claudeSources(): ClaudeSource[] {
-    const out: ClaudeSource[] = [{ account: "default", dir: process.env.ENIGMA_CLAUDE_PROJECTS || join(homedir(), ".claude", "projects") }];
-    const base = join(homedir(), ".enigma", "claude");
-    try {
-        for (const e of readdirSync(base, { withFileTypes: true })) {
-            if (!e.isDirectory()) continue;
-            const dir = join(base, e.name, "projects");
-            if (existsSync(dir)) out.push({ account: e.name, dir });
-        }
-    } catch { /* no managed accounts */ }
-    return out;
-}
-
 /**
  * Which tools enigma can read local token usage for. Only Claude Code writes a local
  * per-message usage transcript; Codex and OpenCode do not expose one we can read, so they
@@ -292,31 +271,11 @@ function foldInto(map: Record<string, UsageBucket>, key: string, b: UsageBucket)
     foldBucket(map[key], b);
 }
 
-/** Recursively list every *.jsonl under `dir` (sessions live nested in subagents/ too). */
-function listJsonl(dir: string): string[] {
-    const out: string[] = [];
-    let entries: import("node:fs").Dirent[];
-    try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return out; }
-    for (const e of entries) {
-        const p = join(dir, e.name);
-        if (e.isDirectory()) out.push(...listJsonl(p));
-        else if (e.isFile() && e.name.endsWith(".jsonl")) out.push(p);
-    }
-    return out;
-}
-
 /** The dominant model in a per-model map (most messages), or "unknown". */
 function topModel(byModel: Record<string, UsageBucket>): string {
     let best = "unknown", bestN = -1;
     for (const [model, b] of Object.entries(byModel)) if (b.messages > bestN) { best = model; bestN = b.messages; }
     return best;
-}
-
-/** The project segment a transcript path belongs to (its dir under ~/.claude/projects). */
-function projectOf(path: string, root: string): string {
-    const rel = path.startsWith(root) ? path.slice(root.length) : path;
-    const seg = rel.split(/[\\/]/).filter(Boolean)[0];
-    return seg || "unknown";
 }
 
 /**
@@ -549,7 +508,7 @@ export function buildUsage(): UsageReport {
     // Fire a throttled background probe (when usageApi is on) so the next build's windows
     // carry Anthropic's real %/reset even without the proxy. Non-blocking, best-effort.
     maybeProbeUsage();
-    const sources = claudeSources();
+    const sources = claudeProjectsDirs();
     const prev = readCache();
     const next: Record<string, FileAgg> = {};
     const now = Date.now();

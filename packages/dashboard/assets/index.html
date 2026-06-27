@@ -426,6 +426,7 @@
             <a href="#/skills" data-view="skills" class="tab">Skills</a>
             <a href="#/settings" data-view="settings" class="tab">Settings</a>
             <a href="#/resources" data-view="resources" class="tab">Resources</a>
+            <a href="#/recall" data-view="recall" class="tab">Recall</a>
         </nav>
         <div class="nav">
             <label class="scope-wrap" title="Scope: global config or a specific project"><span class="scope-lbl">Scope</span><select id="scopeSel" class="scope-sel"><option value="global">Global</option></select></label>
@@ -694,6 +695,28 @@
         </div>
         <div class="panel"><div class="set-cat-h">Listening ports</div><div id="resPorts"><div class="empty" style="padding:12px 0">Loading...</div></div></div>
         <div class="panel"><div class="set-cat-h">Processes <small>by memory</small></div><div id="resProcs"><div class="empty" style="padding:12px 0">Loading...</div></div></div>
+    </section>
+
+    <section id="view-recall" style="display:none">
+        <div class="page-head" style="display:flex;align-items:flex-start;gap:16px">
+            <div style="flex:1">
+                <h1>Recall</h1>
+                <p>Searchable memory of your past coding sessions, built locally from your own transcripts. Agents can query it over MCP (<code>enigma_recall</code>); it never leaves this machine.</p>
+            </div>
+            <button id="recallSync" type="button" class="toggle on" title="Read new transcripts into the store">Sync now</button>
+            <button id="recallClear" type="button" class="btn-danger" title="Delete all stored memory">Clear</button>
+        </div>
+        <div id="recallNote" class="set-note"></div>
+        <div id="recallBody"><div class="empty" style="padding:12px 0">Loading...</div></div>
+        <div id="recallSearch" class="panel" style="display:none">
+            <div class="set-cat-h">Search</div>
+            <div class="ladd" style="gap:8px;flex-wrap:wrap">
+                <input id="recallQ" class="linput" type="search" placeholder="Search your session memory..." style="flex:1;min-width:220px">
+                <select id="recallType" class="linput" style="max-width:160px"></select>
+                <select id="recallProject" class="linput" style="max-width:200px"></select>
+            </div>
+        </div>
+        <div id="recallList"></div>
     </section>
 
     <footer>
@@ -3237,7 +3260,7 @@ export {
 
         // --- hash routing between the subpages ---
         // Single source of truth for the subpage ids (savings is the default/fallback).
-        const VIEWS = ["savings", "usage", "accounts", "skills", "settings", "resources"];
+        const VIEWS = ["savings", "usage", "accounts", "skills", "settings", "resources", "recall"];
         // Views that apply to a single project; the rest are global/machine-level only.
         const PROJECT_VIEWS = ["settings", "skills"];
         let activeView = "savings";
@@ -3257,6 +3280,7 @@ export {
             else if (v === "accounts") { if (!accountsLoaded) { accountsLoaded = true; loadAccounts(); } }
             else if (v === "usage") { loadProviderStatus(); if (!usageAccountsLoaded) { usageAccountsLoaded = true; loadUsageAccounts(); } }
             else if (v === "resources") loadResources();
+            else if (v === "recall") loadRecall();
             // The chart was sized while its view may have been hidden; nudge it on return.
             else if (v === "savings") { loadSystems(true); if (chart) { try { applyRange(); } catch { /* not ready */ } } }
         }
@@ -3313,6 +3337,115 @@ export {
                     : op === "free-port" ? "Kill the process listening on port " + value + "?"
                     : op === "kill" ? "Force-kill process " + value + "?" : "Run this action?";
                 resAction(op, value, msg);
+            });
+        }
+
+        // --- recall subpage (local session memory; reads your own transcripts) ---
+        const RECALL_TYPES = ["bugfix", "feature", "refactor", "change", "discovery", "decision", "security"];
+        let recallProjSig = "";
+        function renderRecall(v) {
+            v = v || {};
+            if (!v.available) {
+                $("recallBody").innerHTML = '<div class="panel"><div class="empty" style="padding:16px 0">Recall needs the enigma binary - open the dashboard via the enigma app.</div></div>';
+                $("recallSearch").style.display = "none"; $("recallList").innerHTML = ""; return;
+            }
+            if (!v.enabled) {
+                $("recallBody").innerHTML = '<div class="panel"><div class="set-cat-h">Session memory is off</div>'
+                    + '<div class="set-hint" style="padding:8px 0">Build a searchable memory of your coding sessions from your own transcripts. Turn it on with:</div>'
+                    + '<code>enigma config recall on</code></div>';
+                $("recallSearch").style.display = "none"; $("recallList").innerHTML = ""; return;
+            }
+            const s = v.stats || {};
+            const types = Object.entries(s.byType || {}).map(([t, n]) => '<span class="tag">' + esc(t) + " " + n + "</span>").join(" ");
+            const last = v.lastSync ? "last sync " + new Date(v.lastSync).toLocaleString() : "not synced yet";
+            $("recallBody").innerHTML = '<div class="panel"><div class="set-cat-h">Stored memory</div>'
+                + '<div class="set-hint" style="padding:6px 0">' + (s.observations || 0) + " observations · " + (s.sessions || 0) + " sessions · "
+                + (s.projects || 0) + " projects · " + Math.round((s.dbBytes || 0) / 1024) + " KB · " + esc(last) + "</div>"
+                + (types ? '<div style="padding-top:6px">' + types + "</div>" : "") + "</div>";
+            $("recallSearch").style.display = "";
+            if (!$("recallType").options.length) $("recallType").innerHTML = '<option value="">All types</option>' + RECALL_TYPES.map((t) => '<option value="' + t + '">' + t + "</option>").join("");
+            const sig = (v.projects || []).join("|");
+            if (sig !== recallProjSig) {
+                const keep = $("recallProject").value;
+                $("recallProject").innerHTML = '<option value="">All projects</option>' + (v.projects || []).map((p) => '<option value="' + esc(p) + '">' + esc(p) + "</option>").join("");
+                $("recallProject").value = keep;
+                recallProjSig = sig;
+            }
+            renderRecallList(v.items);
+        }
+        let recallItemsById = {};
+        function recallRowHtml(it, anchorId) {
+            const ic = '<span class="aicon" title="' + esc(it.source) + '" aria-label="' + esc(it.source) + '">' + (agentSvg(it.source) || esc(it.source)) + "</span>";
+            const date = it.createdAt ? new Date(it.createdAt).toISOString().slice(0, 10) : "";
+            const mark = (anchorId && it.id === anchorId) ? ' style="border-left:2px solid var(--accent,#888);padding-left:8px"' : "";
+            return '<div class="set-meta"' + mark + '><div class="set-name">' + ic + ' <span class="tag">' + esc(it.type) + "</span> " + esc(it.title) + "</div>"
+                + '<div class="set-hint" style="opacity:.6">' + esc(it.project) + " · " + date + (it.id ? " · #" + it.id : "") + "</div></div>";
+        }
+        function recallDetailHtml(it) {
+            const tags = (a) => (a && a.length) ? a.map((x) => '<span class="tag">' + esc(x) + "</span>").join(" ") : "";
+            const list = (label, a) => (a && a.length) ? '<div class="set-hint"><strong>' + label + ":</strong> " + esc(a.join(", ")) + "</div>" : "";
+            const facts = (it.facts && it.facts.length) ? "<ul style='margin:4px 0 0 16px'>" + it.facts.map((f) => "<li>" + esc(f) + "</li>").join("") + "</ul>" : "";
+            return '<div style="padding:8px 0 4px 28px">'
+                + (it.narrative ? '<div style="margin-bottom:6px">' + esc(it.narrative) + "</div>" : "")
+                + facts
+                + (it.concepts && it.concepts.length ? '<div style="margin-top:6px">' + tags(it.concepts) + "</div>" : "")
+                + list("Modified", it.files) + list("Read", it.filesRead)
+                + '<div style="margin-top:8px"><button type="button" class="toggle" data-tl="' + it.id + '">Show timeline</button></div>'
+                + '<div class="rtl" id="rtl-' + it.id + '"></div></div>';
+        }
+        function renderRecallList(items) {
+            recallItemsById = {};
+            if (!items || !items.length) { $("recallList").innerHTML = '<div class="empty" style="padding:16px 0">No memories yet - run a sync, or adjust your search.</div>'; return; }
+            $("recallList").innerHTML = '<div class="panel">' + items.map((it) => {
+                if (it.id) recallItemsById[it.id] = it;
+                return '<div class="set-row" style="cursor:pointer" data-rid="' + (it.id || "") + '">' + recallRowHtml(it) + "</div>"
+                    + '<div id="rd-' + (it.id || "") + '" style="display:none"></div>';
+            }).join("") + "</div>";
+        }
+        async function loadRecallTimeline(id) {
+            const el = $("rtl-" + id);
+            if (!el) return;
+            el.innerHTML = '<div class="set-hint" style="padding:6px 0">Loading timeline...</div>';
+            try {
+                const out = await (await fetch("/api/recall?timeline=" + id, { cache: "no-store" })).json();
+                const rows = out.items || [];
+                el.innerHTML = rows.length
+                    ? '<div style="margin-top:6px;border-top:1px solid rgba(128,128,128,.2)">' + rows.map((r) => '<div class="set-row">' + recallRowHtml(r, Number(id)) + "</div>").join("") + "</div>"
+                    : '<div class="set-hint">No surrounding context.</div>';
+            } catch { el.innerHTML = '<div class="set-hint err">Could not load timeline.</div>'; }
+        }
+        async function loadRecall() {
+            const q = encodeURIComponent($("recallQ").value || "");
+            const type = encodeURIComponent($("recallType").value || "");
+            const proj = encodeURIComponent($("recallProject").value || "");
+            try { renderRecall(await (await fetch("/api/recall?q=" + q + "&type=" + type + "&project=" + proj, { cache: "no-store" })).json()); }
+            catch { $("recallBody").innerHTML = '<div class="empty" style="padding:12px 0">Recall unavailable.</div>'; }
+        }
+        async function recallAction(op, confirmMsg) {
+            if (confirmMsg && !(await askConfirm("Confirm", confirmMsg, true))) return;
+            setNote("recallNote", op === "sync" ? "Reading transcripts..." : "Working...");
+            try {
+                const out = await (await fetch("/api/recall", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ op }) })).json();
+                if (out.view) renderRecall(out.view);
+                setNote("recallNote", out.ok ? (op === "sync" ? "Synced." : "Cleared.") : (out.error || "Action failed."), out.ok ? "ok" : "err");
+            } catch { setNote("recallNote", "Could not reach the server.", "err"); }
+        }
+        function wireRecall() {
+            $("recallSync").addEventListener("click", () => recallAction("sync"));
+            $("recallClear").addEventListener("click", () => recallAction("clear", "Delete all stored session memory? This cannot be undone."));
+            let t; const deb = () => { clearTimeout(t); t = setTimeout(loadRecall, 250); };
+            $("recallQ").addEventListener("input", deb);
+            $("recallType").addEventListener("change", loadRecall);
+            $("recallProject").addEventListener("change", loadRecall);
+            $("recallList").addEventListener("click", (e) => {
+                const tl = e.target.closest("[data-tl]");
+                if (tl) { loadRecallTimeline(tl.dataset.tl); return; }
+                const row = e.target.closest("[data-rid]");
+                if (!row || !row.dataset.rid) return;
+                const detail = $("rd-" + row.dataset.rid);
+                if (!detail) return;
+                if (detail.innerHTML === "") detail.innerHTML = recallDetailHtml(recallItemsById[row.dataset.rid]);
+                detail.style.display = detail.style.display === "none" ? "" : "none";
             });
         }
 
@@ -3607,6 +3740,7 @@ export {
         wireAccounts();
         wireUsage();
         wireResources();
+        wireRecall();
         wireScope();
         $("cfgExport").addEventListener("click", exportConfig);
         $("cfgImport").addEventListener("click", importConfig);

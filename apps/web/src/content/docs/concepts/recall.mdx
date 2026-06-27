@@ -1,0 +1,68 @@
+---
+title: Recall (session memory)
+description: A local, searchable memory of your coding sessions, built from your own transcripts and exposed to agents over MCP.
+group: Concepts
+order: 32
+---
+import Cmd from "../../../components/Cmd.astro";
+
+Recall turns your past coding sessions into durable, searchable memory. It reads your local agent transcripts, extracts what each session did - the request, the files read and changed, the outcome - and stores it in a local SQLite database you can search from the CLI, the dashboard, or that agents can query over MCP.
+
+It is **off by default** and reads only your own local transcripts; nothing leaves your machine. This is separate from **agent memory** (`CLAUDE.md`/`AGENTS.md`), which is instruction content - recall is a record of what happened.
+
+## Enable it
+
+<Cmd name="enigma config recall on" ex={["enigma config recall on", "enigma recall sync"]}>
+Turn recall on, then build the store from your existing transcripts. After that the dashboard and CLI keep it fresh.
+</Cmd>
+
+## Use it
+
+<Cmd name="enigma recall [action]" ex={["enigma recall sync", "enigma recall search auth refresh", "enigma recall list", "enigma recall show 42", "enigma recall timeline 42", "enigma recall sessions", "enigma recall prune 5000", "enigma recall clear"]}>
+`sync` reads new transcripts into the store. `search <query>` runs a hybrid search; `list` shows recent observations; `show <id>` prints one in full; `timeline <id>` shows what happened around it; `sessions` lists recorded sessions; `context [project]` prints a compact memory block; `prune <n>` keeps only the newest n (or `prune days <n>`); `clear` wipes the store.
+</Cmd>
+
+Once recall is on, launching an agent through enigma (`enigma claude`) also refreshes it in the background, so memory stays current without a manual `sync`.
+
+## Search is hybrid
+
+Search fuses **keyword** ranking (SQLite FTS5/BM25) with a **vector** similarity pass, merged by reciprocal rank fusion. The vector half is a dependency-free local embedding (word + character-trigram feature hashing), so it adds fuzzy recall - typos and related word forms still match - with no model, network, or extra dependency. A pluggable embedding provider can later replace the local one for true dense semantics.
+
+## How extraction works
+
+By default extraction is **deterministic** - no LLM call, no cost, fully reproducible. For each user turn in a transcript it records:
+
+- the **request** (the prompt), as the observation title
+- the **files read** and **files modified** (from the agent's tool calls)
+- a short **narrative** (the agent's last reply for that turn) and **facts** (files changed, commands run)
+- an inferred **type**: `bugfix`, `feature`, `refactor`, `change`, `discovery`, `decision`, or `security`
+
+Secrets are redacted and `<private>...</private>` blocks are dropped before anything is stored.
+
+Today recall reads **Claude Code** transcripts; Codex and OpenCode are supported as sources once their local transcript format is verified, behind the same store and search.
+
+## LLM enrichment (optional)
+
+Turn on `recall-llm` to have an LLM rewrite the deterministic observations into richer summaries, using your **local Claude login** (read-only). It runs in the background, batched per session and capped per pass to keep quota use small, and falls back to the deterministic text on any failure. Off by default; Claude Code only.
+
+<Cmd name="enigma config recall-llm on" ex={["enigma config recall-llm on", "enigma recall enrich"]}>
+Enable enrichment, then `enrich` processes the un-enriched sessions on demand (it also runs automatically after a sync).
+</Cmd>
+
+## Retention
+
+For long-term use, keep the store bounded with `enigma recall prune <maxRows>` or `enigma recall prune days <n>` (drops observations beyond the newest n, or older than n days).
+
+## For agents (MCP)
+
+When recall is on, enigma's MCP server exposes three tools to any connected agent (Claude Code, Codex, OpenCode), following a token-efficient search -> timeline -> get workflow:
+
+- `enigma_recall` - search the memory index (compact results with ids)
+- `enigma_recall_timeline` - chronological context around an observation
+- `enigma_recall_get` - fetch full details for specific ids
+
+So an agent can recall prior context about a project at the start of a task. Search first, then fetch only the ids that matter - keeping token use low.
+
+## Where it lives
+
+The database is `~/.enigma/recall/recall.db` (SQLite with FTS5 keyword search and a vector table). Reset it any time with `enigma recall clear` or from the dashboard's **Recall** tab, where you can also browse observations, expand their detail, and view a timeline.

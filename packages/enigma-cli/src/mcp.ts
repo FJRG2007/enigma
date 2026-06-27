@@ -9,13 +9,17 @@
  * stdout. stdout is the protocol channel, so ALL diagnostics go to stderr.
  *
  * Tools:
- *   enigma_compress  - compress tool output/logs/text; returns the compressed
- *                      payload (carrying a CCR marker when lossy).
- *   enigma_retrieve  - restore the original behind a CCR hash.
- *   enigma_stats     - cumulative token savings.
+ *   enigma_compress    - compress tool output/logs/text; returns the compressed
+ *                        payload (carrying a CCR marker when lossy).
+ *   enigma_retrieve    - restore the original behind a CCR hash.
+ *   enigma_stats       - cumulative token savings.
+ *   enigma_recall      - search the local session-memory index (when recall is on).
+ *   enigma_recall_get  - fetch full memory observations by id.
  */
 
+import { readConfig } from "./config";
 import { compress, retrieve, readStats } from "./compress";
+import { searchRecall, getObservations, recallTimeline, recallAvailable } from "./recall";
 import type { ContentType } from "./compress";
 
 const PROTOCOL_VERSION = "2025-06-18";
@@ -67,6 +71,50 @@ const TOOLS = [
     },
 ];
 
+/**
+ * Recall tools, exposed only when the recall setting is on. They give an agent durable
+ * memory of past coding sessions in this project: search a compact index first (cheap), then
+ * fetch full details for the ids that matter (the search -> get pattern keeps tokens low).
+ */
+const RECALL_TOOLS = [
+    {
+        name: "enigma_recall",
+        description: "Search durable memory of past coding sessions (what was done, which files changed, decisions made). Returns a compact index of observations with ids; pass interesting ids to enigma_recall_get for full details. Use this at the start of a task to recall prior context about this project.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                query: { type: "string", description: "Free-text search; empty returns the most recent observations." },
+                project: { type: "string", description: "Optional: limit to a project name." },
+                type: { type: "string", description: "Optional: filter by type (bugfix, feature, refactor, change, discovery, decision, security)." },
+                limit: { type: "number", description: "Max results (default 15)." },
+            },
+        },
+    },
+    {
+        name: "enigma_recall_get",
+        description: "Fetch full details for memory observations by id (from enigma_recall). Always batch the ids you want.",
+        inputSchema: {
+            type: "object",
+            properties: { ids: { type: "array", items: { type: "number" }, description: "Observation ids to fetch." } },
+            required: ["ids"],
+        },
+    },
+    {
+        name: "enigma_recall_timeline",
+        description: "Get the chronological context around a memory observation - what was done just before and after it in the same project. Pass an id from enigma_recall.",
+        inputSchema: {
+            type: "object",
+            properties: { id: { type: "number", description: "Anchor observation id." }, before: { type: "number" }, after: { type: "number" } },
+            required: ["id"],
+        },
+    },
+];
+
+/** The tools advertised this connection: recall tools only appear when recall is enabled. */
+function toolList(): unknown[] {
+    return readConfig().config.recall && recallAvailable() ? [...TOOLS, ...RECALL_TOOLS] : TOOLS;
+}
+
 function ok(id: JsonRpcRequest["id"], result: unknown): JsonRpcResponse {
     return { jsonrpc: "2.0", id: id ?? null, result };
 }
@@ -97,6 +145,30 @@ function callTool(name: string, args: Record<string, unknown>, source?: string):
         }
         case "enigma_stats":
             return textResult(JSON.stringify(readStats(), null, 2));
+        case "enigma_recall": {
+            if (!readConfig().config.recall || !recallAvailable()) return textResult("enigma_recall: session memory is off (enable it with `enigma config recall on`).", true);
+            const query = typeof args.query === "string" ? args.query : "";
+            const project = typeof args.project === "string" ? args.project : undefined;
+            const type = typeof args.type === "string" ? args.type : undefined;
+            const limit = typeof args.limit === "number" ? args.limit : 15;
+            const hits = searchRecall(query, { project, type, limit });
+            const index = hits.map((o) => ({ id: o.id, type: o.type, title: o.title, project: o.project, files: o.filesModified.slice(0, 5) }));
+            return textResult(JSON.stringify(index, null, 2));
+        }
+        case "enigma_recall_get": {
+            if (!readConfig().config.recall || !recallAvailable()) return textResult("enigma_recall_get: session memory is off (enable it with `enigma config recall on`).", true);
+            const ids = Array.isArray(args.ids) ? args.ids.map(Number).filter((n) => Number.isInteger(n)) : [];
+            if (!ids.length) return textResult("enigma_recall_get: 'ids' (array of numbers) is required.", true);
+            return textResult(JSON.stringify(getObservations(ids), null, 2));
+        }
+        case "enigma_recall_timeline": {
+            if (!readConfig().config.recall || !recallAvailable()) return textResult("enigma_recall_timeline: session memory is off (enable it with `enigma config recall on`).", true);
+            const id = typeof args.id === "number" ? args.id : 0;
+            if (!id) return textResult("enigma_recall_timeline: 'id' (number) is required.", true);
+            const before = typeof args.before === "number" ? args.before : undefined;
+            const after = typeof args.after === "number" ? args.after : undefined;
+            return textResult(JSON.stringify(recallTimeline({ id, before, after }), null, 2));
+        }
         default:
             return textResult(`Unknown tool: ${name}`, true);
     }
@@ -128,7 +200,7 @@ export function handleMcpRequest(req: JsonRpcRequest, version: string, source?: 
         case "ping":
             return ok(req.id, {});
         case "tools/list":
-            return ok(req.id, { tools: TOOLS });
+            return ok(req.id, { tools: toolList() });
         case "tools/call": {
             const name = String(req.params?.name ?? "");
             const args = (req.params?.arguments as Record<string, unknown>) ?? {};

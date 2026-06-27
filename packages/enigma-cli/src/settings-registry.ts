@@ -269,6 +269,22 @@ const RAW_CATEGORIES: Category[] = [
                 read: () => readConfig().config.usageApi,
                 write: (value, scope) => ({ path: setEnigmaToggle("usageApi", value, scope), changed: true }),
             },
+            {
+                key: "recall",
+                label: "Session memory (recall)",
+                hint: "build a searchable local memory of your coding sessions from transcripts (Claude Code), browsable here and exposed to agents via MCP; reads your own session logs and stays on this machine; build it with 'enigma recall sync'; enigma default: off",
+                globalOnly: true,
+                read: () => readConfig().config.recall,
+                write: (value, scope) => ({ path: setEnigmaToggle("recall", value, scope), changed: true }),
+            },
+            {
+                key: "recall-llm",
+                label: "Recall LLM enrichment",
+                hint: "rewrite recall observations into richer summaries using an LLM via your local Claude login; Claude Code only, uses a little quota, runs in the background; needs recall on; enigma default: off",
+                globalOnly: true,
+                read: () => readConfig().config.recallLlm,
+                write: (value, scope) => ({ path: setEnigmaToggle("recallLlm", value, scope), changed: true }),
+            },
         ],
     },
     {
