@@ -63,7 +63,7 @@
             autoLint: true, usageStats: !!FX.usage, dashboard: "always", commitEmoji: true,
             proxy: false, usageApi: false, promptSecretGuard: false, promptSecretMode: "redact", live: true,
             proxyStats: { calls: 0, input: 0, output: 0, cacheRead: 0, cacheCreation: 0, lastRequestAt: 0, redacted: 0, rejected: 0, lastBlockedAt: 0 },
-            security: { permissionBypass: true, bypassDisabled: [], guardProtects: ["API keys", ".pem files", ".env files", "node_modules"] },
+            security: { permissionBypass: true, bypassDisabled: [], guardProtects: ["Block committed secrets", "Block .env files", "Block dependency/cache dirs", "Warn on generated dirs", "Warn on log / OS junk files", "Warn on files over 5 MB"] },
             skills: { total: 17, enigma: 15, external: 2, disabled: 0 },
             tools: [
                 { name: "claude", label: "Claude Code", status: "ok" },
@@ -304,6 +304,19 @@
     }
     function qparam(path, key) { var m = path.match(new RegExp(`[?&]${key}=([^&]+)`)); return m ? decodeURIComponent(m[1]) : ""; }
 
+    // Agent memory editor (CLAUDE.md / AGENTS.md): the same demo groups for global and project.
+    var MEMORY_GROUPS = [
+        { id: "claude", file: "CLAUDE.md", agents: [{ name: "claude", label: "Claude Code" }], deployed: true, edited: false, managed: true },
+        { id: "codex", file: "AGENTS.md", agents: [{ name: "codex", label: "Codex" }, { name: "opencode", label: "OpenCode" }], deployed: true, edited: false, managed: true }
+    ];
+    var MEMORY_CONTENT = "# Engineering memory (demo)\n\nMock content for the static demo. The real dashboard reads and writes your agents' CLAUDE.md / AGENTS.md here, and your edits follow the overwrite/keep policy on the next sync.\n";
+    function applyMemoryPost(body) {
+        if (body.action === "read") return { ok: true, content: MEMORY_CONTENT };
+        if (body.action === "save") return { ok: true, note: "Demo - not saved.", groups: MEMORY_GROUPS };
+        if (body.action === "reset") return { ok: true, note: "Demo - not changed.", groups: MEMORY_GROUPS };
+        return { ok: false, error: "unknown action" };
+    }
+
     function route(path, method, body) {
         if (path.indexOf("/api/stats") !== -1) { STATS.generatedAt = Date.now(); return STATS; }
         // Provider status pill: report everything operational (the real server proxies the
@@ -313,6 +326,7 @@
         if (path.indexOf("/api/settings") !== -1) return method === "POST" ? applySettingPost(body) : SETTINGS;
         if (path.indexOf("/api/accounts") !== -1) return method === "POST" ? { ok: true, data: ACCOUNTS } : ACCOUNTS;
         if (path.indexOf("/api/skills") !== -1) return method === "POST" ? applySkillPost(body) : SKILLS;
+        if (path.indexOf("/api/memory") !== -1) return method === "POST" ? applyMemoryPost(body) : { groups: MEMORY_GROUPS, project: qparam(path, "path") || null };
         if (path.indexOf("/api/projects/detail") !== -1) { var pd = projFind(qparam(path, "path")); return pd ? projDetail(pd) : { error: "Project is not registered." }; }
         if (path.indexOf("/api/projects/action") !== -1) return applyProjectActionPost(body);
         if (path.indexOf("/api/projects") !== -1) return method === "POST" ? applyProjectsPost(body) : projList();

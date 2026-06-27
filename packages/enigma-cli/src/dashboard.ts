@@ -421,6 +421,49 @@ function writeSkill(req: import("node:http").IncomingMessage, res: import("node:
     });
 }
 
+/** List the agent memory files for the editor (global, or per project via ?path=). */
+function serveMemory(req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse): void {
+    const project = new URL(req.url || "/", "http://x").searchParams.get("path") || undefined;
+    const send = (): void => {
+        import("./dashboard-memory")
+            .then(({ listMemoryForDashboard }) => { res.writeHead(200, JSON_HDR); res.end(JSON.stringify({ groups: listMemoryForDashboard(project), project: project || null })); })
+            .catch(() => { res.writeHead(500, JSON_HDR); res.end('{"error":"memory unavailable"}'); });
+    };
+    if (project) { ensureRegisteredProject(project, res, send); return; }
+    send();
+}
+
+/** Apply a memory action from a POST body { id, action, content?, path? } (read/save/reset). */
+function writeMemoryAction(req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse): void {
+    let body = "";
+    // Larger cap: the "save" action carries a full CLAUDE.md/AGENTS.md document.
+    req.on("data", (chunk) => { body += chunk; if (body.length > 512 * 1024) req.destroy(); });
+    req.on("end", () => {
+        let parsed: { id?: unknown; action?: unknown; content?: unknown; path?: unknown };
+        try { parsed = JSON.parse(body || "{}"); } catch { res.writeHead(400, JSON_HDR); res.end('{"error":"bad json"}'); return; }
+        if (typeof parsed.action !== "string") { res.writeHead(400, JSON_HDR); res.end('{"error":"missing action"}'); return; }
+        const project = typeof parsed.path === "string" && parsed.path ? parsed.path : undefined;
+        const run = (): void => {
+            import("./dashboard-memory")
+                .then(({ applyMemoryAction }) => applyMemoryAction(typeof parsed.id === "string" ? parsed.id : "", parsed.action as string, parsed.content, project))
+                .then((out) => { res.writeHead(out.ok ? 200 : 400, JSON_HDR); res.end(JSON.stringify(out)); })
+                .catch(() => { res.writeHead(500, JSON_HDR); res.end('{"error":"action failed"}'); });
+        };
+        if (project) { ensureRegisteredProject(project, res, run); return; }
+        run();
+    });
+}
+
+/** Guard a project-scoped memory call: a write only ever targets a registered project folder. */
+function ensureRegisteredProject(path: string, res: import("node:http").ServerResponse, ok: () => void): void {
+    import("./dashboard-projects")
+        .then(({ isRegisteredProject }) => {
+            if (!isRegisteredProject(path)) { res.writeHead(404, JSON_HDR); res.end('{"error":"project not registered"}'); return; }
+            ok();
+        })
+        .catch(() => { res.writeHead(500, JSON_HDR); res.end('{"error":"memory unavailable"}'); });
+}
+
 /** List tool accounts + profiles for the Accounts panel. */
 function serveAccounts(res: import("node:http").ServerResponse): void {
     import("./dashboard-accounts")
@@ -555,6 +598,13 @@ function createDashboardServer(version: string): Server {
             if (!isLocalRequest(req)) { res.writeHead(403, JSON_HDR); res.end('{"error":"forbidden"}'); return; }
             if (method === "GET") { serveSkills(res); return; }
             if (method === "POST") { writeSkill(req, res); return; }
+            res.writeHead(405).end(); return;
+        }
+        // Agent memory editor (CLAUDE.md / AGENTS.md), global or per project. Write surface, origin-guarded.
+        if (url === "/api/memory") {
+            if (!isLocalRequest(req)) { res.writeHead(403, JSON_HDR); res.end('{"error":"forbidden"}'); return; }
+            if (method === "GET") { serveMemory(req, res); return; }
+            if (method === "POST") { writeMemoryAction(req, res); return; }
             res.writeHead(405).end(); return;
         }
         if (url === "/api/update") {

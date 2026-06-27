@@ -2,7 +2,7 @@ name: Dashboard preview
 
 # Regenerate the README's dashboard preview whenever the dashboard UI or its version changes.
 # Renders the REAL shipped assets with mock data (scripts/screenshot.mjs) via a headless
-# browser at a wide 2558x1276 frame, then commits assets/images/dashboard.png to main (the
+# browser at the dashboard's own 1680x1380 @2x frame, then commits assets/images/dashboard.png to main (the
 # README references that path). The PNG is also uploaded as a build artifact so the latest
 # render is always retrievable even if the commit step is blocked by branch protection.
 

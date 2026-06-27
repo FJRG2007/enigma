@@ -91,6 +91,11 @@ function isRegistered(path: string): boolean {
     return readRegistry().projects.some((p) => normalize(p.path) === norm);
 }
 
+/** Public guard so other dashboard bridges (e.g. memory) only act on registered projects. */
+export function isRegisteredProject(path: string): boolean {
+    return isRegistered(path);
+}
+
 // --- status reads (direct, no CLI) ---------------------------------------------
 
 /** Run `git -C <path> config --get <key>`, returning the value or null (git absent / unset). */

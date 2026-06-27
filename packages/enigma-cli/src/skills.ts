@@ -15,7 +15,7 @@ import { isDir, isNewer, readJson, listFilesRel, computeContentSha } from "./uti
 import { readConfig, setEnigmaValue, setSkillDiscarded, setSkillAgentOff, OUTPUT_STYLES, MINIMAL_CODE_LEVELS, DASHBOARD_MODES } from "./config";
 import type { OutputStyle, MinimalCode, DashboardMode } from "./config";
 import { applyDashboardMode } from "./dashboard";
-import { MANAGED_PROVIDER, isManagedProvider, discoverAgents, runningStatus } from "./agents";
+import { AGENTS, MANAGED_PROVIDER, isManagedProvider, discoverAgents, runningStatus, localTargetsAt } from "./agents";
 import type { Agent, AgentTarget, DiscoveredAgent } from "./agents";
 import { maybeOfferGitHooks } from "./security";
 import type { SecurityOptions } from "./security";
@@ -187,7 +187,11 @@ function memoryStatus(srcFile: string, destFile: string): "install" | "identical
 // "user-authored or user-edited" (never touched silently).
 
 const STATE_FILE = join(homedir(), ".enigma", "state.json");
-interface SyncState { memory?: Record<string, string>; }
+// `memory` records the sha enigma last wrote to a dest (managed render); `memoryEdited`
+// records the sha of a user's deliberate dashboard edit. A managed write clears the edit
+// marker (the edit was superseded); the overwrite/keep policy below reads the marker to
+// distinguish a deliberate edit (apply skillUpdatePolicy) from package-stale managed content.
+interface SyncState { memory?: Record<string, string>; memoryEdited?: Record<string, string>; }
 
 const contentHash = (content: string): string => createHash("sha256").update(content).digest("hex");
 
@@ -195,11 +199,31 @@ function readSyncState(): SyncState {
     return readJson<SyncState>(STATE_FILE) || {};
 }
 
+function writeSyncState(state: SyncState): void {
+    mkdirSync(dirname(STATE_FILE), { recursive: true });
+    writeFileSync(STATE_FILE, `${JSON.stringify(state, null, 2)}\n`);
+}
+
 function recordMemoryWrite(dest: string, content: string): void {
     const state = readSyncState();
     state.memory = { ...state.memory, [dest]: contentHash(content) };
-    mkdirSync(dirname(STATE_FILE), { recursive: true });
-    writeFileSync(STATE_FILE, JSON.stringify(state, null, 2) + "\n");
+    if (state.memoryEdited) delete state.memoryEdited[dest]; // a managed write supersedes any edit
+    writeSyncState(state);
+}
+
+/** Record a deliberate user edit of a deployed memory file (marks it for the keep policy). */
+function recordMemoryEdit(dest: string, content: string): void {
+    const state = readSyncState();
+    const h = contentHash(content);
+    state.memory = { ...state.memory, [dest]: h };
+    state.memoryEdited = { ...state.memoryEdited, [dest]: h };
+    writeSyncState(state);
+}
+
+/** True when `dest` is byte-identical to a user edit enigma recorded (vs an unrelated change). */
+function isMemoryEdited(dest: string): boolean {
+    const recorded = (readSyncState().memoryEdited || {})[dest];
+    return Boolean(recorded) && existsSync(dest) && recorded === contentHash(readFileSync(dest, "utf8"));
 }
 
 /** True when the file at `dest` is byte-identical to what enigma last wrote there. */
@@ -489,6 +513,101 @@ function inspectMemory(agent: Agent): MemoryEntry[] {
     if (!agent.memoryFile) return [];
     const src = join(MEMORY_ROOT, agent.memoryFile);
     return existsSync(src) ? [{ name: agent.memoryFile, src }] : [];
+}
+
+// --- memory editing (dashboard global + per-project) ---------------------------
+// The deployed CLAUDE.md/AGENTS.md can be customized from the dashboard. Several agents
+// can share one file (codex + opencode both read AGENTS.md, and in a project they share
+// the same <project>/AGENTS.md path), so targets are GROUPED by deployed path. Edits are
+// written directly to the deployed file and marked (recordMemoryEdit); the overwrite/keep
+// policy in syncTarget decides whether a later sync replaces them. Reads/writes resolve the
+// path from this list server-side - a client never supplies an arbitrary path.
+
+export interface MemoryGroup {
+    /** Stable id (the first agent's name) used by the dashboard to reference a group. */
+    id: string;
+    /** Memory file name (CLAUDE.md / AGENTS.md). */
+    file: string;
+    /** Agents that read this exact file. */
+    agents: { name: string; label: string }[];
+    /** The file exists on disk. */
+    deployed: boolean;
+    /** Edited via the dashboard and not since superseded (the keep policy applies). */
+    edited: boolean;
+    /** enigma wrote it last (managed); false for a hand-authored/edited file. */
+    managed: boolean;
+}
+
+interface MemTargetRaw { name: string; label: string; file: string; src: string; dest: string; }
+
+/** Memory deploy targets for a scope: global (each installed agent's own dir) or a project path. */
+function memoryTargetsRaw(project?: string): MemTargetRaw[] {
+    const out: MemTargetRaw[] = [];
+    if (project) {
+        const locals = localTargetsAt(project);
+        for (const name of Object.keys(locals)) {
+            const def = AGENTS[name];
+            if (!def?.memoryFile) continue;
+            out.push({ name, label: def.label, file: def.memoryFile, src: join(MEMORY_ROOT, def.memoryFile), dest: join(locals[name]!.memory, def.memoryFile) });
+        }
+    } else {
+        for (const a of discoverAgents()) {
+            if (!a.installed || !a.memoryFile) continue;
+            out.push({ name: a.name, label: a.label, file: a.memoryFile, src: join(MEMORY_ROOT, a.memoryFile), dest: join(a.targets.global.memory, a.memoryFile) });
+        }
+    }
+    return out;
+}
+
+/** Group memory targets by deployed path (so a shared AGENTS.md appears once). */
+export function listMemoryGroups(project?: string): MemoryGroup[] {
+    const byDest = new Map<string, MemoryGroup & { dest: string }>();
+    for (const r of memoryTargetsRaw(project)) {
+        let g = byDest.get(r.dest);
+        if (!g) {
+            g = { id: r.name, file: r.file, dest: r.dest, agents: [], deployed: existsSync(r.dest), edited: isMemoryEdited(r.dest), managed: isEnigmaWritten(r.dest) };
+            byDest.set(r.dest, g);
+        }
+        g.agents.push({ name: r.name, label: r.label });
+    }
+    return [...byDest.values()].map(({ dest: _d, ...g }) => g);
+}
+
+/** The content shown in the editor: the deployed file if present, else the rendered template. */
+export function readMemoryGroup(id: string, project?: string): string | null {
+    const r = memoryTargetsRaw(project).find((x) => x.name === id);
+    if (!r) return null;
+    if (existsSync(r.dest)) { try { return readFileSync(r.dest, "utf8"); } catch { /* fall through */ } }
+    return existsSync(r.src) ? renderMemory(r.src) : "";
+}
+
+/**
+ * Save custom memory content to a group's deployed file (creating it if absent - an explicit
+ * user edit is consent to deploy), marking it edited so the keep policy can preserve it.
+ * Returns the agent labels the file serves.
+ */
+export function saveMemoryGroup(id: string, content: string, project?: string): { ok: boolean; labels: string[] } {
+    const targets = memoryTargetsRaw(project);
+    const r = targets.find((x) => x.name === id);
+    if (!r) return { ok: false, labels: [] };
+    try {
+        mkdirSync(dirname(r.dest), { recursive: true });
+        writeFileSync(r.dest, content);
+        recordMemoryEdit(r.dest, content);
+    } catch { return { ok: false, labels: [] }; }
+    const labels = targets.filter((x) => x.dest === r.dest).map((x) => x.label);
+    return { ok: true, labels };
+}
+
+/** Restore a group's memory to the managed (rendered) version, clearing the edit marker. */
+export function resetMemoryGroup(id: string, project?: string): { ok: boolean; labels: string[] } {
+    const targets = memoryTargetsRaw(project);
+    const r = targets.find((x) => x.name === id);
+    if (!r || !existsSync(r.src)) return { ok: false, labels: [] };
+    try { mkdirSync(dirname(r.dest), { recursive: true }); writeMemory(r.src, r.dest); }
+    catch { return { ok: false, labels: [] }; }
+    const labels = targets.filter((x) => x.dest === r.dest).map((x) => x.label);
+    return { ok: true, labels };
 }
 
 // --- maintenance: seal + check -------------------------------------------------
@@ -1181,9 +1300,12 @@ function syncTarget(target: AccountTarget, memory: MemoryEntry[], skills: SkillE
     for (const m of memory) {
         const dest = join(target.memory, m.name);
         if (existsSync(dest)) {
-            // Only rewrite a memory file enigma wrote and the user has not
-            // touched since; a user-edited or user-authored file stays as-is.
-            if (memoryStatus(m.src, dest) === "identical" || !isEnigmaWritten(dest)) continue;
+            if (memoryStatus(m.src, dest) === "identical") continue;
+            // A deliberate dashboard edit follows skillUpdatePolicy: keep -> preserve it,
+            // overwrite -> restore the managed render. A hand-authored/edited file that
+            // enigma never recorded stays untouched (an explicit user decision).
+            if (isMemoryEdited(dest)) { if (keepEdited) continue; }
+            else if (!isEnigmaWritten(dest)) continue;
         } else if (!createMemory) {
             continue;
         }

@@ -156,6 +156,9 @@
         .set-meta { flex: 1; min-width: 0; }
         .set-name { font-size: 13px; color: var(--text); }
         .set-hint { font-size: 12px; color: var(--muted); margin-top: 2px; }
+        /* Capitalize the first letter of every option description/blurb in the dashboard
+           (presentation only; the shared registry keeps its lowercase TUI/CLI convention). */
+        .set-hint::first-letter, .set-cat-b::first-letter, .lnone::first-letter { text-transform: uppercase; }
         .set-ctl { flex-shrink: 0; }
         .toggle {
             background: var(--surface2); color: var(--muted); border: 1px solid var(--border);
@@ -357,6 +360,7 @@
             transform: translateY(10px) scale(.98); opacity: 0; transition: transform .18s ease, opacity .18s ease;
         }
         .modal-back.show .modal { transform: none; opacity: 1; }
+        .modal.wide { max-width: 900px; }
         .modal-title { font-family: var(--mono); font-size: 14px; font-weight: 600; color: var(--text); }
         .modal-msg { color: var(--muted); font-size: 13px; line-height: 1.5; margin-top: 8px; word-break: break-word; }
         .modal-input {
@@ -659,6 +663,11 @@
                     </div>
                 </div>
             </div>
+        </div>
+        <div class="panel" id="memPanel">
+            <div class="set-cat-h">Agent memory</div>
+            <div class="set-cat-b">Customize the instruction files enigma deploys to each agent (CLAUDE.md / AGENTS.md). Your edits follow the Customized-skill updates policy on the next sync: overwrite restores the managed version, keep preserves them.</div>
+            <div id="memBody" class="set-grid"><div class="empty" style="padding:12px 0">Loading...</div></div>
         </div>
     </section>
 
@@ -2587,10 +2596,12 @@ export {
         async function loadSettings() {
             if (isProjectScope()) return loadProjectSettings();
             const port = $("dashPortPanel"); if (port) port.style.display = ""; // global-only panel
+            const mp = $("memPanel"); if (mp) mp.style.display = "";
             try {
                 const data = await (await fetch("/api/settings", { cache: "no-store" })).json();
                 renderSettings(data.categories || []);
                 renderDashPort(data);
+                loadMemory();
             } catch { $("settingsBody").innerHTML = '<div class="empty" style="padding:24px 0">Settings unavailable.</div>'; }
         }
 
@@ -2613,6 +2624,93 @@ export {
                 else setNote("settingsNote", "Could not save: " + (out.error || "error"), "err");
             } catch { setNote("settingsNote", "Could not reach the server to set the port.", "err"); }
         }
+
+        // --- agent memory editor (CLAUDE.md / AGENTS.md), global or per project ----------
+        // Global edits each agent's home memory file; project scope edits <project>/CLAUDE.md
+        // and <project>/AGENTS.md. Writes go through /api/memory, which marks the edit so the
+        // overwrite/keep policy (Customized-skill updates) can preserve it on the next sync.
+        function memProject() { return isProjectScope() ? currentScope : undefined; }
+
+        async function postMemory(id, action, content, project) {
+            const body = { id, action };
+            if (content !== undefined) body.content = content;
+            if (project) body.path = project;
+            return (await fetch("/api/memory", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })).json();
+        }
+
+        function memoryRow(g) {
+            const apps = (g.agents || []).map((a) => '<span class="tag">' + esc(a.label) + "</span>").join(" ");
+            const state = !g.deployed ? '<span class="tag">not deployed</span>'
+                : g.edited ? '<span class="tag exp">edited</span>'
+                : g.managed ? '<span class="tag meas">managed</span>' : '<span class="tag">custom</span>';
+            const reset = (g.deployed && g.edited) ? ' <button type="button" class="iconbtn" data-mem-reset="' + esc(g.id) + '" title="Restore the managed version">reset</button>' : "";
+            return '<div class="set-row"><div class="set-meta"><div class="set-name">' + esc(g.file) + " " + apps + " " + state + "</div>"
+                + '<div class="set-hint">' + (g.deployed ? "Deployed - edit to customize" : "Not deployed yet - editing creates it") + "</div></div>"
+                + '<div class="set-ctl ladd" style="align-items:center"><button type="button" class="toggle on" data-mem-edit="' + esc(g.id) + '">Edit</button>' + reset + "</div></div>";
+        }
+
+        async function loadMemory(project) {
+            const el = project ? $("projMemBody") : $("memBody");
+            if (!el) return;
+            try {
+                const q = project ? "/api/memory?path=" + encodeURIComponent(project) : "/api/memory";
+                const data = await (await fetch(q, { cache: "no-store" })).json();
+                const groups = data.groups || [];
+                el.innerHTML = groups.length ? groups.map(memoryRow).join("")
+                    : '<div class="empty" style="padding:12px 0">No agents detected to deploy memory to.</div>';
+            } catch { el.innerHTML = '<div class="empty" style="padding:12px 0">Memory unavailable.</div>'; }
+        }
+
+        async function openMemoryEditor(id, project) {
+            let out;
+            try { out = await postMemory(id, "read", undefined, project); }
+            catch { toast("Could not reach the server.", "err"); return; }
+            if (!out.ok) { toast(out.error || "Could not read the memory file.", "err"); return; }
+            const back = document.createElement("div");
+            back.className = "modal-back";
+            back.innerHTML = '<div class="modal wide" role="dialog" aria-modal="true">'
+                + '<div class="modal-title">Editing ' + esc(id) + " memory</div>"
+                + '<div class="modal-msg">Saved to every agent that reads this file. On the next sync the Customized-skill updates policy decides whether your edit is kept or replaced by the managed version.</div>'
+                + '<textarea class="editor" spellcheck="false" style="margin-top:14px"></textarea>'
+                + '<div class="modal-acts"><button type="button" class="toggle modal-cancel">Cancel</button>'
+                + '<button type="button" class="toggle on modal-ok">Save</button></div></div>';
+            document.body.appendChild(back);
+            requestAnimationFrame(() => back.classList.add("show"));
+            const ta = back.querySelector("textarea");
+            ta.value = out.content || "";
+            let done = false;
+            const close = () => { if (done) return; done = true; back.classList.remove("show"); setTimeout(() => back.remove(), 200); };
+            back.querySelector(".modal-cancel").addEventListener("click", close);
+            back.addEventListener("mousedown", (e) => { if (e.target === back) close(); });
+            back.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); close(); } });
+            back.querySelector(".modal-ok").addEventListener("click", async () => {
+                const btn = back.querySelector(".modal-ok"); btn.disabled = true;
+                try {
+                    const r = await postMemory(id, "save", ta.value, project);
+                    if (r.ok) { toast(r.note || "Saved.", "ok"); close(); loadMemory(project); }
+                    else { toast(r.error || "Could not save.", "err"); btn.disabled = false; }
+                } catch { toast("Could not reach the server.", "err"); btn.disabled = false; }
+            });
+            ta.focus();
+        }
+
+        async function resetMemory(id, project) {
+            if (!(await askConfirm("Restore managed memory?", "This replaces your edits with enigma's managed version.", true))) return;
+            try {
+                const r = await postMemory(id, "reset", undefined, project);
+                if (r.ok) { toast(r.note || "Restored.", "ok"); loadMemory(project); }
+                else toast(r.error || "Could not restore.", "err");
+            } catch { toast("Could not reach the server.", "err"); }
+        }
+
+        // Edit/reset buttons live in both the global panel (#memBody) and the project view
+        // (#projMemBody, mutually exclusive by scope); one document-level delegate covers both.
+        document.addEventListener("click", (e) => {
+            const ed = e.target.closest && e.target.closest("[data-mem-edit]");
+            if (ed) { openMemoryEditor(ed.dataset.memEdit, memProject()); return; }
+            const rs = e.target.closest && e.target.closest("[data-mem-reset]");
+            if (rs) { resetMemory(rs.dataset.memReset, memProject()); }
+        });
 
         // --- "Enigma systems" overview (factual state, never invented savings) ---
         function pill(state, text) { return '<span class="pill ' + state + '">' + esc(text) + "</span>"; }
@@ -3336,6 +3434,7 @@ export {
         async function loadProjectSettings() {
             const el = $("settingsBody");
             const port = $("dashPortPanel"); if (port) port.style.display = "none"; // global-only
+            const mp = $("memPanel"); if (mp) mp.style.display = "none"; // global panel; project memory is rendered inline below
             el.innerHTML = '<div class="empty" style="padding:24px 0">Loading...</div>';
             let d; try { d = await fetchProjectDetail(); } catch { el.innerHTML = '<div class="empty" style="padding:24px 0">Project unavailable.</div>'; return; }
             if (d.error) { el.innerHTML = '<div class="empty" style="padding:24px 0">' + esc(d.error) + "</div>"; return; }
@@ -3350,11 +3449,13 @@ export {
                 + '<div class="set-row"><div class="set-meta"><div class="set-name">Git hooks</div><div class="set-hint">commit secret guard for this repo</div></div><div class="set-ctl">' + hooks + "</div></div>"
                 + '<div class="set-row"><div class="set-meta"><div class="set-name">AI quality gate</div><div class="set-hint">validate changes through the gate pipeline before push (needs the gate feature enabled)</div></div><div class="set-ctl">' + gate + "</div></div></div></div>"
                 + '<div class="panel"><div class="set-cat-h">Project config</div><div class="set-cat-b">applies only to this project (its .enigma.json). Settings not shown here are global-only - switch Scope to Global for those.</div><div class="set-grid">' + cfg + "</div></div>"
+                + '<div class="panel"><div class="set-cat-h">Agent memory</div><div class="set-cat-b">Customize this project\'s instruction files (CLAUDE.md / AGENTS.md). Edits follow the Customized-skill updates policy on the next sync.</div><div id="projMemBody" class="set-grid"><div class="empty" style="padding:12px 0">Loading...</div></div></div>'
                 + '<div class="panel"><div class="set-cat-h">Manage</div><div class="set-grid">'
                 + '<div class="set-row"><div class="set-meta"><div class="set-name">Name</div><div class="set-hint">display name for this project (must be unique)</div></div><div class="set-ctl"><input class="linput" data-proj-name value="' + esc(d.label) + '" spellcheck="false" style="width:200px"></div></div>'
                 + '<div class="set-row"><div class="set-meta"><div class="set-name">Description</div><div class="set-hint">optional note shown in the header</div></div><div class="set-ctl ladd" style="align-items:center"><input class="linput" data-proj-desc value="' + esc(d.description || "") + '" placeholder="optional" style="flex:none;width:240px"><button type="button" class="toggle on" data-proj-save-meta>Save</button></div></div>'
                 + '<div class="set-row"><div class="set-meta"><div class="set-name">Forget project</div><div class="set-hint">remove it from the dashboard list - its files are not touched</div></div><div class="set-ctl"><button type="button" class="toggle" data-proj-forget>Forget</button></div></div>'
                 + "</div></div>";
+            loadMemory(currentScope);
         }
         async function saveProjectMeta() {
             if (!isProjectScope()) return;

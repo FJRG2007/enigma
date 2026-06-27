@@ -86,12 +86,18 @@ const STATS = {
     usage: null,
 };
 
+// Keep this in sync with SystemsStatus (dashboard-status.ts) so the preview renders every
+// row the live "Enigma Systems" panel does - a missing field would silently show as off.
 const STATUS = {
     systems: {
-        compress: true, usageStats: true, proxy: true,
+        compress: true, usageStats: true, proxy: true, usageApi: true,
+        promptSecretGuard: true, promptSecretMode: "redact",
         outputStyle: "full", minimalCode: "full", parallelSubagents: true, autoLint: true, commitEmoji: true,
         dashboard: "always", live: true,
-        proxyStats: { calls: 9240, input: 96_000_000, output: 24_000_000, cacheRead: 412_000_000, cacheCreation: 18_500_000 },
+        proxyStats: {
+            calls: 9240, input: 96_000_000, output: 24_000_000, cacheRead: 412_000_000, cacheCreation: 18_500_000,
+            lastRequestAt: Date.now() - 4 * 60 * 1000, redacted: 12, rejected: 3, lastBlockedAt: Date.now() - 36 * 60 * 1000,
+        },
         security: {
             permissionBypass: true, bypassDisabled: [],
             guardProtects: ["Block committed secrets", "Block .env files", "Block dependency/cache dirs", "Warn on generated dirs", "Warn on log / OS junk files", "Warn on files over 5 MB"],
