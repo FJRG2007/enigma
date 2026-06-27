@@ -3351,14 +3351,16 @@ export {
             }
             if (!v.enabled) {
                 $("recallBody").innerHTML = '<div class="panel"><div class="set-cat-h">Session memory is off</div>'
-                    + '<div class="set-hint" style="padding:8px 0">Build a searchable memory of your coding sessions from your own transcripts. Turn it on with:</div>'
-                    + '<code>enigma config recall on</code></div>';
+                    + '<div class="set-hint" style="padding:8px 0">Build a searchable memory of your coding sessions from your own transcripts.</div>'
+                    + '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><button type="button" class="toggle" data-recall-on="1">Enable recall</button>'
+                    + '<span class="set-hint">or run <code>enigma config recall on</code></span></div></div>';
                 $("recallSearch").style.display = "none"; $("recallList").innerHTML = ""; return;
             }
             const s = v.stats || {};
             const types = Object.entries(s.byType || {}).map(([t, n]) => '<span class="tag">' + esc(t) + " " + n + "</span>").join(" ");
             const last = v.lastSync ? "last sync " + new Date(v.lastSync).toLocaleString() : "not synced yet";
-            $("recallBody").innerHTML = '<div class="panel"><div class="set-cat-h">Stored memory</div>'
+            $("recallBody").innerHTML = '<div class="panel"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><div class="set-cat-h" style="margin:0">Stored memory</div>'
+                + '<button type="button" class="toggle on" data-recall-on="0" title="Turn session memory off">Disable</button></div>'
                 + '<div class="set-hint" style="padding:6px 0">' + (s.observations || 0) + " observations · " + (s.sessions || 0) + " sessions · "
                 + (s.projects || 0) + " projects · " + Math.round((s.dbBytes || 0) / 1024) + " KB · " + esc(last) + "</div>"
                 + (types ? '<div style="padding-top:6px">' + types + "</div>" : "") + "</div>";
@@ -3430,9 +3432,22 @@ export {
                 setNote("recallNote", out.ok ? (op === "sync" ? "Synced." : "Cleared.") : (out.error || "Action failed."), out.ok ? "ok" : "err");
             } catch { setNote("recallNote", "Could not reach the server.", "err"); }
         }
+        async function setRecallEnabled(on) {
+            setNote("recallNote", on ? "Enabling recall..." : "Disabling recall...");
+            try {
+                const out = await (await fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: "recall", value: on }) })).json();
+                if (!out.ok) { setNote("recallNote", "Could not change recall: " + (out.error || "error"), "err"); return; }
+                setNote("recallNote", out.restartNote || (on ? "Recall enabled." : "Recall disabled."), "ok");
+                loadRecall();
+            } catch { setNote("recallNote", "Could not reach the server.", "err"); }
+        }
         function wireRecall() {
             $("recallSync").addEventListener("click", () => recallAction("sync"));
             $("recallClear").addEventListener("click", () => recallAction("clear", "Delete all stored session memory? This cannot be undone."));
+            $("recallBody").addEventListener("click", (e) => {
+                const t = e.target.closest("[data-recall-on]");
+                if (t) setRecallEnabled(t.dataset.recallOn === "1");
+            });
             let t; const deb = () => { clearTimeout(t); t = setTimeout(loadRecall, 250); };
             $("recallQ").addEventListener("input", deb);
             $("recallType").addEventListener("change", loadRecall);
