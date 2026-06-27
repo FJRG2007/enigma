@@ -1,0 +1,12 @@
+# Keep the Docker build context lean. The builder runs a fresh `bun install`, so host
+# node_modules and build outputs are never needed; `references/` holds multi-GB study clones.
+**/node_modules
+.git
+references
+packages/enigma-cli/dist
+packages/enigma-cli/dist-bin
+apps/web/dist
+apps/web/.astro
+.dev-home
+**/*.log
+**/*.tsbuildinfo

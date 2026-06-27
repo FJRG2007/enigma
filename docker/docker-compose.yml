@@ -1,0 +1,53 @@
+# Dev/test harness for the enigma project. Build context is the repo root so the image
+# compiles enigma from the CURRENT source. Nothing here is launched automatically - run a
+# service explicitly (see docker/README.md).
+#
+#   docker compose -f docker/docker-compose.yml build           # build the image from source
+#   docker compose -f docker/docker-compose.yml run --rm enigma # shell, session persisted
+#   docker compose -f docker/docker-compose.yml --profile ephemeral run --rm enigma-ephemeral
+#
+# Customize: build args (INSTALL_CLAUDE, CLAUDE_PKG), the persistent volume (enigma / enigma-ephemeral),
+# and the optional repo bind-mount under each service's `volumes`.
+
+# Pin the project name so the volume/container names are stable regardless of the compose
+# file's directory (otherwise the volume would be `docker_enigma-home`).
+name: enigma
+
+services:
+  # Default: a persistent shell. The named volume keeps the Claude Code login + sessions and
+  # enigma's data across runs.
+  enigma:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        INSTALL_CLAUDE: "true"
+        CLAUDE_PKG: "@anthropic-ai/claude-code"
+    image: enigma-test:local
+    container_name: enigma-test
+    stdin_open: true
+    tty: true
+    volumes:
+      - enigma-home:/root
+      # Optional: test enigma against the live repo by bind-mounting it (uncomment):
+      # - ../:/workspace
+    command: ["bash"]
+
+  # Ephemeral: same image, NO volume - every run starts clean (login/sessions are discarded
+  # on exit). Behind the `ephemeral` profile so it never runs by accident.
+  enigma-ephemeral:
+    profiles: ["ephemeral"]
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        INSTALL_CLAUDE: "true"
+        CLAUDE_PKG: "@anthropic-ai/claude-code"
+    image: enigma-test:local
+    container_name: enigma-test-ephemeral
+    stdin_open: true
+    tty: true
+    command: ["bash"]
+
+volumes:
+  enigma-home:
