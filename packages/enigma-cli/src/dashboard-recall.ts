@@ -8,7 +8,7 @@
  * shape usage.ts uses), so the user rarely needs the manual "Sync now" button.
  */
 
-import { readConfig } from "./config";
+import { readConfig, setEnigmaValue, RECALL_PROVIDERS, type RecallProvider } from "./config";
 import type { ObservationHit, RecallStats } from "./recall";
 import { recallAvailable, recallStatus, searchRecall, recentObservations, resetRecall, syncRecall, recallTimeline } from "./recall";
 
@@ -36,6 +36,20 @@ function toItem(o: ObservationHit): RecallItem {
     };
 }
 
+/** The recall LLM-provider config, surfaced to the dashboard (the key value is never sent). */
+export interface RecallProviderView {
+    provider: RecallProvider;
+    model: string;
+    base: string;
+    /** Whether a key is set in config or via ENIGMA_RECALL_API_KEY (the value is never exposed). */
+    hasKey: boolean;
+    /** True when the key comes from the env var (config field is then ignored/locked). */
+    keyFromEnv: boolean;
+    /** LLM curation on (recallLlm). */
+    llm: boolean;
+    providers: readonly RecallProvider[];
+}
+
 /** Everything the Recall tab needs in one payload. */
 export interface RecallView {
     /** bun:sqlite present (false under a Node-only run). */
@@ -47,6 +61,17 @@ export interface RecallView {
     projects: string[];
     query: string;
     items: RecallItem[];
+    provider: RecallProviderView;
+}
+
+function providerView(): RecallProviderView {
+    const c = readConfig().config;
+    const envKey = !!process.env.ENIGMA_RECALL_API_KEY;
+    return {
+        provider: c.recallProvider, model: c.recallModel, base: c.recallApiBase,
+        hasKey: envKey || !!c.recallApiKey, keyFromEnv: envKey, llm: c.recallLlm,
+        providers: RECALL_PROVIDERS,
+    };
 }
 
 let lastSyncAttempt = 0;
@@ -64,7 +89,7 @@ function maybeBackgroundSync(): void {
 export function recallDashboard(opts: { q?: string; project?: string; type?: string } = {}): RecallView {
     const enabled = readConfig().config.recall;
     const available = recallAvailable();
-    if (!available || !enabled) return { available, enabled, stats: null, lastSync: 0, projects: [], query: opts.q || "", items: [] };
+    if (!available || !enabled) return { available, enabled, stats: null, lastSync: 0, projects: [], query: opts.q || "", items: [], provider: providerView() };
     maybeBackgroundSync();
     const st = recallStatus();
     const q = (opts.q || "").trim();
@@ -79,6 +104,7 @@ export function recallDashboard(opts: { q?: string; project?: string; type?: str
         projects: st.projects,
         query: q,
         items: hits.map(toItem),
+        provider: providerView(),
     };
 }
 
@@ -88,10 +114,25 @@ export function recallTimelineView(id: number): RecallItem[] {
     return recallTimeline({ id }).map(toItem);
 }
 
+/** Payload for the set-provider action (key omitted leaves the stored key unchanged). */
+export interface RecallProviderPayload { provider?: string; model?: string; base?: string; key?: string; llm?: boolean; }
+
 /** Apply a Recall action and return the refreshed view. */
-export function applyRecallAction(op: string): { ok: boolean; error?: string; view?: RecallView } {
+export function applyRecallAction(op: string, payload: RecallProviderPayload = {}): { ok: boolean; error?: string; view?: RecallView } {
     if (!recallAvailable()) return { ok: false, error: "recall needs the enigma binary" };
     if (op === "sync") { syncRecall(); return { ok: true, view: recallDashboard() }; }
     if (op === "clear") { resetRecall(); return { ok: true, view: recallDashboard() }; }
+    if (op === "set-provider") {
+        if (payload.provider !== undefined) {
+            if (!RECALL_PROVIDERS.includes(payload.provider as RecallProvider)) return { ok: false, error: "unknown provider" };
+            setEnigmaValue("recallProvider", payload.provider, "global");
+        }
+        if (typeof payload.model === "string") setEnigmaValue("recallModel", payload.model.trim(), "global");
+        if (typeof payload.base === "string") setEnigmaValue("recallApiBase", payload.base.trim(), "global");
+        // Empty string clears the key; undefined leaves it as-is (so the UI never has to echo it).
+        if (typeof payload.key === "string") setEnigmaValue("recallApiKey", payload.key, "global");
+        if (typeof payload.llm === "boolean") setEnigmaValue("recallLlm", payload.llm, "global");
+        return { ok: true, view: recallDashboard() };
+    }
     return { ok: false, error: `unknown op '${op}'` };
 }

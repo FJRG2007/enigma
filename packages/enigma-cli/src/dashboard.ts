@@ -404,16 +404,23 @@ function serveRecall(req: import("node:http").IncomingMessage, res: import("node
         .catch(() => { res.writeHead(500, JSON_HDR); res.end('{"error":"recall unavailable"}'); });
 }
 
-/** Apply a recall action from a POST body { op } (sync | clear). */
+/** Apply a recall action from a POST body { op, ... } (sync | clear | set-provider). */
 function writeRecall(req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse): void {
     let body = "";
-    req.on("data", (chunk) => { body += chunk; if (body.length > 4096) req.destroy(); });
+    req.on("data", (chunk) => { body += chunk; if (body.length > 8192) req.destroy(); });
     req.on("end", () => {
-        let parsed: { op?: unknown };
+        let parsed: { op?: unknown; provider?: unknown; model?: unknown; base?: unknown; key?: unknown; llm?: unknown };
         try { parsed = JSON.parse(body || "{}"); } catch { res.writeHead(400, JSON_HDR); res.end('{"error":"bad json"}'); return; }
         if (typeof parsed.op !== "string") { res.writeHead(400, JSON_HDR); res.end('{"error":"missing op"}'); return; }
+        const payload = {
+            provider: typeof parsed.provider === "string" ? parsed.provider : undefined,
+            model: typeof parsed.model === "string" ? parsed.model : undefined,
+            base: typeof parsed.base === "string" ? parsed.base : undefined,
+            key: typeof parsed.key === "string" ? parsed.key : undefined,
+            llm: typeof parsed.llm === "boolean" ? parsed.llm : undefined,
+        };
         import("./dashboard-recall")
-            .then(({ applyRecallAction }) => { const out = applyRecallAction(parsed.op as string); res.writeHead(out.ok ? 200 : 400, JSON_HDR); res.end(JSON.stringify(out)); })
+            .then(({ applyRecallAction }) => { const out = applyRecallAction(parsed.op as string, payload); res.writeHead(out.ok ? 200 : 400, JSON_HDR); res.end(JSON.stringify(out)); })
             .catch(() => { res.writeHead(500, JSON_HDR); res.end('{"ok":false,"error":"action failed"}'); });
     });
 }

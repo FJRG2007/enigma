@@ -1,22 +1,25 @@
 /**
- * Optional LLM enrichment of recall observations. The deterministic extractor records the
- * mechanical facts of a session; this asks an LLM to rewrite them into richer, human-readable
- * observations + a session summary (the quality the upstream design got from the Agent SDK).
+ * Optional LLM curation of recall observations - the claude-mem behavior: an LLM keeps only
+ * the observations worth remembering (rewritten) and discards the rest.
  *
- * It reuses the LOCAL Claude Code OAuth token (read-only, via claude-usage-api) and sends one
- * batched request per session to api.anthropic.com - so it is Claude-only, opt-in (config
- * `recallLlm`, default off), and consumes a little quota. Every failure (no token, network,
- * non-200, bad JSON) returns null and the caller keeps the deterministic observations: this
- * never throws and never blocks a sync.
+ * Pluggable provider (config `recallProvider`):
+ *  - claude-local (default): the local Claude Code OAuth login - no API key, Anthropic API.
+ *  - anthropic: an Anthropic API key (x-api-key), api.anthropic.com or a compatible base.
+ *  - openai: any OpenAI-compatible /chat/completions endpoint (recallApiBase + recallApiKey) -
+ *    covers OpenAI, OpenRouter, Groq, Together, Gemini's OpenAI-compat endpoint, local Ollama/LM Studio.
+ * The API key can also come from ENIGMA_RECALL_API_KEY (preferred over storing it in config).
+ * Every failure (no creds, network, non-200, bad JSON) returns null and the caller keeps the
+ * deterministic observations: this never throws and never blocks a sync.
  */
 
+import { readConfig } from "../config";
 import { OBSERVATION_TYPES } from "./types";
 import type { ObservationHit } from "./types";
-import { request as httpsRequest } from "node:https";
 import { readOAuthToken } from "../claude-usage-api";
 
 const UA = "claude-code/2.1.5";
-const MODEL = "claude-haiku-4-5-20251001";
+const DEFAULT_CLAUDE_MODEL = "claude-haiku-4-5-20251001";
+const DEFAULT_OPENAI_MODEL = "gpt-4o-mini";
 const TYPES = OBSERVATION_TYPES as readonly string[];
 
 /** Fields the LLM may overwrite on one observation. */
@@ -28,41 +31,50 @@ export interface EnrichResult {
     summary?: { request?: string; learned?: string; completed?: string; nextSteps?: string };
 }
 
-/** POST a messages request with the local OAuth token; resolves the assistant text or null. */
-function callAnthropic(token: string, body: string): Promise<string | null> {
-    return new Promise((resolve) => {
-        let settled = false;
-        const done = (v: string | null): void => { if (!settled) { settled = true; resolve(v); } };
-        const req = httpsRequest(
-            {
-                host: "api.anthropic.com", port: 443, method: "POST", path: "/v1/messages",
-                headers: {
-                    "authorization": `Bearer ${token}`,
-                    "anthropic-beta": "oauth-2025-04-20",
-                    "anthropic-version": "2023-06-01",
-                    "user-agent": UA,
-                    "content-type": "application/json",
-                    "content-length": Buffer.byteLength(body),
-                },
-            },
-            (res) => {
-                let data = "";
-                res.on("data", (c) => { data += c; });
-                res.on("end", () => {
-                    if ((res.statusCode ?? 0) >= 300) return done(null);
-                    try {
-                        const json = JSON.parse(data) as { content?: { type?: string; text?: string }[] };
-                        const text = (json.content || []).filter((b) => b.type === "text").map((b) => b.text || "").join("");
-                        done(text || null);
-                    } catch { done(null); }
-                });
-                res.on("error", () => done(null));
-            },
-        );
-        req.on("error", () => done(null));
-        req.setTimeout(30000, () => { try { req.destroy(); } catch { /* */ } done(null); });
-        req.end(body);
-    });
+interface Provider { kind: "anthropic-oauth" | "anthropic-key" | "openai"; base: string; key: string; model: string; }
+
+/** Resolve the enrichment provider from config + env, or null when it has no usable credentials. */
+function resolveProvider(): Provider | null {
+    const c = readConfig().config;
+    const envKey = process.env.ENIGMA_RECALL_API_KEY || "";
+    const provider = c.recallProvider || "claude-local";
+    if (provider === "claude-local") {
+        const tok = readOAuthToken();
+        return tok ? { kind: "anthropic-oauth", base: "https://api.anthropic.com", key: tok.token, model: c.recallModel || DEFAULT_CLAUDE_MODEL } : null;
+    }
+    const key = envKey || c.recallApiKey || "";
+    if (!key) return null;
+    if (provider === "anthropic") return { kind: "anthropic-key", base: c.recallApiBase || "https://api.anthropic.com", key, model: c.recallModel || DEFAULT_CLAUDE_MODEL };
+    return { kind: "openai", base: c.recallApiBase || "https://api.openai.com/v1", key, model: c.recallModel || DEFAULT_OPENAI_MODEL };
+}
+
+/** Call the resolved provider with one user prompt; resolve the assistant text or null. */
+async function callProvider(p: Provider, prompt: string): Promise<string | null> {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 30000);
+    const base = p.base.replace(/\/+$/, "");
+    try {
+        if (p.kind === "openai") {
+            const res = await fetch(`${base}/chat/completions`, {
+                method: "POST", signal: ctrl.signal,
+                headers: { "authorization": `Bearer ${p.key}`, "content-type": "application/json" },
+                body: JSON.stringify({ model: p.model, max_tokens: 2000, messages: [{ role: "user", content: prompt }] }),
+            });
+            if (!res.ok) return null;
+            const j = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+            return j.choices?.[0]?.message?.content || null;
+        }
+        const headers: Record<string, string> = { "content-type": "application/json", "anthropic-version": "2023-06-01" };
+        if (p.kind === "anthropic-oauth") { headers.authorization = `Bearer ${p.key}`; headers["anthropic-beta"] = "oauth-2025-04-20"; headers["user-agent"] = UA; }
+        else headers["x-api-key"] = p.key;
+        const res = await fetch(`${base}/v1/messages`, {
+            method: "POST", signal: ctrl.signal, headers,
+            body: JSON.stringify({ model: p.model, max_tokens: 2000, messages: [{ role: "user", content: prompt }] }),
+        });
+        if (!res.ok) return null;
+        const j = (await res.json()) as { content?: { type?: string; text?: string }[] };
+        return (j.content || []).filter((b) => b.type === "text").map((b) => b.text || "").join("") || null;
+    } catch { return null; } finally { clearTimeout(timer); }
 }
 
 const PROMPT_HEAD = `You curate a developer's coding-session memory like a senior engineer noting only what is worth remembering later. You are given mechanical observations from one session. Return ONLY the ones that are durable and useful (a real change, fix, refactor, decision or genuine discovery), rewritten into clear, factual memories. OMIT anything trivial, redundant, or chatter - omitted observations are permanently discarded. Keep the id of each one you keep. Do not invent work that is not implied by the data.
@@ -108,18 +120,18 @@ function parseEnrich(text: string): EnrichResult | null {
     return { perId, summary };
 }
 
-/** Whether enrichment can run here (a local Claude login exists). */
+/** Whether enrichment can run here (the configured provider has usable credentials). */
 export function enrichAvailable(): boolean {
-    return readOAuthToken() !== null;
+    return resolveProvider() !== null;
 }
 
 /**
- * Enrich one session's observations via a single LLM call. Returns null on any failure so the
- * caller keeps the deterministic data.
+ * Curate one session's observations via a single LLM call to the configured provider. Returns
+ * null on any failure so the caller keeps the deterministic data.
  */
 export async function enrichSession(project: string, observations: ObservationHit[]): Promise<EnrichResult | null> {
-    const tok = readOAuthToken();
-    if (!tok || !observations.length) return null;
+    const provider = resolveProvider();
+    if (!provider || !observations.length) return null;
     const compact = observations.map((o) => ({
         id: o.id,
         request: o.subtitle || o.title,
@@ -128,11 +140,6 @@ export async function enrichSession(project: string, observations: ObservationHi
         filesRead: o.filesRead.slice(0, 12),
         did: o.narrative?.slice(0, 400),
     }));
-    const body = JSON.stringify({
-        model: MODEL,
-        max_tokens: 2000,
-        messages: [{ role: "user", content: `${PROMPT_HEAD}\n\nProject: ${project}\nObservations:\n${JSON.stringify(compact)}` }],
-    });
-    const text = await callAnthropic(tok.token, body);
+    const text = await callProvider(provider, `${PROMPT_HEAD}\n\nProject: ${project}\nObservations:\n${JSON.stringify(compact)}`);
     return text ? parseEnrich(text) : null;
 }
