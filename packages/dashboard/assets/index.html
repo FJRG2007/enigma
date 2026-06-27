@@ -2781,8 +2781,19 @@ export {
         // Brand icon + text in one inline tag; the icon is omitted when there is none (e.g. content types).
         function iconLabel(ic, text) { return '<span class="srctag">' + (ic ? '<span class="aicon">' + ic + '</span>' : '') + esc(text) + '</span>'; }
 
+        let skillScope = "global"; // "global" | "project" - the same rows render in both
         function skillRow(s) {
             const ver = s.version ? '<span class="tag">v' + esc(s.version) + "</span>" : "";
+            // Project scope: same row, but the per-app chips toggle deployment INTO this project
+            // (data-pskill, handled by the scope delegate) and the global-only controls are hidden.
+            if (skillScope === "project") {
+                const chips = (s.agentStates || []).map((a) =>
+                    '<button type="button" class="achip' + (a.deployed ? " on" : "") + '" data-pskill="' + esc(s.name) + '" data-pagent="' + esc(a.name) + '" data-poff="' + (a.deployed ? 1 : 0) + '" aria-label="' + esc(a.label) + '" title="'
+                    + (a.deployed ? esc(a.label) + " - deployed, click to remove" : esc(a.label) + " - not deployed, click to deploy") + '">' + (agentSvg(a.name) || esc(a.label)) + "</button>").join("");
+                return '<div class="set-row"><div class="set-meta"><div class="set-name">' + esc(s.name) + ver + "</div>"
+                    + '<div class="set-hint">' + esc(s.description || "") + "</div>"
+                    + '<div class="set-agents">' + (chips || '<span class="tag">no agents</span>') + "</div></div></div>";
+            }
             // Last-edited date (from skill.json), shown relative via the vendored <relative-time>.
             const edited = s.updated ? '<span class="tag" title="Last edited ' + esc(new Date(s.updated).toLocaleString()) + '">edited '
                 + rtime(new Date(s.updated).getTime(), 'format="relative"', new Date(s.updated).toLocaleDateString()) + "</span>" : "";
@@ -2831,11 +2842,15 @@ export {
         let lastSkills = [];
         function renderSkills(skills) {
             lastSkills = skills; // kept so the editor can offer per-app save targets
-            const enigma = skills.filter((s) => s.source === "enigma");
-            const ext = skills.filter((s) => s.source === "external");
             const section = (title, blurb, list, emptyText) => '<div class="set-cat"><div class="set-cat-h">' + title + "</div>"
                 + '<div class="set-cat-b">' + blurb + "</div>"
                 + (list.length ? list.map(skillRow).join("") : '<div class="empty" style="padding:16px 0">' + emptyText + "</div>") + "</div>";
+            if (skillScope === "project") {
+                $("skillsBody").innerHTML = section("Skills", "Deploy enigma's policy skills into this project, per app. A green chip means the skill is in that app's project folder.", skills, "No skills.");
+                return;
+            }
+            const enigma = skills.filter((s) => s.source === "enigma");
+            const ext = skills.filter((s) => s.source === "external");
             $("skillsBody").innerHTML =
                 section("Enigma skills", "Distributed and kept current by enigma. Disable to remove from your agents; enable to restore.", enigma, "No enigma skills.")
                 + section("External skills", "Skills enigma did not author, found in your agents. Remove deletes the skill from every agent that has it.", ext, "No external skills found.");
@@ -2945,6 +2960,7 @@ export {
         let skillsLoaded = false;
         async function loadSkills() {
             if (isProjectScope()) return loadProjectSkills();
+            skillScope = "global";
             loadSkillSettings();
             try {
                 const res = await fetch("/api/skills", { cache: "no-store" });
@@ -3299,7 +3315,7 @@ export {
             const asSwitch = !c.choices || (c.choices.length === 2 && c.choices.indexOf(c.offChoice) !== -1);
             const ctl = !asSwitch
                 ? '<select class="choice" data-proj-cfg="' + esc(c.key) + '">' + c.choices.map((x) => '<option value="' + esc(x) + '"' + (x === c.choice ? " selected" : "") + ">" + esc(prettyChoice(x)) + "</option>").join("") + "</select>"
-                : '<button type="button" class="toggle' + (c.value ? " on" : "") + '" data-proj-cfg-bool="' + esc(c.key) + '" data-on="' + (c.value ? 1 : 0) + '">' + (c.value ? "On" : "Off") + "</button>";
+                : '<button type="button" class="toggle' + (c.value ? " on" : "") + '" data-kind="bool" data-proj-cfg-bool="' + esc(c.key) + '" data-on="' + (c.value ? 1 : 0) + '" title="' + (c.value ? "On" : "Off") + '">' + (c.value ? "On" : "Off") + "</button>";
             const reset = c.overridden ? ' <button type="button" class="iconbtn" data-proj-cfg-reset="' + esc(c.key) + '" title="Inherit global">reset</button>' : "";
             const badge = c.overridden ? ' <span class="tag">project</span>' : ' <span class="tag">inherited</span>';
             return '<div class="set-row"><div class="set-meta"><div class="set-name">' + esc(c.label) + badge + '</div><div class="set-hint">' + esc(c.hint) + "</div></div>"
@@ -3345,19 +3361,20 @@ export {
             } catch { setNote("settingsNote", "Could not reach the server.", "err"); }
         }
         async function loadProjectSkills() {
+            skillScope = "project";
             const el = $("skillsBody");
             const ss = $("skillSettings"); if (ss) ss.innerHTML = '<div class="set-cat-b" style="padding:0 0 4px">Skill settings are global - switch Scope to Global to change them.</div>';
             el.innerHTML = '<div class="empty" style="padding:24px 0">Loading...</div>';
             let d; try { d = await fetchProjectDetail(); } catch { el.innerHTML = '<div class="empty" style="padding:24px 0">Project unavailable.</div>'; return; }
             if (d.error) { el.innerHTML = '<div class="empty" style="padding:24px 0">' + esc(d.error) + "</div>"; return; }
-            const deployed = new Set(); (d.agents || []).forEach((a) => (a.deployed || []).forEach((s) => deployed.add(s)));
-            const rows = (d.available || []).map((s) => {
-                const on = deployed.has(s.name);
-                return '<div class="set-row"><div class="set-meta"><div class="set-name">' + esc(s.name) + '</div><div class="set-hint">' + esc(s.description || "") + "</div></div>"
-                    + '<div class="set-ctl"><button type="button" class="toggle' + (on ? " on" : "") + '" data-proj-skill="' + esc(s.name) + '" data-on="' + (on ? 1 : 0) + '">' + (on ? "On" : "Off") + "</button></div></div>";
-            }).join("") || '<div class="empty" style="padding:8px 0">No skills.</div>';
-            el.innerHTML = '<div class="scope-banner">Skills for <b>' + esc(d.label) + "</b> &middot; deploy or remove for this project</div>"
-                + '<div class="panel"><div class="set-grid">' + rows + "</div></div>";
+            // Build the SAME skill objects renderSkills/skillRow use globally; agentStates carries
+            // this project's per-app deployment so the rows render identically (chips per app).
+            const agents = d.agents || [];
+            const skills = (d.available || []).map((s) => ({
+                name: s.name, description: s.description, source: "enigma",
+                agentStates: agents.map((a) => ({ name: a.name, label: a.label, deployed: (a.deployed || []).indexOf(s.name) !== -1 })),
+            }));
+            renderSkills(skills);
         }
         async function projAction(payload, confirmMsg) {
             if (!isProjectScope()) return;
@@ -3382,6 +3399,8 @@ export {
         }
         function onProjectControlClick(e) {
             if (!isProjectScope()) return;
+            const chip = e.target.closest("[data-pskill]"); // per-app deploy chip in the Skills view
+            if (chip) { projAction({ op: "skill", name: chip.dataset.pskill, agent: chip.dataset.pagent, on: chip.dataset.poff !== "1" }); return; }
             const sk = e.target.closest("[data-proj-skill]");
             if (sk) { projAction({ op: "skill", name: sk.dataset.projSkill, on: sk.dataset.on !== "1" }); return; }
             const cb = e.target.closest("[data-proj-cfg-bool]");

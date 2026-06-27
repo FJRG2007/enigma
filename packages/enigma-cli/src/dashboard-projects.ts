@@ -256,23 +256,24 @@ function setProjectConfig(projectPath: string, key: string, value: boolean | str
 
 // --- per-project skills (direct deploy/remove of the skill dir) -----------------
 
-function setProjectSkill(projectPath: string, skillName: string, on: boolean): ActionResult {
+/** Deploy/remove a skill in a project. With `agent`, acts on that one agent (the per-app
+ *  chips); without it, deploys to every installed agent / removes from all (a whole-skill toggle). */
+function setProjectSkill(projectPath: string, skillName: string, on: boolean, agent?: string): ActionResult {
     const src = inspectSkills().find((s) => s.name === skillName);
     if (!src) return { ok: false, error: `Unknown skill: ${skillName}` };
     const targets = localTargetsAt(projectPath);
     if (on) {
-        // Deploy to the agents installed on this machine (mirrors `enigma install --local`).
-        const agents = discoverAgents().filter((a) => a.installed && targets[a.name]?.skills);
-        if (!agents.length) return { ok: false, error: "No installed agents to deploy into." };
-        for (const a of agents) {
-            const dir = targets[a.name].skills!;
+        const names = agent ? [agent] : discoverAgents().filter((a) => a.installed && targets[a.name]?.skills).map((a) => a.name);
+        const dirs = names.map((n) => targets[n]?.skills).filter((d): d is string => Boolean(d));
+        if (!dirs.length) return { ok: false, error: agent ? `Unknown agent: ${agent}` : "No installed agents to deploy into." };
+        for (const dir of dirs) {
             mkdirSync(dir, { recursive: true });
             cpSync(src.src, join(dir, skillName), { recursive: true, force: true });
         }
     } else {
-        // Remove from every agent dir under the project so the skill is fully gone.
-        for (const t of Object.values(targets)) {
-            const dest = t.skills && join(t.skills, skillName);
+        const names = agent ? [agent] : Object.keys(targets);
+        for (const n of names) {
+            const dest = targets[n]?.skills && join(targets[n].skills!, skillName);
             if (dest && existsSync(dest)) rmSync(dest, { recursive: true, force: true });
         }
     }
@@ -315,6 +316,7 @@ export interface ProjectActionPayload {
     op: "skill" | "config-set" | "config-unset" | "hooks" | "gate";
     name?: string;
     on?: boolean;
+    agent?: string;
     key?: string;
     value?: boolean | string;
     gateOp?: "init" | "eject";
@@ -327,7 +329,7 @@ export async function applyProjectAction(path: string, payload: ProjectActionPay
     let result: ActionResult;
     switch (payload.op) {
         case "skill":
-            result = payload.name ? setProjectSkill(norm, payload.name, Boolean(payload.on)) : { ok: false, error: "Missing skill name." };
+            result = payload.name ? setProjectSkill(norm, payload.name, Boolean(payload.on), payload.agent) : { ok: false, error: "Missing skill name." };
             break;
         case "config-set":
             result = payload.key !== undefined && payload.value !== undefined
