@@ -244,7 +244,11 @@
             };
         }).filter(Boolean);
         var available = SKILLS.skills.map(function (s) { return { name: s.name, description: s.description }; });
-        var agents = [{ name: "claude", label: "Claude Code", installed: true, deployed: (x.skillsOn || []).slice() }];
+        var agents = [
+            { name: "claude", label: "Claude Code", installed: true, deployed: (x.skillsOn || []).slice() },
+            { name: "codex", label: "Codex", installed: false, deployed: [] },
+            { name: "opencode", label: "OpenCode", installed: false, deployed: [] }
+        ];
         var st = projStatus(x);
         st.agents = agents; st.available = available; st.config = config;
         return st;

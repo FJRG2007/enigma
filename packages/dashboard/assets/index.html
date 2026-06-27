@@ -247,6 +247,7 @@
         .achip { display: inline-flex; align-items: center; justify-content: center; padding: 5px 8px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface2); color: var(--muted); cursor: pointer; text-decoration: none; transition: color .15s, background .15s, border-color .15s; }
         .achip:hover { border-color: #2f3744; color: var(--text); }
         .achip.on { background: var(--good); color: #06210f; border-color: var(--good); }
+        .achip:disabled { opacity: .35; cursor: not-allowed; }
         .achip svg { width: 14px; height: 14px; display: block; }
         /* Inline app icons in the "where deployed" tag (static, name in tooltip). */
         .aicons { display: inline-flex; gap: 5px; align-items: center; vertical-align: middle; margin-left: 6px; }
@@ -2787,9 +2788,13 @@ export {
             // Project scope: same row, but the per-app chips toggle deployment INTO this project
             // (data-pskill, handled by the scope delegate) and the global-only controls are hidden.
             if (skillScope === "project") {
-                const chips = (s.agentStates || []).map((a) =>
-                    '<button type="button" class="achip' + (a.deployed ? " on" : "") + '" data-pskill="' + esc(s.name) + '" data-pagent="' + esc(a.name) + '" data-poff="' + (a.deployed ? 1 : 0) + '" aria-label="' + esc(a.label) + '" title="'
-                    + (a.deployed ? esc(a.label) + " - deployed, click to remove" : esc(a.label) + " - not deployed, click to deploy") + '">' + (agentSvg(a.name) || esc(a.label)) + "</button>").join("");
+                const chips = (s.agentStates || []).map((a) => {
+                    // An app that is not installed on this machine can't be a deploy target - show
+                    // its chip disabled rather than letting a click create a dir for an unused agent.
+                    if (a.installed === false) return '<button type="button" class="achip" disabled aria-label="' + esc(a.label) + '" title="' + esc(a.label) + ' - not installed">' + (agentSvg(a.name) || esc(a.label)) + "</button>";
+                    return '<button type="button" class="achip' + (a.deployed ? " on" : "") + '" data-pskill="' + esc(s.name) + '" data-pagent="' + esc(a.name) + '" data-poff="' + (a.deployed ? 1 : 0) + '" aria-label="' + esc(a.label) + '" title="'
+                        + (a.deployed ? esc(a.label) + " - deployed, click to remove" : esc(a.label) + " - not deployed, click to deploy") + '">' + (agentSvg(a.name) || esc(a.label)) + "</button>";
+                }).join("");
                 return '<div class="set-row"><div class="set-meta"><div class="set-name">' + esc(s.name) + ver + "</div>"
                     + '<div class="set-hint">' + esc(s.description || "") + "</div>"
                     + '<div class="set-agents">' + (chips || '<span class="tag">no agents</span>') + "</div></div></div>";
@@ -3376,7 +3381,7 @@ export {
             const agents = d.agents || [];
             const skills = (d.available || []).map((s) => ({
                 name: s.name, description: s.description, source: "enigma",
-                agentStates: agents.map((a) => ({ name: a.name, label: a.label, deployed: (a.deployed || []).indexOf(s.name) !== -1 })),
+                agentStates: agents.map((a) => ({ name: a.name, label: a.label, installed: a.installed, deployed: (a.deployed || []).indexOf(s.name) !== -1 })),
             }));
             renderSkills(skills);
         }
