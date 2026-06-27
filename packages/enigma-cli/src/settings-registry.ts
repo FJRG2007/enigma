@@ -14,6 +14,7 @@ import { isAutoLintOn, setAutoLint } from "./lint";
 import { readConfig, setEnigmaToggle, setEnigmaValue, OUTPUT_STYLES, MINIMAL_CODE_LEVELS, DASHBOARD_MODES, PROMPT_SECRET_MODES, SKILL_UPDATE_POLICIES } from "./config";
 import { applyDashboardMode } from "./dashboard";
 import { applyCompressToggle } from "./mcp-deploy";
+import { applyGateToggle } from "./command-deploy";
 import type { DashboardMode } from "./config";
 import { getClaudeAttribution, setClaudeAttribution, getClaudeFeedbackSurvey, setClaudeFeedbackSurvey } from "./claude";
 import { getGhTelemetryCached, setGhTelemetry } from "./github";
@@ -121,6 +122,13 @@ function setCompress(on: boolean, scope: Scope): ApplyResult {
     return { path, changed: true };
 }
 
+/** Persist the gate toggle and deploy/remove the /gate command immediately. */
+function setGate(on: boolean, scope: Scope): ApplyResult {
+    const path = setEnigmaToggle("gate", on, scope);
+    applyGateToggle(scope);
+    return { path, changed: true };
+}
+
 // --- render-speed read cache (SWR) ----------------------------------------------
 // The TUI re-reads every visible setting on every render (display value, dirty
 // diffing, save comparison), and each underlying read hits disk (or spawns gh).
@@ -205,7 +213,13 @@ const RAW_CATEGORIES: Category[] = [
                 read: () => readConfig().config.compress,
                 write: (value, scope) => setCompress(value, scope),
             },
-            enigmaToggle("gate", "gate", "AI quality gate (experimental)", "EXPERIMENTAL, off by default: deploy the /gate command so agents can validate changes through the gate pipeline (review/test/lint/PR/CI); nothing runs until you `enigma gate init` a repo; takes effect on the next install/sync"),
+            {
+                key: "gate",
+                label: "AI quality gate (experimental)",
+                hint: "EXPERIMENTAL, off by default: deploy the /gate command so agents can validate changes through the gate pipeline (review/test/lint/PR/CI); toggling applies immediately to already-deployed agents; nothing runs until you `enigma gate init` a repo",
+                read: () => readConfig().config.gate,
+                write: (value, scope) => setGate(value, scope),
+            },
             {
                 key: "auto-lint",
                 label: "Auto-lint on edit",

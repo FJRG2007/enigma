@@ -55,6 +55,9 @@ jobs:
       - name: Test autoskills detection
         run: bun test tests/autoskills.test.ts
         working-directory: packages/enigma-cli
+      - name: Test gate command deploy toggle
+        run: bun test tests/command-deploy.test.ts
+        working-directory: packages/enigma-cli
 
       # The package must build (tsup) so dist is publishable.
       - name: Build
