@@ -1,6 +1,7 @@
 ---
 import Base from "../layouts/Base.astro";
 import Compare from "../components/Compare.astro";
+import InstallTabs from "../components/InstallTabs.astro";
 import { url, docHref } from "../lib/url";
 
 const title = "Enigma - everything you need to work with a coding agent, in one command";
@@ -62,7 +63,7 @@ const termGood = `<span class="k">$</span> git add .env
                 <a href="#dashboard" class="hide-sm">Dashboard</a>
                 <a href="#compare" class="hide-sm">Why</a>
                 <a href={url("demo/")} class="hide-sm">Demo</a>
-                <a href={docHref("getting-started")} class="hide-sm">Docs</a>
+                <a href={docHref("getting-started/introduction")} class="hide-sm">Docs</a>
                 <span class="ghb">
                     <a class="ghb-btn" href="https://github.com/FJRG2007/enigma" target="_blank" rel="noopener noreferrer" aria-label="Star FJRG2007/enigma on GitHub">
                         <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.52 11.52 0 0 1 12 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222 0 1.606-.014 2.898-.014 3.293 0 .322.216.694.825.576C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"></path></svg>
@@ -81,21 +82,8 @@ const termGood = `<span class="k">$</span> git add .env
             <h1>Ship better code with your coding agent</h1>
             <p class="lede">Enigma makes your agent produce more optimal, secure and scalable code - in less time, fewer tokens and fewer iterations. Dynamic Skills that adapt to each agent, portable git security hooks, and a local dashboard to manage and measure it all - from one command.</p>
 
-            <div class="install" id="install" data-next={url("start/")}>
-                <div class="tabs" role="tablist">
-                    <button class="active" data-cmd="curl" role="tab">curl<span class="rec">recommended</span></button>
-                    <button data-cmd="npm" role="tab">npm</button>
-                    <button data-cmd="pnpm" role="tab">pnpm</button>
-                    <button data-cmd="yarn" role="tab">yarn</button>
-                    <button data-cmd="bun" role="tab">bun</button>
-                    <button data-cmd="npx" role="tab">npx</button>
-                </div>
-                <div class="cmd">
-                    <pre id="cmd"><span class="pfx">$ </span><span id="cmdtext">curl -fsSL https://raw.githubusercontent.com/FJRG2007/enigma/main/scripts/install.sh | sh</span></pre>
-                    <button class="copy" id="copy" type="button" title="Copy command" aria-label="Copy command">
-                        <svg class="ico-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-                    </button>
-                </div>
+            <div class="install-wrap">
+                <InstallTabs next={url("start/")} />
             </div>
 
             <div class="works">
@@ -204,7 +192,7 @@ const termGood = `<span class="k">$</span> git add .env
             <div class="s-head">
                 <span class="eyebrow">Dynamic Skills</span>
                 <h2>Skills that adapt, not just deploy</h2>
-                <p>Unlike a static skill, each enigma skill adapts to the app that runs it, re-renders from your config, and loads by context - sealed, versioned, and updated straight from the repo. <a href={docHref("dynamic-skills")}>How Dynamic Skills work &rarr;</a> Newest edits first.</p>
+                <p>Unlike a static skill, each enigma skill adapts to the app that runs it, re-renders from your config, and loads by context - sealed, versioned, and updated straight from the repo. <a href={docHref("concepts/dynamic-skills")}>How Dynamic Skills work &rarr;</a> Newest edits first.</p>
             </div>
             <div class="grid" id="skillsGrid"><p class="muted">Loading skills...</p></div>
         </div>
@@ -274,7 +262,7 @@ const termGood = `<span class="k">$</span> git add .env
         <div class="wrap">
             <span class="brand" style="font-size:15px">Enigma<span class="caret" aria-hidden="true"></span></span>
             <nav class="foot-links">
-                <a href={docHref("getting-started")}>Docs</a>
+                <a href={docHref("getting-started/introduction")}>Docs</a>
                 <a href={url("demo/")}>Demo</a>
                 <a href="https://github.com/FJRG2007/enigma" target="_blank" rel="noopener noreferrer">Repository</a>
                 <a href="https://github.com/FJRG2007/enigma/issues/new/choose" target="_blank" rel="noopener noreferrer">Create issue</a>
@@ -326,23 +314,8 @@ const termGood = `<span class="k">$</span> git add .env
     h1 { font-family: var(--mono); font-size: clamp(34px, 6vw, 58px); line-height: 1.05; font-weight: 600; letter-spacing: -1px; margin: 16px auto 0; max-width: 14ch; }
     .lede { color: var(--muted); font-size: clamp(16px, 2.4vw, 20px); max-width: 56ch; margin: 18px auto 0; }
 
-    .install { max-width: 620px; margin: 36px auto 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-2); overflow: hidden; text-align: left; }
-    .tabs { display: flex; flex-wrap: wrap; gap: 2px; padding: 8px; background: rgba(0, 0, 0, 0.25); border-bottom: 1px solid var(--border-soft); }
-    .tabs button { font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--muted); background: transparent; border: 1px solid transparent; border-radius: 8px; padding: 7px 14px; cursor: pointer; transition: color .15s, background .15s; }
-    .tabs button:hover { color: var(--text); }
-    .tabs button.active { color: var(--accent); background: var(--surface2); border-color: var(--border); }
-    .tabs button .rec { color: var(--good); font-size: 9px; margin-left: 6px; vertical-align: middle; text-transform: uppercase; letter-spacing: 0.5px; }
-    .cmd { display: flex; align-items: flex-start; gap: 12px; padding: 16px 18px; }
-    .cmd pre { margin: 0; flex: 1; min-width: 0; overflow-x: auto; font-family: var(--mono); font-size: 13px; line-height: 1.7; color: var(--text); }
-    .cmd .pfx { color: var(--good); user-select: none; }
-    .cmd .t-cmd { color: var(--accent); }
-    .cmd .t-flag { color: var(--accent2); }
-    .cmd .t-url { color: var(--good); }
-    .cmd .t-op { color: var(--muted); }
-    .copy { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; color: var(--muted); background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 8px; cursor: pointer; transition: color .15s, border-color .15s; }
-    .copy:hover { color: var(--accent); border-color: #2f3744; }
-    .copy.done { color: var(--good); border-color: var(--good); }
-    .copy svg { width: 15px; height: 15px; display: block; }
+    /* The install picker itself lives in InstallTabs.astro; the hero only centers it. */
+    .install-wrap { max-width: 620px; margin: 36px auto 0; }
 
     .works { margin: 30px auto 0; display: flex; align-items: center; justify-content: center; gap: 22px; flex-wrap: wrap; color: var(--muted); font-family: var(--mono); font-size: 12px; }
     .works img { width: 26px; height: 26px; opacity: .9; }
@@ -431,49 +404,8 @@ const termGood = `<span class="k">$</span> git add .env
 </style>
 
 <script>
-    import { highlightShell, copyText, INSTALL_METHODS, isWindows, saveInstallMethod } from "../lib/shell";
-
-    // Install methods come from the shared lib (single source of truth with /start). Clone so the
-    // Windows curl->PowerShell swap below stays local and never mutates the shared map.
-    const COMMANDS: Record<string, string> = { ...INSTALL_METHODS };
-    const tabs = document.querySelectorAll<HTMLButtonElement>(".tabs button");
-    const cmdText = document.getElementById("cmdtext")!;
-
-    // setCmd keeps the raw text in `textContent` (highlight spans strip out), so the copy
-    // button still copies the plain command.
-    const setCmd = (cmd: string) => { cmdText.innerHTML = highlightShell(cmd); };
-    const copyBtn = document.getElementById("copy")!;
-    const COPY_ICON = copyBtn.innerHTML;
-    const CHECK_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>';
-    const resetCopy = () => { copyBtn.innerHTML = COPY_ICON; copyBtn.classList.remove("done"); copyBtn.title = "Copy command"; };
-
-    // On Windows the recommended script is the PowerShell one (`curl ... | sh` has no `sh`),
-    // so adapt the "curl" method to the visitor's OS.
-    if (isWindows()) {
-        COMMANDS.curl = "irm https://raw.githubusercontent.com/FJRG2007/enigma/main/scripts/install.ps1 | iex";
-        const t = document.querySelector<HTMLButtonElement>('.tabs button[data-cmd="curl"]');
-        if (t && t.firstChild) t.firstChild.textContent = "powershell";
-    }
-    const activeTab = document.querySelector<HTMLButtonElement>(".tabs button.active");
-    const initial = (activeTab && activeTab.dataset.cmd) || "curl";
-    setCmd(COMMANDS[initial]);
-    saveInstallMethod(initial);
-    tabs.forEach((b) => b.addEventListener("click", () => {
-        tabs.forEach((x) => x.classList.toggle("active", x === b));
-        setCmd(COMMANDS[b.dataset.cmd!]);
-        saveInstallMethod(b.dataset.cmd!); // so /start shows the method they picked
-        resetCopy();
-    }));
-
-    // After copying, guide the visitor to the get-started page. It reads the method saved
-    // above, so it opens showing the same command they just copied (not a forced default).
-    const nextUrl = document.getElementById("install")?.dataset.next || "";
-    copyBtn.addEventListener("click", async () => {
-        if (!(await copyText(cmdText.textContent || ""))) return;
-        copyBtn.innerHTML = CHECK_ICON; copyBtn.classList.add("done"); copyBtn.title = "Copied";
-        if (nextUrl) setTimeout(() => { window.location.href = nextUrl; }, 500);
-        else setTimeout(resetCopy, 1800);
-    });
+    // The install picker (tabs + copy + navigate-to-/start) lives in InstallTabs.astro; this
+    // page only wires the skills catalog and the live star count.
 
     // Skills marketplace: the official catalog is generated by `enigma seal` into
     // docs/skills-catalog.json (single source of truth) and read here over GitHub raw

@@ -48,8 +48,10 @@ function skillsFromCatalog() {
 const settings = readJson(join(here, "demo-settings.json"));
 if (settings) {
     // Keep the tabs internally consistent: the populated Savings/Usage views imply these are on.
+    // Token-efficient output is shown at "full" in the preview; the product default stays opt-in (off).
     for (const c of settings) for (const s of c.settings) {
         if (s.key === "usage-stats" || s.key === "compress") { s.value = true; if (s.choice != null) s.choice = "on"; }
+        if (s.key === "output-style") { s.value = true; s.choice = "full"; }
     }
 }
 const fixtures = {

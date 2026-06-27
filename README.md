@@ -1,7 +1,7 @@
 <div align="center">
   <img src="assets/logos/enigma-logo.svg" width="120" />
   <h1>Enigma</h1>
-  <h3>Everything you need to work with a coding agent, in one command.</h3>
+  <h3>Ship better code with your coding agent.</h3>
   <img src="https://img.shields.io/badge/TypeScript-blue?style=for-the-badge&logo=typescript&logoColor=white"/> 
   <a href="https://github.com/FJRG2007"> <img alt="GitHub" src="https://img.shields.io/badge/GitHub-purple?style=for-the-badge&logo=github&logoColor=white"/></a>
   <a href="https://ko-fi.com/fjrg2007"> <img alt="Kofi" src="https://img.shields.io/badge/Ko--fi-purple?style=for-the-badge&logo=ko-fi&logoColor=white"></a>
@@ -163,7 +163,7 @@ Most features are opt-in or tunable. Configure them from the interactive hub
 (`enigma`), the local **dashboard** (`enigma dashboard`), or the CLI
 (`enigma config <key> <value>`) - whichever you prefer. For the full list of keys,
 their defaults, and per-feature details, see the
-[documentation](https://fjrg2007.github.io/enigma/docs/configuration/).
+[documentation](https://fjrg2007.github.io/enigma/docs/reference/configuration/).
 
 ## Requirements
 
@@ -234,28 +234,6 @@ enigma help | version
     --output-style <off|lite|full|ultra>  Token-efficient output level (asked if omitted)
     --skills-only / --memory-only / --no-prune / --keep-modified / --dry-run
 ```
-
-## Git security hooks
-
-`enigma security` drops a portable, dependency-free commit guard into **any** repo
-(not just this one): it copies the built guard into the repo's `.githooks/` (as
-`guard.mjs`), writes a cross-platform `pre-commit` shim and a toggle config, and points `core.hooksPath`
-at it. Commit `.githooks/` so the whole team inherits it. Because the hook runs on
-`git commit`, it also covers commits made through the **GitHub CLI** (`gh`), which
-shells out to `git`.
-
-On every commit the guard, OS-agnostically:
-
-- **Blocks** committed secrets (API keys, tokens, private keys).
-- **Blocks** `.env` / `.env.local` and similar (allows `*.example` / `*.sample` /
-  `*.template`).
-- **Blocks** dependency/cache dirs (`node_modules`, `__pycache__`, virtualenvs).
-- **Warns** on generated dirs (`dist`, `build`, `.next`, `coverage`), log/OS-junk
-  files, and files over 5 MB.
-
-Each protection is individually toggleable: the interactive setup uses a
-multiselect, and the choices are saved to `.githooks/enigma-guard.json`. Bypass
-once with `git commit --no-verify`.
 
 ## Contributing
 

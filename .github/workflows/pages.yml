@@ -13,6 +13,15 @@ on:
       - "assets/logos/**"
       - "assets/images/dashboard.png"
       - ".github/workflows/pages.yml"
+  # The dashboard preview workflow regenerates assets/images/dashboard.png and commits it with
+  # [skip ci] (so it triggers no push events), and a dashboard-only change never matches the
+  # push paths above. Run after that workflow finishes so the live site serves the fresh
+  # screenshot AND the rebuilt /demo (which is copied from packages/dashboard/assets at build).
+  # The build job checks out `main` to include the bot's just-committed PNG.
+  workflow_run:
+    workflows: ["Dashboard preview"]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -34,7 +43,11 @@ jobs:
       run:
         working-directory: apps/web
     steps:
+      # Always build from the tip of main so a workflow_run (after the preview bot commits the
+      # PNG) and a workflow_dispatch both pick up the latest assets, not a stale trigger SHA.
       - uses: actions/checkout@v4
+        with:
+          ref: main
       - uses: actions/setup-node@v4
         with:
           node-version: 22

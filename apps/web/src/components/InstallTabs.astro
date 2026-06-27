@@ -1,0 +1,96 @@
+---
+// Reusable install-method picker: tabs (curl / npm / pnpm / yarn / bun / npx) and a copy
+// button, sharing the single source of truth in lib/shell.ts with the landing and /start.
+// On Windows the curl tab becomes the PowerShell one-liner. Used in the docs and the landing
+// so the package managers are selectable instead of listed all at once.
+//
+// Uses <code> (not <pre>) for the command so the docs' global ".doc pre" styling and its
+// copy-button script never touch it - this widget brings its own copy button.
+import { INSTALL_METHODS } from "../lib/shell";
+
+interface Props {
+    // When set, the page navigates here after a successful copy (the landing -> /start flow).
+    next?: string;
+}
+const { next } = Astro.props;
+const methods = Object.keys(INSTALL_METHODS); // curl, npm, pnpm, yarn, bun, npx
+---
+<div class="install-tabs" data-next={next ?? ""}>
+    <div class="it-tabs" role="tablist">
+        {methods.map((m, i) => (
+            <button class={i === 0 ? "active" : ""} data-cmd={m} role="tab">
+                {m}{m === "curl" && <span class="it-rec">recommended</span>}
+            </button>
+        ))}
+    </div>
+    <div class="it-row">
+        <code class="it-text">{INSTALL_METHODS.curl}</code>
+        <button class="it-copy" type="button" title="Copy command" aria-label="Copy command">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+        </button>
+    </div>
+</div>
+
+<style>
+    .install-tabs { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-2); overflow: hidden; text-align: left; margin: 18px 0; }
+    .it-tabs { display: flex; flex-wrap: wrap; gap: 2px; padding: 8px; background: rgba(0, 0, 0, 0.25); border-bottom: 1px solid var(--border-soft); }
+    .it-tabs button { font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--muted); background: transparent; border: 1px solid transparent; border-radius: 8px; padding: 7px 14px; cursor: pointer; transition: color .15s, background .15s; }
+    .it-tabs button:hover { color: var(--text); }
+    .it-tabs button.active { color: var(--accent); background: var(--surface2); border-color: var(--border); }
+    .it-rec { color: var(--good); font-size: 9px; margin-left: 6px; vertical-align: middle; text-transform: uppercase; letter-spacing: 0.5px; }
+    .it-row { display: flex; align-items: flex-start; gap: 12px; padding: 16px 18px; }
+    /* Scoped under .install-tabs so these win over the docs' global ".doc code" pill styling. */
+    .install-tabs .it-text { flex: 1; min-width: 0; overflow-x: auto; white-space: pre; font-family: var(--mono); font-size: 13px; line-height: 1.7; color: var(--text); background: transparent; padding: 0; }
+    .install-tabs .it-text :global(.t-cmd) { color: var(--accent); }
+    .install-tabs .it-text :global(.t-flag) { color: var(--accent2); }
+    .install-tabs .it-text :global(.t-url) { color: var(--good); }
+    .install-tabs .it-text :global(.t-op) { color: var(--muted); }
+    .it-copy { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; color: var(--muted); background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 8px; cursor: pointer; transition: color .15s, border-color .15s; }
+    .it-copy:hover { color: var(--accent); border-color: #2f3744; }
+    .it-copy.done { color: var(--good); border-color: var(--good); }
+    .it-copy svg { width: 15px; height: 15px; display: block; }
+</style>
+
+<script>
+    import { highlightShell, copyText, INSTALL_METHODS, isWindows, saveInstallMethod } from "../lib/shell";
+
+    const CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+
+    // Wire every instance on the page (the component may appear more than once).
+    document.querySelectorAll<HTMLElement>(".install-tabs").forEach((root) => {
+        const tabs = root.querySelectorAll<HTMLButtonElement>(".it-tabs button");
+        const text = root.querySelector<HTMLElement>(".it-text")!;
+        const copyBtn = root.querySelector<HTMLButtonElement>(".it-copy")!;
+        const next = root.dataset.next || "";
+
+        // Clone so the Windows curl -> PowerShell swap stays local to this instance.
+        const commands: Record<string, string> = { ...INSTALL_METHODS };
+        if (isWindows()) {
+            commands.curl = "irm https://raw.githubusercontent.com/FJRG2007/enigma/main/scripts/install.ps1 | iex";
+            const t = root.querySelector<HTMLButtonElement>('.it-tabs button[data-cmd="curl"]');
+            if (t && t.firstChild) t.firstChild.textContent = "powershell";
+        }
+
+        const copyIcon = copyBtn.innerHTML;
+        const setCmd = (cmd: string) => { text.innerHTML = highlightShell(cmd); };
+        const resetCopy = () => { copyBtn.innerHTML = copyIcon; copyBtn.classList.remove("done"); copyBtn.title = "Copy command"; };
+
+        const initial = (root.querySelector<HTMLButtonElement>(".it-tabs button.active")?.dataset.cmd) || "curl";
+        setCmd(commands[initial]);
+        saveInstallMethod(initial);
+
+        tabs.forEach((b) => b.addEventListener("click", () => {
+            tabs.forEach((x) => x.classList.toggle("active", x === b));
+            setCmd(commands[b.dataset.cmd!]);
+            saveInstallMethod(b.dataset.cmd!); // keep /start in sync with the chosen method
+            resetCopy();
+        }));
+
+        copyBtn.addEventListener("click", async () => {
+            if (!(await copyText(text.textContent || ""))) return;
+            copyBtn.innerHTML = CHECK; copyBtn.classList.add("done"); copyBtn.title = "Copied";
+            if (next) setTimeout(() => { window.location.href = next; }, 500);
+            else setTimeout(resetCopy, 1800);
+        });
+    });
+</script>

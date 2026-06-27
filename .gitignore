@@ -27,3 +27,7 @@ packages/enigma-cli/bin/enigma-bin*
 
 # Claude Code local runtime state (not project content)
 /.claude/scheduled_tasks.lock
+
+# Internal task ledger + one-off dev scratch (kept local; may reference upstream sources)
+/.task/
+/packages/linter/_fiximp2.mjs

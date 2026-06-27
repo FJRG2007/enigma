@@ -4,8 +4,8 @@ description: The enigma command reference. Run enigma help for the same list in 
 group: Reference
 order: 10
 ---
-import Cmd from "../../components/Cmd.astro";
-import { docHref } from "../../lib/url";
+import Cmd from "../../../components/Cmd.astro";
+import { docHref } from "../../../lib/url";
 
 ## install & update
 
@@ -49,7 +49,7 @@ No agent argument is the global on/off; with an agent it scopes to that agent.
 
 ## autoskills
 
-Detect the project's tech stack and install the matching community skills, kept separate from the policy skills. See <a href={docHref("autoskills")}>Autoskills</a> for detail.
+Detect the project's tech stack and install the matching community skills, kept separate from the policy skills. See <a href={docHref("concepts/autoskills")}>Autoskills</a> for detail.
 
 <Cmd name="enigma autoskills [path]" ex={["enigma autoskills", "enigma autoskills --dry-run"]}>
 Scans packages, config files, file types and gems; installs the matched, hash-verified skills into the project. `--dry-run` previews; `-a <agent>` limits targets.

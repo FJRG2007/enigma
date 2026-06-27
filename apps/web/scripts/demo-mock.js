@@ -221,6 +221,9 @@
 
     function route(path, method, body) {
         if (path.indexOf("/api/stats") !== -1) { STATS.generatedAt = Date.now(); return STATS; }
+        // Provider status pill: report everything operational (the real server proxies the
+        // upstream statuspage; here it is mocked so the preview always reads green/offline).
+        if (path.indexOf("/api/provider-status") !== -1) return { indicator: "none", description: "All Systems Operational" };
         if (path.indexOf("/api/status") !== -1) return STATUS;
         if (path.indexOf("/api/settings") !== -1) return method === "POST" ? applySettingPost(body) : SETTINGS;
         if (path.indexOf("/api/accounts") !== -1) return method === "POST" ? { ok: true, data: ACCOUNTS } : ACCOUNTS;
@@ -246,11 +249,95 @@
             if (init && typeof init.body === "string") { try { body = JSON.parse(init.body); } catch (e) { /* ignore */ } }
             return Promise.resolve(json(route(path, method, body)));
         }
-        // Outbound calls the dashboard makes (version check, status pages): stub empty so the
-        // preview never depends on the network. The UI tolerates these returning nothing.
-        if (/githubusercontent|api\.github|statuspage|status\.|\/api\/v2\/status/i.test(url)) {
+        // Outbound calls the dashboard makes: stub them so the preview never depends on the
+        // network. Statuspages report operational (direct-fetch fallback for the pill); the
+        // version/incident checks return nothing so they degrade quietly.
+        if (/statuspage|status\.|\/api\/v2\/status/i.test(url)) {
+            return Promise.resolve(json({ status: { indicator: "none", description: "All Systems Operational" } }));
+        }
+        if (/githubusercontent|api\.github/i.test(url)) {
             return Promise.resolve(json({}));
         }
         return realFetch ? realFetch(input, init) : Promise.resolve(json({}));
     };
+
+    // --- Usage view: synthesize Codex/OpenCode data for the preview --------------------------
+    // The real dashboard only reads Claude Code transcripts, so it honestly shows an "unavailable"
+    // panel for the other providers. In this static demo everything is mock, so we feed each
+    // provider a scaled copy of the Claude report through the dashboard's own render path (it is a
+    // classic script - its top-level functions/lets share this realm's globals and are writable).
+    function installUsageProviderDemo() {
+        if (typeof window.applyUsageView !== "function") return;
+        var orig = window.applyUsageView;
+        var FACTOR = { codex: 0.43, opencode: 0.71 };
+        var PROVIDER_MODELS = {
+            codex: ["gpt-5-codex", "gpt-5", "o4-mini"],
+            opencode: ["claude-sonnet-4-6", "gpt-5", "qwen2.5-coder:32b"]
+        };
+        // Keys that are timestamps or non-token attributes and must survive scaling untouched.
+        var TIME_KEYS = { resetsAt: 1, startedAt: 1, endsAt: 1, lastActive: 1, generatedAt: 1, t: 1, at: 1 };
+        var KEEP_KEYS = { pct: 1, limit: 1, live: 1, active: 1, available: 1 };
+        function scaleDeep(obj, f) {
+            if (Array.isArray(obj)) return obj.map(function (x) { return scaleDeep(x, f); });
+            if (obj && typeof obj === "object") {
+                var o = {};
+                for (var k in obj) {
+                    var v = obj[k];
+                    if (v && typeof v === "object") o[k] = scaleDeep(v, f);
+                    else if (typeof v === "number" && !TIME_KEYS[k] && !KEEP_KEYS[k]) o[k] = /cost/i.test(k) ? +(v * f).toFixed(2) : Math.round(v * f);
+                    else o[k] = v;
+                }
+                return o;
+            }
+            return obj;
+        }
+        // Rename the model keys, drop the Claude-specific weekly windows, and clear cross-account
+        // bits that only make sense for the real Claude report.
+        function relabel(r, models) {
+            if (r.byModel) {
+                var nm = {};
+                Object.keys(r.byModel).forEach(function (k, i) { nm[models[i % models.length] || k] = r.byModel[k]; });
+                r.byModel = nm;
+            }
+            (r.recentSessions || []).forEach(function (s, i) { if (s.model) s.model = models[i % models.length]; if (s.account) s.account = "default"; });
+            if (r.windows) {
+                var w = {};
+                if (r.windows.session) { w.session = r.windows.session; w.session.live = false; }
+                if (r.windows.weeklyAll) { w.weeklyAll = r.windows.weeklyAll; w.weeklyAll.live = false; }
+                r.windows = w;
+            }
+            r.byAccount = null; r.accounts = null; r.pending = false;
+            return r;
+        }
+        var cache = {};
+        function providerUsage(prov) {
+            // `usageData` is a top-level `let` in the dashboard script: a shared global-lexical
+            // binding (not a window property), reachable here as a bare identifier.
+            if (!usageData) return null;
+            if (cache[prov] && cache[prov].base === usageData) return cache[prov].report;
+            var report = relabel(scaleDeep(usageData, FACTOR[prov] || 0.5), PROVIDER_MODELS[prov] || ["model"]);
+            cache[prov] = { base: usageData, report: report };
+            return report;
+        }
+        window.applyUsageView = function () {
+            var prov = usageProvider;
+            if (prov === "claude") return orig();
+            var data = providerUsage(prov);
+            if (!data) return orig();
+            // Render through the real claude path with the scaled report, then fix the header.
+            var savedData = usageData;
+            usageProvider = "claude"; usageData = data;
+            try { orig(); } finally { usageProvider = prov; usageData = savedData; }
+            var p = USAGE_PROVIDERS[prov] || USAGE_PROVIDERS.claude;
+            document.getElementById("usageTitle").textContent = `${p.label} Usage`;
+            var link = document.getElementById("usageViewLink");
+            link.href = p.viewHref; link.textContent = `${p.viewLabel} ->`;
+            document.getElementById("uAccountWrap").style.display = "none";
+            document.getElementById("uByAccountWrap").style.display = "none";
+            document.getElementById("uProviders").innerHTML = "";
+            if (typeof providerDD !== "undefined" && providerDD) providerDD.render();
+        };
+    }
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", installUsageProviderDemo);
+    else installUsageProviderDemo();
 })();
