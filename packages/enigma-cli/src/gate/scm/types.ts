@@ -1,6 +1,6 @@
 /**
  * Shared SCM contract types consumed by the provider clients (gitlab, bitbucket).
- * Faithful port of the value types and helpers from no-mistakes' `internal/scm`
+ * Faithful port of the value types and helpers from upstream's `internal/scm`
  * package (scm.go state/bucket enums + host.go PR contract). Provider detection
  * and the GitHub repoSlug helper live in ./host; this module holds the PR, check,
  * capability, and error contract the clients reference as `scm.*` in Go. Go's

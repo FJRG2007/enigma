@@ -1,5 +1,5 @@
 /**
- * Faithful 1:1 port of no-mistakes' `internal/scm/gitlab` package (gitlab.go).
+ * Faithful 1:1 port of upstream's `internal/scm/gitlab` package (gitlab.go).
  * The GitLab host shells out to the `glab` CLI; every invocation goes through
  * `node:child_process` execFile with an argv array (never a shell string), to
  * mirror Go's `exec.CommandContext(ctx, "glab", args...)` and stay injection-safe.

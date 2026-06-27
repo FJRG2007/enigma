@@ -1,7 +1,7 @@
 /**
  * Test pipeline step: runs baseline tests, gathers evidence for the user intent,
  * and optionally asks the agent to fix failures. Faithful port of the
- * no-mistakes `internal/pipeline/steps/test.go`.
+ * upstream `internal/pipeline/steps/test.go`.
  *
  * Go's `context.Context` maps to the StepContext's `AbortSignal`; Go
  * `(value, error)` maps to throw, and `json.Marshal(findings)` maps to

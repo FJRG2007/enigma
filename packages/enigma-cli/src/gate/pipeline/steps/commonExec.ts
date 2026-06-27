@@ -1,7 +1,7 @@
 /**
  * Subprocess helpers for pipeline steps: custom-PATH binary resolution, git
  * invocations that honor the StepContext environment, provider-CLI probes, and
- * the shell runner. Faithful port of the no-mistakes
+ * the shell runner. Faithful port of the upstream
  * `internal/pipeline/steps/common_exec.go`.
  *
  * Go threaded `context.Context`; here the StepContext carries an `AbortSignal`.

@@ -1,7 +1,7 @@
 /**
  * Shared resources for the axi command family: paths, the gate database, the
  * current repo, and an optional daemon connection. Faithful port of the
- * `openResources`/`findRepo`/`openAxiEnv` helpers from no-mistakes'
+ * `openResources`/`findRepo`/`openAxiEnv` helpers from upstream's
  * `internal/cli/root.go` and `axi.go`.
  *
  * The daemon lifecycle (starting it on demand, checking liveness) is not part of

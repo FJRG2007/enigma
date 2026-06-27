@@ -1,5 +1,5 @@
 /**
- * GitHub PR client backed by the `gh` CLI. Faithful port of the no-mistakes
+ * GitHub PR client backed by the `gh` CLI. Faithful port of the upstream
  * `internal/scm/github` package: PR create/find/update, CI check status, merge
  * state, and failing-check log retrieval, with fork `--head <owner>:<branch>`
  * routing. Commands shell out to `gh` via execFile with argument arrays.

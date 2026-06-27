@@ -1,5 +1,5 @@
 /**
- * Faithful port of no-mistakes' `internal/intent/reader_claude.go`: the Claude
+ * Faithful port of upstream's `internal/intent/reader_claude.go`: the Claude
  * Code transcript reader over `~/.claude/projects/<dir>/*.jsonl`, plus the
  * shared `extractToolPaths` helper reused by the codex/opencode/pi readers.
  *

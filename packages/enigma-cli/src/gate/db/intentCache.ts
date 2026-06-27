@@ -1,6 +1,6 @@
 /**
  * Intent-cache records: cached session summarizations keyed by a content hash.
- * Faithful port of no-mistakes' `internal/db/intent_cache.go`.
+ * Faithful port of upstream's `internal/db/intent_cache.go`.
  */
 
 import { now } from "./id";

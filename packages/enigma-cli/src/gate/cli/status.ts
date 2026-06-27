@@ -1,6 +1,6 @@
 /**
  * `gate status`: show the resolved gate, remote, daemon, and active-run status
- * for the current repository. Faithful port of no-mistakes'
+ * for the current repository. Faithful port of upstream's
  * `internal/cli/status.go`. Reads the active run directly from the DB (not IPC),
  * as the Go command does.
  */

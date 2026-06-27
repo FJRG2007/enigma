@@ -2,7 +2,7 @@
  * ID, timestamp, and null-coercion helpers shared by the gate db CRUD modules.
  *
  * `newId` generates monotonic ULIDs (Crockford base32, 48-bit millisecond time +
- * 80-bit randomness) without an external dependency, mirroring no-mistakes' use
+ * 80-bit randomness) without an external dependency, mirroring upstream's use
  * of `oklog/ulid` with `ulid.Monotonic`: IDs created within the same millisecond
  * are strictly increasing, so they stay lexicographically sortable by creation.
  */

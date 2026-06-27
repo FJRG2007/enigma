@@ -1,5 +1,5 @@
 /**
- * Faithful port of no-mistakes' `internal/intent/redact.go`: secret redaction,
+ * Faithful port of upstream's `internal/intent/redact.go`: secret redaction,
  * middle-of-conversation clamping, and adversarial-marker neutering.
  *
  * Go exposed both exported (`RedactSecrets`/`StripAdversarial`) and unexported

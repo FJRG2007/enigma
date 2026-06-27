@@ -1,6 +1,6 @@
 /**
  * SCM provider detection and pure URL helpers. Faithful port of the
- * no-mistakes `internal/scm` host detection plus the GitHub `RepoSlug` helper.
+ * upstream `internal/scm` host detection plus the GitHub `RepoSlug` helper.
  *
  * Only the pure, network-free pieces are ported here; the provider CLI clients
  * (github/gitlab) land in sibling files in a later phase.

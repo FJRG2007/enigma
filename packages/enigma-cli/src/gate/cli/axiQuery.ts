@@ -1,6 +1,6 @@
 /**
  * The agent-facing `axi status` and `axi logs` commands plus the run-resolution
- * and log helpers they share. Faithful port of no-mistakes'
+ * and log helpers they share. Faithful port of upstream's
  * `internal/cli/axi_query.go`.
  */
 

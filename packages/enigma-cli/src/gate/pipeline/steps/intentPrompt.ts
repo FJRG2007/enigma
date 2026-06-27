@@ -1,7 +1,7 @@
 /**
  * User-intent prompt fragment shared by the pipeline steps that embed the change
  * author's inferred intent into their agent prompts. Faithful port of the
- * no-mistakes `internal/pipeline/steps/intent_prompt.go`.
+ * upstream `internal/pipeline/steps/intent_prompt.go`.
  *
  * The intent text is untrusted: it is the LLM-summarized output of an agent
  * conversation that may have echoed adversarial transcript content even after the

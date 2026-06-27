@@ -1,5 +1,5 @@
 /**
- * Faithful port of no-mistakes' `internal/intent/reader.go`: the transcript
+ * Faithful port of upstream's `internal/intent/reader.go`: the transcript
  * Role/Message/Session/DiscoverOpts shapes and the Reader interface implemented
  * by each per-agent reader.
  *
@@ -54,7 +54,7 @@ export interface Message {
     filePaths?: string[];
     timestamp?: Date;
     /**
-     * Synthetic marks a message that was inserted by no-mistakes itself (e.g. a
+     * Synthetic marks a message that was inserted by upstream itself (e.g. a
      * "middle messages omitted" notice from clampMessages). The transcript
      * serializer renders these without a role prefix so the downstream LLM does
      * not mistake them for user or assistant turns.

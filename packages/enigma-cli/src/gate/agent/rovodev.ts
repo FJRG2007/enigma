@@ -137,7 +137,7 @@ export class RovodevAgent implements Agent {
     }
 
     private async createSession(signal: AbortSignal | undefined, baseURL: string): Promise<string> {
-        const body = { custom_title: "no-mistakes" };
+        const body = { custom_title: "enigma" };
         let resp: string;
         try {
             resp = await doJSON(signal, "POST", `${baseURL}/v3/sessions/create`, undefined, body);

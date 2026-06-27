@@ -1,7 +1,7 @@
 /**
  * CI monitoring step: babysits an open PR until it is merged, closed, the run is
  * cancelled, or its configured idle timeout elapses, auto-fixing CI failures and
- * rebasing on merge conflicts. Faithful port of the no-mistakes
+ * rebasing on merge conflicts. Faithful port of the upstream
  * `internal/pipeline/steps/ci.go`.
  *
  * Go's `context.Context` maps to `sctx.signal`; `time.Ticker`/`time.After` map to
@@ -55,7 +55,7 @@ const DEFAULT_BASE_BRANCH_TIP_RESOLVE_WINDOW = 30 * 1000;
 
 // CI monitoring status messages. Surfaced to the user and parsed by the TUI and
 // the agent-facing commands to distinguish passed checks from checks still
-// running. The canonical strings live in no-mistakes' cimonitor package (not yet
+// running. The canonical strings live in upstream's cimonitor package (not yet
 // ported); the literals are mirrored here so producers and consumers agree.
 const CI_CHECKS_PASSED_MSG = "all CI checks passed - still monitoring until merged or closed";
 const CI_NO_CHECKS_PASSED_MSG = "no CI checks reported - still monitoring until merged or closed";

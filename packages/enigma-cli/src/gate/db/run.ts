@@ -1,6 +1,6 @@
 /**
  * Pipeline run records: lifecycle, intent, awaiting-agent marker, and stale-run
- * recovery. Faithful port of no-mistakes' `internal/db/run.go`.
+ * recovery. Faithful port of upstream's `internal/db/run.go`.
  */
 
 import { now, newId } from "./id";

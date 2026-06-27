@@ -1,6 +1,6 @@
 /**
  * Historical usage aggregation across repositories, runs, and steps. Faithful
- * port of no-mistakes' `internal/db/stats.go`.
+ * port of upstream's `internal/db/stats.go`.
  */
 
 import type { Repo } from "./repo";

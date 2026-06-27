@@ -1,7 +1,7 @@
 /**
  * Diff/test-file helpers for pipeline steps: test-file detection, new-test-file
  * discovery via `git status --porcelain`, and gitignore-style filtering of a
- * unified diff. Faithful port of the no-mistakes
+ * unified diff. Faithful port of the upstream
  * `internal/pipeline/steps/common_diff.go`.
  *
  * Go used `filepath.Match` for ignore-pattern globbing; that algorithm is ported

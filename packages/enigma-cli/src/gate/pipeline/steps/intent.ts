@@ -1,7 +1,7 @@
 /**
  * Intent pipeline step: a best-effort step that infers the change author's
  * intent from local agent transcripts and attaches it to the run so downstream
- * steps can surface it in their prompts. Faithful port of the no-mistakes
+ * steps can surface it in their prompts. Faithful port of the upstream
  * `internal/pipeline/steps/intent.go` plus `intent_prompt.go` (the prompt
  * assembly shared with the other steps).
  *

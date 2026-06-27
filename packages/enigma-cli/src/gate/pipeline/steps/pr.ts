@@ -4,7 +4,7 @@
  * failure), appends the generated Risk/Testing/Pipeline sections, prepends the
  * user-intent section, finds an existing PR or creates one (fork --head routing
  * handled inside the Host), and persists the PR URL on the outcome and the run.
- * Faithful port of the no-mistakes `internal/pipeline/steps/pr.go`.
+ * Faithful port of the upstream `internal/pipeline/steps/pr.go`.
  *
  * Go threaded `context.Context`; here the StepContext carries an `AbortSignal`.
  * Go's `(value, error)` returns become throws or local try/catch. The agent's

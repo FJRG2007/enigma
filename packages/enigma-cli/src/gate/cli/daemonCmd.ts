@@ -1,7 +1,7 @@
 /**
  * Daemon lifecycle commands (start/stop/restart/status/run) plus the hidden
  * `__gate-notify` push handler the post-receive hook invokes. Faithful port of
- * no-mistakes' `internal/cli/daemon_cmd.go`, together with the slice of the
+ * upstream's `internal/cli/daemon_cmd.go`, together with the slice of the
  * `internal/daemon` control surface those commands need (Start/Stop/IsRunning/
  * EnsureDaemon/ReadPID).
  *
@@ -297,7 +297,7 @@ export function parseSkipSteps(value: string): StepName[] {
     return dedupeSteps(steps);
 }
 
-/** Collects skip steps from all `no-mistakes.skip=` push options. */
+/** Collects skip steps from all `enigma.skip=` push options. */
 export function parseSkipPushOptions(options: string[]): StepName[] {
     const steps: StepName[] = [];
     for (const option of options) {
@@ -324,7 +324,7 @@ function isStdBase64(value: string): boolean {
     return /^[A-Za-z0-9+/]*={0,2}$/.test(value) && value.length % 4 === 0;
 }
 
-/** Extracts and decodes the last `no-mistakes.intent=` push option, if any. */
+/** Extracts and decodes the last `enigma.intent=` push option, if any. */
 export function parseIntentPushOptions(options: string[]): string {
     let intent = "";
     for (const option of options) {

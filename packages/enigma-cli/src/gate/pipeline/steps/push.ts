@@ -1,6 +1,6 @@
 /**
  * Push step: force-pushes the worktree state to the configured push remote.
- * Faithful 1:1 port of the no-mistakes `internal/pipeline/steps/push.go`.
+ * Faithful 1:1 port of the upstream `internal/pipeline/steps/push.go`.
  *
  * Go threaded `context.Context`; here the StepContext carries an `AbortSignal`.
  * Go's `(value, error)` pairs become "return value / throw on error". The shared
@@ -61,7 +61,7 @@ export class PushStep implements Step {
                 throw new Error(`stage agent changes: ${errMessage(err)}`);
             }
             try {
-                await git.run(sctx.workDir, ["commit", "-m", "no-mistakes: apply agent fixes"], signal);
+                await git.run(sctx.workDir, ["commit", "-m", "enigma: apply agent fixes"], signal);
             } catch (err) {
                 throw new Error(`commit agent changes: ${errMessage(err)}`);
             }

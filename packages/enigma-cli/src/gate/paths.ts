@@ -1,7 +1,7 @@
 /**
  * Filesystem layout for the gate subsystem. Everything lives under a single
  * root, `~/.enigma/gate` by default, overridable via `ENIGMA_GATE_HOME` (the
- * port's equivalent of no-mistakes' `NM_HOME`) so tests can isolate state.
+ * port's equivalent of upstream's home env var) so tests can isolate state.
  *
  * Faithful port of the Go `internal/paths` package. The root is resolved lazily
  * per `Paths.resolve()` call so a test that reassigns the env/home is honored.

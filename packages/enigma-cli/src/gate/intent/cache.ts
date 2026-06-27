@@ -1,5 +1,5 @@
 /**
- * Faithful port of no-mistakes' `internal/intent/cache.go`: the summarization
+ * Faithful port of upstream's `internal/intent/cache.go`: the summarization
  * Cache interface, its db-backed and in-memory implementations, and the
  * deterministic cache-key derivation.
  */

@@ -1,6 +1,6 @@
 /**
  * SQLite schema and additive migrations for the gate database. Faithful port of
- * no-mistakes' `internal/db/schema.go`; the SQL is kept byte-identical.
+ * upstream's `internal/db/schema.go`; the SQL is kept byte-identical.
  */
 
 /** Full schema, applied idempotently via `CREATE TABLE IF NOT EXISTS`. */

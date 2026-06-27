@@ -1,7 +1,7 @@
 /**
  * The agent-facing `axi` command tree: a token-efficient TOON interface to the
  * gate, driven entirely by flags (no interactive prompts). Faithful port of
- * no-mistakes' `internal/cli/axi.go` plus the `executablePath`/`collapseHome`
+ * upstream's `internal/cli/axi.go` plus the `executablePath`/`collapseHome`
  * helpers from `root.go` and the surface telemetry from `telemetry.go`.
  *
  * `runAxiHome` renders the content-first home view from the local database, so it
@@ -62,7 +62,7 @@ export { runAxiStatus, runAxiLogs } from "./axiQuery";
 
 /**
  * The /enigma skill description surfaced on the home view. Faithful rebrand of
- * no-mistakes' `internal/skill` description.
+ * upstream's `internal/skill` description.
  */
 export const SKILL_DESCRIPTION =
     "Validate your code changes through the enigma gate pipeline - automated code review, tests, lint, docs, push, PR, and CI - before they reach the configured push target. Use when the user asks to run enigma gate, gate or ship or validate their changes, push safely, asks you to do a task and then validate it, or invokes /enigma.";

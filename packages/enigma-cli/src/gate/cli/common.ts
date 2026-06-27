@@ -1,7 +1,7 @@
 /**
  * Shared helpers for the gate CLI command surface: terminal styling, run-status
  * coloring, repo lookup, and DB opening. This is the minimal, faithful subset of
- * no-mistakes' `internal/cli` package helpers (`style.go`, `root.go`) that the
+ * upstream's `internal/cli` package helpers (`style.go`, `root.go`) that the
  * ported commands need; the full root/style/telemetry surface is a separate
  * phase. The telemetry wrappers (`trackCommand`) are intentionally dropped: each
  * command runs its body directly, which is byte-identical on stdout.

@@ -1,5 +1,5 @@
 /**
- * Faithful port of no-mistakes' `internal/intent/paths.go`: home resolution,
+ * Faithful port of upstream's `internal/intent/paths.go`: home resolution,
  * path canonicalization, and the git-aware repo matcher that decides whether a
  * candidate session's cwd belongs to the same repository as the change.
  *

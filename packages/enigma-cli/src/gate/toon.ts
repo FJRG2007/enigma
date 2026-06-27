@@ -4,7 +4,7 @@
  * `github.com/toon-format/toon-go` is reimplemented here as the small subset axi
  * actually emits, matching its byte shape exactly.
  *
- * Emitted shapes (all observed from no-mistakes' `axi_render.go` output):
+ * Emitted shapes (all observed from upstream's `axi_render.go` output):
  *   - object field:  `key:` then its fields indented two spaces
  *   - scalar field:  `key: value`
  *   - table field:   `name[N]{c1,c2,c3}:` then N rows indented two more spaces,

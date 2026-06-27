@@ -1,5 +1,5 @@
 /**
- * Faithful port of no-mistakes' `internal/intent/reader_opencode.go`: the
+ * Faithful port of upstream's `internal/intent/reader_opencode.go`: the
  * OpenCode reader over the session/message/part tables in
  * `$XDG_DATA_HOME/opencode/opencode.db`, falling back to
  * `~/.local/share/opencode/opencode.db`.

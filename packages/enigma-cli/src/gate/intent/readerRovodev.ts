@@ -1,5 +1,5 @@
 /**
- * Faithful port of no-mistakes' `internal/intent/reader_rovodev.go`: the
+ * Faithful port of upstream's `internal/intent/reader_rovodev.go`: the
  * Atlassian Rovo Dev reader over session JSON files in
  * `~/.rovodev/sessions/<session-id>/`.
  */

@@ -1,6 +1,6 @@
 /**
  * Recursive filesystem copy preserving symlinks and file permissions. Faithful
- * port of the no-mistakes `internal/pipeline/steps/common_fs.go`.
+ * port of the upstream `internal/pipeline/steps/common_fs.go`.
  *
  * Go returned errors; here the sync fs calls throw, matching the port-wide
  * "(value, error) -> throw on error" convention.

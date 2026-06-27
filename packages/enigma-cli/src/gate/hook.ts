@@ -1,10 +1,10 @@
 /**
- * Faithful 1:1 port of no-mistakes' `internal/git/hook.go`, rebranded for enigma
+ * Faithful 1:1 port of upstream's `internal/git/hook.go`, rebranded for enigma
  * gate. Generates the bare repo's post-receive hook, installs/refreshes it, and
  * isolates the gate's hooks path from worktree config writes.
  *
  * Rebrand: the generated hook invokes the enigma binary's hidden `__gate-notify`
- * subcommand instead of no-mistakes' `daemon notify-push`, and the managed-hook
+ * subcommand instead of upstream's `daemon notify-push`, and the managed-hook
  * marker is `# enigma gate post-receive hook`. The hook stays a POSIX sh script
  * (git runs hooks via sh even on Windows) and is written 0o755 (chmod is guarded
  * since Windows ignores it).

@@ -1,7 +1,7 @@
 /**
  * The gate IPC RPC server: accepts connections, frames newline-delimited JSON-RPC
  * 2.0 requests, and dispatches by method to injected handlers. Faithful port of
- * no-mistakes' `internal/ipc/server.go`, following `mcp.ts`'s pure-handler /
+ * upstream's `internal/ipc/server.go`, following `mcp.ts`'s pure-handler /
  * stateful-loop split.
  *
  * Wire framing (matches `client.go`/`server.go`): one JSON object per line on the

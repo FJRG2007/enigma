@@ -1,5 +1,5 @@
 /**
- * Faithful port of no-mistakes' `internal/intent/summarizer.go`: the Summarizer
+ * Faithful port of upstream's `internal/intent/summarizer.go`: the Summarizer
  * interface and the agent-backed implementation that turns a session's
  * user/assistant text into a 2-6 sentence intent summary.
  *

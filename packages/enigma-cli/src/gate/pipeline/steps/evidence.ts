@@ -4,7 +4,7 @@
  * by local path; opting in to store-in-repo lands it under a readable,
  * branch-named directory inside the worktree so it is committed, pushed, and
  * rendered on the PR. Path safety rejects absolute/escaping/symlinked targets and
- * falls back to the temporary location. Faithful port of the no-mistakes
+ * falls back to the temporary location. Faithful port of the upstream
  * `internal/pipeline/steps/evidence.go`.
  *
  * The temp-dir base is rebranded `enigma-gate-evidence` to match the gate's

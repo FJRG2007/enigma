@@ -2,7 +2,7 @@
  * Builds a compact, sanitized record of prior rounds for the current step so fix
  * and reassess agents see what was already attempted, what the user selected vs
  * left unselected, and the summaries previous fix attempts produced. Faithful
- * port of the no-mistakes `internal/pipeline/steps/round_history.go`.
+ * port of the upstream `internal/pipeline/steps/round_history.go`.
  *
  * Go's `fmt.Fprintf(..., "%q", ...)` is approximated with JSON.stringify, which
  * quotes/escapes the already-sanitized single-line strings equivalently. The

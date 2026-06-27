@@ -362,7 +362,7 @@ function acpxProcessErrorOutput(stderr: string, stdoutErr: string): string {
 
 /** Appends the structured-output contract (JSON Schema) to a prompt. */
 function buildACPStructuredPrompt(prompt: string, schema: unknown): string {
-    return `${prompt}\n\n## no-mistakes final output contract\n\nWhen the task is complete, your final assistant message must be a single JSON object that matches this JSON Schema. Return only the JSON object. Do not wrap it in Markdown fences. Do not include prose before or after the JSON.\n\n${JSON.stringify(schema)}`;
+    return `${prompt}\n\n## enigma final output contract\n\nWhen the task is complete, your final assistant message must be a single JSON object that matches this JSON Schema. Return only the JSON object. Do not wrap it in Markdown fences. Do not include prose before or after the JSON.\n\n${JSON.stringify(schema)}`;
 }
 
 /** Formats a Go-style process exit error, or null on clean exit. */

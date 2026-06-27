@@ -1,5 +1,5 @@
 /**
- * Faithful port of no-mistakes' `internal/intent/disambiguator.go`: the agent-
+ * Faithful port of upstream's `internal/intent/disambiguator.go`: the agent-
  * backed reranker that picks among multiple accepted transcript matches when
  * file-overlap scoring is not decisive, plus the worktree snapshot/restore that
  * undoes any side effects the reranking agent leaves behind.
@@ -72,7 +72,7 @@ class AgentDisambiguator implements Disambiguator {
             throw new Error("no candidates");
         }
 
-        const dir = await mkdtemp(join(tmpdir(), "no-mistakes-intent-rerank-"));
+        const dir = await mkdtemp(join(tmpdir(), "enigma-intent-rerank-"));
         try {
             const packetPaths: string[] = [];
             for (let i = 0; i < candidates.length; i++) {

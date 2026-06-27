@@ -1,7 +1,7 @@
 /**
  * CI auto-fix: runs the agent to fix failing checks and/or resolve merge
  * conflicts, then commits and force-pushes the result to the configured push
- * remote. Faithful port of the no-mistakes `internal/pipeline/steps/ci_fix.go`.
+ * remote. Faithful port of the upstream `internal/pipeline/steps/ci_fix.go`.
  *
  * Go declared these as methods on `*CIStep`; none of them read step state, so the
  * port exposes them as free functions over the StepContext (`ci.ts` calls them).
@@ -163,7 +163,7 @@ export async function commitAndPush(sctx: StepContext): Promise<boolean> {
         throw new Error(`stage CI changes: ${errMessage(err)}`);
     }
     try {
-        await stepGitRun(sctx, "commit", "-m", "no-mistakes: apply CI fixes");
+        await stepGitRun(sctx, "commit", "-m", "enigma: apply CI fixes");
     } catch (err) {
         throw new Error(`commit: ${errMessage(err)}`);
     }

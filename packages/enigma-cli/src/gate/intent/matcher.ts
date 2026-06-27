@@ -1,5 +1,5 @@
 /**
- * Faithful port of no-mistakes' `internal/intent/matcher.go`: file-overlap
+ * Faithful port of upstream's `internal/intent/matcher.go`: file-overlap
  * scoring, candidate acceptance rules (threshold, multi-file and stale-partial
  * gates), recency boosting, and deterministic winner selection.
  */

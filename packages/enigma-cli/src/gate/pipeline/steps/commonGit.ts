@@ -1,6 +1,6 @@
 /**
  * Git base/default-branch resolution helpers shared by pipeline steps. Faithful
- * port of the no-mistakes `internal/pipeline/steps/common_git.go`.
+ * port of the upstream `internal/pipeline/steps/common_git.go`.
  *
  * Go threaded `context.Context` as the first argument; here every helper takes an
  * `AbortSignal` first, matching Go's positional order so the eventual step ports

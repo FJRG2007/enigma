@@ -1,6 +1,6 @@
 /**
  * Bitbucket-specific helpers for the CI step plus the shared CI-log truncation
- * routine. Faithful port of the no-mistakes
+ * routine. Faithful port of the upstream
  * `internal/pipeline/steps/ci_bitbucket.go`.
  *
  * `resolveBitbucketRepoRef` mirrors the Go helper that `buildHost` relied on;

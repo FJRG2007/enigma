@@ -4,7 +4,7 @@
  * nothing unless `ENIGMA_GATE_TELEMETRY=1` is set, in which case events are
  * appended locally for inspection - never sent off-machine.
  *
- * enigma: minimal local-only sink. The upstream no-mistakes telemetry posts to a
+ * enigma: minimal local-only sink. The upstream telemetry posts to a
  * remote collector; the upgrade path (a real exporter) is intentionally not
  * built - it would send data off-machine, against enigma's posture. Keep the
  * `track()` signature stable so callers (executor, steps) need no change if a

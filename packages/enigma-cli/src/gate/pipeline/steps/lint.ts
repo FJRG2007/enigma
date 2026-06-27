@@ -3,7 +3,7 @@
  * the executor can route to an auto-fix round. When no lint command is
  * configured it asks the agent to detect, run, and fix the project's linters
  * directly, then commits the result. In fix mode it first asks the agent to fix
- * lint issues. Faithful port of the no-mistakes
+ * lint issues. Faithful port of the upstream
  * `internal/pipeline/steps/lint.go`.
  *
  * Go threaded `context.Context`; here the StepContext carries an `AbortSignal`,

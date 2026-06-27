@@ -1,7 +1,7 @@
 /**
  * `gate init [--fork-url <url>]`: set up or refresh the local gate for the
  * current repository, start the daemon, and print a summary. Faithful port of
- * no-mistakes' `internal/cli/init.go`.
+ * upstream's `internal/cli/init.go`.
  *
  * Divergence: the user-level agent skill install (Go's `skill.InstallUser` plus
  * the vendored-copy note) belongs to the not-yet-ported skill subsystem and is

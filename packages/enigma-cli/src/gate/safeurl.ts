@@ -1,5 +1,5 @@
 /**
- * Credential redaction for URLs. Faithful port of the no-mistakes
+ * Credential redaction for URLs. Faithful port of the upstream
  * `internal/safeurl` package; hides userinfo so leaked tokens never reach logs.
  */
 

@@ -1,5 +1,5 @@
 /**
- * Faithful port of no-mistakes' `internal/intent/regex.go`.
+ * Faithful port of upstream's `internal/intent/regex.go`.
  */
 
 /**

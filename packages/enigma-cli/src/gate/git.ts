@@ -1,5 +1,5 @@
 /**
- * Faithful 1:1 port of no-mistakes' `internal/git` package (git.go + env.go),
+ * Faithful 1:1 port of upstream's `internal/git` package (git.go + env.go),
  * rebranded for enigma gate. Every git invocation goes through `node:child_process`
  * `execFile`/`execFileSync` with an argv array (never a shell string) to mirror the
  * Go `exec.CommandContext(ctx, "git", args...)` calls and stay injection-safe.

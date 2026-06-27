@@ -1,7 +1,7 @@
 /**
  * Fix-mode execution shared by the auto-fixable pipeline steps: run the fix
  * agent, commit any resulting changes with a deterministic message, and advance
- * the run's HEAD. Faithful port of the no-mistakes
+ * the run's HEAD. Faithful port of the upstream
  * `internal/pipeline/steps/common_fix.go`.
  *
  * The Go `commitSummarySchema` was a `json.RawMessage`; here it is a parsed JS
@@ -122,7 +122,7 @@ function extractCommitSummary(result: Result): string {
 
 export function deterministicFixCommitMessage(stepName: StepName, summary: string): string {
     if (summary === "") summary = "apply fixes";
-    return `no-mistakes(${stepName}): ${summary}`;
+    return `enigma(${stepName}): ${summary}`;
 }
 
 /**

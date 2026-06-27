@@ -1,6 +1,6 @@
 /**
  * `gate rerun`: re-run the pipeline for the current branch via the daemon.
- * Faithful port of no-mistakes' `internal/cli/rerun.go`.
+ * Faithful port of upstream's `internal/cli/rerun.go`.
  */
 
 import type { Paths } from "../paths";

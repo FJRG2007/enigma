@@ -1,6 +1,6 @@
 /**
  * Platform transport for the gate IPC endpoint: a listen/dial abstraction over a
- * filesystem socket. Faithful port of no-mistakes' `transport_unix.go` /
+ * filesystem socket. Faithful port of upstream's `transport_unix.go` /
  * `transport_windows.go`, with one deliberate divergence on Windows.
  *
  * POSIX: a Unix domain socket at the socket path (`node:net` IPC). A leftover

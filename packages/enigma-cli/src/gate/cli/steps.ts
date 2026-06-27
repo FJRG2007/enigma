@@ -2,10 +2,10 @@
  * Pipeline-step CLI helpers shared by the axi run/respond/logs commands: skip-step
  * parsing and the git push-option encoding that carries skip selections and the
  * agent-supplied intent through a push. Faithful port of the relevant helpers in
- * no-mistakes' `internal/cli/daemon_cmd.go`.
+ * upstream's `internal/cli/daemon_cmd.go`.
  *
  * enigma rebrand: the push-option namespace is `enigma.*` (the Go uses
- * `no-mistakes.*`), matching the enigma binary that the gate post-receive hook
+ * `enigma.*`), matching the enigma binary that the gate post-receive hook
  * forwards options to. The gate-notify reader must parse the same prefixes.
  */
 

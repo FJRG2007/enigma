@@ -1,7 +1,7 @@
 /**
  * The gate IPC RPC client: dials the daemon, sends newline-delimited JSON-RPC 2.0
  * requests, and awaits the matching response by ID. Faithful port of
- * no-mistakes' `internal/ipc/client.go`.
+ * upstream's `internal/ipc/client.go`.
  *
  * `Client` reuses one connection for unary calls (each call carries an
  * auto-incremented ID, so responses are matched deterministically and a 30s

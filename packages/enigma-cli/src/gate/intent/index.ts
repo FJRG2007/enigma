@@ -1,5 +1,5 @@
 /**
- * Faithful port of no-mistakes' `internal/intent/intent.go`: the top-level
+ * Faithful port of upstream's `internal/intent/intent.go`: the top-level
  * `extract` orchestrator that runs the discover -> match -> optional
  * disambiguate -> cache -> summarize pipeline for a single run, plus the
  * `ExtractParams`/`Result` contract the intent step and daemon use.

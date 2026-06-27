@@ -1,6 +1,6 @@
 /**
  * Rebase step: syncs the pushed branch with the configured push target and the
- * latest default branch from upstream. Faithful 1:1 port of the no-mistakes
+ * latest default branch from upstream. Faithful 1:1 port of the upstream
  * `internal/pipeline/steps/rebase.go`.
  *
  * Go threaded `context.Context`; here the StepContext carries an `AbortSignal`.
@@ -25,7 +25,7 @@ import { redactSecrets, stripAdversarial } from "../../intent/redact";
 import { newStepOutcome, type Step, type StepContext, type StepOutcome } from "../types";
 import { STEP_REBASE, type StepName, type Finding, type Findings, marshalFindingsJSON } from "../../types";
 
-const forkBranchRefPrefix = "refs/remotes/no-mistakes-push/";
+const forkBranchRefPrefix = "refs/remotes/enigma-push/";
 
 /** RebaseStep syncs the pushed branch with its push target and the default branch. */
 export class RebaseStep implements Step {

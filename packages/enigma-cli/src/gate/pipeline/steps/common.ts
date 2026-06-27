@@ -1,6 +1,6 @@
 /**
  * Shared step helpers and the structured-output JSON Schemas every pipeline step
- * agent call validates against. Faithful port of the no-mistakes
+ * agent call validates against. Faithful port of the upstream
  * `internal/pipeline/steps/common.go` (minus AllSteps/DemoSteps, which reference
  * the step structs ported in a later phase).
  *

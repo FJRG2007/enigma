@@ -1,6 +1,6 @@
 /**
  * Step-result records: the per-step execution state of a run. Faithful port of
- * no-mistakes' `internal/db/step.go`.
+ * upstream's `internal/db/step.go`.
  */
 
 import { now, newId } from "./id";

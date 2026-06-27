@@ -2,7 +2,7 @@
  * Deterministic PR markdown sections built from recorded step results and rounds:
  * the Pipeline summary, the per-step issue -> fix -> outcome narrative, the risk
  * line, and the Testing section (with sanitized, optionally GitHub-linked or
- * embedded test artifacts). Faithful port of the no-mistakes
+ * embedded test artifacts). Faithful port of the upstream
  * `internal/pipeline/steps/prsummary.go`.
  *
  * Go's standard-library facilities are ported inline since enigma carries no
@@ -109,7 +109,7 @@ export function buildPipelineSummary(
 
     if (detailBlocks.length === 0) return ["", ""];
 
-    let b = "## Pipeline\n\nUpdates from [git push no-mistakes](https://github.com/kunchenguid/no-mistakes)\n\n";
+    let b = "## Pipeline\n\nUpdates from [git push enigma](https://github.com/FJRG2007/enigma)\n\n";
     for (let i = 0; i < detailBlocks.length; i++) {
         if (i > 0) b += "\n";
         b += detailBlocks[i];

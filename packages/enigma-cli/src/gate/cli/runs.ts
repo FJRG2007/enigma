@@ -1,6 +1,6 @@
 /**
  * `gate runs [--limit N]`: list pipeline runs for the current repository.
- * Faithful port of no-mistakes' `internal/cli/runs.go`. Reads runs directly
+ * Faithful port of upstream's `internal/cli/runs.go`. Reads runs directly
  * from the DB (not IPC), as the Go command does.
  */
 

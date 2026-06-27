@@ -1,5 +1,5 @@
 /**
- * Faithful port of no-mistakes' `internal/intent/readers.go`: assembles the
+ * Faithful port of upstream's `internal/intent/readers.go`: assembles the
  * default set of per-agent transcript readers, minus any the caller disabled by
  * name. Disabled names are compared against each reader's `name()`; the gate
  * config already lowercases its disabled-reader keys, matching the reader name

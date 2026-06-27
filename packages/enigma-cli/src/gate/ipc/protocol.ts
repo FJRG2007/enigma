@@ -1,6 +1,6 @@
 /**
  * JSON-RPC 2.0 wire protocol for the gate daemon's IPC endpoint. Faithful port of
- * no-mistakes' `internal/ipc/protocol.go`.
+ * upstream's `internal/ipc/protocol.go`.
  *
  * Transport contract: newline-delimited JSON, one message per line, matching
  * `mcp.ts`. TypeScript fields are camelCase; the JSON wire keys stay snake_case
@@ -617,7 +617,7 @@ export function decodeEvent(raw: any): Event {
 
 /**
  * Maps a DB run row plus its already-mapped step results to the IPC RunInfo.
- * `awaitingAgent` is derived from `awaitingAgentSince` (the no-mistakes
+ * `awaitingAgent` is derived from `awaitingAgentSince` (the upstream
  * `runToInfo` convention).
  */
 export function runToInfo(r: Run, steps: StepResultInfo[] = []): RunInfo {

@@ -2,7 +2,7 @@
  * CI check status aggregation: poll-interval pacing, failing/pending bucket
  * helpers, last-fixed-issue encoding, and the StepOutcome builders for CI
  * failures, mergeability stalls, and monitoring timeouts. Faithful port of the
- * no-mistakes `internal/pipeline/steps/ci_checks.go`.
+ * upstream `internal/pipeline/steps/ci_checks.go`.
  *
  * Go's `Check.Failing()`/`Check.Pending()` and `time.Time` zero/`After` semantics
  * map to the `checkFailing`/`checkPending` helpers here and to `Date | undefined`

@@ -1,5 +1,5 @@
 /**
- * Faithful 1:1 port of no-mistakes' `internal/bitbucket` package (client.go +
+ * Faithful 1:1 port of upstream's `internal/bitbucket` package (client.go +
  * host.go). The Bitbucket host talks to the Cloud REST API v2.0 over HTTPS using
  * the global `fetch`; Go's `*http.Client` (30s timeout) maps to an
  * `AbortSignal.timeout` combined with the caller's `AbortSignal`.
@@ -31,9 +31,9 @@ import {
 } from "./types";
 
 const DEFAULT_API_BASE_URL = "https://api.bitbucket.org";
-const ENV_EMAIL = "NO_MISTAKES_BITBUCKET_EMAIL";
-const ENV_TOKEN = "NO_MISTAKES_BITBUCKET_API_TOKEN";
-const ENV_API_BASE_URL = "NO_MISTAKES_BITBUCKET_API_BASE_URL";
+const ENV_EMAIL = "ENIGMA_BITBUCKET_EMAIL";
+const ENV_TOKEN = "ENIGMA_BITBUCKET_API_TOKEN";
+const ENV_API_BASE_URL = "ENIGMA_BITBUCKET_API_BASE_URL";
 const MAX_STEP_LOG_BYTES = 32 * 1024;
 const REQUEST_TIMEOUT_MS = 30_000;
 

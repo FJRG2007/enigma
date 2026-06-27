@@ -1,5 +1,5 @@
 /**
- * Faithful port of no-mistakes' `internal/intent/reader_codex.go`: the Codex CLI
+ * Faithful port of upstream's `internal/intent/reader_codex.go`: the Codex CLI
  * reader. Session metadata (cwd, timestamps, rollout path) lives in
  * `~/.codex/state_*.sqlite`; the actual transcript is a JSONL rollout file
  * referenced by `threads.rollout_path`. The SQLite filters candidates fast, then

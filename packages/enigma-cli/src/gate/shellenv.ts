@@ -1,5 +1,5 @@
 /**
- * Faithful port of the no-mistakes `internal/shellenv` Go package.
+ * Faithful port of the upstream `internal/shellenv` Go package.
  *
  * Two responsibilities:
  *   1. Process-group isolation + whole-tree cancellation. The Go

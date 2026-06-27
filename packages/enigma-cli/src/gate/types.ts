@@ -5,7 +5,7 @@
  *
  * Faithful port of the Go `internal/types` package. Findings JSON keeps the same
  * wire shape (current + legacy keys) so recorded runs and agent output decode
- * identically to no-mistakes.
+ * identically to upstream.
  */
 
 /** Lifecycle state of a pipeline run. */

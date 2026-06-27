@@ -1,6 +1,6 @@
 /**
  * `gate doctor`: check system health and dependencies (git, gh, data dir, DB,
- * daemon, and known agents). Faithful port of no-mistakes'
+ * daemon, and known agents). Faithful port of upstream's
  * `internal/cli/doctor.go`. Always exits 0 (it only reports), printing
  * "some checks failed" when any check fails, as the Go command does.
  */

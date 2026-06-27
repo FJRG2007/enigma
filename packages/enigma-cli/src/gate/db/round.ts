@@ -1,7 +1,7 @@
 /**
  * Step-round records: each execution round within a pipeline step, including the
  * findings produced and the user/auto selection that drove the next round.
- * Faithful port of no-mistakes' `internal/db/round.go`.
+ * Faithful port of upstream's `internal/db/round.go`.
  */
 
 import { now, newId } from "./id";

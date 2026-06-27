@@ -1,6 +1,6 @@
 /**
  * The agent-facing `axi run`, `axi respond`, and `axi abort` commands and the
- * blocking drive loop they share. Faithful port of no-mistakes'
+ * blocking drive loop they share. Faithful port of upstream's
  * `internal/cli/axi_drive.go`.
  *
  * Drive semantics: poll a run until it reaches an approval gate, a terminal
@@ -10,7 +10,7 @@
  * most once so a finding the fix cannot clear converges to an approval. Once CI
  * checks pass the loop hands control back (the PR awaits a human merge).
  *
- * The CI "checks passed" detection is the relevant subset of no-mistakes'
+ * The CI "checks passed" detection is the relevant subset of upstream's
  * `cimonitor` package, reading the exact log strings the CI step emits.
  */
 

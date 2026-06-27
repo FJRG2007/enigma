@@ -1,5 +1,5 @@
 /**
- * Faithful port of no-mistakes' `internal/intent/reader_pi.go`: the Pi
+ * Faithful port of upstream's `internal/intent/reader_pi.go`: the Pi
  * coding-agent reader over `~/.pi/agent/sessions/<repo>/*.jsonl`, including the
  * live/aggregate message de-duplication that reconciles incrementally-streamed
  * turns with the final aggregated `agent_end` record.

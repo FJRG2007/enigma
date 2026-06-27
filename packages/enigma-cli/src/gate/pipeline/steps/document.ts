@@ -1,6 +1,6 @@
 /**
  * Document step: updates project documentation to reflect code changes. Faithful
- * 1:1 port of the no-mistakes `internal/pipeline/steps/document.go`.
+ * 1:1 port of the upstream `internal/pipeline/steps/document.go`.
  *
  * Go threaded `context.Context`; here the StepContext carries an `AbortSignal`.
  * Go's `result.Output` was raw JSON bytes decoded per call; the ported

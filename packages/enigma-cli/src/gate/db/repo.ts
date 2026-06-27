@@ -1,6 +1,6 @@
 /**
  * Repository records: registration, lookup, and metadata updates. Faithful port
- * of no-mistakes' `internal/db/repo.go`.
+ * of upstream's `internal/db/repo.go`.
  */
 
 import type { Database } from "./index";

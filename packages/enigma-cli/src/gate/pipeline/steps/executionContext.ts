@@ -1,5 +1,5 @@
 /**
- * Faithful port of the no-mistakes
+ * Faithful port of the upstream
  * `internal/pipeline/steps/execution_context.go`.
  */
 

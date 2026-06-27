@@ -1,7 +1,7 @@
 /**
  * Resolves a provider-agnostic scm.Host for a pipeline step, wired to the
  * StepContext's working directory and environment. Faithful port of the
- * no-mistakes `internal/pipeline/steps/host.go`, plus `resolveBitbucketRepoRef`
+ * upstream `internal/pipeline/steps/host.go`, plus `resolveBitbucketRepoRef`
  * (Go's ci_bitbucket.go) which host.go depends on.
  *
  * Go built one `cmdFactory` returning `*exec.Cmd` for every provider client. The

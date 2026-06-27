@@ -1,6 +1,6 @@
 /**
  * Render-ready views of a pipeline run and the TOON field builders the axi
- * surface emits. Faithful port of no-mistakes' `internal/cli/axi_render.go`,
+ * surface emits. Faithful port of upstream's `internal/cli/axi_render.go`,
  * decoupled from whether a run came from the daemon (ipc) or the local database.
  *
  * Output helpers (`emitDoc`/`emitError`) write through an `AxiIO` so the daemon

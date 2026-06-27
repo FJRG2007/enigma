@@ -2,7 +2,7 @@
  * Review step: inspects the branch diff for bugs, security issues, and
  * simplification opportunities, returning structured findings plus a risk
  * assessment. In fix mode it first asks the agent to address prior findings.
- * Faithful port of the no-mistakes `internal/pipeline/steps/review.go`.
+ * Faithful port of the upstream `internal/pipeline/steps/review.go`.
  *
  * Go threaded `context.Context`; here the StepContext carries an `AbortSignal`.
  * Go's `(value, error)` returns become throws. The agent's `result.Output` was

@@ -1,6 +1,6 @@
 /**
  * `gate eject`: remove the gate from the current repository (remote, bare repo,
- * worktrees, and DB record) and print a summary. Faithful port of no-mistakes'
+ * worktrees, and DB record) and print a summary. Faithful port of upstream's
  * `internal/cli/eject.go`.
  */
 
