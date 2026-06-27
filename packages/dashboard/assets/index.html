@@ -2846,7 +2846,11 @@ export {
                 + '<div class="set-cat-b">' + blurb + "</div>"
                 + (list.length ? list.map(skillRow).join("") : '<div class="empty" style="padding:16px 0">' + emptyText + "</div>") + "</div>";
             if (skillScope === "project") {
-                $("skillsBody").innerHTML = section("Skills", "Deploy enigma's policy skills into this project, per app. A green chip means the skill is in that app's project folder.", skills, "No skills.");
+                $("skillsBody").innerHTML =
+                    '<div class="panel"><div class="set-cat-h">Auto-detect skills by stack</div>'
+                    + '<div class="set-cat-b">Scan this project (packages, config files, gems) and install the matching community skills for its stack - hash-verified and kept separate from the policy skills below.</div>'
+                    + '<div class="ladd"><button type="button" class="toggle on with-icon" data-proj-autoskills><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>Detect &amp; install</button></div></div>'
+                    + section("Policy skills", "Deploy enigma's policy skills into this project, per app. A green chip means the skill is in that app's project folder.", skills, "No skills.");
                 return;
             }
             const enigma = skills.filter((s) => s.source === "enigma");
@@ -3399,6 +3403,7 @@ export {
         }
         function onProjectControlClick(e) {
             if (!isProjectScope()) return;
+            if (e.target.closest("[data-proj-autoskills]")) { projAction({ op: "autoskills" }, "Scan this project and install the matching community skills for its stack?"); return; }
             const chip = e.target.closest("[data-pskill]"); // per-app deploy chip in the Skills view
             if (chip) { projAction({ op: "skill", name: chip.dataset.pskill, agent: chip.dataset.pagent, on: chip.dataset.poff !== "1" }); return; }
             const sk = e.target.closest("[data-proj-skill]");

@@ -293,6 +293,7 @@
         if (body.op === "config-set") x.cfg[body.key] = body.value;
         else if (body.op === "config-unset") delete x.cfg[body.key];
         else if (body.op === "skill") { if (body.on) { if (x.skillsOn.indexOf(body.name) === -1) x.skillsOn.push(body.name); } else x.skillsOn = x.skillsOn.filter(function (n) { return n !== body.name; }); }
+        else if (body.op === "autoskills") { note = "Demo - detected React, Next.js, Prisma; would install 5 community skills."; }
         else if (body.op === "hooks") { x.hooks = true; note = "Demo - git hooks marked installed."; }
         else if (body.op === "gate") { x.gate = body.gateOp !== "eject"; note = `Demo - gate ${x.gate ? "initialized" : "ejected"}.`; }
         return { ok: true, note: note, detail: projDetail(x) };

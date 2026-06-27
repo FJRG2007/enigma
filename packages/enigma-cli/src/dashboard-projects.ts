@@ -313,13 +313,31 @@ export function projectDetail(path: string): ProjectDetail | { error: string } {
 }
 
 export interface ProjectActionPayload {
-    op: "skill" | "config-set" | "config-unset" | "hooks" | "gate";
+    op: "skill" | "config-set" | "config-unset" | "hooks" | "gate" | "autoskills";
     name?: string;
     on?: boolean;
     agent?: string;
     key?: string;
     value?: boolean | string;
     gateOp?: "init" | "eject";
+    dryRun?: boolean;
+}
+
+/** Detect the project's stack and install the matching community (stack) skills - the dashboard
+ *  twin of `enigma autoskills`. Kept separate from enigma's policy skills. Never throws. */
+async function runAutoskills(projectDir: string, dryRun: boolean): Promise<ActionResult> {
+    const { detectTechnologies, collectSkills, detectAgents } = await import("./autoskills");
+    const det = detectTechnologies(projectDir);
+    const skills = collectSkills(det);
+    const stack = det.detected.map((t) => t.name).join(", ");
+    if (!skills.length) return { ok: true, note: stack ? `Detected ${stack} - no matching community skills.` : "No known technologies detected." };
+    if (dryRun) return { ok: true, note: `Detected ${stack || "your stack"} - ${skills.length} matching skill(s) available.` };
+    const { installStackSkills } = await import("./autoskills-install");
+    const res = await installStackSkills(skills, projectDir, detectAgents(), { yes: true, interactive: false });
+    const parts = [`${res.installed} installed`];
+    if (res.skipped) parts.push(`${res.skipped} skipped`);
+    if (res.failed) parts.push(`${res.failed} failed`);
+    return { ok: res.failed === 0, error: res.failed ? res.errors.join("; ") : undefined, note: `Autoskills (${stack || "stack"}): ${parts.join(", ")}.` };
 }
 
 export async function applyProjectAction(path: string, payload: ProjectActionPayload): Promise<ActionResult & { detail?: ProjectDetail | { error: string } }> {
@@ -339,6 +357,9 @@ export async function applyProjectAction(path: string, payload: ProjectActionPay
         case "config-unset":
             if (payload.key && PROJECT_SETTING_KEYS.includes(payload.key)) { unsetEnigmaValueAt(norm, configField(payload.key)); result = { ok: true }; }
             else result = { ok: false, error: "Missing or invalid key." };
+            break;
+        case "autoskills":
+            result = await runAutoskills(norm, Boolean(payload.dryRun));
             break;
         case "hooks":
             result = await runEnigma(norm, ["security", "-y"]);
