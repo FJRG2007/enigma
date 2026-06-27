@@ -219,6 +219,62 @@
         return { ok: true, skills: SKILLS.skills };
     }
 
+    // Per-project scope demo. Projects live in memory so add/remove/toggle behave within a
+    // session (a reload restores these defaults). The detail view derives project config from
+    // the same SETTINGS registry subset the real server exposes, and skills from SKILLS.
+    var PROJECT_CFG_KEYS = ["gate", "auto-sync", "compress", "output-style", "minimal-code", "parallel-subagents", "skill-update-policy"];
+    var PROJECTS = [
+        { path: "/home/you/api-server", label: "api-server", exists: true, isGitRepo: true, hooks: true, gate: false, skillsOn: ["git-policy", "backend-policy", "security-policy"], cfg: { gate: true } },
+        { path: "/home/you/web-app", label: "web-app", exists: true, isGitRepo: true, hooks: false, gate: true, skillsOn: ["frontend-policy", "ciphera-style-policy"], cfg: {} }
+    ];
+    function projFind(p) { return PROJECTS.filter(function (x) { return x.path === p; })[0]; }
+    function projStatus(x) {
+        return { path: x.path, label: x.label, exists: x.exists !== false, isGitRepo: !!x.isGitRepo, skills: (x.skillsOn || []).length, hasLocalConfig: !!(x.cfg && Object.keys(x.cfg).length), hooks: !!x.hooks, gate: !!x.gate };
+    }
+    function projList() { return { projects: PROJECTS.map(projStatus) }; }
+    function projDetail(x) {
+        x.cfg = x.cfg || {};
+        var config = PROJECT_CFG_KEYS.map(function (k) {
+            var s = findSetting(k); if (!s) return null;
+            var has = Object.prototype.hasOwnProperty.call(x.cfg, k);
+            var val = has ? x.cfg[k] : (s.choices ? s.choice : s.value);
+            return {
+                key: k, label: s.label, hint: s.hint, choices: s.choices || undefined, offChoice: s.choices ? s.offChoice : undefined,
+                value: s.choices ? String(val) !== s.offChoice : !!val, choice: s.choices ? String(val) : undefined, overridden: has
+            };
+        }).filter(Boolean);
+        var available = SKILLS.skills.map(function (s) { return { name: s.name, description: s.description }; });
+        var agents = [{ name: "claude", label: "Claude Code", installed: true, deployed: (x.skillsOn || []).slice() }];
+        var st = projStatus(x);
+        st.agents = agents; st.available = available; st.config = config;
+        return st;
+    }
+    function projValidate(p) { return /^(\/|[A-Za-z]:[\\/]|\\\\)/.test(p || ""); }
+    function applyProjectsPost(body) {
+        if (body.op === "add") {
+            if (!projValidate(body.path)) return { ok: false, error: "Enter an absolute path (e.g. /home/you/app).", projects: projList().projects };
+            if (!projFind(body.path)) {
+                var base = String(body.path).replace(/[\\/]+$/, "").split(/[\\/]/).pop() || body.path;
+                PROJECTS.push({ path: body.path, label: body.label || base, exists: true, isGitRepo: true, hooks: false, gate: false, skillsOn: [], cfg: {} });
+            }
+            return { ok: true, projects: projList().projects };
+        }
+        if (body.op === "remove") { PROJECTS = PROJECTS.filter(function (x) { return x.path !== body.path; }); return { ok: true, projects: projList().projects }; }
+        return { ok: false, error: "unknown op", projects: projList().projects };
+    }
+    function applyProjectActionPost(body) {
+        var x = projFind(body.path); if (!x) return { ok: false, error: "Project is not registered." };
+        x.cfg = x.cfg || {}; x.skillsOn = x.skillsOn || [];
+        var note;
+        if (body.op === "config-set") x.cfg[body.key] = body.value;
+        else if (body.op === "config-unset") delete x.cfg[body.key];
+        else if (body.op === "skill") { if (body.on) { if (x.skillsOn.indexOf(body.name) === -1) x.skillsOn.push(body.name); } else x.skillsOn = x.skillsOn.filter(function (n) { return n !== body.name; }); }
+        else if (body.op === "hooks") { x.hooks = true; note = "Demo - git hooks marked installed."; }
+        else if (body.op === "gate") { x.gate = body.gateOp !== "eject"; note = `Demo - gate ${x.gate ? "initialized" : "ejected"}.`; }
+        return { ok: true, note: note, detail: projDetail(x) };
+    }
+    function qparam(path, key) { var m = path.match(new RegExp(`[?&]${key}=([^&]+)`)); return m ? decodeURIComponent(m[1]) : ""; }
+
     function route(path, method, body) {
         if (path.indexOf("/api/stats") !== -1) { STATS.generatedAt = Date.now(); return STATS; }
         // Provider status pill: report everything operational (the real server proxies the
@@ -228,6 +284,9 @@
         if (path.indexOf("/api/settings") !== -1) return method === "POST" ? applySettingPost(body) : SETTINGS;
         if (path.indexOf("/api/accounts") !== -1) return method === "POST" ? { ok: true, data: ACCOUNTS } : ACCOUNTS;
         if (path.indexOf("/api/skills") !== -1) return method === "POST" ? applySkillPost(body) : SKILLS;
+        if (path.indexOf("/api/projects/detail") !== -1) { var pd = projFind(qparam(path, "path")); return pd ? projDetail(pd) : { error: "Project is not registered." }; }
+        if (path.indexOf("/api/projects/action") !== -1) return applyProjectActionPost(body);
+        if (path.indexOf("/api/projects") !== -1) return method === "POST" ? applyProjectsPost(body) : projList();
         if (path.indexOf("/api/resources") !== -1) return method === "POST" ? { ok: true, message: "Demo - no action taken.", status: RESOURCES } : RESOURCES;
         if (path.indexOf("/api/update") !== -1) return { ok: true, changed: false, version: STATS.version, note: "This is a static demo." };
         if (path.indexOf("/api/fix-path") !== -1) return { ok: true, message: "Demo - nothing to fix." };
@@ -242,7 +301,7 @@
     window.fetch = function (input, init) {
         var url = typeof input === "string" ? input : (input && input.url) || "";
         var path = url;
-        try { path = new URL(url, location.href).pathname; } catch (e) { /* keep raw */ }
+        try { var u = new URL(url, location.href); path = u.pathname + u.search; } catch (e) { /* keep raw */ }
         var method = ((init && init.method) || (input && input.method) || "GET").toUpperCase();
         if (path.indexOf("/api/") !== -1) {
             var body = null;

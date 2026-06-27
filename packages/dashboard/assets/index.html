@@ -331,6 +331,18 @@
         ::-webkit-scrollbar-corner { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #2b3340; border-radius: 999px; }
         ::-webkit-scrollbar-thumb:hover { background: #3a4150; }
+        /* Scope selector (global vs a project) in the header. */
+        .scope-wrap { display: inline-flex; align-items: center; gap: 6px; }
+        .scope-lbl { font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+        .scope-sel {
+            font-family: var(--mono); font-size: 12px; color: var(--text); background: var(--surface);
+            border: 1px solid var(--border); border-radius: 8px; padding: 5px 8px; cursor: pointer; max-width: 220px;
+        }
+        .scope-sel:focus { outline: none; border-color: var(--accent); }
+        .tab.disabled { opacity: .4; pointer-events: none; }
+        .scope-banner { font-family: var(--mono); font-size: 12px; color: var(--muted); margin-bottom: 12px; }
+        .scope-banner b { color: var(--text); }
+
         /* Animated modal dialog - replaces native alert/prompt/confirm so dialogs keep the design. */
         .modal-back {
             position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center;
@@ -397,11 +409,11 @@
             <a href="#/usage" data-view="usage" class="tab">Usage</a>
             <a href="#/accounts" data-view="accounts" class="tab">Accounts</a>
             <a href="#/skills" data-view="skills" class="tab">Skills</a>
-            <a href="#/projects" data-view="projects" class="tab">Projects</a>
             <a href="#/settings" data-view="settings" class="tab">Settings</a>
             <a href="#/resources" data-view="resources" class="tab">Resources</a>
         </nav>
         <div class="nav">
+            <label class="scope-wrap" title="Scope: global config or a specific project"><span class="scope-lbl">Scope</span><select id="scopeSel" class="scope-sel"><option value="global">Global</option></select></label>
             <span class="live"><span id="dot" class="dot stale"></span><span id="updated">Connecting...</span></span>
             <nav class="links">
                 <a href="https://github.com/FJRG2007/enigma" target="_blank" rel="noopener noreferrer" title="GitHub repository" aria-label="GitHub repository">
@@ -662,23 +674,6 @@
         </div>
         <div class="panel"><div class="set-cat-h">Listening ports</div><div id="resPorts"><div class="empty" style="padding:12px 0">Loading...</div></div></div>
         <div class="panel"><div class="set-cat-h">Processes <small>by memory</small></div><div id="resProcs"><div class="empty" style="padding:12px 0">Loading...</div></div></div>
-    </section>
-
-    <section id="view-projects" style="display:none">
-        <div class="page-head" style="display:flex;align-items:flex-start;gap:16px">
-            <div style="flex:1">
-                <h1>Projects</h1>
-                <p>Manage enigma per project folder: its deployed skills, project-local config, git hooks and the AI quality gate. Add a project by path; changes apply only to that project. Global config stays in <a href="#/settings">Settings</a>.</p>
-            </div>
-            <button id="projRefresh" type="button" class="iconbtn" title="Refresh" aria-label="Refresh"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg></button>
-        </div>
-        <div id="projNote" class="set-note"></div>
-        <div class="panel">
-            <div class="set-cat-h">Add a project</div>
-            <div class="ladd"><input id="projPath" class="linput" type="text" placeholder="absolute path to a project folder"><input id="projLabel" class="linput" type="text" style="flex:none;width:160px" placeholder="label (optional)"><button id="projAdd" type="button" class="toggle on">Add</button></div>
-        </div>
-        <div class="panel"><div class="set-cat-h">Projects</div><div id="projList"><div class="empty" style="padding:12px 0">Loading...</div></div></div>
-        <div id="projDetail" class="panel" style="display:none"></div>
     </section>
 
     <footer>
@@ -2559,7 +2554,9 @@ export {
             const el = $("settingsBody");
             el.addEventListener("click", (e) => {
                 const b = e.target.closest("button.toggle");
-                if (b) { postSetting(b.dataset.skey, b.dataset.on !== "1", b); return; }
+                // In project scope this body holds project controls (data-proj-*), handled by the
+                // scope delegate; only act on real global settings toggles (they carry data-skey).
+                if (b && b.dataset.skey) { postSetting(b.dataset.skey, b.dataset.on !== "1", b); return; }
                 const rm = e.target.closest("button.lx");
                 if (rm) { postListOp(rm.dataset.skey, "remove", rm.dataset.item); return; }
                 const add = e.target.closest("button.laddb");
@@ -2569,7 +2566,7 @@ export {
                 }
             });
             el.addEventListener("change", (e) => {
-                const sel = e.target.closest("select.choice");
+                const sel = e.target.closest("select.choice[data-skey]");
                 if (sel) postSetting(sel.dataset.skey, sel.value, sel);
             });
             el.addEventListener("keydown", (e) => {
@@ -2584,6 +2581,8 @@ export {
 
         let settingsLoaded = false;
         async function loadSettings() {
+            if (isProjectScope()) return loadProjectSettings();
+            const port = $("dashPortPanel"); if (port) port.style.display = ""; // global-only panel
             try {
                 const data = await (await fetch("/api/settings", { cache: "no-store" })).json();
                 renderSettings(data.categories || []);
@@ -2942,6 +2941,7 @@ export {
 
         let skillsLoaded = false;
         async function loadSkills() {
+            if (isProjectScope()) return loadProjectSkills();
             loadSkillSettings();
             try {
                 const res = await fetch("/api/skills", { cache: "no-store" });
@@ -3101,20 +3101,28 @@ export {
 
         // --- hash routing between the subpages ---
         // Single source of truth for the subpage ids (savings is the default/fallback).
-        const VIEWS = ["savings", "usage", "accounts", "skills", "projects", "settings", "resources"];
+        const VIEWS = ["savings", "usage", "accounts", "skills", "settings", "resources"];
+        // Views that apply to a single project; the rest are global/machine-level only.
+        const PROJECT_VIEWS = ["settings", "skills"];
+        let activeView = "savings";
         function route() {
+            const project = isProjectScope();
+            // Gate the tabs by scope: under a project, only project-applicable views are reachable.
+            document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("disabled", project && PROJECT_VIEWS.indexOf(t.dataset.view) === -1));
             const h = (location.hash || "").replace(/^#\/?/, "");
-            const v = VIEWS.includes(h) ? h : "savings";
+            let v = VIEWS.includes(h) ? h : "savings";
+            if (project && PROJECT_VIEWS.indexOf(v) === -1) v = "settings";
+            activeView = v;
             VIEWS.forEach((view) => { $("view-" + view).style.display = view === v ? "" : "none"; });
             document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.view === v));
-            if (v === "settings" && !settingsLoaded) { settingsLoaded = true; loadSettings(); }
-            if (v === "skills" && !skillsLoaded) { skillsLoaded = true; loadSkills(); }
-            if (v === "accounts" && !accountsLoaded) { accountsLoaded = true; loadAccounts(); }
-            if (v === "usage") { loadProviderStatus(); if (!usageAccountsLoaded) { usageAccountsLoaded = true; loadUsageAccounts(); } }
-            if (v === "resources") loadResources();
-            if (v === "projects") loadProjects();
+            // Settings + Skills always reload (they are scope-dependent); the rest keep their once-load.
+            if (v === "settings") loadSettings();
+            else if (v === "skills") loadSkills();
+            else if (v === "accounts") { if (!accountsLoaded) { accountsLoaded = true; loadAccounts(); } }
+            else if (v === "usage") { loadProviderStatus(); if (!usageAccountsLoaded) { usageAccountsLoaded = true; loadUsageAccounts(); } }
+            else if (v === "resources") loadResources();
             // The chart was sized while its view may have been hidden; nudge it on return.
-            if (v === "savings") { loadSystems(true); if (chart) { try { applyRange(); } catch { /* not ready */ } } }
+            else if (v === "savings") { loadSystems(true); if (chart) { try { applyRange(); } catch { /* not ready */ } } }
         }
 
         // --- resources subpage (system cleanup; destructive, origin-guarded) ---
@@ -3172,23 +3180,65 @@ export {
             });
         }
 
-        // --- projects subpage (per-project skills / config / hooks / gate, origin-guarded) ---
-        let projOpen = null;
-        function renderProjectList(projects) {
-            const el = $("projList");
-            if (!projects || !projects.length) { el.innerHTML = '<div class="empty" style="padding:12px 0">No projects yet. Add one above.</div>'; return; }
-            el.innerHTML = projects.map((p) => {
-                const badges = [];
-                if (!p.exists) badges.push('<span class="tag">missing</span>');
-                if (p.isGitRepo) badges.push('<span class="tag">git</span>');
-                badges.push('<span class="tag">' + p.skills + " skill" + (p.skills === 1 ? "" : "s") + "</span>");
-                if (p.hooks) badges.push('<span class="tag">hooks</span>');
-                if (p.gate) badges.push('<span class="tag">gate</span>');
-                return '<div class="set-row"><div class="set-meta"><div class="set-name">' + esc(p.label) + " " + badges.join(" ") + '</div><div class="set-hint">' + esc(p.path) + "</div></div>"
-                    + '<div class="set-ctl ladd" style="align-items:center"><button type="button" class="toggle on" data-proj-open="' + esc(p.path) + '">Manage</button>'
-                    + '<button type="button" class="toggle" data-proj-remove="' + esc(p.path) + '">Remove</button></div></div>';
-            }).join("");
+        // --- scope (global vs a project) ---------------------------------------------
+        // A header selector switches the whole dashboard between Global and a specific
+        // project. Project scope is loopback-only and only ever touches a registered
+        // project (the server validates the path on create). Settings + Skills become
+        // scope-aware; the global-only views are disabled while a project is selected.
+        let projectsCache = [];
+        let currentScope = "global";
+        try { currentScope = localStorage.getItem("enigmaScope") || "global"; } catch { /* private mode */ }
+        function isProjectScope() { return currentScope !== "global"; }
+        function scopeLabel() { const p = projectsCache.find((x) => x.path === currentScope); return p ? p.label : currentScope; }
+
+        function populateScopeSelector() {
+            const sel = $("scopeSel");
+            if (!sel) return;
+            // A saved project that no longer exists falls back to Global.
+            if (isProjectScope() && !projectsCache.some((p) => p.path === currentScope)) {
+                currentScope = "global"; try { localStorage.setItem("enigmaScope", "global"); } catch { /* */ }
+            }
+            sel.innerHTML = '<option value="global">Global</option>'
+                + projectsCache.map((p) => '<option value="' + esc(p.path) + '">' + esc(p.label) + "</option>").join("")
+                + '<option value="__create__">+ Create new project</option>';
+            sel.value = currentScope;
         }
+        async function loadProjectsList() {
+            try { projectsCache = ((await (await fetch("/api/projects", { cache: "no-store" })).json()).projects) || []; }
+            catch { projectsCache = []; }
+            populateScopeSelector();
+        }
+        async function openCreateProject() {
+            const path = await askText("Create new project", "", "Absolute path to the project folder (its name becomes the label):",
+                (v) => /^(\/|[A-Za-z]:[\\/]|\\\\)/.test(v) ? null : "Enter an absolute path, e.g. /home/you/app or C:\\path\\to\\app.");
+            if (!path) return;
+            const before = new Set(projectsCache.map((p) => p.path));
+            let out;
+            try { out = await (await fetch("/api/projects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ op: "add", path }) })).json(); }
+            catch { await openModal({ title: "Could not add project", message: "Could not reach the server." }); return; }
+            if (!out.ok) { await openModal({ title: "Could not add project", message: out.error || "That path could not be added." }); return; }
+            projectsCache = out.projects || projectsCache;
+            const added = projectsCache.find((p) => !before.has(p.path)) || projectsCache[projectsCache.length - 1];
+            currentScope = added ? added.path : "global";
+            try { localStorage.setItem("enigmaScope", currentScope); } catch { /* */ }
+            populateScopeSelector();
+            location.hash = "#/settings"; route();
+        }
+        function wireScope() {
+            const sel = $("scopeSel");
+            if (sel) sel.addEventListener("change", () => {
+                const val = sel.value;
+                if (val === "__create__") { sel.value = currentScope; openCreateProject(); return; }
+                currentScope = val;
+                try { localStorage.setItem("enigmaScope", val); } catch { /* */ }
+                route();
+            });
+            // One delegated handler for every project-scope control across Settings + Skills.
+            document.body.addEventListener("click", onProjectControlClick);
+            document.body.addEventListener("change", onProjectControlChange);
+        }
+
+        // --- project-scope rendering (reuses settingsBody / skillsBody) ----------------
         function projConfigRow(c) {
             const asSwitch = !c.choices || (c.choices.length === 2 && c.choices.indexOf(c.offChoice) !== -1);
             const ctl = !asSwitch
@@ -3199,100 +3249,84 @@ export {
             return '<div class="set-row"><div class="set-meta"><div class="set-name">' + esc(c.label) + badge + '</div><div class="set-hint">' + esc(c.hint) + "</div></div>"
                 + '<div class="set-ctl ladd" style="align-items:center">' + ctl + reset + "</div></div>";
         }
-        function renderProjectDetail(d) {
-            const el = $("projDetail");
-            if (!d || d.error) { el.style.display = "none"; projOpen = null; if (d && d.error) setNote("projNote", d.error, "err"); return; }
-            projOpen = d.path;
-            const deployed = new Set();
-            (d.agents || []).forEach((a) => (a.deployed || []).forEach((s) => deployed.add(s)));
+        async function fetchProjectDetail() {
+            return (await (await fetch("/api/projects/detail?path=" + encodeURIComponent(currentScope), { cache: "no-store" })).json());
+        }
+        async function loadProjectSettings() {
+            const el = $("settingsBody");
+            const port = $("dashPortPanel"); if (port) port.style.display = "none"; // global-only
+            el.innerHTML = '<div class="empty" style="padding:24px 0">Loading...</div>';
+            let d; try { d = await fetchProjectDetail(); } catch { el.innerHTML = '<div class="empty" style="padding:24px 0">Project unavailable.</div>'; return; }
+            if (d.error) { el.innerHTML = '<div class="empty" style="padding:24px 0">' + esc(d.error) + "</div>"; return; }
             const agentsLine = (d.agents || []).map((a) => esc(a.label) + (a.installed ? "" : " (not installed)")).join(", ") || "no agents detected";
-            const cfg = (d.config || []).map(projConfigRow).join("");
-            const skills = (d.available || []).map((s) => {
+            const hooks = d.hooks ? '<span class="tag">installed</span>' : (d.isGitRepo ? '<button type="button" class="toggle on" data-proj-act="hooks">Install git hooks</button>' : '<span class="tag">not a git repo</span>');
+            const gate = d.gate ? '<span class="tag">initialized</span> <button type="button" class="toggle" data-proj-act="gate-eject">Eject</button>' : '<button type="button" class="toggle on" data-proj-act="gate-init">Initialize gate</button>';
+            const cfg = (d.config || []).map(projConfigRow).join("") || '<div class="empty" style="padding:8px 0">No project settings.</div>';
+            el.innerHTML =
+                '<div class="scope-banner">Editing <b>' + esc(d.label) + "</b> &middot; " + esc(d.path) + " &middot; " + agentsLine + "</div>"
+                + '<div class="panel"><div class="set-cat-h">Setup</div><div class="set-grid">'
+                + '<div class="set-row"><div class="set-meta"><div class="set-name">Git hooks</div><div class="set-hint">commit secret guard for this repo</div></div><div class="set-ctl">' + hooks + "</div></div>"
+                + '<div class="set-row"><div class="set-meta"><div class="set-name">AI quality gate</div><div class="set-hint">validate changes through the gate pipeline before push (needs the gate feature enabled)</div></div><div class="set-ctl">' + gate + "</div></div></div></div>"
+                + '<div class="panel"><div class="set-cat-h">Project config</div><div class="set-cat-b">applies only to this project (its .enigma.json). Settings not shown here are global-only - switch Scope to Global for those.</div><div class="set-grid">' + cfg + "</div></div>"
+                + '<div class="panel"><div class="set-cat-h">Manage</div><div class="set-grid"><div class="set-row"><div class="set-meta"><div class="set-name">Forget project</div><div class="set-hint">remove it from the dashboard list - its files are not touched</div></div><div class="set-ctl"><button type="button" class="toggle" data-proj-forget>Forget</button></div></div></div></div>';
+        }
+        async function loadProjectSkills() {
+            const el = $("skillsBody");
+            const ss = $("skillSettings"); if (ss) ss.innerHTML = '<div class="set-cat-b" style="padding:0 0 4px">Skill settings are global - switch Scope to Global to change them.</div>';
+            el.innerHTML = '<div class="empty" style="padding:24px 0">Loading...</div>';
+            let d; try { d = await fetchProjectDetail(); } catch { el.innerHTML = '<div class="empty" style="padding:24px 0">Project unavailable.</div>'; return; }
+            if (d.error) { el.innerHTML = '<div class="empty" style="padding:24px 0">' + esc(d.error) + "</div>"; return; }
+            const deployed = new Set(); (d.agents || []).forEach((a) => (a.deployed || []).forEach((s) => deployed.add(s)));
+            const rows = (d.available || []).map((s) => {
                 const on = deployed.has(s.name);
                 return '<div class="set-row"><div class="set-meta"><div class="set-name">' + esc(s.name) + '</div><div class="set-hint">' + esc(s.description || "") + "</div></div>"
                     + '<div class="set-ctl"><button type="button" class="toggle' + (on ? " on" : "") + '" data-proj-skill="' + esc(s.name) + '" data-on="' + (on ? 1 : 0) + '">' + (on ? "On" : "Off") + "</button></div></div>";
-            }).join("");
-            const hooks = d.hooks ? '<span class="tag">installed</span>' : (d.isGitRepo ? '<button type="button" class="toggle on" data-proj-act="hooks">Install git hooks</button>' : '<span class="tag">not a git repo</span>');
-            const gate = d.gate
-                ? '<span class="tag">initialized</span> <button type="button" class="toggle" data-proj-act="gate-eject">Eject</button>'
-                : '<button type="button" class="toggle on" data-proj-act="gate-init">Initialize gate</button>';
-            el.style.display = "";
-            el.innerHTML =
-                '<div class="panel-head" style="display:flex;justify-content:space-between;align-items:center"><h2>' + esc(d.label) + '</h2><button type="button" class="iconbtn" data-proj-close title="Close" aria-label="Close">x</button></div>'
-                + '<div class="set-hint" style="margin-bottom:10px">' + esc(d.path) + " &middot; " + agentsLine + "</div>"
-                + '<div class="set-cat-h">Setup</div><div class="set-grid">'
-                + '<div class="set-row"><div class="set-meta"><div class="set-name">Git hooks</div><div class="set-hint">commit secret guard for this repo</div></div><div class="set-ctl">' + hooks + "</div></div>"
-                + '<div class="set-row"><div class="set-meta"><div class="set-name">AI quality gate</div><div class="set-hint">validate changes through the gate pipeline before push (needs the gate feature enabled)</div></div><div class="set-ctl">' + gate + "</div></div></div>"
-                + '<div class="set-cat-h" style="margin-top:14px">Project config</div><div class="set-grid">' + (cfg || '<div class="empty" style="padding:8px 0">No project settings.</div>') + "</div>"
-                + '<div class="set-cat-h" style="margin-top:14px">Skills</div><div class="set-grid">' + (skills || '<div class="empty" style="padding:8px 0">No skills.</div>') + "</div>";
-        }
-        async function loadProjects() {
-            try { renderProjectList(((await (await fetch("/api/projects", { cache: "no-store" })).json()).projects) || []); }
-            catch { $("projList").innerHTML = '<div class="empty" style="padding:12px 0">Projects unavailable.</div>'; }
-        }
-        async function openProject(path) {
-            setNote("projNote", "Loading...");
-            try {
-                const d = await (await fetch("/api/projects/detail?path=" + encodeURIComponent(path), { cache: "no-store" })).json();
-                renderProjectDetail(d);
-                if (!d.error) setNote("projNote", "");
-            } catch { setNote("projNote", "Could not load the project.", "err"); }
+            }).join("") || '<div class="empty" style="padding:8px 0">No skills.</div>';
+            el.innerHTML = '<div class="scope-banner">Skills for <b>' + esc(d.label) + "</b> &middot; deploy or remove for this project</div>"
+                + '<div class="panel"><div class="set-grid">' + rows + "</div></div>";
         }
         async function projAction(payload, confirmMsg) {
-            if (!projOpen) return;
-            if (confirmMsg && !(await askConfirm("Confirm", confirmMsg, true))) return;
-            setNote("projNote", "Working...");
+            if (!isProjectScope()) return;
+            const danger = payload.op === "gate" || payload.op === "hooks";
+            if (confirmMsg && !(await askConfirm("Confirm", confirmMsg, danger))) return;
             try {
-                const out = await (await fetch("/api/projects/action", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: projOpen, ...payload }) })).json();
-                if (out.detail) renderProjectDetail(out.detail);
-                setNote("projNote", out.note || (out.ok ? "Done." : (out.error || "Action failed.")), out.ok ? "ok" : "err");
-                loadProjects();
-            } catch { setNote("projNote", "Could not reach the server.", "err"); }
+                const out = await (await fetch("/api/projects/action", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: currentScope, ...payload }) })).json();
+                if (!out.ok) setNote(activeView === "skills" ? "skillsNote" : "settingsNote", out.error || "Action failed.", "err");
+                else if (out.note) setNote(activeView === "skills" ? "skillsNote" : "settingsNote", out.note, "ok");
+                if (activeView === "skills") loadProjectSkills(); else loadProjectSettings();
+                loadProjectsList(); // refresh selector badges
+            } catch { setNote(activeView === "skills" ? "skillsNote" : "settingsNote", "Could not reach the server.", "err"); }
         }
-        async function addProjectUI() {
-            const path = $("projPath").value.trim();
-            if (!path) { setNote("projNote", "Enter a path.", "err"); return; }
-            const label = $("projLabel").value.trim();
-            try {
-                const out = await (await fetch("/api/projects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ op: "add", path, label }) })).json();
-                if (out.ok) { $("projPath").value = ""; $("projLabel").value = ""; setNote("projNote", "Added.", "ok"); renderProjectList(out.projects); }
-                else setNote("projNote", out.error || "Could not add.", "err");
-            } catch { setNote("projNote", "Could not reach the server.", "err"); }
+        async function forgetProject() {
+            if (!isProjectScope()) return;
+            if (!(await askConfirm("Forget project", "Stop managing " + scopeLabel() + "? Its files are not touched.", false))) return;
+            const path = currentScope;
+            try { await fetch("/api/projects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ op: "remove", path }) }); } catch { /* */ }
+            currentScope = "global"; try { localStorage.setItem("enigmaScope", "global"); } catch { /* */ }
+            await loadProjectsList();
+            location.hash = "#/settings"; route();
         }
-        function wireProjects() {
-            $("projAdd").addEventListener("click", addProjectUI);
-            $("projRefresh").addEventListener("click", loadProjects);
-            $("projPath").addEventListener("keydown", (e) => { if (e.key === "Enter") addProjectUI(); });
-            $("projList").addEventListener("click", async (e) => {
-                const open = e.target.closest("[data-proj-open]"), rem = e.target.closest("[data-proj-remove]");
-                if (open) { openProject(open.dataset.projOpen); return; }
-                if (rem) {
-                    const path = rem.dataset.projRemove;
-                    if (!(await askConfirm("Remove project", "Stop managing " + path + "? (its files are not touched)", false))) return;
-                    try { const out = await (await fetch("/api/projects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ op: "remove", path }) })).json(); renderProjectList(out.projects || []); if (projOpen === path) { $("projDetail").style.display = "none"; projOpen = null; } }
-                    catch { setNote("projNote", "Could not reach the server.", "err"); }
-                }
-            });
-            $("projDetail").addEventListener("click", (e) => {
-                if (e.target.closest("[data-proj-close]")) { $("projDetail").style.display = "none"; projOpen = null; return; }
-                const skill = e.target.closest("[data-proj-skill]");
-                if (skill) { projAction({ op: "skill", name: skill.dataset.projSkill, on: skill.dataset.on !== "1" }); return; }
-                const cfgBool = e.target.closest("[data-proj-cfg-bool]");
-                if (cfgBool) { projAction({ op: "config-set", key: cfgBool.dataset.projCfgBool, value: cfgBool.dataset.on !== "1" }); return; }
-                const reset = e.target.closest("[data-proj-cfg-reset]");
-                if (reset) { projAction({ op: "config-unset", key: reset.dataset.projCfgReset }); return; }
-                const act = e.target.closest("[data-proj-act]");
-                if (act) {
-                    const a = act.dataset.projAct;
-                    if (a === "hooks") projAction({ op: "hooks" }, "Install enigma git hooks in this repo?");
-                    else if (a === "gate-init") projAction({ op: "gate", gateOp: "init" }, "Initialize the AI quality gate for this project?");
-                    else if (a === "gate-eject") projAction({ op: "gate", gateOp: "eject" }, "Eject the gate from this project?");
-                }
-            });
-            $("projDetail").addEventListener("change", (e) => {
-                const sel = e.target.closest("select[data-proj-cfg]");
-                if (sel) projAction({ op: "config-set", key: sel.dataset.projCfg, value: sel.value });
-            });
+        function onProjectControlClick(e) {
+            if (!isProjectScope()) return;
+            const sk = e.target.closest("[data-proj-skill]");
+            if (sk) { projAction({ op: "skill", name: sk.dataset.projSkill, on: sk.dataset.on !== "1" }); return; }
+            const cb = e.target.closest("[data-proj-cfg-bool]");
+            if (cb) { projAction({ op: "config-set", key: cb.dataset.projCfgBool, value: cb.dataset.on !== "1" }); return; }
+            const rs = e.target.closest("[data-proj-cfg-reset]");
+            if (rs) { projAction({ op: "config-unset", key: rs.dataset.projCfgReset }); return; }
+            if (e.target.closest("[data-proj-forget]")) { forgetProject(); return; }
+            const act = e.target.closest("[data-proj-act]");
+            if (act) {
+                const a = act.dataset.projAct;
+                if (a === "hooks") projAction({ op: "hooks" }, "Install enigma git hooks in this repo?");
+                else if (a === "gate-init") projAction({ op: "gate", gateOp: "init" }, "Initialize the AI quality gate for this project?");
+                else if (a === "gate-eject") projAction({ op: "gate", gateOp: "eject" }, "Eject the gate from this project?");
+            }
+        }
+        function onProjectControlChange(e) {
+            if (!isProjectScope()) return;
+            const sel = e.target.closest("select[data-proj-cfg]");
+            if (sel) projAction({ op: "config-set", key: sel.dataset.projCfg, value: sel.value });
         }
 
         initChart();
@@ -3308,7 +3342,7 @@ export {
         wireAccounts();
         wireUsage();
         wireResources();
-        wireProjects();
+        wireScope();
         $("cfgExport").addEventListener("click", exportConfig);
         $("cfgImport").addEventListener("click", importConfig);
         $("updateBtn").addEventListener("click", runUpdate);
@@ -3322,6 +3356,7 @@ export {
             finally { b.classList.remove("spinning"); }
         });
         window.addEventListener("hashchange", route);
+        loadProjectsList().then(route);
         route();
     </script>
 </body>
