@@ -59,6 +59,15 @@ export const PROMPT_SECRET_MODES: readonly PromptSecretMode[] = ["redact", "reje
 export type SkillUpdatePolicy = "overwrite" | "keep";
 export const SKILL_UPDATE_POLICIES: readonly SkillUpdatePolicy[] = ["overwrite", "keep"];
 
+/**
+ * LLM provider used to curate recall memory. "claude-local" reuses the local Claude Code
+ * login (no API key). "anthropic" uses an Anthropic API key. "openai" targets any
+ * OpenAI-compatible /chat/completions endpoint (OpenAI, OpenRouter, Groq, Gemini's compat
+ * endpoint, local Ollama/LM Studio) via recallApiBase + recallApiKey.
+ */
+export type RecallProvider = "claude-local" | "anthropic" | "openai";
+export const RECALL_PROVIDERS: readonly RecallProvider[] = ["claude-local", "anthropic", "openai"];
+
 export interface EnigmaConfig {
     commitEmoji: boolean;
     updateNotifier: boolean;
@@ -91,8 +100,16 @@ export interface EnigmaConfig {
     usageStats: boolean;
     /** Build a local session-memory store from transcripts (recall), searchable + MCP-exposed (opt-in). */
     recall: boolean;
-    /** Curate/generate recall observations with an LLM via your local Claude login (default on; degrades to the deterministic heuristic with no login). */
+    /** Curate/generate recall observations with an LLM (default on; degrades to the deterministic heuristic with no provider creds). */
     recallLlm: boolean;
+    /** Which LLM provider curates recall memory (claude-local | anthropic | openai-compatible). */
+    recallProvider: RecallProvider;
+    /** Model id for recall curation; empty = the provider's default. */
+    recallModel: string;
+    /** Base URL for the anthropic/openai-compatible provider; empty = the provider's default. */
+    recallApiBase: string;
+    /** API key for the anthropic/openai provider; empty = none. ENIGMA_RECALL_API_KEY overrides it and is preferred (kept out of config files). */
+    recallApiKey: string;
     /** Experimental: route `enigma claude` through a local measuring proxy (opt-in, default off, Claude Code only). */
     proxy: boolean;
     /**
@@ -188,7 +205,7 @@ export interface EnigmaConfig {
  */
 export const CONFIG_DEFAULTS: EnigmaConfig = {
     commitEmoji: true, updateNotifier: true, fullscreen: true, parallelSubagents: false, outputStyle: "off", minimalCode: "full",
-    autoSync: true, remoteSkills: true, skillUpdatePolicy: "overwrite", permissionBypass: true, autoLint: false, compress: false, gate: false, dashboard: "off", tokenPrice: 0, tokenSpeed: 0, usageStats: false, recall: false, recallLlm: true, proxy: false, usageApi: false, promptSecretGuard: false, promptSecretMode: "redact",
+    autoSync: true, remoteSkills: true, skillUpdatePolicy: "overwrite", permissionBypass: true, autoLint: false, compress: false, gate: false, dashboard: "off", tokenPrice: 0, tokenSpeed: 0, usageStats: false, recall: false, recallLlm: true, recallProvider: "claude-local", recallModel: "", recallApiBase: "", recallApiKey: "", proxy: false, usageApi: false, promptSecretGuard: false, promptSecretMode: "redact",
     planSessionLimit: 0, planWeeklyLimit: 0, planWeeklySonnetLimit: 0, planWeeklyOpusLimit: 0, planWeeklyReset: "mon 00:00",
     dashboardLive: true, dashboardPort: 0, toolPaths: {}, bypassDisabled: [], discardedSkills: [], skillAgentsOff: {},
 };

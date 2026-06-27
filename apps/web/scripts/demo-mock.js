@@ -177,6 +177,7 @@
         stats: { observations: 128, summaries: 22, sessions: 22, projects: 3, byType: { change: 41, discovery: 33, feature: 28, bugfix: 14, refactor: 8, decision: 3, security: 1 }, dbBytes: 196608, lastObservationAt: Date.now() },
         lastSync: Date.now() - 3600000,
         projects: ["enigma", "ai-gateway", "cerberus"],
+        provider: { provider: "claude-local", model: "", base: "", hasKey: false, keyFromEnv: false, llm: true, providers: ["claude-local", "anthropic", "openai"] },
         query: "",
         items: [
             { id: 128, type: "feature", title: "Add recall session-memory store", project: "enigma", source: "claude", files: ["src/recall/db.ts", "src/recall/store.ts"], filesRead: ["src/usage.ts"], facts: ["Modified 2 files", "Added FTS5 + vectors"], concepts: ["recall", "sqlite"], narrative: "Wired a bun:sqlite + FTS5 store with a native vector half for hybrid search.", createdAt: Date.now() - 3600000 },

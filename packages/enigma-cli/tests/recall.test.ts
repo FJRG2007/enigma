@@ -188,3 +188,16 @@ test("LLM enrichment is gated by the recall-llm setting; the timeline MCP tool a
     const tools = (handleMcpRequest({ id: 9, method: "tools/list" }, "1.0")!.result as { tools: { name: string }[] }).tools.map((t) => t.name);
     expect(tools).toContain("enigma_recall_timeline");
 });
+
+test("recall provider is configurable and the API key never reaches the view", async () => {
+    const { applyRecallAction } = await import("../src/dashboard-recall");
+    setEnigmaValue("recall", true, "global");
+    const fakeKey = "provkey-testonly-not-a-real-secret-123";
+    const r = applyRecallAction("set-provider", { provider: "openai", model: "m1", base: "https://b.example/v1", key: fakeKey });
+    expect(r.ok).toBe(true);
+    expect(r.view!.provider.provider).toBe("openai");
+    expect(r.view!.provider.model).toBe("m1");
+    expect(r.view!.provider.hasKey).toBe(true);
+    expect(JSON.stringify(r.view)).not.toContain(fakeKey); // the key value is never serialized back
+    expect(applyRecallAction("set-provider", { provider: "nope" }).ok).toBe(false); // unknown provider rejected
+});

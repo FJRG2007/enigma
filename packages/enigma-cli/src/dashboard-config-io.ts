@@ -42,6 +42,16 @@ function globalConfigPath(): string {
     return join(homedir(), CONFIG_FILE);
 }
 
+/** Config keys that hold a secret and must never be exported. */
+const SECRET_CONFIG_KEYS = ["recallApiKey"];
+
+/** Drop secret keys from a config object before it leaves the machine. */
+function stripSecrets(config: Partial<EnigmaConfig>): Partial<EnigmaConfig> {
+    const out = { ...config };
+    for (const k of SECRET_CONFIG_KEYS) delete (out as Record<string, unknown>)[k];
+    return out;
+}
+
 /** Read the user's explicit global .enigma.json (not the merged effective config). */
 function readGlobalConfigFile(): Partial<EnigmaConfig> {
     try { return JSON.parse(readFileSync(globalConfigPath(), "utf8")) as Partial<EnigmaConfig>; } catch { return {}; }
@@ -62,7 +72,7 @@ export function exportBundle(): ConfigBundle {
         kind: BUNDLE_KIND,
         version: BUNDLE_VERSION,
         exportedAt: Date.now(),
-        config: readGlobalConfigFile(),
+        config: stripSecrets(readGlobalConfigFile()),
         guard: readGlobalGuard() as unknown as Record<string, unknown>,
         accounts: { tools, profiles: { active: getActiveProfile()?.name ?? null, items } },
     };
@@ -70,10 +80,12 @@ export function exportBundle(): ConfigBundle {
 
 export interface ImportResult { ok: boolean; error?: string; applied: string[]; skipped: string[]; }
 
-/** Allowed config keys = the settings registry + the numeric knobs outside it. */
+/** Allowed config keys = the settings registry + the numeric/string knobs outside it (no secrets). */
 const NUMERIC_KEYS = new Set(["tokenPrice", "tokenSpeed", "dashboardPort"]);
+const STRING_KEYS = new Set(["recallProvider", "recallModel", "recallApiBase"]);
 function isImportableConfigKey(key: string): boolean {
-    return NUMERIC_KEYS.has(key) || ALL_SETTINGS.some((s) => s.key.replace(/-/g, "") === key.toLowerCase());
+    if (SECRET_CONFIG_KEYS.includes(key)) return false;
+    return NUMERIC_KEYS.has(key) || STRING_KEYS.has(key) || ALL_SETTINGS.some((s) => s.key.replace(/-/g, "") === key.toLowerCase());
 }
 
 /**

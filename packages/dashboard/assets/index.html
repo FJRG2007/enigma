@@ -708,6 +708,20 @@
         </div>
         <div id="recallNote" class="set-note"></div>
         <div id="recallBody"><div class="empty" style="padding:12px 0">Loading...</div></div>
+        <div id="recallProviderPanel" class="panel" style="display:none">
+            <div class="set-cat-h">Memory provider</div>
+            <div class="set-hint" style="padding:4px 0">Which LLM curates your memory (keeps only what's worth remembering). <code>claude-local</code> uses your Claude Code login - no key. For another provider, pick it and set the model/base/key; the key can also come from <code>ENIGMA_RECALL_API_KEY</code>.</div>
+            <div class="set-row"><div class="set-meta"><div class="set-name">LLM curation</div><div class="set-hint">off = deterministic heuristic, no network</div></div><div class="set-ctl"><button id="recallLlmBtn" type="button" class="toggle">...</button></div></div>
+            <div class="ladd" style="gap:8px;flex-wrap:wrap;margin-top:8px">
+                <select id="recallProv" class="linput" style="max-width:160px"></select>
+                <input id="recallModel" class="linput" placeholder="model (provider default)" style="flex:1;min-width:160px">
+            </div>
+            <div id="recallKeyRow" class="ladd" style="gap:8px;flex-wrap:wrap;margin-top:8px">
+                <input id="recallBase" class="linput" placeholder="API base URL (provider default)" style="flex:1;min-width:200px">
+                <input id="recallKey" class="linput" type="password" placeholder="API key" style="flex:1;min-width:160px">
+            </div>
+            <div style="margin-top:8px"><button id="recallProvSave" type="button" class="toggle on">Save provider</button></div>
+        </div>
         <div id="recallSearch" class="panel" style="display:none">
             <div class="set-cat-h">Search</div>
             <div class="ladd" style="gap:8px;flex-wrap:wrap">
@@ -3347,14 +3361,14 @@ export {
             v = v || {};
             if (!v.available) {
                 $("recallBody").innerHTML = '<div class="panel"><div class="empty" style="padding:16px 0">Recall needs the enigma binary - open the dashboard via the enigma app.</div></div>';
-                $("recallSearch").style.display = "none"; $("recallList").innerHTML = ""; return;
+                $("recallSearch").style.display = "none"; $("recallProviderPanel").style.display = "none"; $("recallList").innerHTML = ""; return;
             }
             if (!v.enabled) {
                 $("recallBody").innerHTML = '<div class="panel"><div class="set-cat-h">Session memory is off</div>'
                     + '<div class="set-hint" style="padding:8px 0">Build a searchable memory of your coding sessions from your own transcripts.</div>'
                     + '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><button type="button" class="toggle" data-recall-on="1">Enable recall</button>'
                     + '<span class="set-hint">or run <code>enigma config recall on</code></span></div></div>';
-                $("recallSearch").style.display = "none"; $("recallList").innerHTML = ""; return;
+                $("recallSearch").style.display = "none"; $("recallProviderPanel").style.display = "none"; $("recallList").innerHTML = ""; return;
             }
             const s = v.stats || {};
             const types = Object.entries(s.byType || {}).map(([t, n]) => '<span class="tag">' + esc(t) + " " + n + "</span>").join(" ");
@@ -3373,7 +3387,26 @@ export {
                 $("recallProject").value = keep;
                 recallProjSig = sig;
             }
+            renderRecallProvider(v.provider);
             renderRecallList(v.items);
+        }
+        let recallProvSig = "";
+        function renderRecallProvider(p) {
+            if (!p) { $("recallProviderPanel").style.display = "none"; return; }
+            $("recallProviderPanel").style.display = "";
+            const sig = (p.providers || []).join("|");
+            if (sig !== recallProvSig) { $("recallProv").innerHTML = (p.providers || []).map((x) => '<option value="' + x + '">' + x + "</option>").join(""); recallProvSig = sig; }
+            $("recallProv").value = p.provider;
+            $("recallModel").value = p.model || "";
+            $("recallBase").value = p.base || "";
+            $("recallKey").placeholder = p.keyFromEnv ? "set via ENIGMA_RECALL_API_KEY" : (p.hasKey ? "set - leave blank to keep" : "API key");
+            $("recallKey").disabled = !!p.keyFromEnv;
+            // claude-local needs no base/key; hide that row for it.
+            $("recallKeyRow").style.display = p.provider === "claude-local" ? "none" : "";
+            const llmBtn = $("recallLlmBtn");
+            llmBtn.textContent = p.llm ? "on" : "off";
+            llmBtn.classList.toggle("on", !!p.llm);
+            llmBtn.dataset.on = p.llm ? "1" : "0";
         }
         let recallItemsById = {};
         function recallRowHtml(it, anchorId) {
@@ -3441,6 +3474,14 @@ export {
                 loadRecall();
             } catch { setNote("recallNote", "Could not reach the server.", "err"); }
         }
+        async function recallProviderPost(extra, msg) {
+            setNote("recallNote", msg || "Saving provider...");
+            try {
+                const out = await (await fetch("/api/recall", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.assign({ op: "set-provider" }, extra)) })).json();
+                if (out.view) renderRecall(out.view);
+                setNote("recallNote", out.ok ? "Saved." : (out.error || "Failed."), out.ok ? "ok" : "err");
+            } catch { setNote("recallNote", "Could not reach the server.", "err"); }
+        }
         function wireRecall() {
             $("recallSync").addEventListener("click", () => recallAction("sync"));
             $("recallClear").addEventListener("click", () => recallAction("clear", "Delete all stored session memory? This cannot be undone."));
@@ -3448,6 +3489,15 @@ export {
                 const t = e.target.closest("[data-recall-on]");
                 if (t) setRecallEnabled(t.dataset.recallOn === "1");
             });
+            // Provider panel: toggle which select fields apply; save provider; flip LLM curation.
+            $("recallProv").addEventListener("change", () => { $("recallKeyRow").style.display = $("recallProv").value === "claude-local" ? "none" : ""; });
+            $("recallProvSave").addEventListener("click", () => {
+                const e = { provider: $("recallProv").value, model: $("recallModel").value.trim(), base: $("recallBase").value.trim() };
+                if (!$("recallKey").disabled && $("recallKey").value) e.key = $("recallKey").value; // only send a key the user typed
+                recallProviderPost(e, "Saving provider...");
+                $("recallKey").value = "";
+            });
+            $("recallLlmBtn").addEventListener("click", () => recallProviderPost({ llm: $("recallLlmBtn").dataset.on !== "1" }, "Updating curation..."));
             let t; const deb = () => { clearTimeout(t); t = setTimeout(loadRecall, 250); };
             $("recallQ").addEventListener("input", deb);
             $("recallType").addEventListener("change", loadRecall);

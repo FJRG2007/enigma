@@ -5,7 +5,7 @@
  * <on|off>` it sets one option via the shared registry (settings-registry.ts).
  */
 
-import { readConfig, setEnigmaValue } from "./config";
+import { readConfig, setEnigmaValue, RECALL_PROVIDERS } from "./config";
 import { ALL_SETTINGS, CATEGORIES, parseBool, valueLabel } from "./settings-registry";
 import type { ApplyResult, Scope } from "./settings-registry";
 
@@ -120,9 +120,31 @@ export async function runConfigCli(positionals: string[], scope: Scope | null, i
         return 0;
     }
 
+    // Recall LLM provider knobs (string/enum), outside the boolean/choice registry like the numeric ones.
+    if (rawKey === "recall-provider") {
+        if (rawValue === undefined || !RECALL_PROVIDERS.includes(rawValue as (typeof RECALL_PROVIDERS)[number])) {
+            console.error(`Missing/invalid value for 'recall-provider'. Usage: enigma config recall-provider <${RECALL_PROVIDERS.join(" | ")}> [-g|-l]`);
+            return 1;
+        }
+        const target: Scope = scope || "global";
+        const path = setEnigmaValue("recallProvider", rawValue, target);
+        console.log(`Set recall-provider = ${rawValue} (${target})${path ? ` in ${path}` : ""}.`);
+        return 0;
+    }
+    const RECALL_STRINGS: Record<string, "recallModel" | "recallApiBase" | "recallApiKey"> = {
+        "recall-model": "recallModel", "recall-api-base": "recallApiBase", "recall-api-key": "recallApiKey",
+    };
+    if (rawKey in RECALL_STRINGS) {
+        const target: Scope = scope || "global";
+        const path = setEnigmaValue(RECALL_STRINGS[rawKey]!, rawValue ?? "", target);
+        const shown = rawKey === "recall-api-key" ? (rawValue ? "(set)" : "(cleared)") : (rawValue ?? "(cleared)");
+        console.log(`Set ${rawKey} = ${shown} (${target})${path ? ` in ${path}` : ""}.`);
+        return 0;
+    }
+
     const setting = ALL_SETTINGS.find((s) => s.key === rawKey);
     if (!setting) {
-        console.error(`Unknown config key: ${rawKey}. Known keys: ${ALL_SETTINGS.map((s) => s.key).join(", ")}, token-price, token-speed, dashboard-port, plan-session-limit, plan-weekly-limit, plan-weekly-sonnet-limit, plan-weekly-opus-limit, plan-weekly-reset.`);
+        console.error(`Unknown config key: ${rawKey}. Known keys: ${ALL_SETTINGS.map((s) => s.key).join(", ")}, token-price, token-speed, dashboard-port, plan-session-limit, plan-weekly-limit, plan-weekly-sonnet-limit, plan-weekly-opus-limit, plan-weekly-reset, recall-provider, recall-model, recall-api-base, recall-api-key.`);
         return 1;
     }
 
