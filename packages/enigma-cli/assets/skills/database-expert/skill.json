@@ -4,6 +4,6 @@
   "provider": "FJRG2007/enigma",
   "description": "Senior database architecture policy: query optimization, anti-duplication/normalization, scalability, and RGPD/GDPR encryption.",
   "updated": "2026-06-03T14:19:50+02:00",
-  "cliVersion": "1.22.2",
+  "cliVersion": "1.22.3",
   "sha": "2883bcecb3202683ae6f81b073c3d6a9cec9c55029e011bdd06ba7ac3537297e"
 }
