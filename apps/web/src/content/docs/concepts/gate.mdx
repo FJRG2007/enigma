@@ -1,0 +1,79 @@
+---
+title: Quality gate
+description: A local AI quality gate that validates a branch through a review, test, docs, lint, push, PR and CI pipeline in a disposable worktree before it reaches your push target.
+group: Concepts
+order: 33
+---
+import Cmd from "../../../components/Cmd.astro";
+import { docHref } from "../../../lib/url";
+
+The quality gate puts an AI-driven validation pipeline in front of your real remote. Instead of pushing straight to `origin`, you push through the gate: it spins up a **disposable worktree**, runs the pipeline, and only forwards the branch to your push target - and opens a clean PR - once every check passes. Your own checkout is never touched.
+
+It is **experimental and off by default**. Nothing happens, and the `/gate` command is not deployed to your agents, until you opt in.
+
+## How it works
+
+```text
+        your branch
+            │  git push gate   (or /gate, or enigma gate)
+            ▼
+   ┌──────────────────────────────────────────────────────────┐
+   │  disposable worktree — your checkout stays untouched       │
+   │  intent → rebase → review → test → docs → lint             │
+   │        → push → PR → CI                                     │
+   └──────────────────────────────────────────────────────────┘
+            │  every check green
+            ▼
+        clean PR, opened for you
+```
+
+Each step either passes on its own or stops with a **finding** for you to act on:
+
+- **`auto-fix`** - mechanical, low-risk. Authorize it and the pipeline applies the fix and re-reviews.
+- **`no-op`** - informational; nothing to do.
+- **`ask-user`** - a judgment call only you can make. The pipeline stops and escalates it.
+
+Safe, mechanical fixes are applied automatically; anything that touches your intent is escalated for you to **approve**, **fix**, or **skip**. Nothing reaches the configured push target until every check is green.
+
+## Enable it
+
+The gate is opt-in. Turn it on, then initialize it in a repo:
+
+<Cmd name="enigma config gate on" ex={["enigma config gate on", "enigma gate init"]}>
+`config gate on` enables the feature and makes the `/gate` command available to your agents. `enigma gate init` sets up the gate in the current repo: a disposable bare repo that fronts your real remote, a post-receive hook, and a git remote named `gate`.
+</Cmd>
+
+The repo needs an `origin` remote (the gate routes PRs to it), and your work must be **committed on a feature branch** - the gate validates committed history, not the default branch.
+
+## Three ways to trigger it
+
+Every change runs through the same pipeline. Pick the entry point that fits how you are working:
+
+- **`git push gate <branch>`** - the explicit Git path. Push your committed branch to the `gate` remote instead of `origin`.
+- **`enigma gate`** - the run overview. Inspect the active run, resume it, or start one.
+- **`/gate`** - the agent skill. Tell your coding agent to do a task and gate it with `/gate <task>`, or use bare `/gate` to validate work that is already committed. It drives the pipeline, applies the safe fixes, and stops to ask you about anything that needs a human call.
+
+## Acting on findings
+
+When the pipeline parks at a gate, read its findings and respond:
+
+```bash
+enigma gate axi status                       # where the run is parked
+enigma gate axi respond --action approve     # accept the gate
+enigma gate axi respond --action fix --findings <ids>
+enigma gate axi respond --action skip
+```
+
+While a run is active the pipeline owns the findings and the fixes - decide and respond rather than editing the code yourself. A run ends with one outcome:
+
+- **`checks-passed`** - validated and CI green; the PR is open for you to review and merge.
+- **`passed`** - cleared the gate and the PR was merged or closed.
+- **`failed` / `cancelled`** - read the output, fix what it points at, commit on the same branch, and run it again.
+
+## Commands
+
+<Cmd name="enigma gate <init|status|runs|rerun|doctor|eject|daemon|axi>" ex={["enigma gate init", "enigma gate status", "enigma gate doctor", "enigma gate eject"]}>
+`init` sets up (or repairs) the gate; `status`/`runs` inspect runs; `rerun` re-runs the current branch; `doctor` diagnoses a misbehaving gate; `eject` removes the gate from the repo; `axi` is the machine-readable interface the `/gate` skill drives. See <a href={docHref("reference/configuration")}>Configuration</a> for the `gate` toggle.
+</Cmd>
+
+The gate is experimental: its commands, findings and output may change between releases. Read the `help` lines in its output for the exact next step.

@@ -4,6 +4,7 @@ description: Every configuration key, its values and what it does.
 group: Reference
 order: 11
 ---
+import { docHref } from "../../../lib/url";
 
 ## Configuration
 
@@ -31,6 +32,7 @@ Settings live in `.enigma.json` (global `~/.enigma.json`, overridden by a repo-l
 <tr><td><code>usage-stats</code></td><td>on / off</td><td class="def">off</td><td class="w">Read your Claude Code transcripts for real token usage and cost.</td></tr>
 <tr><td><code>recall</code></td><td>on / off</td><td class="def">off</td><td class="w">Build a searchable local memory of your coding sessions from transcripts; exposed to agents over MCP.</td></tr>
 <tr><td><code>recall-llm</code></td><td>on / off</td><td class="def">off</td><td class="w">Enrich recall observations with an LLM via your local Claude login (Claude Code only; uses a little quota).</td></tr>
+<tr><td><code>gate</code></td><td>on / off</td><td class="def">off</td><td class="w">Enable the experimental AI quality gate (the <code>/gate</code> command and <code>enigma gate</code>). See <a href={docHref("concepts/gate")}>Quality gate</a>.</td></tr>
 <tr><td><code>gh-telemetry</code></td><td>enabled / disabled</td><td class="def">disabled</td><td class="w">GitHub CLI usage analytics.</td></tr>
 <tr><td><code>token-price</code></td><td>&lt;usd&gt;</td><td class="def">0</td><td class="w">$ per 1M input tokens for dashboard money estimates (0 = per-source defaults).</td></tr>
 <tr><td><code>token-speed</code></td><td>&lt;tok/s&gt;</td><td class="def">0</td><td class="w">Prefill speed for dashboard time estimates (0 = default).</td></tr>
