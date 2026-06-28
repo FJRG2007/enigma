@@ -23,16 +23,17 @@
  */
 
 import { homedir } from "node:os";
-import { spawn } from "node:child_process";
-import { fileURLToPath } from "node:url";
-import { createServer, type Server } from "node:http";
-import { basename, dirname, join } from "node:path";
-import { existsSync, mkdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
-import { readStats, readHistory, ccrCacheStats } from "./compress";
-import { dashboardAssetsDir, installedDashboardVersion, spawnDashboardPkgInstall } from "./dashboard-pkg";
-import { readUsageCached } from "./usage";
-import { readConfig, setEnigmaValue } from "./config";
 import { resolveBin } from "./util";
+import { fileURLToPath } from "node:url";
+import { readUsageCached } from "./usage";
+import { spawn } from "node:child_process";
+import { basename, dirname, join } from "node:path";
+import { createServer, type Server } from "node:http";
+import { readConfig, setEnigmaValue } from "./config";
+import { readStats, readHistory, ccrCacheStats } from "./compress";
+import { readUpdateStatusCached, spawnEnigmaUpdate } from "./dashboard-updates";
+import { existsSync, mkdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { dashboardAssetsDir, installedDashboardVersion, spawnDashboardPkgInstall } from "./dashboard-pkg";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -204,6 +205,10 @@ function statsPayload(version: string): string {
         // Version of the served UI bundle (@enigmax/dashboard). The page reloads when this
         // changes, so a background update to a newer bundle swaps the UI without a restart.
         ui: installedDashboardVersion(),
+        // Which installed enigma packages (CLI, dashboard, linter) have a newer npm release.
+        // Read from a 30-min-throttled cache so polling never hits the registry; drives the
+        // top-of-page "update available" alert.
+        updates: readUpdateStatusCached(version),
         priceOverride: cfg.tokenPrice, speedOverride: cfg.tokenSpeed,
         stats: readStats(), history: readHistory(), cache: ccrCacheStats(),
         usage: cfg.usageStats ? readUsageCached() : null,
@@ -285,10 +290,12 @@ function writeSetting(req: import("node:http").IncomingMessage, res: import("nod
  * the running version so the UI can point the user at `enigma update` for a CLI bump.
  */
 function serveUpdate(res: import("node:http").ServerResponse): void {
-    Promise.all([import("./skills"), import("./dashboard-pkg")])
-        .then(async ([skills, pkg]) => {
+    Promise.all([import("./skills"), import("./dashboard-pkg"), import("./lint")])
+        .then(async ([skills, pkg, lint]) => {
             const { updated, synced } = await skills.checkAndUpdateSkills();
             const uiChanged = pkg.refreshDashboardPkg();
+            // Keep the on-demand linter bundle current too (no-op when it is not installed).
+            if (lint.isLinterInstalled()) lint.refreshLinterPkg();
             // Only drop the asset cache when the bundle actually changed, so an unchanged
             // run does not force a needless page reload.
             if (uiChanged) { htmlCache = null; libCache = null; }
@@ -302,6 +309,20 @@ function serveUpdate(res: import("node:http").ServerResponse): void {
             res.end(JSON.stringify({ ok: true, changed, version: process.env.ENIGMA_VERSION || "", note }));
         })
         .catch(() => { res.writeHead(500, JSON_HDR); res.end('{"ok":false,"error":"update failed"}'); });
+}
+
+/**
+ * Run the full self-update behind the scenes: spawn a detached `enigma update` (reinstalls
+ * enigma-cli@latest and refreshes the dashboard/linter bundles). Returns immediately - the
+ * version alert clears on its own as the next polls see the new versions. The running server
+ * keeps its old version until the dashboard is restarted, so the note says so.
+ */
+function serveRunUpdate(res: import("node:http").ServerResponse): void {
+    const started = spawnEnigmaUpdate();
+    res.writeHead(started ? 200 : 500, JSON_HDR);
+    res.end(JSON.stringify(started
+        ? { ok: true, note: "Updating in the background. This can take a minute; restart the dashboard (enigma dashboard) once it finishes to load the new CLI version." }
+        : { ok: false, error: "could not start the update" }));
 }
 
 /**
@@ -659,6 +680,13 @@ function createDashboardServer(version: string): Server {
             if (method === "POST") { serveUpdate(res); return; }
             res.writeHead(405).end(); return;
         }
+        if (url === "/api/run-update") {
+            // Spawns a detached `enigma update` (full self-update incl. the CLI binary), so
+            // it is origin-guarded like the other write surfaces.
+            if (!isLocalRequest(req)) { res.writeHead(403, JSON_HDR); res.end('{"error":"forbidden"}'); return; }
+            if (method === "POST") { serveRunUpdate(res); return; }
+            res.writeHead(405).end(); return;
+        }
         if (url === "/api/fix-path") {
             if (!isLocalRequest(req)) { res.writeHead(403, JSON_HDR); res.end('{"error":"forbidden"}'); return; }
             if (method === "POST") { serveFixPath(req, res); return; }
@@ -803,13 +831,13 @@ function readDaemon(): DaemonRecord | null {
     try { return JSON.parse(readFileSync(daemonFile(), "utf8")) as DaemonRecord; } catch { return null; }
 }
 
-function writeDaemon(rec: DaemonRecord): void {
+export function writeDaemon(rec: DaemonRecord): void {
     const dir = dirname(daemonFile());
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
     writeFileSync(daemonFile(), JSON.stringify(rec, null, 2) + "\n");
 }
 
-function clearDaemon(): void {
+export function clearDaemon(): void {
     try { unlinkSync(daemonFile()); } catch { /* already gone */ }
 }
 

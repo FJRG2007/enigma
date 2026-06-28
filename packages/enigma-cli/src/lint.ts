@@ -26,7 +26,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { join, dirname, basename } from "node:path";
 import { isDir, readJson } from "./util";
 import { readConfig, setEnigmaToggle } from "./config";
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 
 /** Managed dir where @enigmax/linter is installed on demand. */
 export const LINT_INSTALL_DIR = process.env.ENIGMA_LINT_DIR || join(homedir(), ".enigma", "linter");
@@ -41,6 +41,14 @@ export function isAutoLintOn(): boolean {
 /** Whether the managed linter install is present. */
 export function isLinterInstalled(): boolean {
     return existsSync(join(LINT_INSTALL_DIR, "node_modules", "@enigmax", "linter", "package.json"));
+}
+
+/** The version of the installed linter bundle, or null when it is not installed/readable. */
+export function installedLinterVersion(): string | null {
+    try {
+        const pkg = JSON.parse(readFileSync(join(LINT_INSTALL_DIR, "node_modules", "@enigmax", "linter", "package.json"), "utf8"));
+        return typeof pkg.version === "string" ? pkg.version : null;
+    } catch { return null; }
 }
 
 /**

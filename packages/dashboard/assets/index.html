@@ -200,19 +200,92 @@
             background: var(--surface2); color: var(--text); border: 1px solid var(--border);
             border-radius: var(--radius-sm); padding: 6px 10px; font-size: 12px; font-family: var(--mono); cursor: pointer;
         }
-        .set-note { color: var(--accent); font-size: 12px; min-height: 16px; margin-top: 10px; }
-        /* A note must read as success vs. failure at a glance, not the same accent for both. */
+        /* Top-of-page "update available" banner: spans the content width, amber-tinted so it
+           reads as a notice without alarming. Hidden until the stats poll reports an update. */
+        .update-alert {
+            display: flex; align-items: center; gap: 12px;
+            max-width: 1040px; margin: 16px auto -8px; padding: 11px 16px;
+            background: rgba(215,135,95,0.10); border: 1px solid rgba(215,135,95,0.45);
+            border-radius: var(--radius-sm); color: var(--text); font-size: 13px;
+        }
+        .update-alert[hidden] { display: none; }
+        .update-alert .ua-ico { width: 18px; height: 18px; color: var(--accent); flex: none; }
+        .update-alert .ua-msg { flex: 1; }
+        .update-alert .ua-x { background: none; border: none; color: var(--muted); font-size: 20px; line-height: 1; cursor: pointer; padding: 0 4px; }
+        .update-alert .ua-x:hover { color: var(--text); }
+        /* Status notes now surface as toasts; the inline element stays for call compatibility but
+           collapses when empty so no leftover green/red line shows. */
+        .set-note { color: var(--accent); font-size: 12px; margin-top: 10px; }
+        .set-note:empty { display: none; margin: 0; }
         .set-note.ok { color: var(--good); }
         .set-note.err { color: var(--bad); }
-        /* Toasts: failures are easy to miss in a small inline note, so every error is also
-           raised here - fixed, coloured, and self-dismissing - so a failed action is unmissable. */
-        #toasts { position: fixed; right: 18px; bottom: 18px; display: flex; flex-direction: column; gap: 8px; z-index: 9999; max-width: 360px; }
-        .toast { padding: 11px 14px; border-radius: 10px; font-size: 13px; line-height: 1.35; color: var(--text);
-            background: var(--surface2); border: 1px solid var(--border); box-shadow: var(--shadow-1); animation: toastIn 0.18s ease-out; }
-        .toast.err { border-color: var(--bad); }
-        .toast.ok { border-color: var(--good); }
-        .toast.hide { opacity: 0; transition: opacity 0.3s; }
-        @keyframes toastIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+        /* Toasts (Sonner-style, ported to vanilla). Stacked bottom-right: the newest is in front,
+           older ones peek behind and fan out on hover. Rich-coloured per type, self-dismissing,
+           swipe- or click-to-close - so a result is never a cutre green line again. */
+        #toaster {
+            position: fixed; right: var(--t-offset); bottom: var(--t-offset); z-index: 999999;
+            width: var(--t-width); list-style: none; margin: 0; padding: 0; outline: none;
+            --t-offset: 24px; --t-width: 356px; --t-gap: 14px; --t-front: 0px;
+            font-family: var(--sans);
+            --t-bg: var(--surface); --t-border: var(--border); --t-text: var(--text);
+            --success-bg: hsl(150,38%,9%); --success-border: hsl(147,55%,18%); --success-text: hsl(150,80%,72%);
+            --error-bg: hsl(358,42%,12%); --error-border: hsl(357,55%,24%); --error-text: hsl(358,100%,82%);
+            --info-bg: hsl(215,45%,11%); --info-border: hsl(223,50%,24%); --info-text: hsl(216,87%,74%);
+            --warning-bg: hsl(40,55%,9%); --warning-border: hsl(40,55%,20%); --warning-text: hsl(46,87%,70%);
+            transition: transform .35s ease;
+        }
+        #toaster[data-expanded="true"] { transform: translateY(-6px); }
+        .etoast {
+            position: absolute; bottom: 0; right: 0; left: 0; width: 100%; box-sizing: border-box;
+            display: flex; align-items: center; gap: 10px; padding: 15px 16px;
+            background: var(--t-bg); border: 1px solid var(--t-border); color: var(--t-text);
+            border-radius: 12px; box-shadow: 0 6px 22px rgba(0,0,0,.34); font-size: 13px;
+            z-index: var(--z); opacity: 0; touch-action: none; overflow-wrap: anywhere;
+            transform: translateY(110%); transform-origin: bottom center;
+            transition: transform .42s cubic-bezier(.21,1.02,.73,1), opacity .35s, height .35s, box-shadow .2s;
+        }
+        .etoast[data-mounted="true"] { opacity: 1; transform: translateY(0); }
+        /* Collapsed (default): older toasts sit behind the front one, scaled + clipped to its height. */
+        .etoast[data-front="false"][data-expanded="false"] {
+            transform: translateY(calc(var(--toasts-before) * -14px)) scale(calc(1 - var(--toasts-before) * .06));
+            height: var(--t-front);
+        }
+        .etoast[data-front="false"][data-expanded="false"] > * { opacity: 0; }
+        /* Expanded (hover): fan out, each lifted by the summed height of the ones in front of it. */
+        .etoast[data-expanded="true"] { transform: translateY(calc(-1 * var(--offset))); }
+        .etoast[data-visible="false"] { opacity: 0; pointer-events: none; }
+        .etoast[data-removed="true"] { opacity: 0; }
+        .etoast[data-removed="true"][data-expanded="false"] { transform: translateY(150%) scale(.9); }
+        .etoast[data-removed="true"][data-expanded="true"] { transform: translateY(calc(-1 * var(--offset) + 110%)); }
+        .etoast[data-swiping="true"] { transition: opacity .2s; transform: translateX(var(--swipe-x, 0px)); }
+        .etoast > * { transition: opacity .35s; }
+        .etoast-icon { display: flex; align-items: center; flex-shrink: 0; width: 20px; height: 20px; }
+        .etoast-icon svg { width: 20px; height: 20px; display: block; }
+        .etoast-content { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
+        .etoast-title { font-weight: 600; line-height: 1.4; }
+        .etoast-desc { font-size: 12px; line-height: 1.45; color: var(--muted); }
+        .etoast-close {
+            position: absolute; top: 0; left: 0; transform: translate(-35%,-35%);
+            width: 20px; height: 20px; display: flex; align-items: center; justify-content: center;
+            padding: 0; border-radius: 50%; cursor: pointer; opacity: 0; z-index: 1;
+            background: var(--t-bg); border: 1px solid var(--t-border); color: var(--t-text);
+            transition: opacity .15s, background .2s, border-color .2s;
+        }
+        .etoast:hover .etoast-close, .etoast-close:focus-visible { opacity: 1; }
+        .etoast-close:hover { background: var(--surface2); }
+        .etoast[data-type="success"] { background: var(--success-bg); border-color: var(--success-border); color: var(--success-text); }
+        .etoast[data-type="error"]   { background: var(--error-bg);   border-color: var(--error-border);   color: var(--error-text); }
+        .etoast[data-type="info"]    { background: var(--info-bg);    border-color: var(--info-border);    color: var(--info-text); }
+        .etoast[data-type="warning"] { background: var(--warning-bg); border-color: var(--warning-border); color: var(--warning-text); }
+        .etoast[data-type="success"] .etoast-desc, .etoast[data-type="error"] .etoast-desc,
+        .etoast[data-type="info"] .etoast-desc, .etoast[data-type="warning"] .etoast-desc { color: inherit; opacity: .82; }
+        .etoast[data-type] .etoast-close { background: inherit; border-color: currentColor; color: inherit; }
+        .etoast-spin { width: 18px; height: 18px; animation: etoast-spin 0.9s linear infinite; transform-origin: center; }
+        @keyframes etoast-spin { to { transform: rotate(360deg); } }
+        @media (max-width: 600px) {
+            #toaster { right: 14px; left: 14px; width: auto; --t-width: 100%; }
+        }
+        @media (prefers-reduced-motion) { .etoast, .etoast > * { transition: opacity .2s !important; } }
         /* Settings: two-column grid of rows on wide screens, so a long config list stays compact. */
         .set-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 0 32px; }
         .set-grid .set-row { padding: 10px 0; }
@@ -245,6 +318,9 @@
         .btn-danger.icon { display: inline-flex; align-items: center; justify-content: center; padding: 6px 9px; }
         .btn-danger.icon:hover { color: var(--bad); border-color: var(--bad); }
         .btn-danger svg { width: 15px; height: 15px; display: block; }
+        /* Per-memory delete in the Recall list: kept to the right and revealed on row hover/focus. */
+        .recall-del { margin-left: auto; opacity: 0; transition: opacity .12s; }
+        .set-row:hover .recall-del, .recall-del:focus-visible { opacity: 1; }
         /* Per-agent skill toggles: one pill per app (the app's icon), green when the skill is on for it; the app name is the tooltip. */
         .set-agents { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
         .achip { display: inline-flex; align-items: center; justify-content: center; padding: 5px 8px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface2); color: var(--muted); cursor: pointer; text-decoration: none; transition: color .15s, background .15s, border-color .15s; }
@@ -394,6 +470,19 @@
         .dd-opt { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; font-size: 12px; color: var(--text); white-space: nowrap; cursor: pointer; }
         .dd-opt:hover, .dd-opt:focus { background: var(--surface2); outline: none; }
         .dd-opt.sel { color: var(--accent); }
+        .dd-btn:focus-visible { outline: none; border-color: var(--accent); }
+        /* Enhanced native <select>s (enhanceSelect): same look, but they hug their content instead
+           of the wider provider picker, and fill a flex slot when the original select did. */
+        .ddx { display: inline-flex; vertical-align: middle; }
+        .ddx .dd-btn { min-width: 120px; }
+        .ddx .dd-menu { max-height: 320px; overflow-y: auto; }
+        /* Native selects that stay native (inside modals) get a custom caret so they match the
+           styled dropdowns - no default OS chevron. */
+        select.linput, select.modal-input, select.scope-sel, select.choice {
+            -webkit-appearance: none; -moz-appearance: none; appearance: none;
+            background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='13' height='13' viewBox='0 0 24 24' fill='none' stroke='%23808a99' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
+            background-repeat: no-repeat; background-position: right 9px center; padding-right: 28px;
+        }
         /* Icon picker: clickable app cards (a native <select> can't render SVG in options). */
         .modal-picker { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
         .pick-card {
@@ -444,6 +533,13 @@
             </nav>
         </div>
     </header>
+
+    <div id="updateAlert" class="update-alert" hidden>
+        <svg class="ua-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-6.219-8.56"/><path d="M12 7v5l3 2"/></svg>
+        <span class="ua-msg" id="updateAlertMsg"></span>
+        <button type="button" id="updateAlertBtn" class="toggle on">Update now</button>
+        <button type="button" id="updateAlertDismiss" class="ua-x" title="Dismiss" aria-label="Dismiss">&times;</button>
+    </div>
 
     <main id="view-savings">
         <div class="grid">
@@ -1995,23 +2091,28 @@ export {
             try { await fetch("/api/plan", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key, value: Number(value) }) }); refreshAll(true); }
             catch { /* leave as-is */ }
         }
-        // Accessible icon dropdown (a native <select> can't render icons in its <option>s). The
-        // button shows the selected entry's icon + label; the listbox shows every entry with its
-        // icon. entries: [{ value, label, icon }]; getVal()/onPick(value) bind it to state.
-        function iconDropdown(rootId, entries, getVal, onPick) {
-            const root = $(rootId), btn = root.querySelector(".dd-btn"), menu = root.querySelector(".dd-menu");
+        // Shared dropdown core. Renders one styled listbox over a `.dd` root (button + menu) from a
+        // model: entries() -> [{ value, label, icon }], get() -> current value, set(value) -> commit.
+        // Icons are optional per entry, so the SAME component drives the icon pickers (provider,
+        // usage) AND every plain selector on the page (see enhanceSelect) - one look, one set of
+        // keyboard semantics, with or without logos.
+        function bindDropdown(root, model) {
+            const btn = root.querySelector(".dd-btn"), menu = root.querySelector(".dd-menu");
             const btnIc = btn.querySelector(".dd-ic"), btnLabel = btn.querySelector(".dd-label");
             const opts = () => [...menu.querySelectorAll(".dd-opt")];
+            const ic = (svg) => '<span class="dd-ic"' + (svg ? "" : ' style="display:none"') + ">" + (svg || "") + "</span>";
             const render = () => {
-                const cur = getVal(), e = entries.find((x) => x.value === cur) || entries[0];
-                btnIc.innerHTML = e.icon || ""; btnLabel.textContent = e.label;
+                const entries = model.entries(), cur = model.get();
+                const e = entries.find((x) => x.value === cur) || entries[0] || { label: "", icon: "" };
+                btnIc.innerHTML = e.icon || ""; btnIc.style.display = e.icon ? "" : "none";
+                btnLabel.textContent = e.label || "";
                 menu.innerHTML = entries.map((x) => '<li class="dd-opt' + (x.value === cur ? " sel" : "")
                     + '" role="option" tabindex="-1" data-val="' + esc(x.value) + '" aria-selected="' + (x.value === cur)
-                    + '"><span class="dd-ic">' + (x.icon || "") + "</span><span>" + esc(x.label) + "</span></li>").join("");
+                    + '">' + ic(x.icon) + "<span>" + esc(x.label) + "</span></li>").join("");
             };
             const close = () => { menu.hidden = true; btn.setAttribute("aria-expanded", "false"); };
-            const open = () => { menu.hidden = false; btn.setAttribute("aria-expanded", "true"); (menu.querySelector(".sel") || opts()[0]) && (menu.querySelector(".sel") || opts()[0]).focus(); };
-            const pick = (li) => { close(); btn.focus(); if (li && li.dataset.val) onPick(li.dataset.val); };
+            const open = () => { render(); menu.hidden = false; btn.setAttribute("aria-expanded", "true"); const f = menu.querySelector(".sel") || opts()[0]; if (f) f.focus(); };
+            const pick = (li) => { close(); btn.focus(); if (li && li.dataset.val != null) { model.set(li.dataset.val); render(); } };
             btn.addEventListener("click", (e) => { e.stopPropagation(); menu.hidden ? open() : close(); });
             btn.addEventListener("keydown", (e) => { if (e.key === "ArrowDown" || e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } });
             menu.addEventListener("click", (e) => pick(e.target.closest(".dd-opt")));
@@ -2021,11 +2122,65 @@ export {
                 else if (e.key === "ArrowDown") { e.preventDefault(); (list[i + 1] || list[0]).focus(); }
                 else if (e.key === "ArrowUp") { e.preventDefault(); (list[i - 1] || list[list.length - 1]).focus(); }
                 else if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(document.activeElement); }
+                else if (e.key === "Tab") close();
             });
-            document.addEventListener("click", close);
             render();
             return { render };
         }
+        // One global outside-click closes any open dropdown - cheaper and leak-free vs a per-instance
+        // listener (enhanceSelect can create/replace many over a session). A `.dd-btn` click stops
+        // propagation, so opening one never trips this.
+        document.addEventListener("click", () => {
+            document.querySelectorAll(".dd-menu:not([hidden])").forEach((m) => {
+                m.hidden = true;
+                const b = m.parentElement && m.parentElement.querySelector(".dd-btn");
+                if (b) b.setAttribute("aria-expanded", "false");
+            });
+        });
+        // entries: [{ value, label, icon }] bound to a pre-rendered `.dd` root by id.
+        function iconDropdown(rootId, entries, getVal, onPick) {
+            return bindDropdown($(rootId), { entries: () => entries, get: getVal, set: onPick });
+        }
+        // Markup for an enhanced dropdown's button + menu, matching the hand-written provider picker.
+        const DD_INNER = '<button type="button" class="dd-btn" aria-haspopup="listbox" aria-expanded="false"><span class="dd-ic"></span><span class="dd-label"></span><svg class="dd-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg></button><ul class="dd-menu" role="listbox" hidden></ul>';
+        // Progressive enhancement: replace a native <select> with the shared pretty dropdown while
+        // keeping the <select> itself as the source of truth (hidden). Its .value and `change`
+        // events are untouched - we set .value and dispatch a real `change` on pick - so every
+        // existing reader and delegated handler keeps working. Icons are opt-in via
+        // data-dd-icons="agent" (option value -> brand logo) or per-option data-icon="<key>".
+        function enhanceSelect(select) {
+            if (select.__dd || select.dataset.noDd != null) return;
+            if (select.closest(".modal-back")) return; // a popup menu inside an animated modal would clip; left native (still styled)
+            const iconMode = select.dataset.ddIcons || "";
+            const iconFor = (opt) => { const k = opt.dataset.icon || (iconMode === "agent" ? opt.value : ""); return k ? (agentSvg(k) || "") : ""; };
+            const root = document.createElement("span");
+            root.className = "dd ddx";
+            root.innerHTML = DD_INNER;
+            select.style.display = "none";
+            select.insertAdjacentElement("afterend", root);
+            const api = bindDropdown(root, {
+                entries: () => [...select.options].map((o) => ({ value: o.value, label: o.textContent, icon: iconFor(o) })),
+                get: () => select.value,
+                set: (v) => { if (v !== select.value) { select.value = v; select.dispatchEvent(new Event("change", { bubbles: true })); } api.render(); }
+            });
+            select.__dd = api;
+            // Re-sync the button when options are rebuilt (innerHTML) or the value changes.
+            new MutationObserver(() => api.render()).observe(select, { childList: true });
+            select.addEventListener("change", () => api.render());
+            return api;
+        }
+        // Push a programmatic `select.value = x` (no `change` event) into the enhanced dropdown.
+        const syncDD = (el) => { if (el && el.__dd) el.__dd.render(); };
+        function enhanceAll(root) { (root || document).querySelectorAll("select:not([data-no-dd])").forEach(enhanceSelect); }
+        // Any selector added later (settings rows, project config, account profiles...) is enhanced
+        // automatically, so there is nothing to wire per-view.
+        new MutationObserver((muts) => {
+            for (const m of muts) for (const n of m.addedNodes) {
+                if (n.nodeType !== 1) continue;
+                if (n.tagName === "SELECT") enhanceSelect(n);
+                else if (n.querySelectorAll) n.querySelectorAll("select:not([data-no-dd])").forEach(enhanceSelect);
+            }
+        }).observe(document.body, { childList: true, subtree: true });
         let providerDD = null;
         function wireUsage() {
             // The provider picker is a custom icon dropdown; the account one stays a native select.
@@ -2102,6 +2257,7 @@ export {
                     + names.map((n) => '<option value="' + esc(n) + '">' + esc(accountLabel(n)) + "</option>").join("");
             }
             sel.value = usageAccount;
+            syncDD(sel);
         }
 
         // Fill the panel from one scope: the whole report (isAll) or one account's sub-report.
@@ -2330,6 +2486,7 @@ export {
                 if (loadedUi === null) loadedUi = data.ui;
                 else if (data.ui !== loadedUi) { location.reload(); return; }
             }
+            renderUpdateAlert(data.updates);
             priceOverride = Number(data.priceOverride) || 0;
             speedOverride = Number(data.speedOverride) || 0;
             const s = data.stats || {};
@@ -2388,6 +2545,35 @@ export {
             }
         }
 
+        // --- package update alert --------------------------------------------------
+        // Server-side npm version check (CLI + dashboard + linter), surfaced in /api/stats and
+        // refreshed every poll. Dismiss is sticky only for the exact versions shown - a later
+        // release re-shows the banner. The "Update now" button runs `enigma update` behind the
+        // scenes; the alert then clears on its own as the next polls see the new versions.
+        let dismissedUpdateSig = "";
+        function renderUpdateAlert(u) {
+            const el = $("updateAlert");
+            if (!el) return;
+            const items = ((u && u.packages) || []).filter((p) => p.hasUpdate);
+            const sig = items.map((p) => p.name + "@" + p.latest).join(",");
+            if (!items.length || sig === dismissedUpdateSig) { el.hidden = true; return; }
+            const list = items.map((p) => esc(p.label) + " " + esc(p.installed) + " -> " + esc(p.latest)).join(", ");
+            $("updateAlertMsg").innerHTML = "<strong>Update available</strong> &nbsp;" + list;
+            el.dataset.sig = sig;
+            el.hidden = false;
+        }
+
+        async function runFullUpdate() {
+            const btn = $("updateAlertBtn");
+            if (btn) { btn.disabled = true; btn.textContent = "Updating..."; }
+            try {
+                const res = await fetch("/api/run-update", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+                const out = await res.json();
+                toast(out.note || (out.ok ? "Update started." : "Could not start the update."), out.ok ? "ok" : "err");
+            } catch { toast("Could not reach the server to update.", "err"); }
+            finally { if (btn) { btn.disabled = false; btn.textContent = "Update now"; } }
+        }
+
         // --- dashboard self-update -------------------------------------------------
         // Where the latest published dashboard version lives: the raw package.json on the
         // repo's main branch (no API, no auth, no rate limit). A repo rename 404s here and is
@@ -2435,24 +2621,153 @@ export {
         // --- settings subpage (mirrors the TUI registry over /api/settings) ---
         function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
 
-        // A self-dismissing notification so a failed action can't slip by unseen. Errors
-        // linger longer than confirmations; both auto-clear so they never pile up.
-        function toast(msg, kind) {
-            let wrap = $("toasts");
-            if (!wrap) { wrap = document.createElement("div"); wrap.id = "toasts"; document.body.appendChild(wrap); }
-            const el = document.createElement("div");
-            el.className = "toast " + (kind === "err" ? "err" : kind === "ok" ? "ok" : "");
-            el.setAttribute("role", kind === "err" ? "alert" : "status");
-            el.textContent = msg;
-            wrap.appendChild(el);
-            setTimeout(() => { el.classList.add("hide"); setTimeout(() => el.remove(), 320); }, kind === "err" ? 6000 : 3000);
+        // --- Toasts (vanilla port of Sonner) -------------------------------------------------
+        // A stacked, self-dismissing notification system: the newest sits in front, older ones
+        // peek behind and fan out on hover; rich-coloured per type; swipe- or click-to-close.
+        // API: toast(msg, opts) and toast.success/error/info/warning/loading/message/dismiss.
+        // opts: { description, duration, id }. A loading toast has Infinity duration; calling a
+        // type with the same id UPDATES it in place (loading -> success/error), so an async flow
+        // is a single morphing toast, not a pile.
+        const toast = (() => {
+            const ICONS = {
+                success: '<svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clip-rule="evenodd"/></svg>',
+                error: '<svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-5a.75.75 0 01.75.75v4.5a.75.75 0 01-1.5 0v-4.5A.75.75 0 0110 5zm0 10a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"/></svg>',
+                info: '<svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a.75.75 0 000 1.5h.253a.25.25 0 01.244.304l-.459 2.066A1.75 1.75 0 0010.747 15H11a.75.75 0 000-1.5h-.253a.25.25 0 01-.244-.304l.459-2.066A1.75 1.75 0 009.253 9H9z" clip-rule="evenodd"/></svg>',
+                warning: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M9.401 3.003c1.155-2 4.043-2 5.197 0l7.355 12.748c1.154 2-.29 4.5-2.599 4.5H4.645c-2.309 0-3.752-2.5-2.598-4.5L9.4 3.003zM12 8.25a.75.75 0 01.75.75v3.75a.75.75 0 01-1.5 0V9a.75.75 0 01.75-.75zm0 8.25a.75.75 0 100-1.5.75.75 0 000 1.5z" clip-rule="evenodd"/></svg>',
+                loading: '<svg class="etoast-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-6.219-8.56" opacity="0.85"/></svg>',
+                close: '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>'
+            };
+            const VISIBLE = 3, DURATION = { default: 4000, success: 4000, info: 4000, warning: 5000, error: 6000, loading: Infinity };
+            let list = null, counter = 1, expanded = false;
+            const items = []; // newest-first; { id, el, type, duration, remaining, startedAt, timer, removed }
+            const mount = () => { if (!list) { list = document.createElement("ol"); list.id = "toaster"; list.setAttribute("aria-live", "polite"); list.tabIndex = -1; document.body.appendChild(list); wireHover(); } return list; };
+            const wireHover = () => {
+                list.addEventListener("mouseenter", () => { expanded = true; list.dataset.expanded = "true"; pauseAll(); place(); });
+                list.addEventListener("mouseleave", () => { expanded = false; list.dataset.expanded = "false"; resumeAll(); place(); });
+            };
+            const front = () => items.find((t) => !t.removed);
+            const pause = (t) => { if (t.timer) { clearTimeout(t.timer); t.timer = null; t.remaining -= Date.now() - t.startedAt; } };
+            const resume = (t) => { if (t.duration === Infinity || t.removed || t.timer) return; t.startedAt = Date.now(); t.timer = setTimeout(() => dismiss(t.id), Math.max(0, t.remaining)); };
+            const pauseAll = () => items.forEach(pause);
+            const resumeAll = () => items.forEach(resume);
+            // Position every toast: front shows fully, the rest peek behind (collapsed) or fan out
+            // (expanded). --offset is the summed height of the live toasts in front of this one.
+            function place() {
+                let acc = 0, vi = 0;
+                for (const t of items) {
+                    if (t.removed) { t.el.style.setProperty("--z", "0"); continue; }
+                    // The front toast (and any toast while the stack is expanded) is never
+                    // height-clamped, so its offsetHeight is the true natural height - cache it.
+                    if (vi === 0 && !expanded) t.height = t.el.offsetHeight;
+                    if (vi === 0) list.style.setProperty("--t-front", (t.height || t.el.offsetHeight) + "px");
+                    t.el.dataset.front = vi === 0 ? "true" : "false";
+                    t.el.dataset.expanded = expanded ? "true" : "false";
+                    t.el.dataset.visible = vi < VISIBLE ? "true" : "false";
+                    t.el.style.setProperty("--toasts-before", String(vi));
+                    t.el.style.setProperty("--offset", acc + "px");
+                    t.el.style.setProperty("--z", String(1000 - vi));
+                    acc += (t.height || t.el.offsetHeight) + 14;
+                    vi++;
+                }
+            }
+            function dismiss(id) {
+                const t = items.find((x) => x.id === id);
+                if (!t || t.removed) return id;
+                t.removed = true; if (t.timer) clearTimeout(t.timer);
+                t.el.dataset.removed = "true"; t.el.dataset.expanded = expanded ? "true" : "false";
+                place();
+                setTimeout(() => { const i = items.indexOf(t); if (i !== -1) items.splice(i, 1); t.el.remove(); place(); }, 420);
+                return id;
+            }
+            function build(t, type, title, description) {
+                t.el.dataset.type = type;
+                t.el.setAttribute("role", type === "error" ? "alert" : "status");
+                const icon = ICONS[type] ? '<div class="etoast-icon">' + ICONS[type] + "</div>" : "";
+                t.el.innerHTML = icon
+                    + '<div class="etoast-content"><div class="etoast-title"></div>'
+                    + (description ? '<div class="etoast-desc"></div>' : "") + "</div>"
+                    + '<button type="button" class="etoast-close" aria-label="Close">' + ICONS.close + "</button>";
+                t.el.querySelector(".etoast-title").textContent = title == null ? "" : String(title);
+                if (description) t.el.querySelector(".etoast-desc").textContent = String(description);
+                t.el.querySelector(".etoast-close").addEventListener("click", (e) => { e.stopPropagation(); dismiss(t.id); });
+            }
+            // Horizontal swipe-to-dismiss (pointer drag), matching Sonner's feel.
+            function wireSwipe(t) {
+                let startX = null;
+                t.el.addEventListener("pointerdown", (e) => { if (e.target.closest(".etoast-close")) return; startX = e.clientX; t.el.setPointerCapture(e.pointerId); pause(t); });
+                t.el.addEventListener("pointermove", (e) => {
+                    if (startX == null) return;
+                    const dx = e.clientX - startX;
+                    t.el.dataset.swiping = "true"; t.el.style.setProperty("--swipe-x", dx + "px");
+                });
+                const end = (e) => {
+                    if (startX == null) return;
+                    const dx = e.clientX - startX; startX = null; t.el.dataset.swiping = "false";
+                    if (Math.abs(dx) > 80) dismiss(t.id);
+                    else { t.el.style.removeProperty("--swipe-x"); if (!expanded) resume(t); }
+                };
+                t.el.addEventListener("pointerup", end);
+                t.el.addEventListener("pointercancel", end);
+            }
+            function create(opts) {
+                const type = opts.type || "default";
+                const id = opts.id != null ? opts.id : counter++;
+                const duration = opts.duration != null ? opts.duration : DURATION[type];
+                const existing = items.find((x) => x.id === id && !x.removed);
+                if (existing) { // update in place (e.g. loading -> success)
+                    build(existing, type, opts.title, opts.description);
+                    existing.duration = duration; existing.remaining = duration; existing.startedAt = Date.now();
+                    if (existing.timer) { clearTimeout(existing.timer); existing.timer = null; }
+                    if (!expanded) resume(existing);
+                    place();
+                    return id;
+                }
+                mount();
+                const el = document.createElement("li");
+                el.className = "etoast"; el.tabIndex = 0;
+                const t = { id, el, type, duration, remaining: duration, startedAt: Date.now(), timer: null, removed: false };
+                build(t, type, opts.title, opts.description);
+                wireSwipe(t);
+                items.unshift(t);
+                list.prepend(el);
+                place();
+                requestAnimationFrame(() => { el.dataset.mounted = "true"; place(); if (!expanded) resume(t); });
+                return id;
+            }
+            // Back-compat: a string 2nd arg is the legacy kind ("ok"/"err"); an object is opts.
+            const KIND = { ok: "success", err: "error" };
+            const api = (msg, o) => create(typeof o === "string" ? { type: KIND[o] || "default", title: msg } : { ...o, type: "default", title: msg });
+            ["success", "error", "info", "warning", "loading", "message"].forEach((k) => {
+                api[k] = (msg, o) => create({ ...o, type: k === "message" ? "default" : k, title: msg });
+            });
+            api.dismiss = (id) => { if (id == null) items.slice().forEach((t) => dismiss(t.id)); else dismiss(id); return id; };
+            return api;
+        })();
+
+        // Bridge the old inline-note API onto toasts so every existing call site upgrades at once.
+        // A flow reuses ONE note target (e.g. "settingsNote") start to finish, so we key a single
+        // toast per target: a progress message ("Saving...") opens a loading toast, and the ok/err
+        // result morphs that same toast - no pile-up, no leftover green text. `restartNote`-style
+        // long messages split into title + description at the first sentence break.
+        const noteToastId = new Map();
+        function noteKey(el) { return typeof el === "string" ? el : (el && el.id) || "__note__"; }
+        function splitMsg(msg) {
+            msg = String(msg);
+            const m = msg.match(/^(.*?[.!])\s+(.+)$/s);
+            return m && m[1].length <= 64 ? { title: m[1], description: m[2] } : { title: msg };
         }
-        // Set a status note's text and ok/err styling in one place. Errors are also toasted
-        // (the inline note alone is easy to miss), so callers just call setNote(el, msg, "err").
+        // Drop-in replacement for the former setNote(el, msg, kind). `el` is ignored for display
+        // (kept for call compatibility); everything surfaces as a toast.
         function setNote(el, msg, kind) {
-            if (typeof el === "string") el = $(el);
-            if (el) { el.textContent = msg; el.classList.toggle("ok", kind === "ok"); el.classList.toggle("err", kind === "err"); }
-            if (kind === "err") toast(msg, "err");
+            const key = noteKey(el);
+            const prev = noteToastId.get(key);
+            if (msg == null || msg === "") { if (prev != null) { toast.dismiss(prev); noteToastId.delete(key); } return; }
+            const isProgress = !kind && /(\.\.\.|…)\s*$/.test(String(msg));
+            const type = kind === "ok" ? "success" : kind === "err" ? "error" : isProgress ? "loading" : "info";
+            const parts = splitMsg(msg);
+            const id = toast[type](parts.title, { id: prev, description: parts.description });
+            if (isProgress) noteToastId.set(key, id);
+            else noteToastId.delete(key);
         }
 
         // Capitalize a choice value for display ("on-demand" -> "On demand"), keeping the raw
@@ -2599,7 +2914,7 @@ export {
             const want = isBool ? (value === true || value === 1) : String(value);
             const prevBool = ctl.dataset.on === "1";
             const prevChoice = ctl.dataset.prev != null ? ctl.dataset.prev : ctl.value; // <select> already changed natively
-            const rollback = () => { if (isBool) applyBool(ctl, prevBool); else ctl.value = prevChoice; };
+            const rollback = () => { if (isBool) applyBool(ctl, prevBool); else { ctl.value = prevChoice; syncDD(ctl); } };
             if (isBool) applyBool(ctl, want);
             setNote(el, "Saving " + key + "...");
             try {
@@ -2608,7 +2923,7 @@ export {
                 if (!out.ok) { rollback(); setNote(el, "Could not change " + key + ": " + (out.error || "error"), "err"); return; }
                 const s = out.setting;
                 if (s && isBool) applyBool(ctl, s.value);
-                else if (s) { ctl.value = s.choice; ctl.dataset.prev = s.choice; }
+                else if (s) { ctl.value = s.choice; ctl.dataset.prev = s.choice; syncDD(ctl); }
                 if (s && (isBool ? s.value !== want : String(s.choice) !== want)) { setNote(el, key + " did not change (the write had no effect).", "err"); return; }
                 setNote(el, out.restartNote || ("Saved " + key + "."), "ok");
             } catch { rollback(); setNote(el, "Could not reach the server to change " + key + ".", "err"); }
@@ -3387,15 +3702,15 @@ export {
             if (!v.enabled) {
                 $("recallBody").innerHTML = '<div class="panel"><div class="set-cat-h">Session memory is off</div>'
                     + '<div class="set-hint" style="padding:8px 0">Build a searchable memory of your coding sessions from your own transcripts.</div>'
-                    + '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><button type="button" class="toggle" data-recall-on="1">Enable recall</button>'
-                    + '<span class="set-hint">or run <code>enigma config recall on</code></span></div></div>';
+                    + '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><button type="button" class="toggle" data-kind="bool" role="switch" aria-checked="false" data-recall-on="1" aria-label="Session memory" title="Turn session memory on">Enable recall</button>'
+                    + '<span class="set-hint">Turn on, or run <code>enigma config recall on</code></span></div></div>';
                 $("recallSearch").style.display = "none"; $("recallProviderPanel").style.display = "none"; $("recallAddPanel").style.display = "none"; $("recallList").innerHTML = ""; return;
             }
             const s = v.stats || {};
             const types = Object.entries(s.byType || {}).map(([t, n]) => '<span class="tag">' + esc(t) + " " + n + "</span>").join(" ");
             const last = v.lastSync ? "last sync " + new Date(v.lastSync).toLocaleString() : "not synced yet";
             $("recallBody").innerHTML = '<div class="panel"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><div class="set-cat-h" style="margin:0">Stored memory</div>'
-                + '<button type="button" class="toggle on" data-recall-on="0" title="Turn session memory off">Disable</button></div>'
+                + '<button type="button" class="toggle on" data-kind="bool" role="switch" aria-checked="true" data-recall-on="0" aria-label="Session memory" title="Turn session memory off">Disable</button></div>'
                 + '<div class="set-hint" style="padding:6px 0">' + (s.observations || 0) + " observations · " + (s.sessions || 0) + " sessions · "
                 + (s.projects || 0) + " projects · " + Math.round((s.dbBytes || 0) / 1024) + " KB · " + esc(last) + "</div>"
                 + (types ? '<div style="padding-top:6px">' + types + "</div>" : "") + "</div>";
@@ -3466,8 +3781,7 @@ export {
                 + facts
                 + (it.concepts && it.concepts.length ? '<div style="margin-top:6px">' + tags(it.concepts) + "</div>" : "")
                 + list("Modified", it.files) + list("Read", it.filesRead)
-                + '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="toggle" data-tl="' + it.id + '">Show timeline</button>'
-                + (it.id ? '<button type="button" class="btn-danger" data-del="' + it.id + '" title="Delete this memory">Delete</button>' : "") + "</div>"
+                + '<div style="margin-top:8px"><button type="button" class="toggle" data-tl="' + it.id + '">Show timeline</button></div>'
                 + '<div class="rtl" id="rtl-' + it.id + '"></div></div>';
         }
         function renderRecallList(items) {
@@ -3475,7 +3789,8 @@ export {
             if (!items || !items.length) { $("recallList").innerHTML = '<div class="empty" style="padding:16px 0">No memories yet - run a sync, or adjust your search.</div>'; return; }
             $("recallList").innerHTML = '<div class="panel">' + items.map((it) => {
                 if (it.id) recallItemsById[it.id] = it;
-                return '<div class="set-row" style="cursor:pointer" data-rid="' + (it.id || "") + '">' + recallRowHtml(it) + "</div>"
+                const del = it.id ? '<button type="button" class="btn-danger icon recall-del" title="Delete memory" aria-label="Delete this memory" data-del="' + it.id + '">' + TRASH_ICON + "</button>" : "";
+                return '<div class="set-row" style="cursor:pointer" data-rid="' + (it.id || "") + '">' + recallRowHtml(it) + del + "</div>"
                     + '<div id="rd-' + (it.id || "") + '" style="display:none"></div>';
             }).join("") + "</div>";
         }
@@ -3611,6 +3926,7 @@ export {
                 + projectsCache.map((p) => '<option value="' + esc(p.path) + '">' + esc(p.label) + "</option>").join("")
                 + '<option value="__create__">+ Create new project</option>';
             sel.value = currentScope;
+            syncDD(sel);
         }
         async function loadProjectsList() {
             try { projectsCache = ((await (await fetch("/api/projects", { cache: "no-store" })).json()).projects) || []; }
@@ -3690,7 +4006,7 @@ export {
             const sel = $("scopeSel");
             if (sel) sel.addEventListener("change", () => {
                 const val = sel.value;
-                if (val === "__create__") { sel.value = currentScope; openCreateProject(); return; }
+                if (val === "__create__") { sel.value = currentScope; syncDD(sel); openCreateProject(); return; }
                 currentScope = val;
                 try { localStorage.setItem("enigmaScope", val); } catch { /* */ }
                 route();
@@ -3882,10 +4198,13 @@ export {
         wireResources();
         wireRecall();
         wireScope();
+        enhanceAll(); // upgrade every static <select> into the shared pretty dropdown
         $("cfgExport").addEventListener("click", exportConfig);
         $("cfgImport").addEventListener("click", importConfig);
         $("updateBtn").addEventListener("click", runUpdate);
         $("fixPathBtn").addEventListener("click", runFixPath);
+        $("updateAlertBtn").addEventListener("click", runFullUpdate);
+        $("updateAlertDismiss").addEventListener("click", () => { dismissedUpdateSig = $("updateAlert").dataset.sig || ""; $("updateAlert").hidden = true; });
         $("refreshBtn").addEventListener("click", async () => {
             const b = $("refreshBtn");
             if (b.classList.contains("spinning")) return; // already refreshing

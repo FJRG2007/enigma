@@ -15,7 +15,11 @@
  * XDG_DATA_HOME/XDG_CONFIG_HOME pair) are wired up; adding another agent is a
  * single registry entry, not a rewrite. Each tool's existing config dir is
  * surfaced as a synthetic, non-removable "default" account so the user's current
- * login is never lost; new accounts live under ~/.enigma/<tool>/<name>/.
+ * login is never lost; new accounts live under ~/.enigma/<tool>/<uuid>/, where the
+ * directory is an opaque UUID rather than the account name - so renaming an account
+ * (or profile) is a metadata-only change and never has to move files on disk. The
+ * registry persists each account's `dir`, so accounts created before this change
+ * keep their legacy name-based directory and keep working unchanged.
  *
  * PROFILES group one account per tool under a single name (e.g. profile "work" =
  * claude:work + codex:acme), stored alongside the accounts in the registry. When
@@ -28,8 +32,9 @@
 
 import { spawn } from "node:child_process";
 import { homedir } from "node:os";
+import { randomUUID } from "node:crypto";
 import { join, resolve, sep } from "node:path";
-import { mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { isDir, readJson, resolveBin } from "./util";
 import { readConfig } from "./config";
 import { readGlobalGuard } from "./guard-config";
@@ -360,6 +365,10 @@ export function accountExists(toolName: string, name: string): boolean {
  * Create (or return, if it already exists) a managed account for a tool.
  * Validates the name, creates its config directory under the tool's base, and
  * records it. Idempotent so re-running `account add` is safe.
+ *
+ * The directory is a fresh UUID, decoupled from the (mutable) account name, so a
+ * later rename never has to move files. The name stays the user-facing unique key
+ * within the tool's bucket.
  */
 export function addAccount(toolName: string, name: string): Account {
     const tool = getTool(toolName);
@@ -371,7 +380,7 @@ export function addAccount(toolName: string, name: string): Account {
         if (!isDir(existing.dir)) mkdirSync(existing.dir, { recursive: true });
         return existing;
     }
-    const dir = join(accountsBase(tool), name);
+    const dir = join(accountsBase(tool), randomUUID());
     mkdirSync(dir, { recursive: true });
     const account: Account = { name, dir, createdAt: nowIso() };
     bucket.accounts.push(account);
@@ -424,11 +433,12 @@ export function removeAccount(toolName: string, name: string): void {
 }
 
 /**
- * Rename a managed account for a tool: moves its config directory to the new
- * name's path (only when it is a managed dir inside the tool's base - a tampered
- * registry can never make rename touch an arbitrary path) and updates the
- * registry, the active pointer and any profile mapping that pinned the old name.
- * Refuses the built-in "default" and name collisions.
+ * Rename a managed account for a tool: a metadata-only change. The config directory
+ * is an opaque, stable path (a UUID for accounts created since directories were
+ * decoupled from names; a legacy name-based path for older ones), so renaming only
+ * updates the registry, the active pointer and any profile mapping that pinned the
+ * old name - it never moves files, so it cannot fail or collide on disk. Refuses the
+ * built-in "default" and name collisions.
  */
 export function renameAccount(toolName: string, oldName: string, newName: string): Account {
     const tool = getTool(toolName);
@@ -441,13 +451,6 @@ export function renameAccount(toolName: string, oldName: string, newName: string
     if (newName === oldName) return account;
     if (bucket.accounts.some((a) => a.name === newName)) throw new Error(`A ${toolName} account named '${newName}' already exists.`);
 
-    const base = accountsBase(tool);
-    const newDir = join(base, newName);
-    if (isWithinBase(account.dir, base)) {
-        if (isDir(newDir)) throw new Error(`Directory already exists: ${newDir}.`);
-        if (isDir(account.dir)) renameSync(account.dir, newDir);
-        account.dir = newDir;
-    }
     account.name = newName;
     if (bucket.active === oldName) bucket.active = newName;
     reg.tools[toolName] = bucket;

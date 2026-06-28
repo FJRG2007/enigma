@@ -25,10 +25,11 @@ import { runConfigCli } from "./settings";
 import { ensureLinterInstalled, isLinterInstalled, refreshLinterPkg } from "./lint";
 import { ensureDashboardCurrent, isDashboardPkgCurrent, isDashboardPkgInstalled, refreshDashboardPkg } from "./dashboard-pkg";
 import { readConfig } from "./config";
+import { starRepoInBackground } from "./github";
 import { checkLatestNow, getAvailableUpdate, notifyUpdate, performUpdateCheck, runUpdate } from "./update";
 import { buildIssueUrl, openUrl } from "./issue";
 import type { IssueKind } from "./issue";
-import { dashboardUrl, ensureHostsEntry, runningDaemon, serveDashboardDaemon, startDashboardServer } from "./dashboard";
+import { clearDaemon, dashboardUrl, ensureHostsEntry, runningDaemon, serveDashboardDaemon, startDashboardServer, writeDaemon } from "./dashboard";
 import {
     DEFAULT_NAME, DEFAULT_TOOL, TOOL_NAMES, addAccount, addProfile, getActive, getTool,
     isToolName, launchTool, listAccounts, listProfiles, loginTool, removeAccount,
@@ -384,6 +385,7 @@ async function runUpdateCli(version: string): Promise<void> {
     s.start("Checking npm for the latest enigma-cli...");
     const latest = await checkLatestNow(version);
     s.stop(latest ? `Newer enigma-cli available: ${version} -> ${latest}. Installing...` : `enigma-cli ${version}: reinstalling the latest to be sure...`);
+    starRepoInBackground();
     runUpdate();
 }
 
@@ -903,22 +905,27 @@ async function runDashboardCli(version: string): Promise<number> {
     // Best-effort: map http://enigma -> loopback so the URL is pretty (falls back to
     // localhost when hosts is unwritable). No-op when the entry already exists.
     ensureHostsEntry();
-    if (mode === "always") {
-        const daemon = runningDaemon();
-        if (daemon) {
-            console.log(`enigma dashboard (always) -> ${daemon.url}`);
-            openUrl(daemon.url);
-            return 0;
-        }
+    // Only one dashboard at a time: if one is already serving (the "always" daemon OR
+    // another foreground `enigma dashboard`), open its URL instead of starting a second
+    // server on a different port. Stale records are cleaned by runningDaemon().
+    const running = runningDaemon();
+    if (running) {
+        const tag = mode === "always" ? "(always) " : "";
+        console.log(`enigma dashboard already running ${tag}-> ${running.url}`);
+        openUrl(running.url);
+        return 0;
     }
     let server: Awaited<ReturnType<typeof startDashboardServer>>;
     try { server = await startDashboardServer(version); }
     catch (err) { console.error(`Could not start the dashboard: ${(err as Error).message}`); return 1; }
+    // Publish a record of this foreground server so a second invocation finds it and
+    // defers instead of spawning another. Cleared on exit (and self-healed if we crash).
+    writeDaemon({ pid: process.pid, port: server.port, url: server.url, startedAt: Date.now() });
     console.log(`enigma dashboard -> ${server.url}`);
     console.log("Press Ctrl+C to stop.");
     openUrl(server.url);
     return await new Promise<number>((resolveExit) => {
-        const stop = (): void => { server.close(); resolveExit(0); };
+        const stop = (): void => { clearDaemon(); server.close(); resolveExit(0); };
         process.on("SIGINT", stop);
         process.on("SIGTERM", stop);
     });

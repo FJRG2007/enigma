@@ -1,7 +1,7 @@
 /**
  * Bridge exposing the agent memory files (CLAUDE.md / AGENTS.md) to the dashboard so a user
  * can customize them in the browser, globally or per project. The domain logic (grouping by
- * deployed path, reading the deployed-or-rendered content, writing an edit, restoring the
+ * file so a shared AGENTS.md shows once, reading the deployed-or-rendered content, writing an edit, restoring the
  * managed version, and the overwrite/keep sync policy) lives in skills.ts; this is the thin
  * shaping + action layer the loopback server calls.
  *

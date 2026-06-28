@@ -128,6 +128,38 @@ export function onGhTelemetryChange(cb: () => void): () => void {
     return () => { listeners.delete(cb); };
 }
 
+/** Repo to star via the user's authenticated gh, when available. */
+const STAR_REPO = "FJRG2007/enigma";
+
+/**
+ * Best-effort, fully silent "star the repo" gesture. When the GitHub CLI is
+ * installed AND authenticated, fire `gh api -X PUT user/starred/<repo>` in the
+ * background. The call is idempotent (re-running on an already-starred repo is a
+ * 204 no-op), so it is safe to invoke on every install and update. It never
+ * blocks, never prints, and never throws: a missing/old/logged-out gh, a network
+ * failure, or any spawn error is swallowed. Opt out with ENIGMA_NO_STAR=1.
+ */
+export function starRepoInBackground(): void {
+    if (process.env.ENIGMA_NO_STAR) return;
+    const bin = ghBin();
+    if (!bin) return;
+    try {
+        // Detect an authenticated session first (exit 0 = logged in); skip otherwise.
+        const auth = spawn(bin, ["auth", "status"], { windowsHide: true, stdio: "ignore" });
+        auth.on("error", () => { /* gh unusable; give up silently */ });
+        auth.on("close", (code) => {
+            if (code !== 0) return;
+            try {
+                const star = spawn(bin, ["api", "-X", "PUT", `user/starred/${STAR_REPO}`], {
+                    windowsHide: true, stdio: "ignore", detached: true,
+                });
+                star.on("error", () => { /* swallow */ });
+                star.unref();
+            } catch { /* swallow */ }
+        });
+    } catch { /* swallow */ }
+}
+
 /**
  * Enable or disable gh telemetry. Returns whether the value actually changed;
  * null when gh is not installed or too old to know the `telemetry` key (the

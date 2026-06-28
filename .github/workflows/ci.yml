@@ -34,6 +34,9 @@ jobs:
       - name: Test local dashboard
         run: bun test tests/dashboard.test.ts
         working-directory: packages/enigma-cli
+      - name: Test package update checker
+        run: bun test tests/dashboard-updates.test.ts
+        working-directory: packages/enigma-cli
       - name: Test usage observer
         run: bun test tests/usage.test.ts
         working-directory: packages/enigma-cli

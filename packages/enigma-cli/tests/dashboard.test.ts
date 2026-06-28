@@ -12,6 +12,8 @@ import { join } from "node:path";
 const HOME = mkdtempSync(join(tmpdir(), "enigma-dash-"));
 process.env.USERPROFILE = HOME;
 process.env.HOME = HOME;
+// Keep the stats payload's update check from making a real npm request during the test.
+process.env.ENIGMA_NO_UPDATE_CHECK = "1";
 
 const { startDashboardServer, dashboardUrl, runningDaemon, removeHostsEntry } = await import("../src/dashboard");
 const { recordStats } = await import("../src/compress/ccr");

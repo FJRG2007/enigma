@@ -4,32 +4,32 @@
  * selected agent; the matching memory file comes from assets/memory.
  */
 
-import { existsSync, readdirSync, readFileSync, writeFileSync, cpSync, mkdirSync, rmSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
 import { homedir } from "node:os";
+import * as p from "@clack/prompts";
+import { getTool } from "./accounts";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
-import { execFileSync } from "node:child_process";
-import * as p from "@clack/prompts";
-import { isDir, isNewer, readJson, listFilesRel, computeContentSha } from "./util";
-import { readConfig, setEnigmaValue, setSkillDiscarded, setSkillAgentOff, OUTPUT_STYLES, MINIMAL_CODE_LEVELS, DASHBOARD_MODES } from "./config";
-import type { OutputStyle, MinimalCode, DashboardMode } from "./config";
-import { applyDashboardMode } from "./dashboard";
-import { AGENTS, MANAGED_PROVIDER, isManagedProvider, discoverAgents, runningStatus, localTargetsAt } from "./agents";
-import type { Agent, AgentTarget, DiscoveredAgent } from "./agents";
-import { maybeOfferGitHooks } from "./security";
-import type { SecurityOptions } from "./security";
 import { clackReporter } from "./reporter";
 import type { Reporter } from "./reporter";
-import { disableClaudeAttribution, disableClaudeFeedbackSurvey, enableClaudeStatusline } from "./claude";
-import { setGhTelemetry } from "./github";
-import { applyLintWiring, mirrorLintWiring } from "./lint";
-import { resolveBypassSelection, applyBypass, mirrorAccountSettings } from "./permissions";
-import { applyMcpForAgent, applyMcpForAccount } from "./mcp-deploy";
-import { getTool } from "./accounts";
+import { maybeOfferGitHooks } from "./security";
 import type { AccountTarget } from "./accounts";
-import { cachedRemoteSkills, refreshRemoteSkills, shouldCheckRemote } from "./skills-remote";
+import { applyDashboardMode } from "./dashboard";
+import { execFileSync } from "node:child_process";
+import type { SecurityOptions } from "./security";
+import { dirname, join, resolve } from "node:path";
+import { applyLintWiring, mirrorLintWiring } from "./lint";
 import type { RemoteRefreshResult } from "./skills-remote";
+import { setGhTelemetry, starRepoInBackground } from "./github";
+import type { Agent, AgentTarget, DiscoveredAgent } from "./agents";
+import { applyMcpForAgent, applyMcpForAccount } from "./mcp-deploy";
+import type { OutputStyle, MinimalCode, DashboardMode } from "./config";
+import { isDir, isNewer, readJson, listFilesRel, computeContentSha } from "./util";
+import { resolveBypassSelection, applyBypass, mirrorAccountSettings } from "./permissions";
+import { cachedRemoteSkills, refreshRemoteSkills, shouldCheckRemote } from "./skills-remote";
+import { disableClaudeAttribution, disableClaudeFeedbackSurvey, enableClaudeStatusline } from "./claude";
+import { existsSync, readdirSync, readFileSync, writeFileSync, cpSync, mkdirSync, rmSync } from "node:fs";
+import { AGENTS, MANAGED_PROVIDER, isManagedProvider, discoverAgents, runningStatus, localTargetsAt } from "./agents";
+import { readConfig, setEnigmaValue, setSkillDiscarded, setSkillAgentOff, OUTPUT_STYLES, MINIMAL_CODE_LEVELS, DASHBOARD_MODES } from "./config";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PKG_ROOT = resolve(__dirname, "..");
@@ -562,55 +562,81 @@ function memoryTargetsRaw(project?: string): MemTargetRaw[] {
     return out;
 }
 
-/** Group memory targets by deployed path (so a shared AGENTS.md appears once). */
+/**
+ * Group memory targets by file name (so a shared instruction file appears once even when each
+ * agent deploys it to its own dir). AGENTS.md serves codex + opencode and CLAUDE.md serves
+ * claude; the file name maps 1:1 to a single source template, so grouping by it is safe. Globally
+ * codex and opencode read distinct paths (~/.codex/AGENTS.md vs ~/.config/opencode/AGENTS.md); they
+ * still collapse into one row, and edits fan out to every path (see saveMemoryGroup/resetMemoryGroup).
+ */
 export function listMemoryGroups(project?: string): MemoryGroup[] {
-    const byDest = new Map<string, MemoryGroup & { dest: string }>();
+    const byFile = new Map<string, MemoryGroup & { dests: Set<string> }>();
     for (const r of memoryTargetsRaw(project)) {
-        let g = byDest.get(r.dest);
+        let g = byFile.get(r.file);
         if (!g) {
-            g = { id: r.name, file: r.file, dest: r.dest, agents: [], deployed: existsSync(r.dest), edited: isMemoryEdited(r.dest), managed: isEnigmaWritten(r.dest) };
-            byDest.set(r.dest, g);
+            g = { id: r.name, file: r.file, dests: new Set(), agents: [], deployed: true, edited: false, managed: true };
+            byFile.set(r.file, g);
         }
         g.agents.push({ name: r.name, label: r.label });
+        if (g.dests.has(r.dest)) continue; // codex+opencode share one path in project scope
+        g.dests.add(r.dest);
+        g.deployed = g.deployed && existsSync(r.dest);
+        g.edited = g.edited || isMemoryEdited(r.dest);
+        g.managed = g.managed && isEnigmaWritten(r.dest);
     }
-    return [...byDest.values()].map(({ dest: _d, ...g }) => g);
+    return [...byFile.values()].map(({ dests: _d, ...g }) => g);
 }
 
-/** The content shown in the editor: the deployed file if present, else the rendered template. */
+/** Every deploy target sharing the referenced group's file (codex+opencode for AGENTS.md). */
+function memTargetsForGroup(id: string, project?: string): MemTargetRaw[] {
+    const targets = memoryTargetsRaw(project);
+    const self = targets.find((x) => x.name === id);
+    return self ? targets.filter((x) => x.file === self.file) : [];
+}
+
+/** The content shown in the editor: the first deployed file in the group, else the rendered template. */
 export function readMemoryGroup(id: string, project?: string): string | null {
-    const r = memoryTargetsRaw(project).find((x) => x.name === id);
-    if (!r) return null;
-    if (existsSync(r.dest)) { try { return readFileSync(r.dest, "utf8"); } catch { /* fall through */ } }
-    return existsSync(r.src) ? renderMemory(r.src) : "";
+    const group = memTargetsForGroup(id, project);
+    if (!group.length) return null;
+    for (const r of group) if (existsSync(r.dest)) { try { return readFileSync(r.dest, "utf8"); } catch { /* try next */ } }
+    return existsSync(group[0]!.src) ? renderMemory(group[0]!.src) : "";
 }
 
 /**
- * Save custom memory content to a group's deployed file (creating it if absent - an explicit
- * user edit is consent to deploy), marking it edited so the keep policy can preserve it.
- * Returns the agent labels the file serves.
+ * Save custom memory content to every file in the group (creating each if absent - an explicit
+ * user edit is consent to deploy), marking them edited so the keep policy can preserve them. A
+ * shared file (AGENTS.md) is written to each agent's path so they stay in sync. Returns the labels.
  */
 export function saveMemoryGroup(id: string, content: string, project?: string): { ok: boolean; labels: string[] } {
-    const targets = memoryTargetsRaw(project);
-    const r = targets.find((x) => x.name === id);
-    if (!r) return { ok: false, labels: [] };
+    const group = memTargetsForGroup(id, project);
+    if (!group.length) return { ok: false, labels: [] };
+    const written = new Set<string>();
     try {
-        mkdirSync(dirname(r.dest), { recursive: true });
-        writeFileSync(r.dest, content);
-        recordMemoryEdit(r.dest, content);
+        for (const r of group) {
+            if (written.has(r.dest)) continue;
+            written.add(r.dest);
+            mkdirSync(dirname(r.dest), { recursive: true });
+            writeFileSync(r.dest, content);
+            recordMemoryEdit(r.dest, content);
+        }
     } catch { return { ok: false, labels: [] }; }
-    const labels = targets.filter((x) => x.dest === r.dest).map((x) => x.label);
-    return { ok: true, labels };
+    return { ok: true, labels: group.map((x) => x.label) };
 }
 
-/** Restore a group's memory to the managed (rendered) version, clearing the edit marker. */
+/** Restore every file in the group to the managed (rendered) version, clearing the edit markers. */
 export function resetMemoryGroup(id: string, project?: string): { ok: boolean; labels: string[] } {
-    const targets = memoryTargetsRaw(project);
-    const r = targets.find((x) => x.name === id);
-    if (!r || !existsSync(r.src)) return { ok: false, labels: [] };
-    try { mkdirSync(dirname(r.dest), { recursive: true }); writeMemory(r.src, r.dest); }
-    catch { return { ok: false, labels: [] }; }
-    const labels = targets.filter((x) => x.dest === r.dest).map((x) => x.label);
-    return { ok: true, labels };
+    const group = memTargetsForGroup(id, project);
+    if (!group.length || !existsSync(group[0]!.src)) return { ok: false, labels: [] };
+    const written = new Set<string>();
+    try {
+        for (const r of group) {
+            if (written.has(r.dest)) continue;
+            written.add(r.dest);
+            mkdirSync(dirname(r.dest), { recursive: true });
+            writeMemory(r.src, r.dest);
+        }
+    } catch { return { ok: false, labels: [] }; }
+    return { ok: true, labels: group.map((x) => x.label) };
 }
 
 // --- maintenance: seal + check -------------------------------------------------
@@ -957,6 +983,7 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
         if (setGhTelemetry(false) === true) {
             reporter.info("GitHub CLI: telemetry disabled (privacy; re-enable with 'enigma config gh-telemetry on').");
         }
+        starRepoInBackground();
     };
 
     // Optional, opt-in: disable each chosen agent's per-action approval prompts.
