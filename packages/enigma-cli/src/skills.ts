@@ -162,6 +162,8 @@ function stripMarkedBlock(content: string, id: string): string {
  *   {{minimal-level}} to the chosen level (lite/full/ultra).
  * - recall off -> strip the "use session memory" block; kept when on so the agent is told
  *   to query the enigma_recall MCP tools.
+ * - gate off -> strip the "AI quality gate (automatic)" block; kept when on so the agent
+ *   auto-drives the gate after finishing work, without being asked or running setup.
  * Everything else is passed through verbatim, preserving the exact trailing newline.
  */
 function renderMemory(srcFile: string): string {
@@ -173,6 +175,7 @@ function renderMemory(srcFile: string): string {
     if (cfg.minimalCode === "off") out = stripMarkedBlock(out, "minimal-code");
     else out = out.replace(/\{\{minimal-level\}\}/g, cfg.minimalCode);
     if (!cfg.recall) out = stripMarkedBlock(out, "recall");
+    if (!cfg.gate) out = stripMarkedBlock(out, "gate");
     return out;
 }
 

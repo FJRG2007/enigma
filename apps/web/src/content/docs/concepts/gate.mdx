@@ -45,6 +45,12 @@ The gate is opt-in. Turn it on, then initialize it in a repo:
 
 The repo needs an `origin` remote (the gate routes PRs to it), and your work must be **committed on a feature branch** - the gate validates committed history, not the default branch.
 
+## Automatic driving
+
+With the gate on, you do not have to ask your agent to run it or initialize repos by hand. Enabling it renders an always-on instruction into the deployed agent memory: after the agent finishes a code task on a feature branch, it **drives the gate itself** - running `enigma gate init` once if the repo is not set up yet - then applies the safe `auto-fix`/`no-op` findings, escalates every `ask-user` finding to you, and leaves the PR ready for you to review and merge (it never merges on its own).
+
+This is **per project**. To opt a single repo out while the gate stays on everywhere else, set `gate: false` in that repo's `.enigma.json`; the agent skips automatic driving there. Restart your agent after toggling the gate - memory is read at startup.
+
 ## Three ways to trigger it
 
 Every change runs through the same pipeline. Pick the entry point that fits how you are working:

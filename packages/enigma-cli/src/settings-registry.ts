@@ -246,7 +246,8 @@ const RAW_CATEGORIES: Category[] = [
             {
                 key: "gate",
                 label: "AI quality gate (experimental)",
-                hint: "EXPERIMENTAL, off by default: deploy the /gate command so agents can validate changes through the gate pipeline (review/test/lint/PR/CI); toggling applies immediately to already-deployed agents; nothing runs until you `enigma gate init` a repo",
+                hint: "EXPERIMENTAL, off by default: deploy the /gate command AND tell agents to auto-drive the gate (review/test/lint/PR/CI) after finishing work on a feature branch - no need to ask or run `enigma gate init`; per-project opt-out via `.enigma.json` gate:false; edits the memory file - restart your agent to apply",
+                affectsMemory: true,
                 read: () => readConfig().config.gate,
                 write: (value, scope) => setGate(value, scope),
             },
