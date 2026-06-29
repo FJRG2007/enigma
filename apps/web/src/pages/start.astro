@@ -26,6 +26,8 @@ const description = "Install enigma, then open the dashboard with `enigma dash` 
 
             <InstallTabs />
 
+            <p class="already">Already have Enigma? Run <button class="chip" type="button" data-copy="enigma update">enigma update</button> instead - it pulls the latest skills and self-updates the CLI, no reinstall needed.</p>
+
             <ol class="steps">
                 <li>
                     <span class="step-n">1</span>
@@ -79,6 +81,8 @@ const description = "Install enigma, then open the dashboard with `enigma dash` 
     .eyebrow { font-family: var(--mono); font-size: 12px; text-transform: uppercase; letter-spacing: 2px; color: var(--accent); }
     h1 { font-family: var(--mono); font-size: clamp(28px, 5vw, 40px); line-height: 1.1; font-weight: 600; letter-spacing: -0.5px; margin: 14px 0 0; }
     .lede { color: var(--muted); font-size: 17px; max-width: 56ch; margin: 14px 0 0; }
+
+    .already { margin: 14px 0 0; color: var(--muted); font-size: 13px; line-height: 1.7; border-left: 2px solid var(--border); padding-left: 12px; }
 
     .steps { margin: 32px 0 0; list-style: none; padding: 0; display: grid; gap: 12px; }
     .steps li { display: flex; gap: 14px; align-items: flex-start; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px 20px; box-shadow: var(--shadow-1); }

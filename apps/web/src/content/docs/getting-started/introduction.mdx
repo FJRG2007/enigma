@@ -22,3 +22,15 @@ Run `enigma` with no arguments for the interactive hub: choose which agents to s
 enigma            # interactive hub
 enigma install --all --yes   # non-interactive, every supported agent
 ```
+
+## Updating
+
+Already have enigma? Don't re-run the install command - run `enigma update`.
+
+```bash
+enigma update
+```
+
+It pulls the latest policy skills from GitHub (no package release needed) and syncs them into every agent you set up, updates the on-demand packages you use (the dashboard UI and linter), and self-updates the `enigma-cli` package to the latest npm release. Each step is independent, so an unreachable GitHub or npm never blocks the others.
+
+Launching a tool through enigma (e.g. `enigma claude`) already auto-syncs skills, and the hub's "update now" action runs the same flow - `enigma update` is the explicit, do-everything command.
