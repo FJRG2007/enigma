@@ -10,6 +10,10 @@ import { test, expect, afterAll } from "bun:test";
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 
 const HOME = mkdtempSync(join(tmpdir(), "enigma-accounts-"));
+// ENIGMA_CONFIG_HOME is what accounts.ts resolves the registry against: bun on Linux does
+// not reflect a runtime-reassigned $HOME via os.homedir(), so HOME/USERPROFILE alone would
+// leave the module reading the real home dir (the registry path and this test would diverge).
+process.env.ENIGMA_CONFIG_HOME = HOME;
 process.env.USERPROFILE = HOME;
 process.env.HOME = HOME;
 

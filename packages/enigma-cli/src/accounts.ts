@@ -37,7 +37,7 @@ import { spawn } from "node:child_process";
 import { startMeasuringProxy } from "./proxy";
 import { join, resolve, sep } from "node:path";
 import { readGlobalGuard } from "./guard-config";
-import { isDir, readJson, resolveBin } from "./util";
+import { isDir, readJson, resolveBin, enigmaHome } from "./util";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { decryptSecret, encryptSecret } from "./secret-box";
 
@@ -207,7 +207,10 @@ export function getTool(name: string): ToolSpec {
 
 /** Reserved name for a tool's built-in (existing) config-dir account. */
 export const DEFAULT_NAME = "default";
-const ENIGMA_DIR = join(homedir(), ".enigma");
+// enigmaHome() honors ENIGMA_CONFIG_HOME so tests can isolate the registry; bun on Linux
+// does not reflect a runtime-reassigned $HOME via os.homedir(), so a raw homedir() here
+// would ignore a test's temp HOME and write the registry into the real home dir.
+const ENIGMA_DIR = join(enigmaHome(), ".enigma");
 /** Registry file mapping each tool's accounts to their config directories. */
 const REGISTRY_PATH = join(ENIGMA_DIR, "accounts.json");
 
