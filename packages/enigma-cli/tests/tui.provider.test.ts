@@ -49,13 +49,25 @@ const until = async (pred: (f: string) => boolean, label: string): Promise<strin
     throw new Error(`frame never matched: ${label}; last frame:\n${frame}`);
 };
 
+/**
+ * Press keys one at a time, rendering after each so the cursor state commits between them.
+ * A batched pressKeys can drop intermediate updates on the non-free-running test scheduler
+ * (green on Windows, but the events race the render on Linux CI).
+ */
+const press = async (...keys: string[]): Promise<void> => {
+    for (const key of keys) {
+        await setup.mockInput.pressKey(key);
+        await setup.renderOnce();
+    }
+};
+
 test("provider editor: 'p' on a managed Claude account opens the backend picker and fires the callback", async () => {
     const done = runHomeTui(hub);
     await until((f) => f.includes("MENU"), "menu");
 
     // Navigate the sidebar to the identity entry (last item) and focus the panel.
     const identityIndex = CATEGORIES.length + 6; // categories + usage + recall + resources + 3 actions
-    await setup.mockInput.pressKeys(Array(identityIndex).fill("ARROW_DOWN"));
+    await press(...Array(identityIndex).fill("ARROW_DOWN"));
     await setup.mockInput.pressKey("RETURN");
     await until((f) => f.includes("ACCOUNTS"), "identity panel");
 

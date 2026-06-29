@@ -72,6 +72,18 @@ const until = async (pred: (f: string) => boolean, label: string): Promise<strin
     throw new Error(`frame never matched: ${label}; last frame:\n${frame}`);
 };
 
+/**
+ * Press keys one at a time, rendering after each so the cursor state commits between them.
+ * A batched pressKeys can drop intermediate updates on the non-free-running test scheduler
+ * (green on Windows, but the events race the render on Linux CI).
+ */
+const press = async (...keys: string[]): Promise<void> => {
+    for (const key of keys) {
+        await setup.mockInput.pressKey(key);
+        await setup.renderOnce();
+    }
+};
+
 test("unified panel renders sections and the wheel mirrors the arrows", async () => {
     const done = runHomeTui(hub);
     const first = await until((f) => f.includes("MENU"), "menu");
@@ -80,7 +92,7 @@ test("unified panel renders sections and the wheel mirrors the arrows", async ()
 
     // Navigate the sidebar to the identity entry (last item) and focus the panel.
     const identityIndex = CATEGORIES.length + 6; // categories + usage + recall + resources + 3 actions (skills, security, fix-path)
-    await setup.mockInput.pressKeys(Array(identityIndex).fill("ARROW_DOWN"));
+    await press(...Array(identityIndex).fill("ARROW_DOWN"));
     await setup.mockInput.pressKey("RETURN");
     const panel = await until((f) => f.includes("ACCOUNTS") && f.includes("PROFILES"), "identity sections");
     expect(panel).toContain("me@example.com");
@@ -94,7 +106,7 @@ test("unified panel renders sections and the wheel mirrors the arrows", async ()
     await until((f) => f.includes("e edit accounts"), "wheel reaches profile rows");
 
     // Arrows still share the same cursor: two ups land back on an account row.
-    await setup.mockInput.pressKeys(["ARROW_UP", "ARROW_UP"]);
+    await press("ARROW_UP", "ARROW_UP");
     await until((f) => f.includes("c connect/login"), "arrows back to account row");
 
     // Wheel over the sidebar moves the menu selection back up (focus returns left).
@@ -103,7 +115,7 @@ test("unified panel renders sections and the wheel mirrors the arrows", async ()
 
     // Install panel: the SKILLS section lists every skill under the agents. The wheel
     // up landed on the fix-path action; step up past security to the skills action.
-    await setup.mockInput.pressKeys(["ARROW_UP", "ARROW_UP"]); // fix-path -> security -> skills action
+    await press("ARROW_UP", "ARROW_UP"); // fix-path -> security -> skills action
     const install = await until((f) => f.includes("AGENTS") && f.includes("SKILLS"), "install panel sections");
     expect(install).toContain("alpha-skill");
     expect(install).toContain("v2.1.0");
