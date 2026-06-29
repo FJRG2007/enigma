@@ -4,40 +4,42 @@
  * disable each one. Subcommands run a single feature non-interactively.
  */
 
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import { readFileSync } from "node:fs";
-import * as p from "@clack/prompts";
 import { readJson } from "./util";
-import { compress, retrieve, readStats, clearCcr } from "./compress";
-import type { ContentType } from "./compress";
+import * as p from "@clack/prompts";
+import { runGuardCli } from "./guard";
+import { readConfig } from "./config";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import type { IssueKind } from "./issue";
+import { discoverAgents } from "./agents";
+import { runConfigCli } from "./settings";
 import { collectReporter } from "./reporter";
+import type { ContentType } from "./compress";
+import type { InstallOptions } from "./skills";
+import { starRepoInBackground } from "./github";
+import { buildIssueUrl, openUrl } from "./issue";
+import { dirname, join, resolve } from "node:path";
+import { setupGitHooks, GUARD_PROTECTIONS } from "./security";
+import { ensureLaunchable, toolPathStatuses } from "./tool-path";
+import { compress, retrieve, readStats, clearCcr } from "./compress";
+import type { HubAccount, HubExitAction, HubProfile, HubSkill } from "./tui/types";
+import { ensureLinterInstalled, isLinterInstalled, refreshLinterPkg } from "./lint";
+import { checkLatestNow, getAvailableUpdate, notifyUpdate, performUpdateCheck, runUpdate } from "./update";
+import { ensureDashboardCurrent, isDashboardPkgCurrent, isDashboardPkgInstalled, refreshDashboardPkg } from "./dashboard-pkg";
+import { clearDaemon, dashboardUrl, ensureHostsEntry, runningDaemon, serveDashboardDaemon, startDashboardServer, writeDaemon } from "./dashboard";
 import {
     checkSources, discardSkill, hasAccountDeployment, hasDeployment, installSkills,
     listSkillsStatus, refreshSkillsFromGitHub, sealSources, setSkillAgent, shouldCheckRemote,
     syncAccount, syncDeployed,
 } from "./skills";
-import type { InstallOptions } from "./skills";
-import { setupGitHooks, GUARD_PROTECTIONS } from "./security";
-import { discoverAgents } from "./agents";
-import { runGuardCli } from "./guard";
-import { runConfigCli } from "./settings";
-import { ensureLinterInstalled, isLinterInstalled, refreshLinterPkg } from "./lint";
-import { ensureDashboardCurrent, isDashboardPkgCurrent, isDashboardPkgInstalled, refreshDashboardPkg } from "./dashboard-pkg";
-import { readConfig } from "./config";
-import { starRepoInBackground } from "./github";
-import { checkLatestNow, getAvailableUpdate, notifyUpdate, performUpdateCheck, runUpdate } from "./update";
-import { buildIssueUrl, openUrl } from "./issue";
-import type { IssueKind } from "./issue";
-import { clearDaemon, dashboardUrl, ensureHostsEntry, runningDaemon, serveDashboardDaemon, startDashboardServer, writeDaemon } from "./dashboard";
 import {
     DEFAULT_NAME, DEFAULT_TOOL, TOOL_NAMES, addAccount, addProfile, getActive, getTool,
     isToolName, launchTool, listAccounts, listProfiles, loginTool, removeAccount,
     removeProfile, renameAccount, renameProfile, resolveConfigDir, resolveLaunchAccount,
     setActive, setActiveProfile, setProfileAccount, unsetProfileAccount,
+    getAccountProvider, setAccountProvider, providerFromPreset, presetsForTool, PROVIDER_PRESETS,
+    type ProviderInput,
 } from "./accounts";
-import { ensureLaunchable, toolPathStatuses } from "./tool-path";
-import type { HubAccount, HubExitAction, HubProfile, HubSkill } from "./tui/types";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 // In the compiled binary __dirname lives in Bun's virtual fs (no package.json on
@@ -72,6 +74,14 @@ interface CliOptions extends InstallOptions {
     compressType: string | null;
     /** `compress`: delete all CCR data (stats, history, cache) and reset the dashboard. */
     clear: boolean;
+    /** `account provider`: built-in provider preset id (e.g. "minimax"). */
+    preset: string | null;
+    /** `account provider`: auth token (API key) for a provider override. */
+    token: string | null;
+    /** `account provider`: custom Anthropic-compatible base URL. */
+    base: string | null;
+    /** `account provider`: model id for a provider override. */
+    providerModel: string | null;
 }
 
 function parseArgs(argv: string[]): CliOptions {
@@ -82,6 +92,7 @@ function parseArgs(argv: string[]): CliOptions {
         bypass: null, noBypass: false, outputStyle: null, minimalCode: null, dashboard: null, promptSecretGuard: null,
         force: false, all: false, yes: false, login: false, dryRun: false, help: false, version: false,
         stats: false, retrieve: null, compressType: null, clear: false,
+        preset: null, token: null, base: null, providerModel: null,
     };
     for (let i = 0; i < argv.length; i++) {
         const a = argv[i]!;
@@ -109,6 +120,10 @@ function parseArgs(argv: string[]): CliOptions {
             case "--minimal-code": opts.minimalCode = next(); break;
             case "--dashboard": opts.dashboard = next(); break;
             case "--prompt-secret-guard": opts.promptSecretGuard = true; break;
+            case "--preset": opts.preset = next(); break;
+            case "--token": opts.token = next(); break;
+            case "--base": opts.base = next(); break;
+            case "--model": opts.providerModel = next(); break;
             case "--stats": opts.stats = true; break;
             case "--retrieve": opts.retrieve = next(); break;
             case "--type": opts.compressType = next(); break;
@@ -158,6 +173,9 @@ Commands:
                          login|run <name>     Launch the tool with that account
                          rename <old> <new>   Rename an account (its config dir moves)
                          remove <name>        Delete an account (-y to skip confirm)
+                         provider <name>      Point Claude Code at another backend (e.g.
+                                              MiniMax): --preset <id> | --base <url>
+                                              [--model <id>] --token <key>, or --clear
   profile <subcommand> Group one account per tool under a profile (e.g. 'work' =
                        claude:acme + codex:acme); the active profile drives launches:
                          list                       List profiles and their mappings
@@ -641,6 +659,10 @@ async function runAccountCli(opts: CliOptions, interactive: boolean): Promise<nu
                 const meta = a.name === DEFAULT_NAME ? "(existing config)" : a.lastUsed ? `last used ${a.lastUsed}` : "never used";
                 console.log(` ${marker} ${a.name.padEnd(14)} ${identity.padEnd(30)} ${meta}`);
                 console.log(`     ${a.dir}`);
+                if (a.provider) {
+                    const label = a.provider.preset && a.provider.preset !== "custom" ? a.provider.preset : a.provider.baseUrl;
+                    console.log(`     provider: ${label}${a.provider.model ? ` (${a.provider.model})` : ""}`);
+                }
             }
             console.log(`\nActive: ${getActive(tool)}. Launch with: enigma ${tool} [account].`);
             return 0;
@@ -689,8 +711,53 @@ async function runAccountCli(opts: CliOptions, interactive: boolean): Promise<nu
             try { removeAccount(tool, name); console.log(`Removed ${tool} account '${name}'.`); return 0; }
             catch (err) { console.error((err as Error).message); return 1; }
         }
+        case "provider": {
+            const presets = presetsForTool(tool);
+            if (!presets.length && !getTool(tool).providerEnv) { console.error(`${spec.label} does not support a provider override.`); return 1; }
+            if (!name) {
+                console.error("Usage: enigma account provider <name> [--preset <id> | --base <url> [--model <id>]] [--token <key>] [--clear]");
+                if (presets.length) console.error(`Presets for ${tool}: ${presets.map((pr) => pr.id).join(", ")}.`);
+                return 1;
+            }
+            try {
+                // No mutating flag -> show the current override.
+                if (!opts.preset && !opts.base && opts.token === null && !opts.clear && !opts.providerModel) {
+                    const prov = getAccountProvider(tool, name);
+                    if (!prov) { console.log(`'${name}' uses ${spec.label}'s default backend (Anthropic).`); return 0; }
+                    console.log(`'${name}' provider:`);
+                    console.log(`  base   ${prov.baseUrl}`);
+                    if (prov.model) console.log(`  model  ${prov.model}`);
+                    if (prov.preset) console.log(`  preset ${prov.preset}`);
+                    console.log(`  token  ${prov.hasToken ? "set (encrypted)" : "not set"}`);
+                    return 0;
+                }
+                if (opts.clear) {
+                    setAccountProvider(tool, name, null);
+                    console.log(`Cleared the provider override for '${name}' (back to ${spec.label}'s default).`);
+                    return 0;
+                }
+                let input: ProviderInput | null = null;
+                if (opts.preset) {
+                    input = providerFromPreset(opts.preset, opts.token ?? undefined);
+                    if (!input) { console.error(`Unknown preset '${opts.preset}'. Available: ${presets.map((pr) => pr.id).join(", ") || "(none)"}.`); return 1; }
+                    if (opts.base) input.baseUrl = opts.base;
+                    if (opts.providerModel) input.model = opts.providerModel;
+                } else if (opts.base) {
+                    input = { baseUrl: opts.base, model: opts.providerModel ?? undefined, preset: "custom", token: opts.token ?? undefined };
+                } else {
+                    // Only a token/model given: update an existing override in place.
+                    const cur = getAccountProvider(tool, name);
+                    if (!cur) { console.error("Set a provider first with --preset <id> or --base <url>."); return 1; }
+                    input = { baseUrl: cur.baseUrl, model: opts.providerModel ?? cur.model, env: cur.env, preset: cur.preset, token: opts.token ?? undefined };
+                }
+                setAccountProvider(tool, name, input);
+                const label = input.preset && input.preset !== "custom" ? input.preset : input.baseUrl;
+                console.log(`'${name}' now uses ${label}${opts.token ? " (token set)" : ""}. Launch it with: enigma ${tool} ${name}.`);
+                return 0;
+            } catch (err) { console.error((err as Error).message); return 1; }
+        }
         default:
-            console.error(`Unknown account subcommand: ${sub}. Try: list, add, use, login, run, rename, remove.`);
+            console.error(`Unknown account subcommand: ${sub}. Try: list, add, use, login, run, rename, remove, provider.`);
             return 1;
     }
 }
@@ -1069,6 +1136,8 @@ export async function run(argv: string[]): Promise<void> {
             listAccounts(tool).map((a) => ({
                 tool, toolLabel: a.toolLabel, name: a.name, dir: a.dir,
                 email: a.email ?? a.displayName, active: a.active, removable: a.name !== DEFAULT_NAME,
+                supportsProvider: a.supportsProvider,
+                provider: a.provider ? { baseUrl: a.provider.baseUrl, model: a.provider.model, preset: a.provider.preset, hasToken: a.provider.hasToken } : null,
             })));
     const hubProfiles = (): HubProfile[] =>
         listProfiles().map((p) => ({
@@ -1102,6 +1171,22 @@ export async function run(argv: string[]): Promise<void> {
         renameAccount: (tool: string, oldName: string, newName: string) => {
             try { renameAccount(tool, oldName, newName); return { ok: true, accounts: hubAccounts() }; }
             catch (err) { return { ok: false, error: (err as Error).message, accounts: hubAccounts() }; }
+        },
+        providerPresets: PROVIDER_PRESETS.map((p) => ({ id: p.id, label: p.label, tool: p.tool, baseUrl: p.baseUrl, model: p.model, tokenUrl: p.tokenUrl })),
+        setAccountProvider: (tool: string, name: string, input: { baseUrl: string; model?: string; preset?: string; token?: string } | null) => {
+            try {
+                let resolved: ProviderInput | null = input;
+                // A real preset id fills baseUrl/model/env; "custom" (and null) pass through as-is.
+                if (input && input.preset && input.preset !== "custom") {
+                    const fromPreset = providerFromPreset(input.preset, input.token);
+                    if (!fromPreset) throw new Error(`Unknown preset '${input.preset}'.`);
+                    if (input.baseUrl) fromPreset.baseUrl = input.baseUrl;
+                    if (input.model) fromPreset.model = input.model;
+                    resolved = fromPreset;
+                }
+                setAccountProvider(tool, name, resolved);
+                return { ok: true, accounts: hubAccounts() };
+            } catch (err) { return { ok: false, error: (err as Error).message, accounts: hubAccounts() }; }
         },
         tools: TOOL_NAMES.map((t) => ({ name: t, label: getTool(t).label })),
         toolPaths: toolPathStatuses().map((t) => ({ name: t.name, label: t.label, status: t.status })),

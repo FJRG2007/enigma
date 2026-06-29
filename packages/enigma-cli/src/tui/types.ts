@@ -31,6 +31,10 @@ export interface HubProtection { value: string; label: string; hint: string; }
  * hub can enable/disable a skill app-by-app on top of the global discard.
  */
 export interface HubSkill { name: string; version: string | null; discarded: boolean; agentsOff: string[]; }
+/** A provider override (e.g. MiniMax) on an account, token never included. */
+export interface HubProvider { baseUrl: string; model?: string; preset?: string; hasToken: boolean; }
+/** A built-in provider preset offered in the hub's provider editor. */
+export interface HubPreset { id: string; label: string; tool: string; baseUrl: string; model?: string; tokenUrl?: string; }
 /** A tool account row shown in the hub's Accounts panel. */
 export interface HubAccount {
     tool: string;
@@ -40,6 +44,10 @@ export interface HubAccount {
     email?: string;
     active: boolean;
     removable: boolean;
+    /** Whether this tool supports a provider override (drives the 'p' key + display). */
+    supportsProvider?: boolean;
+    /** The active provider override, or null/undefined for the tool's default backend. */
+    provider?: HubProvider | null;
 }
 /** A launchable tool, for the add-account tool selector. */
 export interface HubTool { name: string; label: string; }
@@ -85,6 +93,13 @@ export interface HubContext {
     addAccount?: (tool: string, name: string) => { ok: boolean; error?: string; accounts: HubAccount[] };
     /** Rename an account (its config dir moves with it); errors come back inline. */
     renameAccount?: (tool: string, oldName: string, newName: string) => { ok: boolean; error?: string; accounts: HubAccount[] };
+    /** Built-in provider presets (e.g. MiniMax) the provider editor offers. */
+    providerPresets?: HubPreset[];
+    /**
+     * Set (object) or clear (null) an account's provider override. An omitted token keeps the
+     * stored one; "" clears it. Returns the refreshed list + an inline validation result.
+     */
+    setAccountProvider?: (tool: string, name: string, input: { baseUrl: string; model?: string; preset?: string; token?: string } | null) => { ok: boolean; error?: string; accounts: HubAccount[] };
     /** Supported tools, for the add-account searchable selector. */
     tools?: HubTool[];
     /**

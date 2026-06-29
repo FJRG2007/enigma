@@ -17,6 +17,7 @@ import {
     DEFAULT_NAME, TOOL_NAMES, getTool, listAccounts, listProfiles,
     setActive, addAccount, renameAccount, removeAccount,
     setActiveProfile, addProfile, renameProfile, removeProfile, setProfileAccount, unsetProfileAccount,
+    setAccountProvider, providerFromPreset, PROVIDER_PRESETS, type ProviderInput,
 } from "./accounts";
 
 export interface DashAccount {
@@ -30,7 +31,14 @@ export interface DashAccount {
     removable: boolean;
     /** True when the account has a signed-in identity; false = needs `enigma <tool> <name>` to log in. */
     loggedIn: boolean;
+    /** Whether this tool supports a provider override (drives the provider control's visibility). */
+    supportsProvider: boolean;
+    /** The active provider override (token never included), or null for the default backend. */
+    provider: { baseUrl: string; model?: string; preset?: string; hasToken: boolean } | null;
 }
+
+/** A provider preset the browser can offer (no secrets). */
+export interface DashPreset { id: string; label: string; tool: string; baseUrl: string; model?: string; tokenUrl?: string; }
 
 export interface DashProfile {
     name: string;
@@ -43,6 +51,8 @@ export interface AccountsPayload {
     tools: Array<{ name: string; label: string }>;
     accounts: DashAccount[];
     profiles: DashProfile[];
+    /** Built-in provider presets the UI can offer (e.g. MiniMax), keyed by tool. */
+    presets: DashPreset[];
 }
 
 /** Snapshot every tool's accounts and all profiles for the browser. */
@@ -53,12 +63,17 @@ export function serializeAccounts(): AccountsPayload {
             email: a.email ?? a.displayName,
             active: a.active, removable: a.name !== DEFAULT_NAME,
             loggedIn: Boolean(a.email ?? a.displayName),
+            supportsProvider: a.supportsProvider,
+            provider: a.provider
+                ? { baseUrl: a.provider.baseUrl, model: a.provider.model, preset: a.provider.preset, hasToken: a.provider.hasToken }
+                : null,
         })));
     const profiles: DashProfile[] = listProfiles().map((p) => ({
         name: p.name, active: p.active, accounts: p.accounts,
         summary: Object.entries(p.accounts).map(([t, a]) => `${t}=${a}`).join("  ") || "(no accounts pinned)",
     }));
-    return { tools: TOOL_NAMES.map((t) => ({ name: t, label: getTool(t).label })), accounts, profiles };
+    const presets: DashPreset[] = PROVIDER_PRESETS.map((p) => ({ id: p.id, label: p.label, tool: p.tool, baseUrl: p.baseUrl, model: p.model, tokenUrl: p.tokenUrl }));
+    return { tools: TOOL_NAMES.map((t) => ({ name: t, label: getTool(t).label })), accounts, profiles, presets };
 }
 
 export interface AccountActionResult { ok: boolean; error?: string; data: AccountsPayload; }
@@ -70,6 +85,8 @@ export interface AccountActionPayload {
     newName?: string;
     profile?: string;
     account?: string | null;
+    /** account.provider: null clears the override; an object sets it (preset or custom base/model + token). */
+    provider?: { preset?: string; baseUrl?: string; model?: string; token?: string } | null;
 }
 
 /**
@@ -94,6 +111,21 @@ export async function applyAccountAction(op: string, payload: AccountActionPaylo
             }
             case "account.rename": renameAccount(tool, name, newName); break;
             case "account.remove": removeAccount(tool, name); break;
+            case "account.provider": {
+                const p = payload.provider;
+                if (p === null || p === undefined) { setAccountProvider(tool, name, null); break; }
+                let input: ProviderInput | null;
+                if (p.preset) {
+                    input = providerFromPreset(p.preset, p.token);
+                    if (!input) throw new Error(`Unknown preset '${p.preset}'.`);
+                    if (p.baseUrl) input.baseUrl = p.baseUrl;
+                    if (p.model) input.model = p.model;
+                } else {
+                    input = { baseUrl: p.baseUrl || "", model: p.model, preset: "custom", token: p.token };
+                }
+                setAccountProvider(tool, name, input);
+                break;
+            }
             case "profile.activate": setActiveProfile(name || null); break;
             case "profile.add": addProfile(name); break;
             case "profile.rename": renameProfile(name, newName); break;

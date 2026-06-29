@@ -121,14 +121,19 @@
     var ACCOUNTS = {
         tools: [{ name: "claude", label: "Claude Code" }, { name: "codex", label: "Codex" }, { name: "opencode", label: "opencode" }],
         accounts: [
-            { tool: "claude", toolLabel: "Claude Code", name: "default", dir: "~/.claude", email: "you@example.com", active: true, removable: false, loggedIn: true },
-            { tool: "claude", toolLabel: "Claude Code", name: "work", dir: "~/.enigma/claude/work", email: "work@company.com", active: false, removable: true, loggedIn: true },
-            { tool: "codex", toolLabel: "Codex", name: "default", dir: "~/.codex", email: "", active: true, removable: false, loggedIn: false },
-            { tool: "opencode", toolLabel: "opencode", name: "default", dir: "~/.config/opencode", email: "", active: true, removable: false, loggedIn: false }
+            { tool: "claude", toolLabel: "Claude Code", name: "default", dir: "~/.claude", email: "you@example.com", active: true, removable: false, loggedIn: true, supportsProvider: true, provider: null },
+            { tool: "claude", toolLabel: "Claude Code", name: "work", dir: "~/.enigma/claude/work", email: "work@company.com", active: false, removable: true, loggedIn: true, supportsProvider: true, provider: null },
+            { tool: "claude", toolLabel: "Claude Code", name: "minimax", dir: "~/.enigma/claude/minimax", email: "", active: false, removable: true, loggedIn: false, supportsProvider: true, provider: { baseUrl: "https://api.minimax.io/anthropic", model: "MiniMax-M3[1m]", preset: "minimax", hasToken: true } },
+            { tool: "codex", toolLabel: "Codex", name: "default", dir: "~/.codex", email: "", active: true, removable: false, loggedIn: false, supportsProvider: false, provider: null },
+            { tool: "opencode", toolLabel: "opencode", name: "default", dir: "~/.config/opencode", email: "", active: true, removable: false, loggedIn: false, supportsProvider: false, provider: null }
         ],
         profiles: [
             { name: "daily", active: true, accounts: { claude: "default" } },
             { name: "client-x", active: false, accounts: { claude: "work" } }
+        ],
+        presets: [
+            { id: "minimax", label: "MiniMax (International)", tool: "claude", baseUrl: "https://api.minimax.io/anthropic", model: "MiniMax-M3[1m]", tokenUrl: "https://platform.minimax.io/user-center/payment/token-plan" },
+            { id: "minimax-cn", label: "MiniMax (China)", tool: "claude", baseUrl: "https://api.minimaxi.com/anthropic", model: "MiniMax-M3[1m]", tokenUrl: "https://platform.minimaxi.com/user-center/payment/token-plan" }
         ]
     };
 

@@ -31,9 +31,18 @@ enigma codex -- --version  # forward args to the tool
 
 Several logins per tool without logging out, each in its own config dir. A profile pins one account per tool and drives every launch.
 
-<Cmd name="enigma account <list|add|use|login|rename|remove>" ex={["enigma account add work --login", "enigma account use work --tool codex"]}>
+<Cmd name="enigma account <list|add|use|login|rename|remove|provider>" ex={["enigma account add work --login", "enigma account use work --tool codex"]}>
 Manage tool accounts. Defaults to Claude Code; target another with `--tool <name>`.
 </Cmd>
+
+`provider` points a Claude Code account at another Anthropic-compatible backend (e.g. MiniMax) instead of the default - the `default` account always stays on Anthropic. Configurable here, in the dashboard Accounts tab, and the TUI (`p` on an account). The API key is stored encrypted.
+
+```bash
+enigma account provider work --preset minimax --token <key>   # a built-in preset
+enigma account provider work --base https://host/anthropic --model my-model --token <key>
+enigma account provider work            # show the current override
+enigma account provider work --clear    # back to Anthropic
+```
 
 <Cmd name="enigma profile <list|add|use|set|unset|rename|remove>" ex={["enigma profile add work", "enigma profile set work claude acme", "enigma profile use work"]}>
 Group one account per tool under a profile. `use none` deactivates.

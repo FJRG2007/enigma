@@ -30,15 +30,16 @@
  * wrapper in cli.ts does the prompting and printing.
  */
 
-import { spawn } from "node:child_process";
 import { homedir } from "node:os";
-import { randomUUID } from "node:crypto";
-import { join, resolve, sep } from "node:path";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { isDir, readJson, resolveBin } from "./util";
 import { readConfig } from "./config";
-import { readGlobalGuard } from "./guard-config";
+import { randomUUID } from "node:crypto";
+import { spawn } from "node:child_process";
 import { startMeasuringProxy } from "./proxy";
+import { join, resolve, sep } from "node:path";
+import { readGlobalGuard } from "./guard-config";
+import { isDir, readJson, resolveBin } from "./util";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { decryptSecret, encryptSecret } from "./secret-box";
 
 /**
  * A coding agent enigma can manage accounts for. `envFor` maps an account's
@@ -62,6 +63,12 @@ export interface ToolSpec {
      * location (Codex reads ~/.agents/skills regardless of CODEX_HOME).
      */
     accountTarget: (dir: string) => AccountTarget;
+    /**
+     * Maps a per-account provider override to the env this tool reads to talk to a
+     * different (Anthropic-compatible) backend - e.g. pointing Claude Code at MiniMax.
+     * Absent means the tool has no provider-override support, so the UIs hide it.
+     */
+    providerEnv?: (p: ResolvedProvider) => Record<string, string>;
     loginArgs?: string[];
     loginHint: string;
     /**
@@ -94,6 +101,21 @@ const TOOLS: Record<string, ToolSpec> = {
         // CLAUDE_CONFIG_DIR relocates ~/.claude entirely: skills, the CLAUDE.md
         // user memory and settings.json are all read from the account dir.
         accountTarget: (dir) => ({ skills: join(dir, "skills"), memory: dir, commands: join(dir, "commands") }),
+        // Claude Code reads its backend from ANTHROPIC_BASE_URL + ANTHROPIC_AUTH_TOKEN, and the
+        // active model from ANTHROPIC_MODEL plus the per-tier defaults (sonnet/opus/haiku) - so a
+        // single model id covers a one-model provider like MiniMax. Extra env (e.g. MiniMax's 1M
+        // CLAUDE_CODE_AUTO_COMPACT_WINDOW) is merged last.
+        providerEnv: ({ baseUrl, token, model, env }) => {
+            const out: Record<string, string> = { ANTHROPIC_BASE_URL: baseUrl };
+            if (token) out.ANTHROPIC_AUTH_TOKEN = token;
+            if (model) {
+                out.ANTHROPIC_MODEL = model;
+                out.ANTHROPIC_DEFAULT_SONNET_MODEL = model;
+                out.ANTHROPIC_DEFAULT_OPUS_MODEL = model;
+                out.ANTHROPIC_DEFAULT_HAIKU_MODEL = model;
+            }
+            return { ...out, ...(env || {}) };
+        },
         loginHint: "Launching Claude Code - run /login inside it to authenticate this account.",
         // Claude Code records the signed-in account under oauthAccount in
         // <config-dir>/.claude.json (no tokens there - those live elsewhere).
@@ -191,21 +213,92 @@ const REGISTRY_PATH = join(ENIGMA_DIR, "accounts.json");
 
 const NAME_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/;
 
+/**
+ * A per-account provider override: point the tool at a different Anthropic-compatible
+ * backend (e.g. MiniMax) instead of the vendor default. The auth token is stored
+ * ENCRYPTED at rest (tokenEnc, secret-box.ts); the rest is non-secret config.
+ */
+export interface StoredProvider {
+    /** ANTHROPIC_BASE_URL (the compatible endpoint). Required when an override is set. */
+    baseUrl: string;
+    /** Model id; fills ANTHROPIC_MODEL + the per-tier defaults when present. */
+    model?: string;
+    /** Extra raw env to inject (e.g. CLAUDE_CODE_AUTO_COMPACT_WINDOW for MiniMax's 1M window). */
+    env?: Record<string, string>;
+    /** Preset id this was created from ("minimax", "minimax-cn", or "custom"), for display. */
+    preset?: string;
+    /** Encrypted auth token (ANTHROPIC_AUTH_TOKEN). */
+    tokenEnc?: string;
+}
+
+/** A provider override with its token decrypted, as handed to ToolSpec.providerEnv. */
+export interface ResolvedProvider { baseUrl: string; token: string; model?: string; env?: Record<string, string>; }
+
+/** The non-secret provider fields surfaced to listings/UIs (the token is never exposed). */
+export interface ProviderView { baseUrl: string; model?: string; preset?: string; env?: Record<string, string>; hasToken: boolean; }
+
+/** Fields a UI/CLI sends to set a provider. An omitted `token` keeps the stored one; "" clears it. */
+export interface ProviderInput { baseUrl: string; model?: string; env?: Record<string, string>; preset?: string; token?: string; }
+
+/** A ready-made provider configuration the UIs can offer (fills baseUrl/model/env for the user). */
+export interface ProviderPreset {
+    id: string;
+    label: string;
+    /** Which tool this preset targets (only that tool's accounts should offer it). */
+    tool: string;
+    baseUrl: string;
+    model?: string;
+    env?: Record<string, string>;
+    /** Where to get the API key, shown as a hint in the UIs. */
+    tokenUrl?: string;
+}
+
+/**
+ * Built-in provider presets. MiniMax exposes an Anthropic-compatible endpoint for Claude Code
+ * (https://platform.minimax.io/docs/token-plan/claude-code): one model id (MiniMax-M3[1m]) fills
+ * every tier, and the 1M context window needs CLAUDE_CODE_AUTO_COMPACT_WINDOW.
+ */
+export const PROVIDER_PRESETS: ProviderPreset[] = [
+    {
+        id: "minimax", label: "MiniMax (International)", tool: "claude",
+        baseUrl: "https://api.minimax.io/anthropic", model: "MiniMax-M3[1m]",
+        env: { CLAUDE_CODE_AUTO_COMPACT_WINDOW: "1000000" },
+        tokenUrl: "https://platform.minimax.io/user-center/payment/token-plan",
+    },
+    {
+        id: "minimax-cn", label: "MiniMax (China)", tool: "claude",
+        baseUrl: "https://api.minimaxi.com/anthropic", model: "MiniMax-M3[1m]",
+        env: { CLAUDE_CODE_AUTO_COMPACT_WINDOW: "1000000" },
+        tokenUrl: "https://platform.minimaxi.com/user-center/payment/token-plan",
+    },
+];
+
+/** Presets available for a tool (empty when the tool has no provider-override support). */
+export function presetsForTool(toolName: string): ProviderPreset[] {
+    return getTool(toolName).providerEnv ? PROVIDER_PRESETS.filter((p) => p.tool === toolName) : [];
+}
+
 export interface Account {
     name: string;
     dir: string;
     createdAt: string;
     lastUsed?: string;
+    /** Optional provider override (e.g. MiniMax). Absent = the tool's default backend. */
+    provider?: StoredProvider;
 }
 
 /** An account plus display metadata: active flag, owning tool, and signed-in identity. */
-export interface AccountView extends Account {
+export interface AccountView extends Omit<Account, "provider"> {
     active: boolean;
     tool: string;
     toolLabel: string;
     email?: string;
     /** Fallback identity when the tool has no email (e.g. opencode's provider list). */
     displayName?: string;
+    /** Provider override (token never included), or undefined for the default backend. */
+    provider?: ProviderView;
+    /** Whether this tool supports a provider override at all (drives UI visibility). */
+    supportsProvider: boolean;
 }
 
 /** Per-tool slice of the registry: its accounts and which one is active. */
@@ -324,6 +417,7 @@ export function listAccounts(toolName: string = DEFAULT_TOOL): AccountView[] {
     const bucket = bucketOf(readRegistry(), toolName);
     const all = [defaultAccount(tool), ...bucket.accounts];
     const active = resolveActiveName(bucket, all);
+    const supportsProvider = Boolean(tool.providerEnv);
     return all.map((a) => {
         const info = tool.accountInfo?.(a.dir) ?? {};
         return {
@@ -333,8 +427,17 @@ export function listAccounts(toolName: string = DEFAULT_TOOL): AccountView[] {
             toolLabel: tool.label,
             email: info.email,
             displayName: info.displayName,
+            // The sanitized view (no token) overrides the raw `provider` from the spread above.
+            provider: toProviderView(a.provider),
+            supportsProvider,
         };
     });
+}
+
+/** Map a stored provider to its non-secret view (or undefined when there is no override). */
+function toProviderView(p: StoredProvider | undefined): ProviderView | undefined {
+    if (!p || !p.baseUrl) return undefined;
+    return { baseUrl: p.baseUrl, model: p.model, preset: p.preset, env: p.env, hasToken: Boolean(p.tokenEnc) };
 }
 
 /** Name of a tool's active account, falling back to "default" when the pointer is stale. */
@@ -461,6 +564,66 @@ export function renameAccount(toolName: string, oldName: string, newName: string
     }
     writeRegistry(reg);
     return account;
+}
+
+// --- provider overrides ----------------------------------------------------------
+
+/** A managed account's provider override (non-secret view), or null when none/unsupported. */
+export function getAccountProvider(toolName: string, name: string): ProviderView | null {
+    const tool = getTool(toolName);
+    if (!tool.providerEnv || name === DEFAULT_NAME) return null;
+    const account = bucketOf(readRegistry(), toolName).accounts.find((a) => a.name === name);
+    return account ? (toProviderView(account.provider) ?? null) : null;
+}
+
+/** Build a ProviderInput from a built-in preset id + an optional token, or null if unknown. */
+export function providerFromPreset(presetId: string, token?: string): ProviderInput | null {
+    const preset = PROVIDER_PRESETS.find((p) => p.id === presetId);
+    if (!preset) return null;
+    return { baseUrl: preset.baseUrl, model: preset.model, env: preset.env, preset: preset.id, token };
+}
+
+/**
+ * Set (or clear, with null) a managed account's provider override. The token is encrypted at
+ * rest; an omitted token on update keeps the stored one, an empty string clears it. Rejects the
+ * synthetic "default" account (it stays on the vendor default) and tools without provider support.
+ */
+export function setAccountProvider(toolName: string, name: string, input: ProviderInput | null): void {
+    const tool = getTool(toolName);
+    if (!tool.providerEnv) throw new Error(`${tool.label} does not support a provider override.`);
+    if (name === DEFAULT_NAME) throw new Error(`The '${DEFAULT_NAME}' account stays on ${tool.label}'s default backend; create a named account for a custom provider.`);
+    const reg = readRegistry();
+    const bucket = bucketOf(reg, toolName);
+    const account = bucket.accounts.find((a) => a.name === name);
+    if (!account) throw new Error(`No such ${toolName} account: '${name}'.`);
+    if (input === null) {
+        delete account.provider;
+    } else {
+        const baseUrl = (input.baseUrl || "").trim();
+        if (!/^https?:\/\//i.test(baseUrl)) throw new Error("A provider needs a base URL starting with http:// or https://.");
+        const prev = account.provider;
+        // undefined token keeps the stored one; "" clears it; a value (re)encrypts.
+        const tokenEnc = input.token === undefined ? prev?.tokenEnc : (input.token ? encryptSecret(input.token) : undefined);
+        const provider: StoredProvider = { baseUrl };
+        const model = (input.model || "").trim();
+        if (model) provider.model = model;
+        if (input.env && Object.keys(input.env).length) provider.env = { ...input.env };
+        if (input.preset) provider.preset = input.preset;
+        if (tokenEnc) provider.tokenEnc = tokenEnc;
+        account.provider = provider;
+    }
+    reg.tools[toolName] = bucket;
+    writeRegistry(reg);
+}
+
+/** The env to inject so a launch uses the account's provider override, or null when none applies. */
+export function accountProviderEnv(toolName: string, name: string): Record<string, string> | null {
+    const tool = getTool(toolName);
+    if (!tool.providerEnv || name === DEFAULT_NAME) return null;
+    const account = bucketOf(readRegistry(), toolName).accounts.find((a) => a.name === name);
+    const p = account?.provider;
+    if (!p || !p.baseUrl) return null;
+    return tool.providerEnv({ baseUrl: p.baseUrl, token: decryptSecret(p.tokenEnc || ""), model: p.model, env: p.env });
 }
 
 // --- profiles --------------------------------------------------------------------
@@ -590,6 +753,12 @@ export async function launchTool(toolName: string, name: string | null, passthro
     // makes `enigma <tool>` work when the tool is installed but not on the shell PATH.
     const binary = process.env[tool.binEnv] || cfg.toolPaths?.[toolName] || resolveBin(tool.bin) || tool.bin;
     const env = { ...process.env, ...tool.envFor(dir) };
+
+    // Per-account provider override (e.g. point Claude Code at MiniMax): inject its env BEFORE the
+    // measuring-proxy block so a custom ANTHROPIC_BASE_URL disables the proxy (which must only ever
+    // front Anthropic). This is an explicit per-account choice, so it wins over the inherited shell.
+    const providerEnv = accountProviderEnv(toolName, account);
+    if (providerEnv) Object.assign(env, providerEnv);
 
     touchLastUsed(toolName, account);
 

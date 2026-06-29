@@ -15,15 +15,15 @@
  * enables mouse capture by default (useMouse).
  */
 
-import { CATEGORIES, ALL_SETTINGS, valueLabel, invalidateSettingReads } from "../settings-registry";
+import { readConfig } from "../config";
+import { readUsageCached } from "../usage";
+import type { UsageReport } from "../usage";
 import { applyMemoryToggles } from "../skills";
 import { onGhTelemetryChange } from "../github";
-import { readUsageCached } from "../usage";
+import type { Scope, Setting } from "../settings-registry";
 import { recallDashboard, type RecallView } from "../dashboard-recall";
 import { resourceStatus, runResourceAction, type ResourceStatus } from "../resources";
-import { readConfig } from "../config";
-import type { UsageReport } from "../usage";
-import type { Scope, Setting } from "../settings-registry";
+import { CATEGORIES, ALL_SETTINGS, valueLabel, invalidateSettingReads } from "../settings-registry";
 import type { HubContext, HubAccount, HubExitAction, HubProfile, HubSkill, HubTool, ActionRequest, ActionResult } from "./types";
 
 /** Rendered tree node (React element or primitive child). */
@@ -113,6 +113,8 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
     const renameProfileFn = opts.hub?.renameProfile;
     const removeProfileFn = opts.hub?.removeProfile;
     const setProfileAccountFn = opts.hub?.setProfileAccount;
+    const setProviderFn = opts.hub?.setAccountProvider;
+    const providerPresets = opts.hub?.providerPresets ?? [];
     // The unified Accounts & profiles panel appears when the hub wired either side
     // in; each section renders only when its operations are available.
     const hasAccounts = showActions && Boolean(activateAccount) && initialAccounts.length > 0;
@@ -238,7 +240,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             txt(cur?.kind === "account" ? ` ${cur.account.dir}` : " ", { fg: COL.gray, truncate: true }),
             txt(cur?.kind === "profile"
                 ? "enter set active   a add   e edit accounts   r rename   d remove"
-                : "enter set active   c connect/login   a add   r rename   d remove", { fg: COL.gray, marginTop: 1, truncate: true }),
+                : `enter set active   c connect/login   a add   r rename   d remove${cur?.kind === "account" && cur.account.supportsProvider && cur.account.removable ? "   p provider" : ""}`, { fg: COL.gray, marginTop: 1, truncate: true }),
         ], wheel(s.onMove));
     };
 
@@ -614,6 +616,9 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         const [renaming, setRenaming] = useState<{ tool: string; toolLabel: string; name: string; error?: string } | null>(null);
         const [profRename, setProfRename] = useState<{ name: string; error?: string } | null>(null);
         const [connectPrompt, setConnectPrompt] = useState<{ tool: string; account: string; index: number } | null>(null);
+        // Provider-override editor (e.g. point a Claude account at MiniMax). Multi-step: pick a
+        // backend (default/preset/custom), then a base URL (custom only), then the token.
+        const [providerEdit, setProviderEdit] = useState<{ tool: string; account: string; step: "backend" | "base" | "token"; cursor: number; query: string; presetId?: string; baseUrl?: string; error?: string } | null>(null);
         const [profiles, setProfiles] = useState<HubProfile[]>(initialProfiles);
         // Profile management overlays: name input, two-step mapping editor
         // (searchable tool -> searchable account incl. "(unpin)"), remove confirm.
@@ -1003,6 +1008,57 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             const idx = res.accounts.findIndex((a) => a.tool === renaming.tool && a.name === newName);
             setIdCursor(idx >= 0 ? idx : 0);
         };
+        // Provider-override editor: backend select -> (custom only) base URL -> token. Only
+        // for a managed account whose tool supports a provider override (e.g. Claude/MiniMax).
+        const providerBackendItems = (tool: string): PickItem[] => [
+            { value: "__default__", label: "Default (Anthropic)", hint: "the vendor default backend" },
+            ...providerPresets.filter((p) => p.tool === tool).map((p) => ({ value: p.id, label: p.label, hint: p.baseUrl })),
+            { value: "__custom__", label: "Custom (Anthropic-compatible)", hint: "enter a base URL" },
+        ];
+        const startProviderEdit = (i: number): void => {
+            const acc = accounts[i];
+            if (acc && acc.removable && acc.supportsProvider && setProviderFn) {
+                setProviderEdit({ tool: acc.tool, account: acc.name, step: "backend", cursor: 0, query: "" });
+            }
+        };
+        const moveProviderCursor = (delta: 1 | -1): void =>
+            setProviderEdit((s) => {
+                if (!s || s.step !== "backend") return s;
+                const items = filterItems(providerBackendItems(s.tool), s.query);
+                return { ...s, cursor: Math.max(0, Math.min(Math.max(0, items.length - 1), s.cursor + delta)) };
+            });
+        const applyProvider = (s: NonNullable<typeof providerEdit>, input: { baseUrl: string; model?: string; preset?: string; token?: string } | null): void => {
+            if (!setProviderFn) { setProviderEdit(null); return; }
+            const res = setProviderFn(s.tool, s.account, input);
+            if (!res.ok) { setProviderEdit({ ...s, step: "token", error: res.error }); return; }
+            setAccounts(res.accounts);
+            setProviderEdit(null);
+            const idx = res.accounts.findIndex((a) => a.tool === s.tool && a.name === s.account);
+            if (idx >= 0) setIdCursor(idx);
+        };
+        const pickProviderBackend = (cursor: number): void => {
+            if (!providerEdit) return;
+            const items = filterItems(providerBackendItems(providerEdit.tool), providerEdit.query);
+            const sel = items[Math.min(cursor, items.length - 1)];
+            if (!sel) return;
+            if (sel.value === "__default__") { applyProvider(providerEdit, null); return; }
+            if (sel.value === "__custom__") { setProviderEdit({ ...providerEdit, step: "base", query: "", cursor: 0, presetId: undefined, error: undefined }); return; }
+            setProviderEdit({ ...providerEdit, step: "token", query: "", cursor: 0, presetId: sel.value, error: undefined });
+        };
+        const submitProviderBase = (value: string): void => {
+            if (!providerEdit) return;
+            const base = value.trim();
+            if (!/^https?:\/\//i.test(base)) { setProviderEdit({ ...providerEdit, error: "Base URL must start with http:// or https://" }); return; }
+            setProviderEdit({ ...providerEdit, step: "token", baseUrl: base, error: undefined });
+        };
+        const submitProviderToken = (value: string): void => {
+            if (!providerEdit) return;
+            const token = value.trim();
+            const input = providerEdit.presetId
+                ? { baseUrl: "", preset: providerEdit.presetId, token: token || undefined }
+                : { baseUrl: providerEdit.baseUrl || "", preset: "custom", token: token || undefined };
+            applyProvider(providerEdit, input);
+        };
         const activateProfileRow = (i: number): void => {
             const row = profRows[i];
             if (!row || !activateProfileFn || row.active) return;
@@ -1195,6 +1251,19 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
                 return;
             }
 
+            // Provider editor: the backend step is a search-select (navigate/pick); the base and
+            // token steps are focused inputs that own typing, so only Escape is handled here.
+            if (providerEdit) {
+                if (esc) { setProviderEdit(null); return; }
+                if (providerEdit.step === "backend") {
+                    const items = filterItems(providerBackendItems(providerEdit.tool), providerEdit.query);
+                    if (up) { setProviderEdit({ ...providerEdit, cursor: Math.max(0, providerEdit.cursor - 1) }); return; }
+                    if (down) { setProviderEdit({ ...providerEdit, cursor: Math.min(Math.max(0, items.length - 1), providerEdit.cursor + 1) }); return; }
+                    if (enter) { pickProviderBackend(providerEdit.cursor); return; }
+                }
+                return;
+            }
+
             if (skillConfirm) {
                 if (esc || ch === "n") { setSkillConfirm(null); return; }
                 if (up || ch === "k") { setSkillConfirm((c) => c && { ...c, index: Math.max(0, c.index - 1) }); return; }
@@ -1273,6 +1342,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             // On a skill row in the install panel, 'a' opens the per-app on/off overlay.
             if (focusRight && action === "skills" && ch === "a" && actCursor >= agents.length) { openSkillAgents(); return; }
             if (focusRight && identityMode && ch === "c") { if (idRow?.kind === "account") connectSelected(idRow.index); return; }
+            if (focusRight && identityMode && ch === "p") { if (idRow?.kind === "account") startProviderEdit(idRow.index); return; }
             if (focusRight && identityMode && ch === "e") { if (idRow?.kind === "profile") startProfEdit(idRow.index); return; }
             if (focusRight && identityMode && ch === "r") {
                 if (idRow?.kind === "account") startRename(idRow.index);
@@ -1388,6 +1458,24 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
                 onPick: pickProfEdit,
                 onMove: moveProfEditCursor,
             });
+        } else if (providerEdit) {
+            if (providerEdit.step === "backend") {
+                const items = filterItems(providerBackendItems(providerEdit.tool), providerEdit.query);
+                content = renderSearchSelect({
+                    title: `Provider for '${providerEdit.account}' - backend`,
+                    items,
+                    cursor: Math.min(providerEdit.cursor, Math.max(0, items.length - 1)),
+                    error: providerEdit.error,
+                    onQuery: (value: string) => setProviderEdit((s) => s && { ...s, query: value, cursor: 0 }),
+                    onPick: pickProviderBackend,
+                    onMove: moveProviderCursor,
+                });
+            } else if (providerEdit.step === "base") {
+                content = renderAddInput({ title: `Provider for '${providerEdit.account}' - base URL`, placeholder: "https://...", error: providerEdit.error, maxLength: 256, onSubmit: submitProviderBase });
+            } else {
+                const presetLabel = providerEdit.presetId ? (providerPresets.find((p) => p.id === providerEdit.presetId)?.label ?? providerEdit.presetId) : "custom";
+                content = renderAddInput({ title: `Provider for '${providerEdit.account}' - ${presetLabel} API key`, placeholder: "API key (blank = keep/none)", error: providerEdit.error, maxLength: 256, onSubmit: submitProviderToken });
+            }
         } else if (profRemove) {
             content = renderRemoveConfirm(`Remove profile '${profRemove.name}'? (its accounts are kept)`, profRemove.index, chooseProfRemove,
                 (d) => setProfRemove((c) => c && { ...c, index: Math.max(0, Math.min(1, c.index + d)) }));

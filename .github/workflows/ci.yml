@@ -70,6 +70,15 @@ jobs:
       - name: Test recall session memory
         run: bun test tests/recall.test.ts
         working-directory: packages/enigma-cli
+      - name: Test accounts and provider overrides
+        run: bun test tests/accounts.test.ts
+        working-directory: packages/enigma-cli
+      - name: Test hub TUI
+        run: bun test tests/tui.hub.test.ts
+        working-directory: packages/enigma-cli
+      - name: Test provider editor TUI
+        run: bun test tests/tui.provider.test.ts
+        working-directory: packages/enigma-cli
 
       # The package must build (tsup) so dist is publishable.
       - name: Build

@@ -65,12 +65,19 @@ async function callProvider(p: Provider, prompt: string): Promise<string | null>
             return j.choices?.[0]?.message?.content || null;
         }
         const headers: Record<string, string> = { "content-type": "application/json", "anthropic-version": "2023-06-01" };
-        if (p.kind === "anthropic-oauth") { headers.authorization = `Bearer ${p.key}`; headers["anthropic-beta"] = "oauth-2025-04-20"; headers["user-agent"] = UA; }
-        else headers["x-api-key"] = p.key;
-        const res = await fetch(`${base}/v1/messages`, {
-            method: "POST", signal: ctrl.signal, headers,
-            body: JSON.stringify({ model: p.model, max_tokens: 2000, messages: [{ role: "user", content: prompt }] }),
-        });
+        const body: Record<string, unknown> = { model: p.model, max_tokens: 2000, messages: [{ role: "user", content: prompt }] };
+        if (p.kind === "anthropic-oauth") {
+            headers.authorization = `Bearer ${p.key}`;
+            headers["anthropic-beta"] = "oauth-2025-04-20";
+            headers["user-agent"] = UA;
+            // A Claude Code OAuth token is only authorized for requests that identify as Claude
+            // Code: the FIRST system block must be exactly this string, or Anthropic rejects the
+            // call with 401 ("only authorized for use with Claude Code"). Without it enrichment
+            // silently no-ops and the deterministic observations are never curated. Our actual
+            // curation instructions stay in the user turn.
+            body.system = "You are Claude Code, Anthropic's official CLI for Claude.";
+        } else headers["x-api-key"] = p.key;
+        const res = await fetch(`${base}/v1/messages`, { method: "POST", signal: ctrl.signal, headers, body: JSON.stringify(body) });
         if (!res.ok) return null;
         const j = (await res.json()) as { content?: { type?: string; text?: string }[] };
         return (j.content || []).filter((b) => b.type === "text").map((b) => b.text || "").join("") || null;

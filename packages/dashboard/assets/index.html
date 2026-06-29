@@ -321,6 +321,12 @@
         /* Per-memory delete in the Recall list: kept to the right and revealed on row hover/focus. */
         .recall-del { margin-left: auto; opacity: 0; transition: opacity .12s; }
         .set-row:hover .recall-del, .recall-del:focus-visible { opacity: 1; }
+        /* Recall multi-select: a checkbox per row, a highlight for selected rows, and a bulk-action
+           bar that appears only while something is selected. Ctrl/Cmd+click toggles, Shift+click ranges. */
+        .rc-check { flex: 0 0 auto; width: 15px; height: 15px; cursor: pointer; accent-color: var(--accent); margin: 0; }
+        .set-row.sel { background: rgba(224, 164, 88, .10); }
+        .rc-bulk { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+        .rc-bulk .rc-seln { font-size: 12px; color: var(--muted); }
         /* Per-agent skill toggles: one pill per app (the app's icon), green when the skill is on for it; the app name is the tooltip. */
         .set-agents { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
         .achip { display: inline-flex; align-items: center; justify-content: center; padding: 5px 8px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface2); color: var(--muted); cursor: pointer; text-decoration: none; transition: color .15s, background .15s, border-color .15s; }
@@ -454,6 +460,10 @@
         .modal-fl { display: block; margin-top: 14px; margin-bottom: 5px; font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
         .modal-fl .modal-opt { text-transform: none; letter-spacing: 0; opacity: .75; }
         .modal-fl + .modal-input { margin-top: 0; }
+        /* Provider-override editor labels + key hint. */
+        .prov-l { display: block; margin-top: 12px; margin-bottom: 4px; font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+        .prov-hint { margin-top: 8px; font-size: 12px; color: var(--muted); word-break: break-word; }
+        .prov-hint a { color: var(--accent); }
         /* Usage view provider/account pickers. */
         .useg-pick { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
         .useg-pick select { width: auto; min-width: 170px; }
@@ -3460,7 +3470,7 @@ export {
 
         // --- accounts & profiles subpage (mirrors the TUI hub over /api/accounts) ---
         let accountsLoaded = false;
-        let accTools = [], accAccounts = [], accProfiles = [];
+        let accTools = [], accAccounts = [], accProfiles = [], accPresets = [];
         // Real-time name validator mirroring the server (accounts.ts validateAccountName + the
         // duplicate checks), so the modal blocks an invalid or already-used name as the user types.
         // `taken` = names already in scope (per-tool for accounts, global for profiles); `current`
@@ -3483,16 +3493,23 @@ export {
                 + (a.loggedIn ? '<span class="tag">' + esc(a.email || "logged in") + "</span>" : '<span class="tag warn">not logged in</span>');
             const btn = (act, label, cls) => '<button type="button" class="' + (cls || "toggle") + '" data-acc="' + act + '" data-tool="' + esc(a.tool) + '" data-name="' + esc(a.name) + '">' + label + "</button>";
             const removeBtn = '<button type="button" class="btn-danger icon" title="Remove" aria-label="Remove account ' + esc(a.name) + '" data-acc="remove" data-tool="' + esc(a.tool) + '" data-name="' + esc(a.name) + '">' + TRASH_ICON + "</button>";
+            // Provider override (e.g. MiniMax) only for tools that support it, and never the
+            // built-in "default" account (kept on the vendor default). Managed accounts only.
+            const provBtn = (a.supportsProvider && a.removable) ? btn("provider", "Provider") : "";
             const acts = '<div class="set-ctl" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">'
                 + (a.active ? "" : btn("activate", "Use"))
                 + (a.loggedIn ? "" : btn("login", "Log in..."))
+                + provBtn
                 + (a.removable ? btn("rename", "Rename") + removeBtn : "")
                 + "</div>";
             const toolIc = agentSvg(a.tool);
             const toolBadge = toolIc
                 ? '<span class="aicon set-ic" title="' + esc(a.toolLabel) + '" aria-label="' + esc(a.toolLabel) + '">' + toolIc + "</span>"
                 : '<span class="tag ext">' + esc(a.toolLabel) + "</span> ";
-            return '<div class="set-row"><div class="set-meta"><div class="set-name">' + esc(a.name) + " " + toolBadge + badges
+            const provTag = a.provider
+                ? ' <span class="tag meas" title="' + esc(a.provider.baseUrl) + '">via ' + esc(a.provider.preset && a.provider.preset !== "custom" ? a.provider.preset : "custom") + (a.provider.model ? " · " + esc(a.provider.model) : "") + "</span>"
+                : "";
+            return '<div class="set-row"><div class="set-meta"><div class="set-name">' + esc(a.name) + " " + toolBadge + badges + provTag
                 + '</div><div class="set-hint">' + esc(a.dir) + "</div></div>" + acts + "</div>";
         }
         function profileRow(p, tools, accounts) {
@@ -3515,7 +3532,7 @@ export {
         function renderAccounts(d) {
             d = d || {};
             const accounts = d.accounts || [], profiles = d.profiles || [], tools = d.tools || [];
-            accTools = tools; accAccounts = accounts; accProfiles = profiles;
+            accTools = tools; accAccounts = accounts; accProfiles = profiles; accPresets = d.presets || [];
             $("accountsBody").innerHTML = accounts.length ? accounts.map(accountRow).join("") : '<div class="empty" style="padding:20px 0">No accounts.</div>';
             $("profilesBody").innerHTML = profiles.length ? profiles.map((p) => profileRow(p, tools, accounts)).join("")
                 : '<div class="empty" style="padding:20px 0">No profiles yet. Add one to pin an account per tool.</div>';
@@ -3534,6 +3551,69 @@ export {
                 setNote("accountsNote", "Error: " + (out.error || "failed"), "err");
             } catch { if (rollback) rollback(); setNote("accountsNote", "Could not reach the server.", "err"); }
         }
+        // Provider-override editor: a small multi-field modal (backend select + base/model/token)
+        // since openModal only does single fields. Resolves to { clear:true } to drop the override,
+        // an object to set it ({ baseUrl, model?, preset?, token? } - token only when typed), or null.
+        function editProvider(a) {
+            return new Promise((resolve) => {
+                const toolPresets = accPresets.filter((p) => p.tool === a.tool);
+                const cur = a.provider; // { baseUrl, model?, preset?, hasToken } | null
+                const opts = ['<option value="default">Default (Anthropic)</option>']
+                    .concat(toolPresets.map((p) => '<option value="' + esc(p.id) + '">' + esc(p.label) + "</option>"))
+                    .concat(['<option value="custom">Custom (Anthropic-compatible)</option>']).join("");
+                const back = document.createElement("div");
+                back.className = "modal-back";
+                back.innerHTML = '<div class="modal" role="dialog" aria-modal="true" style="max-width:480px;text-align:left">'
+                    + '<div class="modal-title">Provider for ' + esc(a.name) + "</div>"
+                    + '<div class="modal-msg">Point ' + esc(a.toolLabel) + " at another Anthropic-compatible backend (e.g. MiniMax), or keep the default.</div>"
+                    + '<label class="prov-l">Backend</label><select class="modal-input" id="provSel">' + opts + "</select>"
+                    + '<div id="provFields" style="margin-top:8px">'
+                    + '<label class="prov-l">Base URL</label><input class="modal-input" id="provBase" placeholder="https://...">'
+                    + '<label class="prov-l">Model</label><input class="modal-input" id="provModel" placeholder="(provider default)">'
+                    + '<label class="prov-l">API key</label><input class="modal-input" id="provToken" type="password" autocomplete="off" placeholder="' + (cur && cur.hasToken ? "set - leave blank to keep" : "API key") + '">'
+                    + '<div class="prov-hint" id="provHint"></div></div>'
+                    + '<div class="modal-acts"><button type="button" class="toggle modal-cancel">Cancel</button>'
+                    + '<button type="button" class="toggle on modal-ok">Save</button></div></div>';
+                document.body.appendChild(back);
+                requestAnimationFrame(() => back.classList.add("show"));
+                const sel = back.querySelector("#provSel"), fields = back.querySelector("#provFields");
+                const base = back.querySelector("#provBase"), model = back.querySelector("#provModel"), token = back.querySelector("#provToken"), hint = back.querySelector("#provHint");
+                sel.value = cur ? (cur.preset && cur.preset !== "custom" ? cur.preset : "custom") : "default";
+                function applySel() {
+                    const v = sel.value;
+                    fields.style.display = v === "default" ? "none" : "";
+                    if (v === "default") return;
+                    const preset = toolPresets.find((p) => p.id === v);
+                    if (preset) {
+                        base.value = (cur && cur.preset === v && cur.baseUrl) || preset.baseUrl;
+                        model.value = (cur && cur.preset === v && cur.model) || preset.model || "";
+                        hint.innerHTML = preset.tokenUrl ? 'Get a key at <a href="' + esc(preset.tokenUrl) + '" target="_blank" rel="noopener">' + esc(preset.tokenUrl) + "</a>" : "";
+                    } else {
+                        base.value = (cur && (!cur.preset || cur.preset === "custom") && cur.baseUrl) || "";
+                        model.value = (cur && cur.model) || "";
+                        hint.textContent = "";
+                    }
+                }
+                applySel();
+                sel.addEventListener("change", applySel);
+                let done = false;
+                const close = (val) => { if (done) return; done = true; back.classList.remove("show"); setTimeout(() => back.remove(), 200); resolve(val); };
+                back.querySelector(".modal-cancel").addEventListener("click", () => close(null));
+                back.addEventListener("mousedown", (e) => { if (e.target === back) close(null); });
+                back.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); close(null); } });
+                back.querySelector(".modal-ok").addEventListener("click", () => {
+                    if (sel.value === "default") { close({ clear: true }); return; }
+                    const b = base.value.trim();
+                    if (!/^https?:\/\//i.test(b)) { hint.textContent = "Enter a base URL starting with http:// or https://"; return; }
+                    const out = { baseUrl: b };
+                    if (model.value.trim()) out.model = model.value.trim();
+                    if (sel.value !== "custom") out.preset = sel.value;
+                    if (token.value) out.token = token.value; // only send a typed key (blank keeps the stored one)
+                    close(out);
+                });
+                sel.focus();
+            });
+        }
         function wireAccounts() {
             $("accAdd").addEventListener("click", async () => {
                 const tool = accTools.length === 1 ? accTools[0].name
@@ -3551,6 +3631,12 @@ export {
                 else if (op === "remove") { if (await askConfirm("Remove account", "Remove account '" + name + "' and delete its local config dir?", true)) accAction("account.remove", { tool, name }); }
                 else if (op === "rename") { const taken = accAccounts.filter((a) => a.tool === tool).map((a) => a.name); const nn = await askText("Rename account", name, "Rename '" + name + "' to:", nameValidator(taken, name)); if (nn && nn !== name) accAction("account.rename", { tool, name, newName: nn }); }
                 else if (op === "login") { setNote("accountsNote", "To log in, run this in a terminal:  enigma " + tool + " " + name); }
+                else if (op === "provider") {
+                    const a = accAccounts.find((x) => x.tool === tool && x.name === name);
+                    if (!a) return;
+                    const out = await editProvider(a);
+                    if (out) accAction("account.provider", { tool, name, provider: out.clear ? null : out });
+                }
             });
             $("profilesBody").addEventListener("click", async (e) => {
                 const b = e.target.closest("button[data-prof-act]"); if (!b) return;
@@ -3765,6 +3851,9 @@ export {
             llmBtn.setAttribute("aria-checked", p.llm ? "true" : "false");
         }
         let recallItemsById = {};
+        // Multi-select state for the Recall list: a Set of selected ids, the ordered ids as
+        // rendered (for Shift range selection), and the anchor index for the next Shift+click.
+        let recallSel = new Set(), recallOrderIds = [], recallAnchorIdx = null;
         function recallRowHtml(it, anchorId) {
             const ic = '<span class="aicon" title="' + esc(it.source) + '" aria-label="' + esc(it.source) + '">' + (agentSvg(it.source) || esc(it.source)) + "</span>";
             const date = it.createdAt ? new Date(it.createdAt).toISOString().slice(0, 10) : "";
@@ -3786,13 +3875,45 @@ export {
         }
         function renderRecallList(items) {
             recallItemsById = {};
+            // A fresh list invalidates the previous selection (ids may have changed).
+            recallSel = new Set(); recallOrderIds = []; recallAnchorIdx = null;
             if (!items || !items.length) { $("recallList").innerHTML = '<div class="empty" style="padding:16px 0">No memories yet - run a sync, or adjust your search.</div>'; return; }
-            $("recallList").innerHTML = '<div class="panel">' + items.map((it) => {
-                if (it.id) recallItemsById[it.id] = it;
+            const rows = items.map((it) => {
+                // data-idx aligns with recallOrderIds (id'd rows only) so Shift ranges are exact.
+                let dataIdx = "";
+                if (it.id) { recallItemsById[it.id] = it; recallOrderIds.push(it.id); dataIdx = recallOrderIds.length - 1; }
                 const del = it.id ? '<button type="button" class="btn-danger icon recall-del" title="Delete memory" aria-label="Delete this memory" data-del="' + it.id + '">' + TRASH_ICON + "</button>" : "";
-                return '<div class="set-row" style="cursor:pointer" data-rid="' + (it.id || "") + '">' + recallRowHtml(it) + del + "</div>"
+                const check = it.id ? '<input type="checkbox" class="rc-check" data-id="' + it.id + '" aria-label="Select this memory">' : '<span style="width:15px;flex:0 0 auto"></span>';
+                return '<div class="set-row" style="cursor:pointer" data-rid="' + (it.id || "") + '"' + (it.id ? ' data-idx="' + dataIdx + '"' : "") + '>' + check + recallRowHtml(it) + del + "</div>"
                     + '<div id="rd-' + (it.id || "") + '" style="display:none"></div>';
-            }).join("") + "</div>";
+            }).join("");
+            // Bulk-action bar (hidden until something is selected) + the rows.
+            $("recallList").innerHTML = '<div id="recallBulk" class="rc-bulk" style="display:none">'
+                + '<span class="rc-seln" id="recallSelN"></span>'
+                + '<button type="button" class="btn-danger" data-bulk-del>Delete selected</button>'
+                + '<button type="button" class="toggle" data-bulk-clear>Clear selection</button></div>'
+                + '<div class="panel">' + rows + "</div>";
+        }
+        /** Reflect the current selection in the DOM: row highlight, checkboxes, and the bulk bar. */
+        function updateRecallSelUI() {
+            document.querySelectorAll("#recallList .set-row[data-rid]").forEach((row) => {
+                const id = Number(row.dataset.rid);
+                const on = recallSel.has(id);
+                row.classList.toggle("sel", on);
+                const cb = row.querySelector(".rc-check");
+                if (cb) cb.checked = on;
+            });
+            const bar = $("recallBulk");
+            if (bar) {
+                bar.style.display = recallSel.size ? "" : "none";
+                const n = $("recallSelN");
+                if (n) n.textContent = recallSel.size + (recallSel.size === 1 ? " memory selected" : " memories selected");
+            }
+        }
+        /** Select every id between two row indices (inclusive), for Shift+click range selection. */
+        function recallSelectRange(fromIdx, toIdx) {
+            const lo = Math.min(fromIdx, toIdx), hi = Math.max(fromIdx, toIdx);
+            for (let i = lo; i <= hi; i++) { const id = recallOrderIds[i]; if (id) recallSel.add(id); }
         }
         async function loadRecallTimeline(id) {
             const el = $("rtl-" + id);
@@ -3887,6 +4008,16 @@ export {
             $("recallType").addEventListener("change", loadRecall);
             $("recallProject").addEventListener("change", loadRecall);
             $("recallList").addEventListener("click", async (e) => {
+                // Bulk actions on the current multi-selection.
+                if (e.target.closest("[data-bulk-clear]")) { recallSel.clear(); recallAnchorIdx = null; updateRecallSelUI(); return; }
+                if (e.target.closest("[data-bulk-del]")) {
+                    const ids = [...recallSel];
+                    if (!ids.length) return;
+                    const noun = ids.length === 1 ? "memory" : "memories";
+                    if (!(await askConfirm("Delete memories", "Delete " + ids.length + " selected " + noun + "? This cannot be undone.", true))) return;
+                    recallOpPost({ op: "delete", ids }, "Deleting " + ids.length + "...", ids.length + " " + noun + " deleted.");
+                    return;
+                }
                 const del = e.target.closest("[data-del]");
                 if (del) {
                     if (!(await askConfirm("Delete memory", "Delete this memory? This cannot be undone.", true))) return;
@@ -3897,6 +4028,22 @@ export {
                 if (tl) { loadRecallTimeline(tl.dataset.tl); return; }
                 const row = e.target.closest("[data-rid]");
                 if (!row || !row.dataset.rid) return;
+                const id = Number(row.dataset.rid);
+                const cb = e.target.closest(".rc-check");
+                // Selection shortcuts: a checkbox click, Ctrl/Cmd+click (toggle one), or Shift+click
+                // (select the range from the last-clicked anchor through this row, inclusive).
+                if (cb || e.ctrlKey || e.metaKey || e.shiftKey) {
+                    const idx = row.dataset.idx === undefined ? -1 : Number(row.dataset.idx);
+                    if (e.shiftKey && recallAnchorIdx !== null && idx >= 0) {
+                        recallSelectRange(recallAnchorIdx, idx);
+                    } else {
+                        if (recallSel.has(id)) recallSel.delete(id); else recallSel.add(id);
+                        if (idx >= 0) recallAnchorIdx = idx;
+                    }
+                    updateRecallSelUI();
+                    return;
+                }
+                // Plain click expands/collapses the detail (unchanged).
                 const detail = $("rd-" + row.dataset.rid);
                 if (!detail) return;
                 if (detail.innerHTML === "") detail.innerHTML = recallDetailHtml(recallItemsById[row.dataset.rid]);

@@ -10,7 +10,7 @@
 
 import { readConfig, setEnigmaValue, setRecallApiKey, RECALL_PROVIDERS, type RecallProvider } from "./config";
 import type { ObservationHit, RecallStats } from "./recall";
-import { recallAvailable, recallStatus, searchRecall, recentObservations, resetRecall, syncRecall, recallTimeline, deleteRecallObservation, createObservation, generateObservation } from "./recall";
+import { recallAvailable, recallStatus, searchRecall, recentObservations, resetRecall, syncRecall, enrichRecall, recallTimeline, deleteRecallObservation, createObservation, generateObservation } from "./recall";
 
 /** One observation row as the dashboard renders it (full fields, so the detail view needs no refetch). */
 export interface RecallItem {
@@ -77,12 +77,20 @@ function providerView(): RecallProviderView {
 let lastSyncAttempt = 0;
 const SYNC_THROTTLE_MS = 5 * 60 * 1000;
 
-/** Kick a background sync at most every few minutes; never blocks the response. */
+/**
+ * Kick a background sync at most every few minutes; never blocks the response. Also runs an LLM
+ * curation pass (a no-op unless recallLlm is on and a provider has credentials), so the dashboard
+ * - not just the CLI - actually curates the memory the way claude-mem does. enrichRecall is
+ * internally throttled/capped, so repeated calls just drain the queue a batch at a time.
+ */
 function maybeBackgroundSync(): void {
     const now = Date.now();
     if (now - lastSyncAttempt < SYNC_THROTTLE_MS) return;
     lastSyncAttempt = now;
-    setTimeout(() => { try { syncRecall(); } catch { /* best-effort */ } }, 0);
+    setTimeout(() => {
+        try { syncRecall(); } catch { /* best-effort */ }
+        void enrichRecall().catch(() => { /* best-effort */ });
+    }, 0);
 }
 
 /** Build the Recall view: search results when a query is given, else recent observations. */
@@ -121,6 +129,8 @@ export function recallTimelineView(id: number): RecallItem[] {
 export interface RecallActionPayload {
     provider?: string; model?: string; base?: string; key?: string; llm?: boolean;
     id?: number;
+    /** Bulk delete: several observation ids at once (the dashboard's multi-select). */
+    ids?: number[];
     type?: string; title?: string; project?: string; narrative?: string; facts?: string[]; concepts?: string[];
     prompt?: string;
 }
@@ -128,11 +138,21 @@ export interface RecallActionPayload {
 /** Apply a Recall action and return the refreshed view. */
 export async function applyRecallAction(op: string, payload: RecallActionPayload = {}): Promise<{ ok: boolean; error?: string; view?: RecallView }> {
     if (!recallAvailable()) return { ok: false, error: "recall needs the enigma binary" };
-    if (op === "sync") { syncRecall(); return { ok: true, view: recallDashboard() }; }
+    if (op === "sync") {
+        syncRecall();
+        // Curate in the background (opt-in via recallLlm): a set of model calls must never block
+        // the response, and the dashboard's poll surfaces curated rows as they land. Forced so the
+        // explicit button bypasses the inter-pass throttle.
+        void enrichRecall({ force: true }).catch(() => { /* best-effort */ });
+        return { ok: true, view: recallDashboard() };
+    }
     if (op === "clear") { resetRecall(); return { ok: true, view: recallDashboard() }; }
     if (op === "delete") {
-        if (typeof payload.id !== "number") return { ok: false, error: "missing memory id" };
-        deleteRecallObservation(payload.id);
+        const ids = Array.isArray(payload.ids)
+            ? payload.ids.filter((n): n is number => typeof n === "number" && Number.isInteger(n))
+            : (typeof payload.id === "number" ? [payload.id] : []);
+        if (!ids.length) return { ok: false, error: "missing memory id" };
+        for (const id of ids) deleteRecallObservation(id);
         return { ok: true, view: recallDashboard() };
     }
     if (op === "create") {
