@@ -413,6 +413,13 @@ async function runUpdateCli(version: string): Promise<void> {
         refreshLinterPkg();
         ls.stop("Linter updated to latest.");
     }
+    // Marketplace packs the user has actually installed (never fetch one they don't use).
+    for (const pack of listPacks().filter((pk) => isPackInstalled(pk.id))) {
+        const ps = p.spinner();
+        ps.start(`Updating the ${pack.label} pack (@enigmax/${pack.id})...`);
+        const changed = refreshPack(pack.id);
+        ps.stop(changed ? `${pack.label} pack updated to ${installedPackVersion(pack.id)}.` : `${pack.label} pack is up to date.`);
+    }
     // Self-update: ALWAYS reinstall enigma-cli@latest on an explicit `enigma update`, rather
     // than gating on a cached "is newer" check that a stale registry cache could get wrong.
     // runUpdate() runs `npm cache clean --force` first, so the install ignores the npm cache.
