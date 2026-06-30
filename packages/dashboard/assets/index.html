@@ -3804,11 +3804,15 @@ export {
                         + '<button type="button" class="toggle" data-pack="update" data-id="' + esc(p.id) + '">Update</button>'
                         + '<button type="button" class="btn-danger" data-pack="remove" data-id="' + esc(p.id) + '">Remove</button>'
                     : '<button type="button" class="toggle on" data-pack="install" data-id="' + esc(p.id) + '">Install</button>';
-                const opts = '<option value="">follow active (' + esc(p.resolvedAccount || "default") + ')</option>'
-                    + (p.accounts || []).map((a) => '<option value="' + esc(a.name) + '"' + (p.defaultAccount === a.name ? " selected" : "") + '>' + esc(a.name) + (a.label && a.label !== a.name ? " - " + esc(a.label) : "") + "</option>").join("");
+                const stTag = (s) => s === "expired" ? " (login expired)" : s === "empty" ? " (not signed in)" : s === "absent" ? " (no login)" : "";
+                const opts = '<option value="">follow active (' + esc(p.resolvedAccount || "default") + ")" + stTag(p.resolvedState) + "</option>"
+                    + (p.accounts || []).map((a) => '<option value="' + esc(a.name) + '"' + (p.defaultAccount === a.name ? " selected" : "") + ">" + esc(a.name) + (a.label && a.label !== a.name ? " - " + esc(a.label) : "") + stTag(a.state) + "</option>").join("");
+                const warn = p.installed && (p.resolvedState === "expired" || p.resolvedState === "empty")
+                    ? '<div class="set-hint" style="margin-top:6px;color:var(--warn,#e0a020)">This login is ' + (p.resolvedState === "expired" ? "expired" : "not signed in") + ' - the pack may ask you to log in. Refresh it (launch that account once) or pick another above.</div>'
+                    : "";
                 const accountSel = p.installed
                     ? '<label class="set-hint" style="display:flex;align-items:center;gap:8px;margin-top:10px">Account that seeds this pack:'
-                        + '<select data-pack-account data-id="' + esc(p.id) + '">' + opts + "</select></label>"
+                        + '<select data-pack-account data-id="' + esc(p.id) + '">' + opts + "</select></label>" + warn
                     : "";
                 return '<div class="panel"><div class="set-row"><div class="set-meta">'
                     + '<div class="set-name">' + esc(p.label) + " " + state + " " + added + '</div>'

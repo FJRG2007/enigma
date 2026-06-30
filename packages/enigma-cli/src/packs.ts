@@ -292,17 +292,47 @@ export function deployPack(id: string, tool: string): string | null {
     return dir;
 }
 
+const CRED_FILES: Record<string, string[]> = {
+    claude: [".credentials.json"],
+    codex: ["auth.json"],
+    opencode: [join("xdg-data", "opencode", "auth.json")],
+};
+
+/** Whether a Claude credentials file already holds a usable OAuth token (non-empty access+refresh). */
+function hasUsableToken(file: string): boolean {
+    try {
+        const t = (JSON.parse(readFileSync(file, "utf8")) as { claudeAiOauth?: { accessToken?: string; refreshToken?: string } }).claudeAiOauth;
+        return Boolean(t?.accessToken && t?.refreshToken);
+    } catch {
+        return false;
+    }
+}
+
+/** Claude token expiry state of a credentials file: "ok" | "expired" | "empty" | "absent". */
+function tokenState(file: string): "ok" | "expired" | "empty" | "absent" {
+    if (!existsSync(file)) return "absent";
+    try {
+        const t = (JSON.parse(readFileSync(file, "utf8")) as { claudeAiOauth?: { accessToken?: string; expiresAt?: number } }).claudeAiOauth;
+        if (!t?.accessToken) return "empty";
+        return typeof t.expiresAt === "number" && t.expiresAt > 0 && t.expiresAt < Date.now() ? "expired" : "ok";
+    } catch {
+        return "absent";
+    }
+}
+
 /**
- * Seed `account`'s credential files into the pack context so the isolated agent shares that
- * login (no re-authentication). Best-effort and claude-first: only well-known auth files are
- * copied, never the user's project history. Silent on any failure.
+ * Seed `account`'s credential files into the pack context so the isolated agent shares that login
+ * (no re-authentication). Best-effort and claude-first: only well-known auth files are copied,
+ * never the user's project history.
+ *
+ * CRITICAL: never overwrite a context credentials file that already holds a usable token. The
+ * agent rotates its OAuth token in place (refresh invalidates the old refresh token); re-copying
+ * the account's older token over a refreshed one breaks the next refresh and forces a re-login -
+ * the bug behind "enigma helio keeps asking me to log in". So we seed only into a context that
+ * has no usable token yet (first launch, or after a logout/blanked file), and leave a working
+ * session alone. Silent on any failure. Exported for testing.
  */
-function seedCredentials(id: string, tool: string, account: string): void {
-    const CRED_FILES: Record<string, string[]> = {
-        claude: [".credentials.json"],
-        codex: ["auth.json"],
-        opencode: [join("xdg-data", "opencode", "auth.json")],
-    };
+export function seedCredentials(id: string, tool: string, account: string): void {
     const files = CRED_FILES[tool];
     if (!files) return;
     try {
@@ -312,6 +342,7 @@ function seedCredentials(id: string, tool: string, account: string): void {
             const from = join(source, rel);
             if (!existsSync(from)) continue;
             const to = join(dest, rel);
+            if (existsSync(to) && hasUsableToken(to)) continue; // keep the context's refreshed token
             mkdirSync(dirname(to), { recursive: true });
             cpSync(from, to);
         }
@@ -364,20 +395,24 @@ export interface PackView {
     defaultAccount: string | null;
     /** Account that WILL seed the pack now (resolved default/profile/active), for display. */
     resolvedAccount: string;
-    /** Accounts available for the tool, as { name, email } for a picker. */
-    accounts: { name: string; label: string }[];
+    /** Accounts available for the tool, with login freshness so the picker can flag stale logins. */
+    accounts: { name: string; label: string; state: "ok" | "expired" | "empty" | "absent" }[];
+    /** Login state of the account that will seed the pack now (ok | expired | empty | absent). */
+    resolvedState: "ok" | "expired" | "empty" | "absent";
 }
 
 /** Marketplace listing of every pack with its install/enable state and seeding account. */
 export function listPacks(): PackView[] {
     return PACKS.map((p) => {
         const tool = DEFAULT_TOOL;
-        const accounts = listAccounts(tool).map((a) => ({ name: a.name, label: a.email ?? a.displayName ?? a.name }));
+        const accounts = listAccounts(tool).map((a) => ({ name: a.name, label: a.email ?? a.displayName ?? a.name, state: accountTokenState(tool, a.name) }));
+        const resolvedAccount = resolvePackAccount(p.id, tool);
         return {
             id: p.id, label: p.label, description: p.description, tags: p.tags, homepage: p.homepage,
             installed: isPackInstalled(p.id) || Boolean(packAssetsDir(p.id)),
             enabled: isPackEnabled(p.id), version: installedPackVersion(p.id),
-            tool, defaultAccount: getPackAccount(p.id, tool), resolvedAccount: resolvePackAccount(p.id, tool), accounts,
+            tool, defaultAccount: getPackAccount(p.id, tool), resolvedAccount,
+            resolvedState: accountTokenState(tool, resolvedAccount), accounts,
         };
     });
 }
@@ -402,7 +437,30 @@ export async function launchPack(id: string, tool: string = DEFAULT_TOOL, passth
     if (!isPackEnabled(id)) enablePack(id);
     const dir = deployPack(id, tool);
     if (!dir) { process.stderr.write(`${pack.label} pack assets are missing.\n`); return 1; }
+    // Warn (don't block) when the chosen account's stored login is stale: the agent may then
+    // ask to log in inside the isolated context. Tell the user how to fix it cleanly.
+    const ctxFresh = hasUsableToken(join(dir, ...(CRED_FILES[tool]?.[0] ?? "").split("/")));
+    const srcState = accountTokenState(tool, seedAccount);
+    if (!ctxFresh && (srcState === "expired" || srcState === "empty")) {
+        const how = seedAccount === "default" ? `enigma ${tool}` : `enigma ${tool} ${seedAccount}`;
+        const why = srcState === "expired" ? "expired" : "not signed in";
+        process.stderr.write([
+            `Note: the '${seedAccount}' login is ${why}, so ${pack.label} may ask you to log in.`,
+            `  Fix it by refreshing that login (run \`${how}\` and sign in), or seed from another account:`,
+            `  enigma pack use ${id} <account>   (see your accounts with: enigma account list)`,
+            "",
+        ].join("\n"));
+    }
     seedCredentials(id, tool, seedAccount);
     process.stdout.write(`Launching ${pack.label} (${tool}) with account '${seedAccount}' in an isolated context.\n`);
     return launchInDir(tool, dir, passthrough);
+}
+
+/** Claude OAuth token state for an account's stored credentials: ok | expired | empty | absent. */
+export function accountTokenState(tool: string, account: string): "ok" | "expired" | "empty" | "absent" {
+    if (tool !== "claude") return "ok"; // only Claude's token freshness is inspected today
+    const rel = CRED_FILES[tool]?.[0];
+    if (!rel) return "ok";
+    try { return tokenState(join(resolveConfigDir(tool, account), ...rel.split("/"))); }
+    catch { return "absent"; }
 }

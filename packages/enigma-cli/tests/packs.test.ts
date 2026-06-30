@@ -9,7 +9,7 @@
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { test, expect, afterAll } from "bun:test";
-import { mkdtempSync, existsSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, existsSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 
 const HOME = mkdtempSync(join(tmpdir(), "enigma-packs-"));
 process.env.USERPROFILE = HOME;
@@ -93,6 +93,42 @@ test("seeding account: defaults to the active account, can be pinned to any acco
 test("launchPack refuses an unknown explicit account before spawning anything", async () => {
     const code = await packs.launchPack("helio", "claude", [], "does-not-exist");
     expect(code).toBe(1);
+});
+
+test("credential seeding never clobbers a refreshed context token (the re-login bug)", () => {
+    // Give the 'pentest' account a usable stored token.
+    const acct = addAccount("claude", "seedtest");
+    const cred = (access: string, refresh: string) => JSON.stringify({ claudeAiOauth: { accessToken: access, refreshToken: refresh, expiresAt: 0 } });
+    writeFileSync(join(acct.dir, ".credentials.json"), cred("ACCT_ACCESS", "ACCT_REFRESH"));
+    packs.deployPack("helio", "claude");
+    const ctxCred = join(HOME, "packs", "helio", "context", "claude", ".credentials.json");
+
+    // First seed (context empty) copies the account's token in.
+    packs.seedCredentials("helio", "claude", "seedtest");
+    expect(JSON.parse(readFileSync(ctxCred, "utf8")).claudeAiOauth.accessToken).toBe("ACCT_ACCESS");
+
+    // Simulate the agent refreshing its token in the context (rotation).
+    writeFileSync(ctxCred, cred("REFRESHED_ACCESS", "REFRESHED_REFRESH"));
+    // A second launch must NOT overwrite the refreshed token with the account's older one.
+    packs.seedCredentials("helio", "claude", "seedtest");
+    expect(JSON.parse(readFileSync(ctxCred, "utf8")).claudeAiOauth.accessToken).toBe("REFRESHED_ACCESS");
+
+    // But a blanked/logged-out context token IS re-seeded (recovery).
+    writeFileSync(ctxCred, JSON.stringify({ claudeAiOauth: { accessToken: "", refreshToken: "", expiresAt: 0 } }));
+    packs.seedCredentials("helio", "claude", "seedtest");
+    expect(JSON.parse(readFileSync(ctxCred, "utf8")).claudeAiOauth.accessToken).toBe("ACCT_ACCESS");
+});
+
+test("accountTokenState reports ok/expired/empty/absent", () => {
+    const acct = addAccount("claude", "statetest");
+    const write = (o: object) => writeFileSync(join(acct.dir, ".credentials.json"), JSON.stringify(o));
+    expect(packs.accountTokenState("claude", "statetest")).toBe("absent");
+    write({ claudeAiOauth: { accessToken: "x", refreshToken: "y", expiresAt: Date.now() + 3600_000 } });
+    expect(packs.accountTokenState("claude", "statetest")).toBe("ok");
+    write({ claudeAiOauth: { accessToken: "x", refreshToken: "y", expiresAt: 1 } });
+    expect(packs.accountTokenState("claude", "statetest")).toBe("expired");
+    write({ claudeAiOauth: { accessToken: "", refreshToken: "", expiresAt: 0 } });
+    expect(packs.accountTokenState("claude", "statetest")).toBe("empty");
 });
 
 test("setup registers the pack's MCP servers into the isolated context only", () => {
