@@ -119,14 +119,19 @@ test("credential seeding never clobbers a refreshed context token (the re-login 
     expect(JSON.parse(readFileSync(ctxCred, "utf8")).claudeAiOauth.accessToken).toBe("ACCT_ACCESS");
 });
 
-test("accountTokenState reports ok/expired/empty/absent", () => {
+test("accountTokenState: a past-expiry token with a refresh token is OK (auto-refreshes)", () => {
     const acct = addAccount("claude", "statetest");
     const write = (o: object) => writeFileSync(join(acct.dir, ".credentials.json"), JSON.stringify(o));
     expect(packs.accountTokenState("claude", "statetest")).toBe("absent");
     write({ claudeAiOauth: { accessToken: "x", refreshToken: "y", expiresAt: Date.now() + 3600_000 } });
     expect(packs.accountTokenState("claude", "statetest")).toBe("ok");
+    // Past expiry but a refresh token present -> still OK (the agent refreshes it).
     write({ claudeAiOauth: { accessToken: "x", refreshToken: "y", expiresAt: 1 } });
+    expect(packs.accountTokenState("claude", "statetest")).toBe("ok");
+    // Past expiry AND no refresh token -> genuinely expired.
+    write({ claudeAiOauth: { accessToken: "x", refreshToken: "", expiresAt: 1 } });
     expect(packs.accountTokenState("claude", "statetest")).toBe("expired");
+    // No access token -> signed out.
     write({ claudeAiOauth: { accessToken: "", refreshToken: "", expiresAt: 0 } });
     expect(packs.accountTokenState("claude", "statetest")).toBe("empty");
 });

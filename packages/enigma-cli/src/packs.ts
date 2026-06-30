@@ -308,13 +308,20 @@ function hasUsableToken(file: string): boolean {
     }
 }
 
-/** Claude token expiry state of a credentials file: "ok" | "expired" | "empty" | "absent". */
+/**
+ * Login state of a Claude credentials file: "ok" | "expired" | "empty" | "absent".
+ * IMPORTANT: a past-expiry access token is NOT a problem when a refresh token is present - the
+ * agent refreshes it automatically, so that is "ok" (reporting it "expired" was a false alarm
+ * for any normally-aged login). Only a token with no refresh token AND past expiry is truly
+ * unusable ("expired"); "empty" is a logged-out/blanked file; "absent" is no file at all.
+ */
 function tokenState(file: string): "ok" | "expired" | "empty" | "absent" {
     if (!existsSync(file)) return "absent";
     try {
-        const t = (JSON.parse(readFileSync(file, "utf8")) as { claudeAiOauth?: { accessToken?: string; expiresAt?: number } }).claudeAiOauth;
+        const t = (JSON.parse(readFileSync(file, "utf8")) as { claudeAiOauth?: { accessToken?: string; refreshToken?: string; expiresAt?: number } }).claudeAiOauth;
         if (!t?.accessToken) return "empty";
-        return typeof t.expiresAt === "number" && t.expiresAt > 0 && t.expiresAt < Date.now() ? "expired" : "ok";
+        const past = typeof t.expiresAt === "number" && t.expiresAt > 0 && t.expiresAt < Date.now();
+        return past && !t.refreshToken ? "expired" : "ok";
     } catch {
         return "absent";
     }
@@ -441,15 +448,19 @@ export async function launchPack(id: string, tool: string = DEFAULT_TOOL, passth
     // ask to log in inside the isolated context. Tell the user how to fix it cleanly.
     const ctxFresh = hasUsableToken(join(dir, ...(CRED_FILES[tool]?.[0] ?? "").split("/")));
     const srcState = accountTokenState(tool, seedAccount);
-    if (!ctxFresh && (srcState === "expired" || srcState === "empty")) {
+    if (!ctxFresh && srcState !== "ok") {
         const how = seedAccount === "default" ? `enigma ${tool}` : `enigma ${tool} ${seedAccount}`;
-        const why = srcState === "expired" ? "expired" : "not signed in";
-        process.stderr.write([
-            `Note: the '${seedAccount}' login is ${why}, so ${pack.label} may ask you to log in.`,
-            `  Fix it by refreshing that login (run \`${how}\` and sign in), or seed from another account:`,
-            `  enigma pack use ${id} <account>   (see your accounts with: enigma account list)`,
-            "",
-        ].join("\n"));
+        const why = srcState === "empty" ? "is signed out" : srcState === "absent" ? "has no stored login" : "cannot be refreshed";
+        // Suggest a specific account that IS signed in, so the fix is one command.
+        const valid = listAccounts(tool).find((a) => a.name !== seedAccount && accountTokenState(tool, a.name) === "ok");
+        const lines = [
+            `Note: the '${seedAccount}' login ${why}, so ${pack.label} may ask you to log in.`,
+            `  Fix it by signing that account back in (run \`${how}\` and complete /login),`,
+        ];
+        if (valid) lines.push(`  or use your active login instead:  enigma pack use ${id} ${valid.name}`);
+        else lines.push(`  or pin another account:  enigma pack use ${id} <account>   (list them: enigma account list)`);
+        lines.push("");
+        process.stderr.write(lines.join("\n"));
     }
     seedCredentials(id, tool, seedAccount);
     process.stdout.write(`Launching ${pack.label} (${tool}) with account '${seedAccount}' in an isolated context.\n`);
