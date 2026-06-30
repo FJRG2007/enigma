@@ -829,6 +829,43 @@ export async function loginTool(toolName: string, name: string): Promise<number>
     return launchTool(toolName, name, tool.loginArgs ?? []);
 }
 
+/**
+ * Open the tool's interactive login in a NEW terminal window. The dashboard cannot host an
+ * interactive TUI login itself (the browser has no terminal), so it asks the local enigma server
+ * to spawn `enigma <tool> [account]` in a fresh console where the user completes /login. Detached
+ * and best-effort; returns false when no terminal could be opened (the caller then shows the
+ * command to run by hand). Platform-specific: a new console on Windows, Terminal.app on macOS, a
+ * common terminal emulator on Linux.
+ */
+export function openLoginTerminal(toolName: string, name: string): boolean {
+    getTool(toolName);
+    if (process.env.ENIGMA_NO_TERMINAL === "1") return false; // tests/headless: never open a window
+    const enigma = process.env.ENIGMA_BIN_PATH || resolveBin("enigma") || "enigma";
+    const args = name === DEFAULT_NAME ? [toolName] : [toolName, name];
+    try {
+        if (process.platform === "win32") {
+            // `start "" cmd /k <enigma ...>`: a new console that stays open after the tool exits.
+            spawn("cmd", ["/c", "start", "", "cmd", "/k", enigma, ...args], { detached: true, stdio: "ignore", windowsHide: false }).unref();
+            return true;
+        }
+        if (process.platform === "darwin") {
+            const line = [enigma, ...args].join(" ").replace(/"/g, "\\\"");
+            spawn("osascript", ["-e", `tell application "Terminal" to do script "${line}"`, "-e", "tell application \"Terminal\" to activate"], { detached: true, stdio: "ignore" }).unref();
+            return true;
+        }
+        for (const term of ["x-terminal-emulator", "gnome-terminal", "konsole", "xterm"]) {
+            const bin = resolveBin(term);
+            if (!bin) continue;
+            const termArgs = term === "gnome-terminal" ? ["--", enigma, ...args] : ["-e", [enigma, ...args].join(" ")];
+            spawn(bin, termArgs, { detached: true, stdio: "ignore" }).unref();
+            return true;
+        }
+        return false;
+    } catch {
+        return false;
+    }
+}
+
 /** Update an account's lastUsed timestamp; no-op for the synthetic "default". */
 function touchLastUsed(toolName: string, name: string): void {
     if (name === DEFAULT_NAME) return;

@@ -13,8 +13,9 @@
  * lazily inside the add branch so the module stays cheap to load.
  */
 
+import { accountTokenState } from "./packs";
 import {
-    DEFAULT_NAME, TOOL_NAMES, getTool, listAccounts, listProfiles,
+    DEFAULT_NAME, TOOL_NAMES, getTool, listAccounts, listProfiles, openLoginTerminal,
     setActive, addAccount, renameAccount, removeAccount,
     setActiveProfile, addProfile, renameProfile, removeProfile, setProfileAccount, unsetProfileAccount,
     setAccountProvider, providerFromPreset, PROVIDER_PRESETS, type ProviderInput,
@@ -29,8 +30,10 @@ export interface DashAccount {
     active: boolean;
     /** False for a tool's built-in "default" account (cannot be renamed/removed). */
     removable: boolean;
-    /** True when the account has a signed-in identity; false = needs `enigma <tool> <name>` to log in. */
+    /** True when the account has a usable signed-in session (for Claude, a valid token - not just a cached email). */
     loggedIn: boolean;
+    /** Claude login freshness: ok | expired | empty | absent. Undefined for tools without token inspection. */
+    loginState?: "ok" | "expired" | "empty" | "absent";
     /** Whether this tool supports a provider override (drives the provider control's visibility). */
     supportsProvider: boolean;
     /** The active provider override (token never included), or null for the default backend. */
@@ -58,16 +61,22 @@ export interface AccountsPayload {
 /** Snapshot every tool's accounts and all profiles for the browser. */
 export function serializeAccounts(): AccountsPayload {
     const accounts: DashAccount[] = TOOL_NAMES.flatMap((tool) =>
-        listAccounts(tool).map((a) => ({
+        listAccounts(tool).map((a) => {
+            // For Claude, "logged in" means a USABLE token, not just a cached email - so a stale
+            // account (e.g. its token expired) is shown as such and can be re-authenticated.
+            const loginState = tool === "claude" ? accountTokenState(tool, a.name) : undefined;
+            const loggedIn = tool === "claude" ? loginState === "ok" : Boolean(a.email ?? a.displayName);
+            return {
             tool, toolLabel: a.toolLabel, name: a.name, dir: a.dir,
             email: a.email ?? a.displayName,
             active: a.active, removable: a.name !== DEFAULT_NAME,
-            loggedIn: Boolean(a.email ?? a.displayName),
+            loggedIn, loginState,
             supportsProvider: a.supportsProvider,
             provider: a.provider
                 ? { baseUrl: a.provider.baseUrl, model: a.provider.model, preset: a.provider.preset, hasToken: a.provider.hasToken }
                 : null,
-        })));
+            };
+        }));
     const profiles: DashProfile[] = listProfiles().map((p) => ({
         name: p.name, active: p.active, accounts: p.accounts,
         summary: Object.entries(p.accounts).map(([t, a]) => `${t}=${a}`).join("  ") || "(no accounts pinned)",
@@ -76,7 +85,7 @@ export function serializeAccounts(): AccountsPayload {
     return { tools: TOOL_NAMES.map((t) => ({ name: t, label: getTool(t).label })), accounts, profiles, presets };
 }
 
-export interface AccountActionResult { ok: boolean; error?: string; data: AccountsPayload; }
+export interface AccountActionResult { ok: boolean; error?: string; note?: string; data: AccountsPayload; }
 
 /** One serializable mutation payload from the browser. All fields optional; validated per op. */
 export interface AccountActionPayload {
@@ -111,6 +120,15 @@ export async function applyAccountAction(op: string, payload: AccountActionPaylo
             }
             case "account.rename": renameAccount(tool, name, newName); break;
             case "account.remove": removeAccount(tool, name); break;
+            case "account.login": {
+                // Spawn the tool's interactive login in a new terminal window (the browser can't
+                // host a TUI login). Falls back to telling the user the command when no terminal opens.
+                const opened = openLoginTerminal(tool, name);
+                const cmd = `enigma ${tool}${name === DEFAULT_NAME ? "" : ` ${name}`}`;
+                return opened
+                    ? { ok: true, note: `Opened a terminal to log in '${name}'. Complete /login there, then refresh.`, data: serializeAccounts() }
+                    : { ok: false, error: `Could not open a terminal. Run this yourself:  ${cmd}`, data: serializeAccounts() };
+            }
             case "account.provider": {
                 const p = payload.provider;
                 if (p === null || p === undefined) { setAccountProvider(tool, name, null); break; }

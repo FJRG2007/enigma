@@ -55,6 +55,9 @@ jobs:
       - name: Test marketplace packs
         run: bun test tests/packs.test.ts
         working-directory: packages/enigma-cli
+      - name: Test dashboard accounts bridge
+        run: bun test tests/dashboard-accounts.test.ts
+        working-directory: packages/enigma-cli
       - name: Test per-agent skill scoping
         run: bun test tests/skill-agent-scope.test.ts
         working-directory: packages/enigma-cli

@@ -121,9 +121,9 @@
     var ACCOUNTS = {
         tools: [{ name: "claude", label: "Claude Code" }, { name: "codex", label: "Codex" }, { name: "opencode", label: "opencode" }],
         accounts: [
-            { tool: "claude", toolLabel: "Claude Code", name: "default", dir: "~/.claude", email: "you@example.com", active: true, removable: false, loggedIn: true, supportsProvider: true, provider: null },
-            { tool: "claude", toolLabel: "Claude Code", name: "work", dir: "~/.enigma/claude/work", email: "work@company.com", active: false, removable: true, loggedIn: true, supportsProvider: true, provider: null },
-            { tool: "claude", toolLabel: "Claude Code", name: "minimax", dir: "~/.enigma/claude/minimax", email: "", active: false, removable: true, loggedIn: false, supportsProvider: true, provider: { baseUrl: "https://api.minimax.io/anthropic", model: "MiniMax-M3[1m]", preset: "minimax", hasToken: true } },
+            { tool: "claude", toolLabel: "Claude Code", name: "default", dir: "~/.claude", email: "you@example.com", active: true, removable: false, loggedIn: true, loginState: "ok", supportsProvider: true, provider: null },
+            { tool: "claude", toolLabel: "Claude Code", name: "work", dir: "~/.enigma/claude/work", email: "work@company.com", active: false, removable: true, loggedIn: false, loginState: "empty", supportsProvider: true, provider: null },
+            { tool: "claude", toolLabel: "Claude Code", name: "minimax", dir: "~/.enigma/claude/minimax", email: "", active: false, removable: true, loggedIn: false, loginState: "absent", supportsProvider: true, provider: { baseUrl: "https://api.minimax.io/anthropic", model: "MiniMax-M3[1m]", preset: "minimax", hasToken: true } },
             { tool: "codex", toolLabel: "Codex", name: "default", dir: "~/.codex", email: "", active: true, removable: false, loggedIn: false, supportsProvider: false, provider: null },
             { tool: "opencode", toolLabel: "opencode", name: "default", dir: "~/.config/opencode", email: "", active: true, removable: false, loggedIn: false, supportsProvider: false, provider: null }
         ],
@@ -183,7 +183,7 @@
             description: "Bug-bounty and offensive-security harness: recon, vuln hunting, web2/web3 audit, AD, cloud, triage and report writing. Runs in an isolated agent context so it never loads into your normal coding agent.",
             tags: ["bug-bounty", "security", "pentest", "web3"], homepage: "https://github.com/TPEOficial/helio",
             installed: true, enabled: true, version: "0.1.0",
-            tool: "claude", defaultAccount: null, resolvedAccount: "default", resolvedState: "ok",
+            tool: "claude", defaultAccount: null, resolvedAccount: "default", resolvedState: "ok", contextReady: true,
             accounts: [{ name: "default", label: "you@example.com", state: "ok" }, { name: "work", label: "pentest@acme.com", state: "ok" }]
         }
     ];
@@ -365,7 +365,11 @@
         if (path.indexOf("/api/provider-status") !== -1) return { indicator: "none", description: "All Systems Operational" };
         if (path.indexOf("/api/status") !== -1) return STATUS;
         if (path.indexOf("/api/settings") !== -1) return method === "POST" ? applySettingPost(body) : SETTINGS;
-        if (path.indexOf("/api/accounts") !== -1) return method === "POST" ? { ok: true, data: ACCOUNTS } : ACCOUNTS;
+        if (path.indexOf("/api/accounts") !== -1) {
+            if (method !== "POST") return ACCOUNTS;
+            if (body && body.op === "account.login") return { ok: true, note: "Demo - this would open a terminal to log in.", data: ACCOUNTS };
+            return { ok: true, data: ACCOUNTS };
+        }
         if (path.indexOf("/api/skills") !== -1) return method === "POST" ? applySkillPost(body) : SKILLS;
         if (path.indexOf("/api/memory") !== -1) return method === "POST" ? applyMemoryPost(body) : { groups: MEMORY_GROUPS, project: qparam(path, "path") || null };
         if (path.indexOf("/api/projects/detail") !== -1) { var pd = projFind(qparam(path, "path")); return pd ? projDetail(pd) : { error: "Project is not registered." }; }

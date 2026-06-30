@@ -12,6 +12,8 @@ import { join } from "node:path";
 const HOME = mkdtempSync(join(tmpdir(), "enigma-dashacc-"));
 process.env.USERPROFILE = HOME;
 process.env.HOME = HOME;
+process.env.ENIGMA_CONFIG_HOME = HOME;
+process.env.ENIGMA_NO_TERMINAL = "1"; // account.login must never open a real terminal in tests
 
 const { serializeAccounts, applyAccountAction } = await import("../src/dashboard-accounts");
 
@@ -62,4 +64,19 @@ test("manages a profile and pins a tool account", async () => {
 
     r = await applyAccountAction("profile.remove", { name: "team" });
     expect(r.data.profiles.some((p) => p.name === "team")).toBe(false);
+});
+
+test("Claude accounts report a login state (a cached email is not 'logged in' without a token)", () => {
+    const d = serializeAccounts();
+    const def = d.accounts.find((a) => a.tool === "claude" && a.name === "default")!;
+    // No credentials file in the temp HOME -> not a usable session.
+    expect(def.loginState).toBe("absent");
+    expect(def.loggedIn).toBe(false);
+});
+
+test("account.login is offered for any account and never throws (terminal suppressed in tests)", async () => {
+    const r = await applyAccountAction("account.login", { tool: "claude", name: "default" });
+    // ENIGMA_NO_TERMINAL=1 makes the spawn a no-op, so it falls back to the command hint.
+    expect(r.ok).toBe(false);
+    expect(r.error).toContain("enigma claude");
 });

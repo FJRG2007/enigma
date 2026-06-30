@@ -416,6 +416,9 @@ export interface PackView {
     accounts: { name: string; label: string; state: "ok" | "expired" | "empty" | "absent" }[];
     /** Login state of the account that will seed the pack now (ok | expired | empty | absent). */
     resolvedState: "ok" | "expired" | "empty" | "absent";
+    /** True when the isolated context ALREADY holds a usable token, so no login will be asked
+     * even if the resolved account looks stale - suppresses a misleading "not signed in" warning. */
+    contextReady: boolean;
 }
 
 /** Marketplace listing of every pack with its install/enable state and seeding account. */
@@ -424,12 +427,14 @@ export function listPacks(): PackView[] {
         const tool = DEFAULT_TOOL;
         const accounts = listAccounts(tool).map((a) => ({ name: a.name, label: a.email ?? a.displayName ?? a.name, state: accountTokenState(tool, a.name) }));
         const resolvedAccount = resolvePackAccount(p.id, tool);
+        const ctxCred = join(contextDir(p.id, tool), ...(CRED_FILES[tool]?.[0] ?? "").split("/"));
         return {
             id: p.id, label: p.label, description: p.description, tags: p.tags, homepage: p.homepage,
             installed: isPackInstalled(p.id) || Boolean(packAssetsDir(p.id)),
             enabled: isPackEnabled(p.id), version: installedPackVersion(p.id),
             tool, defaultAccount: getPackAccount(p.id, tool), resolvedAccount,
             resolvedState: accountTokenState(tool, resolvedAccount), accounts,
+            contextReady: tool === "claude" ? hasUsableToken(ctxCred) : existsSync(ctxCred),
         };
     });
 }
