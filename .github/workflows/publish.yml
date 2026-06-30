@@ -180,3 +180,23 @@ jobs:
         run: npm publish --workspace @enigmax/dashboard --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # @enigmax/helio is the optional Helio bug-bounty pack: an asset-only package
+      # enigma-cli fetches on demand when the user enables the pack. Publish it (skip if
+      # its version already exists) so the on-demand fetch and `enigma update` find it.
+      # No build step: it ships only vendored static assets.
+      - name: Determine if helio pack version is new
+        id: heliover
+        run: |
+          HV="$(node -p "require('./packages/helio/package.json').version")"
+          if npm view "@enigmax/helio@$HV" version >/dev/null 2>&1; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "@enigmax/helio@$HV already published; skipping."
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Publish helio pack
+        if: steps.heliover.outputs.publish == 'true'
+        run: npm publish --workspace @enigmax/helio --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

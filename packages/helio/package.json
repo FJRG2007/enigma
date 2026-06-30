@@ -1,0 +1,33 @@
+{
+  "name": "@enigmax/helio",
+  "version": "0.1.0",
+  "description": "Helio bug-bounty harness packaged as an optional enigma pack: skills, slash commands, sub-agents, MCP servers and tooling for offensive security and bug bounty work. Installed on demand into an isolated agent context by enigma-cli; never deployed to your normal coding agent. Not a runtime dependency.",
+  "type": "module",
+  "files": [
+    "assets",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "enigma",
+    "enigma-pack",
+    "helio",
+    "bug-bounty",
+    "security",
+    "pentest",
+    "skills"
+  ],
+  "license": "Apache-2.0",
+  "author": "FJRG2007 <fjrg2007@tpeoficial.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/FJRG2007/enigma.git",
+    "directory": "packages/helio"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

@@ -177,6 +177,15 @@
         ]
     };
 
+    var PACKS = [
+        {
+            id: "helio", label: "Helio",
+            description: "Bug-bounty and offensive-security harness: recon, vuln hunting, web2/web3 audit, AD, cloud, triage and report writing. Runs in an isolated agent context so it never loads into your normal coding agent.",
+            tags: ["bug-bounty", "security", "pentest", "web3"], homepage: "https://github.com/TPEOficial/helio",
+            installed: true, enabled: true, version: "0.1.0"
+        }
+    ];
+
     var RECALL = {
         available: true, enabled: true,
         stats: { observations: 128, summaries: 22, sessions: 22, projects: 3, byType: { change: 41, discovery: 33, feature: 28, bugfix: 14, refactor: 8, decision: 3, security: 1 }, dbBytes: 196608, lastObservationAt: Date.now() },
@@ -364,6 +373,12 @@
         if (path.indexOf("/api/recall") !== -1) {
             if (method !== "POST" && path.indexOf("timeline=") !== -1) return { items: RECALL.items };
             return method === "POST" ? { ok: true, view: RECALL } : RECALL;
+        }
+        if (path.indexOf("/api/packs") !== -1) {
+            if (method !== "POST") return { packs: PACKS };
+            var pb = body || {};
+            if (pb.action === "launch") return { ok: true, command: `enigma ${pb.id || "helio"}`, note: "Run this in a terminal to launch the isolated agent." };
+            return { ok: true, note: "Demo - no action taken.", packs: PACKS };
         }
         if (path.indexOf("/api/update") !== -1) return { ok: true, changed: false, version: STATS.version, note: "This is a static demo." };
         if (path.indexOf("/api/fix-path") !== -1) return { ok: true, message: "Demo - nothing to fix." };

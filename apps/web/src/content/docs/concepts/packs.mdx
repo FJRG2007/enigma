@@ -1,0 +1,34 @@
+---
+title: Packs (marketplace)
+description: Optional, isolated harness packs you install on demand - each runs in its own agent context so it never loads into your normal coding agent.
+group: Concepts
+order: 33
+---
+import Cmd from "../../../components/Cmd.astro";
+
+A **pack** is an optional harness bundle - skills, slash commands, sub-agents and MCP servers for a focused domain - that you add on demand from the marketplace. Unlike enigma's built-in policy skills, a pack is **never** deployed into your normal agent. It runs in a **dedicated, isolated agent context**, so its skills and commands do not load into - or overload - the agent you use for everyday coding.
+
+The first pack is **[Helio](https://github.com/TPEOficial/helio)**: a bug-bounty and offensive-security harness (recon, vulnerability hunting, web2/web3 audit, Active Directory, cloud, triage and report writing).
+
+## Why isolation matters
+
+Agents keep every installed skill's name and description in context at all times (progressive disclosure). Adding a dozen security skills to your normal agent would sit in every session and risk mis-triggering on ordinary coding tasks. A pack avoids that: it is fetched as an asset-only package into a managed directory and deployed **only** into its own context directory, which the agent reads via its config-dir environment variable. Your normal `enigma claude` stays clean.
+
+## Install and launch
+
+<Cmd name="enigma pack <subcommand>" ex={["enigma pack list", "enigma pack install helio", "enigma helio", "enigma pack setup helio", "enigma pack update helio", "enigma pack remove helio"]}>
+`list` shows every pack and its install state. `install <id>` fetches the pack. `enigma <id>` (e.g. `enigma helio`) launches an agent in the pack's isolated context, seeded with your active login so there is no re-authentication. `setup <id>` registers the pack's MCP servers. `update`/`remove` keep or delete it.
+</Cmd>
+
+You can also manage packs from the dashboard's **Packs** tab (install, update, remove, and copy the launch command).
+
+## How it works
+
+- **Delivery** - each pack ships as an asset-only npm package (e.g. `@enigmax/helio`) fetched on demand into `~/.enigma/packs/<id>`, the same on-demand model as the dashboard UI. A workspace checkout is used directly in development.
+- **Isolation** - launching a pack deploys its skills, the agent's command set and its sub-agents into `~/.enigma/packs/<id>/context/<tool>`, then spawns the agent pointed at that directory. The context holds only the pack's content.
+- **Shared login** - your active account's credentials are seeded into the context, so the isolated agent is already authenticated.
+- **MCP and tooling** - a pack can ship MCP servers (Helio bundles HackerOne and Burp clients). They are registered only by `enigma pack setup <id>` because they need Python and the pack's tooling, which is heavier than the default skills-and-commands launch.
+
+## Helio
+
+Helio turns the isolated agent into a bug-bounty workstation: 13 skills across recon, vulnerability classes, web3 audit, AD, cloud, OPSEC and reporting; slash commands like `/recon`, `/hunt`, `/validate`, `/report` and `/autopilot`; specialised sub-agents; and the HackerOne/Burp MCP servers. Use it only against targets you are authorised to test.

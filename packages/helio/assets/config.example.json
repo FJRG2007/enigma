@@ -1,0 +1,31 @@
+{
+  "provider": "ollama",
+  "ollama_host": "http://localhost:11434",
+  "default_model": "qwen3:8b",
+  "tui_safe_prefix": "!",
+  "commands": {
+    "recon": {
+      "enabled": true,
+      "require_scope_check": true,
+      "max_urls": 100
+    },
+    "hunt": {
+      "enabled": true,
+      "auto_validate": true,
+      "vuln_classes": ["idor", "ssrf", "xss", "auth_bypass", "sqli"]
+    },
+    "validate": {
+      "enabled": true,
+      "gates": ["gate0", "gate1", "gate2", "gate3"]
+    },
+    "report": {
+      "enabled": true,
+      "default_platform": "hackerone"
+    }
+  },
+  "memory": {
+    "track_sessions": true,
+    "track_findings": true,
+    "track_patterns": true
+  }
+}
