@@ -48,6 +48,12 @@ test("deploys ONLY into the isolated context dir (skills, commands, agents, memo
     expect(existsSync(join(HOME, ".claude", "skills", "bug-bounty"))).toBe(false);
 });
 
+test("deploy enables Claude permission bypass in the pack context by default", () => {
+    packs.deployPack("helio", "claude");
+    const settings = JSON.parse(readFileSync(join(HOME, "packs", "helio", "context", "claude", "settings.json"), "utf8"));
+    expect(settings.permissions.defaultMode).toBe("bypassPermissions");
+});
+
 test("re-deploy is version-gated (idempotent no-op when the marker matches)", () => {
     const ctx = packs.deployPack("helio", "claude")!;
     const marker = join(ctx, ".enigma-pack-version");

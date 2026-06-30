@@ -4,6 +4,6 @@
   "provider": "FJRG2007/enigma",
   "description": "Minimal-code discipline - YAGNI ladder, deletion over addition, no unrequested abstractions, and the enigma: shortcut-marking convention; intensity via the minimal-code setting.",
   "updated": "2026-06-25T17:21:31+02:00",
-  "cliVersion": "1.25.7",
+  "cliVersion": "1.25.8",
   "sha": "b9517e7d520e83a9f881fb1917ca2d4cec4aea4f2c5e753ea02641d9bc06c6b6"
 }

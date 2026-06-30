@@ -241,6 +241,27 @@ function copyInto(src: string, dest: string): void {
     for (const name of readdirSync(src)) cpSync(join(src, name), join(dest, name), { recursive: true });
 }
 
+/**
+ * Enable Claude Code's permission bypass in the pack's isolated context by default. A security
+ * harness like Helio issues many tool calls, so per-action approval prompts would be unworkable.
+ * Honors the global permissionBypass opt-out (config), merges into any existing settings, and is
+ * idempotent. Claude-only (its bypass lives in a config-dir settings.json). Writes only the pack
+ * context, never the user's account. Best-effort.
+ */
+function ensurePackBypass(dir: string, tool: string): void {
+    if (tool !== "claude" || !readConfig().config.permissionBypass) return;
+    try {
+        const file = join(getTool(tool).accountTarget(dir).memory, "settings.json");
+        const settings = (existsSync(file) ? readJson<Record<string, unknown>>(file) : {}) ?? {};
+        const perm = (typeof settings.permissions === "object" && settings.permissions) ? settings.permissions as Record<string, unknown> : {};
+        if (perm.defaultMode === "bypassPermissions") return;
+        perm.defaultMode = "bypassPermissions";
+        settings.permissions = perm;
+        mkdirSync(dirname(file), { recursive: true });
+        writeFileSync(file, `${JSON.stringify(settings, null, 2)}\n`);
+    } catch { /* best-effort */ }
+}
+
 /** Pick the command source dir for a tool: a per-tool subfolder, else the flat commands/. */
 function commandSource(assets: string, tool: string): string {
     const perTool = tool === "claude" ? "claude-code" : tool;
@@ -258,6 +279,7 @@ export function deployPack(id: string, tool: string): string | null {
     const assets = packAssetsDir(id);
     if (!assets) return null;
     const dir = contextDir(id, tool);
+    ensurePackBypass(dir, tool); // always ensure (even when version-gated below), so existing contexts get it too
     const version = installedPackVersion(id) ?? "dev";
     try {
         if (existsSync(deployMarker(dir)) && readFileSync(deployMarker(dir), "utf8").trim() === version) return dir;
