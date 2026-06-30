@@ -332,12 +332,19 @@ function tokenState(file: string): "ok" | "expired" | "empty" | "absent" {
  * (no re-authentication). Best-effort and claude-first: only well-known auth files are copied,
  * never the user's project history.
  *
- * CRITICAL: never overwrite a context credentials file that already holds a usable token. The
- * agent rotates its OAuth token in place (refresh invalidates the old refresh token); re-copying
- * the account's older token over a refreshed one breaks the next refresh and forces a re-login -
- * the bug behind "enigma helio keeps asking me to log in". So we seed only into a context that
- * has no usable token yet (first launch, or after a logout/blanked file), and leave a working
- * session alone. Silent on any failure. Exported for testing.
+ * Two rules keep this from ever making auth WORSE:
+ *  1. Never overwrite a context token that is already usable. The agent rotates its OAuth token
+ *     in place (a refresh invalidates the old refresh token); re-copying the account's older
+ *     token over a refreshed one breaks the next refresh and forces a re-login.
+ *  2. (Claude) Never PLANT a non-usable token. A blanked/expired `.credentials.json` (which
+ *     happens when the account's real token lives in the OS keychain, not the file) must not be
+ *     copied in: an empty token file is worse than none, as it can block the agent's own session
+ *     resolution. When the file has nothing usable we leave the context's credentials untouched
+ *     and let the agent resolve the login itself (keychain, or an interactive sign-in that the
+ *     isolated context then remembers).
+ *
+ * Together: we only ever copy a USABLE token into a context that lacks one. Silent on any
+ * failure. Exported for testing.
  */
 export function seedCredentials(id: string, tool: string, account: string): void {
     const files = CRED_FILES[tool];
@@ -348,6 +355,9 @@ export function seedCredentials(id: string, tool: string, account: string): void
         for (const rel of files) {
             const from = join(source, rel);
             if (!existsSync(from)) continue;
+            // Claude: only copy a credentials file that actually carries a usable token - never
+            // plant a blanked/keychain-stored placeholder over the agent's own resolution.
+            if (tool === "claude" && !hasUsableToken(from)) continue;
             const to = join(dest, rel);
             if (existsSync(to) && hasUsableToken(to)) continue; // keep the context's refreshed token
             mkdirSync(dirname(to), { recursive: true });
@@ -444,21 +454,19 @@ export async function launchPack(id: string, tool: string = DEFAULT_TOOL, passth
     if (!isPackEnabled(id)) enablePack(id);
     const dir = deployPack(id, tool);
     if (!dir) { process.stderr.write(`${pack.label} pack assets are missing.\n`); return 1; }
-    // Warn (don't block) when the chosen account's stored login is stale: the agent may then
-    // ask to log in inside the isolated context. Tell the user how to fix it cleanly.
+    // Note (don't block) when there is no copyable token for the chosen account: the agent may
+    // ask to log in once inside the isolated context. This is expected when the account's real
+    // token lives in the OS keychain rather than a file (e.g. Claude Code on Windows) - it is NOT
+    // necessarily "signed out". A one-time sign-in is remembered by the context afterwards.
     const ctxFresh = hasUsableToken(join(dir, ...(CRED_FILES[tool]?.[0] ?? "").split("/")));
     const srcState = accountTokenState(tool, seedAccount);
     if (!ctxFresh && srcState !== "ok") {
-        const how = seedAccount === "default" ? `enigma ${tool}` : `enigma ${tool} ${seedAccount}`;
-        const why = srcState === "empty" ? "is signed out" : srcState === "absent" ? "has no stored login" : "cannot be refreshed";
-        // Suggest a specific account that IS signed in, so the fix is one command.
         const valid = listAccounts(tool).find((a) => a.name !== seedAccount && accountTokenState(tool, a.name) === "ok");
         const lines = [
-            `Note: the '${seedAccount}' login ${why}, so ${pack.label} may ask you to log in.`,
-            `  Fix it by signing that account back in (run \`${how}\` and complete /login),`,
+            `Note: no saved token could be copied for '${seedAccount}', so ${pack.label} may ask you to log in once.`,
+            "  If it does, sign in inside the pack (/login) - the isolated context remembers it next time.",
         ];
-        if (valid) lines.push(`  or use your active login instead:  enigma pack use ${id} ${valid.name}`);
-        else lines.push(`  or pin another account:  enigma pack use ${id} <account>   (list them: enigma account list)`);
+        if (valid) lines.push(`  Or seed from an account that has a file-based login:  enigma pack use ${id} ${valid.name}`);
         lines.push("");
         process.stderr.write(lines.join("\n"));
     }

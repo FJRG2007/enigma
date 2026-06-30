@@ -119,6 +119,19 @@ test("credential seeding never clobbers a refreshed context token (the re-login 
     expect(JSON.parse(readFileSync(ctxCred, "utf8")).claudeAiOauth.accessToken).toBe("ACCT_ACCESS");
 });
 
+test("credential seeding never plants a blanked source token (keychain-stored logins)", () => {
+    // Account whose file token is blanked (its real token lives in the OS keychain).
+    const acct = addAccount("claude", "keychainacct");
+    writeFileSync(join(acct.dir, ".credentials.json"), JSON.stringify({ claudeAiOauth: { accessToken: "", refreshToken: "", expiresAt: 0 } }));
+    packs.deployPack("helio", "claude");
+    const ctxCred = join(HOME, "packs", "helio", "context", "claude", ".credentials.json");
+    rmSync(ctxCred, { force: true });
+    // Seeding from a blanked source must NOT create an empty token file in the context
+    // (an empty file would block the agent's own keychain/session resolution).
+    packs.seedCredentials("helio", "claude", "keychainacct");
+    expect(existsSync(ctxCred)).toBe(false);
+});
+
 test("accountTokenState: a past-expiry token with a refresh token is OK (auto-refreshes)", () => {
     const acct = addAccount("claude", "statetest");
     const write = (o: object) => writeFileSync(join(acct.dir, ".credentials.json"), JSON.stringify(o));
