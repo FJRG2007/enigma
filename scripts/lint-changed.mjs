@@ -33,7 +33,7 @@ function parseArgs(argv) {
  * Path prefixes excluded from the style gate: vendored third-party content that
  * enigma commits verbatim and does not own the style of (the autoskills registry).
  */
-const IGNORE_PREFIXES = ["assets/skills-registry/"];
+const IGNORE_PREFIXES = ["assets/skills-registry/", "packages/helio/assets/"];
 
 /** The changed source files (added/copied/modified) for the selected diff. */
 function changedFiles({ staged, range }) {

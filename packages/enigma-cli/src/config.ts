@@ -161,6 +161,14 @@ export interface EnigmaConfig {
      * you can keep a skill for Claude Code but not OpenCode, for example.
      */
     skillAgentsOff: Record<string, string[]>;
+    /**
+     * Optional packs the user has added from the marketplace (e.g. "helio"). A pack is an
+     * isolated harness bundle (skills/commands/agents/MCP) fetched on demand and deployed only
+     * into its own dedicated agent context (see packs.ts), so it never loads into the normal
+     * agent. This list is the durable record of which packs are added; the pack's npm bundle
+     * presence under ~/.enigma/packs is the fetch state.
+     */
+    packs: string[];
 }
 
 /**
@@ -208,7 +216,7 @@ export const CONFIG_DEFAULTS: EnigmaConfig = {
     commitEmoji: true, updateNotifier: true, fullscreen: true, parallelSubagents: false, outputStyle: "off", minimalCode: "full",
     autoSync: true, remoteSkills: true, skillUpdatePolicy: "overwrite", permissionBypass: true, autoLint: false, compress: false, gate: false, dashboard: "off", tokenPrice: 0, tokenSpeed: 0, usageStats: false, recall: false, recallLlm: true, recallProvider: "claude-local", recallModel: "", recallApiBase: "", recallApiKey: "", proxy: false, usageApi: false, promptSecretGuard: false, promptSecretMode: "redact",
     planSessionLimit: 0, planWeeklyLimit: 0, planWeeklySonnetLimit: 0, planWeeklyOpusLimit: 0, planWeeklyReset: "mon 00:00",
-    dashboardLive: true, dashboardPort: 0, toolPaths: {}, bypassDisabled: [], discardedSkills: [], skillAgentsOff: {},
+    dashboardLive: true, dashboardPort: 0, toolPaths: {}, bypassDisabled: [], discardedSkills: [], skillAgentsOff: {}, packs: [],
 };
 
 export type EnigmaConfigKey = keyof EnigmaConfig;

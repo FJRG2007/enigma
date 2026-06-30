@@ -765,21 +765,51 @@ export async function launchTool(toolName: string, name: string | null, passthro
 
     touchLastUsed(toolName, account);
 
-    // Experimental loopback proxy (opt-in, default off, Claude Code only): front Claude Code
-    // with a proxy for THIS launch by pointing ANTHROPIC_BASE_URL at it, and close it when
-    // Claude exits. It runs when EITHER the measuring proxy OR the prompt secret guard is on
-    // (the guard needs the proxy to inspect outgoing messages). Best-effort and non-breaking:
-    // if it cannot start we launch directly, and a user-set ANTHROPIC_BASE_URL is never
-    // overridden. When the guard is on, the proxy scans/redacts secrets in chat prompts.
-    let proxy: Awaited<ReturnType<typeof startMeasuringProxy>> | null = null;
-    if (toolName === "claude" && (cfg.proxy || cfg.promptSecretGuard) && !env.ANTHROPIC_BASE_URL) {
-        try {
-            proxy = await startMeasuringProxy(cfg.promptSecretGuard
-                ? { scanPrompts: true, mode: cfg.promptSecretMode, extraPatterns: readGlobalGuard().secretPatterns }
-                : {});
-            env.ANTHROPIC_BASE_URL = proxy.url;
-        } catch { proxy = null; }
+    const proxy = await maybeStartProxy(toolName, env, cfg);
+    try {
+        return await spawnInherit(binary, passthrough, env);
+    } finally {
+        if (proxy) proxy.close();
     }
+}
+
+/**
+ * Experimental loopback proxy (opt-in, default off, Claude Code only): front Claude Code with
+ * a proxy for this launch by pointing ANTHROPIC_BASE_URL at it. It runs when EITHER the
+ * measuring proxy OR the prompt secret guard is on (the guard needs the proxy to inspect
+ * outgoing messages). Best-effort and non-breaking: if it cannot start we launch directly, and
+ * a user-set ANTHROPIC_BASE_URL is never overridden. Mutates `env`; the caller closes it.
+ */
+async function maybeStartProxy(
+    toolName: string,
+    env: NodeJS.ProcessEnv,
+    cfg: ReturnType<typeof readConfig>["config"],
+): Promise<Awaited<ReturnType<typeof startMeasuringProxy>> | null> {
+    if (toolName !== "claude" || (!cfg.proxy && !cfg.promptSecretGuard) || env.ANTHROPIC_BASE_URL) return null;
+    try {
+        const proxy = await startMeasuringProxy(cfg.promptSecretGuard
+            ? { scanPrompts: true, mode: cfg.promptSecretMode, extraPatterns: readGlobalGuard().secretPatterns }
+            : {});
+        env.ANTHROPIC_BASE_URL = proxy.url;
+        return proxy;
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Spawn `toolName` with its config-dir env pointed at an explicit `dir`, bypassing account
+ * resolution. This is the launch path for an isolated pack context (see packs.ts): the dir holds
+ * ONLY the pack's skills/commands, so the pack never leaks into the user's normal agent. Shares
+ * the binary resolution and measuring-proxy behavior of launchTool. Resolves with the exit code.
+ */
+export async function launchInDir(toolName: string, dir: string, passthrough: string[] = []): Promise<number> {
+    const tool = getTool(toolName);
+    if (!isDir(dir)) mkdirSync(dir, { recursive: true });
+    const cfg = readConfig().config;
+    const binary = process.env[tool.binEnv] || cfg.toolPaths?.[toolName] || resolveBin(tool.bin) || tool.bin;
+    const env: NodeJS.ProcessEnv = { ...process.env, ...tool.envFor(dir) };
+    const proxy = await maybeStartProxy(toolName, env, cfg);
     try {
         return await spawnInherit(binary, passthrough, env);
     } finally {

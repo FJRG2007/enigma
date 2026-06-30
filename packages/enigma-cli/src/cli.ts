@@ -28,6 +28,10 @@ import { checkLatestNow, getAvailableUpdate, notifyUpdate, performUpdateCheck, r
 import { ensureDashboardCurrent, isDashboardPkgCurrent, isDashboardPkgInstalled, refreshDashboardPkg } from "./dashboard-pkg";
 import { clearDaemon, dashboardUrl, ensureHostsEntry, runningDaemon, serveDashboardDaemon, startDashboardServer, writeDaemon } from "./dashboard";
 import {
+    PACKS, disablePack, enablePack, getPack, installedPackVersion, isPackInstalled,
+    launchPack, listPacks, refreshPack, setupPackMcp,
+} from "./packs";
+import {
     checkSources, discardSkill, hasAccountDeployment, hasDeployment, installSkills,
     listSkillsStatus, refreshSkillsFromGitHub, sealSources, setSkillAgent, shouldCheckRemote,
     syncAccount, syncDeployed,
@@ -51,7 +55,9 @@ const PKG = readJson<{ version?: string }>(join(__dirname, "..", "package.json")
 const COMMANDS = new Set<string>([
     "install", "update", "security", "guard", "seal", "check", "config", "account", "accounts",
     "profile", "profiles", "skill", "skills", "issue", "improve", "compress", "mcp", "gate", "dashboard", "dash", "fix-path", "resources", "recall", "autoskills", "statusline", "help", "version",
+    "pack", "packs",
     ...TOOL_NAMES,
+    ...PACKS.map((p) => p.id),
 ]);
 
 interface CliOptions extends InstallOptions {
@@ -213,6 +219,17 @@ Commands:
                        (hybrid keyword+vector search; opt-in; reads your own logs)
   autoskills [path]    Detect the project's tech stack and install matching agent skills
                        (separate from the policy skills; --dry-run to preview)
+  pack <subcommand>    Marketplace of optional, isolated harness packs (e.g. Helio for bug
+                       bounty). Each runs in its own agent context, so its skills/commands
+                       never load into your normal agent:
+                         list                 List packs and their install state
+                         install <id>         Fetch and add a pack
+                         remove <id>          Delete a pack and its context
+                         update <id>          Refresh a pack to the latest version
+                         setup <id>           Register the pack's MCP servers (needs Python)
+                         run <id>             Launch the pack's isolated agent
+  <pack> [tool]        Launch a pack directly (e.g. 'enigma helio') in its isolated context,
+                       seeded with your active login; pass tool args after '--'
   seal                 Maintenance: (re)compute skill content hashes
   check                Integrity gate: verify skills are well-formed and sealed
   statusline           Print the [ENIGMA] badge for an agent status bar (shows the active level)
@@ -456,6 +473,61 @@ async function runResourcesCli(args: string[]): Promise<number> {
     if (!r) { console.error(`Unknown subcommand '${sub}'. Use: enigma resources <wsl | docker | free-port PORT | kill PID>`); return 1; }
     console.log(r.message);
     return r.ok ? 0 : 1;
+}
+
+/**
+ * `enigma pack <list|install|remove|update|setup|run> [id]`: the marketplace of optional,
+ * isolated harness packs. Installing fetches the pack's asset-only npm bundle; launching it
+ * (`enigma <pack>` or `enigma pack run <id>`) spawns an agent in a dedicated context that holds
+ * only the pack's skills/commands, so it never loads into the user's normal agent.
+ */
+async function runPackCli(args: string[], passthrough: string[]): Promise<number> {
+    const [sub, id] = args;
+    if (!sub || sub === "list") {
+        console.log("Packs (optional isolated harnesses):\n");
+        for (const p of listPacks()) {
+            const state = p.installed ? (p.version ? `installed ${p.version}` : "installed") : "not installed";
+            console.log(`  ${p.id.padEnd(10)} ${p.label}  [${state}${p.enabled ? ", added" : ""}]`);
+            console.log(`             ${p.description}`);
+            console.log(`             ${p.tags.join(", ")}  -  ${p.homepage}`);
+        }
+        console.log("\nUse: enigma pack <install|remove|update|setup|run> <id>   (or just `enigma <id>` to launch)");
+        return 0;
+    }
+    if (!id || !getPack(id)) { console.error(`Unknown pack '${id ?? ""}'. Known: ${PACKS.map((p) => p.id).join(", ")}.`); return 1; }
+    const pack = getPack(id)!;
+    switch (sub) {
+        case "install": {
+            process.stdout.write(`Fetching the ${pack.label} pack (${pack.pkg})...\n`);
+            const { ensurePackInstalled } = await import("./packs");
+            if (!ensurePackInstalled(id)) { console.error("Could not fetch the pack. Check your network and npm."); return 1; }
+            enablePack(id);
+            console.log(`${pack.label} added. Launch it with: enigma ${id}`);
+            return 0;
+        }
+        case "remove":
+            disablePack(id);
+            console.log(`${pack.label} removed (managed files and context deleted).`);
+            return 0;
+        case "update": {
+            if (!isPackInstalled(id)) { console.error(`${pack.label} is not installed. Run: enigma pack install ${id}.`); return 1; }
+            const changed = refreshPack(id);
+            console.log(changed ? `${pack.label} updated to ${installedPackVersion(id)}.` : `${pack.label} is already up to date.`);
+            return 0;
+        }
+        case "setup": {
+            const added = setupPackMcp(id, DEFAULT_TOOL);
+            console.log(added.length
+                ? `Registered MCP server(s) in the ${pack.label} context: ${added.join(", ")}. They need Python 3 and the pack's tooling on PATH.`
+                : `No MCP servers were registered for ${pack.label} (none available, or not supported for ${DEFAULT_TOOL}).`);
+            return 0;
+        }
+        case "run":
+            return launchPack(id, DEFAULT_TOOL, passthrough);
+        default:
+            console.error(`Unknown subcommand '${sub}'. Use: enigma pack <list|install|remove|update|setup|run> <id>.`);
+            return 1;
+    }
 }
 
 /**
@@ -1084,6 +1156,12 @@ export async function run(argv: string[]): Promise<void> {
         syncForLaunch(opts.command, account);
         process.exit(await launchTool(opts.command, account, opts.passthrough));
     }
+    // Pack shortcut: `enigma helio [tool] [-- args]` launches the pack's isolated agent.
+    if (opts.command && getPack(opts.command)) {
+        const tool = isToolName(opts.positionals[0] ?? "") ? opts.positionals[0]! : DEFAULT_TOOL;
+        process.exit(await launchPack(opts.command, tool, opts.passthrough));
+    }
+    if (opts.command === "pack" || opts.command === "packs") { process.exit(await runPackCli(opts.positionals, opts.passthrough)); }
     if (opts.command === "account") { process.exit(await runAccountCli(opts, interactive)); }
     if (opts.command === "profile") { process.exit(await runProfileCli(opts, interactive)); }
     if (opts.command === "skills") { process.exit(runSkillsCli(opts)); }

@@ -1,0 +1,77 @@
+/**
+ * Marketplace packs: isolated deployment of an optional harness pack into a dedicated agent
+ * context, plus the enable/disable and MCP-setup lifecycle. Temp HOME + ENIGMA_CONFIG_HOME
+ * isolate the config/registry; ENIGMA_PACKS_DIR isolates the managed install + context; and
+ * ENIGMA_HELIO_ASSETS points the resolver at the in-repo vendored assets so nothing is fetched
+ * from npm. Network-free and spawn-free (the actual agent launch is never invoked).
+ * Run under Bun: bun test tests/packs.test.ts
+ */
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { test, expect, afterAll } from "bun:test";
+import { mkdtempSync, existsSync, readFileSync, rmSync } from "node:fs";
+
+const HOME = mkdtempSync(join(tmpdir(), "enigma-packs-"));
+process.env.USERPROFILE = HOME;
+process.env.HOME = HOME;
+process.env.ENIGMA_CONFIG_HOME = HOME;
+process.env.ENIGMA_PACKS_DIR = join(HOME, "packs");
+// Resolve the Helio pack from the in-repo vendored assets (no npm fetch).
+process.env.ENIGMA_HELIO_ASSETS = join(__dirname, "..", "..", "helio", "assets");
+
+const packs = await import("../src/packs");
+const { readConfig } = await import("../src/config");
+
+afterAll(() => rmSync(HOME, { recursive: true, force: true }));
+
+test("lists the Helio pack, resolved from the vendored assets", () => {
+    const list = packs.listPacks();
+    const helio = list.find((p) => p.id === "helio");
+    expect(helio).toBeTruthy();
+    expect(helio!.installed).toBe(true); // assets resolvable -> counts as installed
+    expect(helio!.enabled).toBe(false);
+});
+
+test("deploys ONLY into the isolated context dir (skills, commands, agents, memory)", () => {
+    const ctx = packs.deployPack("helio", "claude");
+    expect(ctx).toBeTruthy();
+    // The context lives under the managed packs dir, never in the user's ~/.claude.
+    expect(ctx!.startsWith(join(HOME, "packs"))).toBe(true);
+    expect(existsSync(join(ctx!, "skills", "bug-bounty", "SKILL.md"))).toBe(true);
+    expect(existsSync(join(ctx!, "commands"))).toBe(true);
+    expect(existsSync(join(ctx!, "agents"))).toBe(true);
+    // Memory carries the harness instructions.
+    const memory = readFileSync(join(ctx!, "CLAUDE.md"), "utf8");
+    expect(memory).toContain("Helio");
+    // The normal agent home is untouched.
+    expect(existsSync(join(HOME, ".claude", "skills", "bug-bounty"))).toBe(false);
+});
+
+test("re-deploy is version-gated (idempotent no-op when the marker matches)", () => {
+    const ctx = packs.deployPack("helio", "claude")!;
+    const marker = join(ctx, ".enigma-pack-version");
+    const before = readFileSync(marker, "utf8");
+    const again = packs.deployPack("helio", "claude")!;
+    expect(again).toBe(ctx);
+    expect(readFileSync(marker, "utf8")).toBe(before);
+});
+
+test("enable/disable toggles config.packs and disable removes the managed tree", () => {
+    packs.enablePack("helio");
+    expect(readConfig().config.packs).toContain("helio");
+    expect(packs.isPackEnabled("helio")).toBe(true);
+
+    packs.disablePack("helio");
+    expect(readConfig().config.packs).not.toContain("helio");
+    expect(existsSync(join(HOME, "packs", "helio"))).toBe(false);
+});
+
+test("setup registers the pack's MCP servers into the isolated context only", () => {
+    packs.deployPack("helio", "claude");
+    const added = packs.setupPackMcp("helio", "claude");
+    expect(added).toContain("helio-hackerone");
+    const cfg = JSON.parse(readFileSync(join(HOME, "packs", "helio", "context", "claude", ".claude.json"), "utf8"));
+    expect(cfg.mcpServers["helio-hackerone"].command).toMatch(/python/);
+    // The server path points inside the pack assets, and into the agent's own config only.
+    expect(cfg.mcpServers["helio-hackerone"].args[0]).toContain("hackerone-mcp");
+});

@@ -12,6 +12,7 @@
     "dev": "npm run -w enigma-cli dev --",
     "dev:bun": "npm run -w enigma-cli dev:bun --",
     "dashboard:preview": "node scripts/dashboard-preview.mjs",
+    "sync:helio": "node scripts/sync-helio.mjs",
     "build": "npm run -w enigma-cli build",
     "typecheck": "npm run -w enigma-cli typecheck",
     "seal": "npm run -w enigma-cli seal",

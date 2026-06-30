@@ -526,6 +526,7 @@
             <a href="#/settings" data-view="settings" class="tab">Settings</a>
             <a href="#/resources" data-view="resources" class="tab">Resources</a>
             <a href="#/recall" data-view="recall" class="tab">Recall</a>
+            <a href="#/packs" data-view="packs" class="tab">Packs</a>
         </nav>
         <div class="nav">
             <label class="scope-wrap" title="Scope: global config or a specific project"><span class="scope-lbl">Scope</span><select id="scopeSel" class="scope-sel"><option value="global">Global</option></select></label>
@@ -801,6 +802,18 @@
         </div>
         <div class="panel"><div class="set-cat-h">Listening ports</div><div id="resPorts"><div class="empty" style="padding:12px 0">Loading...</div></div></div>
         <div class="panel"><div class="set-cat-h">Processes <small>by memory</small></div><div id="resProcs"><div class="empty" style="padding:12px 0">Loading...</div></div></div>
+    </section>
+
+    <section id="view-packs" style="display:none">
+        <div class="page-head" style="display:flex;align-items:flex-start;gap:16px">
+            <div style="flex:1">
+                <h1>Packs</h1>
+                <p>Optional harness packs you can add on demand. Each runs in its own <strong>isolated agent context</strong>, so its skills and commands never load into your normal coding agent. Launch a pack from a terminal with <code>enigma &lt;pack&gt;</code>.</p>
+            </div>
+            <button id="packsRefresh" type="button" class="iconbtn" title="Refresh" aria-label="Refresh"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg></button>
+        </div>
+        <div id="packsNote" class="set-note"></div>
+        <div id="packsBody"><div class="empty" style="padding:12px 0">Loading...</div></div>
     </section>
 
     <section id="view-recall" style="display:none">
@@ -3696,7 +3709,7 @@ export {
 
         // --- hash routing between the subpages ---
         // Single source of truth for the subpage ids (savings is the default/fallback).
-        const VIEWS = ["savings", "usage", "accounts", "skills", "settings", "resources", "recall"];
+        const VIEWS = ["savings", "usage", "accounts", "skills", "settings", "resources", "recall", "packs"];
         // Views that apply to a single project; the rest are global/machine-level only.
         const PROJECT_VIEWS = ["settings", "skills"];
         let activeView = "savings";
@@ -3717,6 +3730,7 @@ export {
             else if (v === "usage") { loadProviderStatus(); if (!usageAccountsLoaded) { usageAccountsLoaded = true; loadUsageAccounts(); } }
             else if (v === "resources") loadResources();
             else if (v === "recall") loadRecall();
+            else if (v === "packs") loadPacks();
             // The chart was sized while its view may have been hidden; nudge it on return.
             else if (v === "savings") { loadSystems(true); if (chart) { try { applyRange(); } catch { /* not ready */ } } }
         }
@@ -3773,6 +3787,52 @@ export {
                     : op === "free-port" ? "Kill the process listening on port " + value + "?"
                     : op === "kill" ? "Force-kill process " + value + "?" : "Run this action?";
                 resAction(op, value, msg);
+            });
+        }
+
+        // --- packs subpage (optional isolated harness packs; marketplace) ---
+        function renderPacks(list) {
+            list = list || [];
+            if (!list.length) { $("packsBody").innerHTML = '<div class="empty" style="padding:12px 0">No packs available.</div>'; return; }
+            $("packsBody").innerHTML = list.map((p) => {
+                const tags = (p.tags || []).map((t) => '<span class="tag">' + esc(t) + '</span>').join(" ");
+                const state = p.installed ? '<span class="tag">' + (p.version ? "installed " + esc(p.version) : "installed") + '</span>' : '<span class="tag">not installed</span>';
+                const added = p.enabled ? '<span class="tag" style="color:var(--ok)">added</span>' : "";
+                const actions = p.installed
+                    ? '<button type="button" class="toggle on" data-pack="launch" data-id="' + esc(p.id) + '">Launch command</button>'
+                        + '<button type="button" class="toggle" data-pack="setup" data-id="' + esc(p.id) + '" title="Register the pack MCP servers (needs Python 3)">Setup MCP</button>'
+                        + '<button type="button" class="toggle" data-pack="update" data-id="' + esc(p.id) + '">Update</button>'
+                        + '<button type="button" class="btn-danger" data-pack="remove" data-id="' + esc(p.id) + '">Remove</button>'
+                    : '<button type="button" class="toggle on" data-pack="install" data-id="' + esc(p.id) + '">Install</button>';
+                return '<div class="panel"><div class="set-row"><div class="set-meta">'
+                    + '<div class="set-name">' + esc(p.label) + " " + state + " " + added + '</div>'
+                    + '<div class="set-hint">' + esc(p.description) + '</div>'
+                    + '<div class="set-hint" style="margin-top:6px">' + tags + ' &nbsp; <a href="' + esc(p.homepage) + '" target="_blank" rel="noopener">source</a></div>'
+                    + '</div></div><div class="set-ctl" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">' + actions + '</div></div>';
+            }).join("");
+        }
+        async function loadPacks() {
+            $("packsNote").textContent = "";
+            try { renderPacks((await (await fetch("/api/packs", { cache: "no-store" })).json()).packs); }
+            catch { $("packsBody").innerHTML = '<div class="empty" style="padding:12px 0">Packs unavailable.</div>'; }
+        }
+        async function packAction(id, action) {
+            const confirmMsg = action === "remove" ? "Remove this pack and its isolated context?" : null;
+            if (confirmMsg && !(await askConfirm("Confirm", confirmMsg, true))) return;
+            setNote("packsNote", action === "install" || action === "update" ? "Working..." : "Saving...");
+            try {
+                const out = await (await fetch("/api/packs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, action }) })).json();
+                if (out.packs) renderPacks(out.packs);
+                if (out.command) { try { await navigator.clipboard.writeText(out.command); } catch { /* clipboard blocked */ } }
+                setNote("packsNote", out.note || out.error || (out.ok ? "Done." : "Action failed."), out.ok ? "ok" : "err");
+            } catch { setNote("packsNote", "Could not reach the server.", "err"); }
+        }
+        function wirePacks() {
+            $("packsRefresh").addEventListener("click", loadPacks);
+            $("view-packs").addEventListener("click", (e) => {
+                const b = e.target.closest("button[data-pack]");
+                if (!b) return;
+                packAction(b.dataset.id, b.dataset.pack);
             });
         }
 
@@ -4344,6 +4404,7 @@ export {
         wireUsage();
         wireResources();
         wireRecall();
+        wirePacks();
         wireScope();
         enhanceAll(); // upgrade every static <select> into the shared pretty dropdown
         $("cfgExport").addEventListener("click", exportConfig);

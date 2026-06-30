@@ -14,6 +14,10 @@ process.env.USERPROFILE = HOME;
 process.env.HOME = HOME;
 // Keep the stats payload's update check from making a real npm request during the test.
 process.env.ENIGMA_NO_UPDATE_CHECK = "1";
+// Resolve the Helio pack from the in-repo vendored assets (no npm fetch) and isolate its
+// managed dir, so the /api/packs route is exercised network-free.
+process.env.ENIGMA_PACKS_DIR = join(HOME, "packs");
+process.env.ENIGMA_HELIO_ASSETS = join(__dirname, "..", "..", "helio", "assets");
 
 const { startDashboardServer, dashboardUrl, runningDaemon, removeHostsEntry } = await import("../src/dashboard");
 const { recordStats } = await import("../src/compress/ccr");
@@ -212,6 +216,37 @@ test("skills API lists enigma skills and disable/enable round-trips", async () =
         const evil = await fetch(`${base}/api/skills`, {
             method: "POST", headers: { "Content-Type": "application/json", "Origin": "http://evil.example" },
             body: JSON.stringify({ name: "git-policy", action: "enable" }),
+        });
+        expect(evil.status).toBe(403);
+    } finally {
+        server.close();
+    }
+});
+
+test("packs API lists the Helio pack and a cross-origin write is refused", async () => {
+    const server = await startDashboardServer("test-version");
+    const base = `http://127.0.0.1:${server.port}`;
+    try {
+        const get = await fetch(`${base}/api/packs`);
+        expect(get.status).toBe(200);
+        const data = await get.json() as { packs: { id: string; installed: boolean }[] };
+        const helio = data.packs.find((p) => p.id === "helio");
+        expect(helio).toBeDefined();
+        expect(helio!.installed).toBe(true); // resolved from the vendored assets
+
+        // "launch" returns the command to run (the browser cannot spawn an agent).
+        const launch = await fetch(`${base}/api/packs`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: "helio", action: "launch" }),
+        });
+        const lout = await launch.json() as { ok: boolean; command?: string };
+        expect(lout.ok).toBe(true);
+        expect(lout.command).toBe("enigma helio");
+
+        // A cross-origin request to the packs write surface is refused.
+        const evil = await fetch(`${base}/api/packs`, {
+            method: "POST", headers: { "Content-Type": "application/json", "Origin": "http://evil.example" },
+            body: JSON.stringify({ id: "helio", action: "remove" }),
         });
         expect(evil.status).toBe(403);
     } finally {

@@ -1,0 +1,34 @@
+{
+  "hooks": [
+    {
+      "event": "SessionStart",
+      "tui": ["claude_code", "opencode", "openclaw"],
+      "command": "echo 'Helio: Bug Bounty Framework loaded. Run /recon <target> to begin or /hunt to continue.'"
+    },
+    {
+      "event": "SessionStop",
+      "tui": ["claude_code", "opencode", "openclaw"],
+      "command": "echo 'Session ended. Use /validate on any leads before next session.'"
+    },
+    {
+      "event": "Stop",
+      "tui": ["claude_code", "opencode", "openclaw"],
+      "command": "echo 'Hunt complete. Checklist: findings saved? scope verified? Use /report to generate report.'"
+    }
+  ],
+  "tui_compatibility": {
+    "command_prefix": "/",
+    "reserved_commands": ["resume", "claude", "think", "search", "read", "inspect", "ls", "grep", "glob", "bash", "task", "write", "edit", "question", "webfetch"],
+    "custom_commands": {
+      "continue": "replaces /resume (conflicts with Claude Code native)"
+    },
+    "supported_tuis": ["claude_code", "opencode", "openclaw"]
+  },
+  "model_selection": {
+    "per_command": true,
+    "supported_providers": ["ollama", "claude", "openai", "grok"],
+    "format_ollama": "qwen3:8b",
+    "format_claude": "anthropic/claude-3-5-sonnet-20241022",
+    "format_openai": "openai/gpt-4o"
+  }
+}
