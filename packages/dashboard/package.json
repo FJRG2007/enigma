@@ -1,6 +1,6 @@
 {
   "name": "@enigmax/dashboard",
-  "version": "0.1.67",
+  "version": "0.1.68",
   "description": "Local browser dashboard UI for enigma: the static page and chart assets enigma serves on its loopback dashboard (savings, real tool usage, in-browser settings). Installed on demand by enigma-cli; not a runtime dependency.",
   "type": "module",
   "files": [

@@ -3501,6 +3501,7 @@ export {
             catch { $("accountsBody").innerHTML = '<div class="empty" style="padding:24px 0">Accounts unavailable.</div>'; }
         }
         const TRASH_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>';
+        const REFRESH_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>';
         function accountRow(a) {
             const badges = (a.active ? '<span class="tag meas">active</span>' : "")
                 + (a.loggedIn ? '<span class="tag">' + esc(a.email || "logged in") + "</span>" : '<span class="tag warn">not logged in</span>');
@@ -3801,8 +3802,8 @@ export {
                 const actions = p.installed
                     ? '<button type="button" class="toggle on" data-pack="launch" data-id="' + esc(p.id) + '">Launch command</button>'
                         + '<button type="button" class="toggle" data-pack="setup" data-id="' + esc(p.id) + '" title="Register the pack MCP servers (needs Python 3)">Setup MCP</button>'
-                        + '<button type="button" class="toggle" data-pack="update" data-id="' + esc(p.id) + '">Update</button>'
-                        + '<button type="button" class="btn-danger" data-pack="remove" data-id="' + esc(p.id) + '">Remove</button>'
+                        + '<button type="button" class="iconbtn" data-pack="update" data-id="' + esc(p.id) + '" title="Update" aria-label="Update ' + esc(p.label) + '">' + REFRESH_ICON + "</button>"
+                        + '<button type="button" class="btn-danger icon" data-pack="remove" data-id="' + esc(p.id) + '" title="Remove" aria-label="Remove ' + esc(p.label) + '">' + TRASH_ICON + "</button>"
                     : '<button type="button" class="toggle on" data-pack="install" data-id="' + esc(p.id) + '">Install</button>';
                 const stTag = (s) => s === "expired" ? " (login expired)" : s === "empty" ? " (not signed in)" : s === "absent" ? " (no login)" : "";
                 const opts = '<option value="">follow active (' + esc(p.resolvedAccount || "default") + ")" + stTag(p.resolvedState) + "</option>"
