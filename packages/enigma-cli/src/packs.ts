@@ -374,8 +374,17 @@ export function seedCredentials(id: string, tool: string, account: string): void
             cpSync(from, to);
             copied = true;
         }
+        // Claude: keep the context's ACCOUNT STATE (onboarding flags + identity) in sync with the
+        // seeding account so the agent treats the context as the same signed-in install. Without
+        // `hasCompletedOnboarding` the agent runs the onboarding flow - which asks to log in - even
+        // with a perfectly valid token. Idempotent; runs whenever the context holds this account's
+        // token (copied now, or kept from a same-account launch), so a context that only had the
+        // token synced by an older enigma gets the missing onboarding state on the next launch.
+        if (tool === "claude") {
+            const ctxHasToken = hasUsableToken(join(dest, ...(files[0] ?? "").split("/")));
+            if (copied || ctxHasToken) syncContextAccountState(source, dest);
+        }
         if (copied) {
-            if (tool === "claude") syncContextIdentity(source, dest); // identity must match the token
             mkdirSync(dest, { recursive: true });
             writeFileSync(marker, account);
         }
@@ -383,19 +392,22 @@ export function seedCredentials(id: string, tool: string, account: string): void
 }
 
 /**
- * Align the pack context's account identity (`.claude.json` oauthAccount) with the account whose
- * token we just seeded, so the agent does not see a token-vs-identity mismatch and prompt to log
- * in. Only the identity block is copied (never the account's project history). Writes the context
- * file only; the user's account dir is never touched. Best-effort.
+ * Mirror the seeding account's Claude config state (`.claude.json`) into the pack context so the
+ * agent treats the context as the same signed-in install: it carries the onboarding flags,
+ * identity and preferences the agent checks before deciding to run onboarding/login. The pack's
+ * own MCP servers are preserved, and the account's project history is dropped to keep the context
+ * clean. Writes the CONTEXT file only - the user's account dir is never touched. Best-effort.
  */
-function syncContextIdentity(accountDir: string, ctxDir: string): void {
+function syncContextAccountState(accountDir: string, ctxDir: string): void {
     try {
-        const acc = readJson<{ oauthAccount?: unknown }>(join(accountDir, ".claude.json"));
+        const acc = readJson<Record<string, unknown>>(join(accountDir, ".claude.json"));
         if (!acc?.oauthAccount) return;
         const ctxFile = join(ctxDir, ".claude.json");
         const ctx = (existsSync(ctxFile) ? readJson<Record<string, unknown>>(ctxFile) : {}) ?? {};
-        ctx.oauthAccount = acc.oauthAccount;
-        writeFileSync(ctxFile, `${JSON.stringify(ctx, null, 2)}\n`);
+        const merged: Record<string, unknown> = { ...acc };
+        delete merged.projects; // don't drag the account's project history into the pack context
+        if (ctx.mcpServers) merged.mcpServers = ctx.mcpServers; // keep the pack's own MCP servers
+        writeFileSync(ctxFile, `${JSON.stringify(merged, null, 2)}\n`);
     } catch { /* best-effort */ }
 }
 

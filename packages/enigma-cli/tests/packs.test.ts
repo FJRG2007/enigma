@@ -124,9 +124,9 @@ test("re-seeds when the pinned account changes (replaces a previous account's to
     const a = addAccount("claude", "acctA");
     const b = addAccount("claude", "acctB");
     writeFileSync(join(a.dir, ".credentials.json"), cred("AAA"));
-    writeFileSync(join(a.dir, ".claude.json"), JSON.stringify({ oauthAccount: { emailAddress: "a@x" } }));
+    writeFileSync(join(a.dir, ".claude.json"), JSON.stringify({ oauthAccount: { emailAddress: "a@x" }, hasCompletedOnboarding: true }));
     writeFileSync(join(b.dir, ".credentials.json"), cred("BBB"));
-    writeFileSync(join(b.dir, ".claude.json"), JSON.stringify({ oauthAccount: { emailAddress: "b@x" } }));
+    writeFileSync(join(b.dir, ".claude.json"), JSON.stringify({ oauthAccount: { emailAddress: "b@x" }, hasCompletedOnboarding: true }));
     packs.deployPack("helio", "claude");
     const ctxDir = join(HOME, "packs", "helio", "context", "claude");
     const ctxCred = join(ctxDir, ".credentials.json");
@@ -138,7 +138,11 @@ test("re-seeds when the pinned account changes (replaces a previous account's to
     // Switching to acctB must replace the (usable) acctA token AND align the context identity.
     packs.seedCredentials("helio", "claude", "acctB");
     expect(JSON.parse(readFileSync(ctxCred, "utf8")).claudeAiOauth.accessToken).toBe("BBB");
-    expect((JSON.parse(readFileSync(join(ctxDir, ".claude.json"), "utf8")).oauthAccount || {}).emailAddress).toBe("b@x");
+    const ctxJson = JSON.parse(readFileSync(join(ctxDir, ".claude.json"), "utf8"));
+    expect((ctxJson.oauthAccount || {}).emailAddress).toBe("b@x");
+    // The onboarding flag is mirrored too, so the agent treats the context as already set up
+    // (a missing flag makes it run onboarding + login despite a valid token).
+    expect(ctxJson.hasCompletedOnboarding).toBe(true);
 });
 
 test("credential seeding never plants a blanked source token (keychain-stored logins)", () => {
