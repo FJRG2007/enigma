@@ -119,6 +119,28 @@ test("credential seeding never clobbers a refreshed context token (the re-login 
     expect(JSON.parse(readFileSync(ctxCred, "utf8")).claudeAiOauth.accessToken).toBe("ACCT_ACCESS");
 });
 
+test("re-seeds when the pinned account changes (replaces a previous account's token)", () => {
+    const cred = (a: string) => JSON.stringify({ claudeAiOauth: { accessToken: a, refreshToken: `${a}_R`, expiresAt: Date.now() + 3600_000 }, oauthAccount: { emailAddress: `${a}@x` } });
+    const a = addAccount("claude", "acctA");
+    const b = addAccount("claude", "acctB");
+    writeFileSync(join(a.dir, ".credentials.json"), cred("AAA"));
+    writeFileSync(join(a.dir, ".claude.json"), JSON.stringify({ oauthAccount: { emailAddress: "a@x" } }));
+    writeFileSync(join(b.dir, ".credentials.json"), cred("BBB"));
+    writeFileSync(join(b.dir, ".claude.json"), JSON.stringify({ oauthAccount: { emailAddress: "b@x" } }));
+    packs.deployPack("helio", "claude");
+    const ctxDir = join(HOME, "packs", "helio", "context", "claude");
+    const ctxCred = join(ctxDir, ".credentials.json");
+    rmSync(ctxCred, { force: true });
+    rmSync(join(ctxDir, ".enigma-pack-account"), { force: true });
+
+    packs.seedCredentials("helio", "claude", "acctA");
+    expect(JSON.parse(readFileSync(ctxCred, "utf8")).claudeAiOauth.accessToken).toBe("AAA");
+    // Switching to acctB must replace the (usable) acctA token AND align the context identity.
+    packs.seedCredentials("helio", "claude", "acctB");
+    expect(JSON.parse(readFileSync(ctxCred, "utf8")).claudeAiOauth.accessToken).toBe("BBB");
+    expect((JSON.parse(readFileSync(join(ctxDir, ".claude.json"), "utf8")).oauthAccount || {}).emailAddress).toBe("b@x");
+});
+
 test("credential seeding never plants a blanked source token (keychain-stored logins)", () => {
     // Account whose file token is blanked (its real token lives in the OS keychain).
     const acct = addAccount("claude", "keychainacct");

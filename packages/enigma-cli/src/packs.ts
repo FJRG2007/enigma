@@ -332,19 +332,21 @@ function tokenState(file: string): "ok" | "expired" | "empty" | "absent" {
  * (no re-authentication). Best-effort and claude-first: only well-known auth files are copied,
  * never the user's project history.
  *
- * Two rules keep this from ever making auth WORSE:
- *  1. Never overwrite a context token that is already usable. The agent rotates its OAuth token
- *     in place (a refresh invalidates the old refresh token); re-copying the account's older
- *     token over a refreshed one breaks the next refresh and forces a re-login.
- *  2. (Claude) Never PLANT a non-usable token. A blanked/expired `.credentials.json` (which
- *     happens when the account's real token lives in the OS keychain, not the file) must not be
- *     copied in: an empty token file is worse than none, as it can block the agent's own session
- *     resolution. When the file has nothing usable we leave the context's credentials untouched
- *     and let the agent resolve the login itself (keychain, or an interactive sign-in that the
- *     isolated context then remembers).
+ * Rules that keep this from ever making auth WORSE (it only ever writes inside the pack context,
+ * never the user's account dir):
+ *  1. Keep the context's own token when it belongs to the SAME account we are seeding from - the
+ *     agent rotates its OAuth token in place, and re-copying the account's older token over a
+ *     refreshed one would break the next refresh. A per-context marker records which account's
+ *     token is in the context, so this only protects a genuine rotation, not a stale token.
+ *  2. RE-SEED when the account CHANGED (you pinned/switched to a different login): the context may
+ *     still hold the previous account's token, whose identity no longer matches the context - that
+ *     token/identity mismatch is exactly what makes the agent prompt to log in. On a change we copy
+ *     the new token AND align the context identity with it.
+ *  3. (Claude) Never PLANT a non-usable token. A blanked/keychain-stored `.credentials.json` must
+ *     not be copied in (an empty token file is worse than none - it blocks the agent's own session
+ *     resolution); the context is left for the agent to resolve.
  *
- * Together: we only ever copy a USABLE token into a context that lacks one. Silent on any
- * failure. Exported for testing.
+ * Silent on any failure. Exported for testing.
  */
 export function seedCredentials(id: string, tool: string, account: string): void {
     const files = CRED_FILES[tool];
@@ -352,6 +354,12 @@ export function seedCredentials(id: string, tool: string, account: string): void
     try {
         const source = resolveConfigDir(tool, account);
         const dest = contextDir(id, tool);
+        const marker = join(dest, ".enigma-pack-account");
+        let seededFrom = "";
+        try { seededFrom = readFileSync(marker, "utf8").trim(); } catch { /* no prior seed */ }
+        const accountChanged = seededFrom !== account;
+
+        let copied = false;
         for (const rel of files) {
             const from = join(source, rel);
             if (!existsSync(from)) continue;
@@ -359,11 +367,36 @@ export function seedCredentials(id: string, tool: string, account: string): void
             // plant a blanked/keychain-stored placeholder over the agent's own resolution.
             if (tool === "claude" && !hasUsableToken(from)) continue;
             const to = join(dest, rel);
-            if (existsSync(to) && hasUsableToken(to)) continue; // keep the context's refreshed token
+            // Keep the context token only when it is the SAME account's (a possible fresh rotation);
+            // a different/switched account must replace it (token/identity mismatch -> login prompt).
+            if (!accountChanged && existsSync(to) && hasUsableToken(to)) continue;
             mkdirSync(dirname(to), { recursive: true });
             cpSync(from, to);
+            copied = true;
+        }
+        if (copied) {
+            if (tool === "claude") syncContextIdentity(source, dest); // identity must match the token
+            mkdirSync(dest, { recursive: true });
+            writeFileSync(marker, account);
         }
     } catch { /* best-effort - the user can log in inside the context if seeding misses */ }
+}
+
+/**
+ * Align the pack context's account identity (`.claude.json` oauthAccount) with the account whose
+ * token we just seeded, so the agent does not see a token-vs-identity mismatch and prompt to log
+ * in. Only the identity block is copied (never the account's project history). Writes the context
+ * file only; the user's account dir is never touched. Best-effort.
+ */
+function syncContextIdentity(accountDir: string, ctxDir: string): void {
+    try {
+        const acc = readJson<{ oauthAccount?: unknown }>(join(accountDir, ".claude.json"));
+        if (!acc?.oauthAccount) return;
+        const ctxFile = join(ctxDir, ".claude.json");
+        const ctx = (existsSync(ctxFile) ? readJson<Record<string, unknown>>(ctxFile) : {}) ?? {};
+        ctx.oauthAccount = acc.oauthAccount;
+        writeFileSync(ctxFile, `${JSON.stringify(ctx, null, 2)}\n`);
+    } catch { /* best-effort */ }
 }
 
 /**
