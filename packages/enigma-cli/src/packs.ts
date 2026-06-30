@@ -21,9 +21,12 @@ import { isDir, readJson } from "./util";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
-import { readConfig, setEnigmaValue } from "./config";
-import { DEFAULT_TOOL, getActive, getTool, isToolName, launchInDir, resolveConfigDir } from "./accounts";
+import { readConfig, setEnigmaValue, setPackAccount } from "./config";
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+    DEFAULT_TOOL, accountExists, getTool, isToolName, launchInDir,
+    listAccounts, resolveConfigDir, resolveLaunchAccount,
+} from "./accounts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -177,6 +180,48 @@ export function disablePack(id: string): void {
     rmSync(packRoot(id), { recursive: true, force: true });
 }
 
+// --- per-pack seeding account ----------------------------------------------------
+
+/** Config key for a pack's default seeding account on a tool. */
+function packAccountKey(id: string, tool: string): string {
+    return `${id}:${tool}`;
+}
+
+/** The pack's stored default account for a tool, if set and still existing; else null. */
+export function getPackAccount(id: string, tool: string): string | null {
+    const name = readConfig().config.packAccounts?.[packAccountKey(id, tool)];
+    return name && accountExists(tool, name) ? name : null;
+}
+
+/**
+ * Set (or clear, with null) the default account that seeds a pack's isolated context on a tool.
+ * The account must exist for that tool (create one first with `enigma account add`). Clearing
+ * makes the pack fall back to the active profile / tool-active account.
+ */
+export function setPackDefaultAccount(id: string, tool: string, account: string | null): void {
+    if (!getPack(id)) throw new Error(`Unknown pack '${id}'.`);
+    if (!isToolName(tool)) throw new Error(`Unknown tool '${tool}'.`);
+    if (account !== null && !accountExists(tool, account)) {
+        throw new Error(`No such ${tool} account: '${account}'. Create it first: enigma account add ${account}${tool === DEFAULT_TOOL ? "" : ` --tool ${tool}`}.`);
+    }
+    setPackAccount(packAccountKey(id, tool), account, "global");
+}
+
+/**
+ * Resolve which account seeds the pack on a tool: an explicit choice wins, then the pack's
+ * stored default, then the active profile's mapping / the tool's active account (resolveLaunchAccount).
+ * Throws when an explicit account does not exist, so a typo never silently seeds the wrong login.
+ */
+export function resolvePackAccount(id: string, tool: string, explicit?: string): string {
+    if (explicit) {
+        if (!accountExists(tool, explicit)) {
+            throw new Error(`No such ${tool} account: '${explicit}'. Create it first: enigma account add ${explicit}${tool === DEFAULT_TOOL ? "" : ` --tool ${tool}`}.`);
+        }
+        return explicit;
+    }
+    return getPackAccount(id, tool) ?? resolveLaunchAccount(tool);
+}
+
 // --- isolated context deployment -------------------------------------------------
 
 /** The isolated agent config dir for a pack + tool. */
@@ -248,11 +293,11 @@ export function deployPack(id: string, tool: string): string | null {
 }
 
 /**
- * Seed the active account's credential files into the pack context so the isolated agent shares
- * the user's login (no re-authentication). Best-effort and claude-first: only well-known auth
- * files are copied, never the user's project history. Silent on any failure.
+ * Seed `account`'s credential files into the pack context so the isolated agent shares that
+ * login (no re-authentication). Best-effort and claude-first: only well-known auth files are
+ * copied, never the user's project history. Silent on any failure.
  */
-function seedCredentials(id: string, tool: string): void {
+function seedCredentials(id: string, tool: string, account: string): void {
     const CRED_FILES: Record<string, string[]> = {
         claude: [".credentials.json"],
         codex: ["auth.json"],
@@ -261,7 +306,7 @@ function seedCredentials(id: string, tool: string): void {
     const files = CRED_FILES[tool];
     if (!files) return;
     try {
-        const source = resolveConfigDir(tool, getActive(tool));
+        const source = resolveConfigDir(tool, account);
         const dest = contextDir(id, tool);
         for (const rel of files) {
             const from = join(source, rel);
@@ -313,26 +358,43 @@ export interface PackView {
     installed: boolean;
     enabled: boolean;
     version: string | null;
+    /** Tool the pack launches on (its primary tool; claude today). */
+    tool: string;
+    /** The pack's pinned default account, or null when it follows the active profile/account. */
+    defaultAccount: string | null;
+    /** Account that WILL seed the pack now (resolved default/profile/active), for display. */
+    resolvedAccount: string;
+    /** Accounts available for the tool, as { name, email } for a picker. */
+    accounts: { name: string; label: string }[];
 }
 
-/** Marketplace listing of every pack with its install/enable state. */
+/** Marketplace listing of every pack with its install/enable state and seeding account. */
 export function listPacks(): PackView[] {
-    return PACKS.map((p) => ({
-        id: p.id, label: p.label, description: p.description, tags: p.tags, homepage: p.homepage,
-        installed: isPackInstalled(p.id) || Boolean(packAssetsDir(p.id)),
-        enabled: isPackEnabled(p.id), version: installedPackVersion(p.id),
-    }));
+    return PACKS.map((p) => {
+        const tool = DEFAULT_TOOL;
+        const accounts = listAccounts(tool).map((a) => ({ name: a.name, label: a.email ?? a.displayName ?? a.name }));
+        return {
+            id: p.id, label: p.label, description: p.description, tags: p.tags, homepage: p.homepage,
+            installed: isPackInstalled(p.id) || Boolean(packAssetsDir(p.id)),
+            enabled: isPackEnabled(p.id), version: installedPackVersion(p.id),
+            tool, defaultAccount: getPackAccount(p.id, tool), resolvedAccount: resolvePackAccount(p.id, tool), accounts,
+        };
+    });
 }
 
 /**
  * Launch a pack's isolated agent: fetch the bundle if needed, deploy it into the context dir,
- * seed credentials, then spawn the tool pointed at that context. Resolves with the tool's exit
- * code (returns 1 with a message when the pack or its assets are unavailable).
+ * seed the chosen account's credentials, then spawn the tool pointed at that context. `account`
+ * resolution: explicit > the pack's pinned default > the active profile / tool-active account.
+ * Resolves with the tool's exit code (returns 1 with a message on any setup problem).
  */
-export async function launchPack(id: string, tool: string = DEFAULT_TOOL, passthrough: string[] = []): Promise<number> {
+export async function launchPack(id: string, tool: string = DEFAULT_TOOL, passthrough: string[] = [], account?: string): Promise<number> {
     const pack = getPack(id);
     if (!pack) { process.stderr.write(`Unknown pack '${id}'.\n`); return 1; }
     if (!isToolName(tool)) { process.stderr.write(`Unknown tool '${tool}'.\n`); return 1; }
+    let seedAccount: string;
+    try { seedAccount = resolvePackAccount(id, tool, account); }
+    catch (e) { process.stderr.write(`${(e as Error).message}\n`); return 1; }
     if (!ensurePackInstalled(id)) {
         process.stderr.write(`Could not fetch the ${pack.label} pack (${pack.pkg}). Check your network and npm.\n`);
         return 1;
@@ -340,6 +402,7 @@ export async function launchPack(id: string, tool: string = DEFAULT_TOOL, passth
     if (!isPackEnabled(id)) enablePack(id);
     const dir = deployPack(id, tool);
     if (!dir) { process.stderr.write(`${pack.label} pack assets are missing.\n`); return 1; }
-    seedCredentials(id, tool);
+    seedCredentials(id, tool, seedAccount);
+    process.stdout.write(`Launching ${pack.label} (${tool}) with account '${seedAccount}' in an isolated context.\n`);
     return launchInDir(tool, dir, passthrough);
 }

@@ -169,6 +169,13 @@ export interface EnigmaConfig {
      * presence under ~/.enigma/packs is the fetch state.
      */
     packs: string[];
+    /**
+     * Default account per pack+tool that seeds the pack's isolated context, keyed by
+     * "<packId>:<tool>" -> account name. Lets a pack run under a different login than your
+     * everyday active one (e.g. a dedicated pentest account for Helio). When unset, the pack
+     * falls back to the active profile's mapping, then the tool's active account.
+     */
+    packAccounts: Record<string, string>;
 }
 
 /**
@@ -216,7 +223,7 @@ export const CONFIG_DEFAULTS: EnigmaConfig = {
     commitEmoji: true, updateNotifier: true, fullscreen: true, parallelSubagents: false, outputStyle: "off", minimalCode: "full",
     autoSync: true, remoteSkills: true, skillUpdatePolicy: "overwrite", permissionBypass: true, autoLint: false, compress: false, gate: false, dashboard: "off", tokenPrice: 0, tokenSpeed: 0, usageStats: false, recall: false, recallLlm: true, recallProvider: "claude-local", recallModel: "", recallApiBase: "", recallApiKey: "", proxy: false, usageApi: false, promptSecretGuard: false, promptSecretMode: "redact",
     planSessionLimit: 0, planWeeklyLimit: 0, planWeeklySonnetLimit: 0, planWeeklyOpusLimit: 0, planWeeklyReset: "mon 00:00",
-    dashboardLive: true, dashboardPort: 0, toolPaths: {}, bypassDisabled: [], discardedSkills: [], skillAgentsOff: {}, packs: [],
+    dashboardLive: true, dashboardPort: 0, toolPaths: {}, bypassDisabled: [], discardedSkills: [], skillAgentsOff: {}, packs: [], packAccounts: {},
 };
 
 export type EnigmaConfigKey = keyof EnigmaConfig;
@@ -323,6 +330,22 @@ export function setToolPath(tool: string, binPath: string, scope: "global" | "lo
     const dir = join(path, "..");
     if (!isDir(dir)) mkdirSync(dir, { recursive: true });
     writeFileSync(path, JSON.stringify(next, null, 2) + "\n");
+    return path;
+}
+
+/**
+ * Persist a pack's default seeding account, keyed by "<packId>:<tool>". A null account clears
+ * the entry (the pack falls back to the active profile / tool-active account). Merges into the
+ * existing packAccounts map so other packs' defaults are preserved. Returns the written path.
+ */
+export function setPackAccount(key: string, account: string | null, scope: "global" | "local" = "global"): string {
+    const path = configPath(scope);
+    const current = readJson<Record<string, unknown>>(path) || {};
+    const existing = (current.packAccounts && typeof current.packAccounts === "object") ? { ...current.packAccounts as Record<string, string> } : {};
+    if (account === null) delete existing[key]; else existing[key] = account;
+    const dir = join(path, "..");
+    if (!isDir(dir)) mkdirSync(dir, { recursive: true });
+    writeFileSync(path, `${JSON.stringify({ ...current, packAccounts: existing }, null, 2)}\n`);
     return path;
 }
 

@@ -182,7 +182,9 @@
             id: "helio", label: "Helio",
             description: "Bug-bounty and offensive-security harness: recon, vuln hunting, web2/web3 audit, AD, cloud, triage and report writing. Runs in an isolated agent context so it never loads into your normal coding agent.",
             tags: ["bug-bounty", "security", "pentest", "web3"], homepage: "https://github.com/TPEOficial/helio",
-            installed: true, enabled: true, version: "0.1.0"
+            installed: true, enabled: true, version: "0.1.0",
+            tool: "claude", defaultAccount: null, resolvedAccount: "default",
+            accounts: [{ name: "default", label: "you@example.com" }, { name: "work", label: "pentest@acme.com" }]
         }
     ];
 
@@ -378,6 +380,7 @@
             if (method !== "POST") return { packs: PACKS };
             var pb = body || {};
             if (pb.action === "launch") return { ok: true, command: `enigma ${pb.id || "helio"}`, note: "Run this in a terminal to launch the isolated agent." };
+            if (pb.action === "set-account") { PACKS[0].defaultAccount = pb.value || null; PACKS[0].resolvedAccount = pb.value || "default"; return { ok: true, note: "Demo - account preference saved.", packs: PACKS }; }
             return { ok: true, note: "Demo - no action taken.", packs: PACKS };
         }
         if (path.indexOf("/api/update") !== -1) return { ok: true, changed: false, version: STATS.version, note: "This is a static demo." };

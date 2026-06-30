@@ -227,9 +227,11 @@ Commands:
                          remove <id>          Delete a pack and its context
                          update <id>          Refresh a pack to the latest version
                          setup <id>           Register the pack's MCP servers (needs Python)
-                         run <id>             Launch the pack's isolated agent
-  <pack> [tool]        Launch a pack directly (e.g. 'enigma helio') in its isolated context,
-                       seeded with your active login; pass tool args after '--'
+                         use <id> <acct|->    Pin which account seeds the pack ('-' clears)
+                         run <id> [account]   Launch the pack's isolated agent
+  <pack> [account]     Launch a pack directly (e.g. 'enigma helio', 'enigma helio work') in its
+                       isolated context, seeded with the chosen/pinned/active login (--tool to
+                       target codex/opencode); pass tool args after '--'
   seal                 Maintenance: (re)compute skill content hashes
   check                Integrity gate: verify skills are well-formed and sealed
   statusline           Print the [ENIGMA] badge for an agent status bar (shows the active level)
@@ -483,22 +485,25 @@ async function runResourcesCli(args: string[]): Promise<number> {
 }
 
 /**
- * `enigma pack <list|install|remove|update|setup|run> [id]`: the marketplace of optional,
- * isolated harness packs. Installing fetches the pack's asset-only npm bundle; launching it
- * (`enigma <pack>` or `enigma pack run <id>`) spawns an agent in a dedicated context that holds
- * only the pack's skills/commands, so it never loads into the user's normal agent.
+ * `enigma pack <list|install|remove|update|setup|use|run> [id] [account]`: the marketplace of
+ * optional, isolated harness packs. Installing fetches the pack's asset-only npm bundle; launching
+ * it (`enigma <pack>` or `enigma pack run <id>`) spawns an agent in a dedicated context that holds
+ * only the pack's skills/commands. `use <id> <account|->` pins which account seeds the context.
  */
-async function runPackCli(args: string[], passthrough: string[]): Promise<number> {
-    const [sub, id] = args;
+async function runPackCli(args: string[], passthrough: string[], toolOpt?: string): Promise<number> {
+    const [sub, id, value] = args;
+    const tool = toolOpt && isToolName(toolOpt) ? toolOpt : DEFAULT_TOOL;
     if (!sub || sub === "list") {
         console.log("Packs (optional isolated harnesses):\n");
         for (const p of listPacks()) {
             const state = p.installed ? (p.version ? `installed ${p.version}` : "installed") : "not installed";
+            const acct = p.defaultAccount ? `account ${p.defaultAccount}` : `account ${p.resolvedAccount} (follows active)`;
             console.log(`  ${p.id.padEnd(10)} ${p.label}  [${state}${p.enabled ? ", added" : ""}]`);
             console.log(`             ${p.description}`);
             console.log(`             ${p.tags.join(", ")}  -  ${p.homepage}`);
+            console.log(`             seeds with: ${acct}`);
         }
-        console.log("\nUse: enigma pack <install|remove|update|setup|run> <id>   (or just `enigma <id>` to launch)");
+        console.log("\nUse: enigma pack <install|remove|update|setup|use|run> <id>   (or just `enigma <id>` to launch)");
         return 0;
     }
     if (!id || !getPack(id)) { console.error(`Unknown pack '${id ?? ""}'. Known: ${PACKS.map((p) => p.id).join(", ")}.`); return 1; }
@@ -529,10 +534,24 @@ async function runPackCli(args: string[], passthrough: string[]): Promise<number
                 : `No MCP servers were registered for ${pack.label} (none available, or not supported for ${DEFAULT_TOOL}).`);
             return 0;
         }
+        case "use": {
+            // `enigma pack use <id> <account>` pins the seeding account; `-`/`none`/`default-follow` clears.
+            const { setPackDefaultAccount, getPackAccount } = await import("./packs");
+            if (!value) {
+                const cur = getPackAccount(id, tool);
+                console.log(cur ? `${pack.label} (${tool}) seeds with account '${cur}'.` : `${pack.label} (${tool}) follows the active profile/account. Set one: enigma pack use ${id} <account>.`);
+                return 0;
+            }
+            const clear = value === "-" || value === "none";
+            try { setPackDefaultAccount(id, tool, clear ? null : value); }
+            catch (e) { console.error((e as Error).message); return 1; }
+            console.log(clear ? `${pack.label} (${tool}) now follows the active profile/account.` : `${pack.label} (${tool}) will seed with account '${value}'.`);
+            return 0;
+        }
         case "run":
-            return launchPack(id, DEFAULT_TOOL, passthrough);
+            return launchPack(id, tool, passthrough, value);
         default:
-            console.error(`Unknown subcommand '${sub}'. Use: enigma pack <list|install|remove|update|setup|run> <id>.`);
+            console.error(`Unknown subcommand '${sub}'. Use: enigma pack <list|install|remove|update|setup|use|run> <id>.`);
             return 1;
     }
 }
@@ -1163,12 +1182,14 @@ export async function run(argv: string[]): Promise<void> {
         syncForLaunch(opts.command, account);
         process.exit(await launchTool(opts.command, account, opts.passthrough));
     }
-    // Pack shortcut: `enigma helio [tool] [-- args]` launches the pack's isolated agent.
+    // Pack shortcut: `enigma helio [account] [--tool <t>] [-- args]` launches the pack's
+    // isolated agent, seeding the chosen account's login (default: the pack's pinned account,
+    // else the active profile / tool-active account).
     if (opts.command && getPack(opts.command)) {
-        const tool = isToolName(opts.positionals[0] ?? "") ? opts.positionals[0]! : DEFAULT_TOOL;
-        process.exit(await launchPack(opts.command, tool, opts.passthrough));
+        const tool = opts.tool && isToolName(opts.tool) ? opts.tool : DEFAULT_TOOL;
+        process.exit(await launchPack(opts.command, tool, opts.passthrough, opts.positionals[0]));
     }
-    if (opts.command === "pack" || opts.command === "packs") { process.exit(await runPackCli(opts.positionals, opts.passthrough)); }
+    if (opts.command === "pack" || opts.command === "packs") { process.exit(await runPackCli(opts.positionals, opts.passthrough, opts.tool)); }
     if (opts.command === "account") { process.exit(await runAccountCli(opts, interactive)); }
     if (opts.command === "profile") { process.exit(await runProfileCli(opts, interactive)); }
     if (opts.command === "skills") { process.exit(runSkillsCli(opts)); }

@@ -229,10 +229,20 @@ test("packs API lists the Helio pack and a cross-origin write is refused", async
     try {
         const get = await fetch(`${base}/api/packs`);
         expect(get.status).toBe(200);
-        const data = await get.json() as { packs: { id: string; installed: boolean }[] };
+        const data = await get.json() as { packs: { id: string; installed: boolean; resolvedAccount?: string; accounts?: unknown[] }[] };
         const helio = data.packs.find((p) => p.id === "helio");
         expect(helio).toBeDefined();
         expect(helio!.installed).toBe(true); // resolved from the vendored assets
+        // The seeding account is surfaced for the picker.
+        expect(helio!.resolvedAccount).toBe("default");
+        expect(Array.isArray(helio!.accounts)).toBe(true);
+
+        // set-account with "" clears the pin (always valid); the pack follows the active account.
+        const setAcct = await fetch(`${base}/api/packs`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: "helio", action: "set-account", value: "" }),
+        });
+        expect((await setAcct.json() as { ok: boolean }).ok).toBe(true);
 
         // "launch" returns the command to run (the browser cannot spawn an agent).
         const launch = await fetch(`${base}/api/packs`, {

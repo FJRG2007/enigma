@@ -16,11 +16,21 @@ Agents keep every installed skill's name and description in context at all times
 
 ## Install and launch
 
-<Cmd name="enigma pack <subcommand>" ex={["enigma pack list", "enigma pack install helio", "enigma helio", "enigma pack setup helio", "enigma pack update helio", "enigma pack remove helio"]}>
-`list` shows every pack and its install state. `install <id>` fetches the pack. `enigma <id>` (e.g. `enigma helio`) launches an agent in the pack's isolated context, seeded with your active login so there is no re-authentication. `setup <id>` registers the pack's MCP servers. `update`/`remove` keep or delete it.
+<Cmd name="enigma pack <subcommand>" ex={["enigma pack list", "enigma pack install helio", "enigma helio", "enigma pack use helio work", "enigma pack setup helio", "enigma pack remove helio"]}>
+`list` shows every pack and its install state. `install <id>` fetches the pack. `enigma <id>` (e.g. `enigma helio`) launches an agent in the pack's isolated context. `use <id> <account>` pins which login seeds the pack. `setup <id>` registers the pack's MCP servers. `update`/`remove` keep or delete it.
 </Cmd>
 
-You can also manage packs from the dashboard's **Packs** tab (install, update, remove, and copy the launch command).
+You can also manage packs from the dashboard's **Packs** tab (install, update, remove, pick the seeding account, and copy the launch command).
+
+## Which account a pack uses
+
+A pack runs under one of your configured logins, seeded into its isolated context so you do not log in again. You can use **any account or profile** you have set up - or a brand-new one:
+
+<Cmd name="enigma helio [account]" ex={["enigma helio", "enigma helio work", "enigma pack use helio work", "enigma pack use helio -", "enigma account add pentest", "enigma helio pentest"]}>
+`enigma helio` uses the pinned account if you set one, otherwise your active profile's account (or the tool's active account). `enigma helio <account>` overrides it for one launch. `enigma pack use helio <account>` pins a per-pack default (`-` clears it). To use a new login, create it with `enigma account add <name>` (and log in), then point the pack at it. Target Codex/OpenCode with `--tool`.
+</Cmd>
+
+This lets a pack run under a different identity than your everyday agent - for example a dedicated account for authorised security testing - without touching your normal `enigma claude` setup.
 
 ## How it works
 

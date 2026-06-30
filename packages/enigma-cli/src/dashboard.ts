@@ -496,16 +496,16 @@ function servePacks(res: import("node:http").ServerResponse): void {
         .catch(() => { res.writeHead(500, JSON_HDR); res.end('{"error":"packs unavailable"}'); });
 }
 
-/** Apply a pack action from a POST body { id, action } (install/remove/update/setup/launch). */
+/** Apply a pack action from a POST body { id, action, value? } (install/remove/update/setup/set-account/launch). */
 function writePack(req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse): void {
     let body = "";
     req.on("data", (chunk) => { body += chunk; if (body.length > 8 * 1024) req.destroy(); });
     req.on("end", () => {
-        let parsed: { id?: unknown; action?: unknown };
+        let parsed: { id?: unknown; action?: unknown; value?: unknown };
         try { parsed = JSON.parse(body || "{}"); } catch { res.writeHead(400, JSON_HDR); res.end('{"error":"bad json"}'); return; }
         if (typeof parsed.action !== "string") { res.writeHead(400, JSON_HDR); res.end('{"error":"missing action"}'); return; }
         import("./dashboard-packs")
-            .then(({ applyPackAction }) => applyPackAction(typeof parsed.id === "string" ? parsed.id : "", parsed.action as string))
+            .then(({ applyPackAction }) => applyPackAction(typeof parsed.id === "string" ? parsed.id : "", parsed.action as string, typeof parsed.value === "string" ? parsed.value : undefined))
             .then((out) => { res.writeHead(out.ok ? 200 : 400, JSON_HDR); res.end(JSON.stringify(out)); })
             .catch(() => { res.writeHead(500, JSON_HDR); res.end('{"error":"action failed"}'); });
     });

@@ -21,6 +21,7 @@ process.env.ENIGMA_HELIO_ASSETS = join(__dirname, "..", "..", "helio", "assets")
 
 const packs = await import("../src/packs");
 const { readConfig } = await import("../src/config");
+const { addAccount } = await import("../src/accounts");
 
 afterAll(() => rmSync(HOME, { recursive: true, force: true }));
 
@@ -64,6 +65,34 @@ test("enable/disable toggles config.packs and disable removes the managed tree",
     packs.disablePack("helio");
     expect(readConfig().config.packs).not.toContain("helio");
     expect(existsSync(join(HOME, "packs", "helio"))).toBe(false);
+});
+
+test("seeding account: defaults to the active account, can be pinned to any account, and cleared", () => {
+    // With no pin and only the synthetic default account, the pack follows "default".
+    expect(packs.resolvePackAccount("helio", "claude")).toBe("default");
+    expect(packs.getPackAccount("helio", "claude")).toBeNull();
+
+    // Pin a real, user-configured account.
+    addAccount("claude", "pentest");
+    packs.setPackDefaultAccount("helio", "claude", "pentest");
+    expect(packs.getPackAccount("helio", "claude")).toBe("pentest");
+    expect(packs.resolvePackAccount("helio", "claude")).toBe("pentest");
+    // An explicit choice still wins over the pin.
+    expect(packs.resolvePackAccount("helio", "claude", "default")).toBe("default");
+
+    // Clearing falls back to the active account again.
+    packs.setPackDefaultAccount("helio", "claude", null);
+    expect(packs.getPackAccount("helio", "claude")).toBeNull();
+    expect(packs.resolvePackAccount("helio", "claude")).toBe("default");
+
+    // An unknown account is rejected (never silently seeds the wrong login).
+    expect(() => packs.setPackDefaultAccount("helio", "claude", "ghost")).toThrow();
+    expect(() => packs.resolvePackAccount("helio", "claude", "ghost")).toThrow();
+});
+
+test("launchPack refuses an unknown explicit account before spawning anything", async () => {
+    const code = await packs.launchPack("helio", "claude", [], "does-not-exist");
+    expect(code).toBe(1);
 });
 
 test("setup registers the pack's MCP servers into the isolated context only", () => {

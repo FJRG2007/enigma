@@ -11,7 +11,7 @@
 import { DEFAULT_TOOL } from "./accounts";
 import {
     listPacks, getPack, ensurePackInstalled, disablePack, enablePack, refreshPack,
-    installedPackVersion, setupPackMcp, type PackView,
+    installedPackVersion, setupPackMcp, setPackDefaultAccount, type PackView,
 } from "./packs";
 
 /** Marketplace listing of every pack with its install/enable state. */
@@ -34,10 +34,11 @@ export interface PackActionResult {
  *  - install : fetch the pack bundle and add it to the marketplace selection.
  *  - remove  : delete the pack and its isolated context.
  *  - update  : refresh the pack to the latest version.
- *  - setup   : register the pack's MCP servers into the isolated context.
- *  - launch  : return the command to run (the browser cannot spawn an agent).
+ *  - setup       : register the pack's MCP servers into the isolated context.
+ *  - set-account : pin which account seeds the pack (value = account name, or "" to clear).
+ *  - launch      : return the command to run (the browser cannot spawn an agent).
  */
-export async function applyPackAction(id: string, action: string): Promise<PackActionResult> {
+export async function applyPackAction(id: string, action: string, value?: string): Promise<PackActionResult> {
     const pack = getPack(id);
     if (!pack) return { ok: false, error: `unknown pack: ${id}` };
     const list = (): PackView[] => listPacks();
@@ -56,6 +57,11 @@ export async function applyPackAction(id: string, action: string): Promise<PackA
         case "setup": {
             const added = setupPackMcp(id, DEFAULT_TOOL);
             return { ok: true, note: added.length ? `Registered MCP: ${added.join(", ")} (needs Python 3).` : "No MCP servers registered.", packs: list() };
+        }
+        case "set-account": {
+            try { setPackDefaultAccount(id, DEFAULT_TOOL, value ? value : null); }
+            catch (e) { return { ok: false, error: (e as Error).message }; }
+            return { ok: true, note: value ? `${pack.label} will seed with account '${value}'.` : `${pack.label} follows the active account.`, packs: list() };
         }
         case "launch":
             return { ok: true, command: `enigma ${id}`, note: `Run "enigma ${id}" in a terminal to launch the isolated ${pack.label} agent.` };

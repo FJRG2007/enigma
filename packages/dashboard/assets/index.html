@@ -3804,10 +3804,17 @@ export {
                         + '<button type="button" class="toggle" data-pack="update" data-id="' + esc(p.id) + '">Update</button>'
                         + '<button type="button" class="btn-danger" data-pack="remove" data-id="' + esc(p.id) + '">Remove</button>'
                     : '<button type="button" class="toggle on" data-pack="install" data-id="' + esc(p.id) + '">Install</button>';
+                const opts = '<option value="">follow active (' + esc(p.resolvedAccount || "default") + ')</option>'
+                    + (p.accounts || []).map((a) => '<option value="' + esc(a.name) + '"' + (p.defaultAccount === a.name ? " selected" : "") + '>' + esc(a.name) + (a.label && a.label !== a.name ? " - " + esc(a.label) : "") + "</option>").join("");
+                const accountSel = p.installed
+                    ? '<label class="set-hint" style="display:flex;align-items:center;gap:8px;margin-top:10px">Account that seeds this pack:'
+                        + '<select data-pack-account data-id="' + esc(p.id) + '">' + opts + "</select></label>"
+                    : "";
                 return '<div class="panel"><div class="set-row"><div class="set-meta">'
                     + '<div class="set-name">' + esc(p.label) + " " + state + " " + added + '</div>'
                     + '<div class="set-hint">' + esc(p.description) + '</div>'
                     + '<div class="set-hint" style="margin-top:6px">' + tags + ' &nbsp; <a href="' + esc(p.homepage) + '" target="_blank" rel="noopener">source</a></div>'
+                    + accountSel
                     + '</div></div><div class="set-ctl" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">' + actions + '</div></div>';
             }).join("");
         }
@@ -3816,12 +3823,12 @@ export {
             try { renderPacks((await (await fetch("/api/packs", { cache: "no-store" })).json()).packs); }
             catch { $("packsBody").innerHTML = '<div class="empty" style="padding:12px 0">Packs unavailable.</div>'; }
         }
-        async function packAction(id, action) {
+        async function packAction(id, action, value) {
             const confirmMsg = action === "remove" ? "Remove this pack and its isolated context?" : null;
             if (confirmMsg && !(await askConfirm("Confirm", confirmMsg, true))) return;
             setNote("packsNote", action === "install" || action === "update" ? "Working..." : "Saving...");
             try {
-                const out = await (await fetch("/api/packs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, action }) })).json();
+                const out = await (await fetch("/api/packs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, action, value }) })).json();
                 if (out.packs) renderPacks(out.packs);
                 if (out.command) { try { await navigator.clipboard.writeText(out.command); } catch { /* clipboard blocked */ } }
                 setNote("packsNote", out.note || out.error || (out.ok ? "Done." : "Action failed."), out.ok ? "ok" : "err");
@@ -3833,6 +3840,12 @@ export {
                 const b = e.target.closest("button[data-pack]");
                 if (!b) return;
                 packAction(b.dataset.id, b.dataset.pack);
+            });
+            // Pin which account seeds a pack (empty value = follow the active account).
+            $("view-packs").addEventListener("change", (e) => {
+                const sel = e.target.closest("select[data-pack-account]");
+                if (!sel) return;
+                packAction(sel.dataset.id, "set-account", sel.value);
             });
         }
 
