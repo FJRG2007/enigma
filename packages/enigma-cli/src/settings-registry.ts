@@ -11,7 +11,6 @@
 
 import { AGENTS } from "./agents";
 import { applyMcpToggle } from "./mcp-deploy";
-import { applyCodeGraphToggle } from "./codegraph";
 import { isAutoLintOn, setAutoLint } from "./lint";
 import { readConfig, setEnigmaToggle, setEnigmaValue, setRecallApiKey, RECALL_PROVIDERS, OUTPUT_STYLES, MINIMAL_CODE_LEVELS, DASHBOARD_MODES, PROMPT_SECRET_MODES, SKILL_UPDATE_POLICIES } from "./config";
 import { applyDashboardMode } from "./dashboard";
@@ -134,10 +133,10 @@ function setCompress(on: boolean, scope: Scope): ApplyResult {
     return { path, changed: true };
 }
 
-/** Persist the codeGraph toggle and register/remove the code-graph MCP server immediately. */
+/** Persist the codeGraph toggle and (de)register the enigma MCP server, which hosts its tools. */
 function setCodeGraph(on: boolean, scope: Scope): ApplyResult {
     const path = setEnigmaToggle("codeGraph", on, scope);
-    applyCodeGraphToggle(scope);
+    applyMcpToggle(scope);
     return { path, changed: true };
 }
 
@@ -254,7 +253,7 @@ const RAW_CATEGORIES: Category[] = [
             {
                 key: "code-graph",
                 label: "Codebase memory (code graph)",
-                hint: "register the code-intelligence server (a codebase knowledge graph: symbols, call chains, routes) into managed agents; fetched on demand; toggling applies immediately; off removes it; enigma default: off",
+                hint: "expose enigma's native code-graph tools (index a codebase into a knowledge graph of symbols, imports and references) to your agents over MCP; toggling applies immediately; off removes them; enigma default: off",
                 read: () => readConfig().config.codeGraph,
                 write: (value, scope) => setCodeGraph(value, scope),
             },

@@ -1,55 +1,49 @@
 /**
- * Bridge exposing the codebase-memory (code graph) integration to the dashboard's HTTP API:
- * a serializable view (enabled/available state, indexed projects, and a selected project's
- * architecture + graph schema) and one action (toggle the codeGraph setting on/off, which
- * registers/removes the MCP server across managed agents). Imported dynamically by dashboard.ts.
- *
- * All graph data comes from the server's own CLI mode, so the dashboard needs no running UI,
- * port, or SQLite parsing - and degrades gracefully when the tool is not installed
- * (available:false) or nothing is indexed yet (projects:[]).
+ * Bridge exposing the native codebase-memory (code graph) engine to the dashboard's HTTP API:
+ * a serializable view (enabled state, indexed projects, and a selected project's architecture +
+ * graph schema) and actions - toggle the codeGraph setting on/off (which (de)registers the enigma
+ * MCP server that hosts the tools) and index a project directory. Imported dynamically by
+ * dashboard.ts. Everything is computed in-process by enigma's own engine - no external tool.
  */
 
+import { applyMcpToggle } from "./mcp-deploy";
 import { readConfig, setEnigmaValue } from "./config";
 import {
     codeGraphArchitecture,
-    codeGraphAvailable,
-    codeGraphProjects,
     codeGraphSchema,
-    applyCodeGraphToggle,
+    indexProject,
+    listProjects,
+    type Architecture,
     type CodeGraphProject,
+    type GraphSchema,
 } from "./codegraph";
 
 export interface CodeGraphView {
-    /** config.codeGraph is on (server registered in managed agents). */
+    /** config.codeGraph is on (tools exposed to agents). */
     enabled: boolean;
-    /** The engine is reachable (binary on PATH, or npx available to fetch it). */
+    /** The engine is native, so it is always available. */
     available: boolean;
-    /** Indexed projects known to the code-graph store. */
+    /** Indexed projects known to the code graph. */
     projects: CodeGraphProject[];
     /** The project whose detail is shown, or null. */
     selected: string | null;
-    /** get_architecture for the selected project (defensive: shape varies by tool version). */
-    architecture: Record<string, unknown> | null;
-    /** get_graph_schema (node/edge label counts) for the selected project. */
-    schema: Record<string, unknown> | null;
+    /** Architecture overview for the selected project. */
+    architecture: Architecture | null;
+    /** Node/edge label counts for the selected project. */
+    schema: GraphSchema | null;
 }
 
-function projectName(p: CodeGraphProject): string {
-    return (typeof p.name === "string" && p.name) || (typeof p.root === "string" && p.root) || "";
-}
-
-/** Build the Code-graph view. When available, resolves the selected project's detail. */
+/** Build the code-graph view, resolving the selected project's detail. */
 export function codeGraphDashboard(opts: { project?: string } = {}): CodeGraphView {
     const enabled = readConfig().config.codeGraph;
-    const available = codeGraphAvailable();
-    if (!available) return { enabled, available, projects: [], selected: null, architecture: null, schema: null };
-    const projects = codeGraphProjects();
-    // Default to the requested project, else the first indexed one.
-    const names = projects.map(projectName).filter(Boolean);
-    const selected = (opts.project && names.includes(opts.project)) ? opts.project : (names[0] || null);
+    const projects = listProjects();
+    const names = projects.map((p) => p.name);
+    const selected = (opts.project && (names.includes(opts.project) || projects.some((p) => p.id === opts.project)))
+        ? opts.project
+        : (projects[0]?.name || null);
     return {
         enabled,
-        available,
+        available: true,
         projects,
         selected,
         architecture: selected ? codeGraphArchitecture(selected) : null,
@@ -57,15 +51,23 @@ export function codeGraphDashboard(opts: { project?: string } = {}): CodeGraphVi
     };
 }
 
-export interface CodeGraphActionPayload { on?: boolean; project?: string }
+export interface CodeGraphActionPayload { on?: boolean; project?: string; root?: string }
 
-/** Apply a Code-graph action and return the refreshed view. */
+/** Apply a code-graph action and return the refreshed view. */
 export function applyCodeGraphAction(op: string, payload: CodeGraphActionPayload = {}): { ok: boolean; error?: string; view?: CodeGraphView } {
     if (op === "toggle") {
         if (typeof payload.on !== "boolean") return { ok: false, error: "missing on flag" };
         setEnigmaValue("codeGraph", payload.on, "global");
-        applyCodeGraphToggle("global");
+        applyMcpToggle("global");
         return { ok: true, view: codeGraphDashboard({ project: payload.project }) };
+    }
+    if (op === "index") {
+        try {
+            const entry = indexProject(payload.root && payload.root.trim() ? payload.root.trim() : undefined);
+            return { ok: true, view: codeGraphDashboard({ project: entry.name }) };
+        } catch (e) {
+            return { ok: false, error: `indexing failed: ${(e as Error).message}` };
+        }
     }
     if (op === "refresh") return { ok: true, view: codeGraphDashboard({ project: payload.project }) };
     return { ok: false, error: `unknown op '${op}'` };

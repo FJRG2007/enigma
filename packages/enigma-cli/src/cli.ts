@@ -217,9 +217,9 @@ Commands:
   recall [action]      Local session memory from transcripts: status, sync, search <q>,
                        list, show <id>, timeline <id>, sessions, context, prune, clear
                        (hybrid keyword+vector search; opt-in; reads your own logs)
-  codegraph [action]   Codebase memory / code graph: status, on, off, projects,
-                       arch [project]; other actions pass through to the engine
-                       (opt-in; structural code intelligence over MCP)
+  codegraph [action]   Native codebase memory / code graph: status, on, off,
+                       index [path], projects, arch [project], search <name>
+                       (opt-in; structural code intelligence over MCP, no external tool)
   autoskills [path]    Detect the project's tech stack and install matching agent skills
                        (separate from the policy skills; --dry-run to preview)
   pack <subcommand>    Marketplace of optional, isolated harness packs (e.g. Helio for bug
@@ -677,54 +677,63 @@ async function runRecallCli(args: string[]): Promise<number> {
 }
 
 /**
- * `enigma codegraph <status|on|off|projects|arch [project]|...>`: manage the codebase-memory
- * (code graph) integration. `on`/`off` register/remove the MCP server across managed agents;
- * `projects`/`arch` read the graph via the engine's CLI mode; any other subcommand is passed
- * through to the engine binary (e.g. `install`, `update`, `index`, `cli ...`).
+ * `enigma codegraph <status|on|off|index [path]|projects|arch [project]|search <name>>`: the native
+ * code graph. `on`/`off` toggle the setting (and (de)register the enigma MCP server that exposes the
+ * tools); `index` builds the graph for a project; `projects`/`arch`/`search` read it. No external tool.
  */
 async function runCodeGraphCli(args: string[]): Promise<number> {
     const cg = await import("./codegraph");
     const { setEnigmaToggle } = await import("./config");
+    const { applyMcpToggle } = await import("./mcp-deploy");
     const [sub, ...rest] = args;
     if (!sub || sub === "status") {
         const st = cg.codeGraphStatus();
-        console.log("\n  codebase memory (code graph)");
-        console.log(`  registered ${st.enabled ? "on" : "off"}   tool ${st.available ? "available" : "not installed"}   projects ${st.projects}`);
-        if (!st.available) console.log("  The engine will be fetched automatically when enabled (needs npx on PATH).");
-        else if (!st.enabled) console.log("  Enable: enigma codegraph on");
+        console.log("\n  codebase memory (code graph)  -  native, no external dependency");
+        console.log(`  tools ${st.enabled ? "on" : "off"}   indexed projects ${st.projects}`);
+        if (!st.enabled) console.log("  Enable: enigma codegraph on");
+        else console.log("  Index this project: enigma codegraph index");
         console.log("");
         return 0;
     }
     if (sub === "on" || sub === "enable") {
         setEnigmaToggle("codeGraph", true, "global");
-        cg.applyCodeGraphToggle("global");
-        console.log("  Codebase memory enabled - registered in your agents (restart them to load it).");
+        applyMcpToggle("global");
+        console.log("  Code graph enabled - tools exposed to your agents over MCP (restart them to load it).");
         return 0;
     }
     if (sub === "off" || sub === "disable") {
         setEnigmaToggle("codeGraph", false, "global");
-        cg.applyCodeGraphToggle("global");
-        console.log("  Codebase memory disabled - removed from your agents.");
+        applyMcpToggle("global");
+        console.log("  Code graph disabled.");
+        return 0;
+    }
+    if (sub === "index") {
+        const entry = cg.indexProject(rest[0]);
+        console.log(`  Indexed ${entry.name}: ${entry.files} files, ${entry.symbols} symbols.`);
         return 0;
     }
     if (sub === "projects") {
-        if (!cg.codeGraphAvailable()) { console.error("  The code-graph engine is not available (needs npx on PATH)."); return 1; }
-        const ps = cg.codeGraphProjects();
-        if (!ps.length) { console.log('  No projects indexed yet. In your agent, say "Index this project".'); return 0; }
-        for (const p of ps) console.log(`  ${p.name || p.root || ""}${p.name && p.root ? `  ${p.root}` : ""}`);
+        const ps = cg.listProjects();
+        if (!ps.length) { console.log("  No projects indexed yet. Run: enigma codegraph index"); return 0; }
+        for (const p of ps) console.log(`  ${p.name}  ${p.files} files, ${p.symbols} symbols  ${p.root}`);
         return 0;
     }
     if (sub === "arch" || sub === "architecture") {
-        const project = rest[0] || cg.codeGraphProjects()[0]?.name || "";
-        const a = cg.codeGraphArchitecture(project);
-        if (!a) { console.error("  No architecture available (is the project indexed?)."); return 1; }
+        const a = cg.codeGraphArchitecture(rest[0]);
+        if (!a) { console.error("  No project indexed yet. Run: enigma codegraph index"); return 1; }
         console.log(JSON.stringify(a, null, 2));
         return 0;
     }
-    // Passthrough to the engine binary (install | update | index | cli ...).
-    const code = cg.codeGraphRun(args);
-    if (code === -1) { console.error("  The code-graph engine is not available (needs npx on PATH)."); return 1; }
-    return code;
+    if (sub === "search") {
+        const name = rest.join(" ").trim();
+        if (!name) { console.error("Usage: enigma codegraph search <name>"); return 1; }
+        const hits = cg.searchGraph(undefined, { name, limit: 40 });
+        if (!hits.length) { console.log("  No matches (is the project indexed? run: enigma codegraph index)"); return 0; }
+        for (const h of hits) console.log(`  ${h.kind.padEnd(10)} ${h.name}  ${h.file}:${h.line}`);
+        return 0;
+    }
+    console.error(`Unknown subcommand '${sub}'. Use: enigma codegraph <status | on | off | index [path] | projects | arch [project] | search <name>>`);
+    return 1;
 }
 
 /**

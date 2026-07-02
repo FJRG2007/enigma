@@ -15,11 +15,13 @@
  *   enigma_stats       - cumulative token savings.
  *   enigma_recall      - search the local session-memory index (when recall is on).
  *   enigma_recall_get  - fetch full memory observations by id.
+ *   enigma_codegraph_* - index/search/architecture over the native code graph (when codeGraph is on).
  */
 
 import { readConfig } from "./config";
 import { compress, retrieve, readStats } from "./compress";
 import { searchRecall, getObservations, recallTimeline, recallAvailable } from "./recall";
+import { indexProject, listProjects, searchGraph, codeGraphArchitecture } from "./codegraph";
 import type { ContentType } from "./compress";
 
 const PROTOCOL_VERSION = "2025-06-18";
@@ -110,9 +112,55 @@ const RECALL_TOOLS = [
     },
 ];
 
-/** The tools advertised this connection: recall tools only appear when recall is enabled. */
+/**
+ * Native code-graph tools, exposed only when the codeGraph setting is on. They give an agent a
+ * structural map of the codebase (symbols, imports, references) built by enigma itself - no
+ * external engine. Index once, then search symbols or read the architecture.
+ */
+const CODEGRAPH_TOOLS = [
+    {
+        name: "enigma_codegraph_index",
+        description: "Index a project's source into a code knowledge graph (files, symbols, imports, cross-file references). Run once per project (or after big changes); the other codegraph tools read what this builds.",
+        inputSchema: {
+            type: "object",
+            properties: { root: { type: "string", description: "Absolute path to the project root (defaults to the current working directory)." } },
+        },
+    },
+    {
+        name: "enigma_codegraph_projects",
+        description: "List the projects already indexed into the code graph (name, root, file/symbol counts).",
+        inputSchema: { type: "object", properties: {} },
+    },
+    {
+        name: "enigma_codegraph_search",
+        description: "Search a project's code graph for symbols (functions, classes, types, ...) by name pattern and optional kind. Use this to locate where something is defined without grepping.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                name: { type: "string", description: "Name pattern (regex or substring, case-insensitive)." },
+                kind: { type: "string", description: "Optional: function | class | interface | type | struct | enum | trait | module | method." },
+                project: { type: "string", description: "Optional: project name/root/id (defaults to the most recently indexed)." },
+                limit: { type: "number", description: "Max results (default 50)." },
+            },
+        },
+    },
+    {
+        name: "enigma_codegraph_architecture",
+        description: "Get a project's architecture overview from the code graph: languages, entry points, hotspots (most-referenced symbols), top-level packages and external dependencies.",
+        inputSchema: {
+            type: "object",
+            properties: { project: { type: "string", description: "Optional: project name/root/id (defaults to the most recently indexed)." } },
+        },
+    },
+];
+
+/** The tools advertised this connection: recall/codegraph tools appear only when enabled. */
 function toolList(): unknown[] {
-    return readConfig().config.recall && recallAvailable() ? [...TOOLS, ...RECALL_TOOLS] : TOOLS;
+    const cfg = readConfig().config;
+    let tools: unknown[] = [...TOOLS];
+    if (cfg.recall && recallAvailable()) tools = [...tools, ...RECALL_TOOLS];
+    if (cfg.codeGraph) tools = [...tools, ...CODEGRAPH_TOOLS];
+    return tools;
 }
 
 function ok(id: JsonRpcRequest["id"], result: unknown): JsonRpcResponse {
@@ -168,6 +216,30 @@ function callTool(name: string, args: Record<string, unknown>, source?: string):
             const before = typeof args.before === "number" ? args.before : undefined;
             const after = typeof args.after === "number" ? args.after : undefined;
             return textResult(JSON.stringify(recallTimeline({ id, before, after }), null, 2));
+        }
+        case "enigma_codegraph_index": {
+            if (!readConfig().config.codeGraph) return textResult("enigma_codegraph_index: the code graph is off (enable it with `enigma config code-graph on`).", true);
+            const root = typeof args.root === "string" && args.root ? args.root : undefined;
+            return textResult(JSON.stringify(indexProject(root), null, 2));
+        }
+        case "enigma_codegraph_projects": {
+            if (!readConfig().config.codeGraph) return textResult("enigma_codegraph_projects: the code graph is off (enable it with `enigma config code-graph on`).", true);
+            return textResult(JSON.stringify(listProjects(), null, 2));
+        }
+        case "enigma_codegraph_search": {
+            if (!readConfig().config.codeGraph) return textResult("enigma_codegraph_search: the code graph is off (enable it with `enigma config code-graph on`).", true);
+            const project = typeof args.project === "string" ? args.project : undefined;
+            const hits = searchGraph(project, {
+                name: typeof args.name === "string" ? args.name : undefined,
+                kind: typeof args.kind === "string" ? args.kind : undefined,
+                limit: typeof args.limit === "number" ? args.limit : undefined,
+            });
+            return textResult(JSON.stringify(hits, null, 2));
+        }
+        case "enigma_codegraph_architecture": {
+            if (!readConfig().config.codeGraph) return textResult("enigma_codegraph_architecture: the code graph is off (enable it with `enigma config code-graph on`).", true);
+            const arch = codeGraphArchitecture(typeof args.project === "string" ? args.project : undefined);
+            return arch ? textResult(JSON.stringify(arch, null, 2)) : textResult("enigma_codegraph_architecture: no project indexed yet - run enigma_codegraph_index first.", true);
         }
         default:
             return textResult(`Unknown tool: ${name}`, true);
