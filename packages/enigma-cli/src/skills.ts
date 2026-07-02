@@ -22,7 +22,6 @@ import type { RemoteRefreshResult } from "./skills-remote";
 import { setGhTelemetry, starRepoInBackground } from "./github";
 import type { Agent, AgentTarget, DiscoveredAgent } from "./agents";
 import { applyMcpForAgent, applyMcpForAccount } from "./mcp-deploy";
-import { applyCodeGraphForAgent, applyCodeGraphForAccount } from "./codegraph";
 import type { OutputStyle, MinimalCode, DashboardMode } from "./config";
 import { isDir, isNewer, readJson, listFilesRel, computeContentSha } from "./util";
 import { resolveBypassSelection, applyBypass, mirrorAccountSettings } from "./permissions";
@@ -1006,17 +1005,12 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
     const applyMcpConfig = (): void => {
         if (opts.dryRun) return;
         const cfg = readConfig().config;
-        const enabled = cfg.compress || cfg.recall;
+        const enabled = cfg.compress || cfg.recall || cfg.codeGraph;
         const changed: string[] = [];
         for (const agent of chosenAgents) if (applyMcpForAgent(agent.name, scope)) changed.push(agent.label);
         if (changed.length) {
-            reporter.info(`enigma MCP server ${enabled ? "registered in" : "removed from"} ${changed.join(", ")} (tools: compress${cfg.recall ? " + recall" : ""}).`);
-        }
-        // Register/remove the codebase-memory (code graph) MCP the same way.
-        const cgChanged: string[] = [];
-        for (const agent of chosenAgents) if (applyCodeGraphForAgent(agent.name, scope)) cgChanged.push(agent.label);
-        if (cgChanged.length) {
-            reporter.info(`codebase-memory (code graph) MCP ${cfg.codeGraph ? "registered in" : "removed from"} ${cgChanged.join(", ")}.`);
+            const tools = [cfg.compress && "compress", cfg.recall && "recall", cfg.codeGraph && "code graph"].filter(Boolean).join(" + ");
+            reporter.info(`enigma MCP server ${enabled ? "registered in" : "removed from"} ${changed.join(", ")}${tools ? ` (tools: ${tools})` : ""}.`);
         }
     };
 
@@ -1292,9 +1286,7 @@ export function syncDeployed(agentNames?: string[]): string[] {
             if (!target || !hasDeployment(agent, scope)) continue;
             const changed = syncTarget(target, inspectMemory(agent), skills, commands, false);
             const mcpChanged = applyMcpForAgent(agent.name, scope);
-            const cgChanged = applyCodeGraphForAgent(agent.name, scope);
-            const extra = (mcpChanged ? 1 : 0) + (cgChanged ? 1 : 0);
-            if (changed || extra) notices.push(`${agent.label}: ${changed + extra} item(s) updated (${scope})`);
+            if (changed || mcpChanged) notices.push(`${agent.label}: ${changed + (mcpChanged ? 1 : 0)} item(s) updated (${scope})`);
         }
     }
     return notices;
@@ -1401,7 +1393,6 @@ export function syncAccount(toolName: string, dir: string): string[] {
     mirrorAccountSettings(toolName, dir);
     mirrorLintWiring(toolName, dir);
     const mcpChanged = applyMcpForAccount(toolName, dir);
-    const cgChanged = applyCodeGraphForAccount(toolName, dir);
-    const total = changed + (mcpChanged ? 1 : 0) + (cgChanged ? 1 : 0);
+    const total = changed + (mcpChanged ? 1 : 0);
     return total ? [`${agent.label}: ${total} item(s) updated (account)`] : [];
 }

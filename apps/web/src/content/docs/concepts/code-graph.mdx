@@ -1,35 +1,37 @@
 ---
 title: Codebase memory (code graph)
-description: Structural memory of your codebase - a knowledge graph of symbols, call chains, and routes, managed by enigma.
+description: Structural memory of your codebase - a native knowledge graph of symbols, imports and cross-file references, built by enigma itself.
 group: Concepts
 order: 34
 ---
 import Cmd from "../../../components/Cmd.astro";
 
-Codebase memory gives your agents a **structural map of your code**: a persistent knowledge graph of functions, classes, call chains, imports, HTTP routes, and cross-service links, queryable in under a millisecond. It is backed by a zero-dependency code-intelligence engine that parses many languages into a knowledge graph.
+Codebase memory gives your agents a **structural map of your code**: a knowledge graph of the symbols each file defines (functions, classes, interfaces, types, ...), the modules it imports, and cross-file symbol references. Your agent can search it or read a project's architecture instead of grepping and reading dozens of files.
 
-This is **structural** memory of your code - complementary to [Recall](/docs/concepts/recall), which is **session** memory of what you did. It is **off by default**; everything is processed locally and your code never leaves your machine.
+This is **structural** memory of your code - complementary to [Recall](/docs/concepts/recall), which is **session** memory of what you did. It is **off by default**; everything runs locally and your code never leaves your machine.
 
-## How enigma integrates it
+## Native, no dependencies
 
-enigma does not reimplement the engine (it is a pure-C binary with vendored grammars and bundled embeddings). Instead enigma **manages** it: turning the setting on registers the server in each of your managed agents' MCP config so they gain its code-intelligence tools, and the enigma dashboard surfaces the graph. The binary is fetched on demand via `npx` (the package's own runtime) the first time an agent uses it - nothing to install up front.
+The engine is built into enigma - a zero-dependency TypeScript indexer. There is **no external binary, no `npx`, no third-party package**: extraction is deterministic (regex-per-language over the common languages - TS/JS, Python, Go, Rust, Java, Ruby, PHP, C#, Kotlin, C/C++). It is honest "structural-lite", not a compiler-grade AST, but enough to map a codebase with nothing to install and nothing to fetch.
+
+Turning the setting on exposes enigma's code-graph tools (`enigma_codegraph_index`, `enigma_codegraph_search`, `enigma_codegraph_architecture`, `enigma_codegraph_projects`) to your agents through enigma's own MCP server. The graph is stored per project as JSON under `~/.enigma/codegraph`, so the CLI, the MCP tools and the dashboard all read the same store.
 
 ## Enable it
 
-<Cmd name="enigma config code-graph on" ex={["enigma config code-graph on"]}>
-Register the code-intelligence server in your managed agents (Claude Code, Codex, OpenCode). Restart the agent to load it, then tell it "Index this project".
+<Cmd name="enigma config code-graph on" ex={["enigma config code-graph on", "enigma codegraph index"]}>
+Expose the code-graph tools to your agents (restart them to load), then index a project. Your agent can also index on its own via `enigma_codegraph_index`.
 </Cmd>
 
-You can also toggle it from the dashboard's **Code graph** tab, which shows your indexed projects and each project's architecture and graph schema.
+You can also toggle it and index a project from the dashboard's **Code graph** tab, which lists your indexed projects and each project's architecture and graph schema.
 
 ## Use it
 
-<Cmd name="enigma codegraph [action]" ex={["enigma codegraph status", "enigma codegraph on", "enigma codegraph projects", "enigma codegraph arch", "enigma codegraph off"]}>
-`status` shows whether it's registered and available; `on`/`off` register or remove the MCP server across your agents; `projects` lists indexed projects; `arch [project]` prints a project's architecture overview. Any other action (e.g. `install`, `update`, `index`) is passed through to the underlying tool.
+<Cmd name="enigma codegraph [action]" ex={["enigma codegraph index", "enigma codegraph projects", "enigma codegraph arch", "enigma codegraph search Handler", "enigma codegraph off"]}>
+`index [path]` builds the graph for a project (defaults to the current directory); `projects` lists indexed projects; `arch [project]` prints the architecture overview (languages, entry points, hotspots, packages, external deps); `search <name>` finds symbols by name; `on`/`off` toggle the tools.
 </Cmd>
 
-Once it's on, your agent can query the graph directly over MCP - searching symbols, tracing call chains, mapping change impact, detecting dead code, and running Cypher-like queries - which typically replaces dozens of grep/read cycles with a single structural query.
+Once it's on, your agent queries the graph directly over MCP - locating where a symbol is defined, reading a project's shape, or listing hotspots - which typically replaces many grep/read cycles with a single structural query.
 
 ## Privacy
 
-The engine runs entirely locally and stores its graph under your cache directory. enigma only writes the MCP server entry into your agents' config (and removes it when you turn the setting off); the dashboard reads the graph through the tool's own local CLI, never over the network.
+Everything runs in-process and is stored locally under `~/.enigma/codegraph`. Turning the setting off removes the tools from your agents; the dashboard reads the graph from the local store, never over the network.

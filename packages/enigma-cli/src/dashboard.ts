@@ -475,12 +475,13 @@ function writeCodeGraph(req: import("node:http").IncomingMessage, res: import("n
     let body = "";
     req.on("data", (chunk) => { body += chunk; if (body.length > 8192) req.destroy(); });
     req.on("end", () => {
-        let parsed: { op?: unknown; on?: unknown; project?: unknown };
+        let parsed: { op?: unknown; on?: unknown; project?: unknown; root?: unknown };
         try { parsed = JSON.parse(body || "{}"); } catch { res.writeHead(400, JSON_HDR); res.end('{"error":"bad json"}'); return; }
         if (typeof parsed.op !== "string") { res.writeHead(400, JSON_HDR); res.end('{"error":"missing op"}'); return; }
         const payload = {
             on: typeof parsed.on === "boolean" ? parsed.on : undefined,
             project: typeof parsed.project === "string" ? parsed.project : undefined,
+            root: typeof parsed.root === "string" ? parsed.root : undefined,
         };
         import("./dashboard-codegraph")
             .then(({ applyCodeGraphAction }) => applyCodeGraphAction(parsed.op as string, payload))

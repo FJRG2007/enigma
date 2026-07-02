@@ -878,12 +878,17 @@
         <div class="page-head" style="display:flex;align-items:flex-start;gap:16px">
             <div style="flex:1">
                 <h1>Code graph</h1>
-                <p>Structural memory of your codebase - a knowledge graph of symbols, call chains, and routes. Enabling it registers the code-intelligence server in your agents so they can query the graph over MCP. Complements <a href="#/recall">Recall</a> (session memory).</p>
+                <p>Structural memory of your codebase - a native knowledge graph of the symbols each file defines, the modules it imports and cross-file references. Enabling it exposes enigma's code-graph tools to your agents over MCP. Complements <a href="#/recall">Recall</a> (session memory).</p>
             </div>
-            <button id="cgToggle" type="button" class="toggle" role="switch" aria-checked="false" aria-label="Codebase memory">off</button>
+            <button id="cgToggle" type="button" class="toggle" data-kind="bool" role="switch" aria-checked="false" aria-label="Code graph">Off</button>
             <button id="cgRefresh" type="button" class="iconbtn" title="Refresh" aria-label="Refresh"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg></button>
         </div>
         <div id="cgNote" class="set-note"></div>
+        <div class="panel">
+            <div class="set-cat-h">Index a project</div>
+            <div class="set-hint" style="padding:4px 0">Build the graph for a codebase. Leave the path empty to index enigma's own working directory.</div>
+            <div class="ladd" style="gap:8px;flex-wrap:wrap"><input id="cgRoot" class="linput" placeholder="absolute project path (optional)" style="flex:1;min-width:240px"><button id="cgIndex" type="button" class="toggle on">Index</button></div>
+        </div>
         <div id="cgBody"><div class="empty" style="padding:12px 0">Loading...</div></div>
     </section>
 
@@ -3873,9 +3878,9 @@ export {
             });
         }
 
-        // --- code graph subpage (structural code memory) ---
+        // --- code graph subpage (native structural code memory) ---
         let cgProject = null;
-        // A single architecture/schema field, rendered defensively (shape varies by tool version).
+        // Render one architecture/schema field defensively (arrays -> chips, objects -> count).
         function cgItem(x) {
             if (x && typeof x === "object") return String(x.name || x.label || x.path || x.id || JSON.stringify(x)).slice(0, 60);
             return String(x);
@@ -3883,10 +3888,14 @@ export {
         function cgVal(v) {
             if (Array.isArray(v)) {
                 if (!v.length) return '<span class="tag">none</span>';
-                return v.slice(0, 12).map((x) => '<span class="tag">' + esc(cgItem(x)) + "</span>").join(" ")
-                    + (v.length > 12 ? ' <span class="set-hint">+' + (v.length - 12) + " more</span>" : "");
+                return v.slice(0, 16).map((x) => '<span class="tag">' + esc(cgItem(x)) + "</span>").join(" ")
+                    + (v.length > 16 ? ' <span class="set-hint">+' + (v.length - 16) + " more</span>" : "");
             }
-            if (v && typeof v === "object") return '<span class="set-hint">' + esc(Object.keys(v).length + " field(s)") + "</span>";
+            if (v && typeof v === "object") {
+                const ents = Object.entries(v);
+                if (!ents.length) return '<span class="tag">none</span>';
+                return ents.slice(0, 16).map(([k, n]) => '<span class="tag">' + esc(k) + " " + esc(String(n)) + "</span>").join(" ");
+            }
             return esc(String(v));
         }
         function cgSection(title, obj) {
@@ -3900,23 +3909,17 @@ export {
             view = view || {};
             const on = !!view.enabled;
             const t = $("cgToggle");
-            t.classList.toggle("on", on); t.setAttribute("aria-checked", on ? "true" : "false"); t.textContent = on ? "on" : "off";
-            if (!view.available) {
-                $("cgBody").innerHTML = '<div class="panel"><div class="set-cat-h">Not installed</div>'
-                    + '<div class="set-hint" style="padding:6px 0">The code-intelligence engine is not available yet. When enabled, your agent fetches it automatically on first use (needs <code>npx</code> on PATH). Then tell your agent "Index this project".</div></div>';
-                return;
-            }
+            t.classList.toggle("on", on); t.setAttribute("aria-checked", on ? "true" : "false"); t.textContent = on ? "On" : "Off";
             const projects = view.projects || [];
             const projHtml = projects.length
                 ? projects.map((p) => {
-                    const name = p.name || p.root || "";
-                    const sel = name === view.selected;
-                    return '<div class="set-row"><div class="set-meta"><div class="set-name">' + esc(name)
+                    const sel = p.name === view.selected;
+                    return '<div class="set-row"><div class="set-meta"><div class="set-name">' + esc(p.name)
                         + (sel ? ' <span class="tag" style="color:var(--ok)">viewing</span>' : "")
-                        + '</div><div class="set-hint">' + esc(p.root || "") + '</div></div>'
-                        + '<div class="set-ctl"><button type="button" class="toggle' + (sel ? " on" : "") + '" data-cg-project="' + esc(name) + '">View</button></div></div>';
+                        + '</div><div class="set-hint">' + esc((p.files || 0) + " files · " + (p.symbols || 0) + " symbols · " + (p.root || "")) + '</div></div>'
+                        + '<div class="set-ctl"><button type="button" class="toggle' + (sel ? " on" : "") + '" data-cg-project="' + esc(p.name) + '">View</button></div></div>';
                 }).join("")
-                : '<div class="empty" style="padding:12px 0">No projects indexed yet. In your agent, say "Index this project".</div>';
+                : '<div class="empty" style="padding:12px 0">No projects indexed yet. Use "Index a project" above.</div>';
             let html = '<div class="panel"><div class="set-cat-h">Indexed projects <small>' + projects.length + "</small></div>" + projHtml + "</div>";
             if (view.architecture) html += cgSection("Architecture" + (view.selected ? " - " + view.selected : ""), view.architecture);
             if (view.schema) html += cgSection("Graph schema", view.schema);
@@ -3929,18 +3932,28 @@ export {
                 renderCodeGraph(await (await fetch("/api/codegraph" + q, { cache: "no-store" })).json());
             } catch { $("cgBody").innerHTML = '<div class="empty" style="padding:12px 0">Code graph unavailable.</div>'; }
         }
+        async function cgPost(payload, working) {
+            setNote("cgNote", working);
+            try {
+                const out = await (await fetch("/api/codegraph", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })).json();
+                if (out.view) renderCodeGraph(out.view);
+                return out;
+            } catch { setNote("cgNote", "Could not reach the server.", "err"); return null; }
+        }
         async function cgToggleAction() {
             const turnOn = $("cgToggle").getAttribute("aria-checked") !== "true";
-            setNote("cgNote", "Saving...");
-            try {
-                const out = await (await fetch("/api/codegraph", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ op: "toggle", on: turnOn, project: cgProject || undefined }) })).json();
-                if (out.view) renderCodeGraph(out.view);
-                setNote("cgNote", out.ok ? (turnOn ? "Codebase memory enabled - registered in your agents (restart them to load it)." : "Codebase memory disabled.") : (out.error || "Action failed."), out.ok ? "ok" : "err");
-            } catch { setNote("cgNote", "Could not reach the server.", "err"); }
+            const out = await cgPost({ op: "toggle", on: turnOn, project: cgProject || undefined }, "Saving...");
+            if (out) setNote("cgNote", out.ok ? (turnOn ? "Code graph enabled - tools exposed to your agents (restart them to load it)." : "Code graph disabled.") : (out.error || "Action failed."), out.ok ? "ok" : "err");
+        }
+        async function cgIndexAction() {
+            const root = $("cgRoot").value.trim();
+            const out = await cgPost({ op: "index", root: root || undefined }, "Indexing...");
+            if (out) { if (out.view && out.view.selected) cgProject = out.view.selected; setNote("cgNote", out.ok ? "Indexed." : (out.error || "Indexing failed."), out.ok ? "ok" : "err"); }
         }
         function wireCodeGraph() {
             $("cgRefresh").addEventListener("click", loadCodeGraph);
             $("cgToggle").addEventListener("click", cgToggleAction);
+            $("cgIndex").addEventListener("click", cgIndexAction);
             $("view-codegraph").addEventListener("click", (e) => {
                 const b = e.target.closest("button[data-cg-project]");
                 if (!b) return;

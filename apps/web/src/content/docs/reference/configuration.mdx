@@ -24,7 +24,7 @@ Settings live in `.enigma.json` (global `~/.enigma.json`, overridden by a repo-l
 <tr><td><code>parallel-subagents</code></td><td>on / off</td><td class="def">off</td><td class="w">Allow the agent to fan out sub-agents in parallel.</td></tr>
 <tr><td><code>auto-lint</code></td><td>on / off</td><td class="def">off</td><td class="w">Lint edited files via a post-write hook.</td></tr>
 <tr><td><code>compress</code></td><td>on / off</td><td class="def">off</td><td class="w">Register the context-compression MCP server in your agents.</td></tr>
-<tr><td><code>code-graph</code></td><td>on / off</td><td class="def">off</td><td class="w">Register the codebase-memory (code graph) code-intelligence server in your agents; fetched on demand.</td></tr>
+<tr><td><code>code-graph</code></td><td>on / off</td><td class="def">off</td><td class="w">Expose enigma's native code-graph tools (index a codebase into a knowledge graph of symbols/imports/references) to your agents over MCP.</td></tr>
 <tr><td><code>dashboard</code></td><td>off / on-demand / always</td><td class="def">off</td><td class="w">Local management dashboard mode.</td></tr>
 <tr><td><code>dashboard-port</code></td><td>&lt;0-65535&gt;</td><td class="def">0</td><td class="w">Preferred dashboard port (0 = auto: 80, then 24282). Restart the dashboard to apply.</td></tr>
 <tr><td><code>proxy</code></td><td>on / off</td><td class="def">off</td><td class="w">Route `enigma claude` through a local measuring proxy.</td></tr>

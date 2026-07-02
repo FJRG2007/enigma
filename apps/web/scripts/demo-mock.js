@@ -205,18 +205,19 @@
     var CODEGRAPH = {
         enabled: true, available: true,
         projects: [
-            { name: "enigma", root: "/home/you/dev/enigma" },
-            { name: "ai-gateway", root: "/home/you/dev/ai-gateway" }
+            { id: "a1b2c3d4e5f6", name: "enigma", root: "/home/you/dev/enigma", indexedAt: now - 3600000, files: 214, symbols: 3312 },
+            { id: "f6e5d4c3b2a1", name: "ai-gateway", root: "/home/you/dev/ai-gateway", indexedAt: now - 86400000, files: 96, symbols: 1408 }
         ],
         selected: "enigma",
         architecture: {
-            languages: ["TypeScript", "JavaScript", "C", "Shell"],
-            entryPoints: ["src/bin/enigma.ts", "src/mcp.ts"],
-            routes: ["GET /api/stats", "GET /api/codegraph", "POST /api/settings"],
-            hotspots: ["src/skills.ts", "src/dashboard.ts", "src/cli.ts"],
-            packages: 6, layers: ["cli", "core", "transport"], clusters: 9
+            project: "enigma", files: 214, symbols: 3312, importEdges: 1204,
+            languages: { ts: 188, js: 14, python: 3, c: 9 },
+            entryPoints: ["src/bin/enigma.ts", "src/mcp.ts", "src/cli.ts"],
+            hotspots: [{ name: "readConfig", refs: 61 }, { name: "resolveBin", refs: 34 }, { name: "syncTarget", refs: 22 }],
+            packages: { src: 176, tests: 30, scripts: 8 },
+            externalModules: [{ name: "node:fs", count: 84 }, { name: "node:path", count: 71 }, { name: "node:os", count: 40 }]
         },
-        schema: { Function: 2841, Class: 214, Module: 187, Route: 23, CALLS: 9120, IMPORTS: 1204, DEFINES: 3255 }
+        schema: { nodes: { File: 214, Function: 2841, Class: 214, Interface: 187, Type: 70 }, edges: { IMPORTS: 1204, REFERENCES: 5220 } }
     };
 
     function json(obj, status) {
@@ -398,7 +399,11 @@
             return method === "POST" ? { ok: true, view: RECALL } : RECALL;
         }
         if (path.indexOf("/api/codegraph") !== -1) {
-            if (method === "POST") { if (body && typeof body.on === "boolean") CODEGRAPH.enabled = body.on; return { ok: true, view: CODEGRAPH }; }
+            if (method === "POST") {
+                if (body && body.op === "toggle" && typeof body.on === "boolean") CODEGRAPH.enabled = body.on;
+                if (body && body.op === "index") return { ok: true, note: "Demo - indexing is disabled in the preview.", view: CODEGRAPH };
+                return { ok: true, view: CODEGRAPH };
+            }
             return CODEGRAPH;
         }
         if (path.indexOf("/api/packs") !== -1) {
