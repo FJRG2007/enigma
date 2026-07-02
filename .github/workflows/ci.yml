@@ -76,6 +76,9 @@ jobs:
       - name: Test recall session memory
         run: bun test tests/recall.test.ts
         working-directory: packages/enigma-cli
+      - name: Test code-graph integration
+        run: bun test tests/codegraph.test.ts
+        working-directory: packages/enigma-cli
       - name: Test accounts and provider overrides
         run: bun test tests/accounts.test.ts
         working-directory: packages/enigma-cli

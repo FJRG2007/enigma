@@ -526,6 +526,7 @@
             <a href="#/settings" data-view="settings" class="tab">Settings</a>
             <a href="#/resources" data-view="resources" class="tab">Resources</a>
             <a href="#/recall" data-view="recall" class="tab">Recall</a>
+            <a href="#/codegraph" data-view="codegraph" class="tab">Code graph</a>
             <a href="#/packs" data-view="packs" class="tab">Packs</a>
         </nav>
         <div class="nav">
@@ -871,6 +872,19 @@
             </div>
         </div>
         <div id="recallList"></div>
+    </section>
+
+    <section id="view-codegraph" style="display:none">
+        <div class="page-head" style="display:flex;align-items:flex-start;gap:16px">
+            <div style="flex:1">
+                <h1>Code graph</h1>
+                <p>Structural memory of your codebase - a knowledge graph of symbols, call chains, and routes, powered by <a href="https://github.com/DeusData/codebase-memory-mcp" target="_blank" rel="noreferrer noopener">codebase-memory-mcp</a>. Enabling it registers the server in your agents so they can query the graph over MCP. Complements <a href="#/recall">Recall</a> (session memory).</p>
+            </div>
+            <button id="cgToggle" type="button" class="toggle" role="switch" aria-checked="false" aria-label="Codebase memory">off</button>
+            <button id="cgRefresh" type="button" class="iconbtn" title="Refresh" aria-label="Refresh"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg></button>
+        </div>
+        <div id="cgNote" class="set-note"></div>
+        <div id="cgBody"><div class="empty" style="padding:12px 0">Loading...</div></div>
     </section>
 
     <footer>
@@ -3156,6 +3170,7 @@ export {
             const guard = (sec.guardProtects || []).map((p) => '<span class="tag">' + esc(p) + "</span>").join("");
             el.innerHTML =
                   item("Context compression (MCP) · measured", boolPill(s.compress))
+                + item("Codebase memory / code graph (MCP)", boolPill(s.codeGraph))
                 + item("Real tool-usage stats · measured", boolPill(s.usageStats))
                 + item("Claude Code proxy · experimental", boolPill(s.proxy))
                 + item("Live usage windows · real", boolPill(s.usageApi))
@@ -3713,7 +3728,7 @@ export {
 
         // --- hash routing between the subpages ---
         // Single source of truth for the subpage ids (savings is the default/fallback).
-        const VIEWS = ["savings", "usage", "accounts", "skills", "settings", "resources", "recall", "packs"];
+        const VIEWS = ["savings", "usage", "accounts", "skills", "settings", "resources", "recall", "codegraph", "packs"];
         // Views that apply to a single project; the rest are global/machine-level only.
         const PROJECT_VIEWS = ["settings", "skills"];
         let activeView = "savings";
@@ -3734,6 +3749,7 @@ export {
             else if (v === "usage") { loadProviderStatus(); if (!usageAccountsLoaded) { usageAccountsLoaded = true; loadUsageAccounts(); } }
             else if (v === "resources") loadResources();
             else if (v === "recall") loadRecall();
+            else if (v === "codegraph") loadCodeGraph();
             else if (v === "packs") loadPacks();
             // The chart was sized while its view may have been hidden; nudge it on return.
             else if (v === "savings") { loadSystems(true); if (chart) { try { applyRange(); } catch { /* not ready */ } } }
@@ -3854,6 +3870,82 @@ export {
                 const sel = e.target.closest("select[data-pack-account]");
                 if (!sel) return;
                 packAction(sel.dataset.id, "set-account", sel.value);
+            });
+        }
+
+        // --- code graph subpage (codebase-memory-mcp; structural code memory) ---
+        let cgProject = null;
+        // A single architecture/schema field, rendered defensively (shape varies by tool version).
+        function cgItem(x) {
+            if (x && typeof x === "object") return String(x.name || x.label || x.path || x.id || JSON.stringify(x)).slice(0, 60);
+            return String(x);
+        }
+        function cgVal(v) {
+            if (Array.isArray(v)) {
+                if (!v.length) return '<span class="tag">none</span>';
+                return v.slice(0, 12).map((x) => '<span class="tag">' + esc(cgItem(x)) + "</span>").join(" ")
+                    + (v.length > 12 ? ' <span class="set-hint">+' + (v.length - 12) + " more</span>" : "");
+            }
+            if (v && typeof v === "object") return '<span class="set-hint">' + esc(Object.keys(v).length + " field(s)") + "</span>";
+            return esc(String(v));
+        }
+        function cgSection(title, obj) {
+            const entries = obj && typeof obj === "object" ? Object.entries(obj) : [];
+            if (!entries.length) return "";
+            return '<div class="panel"><div class="set-cat-h">' + esc(title) + "</div>"
+                + entries.map(([k, v]) => '<div class="set-row"><div class="set-meta"><div class="set-name">' + esc(k) + '</div><div class="set-hint">' + cgVal(v) + "</div></div></div>").join("")
+                + "</div>";
+        }
+        function renderCodeGraph(view) {
+            view = view || {};
+            const on = !!view.enabled;
+            const t = $("cgToggle");
+            t.classList.toggle("on", on); t.setAttribute("aria-checked", on ? "true" : "false"); t.textContent = on ? "on" : "off";
+            if (!view.available) {
+                $("cgBody").innerHTML = '<div class="panel"><div class="set-cat-h">Not installed</div>'
+                    + '<div class="set-hint" style="padding:6px 0">The <code>codebase-memory-mcp</code> engine is not on your PATH. When enabled, your agent fetches it automatically via <code>npx</code> on first use. To install it now, run <code>npx codebase-memory-mcp install</code>, then tell your agent "Index this project".</div></div>';
+                return;
+            }
+            const projects = view.projects || [];
+            const projHtml = projects.length
+                ? projects.map((p) => {
+                    const name = p.name || p.root || "";
+                    const sel = name === view.selected;
+                    return '<div class="set-row"><div class="set-meta"><div class="set-name">' + esc(name)
+                        + (sel ? ' <span class="tag" style="color:var(--ok)">viewing</span>' : "")
+                        + '</div><div class="set-hint">' + esc(p.root || "") + '</div></div>'
+                        + '<div class="set-ctl"><button type="button" class="toggle' + (sel ? " on" : "") + '" data-cg-project="' + esc(name) + '">View</button></div></div>';
+                }).join("")
+                : '<div class="empty" style="padding:12px 0">No projects indexed yet. In your agent, say "Index this project".</div>';
+            let html = '<div class="panel"><div class="set-cat-h">Indexed projects <small>' + projects.length + "</small></div>" + projHtml + "</div>";
+            if (view.architecture) html += cgSection("Architecture" + (view.selected ? " - " + view.selected : ""), view.architecture);
+            if (view.schema) html += cgSection("Graph schema", view.schema);
+            $("cgBody").innerHTML = html;
+        }
+        async function loadCodeGraph() {
+            $("cgNote").textContent = "";
+            try {
+                const q = cgProject ? "?project=" + encodeURIComponent(cgProject) : "";
+                renderCodeGraph(await (await fetch("/api/codegraph" + q, { cache: "no-store" })).json());
+            } catch { $("cgBody").innerHTML = '<div class="empty" style="padding:12px 0">Code graph unavailable.</div>'; }
+        }
+        async function cgToggleAction() {
+            const turnOn = $("cgToggle").getAttribute("aria-checked") !== "true";
+            setNote("cgNote", "Saving...");
+            try {
+                const out = await (await fetch("/api/codegraph", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ op: "toggle", on: turnOn, project: cgProject || undefined }) })).json();
+                if (out.view) renderCodeGraph(out.view);
+                setNote("cgNote", out.ok ? (turnOn ? "Codebase memory enabled - registered in your agents (restart them to load it)." : "Codebase memory disabled.") : (out.error || "Action failed."), out.ok ? "ok" : "err");
+            } catch { setNote("cgNote", "Could not reach the server.", "err"); }
+        }
+        function wireCodeGraph() {
+            $("cgRefresh").addEventListener("click", loadCodeGraph);
+            $("cgToggle").addEventListener("click", cgToggleAction);
+            $("view-codegraph").addEventListener("click", (e) => {
+                const b = e.target.closest("button[data-cg-project]");
+                if (!b) return;
+                cgProject = b.dataset.cgProject;
+                loadCodeGraph();
             });
         }
 
@@ -4425,6 +4517,7 @@ export {
         wireUsage();
         wireResources();
         wireRecall();
+        wireCodeGraph();
         wirePacks();
         wireScope();
         enhanceAll(); // upgrade every static <select> into the shared pretty dropdown

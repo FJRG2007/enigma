@@ -72,6 +72,14 @@ Local, searchable memory of your coding sessions, built from your own transcript
 `sync` reads transcripts into the store; `search` (hybrid keyword+vector)/`list`/`show`/`timeline`/`sessions`/`context` query it; `enrich` runs optional LLM enrichment; `prune` bounds it; `clear` wipes it. Reads only your own local logs.
 </Cmd>
 
+## codegraph
+
+Codebase memory / code graph (structural code intelligence) powered by codebase-memory-mcp, registered in your agents over MCP. Off by default. See <a href={docHref("concepts/code-graph")}>Codebase memory</a> for detail.
+
+<Cmd name="enigma codegraph <status|on|off|projects|arch>" ex={["enigma config code-graph on", "enigma codegraph status", "enigma codegraph projects", "enigma codegraph arch"]}>
+`status` reports whether it's registered and available; `on`/`off` register or remove the MCP server across your agents; `projects` lists indexed projects; `arch [project]` prints a project's architecture. Other actions pass through to the tool.
+</Cmd>
+
 ## pack
 
 Marketplace of optional, isolated harness packs (e.g. Helio for bug bounty). Each runs in its own agent context, so its skills and commands never load into your normal agent. See <a href={docHref("concepts/packs")}>Packs</a> for detail.

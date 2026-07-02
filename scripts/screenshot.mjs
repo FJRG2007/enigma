@@ -90,7 +90,7 @@ const STATS = {
 // row the live "Enigma Systems" panel does - a missing field would silently show as off.
 const STATUS = {
     systems: {
-        compress: true, usageStats: true, proxy: true, usageApi: true,
+        compress: true, codeGraph: true, usageStats: true, proxy: true, usageApi: true,
         promptSecretGuard: true, promptSecretMode: "redact",
         outputStyle: "full", minimalCode: "full", parallelSubagents: true, autoLint: true, commitEmoji: true,
         dashboard: "always", live: true,
