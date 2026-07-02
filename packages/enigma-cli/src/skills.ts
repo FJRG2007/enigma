@@ -1012,11 +1012,11 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
         if (changed.length) {
             reporter.info(`enigma MCP server ${enabled ? "registered in" : "removed from"} ${changed.join(", ")} (tools: compress${cfg.recall ? " + recall" : ""}).`);
         }
-        // Register/remove the external code-graph MCP (codebase-memory-mcp) the same way.
+        // Register/remove the codebase-memory (code graph) MCP the same way.
         const cgChanged: string[] = [];
         for (const agent of chosenAgents) if (applyCodeGraphForAgent(agent.name, scope)) cgChanged.push(agent.label);
         if (cgChanged.length) {
-            reporter.info(`code-graph MCP server (codebase-memory-mcp) ${cfg.codeGraph ? "registered in" : "removed from"} ${cgChanged.join(", ")}.`);
+            reporter.info(`codebase-memory (code graph) MCP ${cfg.codeGraph ? "registered in" : "removed from"} ${cgChanged.join(", ")}.`);
         }
     };
 

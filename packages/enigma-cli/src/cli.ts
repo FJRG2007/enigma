@@ -217,8 +217,8 @@ Commands:
   recall [action]      Local session memory from transcripts: status, sync, search <q>,
                        list, show <id>, timeline <id>, sessions, context, prune, clear
                        (hybrid keyword+vector search; opt-in; reads your own logs)
-  codegraph [action]   Codebase memory / code graph (codebase-memory-mcp): status, on, off,
-                       projects, arch [project]; other actions pass through to the tool
+  codegraph [action]   Codebase memory / code graph: status, on, off, projects,
+                       arch [project]; other actions pass through to the engine
                        (opt-in; structural code intelligence over MCP)
   autoskills [path]    Detect the project's tech stack and install matching agent skills
                        (separate from the policy skills; --dry-run to preview)
@@ -677,10 +677,10 @@ async function runRecallCli(args: string[]): Promise<number> {
 }
 
 /**
- * `enigma codegraph <status|on|off|projects|arch [project]|...>`: manage the code-graph
- * (codebase-memory-mcp) integration. `on`/`off` register/remove the MCP server across managed
- * agents; `projects`/`arch` read the graph via the tool's CLI mode; any other subcommand is
- * passed through to the upstream binary (e.g. `install`, `update`, `index`, `cli ...`).
+ * `enigma codegraph <status|on|off|projects|arch [project]|...>`: manage the codebase-memory
+ * (code graph) integration. `on`/`off` register/remove the MCP server across managed agents;
+ * `projects`/`arch` read the graph via the engine's CLI mode; any other subcommand is passed
+ * through to the engine binary (e.g. `install`, `update`, `index`, `cli ...`).
  */
 async function runCodeGraphCli(args: string[]): Promise<number> {
     const cg = await import("./codegraph");
@@ -690,7 +690,7 @@ async function runCodeGraphCli(args: string[]): Promise<number> {
         const st = cg.codeGraphStatus();
         console.log("\n  codebase memory (code graph)");
         console.log(`  registered ${st.enabled ? "on" : "off"}   tool ${st.available ? "available" : "not installed"}   projects ${st.projects}`);
-        if (!st.available) console.log("  Install: npx codebase-memory-mcp install");
+        if (!st.available) console.log("  The engine will be fetched automatically when enabled (needs npx on PATH).");
         else if (!st.enabled) console.log("  Enable: enigma codegraph on");
         console.log("");
         return 0;
@@ -708,7 +708,7 @@ async function runCodeGraphCli(args: string[]): Promise<number> {
         return 0;
     }
     if (sub === "projects") {
-        if (!cg.codeGraphAvailable()) { console.error("  codebase-memory-mcp is not installed (npx unavailable)."); return 1; }
+        if (!cg.codeGraphAvailable()) { console.error("  The code-graph engine is not available (needs npx on PATH)."); return 1; }
         const ps = cg.codeGraphProjects();
         if (!ps.length) { console.log('  No projects indexed yet. In your agent, say "Index this project".'); return 0; }
         for (const p of ps) console.log(`  ${p.name || p.root || ""}${p.name && p.root ? `  ${p.root}` : ""}`);
@@ -721,9 +721,9 @@ async function runCodeGraphCli(args: string[]): Promise<number> {
         console.log(JSON.stringify(a, null, 2));
         return 0;
     }
-    // Passthrough to the upstream tool (install | update | index | cli ...).
+    // Passthrough to the engine binary (install | update | index | cli ...).
     const code = cg.codeGraphRun(args);
-    if (code === -1) { console.error("  codebase-memory-mcp is not installed and npx is unavailable."); return 1; }
+    if (code === -1) { console.error("  The code-graph engine is not available (needs npx on PATH)."); return 1; }
     return code;
 }
 

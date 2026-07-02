@@ -1,12 +1,12 @@
 ---
 title: Codebase memory (code graph)
-description: Structural memory of your codebase - a knowledge graph of symbols, call chains, and routes, powered by codebase-memory-mcp and managed by enigma.
+description: Structural memory of your codebase - a knowledge graph of symbols, call chains, and routes, managed by enigma.
 group: Concepts
 order: 34
 ---
 import Cmd from "../../../components/Cmd.astro";
 
-Codebase memory gives your agents a **structural map of your code**: a persistent knowledge graph of functions, classes, call chains, imports, HTTP routes, and cross-service links, queryable in under a millisecond. It is powered by [codebase-memory-mcp](https://github.com/DeusData/codebase-memory-mcp) (MIT), a zero-dependency code-intelligence engine that parses 158 languages via tree-sitter.
+Codebase memory gives your agents a **structural map of your code**: a persistent knowledge graph of functions, classes, call chains, imports, HTTP routes, and cross-service links, queryable in under a millisecond. It is backed by a zero-dependency code-intelligence engine that parses many languages into a knowledge graph.
 
 This is **structural** memory of your code - complementary to [Recall](/docs/concepts/recall), which is **session** memory of what you did. It is **off by default**; everything is processed locally and your code never leaves your machine.
 
@@ -17,7 +17,7 @@ enigma does not reimplement the engine (it is a pure-C binary with vendored gram
 ## Enable it
 
 <Cmd name="enigma config code-graph on" ex={["enigma config code-graph on"]}>
-Register the codebase-memory-mcp server in your managed agents (Claude Code, Codex, OpenCode). Restart the agent to load it, then tell it "Index this project".
+Register the code-intelligence server in your managed agents (Claude Code, Codex, OpenCode). Restart the agent to load it, then tell it "Index this project".
 </Cmd>
 
 You can also toggle it from the dashboard's **Code graph** tab, which shows your indexed projects and each project's architecture and graph schema.

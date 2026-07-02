@@ -254,7 +254,7 @@ const RAW_CATEGORIES: Category[] = [
             {
                 key: "code-graph",
                 label: "Codebase memory (code graph)",
-                hint: "register the codebase-memory-mcp code-intelligence server (a codebase knowledge graph: symbols, call chains, routes) into managed agents; fetched on demand via npx; toggling applies immediately; off removes it; enigma default: off",
+                hint: "register the code-intelligence server (a codebase knowledge graph: symbols, call chains, routes) into managed agents; fetched on demand; toggling applies immediately; off removes it; enigma default: off",
                 read: () => readConfig().config.codeGraph,
                 write: (value, scope) => setCodeGraph(value, scope),
             },

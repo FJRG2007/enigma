@@ -203,7 +203,7 @@
     };
 
     var CODEGRAPH = {
-        enabled: true, available: true, package: "codebase-memory-mcp",
+        enabled: true, available: true,
         projects: [
             { name: "enigma", root: "/home/you/dev/enigma" },
             { name: "ai-gateway", root: "/home/you/dev/ai-gateway" }

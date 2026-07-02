@@ -89,7 +89,7 @@ export interface EnigmaConfig {
     autoLint: boolean;
     /** Deploy the context-compression MCP server (enigma_compress/retrieve/stats) into managed agents (opt-in). */
     compress: boolean;
-    /** Register the codebase-memory-mcp code-intelligence MCP server (a codebase knowledge graph) into managed agents (opt-in; external binary fetched on demand via npx). */
+    /** Register the codebase-memory (code graph) code-intelligence MCP server (a codebase knowledge graph) into managed agents (opt-in; external binary fetched on demand). */
     codeGraph: boolean;
     /** EXPERIMENTAL, default off: the local AI quality gate. Enabling deploys the /gate command AND renders an always-on memory block telling agents to auto-drive the gate after finishing work on a feature branch (auto `enigma gate init`, no prompt needed); per-project opt-out via a repo `.enigma.json` gate:false (nearest-wins). */
     gate: boolean;

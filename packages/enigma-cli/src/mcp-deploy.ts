@@ -32,7 +32,7 @@ export type Scope = "global" | "local";
  * Wrap a base command + args so it launches under the calling agent's spawn model:
  * claude and opencode spawn without a shell, so a Windows `.cmd` launcher (e.g. npx.cmd,
  * or the enigma `.cmd` shim) needs a `cmd /c` wrapper. Codex resolves `.cmd` via PATHEXT
- * itself. Shared by every managed server (enigma, codebase-memory, ...).
+ * itself. Shared by every managed server (enigma, codegraph, ...).
  */
 export function winWrapInvocation(tool: string, base: string, baseArgs: string[]): { command: string; args: string[] } {
     if (process.platform === "win32" && tool !== "codex") return { command: "cmd", args: ["/c", base, ...baseArgs] };

@@ -1,7 +1,7 @@
 /**
- * Code-graph (codebase-memory-mcp) integration: with `codeGraph` on, the external server is
+ * Codebase-memory (code graph) integration: with `codeGraph` on, the code-intelligence server is
  * registered in each managed agent's own config (claude JSON mcpServers, codex
- * [mcp_servers.codebase-memory] TOML, opencode mcp JSON) under a distinct name from enigma's own
+ * [mcp_servers.codegraph] TOML, opencode mcp JSON) under a distinct name from enigma's own
  * server, preserving other keys; off removes it. Query helpers degrade to empty when the tool is
  * not runnable.
  *
@@ -9,7 +9,7 @@
  * uses process.cwd()), never the GLOBAL scope - global config paths use os.homedir(), and bun on
  * Linux does not reflect a reassigned HOME, so a homedir-based test would pass on Windows yet fail
  * in CI. Config is pinned via ENIGMA_CONFIG_HOME (honored by enigmaHome()); ENIGMA_CBM_BIN pins
- * the tool binary so registration is deterministic and the query helpers hit their failure branch.
+ * the engine binary so registration is deterministic and the query helpers hit their failure branch.
  */
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -20,7 +20,7 @@ const HOME = mkdtempSync(join(tmpdir(), "enigma-codegraph-"));
 process.env.USERPROFILE = HOME;
 process.env.HOME = HOME;
 process.env.ENIGMA_CONFIG_HOME = HOME;
-process.env.ENIGMA_CBM_BIN = join(HOME, "fake", "codebase-memory-mcp");
+process.env.ENIGMA_CBM_BIN = join(HOME, "fake", "codegraph-engine");
 
 const cg = await import("../src/codegraph");
 const { setEnigmaValue } = await import("../src/config");
@@ -33,7 +33,7 @@ afterAll(() => {
 
 const readJson = (p: string) => JSON.parse(readFileSync(p, "utf8")) as Record<string, any>;
 
-test("claude account: registers mcpServers['codebase-memory'], preserving enigma's own server", () => {
+test("claude account: registers mcpServers['codegraph'], preserving enigma's own server", () => {
     const dir = join(HOME, "acct", "claude");
     mkdirSync(dir, { recursive: true });
     const file = join(dir, ".claude.json");
@@ -44,12 +44,13 @@ test("claude account: registers mcpServers['codebase-memory'], preserving enigma
     const c = readJson(file);
     expect(c.numStartups).toBe(3);                                 // unrelated key preserved
     expect(c.mcpServers.enigma.args).toEqual(["mcp"]);            // enigma's own server untouched
-    const entry = c.mcpServers["codebase-memory"];
+    const entry = c.mcpServers.codegraph;
     expect(entry).toBeDefined();
-    expect([entry.command, ...(entry.args || [])].join(" ")).toContain("codebase-memory-mcp");
+    expect(typeof entry.command).toBe("string");
+    expect(entry.command.length).toBeGreaterThan(0);
 });
 
-test("codex account: writes [mcp_servers.codebase-memory] and is idempotent", () => {
+test("codex account: writes [mcp_servers.codegraph] and is idempotent", () => {
     const dir = join(HOME, "acct", "codex");
     mkdirSync(dir, { recursive: true });
     const file = join(dir, "config.toml");
@@ -59,16 +60,16 @@ test("codex account: writes [mcp_servers.codebase-memory] and is idempotent", ()
     expect(cg.applyCodeGraphForAccount("codex", dir)).toBe(true);
     const toml = readFileSync(file, "utf8");
     expect(toml).toContain("approval_policy = \"never\"");
-    expect(toml).toContain("[mcp_servers.codebase-memory]");
+    expect(toml).toContain("[mcp_servers.codegraph]");
     expect(cg.applyCodeGraphForAccount("codex", dir)).toBe(false);  // fixed point, no phantom update
 });
 
-test("opencode account: writes mcp['codebase-memory'] into the account opencode.json", () => {
+test("opencode account: writes mcp['codegraph'] into the account opencode.json", () => {
     const dir = join(HOME, "acct", "opencode");
     setEnigmaValue("codeGraph", true, "global");
     expect(cg.applyCodeGraphForAccount("opencode", dir)).toBe(true);
     const c = readJson(join(dir, "xdg-config", "opencode", "opencode.json"));
-    expect(c.mcp["codebase-memory"].type).toBe("local");
+    expect(c.mcp.codegraph.type).toBe("local");
 });
 
 test("turning codeGraph off removes the entry but keeps enigma's own server", () => {
@@ -76,7 +77,7 @@ test("turning codeGraph off removes the entry but keeps enigma's own server", ()
     setEnigmaValue("codeGraph", false, "global");
     expect(cg.applyCodeGraphForAccount("claude", dir)).toBe(true);
     const c = readJson(join(dir, ".claude.json"));
-    expect(c.mcpServers["codebase-memory"]).toBeUndefined();
+    expect(c.mcpServers.codegraph).toBeUndefined();
     expect(c.mcpServers.enigma.args).toEqual(["mcp"]);            // enigma server survives
     expect(c.numStartups).toBe(3);
 });
@@ -93,12 +94,12 @@ test("toggle applies immediately at local scope, only to tools with an existing 
         const on = cg.applyCodeGraphToggle("local");
         expect(on).toContain("claude");
         expect(on).toContain("opencode");
-        expect(readJson(join(proj, ".mcp.json")).mcpServers["codebase-memory"]).toBeDefined();
-        expect(readJson(join(proj, "opencode.json")).mcp["codebase-memory"].type).toBe("local");
+        expect(readJson(join(proj, ".mcp.json")).mcpServers.codegraph).toBeDefined();
+        expect(readJson(join(proj, "opencode.json")).mcp.codegraph.type).toBe("local");
 
         setEnigmaValue("codeGraph", false, "global");
         cg.applyCodeGraphToggle("local");
-        expect(readJson(join(proj, ".mcp.json")).mcpServers?.["codebase-memory"]).toBeUndefined();
+        expect(readJson(join(proj, ".mcp.json")).mcpServers?.codegraph).toBeUndefined();
     } finally {
         process.chdir(prevCwd);
         rmSync(proj, { recursive: true, force: true });

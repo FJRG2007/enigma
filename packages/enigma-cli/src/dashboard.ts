@@ -459,7 +459,7 @@ function writeRecall(req: import("node:http").IncomingMessage, res: import("node
     });
 }
 
-/** Code-graph (codebase-memory-mcp) view: enabled/available state, projects, selected detail. */
+/** Codebase-memory (code graph) view: enabled/available state, projects, selected detail. */
 function serveCodeGraph(req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse): void {
     const u = new URL(req.url || "/", "http://x").searchParams;
     import("./dashboard-codegraph")

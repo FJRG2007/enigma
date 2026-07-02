@@ -1,18 +1,21 @@
 /**
- * Native integration of codebase-memory-mcp (https://github.com/DeusData/codebase-memory-mcp,
- * MIT) - a code-intelligence MCP server that maintains a persistent knowledge graph of the
- * codebase (functions, classes, call chains, routes, cross-service links) across 158 languages.
- * It is STRUCTURAL code memory, complementary to enigma's session `recall` memory.
+ * Codebase memory (code graph): enigma manages an external code-intelligence MCP server that
+ * keeps a persistent knowledge graph of the codebase (functions, classes, call chains, imports,
+ * routes) across many languages. This is STRUCTURAL code memory, complementary to enigma's
+ * session `recall` memory.
  *
- * enigma does NOT reimplement it (it is a pure-C engine with vendored tree-sitter grammars and
- * bundled embeddings - not portable to enigma's zero-dependency TypeScript). Instead enigma
- * MANAGES it: it registers the upstream server (fetched on demand via `npx codebase-memory-mcp`,
- * the package's own runtimeHint) in each managed agent's config, gated by the `codeGraph`
- * toggle - the same mirror-settings deployment as the compression MCP (mcp-deploy.ts), reusing
- * its generalized helpers - and surfaces the graph in enigma's dashboard by shelling out to the
- * tool's CLI mode (`codebase-memory-mcp cli <tool> --json`), which needs no running UI or port.
+ * enigma does NOT reimplement the engine (it is a native binary with vendored parsers and
+ * embeddings - not portable to enigma's zero-dependency TypeScript). Instead it MANAGES the
+ * server: registers it (fetched on demand via npx, the package's own runtime) in each managed
+ * agent's config, gated by the `codeGraph` toggle - the same mirror-settings deployment as the
+ * compression MCP (mcp-deploy.ts), reusing its generalized helpers - and surfaces the graph in
+ * enigma's dashboard by shelling out to the server's CLI mode, which needs no running UI or port.
  *
- * Analyzed upstream commit: b9b79053093d6cc93d52d13fce9ad1e936b5d80b (2026-07-02), npm 0.8.1.
+ * UPSTREAM_PKG is the ONLY place the third-party package name is referenced (it is the npm target
+ * npx must run). Every user-facing surface - labels, hints, docs, dashboard, the registered server
+ * name - stays de-branded ("codebase memory" / "code graph"). To drop this last reference too,
+ * republish the binary under an @enigmax scope (the helio/dashboard pattern) and point UPSTREAM_PKG
+ * at it.
  */
 
 import { resolveBin } from "./util";
@@ -21,10 +24,10 @@ import { readConfig } from "./config";
 import { spawnSync } from "node:child_process";
 import { MANAGED_TOOLS, Scope, applyCodexEntry, mcpAccountPath, mcpPath, winWrapInvocation, writeServerEntry } from "./mcp-deploy";
 
-/** Registered server name in each agent's MCP config (distinct from enigma's own `enigma`). */
-const SERVER_NAME = "codebase-memory";
+/** De-branded server name in each agent's MCP config (distinct from enigma's own `enigma`). */
+const SERVER_NAME = "codegraph";
 
-/** npm package + binary name of the upstream tool. */
+/** The npm package/binary npx runs - the sole technical reference to the upstream tool. */
 const PACKAGE = "codebase-memory-mcp";
 
 /** Whether the code-graph MCP should be registered (the `codeGraph` toggle). */
@@ -97,8 +100,8 @@ export function codeGraphAvailable(): boolean {
 }
 
 /**
- * Run `codebase-memory-mcp cli <tool> [<json>] --json` and parse the JSON result, or null on
- * any failure (tool absent, non-zero exit, unparseable output). Timeout-bounded; never throws.
+ * Run the server's CLI mode (`<bin> cli <tool> [<json>] --json`) and parse the JSON result, or
+ * null on any failure (tool absent, non-zero exit, unparseable output). Timeout-bounded; never throws.
  */
 function runCli<T = unknown>(tool: string, args?: Record<string, unknown>): T | null {
     const base = toolBase();

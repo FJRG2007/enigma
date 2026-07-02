@@ -878,7 +878,7 @@
         <div class="page-head" style="display:flex;align-items:flex-start;gap:16px">
             <div style="flex:1">
                 <h1>Code graph</h1>
-                <p>Structural memory of your codebase - a knowledge graph of symbols, call chains, and routes, powered by <a href="https://github.com/DeusData/codebase-memory-mcp" target="_blank" rel="noreferrer noopener">codebase-memory-mcp</a>. Enabling it registers the server in your agents so they can query the graph over MCP. Complements <a href="#/recall">Recall</a> (session memory).</p>
+                <p>Structural memory of your codebase - a knowledge graph of symbols, call chains, and routes. Enabling it registers the code-intelligence server in your agents so they can query the graph over MCP. Complements <a href="#/recall">Recall</a> (session memory).</p>
             </div>
             <button id="cgToggle" type="button" class="toggle" role="switch" aria-checked="false" aria-label="Codebase memory">off</button>
             <button id="cgRefresh" type="button" class="iconbtn" title="Refresh" aria-label="Refresh"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg></button>
@@ -3873,7 +3873,7 @@ export {
             });
         }
 
-        // --- code graph subpage (codebase-memory-mcp; structural code memory) ---
+        // --- code graph subpage (structural code memory) ---
         let cgProject = null;
         // A single architecture/schema field, rendered defensively (shape varies by tool version).
         function cgItem(x) {
@@ -3903,7 +3903,7 @@ export {
             t.classList.toggle("on", on); t.setAttribute("aria-checked", on ? "true" : "false"); t.textContent = on ? "on" : "off";
             if (!view.available) {
                 $("cgBody").innerHTML = '<div class="panel"><div class="set-cat-h">Not installed</div>'
-                    + '<div class="set-hint" style="padding:6px 0">The <code>codebase-memory-mcp</code> engine is not on your PATH. When enabled, your agent fetches it automatically via <code>npx</code> on first use. To install it now, run <code>npx codebase-memory-mcp install</code>, then tell your agent "Index this project".</div></div>';
+                    + '<div class="set-hint" style="padding:6px 0">The code-intelligence engine is not available yet. When enabled, your agent fetches it automatically on first use (needs <code>npx</code> on PATH). Then tell your agent "Index this project".</div></div>';
                 return;
             }
             const projects = view.projects || [];

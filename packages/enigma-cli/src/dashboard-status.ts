@@ -17,7 +17,7 @@ import { toolPathStatuses } from "./tool-path";
 export interface SystemsStatus {
     /** Context-compression MCP deployed into agents. */
     compress: boolean;
-    /** Code-graph (codebase-memory-mcp) MCP registered in agents. */
+    /** Codebase-memory (code graph) MCP registered in agents. */
     codeGraph: boolean;
     /** Token-efficient output level: off | lite | full | ultra. */
     outputStyle: string;
