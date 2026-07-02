@@ -89,6 +89,8 @@ export interface EnigmaConfig {
     autoLint: boolean;
     /** Deploy the context-compression MCP server (enigma_compress/retrieve/stats) into managed agents (opt-in). */
     compress: boolean;
+    /** Register the codebase-memory (code graph) code-intelligence MCP server (a codebase knowledge graph) into managed agents (opt-in; external binary fetched on demand). */
+    codeGraph: boolean;
     /** EXPERIMENTAL, default off: the local AI quality gate. Enabling deploys the /gate command AND renders an always-on memory block telling agents to auto-drive the gate after finishing work on a feature branch (auto `enigma gate init`, no prompt needed); per-project opt-out via a repo `.enigma.json` gate:false (nearest-wins). */
     gate: boolean;
     /** Local savings dashboard: off | on-demand (default when enabled) | always (background daemon). */
@@ -221,7 +223,7 @@ export interface EnigmaConfig {
  */
 export const CONFIG_DEFAULTS: EnigmaConfig = {
     commitEmoji: true, updateNotifier: true, fullscreen: true, parallelSubagents: false, outputStyle: "off", minimalCode: "full",
-    autoSync: true, remoteSkills: true, skillUpdatePolicy: "overwrite", permissionBypass: true, autoLint: false, compress: false, gate: false, dashboard: "off", tokenPrice: 0, tokenSpeed: 0, usageStats: false, recall: false, recallLlm: true, recallProvider: "claude-local", recallModel: "", recallApiBase: "", recallApiKey: "", proxy: false, usageApi: false, promptSecretGuard: false, promptSecretMode: "redact",
+    autoSync: true, remoteSkills: true, skillUpdatePolicy: "overwrite", permissionBypass: true, autoLint: false, compress: false, codeGraph: false, gate: false, dashboard: "off", tokenPrice: 0, tokenSpeed: 0, usageStats: false, recall: false, recallLlm: true, recallProvider: "claude-local", recallModel: "", recallApiBase: "", recallApiKey: "", proxy: false, usageApi: false, promptSecretGuard: false, promptSecretMode: "redact",
     planSessionLimit: 0, planWeeklyLimit: 0, planWeeklySonnetLimit: 0, planWeeklyOpusLimit: 0, planWeeklyReset: "mon 00:00",
     dashboardLive: true, dashboardPort: 0, toolPaths: {}, bypassDisabled: [], discardedSkills: [], skillAgentsOff: {}, packs: [], packAccounts: {},
 };

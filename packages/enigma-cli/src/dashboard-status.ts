@@ -17,6 +17,8 @@ import { toolPathStatuses } from "./tool-path";
 export interface SystemsStatus {
     /** Context-compression MCP deployed into agents. */
     compress: boolean;
+    /** Codebase-memory (code graph) MCP registered in agents. */
+    codeGraph: boolean;
     /** Token-efficient output level: off | lite | full | ultra. */
     outputStyle: string;
     /** Minimal-code (anti-overengineering) level: off | lite | full | ultra. */
@@ -63,6 +65,7 @@ export function systemsStatus(): SystemsStatus {
     const guard = readGlobalGuard();
     return {
         compress: c.compress,
+        codeGraph: c.codeGraph,
         outputStyle: c.outputStyle,
         minimalCode: c.minimalCode,
         parallelSubagents: c.parallelSubagents,

@@ -54,7 +54,7 @@ const PKG = readJson<{ version?: string }>(join(__dirname, "..", "package.json")
 // Fixed commands plus one launch command per supported tool (e.g. `enigma claude`).
 const COMMANDS = new Set<string>([
     "install", "update", "security", "guard", "seal", "check", "config", "account", "accounts",
-    "profile", "profiles", "skill", "skills", "issue", "improve", "compress", "mcp", "gate", "dashboard", "dash", "fix-path", "resources", "recall", "autoskills", "statusline", "help", "version",
+    "profile", "profiles", "skill", "skills", "issue", "improve", "compress", "mcp", "gate", "dashboard", "dash", "fix-path", "resources", "recall", "codegraph", "autoskills", "statusline", "help", "version",
     "pack", "packs",
     ...TOOL_NAMES,
     ...PACKS.map((p) => p.id),
@@ -217,6 +217,9 @@ Commands:
   recall [action]      Local session memory from transcripts: status, sync, search <q>,
                        list, show <id>, timeline <id>, sessions, context, prune, clear
                        (hybrid keyword+vector search; opt-in; reads your own logs)
+  codegraph [action]   Codebase memory / code graph: status, on, off, projects,
+                       arch [project]; other actions pass through to the engine
+                       (opt-in; structural code intelligence over MCP)
   autoskills [path]    Detect the project's tech stack and install matching agent skills
                        (separate from the policy skills; --dry-run to preview)
   pack <subcommand>    Marketplace of optional, isolated harness packs (e.g. Helio for bug
@@ -671,6 +674,57 @@ async function runRecallCli(args: string[]): Promise<number> {
     }
     console.error(`Unknown subcommand '${sub}'. Use: enigma recall <status | sync | search <q> | list | show <id> | timeline <id> | sessions | context | enrich | prune <n> | clear>`);
     return 1;
+}
+
+/**
+ * `enigma codegraph <status|on|off|projects|arch [project]|...>`: manage the codebase-memory
+ * (code graph) integration. `on`/`off` register/remove the MCP server across managed agents;
+ * `projects`/`arch` read the graph via the engine's CLI mode; any other subcommand is passed
+ * through to the engine binary (e.g. `install`, `update`, `index`, `cli ...`).
+ */
+async function runCodeGraphCli(args: string[]): Promise<number> {
+    const cg = await import("./codegraph");
+    const { setEnigmaToggle } = await import("./config");
+    const [sub, ...rest] = args;
+    if (!sub || sub === "status") {
+        const st = cg.codeGraphStatus();
+        console.log("\n  codebase memory (code graph)");
+        console.log(`  registered ${st.enabled ? "on" : "off"}   tool ${st.available ? "available" : "not installed"}   projects ${st.projects}`);
+        if (!st.available) console.log("  The engine will be fetched automatically when enabled (needs npx on PATH).");
+        else if (!st.enabled) console.log("  Enable: enigma codegraph on");
+        console.log("");
+        return 0;
+    }
+    if (sub === "on" || sub === "enable") {
+        setEnigmaToggle("codeGraph", true, "global");
+        cg.applyCodeGraphToggle("global");
+        console.log("  Codebase memory enabled - registered in your agents (restart them to load it).");
+        return 0;
+    }
+    if (sub === "off" || sub === "disable") {
+        setEnigmaToggle("codeGraph", false, "global");
+        cg.applyCodeGraphToggle("global");
+        console.log("  Codebase memory disabled - removed from your agents.");
+        return 0;
+    }
+    if (sub === "projects") {
+        if (!cg.codeGraphAvailable()) { console.error("  The code-graph engine is not available (needs npx on PATH)."); return 1; }
+        const ps = cg.codeGraphProjects();
+        if (!ps.length) { console.log('  No projects indexed yet. In your agent, say "Index this project".'); return 0; }
+        for (const p of ps) console.log(`  ${p.name || p.root || ""}${p.name && p.root ? `  ${p.root}` : ""}`);
+        return 0;
+    }
+    if (sub === "arch" || sub === "architecture") {
+        const project = rest[0] || cg.codeGraphProjects()[0]?.name || "";
+        const a = cg.codeGraphArchitecture(project);
+        if (!a) { console.error("  No architecture available (is the project indexed?)."); return 1; }
+        console.log(JSON.stringify(a, null, 2));
+        return 0;
+    }
+    // Passthrough to the engine binary (install | update | index | cli ...).
+    const code = cg.codeGraphRun(args);
+    if (code === -1) { console.error("  The code-graph engine is not available (needs npx on PATH)."); return 1; }
+    return code;
 }
 
 /**
@@ -1199,6 +1253,7 @@ export async function run(argv: string[]): Promise<void> {
     if (opts.command === "fix-path") { process.exit(runFixPathCli(opts.positionals[0], opts.scope)); }
     if (opts.command === "resources") { process.exit(await runResourcesCli(opts.positionals)); }
     if (opts.command === "recall") { process.exit(await runRecallCli(opts.positionals)); }
+    if (opts.command === "codegraph") { process.exit(await runCodeGraphCli(opts.positionals)); }
     if (opts.command === "autoskills") { process.exit(await runAutoskillsCli(opts, interactive)); }
 
     if (opts.command === "update") {

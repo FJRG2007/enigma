@@ -59,7 +59,7 @@
 
     var STATUS = {
         systems: {
-            compress: true, outputStyle: "full", minimalCode: "full", parallelSubagents: false,
+            compress: true, codeGraph: true, outputStyle: "full", minimalCode: "full", parallelSubagents: false,
             autoLint: true, usageStats: !!FX.usage, dashboard: "always", commitEmoji: true,
             proxy: false, usageApi: false, promptSecretGuard: false, promptSecretMode: "redact", live: true,
             proxyStats: { calls: 0, input: 0, output: 0, cacheRead: 0, cacheCreation: 0, lastRequestAt: 0, redacted: 0, rejected: 0, lastBlockedAt: 0 },
@@ -200,6 +200,23 @@
             { id: 127, type: "bugfix", title: "Fix token refresh in auth flow", project: "ai-gateway", source: "codex", files: ["src/auth.ts"], filesRead: [], facts: ["root cause: TTL was 0"], concepts: ["auth"], narrative: "The token TTL was zero so sessions expired instantly.", createdAt: Date.now() - 7200000 },
             { id: 126, type: "discovery", title: "Map the transcript extraction pipeline", project: "enigma", source: "opencode", files: [], filesRead: ["src/recall/extract.ts"], facts: [], concepts: ["extraction"], narrative: "Observations are derived per user turn.", createdAt: Date.now() - 9000000 }
         ]
+    };
+
+    var CODEGRAPH = {
+        enabled: true, available: true,
+        projects: [
+            { name: "enigma", root: "/home/you/dev/enigma" },
+            { name: "ai-gateway", root: "/home/you/dev/ai-gateway" }
+        ],
+        selected: "enigma",
+        architecture: {
+            languages: ["TypeScript", "JavaScript", "C", "Shell"],
+            entryPoints: ["src/bin/enigma.ts", "src/mcp.ts"],
+            routes: ["GET /api/stats", "GET /api/codegraph", "POST /api/settings"],
+            hotspots: ["src/skills.ts", "src/dashboard.ts", "src/cli.ts"],
+            packages: 6, layers: ["cli", "core", "transport"], clusters: 9
+        },
+        schema: { Function: 2841, Class: 214, Module: 187, Route: 23, CALLS: 9120, IMPORTS: 1204, DEFINES: 3255 }
     };
 
     function json(obj, status) {
@@ -379,6 +396,10 @@
         if (path.indexOf("/api/recall") !== -1) {
             if (method !== "POST" && path.indexOf("timeline=") !== -1) return { items: RECALL.items };
             return method === "POST" ? { ok: true, view: RECALL } : RECALL;
+        }
+        if (path.indexOf("/api/codegraph") !== -1) {
+            if (method === "POST") { if (body && typeof body.on === "boolean") CODEGRAPH.enabled = body.on; return { ok: true, view: CODEGRAPH }; }
+            return CODEGRAPH;
         }
         if (path.indexOf("/api/packs") !== -1) {
             if (method !== "POST") return { packs: PACKS };

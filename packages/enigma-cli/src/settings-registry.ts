@@ -11,6 +11,7 @@
 
 import { AGENTS } from "./agents";
 import { applyMcpToggle } from "./mcp-deploy";
+import { applyCodeGraphToggle } from "./codegraph";
 import { isAutoLintOn, setAutoLint } from "./lint";
 import { readConfig, setEnigmaToggle, setEnigmaValue, setRecallApiKey, RECALL_PROVIDERS, OUTPUT_STYLES, MINIMAL_CODE_LEVELS, DASHBOARD_MODES, PROMPT_SECRET_MODES, SKILL_UPDATE_POLICIES } from "./config";
 import { applyDashboardMode } from "./dashboard";
@@ -133,6 +134,13 @@ function setCompress(on: boolean, scope: Scope): ApplyResult {
     return { path, changed: true };
 }
 
+/** Persist the codeGraph toggle and register/remove the code-graph MCP server immediately. */
+function setCodeGraph(on: boolean, scope: Scope): ApplyResult {
+    const path = setEnigmaToggle("codeGraph", on, scope);
+    applyCodeGraphToggle(scope);
+    return { path, changed: true };
+}
+
 /**
  * Persist the recall toggle, deploy/remove the MCP server (so the agent can reach the
  * enigma_recall tools), and on enable kick a background sync so memory appears without a
@@ -242,6 +250,13 @@ const RAW_CATEGORIES: Category[] = [
                 hint: "deploy enigma's token-compression MCP server (enigma_compress/retrieve/stats) into managed agents; toggling applies immediately to already-deployed agents; off removes it; enigma default: off",
                 read: () => readConfig().config.compress,
                 write: (value, scope) => setCompress(value, scope),
+            },
+            {
+                key: "code-graph",
+                label: "Codebase memory (code graph)",
+                hint: "register the code-intelligence server (a codebase knowledge graph: symbols, call chains, routes) into managed agents; fetched on demand; toggling applies immediately; off removes it; enigma default: off",
+                read: () => readConfig().config.codeGraph,
+                write: (value, scope) => setCodeGraph(value, scope),
             },
             {
                 key: "gate",

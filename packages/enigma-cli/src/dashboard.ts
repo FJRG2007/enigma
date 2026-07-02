@@ -459,6 +459,36 @@ function writeRecall(req: import("node:http").IncomingMessage, res: import("node
     });
 }
 
+/** Codebase-memory (code graph) view: enabled/available state, projects, selected detail. */
+function serveCodeGraph(req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse): void {
+    const u = new URL(req.url || "/", "http://x").searchParams;
+    import("./dashboard-codegraph")
+        .then((m) => {
+            const view = m.codeGraphDashboard({ project: u.get("project") || undefined });
+            res.writeHead(200, JSON_HDR); res.end(JSON.stringify(view));
+        })
+        .catch(() => { res.writeHead(500, JSON_HDR); res.end('{"error":"code-graph unavailable"}'); });
+}
+
+/** Apply a code-graph action from a POST body { op, on?, project? } (toggle | refresh). */
+function writeCodeGraph(req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse): void {
+    let body = "";
+    req.on("data", (chunk) => { body += chunk; if (body.length > 8192) req.destroy(); });
+    req.on("end", () => {
+        let parsed: { op?: unknown; on?: unknown; project?: unknown };
+        try { parsed = JSON.parse(body || "{}"); } catch { res.writeHead(400, JSON_HDR); res.end('{"error":"bad json"}'); return; }
+        if (typeof parsed.op !== "string") { res.writeHead(400, JSON_HDR); res.end('{"error":"missing op"}'); return; }
+        const payload = {
+            on: typeof parsed.on === "boolean" ? parsed.on : undefined,
+            project: typeof parsed.project === "string" ? parsed.project : undefined,
+        };
+        import("./dashboard-codegraph")
+            .then(({ applyCodeGraphAction }) => applyCodeGraphAction(parsed.op as string, payload))
+            .then((out) => { res.writeHead(out.ok ? 200 : 400, JSON_HDR); res.end(JSON.stringify(out)); })
+            .catch(() => { res.writeHead(500, JSON_HDR); res.end('{"ok":false,"error":"action failed"}'); });
+    });
+}
+
 /** Factual "what's active" overview (configured state of each enigma system + skill counts). */
 function serveStatus(res: import("node:http").ServerResponse): void {
     import("./dashboard-status")
@@ -726,6 +756,13 @@ function createDashboardServer(version: string): Server {
             if (!isLocalRequest(req)) { res.writeHead(403, JSON_HDR); res.end('{"error":"forbidden"}'); return; }
             if (method === "GET") { serveRecall(req, res); return; }
             if (method === "POST") { writeRecall(req, res); return; }
+            res.writeHead(405).end(); return;
+        }
+        // Code-graph reads/registers an external MCP for your agents, so it is origin-guarded.
+        if (url === "/api/codegraph") {
+            if (!isLocalRequest(req)) { res.writeHead(403, JSON_HDR); res.end('{"error":"forbidden"}'); return; }
+            if (method === "GET") { serveCodeGraph(req, res); return; }
+            if (method === "POST") { writeCodeGraph(req, res); return; }
             res.writeHead(405).end(); return;
         }
         // Accounts/profiles management + config import/export are write/structure surfaces, origin-guarded.
