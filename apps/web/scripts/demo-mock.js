@@ -134,6 +134,11 @@
         presets: [
             { id: "minimax", label: "MiniMax (International)", tool: "claude", baseUrl: "https://api.minimax.io/anthropic", model: "MiniMax-M3[1m]", tokenUrl: "https://platform.minimax.io/user-center/payment/token-plan" },
             { id: "minimax-cn", label: "MiniMax (China)", tool: "claude", baseUrl: "https://api.minimaxi.com/anthropic", model: "MiniMax-M3[1m]", tokenUrl: "https://platform.minimaxi.com/user-center/payment/token-plan" }
+        ],
+        sessionSources: [
+            { id: "account:default", kind: "account", tool: "claude", label: "default", email: "you@example.com", state: "ok", usable: true },
+            { id: "account:work", kind: "account", tool: "claude", label: "work", email: "work@company.com", state: "empty", usable: false },
+            { id: "pack:helio", kind: "pack", tool: "claude", label: "pack: Helio", email: "you@example.com", state: "ok", usable: true }
         ]
     };
 

@@ -9,7 +9,7 @@
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { test, expect, afterAll } from "bun:test";
-import { mkdtempSync, existsSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, existsSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 
 const HOME = mkdtempSync(join(tmpdir(), "enigma-packs-"));
 process.env.USERPROFILE = HOME;
@@ -52,6 +52,28 @@ test("deploy enables Claude permission bypass in the pack context by default", (
     packs.deployPack("helio", "claude");
     const settings = JSON.parse(readFileSync(join(HOME, "packs", "helio", "context", "claude", "settings.json"), "utf8"));
     expect(settings.permissions.defaultMode).toBe("bypassPermissions");
+});
+
+test("deploy mirrors the user's enigma-managed Claude settings into the pack context", () => {
+    // The user disabled commit attribution + the feedback survey in their global Claude settings.
+    const globalSettings = join(HOME, ".claude", "settings.json");
+    mkdirSync(join(HOME, ".claude"), { recursive: true });
+    writeFileSync(globalSettings, JSON.stringify({
+        attribution: { commit: "", pr: "" },
+        includeCoAuthoredBy: false,
+        env: { CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY: "1" },
+    }));
+    // Force a re-deploy (the version marker may already match from earlier tests).
+    rmSync(join(HOME, "packs", "helio", "context", "claude", ".enigma-pack-version"), { force: true });
+    packs.deployPack("helio", "claude");
+    const settings = JSON.parse(readFileSync(join(HOME, "packs", "helio", "context", "claude", "settings.json"), "utf8"));
+    expect(settings.attribution.commit).toBe("");
+    expect(settings.attribution.pr).toBe("");
+    expect(settings.includeCoAuthoredBy).toBe(false);
+    expect(settings.env.CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY).toBe("1");
+    // The pack's forced bypass default still wins over the mirror.
+    expect(settings.permissions.defaultMode).toBe("bypassPermissions");
+    rmSync(globalSettings, { force: true });
 });
 
 test("re-deploy is version-gated (idempotent no-op when the marker matches)", () => {
@@ -179,6 +201,53 @@ test("accountTokenState: a past-expiry token with a refresh token is OK (auto-re
     // No access token -> signed out.
     write({ claudeAiOauth: { accessToken: "", refreshToken: "", expiresAt: 0 } });
     expect(packs.accountTokenState("claude", "statetest")).toBe("empty");
+});
+
+test("reconcilePackSession heals a blanked account from the live pack context (ping-pong fix)", () => {
+    // The exact reported symptom: the pack context holds a live token, the managed account it was
+    // seeded from went blank (logged out by OAuth rotation), so `enigma claude` shows signed out.
+    const acct = addAccount("claude", "pingpong");
+    const ctxDir = join(HOME, "packs", "helio", "context", "claude");
+    const ctxCred = join(ctxDir, ".credentials.json");
+    mkdirSync(ctxDir, { recursive: true });
+    // Account credentials blanked; context alive with a valid refresh token.
+    writeFileSync(join(acct.dir, ".credentials.json"), JSON.stringify({ claudeAiOauth: { accessToken: "", refreshToken: "", expiresAt: 0 } }));
+    writeFileSync(ctxCred, JSON.stringify({ claudeAiOauth: { accessToken: "LIVE", refreshToken: "LIVE_R", expiresAt: Date.now() + 3600_000 } }));
+    writeFileSync(join(ctxDir, ".claude.json"), JSON.stringify({ oauthAccount: { emailAddress: "juan@bytehide.com" }, hasCompletedOnboarding: true }));
+
+    packs.reconcilePackSession("helio", "claude", "pingpong");
+
+    // The account is healed from the context - signed in again, no /login needed.
+    expect(packs.accountTokenState("claude", "pingpong")).toBe("ok");
+    expect(JSON.parse(readFileSync(join(acct.dir, ".credentials.json"), "utf8")).claudeAiOauth.refreshToken).toBe("LIVE_R");
+    expect(JSON.parse(readFileSync(join(acct.dir, ".claude.json"), "utf8")).oauthAccount.emailAddress).toBe("juan@bytehide.com");
+});
+
+test("reconcilePackSession pushes a fresher account token into the context, and never writes the default account", () => {
+    const acct = addAccount("claude", "reconpush");
+    const ctxDir = join(HOME, "packs", "helio", "context", "claude");
+    const ctxCred = join(ctxDir, ".credentials.json");
+    mkdirSync(ctxDir, { recursive: true });
+    // Account fresher (later expiry) than the context.
+    writeFileSync(join(acct.dir, ".credentials.json"), JSON.stringify({ claudeAiOauth: { accessToken: "ACCT", refreshToken: "ACCT_R", expiresAt: Date.now() + 7200_000 } }));
+    writeFileSync(ctxCred, JSON.stringify({ claudeAiOauth: { accessToken: "OLD", refreshToken: "OLD_R", expiresAt: Date.now() + 60_000 } }));
+    packs.reconcilePackSession("helio", "claude", "reconpush");
+    expect(JSON.parse(readFileSync(ctxCred, "utf8")).claudeAiOauth.accessToken).toBe("ACCT");
+
+    // The synthetic "default" account (the user's own ~/.claude) is never written to.
+    const defaultCred = join(HOME, ".claude", ".credentials.json");
+    rmSync(defaultCred, { force: true });
+    packs.reconcilePackSession("helio", "claude", "default");
+    expect(existsSync(defaultCred)).toBe(false);
+});
+
+test("packSessionSources lists pack contexts that hold a credentials file", () => {
+    const ctxDir = join(HOME, "packs", "helio", "context", "claude");
+    mkdirSync(ctxDir, { recursive: true });
+    writeFileSync(join(ctxDir, ".credentials.json"), JSON.stringify({ claudeAiOauth: { accessToken: "x", refreshToken: "y", expiresAt: Date.now() + 3600_000 } }));
+    const sources = packs.packSessionSources("claude");
+    expect(sources.find((s) => s.id === "helio")).toBeTruthy();
+    expect(sources.find((s) => s.id === "helio")!.dir).toBe(ctxDir);
 });
 
 test("setup registers the pack's MCP servers into the isolated context only", () => {

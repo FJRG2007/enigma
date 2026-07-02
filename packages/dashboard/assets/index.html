@@ -3503,7 +3503,7 @@ export {
 
         // --- accounts & profiles subpage (mirrors the TUI hub over /api/accounts) ---
         let accountsLoaded = false;
-        let accTools = [], accAccounts = [], accProfiles = [], accPresets = [];
+        let accTools = [], accAccounts = [], accProfiles = [], accPresets = [], accSessionSources = [];
         // Real-time name validator mirroring the server (accounts.ts validateAccountName + the
         // duplicate checks), so the modal blocks an invalid or already-used name as the user types.
         // `taken` = names already in scope (per-tool for accounts, global for profiles); `current`
@@ -3533,9 +3533,13 @@ export {
             // Provider override (e.g. MiniMax) only for tools that support it, and never the
             // built-in "default" account (kept on the vendor default). Managed accounts only.
             const provBtn = (a.supportsProvider && a.removable) ? btn("provider", "Provider") : "";
+            // "Reuse session" (Claude only): copy a live login from another account or a pack context
+            // into a signed-out account, no /login. Shown when this account is not currently logged in.
+            const transferBtn = (a.tool === "claude" && !a.loggedIn) ? btn("transfer", "Reuse session") : "";
             const acts = '<div class="set-ctl" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">'
                 + (a.active ? "" : btn("activate", "Use"))
                 + btn("login", a.loggedIn ? "Re-login" : "Log in")
+                + transferBtn
                 + provBtn
                 + (a.removable ? btn("rename", "Rename") + removeBtn : "")
                 + "</div>";
@@ -3569,7 +3573,7 @@ export {
         function renderAccounts(d) {
             d = d || {};
             const accounts = d.accounts || [], profiles = d.profiles || [], tools = d.tools || [];
-            accTools = tools; accAccounts = accounts; accProfiles = profiles; accPresets = d.presets || [];
+            accTools = tools; accAccounts = accounts; accProfiles = profiles; accPresets = d.presets || []; accSessionSources = d.sessionSources || [];
             $("accountsBody").innerHTML = accounts.length ? accounts.map(accountRow).join("") : '<div class="empty" style="padding:20px 0">No accounts.</div>';
             $("profilesBody").innerHTML = profiles.length ? profiles.map((p) => profileRow(p, tools, accounts)).join("")
                 : '<div class="empty" style="padding:20px 0">No profiles yet. Add one to pin an account per tool.</div>';
@@ -3668,6 +3672,15 @@ export {
                 else if (op === "remove") { if (await askConfirm("Remove account", "Remove account '" + name + "' and delete its local config dir?", true)) accAction("account.remove", { tool, name }); }
                 else if (op === "rename") { const taken = accAccounts.filter((a) => a.tool === tool).map((a) => a.name); const nn = await askText("Rename account", name, "Rename '" + name + "' to:", nameValidator(taken, name)); if (nn && nn !== name) accAction("account.rename", { tool, name, newName: nn }); }
                 else if (op === "login") accAction("account.login", { tool, name });
+                else if (op === "transfer") {
+                    // Offer every OTHER usable Claude session (accounts + pack contexts) to copy in.
+                    const self = "account:" + name;
+                    const usable = accSessionSources.filter((s) => s.usable && s.id !== self);
+                    if (!usable.length) { setNote("accountsNote", "No other logged-in Claude session to reuse. Log in once (or run a pack), then try again.", "err"); return; }
+                    const items = usable.map((s) => ({ value: s.id, label: s.label + (s.email ? " - " + s.email : ""), icon: agentSvg("claude") }));
+                    const src = await askIconChoice("Reuse a session", items, items[0].value, "Copy a live Claude login into '" + name + "' - no re-login needed.");
+                    if (src) accAction("account.transfer", { tool, name, source: src });
+                }
                 else if (op === "provider") {
                     const a = accAccounts.find((x) => x.tool === tool && x.name === name);
                     if (!a) return;

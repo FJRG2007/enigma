@@ -25,11 +25,12 @@ import { compress, retrieve, readStats, clearCcr } from "./compress";
 import type { HubAccount, HubExitAction, HubProfile, HubSkill } from "./tui/types";
 import { ensureLinterInstalled, isLinterInstalled, refreshLinterPkg } from "./lint";
 import { checkLatestNow, getAvailableUpdate, notifyUpdate, performUpdateCheck, runUpdate } from "./update";
+import { isUsableSession, sessionEmail, sessionState, transferSession, type SessionState } from "./claude-oauth";
 import { ensureDashboardCurrent, isDashboardPkgCurrent, isDashboardPkgInstalled, refreshDashboardPkg } from "./dashboard-pkg";
 import { clearDaemon, dashboardUrl, ensureHostsEntry, runningDaemon, serveDashboardDaemon, startDashboardServer, writeDaemon } from "./dashboard";
 import {
     PACKS, disablePack, enablePack, getPack, installedPackVersion, isPackInstalled,
-    launchPack, listPacks, refreshPack, setupPackMcp,
+    launchPack, listPacks, packSessionSources, refreshPack, setupPackMcp,
 } from "./packs";
 import {
     checkSources, discardSkill, hasAccountDeployment, hasDeployment, installSkills,
@@ -182,6 +183,9 @@ Commands:
                          provider <name>      Point Claude Code at another backend (e.g.
                                               MiniMax): --preset <id> | --base <url>
                                               [--model <id>] --token <key>, or --clear
+                         sessions             List reusable Claude logins (Claude only)
+                         transfer <name> [src] Reuse a live login in a signed-out account
+                                              (no re-login; Claude only)
   profile <subcommand> Group one account per tool under a profile (e.g. 'work' =
                        claude:acme + codex:acme); the active profile drives launches:
                          list                       List profiles and their mappings
@@ -802,6 +806,27 @@ async function runAutoskillsCli(opts: CliOptions, interactive: boolean): Promise
  * `enigma account <subcommand>` surface. Wraps the accounts data layer with
  * prompting/printing (the data layer stays UI-free). Returns a process exit code.
  */
+/** A reusable Claude login (an account dir or a pack context), for `account sessions`/`transfer`. */
+interface ClaudeSessionSource { id: string; label: string; dir: string; email?: string; state: SessionState; usable: boolean; }
+
+/**
+ * Every Claude session that can seed another account without a re-login: each Claude account dir
+ * plus every pack context holding a credentials file. Ordered healthiest-first (usable before
+ * unusable, `ok` before `refreshable`) so an auto-picked transfer source is the best available.
+ */
+function claudeSessionSources(): ClaudeSessionSource[] {
+    const rows: ClaudeSessionSource[] = listAccounts("claude").map((a) => {
+        const state = sessionState(a.dir);
+        return { id: `account:${a.name}`, label: a.name, dir: a.dir, email: a.email ?? sessionEmail(a.dir), state, usable: isUsableSession(state) };
+    });
+    for (const s of packSessionSources("claude")) {
+        const state = sessionState(s.dir);
+        rows.push({ id: `pack:${s.id}`, label: `pack ${s.label}`, dir: s.dir, email: sessionEmail(s.dir), state, usable: isUsableSession(state) });
+    }
+    const rank = (s: ClaudeSessionSource): number => (s.usable ? (s.state === "ok" ? 0 : 1) : 2);
+    return rows.sort((a, b) => rank(a) - rank(b));
+}
+
 async function runAccountCli(opts: CliOptions, interactive: boolean): Promise<number> {
     const [sub, name] = opts.positionals;
     const tool = opts.tool;
@@ -917,8 +942,43 @@ async function runAccountCli(opts: CliOptions, interactive: boolean): Promise<nu
                 return 0;
             } catch (err) { console.error((err as Error).message); return 1; }
         }
+        case "sessions": {
+            if (tool !== "claude") { console.error("Session reuse is Claude-only."); return 1; }
+            const rows = claudeSessionSources();
+            console.log("Claude sessions (reusable logins):\n");
+            for (const s of rows) {
+                console.log(` ${s.usable ? "*" : " "} ${s.id.padEnd(22)} ${(s.email ?? "(no identity)").padEnd(30)} ${s.state}`);
+                console.log(`     ${s.dir}`);
+            }
+            console.log("\nReuse one with: enigma account transfer <target> [source-id].");
+            return 0;
+        }
+        case "transfer": {
+            // Reuse a live login: copy a session (another account or a pack context) into a
+            // signed-out account so it works again without /login. Claude-only.
+            if (tool !== "claude") { console.error("Session transfer is Claude-only."); return 1; }
+            if (!name) { console.error("Usage: enigma account transfer <target-account> [source-id]"); return 1; }
+            let targetDir: string;
+            try { targetDir = resolveConfigDir(tool, name); } catch (err) { console.error((err as Error).message); return 1; }
+            const sources = claudeSessionSources().filter((s) => s.dir !== targetDir);
+            const explicit = opts.positionals[2];
+            let src: ClaudeSessionSource | undefined;
+            if (explicit) {
+                src = sources.find((s) => s.id === explicit || s.id === `account:${explicit}` || s.id === `pack:${explicit}` || s.label === explicit);
+                if (!src) { console.error(`Unknown session source '${explicit}'. List them with: enigma account sessions.`); return 1; }
+                if (!src.usable) { console.error(`Source '${src.id}' has no usable session (${src.state}).`); return 1; }
+            } else {
+                src = sources.find((s) => s.usable);
+                if (!src) { console.error("No other logged-in Claude session to reuse. Log in once (or run a pack), then retry."); return 1; }
+            }
+            const res = transferSession(src.dir, targetDir);
+            if (!res.ok) { console.error(`Transfer failed: ${res.error}`); return 1; }
+            console.log(`Moved the '${src.label}' session into '${name}' - signed in now (shared login, no re-login).`);
+            console.log(`Launch it with: enigma ${tool} ${name}.`);
+            return 0;
+        }
         default:
-            console.error(`Unknown account subcommand: ${sub}. Try: list, add, use, login, run, rename, remove, provider.`);
+            console.error(`Unknown account subcommand: ${sub}. Try: list, add, use, login, run, rename, remove, provider, sessions, transfer.`);
             return 1;
     }
 }

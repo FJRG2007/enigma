@@ -21,10 +21,12 @@ import { isDir, readJson } from "./util";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
+import { copyIfFresher } from "./claude-oauth";
+import { mirrorAccountSettings } from "./permissions";
 import { readConfig, setEnigmaValue, setPackAccount } from "./config";
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import {
-    DEFAULT_TOOL, accountExists, getTool, isToolName, launchInDir,
+    DEFAULT_NAME, DEFAULT_TOOL, accountExists, getTool, isToolName, launchInDir,
     listAccounts, resolveConfigDir, resolveLaunchAccount,
 } from "./accounts";
 
@@ -53,7 +55,7 @@ export const PACKS: PackDef[] = [
         pkg: "@enigmax/helio",
         description: "Bug-bounty and offensive-security harness: recon, vuln hunting, web2/web3 audit, AD, cloud, triage and report writing. Runs in an isolated agent context so it never loads into your normal coding agent.",
         tags: ["bug-bounty", "security", "pentest", "web3"],
-        homepage: "https://github.com/TPEOficial/helio",
+        homepage: "https://www.npmjs.com/package/@enigmax/helio",
         // Only self-contained Python servers are auto-registered. Helio's Burp client is a
         // separate Java server (needs Burp Suite + an API key); it stays config-only - see
         // the pack's mcp/burp-mcp-client/README for manual setup.
@@ -272,6 +274,9 @@ function commandSource(assets: string, tool: string): string {
 /**
  * Deploy the pack's content into its isolated context dir for `tool`: skills, the tool's
  * command set, sub-agents (Claude Code) and a memory file carrying the harness instructions.
+ * The user's enigma-managed agent settings (commit attribution / feedback survey off, ...) are
+ * mirrored into the context and the pack's bypass default is forced on top, so the isolated
+ * agent behaves like the user's normal one.
  * Idempotent and version-gated - a re-deploy only runs when the installed pack version changed.
  * Returns the context dir, or null when the pack assets cannot be resolved.
  */
@@ -279,7 +284,13 @@ export function deployPack(id: string, tool: string): string | null {
     const assets = packAssetsDir(id);
     if (!assets) return null;
     const dir = contextDir(id, tool);
-    ensurePackBypass(dir, tool); // always ensure (even when version-gated below), so existing contexts get it too
+    // Mirror the user's enigma-managed agent settings into the isolated context (Claude commit
+    // attribution + feedback survey off, and the codex/opencode equivalents), then force the
+    // pack's bypass default on top so a global bypass-off cannot undo it. Both run even when
+    // version-gated below, so an already-deployed context picks up the current posture on the
+    // next launch.
+    mirrorAccountSettings(tool, dir);
+    ensurePackBypass(dir, tool);
     const version = installedPackVersion(id) ?? "dev";
     try {
         if (existsSync(deployMarker(dir)) && readFileSync(deployMarker(dir), "utf8").trim() === version) return dir;
@@ -434,6 +445,35 @@ function syncContextAccountState(accountDir: string, ctxDir: string): void {
 }
 
 /**
+ * Keep a pack context and its (managed) seeding account on ONE reused Claude session so they
+ * never diverge into the OAuth rotation "ping-pong" (whichever dir refreshes last invalidates
+ * the other's refresh token, silently logging the loser out). Converges both dirs on whichever
+ * currently holds the FRESHER token, in either direction:
+ *  - account fresher (you just launched `enigma claude`, it refreshed) -> update the context;
+ *  - context fresher (the pack has been the only thing launched, and the account went stale or
+ *    blanked) -> heal the account, so the next `enigma claude` reuses the live session.
+ * Only the strictly-fresher side ever writes (copyIfFresher), so a newer token is never lost.
+ * Claude-only, and restricted to MANAGED accounts: the synthetic "default" account is the user's
+ * own ~/.claude, which enigma never writes credentials into. Best-effort.
+ */
+export function reconcilePackSession(id: string, tool: string, account: string): void {
+    if (tool !== "claude" || account === DEFAULT_NAME) return;
+    try {
+        const accountDir = resolveConfigDir(tool, account);
+        const ctx = contextDir(id, tool);
+        copyIfFresher(accountDir, ctx);
+        copyIfFresher(ctx, accountDir);
+    } catch { /* best-effort */ }
+}
+
+/** Claude pack contexts that currently hold a credentials file, as session-transfer sources. */
+export function packSessionSources(tool: string = DEFAULT_TOOL): { id: string; label: string; dir: string }[] {
+    return PACKS
+        .map((p) => ({ id: p.id, label: p.label, dir: contextDir(p.id, tool) }))
+        .filter((s) => existsSync(join(s.dir, ".credentials.json")));
+}
+
+/**
  * Register the pack's MCP servers into the isolated context (Claude Code config). Gated behind
  * `enigma pack setup` because the servers need Python + the pack's tooling; registering them
  * blindly would make the agent fail to start a server whose deps are missing. Returns the names
@@ -543,8 +583,17 @@ export async function launchPack(id: string, tool: string = DEFAULT_TOOL, passth
         process.stderr.write(lines.join("\n"));
     }
     seedCredentials(id, tool, seedAccount);
+    // Reuse ONE session: before launch, converge the context and the managed account on the
+    // fresher token (seed it in, or heal a blanked/stale account from the still-live context).
+    reconcilePackSession(id, tool, seedAccount);
     process.stdout.write(`Launching ${pack.label} (${tool}) with account '${seedAccount}' in an isolated context.\n`);
-    return launchInDir(tool, dir, passthrough);
+    const code = await launchInDir(tool, dir, passthrough);
+    // After exit, propagate any token the pack refreshed during the session back to the managed
+    // account, so the next `enigma claude ${seedAccount}` reuses the live session, not a stale copy.
+    if (tool === "claude" && seedAccount !== DEFAULT_NAME) {
+        try { copyIfFresher(dir, resolveConfigDir(tool, seedAccount)); } catch { /* best-effort */ }
+    }
+    return code;
 }
 
 /** Claude OAuth token state for an account's stored credentials: ok | expired | empty | absent. */

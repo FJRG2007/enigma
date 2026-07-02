@@ -4,10 +4,10 @@
  * activate, rename, remove and a profile mapping; the interactive LOGIN is out of scope
  * (the browser cannot host it - the UI surfaces the command instead).
  */
-import { test, expect, afterAll } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { test, expect, afterAll } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";
 
 const HOME = mkdtempSync(join(tmpdir(), "enigma-dashacc-"));
 process.env.USERPROFILE = HOME;
@@ -16,6 +16,7 @@ process.env.ENIGMA_CONFIG_HOME = HOME;
 process.env.ENIGMA_NO_TERMINAL = "1"; // account.login must never open a real terminal in tests
 
 const { serializeAccounts, applyAccountAction } = await import("../src/dashboard-accounts");
+const { addAccount, resolveConfigDir } = await import("../src/accounts");
 
 afterAll(() => rmSync(HOME, { recursive: true, force: true }));
 
@@ -72,6 +73,30 @@ test("Claude accounts report a login state (a cached email is not 'logged in' wi
     // No credentials file in the temp HOME -> not a usable session.
     expect(def.loginState).toBe("absent");
     expect(def.loggedIn).toBe(false);
+});
+
+test("account.transfer reuses a live session into a signed-out account (no re-login)", async () => {
+    // A source account with a live token, and a target that is signed out.
+    const src = addAccount("claude", "livesrc");
+    const dst = addAccount("claude", "deadtarget");
+    writeFileSync(join(src.dir, ".credentials.json"), JSON.stringify({ claudeAiOauth: { accessToken: "L", refreshToken: "LR", expiresAt: Date.now() + 3600_000 } }));
+    writeFileSync(join(src.dir, ".claude.json"), JSON.stringify({ oauthAccount: { emailAddress: "live@x" }, hasCompletedOnboarding: true }));
+    writeFileSync(join(dst.dir, ".credentials.json"), JSON.stringify({ claudeAiOauth: { accessToken: "", refreshToken: "", expiresAt: 0 } }));
+
+    // The source shows up as a usable session; the target is empty.
+    const before = serializeAccounts();
+    expect(before.sessionSources.find((s) => s.id === "account:livesrc")!.usable).toBe(true);
+    expect(before.accounts.find((a) => a.name === "deadtarget")!.loggedIn).toBe(false);
+
+    const r = await applyAccountAction("account.transfer", { tool: "claude", name: "deadtarget", source: "account:livesrc" });
+    expect(r.ok).toBe(true);
+    // The target is signed in now, sharing the moved login.
+    expect(r.data.accounts.find((a) => a.name === "deadtarget")!.loggedIn).toBe(true);
+    expect(JSON.parse(readFileSync(join(resolveConfigDir("claude", "deadtarget"), ".credentials.json"), "utf8")).claudeAiOauth.refreshToken).toBe("LR");
+
+    // Unknown source id and a non-claude tool are rejected, not thrown.
+    expect((await applyAccountAction("account.transfer", { tool: "claude", name: "deadtarget", source: "account:ghost" })).ok).toBe(false);
+    expect((await applyAccountAction("account.transfer", { tool: "codex", name: "default", source: "account:livesrc" })).ok).toBe(false);
 });
 
 test("account.login is offered for any account and never throws (terminal suppressed in tests)", async () => {

@@ -31,9 +31,21 @@ enigma codex -- --version  # forward args to the tool
 
 Several logins per tool without logging out, each in its own config dir. A profile pins one account per tool and drives every launch.
 
-<Cmd name="enigma account <list|add|use|login|rename|remove|provider>" ex={["enigma account add work --login", "enigma account use work --tool codex"]}>
+<Cmd name="enigma account <list|add|use|login|rename|remove|provider|sessions|transfer>" ex={["enigma account add work --login", "enigma account use work --tool codex"]}>
 Manage tool accounts. Defaults to Claude Code; target another with `--tool <name>`.
 </Cmd>
+
+### Reuse a session (no re-login)
+
+The same Anthropic login stored in two config dirs (a managed account and a pack context, say) can drift apart: Claude rotates the OAuth refresh token on every refresh and invalidates the previous one, so whichever dir refreshes last keeps working and the other is silently signed out. Instead of re-running `/login`, **reuse** the live session - copy it into the signed-out account (its refresh token is all Claude Code needs). Claude only.
+
+```bash
+enigma account sessions                     # list reusable logins (accounts + pack contexts)
+enigma account transfer work                # pull the freshest live session into 'work'
+enigma account transfer work pack:helio     # or from a specific source
+```
+
+Packs do this automatically: `enigma helio` keeps its context and the managed account it seeds from on one shared session (freshest token wins on launch, and any refresh is copied back on exit), so `enigma claude` and the pack never fight. It is also available in the dashboard Accounts tab ("Reuse session" on a signed-out Claude account).
 
 `provider` points a Claude Code account at another Anthropic-compatible backend (e.g. MiniMax) instead of the default - the `default` account always stays on Anthropic. Configurable here, in the dashboard Accounts tab, and the TUI (`p` on an account). The API key is stored encrypted.
 
