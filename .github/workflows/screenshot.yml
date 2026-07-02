@@ -26,7 +26,16 @@ jobs:
   preview:
     runs-on: ubuntu-latest
     steps:
+      # Use PREVIEW_PAT when present so the auto-commit below can push to main:
+      # this repo is user-owned, so the GitHub Actions app cannot be a ruleset
+      # bypass actor, and the default GITHUB_TOKEN's push is rejected by the
+      # "Protect main" ruleset (GH013). A fine-grained PAT owned by the repo
+      # admin bypasses via the RepositoryRole:admin bypass actor. Falls back to
+      # the default token when the secret is absent (push then degrades to the
+      # branch-protection warning below - the artifact is still uploaded).
       - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.PREVIEW_PAT || github.token }}
 
       - uses: actions/setup-node@v4
         with:
