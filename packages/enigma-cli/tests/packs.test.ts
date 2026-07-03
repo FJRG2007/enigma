@@ -213,14 +213,14 @@ test("reconcilePackSession heals a blanked account from the live pack context (p
     // Account credentials blanked; context alive with a valid refresh token.
     writeFileSync(join(acct.dir, ".credentials.json"), JSON.stringify({ claudeAiOauth: { accessToken: "", refreshToken: "", expiresAt: 0 } }));
     writeFileSync(ctxCred, JSON.stringify({ claudeAiOauth: { accessToken: "LIVE", refreshToken: "LIVE_R", expiresAt: Date.now() + 3600_000 } }));
-    writeFileSync(join(ctxDir, ".claude.json"), JSON.stringify({ oauthAccount: { emailAddress: "juan@bytehide.com" }, hasCompletedOnboarding: true }));
+    writeFileSync(join(ctxDir, ".claude.json"), JSON.stringify({ oauthAccount: { emailAddress: "user@example.com" }, hasCompletedOnboarding: true }));
 
     packs.reconcilePackSession("helio", "claude", "pingpong");
 
     // The account is healed from the context - signed in again, no /login needed.
     expect(packs.accountTokenState("claude", "pingpong")).toBe("ok");
     expect(JSON.parse(readFileSync(join(acct.dir, ".credentials.json"), "utf8")).claudeAiOauth.refreshToken).toBe("LIVE_R");
-    expect(JSON.parse(readFileSync(join(acct.dir, ".claude.json"), "utf8")).oauthAccount.emailAddress).toBe("juan@bytehide.com");
+    expect(JSON.parse(readFileSync(join(acct.dir, ".claude.json"), "utf8")).oauthAccount.emailAddress).toBe("user@example.com");
 });
 
 test("reconcilePackSession pushes a fresher account token into the context, and never writes the default account", () => {

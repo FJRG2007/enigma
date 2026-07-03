@@ -55,16 +55,16 @@ test("rename is metadata-only: the directory does not move", () => {
 
 test("a legacy name-based directory keeps working and is not moved on rename", () => {
     // Seed a registry exactly as a pre-change install would have: dir basename == name.
-    const legacyDir = join(HOME, ".enigma", "claude", "ByteHide");
+    const legacyDir = join(HOME, ".enigma", "claude", "legacy");
     mkdirSync(legacyDir, { recursive: true });
     writeFileSync(REGISTRY, `${JSON.stringify({
-        tools: { claude: { active: null, accounts: [{ name: "ByteHide", dir: legacyDir, createdAt: "" }] } },
+        tools: { claude: { active: null, accounts: [{ name: "legacy", dir: legacyDir, createdAt: "" }] } },
         profiles: { active: null, items: {} },
     }, null, 2)}\n`);
 
-    const renamed = accounts.renameAccount("claude", "ByteHide", "personal");
+    const renamed = accounts.renameAccount("claude", "legacy", "personal");
     expect(renamed.dir).toBe(legacyDir); // untouched legacy path
-    expect(basename(renamed.dir)).toBe("ByteHide"); // segment stays, name decoupled
+    expect(basename(renamed.dir)).toBe("legacy"); // segment stays, name decoupled
     expect(existsSync(legacyDir)).toBe(true);
     expect(accounts.resolveConfigDir("claude", "personal")).toBe(legacyDir);
 });

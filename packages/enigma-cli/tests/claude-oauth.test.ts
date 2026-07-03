@@ -61,7 +61,7 @@ test("isUsableSession: ok and refreshable are launchable/transferable, the rest 
 test("transferSession heals a signed-out account from a live one, without a re-login", () => {
     const from = dir(), to = dir();
     creds(from, { access: "LIVE", refresh: "LIVE_R", expiresAt: FUTURE });
-    identity(from, "juan@bytehide.com");
+    identity(from, "user@example.com");
     // Target is blanked (the ping-pong victim) and has no identity yet.
     creds(to, { access: "", refresh: "" });
 
@@ -72,9 +72,9 @@ test("transferSession heals a signed-out account from a live one, without a re-l
     expect(JSON.parse(readFileSync(join(to, ".credentials.json"), "utf8")).claudeAiOauth.refreshToken).toBe("LIVE_R");
     // The identity was aligned so the agent treats it as the same signed-in install.
     const cfg = JSON.parse(readFileSync(join(to, ".claude.json"), "utf8"));
-    expect(cfg.oauthAccount.emailAddress).toBe("juan@bytehide.com");
+    expect(cfg.oauthAccount.emailAddress).toBe("user@example.com");
     expect(cfg.hasCompletedOnboarding).toBe(true);
-    expect(sessionEmail(to)).toBe("juan@bytehide.com");
+    expect(sessionEmail(to)).toBe("user@example.com");
 });
 
 test("transferSession refuses an unusable source and a self-transfer", () => {
@@ -122,13 +122,13 @@ test("copyIfFresher only propagates a strictly fresher token, never overwrites a
 
 test("copyIfFresher heals a blanked account and refuses an unusable source", () => {
     const account = dir(), context = dir();
-    // Account blanked (the exact ByteHide symptom), context still alive -> heal the account.
+    // Account blanked (the exact signed-out symptom), context still alive -> heal the account.
     creds(account, { access: "", refresh: "", expiresAt: 0 });
     creds(context, { access: "CTX", refresh: "CTX_R", expiresAt: FUTURE });
-    identity(context, "juan@bytehide.com");
+    identity(context, "user@example.com");
     expect(copyIfFresher(context, account)).toBe(true);
     expect(sessionState(account)).toBe("ok");
-    expect(sessionEmail(account)).toBe("juan@bytehide.com");
+    expect(sessionEmail(account)).toBe("user@example.com");
 
     // A blanked source can never displace a live target.
     const blanked = dir();

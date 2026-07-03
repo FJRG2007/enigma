@@ -1,0 +1,107 @@
+---
+title: Helio (bug-bounty pack)
+description: The Helio pack turns an isolated agent into a bug-bounty workstation - recon, vulnerability hunting, web3 and Active Directory audits, triage and report writing. Full command reference and workflow.
+group: Concepts
+order: 33.5
+---
+import Cmd from "../../../components/Cmd.astro";
+import { docHref } from "../../../lib/url";
+
+**Helio** is the first enigma <a href={docHref("concepts/packs")}>pack</a>: a bug-bounty and offensive-security harness, created in collaboration with the Dymo Intelligence Team. Like every pack it runs in a **dedicated, isolated agent context** - its skills and commands never load into the agent you use for everyday coding.
+
+It bundles 13 skills (recon, vulnerability classes, web3 audit, Active Directory, cloud, OPSEC, reporting), ~20 slash commands, specialised sub-agents, and the HackerOne/Burp MCP servers.
+
+> Use Helio only against targets you are explicitly authorised to test. It is built for professional bug bounty, VAPT and red-team engagements with a valid scope and rules of engagement.
+
+## Install and launch
+
+<Cmd name="enigma pack install helio" ex={["enigma pack install helio", "enigma pack list"]}>
+Fetch the pack (the `@enigmax/helio` asset package) into `~/.enigma/packs/helio`. `list` shows every pack and its install state. You can skip this - launching also fetches on demand.
+</Cmd>
+
+<Cmd name="enigma helio [account]" ex={["enigma helio", "enigma helio work", "enigma helio --tool codex"]}>
+Launch a coding agent inside Helio's isolated context, seeded with one of your logins so you do not sign in again. With no account it uses the pinned pack account, else your active profile's account, else the tool's active account. Defaults to Claude Code; target another agent with `--tool`.
+</Cmd>
+
+<Cmd name="enigma pack use helio <account|->" ex={["enigma pack use helio work", "enigma pack use helio -"]}>
+Pin which login seeds Helio by default (`-` clears the pin). Create a dedicated login first with `enigma account add <name>` if you want to keep security work under its own identity.
+</Cmd>
+
+<Cmd name="enigma pack setup helio" ex="enigma pack setup helio">
+Register Helio's MCP servers (HackerOne, and a Burp client if you configure it). Kept out of the default launch because they need Python and the pack's tooling. `enigma pack update helio` / `enigma pack remove helio` keep or delete the pack.
+</Cmd>
+
+You can also manage Helio from the dashboard's **Packs** tab - install, update, remove, pick the seeding account, and copy the launch command.
+
+## The core loop
+
+Helio is built around a scope-first hunting cycle. A typical run:
+
+```bash
+/scope api.target.com     # confirm the asset is in the program scope
+/recon target.com         # enumerate the attack surface
+/surface target.com       # rank what to hit first
+/hunt target.com          # hunt targeted vulnerability classes
+/validate                 # kill weak findings before writing anything
+/report                   # produce a submission-ready report
+```
+
+Its rules are strict by design: read the full scope before touching an asset, never chase theoretical bugs, always validate before reporting, kill weak findings fast, and move on when a lead stalls.
+
+## Command reference
+
+Slash commands run **inside** the Helio agent (after `enigma helio`), not from the enigma CLI.
+
+### Recon and surface
+
+| Command | Usage | What it does |
+|---------|-------|--------------|
+| `/scope` | `/scope <asset>` | Check an asset against the program's in-scope and out-of-scope lists and confirm ownership before hunting or submitting. |
+| `/recon` | `/recon target.com` | Full recon pipeline: subdomain enum (Chaos API + subfinder), live hosts (dnsx + httpx), URL crawl (katana + waybackurls + gau), gf classification, nuclei scan. Writes to `recon/<target>/`. |
+| `/surface` | `/surface target.com` | Ranked attack surface from recon output plus hunt memory (recon-ranker agent). |
+| `/intel` | `/intel target.com` | On-demand intelligence for a target: CVEs, disclosed reports, new features. |
+| `/pickup` | `/pickup target.com` | Resume a previous hunt: history, untested endpoints and memory-informed suggestions. |
+
+### Hunting
+
+| Command | Usage | What it does |
+|---------|-------|--------------|
+| `/hunt` | `/hunt target.com [--vuln-class ...]` | Load scope, read disclosed reports, pick the best surface for the tech stack, and run targeted checks (IDOR, SSRF, XSS, SQLi, OAuth, race, GraphQL, LLM, upload, business-logic). |
+| `/chain` | `/chain` | Combine bugs into higher-severity, higher-payout chains - IDOR to ATO, SSRF to cloud metadata, XSS to ATO, open redirect to OAuth theft, S3 to secret to OAuth. |
+| `/autopilot` | `/autopilot target.com [--paranoid \| --normal \| --yolo]` | Autonomous hunt loop: scope to recon to rank to hunt to validate to report, with configurable checkpoints. |
+| `/vaccine` | `/vaccine [finding-file]` | Offensive vaccine: attack a finding, help apply a fix, then re-attack to verify the fix actually holds. |
+
+### Validation and reporting
+
+| Command | Usage | What it does |
+|---------|-------|--------------|
+| `/triage` | `/triage` | Fast 7-Question Gate for a quick go/no-go before writing a report. |
+| `/validate` | `/validate` | 7-Question Gate plus a 4-gate checklist; kills weak findings and prevents N/A submissions that hurt your validity ratio. |
+| `/report` | `/report` | Write a submission-ready report (HackerOne, Bugcrowd, Intigriti, Immunefi) with a CVSS 3.1 score, proof of concept, impact and remediation. Run `/validate` first. |
+| `/remember` | `/remember` | Log the current finding or a winning pattern to hunt memory (auto-fills from `/validate` output). |
+
+### Web3
+
+| Command | Usage | What it does |
+|---------|-------|--------------|
+| `/web3-audit` | `/web3-audit <contract.sol>` | Smart-contract audit across a 10-class checklist (accounting desync, access control, oracle errors, ERC4626, reentrancy, flash loan, signature replay, proxy/upgrade) with a Foundry PoC template for confirmed findings. |
+| `/token-scan` | `/token-scan <path> [--chain solana]` | Meme-coin / token rug-pull scan: hidden mint, honeypot, fee manipulation, LP-lock bypass, authority retention, bonding-curve exploits, fake renounce, sandwich amplification. |
+
+### Active Directory and post-exploitation
+
+| Command | Usage | What it does |
+|---------|-------|--------------|
+| `/ad-attack` | `/ad-attack [domain]` | Active Directory attack chain: BloodHound ingestion, Kerberoasting, ADCS ESC abuse, DCSync. |
+| `/postexploit` | `/postexploit [target]` | Post-foothold guidance: privilege escalation (Windows/Linux), credential access and lateral movement. |
+
+### Engagement and OPSEC
+
+| Command | Usage | What it does |
+|---------|-------|--------------|
+| `/roe` | `/roe` | Draft a Rules of Engagement document: scope, authorized actions, testing window, escalation contacts and OPSEC level. |
+| `/opplan` | `/opplan [new \| status \| update]` | Create and track an engagement OPPLAN: structured objectives with phases, dependencies and status. |
+| `/helio` | `/helio` | Show Helio's in-agent command help. |
+
+## Which account Helio uses
+
+A pack runs under one of your configured logins, seeded into its isolated context so you do not log in again. `enigma helio <account>` overrides the account for one launch; `enigma pack use helio <account>` pins a default. This lets Helio run under a different identity than your everyday agent - for example a dedicated account for authorised security testing - without touching your normal `enigma claude` setup. See <a href={docHref("concepts/packs")}>Packs</a> for how isolation, seeding and MCP work across every pack.

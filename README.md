@@ -20,10 +20,12 @@
 
 `enigma` gives your coding agent a senior engineer's standards, in one command. It
 installs shared **Dynamic Skills** - security, testing, git, style, debugging - into
-Claude Code, OpenAI Codex and opencode, each adapting to the agent and your config.
-It adds portable **git hooks** that stop secrets and `.env` files reaching a commit,
-and a local dashboard to manage and measure everything. Fewer wrong turns, fewer
-re-prompts, cleaner output.
+Claude Code, OpenAI Codex and opencode; each one adapts to the agent, re-renders from
+your config, and loads only when a task needs it. Portable **git hooks** keep secrets
+and `.env` files out of every commit, a local **dashboard** manages and measures the
+whole setup, and optional **packs** add focused harnesses - like the Helio bug-bounty
+toolkit - in their own isolated context. Fewer wrong turns, fewer re-prompts, cleaner
+output.
 
 ![ENIGMA PREVIEW](https://raw.githubusercontent.com/FJRG2007/enigma/refs/heads/main/assets/images/dashboard.png)
 

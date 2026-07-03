@@ -5,6 +5,7 @@ group: Concepts
 order: 33
 ---
 import Cmd from "../../../components/Cmd.astro";
+import { docHref } from "../../../lib/url";
 
 A **pack** is an optional harness bundle - skills, slash commands, sub-agents and MCP servers for a focused domain - that you add on demand from the marketplace. Unlike enigma's built-in policy skills, a pack is **never** deployed into your normal agent. It runs in a **dedicated, isolated agent context**, so its skills and commands do not load into - or overload - the agent you use for everyday coding.
 
@@ -42,3 +43,5 @@ This lets a pack run under a different identity than your everyday agent - for e
 ## Helio
 
 Helio turns the isolated agent into a bug-bounty workstation: 13 skills across recon, vulnerability classes, web3 audit, AD, cloud, OPSEC and reporting; slash commands like `/recon`, `/hunt`, `/validate`, `/report` and `/autopilot`; specialised sub-agents; and the HackerOne/Burp MCP servers. Use it only against targets you are authorised to test.
+
+See <a href={docHref("concepts/helio")}>Helio</a> for the full command reference and workflow.
