@@ -8,15 +8,14 @@
  * so the behavior is enforced regardless of what the model does.
  */
 
-import { homedir } from "node:os";
 import { join } from "node:path";
+import { enigmaHome, isDir, readJson } from "./util";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { isDir, readJson } from "./util";
 
 /** Settings file Claude Code reads for a given scope. */
 function claudeSettingsPath(scope: "global" | "local"): string {
     return scope === "global"
-        ? join(homedir(), ".claude", "settings.json")
+        ? join(enigmaHome(), ".claude", "settings.json")
         : join(process.cwd(), ".claude", "settings.json");
 }
 
