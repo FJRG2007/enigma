@@ -15,18 +15,43 @@ const { title, description, slug } = Astro.props;
 const docs = (await getCollection("docs")).sort((a, b) => a.data.order - b.data.order);
 const index = await buildSearchIndex();
 
+// The active page decides which section (and which pack) the sidebar shows.
+const current = docs.find((d) => d.id === slug);
+const space = current?.data.space ?? "core";
+const pack = current?.data.pack;
+const label = (id: string) => id.charAt(0).toUpperCase() + id.slice(1);
+const packLabel = pack ? label(pack) : "";
+
+// Distinct packs in the Packs space, each linking to its landing (lowest-order) page.
+const packList: { id: string; label: string; landing: string }[] = [];
+for (const d of docs) {
+    if (d.data.space === "packs" && d.data.pack && !packList.find((p) => p.id === d.data.pack)) {
+        packList.push({ id: d.data.pack, label: label(d.data.pack), landing: d.id });
+    }
+}
+
+// The docs shown in the sidebar for the current section (a pack's pages, or all core docs).
+const sidebarDocs = space === "packs"
+    ? (pack ? docs.filter((d) => d.data.pack === pack) : [])
+    : docs.filter((d) => (d.data.space ?? "core") === "core");
+
 // Group the sidebar entries by their `group` frontmatter, preserving order.
 const groups: { name: string; items: typeof docs }[] = [];
-for (const d of docs) {
+for (const d of sidebarDocs) {
     let g = groups.find((x) => x.name === d.data.group);
     if (!g) { g = { name: d.data.group, items: [] }; groups.push(g); }
     g.items.push(d);
 }
+const onPacksHub = space === "packs" && !pack;
 ---
 <Base title={`${title} - Enigma docs`} description={description}>
     <nav>
         <div class="in">
             <a href={url("")} class="brand">Enigma<span class="c"></span></a>
+            <div class="tabs">
+                <a href={docHref("getting-started/introduction")} class={space === "core" ? "active" : ""}>Core</a>
+                <a href={docHref("packs")} class={space === "packs" ? "active" : ""}>Packs</a>
+            </div>
             <a class="home" href={url("")}>&larr; Home</a>
         </div>
     </nav>
@@ -38,14 +63,29 @@ for (const d of docs) {
                 <span>Search docs</span>
                 <kbd>&#8984;K</kbd>
             </button>
-            {groups.map((g) => (
+            {space === "packs" && pack && (
                 <>
-                    <div class="grp">{g.name}</div>
-                    {g.items.map((d) => (
-                        <a href={docHref(d.id)} class={d.id === slug ? "active" : ""}>{d.data.title}</a>
+                    <a class="backlink" href={docHref("packs")}>&larr; All packs</a>
+                    <div class="packhdr">{packLabel}</div>
+                </>
+            )}
+            {onPacksHub ? (
+                <>
+                    <div class="grp">Packs</div>
+                    {packList.map((p) => (
+                        <a href={docHref(p.landing)} class={p.landing === slug ? "active" : ""}>{p.label}</a>
                     ))}
                 </>
-            ))}
+            ) : (
+                groups.map((g) => (
+                    <>
+                        <div class="grp">{g.name}</div>
+                        {g.items.map((d) => (
+                            <a href={docHref(d.id)} class={d.id === slug ? "active" : ""}>{d.data.title}</a>
+                        ))}
+                    </>
+                ))
+            )}
         </aside>
 
         <main>
@@ -69,8 +109,16 @@ for (const d of docs) {
     nav .in { max-width: 1180px; margin: 0 auto; padding: 0 24px; display: flex; align-items: center; gap: 18px; height: 56px; }
     .brand { font-family: var(--mono); font-size: 17px; font-weight: 600; letter-spacing: 0.5px; color: var(--text); }
     .brand .c { display: inline-block; width: 0.46em; height: 1.05em; margin-left: 4px; background: var(--accent); transform: translateY(2px); }
+    nav .tabs { display: flex; gap: 2px; margin-left: 10px; }
+    nav .tabs a { font-family: var(--mono); font-size: 13px; color: var(--muted); padding: 6px 12px; border-radius: 7px; transition: color .15s, background .15s; }
+    nav .tabs a:hover { color: var(--text); }
+    nav .tabs a.active { color: var(--accent); background: var(--surface); }
     nav .in a.home { margin-left: auto; font-family: var(--mono); font-size: 13px; color: var(--muted); }
     nav .in a.home:hover { color: var(--text); }
+
+    aside .backlink { display: block; font-family: var(--mono); font-size: 12px; color: var(--muted); padding: 4px 0; }
+    aside .backlink:hover { color: var(--text); }
+    aside .packhdr { font-family: var(--mono); font-size: 15px; font-weight: 600; color: var(--text); margin: 2px 0 6px; }
 
     .layout { max-width: 1180px; margin: 0 auto; padding: 0 24px; display: grid; grid-template-columns: 210px 1fr; gap: 40px; }
     aside { position: sticky; top: 72px; align-self: start; height: max-content; padding: 28px 0; }

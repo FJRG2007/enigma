@@ -1,0 +1,40 @@
+---
+title: Workflow
+description: Helio's scope-first hunting loop and the rules that keep findings real and submission-ready.
+group: Guide
+order: 3
+space: packs
+pack: helio
+---
+import { docHref } from "../../../lib/url";
+
+Helio is built around a scope-first hunting cycle. Every command feeds the next, and validation gates the report so weak findings never reach a program.
+
+## The core loop
+
+```bash
+/scope api.target.com     # confirm the asset is in the program scope
+/recon target.com         # enumerate the attack surface
+/surface target.com       # rank what to hit first
+/hunt target.com          # hunt targeted vulnerability classes
+/validate                 # kill weak findings before writing anything
+/report                   # produce a submission-ready report
+```
+
+Between hunts, `/remember` logs winning findings and patterns to hunt memory, and `/pickup` resumes a target where you left off. For a hands-off run, `/autopilot` drives the whole loop with configurable checkpoints.
+
+## Rules
+
+Helio's rules are strict by design - they exist to protect your validity ratio and keep you inside the engagement:
+
+1. **Read the full scope** before touching any asset.
+2. **Never hunt theoretical bugs** - a finding must be reproducible.
+3. **Run validation before reporting** - `/triage` or `/validate` first, always.
+4. **Kill weak findings fast** - do not polish something that will be closed N/A.
+5. **The 5-minute rule** - no progress on a lead means move on.
+
+## Where things live
+
+A hunt writes its recon output to `recon/<target>/` and its findings and patterns to the pack's hunt memory, all inside Helio's isolated context. Nothing touches your normal agent's directories.
+
+See the <a href={docHref("helio/commands")}>command reference</a> for what each step does in detail.

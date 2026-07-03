@@ -94,7 +94,7 @@ enigma's **native** codebase memory / code graph (structural code intelligence),
 
 ## pack
 
-Marketplace of optional, isolated harness packs (e.g. Helio for bug bounty). Each runs in its own agent context, so its skills and commands never load into your normal agent. See <a href={docHref("concepts/packs")}>Packs</a> for detail.
+Marketplace of optional, isolated harness packs (e.g. Helio for bug bounty). Each runs in its own agent context, so its skills and commands never load into your normal agent. See <a href={docHref("packs")}>Packs</a> for detail.
 
 <Cmd name="enigma pack <list|install|remove|update|setup|use|run>" ex={["enigma pack list", "enigma pack install helio", "enigma helio", "enigma helio work", "enigma pack use helio work", "enigma pack setup helio"]}>
 `install <id>` fetches a pack; `enigma <id> [account]` (e.g. `enigma helio`) launches its isolated agent, seeded with the chosen/pinned/active login; `use <id> <account|->` pins which account seeds the pack; `setup <id>` registers the pack's MCP servers (needs Python); `update`/`remove` keep or delete it.

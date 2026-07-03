@@ -1,0 +1,25 @@
+---
+title: MCP and tooling
+description: Helio's HackerOne and Burp MCP servers, and how to enable them once the pack is installed.
+group: Reference
+order: 5
+space: packs
+pack: helio
+---
+import Cmd from "../../../components/Cmd.astro";
+
+Helio can wire external tooling into the isolated agent over MCP. These servers are **not** registered by a normal launch - they need Python and the pack's tooling, so they are opt-in.
+
+<Cmd name="enigma pack setup helio" ex="enigma pack setup helio">
+Register Helio's MCP servers into the pack's isolated context. Run it once after installing the pack; a normal `enigma helio` launch does not touch them.
+</Cmd>
+
+## Servers
+
+- **HackerOne** - a public MCP server (no API key) for pulling program and report context into a hunt.
+- **Burp** - a client for Burp Suite. It is config-only: it needs Burp running, its Java server and an API key, so it is registered but inert until you provide those.
+
+## Notes
+
+- The servers live entirely inside `~/.enigma/packs/helio/context/<tool>` - they never register into your normal agent.
+- Python is required for the HackerOne server; if it is missing, the pack still launches with its skills, commands and sub-agents - only the MCP tools are unavailable.

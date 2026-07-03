@@ -1,0 +1,27 @@
+---
+title: Overview
+description: Helio is enigma's bug-bounty and offensive-security pack - it turns an isolated agent into a hunting workstation for recon, vulnerability classes, web3, Active Directory, cloud and reporting.
+group: Guide
+order: 1
+space: packs
+pack: helio
+---
+import { docHref } from "../../../lib/url";
+
+**Helio** is the first enigma <a href={docHref("packs")}>pack</a>: a bug-bounty and offensive-security harness, created in collaboration with the Dymo Intelligence Team. Like every pack it runs in a **dedicated, isolated agent context** - its skills and commands never load into the agent you use for everyday coding.
+
+> Use Helio only against targets you are explicitly authorised to test. It is built for professional bug bounty, VAPT and red-team engagements with a valid scope and rules of engagement.
+
+## What's in the pack
+
+- **13 skills** across recon, vulnerability classes, web3 audit, Active Directory, cloud, OPSEC and reporting.
+- **~20 slash commands** - the hunting loop (`/recon`, `/hunt`, `/validate`, `/report`), autonomous (`/autopilot`), and specialised passes (`/web3-audit`, `/ad-attack`, `/token-scan`).
+- **Specialised sub-agents** - recon ranking, chain building, validation, report writing and more.
+- **MCP servers** - HackerOne and a Burp client, registered on demand.
+
+## Where to go next
+
+- <a href={docHref("helio/getting-started")}>Getting started</a> - install Helio, launch it, and pick which account seeds it.
+- <a href={docHref("helio/workflow")}>Workflow</a> - the scope-first hunting loop and the rules that keep it honest.
+- <a href={docHref("helio/commands")}>Commands</a> - the full reference for every slash command, grouped by domain.
+- <a href={docHref("helio/mcp")}>MCP and tooling</a> - the HackerOne and Burp servers and how to enable them.

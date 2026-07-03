@@ -1,0 +1,61 @@
+---
+title: Commands
+description: The full reference for every Helio slash command, grouped by domain - recon, hunting, validation, web3, Active Directory and engagement.
+group: Reference
+order: 4
+space: packs
+pack: helio
+---
+import { docHref } from "../../../lib/url";
+
+Slash commands run **inside** the Helio agent (after `enigma helio`), not from the enigma CLI. For the flow that ties them together, see the <a href={docHref("helio/workflow")}>workflow</a>.
+
+## Recon and surface
+
+| Command | Usage | What it does |
+|---------|-------|--------------|
+| `/scope` | `/scope <asset>` | Check an asset against the program's in-scope and out-of-scope lists and confirm ownership before hunting or submitting. |
+| `/recon` | `/recon target.com` | Full recon pipeline: subdomain enum (Chaos API + subfinder), live hosts (dnsx + httpx), URL crawl (katana + waybackurls + gau), gf classification, nuclei scan. Writes to `recon/<target>/`. |
+| `/surface` | `/surface target.com` | Ranked attack surface from recon output plus hunt memory (recon-ranker agent). |
+| `/intel` | `/intel target.com` | On-demand intelligence for a target: CVEs, disclosed reports, new features. |
+| `/pickup` | `/pickup target.com` | Resume a previous hunt: history, untested endpoints and memory-informed suggestions. |
+
+## Hunting
+
+| Command | Usage | What it does |
+|---------|-------|--------------|
+| `/hunt` | `/hunt target.com [--vuln-class ...]` | Load scope, read disclosed reports, pick the best surface for the tech stack, and run targeted checks (IDOR, SSRF, XSS, SQLi, OAuth, race, GraphQL, LLM, upload, business-logic). |
+| `/chain` | `/chain` | Combine bugs into higher-severity, higher-payout chains - IDOR to ATO, SSRF to cloud metadata, XSS to ATO, open redirect to OAuth theft, S3 to secret to OAuth. |
+| `/autopilot` | `/autopilot target.com [--paranoid \| --normal \| --yolo]` | Autonomous hunt loop: scope to recon to rank to hunt to validate to report, with configurable checkpoints. |
+| `/vaccine` | `/vaccine [finding-file]` | Offensive vaccine: attack a finding, help apply a fix, then re-attack to verify the fix actually holds. |
+
+## Validation and reporting
+
+| Command | Usage | What it does |
+|---------|-------|--------------|
+| `/triage` | `/triage` | Fast 7-Question Gate for a quick go/no-go before writing a report. |
+| `/validate` | `/validate` | 7-Question Gate plus a 4-gate checklist; kills weak findings and prevents N/A submissions that hurt your validity ratio. |
+| `/report` | `/report` | Write a submission-ready report (HackerOne, Bugcrowd, Intigriti, Immunefi) with a CVSS 3.1 score, proof of concept, impact and remediation. Run `/validate` first. |
+| `/remember` | `/remember` | Log the current finding or a winning pattern to hunt memory (auto-fills from `/validate` output). |
+
+## Web3
+
+| Command | Usage | What it does |
+|---------|-------|--------------|
+| `/web3-audit` | `/web3-audit <contract.sol>` | Smart-contract audit across a 10-class checklist (accounting desync, access control, oracle errors, ERC4626, reentrancy, flash loan, signature replay, proxy/upgrade) with a Foundry PoC template for confirmed findings. |
+| `/token-scan` | `/token-scan <path> [--chain solana]` | Meme-coin / token rug-pull scan: hidden mint, honeypot, fee manipulation, LP-lock bypass, authority retention, bonding-curve exploits, fake renounce, sandwich amplification. |
+
+## Active Directory and post-exploitation
+
+| Command | Usage | What it does |
+|---------|-------|--------------|
+| `/ad-attack` | `/ad-attack [domain]` | Active Directory attack chain: BloodHound ingestion, Kerberoasting, ADCS ESC abuse, DCSync. |
+| `/postexploit` | `/postexploit [target]` | Post-foothold guidance: privilege escalation (Windows/Linux), credential access and lateral movement. |
+
+## Engagement and OPSEC
+
+| Command | Usage | What it does |
+|---------|-------|--------------|
+| `/roe` | `/roe` | Draft a Rules of Engagement document: scope, authorized actions, testing window, escalation contacts and OPSEC level. |
+| `/opplan` | `/opplan [new \| status \| update]` | Create and track an engagement OPPLAN: structured objectives with phases, dependencies and status. |
+| `/helio` | `/helio` | Show Helio's in-agent command help. |
