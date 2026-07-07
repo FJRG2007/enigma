@@ -69,7 +69,8 @@
                 { name: "claude", label: "Claude Code", status: "ok" },
                 { name: "codex", label: "Codex", status: "ok" },
                 { name: "opencode", label: "opencode", status: "ok" }
-            ]
+            ],
+            api: { port: 8000, agents: ["claude", "codex", "opencode"] }
         }
     };
 
@@ -410,6 +411,18 @@
                 return { ok: true, view: CODEGRAPH };
             }
             return CODEGRAPH;
+        }
+        if (path.indexOf("/api/playground") !== -1) {
+            if (method !== "POST") return { agents: ["claude", "codex", "opencode"], models: [{ tool: "claude", models: ["claude-sonnet-5", "claude-opus-4-8", "claude-haiku-4-5"] }, { tool: "codex", models: ["codex"] }, { tool: "opencode", models: ["opencode"] }], accounts: [{ tool: "claude", name: "default" }, { tool: "claude", name: "work" }], profiles: ["work"], packs: [{ id: "helio", label: "Helio", installed: true }], apiPort: 8000, defaults: { account: "", profile: "", pack: "" } };
+            var pg = body || {};
+            if (pg.op === "set-defaults") return { ok: true, defaults: { account: pg.account || "", profile: pg.profile || "", pack: pg.pack || "" } };
+            var anth = pg.format === "anthropic";
+            var demoText = "playground-ok (demo response - run the dashboard via the enigma app to drive a real agent)";
+            var resp = anth
+                ? { id: "msg_demo", type: "message", role: "assistant", model: pg.model || "claude", content: [{ type: "text", text: demoText }], stop_reason: "end_turn", usage: { input_tokens: 8, output_tokens: 14 } }
+                : { id: "chatcmpl-demo", object: "chat.completion", model: pg.model || "claude", choices: [{ index: 0, message: { role: "assistant", content: demoText }, finish_reason: "stop" }], usage: { prompt_tokens: 8, completion_tokens: 14, total_tokens: 22 } };
+            var curlPath = anth ? "/v1/messages" : "/v1/chat/completions";
+            return { ok: true, mode: pg.mode || "inproc", format: pg.format || "openai", tool: "claude", text: demoText, response: resp, usage: { input: 8, output: 14 }, curl: `curl http://127.0.0.1:8000${curlPath} \\\n  -H 'Content-Type: application/json' \\\n  -d '...'` };
         }
         if (path.indexOf("/api/packs") !== -1) {
             if (method !== "POST") return { packs: PACKS };

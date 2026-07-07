@@ -1,0 +1,100 @@
+---
+title: Local API (OpenAI-compatible)
+description: Serve your local coding agents (Claude Code, and Codex/OpenCode where installed) over one OpenAI-compatible HTTP API - route per request by model, with your existing auth, tools, skills and MCP.
+group: Concepts
+order: 35
+---
+import Cmd from "../../../components/Cmd.astro";
+
+`enigma api` exposes your **local coding agents** over an HTTP API that any OpenAI client library can call. Point your existing OpenAI SDK at `http://127.0.0.1:8000/v1` and every request runs through a real agent on your machine - with all of its capabilities: tools, skills, MCP servers, session continuity, and the login you already use.
+
+It is **not** a network proxy to Anthropic. Each request spawns the local agent CLI in headless mode and translates its output into OpenAI (`/v1/chat/completions`) and Anthropic (`/v1/messages`) responses. Nothing new to authenticate: it reuses your active account.
+
+## One server, many agents
+
+A single server can back **several agents at once** - the request's `model` field picks which one:
+
+- `claude-sonnet-5`, `opus`, `haiku`, any `claude-*` id -> **Claude Code**
+- `codex` (or `codex/<model>`) -> **Codex**
+- `opencode` (or `opencode/<provider/model>`) -> **OpenCode**
+
+`--tool` sets the default backend for requests whose model does not name one. `/v1/models` lists only the agents actually installed on your machine. Claude Code is verified end-to-end; the Codex and OpenCode adapters are wired from their documented headless modes (`codex exec --json` and `opencode run`).
+
+## Native and loopback-bound
+
+The server is built into enigma (`node:http`, dependency-free) and binds to `127.0.0.1` only, so it is reachable from your machine and nowhere else. It runs on demand while `enigma api` is open, and stops on Ctrl+C.
+
+## Run it
+
+<Cmd name="enigma api" ex={["enigma api", "enigma api --port 8080", "enigma api --api-key mysecret", "enigma api --tool claude"]}>
+Start the API server. `--port <n>` overrides the port (else the `apiPort` config, default 8000); `--api-key <k>` (or the `ENIGMA_API_KEY` env var) requires a bearer token on every `/v1` route; `--tool <t>` selects which agent backs it (Claude Code by default).
+</Cmd>
+
+## Use it from an OpenAI client
+
+```python
+from openai import OpenAI
+
+client = OpenAI(base_url="http://127.0.0.1:8000/v1", api_key="not-needed")
+resp = client.chat.completions.create(
+    model="claude-sonnet-5",
+    messages=[{"role": "user", "content": "Explain this repo's architecture."}],
+)
+print(resp.choices[0].message.content)
+```
+
+Streaming (`stream=true`), the Anthropic `/v1/messages` shape, and standard OpenAI parameters work as well.
+
+## Endpoints
+
+- `POST /v1/chat/completions` - OpenAI chat completions (streaming and non-streaming).
+- `POST /v1/messages` - Anthropic Messages API shape (streaming and non-streaming).
+- `GET /v1/models` - the model catalog (any `claude-*` id or alias is also accepted).
+- `GET /v1/sessions`, `DELETE /v1/sessions/{id}` - list and drop tracked sessions.
+- `GET /health`, `GET /` - service status and endpoint index.
+
+## Accounts, profiles and packs
+
+Every request can run under a specific **account**, **profile**, or **pack** - the same contexts you use elsewhere in enigma. Set a default for the whole server with a flag, or override it per request in the body:
+
+<Cmd name="enigma api --account work" ex={["enigma api --account work", "enigma api --profile team", "enigma api --pack helio"]}>
+`--account <name>` runs under that account's login, `--profile <name>` uses the profile's account mapping for the backend, and `--pack <id>` runs inside a pack's isolated context (e.g. **Helio** - its skills, commands, sub-agents and MCP, seeded with the pack's account).
+</Cmd>
+
+Per request, add `"account"`, `"profile"`, or `"pack"` to the JSON body (they are ignored by standard OpenAI clients, so they are safe extensions):
+
+```json
+{
+  "model": "claude-sonnet-5",
+  "pack": "helio",
+  "messages": [{ "role": "user", "content": "Scope this target." }]
+}
+```
+
+A request's context wins over the server default, so one server can serve several accounts or packs at once. `GET /health` reports the server's default context.
+
+You can also set a **persisted default** that `enigma api` uses when no flag is given - from the dashboard **Playground** tab ("Save context as `enigma api` default") or the CLI:
+
+<Cmd name="enigma config api-account work" ex={["enigma config api-account work", "enigma config api-pack helio", "enigma config api-account none"]}>
+Persist the default account / profile / pack for the API server (`none` clears it). A per-run flag or a per-request field still overrides it.
+</Cmd>
+
+## Tools and sessions
+
+Tools are off by default so plain chat requests stay fast and OpenAI-compatible. Pass `"enable_tools": true` in the request body to let Claude Code use its tools (Read, Write, Bash, ...); when enabled, it honors your global permission-bypass setting so headless runs never stall on a prompt.
+
+For multi-turn continuity, pass a `"session_id"` in the request - it resumes that Claude Code session. New sessions are tracked and listed under `/v1/sessions`.
+
+## Configure the default port
+
+<Cmd name="enigma config api-port 8080" ex={["enigma config api-port 8080", "enigma api"]}>
+Persist the port `enigma api` binds by default. A `--port` flag still overrides it per run.
+</Cmd>
+
+## Dashboard playground
+
+The local dashboard (`enigma dashboard`) has a **Playground** tab to test the API without leaving the browser: pick the format (OpenAI or Anthropic), a backend/model, optionally an auth key, type a message, and send. Run it **in-process** (no `enigma api` process needed) or **over HTTP** against a running server with its auth key. It shows the response, token usage, and the equivalent `curl` command. HTTP mode only calls loopback servers.
+
+## Security
+
+The server is loopback-only. Add an API key with `--api-key` or `ENIGMA_API_KEY` if other local processes should not reach it; `/v1/models`, `/health` and `/` stay open, every other route requires the bearer token. Requests never leave your machine except as the backing agent's own normal traffic.

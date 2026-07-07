@@ -13,6 +13,7 @@ import { skillsReport } from "./skills";
 import { readProxyStats } from "./proxy";
 import { GUARD_PROTECTIONS, readGlobalGuard } from "./guard-config";
 import { toolPathStatuses } from "./tool-path";
+import { availableAdapters } from "./api-agents";
 
 export interface SystemsStatus {
     /** Context-compression MCP deployed into agents. */
@@ -55,6 +56,8 @@ export interface SystemsStatus {
     skills: { total: number; enigma: number; external: number; disabled: number };
     /** Per-tool launch-path status (name, label, one-line status), for the "Fix tool paths" action. */
     tools: Array<{ name: string; label: string; status: string }>;
+    /** Local OpenAI-compatible API server: the configured port, plus the agents it can back. */
+    api: { port: number; agents: string[] };
 }
 
 
@@ -92,5 +95,6 @@ export function systemsStatus(): SystemsStatus {
             disabled: skills.filter((s) => s.discarded).length,
         },
         tools: toolPathStatuses().map((t) => ({ name: t.name, label: t.label, status: t.status })),
+        api: { port: c.apiPort || 8000, agents: availableAdapters().map((a) => a.tool) },
     };
 }

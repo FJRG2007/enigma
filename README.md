@@ -149,6 +149,22 @@ Opt-in. Shrinks large tool outputs, logs and text to far fewer tokens before the
 
 </td>
 </tr>
+<tr>
+<td>
+
+### <img src="assets/logos/enigma-logo.svg" width="20" height="20" alt="Enigma"/> Local agent API
+
+`enigma api` serves your local coding agents over one **OpenAI-compatible HTTP API** - Claude Code (and Codex/OpenCode where installed), with all of their tools, skills, MCP and sessions. One server, many backends: pick per request via the `model` field. Loopback-only. Point your OpenAI SDK at `http://127.0.0.1:8000/v1`.
+
+</td>
+<td>
+
+### <img src="assets/logos/enigma-logo.svg" width="20" height="20" alt="Enigma"/> Local dashboard
+
+A loopback browser control panel for all of enigma - accounts, skills, settings, system cleanup - that also shows real Claude usage and measured savings. Nothing leaves your machine.
+
+</td>
+</tr>
 </table>
 
 The first install is the only one you run by hand: launching a tool through enigma
@@ -217,6 +233,9 @@ enigma compress [file] Compress JSON/logs/text to fewer tokens (reversible);
                        --retrieve <hash> restores, --stats shows total savings,
                        --clear wipes all dashboard data (stats/history/cache)
 enigma mcp             Run the context-compression MCP server over stdio
+enigma api             Serve a local OpenAI-compatible API for your agents (Claude Code, and
+                       Codex/OpenCode where installed); route per request by the model field.
+                       --port, --api-key, --tool (default backend). Loopback-only
 enigma dashboard|dash  Open the local dashboard (manage enigma; see savings) in your browser (http://enigma,
                        or http://localhost:24282 if :80/hosts is unavailable)
 enigma seal            Maintenance: (re)compute skill content hashes

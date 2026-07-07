@@ -94,6 +94,20 @@ export async function runConfigCli(positionals: string[], scope: Scope | null, i
         return 0;
     }
 
+    // api-port is a numeric setting (the local Claude Code API server's preferred port),
+    // outside the boolean/choice registry. Takes effect on the next `enigma api` run.
+    if (rawKey === "api-port") {
+        const n = Number(rawValue);
+        if (rawValue === undefined || !Number.isInteger(n) || n < 1 || n > 65535) {
+            console.error("Missing/invalid value for 'api-port'. Usage: enigma config api-port <1-65535> (default 8000) [-g|-l]");
+            return 1;
+        }
+        const target: Scope = scope || "global";
+        const path = setEnigmaValue("apiPort", n, target);
+        console.log(`Set api-port = ${n} (${target})${path ? ` in ${path}` : ""}. Applies on the next 'enigma api' run.`);
+        return 0;
+    }
+
     // Plan window limits (numeric, USD-free token caps) + the weekly reset anchor. These
     // drive the Claude-style usage gauges and sit outside the boolean/choice registry, like
     // token-price/token-speed. 0 = unset (the gauge shows tokens instead of a %).
@@ -111,6 +125,17 @@ export async function runConfigCli(positionals: string[], scope: Scope | null, i
         console.log(`Set ${rawKey} = ${n} tokens (${target})${path ? ` in ${path}` : ""}.`);
         return 0;
     }
+    // Default API context (account/profile/pack) - free-form string configs; "none"/empty clears.
+    const API_CONTEXT: Record<string, "apiAccount" | "apiProfile" | "apiPack"> = {
+        "api-account": "apiAccount", "api-profile": "apiProfile", "api-pack": "apiPack",
+    };
+    if (rawKey in API_CONTEXT) {
+        const value = rawValue === undefined || rawValue === "" || rawValue.toLowerCase() === "none" ? "" : rawValue;
+        const target: Scope = scope || "global";
+        const path = setEnigmaValue(API_CONTEXT[rawKey]!, value, target);
+        console.log(`Set ${rawKey} = ${value || "(unset)"} (${target})${path ? ` in ${path}` : ""}. Applies on the next 'enigma api' run.`);
+        return 0;
+    }
     if (rawKey === "plan-weekly-reset") {
         if (rawValue === undefined || !/^[a-z]{3}\s+\d{1,2}:\d{2}$/i.test(rawValue)) {
             console.error("Missing/invalid value for 'plan-weekly-reset'. Usage: enigma config plan-weekly-reset \"<weekday> HH:MM\" (e.g. \"mon 11:00\") [-g|-l]");
@@ -124,7 +149,7 @@ export async function runConfigCli(positionals: string[], scope: Scope | null, i
 
     const setting = ALL_SETTINGS.find((s) => s.key === rawKey);
     if (!setting) {
-        console.error(`Unknown config key: ${rawKey}. Known keys: ${ALL_SETTINGS.map((s) => s.key).join(", ")}, token-price, token-speed, dashboard-port, plan-session-limit, plan-weekly-limit, plan-weekly-sonnet-limit, plan-weekly-opus-limit, plan-weekly-reset.`);
+        console.error(`Unknown config key: ${rawKey}. Known keys: ${ALL_SETTINGS.map((s) => s.key).join(", ")}, token-price, token-speed, dashboard-port, api-port, api-account, api-profile, api-pack, plan-session-limit, plan-weekly-limit, plan-weekly-sonnet-limit, plan-weekly-opus-limit, plan-weekly-reset.`);
         return 1;
     }
 

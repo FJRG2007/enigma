@@ -124,6 +124,14 @@ Shrink JSON, logs or text to fewer tokens, reversibly (the original is cached an
 Run the context-compression MCP server over stdio (used by the agents when `compress` is on).
 </Cmd>
 
+## api
+
+Serve your local Claude Code over an OpenAI-compatible HTTP API - all of its tools, skills, MCP and sessions, reachable from any OpenAI client library. Loopback-only. See <a href={docHref("concepts/api")}>Local API</a> for detail.
+
+<Cmd name="enigma api" ex={["enigma api", "enigma api --port 8080", "enigma api --api-key mysecret"]}>
+Endpoints under `/v1` (chat/completions, messages, models, sessions). `--port <n>` overrides the port (else the `apiPort` config, default 8000); `--api-key <k>` (or `ENIGMA_API_KEY`) gates every `/v1` route; `--tool <t>` selects the backing agent. Ctrl+C to stop.
+</Cmd>
+
 ## dashboard
 
 A loopback-only browser control panel for all of enigma - accounts, skills, settings, system cleanup - that also shows real Claude usage and measured savings. Nothing leaves your machine.

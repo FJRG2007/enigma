@@ -55,7 +55,7 @@ const PKG = readJson<{ version?: string }>(join(__dirname, "..", "package.json")
 // Fixed commands plus one launch command per supported tool (e.g. `enigma claude`).
 const COMMANDS = new Set<string>([
     "install", "update", "security", "guard", "seal", "check", "config", "account", "accounts",
-    "profile", "profiles", "skill", "skills", "issue", "improve", "compress", "mcp", "gate", "dashboard", "dash", "fix-path", "resources", "recall", "codegraph", "autoskills", "statusline", "help", "version",
+    "profile", "profiles", "skill", "skills", "issue", "improve", "compress", "mcp", "api", "gate", "dashboard", "dash", "fix-path", "resources", "recall", "codegraph", "autoskills", "statusline", "help", "version",
     "pack", "packs",
     ...TOOL_NAMES,
     ...PACKS.map((p) => p.id),
@@ -89,6 +89,14 @@ interface CliOptions extends InstallOptions {
     base: string | null;
     /** `account provider`: model id for a provider override. */
     providerModel: string | null;
+    /** `api`: port override for the local Claude Code API server. */
+    port: number | null;
+    /** `api`: optional bearer key required by the local API server. */
+    apiKey: string | null;
+    /** `api`: default account / profile / pack context every request runs under. */
+    apiAccount: string | null;
+    apiProfile: string | null;
+    apiPack: string | null;
 }
 
 function parseArgs(argv: string[]): CliOptions {
@@ -100,6 +108,7 @@ function parseArgs(argv: string[]): CliOptions {
         force: false, all: false, yes: false, login: false, dryRun: false, help: false, version: false,
         stats: false, retrieve: null, compressType: null, clear: false,
         preset: null, token: null, base: null, providerModel: null,
+        port: null, apiKey: null, apiAccount: null, apiProfile: null, apiPack: null,
     };
     for (let i = 0; i < argv.length; i++) {
         const a = argv[i]!;
@@ -131,6 +140,11 @@ function parseArgs(argv: string[]): CliOptions {
             case "--token": opts.token = next(); break;
             case "--base": opts.base = next(); break;
             case "--model": opts.providerModel = next(); break;
+            case "--port": opts.port = Number(next()); break;
+            case "--api-key": opts.apiKey = next(); break;
+            case "--account": opts.apiAccount = next(); break;
+            case "--profile": opts.apiProfile = next(); break;
+            case "--pack": opts.apiPack = next(); break;
             case "--stats": opts.stats = true; break;
             case "--retrieve": opts.retrieve = next(); break;
             case "--type": opts.compressType = next(); break;
@@ -211,6 +225,15 @@ Commands:
   mcp                  Run the context-compression MCP server over stdio (tools:
                        enigma_compress, enigma_retrieve, enigma_stats). Usually launched
                        by an agent, not by hand; enable deployment with 'config compress on'
+  api                  Serve a local OpenAI-compatible API backed by your local coding agents
+                       (Claude Code, and Codex/OpenCode where installed) - all of their
+                       tools/skills/MCP/sessions via the local CLI. One server, many backends:
+                       pick per request via the model field (claude-sonnet-5 | codex | opencode).
+                       Run requests under an account, profile or pack (e.g. Helio): --account,
+                       --profile, --pack set the default; a request body can override with
+                       account/profile/pack. Endpoints under /v1 (chat/completions, messages,
+                       models, sessions). --port <n> (else config apiPort, default 8000),
+                       --api-key <k> (or ENIGMA_API_KEY), --tool <t> = default backend. Loopback
   dashboard, dash      Open the local savings dashboard in your browser (http://enigma,
                        or http://localhost:24282 if :80/hosts is unavailable). Runs only
                        while open; 'config dashboard always' keeps a background daemon
@@ -1220,6 +1243,41 @@ async function runDashboardCli(version: string): Promise<number> {
 }
 
 /**
+ * `enigma api`: serve the local OpenAI-compatible API for Claude Code. Every request
+ * spawns the local `claude` CLI in headless mode, so all of its capabilities (tools,
+ * skills, MCP, sessions, the user's auth) are reachable from any OpenAI client library.
+ * Loopback-bound. Blocks until Ctrl+C. Port comes from --port, else the apiPort config
+ * (default 8000); an optional key from --api-key or ENIGMA_API_KEY gates every /v1 route.
+ */
+async function runApiCli(opts: CliOptions): Promise<number> {
+    const cfg = readConfig().config;
+    const port = opts.port && opts.port > 0 ? opts.port : cfg.apiPort || 8000;
+    const apiKey = opts.apiKey ?? process.env.ENIGMA_API_KEY ?? null;
+    const tool = opts.tool || "claude";
+    const { startApiServer } = await import("./api-server");
+    const { availableAdapters } = await import("./api-agents");
+    // Per-run flags win; otherwise fall back to the persisted defaults (settable from the dashboard).
+    const account = opts.apiAccount ?? (cfg.apiAccount || null);
+    const profile = opts.apiProfile ?? (cfg.apiProfile || null);
+    const pack = opts.apiPack ?? (cfg.apiPack || null);
+    let server: Awaited<ReturnType<typeof startApiServer>>;
+    try { server = await startApiServer({ port, apiKey, tool, account, profile, pack }); }
+    catch (err) { console.error(`Could not start the API server: ${(err as Error).message}`); return 1; }
+    const agents = availableAdapters().map((a) => a.tool);
+    console.log(`enigma api (default ${tool}) -> ${server.url}`);
+    console.log(`OpenAI base URL: ${server.url}/v1${apiKey ? "  (Authorization: Bearer <key> required)" : "  (no auth - loopback only)"}`);
+    console.log(`Backends available: ${agents.length ? agents.join(", ") : "(none installed)"} - pick one per request via the model field (e.g. "claude-sonnet-5", "codex", "opencode").`);
+    const ctx = [pack && `pack ${pack}`, account && `account ${account}`, profile && `profile ${profile}`].filter(Boolean).join(", ");
+    console.log(ctx ? `Default context: ${ctx} (override per request with account/profile/pack in the body).` : "Context: active account (override per request with account/profile/pack in the body).");
+    console.log("Press Ctrl+C to stop.");
+    return await new Promise<number>((resolveExit) => {
+        const stop = (): void => { server.close(); resolveExit(0); };
+        process.on("SIGINT", stop);
+        process.on("SIGTERM", stop);
+    });
+}
+
+/**
  * Print the [ENIGMA] status badge for an agent status bar (e.g. Claude Code's
  * statusLine). Always shows `[ENIGMA]`; when token-efficient output is active it
  * appends the level, e.g. `[ENIGMA:FULL]` / `[ENIGMA:ULTRA]`. Amber unless NO_COLOR.
@@ -1324,6 +1382,7 @@ export async function run(argv: string[]): Promise<void> {
     if (opts.command === "recall") { process.exit(await runRecallCli(opts.positionals)); }
     if (opts.command === "codegraph") { process.exit(await runCodeGraphCli(opts.positionals)); }
     if (opts.command === "autoskills") { process.exit(await runAutoskillsCli(opts, interactive)); }
+    if (opts.command === "api") { process.exit(await runApiCli(opts)); }
 
     if (opts.command === "update") {
         p.intro("enigma - update");

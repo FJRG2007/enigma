@@ -103,6 +103,7 @@ const STATUS = {
             guardProtects: ["Block committed secrets", "Block .env files", "Block dependency/cache dirs", "Warn on generated dirs", "Warn on log / OS junk files", "Warn on files over 5 MB"],
         },
         skills: { total: 19, enigma: 17, external: 2, disabled: 0 },
+        api: { port: 8000, agents: ["claude", "codex", "opencode"] },
     },
 };
 

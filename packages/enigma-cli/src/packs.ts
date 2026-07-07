@@ -552,6 +552,27 @@ export function listPacks(): PackView[] {
  * resolution: explicit > the pack's pinned default > the active profile / tool-active account.
  * Resolves with the tool's exit code (returns 1 with a message on any setup problem).
  */
+/**
+ * Prepare a pack's isolated context for a given tool WITHOUT launching it, and return the
+ * context directory. Mirrors launchPack's setup (resolve the seed account, fetch + enable the
+ * pack, deploy its harness, seed credentials, reconcile the session) so a caller can spawn the
+ * agent itself with the context dir - used by the local API server to serve requests inside a
+ * pack (e.g. Helio). Throws on any unrecoverable error. `account` overrides the pack default.
+ */
+export function ensurePackContext(id: string, tool: string = DEFAULT_TOOL, account?: string): string {
+    const pack = getPack(id);
+    if (!pack) throw new Error(`Unknown pack '${id}'.`);
+    if (!isToolName(tool)) throw new Error(`Unknown tool '${tool}'.`);
+    const seedAccount = resolvePackAccount(id, tool, account);
+    if (!ensurePackInstalled(id)) throw new Error(`Could not fetch the ${pack.label} pack (${pack.pkg}). Check your network and npm.`);
+    if (!isPackEnabled(id)) enablePack(id);
+    const dir = deployPack(id, tool);
+    if (!dir) throw new Error(`${pack.label} pack assets are missing.`);
+    seedCredentials(id, tool, seedAccount);
+    reconcilePackSession(id, tool, seedAccount);
+    return dir;
+}
+
 export async function launchPack(id: string, tool: string = DEFAULT_TOOL, passthrough: string[] = [], account?: string): Promise<number> {
     const pack = getPack(id);
     if (!pack) { process.stderr.write(`Unknown pack '${id}'.\n`); return 1; }

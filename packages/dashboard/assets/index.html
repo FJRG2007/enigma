@@ -352,6 +352,15 @@
         .linput { flex: 1; min-width: 0; background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-radius: 7px; padding: 5px 10px; font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
         .laddb { background: var(--surface2); color: var(--accent); border: 1px solid var(--border); border-radius: 7px; padding: 5px 14px; font-size: 12px; cursor: pointer; font-family: inherit; }
         .laddb:hover { border-color: var(--accent); }
+        /* API playground form + output. */
+        .pg-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-bottom: 12px; }
+        .pg-field { display: flex; flex-direction: column; gap: 5px; margin-top: 8px; }
+        .pg-field > span { font-size: 12px; color: var(--muted); }
+        .pg-field > span small { color: var(--muted); opacity: .7; }
+        .pg-textarea { min-height: 92px; resize: vertical; line-height: 1.5; }
+        .pg-check { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--text); padding-top: 4px; }
+        .pg-check label { color: var(--muted); }
+        .pg-out { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; word-break: break-word; overflow-x: auto; max-height: 360px; overflow-y: auto; margin: 0; }
         /* Claude-style usage window gauges (current session / weekly all / weekly Sonnet). */
         .wgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin-bottom: 18px; }
         .wcard { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; box-shadow: var(--shadow-1); }
@@ -527,6 +536,7 @@
             <a href="#/resources" data-view="resources" class="tab">Resources</a>
             <a href="#/recall" data-view="recall" class="tab">Recall</a>
             <a href="#/codegraph" data-view="codegraph" class="tab">Code graph</a>
+            <a href="#/playground" data-view="playground" class="tab">Playground</a>
             <a href="#/packs" data-view="packs" class="tab">Packs</a>
         </nav>
         <div class="nav">
@@ -890,6 +900,78 @@
             <div class="ladd" style="gap:8px;flex-wrap:wrap"><input id="cgRoot" class="linput" placeholder="absolute project path (optional)" style="flex:1;min-width:240px"><button id="cgIndex" type="button" class="toggle on">Index</button></div>
         </div>
         <div id="cgBody"><div class="empty" style="padding:12px 0">Loading...</div></div>
+    </section>
+
+    <section id="view-playground" style="display:none">
+        <div class="page-head">
+            <h1>API Playground</h1>
+            <p>Test the local agent API without leaving the dashboard. Pick a format (OpenAI or Anthropic), a backend, and send a message. Run it in-process (no server needed) or against a running <code>enigma api</code> with an auth key.</p>
+        </div>
+        <div class="panel">
+            <div class="pg-grid">
+                <label class="pg-field"><span>Run</span>
+                    <select id="pgMode">
+                        <option value="inproc">In-process (no server)</option>
+                        <option value="http">HTTP to a running server</option>
+                    </select>
+                </label>
+                <label class="pg-field"><span>Format</span>
+                    <select id="pgFormat">
+                        <option value="openai">OpenAI (/v1/chat/completions)</option>
+                        <option value="anthropic">Anthropic (/v1/messages)</option>
+                    </select>
+                </label>
+                <label class="pg-field"><span>Backend / model</span>
+                    <select id="pgModel" data-dd-icons="agent"></select>
+                </label>
+                <label class="pg-field pg-http" style="display:none"><span>Base URL</span>
+                    <input id="pgBase" class="linput" placeholder="http://127.0.0.1:8000">
+                </label>
+                <label class="pg-field pg-http" style="display:none"><span>Auth key <small>(optional)</small></span>
+                    <input id="pgKey" class="linput" type="password" placeholder="Bearer token / ENIGMA_API_KEY">
+                </label>
+                <label class="pg-field"><span>Account <small>(optional)</small></span>
+                    <select id="pgAccount"><option value="">(active)</option></select>
+                </label>
+                <label class="pg-field"><span>Profile <small>(optional)</small></span>
+                    <select id="pgProfile"><option value="">(none)</option></select>
+                </label>
+                <label class="pg-field"><span>Pack <small>(optional)</small></span>
+                    <select id="pgPack"><option value="">(none)</option></select>
+                </label>
+                <label class="pg-field pg-tools"><span>Tools</span>
+                    <span class="pg-check"><input id="pgTools" type="checkbox"> <label for="pgTools">Enable agent tools (Read/Write/Bash...)</label></span>
+                </label>
+            </div>
+            <div class="ladd" style="gap:8px;align-items:center">
+                <button id="pgSaveDefault" type="button" class="laddb">Save context as <code>enigma api</code> default</button>
+                <span id="pgDefaultNote" class="set-hint"></span>
+            </div>
+            <label class="pg-field"><span>System prompt <small>(optional)</small></span>
+                <input id="pgSystem" class="linput" placeholder="e.g. You are a terse assistant.">
+            </label>
+            <label class="pg-field"><span>Message</span>
+                <textarea id="pgMessage" class="linput pg-textarea" placeholder="Ask the agent something...">Reply with exactly: playground-ok</textarea>
+            </label>
+            <div class="ladd" style="gap:8px">
+                <button id="pgSend" type="button" class="toggle on">Send</button>
+                <span id="pgStatus" class="set-hint"></span>
+            </div>
+        </div>
+        <div id="pgResult" style="display:none">
+            <div class="panel">
+                <div class="set-cat-h">Response <span id="pgMeta" class="tag"></span></div>
+                <pre id="pgText" class="pg-out"></pre>
+            </div>
+            <div class="panel">
+                <div class="set-cat-h">Raw response</div>
+                <pre id="pgRaw" class="pg-out"></pre>
+            </div>
+            <div class="panel">
+                <div class="set-cat-h">curl <button id="pgCopyCurl" type="button" class="iconbtn" title="Copy" aria-label="Copy curl">Copy</button></div>
+                <pre id="pgCurl" class="pg-out"></pre>
+            </div>
+        </div>
     </section>
 
     <footer>
@@ -3179,6 +3261,8 @@ export {
                 + item("Real tool-usage stats · measured", boolPill(s.usageStats))
                 + item("Claude Code proxy · experimental", boolPill(s.proxy))
                 + item("Live usage windows · real", boolPill(s.usageApi))
+                + item("Local API server (OpenAI-compatible)", '<span class="tag">enigma api · port ' + esc(String((s.api && s.api.port) || 8000)) + "</span>"
+                    + (((s.api && s.api.agents) || []).map(function (a) { return agentSvg ? '<span class="aicon" title="' + esc(a) + '">' + agentSvg(a) + "</span>" : '<span class="tag">' + esc(a) + "</span>"; }).join("")))
                 + proxyMeasured
                 + proxyLast
                 + promptGuard
@@ -3746,7 +3830,7 @@ export {
 
         // --- hash routing between the subpages ---
         // Single source of truth for the subpage ids (savings is the default/fallback).
-        const VIEWS = ["savings", "usage", "accounts", "skills", "settings", "resources", "recall", "codegraph", "packs"];
+        const VIEWS = ["savings", "usage", "accounts", "skills", "settings", "resources", "recall", "codegraph", "playground", "packs"];
         // Views that apply to a single project; the rest are global/machine-level only.
         const PROJECT_VIEWS = ["settings", "skills"];
         let activeView = "savings";
@@ -3768,6 +3852,7 @@ export {
             else if (v === "resources") loadResources();
             else if (v === "recall") loadRecall();
             else if (v === "codegraph") loadCodeGraph();
+            else if (v === "playground") { if (!playgroundLoaded) { playgroundLoaded = true; loadPlayground(); } }
             else if (v === "packs") loadPacks();
             // The chart was sized while its view may have been hidden; nudge it on return.
             else if (v === "savings") { loadSystems(true); if (chart) { try { applyRange(); } catch { /* not ready */ } } }
@@ -3972,6 +4057,115 @@ export {
                 if (!b) return;
                 cgProject = b.dataset.cgProject;
                 loadCodeGraph();
+            });
+        }
+
+        // --- API playground (test the local agent API; drives a real agent) ---
+        let playgroundLoaded = false;
+        async function loadPlayground() {
+            let info = { agents: [], models: [], apiPort: 8000 };
+            try { info = await (await fetch("/api/playground", { cache: "no-store" })).json(); } catch { /* keep defaults */ }
+            // Populate the backend/model dropdown from the installed agents' model lists.
+            const sel = $("pgModel");
+            const opts = [];
+            (info.models || []).forEach((m) => (m.models || []).forEach((id) => opts.push('<option value="' + esc(id) + '">' + esc(id) + " (" + esc(m.tool) + ")</option>")));
+            if (!opts.length) opts.push('<option value="claude">claude (default)</option>');
+            sel.innerHTML = opts.join("");
+            syncDD(sel);
+            // Context selectors: account (labeled by tool), profile, pack.
+            const acc = $("pgAccount");
+            acc.innerHTML = '<option value="">(active)</option>' + (info.accounts || []).map((a) => '<option value="' + esc(a.name) + '">' + esc(a.name) + " (" + esc(a.tool) + ")</option>").join("");
+            syncDD(acc);
+            const prof = $("pgProfile");
+            prof.innerHTML = '<option value="">(none)</option>' + (info.profiles || []).map((n) => '<option value="' + esc(n) + '">' + esc(n) + "</option>").join("");
+            syncDD(prof);
+            const pk = $("pgPack");
+            pk.innerHTML = '<option value="">(none)</option>' + (info.packs || []).map((p) => '<option value="' + esc(p.id) + '">' + esc(p.label) + (p.installed ? "" : " - not installed") + "</option>").join("");
+            syncDD(pk);
+            // Pre-select the persisted server default so the playground matches `enigma api`.
+            const def = info.defaults || { account: "", profile: "", pack: "" };
+            acc.value = def.account || ""; syncDD(acc);
+            prof.value = def.profile || ""; syncDD(prof);
+            pk.value = def.pack || ""; syncDD(pk);
+            renderPgDefault(def);
+            $("pgBase").placeholder = "http://127.0.0.1:" + (info.apiPort || 8000);
+            pgSyncMode();
+        }
+        function renderPgDefault(def) {
+            def = def || {};
+            const parts = [def.pack && "pack " + def.pack, def.account && "account " + def.account, def.profile && "profile " + def.profile].filter(Boolean);
+            $("pgDefaultNote").textContent = parts.length ? "Current default: " + parts.join(", ") : "Current default: active account";
+        }
+        function pgSyncMode() {
+            const http = $("pgMode").value === "http";
+            document.querySelectorAll(".pg-http").forEach((el) => { el.style.display = http ? "" : "none"; });
+        }
+        async function pgSend() {
+            const message = $("pgMessage").value.trim();
+            if (!message) { toast.error("Enter a message to send."); return; }
+            const payload = {
+                mode: $("pgMode").value,
+                format: $("pgFormat").value,
+                model: $("pgModel").value,
+                system: $("pgSystem").value.trim() || undefined,
+                message,
+                enableTools: $("pgTools").checked,
+                account: $("pgAccount").value || undefined,
+                profile: $("pgProfile").value || undefined,
+                pack: $("pgPack").value || undefined,
+                baseUrl: $("pgBase").value.trim() || undefined,
+                apiKey: $("pgKey").value || undefined,
+            };
+            const btn = $("pgSend");
+            btn.disabled = true;
+            $("pgStatus").textContent = "Running...";
+            const t = toast.loading("Sending to the agent...", { id: "pgRun" });
+            try {
+                const res = await fetch("/api/playground", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+                const out = await res.json();
+                renderPlaygroundResult(out);
+                if (out.ok) toast.success("Response received" + (out.tool ? " from " + out.tool : ""), { id: "pgRun" });
+                else toast.error(out.error || "Request failed", { id: "pgRun" });
+            } catch (e) {
+                toast.error("Could not reach the dashboard server.", { id: "pgRun" });
+            } finally {
+                btn.disabled = false;
+                $("pgStatus").textContent = "";
+            }
+        }
+        function renderPlaygroundResult(out) {
+            out = out || {};
+            $("pgResult").style.display = "";
+            const meta = [];
+            if (out.format) meta.push(out.format === "anthropic" ? "Anthropic" : "OpenAI");
+            if (out.tool) meta.push(out.tool);
+            if (typeof out.status === "number") meta.push("HTTP " + out.status);
+            if (out.usage) meta.push(out.usage.input + " in / " + out.usage.output + " out");
+            $("pgMeta").textContent = meta.join(" · ");
+            $("pgText").textContent = out.ok ? (out.text || "(empty response)") : ("[error] " + (out.error || "unknown error"));
+            $("pgRaw").textContent = out.response ? (typeof out.response === "string" ? out.response : JSON.stringify(out.response, null, 2)) : "";
+            $("pgCurl").textContent = out.curl || "";
+        }
+        async function pgSaveDefault() {
+            const payload = { op: "set-defaults", account: $("pgAccount").value || "", profile: $("pgProfile").value || "", pack: $("pgPack").value || "" };
+            try {
+                const out = await (await fetch("/api/playground", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })).json();
+                if (out.ok) { renderPgDefault(out.defaults); toast.success("Saved as the enigma api default"); }
+                else toast.error(out.error || "Could not save the default");
+            } catch { toast.error("Could not reach the dashboard server."); }
+        }
+        function wirePlayground() {
+            $("pgSend").addEventListener("click", pgSend);
+            $("pgSaveDefault").addEventListener("click", pgSaveDefault);
+            $("pgMode").addEventListener("change", pgSyncMode);
+            $("pgCopyCurl").addEventListener("click", () => {
+                const txt = $("pgCurl").textContent || "";
+                if (!txt) return;
+                (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(() => toast.success("Copied curl")).catch(() => {
+                    const ta = document.createElement("textarea"); ta.value = txt; document.body.appendChild(ta); ta.select();
+                    try { document.execCommand("copy"); toast.success("Copied curl"); } catch { toast.error("Copy failed"); }
+                    document.body.removeChild(ta);
+                });
             });
         }
 
@@ -4544,6 +4738,7 @@ export {
         wireResources();
         wireRecall();
         wireCodeGraph();
+        wirePlayground();
         wirePacks();
         wireScope();
         enhanceAll(); // upgrade every static <select> into the shared pretty dropdown

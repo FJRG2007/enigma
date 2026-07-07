@@ -147,6 +147,19 @@ export interface EnigmaConfig {
      */
     dashboardPort: number;
     /**
+     * Preferred port for the local OpenAI-compatible API server (`enigma api`), which exposes
+     * the local Claude Code over an HTTP API. Default 8000; overridable per run with --port.
+     */
+    apiPort: number;
+    /**
+     * Default context the local API server (`enigma api`) runs requests under, settable from
+     * the dashboard or CLI. Empty = the active account. A `--account`/`--profile`/`--pack` flag
+     * or a per-request account/profile/pack field overrides these. `apiPack` wins over the others.
+     */
+    apiAccount: string;
+    apiProfile: string;
+    apiPack: string;
+    /**
      * Persisted absolute launch path per tool, keyed by tool name (e.g. claude).
      * Set by `enigma fix-path` when a tool is installed but not on PATH; consumed by
      * launchTool (accounts.ts) between the ENIGMA_<TOOL>_BIN env override and a plain
@@ -225,7 +238,7 @@ export const CONFIG_DEFAULTS: EnigmaConfig = {
     commitEmoji: true, updateNotifier: true, fullscreen: true, parallelSubagents: false, outputStyle: "off", minimalCode: "full",
     autoSync: true, remoteSkills: true, skillUpdatePolicy: "overwrite", permissionBypass: true, autoLint: false, compress: false, codeGraph: false, gate: false, dashboard: "off", tokenPrice: 0, tokenSpeed: 0, usageStats: false, recall: false, recallLlm: true, recallProvider: "claude-local", recallModel: "", recallApiBase: "", recallApiKey: "", proxy: false, usageApi: false, promptSecretGuard: false, promptSecretMode: "redact",
     planSessionLimit: 0, planWeeklyLimit: 0, planWeeklySonnetLimit: 0, planWeeklyOpusLimit: 0, planWeeklyReset: "mon 00:00",
-    dashboardLive: true, dashboardPort: 0, toolPaths: {}, bypassDisabled: [], discardedSkills: [], skillAgentsOff: {}, packs: [], packAccounts: {},
+    dashboardLive: true, dashboardPort: 0, apiPort: 8000, apiAccount: "", apiProfile: "", apiPack: "", toolPaths: {}, bypassDisabled: [], discardedSkills: [], skillAgentsOff: {}, packs: [], packAccounts: {},
 };
 
 export type EnigmaConfigKey = keyof EnigmaConfig;

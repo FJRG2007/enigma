@@ -81,8 +81,8 @@ export function exportBundle(): ConfigBundle {
 export interface ImportResult { ok: boolean; error?: string; applied: string[]; skipped: string[]; }
 
 /** Allowed config keys = the settings registry + the numeric/string knobs outside it (no secrets). */
-const NUMERIC_KEYS = new Set(["tokenPrice", "tokenSpeed", "dashboardPort"]);
-const STRING_KEYS = new Set(["recallProvider", "recallModel", "recallApiBase"]);
+const NUMERIC_KEYS = new Set(["tokenPrice", "tokenSpeed", "dashboardPort", "apiPort"]);
+const STRING_KEYS = new Set(["recallProvider", "recallModel", "recallApiBase", "apiAccount", "apiProfile", "apiPack"]);
 function isImportableConfigKey(key: string): boolean {
     if (SECRET_CONFIG_KEYS.includes(key)) return false;
     return NUMERIC_KEYS.has(key) || STRING_KEYS.has(key) || ALL_SETTINGS.some((s) => s.key.replace(/-/g, "") === key.toLowerCase());

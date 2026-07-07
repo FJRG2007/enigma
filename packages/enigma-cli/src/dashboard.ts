@@ -490,6 +490,38 @@ function writeCodeGraph(req: import("node:http").IncomingMessage, res: import("n
     });
 }
 
+/** Serve the playground info (installed agents + their models + the default API port). */
+function servePlayground(res: import("node:http").ServerResponse): void {
+    import("./dashboard-playground")
+        .then((m) => { res.writeHead(200, JSON_HDR); res.end(JSON.stringify(m.playgroundInfo())); })
+        .catch(() => { res.writeHead(500, JSON_HDR); res.end('{"error":"playground unavailable"}'); });
+}
+
+/**
+ * Playground POST: either persist the default API context ({ op: "set-defaults", account?,
+ * profile?, pack? }) or run a request (drives a real agent in-process, or forwards to a loopback
+ * server). Both are origin-guarded at the route.
+ */
+function runPlaygroundRoute(req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse): void {
+    let body = "";
+    req.on("data", (chunk) => { body += chunk; if (body.length > 65536) req.destroy(); });
+    req.on("end", () => {
+        let parsed: import("./dashboard-playground").PlaygroundRequest & { op?: string };
+        try { parsed = JSON.parse(body || "{}"); } catch { res.writeHead(400, JSON_HDR); res.end('{"error":"bad json"}'); return; }
+        void (async () => {
+            try {
+                const m = await import("./dashboard-playground");
+                const out = parsed.op === "set-defaults"
+                    ? m.setApiDefaults({ account: parsed.account, profile: parsed.profile, pack: parsed.pack })
+                    : await m.runPlayground(parsed);
+                res.writeHead(out.ok ? 200 : 400, JSON_HDR); res.end(JSON.stringify(out));
+            } catch (err) {
+                res.writeHead(500, JSON_HDR); res.end(JSON.stringify({ ok: false, error: (err as Error).message }));
+            }
+        })();
+    });
+}
+
 /** Factual "what's active" overview (configured state of each enigma system + skill counts). */
 function serveStatus(res: import("node:http").ServerResponse): void {
     import("./dashboard-status")
@@ -764,6 +796,13 @@ function createDashboardServer(version: string): Server {
             if (!isLocalRequest(req)) { res.writeHead(403, JSON_HDR); res.end('{"error":"forbidden"}'); return; }
             if (method === "GET") { serveCodeGraph(req, res); return; }
             if (method === "POST") { writeCodeGraph(req, res); return; }
+            res.writeHead(405).end(); return;
+        }
+        // The API playground drives a real agent (spawns / makes a request), so it is origin-guarded.
+        if (url === "/api/playground") {
+            if (!isLocalRequest(req)) { res.writeHead(403, JSON_HDR); res.end('{"error":"forbidden"}'); return; }
+            if (method === "GET") { servePlayground(res); return; }
+            if (method === "POST") { runPlaygroundRoute(req, res); return; }
             res.writeHead(405).end(); return;
         }
         // Accounts/profiles management + config import/export are write/structure surfaces, origin-guarded.
