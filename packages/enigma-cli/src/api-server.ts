@@ -22,17 +22,27 @@ import {
     resolveAdapter,
     availableAdapters,
     estimateTokens,
+    DEFAULT_MODEL,
     type AgentAdapter,
     type CompletionOptions,
+    type ImageBlock,
 } from "./api-agents";
 
-/** Minimal OpenAI chat message (content may be a string or a content-part array). */
-export interface ChatMessage {
-    role: "system" | "user" | "assistant";
-    content: string | Array<{ type?: string; text?: string }>;
+/** A content part in an OpenAI/Anthropic message: text, an OpenAI image_url, or an Anthropic image. */
+interface ContentPart {
+    type?: string;
+    text?: string;
+    image_url?: { url?: string } | string;
+    source?: { type?: string; media_type?: string; data?: string; url?: string };
 }
 
-/** Coerce OpenAI message content (string or text parts) into a single string. */
+/** Minimal chat message (content may be a string or a content-part array with text and images). */
+export interface ChatMessage {
+    role: "system" | "user" | "assistant";
+    content: string | ContentPart[];
+}
+
+/** Coerce message content (string or parts) into a single string, keeping only text. */
 export function contentToText(content: ChatMessage["content"]): string {
     if (typeof content === "string") return content;
     if (!Array.isArray(content)) return "";
@@ -40,6 +50,39 @@ export function contentToText(content: ChatMessage["content"]): string {
         .filter((p) => p && (p.type === undefined || p.type === "text") && typeof p.text === "string")
         .map((p) => p.text as string)
         .join("\n");
+}
+
+/** Translate an OpenAI `image_url` value (data URL or http URL) into an Anthropic image block. */
+function openAIImage(url: string): ImageBlock | null {
+    const data = /^data:([^;]+);base64,(.+)$/i.exec(url);
+    if (data) return { type: "image", source: { type: "base64", media_type: data[1]!, data: data[2]! } };
+    if (/^https?:\/\//i.test(url)) return { type: "image", source: { type: "url", url } };
+    return null;
+}
+
+/**
+ * Collect image content blocks from all messages, in Anthropic shape. Handles OpenAI
+ * `image_url` parts (data or http URLs) and native Anthropic `image` blocks (passed through),
+ * so both request formats can carry vision content (Claude Code applies it; other agents ignore).
+ */
+export function extractImages(messages: ChatMessage[]): ImageBlock[] {
+    const images: ImageBlock[] = [];
+    for (const m of messages) {
+        if (!Array.isArray(m.content)) continue;
+        for (const part of m.content) {
+            if (!part) continue;
+            if (part.type === "image_url") {
+                const url = typeof part.image_url === "string" ? part.image_url : part.image_url?.url;
+                const block = url ? openAIImage(url) : null;
+                if (block) images.push(block);
+            } else if (part.type === "image" && part.source && (part.source.data || part.source.url)) {
+                images.push(part.source.type === "url" && part.source.url
+                    ? { type: "image", source: { type: "url", url: part.source.url } }
+                    : { type: "image", source: { type: "base64", media_type: part.source.media_type || "image/png", data: part.source.data || "" } });
+            }
+        }
+    }
+    return images;
 }
 
 /**
@@ -174,6 +217,8 @@ export interface CompleteParams {
     messages?: ChatMessage[];
     prompt?: string;
     enableTools?: boolean;
+    /** Images for the current turn (Claude Code only). */
+    images?: ImageBlock[];
     /** Run under a specific account, a profile's mapping, or a pack's isolated context. */
     account?: string | null;
     profile?: string | null;
@@ -198,12 +243,13 @@ export interface CompleteResult {
  * agent without a separate `enigma api` process. Rejects only when the agent cannot be spawned.
  */
 export async function completeOnce(params: CompleteParams): Promise<CompleteResult> {
-    const model = params.model || "claude";
+    const model = params.model || DEFAULT_MODEL;
     const adapter = resolveAdapter(model, params.tool || "claude");
     const { prompt, system } = params.messages
         ? messagesToPrompt(params.messages)
         : { prompt: params.prompt || "", system: params.system ?? null };
-    const result = await runAgent(adapter, prompt, { model, system: params.system ?? system, sessionId: null, enableTools: params.enableTools === true, account: params.account, profile: params.profile, pack: params.pack });
+    const images = params.images ?? (params.messages ? extractImages(params.messages) : undefined);
+    const result = await runAgent(adapter, prompt, { model, system: params.system ?? system, sessionId: null, enableTools: params.enableTools === true, images, account: params.account, profile: params.profile, pack: params.pack });
     return { tool: adapter.tool, model, ...result };
 }
 
@@ -286,9 +332,9 @@ async function handleChatCompletions(req: IncomingMessage, res: ServerResponse, 
     if (!Array.isArray(messages) || messages.length === 0) return apiError(res, 400, "'messages' must be a non-empty array.");
 
     const { prompt, system } = messagesToPrompt(messages);
-    const model = (body.model as string) || "claude";
+    const model = (body.model as string) || DEFAULT_MODEL;
     const adapter = resolveAdapter(model, defaults.tool);
-    const opts: CompletionOptions = { model, system, sessionId: (body.session_id as string) ?? null, enableTools: body.enable_tools === true, ...contextOf(body, defaults) };
+    const opts: CompletionOptions = { model, system, sessionId: (body.session_id as string) ?? null, enableTools: body.enable_tools === true, images: extractImages(messages), ...contextOf(body, defaults) };
     const id = `chatcmpl-${randomUUID().replace(/-/g, "").slice(0, 24)}`;
 
     if (body.stream === true) {
@@ -337,9 +383,9 @@ async function handleAnthropicMessages(req: IncomingMessage, res: ServerResponse
     if (!Array.isArray(rawMessages) || rawMessages.length === 0) return apiError(res, 400, "'messages' must be a non-empty array.");
     const system = typeof body.system === "string" ? (body.system as string) : null;
     const { prompt } = messagesToPrompt(rawMessages);
-    const model = (body.model as string) || "claude";
+    const model = (body.model as string) || DEFAULT_MODEL;
     const adapter = resolveAdapter(model, defaults.tool);
-    const opts: CompletionOptions = { model, system, enableTools: body.enable_tools === true, ...contextOf(body, defaults) };
+    const opts: CompletionOptions = { model, system, enableTools: body.enable_tools === true, images: extractImages(rawMessages), ...contextOf(body, defaults) };
     const id = `msg_${randomUUID().replace(/-/g, "").slice(0, 24)}`;
 
     if (body.stream === true) {

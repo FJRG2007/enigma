@@ -413,7 +413,7 @@
             return CODEGRAPH;
         }
         if (path.indexOf("/api/playground") !== -1) {
-            if (method !== "POST") return { agents: ["claude", "codex", "opencode"], models: [{ tool: "claude", models: ["claude-sonnet-5", "claude-opus-4-8", "claude-haiku-4-5"] }, { tool: "codex", models: ["codex"] }, { tool: "opencode", models: ["opencode"] }], accounts: [{ tool: "claude", name: "default" }, { tool: "claude", name: "work" }], profiles: ["work"], packs: [{ id: "helio", label: "Helio", installed: true }], apiPort: 8000, defaults: { account: "", profile: "", pack: "" } };
+            if (method !== "POST") return { agents: ["claude", "codex", "opencode"], models: [{ tool: "claude", models: ["claude-opus-4-8", "claude-sonnet-5", "claude-haiku-4-5"] }, { tool: "codex", models: ["codex"] }, { tool: "opencode", models: ["opencode"] }], accounts: [{ tool: "claude", name: "default" }, { tool: "claude", name: "work" }], profiles: ["work"], packs: [{ id: "helio", label: "Helio", installed: true }], apiPort: 8000, defaults: { account: "", profile: "", pack: "" } };
             var pg = body || {};
             if (pg.op === "set-defaults") return { ok: true, defaults: { account: pg.account || "", profile: pg.profile || "", pack: pg.pack || "" } };
             var anth = pg.format === "anthropic";

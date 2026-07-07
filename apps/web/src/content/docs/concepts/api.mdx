@@ -37,13 +37,29 @@ from openai import OpenAI
 
 client = OpenAI(base_url="http://127.0.0.1:8000/v1", api_key="not-needed")
 resp = client.chat.completions.create(
-    model="claude-sonnet-5",
+    model="claude-opus-4-8",
     messages=[{"role": "user", "content": "Explain this repo's architecture."}],
 )
 print(resp.choices[0].message.content)
 ```
 
-Streaming (`stream=true`), the Anthropic `/v1/messages` shape, and standard OpenAI parameters work as well.
+The default model is **`claude-opus-4-8`** when a request names none (or a non-Claude id). Streaming (`stream=true`), the Anthropic `/v1/messages` shape, and standard OpenAI parameters work as well.
+
+## Images
+
+Send images the same way you would with OpenAI or Anthropic - the API forwards them to Claude Code's vision:
+
+```python
+resp = client.chat.completions.create(
+    model="claude-opus-4-8",
+    messages=[{"role": "user", "content": [
+        {"type": "text", "text": "What is in this image?"},
+        {"type": "image_url", "image_url": {"url": "data:image/png;base64,iVBORw0KGgo..."}},
+    ]}],
+)
+```
+
+Both a `data:` URL (base64) and an `https://` URL work. The Anthropic shape's native `image` content blocks (`/v1/messages`) are supported too. The dashboard Playground also has an image picker. Images are applied by Claude Code; agents without local vision support get the text only.
 
 ## Endpoints
 

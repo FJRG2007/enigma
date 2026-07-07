@@ -23,12 +23,20 @@ export type AgentEvent =
     | { kind: "text"; text: string }
     | { kind: "result"; text: string | null; sessionId: string | null; inputTokens: number; outputTokens: number; isError: boolean; errorMessage?: string };
 
+/** An image attached to a request, in Anthropic content-block shape (base64 or url source). */
+export interface ImageBlock {
+    type: "image";
+    source: { type: "base64"; media_type: string; data: string } | { type: "url"; url: string };
+}
+
 /** Options that shape a single headless run, independent of the backing agent. */
 export interface CompletionOptions {
     model?: string | null;
     system?: string | null;
     sessionId?: string | null;
     enableTools?: boolean;
+    /** Images for the current user turn (Claude Code only; other agents get text-only). */
+    images?: ImageBlock[];
     /** Run under a specific enigma account (its config dir). Overrides the active account. */
     account?: string | null;
     /** Run under a specific profile's account mapping for this tool. Ignored if `account` is set. */
@@ -55,6 +63,9 @@ export interface AgentAdapter {
 
 /** Claude ids/aliases forwarded to `--model`; foreign ids (gpt-*) fall back to the default. */
 export const CLAUDE_MODELS = ["claude-opus-4-8", "claude-sonnet-5", "claude-haiku-4-5", "claude-fable-5", "opus", "sonnet", "haiku"];
+
+/** Default model when a request names none (or a foreign one) and routes to Claude Code. */
+export const DEFAULT_MODEL = "claude-opus-4-8";
 
 /** Strip a `tool` / `tool:` / `tool/` routing prefix from a model id, returning the remainder (or null). */
 export function stripToolPrefix(model: string | null | undefined, tool: string): string | null {
@@ -125,14 +136,22 @@ const claudeAdapter: AgentAdapter = {
     mode: "stream-json",
     build(prompt, opts) {
         const args = ["-p", "--output-format", "stream-json", "--verbose"];
+        // A named Claude model wins; otherwise (bare "claude" / a foreign id) use the default.
         const model = resolveClaudeModel(opts.model);
-        if (model) args.push("--model", model);
+        args.push("--model", model && model !== "claude" ? model : DEFAULT_MODEL);
         if (opts.system) args.push("--append-system-prompt", opts.system);
         if (opts.sessionId) args.push("--resume", opts.sessionId);
         // Tools off by default for OpenAI compatibility + speed; when enabled, honor the global
         // permission-bypass posture so a headless run never stalls on a permission prompt.
         const bypass = readConfig().config.permissionBypass;
         args.push("--permission-mode", opts.enableTools && bypass ? "bypassPermissions" : "default");
+        // With images, drive Claude Code through its realtime streaming input: one user message
+        // carrying the text plus image content blocks (the reliable way to send vision content).
+        if (opts.images && opts.images.length) {
+            args.push("--input-format", "stream-json");
+            const content = [{ type: "text", text: prompt }, ...opts.images];
+            return { args, stdin: `${JSON.stringify({ type: "user", message: { role: "user", content } })}\n` };
+        }
         return { args, stdin: prompt };
     },
     parseLine: parseClaudeLine,

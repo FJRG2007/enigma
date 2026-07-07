@@ -5,7 +5,7 @@
  * the test stays offline and deterministic (the spawn/HTTP path is exercised manually, not in CI).
  */
 import { test, expect } from "bun:test";
-import { contentToText, messagesToPrompt, streamChunk, type ChatMessage } from "../src/api-server";
+import { contentToText, messagesToPrompt, streamChunk, extractImages, type ChatMessage } from "../src/api-server";
 import {
     resolveClaudeModel,
     stripToolPrefix,
@@ -15,6 +15,7 @@ import {
     adapterFor,
     estimateTokens,
     CLAUDE_MODELS,
+    DEFAULT_MODEL,
 } from "../src/api-agents";
 
 test("contentToText flattens string and text-part content", () => {
@@ -80,11 +81,50 @@ test("resolveAdapter routes by model, defaulting to the given tool", () => {
     expect(resolveAdapter(null, "claude").tool).toBe("claude");
 });
 
+test("DEFAULT_MODEL is Opus and the claude adapter falls back to it", () => {
+    expect(DEFAULT_MODEL).toBe("claude-opus-4-8");
+    const claude = adapterFor("claude")!;
+    // A bare "claude" or a foreign model routes to Claude but uses the default model.
+    const bare = claude.build("hi", { model: "claude" });
+    expect(bare.args[bare.args.indexOf("--model") + 1]).toBe("claude-opus-4-8");
+    const foreign = claude.build("hi", { model: "gpt-4o" });
+    expect(foreign.args[foreign.args.indexOf("--model") + 1]).toBe("claude-opus-4-8");
+});
+
+test("the claude adapter switches to stream-json input when images are attached", () => {
+    const claude = adapterFor("claude")!;
+    const img = { type: "image" as const, source: { type: "base64" as const, media_type: "image/png", data: "AAAA" } };
+    const cmd = claude.build("describe", { model: "claude-haiku-4-5", images: [img] });
+    expect(cmd.args).toContain("--input-format");
+    expect(cmd.args[cmd.args.indexOf("--input-format") + 1]).toBe("stream-json");
+    const msg = JSON.parse((cmd.stdin as string).trim());
+    expect(msg.type).toBe("user");
+    expect(msg.message.content[0]).toEqual({ type: "text", text: "describe" });
+    expect(msg.message.content[1]).toEqual(img);
+});
+
+test("extractImages reads OpenAI image_url (data + http) and Anthropic image blocks", () => {
+    const oai: ChatMessage[] = [{ role: "user", content: [
+        { type: "text", text: "hi" },
+        { type: "image_url", image_url: { url: "data:image/png;base64,ABC123" } },
+        { type: "image_url", image_url: { url: "https://x/y.png" } },
+    ] }];
+    const a = extractImages(oai);
+    expect(a[0]).toEqual({ type: "image", source: { type: "base64", media_type: "image/png", data: "ABC123" } });
+    expect(a[1]).toEqual({ type: "image", source: { type: "url", url: "https://x/y.png" } });
+    const anth: ChatMessage[] = [{ role: "user", content: [
+        { type: "image", source: { type: "base64", media_type: "image/jpeg", data: "ZZ" } },
+    ] }];
+    expect(extractImages(anth)[0]).toEqual({ type: "image", source: { type: "base64", media_type: "image/jpeg", data: "ZZ" } });
+    expect(extractImages([{ role: "user", content: "just text" }])).toEqual([]);
+});
+
 test("adapters expose the expected read mode and headless args", () => {
     const claude = adapterFor("claude")!;
     expect(claude.mode).toBe("stream-json");
     const cmd = claude.build("hi", { model: "claude-sonnet-5", system: "sys", sessionId: "s1" });
     expect(cmd.args.slice(0, 4)).toEqual(["-p", "--output-format", "stream-json", "--verbose"]);
+    expect(cmd.args[cmd.args.indexOf("--model") + 1]).toBe("claude-sonnet-5");
     expect(cmd.args).toContain("--append-system-prompt");
     expect(cmd.args[cmd.args.indexOf("--resume") + 1]).toBe("s1");
     expect(cmd.stdin).toBe("hi");

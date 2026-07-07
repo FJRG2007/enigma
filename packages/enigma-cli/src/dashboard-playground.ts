@@ -60,6 +60,8 @@ export interface PlaygroundRequest {
     system?: string;
     message?: string;
     enableTools?: boolean;
+    /** An attached image as a data URL (data:image/...;base64,...) to send with the message. */
+    imageDataUrl?: string;
     /** Run under a specific account, a profile's mapping, or a pack's isolated context. */
     account?: string;
     profile?: string;
@@ -76,20 +78,36 @@ export function formatPath(format: string): string {
     return format === "anthropic" ? "/v1/messages" : "/v1/chat/completions";
 }
 
+/** Parse a data URL into an Anthropic base64 image source, or null. */
+function dataUrlToAnthropicImage(url: string): { type: "image"; source: { type: "base64"; media_type: string; data: string } } | null {
+    const m = /^data:([^;]+);base64,(.+)$/i.exec(url);
+    return m ? { type: "image", source: { type: "base64", media_type: m[1]!, data: m[2]! } } : null;
+}
+
+/** Build the user-turn content for a format: a plain string, or a parts array when an image is attached. */
+function userContent(message: string, imageDataUrl: string | undefined, format: string): unknown {
+    if (!imageDataUrl) return message;
+    if (format === "anthropic") {
+        const img = dataUrlToAnthropicImage(imageDataUrl);
+        return img ? [{ type: "text", text: message }, img] : message;
+    }
+    return [{ type: "text", text: message }, { type: "image_url", image_url: { url: imageDataUrl } }];
+}
+
 /** Build the request body a client would send for the chosen format. */
 export function buildRequestBody(req: PlaygroundRequest): Record<string, unknown> {
     const model = req.model || "claude";
-    const message = req.message || "";
+    const content = userContent(req.message || "", req.imageDataUrl, req.format || "openai");
     if (req.format === "anthropic") {
-        const body: Record<string, unknown> = { model, max_tokens: 4096, messages: [{ role: "user", content: message }] };
+        const body: Record<string, unknown> = { model, max_tokens: 4096, messages: [{ role: "user", content }] };
         if (req.system) body.system = req.system;
         if (req.enableTools) body.enable_tools = true;
         applyContext(body, req);
         return body;
     }
-    const messages: Array<{ role: string; content: string }> = [];
+    const messages: Array<{ role: string; content: unknown }> = [];
     if (req.system) messages.push({ role: "system", content: req.system });
-    messages.push({ role: "user", content: message });
+    messages.push({ role: "user", content });
     const body: Record<string, unknown> = { model, messages };
     if (req.enableTools) body.enable_tools = true;
     applyContext(body, req);
@@ -130,7 +148,9 @@ export function buildCurl(baseUrl: string, format: string, body: Record<string, 
     const url = `${baseUrl.replace(/\/$/, "")}${formatPath(format)}`;
     const parts = [`curl ${url}`, "-H 'Content-Type: application/json'"];
     if (apiKey) parts.push(`-H 'Authorization: Bearer ${apiKey}'`);
-    parts.push(`-d '${JSON.stringify(body)}'`);
+    // Truncate long base64 image data so the reproducible command stays readable.
+    const serialized = JSON.stringify(body).replace(/(base64,)[A-Za-z0-9+/=]{40,}/g, "$1<base64 image data omitted>");
+    parts.push(`-d '${serialized}'`);
     return parts.join(" \\\n  ");
 }
 
@@ -207,7 +227,8 @@ export async function runPlayground(req: PlaygroundRequest): Promise<PlaygroundR
     }
 
     try {
-        const result = await completeOnce({ model: req.model, system: req.system, messages: [{ role: "user", content: req.message }], enableTools: req.enableTools, account: req.account, profile: req.profile, pack: req.pack });
+        const content = userContent(req.message || "", req.imageDataUrl, "openai") as import("./api-server").ChatMessage["content"];
+        const result = await completeOnce({ model: req.model, system: req.system, messages: [{ role: "user", content }], enableTools: req.enableTools, account: req.account, profile: req.profile, pack: req.pack });
         const response = shapeResult(result, format);
         return {
             ok: !result.isError,

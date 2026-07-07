@@ -47,6 +47,25 @@ test("buildRequestBody folds account/profile/pack context into both formats", ()
     expect(anth.profile).toBe("team");
 });
 
+test("buildRequestBody attaches an image as parts (image_url for OpenAI, image block for Anthropic)", () => {
+    const url = "data:image/png;base64,ABCD";
+    const oai = buildRequestBody({ format: "openai", model: "claude", message: "what is this", imageDataUrl: url }) as { messages: Array<{ content: Array<{ type: string; image_url?: { url: string } }> }> };
+    const parts = oai.messages[0].content;
+    expect(parts[0]).toEqual({ type: "text", text: "what is this" });
+    expect(parts[1]).toEqual({ type: "image_url", image_url: { url } });
+
+    const anth = buildRequestBody({ format: "anthropic", model: "claude", message: "what is this", imageDataUrl: url }) as { messages: Array<{ content: Array<{ type: string; source?: { data: string } }> }> };
+    const ap = anth.messages[0].content;
+    expect(ap[1]).toEqual({ type: "image", source: { type: "base64", media_type: "image/png", data: "ABCD" } });
+});
+
+test("buildCurl truncates long base64 image data for readability", () => {
+    const body = { messages: [{ content: [{ type: "image_url", image_url: { url: `data:image/png;base64,${"A".repeat(200)}` } }] }] };
+    const curl = buildCurl("http://127.0.0.1:8000", "openai", body);
+    expect(curl).toContain("base64,<base64 image data omitted>");
+    expect(curl).not.toContain("A".repeat(200));
+});
+
 test("shapeResult wraps a result in the OpenAI or Anthropic envelope", () => {
     const result: CompleteResult = { tool: "claude", model: "claude-sonnet-5", text: "hello", inputTokens: 5, outputTokens: 2, sessionId: "s1", isError: false };
     const oai = shapeResult(result, "openai") as { object: string; choices: Array<{ message: { content: string } }>; usage: { total_tokens: number } };

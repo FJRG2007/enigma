@@ -939,8 +939,11 @@
                 <label class="pg-field"><span>Pack <small>(optional)</small></span>
                     <select id="pgPack"><option value="">(none)</option></select>
                 </label>
-                <label class="pg-field pg-tools"><span>Tools</span>
-                    <span class="pg-check"><input id="pgTools" type="checkbox"> <label for="pgTools">Enable agent tools (Read/Write/Bash...)</label></span>
+                <div class="pg-field pg-tools"><span>Agent tools <small>(Read/Write/Bash...)</small></span>
+                    <button id="pgTools" type="button" class="toggle on" data-kind="bool" role="switch" aria-checked="true" aria-label="Enable agent tools">On</button>
+                </div>
+                <label class="pg-field"><span>Image <small>(optional)</small></span>
+                    <input id="pgImage" type="file" accept="image/*" class="linput">
                 </label>
             </div>
             <div class="ladd" style="gap:8px;align-items:center">
@@ -4100,16 +4103,23 @@ export {
             const http = $("pgMode").value === "http";
             document.querySelectorAll(".pg-http").forEach((el) => { el.style.display = http ? "" : "none"; });
         }
+        function pgReadImage() {
+            const f = $("pgImage").files && $("pgImage").files[0];
+            if (!f) return Promise.resolve(undefined);
+            return new Promise((resolve) => { const r = new FileReader(); r.onload = () => resolve(r.result); r.onerror = () => resolve(undefined); r.readAsDataURL(f); });
+        }
         async function pgSend() {
             const message = $("pgMessage").value.trim();
             if (!message) { toast.error("Enter a message to send."); return; }
+            const imageDataUrl = await pgReadImage();
             const payload = {
                 mode: $("pgMode").value,
                 format: $("pgFormat").value,
                 model: $("pgModel").value,
                 system: $("pgSystem").value.trim() || undefined,
                 message,
-                enableTools: $("pgTools").checked,
+                enableTools: $("pgTools").getAttribute("aria-checked") === "true",
+                imageDataUrl: imageDataUrl || undefined,
                 account: $("pgAccount").value || undefined,
                 profile: $("pgProfile").value || undefined,
                 pack: $("pgPack").value || undefined,
@@ -4157,6 +4167,8 @@ export {
         function wirePlayground() {
             $("pgSend").addEventListener("click", pgSend);
             $("pgSaveDefault").addEventListener("click", pgSaveDefault);
+            const tog = $("pgTools");
+            tog.addEventListener("click", () => { const on = tog.getAttribute("aria-checked") !== "true"; tog.classList.toggle("on", on); tog.setAttribute("aria-checked", on ? "true" : "false"); tog.textContent = on ? "On" : "Off"; });
             $("pgMode").addEventListener("change", pgSyncMode);
             $("pgCopyCurl").addEventListener("click", () => {
                 const txt = $("pgCurl").textContent || "";
