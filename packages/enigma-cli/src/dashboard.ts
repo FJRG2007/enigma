@@ -252,9 +252,20 @@ function statsPayload(version: string): string {
 /** Hostnames a same-machine request may legitimately use when the server binds loopback. */
 const LOCAL_HOSTS = new Set(["enigma", "localhost", "127.0.0.1", "::1"]);
 
-/** Strip scheme/port/path from a Host or Origin header, leaving the bare hostname. */
+/**
+ * Strip scheme/port/path from a Host or Origin header, leaving the bare hostname.
+ *
+ * IPv6 is why this is not a one-liner. Such a host arrives bracketed (`[::1]:24282`), and
+ * splitting it on ":" chops it at the first group: `[::1]` collapsed to "" (so a loopback
+ * dashboard refused its own IPv6 client) and `[2a01:db8::1]` collapsed to "2a01" (so two
+ * unrelated addresses sharing a prefix compared equal, weakening the Origin/Host check).
+ * Take the bracketed literal whole, and only strip a port off a plain host.
+ */
 function hostOnly(h: string | undefined): string {
-    return (h || "").replace(/^https?:\/\//, "").replace(/^\[|\]$/g, "").split("/")[0].split(":")[0].toLowerCase();
+    const bare = (h || "").trim().replace(/^https?:\/\//, "").split("/")[0];
+    const v6 = /^\[([^\]]+)\]/.exec(bare);
+    if (v6) return v6[1]!.toLowerCase();
+    return bare.split(":")[0].toLowerCase();
 }
 
 /**
