@@ -983,6 +983,54 @@
     </footer>
 
     <!-- Vendored @github/relative-time-element v5.2.0 (MIT) - inlined so there is no CDN and no extra server route; defines <relative-time>. -->
+    <script>
+// Token bootstrap. Only an exposed dashboard (a non-loopback bind) requires a token; on the
+// default loopback bind there is none and this is inert.
+//
+// A classic script runs during parse, before the deferred module below, so the interceptor is
+// always installed before the first request.
+(function () {
+    var KEY = "enigma:token:" + location.origin;
+    function read(k) { try { return sessionStorage.getItem(k); } catch (e) { return null; } }
+    // The token arrives once as a URL fragment (#token=...). A fragment is never sent to the
+    // server, so unlike a query string it cannot land in an access log or a Referer header.
+    var m = /[#&]token=([^&]*)/.exec(location.hash || "");
+    if (m) {
+        try { sessionStorage.setItem(KEY, decodeURIComponent(m[1])); } catch (e) { /* private mode: this tab just stays unauthenticated */ }
+        // Drop it from the address bar so it is not shoulder-surfed, bookmarked or pasted on.
+        history.replaceState(null, "", location.pathname + location.search);
+    }
+    // sessionStorage, not localStorage, and keyed by origin: the token dies with the tab and
+    // never leaks to another dashboard the same browser talks to.
+    var token = read(KEY);
+    var nativeFetch = window.fetch.bind(window);
+    // One interceptor instead of editing ~50 call sites: every /api/* request carries the bearer.
+    // It is installed even without a token so a 401 still surfaces the banner below - otherwise
+    // an exposed dashboard opened without its token would just render ~20 silently empty panels.
+    window.fetch = function (input, init) {
+        var url = typeof input === "string" ? input : (input && input.url) || "";
+        if (url.indexOf("/api/") !== 0) return nativeFetch(input, init);
+        var opts = Object.assign({}, init);
+        opts.headers = new Headers((init && init.headers) || (typeof input === "object" && input && input.headers) || {});
+        if (token) opts.headers.set("Authorization", "Bearer " + token);
+        return nativeFetch(input, opts).then(function (res) {
+            if (res.status === 401) denied();
+            return res;
+        });
+    };
+    var shown = false;
+    // The dashboard is unusable without the token, so say so instead of leaving empty panels.
+    function denied() {
+        if (shown) return;
+        shown = true;
+        var el = document.createElement("div");
+        el.setAttribute("style", "position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:#0b0e14;color:#e6e6e6;font:15px/1.6 ui-sans-serif,system-ui,sans-serif;padding:2rem;text-align:center");
+        el.innerHTML = "<div style=\"max-width:34rem\"><h1 style=\"margin:0 0 .5rem;font-size:1.25rem\">This dashboard needs a token</h1>"
+            + "<p style=\"margin:0;color:#9aa4b2\">It is bound to a reachable interface, so every request must be authenticated. Open the link printed by <code style=\"color:#d7875f\">enigma dashboard</code> on the host - it carries the token as a <code style=\"color:#d7875f\">#token=</code> fragment. Run <code style=\"color:#d7875f\">enigma dashboard token</code> there to print it again.</p></div>";
+        (document.body || document.documentElement).appendChild(el);
+    }
+})();
+    </script>
     <script type="module">
 /*! @github/relative-time-element v5.2.0 | (c) GitHub, Inc. | MIT License | https://github.com/github/relative-time-element */
 var __defProp = Object.defineProperty;

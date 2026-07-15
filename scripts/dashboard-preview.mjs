@@ -61,7 +61,13 @@ if (has("--real")) {
         console.log("Mock data only - nothing is read from ~/.enigma. Use --real for live data. Ctrl+C to stop.");
         if (!has("--no-open")) {
             const cmd = process.platform === "win32" ? ["cmd", ["/c", "start", "", target]] : process.platform === "darwin" ? ["open", [target]] : ["xdg-open", [target]];
-            try { spawn(cmd[0], cmd[1], { stdio: "ignore", detached: true }).unref(); } catch { /* user opens it manually */ }
+            // The error listener is required: a missing opener surfaces as an async
+            // `error` event, which an EventEmitter with no listener would rethrow.
+            try {
+                const child = spawn(cmd[0], cmd[1], { stdio: "ignore", detached: true });
+                child.on("error", () => { /* user opens it manually */ });
+                child.unref();
+            } catch { /* user opens it manually */ }
         }
     });
 }

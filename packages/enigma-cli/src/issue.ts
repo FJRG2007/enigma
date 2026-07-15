@@ -105,12 +105,29 @@ export function buildIssueUrl(kind: IssueKind, version: string): string {
 }
 
 /**
- * Open a URL in the default browser, detached and best-effort. The URL is built
- * by us from constants + URL-encoded params (never untrusted input). Windows uses
- * rundll32's protocol handler instead of `cmd /c start` so the `&` separators in
- * the query string can never be parsed as command separators.
+ * Whether this host has no reachable GUI, so launching a browser is pointless.
+ * Windows and macOS always have one; Linux/BSD need a display server, which a
+ * server accessed over SSH does not have. Callers print the URL instead.
+ */
+export function isHeadless(): boolean {
+    if (process.platform === "win32" || process.platform === "darwin") return false;
+    return !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY;
+}
+
+/**
+ * Open a URL in the default browser, detached and best-effort; returns false when
+ * no browser could be launched so the caller can print the URL instead. The URL is
+ * built by us from constants + URL-encoded params (never untrusted input). Windows
+ * uses rundll32's protocol handler instead of `cmd /c start` so the `&` separators
+ * in the query string can never be parsed as command separators.
+ *
+ * The `error` listener is load-bearing, not decorative: a missing opener (a bare
+ * server has no `xdg-open`) surfaces as an ASYNCHRONOUS `error` event on the child,
+ * which an EventEmitter with no listener rethrows as an uncaught exception - the
+ * try/catch cannot see it, and it would take the whole CLI down.
  */
 export function openUrl(url: string): boolean {
+    if (isHeadless()) return false;
     try {
         const [bin, args] = process.platform === "win32"
             ? ["rundll32", ["url.dll,FileProtocolHandler", url]] as const
@@ -118,6 +135,7 @@ export function openUrl(url: string): boolean {
                 ? ["open", [url]] as const
                 : ["xdg-open", [url]] as const;
         const child = spawn(bin, args, { detached: true, stdio: "ignore", windowsHide: true });
+        child.on("error", () => { /* no opener installed: the caller prints the URL */ });
         child.unref();
         return true;
     } catch {

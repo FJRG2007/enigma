@@ -7,17 +7,19 @@
 import { readJson } from "./util";
 import * as p from "@clack/prompts";
 import { runGuardCli } from "./guard";
-import { readConfig } from "./config";
+import { DASHBOARD_BINDS, readConfig, setEnigmaValue, type DashboardBind } from "./config";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { IssueKind } from "./issue";
 import { discoverAgents } from "./agents";
 import { runConfigCli } from "./settings";
 import { collectReporter } from "./reporter";
+import { hostname, userInfo } from "node:os";
 import type { ContentType } from "./compress";
 import type { InstallOptions } from "./skills";
 import { starRepoInBackground } from "./github";
-import { buildIssueUrl, openUrl } from "./issue";
+import { buildIssueUrl, isHeadless, openUrl } from "./issue";
+import { ensureDashboardToken, readDashboardToken } from "./dashboard-token";
 import { dirname, join, resolve } from "node:path";
 import { setupGitHooks, GUARD_PROTECTIONS } from "./security";
 import { ensureLaunchable, toolPathStatuses } from "./tool-path";
@@ -27,7 +29,7 @@ import { ensureLinterInstalled, isLinterInstalled, refreshLinterPkg } from "./li
 import { checkLatestNow, getAvailableUpdate, notifyUpdate, performUpdateCheck, runUpdate } from "./update";
 import { isUsableSession, sessionEmail, sessionState, transferSession, type SessionState } from "./claude-oauth";
 import { ensureDashboardCurrent, isDashboardPkgCurrent, isDashboardPkgInstalled, refreshDashboardPkg } from "./dashboard-pkg";
-import { clearDaemon, dashboardUrl, ensureHostsEntry, runningDaemon, serveDashboardDaemon, startDashboardServer, writeDaemon } from "./dashboard";
+import { clearDaemon, daemonError, dashboardUrl, ensureHostsEntry, repoBindOverrideIgnored, resolveBind, runningDaemon, serveDashboardDaemon, startDashboardServer, tokenizedUrl, writeDaemon } from "./dashboard";
 import {
     PACKS, disablePack, enablePack, getPack, installedPackVersion, isPackInstalled,
     launchPack, listPacks, packSessionSources, refreshPack, setupPackMcp,
@@ -97,6 +99,10 @@ interface CliOptions extends InstallOptions {
     apiAccount: string | null;
     apiProfile: string | null;
     apiPack: string | null;
+    /** `dashboard`: bind every interface for this run (token required), without persisting it. */
+    expose: boolean;
+    /** `dashboard token`: mint a fresh token, killing every link handed out earlier. */
+    newToken: boolean;
 }
 
 function parseArgs(argv: string[]): CliOptions {
@@ -108,7 +114,7 @@ function parseArgs(argv: string[]): CliOptions {
         force: false, all: false, yes: false, login: false, dryRun: false, help: false, version: false,
         stats: false, retrieve: null, compressType: null, clear: false,
         preset: null, token: null, base: null, providerModel: null,
-        port: null, apiKey: null, apiAccount: null, apiProfile: null, apiPack: null,
+        port: null, apiKey: null, apiAccount: null, apiProfile: null, apiPack: null, expose: false, newToken: false,
     };
     for (let i = 0; i < argv.length; i++) {
         const a = argv[i]!;
@@ -145,6 +151,10 @@ function parseArgs(argv: string[]): CliOptions {
             case "--account": opts.apiAccount = next(); break;
             case "--profile": opts.apiProfile = next(); break;
             case "--pack": opts.apiPack = next(); break;
+            case "--expose": opts.expose = true; break;
+            // Its own flag, not an alias of --force: --force is honoured by several commands,
+            // so folding them together would silently arm those with an undocumented spelling.
+            case "--new": opts.newToken = true; break;
             case "--stats": opts.stats = true; break;
             case "--retrieve": opts.retrieve = next(); break;
             case "--type": opts.compressType = next(); break;
@@ -236,7 +246,12 @@ Commands:
                        --api-key <k> (or ENIGMA_API_KEY), --tool <t> = default backend. Loopback
   dashboard, dash      Open the local savings dashboard in your browser (http://enigma,
                        or http://localhost:24282 if :80/hosts is unavailable). Runs only
-                       while open; 'config dashboard always' keeps a background daemon
+                       while open; 'config dashboard always' keeps a background daemon.
+                       Loopback by default. With no browser (a server over SSH) it prints
+                       the tunnel command and offers to expose it. --expose binds every
+                       interface for this run; 'config dashboard-bind lan' makes it stick.
+                       Exposing always requires a token: 'dashboard token [--new]' prints
+                       or rotates it, and the link carries it as a #token= fragment
   fix-path [tool]      Detect a tool's install path (OS-agnostic, even off PATH) and
                        repair its launch command so 'enigma <tool>' works; no tool fixes all
   resources [action]   System cleanup: status, or wsl | docker | free-port PORT | kill PID
@@ -1198,14 +1213,62 @@ function runCompressCli(opts: CliOptions): number {
 }
 
 /**
+ * The command to tunnel this dashboard to the operator's own machine. Preferred over exposing
+ * it: the port stays on loopback, and SSH already authenticates whoever reaches it.
+ */
+function sshTunnelHint(port: number): string {
+    const user = (() => { try { return userInfo().username; } catch { return "user"; } })();
+    return `ssh -N -L ${port}:127.0.0.1:${port} ${user}@${hostname()}`;
+}
+
+/**
+ * Decide how a headless host should serve the dashboard. Returns the bind to use for this run,
+ * or null to let the configured bind stand.
+ *
+ * Only asked when there is no browser to open, someone is there to answer, and the config does
+ * not already settle it: a scripted or daemonized run must never block on a prompt, and never
+ * silently start exposing itself. "Always" persists the choice, which is what stops the asking.
+ *
+ * Every answer is returned as an explicit bind rather than null, because null falls through to
+ * the configured bind - so answering "keep it local" once "always" had been persisted would
+ * otherwise still expose the host, silently ignoring the choice just made.
+ */
+async function resolveHeadlessBind(expose: boolean): Promise<DashboardBind | null> {
+    if (expose) return "lan";
+    if (!isHeadless() || !process.stdin.isTTY) return null;
+    // Already told how to bind: honour it instead of asking the same question every run.
+    // Validated the way resolveBind validates it, so an unrecognized value still gets asked
+    // about rather than being read as a decision the user never made.
+    const configured = readConfig().config.dashboardBind;
+    if (DASHBOARD_BINDS.includes(configured) && configured !== "loopback") return null;
+    const choice = await p.select({
+        message: "No browser on this host. How should the dashboard be reachable?",
+        initialValue: "local",
+        options: [
+            { value: "local", label: "Keep it local", hint: "reach it over an SSH tunnel (recommended)" },
+            { value: "once", label: "Expose it on the network - just this once", hint: "requires a token" },
+            { value: "always", label: "Expose it on the network - always", hint: "requires a token; remembered" },
+        ],
+    });
+    if (p.isCancel(choice) || choice === "local") return "loopback";
+    if (choice === "always") setEnigmaValue("dashboardBind", "lan", "global");
+    return "lan";
+}
+
+/**
  * `enigma dashboard` (alias `dash`): serve the local savings dashboard and open it in
  * the browser. On-demand by default - the server lives only while this command runs, so
  * it costs nothing when closed. In "always" mode it just opens the running daemon. Blocks
  * until Ctrl+C. The dashboard config setting governs the daemon, not this command, which
  * always works on request.
+ *
+ * With no browser (a server over SSH) it prints the tunnel command instead, and offers to
+ * expose the dashboard on the network - which always requires a token, since it can run
+ * agents with your credentials.
  */
-async function runDashboardCli(version: string): Promise<number> {
+async function runDashboardCli(version: string, opts: CliOptions): Promise<number> {
     const mode = readConfig().config.dashboard;
+    if (opts.positionals[0] === "token") return runDashboardTokenCli(opts);
     // The UI bundle (@enigmax/dashboard) ships separately and is fetched on demand. If it
     // is not present yet, install it now so the first open shows the real page, not the
     // fallback. Best-effort: offline just serves the fallback until a later run succeeds.
@@ -1216,30 +1279,83 @@ async function runDashboardCli(version: string): Promise<number> {
     // Best-effort: map http://enigma -> loopback so the URL is pretty (falls back to
     // localhost when hosts is unwritable). No-op when the entry already exists.
     ensureHostsEntry();
+    // The bind comes from the global config only, so a repo asking for one is dropped. Say it
+    // rather than leaving the user to wonder why their setting had no effect.
+    if (repoBindOverrideIgnored()) console.error("Note: this project's .enigma.json sets dashboard-bind; it is ignored (the bind is a per-machine setting, so repo content cannot open a port here). Use 'enigma config dashboard-bind <mode> -g'.");
+    // A background dashboard that failed to start leaves its reason behind; surface it here,
+    // since the daemon itself is detached with nowhere to print.
+    const failure = daemonError();
+    if (failure && mode === "always") console.error(`Note: the background dashboard is not running: ${failure}`);
     // Only one dashboard at a time: if one is already serving (the "always" daemon OR
     // another foreground `enigma dashboard`), open its URL instead of starting a second
     // server on a different port. Stale records are cleaned by runningDaemon().
     const running = runningDaemon();
     if (running) {
+        // A live server cannot move to another interface, so --expose cannot be honoured here.
+        // Say so instead of printing a loopback URL and exiting 0: with `dashboard: always`
+        // (the documented server setup) that silently did nothing at all, which is the exact
+        // case --expose exists for.
+        if (opts.expose) {
+            console.error(`A dashboard is already running on ${running.url} and a running server cannot rebind.`);
+            console.error("Stop it first (Ctrl+C, or 'enigma config dashboard off' for the background one), then run 'enigma dashboard --expose'.");
+            console.error("To expose it permanently instead: 'enigma config dashboard-bind lan', then restart it.");
+            return 1;
+        }
         const tag = mode === "always" ? "(always) " : "";
-        console.log(`enigma dashboard already running ${tag}-> ${running.url}`);
-        openUrl(running.url);
+        // A daemon on an exposed bind is only reachable with its token, so print that link.
+        let token: string | null = null;
+        try { token = resolveBind().token; } catch { /* misconfigured bind: it is not serving anyway */ }
+        console.log(`enigma dashboard already running ${tag}-> ${tokenizedUrl(running.url, token)}`);
+        // The tokenized URL, or a browser here lands on the "needs a token" banner. The
+        // fragment never reaches the server, so this is the same link that was printed.
+        openUrl(tokenizedUrl(running.url, token));
         return 0;
     }
+    // Ask before binding, not after: the answer decides which interface we listen on.
+    const bindOverride = await resolveHeadlessBind(opts.expose);
+    // Exposing is only ever allowed with a token, so mint one now rather than letting the
+    // server refuse to start on a choice the user just made.
+    if (bindOverride && bindOverride !== "loopback") ensureDashboardToken();
     let server: Awaited<ReturnType<typeof startDashboardServer>>;
-    try { server = await startDashboardServer(version); }
+    try { server = await startDashboardServer(version, bindOverride ?? undefined); }
     catch (err) { console.error(`Could not start the dashboard: ${(err as Error).message}`); return 1; }
     // Publish a record of this foreground server so a second invocation finds it and
     // defers instead of spawning another. Cleared on exit (and self-healed if we crash).
     writeDaemon({ pid: process.pid, port: server.port, url: server.url, startedAt: Date.now() });
-    console.log(`enigma dashboard -> ${server.url}`);
+    if (server.bind.token) {
+        // The tokenized URL is the only way in, and on a headless host the terminal is the
+        // only channel we have to deliver it.
+        console.log(`enigma dashboard -> ${tokenizedUrl(server.url, server.bind.token)}`);
+        console.log(`Bound to ${server.bind.host}:${server.port}. That link grants full control of this machine - treat it as a password.`);
+    } else {
+        console.log(`enigma dashboard -> ${server.url}`);
+        if (isHeadless()) console.log(`No browser here. Reach it from your machine with:\n  ${sshTunnelHint(server.port)}\nthen open http://localhost:${server.port}`);
+    }
     console.log("Press Ctrl+C to stop.");
-    openUrl(server.url);
+    openUrl(tokenizedUrl(server.url, server.bind.token));
     return await new Promise<number>((resolveExit) => {
         const stop = (): void => { clearDaemon(); server.close(); resolveExit(0); };
         process.on("SIGINT", stop);
         process.on("SIGTERM", stop);
     });
+}
+
+/**
+ * `enigma dashboard token [--new]`: print the token an exposed dashboard requires, so it can
+ * be recovered without digging the file out by hand, or rotated to revoke every link already
+ * handed out. Printing beats `cat`-ing the file: this is the only supported way to read it.
+ */
+function runDashboardTokenCli(opts: CliOptions): number {
+    const rotate = opts.newToken;
+    if (!rotate && !readDashboardToken()) {
+        console.log("No dashboard token set. One is minted when you expose the dashboard (`enigma dashboard --expose`), or now with `enigma dashboard token --new`.");
+        return 0;
+    }
+    const token = ensureDashboardToken(rotate);
+    if (rotate) console.log("Rotated. Every link handed out earlier is now dead.");
+    console.log(token);
+    console.log(`\nAppend it as a URL fragment to log in:  http://${hostname()}:<port>/#token=<the token above>`);
+    return 0;
 }
 
 /**
@@ -1376,7 +1492,7 @@ export async function run(argv: string[]): Promise<void> {
     if (opts.command === "skills") { process.exit(runSkillsCli(opts)); }
     if (opts.command === "issue") { process.exit(await runIssueCli(opts.positionals[0], version, interactive)); }
     if (opts.command === "compress") { process.exit(runCompressCli(opts)); }
-    if (opts.command === "dashboard") { process.exit(await runDashboardCli(version)); }
+    if (opts.command === "dashboard") { process.exit(await runDashboardCli(version, opts)); }
     if (opts.command === "fix-path") { process.exit(runFixPathCli(opts.positionals[0], opts.scope)); }
     if (opts.command === "resources") { process.exit(await runResourcesCli(opts.positionals)); }
     if (opts.command === "recall") { process.exit(await runRecallCli(opts.positionals)); }

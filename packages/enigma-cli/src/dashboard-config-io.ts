@@ -80,7 +80,14 @@ export function exportBundle(): ConfigBundle {
 
 export interface ImportResult { ok: boolean; error?: string; applied: string[]; skipped: string[]; }
 
-/** Allowed config keys = the settings registry + the numeric/string knobs outside it (no secrets). */
+/**
+ * Allowed config keys = the settings registry + the numeric/string knobs outside it (no secrets).
+ *
+ * `dashboardBind`/`dashboardBindAddress` are deliberately absent and should stay that way: which
+ * interface a machine listens on is a property of THAT host, not a portable preference, and a
+ * bundle exported from a laptop must never start exposing the server it is imported into. They
+ * land in the `skipped` list, which the UI reports, so the omission is visible rather than silent.
+ */
 const NUMERIC_KEYS = new Set(["tokenPrice", "tokenSpeed", "dashboardPort", "apiPort"]);
 const STRING_KEYS = new Set(["recallProvider", "recallModel", "recallApiBase", "apiAccount", "apiProfile", "apiPack"]);
 function isImportableConfigKey(key: string): boolean {
