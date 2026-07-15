@@ -234,7 +234,7 @@ function hostOnly(h: string | undefined): string {
 }
 
 /**
- * Guard for the settings WRITE surface: accept only same-machine requests and reject any
+ * The loopback layer of isAuthorized: accept only same-machine requests and reject any
  * cross-origin caller. The server is already loopback-bound (unreachable from the network),
  * and this also blocks DNS-rebinding / CSRF from a malicious web page on the same machine.
  */
@@ -806,102 +806,82 @@ function createDashboardServer(version: string): Server {
             res.end(activeBind.token ? '{"error":"unauthorized"}' : '{"error":"forbidden"}');
             return;
         }
-        // Settings + Skills APIs are the write surfaces, so they are origin-guarded.
         if (url === "/api/settings") {
-            if (!isLocalRequest(req)) { res.writeHead(403, JSON_HDR); res.end('{"error":"forbidden"}'); return; }
             if (method === "GET") { serveSettings(res); return; }
             if (method === "POST") { writeSetting(req, res); return; }
             res.writeHead(405).end(); return;
         }
         if (url === "/api/skills") {
-            if (!isLocalRequest(req)) { res.writeHead(403, JSON_HDR); res.end('{"error":"forbidden"}'); return; }
             if (method === "GET") { serveSkills(res); return; }
             if (method === "POST") { writeSkill(req, res); return; }
             res.writeHead(405).end(); return;
         }
-        // Agent memory editor (CLAUDE.md / AGENTS.md), global or per project. Write surface, origin-guarded.
+        // Agent memory editor (CLAUDE.md / AGENTS.md), global or per project.
         if (url === "/api/memory") {
-            if (!isLocalRequest(req)) { res.writeHead(403, JSON_HDR); res.end('{"error":"forbidden"}'); return; }
             if (method === "GET") { serveMemory(req, res); return; }
             if (method === "POST") { writeMemoryAction(req, res); return; }
             res.writeHead(405).end(); return;
         }
         if (url === "/api/update") {
-            if (!isLocalRequest(req)) { res.writeHead(403, JSON_HDR); res.end('{"error":"forbidden"}'); return; }
             if (method === "POST") { serveUpdate(res); return; }
             res.writeHead(405).end(); return;
         }
         if (url === "/api/run-update") {
-            // Spawns a detached `enigma update` (full self-update incl. the CLI binary), so
-            // it is origin-guarded like the other write surfaces.
-            if (!isLocalRequest(req)) { res.writeHead(403, JSON_HDR); res.end('{"error":"forbidden"}'); return; }
+            // Spawns a detached `enigma update` (full self-update incl. the CLI binary).
             if (method === "POST") { serveRunUpdate(res); return; }
             res.writeHead(405).end(); return;
         }
         if (url === "/api/fix-path") {
-            if (!isLocalRequest(req)) { res.writeHead(403, JSON_HDR); res.end('{"error":"forbidden"}'); return; }
             if (method === "POST") { serveFixPath(req, res); return; }
             res.writeHead(405).end(); return;
         }
         if (url === "/api/resources") {
-            // Destructive (kill processes / shut down WSL / quit Docker), so origin-guarded.
-            if (!isLocalRequest(req)) { res.writeHead(403, JSON_HDR); res.end('{"error":"forbidden"}'); return; }
+            // Destructive: kills processes / shuts down WSL / quits Docker.
             if (method === "GET") { serveResources(res); return; }
             if (method === "POST") { writeResources(req, res); return; }
             res.writeHead(405).end(); return;
         }
-        // Recall reads your own session memory and can sync/clear it, so it is origin-guarded.
+        // Recall reads your own session memory and can sync/clear it.
         if (url === "/api/recall") {
-            if (!isLocalRequest(req)) { res.writeHead(403, JSON_HDR); res.end('{"error":"forbidden"}'); return; }
             if (method === "GET") { serveRecall(req, res); return; }
             if (method === "POST") { writeRecall(req, res); return; }
             res.writeHead(405).end(); return;
         }
-        // Code-graph reads/registers an external MCP for your agents, so it is origin-guarded.
+        // Code-graph reads/registers an external MCP for your agents.
         if (url === "/api/codegraph") {
-            if (!isLocalRequest(req)) { res.writeHead(403, JSON_HDR); res.end('{"error":"forbidden"}'); return; }
             if (method === "GET") { serveCodeGraph(req, res); return; }
             if (method === "POST") { writeCodeGraph(req, res); return; }
             res.writeHead(405).end(); return;
         }
-        // The API playground drives a real agent (spawns / makes a request), so it is origin-guarded.
+        // The API playground drives a real agent (spawns / makes a request).
         if (url === "/api/playground") {
-            if (!isLocalRequest(req)) { res.writeHead(403, JSON_HDR); res.end('{"error":"forbidden"}'); return; }
             if (method === "GET") { servePlayground(res); return; }
             if (method === "POST") { runPlaygroundRoute(req, res); return; }
             res.writeHead(405).end(); return;
         }
-        // Accounts/profiles management + config import/export are write/structure surfaces, origin-guarded.
         if (url === "/api/accounts") {
-            if (!isLocalRequest(req)) { res.writeHead(403, JSON_HDR); res.end('{"error":"forbidden"}'); return; }
             if (method === "GET") { serveAccounts(res); return; }
             if (method === "POST") { writeAccount(req, res); return; }
             res.writeHead(405).end(); return;
         }
         if (url === "/api/config-export") {
-            if (!isLocalRequest(req)) { res.writeHead(403, JSON_HDR); res.end('{"error":"forbidden"}'); return; }
             if (method === "GET") { serveConfigExport(res); return; }
             res.writeHead(405).end(); return;
         }
         if (url === "/api/config-import") {
-            if (!isLocalRequest(req)) { res.writeHead(403, JSON_HDR); res.end('{"error":"forbidden"}'); return; }
             if (method === "POST") { writeConfigImport(req, res); return; }
             res.writeHead(405).end(); return;
         }
         if (url === "/api/plan") {
-            if (!isLocalRequest(req)) { res.writeHead(403, JSON_HDR); res.end('{"error":"forbidden"}'); return; }
             if (method === "POST") { writePlan(req, res); return; }
             res.writeHead(405).end(); return;
         }
         if (url === "/api/dashboard-port") {
-            if (!isLocalRequest(req)) { res.writeHead(403, JSON_HDR); res.end('{"error":"forbidden"}'); return; }
             if (method === "POST") { writeDashboardPort(req, res); return; }
             res.writeHead(405).end(); return;
         }
-        // Marketplace packs: fetch/remove/update/setup optional isolated harness packs. A write
-        // surface (installs npm bundles, deletes dirs), so origin-guarded.
+        // Marketplace packs: fetch/remove/update/setup optional isolated harness packs.
         if (url === "/api/packs") {
-            if (!isLocalRequest(req)) { res.writeHead(403, JSON_HDR); res.end('{"error":"forbidden"}'); return; }
             if (method === "GET") { servePacks(res); return; }
             if (method === "POST") { writePack(req, res); return; }
             res.writeHead(405).end(); return;
@@ -909,18 +889,15 @@ function createDashboardServer(version: string): Server {
         // Per-project management: registers project folders and manages each by path
         // (skills, local config, git hooks, gate). Operates only on registered projects.
         if (url === "/api/projects") {
-            if (!isLocalRequest(req)) { res.writeHead(403, JSON_HDR); res.end('{"error":"forbidden"}'); return; }
             if (method === "GET") { serveProjects(res); return; }
             if (method === "POST") { writeProjects(req, res); return; }
             res.writeHead(405).end(); return;
         }
         if (url === "/api/projects/detail") {
-            if (!isLocalRequest(req)) { res.writeHead(403, JSON_HDR); res.end('{"error":"forbidden"}'); return; }
             if (method === "GET") { serveProjectDetail(req, res); return; }
             res.writeHead(405).end(); return;
         }
         if (url === "/api/projects/action") {
-            if (!isLocalRequest(req)) { res.writeHead(403, JSON_HDR); res.end('{"error":"forbidden"}'); return; }
             if (method === "POST") { writeProjectAction(req, res); return; }
             res.writeHead(405).end(); return;
         }
@@ -1008,9 +985,13 @@ export async function startDashboardServer(version: string, bindOverride?: Dashb
  * fragment is deliberate: a browser never sends it to the server, so unlike a query
  * string the token cannot land in access logs or a Referer header. The page reads it
  * once, moves it to sessionStorage and strips it from the address bar.
+ *
+ * Encoded to match the page's decodeURIComponent: a generated token is base64url and needs
+ * none, but an operator-supplied ENIGMA_DASHBOARD_TOKEN may hold `&`, `#` or `%`, which
+ * would otherwise truncate the fragment or fail to decode - leaving a silently dead link.
  */
 export function tokenizedUrl(url: string, token: string | null): string {
-    return token ? `${url}/#token=${token}` : url;
+    return token ? `${url}/#token=${encodeURIComponent(token)}` : url;
 }
 
 // --- daemon (always mode) -------------------------------------------------------

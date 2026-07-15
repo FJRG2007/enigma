@@ -11,6 +11,7 @@
  */
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { request } from "node:http";
 import { test, expect, afterAll } from "bun:test";
 import { mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 
@@ -28,6 +29,24 @@ const { ensureDashboardToken, clearDashboardToken, readDashboardToken, tokenMatc
 /** Point the global config at a bind; the repo has no local .enigma.json to override it. */
 function setBind(mode: string, address = ""): void {
     writeFileSync(join(HOME, ".enigma.json"), JSON.stringify({ dashboardBind: mode, dashboardBindAddress: address }));
+}
+
+/**
+ * GET a route over loopback while presenting an arbitrary Host, the way a browser on another
+ * machine would. Raw node:http because fetch() treats Host as a forbidden header and rewrites
+ * it to the address it dialed - which would quietly turn this back into a same-machine request.
+ */
+function getAs(port: number, path: string, host: string, token: string | null): Promise<number> {
+    const headers: Record<string, string> = { Host: host };
+    if (token) headers.Authorization = `Bearer ${token}`;
+    return new Promise((res, rej) => {
+        const req = request({ host: "127.0.0.1", port, path, method: "GET", headers, setHost: false }, (r) => {
+            r.resume();
+            r.on("end", () => res(r.statusCode || 0));
+        });
+        req.on("error", rej);
+        req.end();
+    });
 }
 
 afterAll(() => rmSync(HOME, { recursive: true, force: true }));
@@ -91,6 +110,23 @@ test("an exposed bind rejects every /api/* request without the bearer, and serve
         // that reads the token out of the URL fragment.
         const page = await fetch(`${base}/`);
         expect(page.status).toBe(200);
+    } finally { server.close(); }
+});
+
+test("an exposed bind serves every route to a bearer arriving at this host's own name", async () => {
+    setBind("custom", "127.0.0.1");
+    const token = ensureDashboardToken(true);
+    const server = await startDashboardServer("test-version");
+    try {
+        // The point of exposing: reaching the dashboard as "server.example", not "localhost".
+        // fetch() forbids overriding Host, so the request is issued raw - and this must stay
+        // that way, since a Host of 127.0.0.1 is exactly what let a 403 on ~20 routes ship.
+        for (const route of ["/api/settings", "/api/skills", "/api/accounts", "/api/status"]) {
+            const res = await getAs(server.port, route, "server.example", token);
+            expect(res).toBe(200);
+        }
+        // The token is still what authenticates: a foreign Host is not a way around it.
+        expect(await getAs(server.port, "/api/settings", "server.example", null)).toBe(401);
     } finally { server.close(); }
 });
 
@@ -159,4 +195,16 @@ test("the token rides the URL as a fragment, never a query string", () => {
     // A fragment is not sent to the server, so it cannot reach an access log or a Referer.
     expect(tokenizedUrl("http://host:24282", "abc")).toBe("http://host:24282/#token=abc");
     expect(tokenizedUrl("http://host:24282", null)).toBe("http://host:24282");
+});
+
+test("a token with URL-special characters survives the trip to the page", () => {
+    // Generated tokens are base64url, but an operator can inject any secret through
+    // ENIGMA_DASHBOARD_TOKEN. Unencoded, `&` truncates the fragment and `%` makes the page's
+    // decodeURIComponent throw - both of which read as a silently unauthenticated tab.
+    const awkward = "a&b#c%d e";
+    const link = tokenizedUrl("http://host:24282", awkward);
+    expect(link).toBe(`http://host:24282/#token=${encodeURIComponent(awkward)}`);
+    // Read it back exactly as the bootstrap in index.html does.
+    const m = /[#&]token=([^&]*)/.exec(link);
+    expect(decodeURIComponent(m![1]!)).toBe(awkward);
 });

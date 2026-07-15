@@ -7,7 +7,7 @@
 import { readJson } from "./util";
 import * as p from "@clack/prompts";
 import { runGuardCli } from "./guard";
-import { readConfig, setEnigmaValue, type DashboardBind } from "./config";
+import { DASHBOARD_BINDS, readConfig, setEnigmaValue, type DashboardBind } from "./config";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { IssueKind } from "./issue";
@@ -101,6 +101,8 @@ interface CliOptions extends InstallOptions {
     apiPack: string | null;
     /** `dashboard`: bind every interface for this run (token required), without persisting it. */
     expose: boolean;
+    /** `dashboard token`: mint a fresh token, killing every link handed out earlier. */
+    newToken: boolean;
 }
 
 function parseArgs(argv: string[]): CliOptions {
@@ -112,7 +114,7 @@ function parseArgs(argv: string[]): CliOptions {
         force: false, all: false, yes: false, login: false, dryRun: false, help: false, version: false,
         stats: false, retrieve: null, compressType: null, clear: false,
         preset: null, token: null, base: null, providerModel: null,
-        port: null, apiKey: null, apiAccount: null, apiProfile: null, apiPack: null, expose: false,
+        port: null, apiKey: null, apiAccount: null, apiProfile: null, apiPack: null, expose: false, newToken: false,
     };
     for (let i = 0; i < argv.length; i++) {
         const a = argv[i]!;
@@ -150,8 +152,9 @@ function parseArgs(argv: string[]): CliOptions {
             case "--profile": opts.apiProfile = next(); break;
             case "--pack": opts.apiPack = next(); break;
             case "--expose": opts.expose = true; break;
-            // `dashboard token --new` rotates; --force is the same intent under its usual name.
-            case "--new": opts.force = true; break;
+            // Its own flag, not an alias of --force: --force is honoured by several commands,
+            // so folding them together would silently arm those with an undocumented spelling.
+            case "--new": opts.newToken = true; break;
             case "--stats": opts.stats = true; break;
             case "--retrieve": opts.retrieve = next(); break;
             case "--type": opts.compressType = next(); break;
@@ -1219,16 +1222,25 @@ function sshTunnelHint(port: number): string {
 }
 
 /**
- * Decide how a headless host should serve the dashboard. Returns the bind to use for this run
- * ("lan" when exposing), or null to stay on loopback.
+ * Decide how a headless host should serve the dashboard. Returns the bind to use for this run,
+ * or null to let the configured bind stand.
  *
- * Only asked when there is no browser to open and someone is there to answer: a scripted or
- * daemonized run must never block on a prompt, and never silently start exposing itself.
- * "Always" persists the choice, which is also what stops this from asking again.
+ * Only asked when there is no browser to open, someone is there to answer, and the config does
+ * not already settle it: a scripted or daemonized run must never block on a prompt, and never
+ * silently start exposing itself. "Always" persists the choice, which is what stops the asking.
+ *
+ * Every answer is returned as an explicit bind rather than null, because null falls through to
+ * the configured bind - so answering "keep it local" once "always" had been persisted would
+ * otherwise still expose the host, silently ignoring the choice just made.
  */
 async function resolveHeadlessBind(expose: boolean): Promise<DashboardBind | null> {
     if (expose) return "lan";
     if (!isHeadless() || !process.stdin.isTTY) return null;
+    // Already told how to bind: honour it instead of asking the same question every run.
+    // Validated the way resolveBind validates it, so an unrecognized value still gets asked
+    // about rather than being read as a decision the user never made.
+    const configured = readConfig().config.dashboardBind;
+    if (DASHBOARD_BINDS.includes(configured) && configured !== "loopback") return null;
     const choice = await p.select({
         message: "No browser on this host. How should the dashboard be reachable?",
         initialValue: "local",
@@ -1238,7 +1250,7 @@ async function resolveHeadlessBind(expose: boolean): Promise<DashboardBind | nul
             { value: "always", label: "Expose it on the network - always", hint: "requires a token; remembered" },
         ],
     });
-    if (p.isCancel(choice) || choice === "local") return null;
+    if (p.isCancel(choice) || choice === "local") return "loopback";
     if (choice === "always") setEnigmaValue("dashboardBind", "lan", "global");
     return "lan";
 }
@@ -1277,14 +1289,16 @@ async function runDashboardCli(version: string, opts: CliOptions): Promise<numbe
         let token: string | null = null;
         try { token = resolveBind().token; } catch { /* misconfigured bind: it is not serving anyway */ }
         console.log(`enigma dashboard already running ${tag}-> ${tokenizedUrl(running.url, token)}`);
-        openUrl(running.url);
+        // The tokenized URL, or a browser here lands on the "needs a token" banner. The
+        // fragment never reaches the server, so this is the same link that was printed.
+        openUrl(tokenizedUrl(running.url, token));
         return 0;
     }
     // Ask before binding, not after: the answer decides which interface we listen on.
     const bindOverride = await resolveHeadlessBind(opts.expose);
     // Exposing is only ever allowed with a token, so mint one now rather than letting the
     // server refuse to start on a choice the user just made.
-    if (bindOverride) ensureDashboardToken();
+    if (bindOverride && bindOverride !== "loopback") ensureDashboardToken();
     let server: Awaited<ReturnType<typeof startDashboardServer>>;
     try { server = await startDashboardServer(version, bindOverride ?? undefined); }
     catch (err) { console.error(`Could not start the dashboard: ${(err as Error).message}`); return 1; }
@@ -1301,7 +1315,7 @@ async function runDashboardCli(version: string, opts: CliOptions): Promise<numbe
         if (isHeadless()) console.log(`No browser here. Reach it from your machine with:\n  ${sshTunnelHint(server.port)}\nthen open http://localhost:${server.port}`);
     }
     console.log("Press Ctrl+C to stop.");
-    openUrl(server.url);
+    openUrl(tokenizedUrl(server.url, server.bind.token));
     return await new Promise<number>((resolveExit) => {
         const stop = (): void => { clearDaemon(); server.close(); resolveExit(0); };
         process.on("SIGINT", stop);
@@ -1315,7 +1329,7 @@ async function runDashboardCli(version: string, opts: CliOptions): Promise<numbe
  * handed out. Printing beats `cat`-ing the file: this is the only supported way to read it.
  */
 function runDashboardTokenCli(opts: CliOptions): number {
-    const rotate = opts.force;
+    const rotate = opts.newToken;
     if (!rotate && !readDashboardToken()) {
         console.log("No dashboard token set. One is minted when you expose the dashboard (`enigma dashboard --expose`), or now with `enigma dashboard token --new`.");
         return 0;
