@@ -37,6 +37,9 @@ jobs:
       - name: Test dashboard exposure and token auth
         run: bun test tests/dashboard-expose.test.ts
         working-directory: packages/enigma-cli
+      - name: Test gh telemetry reporting
+        run: bun test tests/github.test.ts
+        working-directory: packages/enigma-cli
       - name: Test package update checker
         run: bun test tests/dashboard-updates.test.ts
         working-directory: packages/enigma-cli

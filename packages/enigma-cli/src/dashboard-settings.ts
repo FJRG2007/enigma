@@ -10,7 +10,7 @@
  * is no static import cycle with settings-registry -> dashboard (applyDashboardMode).
  */
 
-import { CATEGORIES, ALL_SETTINGS, parseBool, type Scope } from "./settings-registry";
+import { CATEGORIES, ALL_SETTINGS, parseBool, type ApplyResult, type Scope } from "./settings-registry";
 
 /** One setting flattened for the browser: its value plus how to render the control. */
 export interface UiSetting {
@@ -100,13 +100,18 @@ export async function applySetting(key: string, value: unknown, scope: Scope = "
         return { ok: true, key, setting: updatedList };
     }
 
+    // Keep the write's own verdict: a setting backed by another tool's config (gh) can
+    // refuse, and re-reading alone cannot tell "refused" from "already that value" - so
+    // dropping this reported a write that never happened as saved.
+    let result: ApplyResult;
     if (setting.choices && setting.writeChoice && typeof value === "string" && setting.choices.includes(value)) {
-        setting.writeChoice(value, target);
+        result = setting.writeChoice(value, target);
     } else {
         const b = typeof value === "boolean" ? value : (typeof value === "string" ? parseBool(value) : null);
         if (b === null) return { ok: false, error: `invalid value for ${key}` };
-        setting.write(b, target);
+        result = setting.write(b, target);
     }
+    if (result?.error) return { ok: false, key, error: result.error };
 
     let restartNote: string | undefined;
     if (setting.affectsMemory) {

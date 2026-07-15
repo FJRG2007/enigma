@@ -251,6 +251,12 @@ export async function runConfigCli(positionals: string[], scope: Scope | null, i
         result = setting.write(value, target);
         label = setting.readChoice ? setting.readChoice(target) : valueLabel(value);
     }
+    // A write backed by another tool's config can refuse; say so and exit non-zero
+    // rather than printing the value we merely asked for as though it had stuck.
+    if (result.error) {
+        console.error(`Could not set ${rawKey}: ${result.error}.`);
+        return 1;
+    }
     const where = result.path ? ` in ${result.path}` : "";
     console.log(`Set ${rawKey} = ${label} (${target})${where}.`);
 

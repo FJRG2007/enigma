@@ -26,7 +26,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { spawn, spawnSync } from "node:child_process";
 import { isDir, readJson, resolveBin } from "./util";
 
-/** Last-known gh state: enabled/disabled, or null when gh is not installed. */
+/** Last-known gh state: enabled/disabled, or null when gh could not tell us. */
 export type GhTelemetry = boolean | null;
 
 const CACHE_FILE = join(homedir(), ".enigma", "cache.json");
@@ -60,13 +60,32 @@ export function hasGhCli(): boolean {
 
 /**
  * Whether gh telemetry is currently enabled, asking gh synchronously (slow but
- * authoritative). gh's default is enabled, so an unset/unreadable value reads as
- * true. Returns null when gh is not installed.
+ * authoritative). Returns null when we could not find out - gh is absent, or it
+ * answered with an error.
+ *
+ * The null case is load-bearing. `gh config get` exits non-zero on a key it does not
+ * know, which is exactly what a gh predating the `telemetry` setting does (distro
+ * packages lag by many releases). Folding that into `value !== "disabled"` reported
+ * telemetry as ENABLED on a read that never happened, so the dashboard showed it on,
+ * the write then failed the same way, and the toggle looked broken for no stated
+ * reason. An unreadable value is unknown, not enabled.
  */
 export function getGhTelemetry(): GhTelemetry {
     if (!hasGhCli()) return null;
     const value = ghConfig(["get", "telemetry"]);
+    if (value === null) return null;
+    // gh's default is on, so a key that exists but is unset reads as enabled.
     return value !== "disabled";
+}
+
+/**
+ * Why enigma cannot manage gh's telemetry setting here, or null when it can. Callers
+ * surface this instead of letting a write no-op in silence.
+ */
+export function ghTelemetryBlocker(): string | null {
+    if (!hasGhCli()) return "the GitHub CLI (gh) was not found on PATH";
+    if (getGhTelemetry() === null) return "gh is installed but rejected `gh config get telemetry` - it is most likely too old to know that setting, so upgrade gh";
+    return null;
 }
 
 /** Update the memo + persistent cache, notifying subscribers when the value changed. */
@@ -98,8 +117,11 @@ function revalidate(): void {
         const child = spawn(bin, ["config", "get", "telemetry"], { windowsHide: true });
         let out = "";
         child.stdout?.on("data", (d) => { out += String(d); });
-        child.on("error", () => { /* keep the cached value */ });
-        child.on("close", (code) => { if (code === 0) remember(out.trim() !== "disabled"); });
+        child.on("error", () => { remember(null); });
+        // A non-zero exit is an answer too: gh cannot tell us. Keeping the cached value
+        // here is how a stale "enabled" survived forever on a box whose gh cannot read
+        // the key - the revalidation that was meant to correct the cache never did.
+        child.on("close", (code) => { remember(code === 0 ? out.trim() !== "disabled" : null); });
     } catch { /* keep the cached value */ }
 }
 
