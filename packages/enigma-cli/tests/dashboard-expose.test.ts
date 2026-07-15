@@ -23,7 +23,7 @@ process.env.ENIGMA_NO_UPDATE_CHECK = "1";
 // An inherited token would mask the fail-closed case, which is the whole point of this file.
 delete process.env.ENIGMA_DASHBOARD_TOKEN;
 
-const { startDashboardServer, resolveBind, tokenizedUrl } = await import("../src/dashboard");
+const { startDashboardServer, resolveBind, tokenizedUrl, dashboardUrl, repoBindOverrideIgnored } = await import("../src/dashboard");
 const { ensureDashboardToken, clearDashboardToken, readDashboardToken, tokenMatches, bearerOf } = await import("../src/dashboard-token");
 
 /** Point the global config at a bind; the repo has no local .enigma.json to override it. */
@@ -156,6 +156,42 @@ test("an exposed bind rejects a cross-origin caller even with a valid bearer", a
     } finally { server.close(); }
 });
 
+test("rotating the token revokes a live server's old link", async () => {
+    setBind("custom", "127.0.0.1");
+    const old = ensureDashboardToken(true);
+    const server = await startDashboardServer("test-version");
+    const base = `http://127.0.0.1:${server.port}`;
+    try {
+        expect((await fetch(`${base}/api/status`, { headers: { Authorization: `Bearer ${old}` } })).status).toBe(200);
+
+        // Rotation is the documented answer to a leaked link, so it has to bite a server that
+        // is already running - caching the token made `token --new` claim a revocation it had
+        // not performed.
+        const fresh = ensureDashboardToken(true);
+        expect(fresh).not.toBe(old);
+        expect((await fetch(`${base}/api/status`, { headers: { Authorization: `Bearer ${old}` } })).status).toBe(401);
+        expect((await fetch(`${base}/api/status`, { headers: { Authorization: `Bearer ${fresh}` } })).status).toBe(200);
+
+        // Deleting the token closes the surface rather than leaving it open on a stale secret.
+        clearDashboardToken();
+        expect((await fetch(`${base}/api/status`, { headers: { Authorization: `Bearer ${fresh}` } })).status).toBe(401);
+    } finally { server.close(); }
+});
+
+test("a repo .enigma.json cannot widen the bind", () => {
+    // The bind is a per-machine decision: a committed config travels with a clone, so honouring
+    // it would let repo content open a port on whoever runs enigma inside it.
+    writeFileSync(join(HOME, ".enigma.json"), JSON.stringify({ dashboardBind: "loopback" }));
+    const repoConfig = join(process.cwd(), ".enigma.json");
+    try {
+        writeFileSync(repoConfig, JSON.stringify({ dashboardBind: "lan" }));
+        expect(resolveBind().mode).toBe("loopback");
+        expect(resolveBind().host).toBe("127.0.0.1");
+        expect(repoBindOverrideIgnored()).toBe(true);
+    } finally { rmSync(repoConfig, { force: true }); }
+    expect(repoBindOverrideIgnored()).toBe(false);
+});
+
 test("the token round-trips, rotates, and the env var wins", () => {
     clearDashboardToken();
     expect(readDashboardToken()).toBeNull();
@@ -201,6 +237,17 @@ test("bearerOf reads only a well-formed Authorization header", () => {
     expect(bearerOf("Basic abc123")).toBeUndefined();
     expect(bearerOf(undefined)).toBeUndefined();
     expect(bearerOf("Bearer")).toBeUndefined();
+});
+
+test("an IPv6 custom bind produces a usable link", () => {
+    // The docs point at Tailscale for `custom`, and Tailscale hands out an fd7a: address
+    // alongside the 100.x one. Unbracketed, the only way in parses as host:port garbage.
+    const url = dashboardUrl(24282, { mode: "custom", host: "fd7a:115c:a1e0::1", token: "t" });
+    expect(url).toBe("http://[fd7a:115c:a1e0::1]:24282");
+    expect(() => new URL(url)).not.toThrow();
+    expect(new URL(tokenizedUrl(url, "t")).hash).toBe("#token=t");
+    // IPv4 is left alone.
+    expect(dashboardUrl(24282, { mode: "custom", host: "100.64.0.1", token: "t" })).toBe("http://100.64.0.1:24282");
 });
 
 test("the token rides the URL as a fragment, never a query string", () => {

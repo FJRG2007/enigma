@@ -22,17 +22,18 @@
  * posture holds. (Apache-2.0; its license notice is retained inside the asset, logo hidden.)
  */
 
+import { isIPv6 } from "node:net";
 import { resolveBin } from "./util";
-import { homedir, hostname } from "node:os";
 import { fileURLToPath } from "node:url";
 import { readUsageCached } from "./usage";
 import { spawn } from "node:child_process";
 import { basename, dirname, join } from "node:path";
 import { createServer, type Server } from "node:http";
+import { homedir, hostname, networkInterfaces } from "node:os";
 import { readStats, readHistory, ccrCacheStats } from "./compress";
 import { bearerOf, readDashboardToken, tokenMatches } from "./dashboard-token";
 import { readUpdateStatusCached, spawnEnigmaUpdate } from "./dashboard-updates";
-import { DASHBOARD_BINDS, readConfig, setEnigmaValue, type DashboardBind } from "./config";
+import { DASHBOARD_BINDS, readConfig, readGlobalConfig, readProjectConfig, setEnigmaValue, type DashboardBind } from "./config";
 import { existsSync, mkdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { dashboardAssetsDir, installedDashboardVersion, spawnDashboardPkgInstall } from "./dashboard-pkg";
 
@@ -135,14 +136,37 @@ export function removeHostsEntry(): HostsResult {
 }
 
 /**
+ * This machine's first non-internal IPv4, or null when it has none.
+ *
+ * An exposed dashboard is reached from another machine, and `os.hostname()` is usually the
+ * wrong answer there: a cloud VM calls itself something like `ip-172-31-4-9` that resolves
+ * nowhere outside its own VPC, so the printed link (the only way in) would be dead. An address
+ * at least works from anything that can route to it. IPv4 only: an IPv6 pick would need a
+ * scope/reachability judgement we cannot make from here.
+ */
+function lanAddress(): string | null {
+    for (const addrs of Object.values(networkInterfaces())) {
+        for (const a of addrs || []) {
+            if (a.family === "IPv4" && !a.internal) return a.address;
+        }
+    }
+    return null;
+}
+
+/** Wrap an IPv6 literal in brackets; URLs require it, and a bare one parses as host:port garbage. */
+function urlHost(host: string): string {
+    return isIPv6(host) ? `[${host}]` : host;
+}
+
+/**
  * The URL a user should open for a server bound to `port`, given hosts availability.
  * An exposed bind is reached from ANOTHER machine, where the `enigma` hosts alias (and
- * `localhost`) would point the visitor back at themselves - so it reports this host's own
- * name, or the pinned address for a custom bind.
+ * `localhost`) would point the visitor back at themselves - so it reports a routable address:
+ * the pinned one for a custom bind, else this host's own LAN address.
  */
 export function dashboardUrl(port: number, bind?: BindResolution): string {
     const host = bind && bind.mode !== "loopback"
-        ? (bind.mode === "custom" ? bind.host : hostname())
+        ? urlHost(bind.mode === "custom" ? bind.host : (lanAddress() || hostname()))
         : (hasHostsEntry() ? HOSTNAME : "localhost");
     return port === 80 ? `http://${host}` : `http://${host}:${port}`;
 }
@@ -262,9 +286,14 @@ export interface BindResolution {
  * admin surface (it runs agents with your credentials, kills processes, rewrites config), so
  * it is never bound to a reachable interface unauthenticated - failing to start is strictly
  * better than serving something an operator would reasonably assume was safe.
+ *
+ * The bind is read from the GLOBAL config only. A repo's .enigma.json is committable and
+ * travels with a clone, so honouring it here would let cloned repo content decide that this
+ * machine opens a port - which is also the invariant dashboard-config-io.ts keeps by refusing
+ * to carry these keys in an exported bundle.
  */
 export function resolveBind(override?: DashboardBind): BindResolution {
-    const cfg = readConfig().config;
+    const cfg = readGlobalConfig();
     const configured = DASHBOARD_BINDS.includes(cfg.dashboardBind) ? cfg.dashboardBind : "loopback";
     // `override` is the "just this once" path: it binds for this run without persisting.
     const mode = override || configured;
@@ -274,6 +303,15 @@ export function resolveBind(override?: DashboardBind): BindResolution {
     const token = readDashboardToken();
     if (!token) throw new Error(`refusing to bind ${host} without a token (the dashboard can run agents, kill processes and rewrite config): run \`enigma dashboard --expose\`, or set one with \`enigma dashboard token --new\``);
     return { mode, host, token };
+}
+
+/**
+ * Whether a repo-local .enigma.json is trying to set the bind, so a caller can say it was
+ * ignored. Silently dropping a setting the user wrote is worse than refusing it out loud.
+ */
+export function repoBindOverrideIgnored(): boolean {
+    const local = readProjectConfig(process.cwd());
+    return local.dashboardBind !== undefined || local.dashboardBindAddress !== undefined;
 }
 
 /** The bind this process resolved at listen time; every request is authorized against it. */
@@ -286,12 +324,20 @@ let activeBind: BindResolution = { mode: "loopback", host: LOOPBACK, token: null
  * - exposed: the token authenticates. Host may legitimately be any address or DNS name that
  *   points at this box, so pinning an allowlist would just break real setups; instead a
  *   browser's Origin must match the Host it called, which keeps the CSRF/rebinding layer.
+ *
+ * The token is re-read per request rather than taken from `activeBind`. Rotation is the
+ * documented answer to a leaked link, so it has to bite a server that is already running:
+ * caching it here made `dashboard token --new` print "every link handed out earlier is now
+ * dead" while the live process happily kept honouring the old one. A deleted token file now
+ * closes the surface for the same reason.
  */
 function isAuthorized(req: import("node:http").IncomingMessage): boolean {
-    if (!activeBind.token) return isLocalRequest(req);
+    if (activeBind.mode === "loopback") return isLocalRequest(req);
+    const token = readDashboardToken();
+    if (!token) return false;
     const origin = req.headers.origin;
     if (origin && hostOnly(origin) !== hostOnly(req.headers.host)) return false;
-    return tokenMatches(activeBind.token, bearerOf(req.headers.authorization));
+    return tokenMatches(token, bearerOf(req.headers.authorization));
 }
 
 const JSON_HDR = { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" } as const;
@@ -802,8 +848,9 @@ function createDashboardServer(version: string): Server {
         // names, costs and session history). `/` and `/lib/*` stay open on purpose - static
         // assets with no data, and the page must load in order to run the token bootstrap.
         if (url.startsWith("/api/") && !isAuthorized(req)) {
-            res.writeHead(activeBind.token ? 401 : 403, { ...JSON_HDR, "WWW-Authenticate": "Bearer" });
-            res.end(activeBind.token ? '{"error":"unauthorized"}' : '{"error":"forbidden"}');
+            const exposed = activeBind.mode !== "loopback";
+            res.writeHead(exposed ? 401 : 403, { ...JSON_HDR, "WWW-Authenticate": "Bearer" });
+            res.end(exposed ? '{"error":"unauthorized"}' : '{"error":"forbidden"}');
             return;
         }
         if (url === "/api/settings") {
@@ -1025,6 +1072,27 @@ export function clearDaemon(): void {
     try { unlinkSync(daemonFile()); } catch { /* already gone */ }
 }
 
+/** Why the last daemon start failed, sitting next to the pidfile it never got to write. */
+function daemonErrorFile(): string {
+    return join(homedir(), ".enigma", "dashboard-error");
+}
+
+function writeDaemonError(message: string): void {
+    try {
+        mkdirSync(dirname(daemonErrorFile()), { recursive: true });
+        writeFileSync(daemonErrorFile(), `${message}\n`);
+    } catch { /* diagnostics are best-effort; never mask the original failure */ }
+}
+
+function clearDaemonError(): void {
+    try { unlinkSync(daemonErrorFile()); } catch { /* already gone */ }
+}
+
+/** The reason the background dashboard is not running, if it failed to start. */
+export function daemonError(): string | null {
+    try { return readFileSync(daemonErrorFile(), "utf8").trim() || null; } catch { return null; }
+}
+
 /** Signal-0 liveness probe: EPERM means the pid exists but is not ours (still alive). */
 function isProcessAlive(pid: number): boolean {
     try { process.kill(pid, 0); return true; }
@@ -1076,7 +1144,16 @@ export async function serveDashboardDaemon(version: string): Promise<void> {
     // A second daemon would just fight for the port; defer to the live one.
     if (runningDaemon()) return;
     let server: RunningServer;
-    try { server = await startDashboardServer(version); } catch { return; }
+    try { server = await startDashboardServer(version); }
+    catch (err) {
+        // The daemon is detached with stdio ignored, so a thrown error has nowhere to go and
+        // the user just finds no dashboard. Leave the reason next to the pidfile: the common
+        // case here is the fail-closed refusal (an exposed bind with no token), which is
+        // otherwise indistinguishable from the daemon never having been asked to start.
+        writeDaemonError((err as Error).message);
+        return;
+    }
+    clearDaemonError();
     writeDaemon({ pid: process.pid, port: server.port, url: server.url, startedAt: Date.now() });
     const shutdown = (): void => { clearDaemon(); server.close(); process.exit(0); };
     process.on("SIGTERM", shutdown);

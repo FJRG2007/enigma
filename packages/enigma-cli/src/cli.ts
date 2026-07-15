@@ -29,7 +29,7 @@ import { ensureLinterInstalled, isLinterInstalled, refreshLinterPkg } from "./li
 import { checkLatestNow, getAvailableUpdate, notifyUpdate, performUpdateCheck, runUpdate } from "./update";
 import { isUsableSession, sessionEmail, sessionState, transferSession, type SessionState } from "./claude-oauth";
 import { ensureDashboardCurrent, isDashboardPkgCurrent, isDashboardPkgInstalled, refreshDashboardPkg } from "./dashboard-pkg";
-import { clearDaemon, dashboardUrl, ensureHostsEntry, resolveBind, runningDaemon, serveDashboardDaemon, startDashboardServer, tokenizedUrl, writeDaemon } from "./dashboard";
+import { clearDaemon, daemonError, dashboardUrl, ensureHostsEntry, repoBindOverrideIgnored, resolveBind, runningDaemon, serveDashboardDaemon, startDashboardServer, tokenizedUrl, writeDaemon } from "./dashboard";
 import {
     PACKS, disablePack, enablePack, getPack, installedPackVersion, isPackInstalled,
     launchPack, listPacks, packSessionSources, refreshPack, setupPackMcp,
@@ -1279,11 +1279,28 @@ async function runDashboardCli(version: string, opts: CliOptions): Promise<numbe
     // Best-effort: map http://enigma -> loopback so the URL is pretty (falls back to
     // localhost when hosts is unwritable). No-op when the entry already exists.
     ensureHostsEntry();
+    // The bind comes from the global config only, so a repo asking for one is dropped. Say it
+    // rather than leaving the user to wonder why their setting had no effect.
+    if (repoBindOverrideIgnored()) console.error("Note: this project's .enigma.json sets dashboard-bind; it is ignored (the bind is a per-machine setting, so repo content cannot open a port here). Use 'enigma config dashboard-bind <mode> -g'.");
+    // A background dashboard that failed to start leaves its reason behind; surface it here,
+    // since the daemon itself is detached with nowhere to print.
+    const failure = daemonError();
+    if (failure && mode === "always") console.error(`Note: the background dashboard is not running: ${failure}`);
     // Only one dashboard at a time: if one is already serving (the "always" daemon OR
     // another foreground `enigma dashboard`), open its URL instead of starting a second
     // server on a different port. Stale records are cleaned by runningDaemon().
     const running = runningDaemon();
     if (running) {
+        // A live server cannot move to another interface, so --expose cannot be honoured here.
+        // Say so instead of printing a loopback URL and exiting 0: with `dashboard: always`
+        // (the documented server setup) that silently did nothing at all, which is the exact
+        // case --expose exists for.
+        if (opts.expose) {
+            console.error(`A dashboard is already running on ${running.url} and a running server cannot rebind.`);
+            console.error("Stop it first (Ctrl+C, or 'enigma config dashboard off' for the background one), then run 'enigma dashboard --expose'.");
+            console.error("To expose it permanently instead: 'enigma config dashboard-bind lan', then restart it.");
+            return 1;
+        }
         const tag = mode === "always" ? "(always) " : "";
         // A daemon on an exposed bind is only reachable with its token, so print that link.
         let token: string | null = null;

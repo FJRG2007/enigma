@@ -285,6 +285,17 @@ export function readConfig(): { config: EnigmaConfig; sources: string[] } {
 }
 
 /**
+ * Config from the global ~/.enigma.json only, ignoring any repo-local one.
+ *
+ * For host-level decisions that repo content must never influence - notably which interface the
+ * dashboard binds. A repo's .enigma.json is committable and travels with a clone, so honouring
+ * it there would let a cloned repository open a port on the machine that runs enigma inside it.
+ */
+export function readGlobalConfig(): EnigmaConfig {
+    return mergeConfigFiles([configPath("global")]).config;
+}
+
+/**
  * Effective config as seen from a specific project dir: global then that project's
  * own .enigma.json. Used by the dashboard to manage a project by path (its cwd is
  * the dashboard's, not the project's), so it never relies on process.cwd().
