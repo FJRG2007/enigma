@@ -97,7 +97,12 @@ export function spawnEnigmaUpdate(): boolean {
         const exe = basename(process.execPath).toLowerCase();
         const dev = exe === "node" || exe === "node.exe" || exe === "bun" || exe === "bun.exe";
         const args = dev ? [process.argv[1]!, "update"] : ["update"];
-        spawn(process.execPath, args, { detached: true, stdio: "ignore", windowsHide: true }).unref();
+        const child = spawn(process.execPath, args, { detached: true, stdio: "ignore", windowsHide: true });
+        // A spawn failure surfaces as an async `error` event; with no listener the child
+        // rethrows it as an uncaught exception, which this try/catch cannot intercept - and
+        // here that would kill the dashboard server the user is looking at.
+        child.on("error", () => { /* the update simply did not start */ });
+        child.unref();
         return true;
     } catch { return false; }
 }

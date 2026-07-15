@@ -1134,7 +1134,12 @@ export function spawnDashboardDaemon(): void {
         const args = (exe === "node" || exe === "node.exe" || exe === "bun" || exe === "bun.exe")
             ? [process.argv[1]!, "__dashboard-serve"]
             : ["__dashboard-serve"];
-        spawn(process.execPath, args, opts).unref();
+        const child = spawn(process.execPath, args, opts);
+        // Load-bearing, not decorative: a spawn failure arrives as an ASYNCHRONOUS `error`
+        // event, and a child with no listener for it rethrows as an uncaught exception -
+        // taking down the caller. The try/catch around this cannot see that.
+        child.on("error", () => { /* no daemon; the dashboard still opens on demand */ });
+        child.unref();
     } catch { /* best-effort: a failed spawn must never break the calling command */ }
 }
 
