@@ -5,9 +5,13 @@
  * <on|off>` it sets one option via the shared registry (settings-registry.ts).
  */
 
+import { isIP } from "node:net";
 import { DASHBOARD_BINDS, readConfig, setEnigmaValue, type DashboardBind } from "./config";
 import { ALL_SETTINGS, CATEGORIES, parseBool, valueLabel } from "./settings-registry";
 import type { ApplyResult, Scope } from "./settings-registry";
+
+/** A DNS name: dot-separated labels of alphanumerics/hyphens, each 1-63 chars, no leading/trailing hyphen. */
+const HOSTNAME_RE = /^(?=.{1,253}$)[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
 
 /** Print every setting's effective value, grouped by category, for non-TTY use. */
 function printEffective(): void {
@@ -111,8 +115,15 @@ export async function runConfigCli(positionals: string[], scope: Scope | null, i
     }
 
     // dashboard-bind-address pins the interface for dashboard-bind "custom" (e.g. a Tailscale IP).
+    // Validated on write so a typo is caught here, with the address in hand, rather than at bind
+    // time as a failed listen. An address that parses can still be gone by then (a tailnet that
+    // moved), which listenWithFallback reports on its own.
     if (rawKey === "dashboard-bind-address") {
-        const value = rawValue === undefined || rawValue === "" || rawValue.toLowerCase() === "none" ? "" : rawValue;
+        const value = rawValue === undefined || rawValue === "" || rawValue.toLowerCase() === "none" ? "" : rawValue.trim();
+        if (value && !isIP(value) && !HOSTNAME_RE.test(value)) {
+            console.error("Invalid value for 'dashboard-bind-address'. Usage: enigma config dashboard-bind-address <ip|hostname|none> [-g|-l]. It pins the interface `dashboard-bind custom` listens on.");
+            return 1;
+        }
         const target: Scope = scope || "global";
         const path = setEnigmaValue("dashboardBindAddress", value, target);
         console.log(`Set dashboard-bind-address = ${value || "(unset)"} (${target})${path ? ` in ${path}` : ""}. Restart the dashboard to apply.`);

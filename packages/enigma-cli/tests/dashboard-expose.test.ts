@@ -67,6 +67,18 @@ test("a custom bind with no address configured refuses to start", () => {
     clearDashboardToken();
 });
 
+test("an unavailable bind address blames the interface, not the port", async () => {
+    // 192.0.2.1 is TEST-NET-1: never assigned to a local interface, so every listen fails
+    // without touching the network. This is the stale-dashboardBindAddress case (a tailnet
+    // that moved, an interface that is down), which used to exhaust the port fallback list
+    // and report "could not bind any port", sending the operator after the wrong cause.
+    // Asserted on the message, not the error code: bun reports this as EADDRINUSE.
+    setBind("custom", "192.0.2.1");
+    ensureDashboardToken();
+    expect(startDashboardServer("v")).rejects.toThrow(/points at the interface, not the port/);
+    clearDashboardToken();
+});
+
 test("loopback binds with no token and keeps serving the API", async () => {
     setBind("loopback");
     clearDashboardToken();

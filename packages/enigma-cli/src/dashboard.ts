@@ -948,16 +948,25 @@ let boundPort = 0;
  * Bind a port for the dashboard on `host`. A user-configured `dashboardPort` (1-65535) is tried
  * first; otherwise (or if it is busy) it falls back to 80 -> 24282 -> an ephemeral port, so the
  * dashboard always opens. Returns the bound port.
+ *
+ * `host` is user-configurable, so exhausting the list means the interface is unavailable (a
+ * stale `dashboardBindAddress`, a downed tailnet) far more often than it means every port is
+ * taken: the list ends at port 0, and the OS always has a free ephemeral port to hand out, so
+ * failing THAT was never about the port. The error reports that inference rather than the
+ * listen error code, because the code cannot be trusted here - bun flattens every listen
+ * failure to EADDRINUSE ("Is port X in use?"), including an unroutable address, where node
+ * reports EADDRNOTAVAIL. Enigma ships as a bun binary, so the misleading one is the default.
  */
 async function listenWithFallback(server: Server, host: string): Promise<number> {
     const preferred = readConfig().config.dashboardPort;
     const valid = Number.isInteger(preferred) && preferred > 0 && preferred <= 65535;
     const candidates = [...(valid ? [preferred] : []), ...PORTS, 0].filter((p, i, a) => a.indexOf(p) === i);
+    let last = "";
     for (const port of candidates) {
         try { await tryListen(server, port, host); boundPort = (server.address() as { port: number }).port; return boundPort; }
-        catch { /* port busy or privileged: try the next */ }
+        catch (err) { last = (err as NodeJS.ErrnoException).code || (err as Error).message; }
     }
-    throw new Error("could not bind any port for the dashboard");
+    throw new Error(`could not bind the dashboard to ${host}: no port worked, including an ephemeral one (${last}) - that points at the interface, not the port. Check \`enigma config dashboard-bind\` / \`dashboard-bind-address\`.`);
 }
 
 export interface RunningServer {
