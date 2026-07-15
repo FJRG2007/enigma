@@ -134,11 +134,29 @@ Endpoints under `/v1` (chat/completions, messages, models, sessions). `--port <n
 
 ## dashboard
 
-A loopback-only browser control panel for all of enigma - accounts, skills, settings, system cleanup - that also shows real Claude usage and measured savings. Nothing leaves your machine.
+A browser control panel for all of enigma - accounts, skills, settings, system cleanup - that also shows real Claude usage and measured savings. Loopback-only by default: nothing leaves your machine.
 
 <Cmd name="enigma dashboard" ex="enigma dashboard">
 Alias `enigma dash`. Runs while open by default; `enigma config dashboard always` keeps a lightweight background daemon.
 </Cmd>
+
+### On a server
+
+With no browser to open (a host reached over SSH), `enigma dashboard` prints the tunnel command instead of failing. This is the recommended way in: the port stays on loopback and SSH already authenticates whoever reaches it.
+
+```bash
+ssh -N -L 24282:127.0.0.1:24282 user@host   # then open http://localhost:24282
+```
+
+It also offers to expose the dashboard on the network - just this once, or always (`dashboard-bind: lan`). Because the dashboard can run agents with your credentials, kill processes and rewrite config, exposing it **always requires a token**: a non-loopback bind refuses to start without one, and every `/v1`-style `/api/*` request must carry it.
+
+<Cmd name="enigma dashboard --expose" ex={["enigma dashboard --expose", "enigma dashboard token --new"]}>
+Bind every interface for this run without persisting it, minting a token if needed. `enigma config dashboard-bind lan` makes it stick; `custom` + `dashboard-bind-address` pins one interface (e.g. a Tailscale IP). `dashboard token` prints the token, `--new` rotates it and kills every link already handed out.
+</Cmd>
+
+The printed link carries the token as a URL fragment (`http://host:24282/#token=...`). A fragment is never sent to the server, so unlike a query string it cannot land in an access log or a `Referer` header; the page moves it into `sessionStorage` and strips it from the address bar. Treat that link as a password.
+
+Exposing a dashboard directly to the public internet is not a supported setup - prefer the SSH tunnel or a private network (Tailscale), and put TLS in front of it if it must cross one.
 
 ## gate
 

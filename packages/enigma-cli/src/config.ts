@@ -44,6 +44,16 @@ export type DashboardMode = "off" | "on-demand" | "always";
 export const DASHBOARD_MODES: readonly DashboardMode[] = ["off", "on-demand", "always"];
 
 /**
+ * Which interface the dashboard binds. "loopback" (default) is reachable only from this
+ * machine; "lan" binds every interface; "custom" binds `dashboardBindAddress` (use it to
+ * pin one interface, e.g. a Tailscale IP). The dashboard is an admin surface - it can run
+ * agents with your credentials, kill processes and rewrite config - so a non-loopback bind
+ * REFUSES to start without a shared-secret token, and never binds unauthenticated.
+ */
+export type DashboardBind = "loopback" | "lan" | "custom";
+export const DASHBOARD_BINDS: readonly DashboardBind[] = ["loopback", "lan", "custom"];
+
+/**
  * What the prompt secret guard does when it finds a credential in a chat message on
  * its way to Claude (via the proxy). "redact" replaces the secret with a placeholder
  * so the key never reaches the model but the turn still works; "reject" blocks the
@@ -147,6 +157,14 @@ export interface EnigmaConfig {
      */
     dashboardPort: number;
     /**
+     * Which interface the dashboard binds (default "loopback" = this machine only). Anything
+     * else needs a shared-secret token and refuses to start without one. Changing it needs a
+     * dashboard restart to rebind.
+     */
+    dashboardBind: DashboardBind;
+    /** Interface address for `dashboardBind: "custom"` (e.g. a Tailscale IP). Ignored otherwise. */
+    dashboardBindAddress: string;
+    /**
      * Preferred port for the local OpenAI-compatible API server (`enigma api`), which exposes
      * the local Claude Code over an HTTP API. Default 8000; overridable per run with --port.
      */
@@ -238,7 +256,7 @@ export const CONFIG_DEFAULTS: EnigmaConfig = {
     commitEmoji: true, updateNotifier: true, fullscreen: true, parallelSubagents: false, outputStyle: "off", minimalCode: "full",
     autoSync: true, remoteSkills: true, skillUpdatePolicy: "overwrite", permissionBypass: true, autoLint: false, compress: false, codeGraph: false, gate: false, dashboard: "off", tokenPrice: 0, tokenSpeed: 0, usageStats: false, recall: false, recallLlm: true, recallProvider: "claude-local", recallModel: "", recallApiBase: "", recallApiKey: "", proxy: false, usageApi: false, promptSecretGuard: false, promptSecretMode: "redact",
     planSessionLimit: 0, planWeeklyLimit: 0, planWeeklySonnetLimit: 0, planWeeklyOpusLimit: 0, planWeeklyReset: "mon 00:00",
-    dashboardLive: true, dashboardPort: 0, apiPort: 8000, apiAccount: "", apiProfile: "", apiPack: "", toolPaths: {}, bypassDisabled: [], discardedSkills: [], skillAgentsOff: {}, packs: [], packAccounts: {},
+    dashboardLive: true, dashboardPort: 0, dashboardBind: "loopback", dashboardBindAddress: "", apiPort: 8000, apiAccount: "", apiProfile: "", apiPack: "", toolPaths: {}, bypassDisabled: [], discardedSkills: [], skillAgentsOff: {}, packs: [], packAccounts: {},
 };
 
 export type EnigmaConfigKey = keyof EnigmaConfig;

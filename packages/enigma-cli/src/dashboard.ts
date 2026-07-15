@@ -22,16 +22,17 @@
  * posture holds. (Apache-2.0; its license notice is retained inside the asset, logo hidden.)
  */
 
-import { homedir } from "node:os";
 import { resolveBin } from "./util";
+import { homedir, hostname } from "node:os";
 import { fileURLToPath } from "node:url";
 import { readUsageCached } from "./usage";
 import { spawn } from "node:child_process";
 import { basename, dirname, join } from "node:path";
 import { createServer, type Server } from "node:http";
-import { readConfig, setEnigmaValue } from "./config";
 import { readStats, readHistory, ccrCacheStats } from "./compress";
+import { bearerOf, readDashboardToken, tokenMatches } from "./dashboard-token";
 import { readUpdateStatusCached, spawnEnigmaUpdate } from "./dashboard-updates";
+import { DASHBOARD_BINDS, readConfig, setEnigmaValue, type DashboardBind } from "./config";
 import { existsSync, mkdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { dashboardAssetsDir, installedDashboardVersion, spawnDashboardPkgInstall } from "./dashboard-pkg";
 
@@ -46,8 +47,8 @@ function assetPath(...parts: string[]): string | null {
     return dir ? join(dir, ...parts) : null;
 }
 
-/** Loopback only: the dashboard exposes local savings data and is never network-facing. */
-const HOST = "127.0.0.1";
+/** Loopback: the default bind, reachable only from this machine and needing no token. */
+const LOOPBACK = "127.0.0.1";
 /** Bare hostname mapped to loopback in the hosts file so `http://enigma` resolves. */
 const HOSTNAME = "enigma";
 /** Try :80 first (pretty URL, no port), then a high fallback, then an ephemeral port. */
@@ -133,9 +134,16 @@ export function removeHostsEntry(): HostsResult {
     }
 }
 
-/** The URL a user should open for a server bound to `port`, given hosts availability. */
-export function dashboardUrl(port: number): string {
-    const host = hasHostsEntry() ? HOSTNAME : "localhost";
+/**
+ * The URL a user should open for a server bound to `port`, given hosts availability.
+ * An exposed bind is reached from ANOTHER machine, where the `enigma` hosts alias (and
+ * `localhost`) would point the visitor back at themselves - so it reports this host's own
+ * name, or the pinned address for a custom bind.
+ */
+export function dashboardUrl(port: number, bind?: BindResolution): string {
+    const host = bind && bind.mode !== "loopback"
+        ? (bind.mode === "custom" ? bind.host : hostname())
+        : (hasHostsEntry() ? HOSTNAME : "localhost");
     return port === 80 ? `http://${host}` : `http://${host}:${port}`;
 }
 
@@ -217,7 +225,7 @@ function statsPayload(version: string): string {
     return payload;
 }
 
-/** Hostnames a same-machine request may legitimately use (the server binds 127.0.0.1 only). */
+/** Hostnames a same-machine request may legitimately use when the server binds loopback. */
 const LOCAL_HOSTS = new Set(["enigma", "localhost", "127.0.0.1", "::1"]);
 
 /** Strip scheme/port/path from a Host or Origin header, leaving the bare hostname. */
@@ -235,6 +243,55 @@ function isLocalRequest(req: import("node:http").IncomingMessage): boolean {
     const origin = req.headers.origin;
     if (origin && !LOCAL_HOSTS.has(hostOnly(origin))) return false;
     return true;
+}
+
+// --- bind + authentication ------------------------------------------------------
+
+export interface BindResolution {
+    mode: DashboardBind;
+    /** Interface to listen on. */
+    host: string;
+    /** Shared secret every /api/* request must present, or null when loopback (none needed). */
+    token: string | null;
+}
+
+/**
+ * Which interface to bind and which token to require, resolved once per server.
+ *
+ * Throws when an exposed bind has no token. That refusal is the point: the dashboard is an
+ * admin surface (it runs agents with your credentials, kills processes, rewrites config), so
+ * it is never bound to a reachable interface unauthenticated - failing to start is strictly
+ * better than serving something an operator would reasonably assume was safe.
+ */
+export function resolveBind(override?: DashboardBind): BindResolution {
+    const cfg = readConfig().config;
+    const configured = DASHBOARD_BINDS.includes(cfg.dashboardBind) ? cfg.dashboardBind : "loopback";
+    // `override` is the "just this once" path: it binds for this run without persisting.
+    const mode = override || configured;
+    if (mode === "loopback") return { mode, host: LOOPBACK, token: null };
+    const host = mode === "lan" ? "0.0.0.0" : (cfg.dashboardBindAddress || "").trim();
+    if (!host) throw new Error("dashboardBind is \"custom\" but dashboardBindAddress is empty: set it with `enigma config dashboard-bind-address <ip>`");
+    const token = readDashboardToken();
+    if (!token) throw new Error(`refusing to bind ${host} without a token (the dashboard can run agents, kill processes and rewrite config): run \`enigma dashboard --expose\`, or set one with \`enigma dashboard token --new\``);
+    return { mode, host, token };
+}
+
+/** The bind this process resolved at listen time; every request is authorized against it. */
+let activeBind: BindResolution = { mode: "loopback", host: LOOPBACK, token: null };
+
+/**
+ * Whether a request may touch the API surface. The two layers move with the bind:
+ * - loopback: unreachable from the network, so the same-machine Host/Origin check is the
+ *   whole defense (it blocks DNS-rebinding and CSRF from a page on this machine).
+ * - exposed: the token authenticates. Host may legitimately be any address or DNS name that
+ *   points at this box, so pinning an allowlist would just break real setups; instead a
+ *   browser's Origin must match the Host it called, which keeps the CSRF/rebinding layer.
+ */
+function isAuthorized(req: import("node:http").IncomingMessage): boolean {
+    if (!activeBind.token) return isLocalRequest(req);
+    const origin = req.headers.origin;
+    if (origin && hostOnly(origin) !== hostOnly(req.headers.host)) return false;
+    return tokenMatches(activeBind.token, bearerOf(req.headers.authorization));
 }
 
 const JSON_HDR = { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" } as const;
@@ -740,6 +797,15 @@ function createDashboardServer(version: string): Server {
     return createServer((req, res) => {
         const url = (req.url || "/").split("?")[0];
         const method = req.method || "GET";
+        // One gate for the whole API surface. On an exposed bind this is what authenticates:
+        // every /api/* route needs the bearer, including the read-only ones (stats leak project
+        // names, costs and session history). `/` and `/lib/*` stay open on purpose - static
+        // assets with no data, and the page must load in order to run the token bootstrap.
+        if (url.startsWith("/api/") && !isAuthorized(req)) {
+            res.writeHead(activeBind.token ? 401 : 403, { ...JSON_HDR, "WWW-Authenticate": "Bearer" });
+            res.end(activeBind.token ? '{"error":"unauthorized"}' : '{"error":"forbidden"}');
+            return;
+        }
         // Settings + Skills APIs are the write surfaces, so they are origin-guarded.
         if (url === "/api/settings") {
             if (!isLocalRequest(req)) { res.writeHead(403, JSON_HDR); res.end('{"error":"forbidden"}'); return; }
@@ -888,13 +954,13 @@ function createDashboardServer(version: string): Server {
     });
 }
 
-function tryListen(server: Server, port: number): Promise<void> {
+function tryListen(server: Server, port: number, host: string): Promise<void> {
     return new Promise((res, rej) => {
         const onErr = (e: Error): void => { server.removeListener("listening", onOk); rej(e); };
         const onOk = (): void => { server.removeListener("error", onErr); res(); };
         server.once("error", onErr);
         server.once("listening", onOk);
-        server.listen(port, HOST);
+        server.listen(port, host);
     });
 }
 
@@ -902,28 +968,49 @@ function tryListen(server: Server, port: number): Promise<void> {
 let boundPort = 0;
 
 /**
- * Bind a port for the dashboard. A user-configured `dashboardPort` (1-65535) is tried first;
- * otherwise (or if it is busy) it falls back to 80 -> 24282 -> an ephemeral port, so the
+ * Bind a port for the dashboard on `host`. A user-configured `dashboardPort` (1-65535) is tried
+ * first; otherwise (or if it is busy) it falls back to 80 -> 24282 -> an ephemeral port, so the
  * dashboard always opens. Returns the bound port.
  */
-async function listenWithFallback(server: Server): Promise<number> {
+async function listenWithFallback(server: Server, host: string): Promise<number> {
     const preferred = readConfig().config.dashboardPort;
     const valid = Number.isInteger(preferred) && preferred > 0 && preferred <= 65535;
     const candidates = [...(valid ? [preferred] : []), ...PORTS, 0].filter((p, i, a) => a.indexOf(p) === i);
     for (const port of candidates) {
-        try { await tryListen(server, port); boundPort = (server.address() as { port: number }).port; return boundPort; }
+        try { await tryListen(server, port, host); boundPort = (server.address() as { port: number }).port; return boundPort; }
         catch { /* port busy or privileged: try the next */ }
     }
     throw new Error("could not bind any port for the dashboard");
 }
 
-export interface RunningServer { url: string; port: number; close: () => void; }
+export interface RunningServer {
+    /** Clean URL, no token. */
+    url: string;
+    port: number;
+    bind: BindResolution;
+    close: () => void;
+}
 
-/** Start the HTTP server and resolve once it is listening. Caller owns its lifecycle. */
-export async function startDashboardServer(version: string): Promise<RunningServer> {
+/**
+ * Start the HTTP server and resolve once it is listening. Caller owns its lifecycle.
+ * Rejects rather than binding an exposed interface without a token (see resolveBind).
+ */
+export async function startDashboardServer(version: string, bindOverride?: DashboardBind): Promise<RunningServer> {
+    const bind = resolveBind(bindOverride);
+    activeBind = bind;
     const server = createDashboardServer(version);
-    const port = await listenWithFallback(server);
-    return { url: dashboardUrl(port), port, close: () => server.close() };
+    const port = await listenWithFallback(server, bind.host);
+    return { url: dashboardUrl(port, bind), port, bind, close: () => server.close() };
+}
+
+/**
+ * The URL to hand someone, carrying the token as a fragment when one is required. The
+ * fragment is deliberate: a browser never sends it to the server, so unlike a query
+ * string the token cannot land in access logs or a Referer header. The page reads it
+ * once, moves it to sessionStorage and strips it from the address bar.
+ */
+export function tokenizedUrl(url: string, token: string | null): string {
+    return token ? `${url}/#token=${token}` : url;
 }
 
 // --- daemon (always mode) -------------------------------------------------------
