@@ -3080,6 +3080,24 @@ export {
 
         function applyBool(ctl, on) { ctl.classList.toggle("on", on); ctl.textContent = on ? "On" : "Off"; ctl.dataset.on = on ? 1 : 0; }
 
+        // One place that turns an /api/* call into parsed JSON, or an Error naming the real
+        // cause. res.json() throws on any reply that is not JSON - an empty 405, or an HTML
+        // error page from something sitting in front of the dashboard - and callers reported
+        // every one of those as "could not reach the server", which in exactly those cases is
+        // the one explanation that is wrong. An unreachable server now says so; anything else
+        // reports its status and what came back.
+        async function apiJson(path, init) {
+            let res;
+            try { res = await fetch(path, init); }
+            catch (e) { throw new Error("could not reach the server (" + ((e && e.message) || "network error") + ")"); }
+            const text = await res.text();
+            try { return JSON.parse(text); }
+            catch {
+                const body = text.trim();
+                throw new Error("HTTP " + res.status + " - the server sent " + (body ? "a reply that is not JSON: " + body.slice(0, 120) : "an empty reply"));
+            }
+        }
+
         // Optimistic: flip the control immediately, then reconcile with the server. On any
         // failure - rejected write, unreachable server, OR a write that silently did not take
         // effect (returned value != requested) - roll the control back and surface the error.
@@ -3093,15 +3111,14 @@ export {
             if (isBool) applyBool(ctl, want);
             setNote(el, "Saving " + key + "...");
             try {
-                const res = await fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key, value }) });
-                const out = await res.json();
+                const out = await apiJson("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key, value }) });
                 if (!out.ok) { rollback(); setNote(el, "Could not change " + key + ": " + (out.error || "error"), "err"); return; }
                 const s = out.setting;
                 if (s && isBool) applyBool(ctl, s.value);
                 else if (s) { ctl.value = s.choice; ctl.dataset.prev = s.choice; syncDD(ctl); }
                 if (s && (isBool ? s.value !== want : String(s.choice) !== want)) { setNote(el, key + " did not change (the write had no effect).", "err"); return; }
                 setNote(el, out.restartNote || ("Saved " + key + "."), "ok");
-            } catch { rollback(); setNote(el, "Could not reach the server to change " + key + ".", "err"); }
+            } catch (e) { rollback(); setNote(el, "Could not change " + key + ": " + e.message, "err"); }
         }
 
         // List settings: add/remove one entry, then reload so the chips reflect disk truth.
@@ -3110,12 +3127,11 @@ export {
             if (!item) return;
             setNote("settingsNote", (op === "add" ? "Adding to " : "Removing from ") + key + "...");
             try {
-                const res = await fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key, value: { op, item } }) });
-                const out = await res.json();
+                const out = await apiJson("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key, value: { op, item } }) });
                 if (!out.ok) { setNote("settingsNote", "Could not change " + key + ": " + (out.error || "error"), "err"); return; }
                 setNote("settingsNote", "Saved " + key + ".", "ok");
                 await loadSettings();
-            } catch { setNote("settingsNote", "Could not reach the server to change " + key + ".", "err"); }
+            } catch (e) { setNote("settingsNote", "Could not change " + key + ": " + e.message, "err"); }
         }
 
         function wireSettings() {
