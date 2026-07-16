@@ -1,6 +1,6 @@
 ---
 import "../styles/global.css";
-import { url } from "../lib/url";
+import { url, asset } from "../lib/url";
 
 interface Props {
     title: string;
@@ -15,7 +15,7 @@ const og = ogImage ?? "https://raw.githubusercontent.com/FJRG2007/enigma/main/as
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <link rel="icon" type="image/svg+xml" href={url("logos/enigma-logo.svg")} />
+    <link rel="icon" type="image/svg+xml" href={asset("logos/enigma-logo.svg")} />
     <title>{title}</title>
     <meta name="description" content={description} />
     <meta property="og:title" content={title} />
