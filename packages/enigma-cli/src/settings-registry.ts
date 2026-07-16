@@ -12,7 +12,7 @@
 import { AGENTS } from "./agents";
 import { applyMcpToggle } from "./mcp-deploy";
 import { isAutoLintOn, setAutoLint } from "./lint";
-import { readConfig, setEnigmaToggle, setEnigmaValue, setRecallApiKey, RECALL_PROVIDERS, OUTPUT_STYLES, MINIMAL_CODE_LEVELS, DASHBOARD_MODES, PROMPT_SECRET_MODES, SKILL_UPDATE_POLICIES } from "./config";
+import { readConfig, setEnigmaToggle, setEnigmaValue, setRecallApiKey, RECALL_PROVIDERS, OUTPUT_STYLES, MINIMAL_CODE_LEVELS, LOGO_COLOR_POLICIES, DASHBOARD_MODES, PROMPT_SECRET_MODES, SKILL_UPDATE_POLICIES } from "./config";
 import { applyDashboardMode } from "./dashboard";
 import { applyGateToggle } from "./command-deploy";
 import type { DashboardMode } from "./config";
@@ -259,6 +259,19 @@ const RAW_CATEGORIES: Category[] = [
             enigmaToggle("parallel-subagents", "parallelSubagents", "Parallel sub-agents", "let agents split long tasks across sub-agents running in parallel; edits the memory file - restart your agent to apply", true),
             enigmaChoice("output-style", "outputStyle", "Token-efficient output", "compress prose replies (off|lite|full|ultra); on = full; edits the memory file - restart your agent to apply", OUTPUT_STYLES, "full", true),
             enigmaChoice("minimal-code", "minimalCode", "Minimal code (anti-overengineering)", "prefer the laziest solution that works (off|lite|full|ultra); on = full; edits the memory file - restart your agent to apply", MINIMAL_CODE_LEVELS, "full", true),
+            {
+                key: "logo-color-policy",
+                label: "Logo contrast resolution",
+                hint: "the agent always sources real logos (never invents them); this only picks how a logo/background contrast clash is fixed: ask | adapt-background | adapt-logo; edits the memory file - restart your agent to apply; enigma default: ask",
+                affectsMemory: true,
+                choices: LOGO_COLOR_POLICIES,
+                // No off state - a mode is always set; the boolean face stays "on" so the row reads green.
+                offChoice: "__none__",
+                read: () => true,
+                write: () => ({ changed: false }),
+                readChoice: () => readConfig().config.logoColorPolicy,
+                writeChoice: (value, scope) => ({ path: setEnigmaValue("logoColorPolicy", value, scope), changed: true }),
+            },
             {
                 key: "compress",
                 label: "Context compression MCP",

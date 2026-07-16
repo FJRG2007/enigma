@@ -41,6 +41,7 @@ description: Highest-authority engineering rules - priority hierarchy, modular a
   - Any bug, crash, failing test, or unexpected behavior -> debugging-policy.
   - Any commit, branch, or pull request -> git-policy.
   - Any user-facing copy (UI labels, descriptions, hints, empty/error states, panel intros, README/doc prose) -> technical-writing-policy.
+  - Any logo or brand/technology icon added, embedded, or referenced (websites, READMEs, app UI, integration lists, tech-stack badges, social icons) -> logo-sourcing-policy.
   - Any long, multi-item, or porting/migration task (1:1 ports, "migrate all", repo-wide changes, work spanning many files or sessions) -> task-completion-policy.
 - When a task spans multiple domains, compose the relevant skills instead of re-deriving their rules.
 - Never duplicate a specialized skill's rules inside another skill; reference it.
@@ -87,6 +88,7 @@ This core policy owns orchestration, architecture, and the global rules. Each co
 - debugging-policy: reproduce-isolate-fix methodology and root-cause discipline.
 - git-policy: commits, branches, and pull request standards.
 - technical-writing-policy: concise, realistic user-facing copy - UI microcopy, labels, descriptions, hints, empty/error states, panel intros, and README/doc prose that informs without over-explaining, restating the obvious, or leaking implementation detail.
+- logo-sourcing-policy: source real brand/platform/technology logos instead of fabricating them - vendor brand kits and vector-logo registries, SVG (WebP for web) preference, official colors, and contrast-aware placement; color-conflict resolution via the logo-color-policy setting.
 - ciphera-style-policy: Ciphera code style conventions - formatting, naming, quotes, string interpolation, length-sorted imports, indentation, comments/JSDoc, and code-level anti-patterns (TypeScript-first, language-agnostic).
 - anti-overengineering-policy: minimal-code discipline - the YAGNI ladder (stdlib/native/installed-dependency/one-line before custom code), deletion over addition, no unrequested abstractions, the enigma: shortcut-marking convention, and intensity via the minimal-code setting. Owns the detail behind the Anti-Overengineering Rule below.
 - anti-overengineering-review: on-demand complexity-only review - diff review, whole-repo audit, and the enigma: debt-marker ledger (tags delete/stdlib/native/yagni/shrink, line/dep scoring). Lists cuts, applies nothing; correctness/security/performance stay with code-review-policy.
