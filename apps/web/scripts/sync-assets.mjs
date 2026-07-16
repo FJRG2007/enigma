@@ -4,6 +4,11 @@
 import { cpSync, mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { buildId } from "./build-id.mjs";
+
+// Per-deploy cache-busting token for the demo's copied sub-resources (same source as the
+// Astro asset() helper), so a new deploy is never served from a stale cache.
+const BUILD = buildId();
 
 const here = dirname(fileURLToPath(import.meta.url));   // apps/web/scripts
 const repo = join(here, "..", "..", "..");              // repo root
@@ -66,9 +71,9 @@ const BANNER = '<div class="demo-banner"><span class="demo-pill">Static demo</sp
 
 let html = readFileSync(join(dashAssets, "index.html"), "utf8");
 // Fixtures load first, then the mock patches fetch - both before any dashboard script runs.
-html = html.replace("<head>", `<head>\n    <script src="demo-fixtures.js"></script>\n    <script src="demo-mock.js"></script>\n    ${BANNER_STYLE}`);
-// Chart lib is referenced as an absolute root path; rewrite it relative to /enigma/demo/.
-html = html.replace('src="/lib/chart.min.js"', 'src="lib/chart.min.js"');
+html = html.replace("<head>", `<head>\n    <script src="demo-fixtures.js?v=${BUILD}"></script>\n    <script src="demo-mock.js?v=${BUILD}"></script>\n    ${BANNER_STYLE}`);
+// Chart lib is referenced as an absolute root path; rewrite it relative to /enigma/demo/ (with a cache-busting token).
+html = html.replace('src="/lib/chart.min.js"', `src="lib/chart.min.js?v=${BUILD}"`);
 // Surface the "this is a demo" banner at the top of the page body.
 html = html.replace("<body>", `<body>\n    ${BANNER}`);
 writeFileSync(join(demoOut, "index.html"), html);

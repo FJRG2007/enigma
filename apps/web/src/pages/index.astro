@@ -1,8 +1,8 @@
 ---
 import Base from "../layouts/Base.astro";
+import { url, asset, docHref } from "../lib/url";
 import Compare from "../components/Compare.astro";
 import InstallTabs from "../components/InstallTabs.astro";
-import { url, docHref } from "../lib/url";
 
 const title = "Enigma - everything you need to work with a coding agent, in one command";
 const description = "Enigma makes your coding agent ship more optimal, secure and scalable code - in less time, fewer tokens and fewer iterations. Dynamic Skills for Claude Code, OpenAI Codex and opencode, portable git security hooks, and a local dashboard to manage and measure it all - from one command.";
@@ -88,9 +88,9 @@ const termGood = `<span class="k">$</span> git add .env
 
             <div class="works">
                 <span>Works with</span>
-                <span class="row"><img src={url("logos/claude.svg")} alt="Claude Code" /> Claude Code</span>
-                <span class="row"><img src={url("logos/openai.svg")} alt="OpenAI Codex" /> Codex</span>
-                <span class="row"><img src={url("logos/opencode.svg")} alt="opencode" /> opencode</span>
+                <span class="row"><img src={asset("logos/claude.svg")} alt="Claude Code" /> Claude Code</span>
+                <span class="row"><img src={asset("logos/openai.svg")} alt="OpenAI Codex" /> Codex</span>
+                <span class="row"><img src={asset("logos/opencode.svg")} alt="opencode" /> opencode</span>
             </div>
 
             <div class="hero-cta">
@@ -212,7 +212,7 @@ const termGood = `<span class="k">$</span> git add .env
                 <h2>Manage enigma from your browser</h2>
                 <p>A local control panel for the whole thing: switch accounts and profiles, enable or edit skills per app, change any setting, and free up your machine (kill a port, shut down WSL, quit Docker). It also shows real Claude usage and the savings enigma can measure - honest by design.</p>
             </div>
-            <div class="shot"><img src={url("dashboard.png")} alt="The Enigma dashboard" loading="lazy" /></div>
+            <div class="shot"><img src={asset("dashboard.png")} alt="The Enigma dashboard" loading="lazy" /></div>
             <div class="dash-cta"><a class="btn" href={url("demo/")}>Explore the live demo</a></div>
         </div>
     </section>
