@@ -25,6 +25,16 @@ description: Commit, branch, and pull request standards - conventional commits, 
 
 ---
 
+## Branch Cleanup
+
+- Short-lived topic branches (fix/*, feat/*, chore/*) created for one change are disposable. Once that change has landed in the default branch - or the branch is otherwise dead (abandoned experiment, superseded work) - delete it, both local and remote, so the branch list does not rot.
+- Delete a branch only when its work is safely preserved. Safe: the branch is fully merged into the default branch (`git branch --merged <default>` lists it). Careful: a squash-merged or rebase-merged branch does NOT show up as merged even though its content is already in the default branch - confirm the change is really there (compare content, or check the merged PR) before deleting.
+- When in ANY doubt that a branch still holds unmerged, unreleased, or otherwise relevant commits, do NOT delete it - ask the user first. Leaving a stale branch is cheap; losing a branch that held unique work is not.
+- Never delete a protected or long-lived branch (the default branch, release/*, or any branch the repo marks as protected) unless the user explicitly asks.
+- Prune deleted upstreams periodically with `git fetch --prune` so gone remote branches stop lingering locally.
+
+---
+
 ## Cloning & Fetch Efficiency
 
 - When cloning or pulling a repository, do not fetch the full history unless it is actually needed. A shallow fetch saves disk space, bandwidth, and time.
