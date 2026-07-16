@@ -6,7 +6,7 @@
   "config": [
     "logoColorPolicy"
   ],
-  "updated": "2026-07-16T22:43:53+02:00",
-  "cliVersion": "1.28.3",
+  "updated": "2026-07-16T23:37:57+02:00",
+  "cliVersion": "1.29.0",
   "sha": "e2c8b8898ab02d3e6b337533dfb1a955c30a4f5a33f0fb67e738ca3cb35eeac7"
 }

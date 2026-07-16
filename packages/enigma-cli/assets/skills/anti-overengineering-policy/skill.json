@@ -6,7 +6,7 @@
   "config": [
     "minimalCode"
   ],
-  "updated": "2026-06-25T17:21:31+02:00",
-  "cliVersion": "1.28.3",
+  "updated": "2026-07-16T23:37:57+02:00",
+  "cliVersion": "1.29.0",
   "sha": "fe9eb12dc280fee88fba32265394c83bdedd4820b4c23048e716b0954034ab51"
 }
