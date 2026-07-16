@@ -85,31 +85,31 @@ deferred optimization stays visible and owned.
 
 ## Intensity (minimal-code setting)
 
-The aggressiveness is set by `enigma config minimal-code <off|lite|full|ultra>`,
-rendered into the active-configuration block below when this skill is deployed.
 When the user asks to be "more/less lazy" mid-session, follow that for the session.
 
-| Level | Behavior |
-|-------|----------|
-| **off** | Discipline is opt-in only: build what was asked without pushing minimalism, and apply the ladder only when the user explicitly asks to simplify. |
-| **lite** | Build what was asked, but name the lazier alternative in one line. The user picks. |
-| **full** | The ladder enforced: stdlib and native first, shortest diff, shortest explanation. The default when enabled. |
-| **ultra** | YAGNI extremist. Deletion before addition. Ship the one-liner and challenge the rest of the requirement in the same response. |
-
 <!-- enigma:config:start -->
-### Active configuration
+Apply this intensity (using "Add a cache for these API responses" as the illustration):
 
-- **minimal-code** = `{{minimalCode}}` - apply this intensity (see the table above).
-
-This block is rendered by enigma from the user's `.enigma.json` at deploy time; do
-not edit it by hand (it is regenerated on the next sync).
+<!-- enigma:case:minimalCode=off -->
+Discipline is opt-in: build what was asked without pushing minimalism, and apply the ladder
+above only when the user explicitly asks to simplify.
+<!-- enigma:case:end -->
+<!-- enigma:case:minimalCode=lite -->
+Build what was asked, but name the lazier alternative in one line and let the user pick.
+Example: "Done. FYI: `functools.lru_cache` covers this in one line if you'd rather not own a
+cache class."
+<!-- enigma:case:end -->
+<!-- enigma:case:minimalCode=full -->
+Enforce the ladder: stdlib and native first, shortest diff, shortest explanation. Example:
+"`@lru_cache(maxsize=1000)` on the fetch function. Skipped a custom cache class; add it when
+lru_cache measurably falls short."
+<!-- enigma:case:end -->
+<!-- enigma:case:minimalCode=ultra -->
+YAGNI extremist: deletion before addition; ship the one-liner and challenge the rest of the
+requirement in the same response. Example: "No cache until a profiler says so. When it does:
+`@lru_cache`. A hand-rolled TTL cache is a bug farm with a hit rate."
+<!-- enigma:case:end -->
 <!-- enigma:config:end -->
-
-Example - "Add a cache for these API responses":
-
-- lite: "Done. FYI: `functools.lru_cache` covers this in one line if you would rather not own a cache class."
-- full: "`@lru_cache(maxsize=1000)` on the fetch function. Skipped a custom cache class; add it when lru_cache measurably falls short."
-- ultra: "No cache until a profiler says so. When it does: `@lru_cache`. A hand-rolled TTL cache is a bug farm with a hit rate."
 
 ## When NOT to Be Lazy
 

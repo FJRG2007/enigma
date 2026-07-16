@@ -189,16 +189,24 @@ function memoryStatus(srcFile: string, destFile: string): "install" | "identical
 }
 
 /**
- * Render a skill's SKILL.md for deployment: bind each {{key}} placeholder the skill declares
- * in `keys` (skill.json config) to the current .enigma.json value, so a config choice adapts
- * the skill itself (in context only when the skill activates) instead of the always-on memory.
- * The enigma:config block is excluded from the content hash (util.computeContentSha), so the
- * rendered value never reads as a local edit. Skills with no config are returned verbatim.
+ * Render a skill's SKILL.md for deployment so the deployed copy describes ONLY the user's
+ * active option, not every possible one:
+ *  - `<!-- enigma:case:KEY=VALUE -->...<!-- enigma:case:end -->` blocks: keep the one whose
+ *    VALUE equals the current .enigma.json value of KEY, drop the rest (and all case markers).
+ *  - `{{KEY}}` placeholders: bind to the current value.
+ * A config choice thus adapts the skill itself (in context only when the skill activates)
+ * instead of the always-on memory. Case blocks MUST live inside the skill's enigma:config
+ * block, which util.computeContentSha strips before hashing, so the rendered value never reads
+ * as a local edit. Skills with no config are returned verbatim.
  */
 function renderSkill(srcSkillMd: string, keys: string[] | undefined): string {
     let out = readFileSync(srcSkillMd, "utf8");
     if (!keys?.length) return out;
     const cfg = readConfig().config as unknown as Record<string, unknown>;
+    out = out.replace(
+        /<!-- enigma:case:([A-Za-z0-9]+)=(\S+) -->\n?([\s\S]*?)<!-- enigma:case:end -->\n?/g,
+        (_m, key: string, val: string, body: string) => (String(cfg[key]) === val ? body : ""),
+    );
     for (const k of keys) out = out.split(`{{${k}}}`).join(String(cfg[k]));
     return out;
 }
