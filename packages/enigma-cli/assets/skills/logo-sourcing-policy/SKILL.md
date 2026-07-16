@@ -83,8 +83,17 @@ When a monochrome logo would clash with its background, resolve it per the
 | **adapt-background** | Auto-resolve by giving the logo a contrasting container/background (a chip, card, or badge) and KEEP the logo's official colors. Preferred for brand fidelity. |
 | **adapt-logo** | Auto-resolve by switching to the brand's opposite monochrome variant (or recoloring the mark) so it fits the existing background. |
 
-The current value is injected into the deployed memory file, so you always know
-which mode is active without reading config.
+The active mode is rendered into the block below when this skill is deployed, so
+you always know which one applies without reading config.
+
+<!-- enigma:config:start -->
+### Active configuration
+
+- **logo-color-policy** = `{{logoColorPolicy}}` - resolve a contrast clash using this mode.
+
+This block is rendered by enigma from the user's `.enigma.json` at deploy time; do
+not edit it by hand (it is regenerated on the next sync).
+<!-- enigma:config:end -->
 
 ## Trademark Respect
 

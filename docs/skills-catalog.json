@@ -5,11 +5,11 @@
   "skills": [
     {
       "name": "anti-overengineering-policy",
-      "version": "1.2.0",
+      "version": "1.3.0",
       "description": "Minimal-code discipline - YAGNI ladder, deletion over addition, no unrequested abstractions, and the enigma: shortcut-marking convention; intensity via the minimal-code setting.",
       "provider": "FJRG2007/enigma",
       "updated": "2026-06-25T17:21:31+02:00",
-      "sha": "b9517e7d520e83a9f881fb1917ca2d4cec4aea4f2c5e753ea02641d9bc06c6b6"
+      "sha": "fe9eb12dc280fee88fba32265394c83bdedd4820b4c23048e716b0954034ab51"
     },
     {
       "name": "anti-overengineering-review",
@@ -101,11 +101,11 @@
     },
     {
       "name": "logo-sourcing-policy",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "description": "Source real brand/platform/technology logos instead of inventing them - vector-logo registries and vendor brand kits, SVG (WebP for web) preference, official colors, and contrast-aware placement; color-conflict resolution via the logo-color-policy setting.",
       "provider": "FJRG2007/enigma",
       "updated": "2026-07-16T22:43:53+02:00",
-      "sha": "0b32a63c2d5415d3bf8fd801b9418f48fddc57aeee3f9ca0aa6033879171faa5"
+      "sha": "e2c8b8898ab02d3e6b337533dfb1a955c30a4f5a33f0fb67e738ca3cb35eeac7"
     },
     {
       "name": "security-policy",

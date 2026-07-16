@@ -88,6 +88,9 @@ jobs:
       - name: Test agent memory editor
         run: bun test tests/memory-edit.test.ts
         working-directory: packages/enigma-cli
+      - name: Test config-in-skill rendering
+        run: bun test tests/skill-config.test.ts
+        working-directory: packages/enigma-cli
       - name: Test recall session memory
         run: bun test tests/recall.test.ts
         working-directory: packages/enigma-cli

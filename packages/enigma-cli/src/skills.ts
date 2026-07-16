@@ -46,6 +46,13 @@ export interface SkillMeta {
     version?: string;
     provider?: string;
     description?: string;
+    /**
+     * .enigma.json keys this skill consumes as config. At deploy the matching {{key}}
+     * placeholders in the skill's enigma:config block are rendered from the current value
+     * (see renderSkill), so a config choice adapts the skill itself - loaded only when the
+     * skill activates - instead of the always-on memory file.
+     */
+    config?: string[];
     /** ISO date of the last commit that changed this skill, stamped by seal (the catalog "last edited"). */
     updated?: string;
     cliVersion?: string;
@@ -104,7 +111,7 @@ function cliVersion(): string {
  */
 function serializeMeta(meta: SkillMeta): string {
     const ordered: Record<string, unknown> = {};
-    for (const k of ["name", "version", "provider", "description", "updated", "cliVersion", "sha"] as const) {
+    for (const k of ["name", "version", "provider", "description", "config", "updated", "cliVersion", "sha"] as const) {
         if (meta[k] !== undefined) ordered[k] = meta[k];
     }
     for (const k of Object.keys(meta)) if (!(k in ordered)) ordered[k] = (meta as Record<string, unknown>)[k];
@@ -158,10 +165,6 @@ function stripMarkedBlock(content: string, id: string): string {
  * - parallelSubagents off -> strip the parallel sub-agent block (decomposition stays).
  * - outputStyle off -> strip the token-efficient output block; otherwise keep it and
  *   bind {{output-level}} to the chosen level (lite/full/ultra).
- * - minimalCode off -> strip the anti-overengineering block; otherwise keep it and bind
- *   {{minimal-level}} to the chosen level (lite/full/ultra).
- * - logoColorPolicy -> always kept (real-logo sourcing is a baseline); bind
- *   {{logo-color-policy}} to the chosen contrast-clash mode (ask/adapt-background/adapt-logo).
  * - recall off -> strip the "use session memory" block; kept when on so the agent is told
  *   to query the enigma_recall MCP tools.
  * - gate off -> strip the "AI quality gate (automatic)" block; kept when on so the agent
@@ -174,11 +177,6 @@ function renderMemory(srcFile: string): string {
     if (!cfg.parallelSubagents) out = stripMarkedBlock(out, "parallel-subagents");
     if (cfg.outputStyle === "off") out = stripMarkedBlock(out, "output-style");
     else out = out.replace(/\{\{output-level\}\}/g, cfg.outputStyle);
-    if (cfg.minimalCode === "off") out = stripMarkedBlock(out, "minimal-code");
-    else out = out.replace(/\{\{minimal-level\}\}/g, cfg.minimalCode);
-    // Logo sourcing is always-on (fabricating a real brand logo is wrong output); only the
-    // contrast-clash resolution is configurable, so the block is never stripped - just bound.
-    out = out.replace(/\{\{logo-color-policy\}\}/g, cfg.logoColorPolicy);
     if (!cfg.recall) out = stripMarkedBlock(out, "recall");
     if (!cfg.gate) out = stripMarkedBlock(out, "gate");
     return out;
@@ -188,6 +186,38 @@ function renderMemory(srcFile: string): string {
 function memoryStatus(srcFile: string, destFile: string): "install" | "identical" | "overwrite" {
     if (!existsSync(destFile)) return "install";
     return readFileSync(destFile, "utf8") === renderMemory(srcFile) ? "identical" : "overwrite";
+}
+
+/**
+ * Render a skill's SKILL.md for deployment: bind each {{key}} placeholder the skill declares
+ * in `keys` (skill.json config) to the current .enigma.json value, so a config choice adapts
+ * the skill itself (in context only when the skill activates) instead of the always-on memory.
+ * The enigma:config block is excluded from the content hash (util.computeContentSha), so the
+ * rendered value never reads as a local edit. Skills with no config are returned verbatim.
+ */
+function renderSkill(srcSkillMd: string, keys: string[] | undefined): string {
+    let out = readFileSync(srcSkillMd, "utf8");
+    if (!keys?.length) return out;
+    const cfg = readConfig().config as unknown as Record<string, unknown>;
+    for (const k of keys) out = out.split(`{{${k}}}`).join(String(cfg[k]));
+    return out;
+}
+
+/** Copy a skill to `destDir`, then render its SKILL.md config placeholders if it declares any. */
+function deploySkill(src: string, destDir: string, meta: SkillMeta): void {
+    cpSync(src, destDir, { recursive: true, force: true });
+    if (meta.config?.length) writeFileSync(join(destDir, "SKILL.md"), renderSkill(join(src, "SKILL.md"), meta.config));
+}
+
+/**
+ * True when a config-declaring skill's deployed SKILL.md no longer matches its rendered value
+ * (the config was changed since deploy). skillStatus reports such a skill as "identical" because
+ * the config block is excluded from the hash, so this drift check drives the in-place re-render.
+ */
+function skillConfigDrifted(sk: SkillEntry, destDir: string): boolean {
+    if (!sk.meta.config?.length) return false;
+    const md = join(destDir, "SKILL.md");
+    return existsSync(md) && readFileSync(md, "utf8") !== renderSkill(join(sk.src, "SKILL.md"), sk.meta.config);
 }
 
 // --- sync state ------------------------------------------------------------
@@ -1180,7 +1210,7 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
             mkdirSync(x.target.memory, { recursive: true });
             for (const sk of x.skills) {
                 if (!willCopy(sk)) continue;
-                cpSync(sk.src, join(x.target.skills, sk.name), { recursive: true, force: true });
+                deploySkill(sk.src, join(x.target.skills, sk.name), sk.meta);
                 copied++;
             }
             for (const m of x.memory) {
@@ -1246,6 +1276,27 @@ export function applyMemoryToggles(scope: "global" | "local", dryRun = false): A
             if (!existsSync(dest) || memoryStatus(m.src, dest) === "identical") continue;
             if (!dryRun) writeMemory(m.src, dest);
             changed.push(agent);
+        }
+    }
+    return changed;
+}
+
+/**
+ * Re-render deployed skills whose config placeholders drifted after a config change (the
+ * config-in-skill twin of applyMemoryToggles). For every agent with the skill deployed at
+ * `scope`, rewrite its SKILL.md when the rendered value no longer matches. Only touches
+ * already-deployed skills (never a first install). Returns the agents that changed.
+ */
+export function applySkillConfig(scope: "global" | "local", dryRun = false): Agent[] {
+    const changed: Agent[] = [];
+    for (const agent of discoverAgents()) {
+        const target = agent.targets[scope];
+        if (!target || !isDir(target.skills)) continue;
+        for (const sk of currentSkillSet(agent.name)) {
+            const dest = join(target.skills, sk.name);
+            if (!existsSync(dest) || !skillConfigDrifted(sk, dest)) continue;
+            if (!dryRun) writeFileSync(join(dest, "SKILL.md"), renderSkill(join(sk.src, "SKILL.md"), sk.meta.config));
+            if (!changed.includes(agent)) changed.push(agent);
         }
     }
     return changed;
@@ -1326,10 +1377,18 @@ function syncTarget(target: AccountTarget, memory: MemoryEntry[], skills: SkillE
         for (const sk of skills) {
             const dest = join(target.skills, sk.name);
             const kind = skillStatus(dest, sk.meta).kind;
-            if (kind === "identical") continue;
+            if (kind === "identical") {
+                // A config-declaring skill hashes as "identical" even when its rendered value
+                // changed (the config block is excluded from the hash), so re-render on drift.
+                if (skillConfigDrifted(sk, dest)) {
+                    writeFileSync(join(dest, "SKILL.md"), renderSkill(join(sk.src, "SKILL.md"), sk.meta.config));
+                    changed++;
+                }
+                continue;
+            }
             if (kind === "tampered" && keepEdited) continue;
             mkdirSync(target.skills, { recursive: true });
-            cpSync(sk.src, dest, { recursive: true, force: true });
+            deploySkill(sk.src, dest, sk.meta);
             changed++;
         }
         for (const orphan of computePrune(target.skills, skills.map((s) => s.name))) {

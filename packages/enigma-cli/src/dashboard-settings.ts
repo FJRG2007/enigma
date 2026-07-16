@@ -19,6 +19,7 @@ export interface UiSetting {
     hint: string;
     globalOnly: boolean;
     affectsMemory: boolean;
+    affectsSkills: boolean;
     /** On/off face of the setting (a choice setting is "on" when its value is not offChoice). */
     value: boolean;
     /** Full value set for a choice setting, else null (render a toggle). */
@@ -55,6 +56,7 @@ export function serializeSettings(scope: Scope = "global"): UiCategory[] {
                 hint: s.hint,
                 globalOnly: !!s.globalOnly,
                 affectsMemory: !!s.affectsMemory,
+                affectsSkills: !!s.affectsSkills,
                 value: s.read(eff),
                 choices: s.choices ? [...s.choices] : null,
                 choice: s.readChoice ? s.readChoice(eff) : null,
@@ -120,6 +122,13 @@ export async function applySetting(key: string, value: unknown, scope: Scope = "
             const changed = applyMemoryToggles(target);
             if (changed.length) restartNote = `Updated memory for ${changed.map((a) => a.label).join(", ")} - restart the agent to apply.`;
         } catch { /* best-effort: memory re-render must not fail the write */ }
+    }
+    if (setting.affectsSkills) {
+        try {
+            const { applySkillConfig } = await import("./skills");
+            const changed = applySkillConfig(target);
+            if (changed.length) restartNote = `Updated the skill for ${changed.map((a) => a.label).join(", ")} - restart the agent to apply.`;
+        } catch { /* best-effort: skill re-render must not fail the write */ }
     }
 
     const updated = serializeSettings(target).flatMap((c) => c.settings).find((s) => s.key === key);

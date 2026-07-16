@@ -56,26 +56,6 @@
 - Boundaries: code, comments, commit messages, and PR text are always written normally - compression applies only to chat prose. Always respond in the user's language regardless of level.
 <!-- enigma:output-style:end -->
 
-<!-- enigma:minimal-code:start -->
-### Minimal Code (Anti-Overengineering)
-
-- Default to **{{minimal-level}}** minimal-code discipline (full detail in anti-overengineering-policy). The best code is the code never written; before writing any, stop at the first rung that holds: 1) Does this need to exist at all? (YAGNI) 2) Does the standard library do it? 3) Does a native platform feature cover it? 4) Does an already-installed dependency solve it? 5) Can it be one line? 6) Only then the minimum code that works.
-- No unrequested abstractions, no boilerplate "for later", deletion over addition, fewest files, shortest working diff. Mark deliberate shortcuts with an `enigma:` comment naming the ceiling and upgrade path.
-- Levels (the user can switch any time, e.g. "be more lazy", "full", "ultra", or "stop minimal-code" to turn it off):
-  - **lite** - build what was asked, but name the lazier alternative in one line; the user picks.
-  - **full** - the ladder enforced: stdlib and native first, shortest diff and explanation. The default when enabled.
-  - **ultra** - YAGNI extremist: deletion before addition, ship the one-liner and challenge the rest of the requirement in the same response.
-- Never simplify away: input validation at trust boundaries, error handling that prevents data loss, security, accessibility, hardware calibration, or anything explicitly requested. Non-trivial logic leaves ONE runnable check behind (testing-policy owns test strategy).
-<!-- enigma:minimal-code:end -->
-
-<!-- enigma:logo-sourcing:start -->
-### Brand Logos and Icons
-
-- Never fabricate, redraw, or emit from-memory SVG paths for the logo of a real company, product, platform, framework, or technology. SOURCE the official asset: the vendor's brand/press kit, or a vector-logo registry (simpleicons.org, svgl.app, worldvectorlogo.com, cdnlogo.com, iconify.design, devicon.dev), or an already-installed icon package; search the web when you can. Full detail in logo-sourcing-policy. Only author marks that do not exist yet (the user's own project logo, a generic placeholder); if you cannot get a real one, ask the user - never invent it.
-- Prefer vector (SVG); for web or WebP-capable targets prefer an optimized WebP/AVIF over PNG when a raster is required (smaller, faster). Keep the brand's official colors.
-- Check contrast before placing a logo: read the SVG fills to tell if it is monochrome (e.g. a solid black/white mark) and would vanish on a same-tone background. Resolve a clash per the logo-color-policy setting = **{{logo-color-policy}}**: `ask` (stop and ask the user how to resolve), `adapt-background` (add a contrasting container/badge behind the logo, keep its colors), `adapt-logo` (swap to the opposite brand variant / recolor the mark to fit).
-<!-- enigma:logo-sourcing:end -->
-
 <!-- enigma:recall:start -->
 ### Session Memory (Recall)
 
