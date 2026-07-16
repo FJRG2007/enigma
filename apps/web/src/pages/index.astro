@@ -85,7 +85,6 @@ const termGood = `<span class="k">$</span> git add .env
     </nav>
 
     <div class="mnav" id="mobileMenu" hidden>
-        <div class="mnav-backdrop" data-close></div>
         <aside class="mnav-panel" role="dialog" aria-modal="true" aria-label="Menu">
             <div class="mnav-head">
                 <span class="brand">Enigma<span class="caret" aria-hidden="true"></span></span>
@@ -343,9 +342,7 @@ const termGood = `<span class="k">$</span> git add .env
 
     .mnav { position: fixed; inset: 0; z-index: 40; }
     .mnav[hidden] { display: none; }
-    .mnav-backdrop { position: absolute; inset: 0; background: rgba(3, 5, 9, 0.6); opacity: 0; transition: opacity .24s ease; }
-    .mnav.open .mnav-backdrop { opacity: 1; }
-    .mnav-panel { position: absolute; top: 0; left: 0; height: 100%; width: min(82vw, 300px); background: var(--surface); border-right: 1px solid var(--border); box-shadow: var(--shadow-2); padding: 16px 16px 28px; display: flex; flex-direction: column; transform: translateX(-100%); transition: transform .26s cubic-bezier(.4, 0, .2, 1); overflow-y: auto; }
+    .mnav-panel { position: absolute; inset: 0; width: 100%; height: 100%; background: var(--bg); padding: 16px 20px 28px; display: flex; flex-direction: column; transform: translateX(-100%); transition: transform .26s cubic-bezier(.4, 0, .2, 1); overflow-y: auto; }
     .mnav.open .mnav-panel { transform: none; }
     .mnav-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
     .mnav-close { background: none; border: 0; color: var(--muted); font-size: 26px; line-height: 1; cursor: pointer; padding: 2px 8px; }
