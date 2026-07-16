@@ -85,15 +85,25 @@ deferred optimization stays visible and owned.
 
 ## Intensity (minimal-code setting)
 
-The aggressiveness is set by `enigma config minimal-code <off|lite|full|ultra>`
-(it edits the deployed memory file). When the user asks to be "more/less lazy"
-mid-session, follow that for the session.
+The aggressiveness is set by `enigma config minimal-code <off|lite|full|ultra>`,
+rendered into the active-configuration block below when this skill is deployed.
+When the user asks to be "more/less lazy" mid-session, follow that for the session.
 
 | Level | Behavior |
 |-------|----------|
+| **off** | Discipline is opt-in only: build what was asked without pushing minimalism, and apply the ladder only when the user explicitly asks to simplify. |
 | **lite** | Build what was asked, but name the lazier alternative in one line. The user picks. |
 | **full** | The ladder enforced: stdlib and native first, shortest diff, shortest explanation. The default when enabled. |
 | **ultra** | YAGNI extremist. Deletion before addition. Ship the one-liner and challenge the rest of the requirement in the same response. |
+
+<!-- enigma:config:start -->
+### Active configuration
+
+- **minimal-code** = `{{minimalCode}}` - apply this intensity (see the table above).
+
+This block is rendered by enigma from the user's `.enigma.json` at deploy time; do
+not edit it by hand (it is regenerated on the next sync).
+<!-- enigma:config:end -->
 
 Example - "Add a cache for these API responses":
 

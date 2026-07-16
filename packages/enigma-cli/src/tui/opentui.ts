@@ -18,7 +18,7 @@
 import { readConfig } from "../config";
 import { readUsageCached } from "../usage";
 import type { UsageReport } from "../usage";
-import { applyMemoryToggles } from "../skills";
+import { applyMemoryToggles, applySkillConfig } from "../skills";
 import { onGhTelemetryChange } from "../github";
 import type { Scope, Setting } from "../settings-registry";
 import { recallDashboard, type RecallView } from "../dashboard-recall";
@@ -789,6 +789,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         // throw abort the rest or crash the render. Returns the failures + memory restart notes.
         const persistPending = (): { errors: string[]; notes: string[] } => {
             const memoryScopes = new Set<Scope>();
+            const skillScopes = new Set<Scope>();
             const errors: string[] = [];
             for (const [k, v] of Object.entries(pending)) {
                 const { key, scope: sc } = parseStageKey(k);
@@ -798,6 +799,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
                     if (setting.choices && typeof v === "string" && setting.writeChoice) setting.writeChoice(v, sc);
                     else setting.write(Boolean(v), sc);
                     if (setting.affectsMemory) memoryScopes.add(sc);
+                    if (setting.affectsSkills) skillScopes.add(sc);
                 } catch (err) { errors.push(`${setting.label}: ${(err as Error).message}`); }
             }
             // Memory-affecting settings must re-render the deployed memory file; restart the
@@ -808,6 +810,12 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
                     const changed = applyMemoryToggles(sc);
                     if (changed.length) notes.push(`memory updated for ${changed.map((a) => a.label).join(", ")} - restart to apply`);
                 } catch (err) { errors.push(`memory: ${(err as Error).message}`); }
+            }
+            for (const sc of skillScopes) {
+                try {
+                    const changed = applySkillConfig(sc);
+                    if (changed.length) notes.push(`skill updated for ${changed.map((a) => a.label).join(", ")} - restart to apply`);
+                } catch (err) { errors.push(`skill: ${(err as Error).message}`); }
             }
             return { errors, notes };
         };

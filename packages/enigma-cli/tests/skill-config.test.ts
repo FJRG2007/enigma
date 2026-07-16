@@ -1,0 +1,69 @@
+/**
+ * The config-in-skill safety invariant: a SKILL.md's enigma:config block (rendered per-user
+ * from .enigma.json at deploy) is EXCLUDED from computeContentSha, so a user's config choice
+ * never reads as a local edit ("tampered") - while any edit OUTSIDE the block still changes the
+ * hash. This is what lets a rendered deployment stay byte-different from the sealed template yet
+ * hash identically. The full deploy/re-render path is exercised via the CLI e2e; this pins the
+ * hash contract deterministically.
+ */
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { test, expect } from "bun:test";
+import { computeContentSha } from "../src/util";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+
+const BODY = [
+    "---",
+    "name: demo",
+    "description: demo skill",
+    "---",
+    "",
+    "# Demo",
+    "",
+    "Static content that IS hashed.",
+    "",
+    "<!-- enigma:config:start -->",
+    "### Active configuration",
+    "",
+    "- **logo-color-policy** = `__VALUE__`",
+    "<!-- enigma:config:end -->",
+    "",
+    "More static content.",
+    "",
+].join("\n");
+
+/** Write a one-file skill dir with SKILL.md = BODY with the config value substituted. */
+function skillDir(value: string, tail = ""): string {
+    const dir = mkdtempSync(join(tmpdir(), "enigma-skillcfg-"));
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "SKILL.md"), BODY.replace("__VALUE__", value) + tail);
+    // skill.json is excluded from the hash anyway; include one to mirror a real skill.
+    writeFileSync(join(dir, "skill.json"), JSON.stringify({ name: "demo", config: ["logoColorPolicy"] }));
+    return dir;
+}
+
+test("the config block value is excluded from the content hash", () => {
+    const template = skillDir("{{logoColorPolicy}}");
+    const askRendered = skillDir("ask");
+    const adaptRendered = skillDir("adapt-logo");
+    try {
+        const a = computeContentSha(template);
+        const b = computeContentSha(askRendered);
+        const c = computeContentSha(adaptRendered);
+        // Placeholder, "ask" and "adapt-logo" differ ONLY inside the config block -> same hash.
+        expect(b).toBe(a);
+        expect(c).toBe(a);
+    } finally {
+        for (const d of [template, askRendered, adaptRendered]) rmSync(d, { recursive: true, force: true });
+    }
+});
+
+test("an edit OUTSIDE the config block still changes the hash", () => {
+    const base = skillDir("ask");
+    const edited = skillDir("ask", "A user edit after the block.\n");
+    try {
+        expect(computeContentSha(edited)).not.toBe(computeContentSha(base));
+    } finally {
+        for (const d of [base, edited]) rmSync(d, { recursive: true, force: true });
+    }
+});

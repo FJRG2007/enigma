@@ -48,6 +48,12 @@ export interface Setting {
      */
     affectsMemory?: boolean;
     /**
+     * True when this setting is consumed by a skill (declared in its skill.json config), so
+     * changing it re-renders that skill's deployed SKILL.md - config-in-skill instead of the
+     * always-on memory file. The surface calls applySkillConfig and prompts for a restart.
+     */
+    affectsSkills?: boolean;
+    /**
      * On/off face of the setting. A multi-value (choice) setting still implements this
      * as "is it enabled" (read) and "enable to the default value / disable" (write), so
      * the boolean TUI and `config <key> <on|off>` keep working unchanged.
@@ -113,10 +119,10 @@ function enigmaToggle(key: string, field: BooleanConfigKey, label: string, hint:
  */
 function enigmaChoice(
     key: string, field: EnigmaConfigKey, label: string, hint: string,
-    choices: readonly string[], enabledDefault: string, affectsMemory = false, offValue = "off",
+    choices: readonly string[], enabledDefault: string, affectsMemory = false, offValue = "off", affectsSkills = false,
 ): Setting {
     return {
-        key, label, hint, affectsMemory, choices, offChoice: offValue,
+        key, label, hint, affectsMemory, affectsSkills, choices, offChoice: offValue,
         read: () => readConfig().config[field] !== offValue,
         write: (value, scope) => ({ path: setEnigmaValue(field, value ? enabledDefault : offValue, scope), changed: true }),
         readChoice: () => String(readConfig().config[field]),
@@ -258,12 +264,12 @@ const RAW_CATEGORIES: Category[] = [
             enigmaToggle("fullscreen", "fullscreen", "Full-screen TUI", "clear the screen for a clean TUI view; off renders inline among existing output"),
             enigmaToggle("parallel-subagents", "parallelSubagents", "Parallel sub-agents", "let agents split long tasks across sub-agents running in parallel; edits the memory file - restart your agent to apply", true),
             enigmaChoice("output-style", "outputStyle", "Token-efficient output", "compress prose replies (off|lite|full|ultra); on = full; edits the memory file - restart your agent to apply", OUTPUT_STYLES, "full", true),
-            enigmaChoice("minimal-code", "minimalCode", "Minimal code (anti-overengineering)", "prefer the laziest solution that works (off|lite|full|ultra); on = full; edits the memory file - restart your agent to apply", MINIMAL_CODE_LEVELS, "full", true),
+            enigmaChoice("minimal-code", "minimalCode", "Minimal code (anti-overengineering)", "prefer the laziest solution that works (off|lite|full|ultra); on = full; edits the anti-overengineering skill - restart your agent to apply", MINIMAL_CODE_LEVELS, "full", false, "off", true),
             {
                 key: "logo-color-policy",
                 label: "Logo contrast resolution",
-                hint: "the agent always sources real logos (never invents them); this only picks how a logo/background contrast clash is fixed: ask | adapt-background | adapt-logo; edits the memory file - restart your agent to apply; enigma default: ask",
-                affectsMemory: true,
+                hint: "the agent always sources real logos (never invents them); this only picks how a logo/background contrast clash is fixed: ask | adapt-background | adapt-logo; edits the logo skill - restart your agent to apply; enigma default: ask",
+                affectsSkills: true,
                 choices: LOGO_COLOR_POLICIES,
                 // No off state - a mode is always set; the boolean face stays "on" so the row reads green.
                 offChoice: "__none__",

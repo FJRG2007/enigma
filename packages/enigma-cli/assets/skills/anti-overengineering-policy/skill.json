@@ -1,9 +1,12 @@
 {
   "name": "anti-overengineering-policy",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "provider": "FJRG2007/enigma",
   "description": "Minimal-code discipline - YAGNI ladder, deletion over addition, no unrequested abstractions, and the enigma: shortcut-marking convention; intensity via the minimal-code setting.",
-  "updated": "2026-06-25T17:21:31+02:00",
-  "cliVersion": "1.28.3",
-  "sha": "b9517e7d520e83a9f881fb1917ca2d4cec4aea4f2c5e753ea02641d9bc06c6b6"
+  "config": [
+    "minimalCode"
+  ],
+  "updated": "2026-07-16T23:37:57+02:00",
+  "cliVersion": "1.29.0",
+  "sha": "fe9eb12dc280fee88fba32265394c83bdedd4820b4c23048e716b0954034ab51"
 }

@@ -101,13 +101,22 @@ export function listFilesRel(dir: string, base: string = dir): string[] {
     return out;
 }
 
+// A SKILL.md may carry an enigma:config block whose value is rendered per-user at deploy
+// time from .enigma.json (see skills.ts renderSkill). It is excluded from the content hash so
+// a user's config choice never counts as a local edit ("tampered"); everything else still does.
+const SKILL_CONFIG_BLOCK = /<!-- enigma:config:start -->[\s\S]*?<!-- enigma:config:end -->/g;
+
 /** Deterministic sha256 over every file in a skill EXCEPT skill.json (which carries it). */
 export function computeContentSha(dir: string): string {
     const files = listFilesRel(dir).filter((f) => f !== "skill.json").sort();
     const h = createHash("sha256");
     for (const f of files) {
         h.update(f); h.update("\0");
-        h.update(readFileSync(join(dir, f))); h.update("\0");
+        // SKILL.md's rendered config block is deploy-time state, not authored content - hash the
+        // template (block stripped) so source and rendered deployment hash identically.
+        if (f === "SKILL.md") h.update(readFileSync(join(dir, f), "utf8").replace(SKILL_CONFIG_BLOCK, ""));
+        else h.update(readFileSync(join(dir, f)));
+        h.update("\0");
     }
     return h.digest("hex");
 }

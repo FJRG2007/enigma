@@ -263,7 +263,32 @@ export async function runConfigCli(positionals: string[], scope: Scope | null, i
     // Memory-affecting toggles change the deployed agent memory file, so re-render it
     // now and tell the user to restart - agents only read memory at startup.
     if (setting.affectsMemory) await applyMemoryChange(target);
+    if (setting.affectsSkills) await applySkillChange(target);
     return 0;
+}
+
+/**
+ * Re-render the deployed SKILL.md of any skill that consumes this setting (config-in-skill),
+ * and print a restart notice for the affected agents. Twin of applyMemoryChange, loaded lazily
+ * so the no-key/print paths never pull in the install machinery.
+ */
+async function applySkillChange(scope: Scope): Promise<void> {
+    const { applySkillConfig } = await import("./skills");
+    const changed = applySkillConfig(scope);
+    if (!changed.length) {
+        console.log("No deployed skills to update yet - run 'enigma install' to deploy.");
+        return;
+    }
+    const labels = changed.map((a) => a.label).join(", ");
+    console.log(`Updated the skill for ${labels} (${scope}).`);
+    const { runningStatus } = await import("./agents");
+    const { known, running } = runningStatus(changed);
+    if (running.size) {
+        const names = changed.filter((a) => running.has(a.name)).map((a) => a.label).join(", ");
+        console.log(`Restart ${names} to apply the change (running now).`);
+    } else if (!known) {
+        console.log(`Restart ${labels} if running, to apply the change.`);
+    }
 }
 
 /**
