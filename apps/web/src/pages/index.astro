@@ -7,6 +7,19 @@ import InstallTabs from "../components/InstallTabs.astro";
 const title = "Enigma - everything you need to work with a coding agent, in one command";
 const description = "Enigma makes your coding agent ship more optimal, secure and scalable code - in less time, fewer tokens and fewer iterations. Dynamic Skills for Claude Code, OpenAI Codex and opencode, portable git security hooks, and a local dashboard to manage and measure it all - from one command.";
 
+// One source for the nav: rendered both as the desktop links and the mobile drawer list.
+const navLinks = [
+    { href: "#features", label: "Features" },
+    { href: "#difference", label: "Before/after" },
+    { href: "#efficiency", label: "Defaults" },
+    { href: "#skills", label: "Skills" },
+    { href: "#contribute", label: "Contribute" },
+    { href: "#dashboard", label: "Dashboard" },
+    { href: "#compare", label: "Why" },
+    { href: url("demo/"), label: "Demo" },
+    { href: docHref("getting-started/introduction"), label: "Docs" },
+];
+
 // Before/after artifacts for the comparison section. Rendered with set:html (controlled,
 // no user input) so literal braces in code don't collide with Astro's expression syntax.
 const commitBad = `update stuff
@@ -53,17 +66,12 @@ const termGood = `<span class="k">$</span> git add .env
 <Base title={title} description={description}>
     <nav>
         <div class="wrap">
+            <button class="nav-toggle" id="navToggle" type="button" aria-label="Open menu" aria-controls="mobileMenu" aria-expanded="false">
+                <span></span><span></span><span></span>
+            </button>
             <span class="brand">Enigma<span class="caret" aria-hidden="true"></span></span>
             <span class="links">
-                <a href="#features" class="hide-sm">Features</a>
-                <a href="#difference" class="hide-sm">Before/after</a>
-                <a href="#efficiency" class="hide-sm">Defaults</a>
-                <a href="#skills" class="hide-sm">Skills</a>
-                <a href="#contribute" class="hide-sm">Contribute</a>
-                <a href="#dashboard" class="hide-sm">Dashboard</a>
-                <a href="#compare" class="hide-sm">Why</a>
-                <a href={url("demo/")} class="hide-sm">Demo</a>
-                <a href={docHref("getting-started/introduction")} class="hide-sm">Docs</a>
+                {navLinks.map((l) => <a href={l.href} class="hide-sm">{l.label}</a>)}
                 <span class="ghb">
                     <a class="ghb-btn" href="https://github.com/FJRG2007/enigma" target="_blank" rel="noopener noreferrer" aria-label="Star FJRG2007/enigma on GitHub">
                         <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.52 11.52 0 0 1 12 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222 0 1.606-.014 2.898-.014 3.293 0 .322.216.694.825.576C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"></path></svg>
@@ -75,6 +83,21 @@ const termGood = `<span class="k">$</span> git add .env
             </span>
         </div>
     </nav>
+
+    <div class="mnav" id="mobileMenu" hidden>
+        <div class="mnav-backdrop" data-close></div>
+        <aside class="mnav-panel" role="dialog" aria-modal="true" aria-label="Menu">
+            <div class="mnav-head">
+                <span class="brand">Enigma<span class="caret" aria-hidden="true"></span></span>
+                <button class="mnav-close" type="button" data-close aria-label="Close menu">&times;</button>
+            </div>
+            <nav class="mnav-links">
+                {navLinks.map((l) => <a href={l.href} data-close>{l.label}</a>)}
+                <a class="mnav-gh" href="https://github.com/FJRG2007/enigma" target="_blank" rel="noopener noreferrer" data-close>GitHub</a>
+                <a href={url("start/")} class="cta" data-close>Install</a>
+            </nav>
+        </aside>
+    </div>
 
     <header class="hero">
         <div class="wrap">
@@ -311,6 +334,28 @@ const termGood = `<span class="k">$</span> git add .env
     nav .links a:hover { color: var(--text); }
     nav .cta { color: #1a1206 !important; background: var(--accent); padding: 7px 14px; border-radius: 9px; font-weight: 600; }
 
+    /* Mobile nav: a hamburger button (hidden on desktop) opens a left off-canvas drawer. */
+    .nav-toggle { display: none; flex-direction: column; justify-content: center; gap: 4px; width: 40px; height: 40px; padding: 0 9px; margin-left: -8px; background: none; border: 0; cursor: pointer; }
+    .nav-toggle span { display: block; height: 2px; width: 20px; background: var(--text); border-radius: 2px; transition: transform .22s ease, opacity .22s ease; }
+    .nav-toggle[aria-expanded="true"] span:nth-child(1) { transform: translateY(6px) rotate(45deg); }
+    .nav-toggle[aria-expanded="true"] span:nth-child(2) { opacity: 0; }
+    .nav-toggle[aria-expanded="true"] span:nth-child(3) { transform: translateY(-6px) rotate(-45deg); }
+
+    .mnav { position: fixed; inset: 0; z-index: 40; }
+    .mnav[hidden] { display: none; }
+    .mnav-backdrop { position: absolute; inset: 0; background: rgba(3, 5, 9, 0.6); opacity: 0; transition: opacity .24s ease; }
+    .mnav.open .mnav-backdrop { opacity: 1; }
+    .mnav-panel { position: absolute; top: 0; left: 0; height: 100%; width: min(82vw, 300px); background: var(--surface); border-right: 1px solid var(--border); box-shadow: var(--shadow-2); padding: 16px 16px 28px; display: flex; flex-direction: column; transform: translateX(-100%); transition: transform .26s cubic-bezier(.4, 0, .2, 1); overflow-y: auto; }
+    .mnav.open .mnav-panel { transform: none; }
+    .mnav-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+    .mnav-close { background: none; border: 0; color: var(--muted); font-size: 26px; line-height: 1; cursor: pointer; padding: 2px 8px; }
+    .mnav-close:hover { color: var(--text); }
+    .mnav-links { display: flex; flex-direction: column; gap: 2px; margin-top: 8px; font-family: var(--mono); font-size: 15px; }
+    .mnav-links a { color: var(--muted); padding: 12px 8px; border-radius: 8px; }
+    .mnav-links a:hover { color: var(--text); background: var(--surface2); }
+    .mnav-links .mnav-gh { border-top: 1px solid var(--border-soft); margin-top: 8px; padding-top: 15px; }
+    .mnav-links .cta { color: #1a1206 !important; background: var(--accent); text-align: center; font-weight: 600; margin-top: 12px; padding: 12px; }
+
     header.hero { padding: 80px 0 40px; text-align: center; }
     .eyebrow { font-family: var(--mono); font-size: 12px; text-transform: uppercase; letter-spacing: 2px; color: var(--accent); }
     .skill-h { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -407,12 +452,43 @@ const termGood = `<span class="k">$</span> git add .env
     footer .foot-links a:hover { color: var(--text); }
     footer .links { margin-left: auto; display: flex; gap: 18px; }
 
-    @media (max-width: 640px) { nav .links a.hide-sm { display: none; } header.hero { padding: 56px 0 28px; } }
+    @media (max-width: 640px) {
+        nav .links a.hide-sm { display: none; }
+        nav .ghb { display: none; }
+        .nav-toggle { display: flex; }
+        header.hero { padding: 56px 0 28px; }
+    }
 </style>
 
 <script>
     // The install picker (tabs + copy + navigate-to-/start) lives in InstallTabs.astro; this
     // page only wires the skills catalog and the live star count.
+
+    // Mobile nav: the hamburger opens/closes the left drawer. Closing waits for the slide-out
+    // transition before re-hiding the overlay; the backdrop, close button and any link (all
+    // tagged data-close) close it, as does Escape.
+    (function () {
+        const toggle = document.getElementById("navToggle");
+        const menu = document.getElementById("mobileMenu");
+        if (!toggle || !menu) return;
+        let closeTimer;
+        const open = () => {
+            clearTimeout(closeTimer);
+            menu.hidden = false;
+            requestAnimationFrame(() => menu.classList.add("open"));
+            toggle.setAttribute("aria-expanded", "true");
+            document.body.style.overflow = "hidden";
+        };
+        const close = () => {
+            menu.classList.remove("open");
+            toggle.setAttribute("aria-expanded", "false");
+            document.body.style.overflow = "";
+            closeTimer = setTimeout(() => { menu.hidden = true; }, 280);
+        };
+        toggle.addEventListener("click", () => (menu.classList.contains("open") ? close() : open()));
+        menu.addEventListener("click", (e) => { if (e.target.closest("[data-close]")) close(); });
+        document.addEventListener("keydown", (e) => { if (e.key === "Escape" && menu.classList.contains("open")) close(); });
+    })();
 
     // Skills marketplace: the official catalog is generated by `enigma seal` into
     // docs/skills-catalog.json (single source of truth) and read here over GitHub raw
