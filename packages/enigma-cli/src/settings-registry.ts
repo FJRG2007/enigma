@@ -12,12 +12,12 @@
 import { AGENTS } from "./agents";
 import { applyMcpToggle } from "./mcp-deploy";
 import { isAutoLintOn, setAutoLint } from "./lint";
-import { readConfig, setEnigmaToggle, setEnigmaValue, setRecallApiKey, RECALL_PROVIDERS, OUTPUT_STYLES, MINIMAL_CODE_LEVELS, DASHBOARD_MODES, PROMPT_SECRET_MODES, SKILL_UPDATE_POLICIES } from "./config";
+import { readConfig, setEnigmaToggle, setEnigmaValue, setRecallApiKey, RECALL_PROVIDERS, OUTPUT_STYLES, MINIMAL_CODE_LEVELS, LOGO_COLOR_POLICIES, DASHBOARD_MODES, PROMPT_SECRET_MODES, SKILL_UPDATE_POLICIES } from "./config";
 import { applyDashboardMode } from "./dashboard";
 import { applyGateToggle } from "./command-deploy";
 import type { DashboardMode } from "./config";
+import { getGhTelemetryCached, ghTelemetryBlocker, hasGhCli, setGhTelemetry } from "./github";
 import { getClaudeAttribution, setClaudeAttribution, getClaudeFeedbackSurvey, setClaudeFeedbackSurvey } from "./claude";
-import { getGhTelemetryCached, setGhTelemetry } from "./github";
 import { BYPASS_SUPPORTED, getBypass, setBypass } from "./permissions";
 import { GUARD_PROTECTIONS, GUARD_LISTS, readGlobalGuard, setGuardProtection, setGuardList } from "./guard-config";
 import type { GuardListMeta } from "./guard-config";
@@ -28,7 +28,12 @@ export type Scope = "global" | "local";
 /** Keys of EnigmaConfig whose value is a boolean (the on/off toggles). */
 type BooleanConfigKey = { [K in EnigmaConfigKey]: EnigmaConfig[K] extends boolean ? K : never }[EnigmaConfigKey];
 
-export interface ApplyResult { path?: string; changed: boolean; }
+/**
+ * `error` is set when the write could not be performed at all (as opposed to `changed:
+ * false`, which means the value was already what was asked for). Without it every
+ * surface re-read the setting and reported success for a write that never happened.
+ */
+export interface ApplyResult { path?: string; changed: boolean; error?: string; }
 
 export interface Setting {
     /** Stable CLI key (kebab-case) used by `enigma config <key>`. */
@@ -159,6 +164,17 @@ function setRecall(on: boolean, scope: Scope): ApplyResult {
     return { path, changed: true };
 }
 
+/**
+ * Hand gh's telemetry setting to gh, reporting why when gh cannot take it. The setting
+ * lives in gh's own config, not enigma's, so this is the one write that can fail for a
+ * reason entirely outside enigma - and the reason has to reach the user.
+ */
+function writeGhTelemetry(enabled: boolean): ApplyResult {
+    const changed = setGhTelemetry(enabled);
+    if (changed === null) return { changed: false, error: ghTelemetryBlocker() ?? "gh refused the change" };
+    return { changed };
+}
+
 /** Persist the gate toggle and deploy/remove the /gate command immediately. */
 function setGate(on: boolean, scope: Scope): ApplyResult {
     const path = setEnigmaToggle("gate", on, scope);
@@ -243,6 +259,19 @@ const RAW_CATEGORIES: Category[] = [
             enigmaToggle("parallel-subagents", "parallelSubagents", "Parallel sub-agents", "let agents split long tasks across sub-agents running in parallel; edits the memory file - restart your agent to apply", true),
             enigmaChoice("output-style", "outputStyle", "Token-efficient output", "compress prose replies (off|lite|full|ultra); on = full; edits the memory file - restart your agent to apply", OUTPUT_STYLES, "full", true),
             enigmaChoice("minimal-code", "minimalCode", "Minimal code (anti-overengineering)", "prefer the laziest solution that works (off|lite|full|ultra); on = full; edits the memory file - restart your agent to apply", MINIMAL_CODE_LEVELS, "full", true),
+            {
+                key: "logo-color-policy",
+                label: "Logo contrast resolution",
+                hint: "the agent always sources real logos (never invents them); this only picks how a logo/background contrast clash is fixed: ask | adapt-background | adapt-logo; edits the memory file - restart your agent to apply; enigma default: ask",
+                affectsMemory: true,
+                choices: LOGO_COLOR_POLICIES,
+                // No off state - a mode is always set; the boolean face stays "on" so the row reads green.
+                offChoice: "__none__",
+                read: () => true,
+                write: () => ({ changed: false }),
+                readChoice: () => readConfig().config.logoColorPolicy,
+                writeChoice: (value, scope) => ({ path: setEnigmaValue("logoColorPolicy", value, scope), changed: true }),
+            },
             {
                 key: "compress",
                 label: "Context compression MCP",
@@ -415,13 +444,16 @@ const RAW_CATEGORIES: Category[] = [
                 choices: ["enabled", "disabled"],
                 offChoice: "disabled",
                 read: () => getGhTelemetryCached() === true,
-                write: (value) => ({ changed: setGhTelemetry(value) === true }),
+                write: (value) => writeGhTelemetry(value),
                 readChoice: () => {
                     const v = getGhTelemetryCached();
-                    if (v === null) return "not installed";
+                    // Distinguish the two ways we end up with no value: gh missing, or gh
+                    // present but unable to answer. "not installed" for the latter sent
+                    // people looking for a gh that was sitting right there.
+                    if (v === null) return hasGhCli() ? "unavailable" : "not installed";
                     return v ? "enabled" : "disabled";
                 },
-                writeChoice: (value) => ({ changed: setGhTelemetry(value === "enabled") === true }),
+                writeChoice: (value) => writeGhTelemetry(value === "enabled"),
             },
         ],
     },

@@ -92,6 +92,21 @@ test("loopback binds with no token and keeps serving the API", async () => {
     } finally { server.close(); }
 });
 
+test("a loopback bind accepts its own IPv6 client, whose Host arrives bracketed", async () => {
+    setBind("loopback");
+    clearDashboardToken();
+    const server = await startDashboardServer("test-version");
+    try {
+        // `[::1]` is loopback, so this must be served. Splitting the bracketed literal on ":"
+        // truncated it to "" and 403'd the request - every panel silently empty for anyone
+        // whose browser reached the dashboard over IPv6.
+        expect(await getAs(server.port, "/api/status", `[::1]:${server.port}`, null)).toBe(200);
+        // A routable IPv6 is not loopback and must still be refused. The same truncation cut
+        // this one down to its first group, so any address sharing that prefix passed.
+        expect(await getAs(server.port, "/api/status", `[2a01:4f8::1]:${server.port}`, null)).toBe(403);
+    } finally { server.close(); }
+});
+
 test("an exposed bind rejects every /api/* request without the bearer, and serves it with", async () => {
     setBind("custom", "127.0.0.1");
     const token = ensureDashboardToken(true);

@@ -160,6 +160,8 @@ function stripMarkedBlock(content: string, id: string): string {
  *   bind {{output-level}} to the chosen level (lite/full/ultra).
  * - minimalCode off -> strip the anti-overengineering block; otherwise keep it and bind
  *   {{minimal-level}} to the chosen level (lite/full/ultra).
+ * - logoColorPolicy -> always kept (real-logo sourcing is a baseline); bind
+ *   {{logo-color-policy}} to the chosen contrast-clash mode (ask/adapt-background/adapt-logo).
  * - recall off -> strip the "use session memory" block; kept when on so the agent is told
  *   to query the enigma_recall MCP tools.
  * - gate off -> strip the "AI quality gate (automatic)" block; kept when on so the agent
@@ -174,6 +176,9 @@ function renderMemory(srcFile: string): string {
     else out = out.replace(/\{\{output-level\}\}/g, cfg.outputStyle);
     if (cfg.minimalCode === "off") out = stripMarkedBlock(out, "minimal-code");
     else out = out.replace(/\{\{minimal-level\}\}/g, cfg.minimalCode);
+    // Logo sourcing is always-on (fabricating a real brand logo is wrong output); only the
+    // contrast-clash resolution is configurable, so the block is never stripped - just bound.
+    out = out.replace(/\{\{logo-color-policy\}\}/g, cfg.logoColorPolicy);
     if (!cfg.recall) out = stripMarkedBlock(out, "recall");
     if (!cfg.gate) out = stripMarkedBlock(out, "gate");
     return out;

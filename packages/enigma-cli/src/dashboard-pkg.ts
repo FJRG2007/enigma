@@ -140,6 +140,10 @@ export function spawnDashboardPkgInstall(): void {
         const exe = basename(process.execPath).toLowerCase();
         const dev = exe === "node" || exe === "node.exe" || exe === "bun" || exe === "bun.exe";
         const args = dev ? [process.argv[1]!, "__dashboard-install"] : ["__dashboard-install"];
-        spawn(process.execPath, args, { detached: true, stdio: "ignore", windowsHide: true }).unref();
+        const child = spawn(process.execPath, args, { detached: true, stdio: "ignore", windowsHide: true });
+        // A spawn failure surfaces as an async `error` event; with no listener the child
+        // rethrows it as an uncaught exception, which this try/catch cannot intercept.
+        child.on("error", () => { /* the UI falls back to the bundled placeholder page */ });
+        child.unref();
     } catch { /* best-effort */ }
 }

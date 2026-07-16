@@ -18,6 +18,7 @@
 - dependency-policy: adding/upgrading/auditing dependencies, lockfiles, and supply-chain risk.
 - testing-policy, code-review-policy, debugging-policy, git-policy: tests and test-suite layout (structured subfolders, never a flat tests/ dump), pre-delivery review, debugging, and commits/PRs.
 - technical-writing-policy: any user-facing copy - UI labels, descriptions, hints, empty/error states, panel intros, README/doc prose - concise and realistic, no over-explaining or restating the obvious.
+- logo-sourcing-policy: adding any real brand/platform/technology logo or icon - source the official asset (never fabricate one), prefer SVG (WebP for web), keep brand colors, and check contrast.
 - task-completion-policy: long or multi-item tasks (1:1 ports, migrations, repo-wide changes) - work-unit inventory, persistent coverage ledger, and verified completion before any "done" claim.
 
 ### Always-On Rules (never skipped, even if no skill loads)
@@ -66,6 +67,14 @@
   - **ultra** - YAGNI extremist: deletion before addition, ship the one-liner and challenge the rest of the requirement in the same response.
 - Never simplify away: input validation at trust boundaries, error handling that prevents data loss, security, accessibility, hardware calibration, or anything explicitly requested. Non-trivial logic leaves ONE runnable check behind (testing-policy owns test strategy).
 <!-- enigma:minimal-code:end -->
+
+<!-- enigma:logo-sourcing:start -->
+### Brand Logos and Icons
+
+- Never fabricate, redraw, or emit from-memory SVG paths for the logo of a real company, product, platform, framework, or technology. SOURCE the official asset: the vendor's brand/press kit, or a vector-logo registry (simpleicons.org, svgl.app, worldvectorlogo.com, cdnlogo.com, iconify.design, devicon.dev), or an already-installed icon package; search the web when you can. Full detail in logo-sourcing-policy. Only author marks that do not exist yet (the user's own project logo, a generic placeholder); if you cannot get a real one, ask the user - never invent it.
+- Prefer vector (SVG); for web or WebP-capable targets prefer an optimized WebP/AVIF over PNG when a raster is required (smaller, faster). Keep the brand's official colors.
+- Check contrast before placing a logo: read the SVG fills to tell if it is monochrome (e.g. a solid black/white mark) and would vanish on a same-tone background. Resolve a clash per the logo-color-policy setting = **{{logo-color-policy}}**: `ask` (stop and ask the user how to resolve), `adapt-background` (add a contrasting container/badge behind the logo, keep its colors), `adapt-logo` (swap to the opposite brand variant / recolor the mark to fit).
+<!-- enigma:logo-sourcing:end -->
 
 <!-- enigma:recall:start -->
 ### Session Memory (Recall)

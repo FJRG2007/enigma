@@ -97,6 +97,9 @@ export function spawnLinterInstall(): void {
         const dev = exe === "node" || exe === "node.exe" || exe === "bun" || exe === "bun.exe";
         const args = dev ? [process.argv[1]!, "__lint-install"] : ["__lint-install"];
         const child = spawn(process.execPath, args, { detached: true, stdio: "ignore", windowsHide: true });
+        // A spawn failure surfaces as an async `error` event; with no listener the child
+        // rethrows it as an uncaught exception, which this try/catch cannot intercept.
+        child.on("error", () => { /* the linter install just did not start */ });
         child.unref();
     } catch { /* best-effort */ }
 }

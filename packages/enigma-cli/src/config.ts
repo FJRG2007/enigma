@@ -71,6 +71,16 @@ export type SkillUpdatePolicy = "overwrite" | "keep";
 export const SKILL_UPDATE_POLICIES: readonly SkillUpdatePolicy[] = ["overwrite", "keep"];
 
 /**
+ * How the agent resolves a logo/background contrast clash (logo-sourcing-policy). "ask"
+ * (default) stops and asks the user; "adapt-background" adds a contrasting container behind
+ * the logo and keeps its official colors; "adapt-logo" recolors the logo (or swaps to the
+ * opposite brand variant) to fit the background. Deployed as a memory-file placeholder
+ * (see skills.ts renderMemory), so the agent always knows the active mode.
+ */
+export type LogoColorPolicy = "ask" | "adapt-background" | "adapt-logo";
+export const LOGO_COLOR_POLICIES: readonly LogoColorPolicy[] = ["ask", "adapt-background", "adapt-logo"];
+
+/**
  * LLM provider used to curate recall memory. "claude-local" reuses the local Claude Code
  * login (no API key). "anthropic" uses an Anthropic API key. "openai" targets any
  * OpenAI-compatible /chat/completions endpoint (OpenAI, OpenRouter, Groq, Gemini's compat
@@ -87,6 +97,8 @@ export interface EnigmaConfig {
     outputStyle: OutputStyle;
     /** Anti-overengineering intensity for code the agent writes; deployed as a memory section. */
     minimalCode: MinimalCode;
+    /** How the agent resolves a logo/background contrast clash; deployed as a memory placeholder. */
+    logoColorPolicy: LogoColorPolicy;
     /** Silently re-deploy updated skills/memory when launching a tool through enigma. */
     autoSync: boolean;
     /** Fetch newer skills from the GitHub repo (install/update) without a package update. */
@@ -253,7 +265,7 @@ export interface EnigmaConfig {
  * transcript has no counterfactual baseline - see usage.ts).
  */
 export const CONFIG_DEFAULTS: EnigmaConfig = {
-    commitEmoji: true, updateNotifier: true, fullscreen: true, parallelSubagents: false, outputStyle: "off", minimalCode: "full",
+    commitEmoji: true, updateNotifier: true, fullscreen: true, parallelSubagents: false, outputStyle: "off", minimalCode: "full", logoColorPolicy: "ask",
     autoSync: true, remoteSkills: true, skillUpdatePolicy: "overwrite", permissionBypass: true, autoLint: false, compress: false, codeGraph: false, gate: false, dashboard: "off", tokenPrice: 0, tokenSpeed: 0, usageStats: false, recall: false, recallLlm: true, recallProvider: "claude-local", recallModel: "", recallApiBase: "", recallApiKey: "", proxy: false, usageApi: false, promptSecretGuard: false, promptSecretMode: "redact",
     planSessionLimit: 0, planWeeklyLimit: 0, planWeeklySonnetLimit: 0, planWeeklyOpusLimit: 0, planWeeklyReset: "mon 00:00",
     dashboardLive: true, dashboardPort: 0, dashboardBind: "loopback", dashboardBindAddress: "", apiPort: 8000, apiAccount: "", apiProfile: "", apiPack: "", toolPaths: {}, bypassDisabled: [], discardedSkills: [], skillAgentsOff: {}, packs: [], packAccounts: {},

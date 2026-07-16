@@ -33,7 +33,7 @@
 import { homedir } from "node:os";
 import { readConfig } from "./config";
 import { randomUUID } from "node:crypto";
-import { spawn } from "node:child_process";
+import { spawn, type SpawnOptions } from "node:child_process";
 import { startMeasuringProxy } from "./proxy";
 import { join, resolve, sep } from "node:path";
 import { readGlobalGuard } from "./guard-config";
@@ -837,6 +837,17 @@ export async function loginTool(toolName: string, name: string): Promise<number>
  * command to run by hand). Platform-specific: a new console on Windows, Terminal.app on macOS, a
  * common terminal emulator on Linux.
  */
+function spawnDetachedTerminal(bin: string, args: string[], opts: SpawnOptions): void {
+    const child = spawn(bin, args, opts);
+    // The `error` listener is load-bearing. Every binary spawned below can be absent (no
+    // osascript, no terminal emulator), and a missing one surfaces as an ASYNCHRONOUS
+    // `error` event that a child with no listener rethrows as an uncaught exception - the
+    // caller's try/catch never sees it and the CLI dies. This is the same shape as the
+    // missing `xdg-open` that used to crash `enigma dashboard` on a server.
+    child.on("error", () => { /* no window opened; the caller prints the command instead */ });
+    child.unref();
+}
+
 export function openLoginTerminal(toolName: string, name: string): boolean {
     getTool(toolName);
     if (process.env.ENIGMA_NO_TERMINAL === "1") return false; // tests/headless: never open a window
@@ -845,19 +856,19 @@ export function openLoginTerminal(toolName: string, name: string): boolean {
     try {
         if (process.platform === "win32") {
             // `start "" cmd /k <enigma ...>`: a new console that stays open after the tool exits.
-            spawn("cmd", ["/c", "start", "", "cmd", "/k", enigma, ...args], { detached: true, stdio: "ignore", windowsHide: false }).unref();
+            spawnDetachedTerminal("cmd", ["/c", "start", "", "cmd", "/k", enigma, ...args], { detached: true, stdio: "ignore", windowsHide: false });
             return true;
         }
         if (process.platform === "darwin") {
             const line = [enigma, ...args].join(" ").replace(/"/g, "\\\"");
-            spawn("osascript", ["-e", `tell application "Terminal" to do script "${line}"`, "-e", "tell application \"Terminal\" to activate"], { detached: true, stdio: "ignore" }).unref();
+            spawnDetachedTerminal("osascript", ["-e", `tell application "Terminal" to do script "${line}"`, "-e", "tell application \"Terminal\" to activate"], { detached: true, stdio: "ignore" });
             return true;
         }
         for (const term of ["x-terminal-emulator", "gnome-terminal", "konsole", "xterm"]) {
             const bin = resolveBin(term);
             if (!bin) continue;
             const termArgs = term === "gnome-terminal" ? ["--", enigma, ...args] : ["-e", [enigma, ...args].join(" ")];
-            spawn(bin, termArgs, { detached: true, stdio: "ignore" }).unref();
+            spawnDetachedTerminal(bin, termArgs, { detached: true, stdio: "ignore" });
             return true;
         }
         return false;
