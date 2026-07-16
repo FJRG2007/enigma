@@ -1,12 +1,12 @@
 {
   "name": "logo-sourcing-policy",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "provider": "FJRG2007/enigma",
   "description": "Source real brand/platform/technology logos instead of inventing them - vector-logo registries and vendor brand kits, SVG (WebP for web) preference, official colors, and contrast-aware placement; color-conflict resolution via the logo-color-policy setting.",
   "config": [
     "logoColorPolicy"
   ],
-  "updated": "2026-07-16T23:37:57+02:00",
-  "cliVersion": "1.29.0",
-  "sha": "e2c8b8898ab02d3e6b337533dfb1a955c30a4f5a33f0fb67e738ca3cb35eeac7"
+  "updated": "2026-07-17T00:17:02+02:00",
+  "cliVersion": "1.29.1",
+  "sha": "09cdbefd98625b02a7d03685e5deed128238ff8454a83fe22279610fe3ef8ddf"
 }

@@ -74,25 +74,22 @@ disappears.
 - Ensure the placed logo meets a visible contrast against its actual background
   before shipping it.
 
-When a monochrome logo would clash with its background, resolve it per the
-**logo-color-policy** setting (`enigma config logo-color-policy`):
-
-| Value | Behavior |
-|-------|----------|
-| **ask** (default) | Stop and ask the user how to resolve it - recolor the background, add a container/badge behind the logo, swap to a different brand variant, or recolor the logo. Do not silently pick one. |
-| **adapt-background** | Auto-resolve by giving the logo a contrasting container/background (a chip, card, or badge) and KEEP the logo's official colors. Preferred for brand fidelity. |
-| **adapt-logo** | Auto-resolve by switching to the brand's opposite monochrome variant (or recoloring the mark) so it fits the existing background. |
-
-The active mode is rendered into the block below when this skill is deployed, so
-you always know which one applies without reading config.
-
 <!-- enigma:config:start -->
-### Active configuration
+When a monochrome logo would clash with its background, resolve it as follows:
 
-- **logo-color-policy** = `{{logoColorPolicy}}` - resolve a contrast clash using this mode.
-
-This block is rendered by enigma from the user's `.enigma.json` at deploy time; do
-not edit it by hand (it is regenerated on the next sync).
+<!-- enigma:case:logoColorPolicy=ask -->
+Stop and ask the user how to resolve it - recolor the background, add a container/badge
+behind the logo, swap to a different official brand variant, or recolor the logo. Do not
+silently pick one.
+<!-- enigma:case:end -->
+<!-- enigma:case:logoColorPolicy=adapt-background -->
+Give the logo a contrasting container/background (a chip, card, or badge) and KEEP the
+logo's official colors.
+<!-- enigma:case:end -->
+<!-- enigma:case:logoColorPolicy=adapt-logo -->
+Switch to the brand's opposite monochrome variant (or recolor the mark) so it fits the
+existing background.
+<!-- enigma:case:end -->
 <!-- enigma:config:end -->
 
 ## Trademark Respect

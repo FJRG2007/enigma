@@ -67,3 +67,31 @@ test("an edit OUTSIDE the config block still changes the hash", () => {
         for (const d of [base, edited]) rmSync(d, { recursive: true, force: true });
     }
 });
+
+// Case blocks live INSIDE the config block, so the whole block (all cases in the template,
+// one case in the rendered deployment) is stripped before hashing - both hash identically.
+function caseSkillDir(configBody: string): string {
+    const dir = mkdtempSync(join(tmpdir(), "enigma-skillcase-"));
+    writeFileSync(join(dir, "SKILL.md"), [
+        "# Demo", "", "Static content.", "",
+        "<!-- enigma:config:start -->", configBody, "<!-- enigma:config:end -->", "",
+        "Trailing static content.", "",
+    ].join("\n"));
+    return dir;
+}
+
+test("a full-cases template and a single-rendered-case deployment hash identically", () => {
+    const template = caseSkillDir([
+        "<!-- enigma:case:logoColorPolicy=ask -->", "ask text", "<!-- enigma:case:end -->",
+        "<!-- enigma:case:logoColorPolicy=adapt-logo -->", "adapt-logo text", "<!-- enigma:case:end -->",
+    ].join("\n"));
+    const renderedAsk = caseSkillDir("ask text");        // what renderSkill leaves for value "ask"
+    const renderedAdapt = caseSkillDir("adapt-logo text"); // ...and for "adapt-logo"
+    try {
+        const t = computeContentSha(template);
+        expect(computeContentSha(renderedAsk)).toBe(t);
+        expect(computeContentSha(renderedAdapt)).toBe(t);
+    } finally {
+        for (const d of [template, renderedAsk, renderedAdapt]) rmSync(d, { recursive: true, force: true });
+    }
+});

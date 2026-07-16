@@ -773,7 +773,7 @@
         <div class="page-head" style="display:flex;align-items:flex-start;gap:16px">
             <div style="flex:1">
                 <h1>Settings</h1>
-                <p>Everything you can configure with <code>enigma config</code> or the terminal UI, editable here. Changes apply at global scope and take effect immediately; toggles that change agent memory need an agent restart.</p>
+                <p>Everything you can configure with <code>enigma config</code> or the terminal UI, editable here. Changes apply at global scope and take effect immediately; toggles that change agent memory or a skill need an agent restart to apply.</p>
             </div>
             <div style="display:flex;gap:8px;white-space:nowrap">
                 <button id="cfgExport" type="button" class="toggle with-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export config</button>
@@ -2938,7 +2938,7 @@ export {
             const prev = noteToastId.get(key);
             if (msg == null || msg === "") { if (prev != null) { toast.dismiss(prev); noteToastId.delete(key); } return; }
             const isProgress = !kind && /(\.\.\.|…)\s*$/.test(String(msg));
-            const type = kind === "ok" ? "success" : kind === "err" ? "error" : isProgress ? "loading" : "info";
+            const type = kind === "ok" ? "success" : kind === "err" ? "error" : kind === "warn" ? "warning" : isProgress ? "loading" : "info";
             const parts = splitMsg(msg);
             const id = toast[type](parts.title, { id: prev, description: parts.description });
             if (isProgress) noteToastId.set(key, id);
@@ -3117,7 +3117,7 @@ export {
                 if (s && isBool) applyBool(ctl, s.value);
                 else if (s) { ctl.value = s.choice; ctl.dataset.prev = s.choice; syncDD(ctl); }
                 if (s && (isBool ? s.value !== want : String(s.choice) !== want)) { setNote(el, key + " did not change (the write had no effect).", "err"); return; }
-                setNote(el, out.restartNote || ("Saved " + key + "."), "ok");
+                setNote(el, out.restartNote || ("Saved " + key + "."), out.restartNote ? "warn" : "ok");
             } catch (e) { rollback(); setNote(el, "Could not change " + key + ": " + e.message, "err"); }
         }
 
@@ -3189,7 +3189,7 @@ export {
             setNote("settingsNote", "Saving dashboard port...");
             try {
                 const out = await (await fetch("/api/dashboard-port", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ value }) })).json();
-                if (out.ok) setNote("settingsNote", out.restartNote || ("Saved dashboard port = " + (value || "auto") + "."), "ok");
+                if (out.ok) setNote("settingsNote", out.restartNote || ("Saved dashboard port = " + (value || "auto") + "."), out.restartNote ? "warn" : "ok");
                 else setNote("settingsNote", "Could not save: " + (out.error || "error"), "err");
             } catch { setNote("settingsNote", "Could not reach the server to set the port.", "err"); }
         }
@@ -4417,7 +4417,7 @@ export {
             try {
                 const out = await (await fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: "recall", value: on }) })).json();
                 if (!out.ok) { setNote("recallNote", "Could not change recall: " + (out.error || "error"), "err"); return; }
-                setNote("recallNote", out.restartNote || (on ? "Recall enabled." : "Recall disabled."), "ok");
+                setNote("recallNote", out.restartNote || (on ? "Recall enabled." : "Recall disabled."), out.restartNote ? "warn" : "ok");
                 loadRecall();
             } catch { setNote("recallNote", "Could not reach the server.", "err"); }
         }
