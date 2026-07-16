@@ -1,7 +1,7 @@
 {
   "generator": "enigma seal",
-  "cliVersion": "1.28.2",
-  "count": 18,
+  "cliVersion": "1.28.3",
+  "count": 19,
   "skills": [
     {
       "name": "anti-overengineering-policy",
@@ -45,11 +45,11 @@
     },
     {
       "name": "core-engineering-policy",
-      "version": "1.10.0",
+      "version": "1.11.0",
       "description": "Core engineering execution policy and harness orchestration (highest-authority rules).",
       "provider": "FJRG2007/enigma",
-      "updated": "2026-06-25T17:54:55+02:00",
-      "sha": "5e68e2a25c8e3dac6251562062f7fe4c57143baaaee8fd6de83adca9ec24a6e6"
+      "updated": "2026-07-16T22:43:53+02:00",
+      "sha": "d132f20db08806054d95e58d3d56c2aa7ebc8e6dd24d902b0a0ed9ddfae216c5"
     },
     {
       "name": "database-expert",
@@ -93,11 +93,19 @@
     },
     {
       "name": "git-policy",
-      "version": "1.4.0",
+      "version": "1.5.0",
       "description": "Git & contribution policy (senior engineering standards).",
       "provider": "FJRG2007/enigma",
-      "updated": "2026-06-25T17:14:54+02:00",
-      "sha": "9298bf572c6186de65bfae5cc008af247731fac3e07d9320ddfc12fe886d6afe"
+      "updated": "2026-07-16T22:44:02+02:00",
+      "sha": "e6dfbc33884000d9d25841bd9c5a84d6558ffd374882cb7b34451eb2cebc2161"
+    },
+    {
+      "name": "logo-sourcing-policy",
+      "version": "1.0.0",
+      "description": "Source real brand/platform/technology logos instead of inventing them - vector-logo registries and vendor brand kits, SVG (WebP for web) preference, official colors, and contrast-aware placement; color-conflict resolution via the logo-color-policy setting.",
+      "provider": "FJRG2007/enigma",
+      "updated": "2026-07-16T22:43:53+02:00",
+      "sha": "0b32a63c2d5415d3bf8fd801b9418f48fddc57aeee3f9ca0aa6033879171faa5"
     },
     {
       "name": "security-policy",
