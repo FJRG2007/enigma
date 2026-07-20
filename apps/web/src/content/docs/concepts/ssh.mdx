@@ -44,8 +44,8 @@ The two-part `local:remote` form is the common one - the target host defaults to
 
 Give a saved tunnel a name and you can bring it up on its own later - handy when a server has several. In the **dashboard**, each connection has a small tunnel builder: a *remote port* (or `host:port`), a *local port* (blank = the same), and an optional *name*. From the CLI:
 
-<Cmd name="enigma ssh forward add <alias> <spec> [name]" ex={["enigma ssh forward add db 9090:5432 pg", "enigma ssh tunnel db pg", "enigma ssh forward list db"]}>
-Save "remote 5432 -> local 9090" as `pg`, then open just that tunnel any time with `enigma ssh tunnel db pg`. Saved tunnels also show a copy-the-command button in the dashboard.
+<Cmd name="enigma ssh forward add <alias> <spec> [name]" ex={["enigma ssh forward add db 9090:5432 pg", "enigma ssh tunnel pg", "enigma ssh forward list db"]}>
+Save "remote 5432 -> local 9090" on server `db` as `pg`, then open just that tunnel any time with `enigma ssh tunnel pg`. The name is scoped to the server, so if two servers both have a `pg` tunnel you disambiguate with `enigma ssh tunnel db pg`; otherwise the bare name is enough. Saved tunnels also show a copy-the-command button in the dashboard.
 </Cmd>
 
 ## Password auto-fill

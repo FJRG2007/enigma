@@ -108,6 +108,19 @@ test("named forwards persist and run by name via resolveForwardToken", () => {
   expect(ssh.resolveForwardToken(conn, "nope")).toBeNull();
 });
 
+test("findNamedForward resolves a tunnel by name across servers", () => {
+  ssh.addConnection("srvA", { host: "a" });
+  ssh.addConnection("srvB", { host: "b" });
+  ssh.addForward("srvA", { ...ssh.parseForward("9090:5432")!, name: "uniq" });
+  const hit = ssh.findNamedForward("uniq");
+  expect(hit).not.toBeNull();
+  expect((hit as { conn: { alias: string } }).conn.alias).toBe("srvA");
+  // The same name on two servers is ambiguous (the CLI asks the user to qualify it).
+  ssh.addForward("srvB", { ...ssh.parseForward("8080:80")!, name: "uniq" });
+  expect(ssh.findNamedForward("uniq")).toBe("ambiguous");
+  expect(ssh.findNamedForward("missing")).toBeNull();
+});
+
 test("addForward and removeForward persist on the connection", () => {
   ssh.addConnection("fwd", { host: "h" });
   ssh.addForward("fwd", ssh.parseForward("9090:db:5432")!);

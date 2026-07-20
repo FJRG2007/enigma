@@ -642,7 +642,7 @@ async function runSshCli(args: string[], interactive: boolean): Promise<number> 
             if (name) pf.name = name;
             const res = ssh.addForward(alias, pf);
             if (!res.ok) { console.error(res.error); return 1; }
-            console.log(`Added forward to '${alias}': ${ssh.describeForward(pf)}${name ? ` (run it with: enigma ssh tunnel ${alias} ${name})` : ""}`);
+            console.log(`Added forward to '${alias}': ${ssh.describeForward(pf)}${name ? ` (run it with: enigma ssh tunnel ${name})` : ""}`);
             return 0;
         }
         if (op === "remove" || op === "rm") {
@@ -656,18 +656,26 @@ async function runSshCli(args: string[], interactive: boolean): Promise<number> 
     }
 
     if (sub === "tunnel") {
-        const alias = rest[0];
-        if (!alias) { console.error("Usage: enigma ssh tunnel <alias> [name|spec...]   (opens forwards only, no shell)"); return 1; }
-        const conn = ssh.getConnection(alias);
-        if (!conn) { console.error(`Unknown connection '${alias}'. Add it: enigma ssh add ${alias} --host <host>`); return 1; }
-        // Each token is a saved forward's name or an ad-hoc spec; no token uses all saved forwards.
+        const first = rest[0];
+        if (!first) { console.error("Usage: enigma ssh tunnel <alias> [name|spec...]  or  enigma ssh tunnel <name>   (opens forwards only, no shell)"); return 1; }
+        const conn = ssh.getConnection(first);
+        // Shorthand: a first token that is NOT a connection is treated as a saved tunnel's
+        // name, looked up across all servers - so `enigma ssh tunnel pg` just works.
+        if (!conn) {
+            const hit = ssh.findNamedForward(first);
+            if (hit === "ambiguous") { console.error(`Several servers have a tunnel named '${first}'. Qualify it: enigma ssh tunnel <server> ${first}`); return 1; }
+            if (!hit) { console.error(`No connection or saved tunnel named '${first}'. See: enigma ssh list`); return 1; }
+            return connectSsh(ssh, hit.conn.alias, { forwards: [hit.forward], tunnelOnly: true });
+        }
+        // First token is a connection alias; the rest are its tunnel names or ad-hoc specs
+        // (no rest uses all of its saved forwards).
         const forwards: import("./ssh").PortForward[] = [];
         for (const s of rest.slice(1)) {
             const pf = ssh.resolveForwardToken(conn, s);
-            if (!pf) { console.error(`No saved tunnel named '${s}' and it is not a valid spec. See: enigma ssh forward list ${alias}`); return 1; }
+            if (!pf) { console.error(`No saved tunnel named '${s}' and it is not a valid spec. See: enigma ssh forward list ${first}`); return 1; }
             forwards.push(pf);
         }
-        return connectSsh(ssh, alias, { forwards: forwards.length ? forwards : undefined, tunnelOnly: true });
+        return connectSsh(ssh, first, { forwards: forwards.length ? forwards : undefined, tunnelOnly: true });
     }
 
     // Anything else is treated as an alias to connect to; args after `--` pass through.

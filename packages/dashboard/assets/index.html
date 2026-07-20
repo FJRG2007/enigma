@@ -4109,9 +4109,10 @@ export {
                 // Each saved tunnel shows a run button (copies `enigma ssh tunnel <alias> <name|spec>`).
                 const fwds = (c.forwards || []).map((f, i) => {
                     const label = (c.forwardLabels && c.forwardLabels[i]) || sshSpecOf(f);
-                    const token = f.name || sshSpecOf(f);
+                    // A named tunnel runs globally by name; an unnamed one needs its server + spec.
+                    const cmd = f.name ? "enigma ssh tunnel " + f.name : "enigma ssh tunnel " + c.alias + " " + sshSpecOf(f);
                     return '<span class="tag">' + esc(label)
-                        + ' <button type="button" class="ssh-run" data-ssh-fwd-run data-alias="' + esc(c.alias) + '" data-token="' + esc(token) + '" title="Copy run command">&#9654;</button>'
+                        + ' <button type="button" class="ssh-run" data-ssh-fwd-run data-cmd="' + esc(cmd) + '" title="Copy run command">&#9654;</button>'
                         + ' <button type="button" class="ssh-x" data-ssh-fwd-remove data-alias="' + esc(c.alias) + '" data-index="' + i + '" title="Remove tunnel">x</button></span>';
                 }).join(" ") || '<span class="set-hint">no saved tunnels</span>';
                 return '<div class="panel ssh-card">'
@@ -4210,7 +4211,7 @@ export {
                     return;
                 }
                 if (t.hasAttribute("data-ssh-fwd-run")) {
-                    const cmd = "enigma ssh tunnel " + t.dataset.alias + " " + t.dataset.token;
+                    const cmd = t.dataset.cmd;
                     try { await navigator.clipboard.writeText(cmd); } catch { /* clipboard blocked */ }
                     setNote("sshNote", "Copied: " + cmd, "ok");
                     return;

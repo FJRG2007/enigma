@@ -246,6 +246,20 @@ export function resolveForwardToken(conn: SshConnection, token: string): PortFor
   return named ?? parseForward(token);
 }
 
+/**
+ * Find a saved tunnel by name across ALL connections, so it can be run without naming the
+ * server: `enigma ssh tunnel pg`. Returns the match, "ambiguous" when several servers have a
+ * tunnel with that name (the caller asks the user to qualify it), or null when none do.
+ */
+export function findNamedForward(name: string): { conn: SshConnection; forward: PortForward } | "ambiguous" | null {
+  const hits: { conn: SshConnection; forward: PortForward }[] = [];
+  for (const conn of readStore().connections)
+    for (const forward of conn.forwards ?? [])
+      if (forward.name === name) hits.push({ conn, forward });
+  if (hits.length > 1) return "ambiguous";
+  return hits[0] ?? null;
+}
+
 // --- command builders (pure) ----------------------------------------------------
 
 /** "user@host" or just "host" when no user is set. */
