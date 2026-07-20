@@ -199,6 +199,12 @@
         { alias: "db", host: "db.internal", user: "deploy", proxyJump: "root@203.0.113.10", hasPassword: true, target: "deploy@db.internal", forwardLabels: [], forwards: [] }
     ];
 
+    var TUNNELS = [
+        { name: "pg", server: "server1", type: "local", bind: "9090", host: "localhost", hostPort: 5432, active: true, spec: "9090:localhost:5432", label: "pg: local 9090 -> localhost:5432", target: "root@203.0.113.10", missing: false },
+        { name: "redis", server: "db", type: "local", bind: "6380", host: "localhost", hostPort: 6379, active: false, spec: "6380:localhost:6379", label: "redis: local 6380 -> localhost:6379", target: "deploy@db.internal", missing: false },
+        { name: "socks", server: "server1", type: "dynamic", bind: "1080", active: false, spec: "D:1080", label: "socks: dynamic SOCKS on 1080", target: "root@203.0.113.10", missing: false }
+    ];
+
     var RECALL = {
         available: true, enabled: true,
         stats: { observations: 128, summaries: 22, sessions: 22, projects: 3, byType: { change: 41, discovery: 33, feature: 28, bugfix: 14, refactor: 8, decision: 3, security: 1 }, dbBytes: 196608, lastObservationAt: Date.now() },
@@ -437,11 +443,12 @@
             return { ok: true, note: "Demo - no action taken.", packs: PACKS };
         }
         if (path.indexOf("/api/ssh") !== -1) {
-            if (method !== "POST") return { connections: SSH };
+            if (method !== "POST") return { connections: SSH, tunnels: TUNNELS };
             var sb = body || {};
             if (sb.action === "connect") return { ok: true, command: `enigma ssh ${sb.alias || "server1"}`, note: "Run this in a terminal to connect." };
-            if (sb.action === "tunnel") return { ok: true, command: `enigma ssh tunnel ${sb.alias || "server1"}`, note: "Run this in a terminal to open the tunnel." };
-            return { ok: true, note: "Demo - no change made.", connections: SSH };
+            if (sb.action === "tunnel-start") { TUNNELS = TUNNELS.map((t) => t.name === sb.tunnelName ? Object.assign({}, t, { active: true }) : t); return { ok: true, note: "Demo - tunnel started.", connections: SSH, tunnels: TUNNELS }; }
+            if (sb.action === "tunnel-stop") { TUNNELS = TUNNELS.map((t) => t.name === sb.tunnelName ? Object.assign({}, t, { active: false }) : t); return { ok: true, note: "Demo - tunnel stopped.", connections: SSH, tunnels: TUNNELS }; }
+            return { ok: true, note: "Demo - no change made.", connections: SSH, tunnels: TUNNELS };
         }
         if (path.indexOf("/api/update") !== -1) return { ok: true, changed: false, version: STATS.version, note: "This is a static demo." };
         if (path.indexOf("/api/fix-path") !== -1) return { ok: true, message: "Demo - nothing to fix." };

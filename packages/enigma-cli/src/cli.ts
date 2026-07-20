@@ -257,9 +257,9 @@ Commands:
   resources [action]   System cleanup: status, or wsl | docker | free-port PORT | kill PID
                        (shut down WSL/vmmemWSL, quit Docker, free a port, kill a process)
   ssh [alias|name]     SSH connection manager: connect by alias or name, or list | add | edit |
-                       remove | info | tunnel <alias> <name|spec> | forward <add|remove|list> <alias>
-                       (encrypted passwords auto-filled with no extra tools; --name sets a second
-                       connect key; saved key/jump/port-forwards, e.g. 9090:db:5432)
+                       remove | info. Tunnels are standalone (bound to a server): tunnel add
+                       <name> <server> <spec>, tunnel start|stop <name>, tunnels (list w/ status).
+                       (encrypted passwords auto-filled with no extra tools; --name = 2nd key)
   recall [action]      Local session memory from transcripts: status, sync, search <q>,
                        list, show <id>, timeline <id>, sessions, context, prune, clear
                        (hybrid keyword+vector search; opt-in; reads your own logs)
@@ -662,6 +662,59 @@ async function runSshCli(args: string[], interactive: boolean): Promise<number> 
         }
         console.error("Usage: enigma ssh forward <add <alias> SPEC [name] | remove <alias> INDEX | list <alias>>");
         return 1;
+    }
+
+    // Standalone tunnels: named, server-bound, start/stop background port forwards.
+    if (sub === "tunnels" || (sub === "tunnel" && ["add", "rm", "remove", "start", "up", "stop", "down", "edit", "list", "status"].includes(rest[0] ?? ""))) {
+        const tun = await import("./ssh-tunnels");
+        const op = sub === "tunnels" ? "list" : rest[0]!;
+        const a = sub === "tunnels" ? rest : rest.slice(1);
+        if (op === "list" || op === "status") {
+            const list = tun.listTunnels();
+            if (!list.length) { console.log("No tunnels yet. Add one:\n  enigma ssh tunnel add <name> <server> <spec>   (e.g. pg lirio-0 9090:5432)"); return 0; }
+            console.log("Tunnels:\n");
+            for (const t of list) {
+                const state = t.active ? "active " : "stopped";
+                const where = t.missing ? `${t.server} (missing!)` : `${t.server}`;
+                console.log(`  ${(t.active ? "●" : "○")} ${t.name.padEnd(14)} ${state}  ${t.spec.padEnd(22)} -> ${where}`);
+            }
+            console.log("\nStart: enigma ssh tunnel start <name>    Stop: enigma ssh tunnel stop <name>");
+            return 0;
+        }
+        if (op === "add") {
+            const [name, server, spec] = a;
+            if (!name || !server || !spec) { console.error("Usage: enigma ssh tunnel add <name> <server> <spec>   (e.g. pg lirio-0 9090:5432)"); return 1; }
+            const res = tun.addTunnel(name, server, spec);
+            if (!res.ok) { console.error(res.error); return 1; }
+            console.log(`Added tunnel '${name}' -> ${server}. Start it: enigma ssh tunnel start ${name}`);
+            return 0;
+        }
+        if (op === "rm" || op === "remove") {
+            if (!a[0]) { console.error("Usage: enigma ssh tunnel rm <name>"); return 1; }
+            if (!tun.removeTunnel(a[0])) { console.error(`Unknown tunnel '${a[0]}'.`); return 1; }
+            console.log(`Removed tunnel '${a[0]}'.`);
+            return 0;
+        }
+        if (op === "edit") {
+            const name = a[0];
+            if (!name) { console.error("Usage: enigma ssh tunnel edit <name> [--server s] [--spec 9090:5432] [--name newname]"); return 1; }
+            const patch: { server?: string; spec?: string; newName?: string } = {};
+            for (let i = 1; i < a.length; i++) {
+                if (a[i] === "--server") patch.server = a[++i];
+                else if (a[i] === "--spec") patch.spec = a[++i];
+                else if (a[i] === "--name") patch.newName = a[++i];
+            }
+            const res = tun.updateTunnel(name, patch);
+            if (!res.ok) { console.error(res.error); return 1; }
+            console.log(`Updated tunnel '${name}'.`);
+            return 0;
+        }
+        // start/up/stop/down
+        if (!a[0]) { console.error(`Usage: enigma ssh tunnel ${op} <name>`); return 1; }
+        const res = tun.runTunnelAction(op, a[0]);
+        if (!res.ok) { console.error(res.error); return 1; }
+        console.log(op === "start" || op === "up" ? `Tunnel '${a[0]}' started in the background.` : `Tunnel '${a[0]}' stopped.`);
+        return 0;
     }
 
     if (sub === "tunnel") {

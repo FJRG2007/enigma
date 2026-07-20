@@ -170,12 +170,12 @@ A loopback browser control panel for all of enigma - accounts, skills, settings,
 
 ### <img src="assets/logos/enigma-logo.svg" width="20" height="20" alt="Enigma"/> SSH connections
 
-Save each server once - key or encrypted password, jump host, port forwards - then reach it by a short alias or its name. Passwords are stored encrypted and **auto-filled with no extra tools** (enigma acts as OpenSSH's own `SSH_ASKPASS`). Tunnel a remote port with a friendly `9090:db:5432` spec. Managed from the CLI, TUI and dashboard.
+Save each server once - key or encrypted password, jump host - then reach it by a short alias or its name. Passwords are stored encrypted and **auto-filled with no extra tools** (enigma acts as OpenSSH's own `SSH_ASKPASS`). Tunnels are standalone (bound to a rebindable server): start/stop them on demand with live status, from the CLI or a table in the dashboard.
 
 ```bash
 enigma ssh add lirio-0 --name lirio-prod --host 192.168.1.138 --user fjrg2007 --password
 enigma ssh lirio-0
-enigma ssh tunnel lirio-0 9090:5432
+enigma ssh tunnel add pg lirio-0 9090:5432 && enigma ssh tunnel start pg
 ```
 
 </td>
@@ -254,7 +254,8 @@ enigma api             Serve a local OpenAI-compatible API for your agents (Clau
 enigma dashboard|dash  Open the local dashboard (manage enigma; see savings) in your browser (http://enigma,
                        or http://localhost:24282 if :80/hosts is unavailable)
 enigma ssh [alias]     SSH connection manager: connect by alias, or list | add | edit | remove |
-                       info | tunnel <alias> <name|spec> | forward <add|remove|list> <alias>
+                       info; tunnels are standalone: tunnel add <name> <server> <spec>,
+                       tunnel start|stop <name>, tunnels (list with live status)
                        (encrypted passwords, saved key/jump/port-forwards; e.g. 9090:db:5432)
 enigma seal            Maintenance: (re)compute skill content hashes
 enigma check           Integrity gate: verify skills are well-formed and sealed

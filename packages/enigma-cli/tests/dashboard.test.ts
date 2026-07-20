@@ -298,6 +298,18 @@ test("ssh API adds a connection, builds the connect command, and refuses cross-o
         expect(fout.ok).toBe(true);
         expect(fout.connections!.find((c) => c.alias === "server1")!.forwards![0]!.name).toBe("pg");
 
+        // A standalone tunnel is created and listed with its live status (separate from a server).
+        const tadd = await fetch(`${base}/api/ssh`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "tunnel-add", tunnelName: "redis", tunnelServer: "server1", tunnelSpec: "6380:6379" }),
+        });
+        const tout = await tadd.json() as { ok: boolean; tunnels?: { name: string; server: string; active: boolean; spec: string }[] };
+        expect(tout.ok).toBe(true);
+        const rt = tout.tunnels!.find((t) => t.name === "redis")!;
+        expect(rt.server).toBe("server1");
+        expect(rt.active).toBe(false);
+        expect(rt.spec).toBe("6380:localhost:6379");
+
         const evil = await fetch(`${base}/api/ssh`, {
             method: "POST", headers: { "Content-Type": "application/json", "Origin": "http://evil.example" },
             body: JSON.stringify({ action: "remove", alias: "server1" }),

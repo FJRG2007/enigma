@@ -11,6 +11,10 @@
  */
 
 import {
+  listTunnels, addTunnel, updateTunnel, removeTunnel, startTunnel, stopTunnel,
+  type TunnelView,
+} from "./ssh-tunnels";
+import {
   listConnections, getConnection, addConnection, updateConnection, removeConnection,
   addForward, removeForward, parseForward, describeForward, sshTarget,
   type SshConnectionView, type SshInput,
@@ -41,8 +45,10 @@ export interface SshActionResult {
   note?: string;
   /** Set by connect/tunnel: the command the user runs in a terminal (browser cannot spawn). */
   command?: string;
-  /** The refreshed list after a mutating action. */
+  /** The refreshed connection list after a mutating action. */
   connections?: SshRow[];
+  /** The refreshed standalone-tunnel list (with live status) after a mutating action. */
+  tunnels?: TunnelView[];
 }
 
 /** The editable fields the dashboard sends for add/edit. */
@@ -60,6 +66,16 @@ interface SshPayload extends SshInput {
   specs?: string[];
   /** Raw options as one string ("K=V,K2=V2") or an array. */
   optionsRaw?: string;
+  /** Standalone-tunnel fields (tunnel-* actions). */
+  tunnelName?: string;
+  tunnelServer?: string;
+  tunnelSpec?: string;
+  tunnelNewName?: string;
+}
+
+/** Both lists the SSH subpage renders: connections and standalone tunnels (with live status). */
+export function listSshData(): { connections: SshRow[]; tunnels: TunnelView[] } {
+  return { connections: listSshForDashboard(), tunnels: listTunnels() };
 }
 
 /** Turn the loose payload into a validated SshInput (options split, forwards ignored here). */
@@ -86,38 +102,56 @@ function toInput(p: SshPayload): SshInput {
  */
 export async function applySshAction(action: string, payload: SshPayload): Promise<SshActionResult> {
   const alias = typeof payload.alias === "string" ? payload.alias : "";
-  const list = (): SshRow[] => listSshForDashboard();
+  const tName = typeof payload.tunnelName === "string" ? payload.tunnelName : "";
+  const data = (): { connections: SshRow[]; tunnels: TunnelView[] } => listSshData();
   switch (action) {
     case "add": {
       const res = addConnection(alias, toInput(payload));
-      return res.ok ? { ok: true, note: `Saved '${alias}'.`, connections: list() } : { ok: false, error: res.error };
+      return res.ok ? { ok: true, note: `Saved '${alias}'.`, ...data() } : { ok: false, error: res.error };
     }
     case "edit": {
       const res = updateConnection(alias, toInput(payload));
-      return res.ok ? { ok: true, note: `Updated '${alias}'.`, connections: list() } : { ok: false, error: res.error };
+      return res.ok ? { ok: true, note: `Updated '${alias}'.`, ...data() } : { ok: false, error: res.error };
     }
     case "remove":
       if (!removeConnection(alias)) return { ok: false, error: `Unknown connection '${alias}'.` };
-      return { ok: true, note: `Removed '${alias}'.`, connections: list() };
+      return { ok: true, note: `Removed '${alias}'.`, ...data() };
     case "forward-add": {
       const pf = payload.spec ? parseForward(payload.spec) : null;
       if (!pf) return { ok: false, error: "Bad forward spec. Examples: 8080  9090:8080  9090:db:5432  R:8080:localhost:80  D:1080" };
       const nm = typeof payload.name === "string" ? payload.name.trim() : "";
       if (nm) pf.name = nm;
       const res = addForward(alias, pf);
-      return res.ok ? { ok: true, note: `Added tunnel: ${describeForward(pf)}`, connections: list() } : { ok: false, error: res.error };
+      return res.ok ? { ok: true, note: `Added forward: ${describeForward(pf)}`, ...data() } : { ok: false, error: res.error };
     }
     case "forward-remove": {
       const res = removeForward(alias, Number(payload.index));
-      return res.ok ? { ok: true, note: "Forward removed.", connections: list() } : { ok: false, error: res.error };
+      return res.ok ? { ok: true, note: "Forward removed.", ...data() } : { ok: false, error: res.error };
+    }
+    // --- standalone tunnels ---
+    case "tunnel-add": {
+      const res = addTunnel(tName, payload.tunnelServer ?? "", payload.tunnelSpec ?? "");
+      return res.ok ? { ok: true, note: `Added tunnel '${tName}'.`, ...data() } : { ok: false, error: res.error };
+    }
+    case "tunnel-edit": {
+      const res = updateTunnel(tName, { server: payload.tunnelServer, spec: payload.tunnelSpec, newName: payload.tunnelNewName });
+      return res.ok ? { ok: true, note: `Updated tunnel '${tName}'.`, ...data() } : { ok: false, error: res.error };
+    }
+    case "tunnel-remove":
+      if (!removeTunnel(tName)) return { ok: false, error: `Unknown tunnel '${tName}'.` };
+      return { ok: true, note: `Removed tunnel '${tName}'.`, ...data() };
+    case "tunnel-start": {
+      const res = startTunnel(tName);
+      return res.ok ? { ok: true, note: `Tunnel '${tName}' started.`, ...data() } : { ok: false, error: res.error };
+    }
+    case "tunnel-stop": {
+      const res = stopTunnel(tName);
+      return res.ok ? { ok: true, note: `Tunnel '${tName}' stopped.`, ...data() } : { ok: false, error: res.error };
     }
     case "connect":
     case "tunnel": {
       if (!getConnection(alias)) return { ok: false, error: `Unknown connection '${alias}'.` };
-      const extra = (payload.specs ?? []).filter(Boolean).join(" ");
-      const cmd = action === "tunnel"
-        ? `enigma ssh tunnel ${alias}${extra ? ` ${extra}` : ""}`
-        : `enigma ssh ${alias}`;
+      const cmd = action === "tunnel" ? `enigma ssh tunnel ${alias}` : `enigma ssh ${alias}`;
       return { ok: true, command: cmd, note: `Run "${cmd}" in a terminal.` };
     }
     default:

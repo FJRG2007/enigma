@@ -90,7 +90,8 @@ enigma mcp             Run the context-compression MCP server over stdio
 enigma dashboard|dash  Open the local dashboard (manage enigma; see savings) in your browser (http://enigma,
                        or http://localhost:24282 if :80/hosts is unavailable)
 enigma ssh [alias]     SSH connection manager: connect by alias, or list | add | edit | remove |
-                       info | tunnel <alias> <name|spec> | forward <add|remove|list> <alias>
+                       info; tunnels are standalone: tunnel add <name> <server> <spec>,
+                       tunnel start|stop <name>, tunnels (list with live status)
                        (encrypted passwords, saved key/jump/port-forwards; e.g. 9090:db:5432)
 enigma seal            Maintenance: (re)compute skill content hashes
 enigma check           Integrity gate: verify skills are well-formed and sealed

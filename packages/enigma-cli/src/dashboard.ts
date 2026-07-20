@@ -670,10 +670,10 @@ function writeSkill(req: import("node:http").IncomingMessage, res: import("node:
     });
 }
 
-/** List the saved SSH connections for the SSH subpage. */
+/** List the saved SSH connections and standalone tunnels (with live status) for the SSH subpage. */
 function serveSsh(res: import("node:http").ServerResponse): void {
     import("./dashboard-ssh")
-        .then(({ listSshForDashboard }) => { res.writeHead(200, JSON_HDR); res.end(JSON.stringify({ connections: listSshForDashboard() })); })
+        .then(({ listSshData }) => { res.writeHead(200, JSON_HDR); res.end(JSON.stringify(listSshData())); })
         .catch(() => { res.writeHead(500, JSON_HDR); res.end('{"error":"ssh unavailable"}'); });
 }
 

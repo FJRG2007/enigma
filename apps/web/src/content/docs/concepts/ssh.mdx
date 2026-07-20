@@ -30,36 +30,30 @@ Opens an interactive session - the key, port, jump host, options and any saved f
 
 When a connection has a stored password, enigma supplies it to OpenSSH automatically - **no `sshpass`, no PuTTY, nothing to install**. It works by acting as OpenSSH's own `SSH_ASKPASS` helper (`SSH_ASKPASS_REQUIRE=force`), decrypting the password in-memory only when ssh asks for it; the password never touches the command line or a file on disk. Requires OpenSSH 8.4+ (shipped with current Windows, macOS and Linux). First-connect host keys are accepted automatically (`accept-new`). If `sshpass`/`plink` happen to be installed, enigma uses them instead; either way you never retype the password.
 
-## Tunnel a port
+## Tunnels
 
-Bringing a remote port to your machine (or the reverse) is a first-class command. The spec grammar is friendly - the type defaults to a **local** forward (bring a remote port here):
+A **tunnel** is a named port forward that is its own thing - it is *not* nested inside a server, it just **binds** to one (which you can change any time to re-point it). You start and stop each tunnel on demand and see whether it is currently running. The spec grammar is friendly - the type defaults to a **local** forward (bring a remote port here):
 
 | Spec | Meaning |
 | --- | --- |
+| `9090:5432` | local `9090` -> remote `localhost:5432` (the common form) |
+| `9090:dbhost:5432` | local `9090` -> remote `dbhost:5432` (a *different* host the server reaches) |
 | `8080` | remote `8080` -> local `8080` |
-| `9090:8080` | local `9090` -> remote `localhost:8080` |
-| `9090:dbhost:5432` | local `9090` -> remote `dbhost:5432` |
 | `R:8080:localhost:80` | **remote** forward |
 | `D:1080` | **dynamic** SOCKS proxy on `1080` |
 
-The two-part `local:remote` form is the common one - the target host defaults to `localhost` (the port on the server itself), so `9090:5432` is all you need. Add a middle host (`9090:dbhost:5432`) only when the port lives on a *different* machine the server can reach.
-
-<Cmd name="enigma ssh tunnel <alias> <name|spec...>" ex={["enigma ssh tunnel db 9090:5432", "enigma ssh tunnel db pg", "enigma ssh tunnel server1 D:1080"]}>
-`tunnel` opens the forwards only (no shell, `ssh -N`) and stays in the foreground. With no argument it uses the connection's **saved** forwards; each argument is either a **saved tunnel's name** or an ad-hoc spec. `enigma ssh forward <add <alias> SPEC [name] | remove <alias> INDEX | list <alias>>` manages the saved forwards, which are also applied on every normal connect.
+<Cmd name="enigma ssh tunnel <add|start|stop|rm|edit|list>" ex={["enigma ssh tunnel add pg lirio-0 9090:5432", "enigma ssh tunnel start pg", "enigma ssh tunnels", "enigma ssh tunnel edit pg --server other-box", "enigma ssh tunnel stop pg"]}>
+`add <name> <server> <spec>` defines a tunnel; `start`/`stop <name>` bring it up (a background `ssh -N`) and down; `enigma ssh tunnels` lists them all with live status; `edit <name> [--server s] [--spec 9090:5432] [--name new]` re-points or changes it; `rm <name>` deletes it. Passwords are auto-filled, so a tunnel starts with nothing to type.
 </Cmd>
 
-## Name a tunnel and run it by name
+The dashboard's **SSH** tab shows all tunnels in a **table** - name, bound server, forward, live status, and Start/Stop/Edit/Delete - plus an add form (name, a server dropdown, remote port, local port). This is the primary place to manage them.
 
-Give a saved tunnel a name and you can bring it up on its own later - handy when a server has several. In the **dashboard**, each connection has a small tunnel builder: a *remote port* (or `host:port`), a *local port* (blank = the same), and an optional *name*. From the CLI:
-
-<Cmd name="enigma ssh forward add <alias> <spec> [name]" ex={["enigma ssh forward add db 9090:5432 pg", "enigma ssh tunnel pg", "enigma ssh forward list db"]}>
-Save "remote 5432 -> local 9090" on server `db` as `pg`, then open just that tunnel any time with `enigma ssh tunnel pg`. The name is scoped to the server, so if two servers both have a `pg` tunnel you disambiguate with `enigma ssh tunnel db pg`; otherwise the bare name is enough. Saved tunnels also show a copy-the-command button in the dashboard.
-</Cmd>
+There is also a quick foreground form for an ad-hoc tunnel without saving it: `enigma ssh tunnel <server> <spec>` opens it with `ssh -N` and stays in the foreground until Ctrl+C.
 
 ## From the TUI and dashboard
 
-The **SSH** entry in the TUI hub lists your connections - `enter` connects, `e` edits, `t` opens the saved tunnels, `d` removes one. The dashboard's **SSH** tab manages connections (alias, name, credentials) and, under each connection, a **Port forwards / tunnels** section to add, remove and copy the run command for each tunnel. Because a browser cannot open a shell, its **Connect** and **Tunnel** buttons copy the `enigma ssh ...` command for you to paste into a terminal.
+The **SSH** entry in the TUI hub lists your connections - `enter` connects, `e` edits, `d` removes one. The dashboard's **SSH** tab manages connections (alias, name, credentials) and, in a separate **Tunnels table**, every tunnel with its live status and Start/Stop/Edit/Delete. Because a browser cannot open a shell, its **Connect** button copies the `enigma ssh ...` command for you to paste into a terminal - but starting and stopping tunnels works right from the table (they run as background processes).
 
 ## Where it is stored
 
-Connections live in `~/.enigma/ssh.json` (mode `600`), with passwords encrypted. Remove one with `enigma ssh remove <alias>`; inspect one (password redacted) with `enigma ssh info <alias>`.
+Connections live in `~/.enigma/ssh.json` and tunnels in `~/.enigma/ssh-tunnels.json` (mode `600`), with passwords encrypted; a running tunnel's pid is tracked in `~/.enigma/ssh-tunnels-state.json`. Remove a connection with `enigma ssh remove <alias>`; inspect one (password redacted) with `enigma ssh info <alias>`.

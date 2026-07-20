@@ -170,6 +170,12 @@
         .ssh-fwd-form .ssh-f-name { max-width: 140px; }
         .ssh-fwd-form .ssh-f-local, .ssh-fwd-form .ssh-f-remote { max-width: 170px; }
         .ssh-arrow { color: var(--muted); }
+        .tun-table { width: 100%; border-collapse: collapse; }
+        .tun-table th { text-align: left; font-size: 12px; color: var(--muted); font-weight: 500; padding: 6px 10px; border-bottom: 1px solid var(--border); }
+        .tun-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+        .tun-table tr:last-child td { border-bottom: none; }
+        .tun-table .dot { display: inline-block; margin-right: 6px; vertical-align: middle; }
+        .tun-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
         /* Capitalize the first letter of every option description/blurb in the dashboard
            (presentation only; the shared registry keeps its lowercase TUI/CLI convention). */
         .set-hint::first-letter, .set-cat-b::first-letter, .lnone::first-letter { text-transform: uppercase; }
@@ -846,7 +852,7 @@
         <div class="page-head" style="display:flex;align-items:flex-start;gap:16px">
             <div style="flex:1">
                 <h1>SSH</h1>
-                <p>Save each server once - host, user, key or password, jump host and port forwards - then reach it from a terminal with <code>enigma ssh &lt;alias&gt;</code>. Passwords are stored encrypted and auto-filled on connect (via sshpass or PuTTY plink). The browser cannot open a shell, so Connect and Tunnel copy the command for you to paste.</p>
+                <p>Save each server once - host, user, key or password, jump host - then reach it from a terminal with <code>enigma ssh &lt;alias&gt;</code>. Passwords are stored encrypted and <strong>auto-filled with no extra tools</strong>. Tunnels are managed separately below (start/stop, re-point to any server). The browser cannot open a shell, so Connect copies the command for you to paste.</p>
             </div>
             <button id="sshRefresh" type="button" class="iconbtn" title="Refresh" aria-label="Refresh"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg></button>
         </div>
@@ -872,6 +878,21 @@
             </div>
         </div>
         <div id="sshBody"><div class="empty" style="padding:12px 0">Loading...</div></div>
+
+        <div class="page-head" style="margin-top:24px"><div><h1 style="font-size:18px">Tunnels</h1><p>Port forwards you start and stop on demand. Each binds to a server (change it any time to re-point the tunnel). Status shows whether it is currently running.</p></div></div>
+        <div id="tunBody"><div class="empty" style="padding:12px 0">Loading...</div></div>
+        <div class="panel">
+            <div class="set-cat-h">Add / edit a tunnel</div>
+            <div class="ssh-fwd-form">
+                <input id="tunName" class="linput ssh-f-name" placeholder="name (e.g. pg)">
+                <select id="tunServer" class="linput"></select>
+                <input id="tunRemote" class="linput ssh-f-remote" placeholder="remote port or host:port">
+                <span class="ssh-arrow">&#8594;</span>
+                <input id="tunLocal" class="linput ssh-f-local" type="number" min="1" max="65535" placeholder="local (= remote)">
+                <button id="tunFormBtn" type="button" class="toggle on">Add tunnel</button>
+            </div>
+            <div class="set-hint" style="margin-top:8px">Name it, pick the server, and map a remote port to a local one (local defaults to the same). Run it from a terminal too with <code>enigma ssh tunnel start &lt;name&gt;</code>.</div>
+        </div>
     </section>
 
     <section id="view-recall" style="display:none">
@@ -4107,41 +4128,57 @@ export {
                 if (c.proxyJump) meta.push("jump " + esc(c.proxyJump));
                 if (c.forwardAgent) meta.push("agent-forward");
                 (c.options || []).forEach((o) => meta.push("-o " + esc(o)));
-                // Each saved tunnel shows a run button (copies `enigma ssh tunnel <alias> <name|spec>`).
-                const fwds = (c.forwards || []).map((f, i) => {
-                    const label = (c.forwardLabels && c.forwardLabels[i]) || sshSpecOf(f);
-                    // A named tunnel runs globally by name; an unnamed one needs its server + spec.
-                    const cmd = f.name ? "enigma ssh tunnel " + f.name : "enigma ssh tunnel " + c.alias + " " + sshSpecOf(f);
-                    return '<span class="tag">' + esc(label)
-                        + ' <button type="button" class="ssh-run" data-ssh-fwd-run data-cmd="' + esc(cmd) + '" title="Copy run command">&#9654;</button>'
-                        + ' <button type="button" class="ssh-x" data-ssh-fwd-remove data-alias="' + esc(c.alias) + '" data-index="' + i + '" title="Remove tunnel">x</button></span>';
-                }).join(" ") || '<span class="set-hint">no saved tunnels</span>';
                 const nameTag = c.name && c.name !== c.alias ? ' <span class="tag" title="alternate connect name">' + esc(c.name) + '</span>' : '';
+                const nTun = sshTunnels.filter((t) => t.server === c.alias || (c.name && t.server === c.name)).length;
                 return '<div class="panel ssh-card">'
-                    + '<div class="ssh-card-head"><div><strong>' + esc(c.alias) + '</strong>' + nameTag + ' <span class="tag">' + esc(c.target) + port + '</span> <span class="tag">' + sshAuthLabel(c) + '</span></div>'
+                    + '<div class="ssh-card-head"><div><strong>' + esc(c.alias) + '</strong>' + nameTag + ' <span class="tag">' + esc(c.target) + port + '</span> <span class="tag">' + sshAuthLabel(c) + '</span>' + (nTun ? ' <span class="set-hint">' + nTun + ' tunnel' + (nTun > 1 ? 's' : '') + '</span>' : '') + '</div>'
                     + '<div class="ssh-actions">'
                     + '<button type="button" class="toggle on" data-ssh-connect="' + esc(c.alias) + '">Connect</button>'
-                    + '<button type="button" class="toggle" data-ssh-tunnel="' + esc(c.alias) + '">Tunnel all</button>'
                     + '<button type="button" class="toggle" data-ssh-edit="' + esc(c.alias) + '">Edit</button>'
                     + '<button type="button" class="btn-danger" data-ssh-remove="' + esc(c.alias) + '">Remove</button>'
                     + '</div></div>'
                     + (meta.length ? '<div class="set-hint" style="margin:6px 0">' + meta.join(" &middot; ") + '</div>' : "")
-                    + '<div class="set-cat-h" style="margin-top:12px">Port forwards / tunnels</div>'
-                    + '<div class="ssh-fwds" style="margin-top:6px">' + fwds + '</div>'
-                    + '<div class="set-hint" style="margin-top:10px">Add one: a remote port mapped to a local one (local defaults to the same). Name it to run it later with <code>enigma ssh tunnel &lt;name&gt;</code>. &#9654; copies the run command, &times; removes it.</div>'
-                    + '<div class="ssh-fwd-form" style="margin-top:6px">'
-                    + '<input class="linput ssh-f-name" placeholder="name (optional)">'
-                    + '<input class="linput ssh-f-remote" placeholder="remote port or host:port">'
-                    + '<span class="ssh-arrow">&#8594;</span>'
-                    + '<input class="linput ssh-f-local" type="number" min="1" max="65535" placeholder="local (same)">'
-                    + '<button type="button" class="toggle" data-ssh-fwd-add="' + esc(c.alias) + '">Add tunnel</button>'
-                    + '</div>'
                     + '</div>';
             }).join("");
         }
+        // --- standalone tunnels table (not nested per server; each binds to a rebindable server) ---
+        let sshTunnels = [];
+        function renderTunnels(tunnels) {
+            sshTunnels = tunnels || [];
+            const body = $("tunBody");
+            if (!body) return;
+            if (!sshTunnels.length) { body.innerHTML = '<div class="empty" style="padding:12px 0">No tunnels yet. Add one below.</div>'; return; }
+            const rows = sshTunnels.map((t) => {
+                const dot = '<span class="dot ' + (t.active ? 'live' : 'stale') + '" title="' + (t.active ? 'active' : 'stopped') + '"></span>';
+                const server = t.missing ? '<span class="tag" style="color:var(--bad)" title="bound server missing">' + esc(t.server) + ' !</span>' : '<span class="tag">' + esc(t.server) + '</span>';
+                const toggle = t.active
+                    ? '<button type="button" class="btn-danger" data-tun-stop="' + esc(t.name) + '">Stop</button>'
+                    : '<button type="button" class="toggle on" data-tun-start="' + esc(t.name) + '"' + (t.missing ? ' disabled' : '') + '>Start</button>';
+                return '<tr>'
+                    + '<td>' + dot + ' <strong>' + esc(t.name) + '</strong></td>'
+                    + '<td>' + server + '</td>'
+                    + '<td><code>' + esc(t.spec) + '</code></td>'
+                    + '<td>' + (t.active ? '<span style="color:var(--good)">active</span>' : '<span class="set-hint">stopped</span>') + '</td>'
+                    + '<td class="tun-actions">' + toggle
+                    + ' <button type="button" class="toggle" data-tun-edit="' + esc(t.name) + '">Edit</button>'
+                    + ' <button type="button" class="btn-danger" data-tun-remove="' + esc(t.name) + '">Delete</button></td>'
+                    + '</tr>';
+            }).join("");
+            body.innerHTML = '<table class="tun-table"><thead><tr><th>Name</th><th>Server</th><th>Forward</th><th>Status</th><th>Actions</th></tr></thead><tbody>' + rows + '</tbody></table>';
+            // Fill the "server" dropdown of the add form from the current connections.
+            const sel = $("tunServer");
+            if (sel) {
+                const opts = sshCache.map((c) => '<option value="' + esc(c.alias) + '">' + esc(c.alias) + (c.name ? ' (' + esc(c.name) + ')' : '') + '</option>').join("");
+                if (sel.dataset.sig !== opts) { sel.innerHTML = opts; sel.dataset.sig = opts; }
+            }
+        }
         async function loadSsh() {
             setNote("sshNote", "");
-            try { renderSsh((await apiJson("/api/ssh", { cache: "no-store" })).connections); }
+            try {
+                const d = await apiJson("/api/ssh", { cache: "no-store" });
+                sshTunnels = d.tunnels || [];
+                renderSsh(d.connections); renderTunnels(d.tunnels);
+            }
             catch (e) { $("sshBody").innerHTML = '<div class="empty" style="padding:12px 0">' + esc(e.message || "SSH unavailable.") + "</div>"; }
         }
         function sshReadForm() {
@@ -4164,6 +4201,7 @@ export {
             try {
                 const out = await apiJson("/api/ssh", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.assign({ action }, payload)) });
                 if (out.connections) renderSsh(out.connections);
+                if (out.tunnels) renderTunnels(out.tunnels);
                 if (out.command) { try { await navigator.clipboard.writeText(out.command); } catch { /* clipboard blocked */ } }
                 setNote("sshNote", out.note || out.error || (out.ok ? "Done." : "Action failed."), out.ok ? "ok" : "err");
                 return out.ok;
@@ -4194,42 +4232,59 @@ export {
             $("sshFormTitle").textContent = "Add a connection";
             $("sshClearPwWrap").style.display = "none"; $("sshCancel").style.display = "none";
         }
+        // Read the add/edit tunnel form; the server comes from the dropdown, the spec from
+        // remote (+ optional local, defaulting to the remote port).
+        function tunReadForm() {
+            const remote = $("tunRemote").value.trim(), local = $("tunLocal").value.trim();
+            if (!remote) return null;
+            const remotePort = remote.split(":").pop();
+            return { name: $("tunName").value.trim(), server: $("tunServer").value, spec: (local || remotePort) + ":" + remote };
+        }
+        let tunEditing = null;
+        function tunResetForm() {
+            tunEditing = null;
+            ["tunName", "tunRemote", "tunLocal"].forEach((id) => { $(id).value = ""; });
+            $("tunName").disabled = false; $("tunFormBtn").textContent = "Add tunnel";
+        }
+        function tunFillForm(t) {
+            tunEditing = t.name;
+            $("tunName").value = t.name; $("tunName").disabled = true;
+            $("tunServer").value = t.server; if (window.syncDD) syncDD($("tunServer"));
+            $("tunRemote").value = t.host ? (t.host === "localhost" ? t.hostPort : t.host + ":" + t.hostPort) : "";
+            $("tunLocal").value = String(t.bind).split(":").pop();
+            $("tunFormBtn").textContent = "Save tunnel";
+            $("tunName").scrollIntoView({ block: "center", behavior: "smooth" });
+        }
+        async function tunSave() {
+            const f = tunReadForm();
+            if (!f) { setNote("sshNote", "Enter a remote port (or host:port).", "err"); return; }
+            if (!f.name) { setNote("sshNote", "A tunnel name is required.", "err"); return; }
+            if (!f.server) { setNote("sshNote", "Pick a server (add a connection first).", "err"); return; }
+            const ok = tunEditing
+                ? await sshAction("tunnel-edit", { tunnelName: tunEditing, tunnelServer: f.server, tunnelSpec: f.spec })
+                : await sshAction("tunnel-add", { tunnelName: f.name, tunnelServer: f.server, tunnelSpec: f.spec });
+            if (ok) tunResetForm();
+        }
         function wireSsh() {
             $("sshRefresh").addEventListener("click", loadSsh);
             $("sshSave").addEventListener("click", sshSave);
             $("sshCancel").addEventListener("click", sshResetForm);
+            $("tunFormBtn").addEventListener("click", tunSave);
             $("view-ssh").addEventListener("click", async (e) => {
                 const t = e.target.closest("button"); if (!t) return;
                 if (t.dataset.sshConnect != null) return void sshAction("connect", { alias: t.dataset.sshConnect });
-                if (t.dataset.sshTunnel != null) return void sshAction("tunnel", { alias: t.dataset.sshTunnel });
                 if (t.dataset.sshEdit != null) { const c = sshCache.find((x) => x.alias === t.dataset.sshEdit); if (c) sshFillForm(c); return; }
                 if (t.dataset.sshRemove != null) { if (await askConfirm("Confirm", "Remove connection '" + t.dataset.sshRemove + "'?", true)) sshAction("remove", { alias: t.dataset.sshRemove }); return; }
-                if (t.dataset.sshFwdAdd != null) {
-                    const card = t.closest(".ssh-card");
-                    const remote = card.querySelector(".ssh-f-remote").value.trim();
-                    const local = card.querySelector(".ssh-f-local").value.trim();
-                    const name = card.querySelector(".ssh-f-name").value.trim();
-                    if (!remote) { setNote("sshNote", "Enter a remote port (or host:port).", "err"); return; }
-                    const remotePort = remote.split(":").pop();
-                    const spec = (local || remotePort) + ":" + remote; // local defaults to the remote port
-                    sshAction("forward-add", { alias: t.dataset.sshFwdAdd, spec, name });
-                    return;
-                }
-                if (t.hasAttribute("data-ssh-fwd-run")) {
-                    const cmd = t.dataset.cmd;
-                    try { await navigator.clipboard.writeText(cmd); } catch { /* clipboard blocked */ }
-                    setNote("sshNote", "Copied: " + cmd, "ok");
-                    return;
-                }
-                if (t.hasAttribute("data-ssh-fwd-remove")) { sshAction("forward-remove", { alias: t.dataset.alias, index: Number(t.dataset.index) }); return; }
+                // Standalone tunnel actions.
+                if (t.dataset.tunStart != null) return void sshAction("tunnel-start", { tunnelName: t.dataset.tunStart });
+                if (t.dataset.tunStop != null) return void sshAction("tunnel-stop", { tunnelName: t.dataset.tunStop });
+                if (t.dataset.tunEdit != null) { const tt = sshTunnels.find((x) => x.name === t.dataset.tunEdit); if (tt) tunFillForm(tt); return; }
+                if (t.dataset.tunRemove != null) { if (await askConfirm("Confirm", "Delete tunnel '" + t.dataset.tunRemove + "'?", true)) sshAction("tunnel-remove", { tunnelName: t.dataset.tunRemove }); return; }
             });
             // Mirror the remote port into the local placeholder ("local defaults to the same").
-            $("view-ssh").addEventListener("input", (e) => {
-                const r = e.target.closest(".ssh-f-remote");
-                if (!r) return;
-                const local = r.closest(".ssh-fwd-form").querySelector(".ssh-f-local");
-                const p = r.value.trim().split(":").pop();
-                local.placeholder = p ? "local (" + p + ")" : "local (same)";
+            $("tunRemote").addEventListener("input", () => {
+                const p = $("tunRemote").value.trim().split(":").pop();
+                $("tunLocal").placeholder = p ? "local (" + p + ")" : "local (= remote)";
             });
         }
 
