@@ -4143,8 +4143,17 @@ export {
         }
         // --- standalone tunnels table (not nested per server; each binds to a rebindable server) ---
         let sshTunnels = [];
+        // Fill the add-form's "server" dropdown from the current connections (always, even with
+        // zero tunnels - that is exactly when you need it to create your first one).
+        function fillTunServer() {
+            const sel = $("tunServer");
+            if (!sel) return;
+            const opts = sshCache.map((c) => '<option value="' + esc(c.alias) + '">' + esc(c.alias) + (c.name ? ' (' + esc(c.name) + ')' : '') + '</option>').join("");
+            if (sel.dataset.sig !== opts) { sel.innerHTML = opts; sel.dataset.sig = opts; if (window.syncDD) syncDD(sel); }
+        }
         function renderTunnels(tunnels) {
             sshTunnels = tunnels || [];
+            fillTunServer();
             const body = $("tunBody");
             if (!body) return;
             if (!sshTunnels.length) { body.innerHTML = '<div class="empty" style="padding:12px 0">No tunnels yet. Add one below.</div>'; return; }
@@ -4165,12 +4174,6 @@ export {
                     + '</tr>';
             }).join("");
             body.innerHTML = '<table class="tun-table"><thead><tr><th>Name</th><th>Server</th><th>Forward</th><th>Status</th><th>Actions</th></tr></thead><tbody>' + rows + '</tbody></table>';
-            // Fill the "server" dropdown of the add form from the current connections.
-            const sel = $("tunServer");
-            if (sel) {
-                const opts = sshCache.map((c) => '<option value="' + esc(c.alias) + '">' + esc(c.alias) + (c.name ? ' (' + esc(c.name) + ')' : '') + '</option>').join("");
-                if (sel.dataset.sig !== opts) { sel.innerHTML = opts; sel.dataset.sig = opts; }
-            }
         }
         async function loadSsh() {
             setNote("sshNote", "");
