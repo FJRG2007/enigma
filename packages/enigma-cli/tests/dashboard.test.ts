@@ -19,7 +19,7 @@ process.env.ENIGMA_NO_UPDATE_CHECK = "1";
 process.env.ENIGMA_PACKS_DIR = join(HOME, "packs");
 process.env.ENIGMA_HELIO_ASSETS = join(__dirname, "..", "..", "helio", "assets");
 
-const { startDashboardServer, dashboardUrl, runningDaemon, removeHostsEntry } = await import("../src/dashboard");
+const { startDashboardServer, dashboardUrl, runningDaemon, removeHostsEntry, restartDashboardDaemon } = await import("../src/dashboard");
 const { recordStats } = await import("../src/compress/ccr");
 
 afterAll(() => rmSync(HOME, { recursive: true, force: true }));
@@ -305,6 +305,17 @@ test("ssh API adds a connection, builds the connect command, and refuses cross-o
     } finally {
         server.close();
     }
+});
+
+test("restartDashboardDaemon is a no-op (never spawns) when no daemon is running", () => {
+    // No pidfile at all: nothing to restart.
+    expect(restartDashboardDaemon()).toBe(false);
+    // A pidfile pointing at a dead pid is treated as not-running and cleaned up, still no spawn.
+    const daemonPath = join(homedir(), ".enigma", "dashboard.json");
+    mkdirSync(join(homedir(), ".enigma"), { recursive: true });
+    writeFileSync(daemonPath, JSON.stringify({ pid: 2147483646, port: 80, url: "http://localhost", startedAt: 1 }));
+    expect(restartDashboardDaemon()).toBe(false);
+    expect(runningDaemon()).toBeNull(); // the stale pidfile was cleared
 });
 
 test("removeHostsEntry strips only the enigma mapping and leaves other hosts intact", () => {

@@ -433,10 +433,14 @@ function serveUpdate(res: import("node:http").ServerResponse): void {
  */
 function serveRunUpdate(res: import("node:http").ServerResponse): void {
     const started = spawnEnigmaUpdate();
+    // An always-on daemon restarts itself on the new binary at the end of the update (see
+    // restartDashboardDaemon), so the page reloads on its own; a foreground dashboard needs a
+    // manual reopen. Tailor the note so the user knows which to expect.
+    const note = runningDaemon()
+        ? "Updating in the background (about a minute). The dashboard will reload itself on the new version when it's ready."
+        : "Updating in the background (about a minute). Reopen the dashboard (enigma dashboard) once it finishes to load the new CLI version.";
     res.writeHead(started ? 200 : 500, JSON_HDR);
-    res.end(JSON.stringify(started
-        ? { ok: true, note: "Updating in the background. This can take a minute; restart the dashboard (enigma dashboard) once it finishes to load the new CLI version." }
-        : { ok: false, error: "could not start the update" }));
+    res.end(JSON.stringify(started ? { ok: true, note } : { ok: false, error: "could not start the update" }));
 }
 
 /**
@@ -1177,6 +1181,38 @@ export function stopDashboardDaemon(): void {
     if (!rec) { clearDaemon(); return; }
     try { process.kill(rec.pid); } catch { /* already gone */ }
     clearDaemon();
+}
+
+/**
+ * Restart a running dashboard daemon on the freshly installed binary. Called at the end of
+ * `enigma update`: an `always`-mode daemon is a long-lived process still running the PRE-update
+ * binary (with its version baked in at spawn), so without this it keeps serving the old page and
+ * showing a stale "update available" banner - which is exactly why the dashboard's "Update now"
+ * button looked like it did nothing.
+ *
+ * Respawns via the enigma LAUNCHER on PATH, not process.execPath: after an update the current
+ * process is the OLD (parked) binary, so re-invoking it would just bring the old version back;
+ * the launcher resolves to the updated package. No-op when no daemon is running or the launcher
+ * cannot be found (the daemon then simply refreshes on the next `enigma dashboard`).
+ */
+export function restartDashboardDaemon(): boolean {
+    if (!runningDaemon()) return false;
+    const launcher = resolveBin("enigma");
+    if (!launcher) return false;
+    stopDashboardDaemon();
+    try {
+        // On Windows the launcher is enigma.cmd (not an .exe), which CreateProcess cannot run
+        // directly - route it through the shell as a quoted command line (spaces-safe), the same
+        // way accounts.ts spawns non-.exe launchers.
+        const useShell = process.platform === "win32" && !launcher.toLowerCase().endsWith(".exe");
+        const opts = { detached: true, stdio: "ignore", windowsHide: true } as const;
+        const child = useShell
+            ? spawn(`"${launcher}" __dashboard-serve`, { ...opts, shell: true })
+            : spawn(launcher, ["__dashboard-serve"], opts);
+        child.on("error", () => { /* the daemon just won't come back until the next open */ });
+        child.unref();
+        return true;
+    } catch { return false; }
 }
 
 /**

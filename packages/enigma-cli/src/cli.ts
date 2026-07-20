@@ -29,7 +29,7 @@ import { ensureLinterInstalled, isLinterInstalled, refreshLinterPkg } from "./li
 import { checkLatestNow, getAvailableUpdate, notifyUpdate, performUpdateCheck, runUpdate } from "./update";
 import { isUsableSession, sessionEmail, sessionState, transferSession, type SessionState } from "./claude-oauth";
 import { ensureDashboardCurrent, isDashboardPkgCurrent, isDashboardPkgInstalled, refreshDashboardPkg } from "./dashboard-pkg";
-import { clearDaemon, daemonError, dashboardUrl, ensureHostsEntry, repoBindOverrideIgnored, resolveBind, runningDaemon, serveDashboardDaemon, startDashboardServer, tokenizedUrl, writeDaemon } from "./dashboard";
+import { clearDaemon, daemonError, dashboardUrl, ensureHostsEntry, repoBindOverrideIgnored, resolveBind, restartDashboardDaemon, runningDaemon, serveDashboardDaemon, startDashboardServer, tokenizedUrl, writeDaemon } from "./dashboard";
 import {
     PACKS, disablePack, enablePack, getPack, installedPackVersion, isPackInstalled,
     launchPack, listPacks, packSessionSources, refreshPack, setupPackMcp,
@@ -479,6 +479,10 @@ async function runUpdateCli(version: string): Promise<void> {
     s.stop(latest ? `Newer enigma-cli available: ${version} -> ${latest}. Installing...` : `enigma-cli ${version}: reinstalling the latest to be sure...`);
     starRepoInBackground();
     runUpdate();
+    // An always-on dashboard daemon is still running the pre-update binary (version baked in at
+    // spawn), so restart it on the new binary - otherwise the running dashboard keeps showing the
+    // old version and a stale "update available" banner, which is what makes "Update now" look dead.
+    try { if (restartDashboardDaemon()) p.log.info("Restarted the dashboard on the new version."); } catch { /* best-effort */ }
 }
 
 /**
