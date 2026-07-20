@@ -41,7 +41,7 @@ import {
 } from "./skills";
 import {
     DEFAULT_NAME, DEFAULT_TOOL, TOOL_NAMES, addAccount, addProfile, getActive, getTool,
-    isToolName, launchTool, listAccounts, listProfiles, loginTool, removeAccount,
+    isToolName, launchTool, listAccounts, listProfiles, loginTool, removeAccount, spawnInherit,
     removeProfile, renameAccount, renameProfile, resolveConfigDir, resolveLaunchAccount,
     setActive, setActiveProfile, setProfileAccount, unsetProfileAccount,
     getAccountProvider, setAccountProvider, providerFromPreset, presetsForTool, PROVIDER_PRESETS,
@@ -58,7 +58,7 @@ const PKG = readJson<{ version?: string }>(join(__dirname, "..", "package.json")
 const COMMANDS = new Set<string>([
     "install", "update", "security", "guard", "seal", "check", "config", "account", "accounts",
     "profile", "profiles", "skill", "skills", "issue", "improve", "compress", "mcp", "api", "gate", "dashboard", "dash", "fix-path", "resources", "recall", "codegraph", "autoskills", "statusline", "help", "version",
-    "pack", "packs",
+    "pack", "packs", "ssh",
     ...TOOL_NAMES,
     ...PACKS.map((p) => p.id),
 ]);
@@ -256,6 +256,9 @@ Commands:
                        repair its launch command so 'enigma <tool>' works; no tool fixes all
   resources [action]   System cleanup: status, or wsl | docker | free-port PORT | kill PID
                        (shut down WSL/vmmemWSL, quit Docker, free a port, kill a process)
+  ssh [alias]          SSH connection manager: connect by alias, or list | add | edit |
+                       remove | info | tunnel <alias> <name|spec> | forward <add|remove|list> <alias>
+                       (encrypted passwords, saved key/jump/port-forwards; e.g. 9090:db:5432)
   recall [action]      Local session memory from transcripts: status, sync, search <q>,
                        list, show <id>, timeline <id>, sessions, context, prune, clear
                        (hybrid keyword+vector search; opt-in; reads your own logs)
@@ -527,6 +530,163 @@ async function runResourcesCli(args: string[]): Promise<number> {
     if (!r) { console.error(`Unknown subcommand '${sub}'. Use: enigma resources <wsl | docker | free-port PORT | kill PID>`); return 1; }
     console.log(r.message);
     return r.ok ? 0 : 1;
+}
+
+/**
+ * `enigma ssh [alias] | <list|add|edit|remove|info|tunnel|forward>`: the SSH connection
+ * manager. Save a server once (host, user, key or password, jump host, forwards) and reach
+ * it with `enigma ssh <alias>`. Passwords are encrypted at rest and auto-supplied via
+ * sshpass/plink when present. Owns its own flag parsing (dispatched before parseArgs).
+ */
+async function runSshCli(args: string[], interactive: boolean): Promise<number> {
+    const ssh = await import("./ssh");
+    const [sub, ...rest] = args;
+
+    // No arg / list: show saved connections.
+    if (!sub || sub === "list" || sub === "ls") {
+        const conns = ssh.listConnections();
+        if (!conns.length) {
+            console.log("No SSH connections yet. Add one:\n  enigma ssh add <alias> --host <host> [--user u] [-i key.pem | --password]");
+            return 0;
+        }
+        console.log("SSH connections:\n");
+        for (const c of conns) {
+            const auth = c.identityFile ? `key ${c.identityFile}` : c.hasPassword ? "password" : "agent/prompt";
+            const fwd = c.forwards?.length ? `  (${c.forwards.length} forward${c.forwards.length > 1 ? "s" : ""})` : "";
+            console.log(`  ${c.alias.padEnd(14)} ${ssh.sshTarget(c as never).padEnd(28)} ${auth}${fwd}`);
+        }
+        console.log("\nConnect: enigma ssh <alias>    Tunnel: enigma ssh tunnel <alias> <spec...>");
+        return 0;
+    }
+
+    if (sub === "add" || sub === "edit") {
+        const alias = rest[0];
+        if (!alias) { console.error(`Usage: enigma ssh ${sub} <alias> --host <host> [--user u] [--port n] [-i key] [--password] [--jump host] [-o K=V] [-L spec]`); return 1; }
+        const flags = rest.slice(1);
+        const input: import("./ssh").SshInput = {};
+        let promptPassword = false, badForward = false;
+        const opts: string[] = [];
+        const forwards: import("./ssh").PortForward[] = [];
+        for (let i = 0; i < flags.length; i++) {
+            const f = flags[i]!;
+            const val = (): string => flags[++i] ?? "";
+            switch (f) {
+                case "--host": case "-H": input.host = val(); break;
+                case "--user": case "-u": input.user = val(); break;
+                case "--port": case "-p": input.port = Number(val()) || undefined; break;
+                case "--identity": case "-i": input.identityFile = val(); break;
+                case "--jump": case "-j": input.proxyJump = val(); break;
+                case "--forward-agent": case "-A": input.forwardAgent = true; break;
+                case "--no-forward-agent": input.forwardAgent = false; break;
+                case "--option": case "-o": opts.push(val()); break;
+                case "--forward": case "-L": {
+                    const pf = ssh.parseForward(val());
+                    if (pf) forwards.push(pf); else badForward = true;
+                    break;
+                }
+                case "--password": promptPassword = true; break;
+                case "--password-value": input.password = val(); break; // scriptable; discouraged
+                case "--no-password": input.password = ""; break;
+                default: console.error(`Unknown flag: ${f}`); return 1;
+            }
+        }
+        if (badForward) { console.error("Bad forward spec. Examples: 8080  9090:8080  9090:dbhost:5432  R:8080:localhost:80  D:1080"); return 1; }
+        if (opts.length) input.options = opts;
+        if (forwards.length) input.forwards = forwards;
+        if (promptPassword) {
+            if (!interactive) { console.error("--password needs an interactive terminal; use --password-value <pw> in scripts."); return 1; }
+            const pw = await p.password({ message: `Password for ${alias}`, mask: "*" });
+            if (p.isCancel(pw)) { p.cancel("Cancelled."); return 1; }
+            input.password = pw;
+        }
+        const res = sub === "add" ? ssh.addConnection(alias, input) : ssh.updateConnection(alias, input);
+        if (!res.ok) { console.error(res.error); return 1; }
+        console.log(`${sub === "add" ? "Saved" : "Updated"} '${alias}'. Connect with: enigma ssh ${alias}`);
+        return 0;
+    }
+
+    if (sub === "remove" || sub === "rm" || sub === "delete") {
+        const alias = rest[0];
+        if (!alias) { console.error("Usage: enigma ssh remove <alias>"); return 1; }
+        if (!ssh.removeConnection(alias)) { console.error(`Unknown connection '${alias}'.`); return 1; }
+        console.log(`Removed '${alias}'.`);
+        return 0;
+    }
+
+    if (sub === "info" || sub === "show") {
+        const conn = ssh.getConnection(rest[0] ?? "");
+        if (!conn) { console.error(`Unknown connection '${rest[0]}'.`); return 1; }
+        console.log(`${conn.alias}: ${ssh.sshTarget(conn)}${conn.port ? `:${conn.port}` : ""}`);
+        if (conn.identityFile) console.log(`  identity: ${conn.identityFile}`);
+        if (conn.password) console.log("  password: (stored, encrypted)");
+        if (conn.proxyJump) console.log(`  jump: ${conn.proxyJump}`);
+        if (conn.forwardAgent) console.log("  forward-agent: on");
+        for (const o of conn.options ?? []) console.log(`  option: ${o}`);
+        for (const fwd of conn.forwards ?? []) console.log(`  forward: ${ssh.describeForward(fwd)}`);
+        return 0;
+    }
+
+    if (sub === "forward" || sub === "fwd") {
+        const [op, alias, spec, name] = rest;
+        if (!op || !alias) { console.error("Usage: enigma ssh forward <add <alias> SPEC [name] | remove <alias> INDEX | list <alias>>"); return 1; }
+        if (op === "list") {
+            const conn = ssh.getConnection(alias);
+            if (!conn) { console.error(`Unknown connection '${alias}'.`); return 1; }
+            (conn.forwards ?? []).forEach((fwd, idx) => console.log(`  [${idx}] ${ssh.describeForward(fwd)}`));
+            if (!conn.forwards?.length) console.log("  (no saved forwards)");
+            return 0;
+        }
+        if (op === "add") {
+            const pf = spec ? ssh.parseForward(spec) : null;
+            if (!pf) { console.error("Bad forward spec. Examples: 8080  9090:8080  9090:dbhost:5432  R:8080:localhost:80  D:1080"); return 1; }
+            if (name) pf.name = name;
+            const res = ssh.addForward(alias, pf);
+            if (!res.ok) { console.error(res.error); return 1; }
+            console.log(`Added forward to '${alias}': ${ssh.describeForward(pf)}${name ? ` (run it with: enigma ssh tunnel ${alias} ${name})` : ""}`);
+            return 0;
+        }
+        if (op === "remove" || op === "rm") {
+            const res = ssh.removeForward(alias, Number(spec));
+            if (!res.ok) { console.error(res.error); return 1; }
+            console.log(`Removed forward [${spec}] from '${alias}'.`);
+            return 0;
+        }
+        console.error("Usage: enigma ssh forward <add <alias> SPEC [name] | remove <alias> INDEX | list <alias>>");
+        return 1;
+    }
+
+    if (sub === "tunnel") {
+        const alias = rest[0];
+        if (!alias) { console.error("Usage: enigma ssh tunnel <alias> [name|spec...]   (opens forwards only, no shell)"); return 1; }
+        const conn = ssh.getConnection(alias);
+        if (!conn) { console.error(`Unknown connection '${alias}'. Add it: enigma ssh add ${alias} --host <host>`); return 1; }
+        // Each token is a saved forward's name or an ad-hoc spec; no token uses all saved forwards.
+        const forwards: import("./ssh").PortForward[] = [];
+        for (const s of rest.slice(1)) {
+            const pf = ssh.resolveForwardToken(conn, s);
+            if (!pf) { console.error(`No saved tunnel named '${s}' and it is not a valid spec. See: enigma ssh forward list ${alias}`); return 1; }
+            forwards.push(pf);
+        }
+        return connectSsh(ssh, alias, { forwards: forwards.length ? forwards : undefined, tunnelOnly: true });
+    }
+
+    // Anything else is treated as an alias to connect to; args after `--` pass through.
+    const dashIdx = args.indexOf("--");
+    const extra = dashIdx === -1 ? [] : args.slice(dashIdx + 1);
+    return connectSsh(ssh, sub, { extra });
+}
+
+/** Resolve a launcher and spawn ssh/sshpass/plink interactively, returning its exit code. */
+async function connectSsh(ssh: typeof import("./ssh"), alias: string, opts: import("./ssh").ConnectOpts): Promise<number> {
+    const conn = ssh.getConnection(alias);
+    if (!conn) { console.error(`Unknown connection '${alias}'. Add it: enigma ssh add ${alias} --host <host>`); return 1; }
+    const launcher = ssh.resolveLauncher(conn, opts);
+    for (const w of launcher.warnings) console.error(`warning: ${w}`);
+    if (launcher.mode === "plain-prompt")
+        console.error("note: a password is stored but neither sshpass nor plink is installed - ssh will prompt. Install sshpass (Linux/macOS) or PuTTY plink (Windows) to auto-fill it.");
+    const where = opts.tunnelOnly ? "Opening tunnel to" : "Connecting to";
+    console.error(`${where} ${alias} (${ssh.sshTarget(conn)})...`);
+    return spawnInherit(launcher.command, launcher.args, launcher.env);
 }
 
 /**
@@ -1453,6 +1613,9 @@ export async function run(argv: string[]): Promise<void> {
         const { runGateCli } = await import("./gate/cli");
         process.exit(await runGateCli(argv.slice(1)));
     }
+    // SSH connection manager. Dispatched early by argv so its rich flags (--host, -i,
+    // -L 9090:db:5432, ...) never reach enigma's own argument parser.
+    if (argv[0] === "ssh") { process.exit(await runSshCli(argv.slice(1), Boolean(process.stdout.isTTY))); }
     const opts = parseArgs(argv);
     const interactive = Boolean(process.stdout.isTTY) && !opts.yes;
     const version = process.env.ENIGMA_VERSION || PKG.version || "0.0.0";
@@ -1643,8 +1806,11 @@ export async function run(argv: string[]): Promise<void> {
     // Connecting an account must run the tool's own login flow, which needs the
     // terminal the TUI owns; so the hub closes, we run the login here, then reopen.
     let action: HubExitAction | null = await runHomeTui(buildCtx());
-    while (action?.type === "connect") {
-        await loginWithSync(action.tool, action.account);
+    while (action?.type === "connect" || action?.type === "ssh-connect") {
+        // Connecting an account runs its login flow; an SSH connect/tunnel spawns ssh. Both
+        // need the terminal the TUI owns, so run here in the freed terminal, then reopen.
+        if (action.type === "connect") await loginWithSync(action.tool, action.account);
+        else { const ssh = await import("./ssh"); await connectSsh(ssh, action.alias, { tunnelOnly: action.tunnel }); }
         action = await runHomeTui(buildCtx());
     }
     // "Update now" from the hub: run the full update (skills + npm) in the freed

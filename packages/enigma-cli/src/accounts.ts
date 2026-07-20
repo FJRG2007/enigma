@@ -895,7 +895,7 @@ function touchLastUsed(toolName: string, name: string): void {
  * shim like Claude's, or a bare name) must run through the shell; arguments are
  * quoted to avoid a shell-injection surface.
  */
-function spawnInherit(command: string, args: string[], env: NodeJS.ProcessEnv): Promise<number> {
+export function spawnInherit(command: string, args: string[], env: NodeJS.ProcessEnv): Promise<number> {
     const useShell = process.platform === "win32" && !command.toLowerCase().endsWith(".exe");
     const child = useShell
         ? spawn([command, ...args].map(quoteWinArg).join(" "), { stdio: "inherit", env, shell: true })

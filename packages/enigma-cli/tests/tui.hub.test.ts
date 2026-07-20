@@ -97,7 +97,7 @@ test.skipIf(SKIP_HEADLESS_LINUX)("unified panel renders sections and the wheel m
     expect(first).not.toMatch(/ Profiles {2}/); // no separate Profiles entry
 
     // Navigate the sidebar to the identity entry (last item) and focus the panel.
-    const identityIndex = CATEGORIES.length + 6; // categories + usage + recall + resources + 3 actions (skills, security, fix-path)
+    const identityIndex = CATEGORIES.length + 7; // categories + usage + recall + resources + ssh + 3 actions (skills, security, fix-path)
     await press(...Array(identityIndex).fill("ARROW_DOWN"));
     await setup.mockInput.pressKey("RETURN");
     const panel = await until((f) => f.includes("ACCOUNTS") && f.includes("PROFILES"), "identity sections");

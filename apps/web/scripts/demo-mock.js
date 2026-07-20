@@ -194,6 +194,11 @@
         }
     ];
 
+    var SSH = [
+        { alias: "server1", host: "203.0.113.10", user: "root", port: 22, identityFile: "~/.ssh/id_ed25519", hasPassword: false, target: "root@203.0.113.10", forwardLabels: ["pg: local 9090 -> localhost:5432"], forwards: [{ type: "local", bind: "9090", host: "localhost", hostPort: 5432, name: "pg" }] },
+        { alias: "db", host: "db.internal", user: "deploy", proxyJump: "root@203.0.113.10", hasPassword: true, target: "deploy@db.internal", forwardLabels: [], forwards: [] }
+    ];
+
     var RECALL = {
         available: true, enabled: true,
         stats: { observations: 128, summaries: 22, sessions: 22, projects: 3, byType: { change: 41, discovery: 33, feature: 28, bugfix: 14, refactor: 8, decision: 3, security: 1 }, dbBytes: 196608, lastObservationAt: Date.now() },
@@ -430,6 +435,13 @@
             if (pb.action === "launch") return { ok: true, command: `enigma ${pb.id || "helio"}`, note: "Run this in a terminal to launch the isolated agent." };
             if (pb.action === "set-account") { PACKS[0].defaultAccount = pb.value || null; PACKS[0].resolvedAccount = pb.value || "default"; return { ok: true, note: "Demo - account preference saved.", packs: PACKS }; }
             return { ok: true, note: "Demo - no action taken.", packs: PACKS };
+        }
+        if (path.indexOf("/api/ssh") !== -1) {
+            if (method !== "POST") return { connections: SSH };
+            var sb = body || {};
+            if (sb.action === "connect") return { ok: true, command: `enigma ssh ${sb.alias || "server1"}`, note: "Run this in a terminal to connect." };
+            if (sb.action === "tunnel") return { ok: true, command: `enigma ssh tunnel ${sb.alias || "server1"}`, note: "Run this in a terminal to open the tunnel." };
+            return { ok: true, note: "Demo - no change made.", connections: SSH };
         }
         if (path.indexOf("/api/update") !== -1) return { ok: true, changed: false, version: STATS.version, note: "This is a static demo." };
         if (path.indexOf("/api/fix-path") !== -1) return { ok: true, message: "Demo - nothing to fix." };

@@ -666,6 +666,28 @@ function writeSkill(req: import("node:http").IncomingMessage, res: import("node:
     });
 }
 
+/** List the saved SSH connections for the SSH subpage. */
+function serveSsh(res: import("node:http").ServerResponse): void {
+    import("./dashboard-ssh")
+        .then(({ listSshForDashboard }) => { res.writeHead(200, JSON_HDR); res.end(JSON.stringify({ connections: listSshForDashboard() })); })
+        .catch(() => { res.writeHead(500, JSON_HDR); res.end('{"error":"ssh unavailable"}'); });
+}
+
+/** Apply an SSH action from a POST body { action, alias, ... } (add/edit/remove/forward/connect/tunnel). */
+function writeSsh(req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse): void {
+    let body = "";
+    req.on("data", (chunk) => { body += chunk; if (body.length > 16 * 1024) req.destroy(); });
+    req.on("end", () => {
+        let parsed: { action?: unknown };
+        try { parsed = JSON.parse(body || "{}"); } catch { res.writeHead(400, JSON_HDR); res.end('{"error":"bad json"}'); return; }
+        if (typeof parsed.action !== "string") { res.writeHead(400, JSON_HDR); res.end('{"error":"missing action"}'); return; }
+        import("./dashboard-ssh")
+            .then(({ applySshAction }) => applySshAction(parsed.action as string, parsed as Record<string, never>))
+            .then((out) => { res.writeHead(out.ok ? 200 : 400, JSON_HDR); res.end(JSON.stringify(out)); })
+            .catch(() => { res.writeHead(500, JSON_HDR); res.end('{"error":"action failed"}'); });
+    });
+}
+
 /** List the marketplace packs for the Packs subpage. */
 function servePacks(res: import("node:http").ServerResponse): void {
     import("./dashboard-packs")
@@ -942,6 +964,12 @@ function createDashboardServer(version: string): Server {
         if (url === "/api/packs") {
             if (method === "GET") { servePacks(res); return; }
             if (method === "POST") { writePack(req, res); return; }
+            res.writeHead(405).end(); return;
+        }
+        // SSH connection manager: manage saved connections and port forwards.
+        if (url === "/api/ssh") {
+            if (method === "GET") { serveSsh(res); return; }
+            if (method === "POST") { writeSsh(req, res); return; }
             res.writeHead(405).end(); return;
         }
         // Per-project management: registers project folders and manages each by path

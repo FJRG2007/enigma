@@ -67,6 +67,9 @@ jobs:
       - name: Test marketplace packs
         run: bun test tests/packs.test.ts
         working-directory: packages/enigma-cli
+      - name: Test SSH connection manager
+        run: bun test tests/ssh.test.ts
+        working-directory: packages/enigma-cli
       - name: Test Claude session reuse/transfer
         run: bun test tests/claude-oauth.test.ts
         working-directory: packages/enigma-cli
@@ -102,6 +105,9 @@ jobs:
         working-directory: packages/enigma-cli
       - name: Test hub TUI
         run: bun test tests/tui.hub.test.ts
+        working-directory: packages/enigma-cli
+      - name: Test SSH panel TUI
+        run: bun test tests/tui.ssh.test.ts
         working-directory: packages/enigma-cli
       - name: Test provider editor TUI
         run: bun test tests/tui.provider.test.ts

@@ -23,6 +23,7 @@ import { onGhTelemetryChange } from "../github";
 import type { Scope, Setting } from "../settings-registry";
 import { recallDashboard, type RecallView } from "../dashboard-recall";
 import { resourceStatus, runResourceAction, type ResourceStatus } from "../resources";
+import { listConnections, removeConnection, updateConnection, sshTarget, type SshConnectionView, type SshInput } from "../ssh";
 import { CATEGORIES, ALL_SETTINGS, valueLabel, invalidateSettingReads } from "../settings-registry";
 import type { HubContext, HubAccount, HubExitAction, HubProfile, HubSkill, HubTool, ActionRequest, ActionResult } from "./types";
 
@@ -532,6 +533,52 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         ]);
     };
 
+    const renderSshPanel = (s: { conns: SshConnectionView[]; cursor: number; note: string; focused: boolean }): RNode => {
+        const maxRows = 18;
+        const start = Math.max(0, Math.min(s.cursor - (maxRows >> 1), Math.max(0, s.conns.length - maxRows)));
+        const slice = s.conns.slice(start, start + maxRows);
+        const authOf = (c: SshConnectionView): string => c.identityFile ? "key" : c.hasPassword ? "password" : "agent";
+        return panelBox(s.focused ? COL.cyan : COL.gray, [
+            txt("SSH connections", { fg: COL.cyan, attributes: BOLD }),
+            s.note ? txt(s.note, { fg: COL.green }) : txt("Reach a saved server with enter (connect) or t (tunnel).", { fg: COL.gray }),
+            h(box, { flexDirection: "column", marginTop: 1, flexGrow: 1 },
+                ...(s.conns.length
+                    ? slice.map((c, i) => {
+                        const fwd = c.forwards?.length ? `  ${c.forwards.length} fwd` : "";
+                        return txt(` ${c.alias.padEnd(14)} ${sshTarget(c as never)}  [${authOf(c)}]${fwd} `,
+                            { key: c.alias, truncate: true, ...selStyle(start + i === s.cursor) });
+                    })
+                    : [txt(" No connections. Add one: enigma ssh add <alias> --host <host> ", { fg: COL.gray })])),
+            txt("Add/edit from the CLI (enigma ssh add) or the dashboard SSH tab.", { fg: COL.gray, truncate: true }),
+        ]);
+    };
+
+    // The editable fields of a connection, as rows for the 'e' field editor. `kind`
+    // drives what enter does: open a text input, toggle a boolean, or clear the password.
+    type SshEditRow = { field: string; label: string; kind: "text" | "toggle" | "clearpw" };
+    const sshEditRows = (c: SshConnectionView): SshEditRow[] => {
+        const rows: SshEditRow[] = [
+            { field: "host", label: `Host: ${c.host}`, kind: "text" },
+            { field: "user", label: `User: ${c.user ?? "-"}`, kind: "text" },
+            { field: "port", label: `Port: ${c.port ?? 22}`, kind: "text" },
+            { field: "identityFile", label: `Identity: ${c.identityFile ?? "-"}`, kind: "text" },
+            { field: "proxyJump", label: `Jump host: ${c.proxyJump ?? "-"}`, kind: "text" },
+            { field: "options", label: `Options: ${(c.options ?? []).join(", ") || "-"}`, kind: "text" },
+            { field: "forwardAgent", label: `Forward agent: ${c.forwardAgent ? "on" : "off"}`, kind: "toggle" },
+            { field: "password", label: c.hasPassword ? "Set a new password (one stored)" : "Set a password", kind: "text" },
+        ];
+        if (c.hasPassword) rows.push({ field: "clearpw", label: "Clear the stored password", kind: "clearpw" });
+        return rows;
+    };
+
+    const renderSshEditor = (s: { title: string; rows: SshEditRow[]; cursor: number; onSelect: (i: number) => void; onMove: (d: 1 | -1) => void }): RNode =>
+        h(box, { flexGrow: 1, justifyContent: "center", alignItems: "center" },
+            h(box, { border: true, borderStyle: "rounded", borderColor: COL.cyan, flexDirection: "column", paddingLeft: 2, paddingRight: 2, paddingTop: 1, paddingBottom: 1, width: 60, ...wheel(s.onMove) },
+                txt(s.title, { fg: COL.cyan, attributes: BOLD }),
+                h(box, { flexDirection: "column", marginTop: 1 },
+                    ...s.rows.map((r, i) => txt(` ${r.label} `, { key: String(i), truncate: true, ...selStyle(i === s.cursor), onMouseDown: () => s.onSelect(i) }))),
+                txt("up/down move   enter edit   esc done", { fg: COL.gray, marginTop: 1 })));
+
     const renderResult = (res: ActionResult, scroll: number, maxRows: number, onScroll: (dir?: "up" | "down" | "left" | "right") => void): RNode => {
         const windowed = maxRows > 0 && res.lines.length > maxRows;
         const start = windowed ? Math.max(0, Math.min(scroll, res.lines.length - maxRows)) : 0;
@@ -559,13 +606,15 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         | { kind: "identity"; title: string }
         | { kind: "usage"; title: string }
         | { kind: "recall"; title: string }
-        | { kind: "resources"; title: string };
+        | { kind: "resources"; title: string }
+        | { kind: "ssh"; title: string };
     const sideItems: SideItem[] = [
         ...CATEGORIES.map((c, i) => ({ kind: "category" as const, catIndex: i, title: c.title })),
         // The usage view only makes sense in the full hub (it reads session transcripts).
         ...(showActions ? [{ kind: "usage" as const, title: "Claude usage" }] : []),
         ...(showActions ? [{ kind: "recall" as const, title: "Recall memory" }] : []),
         ...(showActions ? [{ kind: "resources" as const, title: "Resources" }] : []),
+        ...(showActions ? [{ kind: "ssh" as const, title: "SSH connections" }] : []),
         ...(showActions ? ACTION_ITEMS.map((a) => ({ kind: "action" as const, ...a })) : []),
         ...(hasIdentity ? [{ kind: "identity" as const, title: "Accounts & profiles" }] : []),
     ];
@@ -640,6 +689,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         const usageMode = current.kind === "usage";
         const recallMode = current.kind === "recall";
         const resourceMode = current.kind === "resources";
+        const sshMode = current.kind === "ssh";
         const [usage, setUsage] = useState<(UsageReport & { pending: boolean }) | null>(null);
         const usageOn = usageMode ? readConfig().config.usageStats : false;
         const [recall, setRecall] = useState<RecallView | null>(null);
@@ -650,6 +700,15 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         const [resCursor, setResCursor] = useState(0);
         const [resConfirm, setResConfirm] = useState<{ label: string; op: string; value?: number; index: number } | null>(null);
         const [resNote, setResNote] = useState("");
+        // SSH connection panel: the saved connections, a cursor, a note, and a remove confirm.
+        const [sshConns, setSshConns] = useState<SshConnectionView[]>([]);
+        const [sshCursor, setSshCursor] = useState(0);
+        const [sshNote, setSshNote] = useState("");
+        const [sshRemove, setSshRemove] = useState<{ alias: string; index: number } | null>(null);
+        // Field-by-field editor for a saved connection (opened with 'e'): a field list
+        // (sshEdit) plus a nested input overlay for one text field (sshField).
+        const [sshEdit, setSshEdit] = useState<{ alias: string; cursor: number } | null>(null);
+        const [sshField, setSshField] = useState<{ alias: string; field: string; label: string } | null>(null);
         const resRows: { op: string; value?: number; label: string }[] = [];
         if (resStatus) {
             if (resStatus.wslAvailable) resRows.push({ op: "wsl-shutdown", label: `Shut down WSL${resStatus.vmmemRunning ? " - vmmemWSL running, eating RAM" : ""}` });
@@ -717,6 +776,49 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             setResNote(r.message);
             reloadResources();
             setResCursor(0);
+        };
+
+        // Load the saved SSH connections whenever the panel opens.
+        useEffect(() => {
+            if (!sshMode) return;
+            try { setSshConns(listConnections()); setSshCursor(0); } catch { setSshConns([]); }
+        }, [sshMode]);
+        const chooseSshRemove = (i: number): void => {
+            const c = sshRemove;
+            setSshRemove(null);
+            if (i !== 0 || !c) return;
+            try { removeConnection(c.alias); setSshConns(listConnections()); setSshNote(`Removed '${c.alias}'.`); setSshCursor(0); } catch { /* */ }
+        };
+        // Apply an edit to the connection under sshEdit and re-read the list so the field
+        // rows reflect the new value. Never throws (best-effort, like the other panels).
+        const applySshEdit = (alias: string, patch: SshInput): void => {
+            try { updateConnection(alias, patch); setSshConns(listConnections()); } catch { /* */ }
+        };
+        // Act on a field row: toggle the boolean, clear the password, or open the input.
+        const actSshEditRow = (i: number): void => {
+            if (!sshEdit) return;
+            const conn = sshConns.find((c) => c.alias === sshEdit.alias);
+            const row = conn ? sshEditRows(conn)[i] : undefined;
+            if (!conn || !row) return;
+            if (row.kind === "toggle") { applySshEdit(conn.alias, { forwardAgent: !conn.forwardAgent }); return; }
+            if (row.kind === "clearpw") { applySshEdit(conn.alias, { password: "" }); setSshNote("Password cleared."); return; }
+            setSshField({ alias: conn.alias, field: row.field, label: row.label.split(":")[0]!.trim() });
+        };
+        // Save one text field. Empty means clear (except host, which stays required, and
+        // password, where empty means keep the stored one).
+        const submitSshField = (value: string): void => {
+            const f = sshField;
+            setSshField(null);
+            if (!f) return;
+            const v = value.trim();
+            const patch: SshInput = {};
+            if (f.field === "host") { if (!v) return; patch.host = v; }
+            else if (f.field === "port") patch.port = v ? Number(v) || undefined : undefined;
+            else if (f.field === "options") patch.options = v ? v.split(",").map((s) => s.trim()).filter(Boolean) : [];
+            else if (f.field === "password") { if (!v) return; patch.password = v; }
+            else (patch as Record<string, string>)[f.field] = v; // user / identityFile / proxyJump ("" clears)
+            applySshEdit(f.alias, patch);
+            setSshNote(`Updated ${f.field} of '${f.alias}'.`);
         };
 
         useEffect(() => {
@@ -1231,6 +1333,20 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
                 return;
             }
 
+            // SSH field editor: the input overlay (sshField) owns typing; the field list
+            // (sshEdit) has no focused input, so single-letter nav works directly.
+            if (sshField) { if (esc) setSshField(null); return; }
+            if (sshEdit) {
+                if (esc) { setSshEdit(null); return; }
+                const conn = sshConns.find((c) => c.alias === sshEdit.alias);
+                const rows = conn ? sshEditRows(conn) : [];
+                if (!rows.length) { setSshEdit(null); return; }
+                if (up || ch === "k") { setSshEdit((e) => e && { ...e, cursor: Math.max(0, e.cursor - 1) }); return; }
+                if (down || ch === "j") { setSshEdit((e) => e && { ...e, cursor: Math.min(rows.length - 1, e.cursor + 1) }); return; }
+                if (enter || space) { actSshEditRow(sshEdit.cursor); return; }
+                return;
+            }
+
             // Profile overlays mirror the add-account flow: the focused input owns
             // typing; the global handler only navigates, selects and cancels.
             if (profAdd) { if (esc) setProfAdd(null); return; }
@@ -1295,6 +1411,15 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
                 if (down || ch === "j") { setResConfirm((c) => c && { ...c, index: Math.min(1, c.index + 1) }); return; }
                 if (ch === "y") { chooseRes(0); return; }
                 if (enter || space) { chooseRes(resConfirm.index); return; }
+                return;
+            }
+
+            if (sshRemove) {
+                if (esc || ch === "n") { setSshRemove(null); return; }
+                if (up || ch === "k") { setSshRemove((c) => c && { ...c, index: Math.max(0, c.index - 1) }); return; }
+                if (down || ch === "j") { setSshRemove((c) => c && { ...c, index: Math.min(1, c.index + 1) }); return; }
+                if (ch === "y") { chooseSshRemove(0); return; }
+                if (enter || space) { chooseSshRemove(sshRemove.index); return; }
                 return;
             }
 
@@ -1363,11 +1488,16 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
                 return;
             }
             if (focusRight && resourceMode && (ch === "r" || ch === "R")) { reloadResources(); setResNote("Refreshed."); return; }
+            if (focusRight && sshMode && (ch === "r" || ch === "R")) { try { setSshConns(listConnections()); } catch { /* */ } setSshNote("Refreshed."); return; }
+            if (focusRight && sshMode && (ch === "t" || ch === "T")) { const c = sshConns[sshCursor]; if (c) onExit({ type: "ssh-connect", alias: c.alias, tunnel: true }); return; }
+            if (focusRight && sshMode && ch === "d") { const c = sshConns[sshCursor]; if (c) setSshRemove({ alias: c.alias, index: 1 }); return; }
+            if (focusRight && sshMode && ch === "e") { const c = sshConns[sshCursor]; if (c) setSshEdit({ alias: c.alias, cursor: 0 }); return; }
             if (up || ch === "k") {
                 if (focusRight && category) setSetIndex((i) => Math.max(0, i - 1));
                 else if (focusRight && action) setActCursor((i) => Math.max(0, i - 1));
                 else if (focusRight && identityMode) setIdCursor((i) => Math.max(0, i - 1));
                 else if (focusRight && resourceMode) setResCursor((i) => Math.max(0, i - 1));
+                else if (focusRight && sshMode) setSshCursor((i) => Math.max(0, i - 1));
                 else { setSideIndex((i) => Math.max(0, i - 1)); setSetIndex(0); setFocusRight(false); }
                 return;
             }
@@ -1376,6 +1506,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
                 else if (focusRight && action) setActCursor((i) => Math.min(actCount - 1, i + 1));
                 else if (focusRight && identityMode) setIdCursor((i) => Math.min(Math.max(0, idRows.length - 1), i + 1));
                 else if (focusRight && resourceMode) setResCursor((i) => Math.min(Math.max(0, resRows.length - 1), i + 1));
+                else if (focusRight && sshMode) setSshCursor((i) => Math.min(Math.max(0, sshConns.length - 1), i + 1));
                 else { setSideIndex((i) => Math.min(sideItems.length - 1, i + 1)); setSetIndex(0); setFocusRight(false); }
                 return;
             }
@@ -1383,6 +1514,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             if (enter || space) {
                 if (!focusRight) { setFocusRight(true); return; }
                 if (resourceMode) { const r = resRows[resCursor]; if (r) setResConfirm({ label: r.label, op: r.op, value: r.value, index: 1 }); return; }
+                if (sshMode) { const c = sshConns[sshCursor]; if (c) onExit({ type: "ssh-connect", alias: c.alias, tunnel: false }); return; }
                 if (identityMode) { activateIdRow(idRow); return; }
                 if (action) { runChosen(action); return; }
                 const setting = category!.settings[setIndex]!;
@@ -1413,6 +1545,10 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             ? txt("set value", { fg: COL.cyan })
             : listEdit
             ? txt("edit list", { fg: COL.cyan })
+            : sshField
+            ? txt("edit field", { fg: COL.cyan })
+            : sshEdit
+            ? txt("edit connection", { fg: COL.cyan })
             : removeConfirm
             ? txt("remove account", { fg: COL.red })
             : skillConfirm
@@ -1500,6 +1636,9 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         } else if (resConfirm) {
             content = renderRemoveConfirm(`${resConfirm.label}? This is destructive.`, resConfirm.index, chooseRes,
                 (d) => setResConfirm((c) => c && { ...c, index: Math.max(0, Math.min(1, c.index + d)) }), "Run");
+        } else if (sshRemove) {
+            content = renderRemoveConfirm(`Remove SSH connection '${sshRemove.alias}'?`, sshRemove.index, chooseSshRemove,
+                (d) => setSshRemove((c) => c && { ...c, index: Math.max(0, Math.min(1, c.index + d)) }));
         } else if (skillAgents) {
             const skill = skills.find((s) => s.name === skillAgents.name);
             const cursor = Math.min(skillAgents.cursor, Math.max(0, agents.length - 1));
@@ -1510,6 +1649,18 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
                 onToggle: toggleSkillAgentRow,
                 onMove: (d) => setSkillAgents((c) => c && { ...c, cursor: Math.max(0, Math.min(Math.max(0, agents.length - 1), c.cursor + d)) }),
             });
+        } else if (sshField) {
+            const conn = sshConns.find((c) => c.alias === sshField.alias);
+            const cur = conn && sshField.field !== "password" ? (conn as unknown as Record<string, unknown>)[sshField.field] : undefined;
+            const hint = sshField.field === "password" ? "new password (blank = keep)"
+                : sshField.field === "host" ? `current: ${conn?.host ?? ""}`
+                : cur != null && cur !== "" ? `current: ${Array.isArray(cur) ? cur.join(", ") : cur} (blank clears)` : "value (blank clears)";
+            content = renderAddInput({ title: `${sshField.alias}: ${sshField.label}`, placeholder: hint, maxLength: 256, onSubmit: submitSshField });
+        } else if (sshEdit) {
+            const conn = sshConns.find((c) => c.alias === sshEdit.alias);
+            content = conn
+                ? renderSshEditor({ title: `Edit ${conn.alias}`, rows: sshEditRows(conn), cursor: Math.min(sshEdit.cursor, sshEditRows(conn).length - 1), onSelect: actSshEditRow, onMove: (d) => setSshEdit((e) => e && { ...e, cursor: Math.max(0, e.cursor + d) }) })
+                : h(box, { flexGrow: 1 });
         } else if (listAdd) {
             const s = SETTING_BY_KEY.get(listAdd.key);
             content = renderAddInput({ title: `Add to ${s?.label ?? listAdd.key}`, placeholder: s?.itemHint ?? "new entry", error: listAdd.error, onSubmit: submitListAdd });
@@ -1542,6 +1693,8 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
                 ? renderRecallPanel({ recallOn, view: recall })
                 : resourceMode
                 ? renderResourcePanel({ status: resStatus, cursor: resCursor, note: resNote, rows: resRows, focused: focusRight })
+                : sshMode
+                ? renderSshPanel({ conns: sshConns, cursor: sshCursor, note: sshNote, focused: focusRight })
                 : identityMode
                 ? renderIdentity({ rows: idRows, focused: focusRight, cursor: idCursor, onSelect: clickIdentity, onMove: moveIdentity })
                 : category
@@ -1580,6 +1733,8 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             h(box, { width: size.columns, paddingLeft: 1, paddingRight: 1 }, txt(s, { fg: COL.gray, attributes: DIM }));
         const menuNav = focusRight && resourceMode
             ? "up/down move   enter run (confirm)   r refresh   tab back"
+            : focusRight && sshMode
+            ? "up/down move   enter connect   e edit   t tunnel   d remove   r refresh   tab back"
             : focusRight && identityMode
             ? (idRow?.kind === "profile"
                 ? "up/down move   enter set active   a add   e edit   r rename   d remove   tab back"
@@ -1630,7 +1785,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
 
         // A one-line "update available" banner under the title, shown only in the plain
         // menu view (not over an overlay or the result/running panels).
-        const noOverlay = !adding && !renaming && !profRename && !profAdd && !profEdit && !profRemove && !connectPrompt && !removeConfirm && !skillConfirm && !skillAgents && !resConfirm && !confirm && !listAdd && !listEdit && !valueEdit;
+        const noOverlay = !adding && !renaming && !profRename && !profAdd && !profEdit && !profRemove && !connectPrompt && !removeConfirm && !skillConfirm && !skillAgents && !resConfirm && !sshRemove && !sshEdit && !sshField && !confirm && !listAdd && !listEdit && !valueEdit;
         const updateBanner = update && mode === "menu" && noOverlay
             ? h(box, { width: size.columns, flexDirection: "row", paddingLeft: 1, paddingRight: 1 },
                 txt(`Update available  ${update.current} -> ${update.latest}   `, { fg: COL.yellow, attributes: BOLD }),

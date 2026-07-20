@@ -264,6 +264,49 @@ test("packs API lists the Helio pack and a cross-origin write is refused", async
     }
 });
 
+test("ssh API adds a connection, builds the connect command, and refuses cross-origin writes", async () => {
+    const server = await startDashboardServer("test-version");
+    const base = `http://127.0.0.1:${server.port}`;
+    try {
+        const add = await fetch(`${base}/api/ssh`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "add", alias: "server1", host: "203.0.113.10", user: "root", password: "hunter2" }),
+        });
+        const aout = await add.json() as { ok: boolean; connections?: { alias: string; hasPassword: boolean }[] };
+        expect(aout.ok).toBe(true);
+        const conn = aout.connections!.find((c) => c.alias === "server1")!;
+        expect(conn.hasPassword).toBe(true); // stored, never echoed back
+        expect((conn as Record<string, unknown>).password).toBeUndefined();
+
+        const list = await fetch(`${base}/api/ssh`);
+        expect(list.status).toBe(200);
+        expect((await list.json() as { connections: unknown[] }).connections.length).toBe(1);
+
+        const connect = await fetch(`${base}/api/ssh`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "connect", alias: "server1" }),
+        });
+        expect((await connect.json() as { command?: string }).command).toBe("enigma ssh server1");
+
+        // A named tunnel is saved on the connection so it can be run by name.
+        const fwd = await fetch(`${base}/api/ssh`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "forward-add", alias: "server1", spec: "9090:5432", name: "pg" }),
+        });
+        const fout = await fwd.json() as { ok: boolean; connections?: { alias: string; forwards?: { name?: string }[] }[] };
+        expect(fout.ok).toBe(true);
+        expect(fout.connections!.find((c) => c.alias === "server1")!.forwards![0]!.name).toBe("pg");
+
+        const evil = await fetch(`${base}/api/ssh`, {
+            method: "POST", headers: { "Content-Type": "application/json", "Origin": "http://evil.example" },
+            body: JSON.stringify({ action: "remove", alias: "server1" }),
+        });
+        expect(evil.status).toBe(403);
+    } finally {
+        server.close();
+    }
+});
+
 test("removeHostsEntry strips only the enigma mapping and leaves other hosts intact", () => {
     const hostsPath = join(homedir(), "hosts-test");
     process.env.ENIGMA_HOSTS_FILE = hostsPath;

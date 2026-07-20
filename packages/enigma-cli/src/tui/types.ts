@@ -66,6 +66,7 @@ export interface HubProfile {
  */
 export type HubExitAction =
     | { type: "connect"; tool: string; account: string }
+    | { type: "ssh-connect"; alias: string; tunnel: boolean }
     | { type: "update" };
 export interface HubContext {
     agents: HubAgent[];

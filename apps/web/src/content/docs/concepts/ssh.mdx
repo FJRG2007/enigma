@@ -1,0 +1,66 @@
+---
+title: SSH connections
+description: Save each server's credentials once - key or password, jump host, port forwards - and reach it with a short alias from the CLI, TUI and dashboard.
+group: Concepts
+order: 36
+---
+import Cmd from "../../../components/Cmd.astro";
+
+Managing several servers over SSH gets tedious fast: one needs `-i cert.pem`, another wants a password you retype every time, a third sits behind a jump host, and bringing a remote port to your machine means remembering a long `-L 9090:db:5432` line. The SSH manager lets you **save each server once under a short alias** and then reach it with `enigma ssh <alias>`.
+
+The same store powers the **CLI, the TUI hub and the dashboard**. Passwords are stored **encrypted at rest** (AES-256-GCM with a machine-local key, the same scheme enigma uses for other secrets) and auto-supplied on connect via `sshpass` (Linux/macOS) or PuTTY `plink` (Windows) when present - so you never retype them. Everything is local; nothing leaves your machine.
+
+## Save a connection
+
+<Cmd name="enigma ssh add <alias> [flags]" ex={["enigma ssh add server1 --host 203.0.113.10 --user root -i ~/.ssh/id_ed25519", "enigma ssh add db --host db.internal --user deploy --jump root@203.0.113.10 --password"]}>
+Flags: `--host`, `--user`/`-u`, `--port`/`-p`, `--identity`/`-i <key>`, `--jump`/`-j <host>` (ProxyJump), `--forward-agent`/`-A`, `--option`/`-o <K=V>` (repeatable), `--forward`/`-L <spec>` (a saved tunnel, repeatable), and `--password` (prompts hidden; stored encrypted). `enigma ssh edit <alias>` changes any field; `--no-password` clears a stored one.
+</Cmd>
+
+## Connect
+
+<Cmd name="enigma ssh <alias>" ex={["enigma ssh server1", "enigma ssh db", "enigma ssh"]}>
+Opens an interactive session - the key, port, jump host, options and any saved forwards are applied for you. With no alias it lists your saved connections. Anything after `--` is passed straight to `ssh` (e.g. `enigma ssh server1 -- uptime`).
+</Cmd>
+
+## Tunnel a port
+
+Bringing a remote port to your machine (or the reverse) is a first-class command. The spec grammar is friendly - the type defaults to a **local** forward (bring a remote port here):
+
+| Spec | Meaning |
+| --- | --- |
+| `8080` | remote `8080` -> local `8080` |
+| `9090:8080` | local `9090` -> remote `localhost:8080` |
+| `9090:dbhost:5432` | local `9090` -> remote `dbhost:5432` |
+| `R:8080:localhost:80` | **remote** forward |
+| `D:1080` | **dynamic** SOCKS proxy on `1080` |
+
+The two-part `local:remote` form is the common one - the target host defaults to `localhost` (the port on the server itself), so `9090:5432` is all you need. Add a middle host (`9090:dbhost:5432`) only when the port lives on a *different* machine the server can reach.
+
+<Cmd name="enigma ssh tunnel <alias> <name|spec...>" ex={["enigma ssh tunnel db 9090:5432", "enigma ssh tunnel db pg", "enigma ssh tunnel server1 D:1080"]}>
+`tunnel` opens the forwards only (no shell, `ssh -N`) and stays in the foreground. With no argument it uses the connection's **saved** forwards; each argument is either a **saved tunnel's name** or an ad-hoc spec. `enigma ssh forward <add <alias> SPEC [name] | remove <alias> INDEX | list <alias>>` manages the saved forwards, which are also applied on every normal connect.
+</Cmd>
+
+## Name a tunnel and run it by name
+
+Give a saved tunnel a name and you can bring it up on its own later - handy when a server has several. In the **dashboard**, each connection has a small tunnel builder: a *remote port* (or `host:port`), a *local port* (blank = the same), and an optional *name*. From the CLI:
+
+<Cmd name="enigma ssh forward add <alias> <spec> [name]" ex={["enigma ssh forward add db 9090:5432 pg", "enigma ssh tunnel db pg", "enigma ssh forward list db"]}>
+Save "remote 5432 -> local 9090" as `pg`, then open just that tunnel any time with `enigma ssh tunnel db pg`. Saved tunnels also show a copy-the-command button in the dashboard.
+</Cmd>
+
+## Password auto-fill
+
+To auto-fill a stored password you need a helper on your PATH:
+
+- **Linux/macOS**: `sshpass` (the password is passed via the `SSHPASS` env, never on the command line).
+- **Windows**: PuTTY's `plink`.
+
+Without either, enigma still connects - `ssh` simply prompts for the password as usual. Key-based logins never need a helper. Where possible, prefer a key: it is the most secure and always passwordless.
+
+## From the TUI and dashboard
+
+The **SSH** entry in the TUI hub lists your connections - `enter` connects, `t` opens the saved tunnels, `d` removes one. The dashboard's **SSH** tab manages connections and forwards fully (add, edit, remove); because a browser cannot open a shell, its **Connect** and **Tunnel** buttons copy the `enigma ssh ...` command for you to paste into a terminal.
+
+## Where it is stored
+
+Connections live in `~/.enigma/ssh.json` (mode `600`), with passwords encrypted. Remove one with `enigma ssh remove <alias>`; inspect one (password redacted) with `enigma ssh info <alias>`.

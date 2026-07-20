@@ -156,6 +156,20 @@
         .set-meta { flex: 1; min-width: 0; }
         .set-name { font-size: 13px; color: var(--text); }
         .set-hint { font-size: 12px; color: var(--muted); margin-top: 2px; }
+        .ssh-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+        .ssh-form label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+        .ssh-form .ssh-check { flex-direction: row; align-items: center; gap: 8px; color: var(--fg); align-self: end; }
+        .ssh-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+        .ssh-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+        .ssh-fwds { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+        .ssh-x { background: none; border: none; color: var(--muted); cursor: pointer; padding: 0 0 0 4px; font-size: 12px; }
+        .ssh-x:hover { color: var(--bad); }
+        .ssh-run { background: none; border: none; color: var(--muted); cursor: pointer; padding: 0 2px; font-size: 11px; }
+        .ssh-run:hover { color: var(--accent); }
+        .ssh-fwd-form { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+        .ssh-fwd-form .ssh-f-name { max-width: 140px; }
+        .ssh-fwd-form .ssh-f-local, .ssh-fwd-form .ssh-f-remote { max-width: 170px; }
+        .ssh-arrow { color: var(--muted); }
         /* Capitalize the first letter of every option description/blurb in the dashboard
            (presentation only; the shared registry keeps its lowercase TUI/CLI convention). */
         .set-hint::first-letter, .set-cat-b::first-letter, .lnone::first-letter { text-transform: uppercase; }
@@ -538,6 +552,7 @@
             <a href="#/codegraph" data-view="codegraph" class="tab">Code graph</a>
             <a href="#/playground" data-view="playground" class="tab">Playground</a>
             <a href="#/packs" data-view="packs" class="tab">Packs</a>
+            <a href="#/ssh" data-view="ssh" class="tab">SSH</a>
         </nav>
         <div class="nav">
             <label class="scope-wrap" title="Scope: global config or a specific project"><span class="scope-lbl">Scope</span><select id="scopeSel" class="scope-sel"><option value="global">Global</option></select></label>
@@ -825,6 +840,37 @@
         </div>
         <div id="packsNote" class="set-note"></div>
         <div id="packsBody"><div class="empty" style="padding:12px 0">Loading...</div></div>
+    </section>
+
+    <section id="view-ssh" style="display:none">
+        <div class="page-head" style="display:flex;align-items:flex-start;gap:16px">
+            <div style="flex:1">
+                <h1>SSH</h1>
+                <p>Save each server once - host, user, key or password, jump host and port forwards - then reach it from a terminal with <code>enigma ssh &lt;alias&gt;</code>. Passwords are stored encrypted and auto-filled on connect (via sshpass or PuTTY plink). The browser cannot open a shell, so Connect and Tunnel copy the command for you to paste.</p>
+            </div>
+            <button id="sshRefresh" type="button" class="iconbtn" title="Refresh" aria-label="Refresh"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg></button>
+        </div>
+        <div id="sshNote" class="set-note"></div>
+        <div class="panel">
+            <div class="set-cat-h"><span id="sshFormTitle">Add a connection</span></div>
+            <div class="ssh-form">
+                <label>Alias<input id="sshAlias" class="linput" placeholder="server1"></label>
+                <label>Host<input id="sshHost" class="linput" placeholder="1.2.3.4 or host.example.com"></label>
+                <label>User<input id="sshUser" class="linput" placeholder="root"></label>
+                <label>Port<input id="sshPort" class="linput" type="number" min="1" max="65535" placeholder="22"></label>
+                <label>Identity file (-i)<input id="sshIdentity" class="linput" placeholder="~/.ssh/id_ed25519 or C:\\keys\\server.pem"></label>
+                <label>Jump host (-J)<input id="sshJump" class="linput" placeholder="user@bastion"></label>
+                <label>Password<input id="sshPassword" class="linput" type="password" placeholder="stored encrypted"></label>
+                <label>Options (-o, comma-separated)<input id="sshOptions" class="linput" placeholder="ServerAliveInterval=60"></label>
+                <label class="ssh-check"><input id="sshForwardAgent" type="checkbox"> Forward agent (-A)</label>
+                <label class="ssh-check" id="sshClearPwWrap" style="display:none"><input id="sshClearPw" type="checkbox"> Clear stored password</label>
+            </div>
+            <div class="ladd" style="margin-top:12px">
+                <button id="sshSave" type="button" class="toggle on">Save</button>
+                <button id="sshCancel" type="button" class="toggle" style="display:none">Cancel</button>
+            </div>
+        </div>
+        <div id="sshBody"><div class="empty" style="padding:12px 0">Loading...</div></div>
     </section>
 
     <section id="view-recall" style="display:none">
@@ -3897,7 +3943,7 @@ export {
 
         // --- hash routing between the subpages ---
         // Single source of truth for the subpage ids (savings is the default/fallback).
-        const VIEWS = ["savings", "usage", "accounts", "skills", "settings", "resources", "recall", "codegraph", "playground", "packs"];
+        const VIEWS = ["savings", "usage", "accounts", "skills", "settings", "resources", "recall", "codegraph", "playground", "packs", "ssh"];
         // Views that apply to a single project; the rest are global/machine-level only.
         const PROJECT_VIEWS = ["settings", "skills"];
         let activeView = "savings";
@@ -3921,6 +3967,7 @@ export {
             else if (v === "codegraph") loadCodeGraph();
             else if (v === "playground") { if (!playgroundLoaded) { playgroundLoaded = true; loadPlayground(); } }
             else if (v === "packs") loadPacks();
+            else if (v === "ssh") loadSsh();
             // The chart was sized while its view may have been hidden; nudge it on return.
             else if (v === "savings") { loadSystems(true); if (chart) { try { applyRange(); } catch { /* not ready */ } } }
         }
@@ -4040,6 +4087,143 @@ export {
                 const sel = e.target.closest("select[data-pack-account]");
                 if (!sel) return;
                 packAction(sel.dataset.id, "set-account", sel.value);
+            });
+        }
+
+        // --- ssh subpage (connection manager) ---
+        let sshEditing = null, sshCache = [];
+        function sshAuthLabel(c) { return c.identityFile ? "key" : c.hasPassword ? "password" : "agent/prompt"; }
+        // The spec string that reproduces a forward (mirror of the engine's forwardSpec).
+        function sshSpecOf(f) { return f.type === "dynamic" ? "D:" + f.bind : (f.type === "remote" ? "R:" : "") + f.bind + ":" + f.host + ":" + f.hostPort; }
+        function renderSsh(conns) {
+            sshCache = conns || [];
+            const body = $("sshBody");
+            if (!sshCache.length) { body.innerHTML = '<div class="empty" style="padding:12px 0">No connections yet. Add one above.</div>'; return; }
+            body.innerHTML = sshCache.map((c) => {
+                const port = c.port ? ":" + esc(String(c.port)) : "";
+                const meta = [];
+                if (c.identityFile) meta.push("key " + esc(c.identityFile));
+                if (c.proxyJump) meta.push("jump " + esc(c.proxyJump));
+                if (c.forwardAgent) meta.push("agent-forward");
+                (c.options || []).forEach((o) => meta.push("-o " + esc(o)));
+                // Each saved tunnel shows a run button (copies `enigma ssh tunnel <alias> <name|spec>`).
+                const fwds = (c.forwards || []).map((f, i) => {
+                    const label = (c.forwardLabels && c.forwardLabels[i]) || sshSpecOf(f);
+                    const token = f.name || sshSpecOf(f);
+                    return '<span class="tag">' + esc(label)
+                        + ' <button type="button" class="ssh-run" data-ssh-fwd-run data-alias="' + esc(c.alias) + '" data-token="' + esc(token) + '" title="Copy run command">&#9654;</button>'
+                        + ' <button type="button" class="ssh-x" data-ssh-fwd-remove data-alias="' + esc(c.alias) + '" data-index="' + i + '" title="Remove tunnel">x</button></span>';
+                }).join(" ") || '<span class="set-hint">no saved tunnels</span>';
+                return '<div class="panel ssh-card">'
+                    + '<div class="ssh-card-head"><div><strong>' + esc(c.alias) + '</strong> <span class="tag">' + esc(c.target) + port + '</span> <span class="tag">' + sshAuthLabel(c) + '</span></div>'
+                    + '<div class="ssh-actions">'
+                    + '<button type="button" class="toggle on" data-ssh-connect="' + esc(c.alias) + '">Connect</button>'
+                    + '<button type="button" class="toggle" data-ssh-tunnel="' + esc(c.alias) + '">Tunnel all</button>'
+                    + '<button type="button" class="toggle" data-ssh-edit="' + esc(c.alias) + '">Edit</button>'
+                    + '<button type="button" class="btn-danger" data-ssh-remove="' + esc(c.alias) + '">Remove</button>'
+                    + '</div></div>'
+                    + (meta.length ? '<div class="set-hint" style="margin:6px 0">' + meta.join(" &middot; ") + '</div>' : "")
+                    + '<div class="ssh-fwds" style="margin-top:6px">' + fwds + '</div>'
+                    + '<div class="set-hint" style="margin-top:10px">Add a tunnel: a remote port mapped to a local one (local defaults to the same). Name it to run it later with <code>enigma ssh tunnel ' + esc(c.alias) + ' &lt;name&gt;</code>.</div>'
+                    + '<div class="ssh-fwd-form" style="margin-top:6px">'
+                    + '<input class="linput ssh-f-name" placeholder="name (optional)">'
+                    + '<input class="linput ssh-f-remote" placeholder="remote port or host:port">'
+                    + '<span class="ssh-arrow">&#8594;</span>'
+                    + '<input class="linput ssh-f-local" type="number" min="1" max="65535" placeholder="local (same)">'
+                    + '<button type="button" class="toggle" data-ssh-fwd-add="' + esc(c.alias) + '">Add tunnel</button>'
+                    + '</div>'
+                    + '</div>';
+            }).join("");
+        }
+        async function loadSsh() {
+            setNote("sshNote", "");
+            try { renderSsh((await apiJson("/api/ssh", { cache: "no-store" })).connections); }
+            catch (e) { $("sshBody").innerHTML = '<div class="empty" style="padding:12px 0">' + esc(e.message || "SSH unavailable.") + "</div>"; }
+        }
+        function sshReadForm() {
+            const payload = {
+                alias: $("sshAlias").value.trim(), host: $("sshHost").value.trim(),
+                user: $("sshUser").value.trim(), identityFile: $("sshIdentity").value.trim(),
+                proxyJump: $("sshJump").value.trim(), forwardAgent: $("sshForwardAgent").checked,
+                optionsRaw: $("sshOptions").value.trim(),
+            };
+            const port = $("sshPort").value.trim();
+            if (port) payload.port = Number(port);
+            const pw = $("sshPassword").value;
+            if (sshEditing) { if ($("sshClearPw").checked) payload.password = ""; else if (pw) payload.password = pw; }
+            else if (pw) payload.password = pw;
+            return payload;
+        }
+        async function sshAction(action, payload) {
+            setNote("sshNote", "Saving...");
+            try {
+                const out = await apiJson("/api/ssh", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.assign({ action }, payload)) });
+                if (out.connections) renderSsh(out.connections);
+                if (out.command) { try { await navigator.clipboard.writeText(out.command); } catch { /* clipboard blocked */ } }
+                setNote("sshNote", out.note || out.error || (out.ok ? "Done." : "Action failed."), out.ok ? "ok" : "err");
+                return out.ok;
+            } catch (e) { setNote("sshNote", e.message || "Could not reach the server.", "err"); return false; }
+        }
+        async function sshSave() {
+            const payload = sshReadForm();
+            if (!payload.alias) { setNote("sshNote", "An alias is required.", "err"); return; }
+            if (await sshAction(sshEditing ? "edit" : "add", payload)) sshResetForm();
+        }
+        function sshFillForm(c) {
+            sshEditing = c.alias;
+            $("sshAlias").value = c.alias; $("sshAlias").disabled = true;
+            $("sshHost").value = c.host || ""; $("sshUser").value = c.user || "";
+            $("sshPort").value = c.port || ""; $("sshIdentity").value = c.identityFile || "";
+            $("sshJump").value = c.proxyJump || ""; $("sshOptions").value = (c.options || []).join(", ");
+            $("sshForwardAgent").checked = !!c.forwardAgent; $("sshPassword").value = "";
+            $("sshFormTitle").textContent = "Edit " + c.alias;
+            $("sshClearPwWrap").style.display = c.hasPassword ? "" : "none"; $("sshClearPw").checked = false;
+            $("sshCancel").style.display = "";
+            window.scrollTo({ top: 0, behavior: "smooth" });
+        }
+        function sshResetForm() {
+            sshEditing = null;
+            ["sshAlias", "sshHost", "sshUser", "sshPort", "sshIdentity", "sshJump", "sshPassword", "sshOptions"].forEach((id) => { $(id).value = ""; });
+            $("sshAlias").disabled = false; $("sshForwardAgent").checked = false;
+            $("sshFormTitle").textContent = "Add a connection";
+            $("sshClearPwWrap").style.display = "none"; $("sshCancel").style.display = "none";
+        }
+        function wireSsh() {
+            $("sshRefresh").addEventListener("click", loadSsh);
+            $("sshSave").addEventListener("click", sshSave);
+            $("sshCancel").addEventListener("click", sshResetForm);
+            $("view-ssh").addEventListener("click", async (e) => {
+                const t = e.target.closest("button"); if (!t) return;
+                if (t.dataset.sshConnect != null) return void sshAction("connect", { alias: t.dataset.sshConnect });
+                if (t.dataset.sshTunnel != null) return void sshAction("tunnel", { alias: t.dataset.sshTunnel });
+                if (t.dataset.sshEdit != null) { const c = sshCache.find((x) => x.alias === t.dataset.sshEdit); if (c) sshFillForm(c); return; }
+                if (t.dataset.sshRemove != null) { if (await askConfirm("Confirm", "Remove connection '" + t.dataset.sshRemove + "'?", true)) sshAction("remove", { alias: t.dataset.sshRemove }); return; }
+                if (t.dataset.sshFwdAdd != null) {
+                    const card = t.closest(".ssh-card");
+                    const remote = card.querySelector(".ssh-f-remote").value.trim();
+                    const local = card.querySelector(".ssh-f-local").value.trim();
+                    const name = card.querySelector(".ssh-f-name").value.trim();
+                    if (!remote) { setNote("sshNote", "Enter a remote port (or host:port).", "err"); return; }
+                    const remotePort = remote.split(":").pop();
+                    const spec = (local || remotePort) + ":" + remote; // local defaults to the remote port
+                    sshAction("forward-add", { alias: t.dataset.sshFwdAdd, spec, name });
+                    return;
+                }
+                if (t.hasAttribute("data-ssh-fwd-run")) {
+                    const cmd = "enigma ssh tunnel " + t.dataset.alias + " " + t.dataset.token;
+                    try { await navigator.clipboard.writeText(cmd); } catch { /* clipboard blocked */ }
+                    setNote("sshNote", "Copied: " + cmd, "ok");
+                    return;
+                }
+                if (t.hasAttribute("data-ssh-fwd-remove")) { sshAction("forward-remove", { alias: t.dataset.alias, index: Number(t.dataset.index) }); return; }
+            });
+            // Mirror the remote port into the local placeholder ("local defaults to the same").
+            $("view-ssh").addEventListener("input", (e) => {
+                const r = e.target.closest(".ssh-f-remote");
+                if (!r) return;
+                const local = r.closest(".ssh-fwd-form").querySelector(".ssh-f-local");
+                const p = r.value.trim().split(":").pop();
+                local.placeholder = p ? "local (" + p + ")" : "local (same)";
             });
         }
 
@@ -4816,6 +5000,7 @@ export {
         wireCodeGraph();
         wirePlayground();
         wirePacks();
+        wireSsh();
         wireScope();
         enhanceAll(); // upgrade every static <select> into the shared pretty dropdown
         $("cfgExport").addEventListener("click", exportConfig);
