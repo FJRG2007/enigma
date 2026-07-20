@@ -10,8 +10,8 @@
  * argv/spec builders are pure and unit-tested without ever spawning ssh.
  */
 
-import { join } from "node:path";
-import { existsSync, writeFileSync } from "node:fs";
+import { basename, join } from "node:path";
+import { existsSync, writeFileSync, writeSync } from "node:fs";
 import { encryptSecret, decryptSecret } from "./secret-box";
 import { enigmaHome, isOnPath, readJson, resolveBin } from "./util";
 
@@ -33,7 +33,10 @@ export interface PortForward {
 
 /** A saved SSH connection. `password` is stored encrypted (enc:v1:...) and never displayed. */
 export interface SshConnection {
+  /** Short key the user connects with (e.g. "lirio-0"). Primary id; always set. */
   alias: string;
+  /** The real server name (e.g. "lirio-production"). An ALTERNATE connect key when set. */
+  name?: string;
   host: string;
   user?: string;
   /** Defaults to 22 when unset. */
@@ -85,13 +88,15 @@ export function listConnections(): SshConnectionView[] {
   return readStore().connections.map(toView).sort((a, b) => a.alias.localeCompare(b.alias));
 }
 
-/** The raw connection (password still encrypted) by alias, or null. */
-export function getConnection(alias: string): SshConnection | null {
-  return readStore().connections.find((c) => c.alias === alias) ?? null;
+/** The raw connection (password still encrypted) by its alias OR its name, or null. */
+export function getConnection(key: string): SshConnection | null {
+  return readStore().connections.find((c) => c.alias === key || c.name === key) ?? null;
 }
 
 /** Fields accepted when creating or editing a connection (plain password; encrypted on write). */
 export interface SshInput {
+  /** Alternate connect key (the real server name); "" clears it. */
+  name?: string;
   host?: string;
   user?: string;
   port?: number;
@@ -106,12 +111,29 @@ export interface SshInput {
 
 const ALIAS_RE = /^[A-Za-z0-9][\w.-]*$/;
 
-/** Create a connection. Alias must be unique and host is required. */
+/**
+ * The connect key (alias or name) that already belongs to a DIFFERENT connection, or null when
+ * alias/name are free. Both alias and name are global connect keys, so neither may collide with
+ * any other connection's alias or name - but a single connection may set name == its own alias.
+ */
+function keyConflict(connections: SshConnection[], selfAlias: string | null, alias: string, name?: string): string | null {
+  for (const c of connections) {
+    if (c.alias === selfAlias) continue;
+    const keys = c.name ? [c.alias, c.name] : [c.alias];
+    if (keys.includes(alias)) return alias;
+    if (name && keys.includes(name)) return name;
+  }
+  return null;
+}
+
+/** Create a connection. Alias (and name, if given) must be unique connect keys; host is required. */
 export function addConnection(alias: string, input: SshInput): { ok: boolean; error?: string } {
   if (!alias || !ALIAS_RE.test(alias)) return { ok: false, error: "Alias must be alphanumeric (dashes, dots and underscores allowed)." };
+  if (input.name && !ALIAS_RE.test(input.name)) return { ok: false, error: "Name must be alphanumeric (dashes, dots and underscores allowed)." };
   if (!input.host) return { ok: false, error: "A host is required (--host)." };
   const store = readStore();
-  if (store.connections.some((c) => c.alias === alias)) return { ok: false, error: `A connection named '${alias}' already exists.` };
+  const clash = keyConflict(store.connections, null, alias, input.name);
+  if (clash) return { ok: false, error: `'${clash}' is already used by another connection (alias and name must be unique).` };
   const conn: SshConnection = { alias, host: input.host };
   applyInput(conn, input);
   store.connections.push(conn);
@@ -124,6 +146,10 @@ export function updateConnection(alias: string, input: SshInput): { ok: boolean;
   const store = readStore();
   const conn = store.connections.find((c) => c.alias === alias);
   if (!conn) return { ok: false, error: `Unknown connection '${alias}'.` };
+  if (input.name && !ALIAS_RE.test(input.name)) return { ok: false, error: "Name must be alphanumeric (dashes, dots and underscores allowed)." };
+  const nextName = input.name !== undefined ? input.name : conn.name;
+  const clash = keyConflict(store.connections, conn.alias, conn.alias, nextName || undefined);
+  if (clash) return { ok: false, error: `'${clash}' is already used by another connection (alias and name must be unique).` };
   applyInput(conn, input);
   writeStore(store);
   return { ok: true };
@@ -131,6 +157,7 @@ export function updateConnection(alias: string, input: SshInput): { ok: boolean;
 
 /** Copy provided input fields onto a connection, encrypting the password. */
 function applyInput(conn: SshConnection, input: SshInput): void {
+  if (input.name !== undefined) conn.name = input.name || undefined;
   if (input.host !== undefined) conn.host = input.host;
   if (input.user !== undefined) conn.user = input.user || undefined;
   if (input.port !== undefined) conn.port = input.port || undefined;
@@ -317,8 +344,46 @@ export function buildPlinkArgs(conn: SshConnection, password: string, opts: Conn
 export type LaunchMode =
   | "sshpass"       // password auto-filled via sshpass -e (SSHPASS env)
   | "plink"         // password auto-filled via plink -pw
+  | "askpass"       // password auto-filled by enigma acting as SSH_ASKPASS (no external tool)
   | "plain-key"     // key/agent auth, plain ssh
-  | "plain-prompt"; // password stored but no helper present; ssh will prompt
+  | "plain-prompt"; // password stored but running from dev (node/bun); ssh will prompt
+
+/** Whether enigma can serve as SSH_ASKPASS: only from the compiled binary (dev node/bun can't). */
+function askpassCapable(): boolean {
+  const exe = basename(process.execPath).toLowerCase();
+  return !(exe.startsWith("node") || exe.startsWith("bun"));
+}
+
+/**
+ * The env that makes OpenSSH call enigma back as SSH_ASKPASS to supply this connection's
+ * password. SSH_ASKPASS_REQUIRE=force uses it even with a terminal (OpenSSH >= 8.4); DISPLAY is
+ * a fallback some builds still want. The password never lands here - only the alias to look up.
+ */
+export function askpassEnv(alias: string): NodeJS.ProcessEnv {
+  return {
+    SSH_ASKPASS: process.execPath,
+    SSH_ASKPASS_REQUIRE: "force",
+    DISPLAY: process.env.DISPLAY || ":0",
+    ENIGMA_ASKPASS: "1",
+    ENIGMA_SSH_ASKPASS_ALIAS: alias,
+  };
+}
+
+/** The decrypted password OpenSSH should receive for a connection (empty when none/unknown). */
+export function askpassAnswer(key: string): string {
+  const conn = getConnection(key);
+  return conn?.password ? decryptSecret(conn.password) : "";
+}
+
+/**
+ * SSH_ASKPASS responder: print the saved connection's decrypted password (+ newline) to stdout so
+ * OpenSSH can auto-fill it. Invoked as a subprocess by ssh with ENIGMA_ASKPASS=1; the connection
+ * comes from ENIGMA_SSH_ASKPASS_ALIAS. Writes synchronously to fd 1 so the short-lived process
+ * never exits before the password is flushed.
+ */
+export function emitAskpass(): void {
+  try { writeSync(1, `${askpassAnswer(process.env.ENIGMA_SSH_ASKPASS_ALIAS || "")}\n`); } catch { /* stdout already closed */ }
+}
 
 export interface Launcher {
   command: string;
@@ -357,6 +422,18 @@ export function resolveLauncher(conn: SshConnection, opts: ConnectOpts = {}): La
       args: buildPlinkArgs(conn, password, opts),
       env: { ...process.env },
       mode: "plink",
+      warnings,
+    };
+  }
+  // Dependency-free auto-fill: OpenSSH invokes enigma itself as SSH_ASKPASS. accept-new avoids a
+  // yes/no host-key prompt so the askpass only ever answers the password. This is the default
+  // path when no external helper is installed - works on any OpenSSH >= 8.4, any OS.
+  if (password && askpassCapable()) {
+    return {
+      command: sshBin,
+      args: ["-o", "StrictHostKeyChecking=accept-new", ...buildSshArgs(conn, opts)],
+      env: { ...process.env, ...askpassEnv(conn.alias) },
+      mode: "askpass",
       warnings,
     };
   }

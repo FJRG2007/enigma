@@ -48,6 +48,8 @@ export interface SshActionResult {
 /** The editable fields the dashboard sends for add/edit. */
 interface SshPayload extends SshInput {
   alias?: string;
+  /** The connection's alternate name key (distinct from a forward's `name` below). */
+  serverName?: string;
   /** Forward spec for forward-add. */
   spec?: string;
   /** Optional name for the forward being added (so it can be run by name). */
@@ -63,6 +65,7 @@ interface SshPayload extends SshInput {
 /** Turn the loose payload into a validated SshInput (options split, forwards ignored here). */
 function toInput(p: SshPayload): SshInput {
   const input: SshInput = {};
+  if (p.serverName !== undefined) input.name = String(p.serverName).trim();
   if (p.host !== undefined) input.host = String(p.host).trim();
   if (p.user !== undefined) input.user = String(p.user).trim();
   if (p.port !== undefined) input.port = Number(p.port) || undefined;

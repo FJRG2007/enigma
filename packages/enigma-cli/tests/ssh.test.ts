@@ -36,6 +36,40 @@ test("add validates alias and host, and rejects duplicates", () => {
   expect(ssh.addConnection("server1", { host: "5.6.7.8" }).ok).toBe(false); // duplicate
 });
 
+test("name is a second connect key: unique across servers, resolvable, same-server name==alias ok", () => {
+  expect(ssh.addConnection("lirio-0", { host: "h", name: "lirio-prod" }).ok).toBe(true);
+  // Both keys resolve to the same connection.
+  expect(ssh.getConnection("lirio-0")!.alias).toBe("lirio-0");
+  expect(ssh.getConnection("lirio-prod")!.alias).toBe("lirio-0");
+  // A new server may not reuse either key (alias or name) of another.
+  expect(ssh.addConnection("x1", { host: "h", name: "lirio-0" }).ok).toBe(false);   // name clashes with an alias
+  expect(ssh.addConnection("lirio-prod", { host: "h" }).ok).toBe(false);            // alias clashes with a name
+  // A single server may set name == its own alias.
+  expect(ssh.addConnection("solo", { host: "h", name: "solo" }).ok).toBe(true);
+  // Editing to clear the name frees it for reuse.
+  ssh.updateConnection("lirio-0", { name: "" });
+  expect(ssh.getConnection("lirio-prod")).toBeNull();
+  expect(ssh.addConnection("reuse", { host: "h", name: "lirio-prod" }).ok).toBe(true);
+});
+
+test("askpassAnswer returns the decrypted password by alias or name, else empty", () => {
+  ssh.addConnection("pwconn", { host: "h", name: "pw-name", password: "hunter2" });
+  expect(ssh.askpassAnswer("pwconn")).toBe("hunter2");
+  expect(ssh.askpassAnswer("pw-name")).toBe("hunter2"); // resolves by name too
+  expect(ssh.askpassAnswer("missing")).toBe("");
+  ssh.addConnection("nopw", { host: "h" });
+  expect(ssh.askpassAnswer("nopw")).toBe("");
+});
+
+test("askpassEnv wires enigma as SSH_ASKPASS with force", () => {
+  const env = ssh.askpassEnv("lirio-0");
+  expect(env.SSH_ASKPASS).toBe(process.execPath);
+  expect(env.SSH_ASKPASS_REQUIRE).toBe("force");
+  expect(env.ENIGMA_ASKPASS).toBe("1");
+  expect(env.ENIGMA_SSH_ASKPASS_ALIAS).toBe("lirio-0");
+  expect(env.DISPLAY).toBeTruthy();
+});
+
 test("password is stored encrypted, never in plain text", () => {
   ssh.addConnection("secret", { host: "h", user: "u", password: "hunter2" });
   const raw = ssh.getConnection("secret")!;

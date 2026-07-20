@@ -195,7 +195,7 @@
     ];
 
     var SSH = [
-        { alias: "server1", host: "203.0.113.10", user: "root", port: 22, identityFile: "~/.ssh/id_ed25519", hasPassword: false, target: "root@203.0.113.10", forwardLabels: ["pg: local 9090 -> localhost:5432"], forwards: [{ type: "local", bind: "9090", host: "localhost", hostPort: 5432, name: "pg" }] },
+        { alias: "server1", name: "web-prod", host: "203.0.113.10", user: "root", port: 22, identityFile: "~/.ssh/id_ed25519", hasPassword: false, target: "root@203.0.113.10", forwardLabels: ["pg: local 9090 -> localhost:5432"], forwards: [{ type: "local", bind: "9090", host: "localhost", hostPort: 5432, name: "pg" }] },
         { alias: "db", host: "db.internal", user: "deploy", proxyJump: "root@203.0.113.10", hasPassword: true, target: "deploy@db.internal", forwardLabels: [], forwards: [] }
     ];
 

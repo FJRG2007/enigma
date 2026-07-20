@@ -170,12 +170,12 @@ A loopback browser control panel for all of enigma - accounts, skills, settings,
 
 ### <img src="assets/logos/enigma-logo.svg" width="20" height="20" alt="Enigma"/> SSH connections
 
-Save each server once - key or encrypted password, jump host, port forwards - then reach it with a short alias. Passwords are stored encrypted and auto-filled (sshpass/plink). Tunnel a remote port with a friendly `9090:db:5432` spec. Managed from the CLI, TUI and dashboard.
+Save each server once - key or encrypted password, jump host, port forwards - then reach it by a short alias or its name. Passwords are stored encrypted and **auto-filled with no extra tools** (enigma acts as OpenSSH's own `SSH_ASKPASS`). Tunnel a remote port with a friendly `9090:db:5432` spec. Managed from the CLI, TUI and dashboard.
 
 ```bash
-enigma ssh add server1 --host 203.0.113.10 --user root -i ~/.ssh/id_ed25519
-enigma ssh server1
-enigma ssh tunnel server1 9090:5432
+enigma ssh add lirio-0 --name lirio-prod --host 192.168.1.138 --user fjrg2007 --password
+enigma ssh lirio-0
+enigma ssh tunnel lirio-0 9090:5432
 ```
 
 </td>

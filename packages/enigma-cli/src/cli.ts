@@ -256,9 +256,10 @@ Commands:
                        repair its launch command so 'enigma <tool>' works; no tool fixes all
   resources [action]   System cleanup: status, or wsl | docker | free-port PORT | kill PID
                        (shut down WSL/vmmemWSL, quit Docker, free a port, kill a process)
-  ssh [alias]          SSH connection manager: connect by alias, or list | add | edit |
+  ssh [alias|name]     SSH connection manager: connect by alias or name, or list | add | edit |
                        remove | info | tunnel <alias> <name|spec> | forward <add|remove|list> <alias>
-                       (encrypted passwords, saved key/jump/port-forwards; e.g. 9090:db:5432)
+                       (encrypted passwords auto-filled with no extra tools; --name sets a second
+                       connect key; saved key/jump/port-forwards, e.g. 9090:db:5432)
   recall [action]      Local session memory from transcripts: status, sync, search <q>,
                        list, show <id>, timeline <id>, sessions, context, prune, clear
                        (hybrid keyword+vector search; opt-in; reads your own logs)
@@ -557,15 +558,16 @@ async function runSshCli(args: string[], interactive: boolean): Promise<number> 
         for (const c of conns) {
             const auth = c.identityFile ? `key ${c.identityFile}` : c.hasPassword ? "password" : "agent/prompt";
             const fwd = c.forwards?.length ? `  (${c.forwards.length} forward${c.forwards.length > 1 ? "s" : ""})` : "";
-            console.log(`  ${c.alias.padEnd(14)} ${ssh.sshTarget(c as never).padEnd(28)} ${auth}${fwd}`);
+            const key = c.name && c.name !== c.alias ? `${c.alias} / ${c.name}` : c.alias;
+            console.log(`  ${key.padEnd(20)} ${ssh.sshTarget(c as never).padEnd(26)} ${auth}${fwd}`);
         }
-        console.log("\nConnect: enigma ssh <alias>    Tunnel: enigma ssh tunnel <alias> <spec...>");
+        console.log("\nConnect: enigma ssh <alias|name>    Tunnel: enigma ssh tunnel <alias> <name|spec...>");
         return 0;
     }
 
     if (sub === "add" || sub === "edit") {
         const alias = rest[0];
-        if (!alias) { console.error(`Usage: enigma ssh ${sub} <alias> --host <host> [--user u] [--port n] [-i key] [--password] [--jump host] [-o K=V] [-L spec]`); return 1; }
+        if (!alias) { console.error(`Usage: enigma ssh ${sub} <alias> --host <host> [--name server-name] [--user u] [--port n] [-i key] [--password] [--jump host] [-o K=V] [-L spec]`); return 1; }
         const flags = rest.slice(1);
         const input: import("./ssh").SshInput = {};
         let promptPassword = false, badForward = false;
@@ -575,6 +577,8 @@ async function runSshCli(args: string[], interactive: boolean): Promise<number> 
             const f = flags[i]!;
             const val = (): string => flags[++i] ?? "";
             switch (f) {
+                case "--name": case "-n": input.name = val(); break;
+                case "--no-name": input.name = ""; break;
                 case "--host": case "-H": input.host = val(); break;
                 case "--user": case "-u": input.user = val(); break;
                 case "--port": case "-p": input.port = Number(val()) || undefined; break;
@@ -621,6 +625,7 @@ async function runSshCli(args: string[], interactive: boolean): Promise<number> 
         const conn = ssh.getConnection(rest[0] ?? "");
         if (!conn) { console.error(`Unknown connection '${rest[0]}'.`); return 1; }
         console.log(`${conn.alias}: ${ssh.sshTarget(conn)}${conn.port ? `:${conn.port}` : ""}`);
+        if (conn.name) console.log(`  name: ${conn.name} (also connects: enigma ssh ${conn.name})`);
         if (conn.identityFile) console.log(`  identity: ${conn.identityFile}`);
         if (conn.password) console.log("  password: (stored, encrypted)");
         if (conn.proxyJump) console.log(`  jump: ${conn.proxyJump}`);
@@ -695,7 +700,7 @@ async function connectSsh(ssh: typeof import("./ssh"), alias: string, opts: impo
     const launcher = ssh.resolveLauncher(conn, opts);
     for (const w of launcher.warnings) console.error(`warning: ${w}`);
     if (launcher.mode === "plain-prompt")
-        console.error("note: a password is stored but neither sshpass nor plink is installed - ssh will prompt. Install sshpass (Linux/macOS) or PuTTY plink (Windows) to auto-fill it.");
+        console.error("note: auto-fill runs from the installed enigma binary, not this dev build - ssh will prompt for the password.");
     const where = opts.tunnelOnly ? "Opening tunnel to" : "Connecting to";
     console.error(`${where} ${alias} (${ssh.sshTarget(conn)})...`);
     return spawnInherit(launcher.command, launcher.args, launcher.env);
@@ -1582,6 +1587,14 @@ function printStatusline(): void {
 }
 
 export async function run(argv: string[]): Promise<void> {
+    // Hidden: invoked by OpenSSH as SSH_ASKPASS to auto-supply a saved connection's password
+    // (enigma ssh <alias> with a stored password). Must be first and silent - stdout is the
+    // password channel ssh reads. Reads the alias from ENIGMA_SSH_ASKPASS_ALIAS.
+    if (process.env.ENIGMA_ASKPASS === "1") {
+        const { emitAskpass } = await import("./ssh");
+        emitAskpass();
+        return;
+    }
     // Hidden: the detached gate daemon. Its detached re-exec carries
     // ENIGMA_GATE_DAEMON=1 (the compiled binary runs with no argv, dev re-runs
     // the script), so detect the marker first and hand off to the daemon. Delete

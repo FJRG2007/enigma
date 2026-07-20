@@ -270,11 +270,12 @@ test("ssh API adds a connection, builds the connect command, and refuses cross-o
     try {
         const add = await fetch(`${base}/api/ssh`, {
             method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ action: "add", alias: "server1", host: "203.0.113.10", user: "root", password: "hunter2" }),
+            body: JSON.stringify({ action: "add", alias: "server1", serverName: "web-prod", host: "203.0.113.10", user: "root", password: "hunter2" }),
         });
-        const aout = await add.json() as { ok: boolean; connections?: { alias: string; hasPassword: boolean }[] };
+        const aout = await add.json() as { ok: boolean; connections?: { alias: string; name?: string; hasPassword: boolean }[] };
         expect(aout.ok).toBe(true);
         const conn = aout.connections!.find((c) => c.alias === "server1")!;
+        expect(conn.name).toBe("web-prod"); // the second connect key round-trips
         expect(conn.hasPassword).toBe(true); // stored, never echoed back
         expect((conn as Record<string, unknown>).password).toBeUndefined();
 

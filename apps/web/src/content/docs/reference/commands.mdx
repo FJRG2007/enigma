@@ -104,8 +104,8 @@ Marketplace of optional, isolated harness packs (e.g. Helio for bug bounty). Eac
 
 Save each server once (host, user, key or encrypted password, jump host, port forwards) and reach it with a short alias. See <a href={docHref("concepts/ssh")}>SSH connections</a> for detail.
 
-<Cmd name="enigma ssh <alias> | <list|add|edit|remove|info|tunnel|forward>" ex={["enigma ssh add server1 --host 203.0.113.10 --user root -i ~/.ssh/id_ed25519", "enigma ssh server1", "enigma ssh tunnel db 9090:5432", "enigma ssh forward add db 9090:5432 pg", "enigma ssh tunnel db pg"]}>
-`enigma ssh <alias>` connects; `add`/`edit` save credentials (passwords stored encrypted, auto-filled via sshpass/plink); `tunnel <alias> <name|spec...>` opens port forwards only (`9090:db:5432`, `D:1080`, or a saved tunnel's name); `forward add <alias> SPEC [name]` saves a (nameable) tunnel; `info` shows a connection (password redacted); `remove` deletes one.
+<Cmd name="enigma ssh <alias|name> | <list|add|edit|remove|info|tunnel|forward>" ex={["enigma ssh add lirio-0 --name lirio-prod --host 192.168.1.138 --user fjrg2007 --password", "enigma ssh lirio-0", "enigma ssh tunnel db 9090:5432", "enigma ssh forward add db 9090:5432 pg", "enigma ssh tunnel pg"]}>
+`enigma ssh <alias|name>` connects (both are unique connect keys; `--name` sets the second); `add`/`edit` save credentials - a stored password is auto-filled with **no extra tools** (enigma acts as OpenSSH's SSH_ASKPASS); `tunnel <alias> <name|spec...>` opens port forwards only (`9090:db:5432`, `D:1080`, or a saved tunnel's name); `forward add <alias> SPEC [name]` saves a (nameable) tunnel; `info` shows a connection; `remove` deletes one.
 </Cmd>
 
 ## security & guard

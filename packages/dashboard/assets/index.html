@@ -854,7 +854,8 @@
         <div class="panel">
             <div class="set-cat-h"><span id="sshFormTitle">Add a connection</span></div>
             <div class="ssh-form">
-                <label>Alias<input id="sshAlias" class="linput" placeholder="server1"></label>
+                <label>Alias (short key)<input id="sshAlias" class="linput" placeholder="lirio-0"></label>
+                <label>Name (optional 2nd key)<input id="sshName" class="linput" placeholder="lirio-prod"></label>
                 <label>Host<input id="sshHost" class="linput" placeholder="1.2.3.4 or host.example.com"></label>
                 <label>User<input id="sshUser" class="linput" placeholder="root"></label>
                 <label>Port<input id="sshPort" class="linput" type="number" min="1" max="65535" placeholder="22"></label>
@@ -4115,8 +4116,9 @@ export {
                         + ' <button type="button" class="ssh-run" data-ssh-fwd-run data-cmd="' + esc(cmd) + '" title="Copy run command">&#9654;</button>'
                         + ' <button type="button" class="ssh-x" data-ssh-fwd-remove data-alias="' + esc(c.alias) + '" data-index="' + i + '" title="Remove tunnel">x</button></span>';
                 }).join(" ") || '<span class="set-hint">no saved tunnels</span>';
+                const nameTag = c.name && c.name !== c.alias ? ' <span class="tag" title="alternate connect name">' + esc(c.name) + '</span>' : '';
                 return '<div class="panel ssh-card">'
-                    + '<div class="ssh-card-head"><div><strong>' + esc(c.alias) + '</strong> <span class="tag">' + esc(c.target) + port + '</span> <span class="tag">' + sshAuthLabel(c) + '</span></div>'
+                    + '<div class="ssh-card-head"><div><strong>' + esc(c.alias) + '</strong>' + nameTag + ' <span class="tag">' + esc(c.target) + port + '</span> <span class="tag">' + sshAuthLabel(c) + '</span></div>'
                     + '<div class="ssh-actions">'
                     + '<button type="button" class="toggle on" data-ssh-connect="' + esc(c.alias) + '">Connect</button>'
                     + '<button type="button" class="toggle" data-ssh-tunnel="' + esc(c.alias) + '">Tunnel all</button>'
@@ -4124,8 +4126,9 @@ export {
                     + '<button type="button" class="btn-danger" data-ssh-remove="' + esc(c.alias) + '">Remove</button>'
                     + '</div></div>'
                     + (meta.length ? '<div class="set-hint" style="margin:6px 0">' + meta.join(" &middot; ") + '</div>' : "")
+                    + '<div class="set-cat-h" style="margin-top:12px">Port forwards / tunnels</div>'
                     + '<div class="ssh-fwds" style="margin-top:6px">' + fwds + '</div>'
-                    + '<div class="set-hint" style="margin-top:10px">Add a tunnel: a remote port mapped to a local one (local defaults to the same). Name it to run it later with <code>enigma ssh tunnel ' + esc(c.alias) + ' &lt;name&gt;</code>.</div>'
+                    + '<div class="set-hint" style="margin-top:10px">Add one: a remote port mapped to a local one (local defaults to the same). Name it to run it later with <code>enigma ssh tunnel &lt;name&gt;</code>. &#9654; copies the run command, &times; removes it.</div>'
                     + '<div class="ssh-fwd-form" style="margin-top:6px">'
                     + '<input class="linput ssh-f-name" placeholder="name (optional)">'
                     + '<input class="linput ssh-f-remote" placeholder="remote port or host:port">'
@@ -4143,7 +4146,8 @@ export {
         }
         function sshReadForm() {
             const payload = {
-                alias: $("sshAlias").value.trim(), host: $("sshHost").value.trim(),
+                alias: $("sshAlias").value.trim(), serverName: $("sshName").value.trim(),
+                host: $("sshHost").value.trim(),
                 user: $("sshUser").value.trim(), identityFile: $("sshIdentity").value.trim(),
                 proxyJump: $("sshJump").value.trim(), forwardAgent: $("sshForwardAgent").checked,
                 optionsRaw: $("sshOptions").value.trim(),
@@ -4173,6 +4177,7 @@ export {
         function sshFillForm(c) {
             sshEditing = c.alias;
             $("sshAlias").value = c.alias; $("sshAlias").disabled = true;
+            $("sshName").value = c.name || "";
             $("sshHost").value = c.host || ""; $("sshUser").value = c.user || "";
             $("sshPort").value = c.port || ""; $("sshIdentity").value = c.identityFile || "";
             $("sshJump").value = c.proxyJump || ""; $("sshOptions").value = (c.options || []).join(", ");
@@ -4184,7 +4189,7 @@ export {
         }
         function sshResetForm() {
             sshEditing = null;
-            ["sshAlias", "sshHost", "sshUser", "sshPort", "sshIdentity", "sshJump", "sshPassword", "sshOptions"].forEach((id) => { $(id).value = ""; });
+            ["sshAlias", "sshName", "sshHost", "sshUser", "sshPort", "sshIdentity", "sshJump", "sshPassword", "sshOptions"].forEach((id) => { $(id).value = ""; });
             $("sshAlias").disabled = false; $("sshForwardAgent").checked = false;
             $("sshFormTitle").textContent = "Add a connection";
             $("sshClearPwWrap").style.display = "none"; $("sshCancel").style.display = "none";

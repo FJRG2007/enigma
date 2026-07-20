@@ -1,6 +1,6 @@
 ---
 title: SSH connections
-description: Save each server's credentials once - key or password, jump host, port forwards - and reach it with a short alias from the CLI, TUI and dashboard.
+description: Save each server's credentials once - key or encrypted password (auto-filled, no extra tools), jump host, port forwards - and reach it by alias or name from the CLI, TUI and dashboard.
 group: Concepts
 order: 36
 ---
@@ -8,19 +8,27 @@ import Cmd from "../../../components/Cmd.astro";
 
 Managing several servers over SSH gets tedious fast: one needs `-i cert.pem`, another wants a password you retype every time, a third sits behind a jump host, and bringing a remote port to your machine means remembering a long `-L 9090:db:5432` line. The SSH manager lets you **save each server once under a short alias** and then reach it with `enigma ssh <alias>`.
 
-The same store powers the **CLI, the TUI hub and the dashboard**. Passwords are stored **encrypted at rest** (AES-256-GCM with a machine-local key, the same scheme enigma uses for other secrets) and auto-supplied on connect via `sshpass` (Linux/macOS) or PuTTY `plink` (Windows) when present - so you never retype them. Everything is local; nothing leaves your machine.
+The same store powers the **CLI, the TUI hub and the dashboard**. Passwords are stored **encrypted at rest** (AES-256-GCM with a machine-local key, the same scheme enigma uses for other secrets) and **auto-filled on connect with no extra tools** - so you never retype them. Everything is local; nothing leaves your machine.
 
 ## Save a connection
 
-<Cmd name="enigma ssh add <alias> [flags]" ex={["enigma ssh add server1 --host 203.0.113.10 --user root -i ~/.ssh/id_ed25519", "enigma ssh add db --host db.internal --user deploy --jump root@203.0.113.10 --password"]}>
-Flags: `--host`, `--user`/`-u`, `--port`/`-p`, `--identity`/`-i <key>`, `--jump`/`-j <host>` (ProxyJump), `--forward-agent`/`-A`, `--option`/`-o <K=V>` (repeatable), `--forward`/`-L <spec>` (a saved tunnel, repeatable), and `--password` (prompts hidden; stored encrypted). `enigma ssh edit <alias>` changes any field; `--no-password` clears a stored one.
+<Cmd name="enigma ssh add <alias> [flags]" ex={["enigma ssh add lirio-0 --name lirio-prod --host 192.168.1.138 --user fjrg2007 --password", "enigma ssh add db --host db.internal --user deploy --jump root@bastion -i ~/.ssh/id_ed25519"]}>
+Flags: `--host`, `--name`/`-n` (a second connect key, see below), `--user`/`-u`, `--port`/`-p`, `--identity`/`-i <key>`, `--jump`/`-j <host>` (ProxyJump), `--forward-agent`/`-A`, `--option`/`-o <K=V>` (repeatable), `--forward`/`-L <spec>` (a saved tunnel, repeatable), and `--password` (prompts hidden; stored encrypted). `enigma ssh edit <alias>` changes any field; `--no-password` clears a stored one, `--no-name` clears the name.
 </Cmd>
+
+## Alias and name
+
+Every connection has an **alias** (the short key you type) and an optional **name** (the real server name). Both are connect keys - `enigma ssh lirio-0` and `enigma ssh lirio-prod` reach the same box. Neither an alias nor a name may be reused by a *different* connection (both are unique), but a single connection may set its name equal to its own alias.
 
 ## Connect
 
-<Cmd name="enigma ssh <alias>" ex={["enigma ssh server1", "enigma ssh db", "enigma ssh"]}>
-Opens an interactive session - the key, port, jump host, options and any saved forwards are applied for you. With no alias it lists your saved connections. Anything after `--` is passed straight to `ssh` (e.g. `enigma ssh server1 -- uptime`).
+<Cmd name="enigma ssh <alias|name>" ex={["enigma ssh lirio-0", "enigma ssh lirio-prod", "enigma ssh"]}>
+Opens an interactive session - the key, port, jump host, options and any saved forwards are applied for you. With no argument it lists your saved connections. Anything after `--` is passed straight to `ssh` (e.g. `enigma ssh lirio-0 -- uptime`).
 </Cmd>
+
+## Password auto-fill (no extra tools)
+
+When a connection has a stored password, enigma supplies it to OpenSSH automatically - **no `sshpass`, no PuTTY, nothing to install**. It works by acting as OpenSSH's own `SSH_ASKPASS` helper (`SSH_ASKPASS_REQUIRE=force`), decrypting the password in-memory only when ssh asks for it; the password never touches the command line or a file on disk. Requires OpenSSH 8.4+ (shipped with current Windows, macOS and Linux). First-connect host keys are accepted automatically (`accept-new`). If `sshpass`/`plink` happen to be installed, enigma uses them instead; either way you never retype the password.
 
 ## Tunnel a port
 
@@ -48,18 +56,9 @@ Give a saved tunnel a name and you can bring it up on its own later - handy when
 Save "remote 5432 -> local 9090" on server `db` as `pg`, then open just that tunnel any time with `enigma ssh tunnel pg`. The name is scoped to the server, so if two servers both have a `pg` tunnel you disambiguate with `enigma ssh tunnel db pg`; otherwise the bare name is enough. Saved tunnels also show a copy-the-command button in the dashboard.
 </Cmd>
 
-## Password auto-fill
-
-To auto-fill a stored password you need a helper on your PATH:
-
-- **Linux/macOS**: `sshpass` (the password is passed via the `SSHPASS` env, never on the command line).
-- **Windows**: PuTTY's `plink`.
-
-Without either, enigma still connects - `ssh` simply prompts for the password as usual. Key-based logins never need a helper. Where possible, prefer a key: it is the most secure and always passwordless.
-
 ## From the TUI and dashboard
 
-The **SSH** entry in the TUI hub lists your connections - `enter` connects, `t` opens the saved tunnels, `d` removes one. The dashboard's **SSH** tab manages connections and forwards fully (add, edit, remove); because a browser cannot open a shell, its **Connect** and **Tunnel** buttons copy the `enigma ssh ...` command for you to paste into a terminal.
+The **SSH** entry in the TUI hub lists your connections - `enter` connects, `e` edits, `t` opens the saved tunnels, `d` removes one. The dashboard's **SSH** tab manages connections (alias, name, credentials) and, under each connection, a **Port forwards / tunnels** section to add, remove and copy the run command for each tunnel. Because a browser cannot open a shell, its **Connect** and **Tunnel** buttons copy the `enigma ssh ...` command for you to paste into a terminal.
 
 ## Where it is stored
 
