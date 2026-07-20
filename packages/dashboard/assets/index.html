@@ -4158,7 +4158,7 @@ export {
             if (!body) return;
             if (!sshTunnels.length) { body.innerHTML = '<div class="empty" style="padding:12px 0">No tunnels yet. Add one below.</div>'; return; }
             const rows = sshTunnels.map((t) => {
-                const dot = '<span class="dot ' + (t.active ? 'live' : 'stale') + '" title="' + (t.active ? 'active' : 'stopped') + '"></span>';
+                const dot = '<span class="dot' + (t.active ? '' : ' stale') + '" title="' + (t.active ? 'active' : 'stopped') + '"></span>';
                 const server = t.missing ? '<span class="tag" style="color:var(--bad)" title="bound server missing">' + esc(t.server) + ' !</span>' : '<span class="tag">' + esc(t.server) + '</span>';
                 const toggle = t.active
                     ? '<button type="button" class="btn-danger" data-tun-stop="' + esc(t.name) + '">Stop</button>'

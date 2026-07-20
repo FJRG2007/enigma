@@ -1197,18 +1197,18 @@ export function stopDashboardDaemon(): void {
  */
 export function restartDashboardDaemon(): boolean {
     if (!runningDaemon()) return false;
-    const launcher = resolveBin("enigma");
-    if (!launcher) return false;
     stopDashboardDaemon();
     try {
-        // On Windows the launcher is enigma.cmd (not an .exe), which CreateProcess cannot run
-        // directly - route it through the shell as a quoted command line (spaces-safe), the same
-        // way accounts.ts spawns non-.exe launchers.
-        const useShell = process.platform === "win32" && !launcher.toLowerCase().endsWith(".exe");
-        const opts = { detached: true, stdio: "ignore", windowsHide: true } as const;
-        const child = useShell
-            ? spawn(`"${launcher}" __dashboard-serve`, { ...opts, shell: true })
-            : spawn(launcher, ["__dashboard-serve"], opts);
+        // Respawn the SAME way spawnDashboardDaemon does - process.execPath, no shell - which is
+        // windowless on Windows (a .exe with windowsHide). Using the enigma.cmd launcher + shell:true
+        // popped a visible Node/cmd console on every `enigma update`. This still picks up the new
+        // version: `enigma update` parks the old binary and npm installs the new one at execPath's
+        // path, so process.execPath now resolves to the updated binary. Dev (node/bun) re-runs argv[1].
+        const exe = basename(process.execPath).toLowerCase();
+        const args = (exe === "node" || exe === "node.exe" || exe === "bun" || exe === "bun.exe")
+            ? [process.argv[1]!, "__dashboard-serve"]
+            : ["__dashboard-serve"];
+        const child = spawn(process.execPath, args, { detached: true, stdio: "ignore", windowsHide: true });
         child.on("error", () => { /* the daemon just won't come back until the next open */ });
         child.unref();
         return true;
