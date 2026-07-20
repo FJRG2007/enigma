@@ -1235,9 +1235,14 @@ export async function serveDashboardDaemon(version: string): Promise<void> {
     }
     clearDaemonError();
     writeDaemon({ pid: process.pid, port: server.port, url: server.url, startedAt: Date.now() });
-    const shutdown = (): void => { clearDaemon(); server.close(); process.exit(0); };
-    process.on("SIGTERM", shutdown);
-    process.on("SIGINT", shutdown);
+    // Block until a shutdown signal. Without this the function would return, run() would resolve,
+    // and the bin entry's process.exit() would kill the daemon the instant after it bound its port
+    // (the pidfile is written but nothing ever answers). The MCP server stays alive the same way.
+    await new Promise<void>((resolve) => {
+        const shutdown = (): void => { clearDaemon(); server.close(); resolve(); };
+        process.on("SIGTERM", shutdown);
+        process.on("SIGINT", shutdown);
+    });
 }
 
 // --- mode side effects ----------------------------------------------------------
