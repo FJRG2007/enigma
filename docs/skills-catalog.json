@@ -1,6 +1,6 @@
 {
   "generator": "enigma seal",
-  "cliVersion": "1.30.6",
+  "cliVersion": "1.30.7",
   "count": 19,
   "skills": [
     {
@@ -88,7 +88,7 @@
       "version": "1.9.0",
       "description": "Frontend architecture: reusable components, abstraction thresholds, state management, no-op save detection, large-list rendering (infinite scroll/pagination, virtualization, skeletons, progressive loading), and optimistic UI with rollback.",
       "provider": "FJRG2007/enigma",
-      "updated": "2026-07-22T00:23:06+02:00",
+      "updated": "2026-07-22T01:41:06+02:00",
       "sha": "c5e0b4ac972e6448331bc56f7fc0069f3f57c3515ea719d0be46addfc8dbb064"
     },
     {
@@ -136,7 +136,7 @@
       "version": "1.2.0",
       "description": "Concise, realistic technical copy - UI microcopy, descriptions, hints, empty/error states, and README/doc prose that informs without over-explaining or restating the obvious.",
       "provider": "FJRG2007/enigma",
-      "updated": "2026-06-26T14:09:06+02:00",
+      "updated": "2026-07-22T01:41:06+02:00",
       "sha": "a8c008fac91782de0d4ef1a4ae6ee77d69e3c0a506ea06b649aa86a6c988bc4f"
     },
     {
@@ -152,7 +152,7 @@
       "version": "1.3.0",
       "description": "Strict frontend + backend schema validation, schema consistency, and safe client-facing error handling.",
       "provider": "FJRG2007/enigma",
-      "updated": "2026-07-22T00:23:06+02:00",
+      "updated": "2026-07-22T01:41:06+02:00",
       "sha": "d937df0052d1ec151728a28f6567744d9e7ca0a65d84b4d5c9a697f1e40d704f"
     }
   ]
