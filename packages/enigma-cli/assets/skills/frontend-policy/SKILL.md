@@ -97,6 +97,16 @@ Decide per case which mode fits; when in doubt for simple single-user forms and 
 
 ---
 
+## Real-Time Uniqueness Against Loaded Data
+
+When the user edits a value that must be unique within a set the client already holds in memory (the list of names, slugs, tags, emails it just rendered), validate uniqueness against that loaded data on every change instead of waiting for a server round-trip to report "already taken". The set is already loaded - reuse it (per Client-Side Caching): the user gets instant inline feedback as they type, and a redundant request (and its downstream DB query) is skipped. This is a default to apply without being asked, not a feature to wait for the user to request.
+
+- Apply whenever duplicates are disallowed (unique names, slugs, one-per-parent constraints, "already in use", reserved values). Skip it when repeats are legitimate - never gate a value the model has no basis to treat as unique.
+- Check on every change/blur and block submission while a conflict stands; surface the conflict inline, not only on submit.
+- The cross-record rule itself - mirror the server's exact check (trim, case-fold, scope, reserved values), exclude the edited record's own value, and keep the server as the authority since client data can be stale - is owned by validation-policy. This client check is a UX and request-saving accelerator, never the sole validation layer.
+
+---
+
 ## Client-Side Caching (Reduce Server Load)
 
 Cache on the client to avoid redundant server round-trips and to keep the app usable under rate limits. The goal is to reach the backend (and therefore Redis/DB) as rarely as correctness allows.
@@ -165,6 +175,16 @@ Never render an unbounded or large dataset in one shot (no fetch-everything then
 - Reconcile optimistic state with the server response; never leave the UI in a divergent state.
 - Keep the optimistic update and any client cache consistent with each other.
 - Surface failures to the user clearly without exposing internal error details (see validation-policy).
+
+---
+
+## Dates & Timestamps
+
+Render dates and timestamps as localized, auto-updating values. Do not hand-roll formatting (`new Date().toLocaleString`, ad-hoc "X ago" math) scattered across components, and do not pull in a heavy date library just to display a time.
+
+- On the web, use the `<relative-time>` element (`@github/relative-time-element`, MIT, dependency-light): `<relative-time datetime="<ISO-8601>">fallback text</relative-time>`. It renders relative phrasing that updates itself ("3 minutes ago" -> "4 minutes ago"), localizes to the user's timezone and locale via `Intl`, is accessible, and works server-rendered with a graceful no-JS fallback (the slotted text is what the server caches). Switch relative vs. absolute with `format`, `tense`, `precision`, and `threshold`, and style it through `::part(root)`.
+- Keep the raw ISO-8601 / UTC value in data and state; localize only at the render boundary. Never store or compare pre-formatted date strings.
+- Where a custom element is not available (React Native, non-web surfaces), centralize formatting in one shared helper built on the platform `Intl` APIs rather than repeating format calls, and keep the same "store UTC, localize at render" rule.
 
 ---
 

@@ -85,11 +85,11 @@
     },
     {
       "name": "frontend-policy",
-      "version": "1.4.0",
+      "version": "1.6.0",
       "description": "Frontend architecture: reusable components, abstraction thresholds, state management, no-op save detection, large-list rendering (infinite scroll/pagination, virtualization, skeletons, progressive loading), and optimistic UI with rollback.",
       "provider": "FJRG2007/enigma",
       "updated": "2026-06-26T13:57:02+02:00",
-      "sha": "41cb938c9022efcdadc3056417cc7d442511adee40b09a141f11bb5fd9d56514"
+      "sha": "aac4a6fa8ef875ce968ef35613361c78d1935972bf224770ca286998f8f053e5"
     },
     {
       "name": "git-policy",
@@ -128,7 +128,7 @@
       "version": "1.2.0",
       "description": "Exhaustive completion discipline for long/multi-item tasks - inventory, coverage ledger, verified done.",
       "provider": "FJRG2007/enigma",
-      "updated": "2026-06-10T22:11:09+02:00",
+      "updated": "2026-07-21T20:25:56+02:00",
       "sha": "feaf44a9b3ab9676c8ebd3c2a799f156d28419998f5a5355250fe95a28cd5a01"
     },
     {
@@ -149,11 +149,11 @@
     },
     {
       "name": "validation-policy",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "description": "Strict frontend + backend schema validation, schema consistency, and safe client-facing error handling.",
       "provider": "FJRG2007/enigma",
       "updated": "2026-06-25T18:21:50-04:00",
-      "sha": "50349f5b3c55cc337f828dd510c163550614832acb28714871210a7c115a1501"
+      "sha": "24cda38efc700bed1fcdaca006834b8df6daf75ac5a8b75b00f68728471a26e1"
     }
   ]
 }
