@@ -1,6 +1,6 @@
 {
   "generator": "enigma seal",
-  "cliVersion": "1.30.5",
+  "cliVersion": "1.30.6",
   "count": 19,
   "skills": [
     {
@@ -88,7 +88,7 @@
       "version": "1.6.0",
       "description": "Frontend architecture: reusable components, abstraction thresholds, state management, no-op save detection, large-list rendering (infinite scroll/pagination, virtualization, skeletons, progressive loading), and optimistic UI with rollback.",
       "provider": "FJRG2007/enigma",
-      "updated": "2026-06-26T13:57:02+02:00",
+      "updated": "2026-07-22T00:21:54+02:00",
       "sha": "aac4a6fa8ef875ce968ef35613361c78d1935972bf224770ca286998f8f053e5"
     },
     {
@@ -152,7 +152,7 @@
       "version": "1.2.0",
       "description": "Strict frontend + backend schema validation, schema consistency, and safe client-facing error handling.",
       "provider": "FJRG2007/enigma",
-      "updated": "2026-06-25T18:21:50-04:00",
+      "updated": "2026-07-22T00:21:54+02:00",
       "sha": "24cda38efc700bed1fcdaca006834b8df6daf75ac5a8b75b00f68728471a26e1"
     }
   ]
