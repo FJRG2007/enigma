@@ -1,6 +1,6 @@
 {
   "name": "enigma-cli",
-  "version": "1.30.4",
+  "version": "1.30.5",
   "description": "Everything you need to work with a coding agent: install shared policy skills for Claude Code, OpenAI Codex and opencode, and set up portable git security hooks.",
   "type": "module",
   "bin": {
@@ -17,7 +17,8 @@
     "seal": "tsx src/bin/enigma.ts seal",
     "check": "tsx src/bin/enigma.ts check",
     "guard": "tsx src/guard.ts --all",
-    "verify": "npm run typecheck && npm run check && npm run guard",
+    "guardrails": "tsx src/guardrails.ts --all",
+    "verify": "npm run typecheck && npm run check && npm run guard && npm run guardrails",
     "prepublishOnly": "npm run verify && npm run build",
     "postinstall": "node bin/postinstall.mjs"
   },

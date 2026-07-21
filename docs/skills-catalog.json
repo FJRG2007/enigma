@@ -1,6 +1,6 @@
 {
   "generator": "enigma seal",
-  "cliVersion": "1.30.4",
+  "cliVersion": "1.30.5",
   "count": 19,
   "skills": [
     {
@@ -125,11 +125,11 @@
     },
     {
       "name": "task-completion-policy",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "description": "Exhaustive completion discipline for long/multi-item tasks - inventory, coverage ledger, verified done.",
       "provider": "FJRG2007/enigma",
       "updated": "2026-06-10T22:11:09+02:00",
-      "sha": "6e3facba307eb2b55cefbab2e4b2a346a2b82f93c3ef47e11ebeb78c3c9453a8"
+      "sha": "feaf44a9b3ab9676c8ebd3c2a799f156d28419998f5a5355250fe95a28cd5a01"
     },
     {
       "name": "technical-writing-policy",
