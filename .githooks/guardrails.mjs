@@ -1,0 +1,305 @@
+#!/usr/bin/env node
+
+// src/guardrails.ts
+import { homedir } from "os";
+import { fileURLToPath } from "url";
+import { execFileSync } from "child_process";
+import { readFileSync, statSync, existsSync } from "fs";
+import { dirname, join, resolve } from "path";
+var COMMENT_LINE = /^\s*(\/\/|#|\*|--|<!--|\{?\/\*)/;
+var BUILTIN_RULES = [
+  {
+    id: "db-uuid-pk",
+    label: "UUID primary keys",
+    // Basename globs (no slash) match at any depth, including the repo root; the dir
+    // globs additionally catch non-standard extensions under those folders.
+    files: ["*.prisma", "*.sql", "*.entity.ts", "**/migrations/**", "**/entities/**", "**/models/**"],
+    scope: "file",
+    // Matches only explicit auto-increment identity signals across engines/ORMs.
+    // Deliberately does NOT match a plain `INTEGER PRIMARY KEY` (valid in many cases,
+    // and used on purpose by enigma's own recall SQLite store).
+    pattern: `\\b(?:BIG|SMALL)?SERIAL\\b|\\bAUTO_INCREMENT\\b|\\bIDENTITY\\s*\\(|\\bGENERATED\\s+(?:ALWAYS|BY\\s+DEFAULT)\\s+AS\\s+IDENTITY\\b|@default\\(autoincrement\\(\\)\\)|@PrimaryGeneratedColumn\\(\\s*(?:\\)|["']increment["'])`,
+    flags: "i",
+    message: "Use UUID primary keys, never auto-increment / SERIAL / IDENTITY / AUTO_INCREMENT (database-expert). Generate a UUID (prefer UUIDv7 or ULID) at the application layer or via a database uuid default.",
+    severity: "block",
+    skill: "database-expert"
+  },
+  {
+    id: "db-ts-orm-prisma",
+    label: "Prisma as the default ORM (TypeScript)",
+    files: ["package.json", "*.sql", "schema.ts", "ormconfig.*", "data-source.ts", "knexfile.*", "drizzle.config.*"],
+    scope: "project",
+    check: "ts-relational-no-prisma",
+    message: "This is a TypeScript project on a relational datastore without Prisma. Prefer Prisma as the default ORM for new TypeScript work (database-expert).",
+    severity: "warn",
+    skill: "database-expert"
+  },
+  {
+    id: "be-validate-input-ts",
+    label: "Validate request input (TypeScript)",
+    files: ["*.ts", "*.js", "*.mts", "*.cts"],
+    excludeFiles: ["*.test.*", "*.spec.*", "**/tests/**", "**/__tests__/**"],
+    scope: "file",
+    // Fires only on ASSIGNING the request BODY to a variable (where validation belongs) with
+    // no schema-validation signal in the file. Deliberately NOT req.query/req.params (single
+    // scalars, usually validated inline) and NOT a body passed as a bare arg (e.g. to a logger)
+    // - real-world scanning showed those are the false-positive sources. The absent set is BROAD
+    // (every common validator) so any validated file is skipped: precision over recall.
+    pattern: "=\\s*req\\.body\\b|=\\s*(await\\s+)?request\\.json\\(\\)|=\\s*ctx\\.request\\.body\\b|=\\s*await\\s+c\\.req\\.json\\(",
+    absent: "z\\.|\\.parse\\(|\\.safeParse\\(|\\.validate\\(|\\.assert\\(|valibot|\\byup\\b|\\bjoi\\b|\\bJoi\\b|\\bajv\\b|superstruct|typebox|@sinclair|arktype|io-ts|runtypes|@Body\\(|class-validator|express-validator|zodResolver|Type\\.Object|checkSchema|celebrate",
+    message: "Reads request input without validating it. Parse every input through a schema (Zod, or valibot/yup/...) - never trust an unvalidated shape. For a tagged/event union, validate the discriminant AND that variant's body (validation-policy, backend-policy).",
+    severity: "warn",
+    skill: "validation-policy"
+  },
+  {
+    id: "be-validate-input-py",
+    label: "Validate request input (Python)",
+    files: ["*.py"],
+    excludeFiles: ["test_*.py", "*_test.py", "conftest.py", "**/tests/**"],
+    scope: "file",
+    // Assigns the request body to a variable with no schema-validation signal. request.data is
+    // intentionally omitted (raw-bytes reads - webhook HMAC, proxying - are not schema surfaces).
+    // The absent set is broad to skip any validated file (Pydantic, marshmallow, Django forms, ...).
+    pattern: "=\\s*request\\.get_json\\(|=\\s*(await\\s+)?request\\.json\\b|=\\s*request\\.form\\b|=\\s*request\\.POST\\b",
+    absent: "BaseModel|pydantic|marshmallow|serializers|TypeAdapter|field_validator|@validator|model_validate|is_valid\\(|forms\\.|ModelForm|cerberus|voluptuous|jsonschema|@dataclass|\\.load\\(|Schema\\(",
+    message: "Reads the raw request body without a schema. Validate with Pydantic (BaseModel / model_validate) - or the stack's validator - and discriminate the payload by its type/event (validation-policy, backend-policy).",
+    severity: "warn",
+    skill: "validation-policy"
+  },
+  // NOTE: no Go/Rust input-validation rule. Go's manual validation (`if in.X == ""`) is
+  // idiomatic and has no detectable signature, and Rust's serde typed deserialization already
+  // enforces shape - a rule for either would false-positive. The generic "validate every input"
+  // principle for those languages lives in the always-on memory kernel instead.
+  {
+    id: "fe-password-input",
+    label: "Reusable password input (show/hide)",
+    files: ["*.tsx", "*.jsx"],
+    scope: "file",
+    // A raw lowercase <input type="password"> (not a component) with no show/hide toggle in the
+    // file. flags:"" = case-sensitive so a capitalized <Input> component is NOT matched; a
+    // literal type="password" only, so a dynamic type={visible?...} toggle is not matched either.
+    pattern: `<input\\b[^>]*type=["']password["']`,
+    flags: "",
+    absent: "showPassword|setShowPassword|togglePassword|revealPassword|passwordVisible|isPasswordVisible|showPw|hidePassword",
+    message: 'Raw <input type="password">: use the shared reusable Input component (which renders a show/hide toggle for passwords) instead of a bare input, or add the toggle (frontend-policy).',
+    severity: "warn",
+    skill: "frontend-policy"
+  },
+  {
+    id: "fe-no-native-dialog",
+    label: "No native browser dialogs",
+    files: ["*.tsx", "*.jsx", "*.ts", "*.js", "*.mts", "*.cts", "*.vue", "*.svelte", "*.astro"],
+    excludeFiles: ["*.test.*", "*.spec.*", "**/tests/**", "**/__tests__/**"],
+    scope: "file",
+    // window.(alert|confirm|prompt)( is unambiguously the native dialog (window is browser-only,
+    // so no false positive in a Node file). Bare alert/confirm/prompt is matched ONLY with a
+    // string-literal arg - native dialogs take a string, while CLI libs (clack/inquirer) and
+    // custom design-system dialogs take a {config} object, and an AI `prompt` value is a string
+    // that is passed, not called with a string literal. flags:"" is case-sensitive so a
+    // capitalized custom <Alert>/Confirm() is not matched; (?<![.\w]) excludes method calls.
+    pattern: `\\bwindow\\.(alert|confirm|prompt)\\s*\\(|(?<![.\\w])(alert|confirm|prompt)\\s*\\(\\s*["']`,
+    flags: "",
+    message: "Native browser dialog (alert/confirm/prompt) - use a dialog/modal component that matches the page design instead of the browser's built-in (frontend-policy).",
+    severity: "warn",
+    skill: "frontend-policy"
+  }
+];
+var PROJECT_CHECKS = {
+  "ts-relational-no-prisma": (root) => {
+    const pkg = readPkgDeps(root);
+    if (!pkg) return false;
+    const hasTs = "typescript" in pkg || existsSync(join(root, "tsconfig.json"));
+    if (!hasTs) return false;
+    const relational = ["typeorm", "sequelize", "knex", "drizzle-orm", "pg", "mysql", "mysql2", "better-sqlite3", "@mikro-orm/core"];
+    if (!relational.some((d) => d in pkg)) return false;
+    return !("prisma" in pkg || "@prisma/client" in pkg);
+  }
+};
+function readPkgDeps(root) {
+  try {
+    const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+    return { ...pkg.dependencies, ...pkg.devDependencies, ...pkg.optionalDependencies, ...pkg.peerDependencies };
+  } catch {
+    return null;
+  }
+}
+function globToRegExp(glob) {
+  const esc = glob.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+  const body = esc.replace(/\*\*/g, " ").replace(/\*/g, "[^/]*").replace(/ /g, ".*").replace(/\?/g, "[^/]");
+  return new RegExp(glob.includes("/") ? `^${body}$` : `(^|/)${body}$`);
+}
+function guardrailsConfigPath() {
+  return process.env.ENIGMA_GUARDRAILS_CONFIG || join(homedir(), ".enigma-guardrails.json");
+}
+function isValidRule(r) {
+  const x = r;
+  if (!x || typeof x.id !== "string" || !Array.isArray(x.files) || typeof x.message !== "string") return false;
+  if (x.severity !== "block" && x.severity !== "warn") return false;
+  if (x.scope === "file") return typeof x.pattern === "string";
+  if (x.scope === "project") return typeof x.check === "string";
+  return false;
+}
+function loadRules() {
+  let disabled = [];
+  let custom = [];
+  try {
+    const raw = JSON.parse(readFileSync(guardrailsConfigPath(), "utf8"));
+    if (Array.isArray(raw.disabled)) disabled = raw.disabled.filter((s) => typeof s === "string");
+    if (Array.isArray(raw.rules)) custom = raw.rules.filter(isValidRule);
+  } catch {
+  }
+  const off = new Set(disabled);
+  return [...BUILTIN_RULES.filter((r) => !off.has(r.id)), ...custom];
+}
+function findProjectRoot(file) {
+  let dir = dirname(resolve(file));
+  for (let i = 0; i < 40; i++) {
+    const isProj = existsSync(join(dir, "package.json")) || existsSync(join(dir, ".enigma.json"));
+    let hasGit = false;
+    try {
+      hasGit = statSync(join(dir, ".git")).isDirectory();
+    } catch {
+    }
+    if (isProj || hasGit) return dir;
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return null;
+}
+function checkFile(file, content, projectRoot) {
+  const norm = file.replace(/\\/g, "/");
+  const out = [];
+  for (const rule of loadRules()) {
+    if (!rule.files.some((g) => globToRegExp(g).test(norm))) continue;
+    if (rule.excludeFiles?.some((g) => globToRegExp(g).test(norm))) continue;
+    const base = { ruleId: rule.id, severity: rule.severity, file: norm, message: rule.message, skill: rule.skill };
+    if (rule.scope === "file" && rule.pattern) {
+      if (rule.absent) {
+        try {
+          if (new RegExp(rule.absent, "i").test(content)) continue;
+        } catch {
+        }
+      }
+      let re;
+      try {
+        re = new RegExp(rule.pattern, (rule.flags ?? "i").replace(/g/g, ""));
+      } catch {
+        continue;
+      }
+      const lines = content.split("\n");
+      for (let i = 0; i < lines.length; i++) {
+        if (COMMENT_LINE.test(lines[i])) continue;
+        if (re.test(lines[i])) out.push({ ...base, line: i + 1 });
+      }
+    } else if (rule.scope === "project" && rule.check && projectRoot) {
+      const check = PROJECT_CHECKS[rule.check];
+      if (check && check(projectRoot)) out.push({ ...base });
+    }
+  }
+  return out;
+}
+function formatFindings(findings) {
+  return findings.map((f) => {
+    const tag = f.severity === "block" ? "MUST FIX" : "SUGGESTED";
+    const loc = f.line ? `:${f.line}` : "";
+    const skill = f.skill ? ` [${f.skill}]` : "";
+    return `${tag} ${f.file}${loc} (${f.ruleId})${skill}: ${f.message}`;
+  }).join("\n");
+}
+function checkPath(file) {
+  let content;
+  try {
+    content = readFileSync(file, "utf8");
+  } catch {
+    return [];
+  }
+  if (content.includes("\0")) return [];
+  return checkFile(file, content, findProjectRoot(file));
+}
+function runGuardrailsHook(payload) {
+  let file;
+  try {
+    file = JSON.parse(payload ?? readFileSync(0, "utf8"))?.tool_input?.file_path;
+  } catch {
+  }
+  if (!file || typeof file !== "string") return 0;
+  const findings = checkPath(file);
+  if (!findings.length) return 0;
+  const warns = findings.filter((f) => f.severity === "warn");
+  const blocks = findings.filter((f) => f.severity === "block");
+  if (warns.length) process.stdout.write(`enigma guardrails (suggestions)
+${formatFindings(warns)}
+`);
+  if (blocks.length) {
+    process.stderr.write(`enigma guardrails
+${formatFindings(blocks)}
+Fix the above before continuing.
+`);
+    return 2;
+  }
+  return 0;
+}
+function gitFiles(all) {
+  const out = execFileSync("git", all ? ["ls-files"] : ["diff", "--cached", "--name-only", "--diff-filter=ACM"], { encoding: "utf8" });
+  return out.split("\n").map((s) => s.trim()).filter(Boolean);
+}
+function runGuardrailsScan(all) {
+  let files;
+  try {
+    files = gitFiles(all);
+  } catch {
+    return { ok: true, blocks: [], warns: [], count: 0, notRepo: true };
+  }
+  const root = process.cwd();
+  const blocks = [];
+  const warns = [];
+  for (const file of files) {
+    let content;
+    try {
+      content = readFileSync(file, "utf8");
+    } catch {
+      continue;
+    }
+    if (content.includes("\0")) continue;
+    for (const f of checkFile(file, content, root)) (f.severity === "block" ? blocks : warns).push(f);
+  }
+  return { ok: blocks.length === 0, blocks, warns, count: files.length };
+}
+function runGuardrailsScanCli(all) {
+  const r = runGuardrailsScan(all);
+  if (r.notRepo) {
+    console.error("enigma-guardrails: not a git repository; nothing to check.");
+    return 0;
+  }
+  if (r.warns.length) {
+    console.error(`enigma-guardrails: ${r.warns.length} suggestion(s):`);
+    for (const w of r.warns) console.error(`  ! ${formatFindings([w])}`);
+  }
+  if (r.blocks.length) {
+    console.error(`
+enigma-guardrails: BLOCKED - ${r.blocks.length} convention violation(s):`);
+    for (const b of r.blocks) console.error(`  x ${formatFindings([b])}`);
+    console.error("\nTo bypass intentionally for one commit: git commit --no-verify");
+    return 1;
+  }
+  console.log(`enigma-guardrails: ${r.count} ${all ? "tracked" : "staged"} file(s) checked, no blocking violations.`);
+  return 0;
+}
+var grEntry = process.argv[1] ?? "";
+var isGrEntry = /(^|[\\/])guardrails\.[mc]?[jt]s$/.test(grEntry);
+if (isGrEntry && fileURLToPath(import.meta.url) === grEntry) {
+  process.exit(runGuardrailsScanCli(process.argv.includes("--all")));
+}
+export {
+  BUILTIN_RULES,
+  PROJECT_CHECKS,
+  checkFile,
+  checkPath,
+  findProjectRoot,
+  formatFindings,
+  loadRules,
+  runGuardrailsHook,
+  runGuardrailsScan,
+  runGuardrailsScanCli
+};

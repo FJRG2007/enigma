@@ -18,6 +18,7 @@ import { execFileSync } from "node:child_process";
 import type { SecurityOptions } from "./security";
 import { dirname, join, resolve } from "node:path";
 import { applyLintWiring, mirrorLintWiring } from "./lint";
+import { applyGuardrailsWiring, mirrorGuardrailsWiring } from "./guardrails-deploy";
 import type { RemoteRefreshResult } from "./skills-remote";
 import { setGhTelemetry, starRepoInBackground } from "./github";
 import type { Agent, AgentTarget, DiscoveredAgent } from "./agents";
@@ -1042,6 +1043,10 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
     // install runs in the background. Skipped on a dry run (writes nothing).
     const applyLintConfig = (): void => { if (!opts.dryRun) applyLintWiring(); };
 
+    // Convention guardrails: re-assert the post-edit hook wiring to match the toggle
+    // (default on). Same side-effect shape as the lint hook; skipped on a dry run.
+    const applyGuardrailsConfig = (): void => { if (!opts.dryRun) applyGuardrailsWiring(); };
+
     // Context-compression MCP: register enigma's MCP server in each chosen agent's
     // config when `compress` is on, remove it when off (mirror presence/absence).
     // Same side-effect shape as the bypass/claude/gh/lint hooks; skipped on dry run.
@@ -1178,6 +1183,7 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
         applyGhConfig();
         applyBypassConfig();
         applyLintConfig();
+        applyGuardrailsConfig();
         applyMcpConfig();
         await maybeOfferGitHooks(interactive, opts);
         reporter.success(`Everything up-to-date - ${nSkip} item(s) unchanged${nKept ? `, ${nKept} kept modified` : ""} (${scope}).`);
@@ -1245,6 +1251,7 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
     applyGhConfig();
     applyBypassConfig();
     applyLintConfig();
+    applyGuardrailsConfig();
     applyMcpConfig();
     await maybeOfferGitHooks(interactive, opts);
     reporter.success(`${nInstall} installed, ${nUpdate} updated/overwritten` +
@@ -1464,6 +1471,7 @@ export function syncAccount(toolName: string, dir: string): string[] {
     const changed = syncTarget(target, inspectMemory(agent), currentSkillSet(toolName), bundledCommands(), true);
     mirrorAccountSettings(toolName, dir);
     mirrorLintWiring(toolName, dir);
+    mirrorGuardrailsWiring(toolName, dir);
     const mcpChanged = applyMcpForAccount(toolName, dir);
     const total = changed + (mcpChanged ? 1 : 0);
     return total ? [`${agent.label}: ${total} item(s) updated (account)`] : [];

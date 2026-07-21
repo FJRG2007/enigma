@@ -24,6 +24,8 @@ import { dirname, join, resolve } from "node:path";
 import { setupGitHooks, GUARD_PROTECTIONS } from "./security";
 import { ensureLaunchable, toolPathStatuses } from "./tool-path";
 import { compress, retrieve, readStats, clearCcr } from "./compress";
+import { BUILTIN_RULES, checkPath, formatFindings } from "./guardrails";
+import { readGuardrailsConfig, disableRule, enableRule, removeRule } from "./guardrails-config";
 import type { HubAccount, HubExitAction, HubProfile, HubSkill } from "./tui/types";
 import { ensureLinterInstalled, isLinterInstalled, refreshLinterPkg } from "./lint";
 import { checkLatestNow, getAvailableUpdate, notifyUpdate, performUpdateCheck, runUpdate } from "./update";
@@ -57,7 +59,7 @@ const PKG = readJson<{ version?: string }>(join(__dirname, "..", "package.json")
 // Fixed commands plus one launch command per supported tool (e.g. `enigma claude`).
 const COMMANDS = new Set<string>([
     "install", "update", "security", "guard", "seal", "check", "config", "account", "accounts",
-    "profile", "profiles", "skill", "skills", "issue", "improve", "compress", "mcp", "api", "gate", "dashboard", "dash", "fix-path", "resources", "recall", "codegraph", "autoskills", "statusline", "help", "version",
+    "profile", "profiles", "skill", "skills", "issue", "improve", "compress", "guardrails", "mcp", "api", "gate", "dashboard", "dash", "fix-path", "resources", "recall", "codegraph", "autoskills", "statusline", "help", "version",
     "pack", "packs", "ssh",
     ...TOOL_NAMES,
     ...PACKS.map((p) => p.id),
@@ -232,6 +234,10 @@ Commands:
                        reads a file or stdin. --retrieve <hash> restores an original,
                        --stats shows cumulative savings, --clear wipes all dashboard
                        data (stats/history/cache), --type forces the content type
+  guardrails [cmd]     Convention rules enforced by a post-edit hook (e.g. UUID keys,
+                       Prisma as default ORM). No arg lists rules; check <file> runs them;
+                       disable/enable <id> toggles a built-in; remove <id> drops a custom
+                       rule. Toggle the feature with 'config guardrails on|off'
   mcp                  Run the context-compression MCP server over stdio (tools:
                        enigma_compress, enigma_retrieve, enigma_stats). Usually launched
                        by an agent, not by hand; enable deployment with 'config compress on'
@@ -1443,6 +1449,50 @@ function runCompressCli(opts: CliOptions): number {
 }
 
 /**
+ * `enigma guardrails` surface: inspect and manage the convention rules the post-edit hook
+ * enforces. No subcommand lists rules; `check <file>` runs them against a file; `disable`/
+ * `enable <id>` toggles a built-in; `remove <id>` deletes a custom rule. Custom rules are
+ * authored in ~/.enigma-guardrails.json. Returns an exit code.
+ */
+function runGuardrailsCli(positionals: string[]): number {
+    const [sub, arg] = positionals;
+    if (sub === "check") {
+        if (!arg) { console.error("Usage: enigma guardrails check <file>"); return 1; }
+        const findings = checkPath(arg);
+        if (!findings.length) { console.log(`No guardrail violations in ${arg}.`); return 0; }
+        console.log(formatFindings(findings));
+        return findings.some((f) => f.severity === "block") ? 1 : 0;
+    }
+    if (sub === "disable") {
+        if (!arg) { console.error("Usage: enigma guardrails disable <rule-id>"); return 1; }
+        disableRule(arg); console.log(`Disabled rule '${arg}'.`); return 0;
+    }
+    if (sub === "enable") {
+        if (!arg) { console.error("Usage: enigma guardrails enable <rule-id>"); return 1; }
+        enableRule(arg); console.log(`Enabled rule '${arg}'.`); return 0;
+    }
+    if (sub === "remove") {
+        if (!arg) { console.error("Usage: enigma guardrails remove <rule-id>"); return 1; }
+        removeRule(arg); console.log(`Removed custom rule '${arg}'.`); return 0;
+    }
+    if (sub && sub !== "list") {
+        console.error(`Unknown guardrails command '${sub}'. Use: list | check <file> | disable <id> | enable <id> | remove <id>.`);
+        return 1;
+    }
+    const cfg = readGuardrailsConfig();
+    const off = new Set(cfg.disabled);
+    const on = readConfig().config.guardrails;
+    console.log(`guardrails: ${on ? "on" : "off"} (toggle with 'enigma config guardrails on|off')\n`);
+    console.log("Built-in rules:");
+    for (const r of BUILTIN_RULES) console.log(`  ${off.has(r.id) ? "[off]" : "[on] "} ${r.id} (${r.severity}) - ${r.label}`);
+    if (cfg.rules.length) {
+        console.log("\nCustom rules (~/.enigma-guardrails.json):");
+        for (const r of cfg.rules) console.log(`  [on]  ${r.id} (${r.severity}) - ${r.label}`);
+    }
+    return 0;
+}
+
+/**
  * The command to tunnel this dashboard to the operator's own machine. Preferred over exposing
  * it: the port stays on loopback, and SSH already authenticates whoever reaches it.
  */
@@ -1678,6 +1728,19 @@ export async function run(argv: string[]): Promise<void> {
         await runMcpServer(process.env.ENIGMA_VERSION || PKG.version || "0.0.0");
         return;
     }
+    // Hidden: the post-edit guardrails hook each agent invokes. Reads the PostToolUse
+    // payload from stdin, scans that file, and exits 2 on a BLOCK convention violation
+    // (stderr fed back to the model). Dispatched early so its stdin read never contends
+    // with clack; import is dynamic so normal commands never load the engine.
+    if (argv[0] === "__guardrails-hook") {
+        // Read the stdin payload SYNCHRONOUSLY before the async import: an await lets Node's
+        // stdin machinery drain the pipe, leaving readFileSync(0) empty (compress works
+        // because it reads fd 0 with no preceding await).
+        let payload = "";
+        try { payload = readFileSync(0, "utf8"); } catch { /* no stdin */ }
+        const { runGuardrailsHook } = await import("./guardrails");
+        process.exit(runGuardrailsHook(payload));
+    }
     // Hidden: the gate post-receive hook invokes this to notify the daemon of a
     // push. Non-blocking by the hook's contract; must not print to stdout noise.
     if (argv[0] === "__gate-notify") {
@@ -1733,6 +1796,7 @@ export async function run(argv: string[]): Promise<void> {
     if (opts.command === "skills") { process.exit(runSkillsCli(opts)); }
     if (opts.command === "issue") { process.exit(await runIssueCli(opts.positionals[0], version, interactive)); }
     if (opts.command === "compress") { process.exit(runCompressCli(opts)); }
+    if (opts.command === "guardrails") { process.exit(runGuardrailsCli(opts.positionals)); }
     if (opts.command === "dashboard") { process.exit(await runDashboardCli(version, opts)); }
     if (opts.command === "fix-path") { process.exit(runFixPathCli(opts.positionals[0], opts.scope)); }
     if (opts.command === "resources") { process.exit(await runResourcesCli(opts.positionals)); }

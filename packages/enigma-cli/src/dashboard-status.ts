@@ -11,6 +11,7 @@
 import { readConfig } from "./config";
 import { skillsReport } from "./skills";
 import { readProxyStats } from "./proxy";
+import { loadRules } from "./guardrails";
 import { GUARD_PROTECTIONS, readGlobalGuard } from "./guard-config";
 import { toolPathStatuses } from "./tool-path";
 import { availableAdapters } from "./api-agents";
@@ -28,6 +29,8 @@ export interface SystemsStatus {
     parallelSubagents: boolean;
     /** Auto-lint on edit. */
     autoLint: boolean;
+    /** Convention guardrails on edit, plus the active rule count. */
+    guardrails: { on: boolean; rules: number };
     /** Real tool-usage stats (transcript reading). */
     usageStats: boolean;
     /** Local dashboard mode: off | on-demand | always. */
@@ -73,6 +76,7 @@ export function systemsStatus(): SystemsStatus {
         minimalCode: c.minimalCode,
         parallelSubagents: c.parallelSubagents,
         autoLint: c.autoLint,
+        guardrails: { on: c.guardrails, rules: c.guardrails ? loadRules().length : 0 },
         usageStats: c.usageStats,
         dashboard: c.dashboard,
         commitEmoji: c.commitEmoji,

@@ -12,6 +12,7 @@
 import { AGENTS } from "./agents";
 import { applyMcpToggle } from "./mcp-deploy";
 import { isAutoLintOn, setAutoLint } from "./lint";
+import { setGuardrails } from "./guardrails-deploy";
 import { readConfig, setEnigmaToggle, setEnigmaValue, setRecallApiKey, RECALL_PROVIDERS, OUTPUT_STYLES, MINIMAL_CODE_LEVELS, LOGO_COLOR_POLICIES, DASHBOARD_MODES, PROMPT_SECRET_MODES, SKILL_UPDATE_POLICIES } from "./config";
 import { applyDashboardMode } from "./dashboard";
 import { applyGateToggle } from "./command-deploy";
@@ -306,6 +307,13 @@ const RAW_CATEGORIES: Category[] = [
                 hint: "auto-fix edited files and surface only unfixable findings; on enable installs @enigmax/linter and wires a post-write hook (Claude + opencode); enigma default: off",
                 read: () => isAutoLintOn(),
                 write: (value, scope) => ({ path: setAutoLint(scope, value), changed: true }),
+            },
+            {
+                key: "guardrails",
+                label: "Convention guardrails on edit",
+                hint: "enforce project conventions (e.g. UUID primary keys, Prisma as the default ORM) via a post-edit hook that feeds violations back to the model; toggling applies immediately (Claude + opencode); enigma default: on",
+                read: () => readConfig().config.guardrails,
+                write: (value, scope) => ({ path: setGuardrails(scope, value), changed: true }),
             },
         ],
     },

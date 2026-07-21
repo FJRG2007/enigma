@@ -3411,6 +3411,7 @@ export {
                 + item("Minimal code", levelPill(s.minimalCode))
                 + item("Parallel sub-agents", boolPill(s.parallelSubagents))
                 + item("Auto-lint on edit", boolPill(s.autoLint))
+                + item("Convention guardrails", s.guardrails ? boolPill(s.guardrails.on) + (s.guardrails.on ? ' <span class="tag">' + s.guardrails.rules + " rules</span>" : "") : boolPill(false))
                 + item("Commit emoji", boolPill(s.commitEmoji))
                 + item("Local dashboard", pill(s.dashboard === "off" ? "off" : "lvl", s.dashboard || "off"))
                 + item("Permission bypass (security)", boolPill(sec.permissionBypass))

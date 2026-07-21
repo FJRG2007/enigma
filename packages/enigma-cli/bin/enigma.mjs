@@ -78,6 +78,7 @@ try {
 const env = { ...process.env };
 env.ENIGMA_ASSETS_DIR = join(pkgRoot, "assets");
 env.ENIGMA_GUARD_PATH = join(pkgRoot, "dist", "guard.js");
+env.ENIGMA_GUARDRAILS_PATH = join(pkgRoot, "dist", "guardrails.js");
 try {
     env.ENIGMA_VERSION = packageVersion();
 } catch { /* version is best-effort */ }

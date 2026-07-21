@@ -6,12 +6,13 @@
  * GitHub CLI (`gh`), since `gh` shells out to `git`.
  */
 
-import { existsSync, mkdirSync, cpSync, writeFileSync, chmodSync } from "node:fs";
+import { existsSync, mkdirSync, cpSync, writeFileSync, chmodSync, rmSync } from "node:fs";
 import { dirname, join, resolve, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 import * as p from "@clack/prompts";
 import { isOnPath } from "./util";
+import { readConfig } from "./config";
 import { clackReporter } from "./reporter";
 import type { Reporter } from "./reporter";
 
@@ -28,6 +29,16 @@ function findGuardSrc(): string | null {
         ...(process.env.ENIGMA_GUARD_PATH ? [process.env.ENIGMA_GUARD_PATH] : []),
         join(__dirname, "guard.js"),
         join(__dirname, "..", "dist", "guard.js"),
+    ];
+    return candidates.find((c) => existsSync(c)) ?? null;
+}
+
+/** The built, self-contained guardrails engine to copy into target repos as the commit/CI convention backstop. */
+function findGuardrailsSrc(): string | null {
+    const candidates = [
+        ...(process.env.ENIGMA_GUARDRAILS_PATH ? [process.env.ENIGMA_GUARDRAILS_PATH] : []),
+        join(__dirname, "guardrails.js"),
+        join(__dirname, "..", "dist", "guardrails.js"),
     ];
     return candidates.find((c) => existsSync(c)) ?? null;
 }
@@ -112,17 +123,30 @@ export async function setupGitHooks(opts: SecurityOptions, interactive: boolean,
     cpSync(guardSrc, join(hooksDir, "guard.mjs"), { force: true });
     writeFileSync(join(hooksDir, "enigma-guard.json"), JSON.stringify(config, null, 2) + "\n");
 
+    // Convention backstop (guardrails): copy the engine when the feature is on, remove it
+    // when off. The pre-commit shim runs it only when the file is present, so a later toggle
+    // that removes it cleanly disables the check without rewriting the shim.
+    const guardrailsDest = join(hooksDir, "guardrails.mjs");
+    const guardrailsSrc = readConfig().config.guardrails ? findGuardrailsSrc() : null;
+    if (guardrailsSrc) cpSync(guardrailsSrc, guardrailsDest, { force: true });
+    else if (existsSync(guardrailsDest)) rmSync(guardrailsDest, { force: true });
+
     const shimPath = join(hooksDir, "pre-commit");
     const shim = [
         "#!/bin/sh",
-        "# Managed by enigma (enigma-cli) - blocks committed secrets, .env files, and dependency dirs.",
-        "# Toggle protections in .githooks/enigma-guard.json. Bypass once: git commit --no-verify",
-        'exec node "$(git rev-parse --show-toplevel)/.githooks/guard.mjs" "$@"',
+        "# Managed by enigma (enigma-cli) - blocks committed secrets/.env/dep dirs and enforces code conventions.",
+        "# Toggle protections in .githooks/enigma-guard.json; conventions via 'enigma config guardrails'.",
+        "# Bypass once: git commit --no-verify",
+        'root="$(git rev-parse --show-toplevel)"',
+        'node "$root/.githooks/guard.mjs" "$@" || exit 1',
+        '[ -f "$root/.githooks/guardrails.mjs" ] && { node "$root/.githooks/guardrails.mjs" "$@" || exit 1; }',
+        "exit 0",
         "",
     ].join("\n");
     writeFileSync(shimPath, shim);
     try { chmodSync(shimPath, 0o755); } catch { /* no-op on Windows */ }
     try { chmodSync(join(hooksDir, "guard.mjs"), 0o755); } catch { /* no-op on Windows */ }
+    if (existsSync(guardrailsDest)) { try { chmodSync(guardrailsDest, 0o755); } catch { /* no-op on Windows */ } }
 
     try {
         execFileSync("git", ["-C", root, "config", "core.hooksPath", ".githooks"]);

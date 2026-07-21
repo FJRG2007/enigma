@@ -132,6 +132,14 @@ Shrink JSON, logs or text to fewer tokens, reversibly (the original is cached an
 Run the context-compression MCP server over stdio (used by the agents when `compress` is on).
 </Cmd>
 
+## guardrails
+
+Enforce project conventions via a post-edit hook that feeds violations back to the agent. On by default. See <a href={docHref("concepts/guardrails")}>Convention guardrails</a> for detail.
+
+<Cmd name="enigma guardrails [cmd]" ex={["enigma guardrails", "enigma guardrails check db/schema.sql", "enigma guardrails disable db-uuid-pk", "enigma config guardrails off"]}>
+No argument lists the rules; `check <file>` runs them against a file; `disable`/`enable <id>` toggles a built-in; `remove <id>` drops a custom rule. Toggle the feature with `enigma config guardrails on|off`.
+</Cmd>
+
 ## api
 
 Serve your local Claude Code over an OpenAI-compatible HTTP API - all of its tools, skills, MCP and sessions, reachable from any OpenAI client library. Loopback-only. See <a href={docHref("concepts/api")}>Local API</a> for detail.

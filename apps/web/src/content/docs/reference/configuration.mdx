@@ -23,6 +23,7 @@ Settings live in `.enigma.json` (global `~/.enigma.json`, overridden by a repo-l
 <tr><td><code>usage-api</code></td><td>on / off</td><td class="def">off</td><td class="w">Fetch the real usage %/reset from Anthropic via your local Claude Code login.</td></tr>
 <tr><td><code>parallel-subagents</code></td><td>on / off</td><td class="def">off</td><td class="w">Allow the agent to fan out sub-agents in parallel.</td></tr>
 <tr><td><code>auto-lint</code></td><td>on / off</td><td class="def">off</td><td class="w">Lint edited files via a post-write hook.</td></tr>
+<tr><td><code>guardrails</code></td><td>on / off</td><td class="def">on</td><td class="w">Enforce project conventions (UUID keys, Prisma as default ORM, ...) via a post-edit hook that feeds violations back to the agent.</td></tr>
 <tr><td><code>compress</code></td><td>on / off</td><td class="def">off</td><td class="w">Register the context-compression MCP server in your agents.</td></tr>
 <tr><td><code>code-graph</code></td><td>on / off</td><td class="def">off</td><td class="w">Expose enigma's native code-graph tools (index a codebase into a knowledge graph of symbols/imports/references) to your agents over MCP.</td></tr>
 <tr><td><code>dashboard</code></td><td>off / on-demand / always</td><td class="def">off</td><td class="w">Local management dashboard mode.</td></tr>

@@ -18,6 +18,7 @@
     "seal": "npm run -w enigma-cli seal",
     "check": "npm run -w enigma-cli check",
     "guard": "npm run -w enigma-cli guard",
+    "guardrails": "npm run -w enigma-cli guardrails",
     "verify": "npm run -w enigma-cli verify",
     "lint": "npm run -w @enigmax/linter dev --",
     "lint:test": "npm run -w @enigmax/linter test",

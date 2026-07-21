@@ -92,7 +92,7 @@ const STATUS = {
     systems: {
         compress: true, codeGraph: true, usageStats: true, proxy: true, usageApi: true,
         promptSecretGuard: true, promptSecretMode: "redact",
-        outputStyle: "full", minimalCode: "full", parallelSubagents: true, autoLint: true, commitEmoji: true,
+        outputStyle: "full", minimalCode: "full", parallelSubagents: true, autoLint: true, guardrails: { on: true, rules: 6 }, commitEmoji: true,
         dashboard: "always", live: true,
         proxyStats: {
             calls: 9240, input: 96_000_000, output: 24_000_000, cacheRead: 412_000_000, cacheCreation: 18_500_000,

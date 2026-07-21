@@ -1,0 +1,71 @@
+---
+title: Convention guardrails
+description: Enforce project conventions deterministically - a post-edit hook that scans what the agent writes and feeds any violation back so it self-corrects, at zero token cost until there is one.
+group: Concepts
+order: 37
+---
+import Cmd from "../../../components/Cmd.astro";
+
+Skills only **persuade** the model, and they load only when it decides to (progressive disclosure). So a convention that lives only in a skill - "use UUID primary keys", "prefer Prisma as the ORM for TypeScript" - is often skipped: the agent never reads the skill. Guardrails **enforces** conventions instead, outside the model.
+
+After the agent writes a file, a post-edit hook runs a set of data-driven rules against it. A blocking violation is fed straight back so the agent fixes it in the **same turn**. Nothing runs until an edit lands, and a clean file produces no output - so the cost is **zero tokens until there is an actual violation**, and a tiny message when there is.
+
+It is **on by default** and everything runs locally.
+
+## How it works
+
+Each rule is **data**, not code - one entry, either built in or in `~/.enigma-guardrails.json`:
+
+- **file rules** regex-scan the edited file - e.g. a migration using `SERIAL`/`AUTO_INCREMENT` instead of a UUID key, a handler that assigns a request body without validating it (Zod/TS, Pydantic/Py), a raw `<input type="password">` that should use your reusable Input, or a native `alert`/`confirm`/`prompt` that should be a design-system dialog.
+- **project rules** run a small built-in check against the project (e.g. a TypeScript project on a relational datastore with no Prisma).
+
+A file rule can also require a mitigation to be present: with an `absent` regex, the rule fires only when the risky pattern appears **without** the fix in the same file - that is how "reads input without validating it" is detected across languages.
+
+Rules carry a severity: **block** is enforced (the agent hook exits non-zero, feeding the fix back to the model; a commit fails), **warn** is advisory (printed, never blocks). Messages name the owning skill (e.g. `database-expert`) so a fix is traceable.
+
+The seed set is deliberately tiny and precise - it matches only unambiguous violations, so a false positive never trains the agent (or you) to ignore it. Add your own rules by dropping an entry in `~/.enigma-guardrails.json`.
+
+## Where it runs
+
+- **Claude Code** - a `PostToolUse` hook (matcher `Edit|Write|MultiEdit|NotebookEdit`).
+- **opencode** - an auto-loaded plugin that runs after each write/edit.
+- **Codex** has no per-edit hook mechanism, so it is skipped (like auto-lint).
+- **Commit / CI backstop** - `enigma security` also copies the engine into `.githooks/`, so the same rules block a commit even if the agent hook was off or bypassed.
+
+## Use it
+
+<Cmd name="enigma guardrails [cmd]" ex={["enigma guardrails", "enigma guardrails check db/schema.sql", "enigma guardrails disable db-uuid-pk", "enigma guardrails enable db-uuid-pk", "enigma config guardrails off"]}>
+No argument lists the rules (built-in and custom, with their on/off state); `check <file>` runs the rules against a file; `disable`/`enable <id>` toggles a built-in; `remove <id>` drops a custom rule. Toggle the whole feature with `enigma config guardrails on|off` (applies immediately to Claude Code and opencode).
+</Cmd>
+
+## Add a custom rule
+
+Custom rules live in `~/.enigma-guardrails.json`. A file rule is a regex over the edited file:
+
+```json
+{
+  "rules": [
+    {
+      "id": "no-select-star",
+      "label": "No SELECT *",
+      "files": ["*.sql"],
+      "scope": "file",
+      "pattern": "select\\s+\\*",
+      "flags": "i",
+      "message": "Avoid SELECT * on hot paths (database-expert).",
+      "severity": "warn"
+    }
+  ],
+  "disabled": ["db-uuid-pk"]
+}
+```
+
+`disabled` turns off a built-in by id. That's the whole authoring surface - one JSON entry per convention, no code.
+
+## What guardrails can't check
+
+Guardrails see the **syntax** of the edited file, not intent or behaviour. Some conventions have no reliable syntactic signature - "the UI is optimistic", "reads are cached for 30s", "the form validates in real time". A regex for those is either impossible or pure noise. Those live in enigma's **always-on memory** instead (the "Engineering Defaults" block), stated once, language-agnostic, so the agent applies them by default without a hook. Guardrails back up the syntactic half; the memory covers the semantic half.
+
+## Privacy
+
+Everything runs in-process on your machine; nothing is sent anywhere. Turning the setting off removes the hooks from your agents.

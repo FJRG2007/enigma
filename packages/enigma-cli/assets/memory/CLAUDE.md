@@ -31,12 +31,24 @@
 - End files with exactly one trailing newline and no trailing whitespace.
 - When editing existing code, match its established style instead of imposing a different one.
 
+### Engineering Defaults (Always-On)
+
+Non-negotiable, language-agnostic defaults - apply them by default without being asked, using the stack's idiomatic tool. They restate the cores of validation-policy, backend-policy and frontend-policy so they hold even when a skill does not load.
+
+- Validate EVERY external input (request body, query, params, event payload, form field, CLI arg, webhook/message) against an explicit schema before use - Zod (TS/JS), Pydantic (Python), the language's equivalent elsewhere. Never consume an unvalidated shape or leave it open-ended. When the input is a tagged/event union, validate the discriminant AND that specific variant's body, with the expected fields typed.
+- Frontend forms: validate in real time against the same schema, and use optimistic UI with rollback on failure for user-facing mutations.
+- Cache reads on the client (localStorage/sessionStorage, or the data layer's cache) with a short TTL (~30s or more) to avoid redundant queries and survive rate limits; invalidate on write.
+- Build reusable, composable components instead of duplicating UI - e.g. a single Input that renders a show/hide toggle when the type is password. Reuse before writing new.
+- Never use the browser's native `alert`/`confirm`/`prompt` - use a dialog/modal component that matches the page design.
+
 ### Task Execution (Always-On)
 
-- For long or complex tasks - or any task you judge to warrant it - break the work into smaller, well-scoped subtasks and complete them incrementally, validating each subtask before moving to the next.
-- Map the dependencies between subtasks before starting, and do only the decomposition the task genuinely needs - never over-decompose simple work.
-- For multi-item work (ports, migrations, batch changes), enumerate the FULL inventory of work units with deterministic commands before implementing, persist it as a checklist (file or todo system), and mark a unit done only after verifying it - never because a similar unit worked.
-- Never declare a task complete while any unit is pending, stubbed, or unverified. Before saying "done": reconcile counts against the inventory, build/typecheck the whole artifact, and grep for TODO/stub markers you introduced. If anything remains, say exactly what remains instead of rounding up to "done". Never silently skip or stub an item - record it with a reason and report it.
+- A message that bundles several asks, questions, or items is a MULTI-PART task - even if it is just two, three, or four things. Before doing anything, extract EVERY distinct ask into an explicit list (the runtime's todo system when it has one, else a written checklist) and treat the request as unfinished until every item on that list is addressed. Never answer the first ask and drop, summarize away, or postpone the rest. When you present a plan, execute the whole plan - do not stop after listing it.
+- For long or complex tasks - or any task you judge to warrant it - break the work into smaller, well-scoped subtasks and complete them incrementally, validating each subtask before moving to the next. Map the dependencies between subtasks first, and do only the decomposition the task genuinely needs - never over-decompose simple work.
+- For multi-item work (ports, migrations, batch changes), enumerate the FULL inventory of work units with deterministic commands before implementing, persist it as a checklist (file or todo system), and mark a unit done only after verifying it - never because a similar unit worked. This is the task-completion-policy skill; load it for any task that spans many files/items or bundles several asks.
+- "Pending", "pendiente", "TODO", "left as a follow-up", "next step: ...", or "you can do X yourself" is NOT an acceptable way to end a turn for work you are able to perform now. Do that work in this same turn. The only reasons to stop short are a genuine blocker - missing credentials or access, an irreversible or destructive choice, a business decision, or something the user explicitly approved deferring - and then you must name the blocker explicitly, never leave the item silently unfinished.
+- Do not stop early because a task is long, tedious, or the context is filling up. Keep going until every enumerated item is finished or truly blocked. If work is genuinely paused, the checklist holds the remaining items - on resume, re-read it FIRST and continue from it; never reconstruct progress from memory, that is where items get dropped.
+- Never declare a task complete while any item is pending, stubbed, or unverified. Before saying "done": reconcile against the checklist, build/typecheck the whole artifact, and grep for TODO/stub markers you introduced. If anything remains, say exactly what remains instead of rounding up to "done". Never silently skip or stub an item - record it with a reason and report it.
 - Never offload doable work to the user: "you can adjust/refresh X yourself" in a final report is a hidden deferral. If you can execute the action, do it before reporting; hand off only what genuinely requires the user (credentials, irreversible/destructive choices, business decisions) or what they explicitly approved deferring.
 
 <!-- enigma:parallel-subagents:start -->
