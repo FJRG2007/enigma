@@ -62,6 +62,14 @@ microcopy - the reader shouldn't have to study it.
 - READMEs: assume a competent reader. Explain what is non-obvious or load-bearing (how to
   run it, the one surprising constraint, why a choice was made) and skip what the audience
   already knows or can infer from the code. Lead with the point; cut the throat-clearing.
+- Do NOT volunteer a "Project Structure" section with an ASCII/box-drawing file tree and a
+  folder-by-folder explanation ("src/ contains the files of the application", "public/:
+  contains static files") on your own initiative. It is the hallmark of an AI-written README:
+  it rots the instant a file moves, is usually misaligned, and restates what the reader sees in
+  the file browser - real project READMEs rarely ship one. If the user explicitly asks for a
+  project-structure tree, generate it (well-formed and accurate); just never add one unprompted.
+  Otherwise document a directory only when its purpose is non-obvious and load-bearing, in one
+  line of prose, never a whole tree.
 
 ## Reviewing existing copy
 

@@ -64,6 +64,16 @@ description: Frontend architecture - reusable components, abstraction thresholds
 
 ---
 
+## Visual Hierarchy & Layout Restraint
+
+Keep surfaces flat and let spacing, not chrome, do the grouping.
+
+- Do not nest a card inside another card. A card already establishes a surface; wrapping cards in cards stacks backgrounds, paddings, and shadows into visual noise. Group related content inside one card with spacing, a heading, or a light divider - not a second bordered container.
+- Do not add borders, boxes, or dividers that carry no information. A border is justified only when it marks a real boundary the user needs (a distinct interactive region, a table edge); otherwise prefer whitespace, type weight, and grouping over outlines, and reach for a divider only when spacing alone cannot convey the separation.
+- Avoid redundant containers in general: one elevation/background per surface, minimal wrapping, and consistent padding read cleaner and are easier to maintain than deeply nested boxed layouts.
+
+---
+
 ## State Management
 
 - Keep state as local as possible; lift it only when genuinely shared.
@@ -188,11 +198,21 @@ Render dates and timestamps as localized, auto-updating values. Do not hand-roll
 
 ---
 
+## Search & Filtering
+
+For a user-facing search box or finder over a list, use fuse.js (fuzzy search) rather than a hand-rolled `.toLowerCase().includes()` filter. Fuzzy matching tolerates typos and partial or transposed input and ranks results by relevance - which is what users expect from a search field; a raw substring filter misses "usnig" for "using" and cannot rank. Apply it by default without being asked whenever the input is a free-text search.
+
+- Reach for fuse.js whenever the input is a search/filter box the user types free text into. Keep a plain equality/predicate filter only for exact, structured filtering (a status dropdown, a tag toggle) where fuzziness would be wrong.
+- Configure the searched `keys` and a sensible `threshold`, and run the search over the already-loaded client list where possible (reuse the data, per Client-Side Caching) before falling back to a server query.
+
+---
+
 ## Accessibility & Resilience
 
 - Use semantic markup and accessible interactive elements by default.
 - Handle loading, empty, and error states explicitly for every async view.
 - Validate user input in real time per validation-policy; never rely on the UI as the only validation layer.
+- When a select/dropdown/radio group (or any single-choice control) resolves to exactly one option, preselect it by default so the user is not forced to open a menu to pick the only possibility; disable the control when that single option is fixed. This applies whenever the set narrows to one, including after filtering or an async load.
 
 ---
 

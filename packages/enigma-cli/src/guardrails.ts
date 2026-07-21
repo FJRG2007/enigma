@@ -169,6 +169,70 @@ export const BUILTIN_RULES: GuardrailRule[] = [
         severity: "warn",
         skill: "frontend-policy",
     },
+    {
+        id: "fe-date-moment",
+        label: "Modern date handling (no moment.js)",
+        files: ["*.tsx", "*.jsx", "*.vue", "*.svelte", "*.astro"],
+        excludeFiles: ["*.test.*", "*.spec.*", "**/tests/**", "**/__tests__/**"],
+        scope: "file",
+        // Importing moment / moment-timezone. The `from "..."` / `require("...")` specifier is
+        // unambiguous (near-zero FP): a quote must sit right before `moment`, so "react-moment"
+        // and a prose "...from moment" string do not match, and comment lines are skipped anyway.
+        // This is the only regex-gateable slice of the date-display convention - "use
+        // <relative-time>" itself is a positive semantic recommendation the engine cannot assert.
+        pattern: "from\\s+[\"']moment(?:-timezone)?[\"']|require\\(\\s*[\"']moment(?:-timezone)?[\"']\\s*\\)",
+        message: "moment.js is heavy and in maintenance mode. For displaying dates use <relative-time> (@github/relative-time-element) or the native Intl APIs; for date math prefer a lightweight option (date-fns, dayjs, or Temporal) (frontend-policy).",
+        severity: "warn",
+        skill: "frontend-policy",
+    },
+    {
+        id: "fe-search-fuzzy",
+        label: "Fuzzy search for finders (fuse.js)",
+        files: ["*.tsx", "*.jsx", "*.vue", "*.svelte", "*.astro"],
+        excludeFiles: ["*.test.*", "*.spec.*", "**/tests/**", "**/__tests__/**"],
+        scope: "file",
+        // A hand-rolled case-insensitive substring finder: a .filter(...) whose body does
+        // `.toLowerCase().includes(....toLowerCase())`. The SYMMETRIC double-toLowerCase inside a
+        // filter is a near-certain search box (precision over recall - a one-sided or non-filter
+        // .includes is intentionally not matched). Skipped when fuse is already present in the file.
+        pattern: "\\.filter\\([^;]*\\.toLowerCase\\(\\)\\.includes\\([^;]*\\.toLowerCase\\(\\)",
+        absent: "fuse",
+        message: "Hand-rolled substring search. For a free-text search box use fuse.js (fuzzy search): it tolerates typos and ranks matches, which is more robust and professional than a case-insensitive .includes() filter (frontend-policy).",
+        severity: "warn",
+        skill: "frontend-policy",
+    },
+    {
+        id: "doc-no-file-tree",
+        label: "No ASCII file-tree in the README",
+        // README only, at any depth. Scoped deliberately: a file tree in a deliberate
+        // authoring guide or tutorial (e.g. a skill-creation doc) is legitimate; the
+        // auto-generated "Project Structure" tree in a README is the AI tell this targets.
+        files: ["README.md", "README.mdx", "readme.md", "readme.mdx"],
+        scope: "file",
+        // Box-drawing branch connectors (U+251C '├' and U+2514 '└' followed by U+2500 '─') are
+        // the signature of an auto-generated project-structure tree; they appear almost nowhere
+        // else in prose, markdown tables, or mermaid.
+        pattern: "[\\u251C\\u2514]\\u2500",
+        message: "ASCII/box-drawing project-structure tree in the README. Only keep one if the user explicitly asked for it - never volunteer it. If unprompted, drop the tree and the folder-by-folder explanation: it rots when files move, is usually misaligned, and restates what the file browser shows (technical-writing-policy).",
+        severity: "warn",
+        skill: "technical-writing-policy",
+    },
+    {
+        id: "be-no-leak-internal-error",
+        label: "Do not leak internal errors to the client",
+        files: ["*.ts", "*.js", "*.mts", "*.cts"],
+        excludeFiles: ["*.test.*", "*.spec.*", "**/tests/**", "**/__tests__/**"],
+        scope: "file",
+        // Two high-signal one-line leaks: (a) a 5xx response whose body includes a caught error's
+        // .message/.stack (the Prisma/DB-error leak), or (b) a stack trace passed into any response
+        // body. A 4xx validation reply carrying a constructed .message is deliberately NOT matched
+        // (those can be safe). `console.error(err.message)` / `logger.error(err.stack)` are not
+        // responses, so logging the real error is never flagged - only sending it out is.
+        pattern: "\\.status\\(\\s*5\\d\\d\\s*\\)[^;]*\\b(err|error|e|ex|exception)\\.(message|stack)\\b|(res|reply|response)\\.(json|send|end)\\([^;]*\\b(err|error|e|ex|exception)\\.stack\\b",
+        message: "Leaking an internal error to the client. Never send a caught exception's .message/.stack (or a raw ORM/DB error) in a 5xx response - it exposes your schema, ORM, and internals. Log it server-side (console.error / your logger) and return a generic message with a stable code (validation-policy, security-policy).",
+        severity: "warn",
+        skill: "validation-policy",
+    },
 ];
 
 /**

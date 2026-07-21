@@ -123,3 +123,71 @@ matrix("fe-no-native-dialog", false, [
     { name: "identifier ending in Prompt", file: "src/chat.tsx", code: "const t = renderPrompt(\"template\", vars);" },
     { name: "test file is excluded", file: "src/Page.test.tsx", code: "alert(\"x\");" },
 ]);
+
+// --- fe-date-moment ----------------------------------------------------------------
+
+matrix("fe-date-moment", true, [
+    { name: "default import, double quotes", file: "src/Row.tsx", code: `import moment from "moment";\nreturn <span>{moment(ts).fromNow()}</span>;` },
+    { name: "default import, single quotes", file: "src/Row.jsx", code: "import moment from 'moment';" },
+    { name: "require form", file: "src/Row.jsx", code: "const moment = require(\"moment\");" },
+    { name: "moment-timezone", file: "src/Row.tsx", code: "import moment from \"moment-timezone\";" },
+    { name: "multiline named import (from line matches)", file: "src/Row.tsx", code: `import {\n  duration,\n} from "moment";` },
+]);
+
+matrix("fe-date-moment", false, [
+    { name: "react-moment is a different package", file: "src/Row.tsx", code: "import Moment from \"react-moment\";" },
+    { name: "date-fns is fine", file: "src/Row.tsx", code: "import { formatDistanceToNow } from \"date-fns\";" },
+    { name: "dayjs is fine", file: "src/Row.tsx", code: "import dayjs from \"dayjs\";" },
+    { name: "relative-time (the recommended element)", file: "src/Row.tsx", code: "return <relative-time datetime={iso}>{fallback}</relative-time>;" },
+    { name: "prose mentioning moment in a comment", file: "src/Row.tsx", code: `// migrated away from moment to Intl\nreturn <time>{fmt(ts)}</time>;` },
+    { name: "moment only inside a string, not an import", file: "src/Row.tsx", code: "const note = \"ported from moment.js\";" },
+    { name: "test file is excluded", file: "src/Row.test.tsx", code: "import moment from \"moment\";" },
+]);
+
+// --- fe-search-fuzzy ---------------------------------------------------------------
+
+matrix("fe-search-fuzzy", true, [
+    { name: "classic case-insensitive substring finder", file: "src/List.tsx", code: "const results = items.filter(i => i.name.toLowerCase().includes(query.toLowerCase()));" },
+    { name: "different field/query names", file: "src/Search.jsx", code: "const shown = rows.filter(r => r.title.toLowerCase().includes(q.toLowerCase()));" },
+]);
+
+matrix("fe-search-fuzzy", false, [
+    { name: "file already uses fuse.js", file: "src/Search.tsx", code: `import Fuse from "fuse.js";\nconst r = items.filter(i => i.name.toLowerCase().includes(q.toLowerCase()));` },
+    { name: "exact structured filter (no search)", file: "src/List.tsx", code: "const open = items.filter(i => i.status === \"open\");" },
+    { name: "one-sided includes (not the symmetric finder)", file: "src/List.tsx", code: "const r = items.filter(i => i.name.toLowerCase().includes(query));" },
+    { name: "symmetric includes but not inside a filter", file: "src/util.tsx", code: "if (a.toLowerCase().includes(b.toLowerCase())) merge();" },
+    { name: "test file is excluded", file: "src/List.test.tsx", code: "const r = items.filter(i => i.name.toLowerCase().includes(q.toLowerCase()));" },
+]);
+
+// --- doc-no-file-tree --------------------------------------------------------------
+// Fixtures embed the literal box-drawing connectors (U+251C/U+2514 + U+2500) the rule detects.
+
+matrix("doc-no-file-tree", true, [
+    { name: "tree branch connector in README", file: "README.md", code: "## Project Structure\n├── src/\n└── package.json" },
+    { name: "tree in a nested package README", file: "packages/app/README.md", code: "└── package.json" },
+]);
+
+matrix("doc-no-file-tree", false, [
+    { name: "normal README prose", file: "README.md", code: "## Install\nRun `npm install` then `npm start`." },
+    { name: "markdown table (no box-drawing)", file: "README.md", code: "| Key | Value |\n| --- | --- |\n| a | b |" },
+    { name: "mermaid diagram (arrows, not box-drawing)", file: "README.md", code: "graph TD\n  A --> B" },
+    { name: "legit tree in a non-README doc (authoring guide) is allowed", file: "assets/skills/skill-creator/SKILL.md", code: "skill-name/\n├── SKILL.md\n└── reference.md" },
+]);
+
+// --- be-no-leak-internal-error -----------------------------------------------------
+
+matrix("be-no-leak-internal-error", true, [
+    { name: "5xx returning err.message (the Prisma leak)", file: "src/routes/user.ts", code: "res.status(500).json({ error: err.message });" },
+    { name: "5xx sending error.message", file: "src/api.ts", code: "return res.status(500).send(error.message);" },
+    { name: "stack trace in any response", file: "src/api.ts", code: "res.send(err.stack);" },
+    { name: "503 with e.message", file: "src/api.ts", code: "res.status(503).json({ detail: e.message });" },
+]);
+
+matrix("be-no-leak-internal-error", false, [
+    { name: "5xx with a generic constructed message", file: "src/api.ts", code: "res.status(500).json({ error: \"Something went wrong\" });" },
+    { name: "4xx validation reply may carry a safe message", file: "src/api.ts", code: "res.status(400).json({ error: err.message });" },
+    { name: "logging the real error server-side is fine", file: "src/api.ts", code: "console.error(err.message);" },
+    { name: "logger.error with the stack is fine (not a response)", file: "src/api.ts", code: "logger.error(err.stack);" },
+    { name: "generic 500, no error internals", file: "src/api.ts", code: "res.status(500).json({ error: \"internal_error\" });" },
+    { name: "test file is excluded", file: "src/api.test.ts", code: "res.status(500).json({ error: err.message });" },
+]);

@@ -73,6 +73,7 @@ description: Strict frontend + backend schema validation (Zod or equivalent), sc
   - Internal paths
   - Service names
 - Log detailed errors internally only, with enough context to debug.
+- Concretely: in a catch block never return the caught error's `message`/`stack` or the raw error object to the client. A leaked ORM/DB error like `Invalid prisma.driveItemMeta.findMany() invocation: Inconsistent column data: Error creating UUID...` exposes your ORM, table/column names, and internals to an attacker. Log the real error server-side (`console.error` or your logger) and respond with a generic message plus a stable code. This is about 5xx internal failures; a 4xx validation reply may carry a safe, caller-actionable message you constructed, never a raw framework/ORM error.
 - Use consistent, structured error responses (stable codes, safe messages).
 - Distinguish validation errors (4xx, actionable) from internal failures (5xx, opaque to the client).
 - Never leak the existence or absence of sensitive resources through error differences.
