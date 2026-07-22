@@ -4,6 +4,6 @@
   "provider": "FJRG2007/enigma",
   "description": "Frontend architecture: reusable components, abstraction thresholds, state management, no-op save detection, large-list rendering (infinite scroll/pagination, virtualization, skeletons, progressive loading), and optimistic UI with rollback.",
   "updated": "2026-07-22T01:41:06+02:00",
-  "cliVersion": "1.30.7",
+  "cliVersion": "1.30.8",
   "sha": "c5e0b4ac972e6448331bc56f7fc0069f3f57c3515ea719d0be46addfc8dbb064"
 }
