@@ -216,10 +216,31 @@ export function enableClaudeBypass(scope: "global" | "local", dryRun: boolean): 
  * statusline is configured yet - it never clobbers a user's own. Returns true if written.
  */
 export function enableClaudeStatusline(scope: "global" | "local"): boolean {
+    // Windows: an `enigma statusline` command resolves to the npm `.cmd` shim, and Claude
+    // Code re-spawns the statusline on every refresh without windowsHide, popping a console
+    // window each time (anthropics/claude-code#54590). Never install it there.
+    if (process.platform === "win32") return false;
     const path = claudeSettingsPath(scope);
     const current = readJson<Record<string, unknown>>(path) || {};
     if (current.statusLine !== undefined) return false;
     const next = { ...current, statusLine: { type: "command", command: "enigma statusline", padding: 0 } };
+    writeClaudeSettings(path, next);
+    return true;
+}
+
+/**
+ * Remove enigma's own statusline from a settings.json, leaving a user's custom one
+ * untouched. Used on Windows, where the statusline triggers Claude Code's console-flash
+ * bug (#54590) by opening a cmd window on every refresh. Returns true when the file changed.
+ */
+export function disableClaudeStatusline(scope: "global" | "local"): boolean {
+    const path = claudeSettingsPath(scope);
+    const current = readJson<Record<string, unknown>>(path);
+    if (!current) return false;
+    const line = current.statusLine as Record<string, unknown> | undefined;
+    if (line?.command !== "enigma statusline") return false;
+    const next = { ...current };
+    delete next.statusLine;
     writeClaudeSettings(path, next);
     return true;
 }
@@ -283,9 +304,14 @@ export function mirrorClaudeSettings(accountDir: string): boolean {
     if (Object.keys(env).length) next.env = env;
     else delete next.env;
 
-    // Statusline: propagate enigma's statusline when the account has none.
+    // Statusline: propagate enigma's statusline when the account has none - except on
+    // Windows, where it triggers Claude Code's console-flash bug (#54590); there, strip an
+    // enigma-managed one that an older install left behind.
     const globalLine = global.statusLine as Record<string, unknown> | undefined;
-    if (next.statusLine === undefined && globalLine?.command === "enigma statusline") {
+    const accountLine = next.statusLine as Record<string, unknown> | undefined;
+    if (process.platform === "win32") {
+        if (accountLine?.command === "enigma statusline") delete next.statusLine;
+    } else if (next.statusLine === undefined && globalLine?.command === "enigma statusline") {
         next.statusLine = { ...globalLine };
     }
 

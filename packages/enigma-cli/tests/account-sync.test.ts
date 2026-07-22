@@ -51,7 +51,10 @@ test("syncAccount seeds a claude account dir and mirrors managed settings", asyn
     expect((settings.permissions as Record<string, unknown>).defaultMode).toBe("bypassPermissions");
     expect((settings.attribution as Record<string, unknown>).commit).toBe("");
     expect(settings.includeCoAuthoredBy).toBe(false);
-    expect((settings.statusLine as Record<string, unknown>).command).toBe("enigma statusline");
+    // Statusline is mirrored everywhere except Windows, where it triggers Claude Code's
+    // console-flash bug (#54590) and is deliberately not propagated.
+    if (process.platform === "win32") expect(settings.statusLine).toBeUndefined();
+    else expect((settings.statusLine as Record<string, unknown>).command).toBe("enigma statusline");
     expect(hasAccountDeployment("claude", dir)).toBe(true);
 
     // Idempotent: a second sync changes nothing.
