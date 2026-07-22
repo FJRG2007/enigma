@@ -17,11 +17,15 @@ process.env.HOME = HOME;
 
 const {
     disableClaudeFeedbackSurvey, getClaudeFeedbackSurvey, setClaudeFeedbackSurvey, mirrorClaudeSettings,
+    enableClaudeStatusline, disableClaudeStatusline,
 } = await import("../src/claude");
 
 const GLOBAL = join(HOME, ".claude", "settings.json");
 const readJson = (path: string): Record<string, unknown> =>
     JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
+const writeJson = (path: string, obj: unknown): void =>
+    writeFileSync(path, `${JSON.stringify(obj, null, 2)}\n`);
+const ENIGMA_LINE = { type: "command", command: "enigma statusline", padding: 0 };
 
 beforeEach(() => {
     mkdirSync(join(HOME, ".claude"), { recursive: true });
@@ -72,4 +76,45 @@ test("mirrorClaudeSettings propagates the survey override presence and absence",
     setClaudeFeedbackSurvey("global", true);
     expect(mirrorClaudeSettings(accountDir)).toBe(true);
     expect(readJson(join(accountDir, "settings.json")).env).toBeUndefined();
+});
+
+const isWin = process.platform === "win32";
+
+test("statusline is never installed on Windows (console-flash bug #54590), installed elsewhere", () => {
+    const written = enableClaudeStatusline("global");
+    const line = readJson(GLOBAL).statusLine as Record<string, unknown> | undefined;
+    if (isWin) {
+        expect(written).toBe(false);
+        expect(line).toBeUndefined();
+    } else {
+        expect(written).toBe(true);
+        expect(line?.command).toBe("enigma statusline");
+    }
+    // Unrelated settings survive either way.
+    expect((readJson(GLOBAL).env as Record<string, unknown>).FOO).toBe("bar");
+});
+
+test("disableClaudeStatusline removes only enigma's line, never a user's custom one", () => {
+    // Enigma's own line is stripped.
+    writeJson(GLOBAL, { env: { FOO: "bar" }, statusLine: ENIGMA_LINE });
+    expect(disableClaudeStatusline("global")).toBe(true);
+    expect(readJson(GLOBAL).statusLine).toBeUndefined();
+    expect((readJson(GLOBAL).env as Record<string, unknown>).FOO).toBe("bar");
+    // Idempotent, and a custom statusline is left untouched.
+    expect(disableClaudeStatusline("global")).toBe(false);
+    writeJson(GLOBAL, { statusLine: { type: "command", command: "my-own-bar" } });
+    expect(disableClaudeStatusline("global")).toBe(false);
+    expect((readJson(GLOBAL).statusLine as Record<string, unknown>).command).toBe("my-own-bar");
+});
+
+test("on Windows, mirror strips an enigma statusline an older install left in the account", () => {
+    const accountDir = join(HOME, ".enigma", "claude", "old");
+    mkdirSync(accountDir, { recursive: true });
+    writeJson(join(accountDir, "settings.json"), { statusLine: ENIGMA_LINE });
+    // Global carries the enigma statusline too (as an older install would have written).
+    writeJson(GLOBAL, { statusLine: ENIGMA_LINE });
+    mirrorClaudeSettings(accountDir);
+    const line = readJson(join(accountDir, "settings.json")).statusLine as Record<string, unknown> | undefined;
+    if (isWin) expect(line).toBeUndefined();
+    else expect(line?.command).toBe("enigma statusline");
 });
