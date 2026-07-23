@@ -1,6 +1,6 @@
 ---
 name: frontend-policy
-description: Frontend architecture - reusable components, abstraction thresholds, state management, no-op save detection (skip mutations when the edited state equals the saved state), client-side caching (localStorage/sessionStorage to avoid redundant server calls and survive rate limits), large-list rendering (virtualized infinite scroll vs pagination, skeletons, progressive/parallel loading, short-TTL caching), optimistic UI with rollback, and periodic React code-health audits (react-doctor). Use when building or changing UI components, client state, forms/save flows, data fetching/caching, lists that show lots of data, loading states, or any frontend structure.
+description: Frontend architecture - reusable components, abstraction thresholds, state management, no-op save detection (skip mutations when the edited state equals the saved state), client-side caching (localStorage/sessionStorage to avoid redundant server calls and survive rate limits), instant first paint (render the shell immediately, load data async via the API, show skeletons - never block render on data), perceived performance and responsiveness (instant interaction feedback, prefetch on intent, debounce/throttle, cancel stale requests, avoid request waterfalls, lazy-load heavy widgets), large-list rendering (virtualized infinite scroll vs pagination, skeletons, progressive/parallel loading, short-TTL caching), optimistic UI with rollback, and periodic React code-health audits (react-doctor). Use when building or changing UI components, client state, forms/save flows, data fetching/caching, lists that show lots of data, loading states, dashboards/panels, making the UI feel fast, or any frontend structure.
 ---
 
 # Frontend Architecture Policy
@@ -91,7 +91,10 @@ Before sending a save/update mutation, compare the edited state against the last
 - Track the saved (pristine) snapshot of the form/settings when it loads or after a successful save.
 - Compute dirtiness by comparing the current edited values against that snapshot (deep/structural equality on the fields being saved), not by counting user interactions.
   - Example: a value goes from state x to state z, then back to x before saving. The net change is zero - the form is NOT dirty, and pressing Save must send nothing to the backend.
-- When the form is not dirty, the Save action does nothing (and the button should reflect it, e.g. disabled or neutral); no request, no spinner, no toast.
+- When the form is not dirty, Save must never hit the network. Two acceptable UX options:
+  - Preferred: disable / neutralize the Save button while the edited values equal the snapshot, so there is nothing to submit until a real change exists.
+  - Or keep Save enabled but short-circuit on click: show the normal "saved" confirmation instantly and send NO request. Never open a spinner or fire a call for a no-op.
+  - Example: the user opens their account settings and presses Save without changing the name. The name still equals the loaded value, so the form is not dirty - the button is disabled, or the click just confirms success without a request.
 - When partial updates are supported, send only the changed fields (a diff against the snapshot), not the full object.
 - After a successful save, replace the snapshot with the newly saved state so subsequent edits diff against it.
 
@@ -151,6 +154,18 @@ Cache on the client to avoid redundant server round-trips and to keep the app us
 
 ---
 
+## Instant First Paint (Shell First, Data Async)
+
+Render the page shell immediately; never block the first paint on data. A view that fetches everything before it renders anything looks frozen until the slowest request returns - the user stares at a blank screen. Paint the static structure (nav, headings, card frames, table chrome, stat-tile outlines) on the first tick, then fill each region as its data arrives.
+
+- Load data asynchronously via the API AFTER the shell renders (client fetch on mount, or streaming/Suspense on server components) - do not gate the component's first render on the awaited data. The layout is static and free to render now; only the contents wait.
+- Show skeleton placeholders shaped like the real content in every region still loading (cards, rows, charts, stat tiles), not one full-page spinner. Reserve the final dimensions so nothing shifts when data lands (no layout shift / CLS).
+- This applies to ANY data-driven view - dashboards, panels, detail pages, settings screens - not only long lists. A dashboard of independent widgets renders its grid instantly and lets each widget resolve on its own (see Progressive / parallel rendering below).
+- For an instant first paint with REAL content, read the client cache first (per Client-Side Caching) and render it immediately, then revalidate in the background (stale-while-revalidate); fall back to skeletons only on a cold cache.
+- Keep empty and error states per region, so a single failed or slow widget shows its own inline state without blanking the whole page.
+
+---
+
 ## Large Lists & Progressive Loading
 
 Never render an unbounded or large dataset in one shot (no fetch-everything then map over thousands of rows). Lists of products, feeds, search results, logs, etc. must load incrementally and keep the rendered DOM bounded.
@@ -185,6 +200,19 @@ Never render an unbounded or large dataset in one shot (no fetch-everything then
 - Reconcile optimistic state with the server response; never leave the UI in a divergent state.
 - Keep the optimistic update and any client cache consistent with each other.
 - Surface failures to the user clearly without exposing internal error details (see validation-policy).
+
+---
+
+## Perceived Performance & Responsiveness
+
+Make the dashboard FEEL instant: acknowledge every interaction immediately and push the slow work off the critical path. Combine these with Instant First Paint, Client-Side Caching, and Optimistic UI above.
+
+- Instant interaction feedback: respond to every click/keystroke in under ~100ms (button press state, inline value change, row highlight) even while the real work is still running. A control must never feel dead while a request is in flight; keep expensive updates off the main thread (e.g. React's `startTransition`/`useTransition`) so typing and clicking stay smooth.
+- Prefetch on intent: warm the data for the next likely view before the user commits - on hover/focus of a nav item or row, when a tab becomes visible, or as a row scrolls into view. Prefetch into the client cache (per Client-Side Caching) so the actual navigation reads a warm cache and paints instantly. Do not prefetch everything eagerly - only the high-probability next step.
+- Debounce and throttle user-driven work: debounce inputs that trigger a query (search, filter, autosave) so a request fires only after the user pauses (~200-300ms), not per keystroke; throttle high-frequency events (scroll, resize, pointer-move, drag) to at most one run per frame. This cuts redundant requests and the re-renders that make the UI stutter.
+- Cancel stale in-flight requests: when inputs change or the component unmounts, abort the previous request (AbortController, or the data library's cancellation) so a slow earlier response cannot land after - and overwrite - a newer one (an out-of-order race that shows stale data). Guard async results by the request they belong to before applying them.
+- Avoid request waterfalls: start independent requests in parallel, never one-after-another. Do not fetch in a child that only renders after a parent's fetch resolves when both could start at once - hoist and fire them together (`Promise.all`, parallel queries, route loaders). Reserve sequential awaits for genuinely dependent data. (Splitting the server work is backend-policy; per-section streaming is Instant First Paint.)
+- Defer heavy, offscreen widgets: code-split and lazy-load large or below-the-fold dashboard pieces (charts, editors, rarely-opened panels) so the initial bundle and first paint stay small; load them on demand or as they near the viewport.
 
 ---
 

@@ -202,6 +202,24 @@ export const BUILTIN_RULES: GuardrailRule[] = [
         skill: "frontend-policy",
     },
     {
+        id: "fe-skeleton-loading",
+        label: "Skeletons over blank/spinner loading",
+        files: ["*.tsx", "*.jsx"],
+        excludeFiles: ["*.test.*", "*.spec.*", "**/tests/**", "**/__tests__/**"],
+        scope: "file",
+        // A whole-component loading guard that returns null or a bare spinner (blank screen until
+        // the fetch resolves) - the "page doesn't render until it has data" tell. The return group
+        // matches ONLY null / a *Spinner|*Loader|*Loading|CircularProgress element, so
+        // `return <Skeleton/>` is NOT matched (that is the correct pattern). `absent` skips the file
+        // when any skeleton signal is present - the component already renders a placeholder. Kept to
+        // the terse one-line guard for precision (a multi-line block is not matched: precision > recall).
+        pattern: "\\bif\\s*\\(\\s*(isLoading|isPending|isFetching|loading|pending)\\s*\\)\\s*return\\s+(null\\b|<\\s*\\w*(Spinner|Loader|Loading|CircularProgress)\\b)",
+        absent: "skeleton|animate-pulse|shimmer|Suspense",
+        message: "Component returns nothing (or only a spinner) while data loads, so the page stays blank until the fetch resolves. Render the shell/layout on first paint and show skeleton placeholders shaped like the final content (reserve their space to avoid layout shift) while data loads async via the API (frontend-policy).",
+        severity: "warn",
+        skill: "frontend-policy",
+    },
+    {
         id: "doc-no-file-tree",
         label: "No ASCII file-tree in the README",
         // README only, at any depth. Scoped deliberately: a file tree in a deliberate
