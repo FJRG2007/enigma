@@ -756,12 +756,26 @@ async function runSshCli(args: string[], interactive: boolean): Promise<number> 
 async function connectSsh(ssh: typeof import("./ssh"), alias: string, opts: import("./ssh").ConnectOpts): Promise<number> {
     const conn = ssh.getConnection(alias);
     if (!conn) { console.error(`Unknown connection '${alias}'. Add it: enigma ssh add ${alias} --host <host>`); return 1; }
+    // A tunnel with nothing to forward is a silent no-op: `ssh -N` would just open an idle
+    // connection that forwards no ports. Refuse it with guidance instead of looking "stuck".
+    const forwards = opts.forwards ?? conn.forwards ?? [];
+    if (opts.tunnelOnly && !forwards.length) {
+        console.error(`'${alias}' has no port forwards to open, so there is nothing to tunnel. Give a spec or save one:\n  enigma ssh tunnel ${alias} 9090:localhost:5432        (ad-hoc, this run only)\n  enigma ssh forward add ${alias} 9090:localhost:5432    (save it on the connection)`);
+        return 1;
+    }
     const launcher = ssh.resolveLauncher(conn, opts);
     for (const w of launcher.warnings) console.error(`warning: ${w}`);
     if (launcher.mode === "plain-prompt")
         console.error("note: auto-fill runs from the installed enigma binary, not this dev build - ssh will prompt for the password.");
-    const where = opts.tunnelOnly ? "Opening tunnel to" : "Connecting to";
-    console.error(`${where} ${alias} (${ssh.sshTarget(conn)})...`);
+    if (opts.tunnelOnly) {
+        // `ssh -N` blocks silently with no "connected" line, which reads as a hang. Print the
+        // forward map up front and steer to the backgrounded, status-tracked equivalent.
+        console.error(`Opening tunnel to ${alias} (${ssh.sshTarget(conn)}):`);
+        for (const f of forwards) console.error(`  ${ssh.describeForward(f)}`);
+        console.error("Keep this terminal open (the tunnel stays up while it runs); Ctrl+C to close.\nFor a background tunnel with start/stop and live status, use: enigma ssh tunnel start <name>.");
+        return spawnInherit(launcher.command, launcher.args, launcher.env);
+    }
+    console.error(`Connecting to ${alias} (${ssh.sshTarget(conn)})...`);
     return spawnInherit(launcher.command, launcher.args, launcher.env);
 }
 
