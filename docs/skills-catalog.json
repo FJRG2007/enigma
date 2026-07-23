@@ -1,6 +1,6 @@
 {
   "generator": "enigma seal",
-  "cliVersion": "1.30.10",
+  "cliVersion": "1.30.11",
   "count": 19,
   "skills": [
     {
@@ -88,7 +88,7 @@
       "version": "1.15.0",
       "description": "Frontend architecture: reusable components, abstraction thresholds, state management, no-op detection (skip any operation whose result equals current state, not just form saves), instant first paint (render the shell, load data async, skeletons), perceived performance (prefetch on intent, debounce/throttle, cancel stale requests, avoid waterfalls, lazy widgets), large-list rendering (infinite scroll/pagination, virtualization, skeletons, progressive loading), optimistic UI with rollback, and responsive/adaptive layout (fluid units, breakpoints, no overlap/overflow, viewport meta, touch targets).",
       "provider": "FJRG2007/enigma",
-      "updated": "2026-07-23T04:41:39+02:00",
+      "updated": "2026-07-24T01:21:27+02:00",
       "sha": "a879c95e63a6b4c4ca1f0561a6050c3ce1402e1311dfb30191f17f6c995001a3"
     },
     {
