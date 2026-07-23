@@ -13,7 +13,7 @@ interface Props {
     next?: string;
 }
 const { next } = Astro.props;
-const methods = Object.keys(INSTALL_METHODS); // curl, npm, pnpm, yarn, bun, npx
+const methods = Object.keys(INSTALL_METHODS); // curl, powershell, npm, pnpm, yarn, bun, npx
 ---
 <div class="install-tabs" data-next={next ?? ""}>
     <div class="it-tabs" role="tablist">
@@ -40,8 +40,10 @@ const methods = Object.keys(INSTALL_METHODS); // curl, npm, pnpm, yarn, bun, npx
     .it-tabs button.active { color: var(--accent); background: var(--surface2); border-color: var(--border); }
     .it-rec { color: var(--good); font-size: 9px; margin-left: 6px; vertical-align: middle; text-transform: uppercase; letter-spacing: 0.5px; }
     .it-row { display: flex; align-items: flex-start; gap: 12px; padding: 16px 18px; }
-    /* Scoped under .install-tabs so these win over the docs' global ".doc code" pill styling. */
-    .install-tabs .it-text { flex: 1; min-width: 0; overflow-x: auto; white-space: pre; font-family: var(--mono); font-size: 13px; line-height: 1.7; color: var(--text); background: transparent; padding: 0; }
+    /* Scoped under .install-tabs so these win over the docs' global ".doc code" pill styling.
+       Wrap (pre-wrap) instead of overflow-x:auto: the global themed scrollbars are non-overlay,
+       so a long command reserved a 10px horizontal scrollbar track below the text. */
+    .install-tabs .it-text { flex: 1; min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--mono); font-size: 13px; line-height: 1.7; color: var(--text); background: transparent; padding: 0; }
     .install-tabs .it-text :global(.t-cmd) { color: var(--accent); }
     .install-tabs .it-text :global(.t-flag) { color: var(--accent2); }
     .install-tabs .it-text :global(.t-url) { color: var(--good); }
@@ -67,16 +69,22 @@ const methods = Object.keys(INSTALL_METHODS); // curl, npm, pnpm, yarn, bun, npx
         const copyBtn = root.querySelector<HTMLButtonElement>(".it-copy")!;
         const next = root.dataset.next || "";
 
-        // Clone so the Windows curl -> PowerShell swap stays local to this instance.
         const commands: Record<string, string> = { ...INSTALL_METHODS };
-        if (isWindows()) {
-            commands.curl = "irm https://raw.githubusercontent.com/FJRG2007/enigma/main/scripts/install.ps1 | iex";
-            const t = root.querySelector<HTMLButtonElement>('.it-tabs button[data-cmd="curl"]');
-            if (t && t.firstChild) t.firstChild.textContent = "powershell";
-        }
-
         const setCmd = (cmd: string) => { text.innerHTML = highlightShell(cmd); };
         const resetCopy = () => { copyBtn.classList.remove("done"); copyBtn.title = "Copy command"; };
+
+        // curl (macOS/Linux) and powershell (Windows) are both always shown; recommend and
+        // pre-select the one matching the visitor's OS (curl is the SSR default).
+        if (isWindows()) {
+            root.querySelector('.it-tabs button[data-cmd="curl"] .it-rec')?.remove();
+            const ps = root.querySelector<HTMLButtonElement>('.it-tabs button[data-cmd="powershell"]');
+            if (ps && !ps.querySelector(".it-rec")) {
+                const rec = document.createElement("span");
+                rec.className = "it-rec"; rec.textContent = "recommended";
+                ps.appendChild(rec);
+            }
+            tabs.forEach((x) => x.classList.toggle("active", x.dataset.cmd === "powershell"));
+        }
 
         const initial = (root.querySelector<HTMLButtonElement>(".it-tabs button.active")?.dataset.cmd) || "curl";
         setCmd(commands[initial]);

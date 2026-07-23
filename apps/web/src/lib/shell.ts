@@ -43,13 +43,13 @@ export async function copyText(text: string): Promise<boolean> {
 // for those who use them; npx is one-shot. Single source of truth for both pages.
 export const INSTALL_METHODS: Record<string, string> = {
     curl: "curl -fsSL https://raw.githubusercontent.com/FJRG2007/enigma/main/scripts/install.sh | sh",
+    powershell: "irm https://raw.githubusercontent.com/FJRG2007/enigma/main/scripts/install.ps1 | iex",
     npm: "npm install -g enigma-cli@latest && enigma install",
     pnpm: "pnpm add -g enigma-cli@latest && enigma install",
     yarn: "yarn global add enigma-cli@latest && enigma install",
     bun: "bun add -g enigma-cli@latest && enigma install",
     npx: "npx enigma-cli@latest install --all --yes",
 };
-const INSTALL_PS = "irm https://raw.githubusercontent.com/FJRG2007/enigma/main/scripts/install.ps1 | iex";
 // The visitor's last-chosen method, so /start shows the same one they picked on the landing.
 export const INSTALL_STORE_KEY = "enigma-install-method";
 
@@ -60,16 +60,13 @@ export function isWindows(): boolean {
 
 /**
  * Resolve a method id to its command and a short label. The `curl` script has no `sh` on
- * Windows, so it becomes the PowerShell one-liner there; package-manager methods are OS-agnostic.
+ * Windows, so it defaults to the PowerShell one-liner there; package-manager methods are OS-agnostic.
  */
 export function resolveInstall(method?: string | null): { id: string; command: string; label: string } {
-    const id = method && method in INSTALL_METHODS ? method : "curl";
-    if (id === "curl") {
-        return isWindows()
-            ? { id, command: INSTALL_PS, label: "Windows (PowerShell)" }
-            : { id, command: INSTALL_METHODS.curl, label: "macOS / Linux" };
-    }
-    return { id, command: INSTALL_METHODS[id], label: id };
+    let id = method && method in INSTALL_METHODS ? method : "curl";
+    if (id === "curl" && isWindows()) id = "powershell";
+    const labels: Record<string, string> = { curl: "macOS / Linux", powershell: "Windows (PowerShell)" };
+    return { id, command: INSTALL_METHODS[id], label: labels[id] ?? id };
 }
 
 export function savedInstallMethod(): string | null {
