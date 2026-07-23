@@ -21,11 +21,11 @@
     },
     {
       "name": "backend-policy",
-      "version": "1.1.0",
-      "description": "Backend/API architecture: controller-service-repository layering, API and request optimization, server-side caching (Redis), and Zod boundary validation.",
+      "version": "1.2.0",
+      "description": "Backend/API architecture: controller-service-repository layering, API and request optimization (batching, avoiding redundant calls, skipping no-op writes), server-side caching (Redis), and Zod boundary validation.",
       "provider": "FJRG2007/enigma",
       "updated": "2026-06-16T12:06:06+02:00",
-      "sha": "a46c3cd00aa5f47adb1e7907f1d2bc6f5562f7a272890dee9b1121976ac04ae1"
+      "sha": "d091e8708888d23ee14cdd6c0e71f386861f2252d95360895a31c73db090a689"
     },
     {
       "name": "ciphera-style-policy",
@@ -85,11 +85,11 @@
     },
     {
       "name": "frontend-policy",
-      "version": "1.11.0",
-      "description": "Frontend architecture: reusable components, abstraction thresholds, state management, no-op save detection, instant first paint (render the shell, load data async, skeletons), perceived performance (prefetch on intent, debounce/throttle, cancel stale requests, avoid waterfalls, lazy widgets), large-list rendering (infinite scroll/pagination, virtualization, skeletons, progressive loading), and optimistic UI with rollback.",
+      "version": "1.13.0",
+      "description": "Frontend architecture: reusable components, abstraction thresholds, state management, no-op detection (skip any operation whose result equals current state, not just form saves), instant first paint (render the shell, load data async, skeletons), perceived performance (prefetch on intent, debounce/throttle, cancel stale requests, avoid waterfalls, lazy widgets), large-list rendering (infinite scroll/pagination, virtualization, skeletons, progressive loading), optimistic UI with rollback, and responsive/adaptive layout (fluid units, breakpoints, no overlap/overflow, viewport meta, touch targets).",
       "provider": "FJRG2007/enigma",
-      "updated": "2026-07-22T01:41:06+02:00",
-      "sha": "91eb4609e7050ed5ef5d6f3c27184fbe113df13334b9e46bf1ca053f5c010377"
+      "updated": "2026-07-23T02:30:33+02:00",
+      "sha": "e4aa651134cfa25d8c65828ac213ff80d191eddb151a0f76a847031773cec8a3"
     },
     {
       "name": "git-policy",

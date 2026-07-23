@@ -207,15 +207,42 @@ export const BUILTIN_RULES: GuardrailRule[] = [
         files: ["*.tsx", "*.jsx"],
         excludeFiles: ["*.test.*", "*.spec.*", "**/tests/**", "**/__tests__/**"],
         scope: "file",
-        // A whole-component loading guard that returns null or a bare spinner (blank screen until
-        // the fetch resolves) - the "page doesn't render until it has data" tell. The return group
-        // matches ONLY null / a *Spinner|*Loader|*Loading|CircularProgress element, so
-        // `return <Skeleton/>` is NOT matched (that is the correct pattern). `absent` skips the file
-        // when any skeleton signal is present - the component already renders a placeholder. Kept to
-        // the terse one-line guard for precision (a multi-line block is not matched: precision > recall).
+        // JSX only (*.tsx/*.jsx = React/Preact/Solid/RN); other frameworks use their own idioms and
+        // file types, so they are never touched by this rule. A whole-component loading guard that
+        // returns null or a bare spinner (blank screen until the fetch resolves) - the "page doesn't
+        // render until it has data" tell. The return group matches ONLY null / a
+        // *Spinner|*Loader|*Loading|CircularProgress element, so `return <Skeleton/>` is NOT matched
+        // (that is the correct pattern). `absent` skips the file when ANY placeholder/skeleton signal
+        // is present (skeleton, animate-pulse, shimmer, Suspense, a content-loader lib, <Placeholder>)
+        // - the component already renders a placeholder somewhere. Kept to the terse one-line guard for
+        // precision (a multi-line block is not matched: precision > recall).
         pattern: "\\bif\\s*\\(\\s*(isLoading|isPending|isFetching|loading|pending)\\s*\\)\\s*return\\s+(null\\b|<\\s*\\w*(Spinner|Loader|Loading|CircularProgress)\\b)",
-        absent: "skeleton|animate-pulse|shimmer|Suspense",
+        absent: "skeleton|animate-pulse|shimmer|Suspense|ContentLoader|content-loader|<\\s*Placeholder",
         message: "Component returns nothing (or only a spinner) while data loads, so the page stays blank until the fetch resolves. Render the shell/layout on first paint and show skeleton placeholders shaped like the final content (reserve their space to avoid layout shift) while data loads async via the API (frontend-policy).",
+        severity: "warn",
+        skill: "frontend-policy",
+    },
+    {
+        id: "fe-viewport-meta",
+        label: "Responsive viewport meta tag",
+        // Full HTML documents (a page/layout, not a fragment). Astro layouts own the <head>;
+        // .vue/.svelte SFCs manage head via the framework, so they are not included. A head-fragment
+        // file (Storybook preview-head.html, an injected partial) holds bare <meta>/<link> with NO
+        // literal <head> tag, so it never matches the pattern either.
+        files: ["*.html", "*.htm", "*.astro"],
+        // EMAIL and PRINT/PDF docs are full <head> documents that OMIT viewport ON PURPOSE (mail
+        // clients ignore it; print is fixed-width) - exclude those trees so they never flag.
+        excludeFiles: ["**/dist/**", "**/build/**", "**/email/**", "**/emails/**", "**/mail/**", "**/mailer/**", "**/mailers/**", "**/pdf/**", "**/print/**"],
+        scope: "file",
+        // Fires on a web document that opens a <head> but never declares a viewport meta - the one
+        // precise slice of "make it responsive": without it the page renders at desktop width on
+        // mobile. `absent` skips the file when viewport is present OR when it is clearly an EMAIL
+        // (mso- Outlook styles, an <!--[if mso]> conditional, -webkit-text-size-adjust reset, or MJML
+        // <mj-*>) - emails legitimately have no viewport, so those must never be flagged. Together with
+        // the path excludes this drives cross-stack false positives to ~zero.
+        pattern: "<head[\\s>]",
+        absent: "viewport|mso-|<!--\\[if\\s|-webkit-text-size-adjust|<mj-",
+        message: "HTML document with a <head> but no responsive viewport meta. Add <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"> so the page is responsive on mobile instead of rendering at desktop width (frontend-policy).",
         severity: "warn",
         skill: "frontend-policy",
     },

@@ -123,11 +123,31 @@ test("flags a blank/spinner loading guard without a skeleton, but not when a ske
     expect(checkFile("src/Panel.tsx", "if (isLoading) return null;\nfunction Row(){ return <Skeleton/>; }", null).some((x) => x.ruleId === "fe-skeleton-loading")).toBe(false);
     // Returning an actual skeleton is the correct pattern - never flagged.
     expect(checkFile("src/Panel.tsx", "if (isLoading) return <CardSkeleton/>;", null).some((x) => x.ruleId === "fe-skeleton-loading")).toBe(false);
+    // Other placeholder libs also clear it (react-content-loader, a <Placeholder> component).
+    expect(checkFile("src/Panel.tsx", "if (isLoading) return null;\nimport ContentLoader from 'react-content-loader';", null).some((x) => x.ruleId === "fe-skeleton-loading")).toBe(false);
+    expect(checkFile("src/Panel.tsx", "if (loading) return null;\nreturn <Placeholder as={Card}/>;", null).some((x) => x.ruleId === "fe-skeleton-loading")).toBe(false);
+});
+
+test("flags an HTML document missing the viewport meta, but not one that has it", () => {
+    expect(checkFile("index.html", "<html>\n<head>\n<title>x</title>\n</head>", null).some((x) => x.ruleId === "fe-viewport-meta" && x.severity === "warn")).toBe(true);
+    // Present anywhere in the file -> skipped.
+    expect(checkFile("index.html", "<head>\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n</head>", null).some((x) => x.ruleId === "fe-viewport-meta")).toBe(false);
+    // A fragment with no <head> is not a full document -> never flagged.
+    expect(checkFile("card.html", "<div class=\"card\">hi</div>", null).some((x) => x.ruleId === "fe-viewport-meta")).toBe(false);
+});
+
+test("viewport rule never flags email/print docs (cross-stack false-positive guard)", () => {
+    // An email template legitimately has a <head> and no viewport - Outlook conditional / mso- / reset are the tell.
+    expect(checkFile("welcome.html", "<head>\n<!--[if mso]><style>td{font-family:Arial}</style><![endif]-->\n</head>", null).some((x) => x.ruleId === "fe-viewport-meta")).toBe(false);
+    expect(checkFile("receipt.html", "<head><style>.x{mso-line-height-rule:exactly}</style></head>", null).some((x) => x.ruleId === "fe-viewport-meta")).toBe(false);
+    // Files under an email/pdf/print tree are excluded outright.
+    expect(checkFile("src/emails/welcome.html", "<head><title>hi</title></head>", null).some((x) => x.ruleId === "fe-viewport-meta")).toBe(false);
+    expect(checkFile("server/pdf/invoice.html", "<head><title>inv</title></head>", null).some((x) => x.ruleId === "fe-viewport-meta")).toBe(false);
 });
 
 test("built-in rules cover the documented conventions", () => {
     const ids = BUILTIN_RULES.map((r) => r.id);
-    for (const id of ["db-uuid-pk", "db-ts-orm-prisma", "be-validate-input-ts", "be-validate-input-py", "fe-password-input", "fe-no-native-dialog", "fe-skeleton-loading"]) {
+    for (const id of ["db-uuid-pk", "db-ts-orm-prisma", "be-validate-input-ts", "be-validate-input-py", "fe-password-input", "fe-no-native-dialog", "fe-skeleton-loading", "fe-viewport-meta"]) {
         expect(ids).toContain(id);
     }
     // Go/Rust input-validation rules are deliberately absent (imprecise - see guardrails.ts).

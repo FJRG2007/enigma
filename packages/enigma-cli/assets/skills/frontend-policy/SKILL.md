@@ -1,6 +1,6 @@
 ---
 name: frontend-policy
-description: Frontend architecture - reusable components, abstraction thresholds, state management, no-op save detection (skip mutations when the edited state equals the saved state), client-side caching (localStorage/sessionStorage to avoid redundant server calls and survive rate limits), instant first paint (render the shell immediately, load data async via the API, show skeletons - never block render on data), perceived performance and responsiveness (instant interaction feedback, prefetch on intent, debounce/throttle, cancel stale requests, avoid request waterfalls, lazy-load heavy widgets), large-list rendering (virtualized infinite scroll vs pagination, skeletons, progressive/parallel loading, short-TTL caching), optimistic UI with rollback, and periodic React code-health audits (react-doctor). Use when building or changing UI components, client state, forms/save flows, data fetching/caching, lists that show lots of data, loading states, dashboards/panels, making the UI feel fast, or any frontend structure.
+description: Frontend architecture - reusable components, abstraction thresholds, state management, no-op detection (skip any operation whose result equals the current state - form saves, toggles, filters, reorders - not just saves), client-side caching (localStorage/sessionStorage to avoid redundant server calls and survive rate limits), instant first paint (render the shell immediately, load data async via the API, show skeletons - never block render on data), perceived performance and responsiveness (instant interaction feedback, prefetch on intent, debounce/throttle, cancel stale requests, avoid request waterfalls, lazy-load heavy widgets), large-list rendering (virtualized infinite scroll vs pagination, skeletons, progressive/parallel loading, short-TTL caching), optimistic UI with rollback, responsive/adaptive layout (fluid units, breakpoints, no overlap or horizontal overflow, viewport meta, touch targets), and periodic React code-health audits (react-doctor). Use when building or changing UI components, client state, forms/save flows, data fetching/caching, lists that show lots of data, loading states, dashboards/panels, layout/responsiveness, making the UI feel fast, or any frontend structure.
 ---
 
 # Frontend Architecture Policy
@@ -74,6 +74,19 @@ Keep surfaces flat and let spacing, not chrome, do the grouping.
 
 ---
 
+## Responsive & Adaptive Layout
+
+Build every UI to adapt to the viewport; never assume a desktop width. A layout that looks right on your screen but overlaps, overflows, or clips at another size is NOT done - responsiveness is part of the task, not a follow-up.
+
+- Design fluid / mobile-first: use responsive units and constraints (%, rem, `fr`, `min`/`max`/`clamp`, flexbox/grid) over fixed pixel widths and absolute positioning, and let content reflow. Reserve fixed sizes for things that are genuinely fixed (icons, avatars).
+- Verify at real breakpoints - narrow phone, tablet, desktop, and very wide - not only the current window. At every size: nothing overlaps, collides, or sits on top of other content, and nothing is cut off, clipped, or hidden behind another element ("no se pisan las cosas").
+- No horizontal page scroll: constrain widths (`max-width: 100%`), wrap or truncate long text, and give wide content (tables, code blocks, charts, diagrams) its OWN horizontal scroll container so the page body never scrolls sideways.
+- Every HTML document needs the responsive viewport meta (`<meta name="viewport" content="width=device-width, initial-scale=1">`), or it renders at desktop width on mobile.
+- Media scales: images/video use `max-width: 100%` with appropriate `object-fit`; never a hardcoded width that breaks small screens.
+- Touch-friendly: tap targets are large enough (~44px) with spacing that prevents mis-taps, and any hover-only affordance has a tap/focus equivalent.
+
+---
+
 ## State Management
 
 - Keep state as local as possible; lift it only when genuinely shared.
@@ -82,28 +95,36 @@ Keep surfaces flat and let spacing, not chrome, do the grouping.
 
 ---
 
-## No-Op Save Detection (Dirty-State Check)
+## No-Op Detection (Skip Operations That Change Nothing)
 
-Before sending a save/update mutation, compare the edited state against the last-known saved state. If they are equal, the save is a no-op: skip the request entirely.
+The general rule: before running any operation, check whether its result would equal the current state. If the outcome is identical to what already exists, the operation is a no-op - skip it entirely: no request, no mutation, no event, no side effect. A form save is just the most common instance of this.
 
-### The rule
+### The general rule
 
-- Track the saved (pristine) snapshot of the form/settings when it loads or after a successful save.
-- Compute dirtiness by comparing the current edited values against that snapshot (deep/structural equality on the fields being saved), not by counting user interactions.
-  - Example: a value goes from state x to state z, then back to x before saving. The net change is zero - the form is NOT dirty, and pressing Save must send nothing to the backend.
+- Hold the current (pristine) state as a snapshot, and before acting decide whether the operation would actually change it - by comparing the resulting values against the current ones (deep/structural equality on the affected fields), not by whether the user interacted.
+- If nothing would change, do not perform the operation: send no request, run no mutation, emit no event, write nothing.
+- Common no-ops to skip: saving a form whose values equal the loaded ones; toggling a flag to the value it already holds; selecting the filter/sort/tab that is already active; dropping an item back into its original position; re-applying a value that is already set; a PATCH whose fields already hold those values.
+- When only part changed, act on the diff, not the whole object (send only the changed fields). After a successful operation, replace the snapshot with the new state so the next comparison is correct.
+
+### Forms & Save (the common case)
+
+- Track the saved snapshot when the form/settings loads or after a successful save; compute dirtiness by comparing the edited values against it.
+  - Example: a value goes x -> z -> back to x before saving. The net change is zero - the form is NOT dirty, and Save must send nothing to the backend.
 - When the form is not dirty, Save must never hit the network. Two acceptable UX options:
   - Preferred: disable / neutralize the Save button while the edited values equal the snapshot, so there is nothing to submit until a real change exists.
   - Or keep Save enabled but short-circuit on click: show the normal "saved" confirmation instantly and send NO request. Never open a spinner or fire a call for a no-op.
   - Example: the user opens their account settings and presses Save without changing the name. The name still equals the loaded value, so the form is not dirty - the button is disabled, or the click just confirms success without a request.
-- When partial updates are supported, send only the changed fields (a diff against the snapshot), not the full object.
-- After a successful save, replace the snapshot with the newly saved state so subsequent edits diff against it.
+
+### Enforce it server-side too
+
+- The client no-op check is a UX/latency win, not the authority. The server should also short-circuit an idempotent no-op: if a mutation would set fields to the values they already hold, skip the write, the domain event, and the cache invalidation, and return the unchanged resource (the server-side rule is owned by backend-policy).
 
 ### When NOT to apply it (judgment call)
 
-This is the default, not an absolute. Skip the no-op check and allow the save to go through when overwriting has value on its own:
+This is the default, not an absolute. Skip the no-op check and let the operation through when performing it has value on its own:
 
 - The resource is edited concurrently by many users or updated constantly server-side, and an explicit save is meant to assert/overwrite the user's view ("last write wins" by intent).
-- Saving has intentional side effects beyond persisting values: bumping `updatedAt`, re-triggering a pipeline/deploy, re-validating, or acknowledging a state.
+- The operation has intentional side effects beyond persisting values: bumping `updatedAt`, re-triggering a pipeline/deploy, re-validating, or acknowledging a state.
 - The client snapshot cannot be trusted to match the server (long-lived stale forms) and the save doubles as a sync.
 
 Decide per case which mode fits; when in doubt for simple single-user forms and settings panels, apply the no-op check.

@@ -36,6 +36,7 @@ description: Backend/API architecture - controller-service-repository layering, 
 
 - Minimize external requests; prefer batching or aggregation over many small calls.
 - Avoid redundant network calls and duplicate work within a request.
+- Skip no-op writes: if a mutation would set fields to the values they already hold, short-circuit before touching the database - no write, no domain event, no cache invalidation - and return the unchanged resource. Compare the incoming values against the current row (or a version/ETag). The client applies the same rule (frontend-policy); the server is the authority.
 - Merge requests when possible; coalesce concurrent identical work.
 - Avoid N+1 queries; batch data access (delegate query specifics to database-expert).
 - Return only the fields the client needs; avoid overfetching.
