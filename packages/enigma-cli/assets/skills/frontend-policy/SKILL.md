@@ -203,6 +203,7 @@ Never render an unbounded or large dataset in one shot (no fetch-everything then
 
 - Show skeleton placeholders that mirror the final layout while data loads, not bare spinners for content areas, and reserve the space so content does not shift in (avoid layout shift / CLS).
 - Empty and error states are still handled explicitly for every async view (see Accessibility & Resilience).
+- To avoid hand-drawing and re-maintaining skeleton markup, you can generate skeletons automatically from the real rendered UI with `boneyard-js` (supports React, Preact, React Native, Svelte, Vue, Angular). Wrap a region in its `<Skeleton name="..." loading={...}>` component, run `npx boneyard-js build` once to capture the live DOM into responsive JSON "bones" (committed under `src/bones/`), and import the generated registry at the app entry. It produces pixel-perfect, zero-CLS placeholders with a small runtime (~7.5KB for React) and stays in sync with the layout via re-builds - preferable to bespoke skeleton components when a view's markup changes often. A hand-built skeleton is still fine for a one-off or tiny placeholder (anti-overengineering-policy); reach for the generator when there are many regions or the layout churns.
 
 ### Progressive / parallel rendering
 
@@ -221,6 +222,18 @@ Never render an unbounded or large dataset in one shot (no fetch-everything then
 - Reconcile optimistic state with the server response; never leave the UI in a divergent state.
 - Keep the optimistic update and any client cache consistent with each other.
 - Surface failures to the user clearly without exposing internal error details (see validation-policy).
+
+---
+
+## Destructive & Irreversible Actions (Confirm Before Doing)
+
+Guard every destructive action behind friction proportional to how bad an accidental trigger would be. Never wire a permanent destroy straight to a button's `onClick` with no confirmation - a one-click "delete forever" is a footgun.
+
+- Reversible / low-stakes destroy (remove a row, delete a draft, clear a field): prefer acting immediately with an Undo affordance over a confirmation prompt - soft-delete and show a "Deleted - Undo" toast (optimistic, with rollback per Optimistic UI). The common case gets zero friction and a mistake is one click to recover. Reach for undo before a confirm whenever the delete can actually be reversed.
+- Standard destructive action (delete an item, remove a member, revoke a key): show a confirmation dialog that NAMES the exact thing being deleted ("Delete project 'Acme'?"), states the consequence, and uses a destructive-styled confirm button. It must be a real dialog/modal component, never the native `confirm()` (see the No-Op / native-dialog rules and the `fe-no-native-dialog` guardrail); default focus to Cancel and let Escape dismiss.
+- Critical / irreversible action (delete a repository, organization, account, or workspace; drop a database; transfer ownership; wipe production data): require a type-to-confirm step. The user must type the exact resource identifier (the repo/org name, or an explicit phrase like "delete my account") into an input, and the confirm button stays disabled until the typed value matches EXACTLY (trimmed, case-sensitive comparison against the real name). This is the GitHub / Vercel / Stripe "danger zone" pattern: it forces the user to read what they are about to destroy and makes an accidental click impossible.
+
+Scale the friction to the blast radius: do NOT make a trivial single-item delete demand typing a name (that is needless friction, anti-overengineering-policy), and NEVER leave an account-, repo-, or data-destroying action behind a single unconfirmed click. A named confirmation dialog is the floor; type-to-confirm is the ceiling for the truly unrecoverable. When in doubt about which tier applies, ask how recoverable the action is: recoverable -> undo, destructive-but-scoped -> confirm dialog, irreversible/high-blast-radius -> type-to-confirm.
 
 ---
 

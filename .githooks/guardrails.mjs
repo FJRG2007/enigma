@@ -99,7 +99,7 @@ var BUILTIN_RULES = [
     // capitalized custom <Alert>/Confirm() is not matched; (?<![.\w]) excludes method calls.
     pattern: `\\bwindow\\.(alert|confirm|prompt)\\s*\\(|(?<![.\\w])(alert|confirm|prompt)\\s*\\(\\s*["']`,
     flags: "",
-    message: "Native browser dialog (alert/confirm/prompt) - use a dialog/modal component that matches the page design instead of the browser's built-in (frontend-policy).",
+    message: "Native browser dialog (alert/confirm/prompt) - use a dialog/modal component that matches the page design instead of the browser's built-in. If this confirms a destructive action, use a real confirmation dialog that names what is being deleted; for an irreversible one (delete a repo/account/org, drop data) require type-to-confirm - the user types the exact resource name and the button stays disabled until it matches (frontend-policy).",
     severity: "warn",
     skill: "frontend-policy"
   },
