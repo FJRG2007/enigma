@@ -112,6 +112,43 @@ export interface SshInput {
 const ALIAS_RE = /^[A-Za-z0-9][\w.-]*$/;
 
 /**
+ * Tokens `enigma ssh <token>` already dispatches as a subcommand (see runSshCli in cli.ts).
+ * A connection keyed with one of these could never be connected to - `enigma ssh tunnel` runs
+ * the tunnel subcommand, it does not reach a server called "tunnel" - so they are refused up
+ * front instead of saving a connection the user can never reach.
+ */
+export const RESERVED_CONNECTION_KEYS: readonly string[] = [
+  "add", "delete", "edit", "forward", "fwd", "info", "list", "ls", "remove", "rm", "show", "tunnel", "tunnels",
+];
+
+/** Tokens `enigma ssh tunnel <token>` dispatches as a tunnel operation; unreachable as a tunnel name. */
+export const RESERVED_TUNNEL_NAMES: readonly string[] = [
+  "add", "down", "edit", "list", "remove", "rm", "start", "status", "stop", "up",
+];
+
+/**
+ * Why a connect key (an alias or a connection's name) cannot be used, or null when it is fine.
+ * The single source of truth for the CLI, the TUI and the dashboard's real-time check, so all
+ * three refuse the same values with the same wording.
+ */
+export function connectionKeyIssue(value: string, label = "Alias"): string | null {
+  if (!value) return `${label} is required.`;
+  if (!ALIAS_RE.test(value)) return `${label} must be alphanumeric (dashes, dots and underscores allowed).`;
+  if (RESERVED_CONNECTION_KEYS.includes(value.toLowerCase()))
+    return `'${value}' is an 'enigma ssh' subcommand, so 'enigma ssh ${value}' would never reach this server. Pick another ${label.toLowerCase()}.`;
+  return null;
+}
+
+/** Why a tunnel or saved-forward name cannot be used, or null when it is fine. */
+export function tunnelNameIssue(value: string, label = "Tunnel name"): string | null {
+  if (!value) return `${label} is required.`;
+  if (!ALIAS_RE.test(value)) return `${label} must be alphanumeric (dashes, dots and underscores allowed).`;
+  if (RESERVED_TUNNEL_NAMES.includes(value.toLowerCase()))
+    return `'${value}' is an 'enigma ssh tunnel' operation, so 'enigma ssh tunnel ${value}' would never run this tunnel. Pick another name.`;
+  return null;
+}
+
+/**
  * The connect key (alias or name) that already belongs to a DIFFERENT connection, or null when
  * alias/name are free. Both alias and name are global connect keys, so neither may collide with
  * any other connection's alias or name - but a single connection may set name == its own alias.
@@ -128,8 +165,10 @@ function keyConflict(connections: SshConnection[], selfAlias: string | null, ali
 
 /** Create a connection. Alias (and name, if given) must be unique connect keys; host is required. */
 export function addConnection(alias: string, input: SshInput): { ok: boolean; error?: string } {
-  if (!alias || !ALIAS_RE.test(alias)) return { ok: false, error: "Alias must be alphanumeric (dashes, dots and underscores allowed)." };
-  if (input.name && !ALIAS_RE.test(input.name)) return { ok: false, error: "Name must be alphanumeric (dashes, dots and underscores allowed)." };
+  const aliasIssue = connectionKeyIssue(alias);
+  if (aliasIssue) return { ok: false, error: aliasIssue };
+  const nameIssue = input.name ? connectionKeyIssue(input.name, "Name") : null;
+  if (nameIssue) return { ok: false, error: nameIssue };
   if (!input.host) return { ok: false, error: "A host is required (--host)." };
   const store = readStore();
   const clash = keyConflict(store.connections, null, alias, input.name);
@@ -146,7 +185,8 @@ export function updateConnection(alias: string, input: SshInput): { ok: boolean;
   const store = readStore();
   const conn = store.connections.find((c) => c.alias === alias);
   if (!conn) return { ok: false, error: `Unknown connection '${alias}'.` };
-  if (input.name && !ALIAS_RE.test(input.name)) return { ok: false, error: "Name must be alphanumeric (dashes, dots and underscores allowed)." };
+  const nameIssue = input.name ? connectionKeyIssue(input.name, "Name") : null;
+  if (nameIssue) return { ok: false, error: nameIssue };
   const nextName = input.name !== undefined ? input.name : conn.name;
   const clash = keyConflict(store.connections, conn.alias, conn.alias, nextName || undefined);
   if (clash) return { ok: false, error: `'${clash}' is already used by another connection (alias and name must be unique).` };
@@ -180,10 +220,12 @@ export function removeConnection(alias: string): boolean {
   return true;
 }
 
-/** Add a saved forward to a connection. */
+/** Add a saved forward to a connection. A named forward is run with `enigma ssh tunnel <name>`. */
 export function addForward(alias: string, forward: PortForward): { ok: boolean; error?: string } {
   const conn = getConnection(alias);
   if (!conn) return { ok: false, error: `Unknown connection '${alias}'.` };
+  const nameIssue = forward.name ? tunnelNameIssue(forward.name, "Forward name") : null;
+  if (nameIssue) return { ok: false, error: nameIssue };
   const forwards = [...(conn.forwards ?? []), forward];
   return updateConnection(alias, { forwards });
 }

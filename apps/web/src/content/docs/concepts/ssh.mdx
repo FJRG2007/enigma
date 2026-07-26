@@ -20,6 +20,8 @@ Flags: `--host`, `--name`/`-n` (a second connect key, see below), `--user`/`-u`,
 
 Every connection has an **alias** (the short key you type) and an optional **name** (the real server name). Both are connect keys - `enigma ssh lirio-0` and `enigma ssh lirio-prod` reach the same box. Neither an alias nor a name may be reused by a *different* connection (both are unique), but a single connection may set its name equal to its own alias.
 
+A key that the CLI already reads as a subcommand is refused, because it could never be reached: `enigma ssh tunnel` runs the tunnel subcommand, so no server can be aliased `tunnel` (nor `add`, `edit`, `remove`, `rm`, `delete`, `info`, `show`, `list`, `ls`, `forward`, `fwd`, `tunnels`). The same applies to tunnel and saved-forward names against the tunnel operations (`add`, `edit`, `remove`, `rm`, `list`, `status`, `start`, `up`, `stop`, `down`). The CLI, the TUI and the dashboard all enforce this - the dashboard form flags it as you type.
+
 ## Connect
 
 <Cmd name="enigma ssh <alias|name>" ex={["enigma ssh lirio-0", "enigma ssh lirio-prod", "enigma ssh"]}>

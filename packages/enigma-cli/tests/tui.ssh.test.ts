@@ -23,7 +23,7 @@ mock.module("@opentui/core", () => ({ ...core, createCliRenderer: async () => se
 Object.defineProperty(process.stdout, "isTTY", { value: true, configurable: true });
 
 const { CATEGORIES } = await import("../src/settings-registry");
-const { addConnection, parseForward } = await import("../src/ssh");
+const { addConnection, getConnection, parseForward } = await import("../src/ssh");
 const { runHomeTui } = await import("../src/tui/opentui");
 import type { HubContext } from "../src/tui/types";
 
@@ -82,6 +82,19 @@ test.skipIf(SKIP_HEADLESS_LINUX)("SSH panel lists a connection and the field edi
     expect(editor).toContain("Host: 203.0.113.10");
     expect(editor).toContain("User: root");
     expect(editor).toContain("Clear the stored password"); // only shown because a password is stored
+
+    // The cursor starts on the Name row: entering a reserved key ('tunnel' is the CLI's tunnel
+    // subcommand) must be refused IN the input overlay - the panel note behind it is not visible
+    // from here, so a rejected value would otherwise look saved.
+    await setup.mockInput.pressKey("RETURN");
+    // Wait for the INPUT overlay specifically ("enter confirm" is only rendered by it) - the
+    // field list also shows the row label, and typing before the input mounts is dropped.
+    await until((f) => f.includes("enter confirm"), "field input");
+    for (const c of "tunnel") await press(c);
+    await setup.mockInput.pressKey("RETURN");
+    const refused = await until((f) => f.includes("subcommand") || f.includes("Updated name"), "name refused");
+    expect(refused).toContain("would never reach this");
+    expect(getConnection("server1")!.name).toBeUndefined(); // nothing was written
 
     // Quit with Ctrl+C (a lone ESC byte is buffered by the headless key parser).
     await setup.mockInput.pressKey("\x03");

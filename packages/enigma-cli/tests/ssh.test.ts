@@ -52,6 +52,32 @@ test("name is a second connect key: unique across servers, resolvable, same-serv
   expect(ssh.addConnection("reuse", { host: "h", name: "lirio-prod" }).ok).toBe(true);
 });
 
+test("a CLI subcommand cannot be used as an alias, a name or a forward name", () => {
+  // `enigma ssh tunnel` dispatches the tunnel subcommand, so a server keyed "tunnel" would be
+  // unreachable; the same holds for a saved forward named after a tunnel operation.
+  for (const word of ["tunnel", "list", "add", "remove", "TUNNEL"]) {
+    const res = ssh.addConnection(word, { host: "h" });
+    expect(res.ok).toBe(false);
+    expect(res.error).toContain("enigma ssh");
+  }
+  expect(ssh.addConnection("ok-alias", { host: "h", name: "forward" }).ok).toBe(false);
+  expect(ssh.addConnection("ok-alias", { host: "h" }).ok).toBe(true);
+  expect(ssh.updateConnection("ok-alias", { name: "tunnels" }).ok).toBe(false);
+  expect(ssh.updateConnection("ok-alias", { name: "ok-name" }).ok).toBe(true);
+  // Forward names are run as `enigma ssh tunnel <name>`, so tunnel operations are refused.
+  expect(ssh.addForward("ok-alias", { ...ssh.parseForward("9090:5432")!, name: "start" }).ok).toBe(false);
+  expect(ssh.addForward("ok-alias", { ...ssh.parseForward("9090:5432")!, name: "pg" }).ok).toBe(true);
+});
+
+test("the reserved lists match the issue helpers, so every surface refuses the same names", () => {
+  expect(ssh.connectionKeyIssue("lirio-0")).toBeNull();
+  expect(ssh.connectionKeyIssue("")).toContain("required");
+  expect(ssh.connectionKeyIssue("bad alias")).toContain("alphanumeric");
+  expect(ssh.tunnelNameIssue("pg")).toBeNull();
+  for (const word of ssh.RESERVED_CONNECTION_KEYS) expect(ssh.connectionKeyIssue(word)).toBeTruthy();
+  for (const word of ssh.RESERVED_TUNNEL_NAMES) expect(ssh.tunnelNameIssue(word)).toBeTruthy();
+});
+
 test("askpassAnswer returns the decrypted password by alias or name, else empty", () => {
   ssh.addConnection("pwconn", { host: "h", name: "pw-name", password: "hunter2" });
   expect(ssh.askpassAnswer("pwconn")).toBe("hunter2");
@@ -156,13 +182,14 @@ test("findNamedForward resolves a tunnel by name across servers", () => {
 });
 
 test("addForward and removeForward persist on the connection", () => {
-  ssh.addConnection("fwd", { host: "h" });
-  ssh.addForward("fwd", ssh.parseForward("9090:db:5432")!);
-  ssh.addForward("fwd", ssh.parseForward("D:1080")!);
-  expect(ssh.getConnection("fwd")!.forwards).toHaveLength(2);
-  expect(ssh.removeForward("fwd", 0).ok).toBe(true);
-  expect(ssh.getConnection("fwd")!.forwards).toEqual([{ type: "dynamic", bind: "1080" }]);
-  expect(ssh.removeForward("fwd", 9).ok).toBe(false);
+  // NOTE: "fwd" itself is a reserved key (it is the `forward` subcommand's alias).
+  ssh.addConnection("fwdconn", { host: "h" });
+  ssh.addForward("fwdconn", ssh.parseForward("9090:db:5432")!);
+  ssh.addForward("fwdconn", ssh.parseForward("D:1080")!);
+  expect(ssh.getConnection("fwdconn")!.forwards).toHaveLength(2);
+  expect(ssh.removeForward("fwdconn", 0).ok).toBe(true);
+  expect(ssh.getConnection("fwdconn")!.forwards).toEqual([{ type: "dynamic", bind: "1080" }]);
+  expect(ssh.removeForward("fwdconn", 9).ok).toBe(false);
 });
 
 // --- command builders -----------------------------------------------------------

@@ -17,6 +17,7 @@ import {
 import {
   listConnections, getConnection, addConnection, updateConnection, removeConnection,
   addForward, removeForward, parseForward, describeForward, sshTarget,
+  RESERVED_CONNECTION_KEYS, RESERVED_TUNNEL_NAMES,
   type SshConnectionView, type SshInput,
 } from "./ssh";
 
@@ -49,6 +50,8 @@ export interface SshActionResult {
   connections?: SshRow[];
   /** The refreshed standalone-tunnel list (with live status) after a mutating action. */
   tunnels?: TunnelView[];
+  /** Reserved names, resent with every refresh so the form's live check stays in sync. */
+  reserved?: SshReserved;
 }
 
 /** The editable fields the dashboard sends for add/edit. */
@@ -73,9 +76,16 @@ interface SshPayload extends SshInput {
   tunnelNewName?: string;
 }
 
+/** The names the CLI already claims, so the form can reject them as the user types. */
+export interface SshReserved { connection: readonly string[]; tunnel: readonly string[]; }
+
 /** Both lists the SSH subpage renders: connections and standalone tunnels (with live status). */
-export function listSshData(): { connections: SshRow[]; tunnels: TunnelView[] } {
-  return { connections: listSshForDashboard(), tunnels: listTunnels() };
+export function listSshData(): { connections: SshRow[]; tunnels: TunnelView[]; reserved: SshReserved } {
+  return {
+    connections: listSshForDashboard(),
+    tunnels: listTunnels(),
+    reserved: { connection: RESERVED_CONNECTION_KEYS, tunnel: RESERVED_TUNNEL_NAMES },
+  };
 }
 
 /** Turn the loose payload into a validated SshInput (options split, forwards ignored here). */

@@ -16,7 +16,7 @@ import { enigmaHome, readJson } from "./util";
 import { existsSync, writeFileSync } from "node:fs";
 import {
   getConnection, resolveLauncher, forwardSpec, describeForward, parseForward,
-  sshTarget, type PortForward,
+  sshTarget, tunnelNameIssue, type PortForward,
 } from "./ssh";
 
 /** A named, server-bound port forward that can be run as a background process. */
@@ -76,8 +76,6 @@ export function tunnelActive(name: string): boolean {
   return false;
 }
 
-const NAME_RE = /^[A-Za-z0-9][\w.-]*$/;
-
 /** The forward payload of a tunnel (drops the standalone-only fields). */
 function toForward(t: Tunnel): PortForward {
   return { type: t.type, bind: t.bind, host: t.host, hostPort: t.hostPort, name: t.name };
@@ -108,7 +106,8 @@ export function getTunnel(name: string): Tunnel | null {
 
 /** Create a tunnel from a name, a server (alias or name) and a spec (e.g. "9090:db:5432"). */
 export function addTunnel(name: string, server: string, spec: string): { ok: boolean; error?: string } {
-  if (!name || !NAME_RE.test(name)) return { ok: false, error: "Tunnel name must be alphanumeric (dashes, dots and underscores allowed)." };
+  const issue = tunnelNameIssue(name);
+  if (issue) return { ok: false, error: issue };
   const store = readStore();
   if (store.tunnels.some((t) => t.name === name)) return { ok: false, error: `A tunnel named '${name}' already exists.` };
   if (!getConnection(server)) return { ok: false, error: `Unknown server '${server}'. Add it first, or use one of your saved connections.` };
@@ -125,7 +124,8 @@ export function updateTunnel(name: string, patch: { server?: string; spec?: stri
   const t = store.tunnels.find((x) => x.name === name);
   if (!t) return { ok: false, error: `Unknown tunnel '${name}'.` };
   if (patch.newName !== undefined && patch.newName !== name) {
-    if (!NAME_RE.test(patch.newName)) return { ok: false, error: "Tunnel name must be alphanumeric (dashes, dots and underscores allowed)." };
+    const issue = tunnelNameIssue(patch.newName);
+    if (issue) return { ok: false, error: issue };
     if (store.tunnels.some((x) => x.name === patch.newName)) return { ok: false, error: `A tunnel named '${patch.newName}' already exists.` };
   }
   if (patch.server !== undefined && !getConnection(patch.server)) return { ok: false, error: `Unknown server '${patch.server}'.` };
