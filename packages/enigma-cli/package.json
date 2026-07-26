@@ -1,6 +1,6 @@
 {
   "name": "enigma-cli",
-  "version": "1.30.11",
+  "version": "1.30.12",
   "description": "Everything you need to work with a coding agent: install shared policy skills for Claude Code, OpenAI Codex and opencode, and set up portable git security hooks.",
   "type": "module",
   "bin": {

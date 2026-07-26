@@ -8,7 +8,7 @@
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { test, expect, afterAll } from "bun:test";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 
 const HOME = mkdtempSync(join(tmpdir(), "enigma-ssh-"));
 const BIN = mkdtempSync(join(tmpdir(), "enigma-ssh-bin-"));
@@ -50,6 +50,47 @@ test("name is a second connect key: unique across servers, resolvable, same-serv
   ssh.updateConnection("lirio-0", { name: "" });
   expect(ssh.getConnection("lirio-prod")).toBeNull();
   expect(ssh.addConnection("reuse", { host: "h", name: "lirio-prod" }).ok).toBe(true);
+});
+
+test("a CLI subcommand cannot be used as an alias, a name or a forward name", () => {
+  // `enigma ssh tunnel` dispatches the tunnel subcommand, so a server keyed "tunnel" would be
+  // unreachable; the same holds for a saved forward named after a tunnel operation.
+  for (const word of ["tunnel", "list", "add", "remove", "TUNNEL"]) {
+    const res = ssh.addConnection(word, { host: "h" });
+    expect(res.ok).toBe(false);
+    expect(res.error).toContain("enigma ssh");
+  }
+  expect(ssh.addConnection("ok-alias", { host: "h", name: "forward" }).ok).toBe(false);
+  expect(ssh.addConnection("ok-alias", { host: "h" }).ok).toBe(true);
+  expect(ssh.updateConnection("ok-alias", { name: "tunnels" }).ok).toBe(false);
+  expect(ssh.updateConnection("ok-alias", { name: "ok-name" }).ok).toBe(true);
+  // A forward's name IS the token in `enigma ssh tunnel <name>`, so operations are refused.
+  expect(ssh.addForward("ok-alias", { ...ssh.parseForward("9090:5432")!, name: "start" }).ok).toBe(false);
+  expect(ssh.addForward("ok-alias", { ...ssh.parseForward("9090:5432")!, name: "pg" }).ok).toBe(true);
+});
+
+test("a name already stored stays editable, so a pre-reserved connection is not locked out", () => {
+  // Written straight to the store: this is what a connection saved before the keys were
+  // reserved looks like. Every edit form resends the stored name, so re-validating it would
+  // make the row uneditable - only a CHANGED name is checked.
+  const store = JSON.parse(readFileSync(join(HOME, "ssh.json"), "utf8")) as { connections: { alias: string; host: string; name?: string }[] };
+  store.connections.push({ alias: "legacy", host: "h", name: "tunnel" });
+  writeFileSync(join(HOME, "ssh.json"), JSON.stringify(store));
+  expect(ssh.updateConnection("legacy", { name: "tunnel", host: "newhost" }).ok).toBe(true);
+  expect(ssh.getConnection("legacy")!.host).toBe("newhost");
+  expect(ssh.updateConnection("legacy", { name: "list" }).ok).toBe(false); // a new reserved name still is
+});
+
+test("the reserved lists match the issue helpers, so every surface refuses the same names", () => {
+  expect(ssh.connectionKeyIssue("lirio-0")).toBeNull();
+  expect(ssh.connectionKeyIssue("")).toContain("required");
+  expect(ssh.connectionKeyIssue("bad alias")).toContain("alphanumeric");
+  expect(ssh.forwardNameIssue("pg")).toBeNull();
+  for (const word of ssh.RESERVED_CONNECTION_KEYS) expect(ssh.connectionKeyIssue(word)).toBeTruthy();
+  for (const word of ssh.RESERVED_TUNNEL_NAMES) expect(ssh.forwardNameIssue(word)).toBeTruthy();
+  // A standalone tunnel is run as `enigma ssh tunnel start <name>`, so its name is only shaped.
+  for (const word of ssh.RESERVED_TUNNEL_NAMES) expect(ssh.tunnelNameIssue(word)).toBeNull();
+  expect(ssh.tunnelNameIssue("bad name")).toContain("alphanumeric");
 });
 
 test("askpassAnswer returns the decrypted password by alias or name, else empty", () => {
@@ -94,6 +135,30 @@ test("update changes fields and an empty password clears it", () => {
 test("remove deletes and reports unknown aliases", () => {
   expect(ssh.removeConnection("secret")).toBe(true);
   expect(ssh.removeConnection("secret")).toBe(false);
+});
+
+test("edit and remove accept a name, like every other lookup", () => {
+  // `enigma ssh <name>` connects and `enigma ssh info <name>` prints, so editing or removing by
+  // the same key must not answer "Unknown connection" for a connection that plainly exists.
+  ssh.addConnection("edit-0", { host: "h", name: "edit-prod" });
+  expect(ssh.updateConnection("edit-prod", { host: "5.6.7.8" }).ok).toBe(true);
+  expect(ssh.getConnection("edit-0")!.host).toBe("5.6.7.8");
+  expect(ssh.updateConnection("no-such-key", { host: "h" }).error).toContain("Unknown connection");
+  expect(ssh.removeConnection("edit-prod")).toBe(true);
+  expect(ssh.getConnection("edit-0")).toBeNull();
+});
+
+test("an alias wins over another row's name, so a pre-uniqueness store cannot shadow it", () => {
+  // Written straight to the store: the keys are unique for anything saved through addConnection,
+  // but a hand-edited or pre-uniqueness ssh.json can hold a name that repeats another alias.
+  const path = join(HOME, "ssh.json");
+  const store = JSON.parse(readFileSync(path, "utf8")) as { connections: { alias: string; host: string; name?: string }[] };
+  store.connections.push({ alias: "shadower", host: "h", name: "target" }, { alias: "target", host: "h" });
+  writeFileSync(path, JSON.stringify(store));
+  expect(ssh.getConnection("target")!.alias).toBe("target"); // connect resolves the alias row...
+  expect(ssh.removeConnection("target")).toBe(true);         // ...and so does remove
+  expect(ssh.getConnection("target")!.alias).toBe("shadower"); // the name resolves once free
+  expect(ssh.removeConnection("shadower")).toBe(true);
 });
 
 // --- forward specs --------------------------------------------------------------
@@ -155,14 +220,93 @@ test("findNamedForward resolves a tunnel by name across servers", () => {
   expect(ssh.findNamedForward("missing")).toBeNull();
 });
 
+test("port 0 clears a stored port, so a blanked field does not silently keep the old one", () => {
+  ssh.addConnection("portconn", { host: "h", port: 2222 });
+  expect(ssh.getConnection("portconn")!.port).toBe(2222);
+  ssh.updateConnection("portconn", { port: 0 });
+  expect(ssh.getConnection("portconn")!.port).toBeUndefined();
+});
+
+test("portIssue accepts a blank/0 clear and reports anything outside 1-65535", () => {
+  expect(ssh.portIssue("")).toBeNull();
+  expect(ssh.portIssue(" ")).toBeNull();
+  expect(ssh.portIssue(0)).toBeNull();
+  expect(ssh.portIssue("0")).toBeNull();
+  expect(ssh.portIssue("2222")).toBeNull();
+  expect(ssh.portIssue(65535)).toBeNull();
+  for (const bad of ["notaport", "-1", "1.5", "70000"]) expect(ssh.portIssue(bad)).toContain("65535");
+});
+
+test("portIssue judges the shape, so a value that merely coerces to 0 is not read as a clear", () => {
+  // /api/ssh is a validation boundary: a non-UI caller can POST any JSON. null, false and []
+  // all coerce to 0, which must be reported as invalid rather than wiping the stored port.
+  for (const bad of [null, false, [], {}, "0x0", NaN]) {
+    expect(ssh.portIssue(bad as never)).toContain("65535");
+  }
+});
+
+test("port survives an edit that does not mention it, and --no-port style 0 clears it", () => {
+  ssh.addConnection("portkeep", { host: "h", port: 2222 });
+  ssh.updateConnection("portkeep", { host: "h2" });
+  expect(ssh.getConnection("portkeep")!.port).toBe(2222); // undefined means "leave as-is"
+  ssh.updateConnection("portkeep", { port: 0 });
+  expect(ssh.getConnection("portkeep")!.port).toBeUndefined();
+});
+
+// --- CLI flag parsing -----------------------------------------------------------
+
+test("parseConnectionFlags validates --port instead of coercing a typo into 'leave as-is'", () => {
+  // A bad port used to become `undefined`, which applyInput skips - the CLI then reported the
+  // connection as updated while the old port was still stored.
+  for (const bad of ["abc", "70000", "-1", "1.5"]) {
+    expect(ssh.parseConnectionFlags(["--port", bad]).error).toContain("65535");
+  }
+  expect(ssh.parseConnectionFlags(["--port", "2222"]).input.port).toBe(2222);
+  expect(ssh.parseConnectionFlags(["-p", " 2222 "]).input.port).toBe(2222);
+});
+
+test("parseConnectionFlags clears the port with --no-port (and an explicit 0)", () => {
+  expect(ssh.parseConnectionFlags(["--no-port"]).input.port).toBe(0);
+  expect(ssh.parseConnectionFlags(["--port", "0"]).input.port).toBe(0);
+  ssh.addConnection("cliport", { host: "h", port: 2222 });
+  ssh.updateConnection("cliport", ssh.parseConnectionFlags(["--no-port"]).input);
+  expect(ssh.getConnection("cliport")!.port).toBeUndefined();
+});
+
+test("parseConnectionFlags reads the remaining flags and reports bad ones", () => {
+  const { input, promptPassword } = ssh.parseConnectionFlags([
+    "--host", "h", "-u", "root", "--name", "srv", "-i", "/k.pem", "-j", "bastion",
+    "-A", "-o", "X=Y", "-L", "9090:db:5432", "--password",
+  ]);
+  expect(input).toMatchObject({ host: "h", user: "root", name: "srv", identityFile: "/k.pem", proxyJump: "bastion", forwardAgent: true, options: ["X=Y"] });
+  expect(input.forwards).toEqual([ssh.parseForward("9090:db:5432")!]);
+  expect(promptPassword).toBe(true);
+  expect(ssh.parseConnectionFlags(["--no-name"]).input.name).toBe("");
+  expect(ssh.parseConnectionFlags(["--no-password"]).input.password).toBe("");
+  expect(ssh.parseConnectionFlags(["-L", "nope"]).error).toContain("Bad forward spec");
+  expect(ssh.parseConnectionFlags(["--nope"]).error).toContain("Unknown flag");
+});
+
 test("addForward and removeForward persist on the connection", () => {
-  ssh.addConnection("fwd", { host: "h" });
-  ssh.addForward("fwd", ssh.parseForward("9090:db:5432")!);
-  ssh.addForward("fwd", ssh.parseForward("D:1080")!);
-  expect(ssh.getConnection("fwd")!.forwards).toHaveLength(2);
-  expect(ssh.removeForward("fwd", 0).ok).toBe(true);
-  expect(ssh.getConnection("fwd")!.forwards).toEqual([{ type: "dynamic", bind: "1080" }]);
-  expect(ssh.removeForward("fwd", 9).ok).toBe(false);
+  // NOTE: "fwd" itself is a reserved key (it is the `forward` subcommand's alias).
+  ssh.addConnection("fwdconn", { host: "h" });
+  ssh.addForward("fwdconn", ssh.parseForward("9090:db:5432")!);
+  ssh.addForward("fwdconn", ssh.parseForward("D:1080")!);
+  expect(ssh.getConnection("fwdconn")!.forwards).toHaveLength(2);
+  expect(ssh.removeForward("fwdconn", 0).ok).toBe(true);
+  expect(ssh.getConnection("fwdconn")!.forwards).toEqual([{ type: "dynamic", bind: "1080" }]);
+  expect(ssh.removeForward("fwdconn", 9).ok).toBe(false);
+});
+
+test("forwards can be managed by a connection's name, not just its alias", () => {
+  // getConnection accepts both keys, so resolving by name and then writing by alias must not
+  // report "Unknown connection" for a connection it just found.
+  ssh.addConnection("byname-0", { host: "h", name: "byname-prod" });
+  expect(ssh.addForward("byname-prod", ssh.parseForward("9090:5432")!).ok).toBe(true);
+  expect(ssh.getConnection("byname-0")!.forwards).toHaveLength(1);
+  expect(ssh.removeForward("byname-prod", 0).ok).toBe(true);
+  expect(ssh.getConnection("byname-0")!.forwards).toBeUndefined();
+  expect(ssh.addForward("no-such-server", ssh.parseForward("9090:5432")!).error).toContain("Unknown connection");
 });
 
 // --- command builders -----------------------------------------------------------
@@ -211,7 +355,7 @@ test("resolveLauncher uses plain ssh for key auth", () => {
 
 test("resolveLauncher falls back to a prompt when a password has no helper", () => {
   process.env.PATH = ""; // no sshpass, no plink
-  const conn = ssh.getConnection("fwd")!;
+  const conn = ssh.getConnection("fwdconn")!;
   const l = ssh.resolveLauncher({ ...conn, password: (ssh.addConnection("pw1", { host: "h", password: "s" }), ssh.getConnection("pw1")!.password) });
   expect(l.mode).toBe("plain-prompt");
 });

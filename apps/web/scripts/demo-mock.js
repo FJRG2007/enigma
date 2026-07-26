@@ -205,6 +205,12 @@
         { name: "socks", server: "server1", type: "dynamic", bind: "1080", active: false, spec: "D:1080", label: "socks: dynamic SOCKS on 1080", target: "root@203.0.113.10", missing: false }
     ];
 
+    // Mirrors RESERVED_CONNECTION_KEYS in src/ssh.ts so the demo form rejects the same aliases
+    // the real CLI would refuse.
+    var SSH_RESERVED = {
+        connection: ["add", "delete", "edit", "forward", "fwd", "info", "list", "ls", "remove", "rm", "show", "tunnel", "tunnels"]
+    };
+
     var RECALL = {
         available: true, enabled: true,
         stats: { observations: 128, summaries: 22, sessions: 22, projects: 3, byType: { change: 41, discovery: 33, feature: 28, bugfix: 14, refactor: 8, decision: 3, security: 1 }, dbBytes: 196608, lastObservationAt: Date.now() },
@@ -443,7 +449,7 @@
             return { ok: true, note: "Demo - no action taken.", packs: PACKS };
         }
         if (path.indexOf("/api/ssh") !== -1) {
-            if (method !== "POST") return { connections: SSH, tunnels: TUNNELS };
+            if (method !== "POST") return { connections: SSH, tunnels: TUNNELS, reserved: SSH_RESERVED };
             var sb = body || {};
             if (sb.action === "connect") return { ok: true, command: `enigma ssh ${sb.alias || "server1"}`, note: "Run this in a terminal to connect." };
             if (sb.action === "tunnel-start") { TUNNELS = TUNNELS.map((t) => t.name === sb.tunnelName ? Object.assign({}, t, { active: true }) : t); return { ok: true, note: "Demo - tunnel started.", connections: SSH, tunnels: TUNNELS }; }

@@ -23,7 +23,7 @@ import { onGhTelemetryChange } from "../github";
 import type { Scope, Setting } from "../settings-registry";
 import { recallDashboard, type RecallView } from "../dashboard-recall";
 import { resourceStatus, runResourceAction, type ResourceStatus } from "../resources";
-import { listConnections, removeConnection, updateConnection, sshTarget, type SshConnectionView, type SshInput } from "../ssh";
+import { listConnections, removeConnection, updateConnection, sshTarget, portIssue, type SshConnectionView, type SshInput } from "../ssh";
 import { CATEGORIES, ALL_SETTINGS, valueLabel, invalidateSettingReads } from "../settings-registry";
 import type { HubContext, HubAccount, HubExitAction, HubProfile, HubSkill, HubTool, ActionRequest, ActionResult } from "./types";
 
@@ -558,6 +558,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
     type SshEditRow = { field: string; label: string; kind: "text" | "toggle" | "clearpw" };
     const sshEditRows = (c: SshConnectionView): SshEditRow[] => {
         const rows: SshEditRow[] = [
+            { field: "name", label: `Name (2nd connect key): ${c.name ?? "-"}`, kind: "text" },
             { field: "host", label: `Host: ${c.host}`, kind: "text" },
             { field: "user", label: `User: ${c.user ?? "-"}`, kind: "text" },
             { field: "port", label: `Port: ${c.port ?? 22}`, kind: "text" },
@@ -708,7 +709,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         // Field-by-field editor for a saved connection (opened with 'e'): a field list
         // (sshEdit) plus a nested input overlay for one text field (sshField).
         const [sshEdit, setSshEdit] = useState<{ alias: string; cursor: number } | null>(null);
-        const [sshField, setSshField] = useState<{ alias: string; field: string; label: string } | null>(null);
+        const [sshField, setSshField] = useState<{ alias: string; field: string; label: string; error?: string } | null>(null);
         const resRows: { op: string; value?: number; label: string }[] = [];
         if (resStatus) {
             if (resStatus.wslAvailable) resRows.push({ op: "wsl-shutdown", label: `Shut down WSL${resStatus.vmmemRunning ? " - vmmemWSL running, eating RAM" : ""}` });
@@ -790,9 +791,15 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             try { removeConnection(c.alias); setSshConns(listConnections()); setSshNote(`Removed '${c.alias}'.`); setSshCursor(0); } catch { /* */ }
         };
         // Apply an edit to the connection under sshEdit and re-read the list so the field
-        // rows reflect the new value. Never throws (best-effort, like the other panels).
-        const applySshEdit = (alias: string, patch: SshInput): void => {
-            try { updateConnection(alias, patch); setSshConns(listConnections()); } catch { /* */ }
+        // rows reflect the new value. Returns why the store refused it, else null - a rejected
+        // value (a reserved name, say) must never look saved. Never throws, like the other panels.
+        const applySshEdit = (alias: string, patch: SshInput): string | null => {
+            try {
+                const res = updateConnection(alias, patch);
+                if (!res.ok) return res.error ?? "Could not save that value.";
+                setSshConns(listConnections());
+                return null;
+            } catch (e) { return (e as Error).message || "Could not save that value."; }
         };
         // Act on a field row: toggle the boolean, clear the password, or open the input.
         const actSshEditRow = (i: number): void => {
@@ -800,24 +807,35 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             const conn = sshConns.find((c) => c.alias === sshEdit.alias);
             const row = conn ? sshEditRows(conn)[i] : undefined;
             if (!conn || !row) return;
-            if (row.kind === "toggle") { applySshEdit(conn.alias, { forwardAgent: !conn.forwardAgent }); return; }
-            if (row.kind === "clearpw") { applySshEdit(conn.alias, { password: "" }); setSshNote("Password cleared."); return; }
+            if (row.kind === "toggle") { const err = applySshEdit(conn.alias, { forwardAgent: !conn.forwardAgent }); if (err) setSshNote(err); return; }
+            if (row.kind === "clearpw") { setSshNote(applySshEdit(conn.alias, { password: "" }) ?? "Password cleared."); return; }
             setSshField({ alias: conn.alias, field: row.field, label: row.label.split(":")[0]!.trim() });
         };
         // Save one text field. Empty means clear (except host, which stays required, and
-        // password, where empty means keep the stored one).
+        // password, where empty means keep the stored one). A refused value keeps the input
+        // open with the reason: the note behind this overlay would not be visible from here.
         const submitSshField = (value: string): void => {
             const f = sshField;
-            setSshField(null);
             if (!f) return;
             const v = value.trim();
             const patch: SshInput = {};
-            if (f.field === "host") { if (!v) return; patch.host = v; }
-            else if (f.field === "port") patch.port = v ? Number(v) || undefined : undefined;
+            // Host must stay set and an empty password means "keep the stored one", so both
+            // just close the input instead of writing an empty value.
+            if ((f.field === "host" || f.field === "password") && !v) { setSshField(null); return; }
+            if (f.field === "host") patch.host = v;
+            // A blank port must actually clear it: `port: undefined` is "leave as-is" in
+            // applyInput, so it silently kept the old value while reporting a save. 0 clears.
+            else if (f.field === "port") {
+                const issue = portIssue(v);
+                if (issue) { setSshField({ ...f, error: issue }); return; }
+                patch.port = v ? Number(v) : 0;
+            }
             else if (f.field === "options") patch.options = v ? v.split(",").map((s) => s.trim()).filter(Boolean) : [];
-            else if (f.field === "password") { if (!v) return; patch.password = v; }
-            else (patch as Record<string, string>)[f.field] = v; // user / identityFile / proxyJump ("" clears)
-            applySshEdit(f.alias, patch);
+            else if (f.field === "password") patch.password = v;
+            else (patch as Record<string, string>)[f.field] = v; // name / user / identityFile / proxyJump ("" clears)
+            const err = applySshEdit(f.alias, patch);
+            if (err) { setSshField({ ...f, error: err }); return; }
+            setSshField(null);
             setSshNote(`Updated ${f.field} of '${f.alias}'.`);
         };
 
@@ -1655,7 +1673,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             const hint = sshField.field === "password" ? "new password (blank = keep)"
                 : sshField.field === "host" ? `current: ${conn?.host ?? ""}`
                 : cur != null && cur !== "" ? `current: ${Array.isArray(cur) ? cur.join(", ") : cur} (blank clears)` : "value (blank clears)";
-            content = renderAddInput({ title: `${sshField.alias}: ${sshField.label}`, placeholder: hint, maxLength: 256, onSubmit: submitSshField });
+            content = renderAddInput({ title: `${sshField.alias}: ${sshField.label}`, placeholder: hint, error: sshField.error, maxLength: 256, onSubmit: submitSshField });
         } else if (sshEdit) {
             const conn = sshConns.find((c) => c.alias === sshEdit.alias);
             content = conn

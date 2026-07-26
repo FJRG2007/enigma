@@ -170,6 +170,10 @@
         .ssh-fwd-form .ssh-f-name { max-width: 140px; }
         .ssh-fwd-form .ssh-f-local, .ssh-fwd-form .ssh-f-remote { max-width: 170px; }
         .ssh-arrow { color: var(--muted); }
+        .toggle:disabled { opacity: .45; cursor: not-allowed; }
+        .fld-err { color: var(--bad); font-size: 11px; min-height: 0; }
+        .fld-err:empty { display: none; }
+        .linput.bad { border-color: var(--bad); }
         .tun-table { width: 100%; border-collapse: collapse; }
         .tun-table th { text-align: left; font-size: 12px; color: var(--muted); font-weight: 500; padding: 6px 10px; border-bottom: 1px solid var(--border); }
         .tun-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
@@ -865,8 +869,8 @@
         <div class="panel">
             <div class="set-cat-h"><span id="sshFormTitle">Add a connection</span></div>
             <div class="ssh-form">
-                <label>Alias (short key)<input id="sshAlias" class="linput" placeholder="lirio-0"></label>
-                <label>Name (optional 2nd key)<input id="sshName" class="linput" placeholder="lirio-prod"></label>
+                <label>Alias (short key)<input id="sshAlias" class="linput" placeholder="lirio-0"><span id="sshAliasErr" class="fld-err"></span></label>
+                <label>Name (optional 2nd key)<input id="sshName" class="linput" placeholder="lirio-prod"><span id="sshNameErr" class="fld-err"></span></label>
                 <label>Host<input id="sshHost" class="linput" placeholder="1.2.3.4 or host.example.com"></label>
                 <label>User<input id="sshUser" class="linput" placeholder="root"></label>
                 <label>Port<input id="sshPort" class="linput" type="number" min="1" max="65535" placeholder="22"></label>
@@ -896,6 +900,7 @@
                 <input id="tunLocal" class="linput ssh-f-local" type="number" min="1" max="65535" placeholder="local (= remote)">
                 <button id="tunFormBtn" type="button" class="toggle on">Add tunnel</button>
             </div>
+            <div id="tunNameErr" class="fld-err" style="margin-top:6px"></div>
             <div class="set-hint" style="margin-top:8px">Name it, pick the server, and map a remote port to a local one (local defaults to the same). Run it from a terminal too with <code>enigma ssh tunnel start &lt;name&gt;</code>.</div>
         </div>
     </section>
@@ -4120,6 +4125,53 @@ export {
 
         // --- ssh subpage (connection manager) ---
         let sshEditing = null, sshCache = [];
+        // Names the CLI already claims as subcommands: `enigma ssh tunnel` runs the tunnel
+        // subcommand, so a server aliased "tunnel" could never be reached. The server sends the
+        // lists with every SSH payload; the checks below mirror its wording so the form can
+        // refuse them as the user types instead of after a round trip.
+        let sshReserved = { connection: [] };
+        const SSH_KEY_RE = /^[A-Za-z0-9][\w.-]*$/;
+        function sshKeyIssue(v, label) {
+            if (!SSH_KEY_RE.test(v)) return label + " must be alphanumeric (dashes, dots and underscores allowed).";
+            if ((sshReserved.connection || []).indexOf(v.toLowerCase()) !== -1)
+                return "'" + v + "' is an 'enigma ssh' subcommand, so 'enigma ssh " + v + "' would never reach this server.";
+            return "";
+        }
+        // A tunnel's name is not a dispatch token (`enigma ssh tunnel start up` runs the tunnel
+        // "up"), so only its shape is checked - the engine agrees.
+        function tunKeyIssue(v) {
+            return SSH_KEY_RE.test(v) ? "" : "Tunnel name must be alphanumeric (dashes, dots and underscores allowed).";
+        }
+        /** Paint one field's validity: red border + inline message (empty message clears it). */
+        function setFieldErr(inputId, errId, msg) {
+            const el = $(inputId), box = $(errId);
+            if (box) box.textContent = msg;
+            if (el) { el.classList.toggle("bad", !!msg); el.setAttribute("aria-invalid", msg ? "true" : "false"); }
+            return !msg;
+        }
+        /**
+         * Live-check the connection form. The alias is fixed while editing (its input is
+         * disabled), so only a new alias is checked; the name is optional, checked when typed.
+         * Also gates the Save button so an invalid name can never be submitted.
+         */
+        function sshValidateForm() {
+            const alias = $("sshAlias").value.trim(), name = $("sshName").value.trim();
+            const aliasOk = setFieldErr("sshAlias", "sshAliasErr", sshEditing || !alias ? "" : sshKeyIssue(alias, "Alias"));
+            // A name already stored on this connection passes untouched, so a row saved before
+            // these keys were reserved stays editable (the engine allows the unchanged name too).
+            const stored = sshEditing ? (sshCache.find((c) => c.alias === sshEditing) || {}).name : "";
+            const nameOk = setFieldErr("sshName", "sshNameErr", name && name !== stored ? sshKeyIssue(name, "Name") : "");
+            const ok = aliasOk && nameOk;
+            $("sshSave").disabled = !ok;
+            return ok;
+        }
+        /** Live-check the tunnel name (fixed while editing) and gate its Add/Save button. */
+        function tunValidateForm() {
+            const name = $("tunName").value.trim();
+            const ok = setFieldErr("tunName", "tunNameErr", tunEditing || !name ? "" : tunKeyIssue(name));
+            $("tunFormBtn").disabled = !ok;
+            return ok;
+        }
         // Icon-only action buttons (edit=pencil, start=play, stop=stop, delete=trash, connect=terminal).
         const ICO = {
             play: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="6 4 20 12 6 20"/></svg>',
@@ -4195,7 +4247,9 @@ export {
             try {
                 const d = await apiJson("/api/ssh", { cache: "no-store" });
                 sshTunnels = d.tunnels || [];
+                if (d.reserved) sshReserved = d.reserved;
                 renderSsh(d.connections); renderTunnels(d.tunnels);
+                sshValidateForm(); tunValidateForm();
             }
             catch (e) { $("sshBody").innerHTML = '<div class="empty" style="padding:12px 0">' + esc(e.message || "SSH unavailable.") + "</div>"; }
         }
@@ -4208,7 +4262,10 @@ export {
                 optionsRaw: $("sshOptions").value.trim(),
             };
             const port = $("sshPort").value.trim();
+            // Blanking Port while editing must clear it: 0 is the clear sentinel, while omitting
+            // the field means "leave as-is" and would silently keep the stored port.
             if (port) payload.port = Number(port);
+            else if (sshEditing) payload.port = 0;
             const pw = $("sshPassword").value;
             if (sshEditing) { if ($("sshClearPw").checked) payload.password = ""; else if (pw) payload.password = pw; }
             else if (pw) payload.password = pw;
@@ -4218,6 +4275,7 @@ export {
             setNote("sshNote", "Saving...");
             try {
                 const out = await apiJson("/api/ssh", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.assign({ action }, payload)) });
+                if (out.reserved) sshReserved = out.reserved;
                 if (out.connections) renderSsh(out.connections);
                 if (out.tunnels) renderTunnels(out.tunnels);
                 if (out.command) { try { await navigator.clipboard.writeText(out.command); } catch { /* clipboard blocked */ } }
@@ -4228,6 +4286,7 @@ export {
         async function sshSave() {
             const payload = sshReadForm();
             if (!payload.alias) { setNote("sshNote", "An alias is required.", "err"); return; }
+            if (!sshValidateForm()) { setNote("sshNote", $("sshAliasErr").textContent || $("sshNameErr").textContent, "err"); return; }
             if (await sshAction(sshEditing ? "edit" : "add", payload)) sshResetForm();
         }
         function sshFillForm(c) {
@@ -4241,6 +4300,7 @@ export {
             $("sshFormTitle").textContent = "Edit " + c.alias;
             $("sshClearPwWrap").style.display = c.hasPassword ? "" : "none"; $("sshClearPw").checked = false;
             $("sshCancel").style.display = "";
+            sshValidateForm();
             window.scrollTo({ top: 0, behavior: "smooth" });
         }
         function sshResetForm() {
@@ -4249,6 +4309,7 @@ export {
             $("sshAlias").disabled = false; $("sshForwardAgent").checked = false;
             $("sshFormTitle").textContent = "Add a connection";
             $("sshClearPwWrap").style.display = "none"; $("sshCancel").style.display = "none";
+            sshValidateForm();
         }
         // Read the add/edit tunnel form; the server comes from the dropdown, the spec from
         // remote (+ optional local, defaulting to the remote port).
@@ -4263,6 +4324,7 @@ export {
             tunEditing = null;
             ["tunName", "tunRemote", "tunLocal"].forEach((id) => { $(id).value = ""; });
             $("tunName").disabled = false; $("tunFormBtn").textContent = "Add tunnel";
+            tunValidateForm();
         }
         function tunFillForm(t) {
             tunEditing = t.name;
@@ -4271,12 +4333,14 @@ export {
             $("tunRemote").value = t.host ? (t.host === "localhost" ? t.hostPort : t.host + ":" + t.hostPort) : "";
             $("tunLocal").value = String(t.bind).split(":").pop();
             $("tunFormBtn").textContent = "Save tunnel";
+            tunValidateForm();
             $("tunName").scrollIntoView({ block: "center", behavior: "smooth" });
         }
         async function tunSave() {
             const f = tunReadForm();
             if (!f) { setNote("sshNote", "Enter a remote port (or host:port).", "err"); return; }
             if (!f.name) { setNote("sshNote", "A tunnel name is required.", "err"); return; }
+            if (!tunValidateForm()) { setNote("sshNote", $("tunNameErr").textContent, "err"); return; }
             if (!f.server) { setNote("sshNote", "Pick a server (add a connection first).", "err"); return; }
             const ok = tunEditing
                 ? await sshAction("tunnel-edit", { tunnelName: tunEditing, tunnelServer: f.server, tunnelSpec: f.spec })
@@ -4288,6 +4352,10 @@ export {
             $("sshSave").addEventListener("click", sshSave);
             $("sshCancel").addEventListener("click", sshResetForm);
             $("tunFormBtn").addEventListener("click", tunSave);
+            // Real-time name checks: refuse a reserved or malformed key while it is being typed.
+            $("sshAlias").addEventListener("input", sshValidateForm);
+            $("sshName").addEventListener("input", sshValidateForm);
+            $("tunName").addEventListener("input", tunValidateForm);
             $("view-ssh").addEventListener("click", async (e) => {
                 const t = e.target.closest("button"); if (!t) return;
                 if (t.dataset.sshConnect != null) return void sshAction("connect", { alias: t.dataset.sshConnect });

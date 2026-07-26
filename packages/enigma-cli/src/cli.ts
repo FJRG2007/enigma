@@ -573,41 +573,11 @@ async function runSshCli(args: string[], interactive: boolean): Promise<number> 
 
     if (sub === "add" || sub === "edit") {
         const alias = rest[0];
-        if (!alias) { console.error(`Usage: enigma ssh ${sub} <alias> --host <host> [--name server-name] [--user u] [--port n] [-i key] [--password] [--jump host] [-o K=V] [-L spec]`); return 1; }
-        const flags = rest.slice(1);
-        const input: import("./ssh").SshInput = {};
-        let promptPassword = false, badForward = false;
-        const opts: string[] = [];
-        const forwards: import("./ssh").PortForward[] = [];
-        for (let i = 0; i < flags.length; i++) {
-            const f = flags[i]!;
-            const val = (): string => flags[++i] ?? "";
-            switch (f) {
-                case "--name": case "-n": input.name = val(); break;
-                case "--no-name": input.name = ""; break;
-                case "--host": case "-H": input.host = val(); break;
-                case "--user": case "-u": input.user = val(); break;
-                case "--port": case "-p": input.port = Number(val()) || undefined; break;
-                case "--identity": case "-i": input.identityFile = val(); break;
-                case "--jump": case "-j": input.proxyJump = val(); break;
-                case "--forward-agent": case "-A": input.forwardAgent = true; break;
-                case "--no-forward-agent": input.forwardAgent = false; break;
-                case "--option": case "-o": opts.push(val()); break;
-                case "--forward": case "-L": {
-                    const pf = ssh.parseForward(val());
-                    if (pf) forwards.push(pf); else badForward = true;
-                    break;
-                }
-                case "--password": promptPassword = true; break;
-                case "--password-value": input.password = val(); break; // scriptable; discouraged
-                case "--no-password": input.password = ""; break;
-                default: console.error(`Unknown flag: ${f}`); return 1;
-            }
-        }
-        if (badForward) { console.error("Bad forward spec. Examples: 8080  9090:8080  9090:dbhost:5432  R:8080:localhost:80  D:1080"); return 1; }
-        if (opts.length) input.options = opts;
-        if (forwards.length) input.forwards = forwards;
-        if (promptPassword) {
+        if (!alias) { console.error(`Usage: enigma ssh ${sub} <alias> --host <host> [--name server-name] [--user u] [--port n | --no-port] [-i key] [--password] [--jump host] [-o K=V] [-L spec]`); return 1; }
+        const parsed = ssh.parseConnectionFlags(rest.slice(1));
+        if (parsed.error) { console.error(parsed.error); return 1; }
+        const input = parsed.input;
+        if (parsed.promptPassword) {
             if (!interactive) { console.error("--password needs an interactive terminal; use --password-value <pw> in scripts."); return 1; }
             const pw = await p.password({ message: `Password for ${alias}`, mask: "*" });
             if (p.isCancel(pw)) { p.cancel("Cancelled."); return 1; }

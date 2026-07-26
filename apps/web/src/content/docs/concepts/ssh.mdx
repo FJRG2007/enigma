@@ -13,12 +13,14 @@ The same store powers the **CLI, the TUI hub and the dashboard**. Passwords are 
 ## Save a connection
 
 <Cmd name="enigma ssh add <alias> [flags]" ex={["enigma ssh add lirio-0 --name lirio-prod --host 192.168.1.138 --user fjrg2007 --password", "enigma ssh add db --host db.internal --user deploy --jump root@bastion -i ~/.ssh/id_ed25519"]}>
-Flags: `--host`, `--name`/`-n` (a second connect key, see below), `--user`/`-u`, `--port`/`-p`, `--identity`/`-i <key>`, `--jump`/`-j <host>` (ProxyJump), `--forward-agent`/`-A`, `--option`/`-o <K=V>` (repeatable), `--forward`/`-L <spec>` (a saved tunnel, repeatable), and `--password` (prompts hidden; stored encrypted). `enigma ssh edit <alias>` changes any field; `--no-password` clears a stored one, `--no-name` clears the name.
+Flags: `--host`, `--name`/`-n` (a second connect key, see below), `--user`/`-u`, `--port`/`-p`, `--identity`/`-i <key>`, `--jump`/`-j <host>` (ProxyJump), `--forward-agent`/`-A`, `--option`/`-o <K=V>` (repeatable), `--forward`/`-L <spec>` (a saved tunnel, repeatable), and `--password` (prompts hidden; stored encrypted). `enigma ssh edit <alias|name>` changes any field; `--no-password` clears a stored one, `--no-name` clears the name and `--no-port` clears the port (back to 22).
 </Cmd>
 
 ## Alias and name
 
 Every connection has an **alias** (the short key you type) and an optional **name** (the real server name). Both are connect keys - `enigma ssh lirio-0` and `enigma ssh lirio-prod` reach the same box. Neither an alias nor a name may be reused by a *different* connection (both are unique), but a single connection may set its name equal to its own alias.
+
+A key that the CLI already reads as a subcommand is refused, because it could never be reached: `enigma ssh tunnel` runs the tunnel subcommand, so no server can be aliased `tunnel` (nor `add`, `edit`, `remove`, `rm`, `delete`, `info`, `show`, `list`, `ls`, `forward`, `fwd`, `tunnels`). The CLI, the TUI and the dashboard all enforce this - the dashboard form flags it as you type. A **saved forward**'s name is refused the same way against the tunnel operations, since `enigma ssh tunnel <name>` runs it by name; a standalone tunnel's name is free, because you always run it as `enigma ssh tunnel start <name>`.
 
 ## Connect
 
@@ -56,4 +58,4 @@ The **SSH** entry in the TUI hub lists your connections - `enter` connects, `e` 
 
 ## Where it is stored
 
-Connections live in `~/.enigma/ssh.json` and tunnels in `~/.enigma/ssh-tunnels.json` (mode `600`), with passwords encrypted; a running tunnel's pid is tracked in `~/.enigma/ssh-tunnels-state.json`. Remove a connection with `enigma ssh remove <alias>`; inspect one (password redacted) with `enigma ssh info <alias>`.
+Connections live in `~/.enigma/ssh.json` and tunnels in `~/.enigma/ssh-tunnels.json` (mode `600`), with passwords encrypted; a running tunnel's pid is tracked in `~/.enigma/ssh-tunnels-state.json`. Remove a connection with `enigma ssh remove <alias|name>`; inspect one (password redacted) with `enigma ssh info <alias|name>`.

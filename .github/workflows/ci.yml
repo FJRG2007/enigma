@@ -73,6 +73,9 @@ jobs:
       - name: Test SSH standalone tunnels
         run: bun test tests/ssh-tunnels.test.ts
         working-directory: packages/enigma-cli
+      - name: Test dashboard SSH bridge
+        run: bun test tests/dashboard-ssh.test.ts
+        working-directory: packages/enigma-cli
       - name: Test Claude session reuse/transfer
         run: bun test tests/claude-oauth.test.ts
         working-directory: packages/enigma-cli

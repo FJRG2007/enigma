@@ -88,9 +88,19 @@ export function listConnections(): SshConnectionView[] {
   return readStore().connections.map(toView).sort((a, b) => a.alias.localeCompare(b.alias));
 }
 
+/**
+ * Resolve a connect key. Alias and name are both connect keys, so every lookup - read, edit and
+ * remove alike - accepts either; matching on the alias only made `enigma ssh edit <name>` refuse
+ * a connection that `enigma ssh <name>` connects to. An alias always wins over a name, so a row
+ * saved before the keys were unique cannot shadow another connection's alias.
+ */
+function findConnection(connections: SshConnection[], key: string): SshConnection | null {
+  return connections.find((c) => c.alias === key) ?? connections.find((c) => c.name === key) ?? null;
+}
+
 /** The raw connection (password still encrypted) by its alias OR its name, or null. */
 export function getConnection(key: string): SshConnection | null {
-  return readStore().connections.find((c) => c.alias === key || c.name === key) ?? null;
+  return findConnection(readStore().connections, key);
 }
 
 /** Fields accepted when creating or editing a connection (plain password; encrypted on write). */
@@ -112,6 +122,76 @@ export interface SshInput {
 const ALIAS_RE = /^[A-Za-z0-9][\w.-]*$/;
 
 /**
+ * Tokens `enigma ssh <token>` already dispatches as a subcommand (see runSshCli in cli.ts).
+ * A connection keyed with one of these could never be connected to - `enigma ssh tunnel` runs
+ * the tunnel subcommand, it does not reach a server called "tunnel" - so they are refused up
+ * front instead of saving a connection the user can never reach.
+ */
+export const RESERVED_CONNECTION_KEYS: readonly string[] = [
+  "add", "delete", "edit", "forward", "fwd", "info", "list", "ls", "remove", "rm", "show", "tunnel", "tunnels",
+];
+
+/**
+ * Tokens `enigma ssh tunnel <token>` dispatches as a tunnel operation. These only collide with a
+ * SAVED FORWARD's name, which is the token itself in `enigma ssh tunnel <name>`. A standalone
+ * tunnel is always run as `enigma ssh tunnel <op> <name>`, so its name is never a dispatch token
+ * and one called "up" stays perfectly reachable - do not refuse those.
+ */
+export const RESERVED_TUNNEL_NAMES: readonly string[] = [
+  "add", "down", "edit", "list", "remove", "rm", "start", "status", "stop", "up",
+];
+
+/** Why a name is the wrong shape, or null. The shared half of the checks below. */
+function nameShapeIssue(value: string, label: string): string | null {
+  if (!value) return `${label} is required.`;
+  if (!ALIAS_RE.test(value)) return `${label} must be alphanumeric (dashes, dots and underscores allowed).`;
+  return null;
+}
+
+/**
+ * Why a connect key (an alias or a connection's name) cannot be used, or null when it is fine.
+ * The single source of truth for the CLI, the TUI and the dashboard's real-time check, so all
+ * three refuse the same values with the same wording.
+ */
+export function connectionKeyIssue(value: string, label = "Alias"): string | null {
+  const shape = nameShapeIssue(value, label);
+  if (shape) return shape;
+  if (RESERVED_CONNECTION_KEYS.includes(value.toLowerCase()))
+    return `'${value}' is an 'enigma ssh' subcommand, so 'enigma ssh ${value}' would never reach this server. Pick another ${label.toLowerCase()}.`;
+  return null;
+}
+
+/** Why a standalone tunnel's name cannot be used, or null. Shape only - see RESERVED_TUNNEL_NAMES. */
+export function tunnelNameIssue(value: string, label = "Tunnel name"): string | null {
+  return nameShapeIssue(value, label);
+}
+
+/**
+ * Why a typed port cannot be used, or null. Blank (or 0) is fine and means "clear it" - the
+ * connection falls back to 22 - so every surface accepts the same range with the same wording
+ * instead of silently dropping a typo back to the stored value.
+ */
+export function portIssue(value: string | number): string | null {
+  const raw = typeof value === "string" ? value.trim() : value;
+  if (raw === "") return null;
+  // Decide on the SHAPE, never on the coercion: null, false and [] all coerce to 0, and a
+  // bare `Number(raw) === 0` would read those as "clear it" at what is the /api/ssh boundary.
+  const n = typeof raw === "number" ? raw : /^\d+$/.test(raw) ? Number(raw) : NaN;
+  if (n === 0) return null;
+  if (!Number.isInteger(n) || n < 1 || n > 65535) return "Port must be a whole number between 1 and 65535.";
+  return null;
+}
+
+/** Why a saved forward's name cannot be used, or null. It IS the `enigma ssh tunnel <name>` token. */
+export function forwardNameIssue(value: string, label = "Forward name"): string | null {
+  const shape = nameShapeIssue(value, label);
+  if (shape) return shape;
+  if (RESERVED_TUNNEL_NAMES.includes(value.toLowerCase()))
+    return `'${value}' is an 'enigma ssh tunnel' operation, so 'enigma ssh tunnel ${value}' would never run this forward. Pick another name.`;
+  return null;
+}
+
+/**
  * The connect key (alias or name) that already belongs to a DIFFERENT connection, or null when
  * alias/name are free. Both alias and name are global connect keys, so neither may collide with
  * any other connection's alias or name - but a single connection may set name == its own alias.
@@ -128,8 +208,10 @@ function keyConflict(connections: SshConnection[], selfAlias: string | null, ali
 
 /** Create a connection. Alias (and name, if given) must be unique connect keys; host is required. */
 export function addConnection(alias: string, input: SshInput): { ok: boolean; error?: string } {
-  if (!alias || !ALIAS_RE.test(alias)) return { ok: false, error: "Alias must be alphanumeric (dashes, dots and underscores allowed)." };
-  if (input.name && !ALIAS_RE.test(input.name)) return { ok: false, error: "Name must be alphanumeric (dashes, dots and underscores allowed)." };
+  const aliasIssue = connectionKeyIssue(alias);
+  if (aliasIssue) return { ok: false, error: aliasIssue };
+  const nameIssue = input.name ? connectionKeyIssue(input.name, "Name") : null;
+  if (nameIssue) return { ok: false, error: nameIssue };
   if (!input.host) return { ok: false, error: "A host is required (--host)." };
   const store = readStore();
   const clash = keyConflict(store.connections, null, alias, input.name);
@@ -141,12 +223,16 @@ export function addConnection(alias: string, input: SshInput): { ok: boolean; er
   return { ok: true };
 }
 
-/** Update an existing connection with the provided fields (others untouched). */
-export function updateConnection(alias: string, input: SshInput): { ok: boolean; error?: string } {
+/** Update an existing connection, keyed by alias or name, with the provided fields (others untouched). */
+export function updateConnection(key: string, input: SshInput): { ok: boolean; error?: string } {
   const store = readStore();
-  const conn = store.connections.find((c) => c.alias === alias);
-  if (!conn) return { ok: false, error: `Unknown connection '${alias}'.` };
-  if (input.name && !ALIAS_RE.test(input.name)) return { ok: false, error: "Name must be alphanumeric (dashes, dots and underscores allowed)." };
+  const conn = findConnection(store.connections, key);
+  if (!conn) return { ok: false, error: `Unknown connection '${key}'.` };
+  // Only a NEW name is checked: a connection saved before the reserved keys existed would
+  // otherwise be uneditable (every form resends its stored name), blocking an unrelated
+  // host change until the user renamed it.
+  const nameIssue = input.name && input.name !== conn.name ? connectionKeyIssue(input.name, "Name") : null;
+  if (nameIssue) return { ok: false, error: nameIssue };
   const nextName = input.name !== undefined ? input.name : conn.name;
   const clash = keyConflict(store.connections, conn.alias, conn.alias, nextName || undefined);
   if (clash) return { ok: false, error: `'${clash}' is already used by another connection (alias and name must be unique).` };
@@ -160,7 +246,7 @@ function applyInput(conn: SshConnection, input: SshInput): void {
   if (input.name !== undefined) conn.name = input.name || undefined;
   if (input.host !== undefined) conn.host = input.host;
   if (input.user !== undefined) conn.user = input.user || undefined;
-  if (input.port !== undefined) conn.port = input.port || undefined;
+  if (input.port !== undefined) conn.port = input.port || undefined; // 0 clears it (back to 22)
   if (input.identityFile !== undefined) conn.identityFile = input.identityFile || undefined;
   if (input.proxyJump !== undefined) conn.proxyJump = input.proxyJump || undefined;
   if (input.forwardAgent !== undefined) conn.forwardAgent = input.forwardAgent || undefined;
@@ -170,32 +256,96 @@ function applyInput(conn: SshConnection, input: SshInput): void {
   if (input.password !== undefined) conn.password = input.password ? encryptSecret(input.password) : undefined;
 }
 
-/** Delete a connection. Returns false when the alias was not found. */
-export function removeConnection(alias: string): boolean {
+/** The outcome of parsing `enigma ssh add|edit` flags: the fields to write, or why they are bad. */
+export interface ParsedConnectionFlags {
+  input: SshInput;
+  /** The caller must ask for a password interactively and assign it to `input.password`. */
+  promptPassword: boolean;
+  error?: string;
+}
+
+/**
+ * Parse the flag list of `enigma ssh add|edit` into an SshInput. It lives here, beside the
+ * validators, so the CLI refuses exactly what the TUI and the dashboard refuse: a port typo used
+ * to coerce to `undefined`, which applyInput reads as "leave as-is", so the old port was kept
+ * while the CLI still reported the connection as updated.
+ */
+export function parseConnectionFlags(flags: string[]): ParsedConnectionFlags {
+  const input: SshInput = {};
+  const options: string[] = [];
+  const forwards: PortForward[] = [];
+  let promptPassword = false;
+  const fail = (error: string): ParsedConnectionFlags => ({ input, promptPassword, error });
+  for (let i = 0; i < flags.length; i++) {
+    const f = flags[i]!;
+    const val = (): string => flags[++i] ?? "";
+    switch (f) {
+      case "--name": case "-n": input.name = val(); break;
+      case "--no-name": input.name = ""; break;
+      case "--host": case "-H": input.host = val(); break;
+      case "--user": case "-u": input.user = val(); break;
+      case "--port": case "-p": {
+        const raw = val();
+        const issue = portIssue(raw);
+        if (issue) return fail(issue);
+        input.port = Number(raw.trim()) || 0; // blank or 0 clears it (back to 22)
+        break;
+      }
+      case "--no-port": input.port = 0; break;
+      case "--identity": case "-i": input.identityFile = val(); break;
+      case "--jump": case "-j": input.proxyJump = val(); break;
+      case "--forward-agent": case "-A": input.forwardAgent = true; break;
+      case "--no-forward-agent": input.forwardAgent = false; break;
+      case "--option": case "-o": options.push(val()); break;
+      case "--forward": case "-L": {
+        const pf = parseForward(val());
+        if (!pf) return fail("Bad forward spec. Examples: 8080  9090:8080  9090:dbhost:5432  R:8080:localhost:80  D:1080");
+        forwards.push(pf);
+        break;
+      }
+      case "--password": promptPassword = true; break;
+      case "--password-value": input.password = val(); break; // scriptable; discouraged
+      case "--no-password": input.password = ""; break;
+      default: return fail(`Unknown flag: ${f}`);
+    }
+  }
+  if (options.length) input.options = options;
+  if (forwards.length) input.forwards = forwards;
+  return { input, promptPassword };
+}
+
+/** Delete a connection by alias or name. Returns false when neither key matched. */
+export function removeConnection(key: string): boolean {
   const store = readStore();
-  const before = store.connections.length;
-  store.connections = store.connections.filter((c) => c.alias !== alias);
-  if (store.connections.length === before) return false;
+  const conn = findConnection(store.connections, key);
+  if (!conn) return false;
+  store.connections.splice(store.connections.indexOf(conn), 1);
   writeStore(store);
   return true;
 }
 
-/** Add a saved forward to a connection. */
-export function addForward(alias: string, forward: PortForward): { ok: boolean; error?: string } {
-  const conn = getConnection(alias);
-  if (!conn) return { ok: false, error: `Unknown connection '${alias}'.` };
+/**
+ * Add a saved forward to a connection. A named forward is run with `enigma ssh tunnel <name>`.
+ * The key may be an alias OR a name (getConnection accepts both); the write goes through the
+ * resolved alias so the forward always lands on the connection that was found.
+ */
+export function addForward(key: string, forward: PortForward): { ok: boolean; error?: string } {
+  const conn = getConnection(key);
+  if (!conn) return { ok: false, error: `Unknown connection '${key}'.` };
+  const nameIssue = forward.name ? forwardNameIssue(forward.name) : null;
+  if (nameIssue) return { ok: false, error: nameIssue };
   const forwards = [...(conn.forwards ?? []), forward];
-  return updateConnection(alias, { forwards });
+  return updateConnection(conn.alias, { forwards });
 }
 
-/** Remove a saved forward by its index (as listed). */
-export function removeForward(alias: string, index: number): { ok: boolean; error?: string } {
-  const conn = getConnection(alias);
-  if (!conn) return { ok: false, error: `Unknown connection '${alias}'.` };
+/** Remove a saved forward by its index (as listed). Keyed by alias or name, like addForward. */
+export function removeForward(key: string, index: number): { ok: boolean; error?: string } {
+  const conn = getConnection(key);
+  if (!conn) return { ok: false, error: `Unknown connection '${key}'.` };
   const forwards = [...(conn.forwards ?? [])];
   if (index < 0 || index >= forwards.length) return { ok: false, error: "No forward at that index." };
   forwards.splice(index, 1);
-  return updateConnection(alias, { forwards });
+  return updateConnection(conn.alias, { forwards });
 }
 
 // --- port-forward specs (pure) --------------------------------------------------

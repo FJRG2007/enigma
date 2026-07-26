@@ -16,7 +16,8 @@ import {
 } from "./ssh-tunnels";
 import {
   listConnections, getConnection, addConnection, updateConnection, removeConnection,
-  addForward, removeForward, parseForward, describeForward, sshTarget,
+  addForward, removeForward, parseForward, describeForward, sshTarget, portIssue,
+  RESERVED_CONNECTION_KEYS,
   type SshConnectionView, type SshInput,
 } from "./ssh";
 
@@ -49,6 +50,8 @@ export interface SshActionResult {
   connections?: SshRow[];
   /** The refreshed standalone-tunnel list (with live status) after a mutating action. */
   tunnels?: TunnelView[];
+  /** Reserved names, resent with every refresh so the form's live check stays in sync. */
+  reserved?: SshReserved;
 }
 
 /** The editable fields the dashboard sends for add/edit. */
@@ -73,9 +76,20 @@ interface SshPayload extends SshInput {
   tunnelNewName?: string;
 }
 
+/**
+ * The names the CLI already claims, so the form can reject them as the user types. Only the
+ * connection keys are sent: a standalone tunnel's name is never a dispatch token, and the
+ * forward names that are one have no field in this UI.
+ */
+export interface SshReserved { connection: readonly string[]; }
+
 /** Both lists the SSH subpage renders: connections and standalone tunnels (with live status). */
-export function listSshData(): { connections: SshRow[]; tunnels: TunnelView[] } {
-  return { connections: listSshForDashboard(), tunnels: listTunnels() };
+export function listSshData(): { connections: SshRow[]; tunnels: TunnelView[]; reserved: SshReserved } {
+  return {
+    connections: listSshForDashboard(),
+    tunnels: listTunnels(),
+    reserved: { connection: RESERVED_CONNECTION_KEYS },
+  };
 }
 
 /** Turn the loose payload into a validated SshInput (options split, forwards ignored here). */
@@ -84,7 +98,9 @@ function toInput(p: SshPayload): SshInput {
   if (p.serverName !== undefined) input.name = String(p.serverName).trim();
   if (p.host !== undefined) input.host = String(p.host).trim();
   if (p.user !== undefined) input.user = String(p.user).trim();
-  if (p.port !== undefined) input.port = Number(p.port) || undefined;
+  // The form sends 0 for a blanked Port field; applyInput maps 0 back to unset (port 22). Keeping
+  // it as `undefined` would read as "leave as-is" and silently keep the old port.
+  if (p.port !== undefined) input.port = Number(p.port) || 0;
   if (p.identityFile !== undefined) input.identityFile = String(p.identityFile).trim();
   if (p.proxyJump !== undefined) input.proxyJump = String(p.proxyJump).trim();
   if (p.forwardAgent !== undefined) input.forwardAgent = Boolean(p.forwardAgent);
@@ -103,7 +119,11 @@ function toInput(p: SshPayload): SshInput {
 export async function applySshAction(action: string, payload: SshPayload): Promise<SshActionResult> {
   const alias = typeof payload.alias === "string" ? payload.alias : "";
   const tName = typeof payload.tunnelName === "string" ? payload.tunnelName : "";
-  const data = (): { connections: SshRow[]; tunnels: TunnelView[] } => listSshData();
+  const data = () => listSshData();
+  if (action === "add" || action === "edit") {
+    const bad = payload.port === undefined ? null : portIssue(payload.port);
+    if (bad) return { ok: false, error: bad };
+  }
   switch (action) {
     case "add": {
       const res = addConnection(alias, toInput(payload));
