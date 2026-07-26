@@ -33,15 +33,12 @@ test("addTunnel validates the name, server and spec", () => {
   expect(tun.addTunnel("pg", "srv1", "9090:5432").ok).toBe(false);      // duplicate name
 });
 
-test("a tunnel operation cannot be used as a tunnel name", () => {
-  // `enigma ssh tunnel start` runs the start operation, so it could never name a tunnel.
-  for (const word of ["start", "stop", "list", "STATUS"]) {
-    const res = tun.addTunnel(word, "srv1", "9090:5432");
-    expect(res.ok).toBe(false);
-    expect(res.error).toContain("enigma ssh tunnel");
-  }
-  expect(tun.updateTunnel("pg", { newName: "up" }).ok).toBe(false);
-  expect(tun.getTunnel("pg")).not.toBeNull(); // the rejected rename left it untouched
+test("a tunnel may be named after an operation: the name is never the dispatch token", () => {
+  // `enigma ssh tunnel <op> <name>` always carries the operation separately, so a tunnel named
+  // "up" runs fine as `enigma ssh tunnel start up`. Only a saved FORWARD's name collides.
+  expect(tun.addTunnel("up", "srv1", "9090:5432").ok).toBe(true);
+  expect(tun.getTunnel("up")).not.toBeNull();
+  expect(tun.removeTunnel("up")).toBe(true);
 });
 
 test("a tunnel binds to a server by alias or name and lists its spec/target", () => {

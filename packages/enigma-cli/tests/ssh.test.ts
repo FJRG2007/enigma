@@ -8,7 +8,7 @@
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { test, expect, afterAll } from "bun:test";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 
 const HOME = mkdtempSync(join(tmpdir(), "enigma-ssh-"));
 const BIN = mkdtempSync(join(tmpdir(), "enigma-ssh-bin-"));
@@ -64,18 +64,33 @@ test("a CLI subcommand cannot be used as an alias, a name or a forward name", ()
   expect(ssh.addConnection("ok-alias", { host: "h" }).ok).toBe(true);
   expect(ssh.updateConnection("ok-alias", { name: "tunnels" }).ok).toBe(false);
   expect(ssh.updateConnection("ok-alias", { name: "ok-name" }).ok).toBe(true);
-  // Forward names are run as `enigma ssh tunnel <name>`, so tunnel operations are refused.
+  // A forward's name IS the token in `enigma ssh tunnel <name>`, so operations are refused.
   expect(ssh.addForward("ok-alias", { ...ssh.parseForward("9090:5432")!, name: "start" }).ok).toBe(false);
   expect(ssh.addForward("ok-alias", { ...ssh.parseForward("9090:5432")!, name: "pg" }).ok).toBe(true);
+});
+
+test("a name already stored stays editable, so a pre-reserved connection is not locked out", () => {
+  // Written straight to the store: this is what a connection saved before the keys were
+  // reserved looks like. Every edit form resends the stored name, so re-validating it would
+  // make the row uneditable - only a CHANGED name is checked.
+  const store = JSON.parse(readFileSync(join(HOME, "ssh.json"), "utf8")) as { connections: { alias: string; host: string; name?: string }[] };
+  store.connections.push({ alias: "legacy", host: "h", name: "tunnel" });
+  writeFileSync(join(HOME, "ssh.json"), JSON.stringify(store));
+  expect(ssh.updateConnection("legacy", { name: "tunnel", host: "newhost" }).ok).toBe(true);
+  expect(ssh.getConnection("legacy")!.host).toBe("newhost");
+  expect(ssh.updateConnection("legacy", { name: "list" }).ok).toBe(false); // a new reserved name still is
 });
 
 test("the reserved lists match the issue helpers, so every surface refuses the same names", () => {
   expect(ssh.connectionKeyIssue("lirio-0")).toBeNull();
   expect(ssh.connectionKeyIssue("")).toContain("required");
   expect(ssh.connectionKeyIssue("bad alias")).toContain("alphanumeric");
-  expect(ssh.tunnelNameIssue("pg")).toBeNull();
+  expect(ssh.forwardNameIssue("pg")).toBeNull();
   for (const word of ssh.RESERVED_CONNECTION_KEYS) expect(ssh.connectionKeyIssue(word)).toBeTruthy();
-  for (const word of ssh.RESERVED_TUNNEL_NAMES) expect(ssh.tunnelNameIssue(word)).toBeTruthy();
+  for (const word of ssh.RESERVED_TUNNEL_NAMES) expect(ssh.forwardNameIssue(word)).toBeTruthy();
+  // A standalone tunnel is run as `enigma ssh tunnel start <name>`, so its name is only shaped.
+  for (const word of ssh.RESERVED_TUNNEL_NAMES) expect(ssh.tunnelNameIssue(word)).toBeNull();
+  expect(ssh.tunnelNameIssue("bad name")).toContain("alphanumeric");
 });
 
 test("askpassAnswer returns the decrypted password by alias or name, else empty", () => {
@@ -181,6 +196,13 @@ test("findNamedForward resolves a tunnel by name across servers", () => {
   expect(ssh.findNamedForward("missing")).toBeNull();
 });
 
+test("port 0 clears a stored port, so a blanked field does not silently keep the old one", () => {
+  ssh.addConnection("portconn", { host: "h", port: 2222 });
+  expect(ssh.getConnection("portconn")!.port).toBe(2222);
+  ssh.updateConnection("portconn", { port: 0 });
+  expect(ssh.getConnection("portconn")!.port).toBeUndefined();
+});
+
 test("addForward and removeForward persist on the connection", () => {
   // NOTE: "fwd" itself is a reserved key (it is the `forward` subcommand's alias).
   ssh.addConnection("fwdconn", { host: "h" });
@@ -238,7 +260,7 @@ test("resolveLauncher uses plain ssh for key auth", () => {
 
 test("resolveLauncher falls back to a prompt when a password has no helper", () => {
   process.env.PATH = ""; // no sshpass, no plink
-  const conn = ssh.getConnection("fwd")!;
+  const conn = ssh.getConnection("fwdconn")!;
   const l = ssh.resolveLauncher({ ...conn, password: (ssh.addConnection("pw1", { host: "h", password: "s" }), ssh.getConnection("pw1")!.password) });
   expect(l.mode).toBe("plain-prompt");
 });

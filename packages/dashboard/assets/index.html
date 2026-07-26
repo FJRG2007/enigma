@@ -4129,7 +4129,7 @@ export {
         // subcommand, so a server aliased "tunnel" could never be reached. The server sends the
         // lists with every SSH payload; the checks below mirror its wording so the form can
         // refuse them as the user types instead of after a round trip.
-        let sshReserved = { connection: [], tunnel: [] };
+        let sshReserved = { connection: [] };
         const SSH_KEY_RE = /^[A-Za-z0-9][\w.-]*$/;
         function sshKeyIssue(v, label) {
             if (!SSH_KEY_RE.test(v)) return label + " must be alphanumeric (dashes, dots and underscores allowed).";
@@ -4137,11 +4137,10 @@ export {
                 return "'" + v + "' is an 'enigma ssh' subcommand, so 'enigma ssh " + v + "' would never reach this server.";
             return "";
         }
+        // A tunnel's name is not a dispatch token (`enigma ssh tunnel start up` runs the tunnel
+        // "up"), so only its shape is checked - the engine agrees.
         function tunKeyIssue(v) {
-            if (!SSH_KEY_RE.test(v)) return "Tunnel name must be alphanumeric (dashes, dots and underscores allowed).";
-            if ((sshReserved.tunnel || []).indexOf(v.toLowerCase()) !== -1)
-                return "'" + v + "' is an 'enigma ssh tunnel' operation, so 'enigma ssh tunnel " + v + "' would never run this tunnel.";
-            return "";
+            return SSH_KEY_RE.test(v) ? "" : "Tunnel name must be alphanumeric (dashes, dots and underscores allowed).";
         }
         /** Paint one field's validity: red border + inline message (empty message clears it). */
         function setFieldErr(inputId, errId, msg) {
@@ -4158,7 +4157,10 @@ export {
         function sshValidateForm() {
             const alias = $("sshAlias").value.trim(), name = $("sshName").value.trim();
             const aliasOk = setFieldErr("sshAlias", "sshAliasErr", sshEditing || !alias ? "" : sshKeyIssue(alias, "Alias"));
-            const nameOk = setFieldErr("sshName", "sshNameErr", name ? sshKeyIssue(name, "Name") : "");
+            // A name already stored on this connection passes untouched, so a row saved before
+            // these keys were reserved stays editable (the engine allows the unchanged name too).
+            const stored = sshEditing ? (sshCache.find((c) => c.alias === sshEditing) || {}).name : "";
+            const nameOk = setFieldErr("sshName", "sshNameErr", name && name !== stored ? sshKeyIssue(name, "Name") : "");
             const ok = aliasOk && nameOk;
             $("sshSave").disabled = !ok;
             return ok;

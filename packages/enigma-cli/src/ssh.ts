@@ -121,10 +121,22 @@ export const RESERVED_CONNECTION_KEYS: readonly string[] = [
   "add", "delete", "edit", "forward", "fwd", "info", "list", "ls", "remove", "rm", "show", "tunnel", "tunnels",
 ];
 
-/** Tokens `enigma ssh tunnel <token>` dispatches as a tunnel operation; unreachable as a tunnel name. */
+/**
+ * Tokens `enigma ssh tunnel <token>` dispatches as a tunnel operation. These only collide with a
+ * SAVED FORWARD's name, which is the token itself in `enigma ssh tunnel <name>`. A standalone
+ * tunnel is always run as `enigma ssh tunnel <op> <name>`, so its name is never a dispatch token
+ * and one called "up" stays perfectly reachable - do not refuse those.
+ */
 export const RESERVED_TUNNEL_NAMES: readonly string[] = [
   "add", "down", "edit", "list", "remove", "rm", "start", "status", "stop", "up",
 ];
+
+/** Why a name is the wrong shape, or null. The shared half of the checks below. */
+function nameShapeIssue(value: string, label: string): string | null {
+  if (!value) return `${label} is required.`;
+  if (!ALIAS_RE.test(value)) return `${label} must be alphanumeric (dashes, dots and underscores allowed).`;
+  return null;
+}
 
 /**
  * Why a connect key (an alias or a connection's name) cannot be used, or null when it is fine.
@@ -132,19 +144,24 @@ export const RESERVED_TUNNEL_NAMES: readonly string[] = [
  * three refuse the same values with the same wording.
  */
 export function connectionKeyIssue(value: string, label = "Alias"): string | null {
-  if (!value) return `${label} is required.`;
-  if (!ALIAS_RE.test(value)) return `${label} must be alphanumeric (dashes, dots and underscores allowed).`;
+  const shape = nameShapeIssue(value, label);
+  if (shape) return shape;
   if (RESERVED_CONNECTION_KEYS.includes(value.toLowerCase()))
     return `'${value}' is an 'enigma ssh' subcommand, so 'enigma ssh ${value}' would never reach this server. Pick another ${label.toLowerCase()}.`;
   return null;
 }
 
-/** Why a tunnel or saved-forward name cannot be used, or null when it is fine. */
+/** Why a standalone tunnel's name cannot be used, or null. Shape only - see RESERVED_TUNNEL_NAMES. */
 export function tunnelNameIssue(value: string, label = "Tunnel name"): string | null {
-  if (!value) return `${label} is required.`;
-  if (!ALIAS_RE.test(value)) return `${label} must be alphanumeric (dashes, dots and underscores allowed).`;
+  return nameShapeIssue(value, label);
+}
+
+/** Why a saved forward's name cannot be used, or null. It IS the `enigma ssh tunnel <name>` token. */
+export function forwardNameIssue(value: string, label = "Forward name"): string | null {
+  const shape = nameShapeIssue(value, label);
+  if (shape) return shape;
   if (RESERVED_TUNNEL_NAMES.includes(value.toLowerCase()))
-    return `'${value}' is an 'enigma ssh tunnel' operation, so 'enigma ssh tunnel ${value}' would never run this tunnel. Pick another name.`;
+    return `'${value}' is an 'enigma ssh tunnel' operation, so 'enigma ssh tunnel ${value}' would never run this forward. Pick another name.`;
   return null;
 }
 
@@ -185,7 +202,10 @@ export function updateConnection(alias: string, input: SshInput): { ok: boolean;
   const store = readStore();
   const conn = store.connections.find((c) => c.alias === alias);
   if (!conn) return { ok: false, error: `Unknown connection '${alias}'.` };
-  const nameIssue = input.name ? connectionKeyIssue(input.name, "Name") : null;
+  // Only a NEW name is checked: a connection saved before the reserved keys existed would
+  // otherwise be uneditable (every form resends its stored name), blocking an unrelated
+  // host change until the user renamed it.
+  const nameIssue = input.name && input.name !== conn.name ? connectionKeyIssue(input.name, "Name") : null;
   if (nameIssue) return { ok: false, error: nameIssue };
   const nextName = input.name !== undefined ? input.name : conn.name;
   const clash = keyConflict(store.connections, conn.alias, conn.alias, nextName || undefined);
@@ -200,7 +220,7 @@ function applyInput(conn: SshConnection, input: SshInput): void {
   if (input.name !== undefined) conn.name = input.name || undefined;
   if (input.host !== undefined) conn.host = input.host;
   if (input.user !== undefined) conn.user = input.user || undefined;
-  if (input.port !== undefined) conn.port = input.port || undefined;
+  if (input.port !== undefined) conn.port = input.port || undefined; // 0 clears it (back to 22)
   if (input.identityFile !== undefined) conn.identityFile = input.identityFile || undefined;
   if (input.proxyJump !== undefined) conn.proxyJump = input.proxyJump || undefined;
   if (input.forwardAgent !== undefined) conn.forwardAgent = input.forwardAgent || undefined;
@@ -224,7 +244,7 @@ export function removeConnection(alias: string): boolean {
 export function addForward(alias: string, forward: PortForward): { ok: boolean; error?: string } {
   const conn = getConnection(alias);
   if (!conn) return { ok: false, error: `Unknown connection '${alias}'.` };
-  const nameIssue = forward.name ? tunnelNameIssue(forward.name, "Forward name") : null;
+  const nameIssue = forward.name ? forwardNameIssue(forward.name) : null;
   if (nameIssue) return { ok: false, error: nameIssue };
   const forwards = [...(conn.forwards ?? []), forward];
   return updateConnection(alias, { forwards });

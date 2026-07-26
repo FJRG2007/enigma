@@ -205,11 +205,10 @@
         { name: "socks", server: "server1", type: "dynamic", bind: "1080", active: false, spec: "D:1080", label: "socks: dynamic SOCKS on 1080", target: "root@203.0.113.10", missing: false }
     ];
 
-    // Mirrors RESERVED_CONNECTION_KEYS / RESERVED_TUNNEL_NAMES in src/ssh.ts so the demo form
-    // rejects the same names the real CLI would refuse.
+    // Mirrors RESERVED_CONNECTION_KEYS in src/ssh.ts so the demo form rejects the same aliases
+    // the real CLI would refuse.
     var SSH_RESERVED = {
-        connection: ["add", "delete", "edit", "forward", "fwd", "info", "list", "ls", "remove", "rm", "show", "tunnel", "tunnels"],
-        tunnel: ["add", "down", "edit", "list", "remove", "rm", "start", "status", "stop", "up"]
+        connection: ["add", "delete", "edit", "forward", "fwd", "info", "list", "ls", "remove", "rm", "show", "tunnel", "tunnels"]
     };
 
     var RECALL = {

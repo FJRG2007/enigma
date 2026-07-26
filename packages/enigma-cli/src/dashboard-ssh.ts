@@ -17,7 +17,7 @@ import {
 import {
   listConnections, getConnection, addConnection, updateConnection, removeConnection,
   addForward, removeForward, parseForward, describeForward, sshTarget,
-  RESERVED_CONNECTION_KEYS, RESERVED_TUNNEL_NAMES,
+  RESERVED_CONNECTION_KEYS,
   type SshConnectionView, type SshInput,
 } from "./ssh";
 
@@ -76,15 +76,19 @@ interface SshPayload extends SshInput {
   tunnelNewName?: string;
 }
 
-/** The names the CLI already claims, so the form can reject them as the user types. */
-export interface SshReserved { connection: readonly string[]; tunnel: readonly string[]; }
+/**
+ * The names the CLI already claims, so the form can reject them as the user types. Only the
+ * connection keys are sent: a standalone tunnel's name is never a dispatch token, and the
+ * forward names that are one have no field in this UI.
+ */
+export interface SshReserved { connection: readonly string[]; }
 
 /** Both lists the SSH subpage renders: connections and standalone tunnels (with live status). */
 export function listSshData(): { connections: SshRow[]; tunnels: TunnelView[]; reserved: SshReserved } {
   return {
     connections: listSshForDashboard(),
     tunnels: listTunnels(),
-    reserved: { connection: RESERVED_CONNECTION_KEYS, tunnel: RESERVED_TUNNEL_NAMES },
+    reserved: { connection: RESERVED_CONNECTION_KEYS },
   };
 }
 

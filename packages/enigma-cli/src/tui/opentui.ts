@@ -823,7 +823,16 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             // just close the input instead of writing an empty value.
             if ((f.field === "host" || f.field === "password") && !v) { setSshField(null); return; }
             if (f.field === "host") patch.host = v;
-            else if (f.field === "port") patch.port = v ? Number(v) || undefined : undefined;
+            // A blank port must actually clear it: `port: undefined` is "leave as-is" in
+            // applyInput, so it silently kept the old value while reporting a save. 0 clears.
+            else if (f.field === "port") {
+                if (!v) patch.port = 0;
+                else {
+                    const n = Number(v);
+                    if (!Number.isInteger(n) || n < 1 || n > 65535) { setSshField({ ...f, error: "Port must be a whole number between 1 and 65535." }); return; }
+                    patch.port = n;
+                }
+            }
             else if (f.field === "options") patch.options = v ? v.split(",").map((s) => s.trim()).filter(Boolean) : [];
             else if (f.field === "password") patch.password = v;
             else (patch as Record<string, string>)[f.field] = v; // name / user / identityFile / proxyJump ("" clears)
