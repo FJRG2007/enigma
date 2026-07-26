@@ -81,6 +81,9 @@ uses `--intent` to tell a deliberate choice from a mistake.
    enigma gate axi respond --action fix --findings <id1,id2> --instructions "<optional>"
    enigma gate axi respond --action skip
    ```
+   For long guidance, write it to a file and pass `--instructions @path/to/notes.md`.
+   That avoids the shell quoting differences between PowerShell and sh, which mangle
+   quotes and newlines in a long inline string.
    While a run is active, never fix findings by editing code yourself - the
    pipeline owns the findings and the fixes. Decide and respond; `--action fix`
    has the pipeline apply the fix and re-review.

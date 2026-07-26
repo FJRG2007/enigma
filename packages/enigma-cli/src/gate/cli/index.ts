@@ -43,6 +43,21 @@ function parseLimitFlag(args: string[]): { limit?: number } {
     return {};
 }
 
+/** Usage text for one gate subcommand, or the command list when it is unknown or absent. */
+export function gateSubcommandHelp(sub: string): string {
+    const usage: Record<string, string> = {
+        init: "usage: enigma gate init [--fork <url>]\nInitializes the gate in this repository.",
+        eject: "usage: enigma gate eject\nRemoves the gate's hooks and mirror from this repository.",
+        doctor: "usage: enigma gate doctor\nReports why the gate is not working.",
+        status: "usage: enigma gate status\nShows the current run.",
+        runs: "usage: enigma gate runs [--limit <n>]\nLists recent runs.",
+        rerun: "usage: enigma gate rerun\nStarts a new run from the current branch, reusing the last run's applied fixes.",
+        daemon: "usage: enigma gate daemon <start|stop|status>\nControls the background daemon.",
+        axi: "usage: enigma gate axi [run|respond|status|logs|abort] [flags]\nThe machine-readable surface agents drive. Add --help to a subcommand for its flags."
+    };
+    return usage[sub] ?? "usage: enigma gate <init|status|runs|rerun|doctor|eject|daemon|axi>\nAdd --help to any subcommand for its usage.";
+}
+
 /** Dispatches a gate subcommand. Returns the process exit code. */
 export async function runGateCli(argv: string[]): Promise<number> {
     // The gate is EXPERIMENTAL and off by default. It does nothing (and the /gate
@@ -55,6 +70,15 @@ export async function runGateCli(argv: string[]): Promise<number> {
     }
     const sub = argv[0] ?? "";
     const rest = argv.slice(1);
+    // `--help` must never DO the thing. `enigma gate rerun --help` used to drop `rest` on the
+    // floor and start a rerun - the one command someone types to find out what it does was the
+    // command that did it. Answered before any side effect, for every subcommand.
+    // `axi` answers for its own subcommands (`axi run --help` documents run's flags), so it is
+    // left to dispatch; intercepting here would flatten every axi help to one generic line.
+    if (sub !== "axi" && (rest.includes("--help") || rest.includes("-h"))) {
+        process.stdout.write(`${gateSubcommandHelp(sub)}\n`);
+        return 0;
+    }
     const paths = Paths.resolve();
     paths.ensureDirs();
     const daemon: AxiDaemon = { ensureDaemon, isDaemonRunning };
