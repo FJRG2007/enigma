@@ -203,6 +203,15 @@ test("port 0 clears a stored port, so a blanked field does not silently keep the
   expect(ssh.getConnection("portconn")!.port).toBeUndefined();
 });
 
+test("portIssue accepts a blank/0 clear and reports anything outside 1-65535", () => {
+  expect(ssh.portIssue("")).toBeNull();
+  expect(ssh.portIssue(" ")).toBeNull();
+  expect(ssh.portIssue(0)).toBeNull();
+  expect(ssh.portIssue("2222")).toBeNull();
+  expect(ssh.portIssue(65535)).toBeNull();
+  for (const bad of ["notaport", "-1", "1.5", "70000"]) expect(ssh.portIssue(bad)).toContain("65535");
+});
+
 test("addForward and removeForward persist on the connection", () => {
   // NOTE: "fwd" itself is a reserved key (it is the `forward` subcommand's alias).
   ssh.addConnection("fwdconn", { host: "h" });
@@ -212,6 +221,17 @@ test("addForward and removeForward persist on the connection", () => {
   expect(ssh.removeForward("fwdconn", 0).ok).toBe(true);
   expect(ssh.getConnection("fwdconn")!.forwards).toEqual([{ type: "dynamic", bind: "1080" }]);
   expect(ssh.removeForward("fwdconn", 9).ok).toBe(false);
+});
+
+test("forwards can be managed by a connection's name, not just its alias", () => {
+  // getConnection accepts both keys, so resolving by name and then writing by alias must not
+  // report "Unknown connection" for a connection it just found.
+  ssh.addConnection("byname-0", { host: "h", name: "byname-prod" });
+  expect(ssh.addForward("byname-prod", ssh.parseForward("9090:5432")!).ok).toBe(true);
+  expect(ssh.getConnection("byname-0")!.forwards).toHaveLength(1);
+  expect(ssh.removeForward("byname-prod", 0).ok).toBe(true);
+  expect(ssh.getConnection("byname-0")!.forwards).toBeUndefined();
+  expect(ssh.addForward("no-such-server", ssh.parseForward("9090:5432")!).error).toContain("Unknown connection");
 });
 
 // --- command builders -----------------------------------------------------------

@@ -16,7 +16,7 @@ import {
 } from "./ssh-tunnels";
 import {
   listConnections, getConnection, addConnection, updateConnection, removeConnection,
-  addForward, removeForward, parseForward, describeForward, sshTarget,
+  addForward, removeForward, parseForward, describeForward, sshTarget, portIssue,
   RESERVED_CONNECTION_KEYS,
   type SshConnectionView, type SshInput,
 } from "./ssh";
@@ -98,7 +98,9 @@ function toInput(p: SshPayload): SshInput {
   if (p.serverName !== undefined) input.name = String(p.serverName).trim();
   if (p.host !== undefined) input.host = String(p.host).trim();
   if (p.user !== undefined) input.user = String(p.user).trim();
-  if (p.port !== undefined) input.port = Number(p.port) || undefined;
+  // The form sends 0 for a blanked Port field; applyInput maps 0 back to unset (port 22). Keeping
+  // it as `undefined` would read as "leave as-is" and silently keep the old port.
+  if (p.port !== undefined) input.port = Number(p.port) || 0;
   if (p.identityFile !== undefined) input.identityFile = String(p.identityFile).trim();
   if (p.proxyJump !== undefined) input.proxyJump = String(p.proxyJump).trim();
   if (p.forwardAgent !== undefined) input.forwardAgent = Boolean(p.forwardAgent);
@@ -117,7 +119,11 @@ function toInput(p: SshPayload): SshInput {
 export async function applySshAction(action: string, payload: SshPayload): Promise<SshActionResult> {
   const alias = typeof payload.alias === "string" ? payload.alias : "";
   const tName = typeof payload.tunnelName === "string" ? payload.tunnelName : "";
-  const data = (): { connections: SshRow[]; tunnels: TunnelView[] } => listSshData();
+  const data = () => listSshData();
+  if (action === "add" || action === "edit") {
+    const bad = payload.port === undefined ? null : portIssue(payload.port);
+    if (bad) return { ok: false, error: bad };
+  }
   switch (action) {
     case "add": {
       const res = addConnection(alias, toInput(payload));

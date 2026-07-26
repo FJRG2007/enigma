@@ -23,7 +23,7 @@ import { onGhTelemetryChange } from "../github";
 import type { Scope, Setting } from "../settings-registry";
 import { recallDashboard, type RecallView } from "../dashboard-recall";
 import { resourceStatus, runResourceAction, type ResourceStatus } from "../resources";
-import { listConnections, removeConnection, updateConnection, sshTarget, type SshConnectionView, type SshInput } from "../ssh";
+import { listConnections, removeConnection, updateConnection, sshTarget, portIssue, type SshConnectionView, type SshInput } from "../ssh";
 import { CATEGORIES, ALL_SETTINGS, valueLabel, invalidateSettingReads } from "../settings-registry";
 import type { HubContext, HubAccount, HubExitAction, HubProfile, HubSkill, HubTool, ActionRequest, ActionResult } from "./types";
 
@@ -826,12 +826,9 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
             // A blank port must actually clear it: `port: undefined` is "leave as-is" in
             // applyInput, so it silently kept the old value while reporting a save. 0 clears.
             else if (f.field === "port") {
-                if (!v) patch.port = 0;
-                else {
-                    const n = Number(v);
-                    if (!Number.isInteger(n) || n < 1 || n > 65535) { setSshField({ ...f, error: "Port must be a whole number between 1 and 65535." }); return; }
-                    patch.port = n;
-                }
+                const issue = portIssue(v);
+                if (issue) { setSshField({ ...f, error: issue }); return; }
+                patch.port = v ? Number(v) : 0;
             }
             else if (f.field === "options") patch.options = v ? v.split(",").map((s) => s.trim()).filter(Boolean) : [];
             else if (f.field === "password") patch.password = v;

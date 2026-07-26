@@ -156,6 +156,19 @@ export function tunnelNameIssue(value: string, label = "Tunnel name"): string | 
   return nameShapeIssue(value, label);
 }
 
+/**
+ * Why a typed port cannot be used, or null. Blank (or 0) is fine and means "clear it" - the
+ * connection falls back to 22 - so every surface accepts the same range with the same wording
+ * instead of silently dropping a typo back to the stored value.
+ */
+export function portIssue(value: string | number): string | null {
+  const raw = typeof value === "string" ? value.trim() : value;
+  if (raw === "" || Number(raw) === 0) return null;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 1 || n > 65535) return "Port must be a whole number between 1 and 65535.";
+  return null;
+}
+
 /** Why a saved forward's name cannot be used, or null. It IS the `enigma ssh tunnel <name>` token. */
 export function forwardNameIssue(value: string, label = "Forward name"): string | null {
   const shape = nameShapeIssue(value, label);
@@ -240,24 +253,29 @@ export function removeConnection(alias: string): boolean {
   return true;
 }
 
-/** Add a saved forward to a connection. A named forward is run with `enigma ssh tunnel <name>`. */
-export function addForward(alias: string, forward: PortForward): { ok: boolean; error?: string } {
-  const conn = getConnection(alias);
-  if (!conn) return { ok: false, error: `Unknown connection '${alias}'.` };
+/**
+ * Add a saved forward to a connection. A named forward is run with `enigma ssh tunnel <name>`.
+ * The key may be an alias OR a name (getConnection accepts both), so the write goes through the
+ * resolved alias - updateConnection is alias-keyed and would otherwise refuse a connection that
+ * was just found by name.
+ */
+export function addForward(key: string, forward: PortForward): { ok: boolean; error?: string } {
+  const conn = getConnection(key);
+  if (!conn) return { ok: false, error: `Unknown connection '${key}'.` };
   const nameIssue = forward.name ? forwardNameIssue(forward.name) : null;
   if (nameIssue) return { ok: false, error: nameIssue };
   const forwards = [...(conn.forwards ?? []), forward];
-  return updateConnection(alias, { forwards });
+  return updateConnection(conn.alias, { forwards });
 }
 
-/** Remove a saved forward by its index (as listed). */
-export function removeForward(alias: string, index: number): { ok: boolean; error?: string } {
-  const conn = getConnection(alias);
-  if (!conn) return { ok: false, error: `Unknown connection '${alias}'.` };
+/** Remove a saved forward by its index (as listed). Keyed by alias or name, like addForward. */
+export function removeForward(key: string, index: number): { ok: boolean; error?: string } {
+  const conn = getConnection(key);
+  if (!conn) return { ok: false, error: `Unknown connection '${key}'.` };
   const forwards = [...(conn.forwards ?? [])];
   if (index < 0 || index >= forwards.length) return { ok: false, error: "No forward at that index." };
   forwards.splice(index, 1);
-  return updateConnection(alias, { forwards });
+  return updateConnection(conn.alias, { forwards });
 }
 
 // --- port-forward specs (pure) --------------------------------------------------

@@ -4262,7 +4262,10 @@ export {
                 optionsRaw: $("sshOptions").value.trim(),
             };
             const port = $("sshPort").value.trim();
+            // Blanking Port while editing must clear it: 0 is the clear sentinel, while omitting
+            // the field means "leave as-is" and would silently keep the stored port.
             if (port) payload.port = Number(port);
+            else if (sshEditing) payload.port = 0;
             const pw = $("sshPassword").value;
             if (sshEditing) { if ($("sshClearPw").checked) payload.password = ""; else if (pw) payload.password = pw; }
             else if (pw) payload.password = pw;
