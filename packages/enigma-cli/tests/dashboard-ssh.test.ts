@@ -46,6 +46,27 @@ test("an out-of-range port is refused instead of silently clearing the stored on
   expect(ssh.getConnection("lirio-0")!.port).toBe(2222);
 });
 
+test("a non-numeric port from a non-UI caller is refused, not read as a clear", async () => {
+  // The form always sends a number or 0, but /api/ssh accepts any JSON: null, false and [] all
+  // coerce to 0, which must not wipe the stored port behind an "Updated ..." reply.
+  await applySshAction("edit", { alias: "lirio-0", port: 2222 });
+  for (const bad of [null, false, [], "abc"]) {
+    const res = await applySshAction("edit", { alias: "lirio-0", port: bad as never });
+    expect(res.ok).toBe(false);
+    expect(ssh.getConnection("lirio-0")!.port).toBe(2222);
+  }
+});
+
+test("edit and remove work with the connection's name, like connect does", async () => {
+  const edited = await applySshAction("edit", { alias: "lirio-prod", user: "deploy" });
+  expect(edited.ok).toBe(true);
+  expect(ssh.getConnection("lirio-0")!.user).toBe("deploy");
+  await applySshAction("add", { alias: "tmp-0", serverName: "tmp-prod", host: "h" });
+  const removed = await applySshAction("remove", { alias: "tmp-prod" });
+  expect(removed.ok).toBe(true);
+  expect(ssh.getConnection("tmp-0")).toBeNull();
+});
+
 test("a reserved alias is refused with the CLI's own wording", async () => {
   const res = await applySshAction("add", { alias: "tunnel", host: "h" });
   expect(res.ok).toBe(false);
