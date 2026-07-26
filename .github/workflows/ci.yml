@@ -164,7 +164,11 @@ jobs:
       - name: Ciphera-style lint (changed lines)
         run: |
           if [ -n "${{ github.base_ref }}" ]; then
-            git fetch --depth=1 origin "${{ github.base_ref }}"
+            # NOT --depth=1: the checkout above is already full, and a shallow fetch grafts the
+            # base as a root with no history in common, so `base...HEAD` dies with "no merge
+            # base". It only shows up once the base moves after the checkout - i.e. whenever
+            # another PR merges first.
+            git fetch origin "${{ github.base_ref }}"
             range="origin/${{ github.base_ref }}...HEAD"
           elif git rev-parse --verify -q "${{ github.event.before }}" >/dev/null; then
             range="${{ github.event.before }}...HEAD"
