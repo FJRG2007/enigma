@@ -288,6 +288,31 @@ function parseFlags(
     return { values, bools };
 }
 
+/** Usage for one axi subcommand: the flags it takes, with no side effect. */
+export function axiSubcommandHelp(sub: string): string {
+    const usage: Record<string, string> = {
+        run: [
+            "usage: enigma gate axi run --intent \"<what the user set out to accomplish>\" [flags]",
+            "  --intent <text>   required; the goal behind the work, in the user's terms",
+            "  --skip <steps>    comma-separated: intent, rebase, review, test, document, lint, push, pr, ci",
+            "  --yes, -y         treat every actionable finding as consent to fix (drives unattended)"
+        ].join("\n"),
+        respond: [
+            "usage: enigma gate axi respond --action <approve|fix|skip> [flags]",
+            "  --action <a>          approve, fix or skip the awaiting step",
+            "  --findings <id,...>   with --action fix: which findings to fix",
+            "  --instructions <text> guidance for the fix; @<file> reads it from a file",
+            "  --add-finding <json>  add your own finding, e.g. {\"description\":\"...\"}",
+            "  --step <name>         target a specific step instead of the awaiting one",
+            "  --yes, -y             accept the resulting fix review without a second prompt"
+        ].join("\n"),
+        status: "usage: enigma gate axi status\nFull detail of the resolved run.",
+        logs: "usage: enigma gate axi logs --step <name> [--full]\nPrints a step's log.",
+        abort: "usage: enigma gate axi abort [--run <id>]\nCancels the current-branch run, or the run with that id."
+    };
+    return `${usage[sub] ?? "usage: enigma gate axi [run|respond|status|logs|abort]\nAdd --help to a subcommand for its flags."}\n`;
+}
+
 /**
  * Parses an axi argv slice (the args after `axi`) and dispatches to the matching
  * subcommand, returning the process exit code (0 success/no-op/decision-gate, 1
@@ -306,6 +331,13 @@ export async function runAxi(argv: string[], deps: Pick<AxiDeps, "daemon"> & Par
         return trackAxiSurface("axi-home", "/axi", {}, () => runAxiHome(resolved));
     }
     const rest = argv.slice(1);
+    // Asking for the flags used to answer `error: unknown flag --help`, which is what the /gate
+    // command tells an agent to run. Answer it, before parseFlags rejects it and before any run
+    // starts.
+    if (rest.includes("--help") || rest.includes("-h")) {
+        resolved.io.stdout(axiSubcommandHelp(sub));
+        return 0;
+    }
 
     switch (sub) {
         case "run": {

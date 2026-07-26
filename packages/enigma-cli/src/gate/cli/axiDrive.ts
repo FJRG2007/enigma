@@ -510,6 +510,26 @@ export async function runAxiRun(deps: AxiDeps, autoYes: boolean, skipSteps: Step
 }
 
 /** Parsed arguments for `axi respond`. */
+/**
+ * Resolves `--instructions`: the text itself, or the contents of `@<path>`.
+ *
+ * The file form exists because the text has to survive a command line. Long guidance ran into two
+ * walls: the OS argv limit (see gate/agent/argv) and shell quoting, which differs between
+ * PowerShell and sh and mangles quotes and newlines. A path has neither problem. `@` is the same
+ * convention curl and gh use; a literal value starting with `@` can be passed from a file.
+ */
+export function readInstructions(raw: string): string {
+    const value = raw.trim();
+    if (!value.startsWith("@")) return value;
+    const path = value.slice(1);
+    if (path === "") throw new Error("--instructions @ needs a file path");
+    try {
+        return readFileSync(path, "utf8").trim();
+    } catch (err) {
+        throw new Error(`--instructions ${value}: ${errMessage(err)}`);
+    }
+}
+
 export interface RespondArgs {
     action: string;
     step: string;
@@ -590,7 +610,13 @@ export async function runAxiRespond(deps: AxiDeps, ra: RespondArgs): Promise<num
                 return emitError(deps.io, 2, "--action fix requires --findings <id,...> or --add-finding <json>",
                     "Run `enigma gate axi status` to list finding IDs");
             }
-            const note = ra.instructions.trim();
+            let note: string;
+            try {
+                note = readInstructions(ra.instructions);
+            } catch (err) {
+                return emitError(deps.io, 2, errMessage(err),
+                    "Pass the text directly, or @<path> to read it from a file");
+            }
             if (note !== "" && findingIDs.length > 0) {
                 instructions = {};
                 for (const id of findingIDs) instructions[id] = note;

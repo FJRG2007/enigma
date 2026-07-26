@@ -17,6 +17,7 @@
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gitSafeEnv } from "./env";
+import { promptFitsArgv } from "./argv";
 import type { Readable } from "node:stream";
 import { spawnConfigured } from "../shellenv";
 import { CLAUDE_MAX_RETRIES } from "./claude";
@@ -105,14 +106,23 @@ export class CodexAgent implements Agent {
         validationSchema: unknown,
         signal?: AbortSignal
     ): Promise<Result> {
-        const args = this.buildArgs(opts.prompt, schemaPath);
+        // `codex exec -` reads the prompt from stdin, which argv cannot always carry - see ./argv.
+        // Only an oversized prompt takes this path, and that path fails to spawn at all today,
+        // so it can only improve on the current outcome.
+        const viaStdin = !promptFitsArgv(opts.prompt, this.extraArgs);
+        const args = this.buildArgs(viaStdin ? "-" : opts.prompt, schemaPath);
         const child = spawnConfigured(this.bin, args, {
             cwd: opts.cwd,
             env: gitSafeEnv(opts.cwd),
-            stdio: ["ignore", "pipe", "pipe"],
+            stdio: [viaStdin ? "pipe" : "ignore", "pipe", "pipe"],
             signal
         });
         if (!child.stdout || !child.stderr) throw new Error("codex pipes unavailable");
+        if (viaStdin) {
+            if (!child.stdin) throw new Error("codex stdin unavailable");
+            child.stdin.on("error", () => { /* reported through the process outcome */ });
+            child.stdin.end(opts.prompt);
+        }
 
         const outcome = awaitProcessOutcome(child);
         const stderrPromise = collectStream(child.stderr);

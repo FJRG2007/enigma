@@ -18,6 +18,7 @@
  */
 
 import { gitSafeEnv } from "./env";
+import { promptFitsArgv } from "./argv";
 import type { Readable } from "node:stream";
 import { spawnConfigured } from "../shellenv";
 import { type Config, agentArgs, agentPath } from "../config";
@@ -80,14 +81,23 @@ export class ClaudeAgent implements Agent {
     async close(): Promise<void> {}
 
     private async runOnce(opts: RunOpts, signal?: AbortSignal): Promise<Result> {
-        const args = this.buildArgs(opts.prompt, opts.jsonSchema);
+        // A prompt too large for argv is piped to stdin instead, which claude reads when its
+        // input is not a TTY. Only oversized prompts take this path - see ./argv.
+        const viaStdin = !promptFitsArgv(opts.prompt, this.extraArgs);
+        const args = this.buildArgs(viaStdin ? "" : opts.prompt, opts.jsonSchema);
         const child = spawnConfigured(this.bin, args, {
             cwd: opts.cwd,
             env: gitSafeEnv(opts.cwd),
-            stdio: ["ignore", "pipe", "pipe"],
+            stdio: [viaStdin ? "pipe" : "ignore", "pipe", "pipe"],
             signal
         });
         if (!child.stdout || !child.stderr) throw new Error("claude pipes unavailable");
+        if (viaStdin) {
+            if (!child.stdin) throw new Error("claude stdin unavailable");
+            // An EPIPE here means the child died before reading; the exit error below says why.
+            child.stdin.on("error", () => { /* reported through the process outcome */ });
+            child.stdin.end(opts.prompt);
+        }
 
         const outcome = awaitProcessOutcome(child);
         const stderrPromise = collectStream(child.stderr);
@@ -130,7 +140,10 @@ export class ClaudeAgent implements Agent {
      */
     private buildArgs(prompt: string, schema: unknown): string[] {
         const args: string[] = [...this.extraArgs];
-        args.push("-p", prompt, "--verbose", "--output-format", "stream-json");
+        // An empty prompt means the caller is piping it to stdin, where `-p` takes no value.
+        if (prompt === "") args.push("-p");
+        else args.push("-p", prompt);
+        args.push("--verbose", "--output-format", "stream-json");
         if (hasSchema(schema)) args.push("--json-schema", JSON.stringify(schema));
         if (!claudeUserSetPermissionMode(this.extraArgs)) args.push("--dangerously-skip-permissions");
         return args;
