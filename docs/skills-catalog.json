@@ -1,6 +1,6 @@
 {
   "generator": "enigma seal",
-  "cliVersion": "1.30.12",
+  "cliVersion": "1.31.0",
   "count": 19,
   "skills": [
     {
@@ -85,11 +85,11 @@
     },
     {
       "name": "frontend-policy",
-      "version": "1.15.0",
-      "description": "Frontend architecture: reusable components, abstraction thresholds, state management, no-op detection (skip any operation whose result equals current state, not just form saves), instant first paint (render the shell, load data async, skeletons), perceived performance (prefetch on intent, debounce/throttle, cancel stale requests, avoid waterfalls, lazy widgets), large-list rendering (infinite scroll/pagination, virtualization, skeletons, progressive loading), optimistic UI with rollback, and responsive/adaptive layout (fluid units, breakpoints, no overlap/overflow, viewport meta, touch targets).",
+      "version": "1.16.0",
+      "description": "Frontend architecture: reusable components, abstraction thresholds, state management, no-op detection (skip any operation whose result equals current state, not just form saves), instant first paint (render the shell, load data async, skeletons), perceived performance (prefetch on intent, debounce/throttle, cancel stale requests, avoid waterfalls, lazy widgets), large-list rendering (infinite scroll/pagination, virtualization, skeletons, progressive loading), optimistic UI with rollback, responsive/adaptive layout (fluid units, breakpoints, no overlap/overflow, viewport meta, touch targets), and variable-length text (min-width:0 in flex/grid, wrap vs truncate, long unbroken strings, worst-case content checks).",
       "provider": "FJRG2007/enigma",
       "updated": "2026-07-24T01:21:27+02:00",
-      "sha": "a879c95e63a6b4c4ca1f0561a6050c3ce1402e1311dfb30191f17f6c995001a3"
+      "sha": "e90959f11d212469bdc263e88802e03e9b7eba9d0e0c7e55995aa396521f77e6"
     },
     {
       "name": "git-policy",
@@ -125,11 +125,11 @@
     },
     {
       "name": "task-completion-policy",
-      "version": "1.2.0",
+      "version": "1.3.0",
       "description": "Exhaustive completion discipline for long/multi-item tasks - inventory, coverage ledger, verified done.",
       "provider": "FJRG2007/enigma",
       "updated": "2026-07-21T20:25:56+02:00",
-      "sha": "feaf44a9b3ab9676c8ebd3c2a799f156d28419998f5a5355250fe95a28cd5a01"
+      "sha": "b9046c15fd636057a8e42e199d2eeb47297477f38a0a26a07a7b0bf71d61fcb4"
     },
     {
       "name": "technical-writing-policy",
