@@ -60,7 +60,7 @@
     var STATUS = {
         systems: {
             compress: true, codeGraph: true, outputStyle: "full", minimalCode: "full", parallelSubagents: false,
-            autoLint: true, guardrails: { on: true, rules: 6 }, usageStats: !!FX.usage, dashboard: "always", commitEmoji: true,
+            autoLint: true, guardrails: { on: true, rules: 6 }, verify: { on: true, command: "npm test" }, usageStats: !!FX.usage, dashboard: "always", commitEmoji: true,
             proxy: false, usageApi: false, promptSecretGuard: false, promptSecretMode: "redact", live: true,
             proxyStats: { calls: 0, input: 0, output: 0, cacheRead: 0, cacheCreation: 0, lastRequestAt: 0, redacted: 0, rejected: 0, lastBlockedAt: 0 },
             security: { permissionBypass: true, bypassDisabled: [], guardProtects: ["Block committed secrets", "Block .env files", "Block dependency/cache dirs", "Warn on generated dirs", "Warn on log / OS junk files", "Warn on files over 5 MB"] },

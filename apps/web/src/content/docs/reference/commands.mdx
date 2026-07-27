@@ -140,6 +140,14 @@ Enforce project conventions via a post-edit hook that feeds violations back to t
 No argument lists the rules; `check <file>` runs them against a file; `disable`/`enable <id>` toggles a built-in; `remove <id>` drops a custom rule. Toggle the feature with `enigma config guardrails on|off`.
 </Cmd>
 
+## verify
+
+Check that work reported as finished actually is. Runs automatically at turn end (on by default). See <a href={docHref("concepts/verify")}>Verified completion</a> for detail.
+
+<Cmd name="enigma verify [cmd]" ex={["enigma verify", "enigma verify --all", "enigma verify parity ../original .", "enigma config verify-command \"npm test\"", "enigma config verify off"]}>
+No argument checks the current change for evidence of unfinished work and runs the configured verification command; `--all` sweeps every tracked file; `parity <source> <target>` compares a codebase against a port or clone of it and reports what was never carried over. Exits non-zero when something is unfinished, so it doubles as a CI check.
+</Cmd>
+
 ## api
 
 Serve your local Claude Code over an OpenAI-compatible HTTP API - all of its tools, skills, MCP and sessions, reachable from any OpenAI client library. Loopback-only. See <a href={docHref("concepts/api")}>Local API</a> for detail.
