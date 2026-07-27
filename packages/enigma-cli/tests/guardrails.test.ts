@@ -21,6 +21,47 @@ const { disableRule, enableRule, addRule, removeRule } = await import("../src/gu
 afterAll(() => rmSync(HOME, { recursive: true, force: true }));
 beforeEach(() => rmSync(CONFIG, { force: true }));
 
+test("flags a truncating flex item that cannot shrink", () => {
+    for (const markup of [
+        '<div className="flex-1 truncate">{name}</div>',
+        '<div className="truncate flex-auto">{name}</div>',
+        '<span class="px-2 flex-1 text-sm truncate">{v}</span>',
+    ]) {
+        const f = checkFile("src/Row.tsx", markup, null);
+        expect(f.length).toBe(1);
+        expect(f[0]!.ruleId).toBe("fe-flex-truncate-min-width");
+        expect(f[0]!.severity).toBe("warn");
+    }
+});
+
+test("accepts a truncating flex item that declares min-w-0", () => {
+    for (const markup of [
+        '<div className="flex-1 min-w-0 truncate">{name}</div>',
+        // Not a flex item, so nothing forces it to overflow.
+        '<div className="truncate">{name}</div>',
+        // Capitalised utility from a design system, not the Tailwind class.
+        '<div className="Flex-1 Truncate">{name}</div>',
+    ]) expect(checkFile("src/Row.tsx", markup, null)).toEqual([]);
+});
+
+test("a min-w-0 on another element does not mask a broken one", () => {
+    // The lookahead is scoped to one class attribute, so the fixed row above must not
+    // suppress the broken row below - a file-wide `absent` would have hidden it.
+    const file = '<div className="flex-1 min-w-0 truncate">{a}</div>\n<div className="flex-1 truncate">{b}</div>\n';
+    const f = checkFile("src/List.tsx", file, null);
+    expect(f.length).toBe(1);
+    expect(f[0]!.line).toBe(2);
+});
+
+test("flags an ellipsis that cannot take effect, and only that", () => {
+    const broken = ".name { text-overflow: ellipsis; white-space: nowrap; }";
+    const fixed = ".name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }";
+    const f = checkFile("src/app.css", broken, null);
+    expect(f.length).toBe(1);
+    expect(f[0]!.ruleId).toBe("fe-ellipsis-without-overflow");
+    expect(checkFile("src/app.css", fixed, null)).toEqual([]);
+});
+
 test("flags every explicit auto-increment identity signal", () => {
     const cases = [
         "id SERIAL PRIMARY KEY",

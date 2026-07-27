@@ -87,6 +87,21 @@ Build every UI to adapt to the viewport; never assume a desktop width. A layout 
 
 ---
 
+## Text That Does Not Fit (Variable-Length Content)
+
+Every string is variable-length; the value on screen during development is one sample. Text escaping its card or colliding with a neighbour is the most common layout defect, it is invisible until the content changes, and it is the responsibility of whoever writes the layout - not something to be pointed out afterwards.
+
+- Design for the extremes of each string, not the sample: the longest realistic value (an unbounded user-supplied name, a long identifier, a full path, a big formatted number) and the shortest (empty, one character). Translations run noticeably longer than English - roughly a third more for German - so a label that only just fits is already broken.
+- **A flex or grid item refuses to shrink below its content by default** (`min-width: auto`). That single rule causes most "text sticks out of its card" bugs. Set `min-width: 0` (Tailwind `min-w-0`) on the item that must shrink AND on every ancestor between it and the container; for grid tracks use `minmax(0, 1fr)`, never a bare `1fr`, when the track holds text.
+- Decide per string whether it wraps or truncates. Truncation needs `overflow: hidden` - `text-overflow: ellipsis` does nothing without it - and the full value must stay reachable via `title`, a tooltip, or an accessible label. Never truncate a value the user has no way to recover.
+- Long unbroken strings (URLs, tokens, hashes, ids, file paths) have no spaces to wrap at and will push their container wide. Use `overflow-wrap: anywhere` on those. Prefer it over `word-break: break-word`: it also lowers the element's min-content width, which is what actually stops the track being forced wider.
+- Content whose width changes as it updates (counters, timers, prices) reflows its row on every tick. Use tabular numerals (`font-variant-numeric: tabular-nums`) or reserve the space.
+- Absolutely positioned or overlaid text is where collisions happen, because it is outside normal flow and cannot push anything away. Constrain it with a `max-width` and check it at the narrowest breakpoint.
+- Do not "fix" an overflow by clipping the parent. `overflow: hidden` on the container hides the symptom, and clips focus rings, tooltips and menus with it. Fix the sizing that caused it.
+- Verify with worst-case content before calling it done: render the longest value you expect and confirm nothing spills out of its box or over a neighbour. The mechanical check is `element.scrollWidth <= element.clientWidth` for the box, and comparing bounding rectangles against the container for the collision - cheaper and more reliable than eyeballing it at one window size.
+
+---
+
 ## State Management
 
 - Keep state as local as possible; lift it only when genuinely shared.

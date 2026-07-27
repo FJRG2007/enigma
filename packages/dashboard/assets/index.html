@@ -418,9 +418,16 @@
         /* Each system reads as its own lit chip-card (name left, state pill right) in a grid,
            rather than a dense list of underlined rows - easier to scan at a glance. */
         .sys-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(232px, 1fr)); gap: 10px; }
-        .sys-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 14px; font-size: 13px; background: var(--surface2); border: 1px solid var(--border-soft); border-radius: var(--radius-sm); }
-        .sys-item .k { color: var(--text); }
-        .sys-item .v { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; flex: 0 0 auto; }
+        /* Both halves hold text of unpredictable length (a setting label, a port, a model id, a
+           command), so the row is built to shrink rather than to push: min-width:0 defeats the
+           default min-width:auto that makes a flex/grid item refuse to go below its content
+           width, flex-wrap lets the value drop to its own line instead of spilling out of the
+           card, and overflow-wrap:anywhere lets a long unbroken label break (unlike break-word,
+           it also lowers min-content, which is what stops the grid track being forced wider). */
+        .sys-item { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; padding: 11px 14px; font-size: 13px; background: var(--surface2); border: 1px solid var(--border-soft); border-radius: var(--radius-sm); }
+        .sys-item .k { color: var(--text); min-width: 0; overflow-wrap: anywhere; }
+        .sys-item .v { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; flex: 0 1 auto; min-width: 0; }
+        .sys-item .v .tag { overflow-wrap: anywhere; }
         /* On a surface2 card the surface2 "off" pill would vanish - keep it outlined instead. */
         .sys-item .pill.off { background: transparent; }
         /* Rows whose value is a list of chips span the full width and let the chips wrap with
@@ -3417,6 +3424,7 @@ export {
                 + item("Parallel sub-agents", boolPill(s.parallelSubagents))
                 + item("Auto-lint on edit", boolPill(s.autoLint))
                 + item("Convention guardrails", s.guardrails ? boolPill(s.guardrails.on) + (s.guardrails.on ? ' <span class="tag">' + s.guardrails.rules + " rules</span>" : "") : boolPill(false))
+                + item("Verify completion claims", s.verify ? boolPill(s.verify.on) + (s.verify.on && s.verify.command ? ' <span class="tag">' + esc(s.verify.command) + "</span>" : "") : boolPill(false))
                 + item("Commit emoji", boolPill(s.commitEmoji))
                 + item("Local dashboard", pill(s.dashboard === "off" ? "off" : "lvl", s.dashboard || "off"))
                 + item("Permission bypass (security)", boolPill(sec.permissionBypass))

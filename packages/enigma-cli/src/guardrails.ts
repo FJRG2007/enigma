@@ -247,6 +247,40 @@ export const BUILTIN_RULES: GuardrailRule[] = [
         skill: "frontend-policy",
     },
     {
+        id: "fe-flex-truncate-min-width",
+        label: "Truncating flex item needs min-w-0",
+        files: ["*.tsx", "*.jsx", "*.vue", "*.svelte", "*.astro", "*.html"],
+        excludeFiles: ["*.test.*", "*.spec.*", "**/tests/**", "**/__tests__/**"],
+        scope: "file",
+        // A flex item that truncates but never sets min-w-0. This is the canonical "text sticks
+        // out of its card" bug and it is unambiguous: `truncate` implies white-space:nowrap, so
+        // the item's min-content width is the whole string, and a flex item's default
+        // min-width:auto refuses to shrink below that - it overflows instead. flex-1/flex-auto
+        // says it IS a flex item. The negative lookahead is scoped to the same class attribute
+        // (not the file) so a min-w-0 elsewhere never masks a broken element here.
+        pattern: "class(?:Name)?=[\"'](?![^\"']*\\bmin-w-0\\b)[^\"']*(?:\\b(?:flex-1|flex-auto)\\b[^\"']*\\btruncate\\b|\\btruncate\\b[^\"']*\\b(?:flex-1|flex-auto)\\b)[^\"']*[\"']",
+        flags: "",
+        message: "Flex item truncates without min-w-0, so it will overflow its container instead of shrinking (a flex item's default min-width:auto refuses to go below its content width, and truncate makes that the full string). Add min-w-0 to this element and to any ancestor between it and the container; for a grid track holding text use minmax(0, 1fr) rather than 1fr (frontend-policy).",
+        severity: "warn",
+        skill: "frontend-policy",
+    },
+    {
+        id: "fe-ellipsis-without-overflow",
+        label: "Ellipsis needs overflow hidden",
+        files: ["*.css", "*.scss", "*.sass", "*.less", "*.styl", "*.tsx", "*.jsx", "*.vue", "*.svelte", "*.astro", "*.html"],
+        excludeFiles: ["*.test.*", "*.spec.*", "**/tests/**", "**/__tests__/**", "**/dist/**", "**/build/**", "*.min.css"],
+        scope: "file",
+        // text-overflow only applies to a box that actually overflows, so ellipsis without an
+        // overflow value does nothing at all - the text just spills. The absent set covers the
+        // CSS declarations and the Tailwind utilities that provide it; note it cannot simply be
+        // "overflow", which would match the text-overflow property on this very line.
+        pattern: "text-overflow\\s*:\\s*ellipsis",
+        absent: "overflow(?:-x|-y)?\\s*:\\s*(?:hidden|clip|auto|scroll)|overflow-hidden|overflow-clip|\\btruncate\\b|text-ellipsis",
+        message: "text-overflow: ellipsis has no effect without an overflow value other than visible - the text overflows instead of being clipped. Add overflow: hidden (with white-space: nowrap for a single line), and keep the full value reachable via title or a tooltip (frontend-policy).",
+        severity: "warn",
+        skill: "frontend-policy",
+    },
+    {
         id: "doc-no-file-tree",
         label: "No ASCII file-tree in the README",
         // README only, at any depth. Scoped deliberately: a file tree in a deliberate
