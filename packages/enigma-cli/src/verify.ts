@@ -125,6 +125,11 @@ function inGitRepo(cwd: string): boolean {
     return gitOut(cwd, ["rev-parse", "--git-dir"]).trim() !== "";
 }
 
+/** Whether the repository has any commit yet - a fresh one has no HEAD to diff against. */
+function hasCommits(cwd: string): boolean {
+    return gitTry(cwd, ["rev-parse", "--verify", "HEAD"]) !== null;
+}
+
 /**
  * Run git in `cwd`. Returns null when the command FAILED, which an empty string cannot
  * express: a diff too large for the buffer throws, and reading that as "no changes" would
@@ -211,8 +216,15 @@ export function addedLines(cwd: string): ScannedLines {
         lines.push({ file, line, text });
         return true;
     };
-    const diff = gitTry(cwd, ["diff", "--unified=0", "--no-color", branchPoint(cwd) || "HEAD"]);
-    if (diff === null) truncated = true; else eachAddedLine(diff, add);
+    // quotepath off here as well as on the listings: git escapes a non-ASCII path in the diff
+    // header too, and the escaped form neither matches a real file nor can be opened by the
+    // idiom exemption - so findings point nowhere and the exemption quietly stops applying.
+    const base = branchPoint(cwd);
+    const diff = gitTry(cwd, ["-c", "core.quotepath=false", "diff", "--unified=0", "--no-color", base || "HEAD"]);
+    // Before the first commit there is no HEAD to diff against, and that is not incomplete
+    // coverage: every file is untracked and read in full below. Only a real failure counts.
+    if (diff === null && hasCommits(cwd)) truncated = true;
+    else if (diff !== null) eachAddedLine(diff, add);
     const untracked = gitTry(cwd, ["-c", "core.quotepath=false", "ls-files", "--others", "--exclude-standard"]);
     if (untracked === null) truncated = true;
     for (const path of (untracked ?? "").split("\n").map((s) => s.trim()).filter(Boolean)) {

@@ -296,6 +296,19 @@ test("parity refuses to call an empty comparison a pass", () => {
     expect(formatParity(report)).not.toContain("Every source module");
 });
 
+test("a repository before its first commit is fully covered, not truncated", () => {
+    // Every file is untracked and read in full, so there is nothing incomplete to report -
+    // but diffing HEAD fails there, and treating that as a failed scan told a scaffolding turn
+    // its work had only been partially checked.
+    const dir = mkdtempSync(join(tmpdir(), "enigma-verify-fresh-"));
+    repos.push(dir);
+    execFileSync("git", ["init", "-q"], { cwd: dir, stdio: "ignore" });
+    write(dir, "src/new.ts", "// TODO: finish this\n"); // enigma:verify-ignore
+    const scan = collectGaps(dir);
+    expect(scan.truncated).toBe(false);
+    expect(scan.gaps.length).toBe(1);
+});
+
 test("does not silently pass outside a git repository", () => {
     const plain = mkdtempSync(join(tmpdir(), "enigma-verify-nogit-"));
     repos.push(plain);
