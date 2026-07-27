@@ -18,7 +18,7 @@ import { execFileSync } from "node:child_process";
 import type { SecurityOptions } from "./security";
 import { dirname, join, resolve } from "node:path";
 import { applyLintWiring, mirrorLintWiring } from "./lint";
-import { applyVerifyWiring, mirrorVerifyWiring } from "./verify-deploy";
+import { applyVerifyWiring, isVerifyOn, mirrorVerifyWiring } from "./verify-deploy";
 import { applyGuardrailsWiring, mirrorGuardrailsWiring } from "./guardrails-deploy";
 import type { RemoteRefreshResult } from "./skills-remote";
 import { setGhTelemetry, starRepoInBackground } from "./github";
@@ -1376,7 +1376,11 @@ export function syncDeployed(agentNames?: string[]): string[] {
         // here too: an on-by-default gate has to reach an existing deployment (and disappear
         // from it when switched off) without waiting for the next explicit install. Gated on
         // there already being one, so a sync never wires an agent enigma was not installed into.
-        if (agent.name === "claude" && hasDeployment(agent, "global")) applyVerifyWiring();
+        // Installing it changes how the agent behaves, so the one time that happens it says so
+        // rather than letting the user first meet the gate as an unexplained blocked turn.
+        if (agent.name === "claude" && hasDeployment(agent, "global") && applyVerifyWiring() && isVerifyOn()) {
+            notices.push("Completion checks are on: when the agent reports work as finished, enigma now verifies that against the change. Turn off with 'enigma config verify off'.");
+        }
     }
     return notices;
 }

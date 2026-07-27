@@ -184,6 +184,28 @@ test("still sees the work after the agent commits it", () => {
     expect(runVerifyHook(payload(dir, "All done, everything is implemented."))).toBe(2);
 });
 
+test("stops reporting a marker once it has been removed", () => {
+    // Committed evidence has to reflect the CURRENT state: blocking over something already
+    // fixed is a false block, and false blocks are how a gate like this gets switched off.
+    const dir = repoWith({ "src/app.ts": "export const a = 1;\n" });
+    git(dir, "checkout", "-q", "-b", "feature");
+    write(dir, "src/new.ts", "// TODO: finish this\nexport const b = 2;\n"); // enigma:verify-ignore
+    git(dir, "add", "-A");
+    git(dir, "commit", "-qm", "wip");
+    expect(scanGaps(dir).length).toBe(1);
+
+    write(dir, "src/new.ts", "export const b = 2;\n");
+    expect(scanGaps(dir)).toEqual([]);
+});
+
+test("does not mistake ordinary code for a placeholder", () => {
+    const dir = repoWith();
+    write(dir, "src/theme.css", ":root { --placeholder-color: #999; }\n");
+    write(dir, "src/link.html", "<a href=\"#placeholder\">jump</a>\n");
+    write(dir, "package.json", "{ \"scripts\": { \"build\": \"module-build build --stub\" } }\n");
+    expect(scanGaps(dir)).toEqual([]);
+});
+
 test("a marker committed before the branch existed stays out of scope", () => {
     const dir = repoWith({ "src/old.ts": "// TODO: someone else's debt\n" }); // enigma:verify-ignore
     git(dir, "checkout", "-q", "-b", "feature");

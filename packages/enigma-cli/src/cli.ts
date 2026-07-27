@@ -1509,8 +1509,12 @@ async function runVerifyCli(positionals: string[], all: boolean): Promise<number
     }
     const { collectGaps, formatGaps, verifyCommandOf } = await import("./verify");
     const command = verifyCommandOf();
-    if (command) console.log(`Running the verification command: ${command}`);
-    const { gaps, truncated, noRepo } = collectGaps(process.cwd(), { all });
+    const { gaps, truncated, noRepo, scanned } = collectGaps(process.cwd(), { all });
+    // Announced after the fact, because the scan decides whether it runs at all: saying it ran
+    // on a turn that produced nothing would be the same kind of unearned reassurance this
+    // command exists to remove.
+    const ranCommand = Boolean(command) && scanned > 0;
+    if (ranCommand) console.log(`Ran the verification command: ${command}`);
     if (noRepo) {
         console.error("enigma verify: this directory is not a git repository, so there is no change to check. Nothing was verified.");
         return 1;
@@ -1518,7 +1522,7 @@ async function runVerifyCli(positionals: string[], all: boolean): Promise<number
     // Never present a partial scan as a clean one.
     const partial = truncated ? " (scan truncated: too large to read in full, so coverage is incomplete)" : "";
     if (!gaps.length) {
-        console.log(`No evidence of unfinished work in ${all ? "any tracked file" : "the current change"}${command ? ", and the verification command passed" : ""}.${partial}`);
+        console.log(`No evidence of unfinished work in ${all ? "any tracked file" : "the current change"}${ranCommand ? ", and the verification command passed" : ""}.${partial}`);
         return 0;
     }
     console.error(`enigma verify: ${gaps.length} item(s) suggest the work is not finished${partial}:\n${formatGaps(gaps)}`);

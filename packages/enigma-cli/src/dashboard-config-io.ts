@@ -45,10 +45,17 @@ function globalConfigPath(): string {
 /** Config keys that hold a secret and must never be exported. */
 const SECRET_CONFIG_KEYS = ["recallApiKey"];
 
-/** Drop secret keys from a config object before it leaves the machine. */
+/**
+ * Keys stripped from an export for reasons other than secrecy. `verifyCommand` is a shell
+ * command that can embed local paths, hosts or flags; a bundle is meant to be shareable, and
+ * it is already refused on import, so carrying it out would be the same mistake in reverse.
+ */
+const UNSHAREABLE_CONFIG_KEYS = ["verifyCommand"];
+
+/** Drop secret and machine-specific keys from a config object before it leaves the machine. */
 function stripSecrets(config: Partial<EnigmaConfig>): Partial<EnigmaConfig> {
     const out = { ...config };
-    for (const k of SECRET_CONFIG_KEYS) delete (out as Record<string, unknown>)[k];
+    for (const k of [...SECRET_CONFIG_KEYS, ...UNSHAREABLE_CONFIG_KEYS]) delete (out as Record<string, unknown>)[k];
     return out;
 }
 

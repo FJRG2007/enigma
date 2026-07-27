@@ -87,10 +87,11 @@ function claudeGlobalSettings(): string {
 
 /**
  * Re-assert the global wiring to match the current toggle (presence AND absence).
- * Called on install and on toggle.
+ * Called on install, on toggle, and on auto-sync. Returns true when the settings changed,
+ * so a caller can tell the user the first time the gate is actually installed for them.
  */
-export function applyVerifyWiring(): void {
-    applyClaudeVerifyHook(claudeGlobalSettings(), isVerifyOn());
+export function applyVerifyWiring(): boolean {
+    return applyClaudeVerifyHook(claudeGlobalSettings(), isVerifyOn());
 }
 
 /**

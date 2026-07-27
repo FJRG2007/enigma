@@ -29,7 +29,7 @@ import { enigmaHome, readJson } from "./util";
 import { readConfigAt, readGlobalConfig } from "./config";
 import { lastAssistantMessage } from "./claude-transcripts";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, statSync, writeFileSync } from "node:fs";
 
 /** One piece of evidence that the work is not finished. */
 export interface VerifyGap {
@@ -68,7 +68,10 @@ const INCOMPLETE_PATTERNS: Array<{ id: string; re: RegExp; label: string; notNea
         // An abstract base class or protocol raises it by design, so a hit there is not a stub.
         notNear: /@abstractmethod|abstractproperty|\bABC\b|\bProtocol\b|@abc\./,
     },
-    { id: "placeholder", re: /(?:\/\/|#|\/\*|<!--|--)\s*(placeholder|stub\b|coming soon|fill (?:this )?in|implement (?:this|later))/i, label: "placeholder left in place" },
+    // The bare-token comment openers (# and --) need real separation before the word, or this
+    // fires on ordinary code: a CSS custom property (`--placeholder-color`), an anchor
+    // (`href="#placeholder"`) or a CLI flag (`--stub`) are not placeholders left behind.
+    { id: "placeholder", re: /(?:(?:\/\/|\/\*|<!--)\s*|(?:#|--)[ \t]+)(placeholder|stub\b|coming soon|fill (?:this )?in|implement (?:this|later))/i, label: "placeholder left in place" },
 ];
 
 // --- completion-claim detection ----------------------------------------------------
@@ -159,35 +162,31 @@ function eachAddedLine(diff: string, sink: (file: string, line: number, text: st
 }
 
 /**
- * The lines this piece of work ADDED: what is not committed yet (working tree against HEAD,
- * plus untracked files) UNION what this branch has already committed since it left the
- * default branch.
+ * The lines this piece of work ADDED: everything that differs between the branch point and
+ * the working tree right now, plus untracked files.
  *
- * The committed half matters more than it looks: enigma's own workflow tells an agent to
- * commit before validating, and against HEAD alone that leaves an empty diff - so the gate
- * would find nothing and pass a false claim in exactly the flow it recommends. Scanning
- * added lines only (the ratchet the changed-line linter already uses) still means a
- * repository's pre-existing markers never block a turn.
+ * ONE diff against the branch point, not two. Diffing the branch point against the working
+ * tree covers committed and uncommitted work together - which matters because enigma's own
+ * workflow tells an agent to commit before validating, and diffing HEAD alone leaves an empty
+ * diff there, so the gate would find nothing and pass a false claim in exactly the flow it
+ * recommends. Unioning a working-tree diff with a `base..HEAD` diff also covered it, but
+ * wrongly: a marker committed earlier and since deleted still showed up in the second diff,
+ * so the gate blocked over something the agent had already fixed. A single diff always
+ * describes the CURRENT state. Added lines only (the ratchet the changed-line linter uses),
+ * so a repository's pre-existing markers never block a turn.
  */
 export function addedLines(cwd: string): ScannedLines {
     const lines: AddedLine[] = [];
-    const seen = new Set<string>();
     let truncated = false;
     // Outside a repository there is no diff to read, and an empty result would otherwise be
     // indistinguishable from "nothing wrong" - the silent pass this whole module exists against.
     if (!inGitRepo(cwd)) return { lines, truncated, noRepo: true };
     const add = (file: string, line: number, text: string): boolean => {
         if (lines.length >= MAX_ADDED_LINES) { truncated = true; return false; }
-        // A line reachable through both diffs is one line, not two.
-        const key = `${file}:${line}:${text}`;
-        if (seen.has(key)) return true;
-        seen.add(key);
         lines.push({ file, line, text });
         return true;
     };
-    eachAddedLine(gitOut(cwd, ["diff", "--unified=0", "--no-color", "HEAD"]), add);
-    const base = branchPoint(cwd);
-    if (base) eachAddedLine(gitOut(cwd, ["diff", "--unified=0", "--no-color", `${base}..HEAD`]), add);
+    eachAddedLine(gitOut(cwd, ["diff", "--unified=0", "--no-color", branchPoint(cwd) || "HEAD"]), add);
     for (const path of gitOut(cwd, ["ls-files", "--others", "--exclude-standard"]).split("\n").map((s) => s.trim()).filter(Boolean)) {
         if (!readInto(cwd, path, add, () => { truncated = true; })) break;
     }
@@ -219,12 +218,27 @@ function readInto(cwd: string, path: string, sink: (file: string, line: number, 
     const full = join(cwd, path);
     let size = 0;
     try { size = statSync(full).size; } catch { return true; }
-    if (size > MAX_UNTRACKED_BYTES) { onSkipped(); return true; }
+    // Binary-ness is checked BEFORE size: a large image or archive has no lines to miss, so
+    // announcing "only partially checked" for one would be noise in the single signal that is
+    // supposed to mean coverage was genuinely incomplete.
+    if (size > MAX_UNTRACKED_BYTES) { if (!isBinary(full)) onSkipped(); return true; }
     const text = readTextFile(full, MAX_UNTRACKED_BYTES);
     if (text === null) return true;
     const rows = text.split("\n");
     for (let i = 0; i < rows.length; i++) if (!sink(path, i + 1, rows[i]!)) return false;
     return true;
+}
+
+/** Whether a file looks binary, judged from a NUL byte in its opening bytes. */
+function isBinary(path: string): boolean {
+    let fd: number;
+    try { fd = openSync(path, "r"); } catch { return false; }
+    try {
+        const buf = Buffer.alloc(4096);
+        const read = readSync(fd, buf, 0, buf.length, 0);
+        return buf.subarray(0, read).includes(0);
+    } catch { return false; }
+    finally { closeSync(fd); }
 }
 
 /** Read a text file, or null when it is missing, too large, or binary. */
@@ -236,11 +250,20 @@ function readTextFile(path: string, maxBytes: number): string | null {
     } catch { return null; }
 }
 
-/** Whether a hit is a legitimate idiom given the lines preceding it in the file. */
-function suppressedByContext(cwd: string, file: string, line: number, notNear: RegExp): boolean {
-    const text = readTextFile(join(cwd, file), MAX_UNTRACKED_BYTES);
-    if (text === null) return false;
-    const lines = text.split("\n");
+/**
+ * Whether a hit is a legitimate idiom given the lines preceding it in the file. `cache` holds
+ * files already split for this scan: without it a Python port full of abstract methods - the
+ * very case this exists for - re-reads the same file once per occurrence, inside a hook that
+ * runs at the end of every turn.
+ */
+function suppressedByContext(cwd: string, file: string, line: number, notNear: RegExp, cache: Map<string, string[]>): boolean {
+    let lines = cache.get(file);
+    if (!lines) {
+        const text = readTextFile(join(cwd, file), MAX_UNTRACKED_BYTES);
+        lines = text === null ? [] : text.split("\n");
+        cache.set(file, lines);
+    }
+    if (!lines.length) return false;
     const from = Math.max(0, line - 6);
     return lines.slice(from, line).some((l) => notNear.test(l));
 }
@@ -248,12 +271,13 @@ function suppressedByContext(cwd: string, file: string, line: number, notNear: R
 /** Match the evidence patterns against a set of lines. */
 function scanLines(cwd: string, lines: AddedLine[]): VerifyGap[] {
     const gaps: VerifyGap[] = [];
+    const cache = new Map<string, string[]>();
     for (const entry of lines) {
         if (DOC_EXT.has(extname(entry.file).toLowerCase())) continue;
         if (IGNORE_RE.test(entry.text)) continue;
         for (const pattern of INCOMPLETE_PATTERNS) {
             if (!pattern.re.test(entry.text)) continue;
-            if (pattern.notNear && suppressedByContext(cwd, entry.file, entry.line, pattern.notNear)) break;
+            if (pattern.notNear && suppressedByContext(cwd, entry.file, entry.line, pattern.notNear, cache)) break;
             gaps.push({ kind: "marker", file: entry.file, line: entry.line, detail: `${pattern.label}: ${entry.text.trim().slice(0, 160)}` });
             break;
         }
@@ -400,8 +424,13 @@ function blockMessage(gaps: VerifyGap[], truncated = false): string {
 export function runVerifyHook(payload?: string): number {
     let raw: Record<string, unknown> = {};
     // Strip a leading BOM before parsing: JSON.parse throws on one, and this gate failing
-    // open is exactly the silent pass it exists to prevent.
-    try { raw = JSON.parse((payload ?? readFileSync(0, "utf8")).replace(/^\uFEFF/, "")) || {}; } catch { return 0; }
+    // open is exactly the silent pass it exists to prevent - so an unreadable payload says so
+    // rather than returning quietly, like every other degraded path here.
+    try { raw = JSON.parse((payload ?? readFileSync(0, "utf8")).replace(/^\uFEFF/, "")) || {}; }
+    catch {
+        process.stderr.write("enigma verify: the turn-end payload could not be read, so the completion check did not run.\n");
+        return 0;
+    }
     // Already re-entered from a previous block: never stack gates on one turn.
     if (raw.stop_hook_active === true) return 0;
 
