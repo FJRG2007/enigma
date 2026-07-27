@@ -8,13 +8,13 @@
  * static import cycle with skills.ts -> dashboard.ts.
  */
 
-import { readConfig } from "./config";
 import { skillsReport } from "./skills";
 import { readProxyStats } from "./proxy";
 import { loadRules } from "./guardrails";
-import { GUARD_PROTECTIONS, readGlobalGuard } from "./guard-config";
 import { toolPathStatuses } from "./tool-path";
 import { availableAdapters } from "./api-agents";
+import { readConfig, readGlobalConfig } from "./config";
+import { GUARD_PROTECTIONS, readGlobalGuard } from "./guard-config";
 
 export interface SystemsStatus {
     /** Context-compression MCP deployed into agents. */
@@ -79,7 +79,9 @@ export function systemsStatus(): SystemsStatus {
         parallelSubagents: c.parallelSubagents,
         autoLint: c.autoLint,
         guardrails: { on: c.guardrails, rules: c.guardrails ? loadRules().length : 0 },
-        verify: { on: c.verify, command: c.verifyCommand },
+        // Global, matching what actually runs: the hook is wired from the global toggle and a
+        // repo-local verifyCommand is never executed, so showing either merged would misreport.
+        verify: { on: readGlobalConfig().verify, command: readGlobalConfig().verifyCommand },
         usageStats: c.usageStats,
         dashboard: c.dashboard,
         commitEmoji: c.commitEmoji,

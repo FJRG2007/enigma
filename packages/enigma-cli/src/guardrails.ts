@@ -265,7 +265,10 @@ export const BUILTIN_RULES: GuardrailRule[] = [
         // CSS declarations and the Tailwind utilities that provide it; note it cannot simply be
         // "overflow", which would match the text-overflow property on this very line.
         pattern: "text-overflow\\s*:\\s*ellipsis",
-        absent: "overflow(?:-x|-y)?\\s*:\\s*(?:hidden|clip|auto|scroll)|overflow-hidden|overflow-clip|\\btruncate\\b|text-ellipsis",
+        // Only things that actually PROVIDE the missing overflow value. Tailwind's `truncate`
+        // does (it sets overflow-hidden); `text-ellipsis` does not - it is the ellipsis
+        // declaration itself, so listing it would suppress the very case being flagged.
+        absent: "overflow(?:-x|-y)?\\s*:\\s*(?:hidden|clip|auto|scroll)|overflow-hidden|overflow-clip|\\btruncate\\b",
         message: "text-overflow: ellipsis has no effect without an overflow value other than visible - the text overflows instead of being clipped. Add overflow: hidden (with white-space: nowrap for a single line), and keep the full value reachable via title or a tooltip (frontend-policy).",
         severity: "warn",
         skill: "frontend-policy",

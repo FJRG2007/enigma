@@ -4,9 +4,9 @@
  * disable each one. Subcommands run a single feature non-interactively.
  */
 
-import { isDir, readJson } from "./util";
 import * as p from "@clack/prompts";
 import { runGuardCli } from "./guard";
+import { isDir, readJson } from "./util";
 import { DASHBOARD_BINDS, readConfig, setEnigmaValue, type DashboardBind } from "./config";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -1500,7 +1500,8 @@ async function runVerifyCli(positionals: string[], all: boolean): Promise<number
         const { parityReport, formatParity } = await import("./verify-parity");
         const report = parityReport(source, target);
         console.log(formatParity(report));
-        return report.absent.length || report.partial.length ? 1 : 0;
+        // A comparison that found nothing to compare is a failure, not a pass.
+        return report.empty || report.absentTotal || report.partialTotal ? 1 : 0;
     }
     if (sub && sub !== "check") {
         console.error(`Unknown verify command '${sub}'. Use: (no argument) | --all | parity <source> <target>.`);
@@ -1509,7 +1510,11 @@ async function runVerifyCli(positionals: string[], all: boolean): Promise<number
     const { collectGaps, formatGaps, verifyCommandOf } = await import("./verify");
     const command = verifyCommandOf();
     if (command) console.log(`Running the verification command: ${command}`);
-    const { gaps, truncated } = collectGaps(process.cwd(), { all });
+    const { gaps, truncated, noRepo } = collectGaps(process.cwd(), { all });
+    if (noRepo) {
+        console.error("enigma verify: this directory is not a git repository, so there is no change to check. Nothing was verified.");
+        return 1;
+    }
     // Never present a partial scan as a clean one.
     const partial = truncated ? " (scan truncated: too large to read in full, so coverage is incomplete)" : "";
     if (!gaps.length) {

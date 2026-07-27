@@ -23,6 +23,7 @@
  * tracking TODOs are excluded, and a line carrying `enigma:verify-ignore` is skipped.
  */
 
+import { createHash } from "node:crypto";
 import { join, extname } from "node:path";
 import { enigmaHome, readJson } from "./util";
 import { readConfigAt, readGlobalConfig } from "./config";
@@ -50,8 +51,8 @@ const MAX_GAPS = 25;
 const MAX_ADDED_LINES = 40000;
 const MAX_UNTRACKED_BYTES = 512 * 1024;
 
-/** How many times one prompt may be blocked before the gate stands down (loop safety). */
-const MAX_BLOCKS_PER_PROMPT = 2;
+/** How many times the SAME evidence may block before the gate stands down (loop safety). */
+const MAX_BLOCKS_PER_ISSUE = 2;
 
 /**
  * Evidence patterns. Each matches only an unambiguous "this is not finished" signal.
@@ -107,8 +108,13 @@ export function claimsDone(message: string): boolean {
 /** One line added by the current change. */
 export interface AddedLine { file: string; line: number; text: string; }
 
-/** The lines a scan read, and whether a cap stopped it before it had read them all. */
-export interface ScannedLines { lines: AddedLine[]; truncated: boolean; }
+/** The lines a scan read, and whether anything stopped it from reading them all. */
+export interface ScannedLines { lines: AddedLine[]; truncated: boolean; noRepo?: boolean; }
+
+/** Whether `cwd` is inside a git repository at all (git missing counts as "no"). */
+function inGitRepo(cwd: string): boolean {
+    return gitOut(cwd, ["rev-parse", "--git-dir"]).trim() !== "";
+}
 
 /** Run git in `cwd`, returning stdout ("" when git fails or the dir is not a repo). */
 function gitOut(cwd: string, args: string[]): string {
@@ -138,10 +144,15 @@ function branchPoint(cwd: string): string | null {
 function eachAddedLine(diff: string, sink: (file: string, line: number, text: string) => boolean): void {
     let file = "";
     let line = 0;
+    let previous = "";
     for (const raw of diff.split("\n")) {
-        if (raw.startsWith("+++ ")) { file = raw.slice(4).replace(/^b\//, ""); continue; }
+        // A `+++ ` line is only the file header when it follows the `--- ` one; an ADDED line
+        // of content that happens to start with "++ " must not be mistaken for a header, or
+        // every later finding in the diff is attributed to a file that does not exist.
+        if (raw.startsWith("+++ ") && previous.startsWith("--- ")) { file = raw.slice(4).replace(/^b\//, ""); previous = raw; continue; }
+        previous = raw;
         if (raw.startsWith("@@")) { const m = /\+(\d+)/.exec(raw); line = m ? Number(m[1]) : 0; continue; }
-        if (!raw.startsWith("+") || raw.startsWith("+++")) continue;
+        if (!raw.startsWith("+")) continue;
         if (file && file !== "/dev/null" && !sink(file, line, raw.slice(1))) return;
         line++;
     }
@@ -162,6 +173,9 @@ export function addedLines(cwd: string): ScannedLines {
     const lines: AddedLine[] = [];
     const seen = new Set<string>();
     let truncated = false;
+    // Outside a repository there is no diff to read, and an empty result would otherwise be
+    // indistinguishable from "nothing wrong" - the silent pass this whole module exists against.
+    if (!inGitRepo(cwd)) return { lines, truncated, noRepo: true };
     const add = (file: string, line: number, text: string): boolean => {
         if (lines.length >= MAX_ADDED_LINES) { truncated = true; return false; }
         // A line reachable through both diffs is one line, not two.
@@ -184,6 +198,7 @@ export function addedLines(cwd: string): ScannedLines {
 function trackedLines(cwd: string): ScannedLines {
     const lines: AddedLine[] = [];
     let truncated = false;
+    if (!inGitRepo(cwd)) return { lines, truncated, noRepo: true };
     const add = (file: string, line: number, text: string): boolean => {
         if (lines.length >= MAX_ADDED_LINES) { truncated = true; return false; }
         lines.push({ file, line, text });
@@ -250,7 +265,7 @@ function scanLines(cwd: string, lines: AddedLine[]): VerifyGap[] {
 /** Evidence of unfinished work in the code this change produced, with the scan's coverage. */
 function scanEvidence(cwd: string, all: boolean): VerifyScan {
     const scanned = all ? trackedLines(cwd) : addedLines(cwd);
-    return { gaps: scanLines(cwd, scanned.lines), truncated: scanned.truncated };
+    return { gaps: scanLines(cwd, scanned.lines), truncated: scanned.truncated, noRepo: scanned.noRepo, scanned: scanned.lines.length };
 }
 
 /** Evidence of unfinished work in the code this change produced. */
@@ -281,16 +296,28 @@ export function verifyCommandOf(): string {
 }
 
 /** The result of a full check: what it found, and whether it managed to look everywhere. */
-export interface VerifyScan { gaps: VerifyGap[]; truncated: boolean; }
+export interface VerifyScan {
+    gaps: VerifyGap[];
+    /** A cap stopped the scan before it had read everything. */
+    truncated: boolean;
+    /** There was no repository to read a change from, so nothing could be checked. */
+    noRepo?: boolean;
+    /** How many lines the scan actually examined. */
+    scanned: number;
+}
 
 /**
  * All evidence: incompleteness markers, plus the verification command when configured.
- * `truncated` reports that a cap stopped the scan short, so a partial pass is never
- * presented as a clean one.
+ * `truncated` and `noRepo` report that the scan could not see everything (or anything), so a
+ * partial pass is never presented as a clean one.
+ *
+ * The verification command runs only when the change produced something. A turn that merely
+ * answered a question must not pay for a five-minute test suite, and - worse - must not be
+ * blocked by a suite that was already red for reasons it had nothing to do with.
  */
 export function collectGaps(cwd: string, opts: { all?: boolean; runCommand?: boolean } = {}): VerifyScan {
     const scan = scanEvidence(cwd, opts.all === true);
-    const command = opts.runCommand === false ? "" : verifyCommandOf();
+    const command = opts.runCommand === false || scan.scanned === 0 ? "" : verifyCommandOf();
     if (command) {
         const failure = runVerifyCommand(cwd, command);
         if (failure) scan.gaps.push(failure);
@@ -311,6 +338,21 @@ function statePath(): string {
 }
 
 /**
+ * A stable identity for one set of findings, so the loop-safety budget is spent per PROBLEM
+ * rather than per turn.
+ *
+ * Keying the budget on the turn was wrong: the payload's prompt id is not guaranteed, and
+ * falling back to the session id meant two blocks anywhere in a session silenced the gate for
+ * the rest of it, however many further false claims followed. Keyed by the evidence, a repeat
+ * of the same unresolved findings is capped - which is the only thing a loop can be - while
+ * a genuinely new problem always gets a fresh budget.
+ */
+function issueKey(session: string, gaps: VerifyGap[]): string {
+    const identity = gaps.map((g) => `${g.file || ""}:${g.line || 0}:${g.detail.slice(0, 80)}`).sort().join("|");
+    return `${session}:${createHash("sha1").update(identity).digest("hex").slice(0, 12)}`;
+}
+
+/**
  * Count this block against `key` and report whether the gate may still fire. Capped so a
  * model that cannot satisfy the gate is never trapped in an endless stop/continue loop.
  */
@@ -318,7 +360,7 @@ function mayBlock(key: string): boolean {
     const path = statePath();
     const state = readJson<Record<string, number>>(path) || {};
     const count = (state[key] || 0) + 1;
-    if (count > MAX_BLOCKS_PER_PROMPT) return false;
+    if (count > MAX_BLOCKS_PER_ISSUE) return false;
     state[key] = count;
     // Keep the file bounded; the newest entries are the only ones a live turn can hit.
     const keys = Object.keys(state);
@@ -376,14 +418,15 @@ export function runVerifyHook(payload?: string): number {
     }
     if (!claimsDone(message)) return 0;
 
-    const { gaps, truncated } = collectGaps(cwd);
+    const { gaps, truncated, noRepo } = collectGaps(cwd);
     if (!gaps.length) {
-        if (truncated) process.stderr.write("enigma verify: the change was too large to scan in full, so this claim was only partially checked.\n");
+        if (noRepo) process.stderr.write("enigma verify: this directory is not a git repository, so there was no change to check this claim against.\n");
+        else if (truncated) process.stderr.write("enigma verify: the change was too large to scan in full, so this claim was only partially checked.\n");
         return 0;
     }
 
-    const key = String(raw.prompt_id || raw.session_id || "session");
-    if (!mayBlock(key)) return 0;
+    const session = String(raw.session_id || raw.prompt_id || "session");
+    if (!mayBlock(issueKey(session, gaps))) return 0;
     process.stderr.write(`${blockMessage(gaps, truncated)}\n`);
     return 2;
 }

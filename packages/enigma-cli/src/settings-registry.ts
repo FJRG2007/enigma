@@ -14,7 +14,7 @@ import { setVerify } from "./verify-deploy";
 import { applyMcpToggle } from "./mcp-deploy";
 import { isAutoLintOn, setAutoLint } from "./lint";
 import { setGuardrails } from "./guardrails-deploy";
-import { readConfig, setEnigmaToggle, setEnigmaValue, setRecallApiKey, RECALL_PROVIDERS, OUTPUT_STYLES, MINIMAL_CODE_LEVELS, LOGO_COLOR_POLICIES, DASHBOARD_MODES, PROMPT_SECRET_MODES, SKILL_UPDATE_POLICIES } from "./config";
+import { readConfig, readGlobalConfig, setEnigmaToggle, setEnigmaValue, setRecallApiKey, RECALL_PROVIDERS, OUTPUT_STYLES, MINIMAL_CODE_LEVELS, LOGO_COLOR_POLICIES, DASHBOARD_MODES, PROMPT_SECRET_MODES, SKILL_UPDATE_POLICIES } from "./config";
 import { applyDashboardMode } from "./dashboard";
 import { applyGateToggle } from "./command-deploy";
 import type { DashboardMode } from "./config";
@@ -319,8 +319,13 @@ const RAW_CATEGORIES: Category[] = [
             {
                 key: "verify",
                 label: "Verify completion claims",
-                hint: "when the agent reports work as finished, check the claim against what the turn produced (incompleteness markers, plus 'verify-command' when set) and deny the stop on evidence it is false; Claude Code only; enigma default: on",
-                read: () => readConfig().config.verify,
+                // globalOnly because the hook it installs is global: a local "on" would write the
+                // repo config, report success, and install nothing. Turning it OFF for one project
+                // still works - put verify: false in that repo's .enigma.json and the hook honours
+                // it at runtime, against the directory the turn actually ran in.
+                globalOnly: true,
+                hint: "when the agent reports work as finished, check the claim against what the turn produced (incompleteness markers, plus 'verify-command' when set) and deny the stop on evidence it is false; Claude Code only; set verify: false in a repo's .enigma.json to skip that project; enigma default: on",
+                read: () => readGlobalConfig().verify,
                 write: (value, scope) => ({ path: setVerify(scope, value), changed: true }),
             },
             {
@@ -330,9 +335,12 @@ const RAW_CATEGORIES: Category[] = [
                 globalOnly: true,
                 kind: "value",
                 valueHint: "e.g. npm test (blank = markers only)",
-                read: () => !!readConfig().config.verifyCommand,
+                // Global, matching what actually runs: a repo-local verifyCommand is deliberately
+                // never executed, so displaying one would advertise a command that cannot run -
+                // and let a cloned repository put alarming text on the user's settings screen.
+                read: () => !!readGlobalConfig().verifyCommand,
                 write: () => ({ changed: false }),
-                readValue: () => readConfig().config.verifyCommand,
+                readValue: () => readGlobalConfig().verifyCommand,
                 writeValue: (value, scope) => ({ path: setEnigmaValue("verifyCommand", value.trim(), scope), changed: true }),
             },
         ],

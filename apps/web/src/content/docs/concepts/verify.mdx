@@ -33,7 +33,8 @@ A false block would just train you to switch this off, so the checks only match 
 - Documents (`.md`, `.txt`, ...) are skipped, because a plan legitimately tracks TODOs.
 - Language idioms are recognised - a Python abstract method raising `NotImplementedError` is by design, not a stub.
 - A line carrying `enigma:verify-ignore` is never treated as evidence.
-- After two blocks on the same prompt the gate stands down, so it can never trap a turn in a loop.
+- The verification command runs only when the turn actually produced code, so answering a question never pays for your test suite - and a suite that was already red never blocks a turn that did not touch it.
+- After two blocks on the **same findings** the gate stands down, so it can never trap a turn in a loop. A different problem always gets a fresh budget, so standing down once never silences the rest of the session.
 
 ## Ports and clones
 
@@ -57,6 +58,14 @@ Set `verify-command` to whatever proves your project works (`npm test`, `make ch
 
 - **Claude Code** - a `Stop` hook, the one documented turn-end hook that can deny a stop.
 - **Codex** has no turn-end hook, and **opencode**'s `session.idle` event has no documented way to block a turn or return anything to the model. Wiring either would only pretend to gate them. Both are covered by `enigma verify` plus the always-on memory rule instead, which is persuasion rather than enforcement, and is described as such.
+
+## What it does not do
+
+The gate is on globally (`enigma config verify off` turns it off); to skip one project, put `verify: false` in that repository's `.enigma.json`.
+
+Both of its escape hatches - that per-project switch and the `enigma:verify-ignore` marker - are writable by the agent being gated. An agent that decided to route around it could set either, and the gate would go quiet. That is deliberate: this stops **accidental** false claims, which is what actually happens, and both bypasses leave a visible line in the diff you review. It is not a defence against a model actively working to evade it, and nothing that runs on the same machine as the agent could be.
+
+It also cannot judge whether an implementation is *correct* - only whether the work shows signs of being unfinished. A wrong-but-complete implementation passes, which is what code review and tests are for.
 
 ## Privacy
 

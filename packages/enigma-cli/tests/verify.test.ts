@@ -19,7 +19,7 @@ process.env.HOME = HOME;
 process.env.ENIGMA_CONFIG_HOME = HOME;
 
 const { claimsDone, scanGaps, collectGaps, runVerifyHook } = await import("../src/verify");
-const { parityReport } = await import("../src/verify-parity");
+const { parityReport, formatParity } = await import("../src/verify-parity");
 
 const repos: string[] = [];
 afterAll(() => {
@@ -106,12 +106,25 @@ test("ignores documents, ignore-marked lines, and abstract-method idioms", () =>
 
 test("runs the configured verification command and reports its failure", () => {
     const dir = repoWith();
+    write(dir, "src/new.ts", "export const a = 1;\n");
     writeFileSync(join(HOME, ".enigma.json"), JSON.stringify({ verifyCommand: "node -e \"process.exit(3)\"" }));
     try {
         const { gaps } = collectGaps(dir);
         expect(gaps.length).toBe(1);
         expect(gaps[0]!.kind).toBe("command");
         expect(gaps[0]!.detail).toContain("exited 3");
+    } finally {
+        writeFileSync(join(HOME, ".enigma.json"), "{}");
+    }
+});
+
+test("does not run the verification command on a turn that changed nothing", () => {
+    // Answering a question must not pay for a test suite, and must not be blocked by one that
+    // was already failing for reasons this turn had nothing to do with.
+    const dir = repoWith();
+    writeFileSync(join(HOME, ".enigma.json"), JSON.stringify({ verifyCommand: "node -e \"process.exit(3)\"" }));
+    try {
+        expect(collectGaps(dir).gaps).toEqual([]);
     } finally {
         writeFileSync(join(HOME, ".enigma.json"), "{}");
     }
@@ -220,6 +233,42 @@ test("parity reports a module the port never carried over", () => {
     expect(report.absent[0]!.module).toBe("exporter.ts");
     expect(report.absent[0]!.missing).toEqual(["exportCsv", "exportJson"]);
     expect(report.coverage).toBe(50);
+});
+
+test("parity refuses to call an empty comparison a pass", () => {
+    const source = mkdtempSync(join(tmpdir(), "enigma-parity-empty-src-"));
+    const target = mkdtempSync(join(tmpdir(), "enigma-parity-empty-dst-"));
+    repos.push(source, target);
+    write(target, "app.ts", "export function run() {}\n");
+
+    const report = parityReport(source, target);
+    expect(report.empty).toBe(true);
+    expect(formatParity(report)).toContain("NOTHING TO COMPARE");
+    // 100% coverage over zero symbols must never read as "every module has a counterpart".
+    expect(formatParity(report)).not.toContain("Every source module");
+});
+
+test("does not silently pass outside a git repository", () => {
+    const plain = mkdtempSync(join(tmpdir(), "enigma-verify-nogit-"));
+    repos.push(plain);
+    write(plain, "src/new.ts", "// TODO: finish this\n"); // enigma:verify-ignore
+    const scan = collectGaps(plain);
+    expect(scan.noRepo).toBe(true);
+    expect(scan.gaps).toEqual([]);
+});
+
+test("a fresh problem gets its own block budget", () => {
+    const dir = repoWith();
+    write(dir, "src/a.ts", "// TODO: first problem\n"); // enigma:verify-ignore
+    const same = { session_id: "one-session" };
+    expect(runVerifyHook(payload(dir, "All done.", same))).toBe(2);
+    expect(runVerifyHook(payload(dir, "All done.", same))).toBe(2);
+    // The same unresolved evidence has spent its budget...
+    expect(runVerifyHook(payload(dir, "All done.", same))).toBe(0);
+    // ...but a different problem in the same session must still be caught, which keying the
+    // budget on the turn (rather than on the evidence) silently prevented.
+    write(dir, "src/b.ts", "// FIXME: second problem\n"); // enigma:verify-ignore
+    expect(runVerifyHook(payload(dir, "All done.", same))).toBe(2);
 });
 
 test("parity accepts a faithful port across naming conventions", () => {

@@ -43,6 +43,11 @@ export interface ParityReport {
     absent: ModuleParity[];
     /** Source modules only partially carried over (coverage below PARTIAL_THRESHOLD). */
     partial: ModuleParity[];
+    /** How many absent/partial modules exist in total, when the lists above were capped. */
+    absentTotal: number;
+    partialTotal: number;
+    /** The source yielded no comparable symbols, so there was nothing to check. */
+    empty: boolean;
 }
 
 /** Names shorter than this collide too easily to match reliably (mirrors codegraph). */
@@ -97,13 +102,18 @@ export function parityReport(sourceDir: string, targetDir: string): ParityReport
     }
 
     const worstFirst = (a: ModuleParity, b: ModuleParity): number => (b.symbols - b.matched) - (a.symbols - a.matched);
-    const absent = modules.filter((m) => m.matched === 0).sort(worstFirst).slice(0, MAX_MODULES);
-    const partial = modules
-        .filter((m) => m.matched > 0 && (m.matched / m.symbols) * 100 < PARTIAL_THRESHOLD)
-        .sort(worstFirst)
-        .slice(0, MAX_MODULES);
+    const allAbsent = modules.filter((m) => m.matched === 0).sort(worstFirst);
+    const allPartial = modules.filter((m) => m.matched > 0 && (m.matched / m.symbols) * 100 < PARTIAL_THRESHOLD).sort(worstFirst);
+    const absent = allAbsent.slice(0, MAX_MODULES);
+    const partial = allPartial.slice(0, MAX_MODULES);
 
     return {
+        absentTotal: allAbsent.length,
+        partialTotal: allPartial.length,
+        // No symbols on the source side means the comparison never happened - a mistyped path,
+        // an unsupported language, an empty tree. Reporting that as 100% would turn a completion
+        // check into a rubber stamp, which is the one thing it must never be.
+        empty: sourceSymbols === 0,
         source: source.root,
         target: target.root,
         sourceFiles: source.files.length,
@@ -122,17 +132,27 @@ export function formatParity(report: ParityReport): string {
     const lines: string[] = [
         `source: ${report.source} (${report.sourceFiles} files, ${report.sourceSymbols} symbols)`,
         `target: ${report.target} (${report.targetFiles} files, ${report.targetSymbols} symbols)`,
-        `symbol coverage: ${report.coverage}% (${report.matched}/${report.sourceSymbols} carried over)`,
     ];
-    if (report.absent.length) {
-        lines.push("", `NOT PORTED AT ALL - ${report.absent.length} module(s) with zero symbols carried over:`);
+    if (report.empty) {
+        lines.push("", "NOTHING TO COMPARE: no symbols were found in the source, so this proves nothing.",
+            "Check the path, and that the source is in a language the scanner reads.");
+        return lines.join("\n");
+    }
+    lines.push(`symbol coverage: ${report.coverage}% (${report.matched}/${report.sourceSymbols} carried over)`);
+    if (report.absentTotal) {
+        lines.push("", `NOT PORTED AT ALL - ${report.absentTotal} module(s) with zero symbols carried over${listed(report.absent.length, report.absentTotal)}:`);
         for (const m of report.absent) lines.push(`  x ${m.module} (${m.symbols} symbols): ${m.missing.join(", ")}`);
     }
-    if (report.partial.length) {
-        lines.push("", `PARTIALLY PORTED - ${report.partial.length} module(s) below ${PARTIAL_THRESHOLD}% coverage:`);
+    if (report.partialTotal) {
+        lines.push("", `PARTIALLY PORTED - ${report.partialTotal} module(s) below ${PARTIAL_THRESHOLD}% coverage${listed(report.partial.length, report.partialTotal)}:`);
         for (const m of report.partial) lines.push(`  ! ${m.module} (${m.matched}/${m.symbols}): missing ${m.missing.join(", ")}`);
     }
-    if (!report.absent.length && !report.partial.length) lines.push("", "Every source module has a counterpart in the target.");
+    if (!report.absentTotal && !report.partialTotal) lines.push("", "Every source module has a counterpart in the target.");
     lines.push("", "Coverage matches symbol NAMES: it proves a counterpart exists, not that its behaviour was ported faithfully.");
     return lines.join("\n");
+}
+
+/** Say so when a list was capped, rather than letting the shown count read as the total. */
+function listed(shown: number, total: number): string {
+    return shown < total ? `, showing the worst ${shown}` : "";
 }
