@@ -120,11 +120,20 @@ test("runs the configured verification command and reports its failure", () => {
 
 test("does not run the verification command on a turn that changed nothing", () => {
     // Answering a question must not pay for a test suite, and must not be blocked by one that
-    // was already failing for reasons this turn had nothing to do with.
-    const dir = repoWith();
+    // was already failing for reasons this turn had nothing to do with. The branch's line count
+    // cannot decide that - on a branch with earlier commits it is always positive - so a clean
+    // working tree is what "this turn produced nothing" actually looks like.
+    const dir = repoWith({ "src/app.ts": "export const a = 1;\n" });
+    git(dir, "checkout", "-q", "-b", "feature");
+    write(dir, "src/more.ts", "export const b = 2;\n");
+    git(dir, "add", "-A");
+    git(dir, "commit", "-qm", "earlier work on this branch");
     writeFileSync(join(HOME, ".enigma.json"), JSON.stringify({ verifyCommand: "node -e \"process.exit(3)\"" }));
     try {
-        expect(collectGaps(dir).gaps).toEqual([]);
+        const scan = collectGaps(dir);
+        expect(scan.scanned).toBeGreaterThan(0);
+        expect(scan.ranCommand).toBe(false);
+        expect(scan.gaps).toEqual([]);
     } finally {
         writeFileSync(join(HOME, ".enigma.json"), "{}");
     }

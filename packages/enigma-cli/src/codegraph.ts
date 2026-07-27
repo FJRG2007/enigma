@@ -241,7 +241,8 @@ export function scanFiles(rootDir?: string): { root: string; files: CodeFile[]; 
     // Both caps are reported, not just applied: a caller that compares two trees (the parity
     // check) would otherwise score an unread module as absent-free and call a port complete.
     let truncated = false;
-    for (const abs of walk(root)) {
+    const walked = walk(root);
+    for (const abs of walked) {
         let size = 0;
         try { size = statSync(abs).size; } catch { continue; }
         if (size > MAX_FILE_BYTES) { truncated = true; continue; }
@@ -252,8 +253,9 @@ export function scanFiles(rootDir?: string): { root: string; files: CodeFile[]; 
         const path = relative(root, abs).split("\\").join("/");
         files.push({ path, lang, loc: content ? content.split("\n").length : 0, symbols, imports });
     }
-    // walk() stops at MAX_FILES; hitting it exactly means the tree was probably larger.
-    if (files.length >= MAX_FILES) truncated = true;
+    // Measured on what walk() RETURNED, not on what survived per-file drops: a tree that hit
+    // the cap and also had one unreadable file would otherwise report full coverage.
+    if (walked.length >= MAX_FILES) truncated = true;
     return { root, files, truncated };
 }
 

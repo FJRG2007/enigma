@@ -122,10 +122,19 @@ function inGitRepo(cwd: string): boolean {
     return gitOut(cwd, ["rev-parse", "--git-dir"]).trim() !== "";
 }
 
-/** Run git in `cwd`, returning stdout ("" when git fails or the dir is not a repo). */
-function gitOut(cwd: string, args: string[]): string {
+/**
+ * Run git in `cwd`. Returns null when the command FAILED, which an empty string cannot
+ * express: a diff too large for the buffer throws, and reading that as "no changes" would
+ * report a clean pass over work nobody looked at.
+ */
+function gitTry(cwd: string, args: string[]): string | null {
     try { return execFileSync("git", args, { cwd, encoding: "utf8", maxBuffer: 32 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] }); }
-    catch { return ""; }
+    catch { return null; }
+}
+
+/** Run git in `cwd`, treating failure as empty output (for probes where that is the answer). */
+function gitOut(cwd: string, args: string[]): string {
+    return gitTry(cwd, args) ?? "";
 }
 
 /**
@@ -136,11 +145,13 @@ function gitOut(cwd: string, args: string[]): string {
  */
 function branchPoint(cwd: string): string | null {
     const refs: string[] = [];
-    // The branch's own upstream first: it is the only ref that knows a develop-based flow, and
-    // guessing main/master there can pick a merge-base months back, making everything committed
-    // since count as this turn's work.
-    const upstream = gitOut(cwd, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"]).trim();
-    if (upstream) refs.push(upstream);
+    // NOT the branch's own upstream. Tried, and it silently defeated the whole point: after
+    // `git push -u`, the upstream IS this branch, so the merge-base equals HEAD and the scan
+    // collapses to the working tree - losing every committed change, which is the hole this
+    // exists to close. The integration branch is what matters, so the remote's default head
+    // leads. On a develop-style flow without origin/HEAD the fallbacks can pick an older base
+    // and over-attribute; that is the lesser evil, because it is visible and answerable,
+    // whereas a silent pass is the failure this whole module exists to prevent.
     const originHead = gitOut(cwd, ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"]).trim();
     if (originHead) refs.push(originHead);
     refs.push("origin/main", "origin/master", "main", "master");
@@ -194,11 +205,21 @@ export function addedLines(cwd: string): ScannedLines {
         lines.push({ file, line, text });
         return true;
     };
-    eachAddedLine(gitOut(cwd, ["diff", "--unified=0", "--no-color", branchPoint(cwd) || "HEAD"]), add);
-    for (const path of gitOut(cwd, ["ls-files", "--others", "--exclude-standard"]).split("\n").map((s) => s.trim()).filter(Boolean)) {
+    const diff = gitTry(cwd, ["diff", "--unified=0", "--no-color", branchPoint(cwd) || "HEAD"]);
+    if (diff === null) truncated = true; else eachAddedLine(diff, add);
+    const untracked = gitTry(cwd, ["ls-files", "--others", "--exclude-standard"]);
+    if (untracked === null) truncated = true;
+    for (const path of (untracked ?? "").split("\n").map((s) => s.trim()).filter(Boolean)) {
         if (!readInto(cwd, path, add, () => { truncated = true; })) break;
     }
     return { lines, truncated };
+}
+
+/** Whether this turn left anything uncommitted - the cheap "did it actually do something". */
+function workingTreeDirty(cwd: string): boolean {
+    const status = gitTry(cwd, ["status", "--porcelain"]);
+    // A failed status is treated as dirty: better to run the check than to skip it silently.
+    return status === null || status.trim() !== "";
 }
 
 /** Every tracked file's lines, for the whole-repository sweep (`enigma verify --all`). */
@@ -211,7 +232,9 @@ function trackedLines(cwd: string): ScannedLines {
         lines.push({ file, line, text });
         return true;
     };
-    for (const path of gitOut(cwd, ["ls-files"]).split("\n").map((s) => s.trim()).filter(Boolean)) {
+    const tracked = gitTry(cwd, ["ls-files"]);
+    if (tracked === null) truncated = true;
+    for (const path of (tracked ?? "").split("\n").map((s) => s.trim()).filter(Boolean)) {
         if (!readInto(cwd, path, add, () => { truncated = true; })) break;
     }
     return { lines, truncated };
@@ -301,7 +324,7 @@ function scanLines(cwd: string, lines: AddedLine[]): { gaps: VerifyGap[]; capped
 function scanEvidence(cwd: string, all: boolean): VerifyScan {
     const scanned = all ? trackedLines(cwd) : addedLines(cwd);
     const { gaps, capped } = scanLines(cwd, scanned.lines);
-    return { gaps, truncated: scanned.truncated, capped, noRepo: scanned.noRepo, scanned: scanned.lines.length };
+    return { gaps, truncated: scanned.truncated, capped, noRepo: scanned.noRepo, scanned: scanned.lines.length, ranCommand: false };
 }
 
 /** Evidence of unfinished work in the code this change produced. */
@@ -349,6 +372,8 @@ export interface VerifyScan {
     noRepo?: boolean;
     /** How many lines the scan actually examined. */
     scanned: number;
+    /** Whether the project's verification command was actually run. */
+    ranCommand: boolean;
 }
 
 /**
@@ -356,18 +381,21 @@ export interface VerifyScan {
  * `truncated` and `noRepo` report that the scan could not see everything (or anything), so a
  * partial pass is never presented as a clean one.
  *
- * The verification command runs only when the change produced something. A turn that merely
- * answered a question must not pay for a five-minute test suite, and - worse - must not be
- * blocked by a suite that was already red for reasons it had nothing to do with.
+ * The verification command runs only when THIS TURN left something uncommitted. A turn that
+ * merely answered a question must not pay for a five-minute test suite, and - worse - must not
+ * be blocked by a suite that was already red for reasons it had nothing to do with. The line
+ * count cannot decide that: it covers the whole branch, so on any branch with earlier commits
+ * it is always positive and every conversational turn would have paid.
  */
 export function collectGaps(cwd: string, opts: { all?: boolean; runCommand?: boolean } = {}): VerifyScan {
     const scan = scanEvidence(cwd, opts.all === true);
-    const command = opts.runCommand === false || scan.scanned === 0 ? "" : verifyCommandOf();
+    const produced = scan.scanned > 0 && (opts.all === true || workingTreeDirty(cwd));
+    const command = opts.runCommand === false || !produced ? "" : verifyCommandOf();
     if (command) {
         const failure = runVerifyCommand(cwd, command);
         if (failure) scan.gaps.push(failure);
     }
-    return scan;
+    return { ...scan, ranCommand: Boolean(command) };
 }
 
 /** Format evidence as a compact, model-facing list. */
@@ -400,6 +428,8 @@ function statePath(): string {
  * a genuinely new problem always gets a fresh budget.
  */
 function issueKey(session: string, gaps: VerifyGap[]): string {
+    // `session` must never be a shared constant: a payload with no session id would otherwise
+    // put every project in one budget, where two blocks anywhere stand the gate down everywhere.
     // The line number is deliberately excluded: editing anything above an untouched marker
     // moves it, and including the line would hand the same unfixed finding a fresh budget
     // every time, which is a loop with extra steps.
@@ -490,7 +520,7 @@ export function runVerifyHook(payload?: string): number {
         return 0;
     }
 
-    const session = String(raw.session_id || raw.prompt_id || "session");
+    const session = String(raw.session_id || raw.prompt_id || cwd);
     if (!mayBlock(issueKey(session, gaps))) return 0;
     process.stderr.write(`${blockMessage(gaps, { truncated, capped })}\n`);
     return 2;

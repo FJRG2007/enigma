@@ -1509,11 +1509,10 @@ async function runVerifyCli(positionals: string[], all: boolean): Promise<number
     }
     const { collectGaps, formatGaps, verifyCommandOf } = await import("./verify");
     const command = verifyCommandOf();
-    const { gaps, truncated, capped, noRepo, scanned } = collectGaps(process.cwd(), { all });
+    const { gaps, truncated, capped, noRepo, ranCommand } = collectGaps(process.cwd(), { all });
     // Announced after the fact, because the scan decides whether it runs at all: saying it ran
     // on a turn that produced nothing would be the same kind of unearned reassurance this
     // command exists to remove.
-    const ranCommand = Boolean(command) && scanned > 0;
     if (ranCommand) console.log(`Ran the verification command: ${command}`);
     if (noRepo) {
         console.error("enigma verify: this directory is not a git repository, so there is no change to check. Nothing was verified.");

@@ -89,8 +89,10 @@ function tail(path: string, bytes: number): string {
         const size = fstatSync(fd).size;
         const length = Math.min(size, bytes);
         const buf = Buffer.alloc(length);
-        readSync(fd, buf, 0, length, size - length);
-        const text = buf.toString("utf8");
+        // Decode only what was actually read: a short read would otherwise leave NUL padding on
+        // the final line, which is exactly the line the newest message is on.
+        const read = readSync(fd, buf, 0, length, size - length);
+        const text = buf.subarray(0, read).toString("utf8");
         return length < size ? text.slice(text.indexOf("\n") + 1) : text;
     } catch { return ""; }
     finally { closeSync(fd); }
