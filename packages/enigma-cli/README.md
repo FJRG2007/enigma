@@ -86,6 +86,9 @@ enigma skills ...      List skills and manage discards (list/discard/restore)
 enigma compress [file] Compress JSON/logs/text to fewer tokens (reversible via CCR);
                        --retrieve <hash> restores, --stats shows total savings,
                        --clear wipes all dashboard data (stats/history/cache)
+enigma verify          Check that work reported as finished actually is: scans the change for
+                       unfinished work and runs your verification command. parity <src> <dst>
+                       compares a codebase against a port of it. Also runs at turn end
 enigma mcp             Run the context-compression MCP server over stdio
 enigma dashboard|dash  Open the local dashboard (manage enigma; see savings) in your browser (http://enigma,
                        or http://localhost:24282 if :80/hosts is unavailable)
