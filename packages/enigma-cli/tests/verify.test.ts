@@ -144,8 +144,22 @@ test("denies the stop only when a claim is contradicted by evidence", () => {
     expect(runVerifyHook(payload(dir, "All done, everything is implemented."))).toBe(2);
     // Evidence but no claim -> the turn is free to end.
     expect(runVerifyHook(payload(dir, "I started the parser; continuing next turn."))).toBe(0);
-    // Already re-entered from a block -> never stack gates on one turn.
-    expect(runVerifyHook(payload(dir, "All done.", { stop_hook_active: true }))).toBe(0);
+    // stop_hook_active must NOT excuse the claim: it stays set for every stop while the turn
+    // continues, so honouring it let an agent clear the gate by repeating "all done" unchanged.
+    expect(runVerifyHook(payload(dir, "All done.", { stop_hook_active: true }))).toBe(2);
+});
+
+test("a moved marker does not buy a fresh block budget", () => {
+    // The budget is keyed on the findings, not their position: inserting a line above an
+    // untouched marker must not reset it, or the cap can be dodged indefinitely.
+    const dir = repoWith();
+    write(dir, "src/new.ts", "// TODO: finish this\n"); // enigma:verify-ignore
+    const same = { session_id: "drift-session" };
+    expect(runVerifyHook(payload(dir, "All done.", same))).toBe(2);
+    write(dir, "src/new.ts", "const unrelated = 1;\n// TODO: finish this\n"); // enigma:verify-ignore
+    expect(runVerifyHook(payload(dir, "All done.", same))).toBe(2);
+    write(dir, "src/new.ts", "const a = 1;\nconst b = 2;\n// TODO: finish this\n"); // enigma:verify-ignore
+    expect(runVerifyHook(payload(dir, "All done.", same))).toBe(0);
 });
 
 test("lets a claim through when the work holds up", () => {

@@ -46,6 +46,9 @@ const DOC_EXT = new Set([".md", ".mdx", ".txt", ".rst", ".adoc"]);
 /** Escape hatch: a line carrying this token is never treated as evidence. */
 const IGNORE_RE = /enigma:verify-ignore/;
 
+/** How long the project's verification command may run before it is given up on. */
+const TIMEOUT_MS = 300_000;
+
 /** Hard caps so the gate stays fast on any repository. */
 const MAX_GAPS = 25;
 const MAX_ADDED_LINES = 40000;
@@ -133,6 +136,11 @@ function gitOut(cwd: string, args: string[]): string {
  */
 function branchPoint(cwd: string): string | null {
     const refs: string[] = [];
+    // The branch's own upstream first: it is the only ref that knows a develop-based flow, and
+    // guessing main/master there can pick a merge-base months back, making everything committed
+    // since count as this turn's work.
+    const upstream = gitOut(cwd, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"]).trim();
+    if (upstream) refs.push(upstream);
     const originHead = gitOut(cwd, ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"]).trim();
     if (originHead) refs.push(originHead);
     refs.push("origin/main", "origin/master", "main", "master");
@@ -268,9 +276,10 @@ function suppressedByContext(cwd: string, file: string, line: number, notNear: R
     return lines.slice(from, line).some((l) => notNear.test(l));
 }
 
-/** Match the evidence patterns against a set of lines. */
-function scanLines(cwd: string, lines: AddedLine[]): VerifyGap[] {
+/** Match the evidence patterns against a set of lines, reporting whether the cap cut it short. */
+function scanLines(cwd: string, lines: AddedLine[]): { gaps: VerifyGap[]; capped: boolean } {
     const gaps: VerifyGap[] = [];
+    let capped = false;
     const cache = new Map<string, string[]>();
     for (const entry of lines) {
         if (DOC_EXT.has(extname(entry.file).toLowerCase())) continue;
@@ -281,15 +290,18 @@ function scanLines(cwd: string, lines: AddedLine[]): VerifyGap[] {
             gaps.push({ kind: "marker", file: entry.file, line: entry.line, detail: `${pattern.label}: ${entry.text.trim().slice(0, 160)}` });
             break;
         }
-        if (gaps.length >= MAX_GAPS) break;
+        // Say when the list was cut short: shown-is-all would let the model fix everything it
+        // was given and still be blocked next turn by findings it was never told about.
+        if (gaps.length >= MAX_GAPS) { capped = true; break; }
     }
-    return gaps;
+    return { gaps, capped };
 }
 
 /** Evidence of unfinished work in the code this change produced, with the scan's coverage. */
 function scanEvidence(cwd: string, all: boolean): VerifyScan {
     const scanned = all ? trackedLines(cwd) : addedLines(cwd);
-    return { gaps: scanLines(cwd, scanned.lines), truncated: scanned.truncated, noRepo: scanned.noRepo, scanned: scanned.lines.length };
+    const { gaps, capped } = scanLines(cwd, scanned.lines);
+    return { gaps, truncated: scanned.truncated, capped, noRepo: scanned.noRepo, scanned: scanned.lines.length };
 }
 
 /** Evidence of unfinished work in the code this change produced. */
@@ -306,12 +318,19 @@ export function runVerifyCommand(cwd: string, command: string): VerifyGap | null
     // A real test suite is verbose, and Node's 1 MiB default output buffer would kill a
     // PASSING one and report it as a failure - a false block, which is how a gate like this
     // gets switched off. result.error separates "could not run it" from "it failed".
-    const result = spawnSync(command, { cwd, shell: true, encoding: "utf8", timeout: 300_000, maxBuffer: 64 * 1024 * 1024 });
-    if (result.error) return { kind: "command", detail: `could not run the verification command \`${command}\`: ${result.error.message}` };
-    if (result.status === 0) return null;
+    const result = spawnSync(command, { cwd, shell: true, encoding: "utf8", timeout: TIMEOUT_MS, maxBuffer: 64 * 1024 * 1024 });
     const output = `${result.stdout || ""}${result.stderr || ""}`.trim().slice(-1500);
-    const why = result.status === null ? "did not finish (timed out or was killed)" : `exited ${result.status}`;
-    return { kind: "command", detail: `the project's verification command \`${command}\` ${why}\n${output}` };
+    // A timeout also arrives as result.error, so it has to be told apart from "no such command"
+    // first - otherwise someone with a merely slow test suite is sent looking for a typo.
+    if (result.error) {
+        const timedOut = (result.error as NodeJS.ErrnoException).code === "ETIMEDOUT" || result.signal !== null;
+        const detail = timedOut
+            ? `the project's verification command \`${command}\` did not finish within ${Math.round(TIMEOUT_MS / 1000)}s\n${output}`
+            : `could not run the verification command \`${command}\`: ${result.error.message}`;
+        return { kind: "command", detail };
+    }
+    if (result.status === 0) return null;
+    return { kind: "command", detail: `the project's verification command \`${command}\` exited ${result.status}\n${output}` };
 }
 
 /** The configured verification command, or "" when none is set. */
@@ -324,6 +343,8 @@ export interface VerifyScan {
     gaps: VerifyGap[];
     /** A cap stopped the scan before it had read everything. */
     truncated: boolean;
+    /** There were more findings than the report shows. */
+    capped: boolean;
     /** There was no repository to read a change from, so nothing could be checked. */
     noRepo?: boolean;
     /** How many lines the scan actually examined. */
@@ -372,7 +393,10 @@ function statePath(): string {
  * a genuinely new problem always gets a fresh budget.
  */
 function issueKey(session: string, gaps: VerifyGap[]): string {
-    const identity = gaps.map((g) => `${g.file || ""}:${g.line || 0}:${g.detail.slice(0, 80)}`).sort().join("|");
+    // The line number is deliberately excluded: editing anything above an untouched marker
+    // moves it, and including the line would hand the same unfixed finding a fresh budget
+    // every time, which is a loop with extra steps.
+    const identity = gaps.map((g) => `${g.file || ""}:${g.detail.slice(0, 80)}`).sort().join("|");
     return `${session}:${createHash("sha1").update(identity).digest("hex").slice(0, 12)}`;
 }
 
@@ -401,12 +425,15 @@ function mayBlock(key: string): boolean {
  * Deliberately framed at maximum stakes: the whole point of this gate is that a false
  * "done" is a worse outcome than an honest "unfinished", and the model must feel that.
  */
-function blockMessage(gaps: VerifyGap[], truncated = false): string {
+function blockMessage(gaps: VerifyGap[], incomplete: { truncated?: boolean; capped?: boolean } = {}): string {
+    const caveat = incomplete.capped
+        ? "(Only the first findings are listed - there are more than these.)"
+        : incomplete.truncated ? "(The change was too large to scan in full, so there may be more than this.)" : "";
     return [
         "enigma verify: STOP. You just reported this work as finished, but a deterministic check of what you actually produced contradicts that claim:",
         "",
         formatGaps(gaps),
-        ...(truncated ? ["", "(The change was too large to scan in full, so there may be more than this.)"] : []),
+        ...(caveat ? ["", caveat] : []),
         "",
         "Treat this as mission-critical: lives depend on this code being genuinely correct and complete, and a false \"done\" is the single worst outcome possible here - far worse than admitting the work is unfinished. Someone will rely on your report without re-reading every line.",
         "Do not stop now. Either:",
@@ -431,9 +458,11 @@ export function runVerifyHook(payload?: string): number {
         process.stderr.write("enigma verify: the turn-end payload could not be read, so the completion check did not run.\n");
         return 0;
     }
-    // Already re-entered from a previous block: never stack gates on one turn.
-    if (raw.stop_hook_active === true) return 0;
-
+    // NOTE: `stop_hook_active` is deliberately NOT honoured. It stays true for every stop that
+    // happens while a turn continues because of a stop hook, so returning early on it capped the
+    // gate at one block per prompt - and an agent could clear it by simply repeating "all done"
+    // with nothing changed, which is precisely the behaviour being gated. Loop safety comes from
+    // the evidence-keyed budget below instead, which bounds repeats without excusing them.
     const cwd = typeof raw.cwd === "string" && existsSync(raw.cwd) ? raw.cwd : process.cwd();
     if (!readConfigAt(cwd).verify) return 0;
 
@@ -447,7 +476,7 @@ export function runVerifyHook(payload?: string): number {
     }
     if (!claimsDone(message)) return 0;
 
-    const { gaps, truncated, noRepo } = collectGaps(cwd);
+    const { gaps, truncated, capped, noRepo } = collectGaps(cwd);
     if (!gaps.length) {
         if (noRepo) process.stderr.write("enigma verify: this directory is not a git repository, so there was no change to check this claim against.\n");
         else if (truncated) process.stderr.write("enigma verify: the change was too large to scan in full, so this claim was only partially checked.\n");
@@ -456,6 +485,6 @@ export function runVerifyHook(payload?: string): number {
 
     const session = String(raw.session_id || raw.prompt_id || "session");
     if (!mayBlock(issueKey(session, gaps))) return 0;
-    process.stderr.write(`${blockMessage(gaps, truncated)}\n`);
+    process.stderr.write(`${blockMessage(gaps, { truncated, capped })}\n`);
     return 2;
 }

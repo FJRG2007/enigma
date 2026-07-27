@@ -52,7 +52,9 @@ Coverage matches symbol **names**: it proves a counterpart exists, never that it
 No argument checks the current change and runs your verification command - the same check the turn-end hook runs, on demand. `--all` sweeps every tracked file. It returns a non-zero exit code when something is unfinished, so it also works as a pre-merge or CI check.
 </Cmd>
 
-Set `verify-command` to whatever proves your project works (`npm test`, `make check`, `pytest -q`). It is read from your **global** config only, never from a repository's own `.enigma.json`, and it is excluded from config import/export: a cloned repository or an imported bundle must never be able to run a command on your machine.
+Set `verify-command` to whatever proves your project works (`npm test`, `make check`, `pytest -q`). It is read from your **global** config only, never from a repository's own `.enigma.json`, and it is excluded from config import and export: a cloned repository or an imported bundle must never be able to choose a command to run on your machine.
+
+Be aware of what that does **not** cover. A command like `npm test` names an entry point that each repository defines, so setting it globally means a cloned repo's own `scripts.test` runs automatically at the end of a claiming turn. That is the same trust you extend by running `npm test` in that repo yourself - but here it happens without you typing it. It is off by default for exactly this reason. If you work in repositories you have not read, either leave it unset (marker checks still run) or point it at something you control rather than something the repo defines.
 
 ## Where it runs
 

@@ -1509,7 +1509,7 @@ async function runVerifyCli(positionals: string[], all: boolean): Promise<number
     }
     const { collectGaps, formatGaps, verifyCommandOf } = await import("./verify");
     const command = verifyCommandOf();
-    const { gaps, truncated, noRepo, scanned } = collectGaps(process.cwd(), { all });
+    const { gaps, truncated, capped, noRepo, scanned } = collectGaps(process.cwd(), { all });
     // Announced after the fact, because the scan decides whether it runs at all: saying it ran
     // on a turn that produced nothing would be the same kind of unearned reassurance this
     // command exists to remove.
@@ -1519,8 +1519,9 @@ async function runVerifyCli(positionals: string[], all: boolean): Promise<number
         console.error("enigma verify: this directory is not a git repository, so there is no change to check. Nothing was verified.");
         return 1;
     }
-    // Never present a partial scan as a clean one.
-    const partial = truncated ? " (scan truncated: too large to read in full, so coverage is incomplete)" : "";
+    // Never present a partial scan, or a partial list, as the whole picture.
+    const partial = capped ? " (only the first findings are listed - there are more)"
+        : truncated ? " (scan truncated: too large to read in full, so coverage is incomplete)" : "";
     if (!gaps.length) {
         console.log(`No evidence of unfinished work in ${all ? "any tracked file" : "the current change"}${ranCommand ? ", and the verification command passed" : ""}.${partial}`);
         return 0;
