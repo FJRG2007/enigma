@@ -57,6 +57,9 @@ const MAX_UNTRACKED_BYTES = 512 * 1024;
 /** How many times the SAME evidence may block before the gate stands down (loop safety). */
 const MAX_BLOCKS_PER_ISSUE = 2;
 
+/** Absolute ceiling per session, so an ever-changing finding set cannot cycle forever. */
+const MAX_BLOCKS_PER_SESSION = 10;
+
 /**
  * Evidence patterns. Each matches only an unambiguous "this is not finished" signal.
  * `notNear` suppresses a hit when the preceding lines show it is a legitimate idiom
@@ -171,7 +174,10 @@ function eachAddedLine(diff: string, sink: (file: string, line: number, text: st
         // A `+++ ` line is only the file header when it follows the `--- ` one; an ADDED line
         // of content that happens to start with "++ " must not be mistaken for a header, or
         // every later finding in the diff is attributed to a file that does not exist.
-        if (raw.startsWith("+++ ") && previous.startsWith("--- ")) { file = raw.slice(4).replace(/^b\//, ""); previous = raw; continue; }
+        // git appends a TAB (and timestamp) to the header when the path contains a space, and
+        // keeping it produces a path that does not exist - so findings point nowhere and the
+        // idiom exemption, which has to read the file, silently stops working.
+        if (raw.startsWith("+++ ") && previous.startsWith("--- ")) { file = raw.slice(4).replace(/\t.*$/, "").replace(/^b\//, ""); previous = raw; continue; }
         previous = raw;
         if (raw.startsWith("@@")) { const m = /\+(\d+)/.exec(raw); line = m ? Number(m[1]) : 0; continue; }
         if (!raw.startsWith("+")) continue;
@@ -207,7 +213,7 @@ export function addedLines(cwd: string): ScannedLines {
     };
     const diff = gitTry(cwd, ["diff", "--unified=0", "--no-color", branchPoint(cwd) || "HEAD"]);
     if (diff === null) truncated = true; else eachAddedLine(diff, add);
-    const untracked = gitTry(cwd, ["ls-files", "--others", "--exclude-standard"]);
+    const untracked = gitTry(cwd, ["-c", "core.quotepath=false", "ls-files", "--others", "--exclude-standard"]);
     if (untracked === null) truncated = true;
     for (const path of (untracked ?? "").split("\n").map((s) => s.trim()).filter(Boolean)) {
         if (!readInto(cwd, path, add, () => { truncated = true; })) break;
@@ -215,11 +221,22 @@ export function addedLines(cwd: string): ScannedLines {
     return { lines, truncated };
 }
 
-/** Whether this turn left anything uncommitted - the cheap "did it actually do something". */
-function workingTreeDirty(cwd: string): boolean {
+/**
+ * Whether there is anything new to verify since the command last ran here: an uncommitted
+ * change, or a commit made since the last run.
+ *
+ * Dirtiness alone was not enough - it skipped the command exactly when the agent had committed
+ * its work, which is the flow enigma prescribes. The branch's line count was not enough either
+ * - on a branch with earlier commits it is always positive, so every conversational turn paid
+ * for the suite. "Has anything moved since we last checked" is the question that was actually
+ * being asked.
+ */
+function hasNewWork(cwd: string): boolean {
     const status = gitTry(cwd, ["status", "--porcelain"]);
-    // A failed status is treated as dirty: better to run the check than to skip it silently.
-    return status === null || status.trim() !== "";
+    // A failed status counts as new work: better to run the check than to skip it silently.
+    if (status === null || status.trim() !== "") return true;
+    const head = gitOut(cwd, ["rev-parse", "HEAD"]).trim();
+    return head !== "" && head !== lastVerifiedHead(cwd);
 }
 
 /** Every tracked file's lines, for the whole-repository sweep (`enigma verify --all`). */
@@ -232,7 +249,7 @@ function trackedLines(cwd: string): ScannedLines {
         lines.push({ file, line, text });
         return true;
     };
-    const tracked = gitTry(cwd, ["ls-files"]);
+    const tracked = gitTry(cwd, ["-c", "core.quotepath=false", "ls-files"]);
     if (tracked === null) truncated = true;
     for (const path of (tracked ?? "").split("\n").map((s) => s.trim()).filter(Boolean)) {
         if (!readInto(cwd, path, add, () => { truncated = true; })) break;
@@ -389,11 +406,12 @@ export interface VerifyScan {
  */
 export function collectGaps(cwd: string, opts: { all?: boolean; runCommand?: boolean } = {}): VerifyScan {
     const scan = scanEvidence(cwd, opts.all === true);
-    const produced = scan.scanned > 0 && (opts.all === true || workingTreeDirty(cwd));
+    const produced = scan.scanned > 0 && (opts.all === true || hasNewWork(cwd));
     const command = opts.runCommand === false || !produced ? "" : verifyCommandOf();
     if (command) {
         const failure = runVerifyCommand(cwd, command);
         if (failure) scan.gaps.push(failure);
+        else rememberVerifiedHead(cwd);
     }
     return { ...scan, ranCommand: Boolean(command) };
 }
@@ -437,15 +455,42 @@ function issueKey(session: string, gaps: VerifyGap[]): string {
     return `${session}:${createHash("sha1").update(identity).digest("hex").slice(0, 12)}`;
 }
 
+/** The commit the verification command last passed on in `cwd`, or "" when it never has. */
+function lastVerifiedHead(cwd: string): string {
+    const state = readJson<Record<string, number | string>>(statePath()) || {};
+    const value = state[`head:${cwd}`];
+    return typeof value === "string" ? value : "";
+}
+
+/** Record the commit the verification command just passed on, so it is not re-run for it. */
+function rememberVerifiedHead(cwd: string): void {
+    const head = gitOut(cwd, ["rev-parse", "HEAD"]).trim();
+    if (!head) return;
+    const path = statePath();
+    const state = readJson<Record<string, number | string>>(path) || {};
+    state[`head:${cwd}`] = head;
+    try {
+        mkdirSync(stateDir(), { recursive: true });
+        writeFileSync(path, `${JSON.stringify(state)}\n`);
+    } catch { /* a read-only home must not break the gate */ }
+}
+
 /**
  * Count this block against `key` and report whether the gate may still fire. Capped so a
- * model that cannot satisfy the gate is never trapped in an endless stop/continue loop.
+ * model that cannot satisfy the gate is never trapped in an endless stop/continue loop:
+ * per set of findings, and again by an absolute ceiling per session, because a model that
+ * produces a slightly different finding set each round would otherwise earn a fresh budget
+ * forever and the stop/continue cycle would never end.
  */
-function mayBlock(key: string): boolean {
+function mayBlock(key: string, session: string): boolean {
     const path = statePath();
     const state = readJson<Record<string, number>>(path) || {};
+    const sessionKey = `total:${session}`;
+    const total = (Number(state[sessionKey]) || 0) + 1;
+    if (total > MAX_BLOCKS_PER_SESSION) return false;
     const count = (state[key] || 0) + 1;
     if (count > MAX_BLOCKS_PER_ISSUE) return false;
+    state[sessionKey] = total;
     state[key] = count;
     // Keep the file bounded; the newest entries are the only ones a live turn can hit.
     const keys = Object.keys(state);
@@ -521,7 +566,7 @@ export function runVerifyHook(payload?: string): number {
     }
 
     const session = String(raw.session_id || raw.prompt_id || cwd);
-    if (!mayBlock(issueKey(session, gaps))) return 0;
+    if (!mayBlock(issueKey(session, gaps), session)) return 0;
     process.stderr.write(`${blockMessage(gaps, { truncated, capped })}\n`);
     return 2;
 }

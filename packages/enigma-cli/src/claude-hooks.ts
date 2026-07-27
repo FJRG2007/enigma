@@ -22,15 +22,22 @@ export interface HookEntry { type?: string; command?: string; timeout?: number }
 export interface HookGroup { matcher?: string; hooks?: HookEntry[] }
 
 /**
+ * What a hook write did. `refused` is kept distinct from `unchanged` on purpose: they both
+ * mean "nothing was written", but one of them means the hook is NOT installed and the user
+ * has no idea - which is the failure this whole area keeps having to design against.
+ */
+export type HookWrite = "changed" | "unchanged" | "refused";
+
+/**
  * Add (`on`) or remove the enigma group for `event` in a Claude settings.json, identified by
  * `marker` appearing in its command so the operation is idempotent and never touches a hook
- * the user wrote. Returns true when the file changed.
+ * the user wrote.
  */
-export function applyClaudeHook(settingsPath: string, event: string, marker: string, group: HookGroup, on: boolean): boolean {
+export function applyClaudeHook(settingsPath: string, event: string, marker: string, group: HookGroup, on: boolean): HookWrite {
     const parsed = readJson<Record<string, unknown>>(settingsPath);
     // Refuse to touch a settings file that exists but cannot be parsed: writing a fresh one
     // would silently discard everything the user has in it.
-    if (parsed === null && existsSync(settingsPath)) return false;
+    if (parsed === null && existsSync(settingsPath)) return "refused";
     const current = parsed || {};
 
     const hooks = (typeof current.hooks === "object" && current.hooks !== null) ? { ...current.hooks as Record<string, unknown> } : {};
@@ -44,10 +51,10 @@ export function applyClaudeHook(settingsPath: string, event: string, marker: str
     const nextSettings: Record<string, unknown> = { ...current };
     if (Object.keys(hooks).length) nextSettings.hooks = hooks; else delete nextSettings.hooks;
 
-    if (JSON.stringify(nextSettings) === JSON.stringify(current)) return false;
+    if (JSON.stringify(nextSettings) === JSON.stringify(current)) return "unchanged";
     // Never create a settings file just to record the absence of a hook.
-    if (!existsSync(settingsPath) && Object.keys(nextSettings).length === 0) return false;
+    if (!existsSync(settingsPath) && Object.keys(nextSettings).length === 0) return "unchanged";
     mkdirSync(dirname(settingsPath), { recursive: true });
     writeFileSync(settingsPath, `${JSON.stringify(nextSettings, null, 2)}\n`);
-    return true;
+    return "changed";
 }

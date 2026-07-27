@@ -40,7 +40,7 @@ function hookCommand(): string {
  * preserving every other hook and setting. Returns true when the file changed.
  */
 export function applyClaudeGuardrailsHook(settingsPath: string, on: boolean): boolean {
-    return applyClaudeHook(settingsPath, "PostToolUse", "__guardrails-hook", { matcher: HOOK_MATCHER, hooks: [{ type: "command", command: hookCommand(), timeout: 30 }] }, on);
+    return applyClaudeHook(settingsPath, "PostToolUse", "__guardrails-hook", { matcher: HOOK_MATCHER, hooks: [{ type: "command", command: hookCommand(), timeout: 30 }] }, on) === "changed";
 }
 
 // --- opencode: auto-loaded plugin --------------------------------------------------

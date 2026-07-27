@@ -18,6 +18,7 @@
 
 import { join } from "node:path";
 import { homedir } from "node:os";
+import type { HookWrite } from "./claude-hooks";
 import { applyClaudeHook } from "./claude-hooks";
 import { readGlobalConfig, setEnigmaToggle } from "./config";
 
@@ -47,6 +48,11 @@ function hookCommand(): string {
  * it is generous compared with the per-edit guardrails hook.
  */
 export function applyClaudeVerifyHook(settingsPath: string, on: boolean): boolean {
+    return writeVerifyHook(settingsPath, on) === "changed";
+}
+
+/** The same write, reporting whether it was refused rather than collapsing that into "no change". */
+function writeVerifyHook(settingsPath: string, on: boolean): HookWrite {
     return applyClaudeHook(settingsPath, "Stop", "__verify-hook", { hooks: [{ type: "command", command: hookCommand(), timeout: 330 }] }, on);
 }
 
@@ -61,7 +67,13 @@ function claudeGlobalSettings(): string {
  * so a caller can tell the user the first time the gate is actually installed for them.
  */
 export function applyVerifyWiring(): boolean {
-    return applyClaudeVerifyHook(claudeGlobalSettings(), isVerifyOn());
+    const result = writeVerifyHook(claudeGlobalSettings(), isVerifyOn());
+    // A refusal means the gate is NOT installed. Saying so beats the alternative, where the
+    // user believes it is on and only learns otherwise by never being stopped.
+    if (result === "refused") {
+        process.stderr.write(`enigma: could not read ${claudeGlobalSettings()}, so completion checks were not installed. Fix the JSON in that file and run 'enigma install'.\n`);
+    }
+    return result === "changed";
 }
 
 /**

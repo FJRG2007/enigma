@@ -118,22 +118,25 @@ test("runs the configured verification command and reports its failure", () => {
     }
 });
 
-test("does not run the verification command on a turn that changed nothing", () => {
-    // Answering a question must not pay for a test suite, and must not be blocked by one that
-    // was already failing for reasons this turn had nothing to do with. The branch's line count
-    // cannot decide that - on a branch with earlier commits it is always positive - so a clean
-    // working tree is what "this turn produced nothing" actually looks like.
+test("runs the verification command once per piece of new work, not once per claim", () => {
+    // Two failure modes, one rule. Gating on a dirty tree skipped the suite exactly when the
+    // agent had committed - the flow enigma prescribes. Gating on the branch's line count ran
+    // it on every conversational turn, since on a branch with earlier commits that count is
+    // always positive. The question is whether anything has moved since it last passed.
     const dir = repoWith({ "src/app.ts": "export const a = 1;\n" });
     git(dir, "checkout", "-q", "-b", "feature");
     write(dir, "src/more.ts", "export const b = 2;\n");
     git(dir, "add", "-A");
-    git(dir, "commit", "-qm", "earlier work on this branch");
-    writeFileSync(join(HOME, ".enigma.json"), JSON.stringify({ verifyCommand: "node -e \"process.exit(3)\"" }));
+    git(dir, "commit", "-qm", "work, then report - nothing left uncommitted");
+    writeFileSync(join(HOME, ".enigma.json"), JSON.stringify({ verifyCommand: "node -e \"\"" }));
     try {
-        const scan = collectGaps(dir);
-        expect(scan.scanned).toBeGreaterThan(0);
-        expect(scan.ranCommand).toBe(false);
-        expect(scan.gaps).toEqual([]);
+        // Committed work still gets verified.
+        expect(collectGaps(dir).ranCommand).toBe(true);
+        // A second claim with nothing changed since does not pay for it again.
+        expect(collectGaps(dir).ranCommand).toBe(false);
+        // New work brings it back.
+        write(dir, "src/again.ts", "export const c = 3;\n");
+        expect(collectGaps(dir).ranCommand).toBe(true);
     } finally {
         writeFileSync(join(HOME, ".enigma.json"), "{}");
     }
