@@ -29,27 +29,27 @@ A message that already discloses what is left - *"the port is complete except fo
 A false block would just train you to switch this off, so the checks only match unambiguous evidence:
 
 - Only **added** lines are scanned, measured from where your branch left the default branch - so a repository's pre-existing TODOs never block a turn. On a long-lived branch that scope also covers earlier commits on the same branch, so a marker someone added there days ago can surface; that is the price of also catching work the agent commits mid-turn, and `enigma:verify-ignore` settles an intentional one.
-- It never fails open quietly: if the final message cannot be read, or the change was too large to scan in full, it says so rather than reporting a clean pass.
+- It never fails open quietly: if the final message cannot be read, the change was too large to scan in full, or there is no repository to read a change from at all, it says so rather than reporting a clean pass.
 - Documents (`.md`, `.txt`, ...) are skipped, because a plan legitimately tracks TODOs.
 - Language idioms are recognised - a Python abstract method raising `NotImplementedError` is by design, not a stub.
 - A line carrying `enigma:verify-ignore` is never treated as evidence.
-- The verification command runs only when the turn actually produced code, so answering a question never pays for your test suite - and a suite that was already red never blocks a turn that did not touch it.
-- After two blocks on the **same findings** the gate stands down, so it can never trap a turn in a loop. A different problem always gets a fresh budget, so standing down once never silences the rest of the session.
+- The verification command runs only when the turn actually produced code *and* something has moved since it last passed - an uncommitted change, or a commit made since. So answering a question never pays for your test suite, a suite that was already red never blocks a turn that did not touch it, and a passing suite is not re-run for a commit it already cleared.
+- After two blocks on the **same findings** the gate stands down, so it can never trap a turn in a loop. A different problem gets a fresh budget, so standing down once does not silence the rest of the session - up to an absolute ceiling of ten blocks per session, past which the gate stays quiet, because a finding set that keeps changing shape would otherwise earn a fresh budget forever.
 
 ## Ports and clones
 
 The gate sees what the agent wrote. It cannot see what the agent **never wrote** - the module skipped entirely, which is the worst version of this failure. Comparing against the original is the only thing that can:
 
 <Cmd name="enigma verify parity <source> <target>" ex={["enigma verify parity ../original-repo .", "enigma verify parity ./py-service ./go-service"]}>
-Compares two codebases by symbol, reusing enigma's multi-language code-graph extraction, and reports per source module how much was carried over. Names are normalised first, so a port renaming `parse_config` to `parseConfig` still matches. Modules at **zero** coverage are the headline: those were never written.
+Compares two codebases by symbol, reusing enigma's multi-language code-graph extraction, and reports per source module how much was carried over. Names are normalised first, so a port renaming `parse_config` to `parseConfig` still matches. Modules at **zero** coverage are the headline: those were never written. Modules below 60% are listed after them, as partially ported. It exits non-zero when either list is non-empty.
 </Cmd>
 
-Coverage matches symbol **names**: it proves a counterpart exists, never that its behaviour was ported faithfully. It is a coverage signal, not a proof of correctness - claiming otherwise would recreate the exact problem this feature exists to fix.
+Coverage matches symbol **names**: it proves a counterpart exists, never that its behaviour was ported faithfully. It is a coverage signal, not a proof of correctness - claiming otherwise would recreate the exact problem this feature exists to fix. For the same reason a comparison that could not be made is reported as a failure rather than a pass: if the source yields no symbols at all (a mistyped path, a language the scanner does not read) or either tree hit a scan limit, it says so and exits non-zero instead of reporting 100%.
 
 ## Use it
 
 <Cmd name="enigma verify [cmd]" ex={["enigma verify", "enigma verify --all", "enigma verify parity ../original .", "enigma config verify-command \"npm test\"", "enigma config verify off"]}>
-No argument checks the current change and runs your verification command - the same check the turn-end hook runs, on demand. `--all` sweeps every tracked file. It returns a non-zero exit code when something is unfinished, so it also works as a pre-merge or CI check.
+No argument checks the current change and runs your verification command when there is new work to check - the same check the turn-end hook runs, on demand. `--all` sweeps every tracked file. It returns a non-zero exit code when something is unfinished, and also when it could not check at all (outside a git repository), so it works as a pre-merge or CI check.
 </Cmd>
 
 Set `verify-command` to whatever proves your project works (`npm test`, `make check`, `pytest -q`). It is read from your **global** config only, never from a repository's own `.enigma.json`, and it is excluded from config import and export: a cloned repository or an imported bundle must never be able to choose a command to run on your machine.

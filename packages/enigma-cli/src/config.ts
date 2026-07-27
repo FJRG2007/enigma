@@ -276,8 +276,9 @@ export interface EnigmaConfig {
  * verify is ON by default: a completion claim being checked against the work actually
  * produced is a baseline enigma behavior, not an extra. It costs nothing on a turn that
  * claims nothing, only fires on evidence the claim is false, and stands down after two
- * blocks on one prompt, so it cannot trap a turn. verifyCommand stays empty by default -
- * running a project command automatically is the user's explicit choice.
+ * blocks on the same findings (and an absolute ceiling per session), so it cannot trap a
+ * turn. verifyCommand stays empty by default - running a project command automatically is
+ * the user's explicit choice.
  * compress is opt-in (off): when on, installs/syncs register enigma's compression
  * MCP server (enigma_compress/retrieve/stats) in each managed agent's config so the
  * agent can shrink large tool outputs. Adding an MCP server to the user's agents is

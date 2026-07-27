@@ -10,9 +10,10 @@
  * So the claim is checked OUTSIDE the model. On turn end, the agent's own final message
  * is matched against completion claims; only when it asserts the work is finished does
  * the engine look for evidence to the contrary in the code the turn actually produced
- * (added lines vs HEAD plus untracked files) and, when configured, run the project's own
- * verification command. Evidence against a claim exits 2, which feeds the findings back
- * and denies the stop, so the model must either finish the work or state what is missing.
+ * (lines added since the branch left the default branch, plus untracked files) and, when
+ * configured, run the project's own verification command. Evidence against a claim exits 2,
+ * which feeds the findings back and denies the stop, so the model must either finish the work
+ * or state what is missing.
  *
  * Cost model: the claim check is a regex over one string, so a turn that claims nothing
  * costs nothing, and a turn that does claim pays one git diff. No model tokens are spent
@@ -410,11 +411,12 @@ export interface VerifyScan {
  * `truncated` and `noRepo` report that the scan could not see everything (or anything), so a
  * partial pass is never presented as a clean one.
  *
- * The verification command runs only when THIS TURN left something uncommitted. A turn that
- * merely answered a question must not pay for a five-minute test suite, and - worse - must not
- * be blocked by a suite that was already red for reasons it had nothing to do with. The line
- * count cannot decide that: it covers the whole branch, so on any branch with earlier commits
- * it is always positive and every conversational turn would have paid.
+ * The verification command runs only when the scan saw produced code AND something has moved
+ * since it last passed here (see hasNewWork). A turn that merely answered a question must not
+ * pay for a five-minute test suite, and - worse - must not be blocked by a suite that was
+ * already red for reasons it had nothing to do with. The line count cannot decide that: it
+ * covers the whole branch, so on any branch with earlier commits it is always positive and
+ * every conversational turn would have paid.
  */
 export function collectGaps(cwd: string, opts: { all?: boolean; runCommand?: boolean } = {}): VerifyScan {
     const scan = scanEvidence(cwd, opts.all === true);
