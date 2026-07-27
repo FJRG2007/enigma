@@ -1,0 +1,104 @@
+/**
+ * Verify hook deployment. When the `verify` toggle is on (default), enigma wires a
+ * turn-end hook into Claude Code so that a completion claim is checked against what the
+ * turn actually produced before the agent is allowed to stop. The engine is bundled in
+ * enigma, so the hook just invokes the hidden `enigma __verify-hook` command (which reads
+ * the Stop payload from stdin) - no runner file to maintain.
+ *
+ * Claude Code only, by capability rather than preference: its `Stop` hook is the one
+ * documented turn-end hook that can DENY the stop (exit 2 feeds stderr back and the turn
+ * continues). Codex has no turn-end hook at all, and opencode's `session.idle` event has no
+ * documented way to block a turn or return anything to the model, so wiring either would
+ * only pretend to gate them. Those two are covered by `enigma verify` plus the always-on
+ * memory rule instead, which is honest about being persuasion rather than enforcement.
+ *
+ * Node-builtins + config/util only (no engine import), like guardrails-deploy.ts: this is
+ * the deploy counterpart, cheap to load and free of cycles.
+ */
+
+import { readJson } from "./util";
+import { homedir } from "node:os";
+import { join, dirname } from "node:path";
+import { readConfig, setEnigmaToggle } from "./config";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+
+/** True when the completion gate is enabled (default on). */
+export function isVerifyOn(): boolean {
+    return readConfig().config.verify;
+}
+
+/** The hook command: the hidden verify subcommand of the enigma binary on PATH. */
+function hookCommand(): string {
+    return "enigma __verify-hook";
+}
+
+interface HookGroup { matcher?: string; hooks?: Array<{ type?: string; command?: string; timeout?: number }>; }
+
+/** Whether a Stop group is the enigma verify hook (identified by the command). */
+function isOurGroup(group: HookGroup): boolean {
+    return Array.isArray(group.hooks) && group.hooks.some((h) => typeof h.command === "string" && h.command.includes("__verify-hook"));
+}
+
+/**
+ * Add (on) or remove (off) the enigma Stop hook in a Claude settings.json, preserving
+ * every other hook and setting. Identified by the command so it is idempotent and never
+ * clobbers the user's own hooks. Returns true when the file changed.
+ *
+ * The timeout covers the project's own verification command when one is configured, so
+ * it is generous compared with the per-edit guardrails hook.
+ */
+export function applyClaudeVerifyHook(settingsPath: string, on: boolean): boolean {
+    const parsed = readJson<Record<string, unknown>>(settingsPath);
+    // Refuse to touch a settings file that exists but cannot be parsed: writing a fresh one
+    // would silently discard everything the user has in it (the rule applyJsonEntry follows).
+    if (parsed === null && existsSync(settingsPath)) return false;
+    const current = parsed || {};
+    const hooks = (typeof current.hooks === "object" && current.hooks !== null) ? { ...current.hooks as Record<string, unknown> } : {};
+    const stop: HookGroup[] = Array.isArray(hooks.Stop) ? [...hooks.Stop as HookGroup[]] : [];
+
+    const rest = stop.filter((g) => !isOurGroup(g));
+    const next: HookGroup[] = on
+        ? [...rest, { hooks: [{ type: "command", command: hookCommand(), timeout: 330 }] }]
+        : rest;
+
+    if (next.length) hooks.Stop = next; else delete hooks.Stop;
+    const nextSettings: Record<string, unknown> = { ...current };
+    if (Object.keys(hooks).length) nextSettings.hooks = hooks; else delete nextSettings.hooks;
+
+    if (JSON.stringify(nextSettings) === JSON.stringify(current)) return false;
+    if (!existsSync(settingsPath) && Object.keys(nextSettings).length === 0) return false;
+    mkdirSync(dirname(settingsPath), { recursive: true });
+    writeFileSync(settingsPath, `${JSON.stringify(nextSettings, null, 2)}\n`);
+    return true;
+}
+
+/** Global Claude settings.json for the default account. */
+function claudeGlobalSettings(): string {
+    return join(homedir(), ".claude", "settings.json");
+}
+
+/**
+ * Re-assert the global wiring to match the current toggle (presence AND absence).
+ * Called on install and on toggle.
+ */
+export function applyVerifyWiring(): void {
+    applyClaudeVerifyHook(claudeGlobalSettings(), isVerifyOn());
+}
+
+/**
+ * Mirror the verify wiring into a managed account's config dir, matching the global
+ * toggle, so `enigma claude <account>` behaves like the default account.
+ */
+export function mirrorVerifyWiring(toolName: string, accountDir: string): void {
+    if (toolName === "claude") applyClaudeVerifyHook(join(accountDir, "settings.json"), isVerifyOn());
+}
+
+/**
+ * Set the verify toggle and apply the global wiring. Enabling adds the Stop hook;
+ * disabling removes it. Returns the .enigma.json path written.
+ */
+export function setVerify(scope: "global" | "local", on: boolean): string {
+    const path = setEnigmaToggle("verify", on, scope);
+    applyVerifyWiring();
+    return path;
+}

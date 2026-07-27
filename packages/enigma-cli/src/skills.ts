@@ -18,6 +18,7 @@ import { execFileSync } from "node:child_process";
 import type { SecurityOptions } from "./security";
 import { dirname, join, resolve } from "node:path";
 import { applyLintWiring, mirrorLintWiring } from "./lint";
+import { applyVerifyWiring, mirrorVerifyWiring } from "./verify-deploy";
 import { applyGuardrailsWiring, mirrorGuardrailsWiring } from "./guardrails-deploy";
 import type { RemoteRefreshResult } from "./skills-remote";
 import { setGhTelemetry, starRepoInBackground } from "./github";
@@ -1053,6 +1054,10 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
     // (default on). Same side-effect shape as the lint hook; skipped on a dry run.
     const applyGuardrailsConfig = (): void => { if (!opts.dryRun) applyGuardrailsWiring(); };
 
+    // Completion gate: re-assert the turn-end hook wiring to match the toggle (default
+    // on). Same side-effect shape as the guardrails hook; skipped on a dry run.
+    const applyVerifyConfig = (): void => { if (!opts.dryRun) applyVerifyWiring(); };
+
     // Context-compression MCP: register enigma's MCP server in each chosen agent's
     // config when `compress` is on, remove it when off (mirror presence/absence).
     // Same side-effect shape as the bypass/claude/gh/lint hooks; skipped on dry run.
@@ -1190,6 +1195,7 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
         applyBypassConfig();
         applyLintConfig();
         applyGuardrailsConfig();
+        applyVerifyConfig();
         applyMcpConfig();
         await maybeOfferGitHooks(interactive, opts);
         reporter.success(`Everything up-to-date - ${nSkip} item(s) unchanged${nKept ? `, ${nKept} kept modified` : ""} (${scope}).`);
@@ -1258,6 +1264,7 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
     applyBypassConfig();
     applyLintConfig();
     applyGuardrailsConfig();
+    applyVerifyConfig();
     applyMcpConfig();
     await maybeOfferGitHooks(interactive, opts);
     reporter.success(`${nInstall} installed, ${nUpdate} updated/overwritten` +
@@ -1365,6 +1372,11 @@ export function syncDeployed(agentNames?: string[]): string[] {
             const mcpChanged = applyMcpForAgent(agent.name, scope);
             if (changed || mcpChanged) notices.push(`${agent.label}: ${changed + (mcpChanged ? 1 : 0)} item(s) updated (${scope})`);
         }
+        // The completion gate is hook WIRING, not a file this loop copies, so re-assert it
+        // here too: an on-by-default gate has to reach an existing deployment (and disappear
+        // from it when switched off) without waiting for the next explicit install. Gated on
+        // there already being one, so a sync never wires an agent enigma was not installed into.
+        if (agent.name === "claude" && hasDeployment(agent, "global")) applyVerifyWiring();
     }
     return notices;
 }
@@ -1478,6 +1490,7 @@ export function syncAccount(toolName: string, dir: string): string[] {
     mirrorAccountSettings(toolName, dir);
     mirrorLintWiring(toolName, dir);
     mirrorGuardrailsWiring(toolName, dir);
+    mirrorVerifyWiring(toolName, dir);
     const mcpChanged = applyMcpForAccount(toolName, dir);
     const total = changed + (mcpChanged ? 1 : 0);
     return total ? [`${agent.label}: ${total} item(s) updated (account)`] : [];

@@ -47,11 +47,13 @@ A completion claim is forbidden unless ALL of these hold:
 1. The ledger has zero `pending` and zero `blocked` units. `deferred` units require the user's explicit approval and must appear in the final report.
 2. Counts reconcile mechanically: target counts match the inventory (files ported vs source files, symbols vs symbols, endpoints vs endpoints). Run the comparison commands; never estimate.
 3. The whole artifact builds/compiles/typechecks and the test suite (or smoke run) passes - not just the last file touched.
-4. A final sweep finds no incompleteness markers introduced by this task: grep the produced code for TODO, FIXME, "not implemented", placeholder/stub patterns. Every hit is fixed or explicitly reported.
-5. Self-review per code-review-policy.
+4. A final sweep finds no incompleteness markers introduced by this task: run `enigma verify`, which scans exactly the code this change produced for TODO/FIXME markers, unimplemented paths and placeholders, and runs the project's configured verification command. Every hit is fixed or explicitly reported.
+5. For a port, clone, or migration, `enigma verify parity <source> <target>` reports zero absent modules. It compares the two codebases by symbol, so a module that was never carried over - the failure this phase exists to catch - cannot hide. Partially covered modules are explained or finished. Coverage matches symbol names, so it proves a counterpart exists, never that its behavior was ported faithfully; check the behavior of anything non-trivial yourself.
+6. Self-review per code-review-policy.
 
 - If any check fails, the task is NOT done: state exactly what remains and keep working (or report the blocker). Never say "everything is complete", "fully ported", or "all done" while the ledger has open units.
-- Words like "complete", "all", "every", and "fully" in a final report are claims that must be backed by checks 1-4.
+- Words like "complete", "all", "every", and "fully" in a final report are claims that must be backed by checks 1-5.
+- These checks also run automatically at turn end: when a final message claims the work is finished, enigma re-runs them and denies the stop if the evidence contradicts the claim (see the verify concept). Treat that as a backstop for accidents, never as the thing that does the checking - a claim it has to catch was one that should never have been made.
 
 ---
 

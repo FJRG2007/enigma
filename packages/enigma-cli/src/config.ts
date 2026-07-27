@@ -116,6 +116,21 @@ export interface EnigmaConfig {
      * ~/.enigma-guardrails.json and guardrails.ts; a commit/CI backstop mirrors them. See guardrails.ts.
      */
     guardrails: boolean;
+    /**
+     * Check completion claims against the work actually produced, via a turn-end hook
+     * (default on, Claude Code only - the one agent with a turn-end hook that can deny the
+     * stop). When the agent's final message says the work is finished, enigma scans the
+     * code that turn produced for incompleteness markers and runs `verifyCommand`; evidence
+     * to the contrary is fed back and the stop is denied. See verify.ts.
+     */
+    verify: boolean;
+    /**
+     * The project's own verification command (e.g. "npm test"), run by the completion gate
+     * before a "done" claim is allowed through. Empty = markers only. Read from the GLOBAL
+     * config only: a repo-local .enigma.json travels with a clone, so honouring one here
+     * would let a cloned repository run a command on the machine that opens it.
+     */
+    verifyCommand: string;
     /** Deploy the context-compression MCP server (enigma_compress/retrieve/stats) into managed agents (opt-in). */
     compress: boolean;
     /** Expose enigma's native code-graph tools (index a codebase into a knowledge graph of symbols/imports/references) to agents over MCP (opt-in). */
@@ -258,6 +273,11 @@ export interface EnigmaConfig {
  * autoLint is opt-in (off): enabling it autonomously installs @enigmax/linter and
  * wires a post-write hook into each agent (auto-fix + surface only unfixable
  * findings). It changes agent behavior and installs a package, so it stays explicit.
+ * verify is ON by default: a completion claim being checked against the work actually
+ * produced is a baseline enigma behavior, not an extra. It costs nothing on a turn that
+ * claims nothing, only fires on evidence the claim is false, and stands down after two
+ * blocks on one prompt, so it cannot trap a turn. verifyCommand stays empty by default -
+ * running a project command automatically is the user's explicit choice.
  * compress is opt-in (off): when on, installs/syncs register enigma's compression
  * MCP server (enigma_compress/retrieve/stats) in each managed agent's config so the
  * agent can shrink large tool outputs. Adding an MCP server to the user's agents is
@@ -273,7 +293,7 @@ export interface EnigmaConfig {
  */
 export const CONFIG_DEFAULTS: EnigmaConfig = {
     commitEmoji: true, updateNotifier: true, fullscreen: true, parallelSubagents: false, outputStyle: "off", minimalCode: "full", logoColorPolicy: "ask",
-    autoSync: true, remoteSkills: true, skillUpdatePolicy: "overwrite", permissionBypass: true, autoLint: false, guardrails: true, compress: false, codeGraph: false, gate: false, dashboard: "off", tokenPrice: 0, tokenSpeed: 0, usageStats: false, recall: false, recallLlm: true, recallProvider: "claude-local", recallModel: "", recallApiBase: "", recallApiKey: "", proxy: false, usageApi: false, promptSecretGuard: false, promptSecretMode: "redact",
+    autoSync: true, remoteSkills: true, skillUpdatePolicy: "overwrite", permissionBypass: true, autoLint: false, guardrails: true, verify: true, verifyCommand: "", compress: false, codeGraph: false, gate: false, dashboard: "off", tokenPrice: 0, tokenSpeed: 0, usageStats: false, recall: false, recallLlm: true, recallProvider: "claude-local", recallModel: "", recallApiBase: "", recallApiKey: "", proxy: false, usageApi: false, promptSecretGuard: false, promptSecretMode: "redact",
     planSessionLimit: 0, planWeeklyLimit: 0, planWeeklySonnetLimit: 0, planWeeklyOpusLimit: 0, planWeeklyReset: "mon 00:00",
     dashboardLive: true, dashboardPort: 0, dashboardBind: "loopback", dashboardBindAddress: "", apiPort: 8000, apiAccount: "", apiProfile: "", apiPack: "", toolPaths: {}, bypassDisabled: [], discardedSkills: [], skillAgentsOff: {}, packs: [], packAccounts: {},
 };

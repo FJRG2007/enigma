@@ -4,7 +4,7 @@
  * disable each one. Subcommands run a single feature non-interactively.
  */
 
-import { readJson } from "./util";
+import { isDir, readJson } from "./util";
 import * as p from "@clack/prompts";
 import { runGuardCli } from "./guard";
 import { DASHBOARD_BINDS, readConfig, setEnigmaValue, type DashboardBind } from "./config";
@@ -59,7 +59,7 @@ const PKG = readJson<{ version?: string }>(join(__dirname, "..", "package.json")
 // Fixed commands plus one launch command per supported tool (e.g. `enigma claude`).
 const COMMANDS = new Set<string>([
     "install", "update", "security", "guard", "seal", "check", "config", "account", "accounts",
-    "profile", "profiles", "skill", "skills", "issue", "improve", "compress", "guardrails", "mcp", "api", "gate", "dashboard", "dash", "fix-path", "resources", "recall", "codegraph", "autoskills", "statusline", "help", "version",
+    "profile", "profiles", "skill", "skills", "issue", "improve", "compress", "guardrails", "verify", "mcp", "api", "gate", "dashboard", "dash", "fix-path", "resources", "recall", "codegraph", "autoskills", "statusline", "help", "version",
     "pack", "packs", "ssh",
     ...TOOL_NAMES,
     ...PACKS.map((p) => p.id),
@@ -238,6 +238,12 @@ Commands:
                        Prisma as default ORM). No arg lists rules; check <file> runs them;
                        disable/enable <id> toggles a built-in; remove <id> drops a custom
                        rule. Toggle the feature with 'config guardrails on|off'
+  verify [cmd]         Check that work reported as finished actually is. No arg checks the
+                       current change for evidence of unfinished work and runs the
+                       configured verification command; --all sweeps every tracked file;
+                       parity <source> <target> compares a codebase against a port or
+                       clone of it and reports what was never carried over. The same check
+                       runs automatically at turn end ('config verify on|off')
   mcp                  Run the context-compression MCP server over stdio (tools:
                        enigma_compress, enigma_retrieve, enigma_stats). Usually launched
                        by an agent, not by hand; enable deployment with 'config compress on'
@@ -1477,6 +1483,42 @@ function runGuardrailsCli(positionals: string[]): number {
 }
 
 /**
+ * `enigma verify` - the completion gate on demand. No subcommand checks the current change
+ * for evidence of unfinished work (and runs the configured verification command);
+ * `--all` sweeps every tracked file; `parity <source> <target>` compares a codebase against
+ * a port or clone of it and reports what was never carried over. Returns an exit code, so
+ * it doubles as a CI/pre-merge check.
+ */
+async function runVerifyCli(positionals: string[], all: boolean): Promise<number> {
+    const [sub] = positionals;
+    if (sub === "parity") {
+        const [, source, target] = positionals;
+        if (!source || !target) { console.error("Usage: enigma verify parity <source-dir> <target-dir>"); return 1; }
+        for (const dir of [source, target]) {
+            if (!isDir(dir)) { console.error(`Not a directory: ${dir}`); return 1; }
+        }
+        const { parityReport, formatParity } = await import("./verify-parity");
+        const report = parityReport(source, target);
+        console.log(formatParity(report));
+        return report.absent.length || report.partial.length ? 1 : 0;
+    }
+    if (sub && sub !== "check") {
+        console.error(`Unknown verify command '${sub}'. Use: (no argument) | --all | parity <source> <target>.`);
+        return 1;
+    }
+    const { collectGaps, formatGaps, verifyCommandOf } = await import("./verify");
+    const command = verifyCommandOf();
+    if (command) console.log(`Running the verification command: ${command}`);
+    const gaps = collectGaps(process.cwd(), { all });
+    if (!gaps.length) {
+        console.log(`No evidence of unfinished work in ${all ? "any tracked file" : "the current change"}${command ? ", and the verification command passed" : ""}.`);
+        return 0;
+    }
+    console.error(`enigma verify: ${gaps.length} item(s) suggest the work is not finished:\n${formatGaps(gaps)}`);
+    return 1;
+}
+
+/**
  * The command to tunnel this dashboard to the operator's own machine. Preferred over exposing
  * it: the port stays on loopback, and SSH already authenticates whoever reaches it.
  */
@@ -1725,6 +1767,16 @@ export async function run(argv: string[]): Promise<void> {
         const { runGuardrailsHook } = await import("./guardrails");
         process.exit(runGuardrailsHook(payload));
     }
+    // Hidden: the turn-end completion gate. Reads the Stop payload from stdin and exits 2
+    // when the agent's own "this is finished" claim is contradicted by what the turn
+    // produced, which denies the stop and feeds the evidence back. Same early dispatch and
+    // synchronous stdin read as the guardrails hook, for the same reasons.
+    if (argv[0] === "__verify-hook") {
+        let payload = "";
+        try { payload = readFileSync(0, "utf8"); } catch { /* no stdin */ }
+        const { runVerifyHook } = await import("./verify");
+        process.exit(runVerifyHook(payload));
+    }
     // Hidden: the gate post-receive hook invokes this to notify the daemon of a
     // push. Non-blocking by the hook's contract; must not print to stdout noise.
     if (argv[0] === "__gate-notify") {
@@ -1781,6 +1833,7 @@ export async function run(argv: string[]): Promise<void> {
     if (opts.command === "issue") { process.exit(await runIssueCli(opts.positionals[0], version, interactive)); }
     if (opts.command === "compress") { process.exit(runCompressCli(opts)); }
     if (opts.command === "guardrails") { process.exit(runGuardrailsCli(opts.positionals)); }
+    if (opts.command === "verify") { process.exit(await runVerifyCli(opts.positionals, opts.all)); }
     if (opts.command === "dashboard") { process.exit(await runDashboardCli(version, opts)); }
     if (opts.command === "fix-path") { process.exit(runFixPathCli(opts.positionals[0], opts.scope)); }
     if (opts.command === "resources") { process.exit(await runResourcesCli(opts.positionals)); }

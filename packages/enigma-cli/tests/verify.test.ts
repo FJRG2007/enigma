@@ -1,0 +1,184 @@
+/**
+ * Completion gate: claim detection, the evidence scan over what a change actually produced,
+ * the turn-end hook's decision table (including its loop-safety cap), and port parity.
+ *
+ * Temp HOME + ENIGMA_CONFIG_HOME (set BEFORE import) isolate the global config and the
+ * hook's block-counter state, so the test never reads or writes the real ~/.enigma.
+ * A throwaway git repository per test supplies the diff the scan reads; nothing here
+ * spawns an agent or touches the user's own repositories.
+ */
+import { tmpdir } from "node:os";
+import { join, dirname } from "node:path";
+import { execFileSync } from "node:child_process";
+import { test, expect, afterAll } from "bun:test";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+
+const HOME = mkdtempSync(join(tmpdir(), "enigma-verify-"));
+process.env.USERPROFILE = HOME;
+process.env.HOME = HOME;
+process.env.ENIGMA_CONFIG_HOME = HOME;
+
+const { claimsDone, scanGaps, collectGaps, runVerifyHook } = await import("../src/verify");
+const { parityReport } = await import("../src/verify-parity");
+
+const repos: string[] = [];
+afterAll(() => {
+    for (const dir of repos) rmSync(dir, { recursive: true, force: true });
+    rmSync(HOME, { recursive: true, force: true });
+});
+
+/** A git repository whose only commit holds `committed`, so later writes read as the change. */
+function repoWith(committed: Record<string, string> = {}): string {
+    const dir = mkdtempSync(join(tmpdir(), "enigma-verify-repo-"));
+    repos.push(dir);
+    const git = (...args: string[]): void => { execFileSync("git", args, { cwd: dir, stdio: "ignore" }); };
+    git("init", "-q");
+    git("config", "user.email", "test@example.com");
+    git("config", "user.name", "test");
+    git("config", "commit.gpgsign", "false");
+    write(dir, ".keep", "");
+    for (const [path, content] of Object.entries(committed)) write(dir, path, content);
+    git("add", "-A");
+    git("commit", "-qm", "base");
+    return dir;
+}
+
+function write(dir: string, path: string, content: string): void {
+    const full = join(dir, path);
+    mkdirSync(dirname(full), { recursive: true });
+    writeFileSync(full, content);
+}
+
+test("recognises a completion claim in English and Spanish", () => {
+    for (const message of [
+        "All done - the port is finished.",
+        "Everything is implemented and working.",
+        "The migration is now complete.",
+        "Ya está todo.",
+        "Listo, no falta nada.",
+        "Nothing is missing.",
+    ]) expect(claimsDone(message)).toBe(true);
+});
+
+test("does not treat progress notes or honest reports as a claim", () => {
+    for (const message of [
+        "I added the parser; next I will wire the CLI.",
+        "Done with the parser, but the exporter is still pending.",
+        "The port is complete except for two modules I could not finish.",
+        "He implementado el parser. Falta el exportador.",
+        "Should I use Zod or valibot here?",
+        "",
+    ]) expect(claimsDone(message)).toBe(false);
+});
+
+test("flags incompleteness only in what the change produced", () => {
+    // The committed file already carries a marker: pre-existing debt must never block a turn.
+    const dir = repoWith({ "src/old.ts": "// TODO: rewrite this someday\nexport const a = 1;\n" }); // enigma:verify-ignore
+    expect(scanGaps(dir)).toEqual([]);
+
+    write(dir, "src/new.ts", "export function parse() {\n    // TODO: implement the real parser\n    return null;\n}\n"); // enigma:verify-ignore
+    const gaps = scanGaps(dir);
+    expect(gaps.length).toBe(1);
+    expect(gaps[0]!.file).toBe("src/new.ts");
+    expect(gaps[0]!.line).toBe(2);
+    expect(gaps[0]!.kind).toBe("marker");
+});
+
+test("flags an unimplemented code path in a modified file", () => {
+    const dir = repoWith({ "src/api.ts": "export function run() {\n    return 1;\n}\n" });
+    write(dir, "src/api.ts", "export function run() {\n    throw new Error(\"not implemented\");\n}\n"); // enigma:verify-ignore
+    const gaps = scanGaps(dir);
+    expect(gaps.length).toBe(1);
+    expect(gaps[0]!.detail).toContain("unimplemented code path");
+});
+
+test("ignores documents, ignore-marked lines, and abstract-method idioms", () => {
+    const dir = repoWith();
+    write(dir, "PLAN.md", "- TODO: write the docs\n"); // enigma:verify-ignore
+    write(dir, "src/kept.ts", "const x = 1; // TODO: revisit - enigma:verify-ignore\n");
+    write(dir, "src/base.py", "class Base(ABC):\n    @abstractmethod\n    def run(self):\n        raise NotImplementedError\n");
+    expect(scanGaps(dir)).toEqual([]);
+});
+
+test("runs the configured verification command and reports its failure", () => {
+    const dir = repoWith();
+    writeFileSync(join(HOME, ".enigma.json"), JSON.stringify({ verifyCommand: "node -e \"process.exit(3)\"" }));
+    try {
+        const gaps = collectGaps(dir);
+        expect(gaps.length).toBe(1);
+        expect(gaps[0]!.kind).toBe("command");
+        expect(gaps[0]!.detail).toContain("exited 3");
+    } finally {
+        writeFileSync(join(HOME, ".enigma.json"), "{}");
+    }
+});
+
+/** A Stop payload for `dir`, with a fresh prompt id unless one is given. */
+let promptSeq = 0;
+function payload(dir: string, message: string, extra: Record<string, unknown> = {}): string {
+    return JSON.stringify({ cwd: dir, last_assistant_message: message, prompt_id: `p${promptSeq++}`, ...extra });
+}
+
+test("denies the stop only when a claim is contradicted by evidence", () => {
+    const dir = repoWith();
+    write(dir, "src/new.ts", "// TODO: finish this\n"); // enigma:verify-ignore
+
+    // Claim + evidence -> blocked.
+    expect(runVerifyHook(payload(dir, "All done, everything is implemented."))).toBe(2);
+    // Evidence but no claim -> the turn is free to end.
+    expect(runVerifyHook(payload(dir, "I started the parser; continuing next turn."))).toBe(0);
+    // Already re-entered from a block -> never stack gates on one turn.
+    expect(runVerifyHook(payload(dir, "All done.", { stop_hook_active: true }))).toBe(0);
+});
+
+test("lets a claim through when the work holds up", () => {
+    const dir = repoWith();
+    write(dir, "src/new.ts", "export const parse = (s: string): number => Number(s);\n");
+    expect(runVerifyHook(payload(dir, "All done - the parser is implemented and tested."))).toBe(0);
+});
+
+test("stands down after repeated blocks on one prompt", () => {
+    const dir = repoWith();
+    write(dir, "src/new.ts", "// TODO: finish this\n"); // enigma:verify-ignore
+    const same = { prompt_id: "stuck-prompt" };
+    expect(runVerifyHook(payload(dir, "All done.", same))).toBe(2);
+    expect(runVerifyHook(payload(dir, "All done.", same))).toBe(2);
+    // Third attempt: the gate gives up rather than trapping the turn in a loop.
+    expect(runVerifyHook(payload(dir, "All done.", same))).toBe(0);
+});
+
+test("a repo can switch the gate off for itself", () => {
+    const dir = repoWith();
+    write(dir, "src/new.ts", "// TODO: finish this\n"); // enigma:verify-ignore
+    write(dir, ".enigma.json", JSON.stringify({ verify: false }));
+    expect(runVerifyHook(payload(dir, "All done."))).toBe(0);
+});
+
+test("parity reports a module the port never carried over", () => {
+    const source = mkdtempSync(join(tmpdir(), "enigma-parity-src-"));
+    const target = mkdtempSync(join(tmpdir(), "enigma-parity-dst-"));
+    repos.push(source, target);
+    write(source, "parser.ts", "export function parseHeader() {}\nexport function parseBody() {}\n");
+    write(source, "exporter.ts", "export function exportCsv() {}\nexport function exportJson() {}\n");
+    // The port renames across conventions but skips the exporter entirely.
+    write(target, "parser.py", "def parse_header():\n    pass\n\ndef parse_body():\n    pass\n");
+
+    const report = parityReport(source, target);
+    expect(report.absent.length).toBe(1);
+    expect(report.absent[0]!.module).toBe("exporter.ts");
+    expect(report.absent[0]!.missing).toEqual(["exportCsv", "exportJson"]);
+    expect(report.coverage).toBe(50);
+});
+
+test("parity accepts a faithful port across naming conventions", () => {
+    const source = mkdtempSync(join(tmpdir(), "enigma-parity-ok-src-"));
+    const target = mkdtempSync(join(tmpdir(), "enigma-parity-ok-dst-"));
+    repos.push(source, target);
+    write(source, "parser.ts", "export function parseHeader() {}\nexport function parseBody() {}\n");
+    write(target, "parser.py", "def parse_header():\n    pass\n\ndef parse_body():\n    pass\n");
+
+    const report = parityReport(source, target);
+    expect(report.absent).toEqual([]);
+    expect(report.partial).toEqual([]);
+    expect(report.coverage).toBe(100);
+});

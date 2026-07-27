@@ -87,11 +87,16 @@ export interface ImportResult { ok: boolean; error?: string; applied: string[]; 
  * interface a machine listens on is a property of THAT host, not a portable preference, and a
  * bundle exported from a laptop must never start exposing the server it is imported into. They
  * land in the `skipped` list, which the UI reports, so the omission is visible rather than silent.
+ *
+ * `verifyCommand` is excluded for the same class of reason, and more sharply: it is a shell
+ * command the completion gate executes, so importing one would let a bundle run arbitrary code
+ * on the importing machine. It must be set deliberately, on the machine that will run it.
  */
 const NUMERIC_KEYS = new Set(["tokenPrice", "tokenSpeed", "dashboardPort", "apiPort"]);
 const STRING_KEYS = new Set(["recallProvider", "recallModel", "recallApiBase", "apiAccount", "apiProfile", "apiPack"]);
+const NEVER_IMPORT = new Set(["verifyCommand"]);
 function isImportableConfigKey(key: string): boolean {
-    if (SECRET_CONFIG_KEYS.includes(key)) return false;
+    if (SECRET_CONFIG_KEYS.includes(key) || NEVER_IMPORT.has(key)) return false;
     return NUMERIC_KEYS.has(key) || STRING_KEYS.has(key) || ALL_SETTINGS.some((s) => s.key.replace(/-/g, "") === key.toLowerCase());
 }
 

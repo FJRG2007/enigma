@@ -31,6 +31,8 @@ export interface SystemsStatus {
     autoLint: boolean;
     /** Convention guardrails on edit, plus the active rule count. */
     guardrails: { on: boolean; rules: number };
+    /** Completion claims checked at turn end, plus the project's verification command when set. */
+    verify: { on: boolean; command: string };
     /** Real tool-usage stats (transcript reading). */
     usageStats: boolean;
     /** Local dashboard mode: off | on-demand | always. */
@@ -77,6 +79,7 @@ export function systemsStatus(): SystemsStatus {
         parallelSubagents: c.parallelSubagents,
         autoLint: c.autoLint,
         guardrails: { on: c.guardrails, rules: c.guardrails ? loadRules().length : 0 },
+        verify: { on: c.verify, command: c.verifyCommand },
         usageStats: c.usageStats,
         dashboard: c.dashboard,
         commitEmoji: c.commitEmoji,

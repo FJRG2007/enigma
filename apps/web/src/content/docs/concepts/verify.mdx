@@ -1,0 +1,62 @@
+---
+title: Verified completion
+description: Stop agents reporting work as finished when it is not - the claim is checked against what the turn actually produced, and the stop is denied when the evidence contradicts it.
+group: Concepts
+order: 38
+---
+import Cmd from "../../../components/Cmd.astro";
+
+Agents say "done" when they are not. A module never written, a hard function replaced by a placeholder, a real parser quietly swapped for a regex because the faithful port was tedious - and the final message still reads *everything is complete*. You only find out later, reading the code yourself.
+
+Telling the model to be honest does not fix this. enigma's always-on memory already says exactly that, and it still happens: a claim is free to make, and nothing checks it. So enigma **checks the claim outside the model**.
+
+It is **on by default** and everything runs locally.
+
+## How it works
+
+At the end of a turn, enigma reads the agent's own final message.
+
+1. **Does it claim the work is finished?** If not, nothing else happens - the check is one regex over one string, so an ordinary turn costs nothing.
+2. **If it does**, enigma looks for evidence to the contrary in the code that turn actually produced: the lines added against `HEAD` plus any new file. It matches unfinished-work markers (`TODO`/`FIXME`), unimplemented paths (`not implemented`, `NotImplementedError`, `todo!()`) and placeholders left behind. When you have configured a verification command, it runs that too.
+3. **If the evidence contradicts the claim**, the stop is **denied**: the findings go back to the model, which has to either finish the work properly or state exactly what is missing and why.
+
+No model tokens are spent unless the gate actually fires, and then only on the findings.
+
+A message that already discloses what is left - *"the port is complete except for two modules I could not finish"* - is an honest report, and the gate leaves it alone. It exists to catch **silence** about gaps, never to punish naming them.
+
+## Precision
+
+A false block would just train you to switch this off, so the checks only match unambiguous evidence:
+
+- Only lines this change **added** are scanned - a repository's pre-existing TODOs never block a turn.
+- Documents (`.md`, `.txt`, ...) are skipped, because a plan legitimately tracks TODOs.
+- Language idioms are recognised - a Python abstract method raising `NotImplementedError` is by design, not a stub.
+- A line carrying `enigma:verify-ignore` is never treated as evidence.
+- After two blocks on the same prompt the gate stands down, so it can never trap a turn in a loop.
+
+## Ports and clones
+
+The gate sees what the agent wrote. It cannot see what the agent **never wrote** - the module skipped entirely, which is the worst version of this failure. Comparing against the original is the only thing that can:
+
+<Cmd name="enigma verify parity <source> <target>" ex={["enigma verify parity ../original-repo .", "enigma verify parity ./py-service ./go-service"]}>
+Compares two codebases by symbol, reusing enigma's multi-language code-graph extraction, and reports per source module how much was carried over. Names are normalised first, so a port renaming `parse_config` to `parseConfig` still matches. Modules at **zero** coverage are the headline: those were never written.
+</Cmd>
+
+Coverage matches symbol **names**: it proves a counterpart exists, never that its behaviour was ported faithfully. It is a coverage signal, not a proof of correctness - claiming otherwise would recreate the exact problem this feature exists to fix.
+
+## Use it
+
+<Cmd name="enigma verify [cmd]" ex={["enigma verify", "enigma verify --all", "enigma verify parity ../original .", "enigma config verify-command \"npm test\"", "enigma config verify off"]}>
+No argument checks the current change and runs your verification command - the same check the turn-end hook runs, on demand. `--all` sweeps every tracked file. It returns a non-zero exit code when something is unfinished, so it also works as a pre-merge or CI check.
+</Cmd>
+
+Set `verify-command` to whatever proves your project works (`npm test`, `make check`, `pytest -q`). It is read from your **global** config only, never from a repository's own `.enigma.json`, and it is excluded from config import/export: a cloned repository or an imported bundle must never be able to run a command on your machine.
+
+## Where it runs
+
+- **Claude Code** - a `Stop` hook, the one documented turn-end hook that can deny a stop.
+- **Codex** has no turn-end hook, and **opencode**'s `session.idle` event has no documented way to block a turn or return anything to the model. Wiring either would only pretend to gate them. Both are covered by `enigma verify` plus the always-on memory rule instead, which is persuasion rather than enforcement, and is described as such.
+
+## Privacy
+
+Everything runs in-process on your machine; nothing is sent anywhere. The gate reads your working tree and the agent's final message locally. Turning the setting off removes the hook from your agents.

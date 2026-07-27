@@ -230,12 +230,13 @@ function resolveRelative(fromFileAbs: string, spec: string, root: string, known:
     return null;
 }
 
-/** Index a project directory into a graph and persist it. Returns the summary entry. */
-export function indexProject(rootDir?: string): ProjectEntry {
+/**
+ * Walk a directory and extract every source file's symbols and imports, without
+ * persisting anything. The read-only half of indexing, shared with the parity checker
+ * (verify-parity.ts) so comparing two codebases never writes to the code-graph store.
+ */
+export function scanFiles(rootDir?: string): { root: string; files: CodeFile[] } {
     const root = resolve(rootDir || process.cwd());
-    const id = createHash("sha1").update(root).digest("hex").slice(0, 12);
-    const name = basename(root) || root;
-
     const files: CodeFile[] = [];
     for (const abs of walk(root)) {
         let size = 0;
@@ -248,6 +249,14 @@ export function indexProject(rootDir?: string): ProjectEntry {
         const path = relative(root, abs).split("\\").join("/");
         files.push({ path, lang, loc: content ? content.split("\n").length : 0, symbols, imports });
     }
+    return { root, files };
+}
+
+/** Index a project directory into a graph and persist it. Returns the summary entry. */
+export function indexProject(rootDir?: string): ProjectEntry {
+    const { root, files } = scanFiles(rootDir);
+    const id = createHash("sha1").update(root).digest("hex").slice(0, 12);
+    const name = basename(root) || root;
 
     const known = new Set(files.map((f) => f.path));
     const absByPath = new Map(files.map((f) => [f.path, join(root, f.path)]));

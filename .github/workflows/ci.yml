@@ -115,6 +115,12 @@ jobs:
       - name: Test guardrails deployment
         run: bun test tests/guardrails-deploy.test.ts
         working-directory: packages/enigma-cli
+      - name: Test completion gate
+        run: bun test tests/verify.test.ts
+        working-directory: packages/enigma-cli
+      - name: Test completion gate deployment
+        run: bun test tests/verify-deploy.test.ts
+        working-directory: packages/enigma-cli
       - name: Test accounts and provider overrides
         run: bun test tests/accounts.test.ts
         working-directory: packages/enigma-cli

@@ -10,6 +10,7 @@
  */
 
 import { AGENTS } from "./agents";
+import { setVerify } from "./verify-deploy";
 import { applyMcpToggle } from "./mcp-deploy";
 import { isAutoLintOn, setAutoLint } from "./lint";
 import { setGuardrails } from "./guardrails-deploy";
@@ -314,6 +315,25 @@ const RAW_CATEGORIES: Category[] = [
                 hint: "enforce project conventions (e.g. UUID primary keys, Prisma as the default ORM) via a post-edit hook that feeds violations back to the model; toggling applies immediately (Claude + opencode); enigma default: on",
                 read: () => readConfig().config.guardrails,
                 write: (value, scope) => ({ path: setGuardrails(scope, value), changed: true }),
+            },
+            {
+                key: "verify",
+                label: "Verify completion claims",
+                hint: "when the agent reports work as finished, check the claim against what the turn produced (incompleteness markers, plus 'verify-command' when set) and deny the stop on evidence it is false; Claude Code only; enigma default: on",
+                read: () => readConfig().config.verify,
+                write: (value, scope) => ({ path: setVerify(scope, value), changed: true }),
+            },
+            {
+                key: "verify-command",
+                label: "Verification command",
+                hint: "command the completion gate runs before a 'done' claim is allowed through (e.g. npm test); blank = check for incompleteness markers only. Global-only on purpose: a repo-local setting would let a cloned repository run a command on your machine",
+                globalOnly: true,
+                kind: "value",
+                valueHint: "e.g. npm test (blank = markers only)",
+                read: () => !!readConfig().config.verifyCommand,
+                write: () => ({ changed: false }),
+                readValue: () => readConfig().config.verifyCommand,
+                writeValue: (value, scope) => ({ path: setEnigmaValue("verifyCommand", value.trim(), scope), changed: true }),
             },
         ],
     },
