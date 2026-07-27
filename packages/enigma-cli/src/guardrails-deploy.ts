@@ -16,9 +16,9 @@
  * of cycles - it is the deploy counterpart of the self-contained guardrails.ts engine.
  */
 
-import { readJson } from "./util";
 import { homedir } from "node:os";
 import { join, dirname } from "node:path";
+import { applyClaudeHook } from "./claude-hooks";
 import { readConfig, setEnigmaToggle } from "./config";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 
@@ -35,37 +35,12 @@ function hookCommand(): string {
     return "enigma __guardrails-hook";
 }
 
-interface HookGroup { matcher?: string; hooks?: Array<{ type?: string; command?: string; timeout?: number }>; }
-
-/** Whether a PostToolUse group is the enigma guardrails hook (identified by the command). */
-function isOurGroup(group: HookGroup): boolean {
-    return Array.isArray(group.hooks) && group.hooks.some((h) => typeof h.command === "string" && h.command.includes("__guardrails-hook"));
-}
-
 /**
  * Add (on) or remove (off) the enigma PostToolUse guardrails hook in a Claude settings.json,
- * preserving every other hook and setting. Identified by the command so it is idempotent and
- * never clobbers the user's own hooks. Returns true when the file changed.
+ * preserving every other hook and setting. Returns true when the file changed.
  */
 export function applyClaudeGuardrailsHook(settingsPath: string, on: boolean): boolean {
-    const current = readJson<Record<string, unknown>>(settingsPath) || {};
-    const hooks = (typeof current.hooks === "object" && current.hooks !== null) ? { ...current.hooks as Record<string, unknown> } : {};
-    const post: HookGroup[] = Array.isArray(hooks.PostToolUse) ? [...hooks.PostToolUse as HookGroup[]] : [];
-
-    const rest = post.filter((g) => !isOurGroup(g));
-    const next: HookGroup[] = on
-        ? [...rest, { matcher: HOOK_MATCHER, hooks: [{ type: "command", command: hookCommand(), timeout: 30 }] }]
-        : rest;
-
-    if (next.length) hooks.PostToolUse = next; else delete hooks.PostToolUse;
-    const nextSettings: Record<string, unknown> = { ...current };
-    if (Object.keys(hooks).length) nextSettings.hooks = hooks; else delete nextSettings.hooks;
-
-    if (JSON.stringify(nextSettings) === JSON.stringify(current)) return false;
-    if (!existsSync(settingsPath) && Object.keys(nextSettings).length === 0) return false;
-    mkdirSync(dirname(settingsPath), { recursive: true });
-    writeFileSync(settingsPath, `${JSON.stringify(nextSettings, null, 2)}\n`);
-    return true;
+    return applyClaudeHook(settingsPath, "PostToolUse", "__guardrails-hook", { matcher: HOOK_MATCHER, hooks: [{ type: "command", command: hookCommand(), timeout: 30 }] }, on);
 }
 
 // --- opencode: auto-loaded plugin --------------------------------------------------

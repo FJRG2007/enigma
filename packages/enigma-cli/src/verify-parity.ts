@@ -48,6 +48,8 @@ export interface ParityReport {
     partialTotal: number;
     /** The source yielded no comparable symbols, so there was nothing to check. */
     empty: boolean;
+    /** A scan cap meant part of one tree was never read, so the comparison is incomplete. */
+    truncated: boolean;
 }
 
 /** Names shorter than this collide too easily to match reliably (mirrors codegraph). */
@@ -114,6 +116,7 @@ export function parityReport(sourceDir: string, targetDir: string): ParityReport
         // an unsupported language, an empty tree. Reporting that as 100% would turn a completion
         // check into a rubber stamp, which is the one thing it must never be.
         empty: sourceSymbols === 0,
+        truncated: source.truncated || target.truncated,
         source: source.root,
         target: target.root,
         sourceFiles: source.files.length,
@@ -147,7 +150,12 @@ export function formatParity(report: ParityReport): string {
         lines.push("", `PARTIALLY PORTED - ${report.partialTotal} module(s) below ${PARTIAL_THRESHOLD}% coverage${listed(report.partial.length, report.partialTotal)}:`);
         for (const m of report.partial) lines.push(`  ! ${m.module} (${m.matched}/${m.symbols}): missing ${m.missing.join(", ")}`);
     }
-    if (!report.absentTotal && !report.partialTotal) lines.push("", "Every source module has a counterpart in the target.");
+    if (!report.absentTotal && !report.partialTotal) {
+        lines.push("", report.truncated
+            ? "No gaps in what was compared - but see the warning below, part of the tree was never read."
+            : "Every source module has a counterpart in the target.");
+    }
+    if (report.truncated) lines.push("", "INCOMPLETE: one of the trees hit a scan limit (too many files, or files too large), so some modules were never compared.");
     lines.push("", "Coverage matches symbol NAMES: it proves a counterpart exists, not that its behaviour was ported faithfully.");
     return lines.join("\n");
 }

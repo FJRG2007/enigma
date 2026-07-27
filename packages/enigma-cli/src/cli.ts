@@ -1500,8 +1500,8 @@ async function runVerifyCli(positionals: string[], all: boolean): Promise<number
         const { parityReport, formatParity } = await import("./verify-parity");
         const report = parityReport(source, target);
         console.log(formatParity(report));
-        // A comparison that found nothing to compare is a failure, not a pass.
-        return report.empty || report.absentTotal || report.partialTotal ? 1 : 0;
+        // A comparison that could not be made in full is a failure, not a pass.
+        return report.empty || report.truncated || report.absentTotal || report.partialTotal ? 1 : 0;
     }
     if (sub && sub !== "check") {
         console.error(`Unknown verify command '${sub}'. Use: (no argument) | --all | parity <source> <target>.`);

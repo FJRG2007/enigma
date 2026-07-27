@@ -377,9 +377,16 @@ export function formatGaps(gaps: VerifyGap[]): string {
 
 // --- turn-end gate -------------------------------------------------------------------
 
-/** Where the per-prompt block counter lives (loop safety across hook invocations). */
+/** Where the block counter lives (loop safety across hook invocations). */
+function stateDir(): string {
+    // enigmaHome() is the HOME directory, not ~/.enigma - the global config file is
+    // ~/.enigma.json. Every other state file lives under ~/.enigma/, and joining without it
+    // dropped verify-state.json straight into the user's home.
+    return join(enigmaHome(), ".enigma");
+}
+
 function statePath(): string {
-    return join(enigmaHome(), "verify-state.json");
+    return join(stateDir(), "verify-state.json");
 }
 
 /**
@@ -414,7 +421,7 @@ function mayBlock(key: string): boolean {
     const keys = Object.keys(state);
     for (const stale of keys.slice(0, Math.max(0, keys.length - 50))) delete state[stale];
     try {
-        mkdirSync(enigmaHome(), { recursive: true });
+        mkdirSync(stateDir(), { recursive: true });
         writeFileSync(path, `${JSON.stringify(state)}\n`);
     } catch { /* a read-only home must not break the gate */ }
     return true;

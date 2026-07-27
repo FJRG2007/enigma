@@ -72,6 +72,22 @@ test("never creates a settings file just to remove an absent hook", () => {
     expect(() => readFileSync(path, "utf8")).toThrow();
 });
 
+test("leaves a guardrails hook in the same file alone", () => {
+    // Both hooks share one merge helper now, so each must still own only its own entry.
+    const path = settingsFile(JSON.stringify({
+        hooks: { PostToolUse: [{ matcher: "Edit", hooks: [{ type: "command", command: "enigma __guardrails-hook" }] }] },
+    }));
+    applyClaudeVerifyHook(path, true);
+    let after = read(path).hooks as Record<string, unknown[]>;
+    expect(after.PostToolUse.length).toBe(1);
+    expect(after.Stop.length).toBe(1);
+
+    applyClaudeVerifyHook(path, false);
+    after = read(path).hooks as Record<string, unknown[]>;
+    expect(after.PostToolUse.length).toBe(1);
+    expect(after.Stop).toBeUndefined();
+});
+
 test("refuses to rewrite a settings file it cannot parse", () => {
     const broken = "{ this is not json";
     const path = settingsFile(broken);

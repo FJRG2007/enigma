@@ -16,11 +16,10 @@
  * the deploy counterpart, cheap to load and free of cycles.
  */
 
-import { readJson } from "./util";
+import { join } from "node:path";
 import { homedir } from "node:os";
-import { join, dirname } from "node:path";
+import { applyClaudeHook } from "./claude-hooks";
 import { readGlobalConfig, setEnigmaToggle } from "./config";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 
 /**
  * True when the completion gate is enabled (default on).
@@ -40,44 +39,15 @@ function hookCommand(): string {
     return "enigma __verify-hook";
 }
 
-interface HookGroup { matcher?: string; hooks?: Array<{ type?: string; command?: string; timeout?: number }>; }
-
-/** Whether a Stop group is the enigma verify hook (identified by the command). */
-function isOurGroup(group: HookGroup): boolean {
-    return Array.isArray(group.hooks) && group.hooks.some((h) => typeof h.command === "string" && h.command.includes("__verify-hook"));
-}
-
 /**
  * Add (on) or remove (off) the enigma Stop hook in a Claude settings.json, preserving
- * every other hook and setting. Identified by the command so it is idempotent and never
- * clobbers the user's own hooks. Returns true when the file changed.
+ * every other hook and setting. Returns true when the file changed.
  *
  * The timeout covers the project's own verification command when one is configured, so
  * it is generous compared with the per-edit guardrails hook.
  */
 export function applyClaudeVerifyHook(settingsPath: string, on: boolean): boolean {
-    const parsed = readJson<Record<string, unknown>>(settingsPath);
-    // Refuse to touch a settings file that exists but cannot be parsed: writing a fresh one
-    // would silently discard everything the user has in it (the rule applyJsonEntry follows).
-    if (parsed === null && existsSync(settingsPath)) return false;
-    const current = parsed || {};
-    const hooks = (typeof current.hooks === "object" && current.hooks !== null) ? { ...current.hooks as Record<string, unknown> } : {};
-    const stop: HookGroup[] = Array.isArray(hooks.Stop) ? [...hooks.Stop as HookGroup[]] : [];
-
-    const rest = stop.filter((g) => !isOurGroup(g));
-    const next: HookGroup[] = on
-        ? [...rest, { hooks: [{ type: "command", command: hookCommand(), timeout: 330 }] }]
-        : rest;
-
-    if (next.length) hooks.Stop = next; else delete hooks.Stop;
-    const nextSettings: Record<string, unknown> = { ...current };
-    if (Object.keys(hooks).length) nextSettings.hooks = hooks; else delete nextSettings.hooks;
-
-    if (JSON.stringify(nextSettings) === JSON.stringify(current)) return false;
-    if (!existsSync(settingsPath) && Object.keys(nextSettings).length === 0) return false;
-    mkdirSync(dirname(settingsPath), { recursive: true });
-    writeFileSync(settingsPath, `${JSON.stringify(nextSettings, null, 2)}\n`);
-    return true;
+    return applyClaudeHook(settingsPath, "Stop", "__verify-hook", { hooks: [{ type: "command", command: hookCommand(), timeout: 330 }] }, on);
 }
 
 /** Global Claude settings.json for the default account. */

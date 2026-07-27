@@ -235,13 +235,16 @@ function resolveRelative(fromFileAbs: string, spec: string, root: string, known:
  * persisting anything. The read-only half of indexing, shared with the parity checker
  * (verify-parity.ts) so comparing two codebases never writes to the code-graph store.
  */
-export function scanFiles(rootDir?: string): { root: string; files: CodeFile[] } {
+export function scanFiles(rootDir?: string): { root: string; files: CodeFile[]; truncated: boolean } {
     const root = resolve(rootDir || process.cwd());
     const files: CodeFile[] = [];
+    // Both caps are reported, not just applied: a caller that compares two trees (the parity
+    // check) would otherwise score an unread module as absent-free and call a port complete.
+    let truncated = false;
     for (const abs of walk(root)) {
         let size = 0;
         try { size = statSync(abs).size; } catch { continue; }
-        if (size > MAX_FILE_BYTES) continue;
+        if (size > MAX_FILE_BYTES) { truncated = true; continue; }
         let content: string;
         try { content = readFileSync(abs, "utf8"); } catch { continue; }
         const lang = LANG_BY_EXT[extname(abs).toLowerCase()];
@@ -249,7 +252,9 @@ export function scanFiles(rootDir?: string): { root: string; files: CodeFile[] }
         const path = relative(root, abs).split("\\").join("/");
         files.push({ path, lang, loc: content ? content.split("\n").length : 0, symbols, imports });
     }
-    return { root, files };
+    // walk() stops at MAX_FILES; hitting it exactly means the tree was probably larger.
+    if (files.length >= MAX_FILES) truncated = true;
+    return { root, files, truncated };
 }
 
 /** Index a project directory into a graph and persist it. Returns the summary entry. */

@@ -28,7 +28,7 @@ A message that already discloses what is left - *"the port is complete except fo
 
 A false block would just train you to switch this off, so the checks only match unambiguous evidence:
 
-- Only lines this work **added** are scanned - a repository's pre-existing TODOs, and anything that was already on the default branch, never block a turn.
+- Only **added** lines are scanned, measured from where your branch left the default branch - so a repository's pre-existing TODOs never block a turn. On a long-lived branch that scope also covers earlier commits on the same branch, so a marker someone added there days ago can surface; that is the price of also catching work the agent commits mid-turn, and `enigma:verify-ignore` settles an intentional one.
 - It never fails open quietly: if the final message cannot be read, or the change was too large to scan in full, it says so rather than reporting a clean pass.
 - Documents (`.md`, `.txt`, ...) are skipped, because a plan legitimately tracks TODOs.
 - Language idioms are recognised - a Python abstract method raising `NotImplementedError` is by design, not a stub.
