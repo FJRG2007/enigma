@@ -26,8 +26,9 @@
 import { join, extname } from "node:path";
 import { enigmaHome, readJson } from "./util";
 import { readConfigAt, readGlobalConfig } from "./config";
+import { lastAssistantMessage } from "./claude-transcripts";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 
 /** One piece of evidence that the work is not finished. */
 export interface VerifyGap {
@@ -106,6 +107,9 @@ export function claimsDone(message: string): boolean {
 /** One line added by the current change. */
 export interface AddedLine { file: string; line: number; text: string; }
 
+/** The lines a scan read, and whether a cap stopped it before it had read them all. */
+export interface ScannedLines { lines: AddedLine[]; truncated: boolean; }
+
 /** Run git in `cwd`, returning stdout ("" when git fails or the dir is not a repo). */
 function gitOut(cwd: string, args: string[]): string {
     try { return execFileSync("git", args, { cwd, encoding: "utf8", maxBuffer: 32 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] }); }
@@ -113,43 +117,99 @@ function gitOut(cwd: string, args: string[]): string {
 }
 
 /**
- * Lines this change ADDED: the `+` lines of the working tree against HEAD, plus every
- * line of an untracked file. Scanning added lines only (the ratchet the changed-line
- * linter already uses) means a repository's pre-existing TODOs never block a turn.
+ * Where this branch left the default branch, so the work it has already committed counts as
+ * evidence. Returns null when nothing resolves - a detached HEAD, no remote, a repository
+ * with no commits - and the caller then falls back to the working tree alone rather than
+ * failing: this runs inside a turn-end hook and must never break the turn.
  */
-export function addedLines(cwd: string): AddedLine[] {
-    const out: AddedLine[] = [];
+function branchPoint(cwd: string): string | null {
+    const refs: string[] = [];
+    const originHead = gitOut(cwd, ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"]).trim();
+    if (originHead) refs.push(originHead);
+    refs.push("origin/main", "origin/master", "main", "master");
+    for (const ref of refs) {
+        const base = gitOut(cwd, ["merge-base", ref, "HEAD"]).trim();
+        if (base) return base;
+    }
+    return null;
+}
+
+/** Feed every added line of a unified (-U0) diff to `sink`, stopping when it returns false. */
+function eachAddedLine(diff: string, sink: (file: string, line: number, text: string) => boolean): void {
     let file = "";
     let line = 0;
-    for (const raw of gitOut(cwd, ["diff", "--unified=0", "--no-color", "HEAD"]).split("\n")) {
+    for (const raw of diff.split("\n")) {
         if (raw.startsWith("+++ ")) { file = raw.slice(4).replace(/^b\//, ""); continue; }
         if (raw.startsWith("@@")) { const m = /\+(\d+)/.exec(raw); line = m ? Number(m[1]) : 0; continue; }
         if (!raw.startsWith("+") || raw.startsWith("+++")) continue;
-        if (file && file !== "/dev/null") out.push({ file, line, text: raw.slice(1) });
+        if (file && file !== "/dev/null" && !sink(file, line, raw.slice(1))) return;
         line++;
-        if (out.length >= MAX_ADDED_LINES) return out;
     }
+}
+
+/**
+ * The lines this piece of work ADDED: what is not committed yet (working tree against HEAD,
+ * plus untracked files) UNION what this branch has already committed since it left the
+ * default branch.
+ *
+ * The committed half matters more than it looks: enigma's own workflow tells an agent to
+ * commit before validating, and against HEAD alone that leaves an empty diff - so the gate
+ * would find nothing and pass a false claim in exactly the flow it recommends. Scanning
+ * added lines only (the ratchet the changed-line linter already uses) still means a
+ * repository's pre-existing markers never block a turn.
+ */
+export function addedLines(cwd: string): ScannedLines {
+    const lines: AddedLine[] = [];
+    const seen = new Set<string>();
+    let truncated = false;
+    const add = (file: string, line: number, text: string): boolean => {
+        if (lines.length >= MAX_ADDED_LINES) { truncated = true; return false; }
+        // A line reachable through both diffs is one line, not two.
+        const key = `${file}:${line}:${text}`;
+        if (seen.has(key)) return true;
+        seen.add(key);
+        lines.push({ file, line, text });
+        return true;
+    };
+    eachAddedLine(gitOut(cwd, ["diff", "--unified=0", "--no-color", "HEAD"]), add);
+    const base = branchPoint(cwd);
+    if (base) eachAddedLine(gitOut(cwd, ["diff", "--unified=0", "--no-color", `${base}..HEAD`]), add);
     for (const path of gitOut(cwd, ["ls-files", "--others", "--exclude-standard"]).split("\n").map((s) => s.trim()).filter(Boolean)) {
-        const text = readTextFile(join(cwd, path), MAX_UNTRACKED_BYTES);
-        if (text === null) continue;
-        const lines = text.split("\n");
-        for (let i = 0; i < lines.length; i++) out.push({ file: path, line: i + 1, text: lines[i]! });
-        if (out.length >= MAX_ADDED_LINES) return out;
+        if (!readInto(cwd, path, add, () => { truncated = true; })) break;
     }
-    return out;
+    return { lines, truncated };
 }
 
 /** Every tracked file's lines, for the whole-repository sweep (`enigma verify --all`). */
-function trackedLines(cwd: string): AddedLine[] {
-    const out: AddedLine[] = [];
+function trackedLines(cwd: string): ScannedLines {
+    const lines: AddedLine[] = [];
+    let truncated = false;
+    const add = (file: string, line: number, text: string): boolean => {
+        if (lines.length >= MAX_ADDED_LINES) { truncated = true; return false; }
+        lines.push({ file, line, text });
+        return true;
+    };
     for (const path of gitOut(cwd, ["ls-files"]).split("\n").map((s) => s.trim()).filter(Boolean)) {
-        const text = readTextFile(join(cwd, path), MAX_UNTRACKED_BYTES);
-        if (text === null) continue;
-        const lines = text.split("\n");
-        for (let i = 0; i < lines.length; i++) out.push({ file: path, line: i + 1, text: lines[i]! });
-        if (out.length >= MAX_ADDED_LINES) return out;
+        if (!readInto(cwd, path, add, () => { truncated = true; })) break;
     }
-    return out;
+    return { lines, truncated };
+}
+
+/**
+ * Feed one file's lines to `sink`. Reports `onSkipped` only for a file skipped because it is
+ * too large - that is coverage the caller has to disclose - and not for a binary one, which
+ * has no lines to miss. Returns false when the sink asked to stop.
+ */
+function readInto(cwd: string, path: string, sink: (file: string, line: number, text: string) => boolean, onSkipped: () => void): boolean {
+    const full = join(cwd, path);
+    let size = 0;
+    try { size = statSync(full).size; } catch { return true; }
+    if (size > MAX_UNTRACKED_BYTES) { onSkipped(); return true; }
+    const text = readTextFile(full, MAX_UNTRACKED_BYTES);
+    if (text === null) return true;
+    const rows = text.split("\n");
+    for (let i = 0; i < rows.length; i++) if (!sink(path, i + 1, rows[i]!)) return false;
+    return true;
 }
 
 /** Read a text file, or null when it is missing, too large, or binary. */
@@ -187,9 +247,15 @@ function scanLines(cwd: string, lines: AddedLine[]): VerifyGap[] {
     return gaps;
 }
 
+/** Evidence of unfinished work in the code this change produced, with the scan's coverage. */
+function scanEvidence(cwd: string, all: boolean): VerifyScan {
+    const scanned = all ? trackedLines(cwd) : addedLines(cwd);
+    return { gaps: scanLines(cwd, scanned.lines), truncated: scanned.truncated };
+}
+
 /** Evidence of unfinished work in the code this change produced. */
 export function scanGaps(cwd: string, all = false): VerifyGap[] {
-    return scanLines(cwd, all ? trackedLines(cwd) : addedLines(cwd));
+    return scanEvidence(cwd, all).gaps;
 }
 
 /**
@@ -198,7 +264,11 @@ export function scanGaps(cwd: string, all = false): VerifyGap[] {
  * one here would let a cloned repository execute a command on the machine that runs it.
  */
 export function runVerifyCommand(cwd: string, command: string): VerifyGap | null {
-    const result = spawnSync(command, { cwd, shell: true, encoding: "utf8", timeout: 300_000 });
+    // A real test suite is verbose, and Node's 1 MiB default output buffer would kill a
+    // PASSING one and report it as a failure - a false block, which is how a gate like this
+    // gets switched off. result.error separates "could not run it" from "it failed".
+    const result = spawnSync(command, { cwd, shell: true, encoding: "utf8", timeout: 300_000, maxBuffer: 64 * 1024 * 1024 });
+    if (result.error) return { kind: "command", detail: `could not run the verification command \`${command}\`: ${result.error.message}` };
     if (result.status === 0) return null;
     const output = `${result.stdout || ""}${result.stderr || ""}`.trim().slice(-1500);
     const why = result.status === null ? "did not finish (timed out or was killed)" : `exited ${result.status}`;
@@ -210,15 +280,22 @@ export function verifyCommandOf(): string {
     return (readGlobalConfig().verifyCommand || "").trim();
 }
 
-/** All evidence: incompleteness markers, plus the verification command when configured. */
-export function collectGaps(cwd: string, opts: { all?: boolean; runCommand?: boolean } = {}): VerifyGap[] {
-    const gaps = scanGaps(cwd, opts.all);
+/** The result of a full check: what it found, and whether it managed to look everywhere. */
+export interface VerifyScan { gaps: VerifyGap[]; truncated: boolean; }
+
+/**
+ * All evidence: incompleteness markers, plus the verification command when configured.
+ * `truncated` reports that a cap stopped the scan short, so a partial pass is never
+ * presented as a clean one.
+ */
+export function collectGaps(cwd: string, opts: { all?: boolean; runCommand?: boolean } = {}): VerifyScan {
+    const scan = scanEvidence(cwd, opts.all === true);
     const command = opts.runCommand === false ? "" : verifyCommandOf();
     if (command) {
         const failure = runVerifyCommand(cwd, command);
-        if (failure) gaps.push(failure);
+        if (failure) scan.gaps.push(failure);
     }
-    return gaps;
+    return scan;
 }
 
 /** Format evidence as a compact, model-facing list. */
@@ -258,11 +335,12 @@ function mayBlock(key: string): boolean {
  * Deliberately framed at maximum stakes: the whole point of this gate is that a false
  * "done" is a worse outcome than an honest "unfinished", and the model must feel that.
  */
-function blockMessage(gaps: VerifyGap[]): string {
+function blockMessage(gaps: VerifyGap[], truncated = false): string {
     return [
         "enigma verify: STOP. You just reported this work as finished, but a deterministic check of what you actually produced contradicts that claim:",
         "",
         formatGaps(gaps),
+        ...(truncated ? ["", "(The change was too large to scan in full, so there may be more than this.)"] : []),
         "",
         "Treat this as mission-critical: lives depend on this code being genuinely correct and complete, and a false \"done\" is the single worst outcome possible here - far worse than admitting the work is unfinished. Someone will rely on your report without re-reading every line.",
         "Do not stop now. Either:",
@@ -288,14 +366,24 @@ export function runVerifyHook(payload?: string): number {
     const cwd = typeof raw.cwd === "string" && existsSync(raw.cwd) ? raw.cwd : process.cwd();
     if (!readConfigAt(cwd).verify) return 0;
 
-    const message = typeof raw.last_assistant_message === "string" ? raw.last_assistant_message : "";
+    // The whole gate hangs off the final message, so losing it must be loud rather than a
+    // permanent silent no-op that reads exactly like "nothing to report".
+    let message = typeof raw.last_assistant_message === "string" ? raw.last_assistant_message : "";
+    if (!message && typeof raw.transcript_path === "string") message = lastAssistantMessage(raw.transcript_path);
+    if (!message) {
+        process.stderr.write("enigma verify: the turn-end payload carried no final assistant message and none could be read from the transcript, so the completion check did not run.\n");
+        return 0;
+    }
     if (!claimsDone(message)) return 0;
 
-    const gaps = collectGaps(cwd);
-    if (!gaps.length) return 0;
+    const { gaps, truncated } = collectGaps(cwd);
+    if (!gaps.length) {
+        if (truncated) process.stderr.write("enigma verify: the change was too large to scan in full, so this claim was only partially checked.\n");
+        return 0;
+    }
 
     const key = String(raw.prompt_id || raw.session_id || "session");
     if (!mayBlock(key)) return 0;
-    process.stderr.write(`${blockMessage(gaps)}\n`);
+    process.stderr.write(`${blockMessage(gaps, truncated)}\n`);
     return 2;
 }

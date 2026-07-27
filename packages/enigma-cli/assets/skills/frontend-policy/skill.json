@@ -3,7 +3,7 @@
   "version": "1.16.0",
   "provider": "FJRG2007/enigma",
   "description": "Frontend architecture: reusable components, abstraction thresholds, state management, no-op detection (skip any operation whose result equals current state, not just form saves), instant first paint (render the shell, load data async, skeletons), perceived performance (prefetch on intent, debounce/throttle, cancel stale requests, avoid waterfalls, lazy widgets), large-list rendering (infinite scroll/pagination, virtualization, skeletons, progressive loading), optimistic UI with rollback, responsive/adaptive layout (fluid units, breakpoints, no overlap/overflow, viewport meta, touch targets), and variable-length text (min-width:0 in flex/grid, wrap vs truncate, long unbroken strings, worst-case content checks).",
-  "updated": "2026-07-24T01:21:27+02:00",
+  "updated": "2026-07-27T17:22:51+02:00",
   "cliVersion": "1.31.0",
-  "sha": "e90959f11d212469bdc263e88802e03e9b7eba9d0e0c7e55995aa396521f77e6"
+  "sha": "8a24f1a64ab2d2f216a63eec5d40e4ca76a1de43a574a5a6435e056212615c1c"
 }

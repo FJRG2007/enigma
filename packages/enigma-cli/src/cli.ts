@@ -1509,12 +1509,14 @@ async function runVerifyCli(positionals: string[], all: boolean): Promise<number
     const { collectGaps, formatGaps, verifyCommandOf } = await import("./verify");
     const command = verifyCommandOf();
     if (command) console.log(`Running the verification command: ${command}`);
-    const gaps = collectGaps(process.cwd(), { all });
+    const { gaps, truncated } = collectGaps(process.cwd(), { all });
+    // Never present a partial scan as a clean one.
+    const partial = truncated ? " (scan truncated: too large to read in full, so coverage is incomplete)" : "";
     if (!gaps.length) {
-        console.log(`No evidence of unfinished work in ${all ? "any tracked file" : "the current change"}${command ? ", and the verification command passed" : ""}.`);
+        console.log(`No evidence of unfinished work in ${all ? "any tracked file" : "the current change"}${command ? ", and the verification command passed" : ""}.${partial}`);
         return 0;
     }
-    console.error(`enigma verify: ${gaps.length} item(s) suggest the work is not finished:\n${formatGaps(gaps)}`);
+    console.error(`enigma verify: ${gaps.length} item(s) suggest the work is not finished${partial}:\n${formatGaps(gaps)}`);
     return 1;
 }
 

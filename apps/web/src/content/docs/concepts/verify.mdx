@@ -17,7 +17,7 @@ It is **on by default** and everything runs locally.
 At the end of a turn, enigma reads the agent's own final message.
 
 1. **Does it claim the work is finished?** If not, nothing else happens - the check is one regex over one string, so an ordinary turn costs nothing.
-2. **If it does**, enigma looks for evidence to the contrary in the code that turn actually produced: the lines added against `HEAD` plus any new file. It matches unfinished-work markers (`TODO`/`FIXME`), unimplemented paths (`not implemented`, `NotImplementedError`, `todo!()`) and placeholders left behind. When you have configured a verification command, it runs that too.
+2. **If it does**, enigma looks for evidence to the contrary in the code that turn actually produced: everything not committed yet, plus what this branch has already committed since it left the default branch. (Both halves matter - an agent that commits before finishing its turn would otherwise leave an empty diff and sail through.) It matches unfinished-work markers (`TODO`/`FIXME`), unimplemented paths (`not implemented`, `NotImplementedError`, `todo!()`) and placeholders left behind. When you have configured a verification command, it runs that too.
 3. **If the evidence contradicts the claim**, the stop is **denied**: the findings go back to the model, which has to either finish the work properly or state exactly what is missing and why.
 
 No model tokens are spent unless the gate actually fires, and then only on the findings.
@@ -28,7 +28,8 @@ A message that already discloses what is left - *"the port is complete except fo
 
 A false block would just train you to switch this off, so the checks only match unambiguous evidence:
 
-- Only lines this change **added** are scanned - a repository's pre-existing TODOs never block a turn.
+- Only lines this work **added** are scanned - a repository's pre-existing TODOs, and anything that was already on the default branch, never block a turn.
+- It never fails open quietly: if the final message cannot be read, or the change was too large to scan in full, it says so rather than reporting a clean pass.
 - Documents (`.md`, `.txt`, ...) are skipped, because a plan legitimately tracks TODOs.
 - Language idioms are recognised - a Python abstract method raising `NotImplementedError` is by design, not a stub.
 - A line carrying `enigma:verify-ignore` is never treated as evidence.

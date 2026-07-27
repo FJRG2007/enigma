@@ -27,6 +27,10 @@ afterAll(() => {
     rmSync(HOME, { recursive: true, force: true });
 });
 
+function git(dir: string, ...args: string[]): void {
+    execFileSync("git", args, { cwd: dir, stdio: "ignore" });
+}
+
 /** A git repository whose only commit holds `committed`, so later writes read as the change. */
 function repoWith(committed: Record<string, string> = {}): string {
     const dir = mkdtempSync(join(tmpdir(), "enigma-verify-repo-"));
@@ -96,7 +100,7 @@ test("ignores documents, ignore-marked lines, and abstract-method idioms", () =>
     const dir = repoWith();
     write(dir, "PLAN.md", "- TODO: write the docs\n"); // enigma:verify-ignore
     write(dir, "src/kept.ts", "const x = 1; // TODO: revisit - enigma:verify-ignore\n");
-    write(dir, "src/base.py", "class Base(ABC):\n    @abstractmethod\n    def run(self):\n        raise NotImplementedError\n");
+    write(dir, "src/base.py", "class Base(ABC):\n    @abstractmethod\n    def run(self):\n        raise NotImplementedError\n"); // enigma:verify-ignore
     expect(scanGaps(dir)).toEqual([]);
 });
 
@@ -104,7 +108,7 @@ test("runs the configured verification command and reports its failure", () => {
     const dir = repoWith();
     writeFileSync(join(HOME, ".enigma.json"), JSON.stringify({ verifyCommand: "node -e \"process.exit(3)\"" }));
     try {
-        const gaps = collectGaps(dir);
+        const { gaps } = collectGaps(dir);
         expect(gaps.length).toBe(1);
         expect(gaps[0]!.kind).toBe("command");
         expect(gaps[0]!.detail).toContain("exited 3");
@@ -152,6 +156,54 @@ test("a repo can switch the gate off for itself", () => {
     write(dir, "src/new.ts", "// TODO: finish this\n"); // enigma:verify-ignore
     write(dir, ".enigma.json", JSON.stringify({ verify: false }));
     expect(runVerifyHook(payload(dir, "All done."))).toBe(0);
+});
+
+test("still sees the work after the agent commits it", () => {
+    // enigma's own workflow tells an agent to commit before validating. Against HEAD alone
+    // that leaves an empty diff, so the gate would find nothing and wave the claim through.
+    const dir = repoWith({ "src/app.ts": "export const a = 1;\n" });
+    git(dir, "checkout", "-q", "-b", "feature");
+    write(dir, "src/new.ts", "// TODO: finish this\n"); // enigma:verify-ignore
+    git(dir, "add", "-A");
+    git(dir, "commit", "-qm", "wip");
+
+    expect(scanGaps(dir).length).toBe(1);
+    expect(runVerifyHook(payload(dir, "All done, everything is implemented."))).toBe(2);
+});
+
+test("a marker committed before the branch existed stays out of scope", () => {
+    const dir = repoWith({ "src/old.ts": "// TODO: someone else's debt\n" }); // enigma:verify-ignore
+    git(dir, "checkout", "-q", "-b", "feature");
+    write(dir, "src/new.ts", "export const clean = true;\n");
+    git(dir, "add", "-A");
+    git(dir, "commit", "-qm", "clean work");
+    expect(scanGaps(dir)).toEqual([]);
+});
+
+test("falls back to the transcript when the payload has no final message", () => {
+    const dir = repoWith();
+    write(dir, "src/new.ts", "// TODO: finish this\n"); // enigma:verify-ignore
+    const transcript = join(dir, "session.jsonl");
+    writeFileSync(transcript, [
+        JSON.stringify({ type: "user", message: { role: "user", content: "port it" } }),
+        JSON.stringify({ type: "assistant", message: { role: "assistant", content: [{ type: "text", text: "All done, everything is implemented." }] } }),
+        "",
+    ].join("\n"));
+    expect(runVerifyHook(JSON.stringify({ cwd: dir, transcript_path: transcript, prompt_id: "no-message" }))).toBe(2);
+});
+
+test("says so when it cannot read the final message at all", () => {
+    const dir = repoWith();
+    write(dir, "src/new.ts", "// TODO: finish this\n"); // enigma:verify-ignore
+    const said: string[] = [];
+    const original = process.stderr.write.bind(process.stderr);
+    (process.stderr as { write: unknown }).write = (chunk: string): boolean => { said.push(String(chunk)); return true; };
+    try {
+        expect(runVerifyHook(JSON.stringify({ cwd: dir, prompt_id: "no-message-at-all" }))).toBe(0);
+    } finally {
+        (process.stderr as { write: unknown }).write = original;
+    }
+    expect(said.join("")).toContain("completion check did not run");
 });
 
 test("parity reports a module the port never carried over", () => {

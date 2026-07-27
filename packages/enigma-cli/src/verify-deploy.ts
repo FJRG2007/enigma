@@ -19,12 +19,20 @@
 import { readJson } from "./util";
 import { homedir } from "node:os";
 import { join, dirname } from "node:path";
-import { readConfig, setEnigmaToggle } from "./config";
+import { readGlobalConfig, setEnigmaToggle } from "./config";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 
-/** True when the completion gate is enabled (default on). */
+/**
+ * True when the completion gate is enabled (default on).
+ *
+ * Deliberately the GLOBAL value, not the cwd-merged one: this drives wiring that is written
+ * to the global agent settings, and auto-sync re-asserts it on every launch. Reading a
+ * repo-local `verify: false` here would let launching from inside one project strip the hook
+ * for every other project. The per-project opt-out is honoured where it belongs - at runtime,
+ * in runVerifyHook, against the directory the turn actually ran in.
+ */
 export function isVerifyOn(): boolean {
-    return readConfig().config.verify;
+    return readGlobalConfig().verify;
 }
 
 /** The hook command: the hidden verify subcommand of the enigma binary on PATH. */

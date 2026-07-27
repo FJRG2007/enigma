@@ -12,7 +12,7 @@
 
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { closeSync, existsSync, fstatSync, openSync, readSync, readdirSync, readFileSync } from "node:fs";
 
 /** One Claude account's transcript source: its display name and its projects directory. */
 export interface ClaudeSource { account: string; dir: string; }
@@ -76,4 +76,52 @@ export function projectOf(path: string, root: string): string {
     const rel = path.startsWith(root) ? path.slice(root.length) : path;
     const seg = rel.split(/[\\/]/).filter(Boolean)[0];
     return seg || "unknown";
+}
+
+/** How much of a transcript's tail to read when only its final turn is wanted. */
+const TAIL_BYTES = 256 * 1024;
+
+/** The last `bytes` of a file as text, dropping the first (probably partial) line. */
+function tail(path: string, bytes: number): string {
+    let fd: number;
+    try { fd = openSync(path, "r"); } catch { return ""; }
+    try {
+        const size = fstatSync(fd).size;
+        const length = Math.min(size, bytes);
+        const buf = Buffer.alloc(length);
+        readSync(fd, buf, 0, length, size - length);
+        const text = buf.toString("utf8");
+        return length < size ? text.slice(text.indexOf("\n") + 1) : text;
+    } catch { return ""; }
+    finally { closeSync(fd); }
+}
+
+/**
+ * The text of the final assistant message in a transcript, or "" when there is none.
+ *
+ * Used as a fallback by the completion gate when a Stop payload does not carry
+ * `last_assistant_message`: without it, a change in the payload shape would silently turn
+ * the gate into a permanent no-op. Only the tail is read, since a transcript grows without
+ * bound but the last turn is always at the end.
+ */
+export function lastAssistantMessage(transcriptPath: string): string {
+    const lines = tail(transcriptPath, TAIL_BYTES).split("\n");
+    for (let i = lines.length - 1; i >= 0; i--) {
+        const line = lines[i]!;
+        if (!line.includes("\"assistant\"")) continue;
+        let entry: { message?: { role?: string; content?: unknown } };
+        try { entry = JSON.parse(line); } catch { continue; }
+        const message = entry.message;
+        if (!message || message.role !== "assistant") continue;
+        const content = message.content;
+        if (typeof content === "string") { if (content.trim()) return content; continue; }
+        if (!Array.isArray(content)) continue;
+        const text = content
+            .filter((b): b is { type: string; text: string } => !!b && typeof b === "object" && (b as { type?: string }).type === "text" && typeof (b as { text?: string }).text === "string")
+            .map((b) => b.text)
+            .join("\n")
+            .trim();
+        if (text) return text;
+    }
+    return "";
 }

@@ -180,24 +180,14 @@ var BUILTIN_RULES = [
     severity: "warn",
     skill: "frontend-policy"
   },
-  {
-    id: "fe-flex-truncate-min-width",
-    label: "Truncating flex item needs min-w-0",
-    files: ["*.tsx", "*.jsx", "*.vue", "*.svelte", "*.astro", "*.html"],
-    excludeFiles: ["*.test.*", "*.spec.*", "**/tests/**", "**/__tests__/**"],
-    scope: "file",
-    // A flex item that truncates but never sets min-w-0. This is the canonical "text sticks
-    // out of its card" bug and it is unambiguous: `truncate` implies white-space:nowrap, so
-    // the item's min-content width is the whole string, and a flex item's default
-    // min-width:auto refuses to shrink below that - it overflows instead. flex-1/flex-auto
-    // says it IS a flex item. The negative lookahead is scoped to the same class attribute
-    // (not the file) so a min-w-0 elsewhere never masks a broken element here.
-    pattern: `class(?:Name)?=["'](?![^"']*\\bmin-w-0\\b)[^"']*(?:\\b(?:flex-1|flex-auto)\\b[^"']*\\btruncate\\b|\\btruncate\\b[^"']*\\b(?:flex-1|flex-auto)\\b)[^"']*["']`,
-    flags: "",
-    message: "Flex item truncates without min-w-0, so it will overflow its container instead of shrinking (a flex item's default min-width:auto refuses to go below its content width, and truncate makes that the full string). Add min-w-0 to this element and to any ancestor between it and the container; for a grid track holding text use minmax(0, 1fr) rather than 1fr (frontend-policy).",
-    severity: "warn",
-    skill: "frontend-policy"
-  },
+  // NOTE: there is deliberately no "truncating flex item needs min-w-0" rule. It was written
+  // and then removed after measuring it in a browser: per CSS Flexbox 4.5 a flex item's
+  // automatic minimum size only applies while its computed overflow is visible, and Tailwind's
+  // `truncate` sets overflow:hidden - so `flex-1 truncate` already shrinks and ellipsizes, and
+  // the rule only ever flagged correct code. The real defect is an ANCESTOR flex/grid item with
+  // visible overflow wrapping the truncating element, which spans two elements and so has no
+  // single-line signature. It stays in frontend-policy as guidance rather than becoming a rule
+  // that cries wolf.
   {
     id: "fe-ellipsis-without-overflow",
     label: "Ellipsis needs overflow hidden",
