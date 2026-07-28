@@ -1,6 +1,6 @@
 {
   "generator": "enigma seal",
-  "cliVersion": "1.31.2",
+  "cliVersion": "1.31.3",
   "count": 19,
   "skills": [
     {
@@ -80,7 +80,7 @@
       "version": "1.6.0",
       "description": "Guidance for distinctive, intentional visual design when building new UI or reshaping an existing one.",
       "provider": "FJRG2007/enigma",
-      "updated": "2026-07-28T20:30:12+02:00",
+      "updated": "2026-07-29T01:18:36+02:00",
       "sha": "9e30ee7d8a1a1e8c6e7f4e043857cd01841c68a427752e45bc0cad9ec5cfa279"
     },
     {
@@ -88,7 +88,7 @@
       "version": "1.19.0",
       "description": "Frontend architecture: reusable components, abstraction thresholds, state management, no-op detection (skip any operation whose result equals current state, not just form saves), instant first paint (render the shell, load data async, skeletons), perceived performance (prefetch on intent, debounce/throttle, cancel stale requests, avoid waterfalls, lazy widgets), large-list rendering (infinite scroll/pagination, virtualization, skeletons, progressive loading), optimistic UI with rollback, visual restraint (one card level, spacing before borders, one elevation scale), icon actions (repeated row/card actions are icon-only buttons with aria-label plus title, not text labels), responsive/adaptive layout (fluid units, breakpoints, no overlap/overflow, viewport meta, touch targets), variable-length text (min-width:0 in flex/grid, wrap vs truncate, long unbroken strings, worst-case content checks), and AI chat/agent interfaces via Vercel's AI Elements registry instead of hand-rolled message threads.",
       "provider": "FJRG2007/enigma",
-      "updated": "2026-07-28T20:30:12+02:00",
+      "updated": "2026-07-29T01:18:36+02:00",
       "sha": "9f36e32b0a0c31c48d05b26b50112e12014739ad9002ff3a68c8f639ddd44476"
     },
     {
@@ -120,7 +120,7 @@
       "version": "1.0.0",
       "description": "Create new skills, modify and improve existing skills, and measure skill performance with evals and benchmarks.",
       "provider": "FJRG2007/enigma",
-      "updated": "2026-06-16T16:39:13+02:00",
+      "updated": "2026-07-29T01:18:36+02:00",
       "sha": "13d24c217bdb6fe83fe16835d8f5c3d397a9f3338f16876c61ef96e97f34c90a"
     },
     {
