@@ -18,10 +18,13 @@ Each rule is **data**, not code - one entry, either built in or in `~/.enigma-gu
 
 - **file rules** regex-scan the edited file - e.g. a migration using `SERIAL`/`AUTO_INCREMENT` instead of a UUID key, a handler that assigns a request body without validating it (Zod/TS, Pydantic/Py), a raw `<input type="password">` that should use your reusable Input, a native `alert`/`confirm`/`prompt` that should be a design-system dialog, or a `text-overflow: ellipsis` with no overflow value, which does nothing and lets the text spill.
 - **project rules** run a small built-in check against the project (e.g. a TypeScript project on a relational datastore with no Prisma).
+- **size rules** set a `maxBytes` budget on a file instead of a pattern - used to stop an agent memory file (`CLAUDE.md`, `AGENTS.md`) from growing past 40 KB.
 
 A file rule can also require a mitigation to be present: with an `absent` regex, the rule fires only when the risky pattern appears **without** the fix in the same file - that is how "reads input without validating it" is detected across languages.
 
 Rules carry a severity: **block** is enforced (the agent hook exits non-zero, feeding the fix back to the model; a commit fails), **warn** is advisory (printed, never blocks). Messages name the owning skill (e.g. `database-expert`) so a fix is traceable.
+
+One rule is about cost rather than correctness: `ctx-memory-budget` blocks an edit to a `CLAUDE.md` or `AGENTS.md` larger than 40 KB. A memory file loads into every session in the project, so a knowledge base living there is paid for on every task, relevant or not. Keep it an index - one line per topic - and move the detail into docs the agent opens on demand. Disable it with `enigma guardrails disable ctx-memory-budget` if you keep a large memory file on purpose.
 
 The seed set is deliberately tiny and precise - it matches only unambiguous violations, so a false positive never trains the agent (or you) to ignore it. Add your own rules by dropping an entry in `~/.enigma-guardrails.json`.
 

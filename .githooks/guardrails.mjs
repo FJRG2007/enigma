@@ -314,6 +314,21 @@ var BUILTIN_RULES = [
     message: "Leaking an internal error to the client. Never send a caught exception's .message/.stack (or a raw ORM/DB error) in a 5xx response - it exposes your schema, ORM, and internals. Log it server-side (console.error / your logger) and return a generic message with a stable code (validation-policy, security-policy).",
     severity: "warn",
     skill: "validation-policy"
+  },
+  {
+    id: "ctx-memory-budget",
+    label: "Agent memory file within its context budget",
+    // Basename globs, so this covers the file at any depth. Only the agent memory files:
+    // every other doc is read on demand and costs nothing until it is opened.
+    files: ["CLAUDE.md", "AGENTS.md"],
+    scope: "file",
+    // Size has no regex form, hence maxBytes. 40 KB is ~10k tokens paid on EVERY session
+    // in the project, relevant or not - a memory file that large is already broken, and
+    // the fix (an index plus on-demand docs) is mechanical, so this blocks rather than
+    // warns: a warn exits 0 and never reaches the model that keeps growing the file.
+    maxBytes: 4e4,
+    message: "This memory file loads into every session in the project, so its cost is paid on every task regardless of relevance. Keep it an INDEX: move each subsystem's detail into its own doc (docs/notes/<topic>.md) and leave one line here saying what the note covers and when to read it. Route new conventions by tier - a file-local syntactic signature becomes a guardrail rule, a domain-scoped rule belongs in the owning skill (loaded on demand), and only a truly universal rule stays in memory. Turn this off with `enigma guardrails disable ctx-memory-budget`.",
+    severity: "block"
   }
 ];
 var PROJECT_CHECKS = {
@@ -386,7 +401,10 @@ function checkFile(file, content, projectRoot) {
     if (!rule.files.some((g) => globToRegExp(g).test(norm))) continue;
     if (rule.excludeFiles?.some((g) => globToRegExp(g).test(norm))) continue;
     const base = { ruleId: rule.id, severity: rule.severity, file: norm, message: rule.message, skill: rule.skill };
-    if (rule.scope === "file" && rule.pattern) {
+    if (rule.scope === "file" && rule.maxBytes) {
+      const bytes = Buffer.byteLength(content, "utf8");
+      if (bytes > rule.maxBytes) out.push({ ...base, message: `${rule.message} (${bytes} bytes, budget ${rule.maxBytes})` });
+    } else if (rule.scope === "file" && rule.pattern) {
       if (rule.absent) {
         try {
           if (new RegExp(rule.absent, "i").test(content)) continue;

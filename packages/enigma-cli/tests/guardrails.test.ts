@@ -216,6 +216,17 @@ test("flags a typographic dash in UI copy, never one the code is handling", () =
     expect(hit("apps/dist/main.js", `t("x ${EM} y")`)).toBe(false);
 });
 
+test("flags an agent memory file over its context budget, and only that file kind", () => {
+    const big = `# notes\n${"a".repeat(45_000)}`;
+    const f = checkFile("CLAUDE.md", big, null);
+    expect(f.length).toBe(1);
+    expect(f[0]!.ruleId).toBe("ctx-memory-budget");
+    expect(f[0]!.severity).toBe("block");
+    expect(f[0]!.message).toContain("45008 bytes");
+    expect(checkFile("docs/notes/dashboard.md", big, null)).toEqual([]);
+    expect(checkFile("CLAUDE.md", "# notes\nan index, not a knowledge base\n", null)).toEqual([]);
+});
+
 test("built-in rules cover the documented conventions", () => {
     const ids = BUILTIN_RULES.map((r) => r.id);
     for (const id of ["db-uuid-pk", "db-ts-orm-prisma", "be-validate-input-ts", "be-validate-input-py", "fe-password-input", "fe-no-native-dialog", "fe-skeleton-loading", "fe-viewport-meta", "fe-ai-elements-chat", "ui-no-em-dash"]) {

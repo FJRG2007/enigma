@@ -28,8 +28,8 @@ import type { OutputStyle, MinimalCode, DashboardMode } from "./config";
 import { isDir, isNewer, readJson, listFilesRel, computeContentSha } from "./util";
 import { resolveBypassSelection, applyBypass, mirrorAccountSettings } from "./permissions";
 import { cachedRemoteSkills, refreshRemoteSkills, shouldCheckRemote } from "./skills-remote";
+import { existsSync, readdirSync, readFileSync, writeFileSync, statSync, cpSync, mkdirSync, rmSync } from "node:fs";
 import { disableClaudeAttribution, disableClaudeFeedbackSurvey, disableClaudeStatusline, enableClaudeStatusline } from "./claude";
-import { existsSync, readdirSync, readFileSync, writeFileSync, cpSync, mkdirSync, rmSync } from "node:fs";
 import { AGENTS, MANAGED_PROVIDER, isManagedProvider, discoverAgents, runningStatus, localTargetsAt } from "./agents";
 import { readConfig, setEnigmaValue, setSkillDiscarded, setSkillAgentOff, OUTPUT_STYLES, MINIMAL_CODE_LEVELS, DASHBOARD_MODES } from "./config";
 
@@ -771,6 +771,26 @@ export function sealSources(): void {
 }
 
 /**
+ * Byte budget for a deployed memory file. Memory is the only always-on channel, so every
+ * byte here is paid on every session of every user regardless of the task. Anything that is
+ * not a truly universal rule belongs in a policy skill (loaded on demand) or a guardrail
+ * rule (deterministic, token-free) instead - see the three-tier routing doctrine.
+ */
+export const MEMORY_BUDGET_BYTES = 24_000;
+
+/** Report every bundled memory file that exceeds MEMORY_BUDGET_BYTES. */
+function checkMemoryBudget(): string[] {
+    if (!isDir(MEMORY_ROOT)) return [];
+    const problems: string[] = [];
+    for (const file of readdirSync(MEMORY_ROOT)) {
+        if (!file.endsWith(".md")) continue;
+        const bytes = statSync(join(MEMORY_ROOT, file)).size;
+        if (bytes > MEMORY_BUDGET_BYTES) problems.push(`memory/${file}: ${bytes} bytes exceeds the ${MEMORY_BUDGET_BYTES}-byte always-on budget - move detail into a policy skill or a guardrail rule`);
+    }
+    return problems;
+}
+
+/**
  * Integrity gate (CI/pre-commit): verify each source skill is well-formed and
  * sealed. Exits non-zero on any problem.
  */
@@ -802,6 +822,7 @@ export function checkSources(): void {
     }
     const cited = citationVersion();
     if (cited !== null && cited !== cli) problems.push(`CITATION.cff: stale version (${cited} != ${cli}) - run 'enigma seal'`);
+    problems.push(...checkMemoryBudget());
     if (problems.length) {
         console.error(`Integrity check FAILED (${problems.length} problem(s) across ${checked} skill(s)):`);
         for (const pr of problems) console.error(`  - ${pr}`);
