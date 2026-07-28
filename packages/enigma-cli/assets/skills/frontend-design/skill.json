@@ -3,7 +3,7 @@
   "version": "1.5.0",
   "provider": "FJRG2007/enigma",
   "description": "Guidance for distinctive, intentional visual design when building new UI or reshaping an existing one.",
-  "updated": "2026-06-25T15:51:43-04:00",
-  "cliVersion": "1.31.0",
+  "updated": "2026-07-28T20:30:12+02:00",
+  "cliVersion": "1.31.1",
   "sha": "5fbc294a4f33aba03fd93e76e0cfeeefe04389b6c8e8493043dc4036ad8f4d19"
 }
