@@ -1056,7 +1056,7 @@
                 <pre id="pgRaw" class="pg-out"></pre>
             </div>
             <div class="panel">
-                <div class="set-cat-h">curl <button id="pgCopyCurl" type="button" class="iconbtn" title="Copy" aria-label="Copy curl">Copy</button></div>
+                <div class="set-cat-h">curl <button id="pgCopyCurl" type="button" class="iconbtn" title="Copy" aria-label="Copy the curl command"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button></div>
                 <pre id="pgCurl" class="pg-out"></pre>
             </div>
         </div>
@@ -3301,10 +3301,10 @@ export {
             const state = !g.deployed ? '<span class="tag">not deployed</span>'
                 : g.edited ? '<span class="tag exp">edited</span>'
                 : g.managed ? '<span class="tag meas">managed</span>' : '<span class="tag">custom</span>';
-            const reset = (g.deployed && g.edited) ? ' <button type="button" class="iconbtn" data-mem-reset="' + esc(g.id) + '" title="Restore the managed version">reset</button>' : "";
+            const reset = (g.deployed && g.edited) ? ' <button type="button" class="iconbtn" data-mem-reset="' + esc(g.id) + '" title="Restore the managed version" aria-label="Restore the managed version of ' + esc(g.file) + '">' + RESTORE_ICON + "</button>" : "";
             return '<div class="set-row"><div class="set-meta"><div class="set-name">' + esc(g.file) + " " + apps + " " + state + "</div>"
                 + '<div class="set-hint">' + (g.deployed ? "Deployed - edit to customize" : "Not deployed yet - editing creates it") + "</div></div>"
-                + '<div class="set-ctl ladd" style="align-items:center"><button type="button" class="toggle on" data-mem-edit="' + esc(g.id) + '">Edit</button>' + reset + "</div></div>";
+                + '<div class="set-ctl ladd" style="align-items:center"><button type="button" class="iconbtn" title="Edit" aria-label="Edit ' + esc(g.file) + '" data-mem-edit="' + esc(g.id) + '">' + PENCIL_ICON + "</button>" + reset + "</div></div>";
         }
 
         async function loadMemory(project) {
@@ -3579,18 +3579,18 @@ export {
             const upd = s.source !== "enigma" ? ""
                 : s.update === "update" ? '<span class="tag warn">update available</span>'
                 : s.update === "modified" ? '<span class="tag ext">modified</span>' : "";
-            const edit = '<button type="button" class="iconbtn" title="Edit" aria-label="Edit" data-name="' + esc(s.name) + '" data-action="edit" data-enigma="' + (s.source === "enigma" ? 1 : 0) + '">'
+            const edit = '<button type="button" class="iconbtn" title="Edit" aria-label="Edit ' + esc(s.name) + '" data-name="' + esc(s.name) + '" data-action="edit" data-enigma="' + (s.source === "enigma" ? 1 : 0) + '">'
                 + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>';
             // Propose an improvement: open the skill's source on GitHub (view / edit / open a PR).
             const propose = s.source === "enigma"
-                ? '<button type="button" class="iconbtn" title="Propose an improvement (opens GitHub)" aria-label="Propose an improvement" data-name="' + esc(s.name) + '" data-action="propose">'
+                ? '<button type="button" class="iconbtn" title="Propose an improvement (opens GitHub)" aria-label="Propose an improvement to ' + esc(s.name) + '" data-name="' + esc(s.name) + '" data-action="propose">'
                     + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg></button>'
                 : "";
             const main = s.source === "enigma"
                 ? '<button type="button" class="toggle' + (s.discarded ? "" : " on") + '" data-kind="bool" title="'
                     + (s.discarded ? "Disabled - click to enable" : "Enabled - click to disable") + '" data-name="' + esc(s.name)
                     + '" data-action="' + (s.discarded ? "enable" : "disable") + '">' + (s.discarded ? "Disabled" : "Enabled") + "</button>"
-                : '<button type="button" class="btn-danger" data-name="' + esc(s.name) + '" data-action="remove">Remove</button>';
+                : '<button type="button" class="btn-danger icon" title="Remove" aria-label="Remove skill ' + esc(s.name) + '" data-name="' + esc(s.name) + '" data-action="remove">' + TRASH_ICON + "</button>";
             // Per-app on/off chips (Claude Code, Codex, OpenCode...). Only for an enabled enigma
             // skill: when the whole skill is disabled the per-agent state is moot. data-off is the
             // value to SET on click (turn off if currently on, on if currently off).
@@ -3760,6 +3760,10 @@ export {
         }
         const TRASH_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>';
         const REFRESH_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>';
+        // Row actions are icons, never words: the label lives in title + aria-label so a row stays
+        // narrow and reads at a glance (the same convention as the brand logos above).
+        const PENCIL_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
+        const RESTORE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 2v6h6"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L3 8"/></svg>';
         function accountRow(a) {
             const stateTxt = a.loginState === "expired" ? "session expired" : a.loginState === "empty" ? "signed out" : a.loginState === "absent" ? "not logged in" : "";
             const badges = (a.active ? '<span class="tag meas">active</span>' : "")
@@ -3767,6 +3771,9 @@ export {
                     ? '<span class="tag">' + esc(a.email || "logged in") + "</span>"
                     : '<span class="tag warn">' + (a.email ? esc(a.email) + " · " : "") + (stateTxt || "not logged in") + "</span>");
             const btn = (act, label, cls) => '<button type="button" class="' + (cls || "toggle") + '" data-acc="' + act + '" data-tool="' + esc(a.tool) + '" data-name="' + esc(a.name) + '">' + label + "</button>";
+            // Icon form of the same row action, for the ones with a universally read glyph. The
+            // written label stays only where no glyph says it (Use, Log in, Reuse session, Provider).
+            const iconBtn = (act, title, icon) => '<button type="button" class="iconbtn" title="' + title + '" aria-label="' + title + " " + esc(a.name) + '" data-acc="' + act + '" data-tool="' + esc(a.tool) + '" data-name="' + esc(a.name) + '">' + icon + "</button>";
             const removeBtn = '<button type="button" class="btn-danger icon" title="Remove" aria-label="Remove account ' + esc(a.name) + '" data-acc="remove" data-tool="' + esc(a.tool) + '" data-name="' + esc(a.name) + '">' + TRASH_ICON + "</button>";
             // Provider override (e.g. MiniMax) only for tools that support it, and never the
             // built-in "default" account (kept on the vendor default). Managed accounts only.
@@ -3779,7 +3786,7 @@ export {
                 + btn("login", a.loggedIn ? "Re-login" : "Log in")
                 + transferBtn
                 + provBtn
-                + (a.removable ? btn("rename", "Rename") + removeBtn : "")
+                + (a.removable ? iconBtn("rename", "Rename", PENCIL_ICON) + removeBtn : "")
                 + "</div>";
             const toolIc = agentSvg(a.tool);
             const toolBadge = toolIc
@@ -3803,7 +3810,7 @@ export {
             }).join("");
             const acts = '<div class="set-ctl" style="display:flex;gap:6px;align-items:center">'
                 + (p.active ? "" : '<button type="button" class="toggle" data-prof-act="activate" data-name="' + esc(p.name) + '">Use</button>')
-                + '<button type="button" class="toggle" data-prof-act="rename" data-name="' + esc(p.name) + '">Rename</button>'
+                + '<button type="button" class="iconbtn" title="Rename" aria-label="Rename profile ' + esc(p.name) + '" data-prof-act="rename" data-name="' + esc(p.name) + '">' + PENCIL_ICON + "</button>"
                 + '<button type="button" class="btn-danger icon" title="Remove" aria-label="Remove profile ' + esc(p.name) + '" data-prof-act="remove" data-name="' + esc(p.name) + '">' + TRASH_ICON + "</button></div>";
             return '<div class="set-row"><div class="set-meta"><div class="set-name">' + esc(p.name) + (p.active ? ' <span class="tag meas">active</span>' : "")
                 + '</div><div class="set-hint" style="margin-top:6px">' + maps + "</div></div>" + acts + "</div>";
@@ -4573,12 +4580,25 @@ export {
             const tog = $("pgTools");
             tog.addEventListener("click", () => { const on = tog.getAttribute("aria-checked") !== "true"; tog.classList.toggle("on", on); tog.setAttribute("aria-checked", on ? "true" : "false"); tog.textContent = on ? "On" : "Off"; });
             $("pgMode").addEventListener("change", pgSyncMode);
-            $("pgCopyCurl").addEventListener("click", () => {
+            const copyBtn = $("pgCopyCurl");
+            // The button is an icon, so the toast is not the only confirmation: swap the icon for a
+            // check on the control itself, then restore the captured original markup.
+            const copyIcon = copyBtn.innerHTML;
+            const CHECK_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
+            let copyTimer = null;
+            const copied = () => {
+                toast.success("Copied curl");
+                copyBtn.innerHTML = CHECK_ICON;
+                copyBtn.classList.add("go");
+                clearTimeout(copyTimer);
+                copyTimer = setTimeout(() => { copyBtn.innerHTML = copyIcon; copyBtn.classList.remove("go"); }, 1200);
+            };
+            copyBtn.addEventListener("click", () => {
                 const txt = $("pgCurl").textContent || "";
                 if (!txt) return;
-                (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(() => toast.success("Copied curl")).catch(() => {
+                (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(copied).catch(() => {
                     const ta = document.createElement("textarea"); ta.value = txt; document.body.appendChild(ta); ta.select();
-                    try { document.execCommand("copy"); toast.success("Copied curl"); } catch { toast.error("Copy failed"); }
+                    try { document.execCommand("copy"); copied(); } catch { toast.error("Copy failed"); }
                     document.body.removeChild(ta);
                 });
             });
@@ -4977,7 +4997,7 @@ export {
             const ctl = !asSwitch
                 ? '<select class="choice" data-proj-cfg="' + esc(c.key) + '">' + c.choices.map((x) => '<option value="' + esc(x) + '"' + (x === c.choice ? " selected" : "") + ">" + esc(prettyChoice(x)) + "</option>").join("") + "</select>"
                 : '<button type="button" class="toggle' + (c.value ? " on" : "") + '" data-kind="bool" data-proj-cfg-bool="' + esc(c.key) + '" data-on="' + (c.value ? 1 : 0) + '" title="' + (c.value ? "On" : "Off") + '">' + (c.value ? "On" : "Off") + "</button>";
-            const reset = c.overridden ? ' <button type="button" class="iconbtn" data-proj-cfg-reset="' + esc(c.key) + '" title="Inherit global">reset</button>' : "";
+            const reset = c.overridden ? ' <button type="button" class="iconbtn" data-proj-cfg-reset="' + esc(c.key) + '" title="Inherit global" aria-label="Inherit the global value for ' + esc(c.label) + '">' + RESTORE_ICON + "</button>" : "";
             const badge = c.overridden ? ' <span class="tag">project</span>' : ' <span class="tag">inherited</span>';
             return '<div class="set-row"><div class="set-meta"><div class="set-name">' + esc(c.label) + badge + '</div><div class="set-hint">' + esc(c.hint) + "</div></div>"
                 + '<div class="set-ctl ladd" style="align-items:center">' + ctl + reset + "</div></div>";

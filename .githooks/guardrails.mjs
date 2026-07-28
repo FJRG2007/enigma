@@ -227,6 +227,49 @@ var BUILTIN_RULES = [
     skill: "frontend-policy"
   },
   {
+    id: "fe-icon-action-button",
+    label: "Repeated actions are icon buttons, not text labels",
+    files: ["*.tsx", "*.jsx", "*.vue", "*.svelte", "*.astro", "*.html", "*.htm", "*.ts", "*.js", "*.mts", "*.cts"],
+    // Same two-form generated/vendored excludes as ui-no-em-dash: `**/x/**` needs a leading
+    // segment, so it misses a root-level dist/.
+    excludeFiles: [
+      "*.test.*",
+      "*.spec.*",
+      "**/tests/**",
+      "**/__tests__/**",
+      "**/fixtures/**",
+      "*.min.js",
+      "**/dist/**",
+      "**/build/**",
+      "**/_build/**",
+      "**/node_modules/**",
+      "**/vendor/**",
+      "dist/**",
+      "build/**",
+      "_build/**",
+      "node_modules/**",
+      "vendor/**"
+    ],
+    scope: "file",
+    // A button whose ENTIRE content is one bare action verb. Three things keep this precise,
+    // measured over ~1100 real UI files (this repo, apps/web and references/repos): 10 hits,
+    // all genuine text action buttons, 0 false positives.
+    // (1) `[^>]*` forces the whole element onto one line with NOTHING but the word inside, so
+    //     a button that already carries an icon (its <svg .../> contains a '>') never matches -
+    //     icon-plus-label is not the defect, a bare word is. It still catches the string-concat
+    //     form ('<button data-id="' + esc(id) + '">Edit</button>') because that has no '>' either.
+    // (2) The verb set is limited to actions with a universally understood glyph that repeat per
+    //     row or per card. Save/Cancel/Submit/Add and any multi-word label ("Delete project") are
+    //     deliberately absent: those are primary buttons whose job is to be read.
+    // (3) Case-insensitive on the tag, so a <Button> component matches too; the backreference
+    //     keeps the closing tag paired with the opening one.
+    pattern: "^(?!.*enigma:).*<(button)\\b[^>]*>\\s*(?:Copy|Remove|Delete|Edit|Rename|Duplicate|Download|Share|Refresh|Reload)\\s*</\\1>",
+    absent: "enigma:allow-text-actions",
+    message: 'Action button labelled with a word. A repeated row or card action (copy, edit, rename, duplicate, remove, delete, download, share, refresh) reads faster and costs far less width as an ICON button: drop the visible word for a single icon taken from the project\'s one icon set, and keep the action reachable without sight - aria-label="<Action> <what it acts on>" for the accessible name, title="<Action>" for the hover tooltip, aria-hidden="true" on the icon itself (an <img> icon carries the same text as its alt instead). Keep a written label only where the design or the user asks for one, or on a primary/confirmation button whose whole job is to be read - then mark the line with an `enigma:` note, or add `enigma:allow-text-actions` to the file (frontend-policy).',
+    severity: "block",
+    skill: "frontend-policy"
+  },
+  {
     id: "doc-no-file-tree",
     label: "No ASCII file-tree in the README",
     // README only, at any depth. Scoped deliberately: a file tree in a deliberate

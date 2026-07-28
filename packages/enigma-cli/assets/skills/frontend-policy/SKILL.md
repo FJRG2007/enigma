@@ -1,6 +1,6 @@
 ---
 name: frontend-policy
-description: Frontend architecture - reusable components, abstraction thresholds, state management, no-op detection (skip any operation whose result equals the current state - form saves, toggles, filters, reorders - not just saves), client-side caching (localStorage/sessionStorage to avoid redundant server calls and survive rate limits), instant first paint (render the shell immediately, load data async via the API, show skeletons - never block render on data), perceived performance and responsiveness (instant interaction feedback, prefetch on intent, debounce/throttle, cancel stale requests, avoid request waterfalls, lazy-load heavy widgets), large-list rendering (virtualized infinite scroll vs pagination, skeletons, progressive/parallel loading, short-TTL caching), optimistic UI with rollback, visual restraint (never a card inside a card, borders only where they carry information, spacing and background tone before chrome), responsive/adaptive layout (fluid units, breakpoints, no overlap or horizontal overflow, viewport meta, touch targets), AI chat/assistant/agent interfaces (use Vercel's AI Elements registry for message threads, streaming, reasoning and tool-call panels, prompt inputs - never hand-roll chat UI in React), and periodic React code-health audits (react-doctor). Use when building or changing UI components, client state, forms/save flows, data fetching/caching, lists that show lots of data, loading states, dashboards/panels, layout/responsiveness, making the UI feel fast, building a chat/AI/agent/LLM interface, or any frontend structure.
+description: Frontend architecture - reusable components, abstraction thresholds, state management, no-op detection (skip any operation whose result equals the current state - form saves, toggles, filters, reorders - not just saves), client-side caching (localStorage/sessionStorage to avoid redundant server calls and survive rate limits), instant first paint (render the shell immediately, load data async via the API, show skeletons - never block render on data), perceived performance and responsiveness (instant interaction feedback, prefetch on intent, debounce/throttle, cancel stale requests, avoid request waterfalls, lazy-load heavy widgets), large-list rendering (virtualized infinite scroll vs pagination, skeletons, progressive/parallel loading, short-TTL caching), optimistic UI with rollback, visual restraint (never a card inside a card, borders only where they carry information, spacing and background tone before chrome), icon actions (repeated row/card actions like copy, edit, rename, remove, download, refresh are icon-only buttons carrying aria-label plus title, never a text label), responsive/adaptive layout (fluid units, breakpoints, no overlap or horizontal overflow, viewport meta, touch targets), AI chat/assistant/agent interfaces (use Vercel's AI Elements registry for message threads, streaming, reasoning and tool-call panels, prompt inputs - never hand-roll chat UI in React), and periodic React code-health audits (react-doctor). Use when building or changing UI components, client state, forms/save flows, data fetching/caching, lists that show lots of data, loading states, dashboards/panels, layout/responsiveness, making the UI feel fast, building a chat/AI/agent/LLM interface, or any frontend structure.
 ---
 
 # Frontend Architecture Policy
@@ -83,6 +83,30 @@ Never apply more than one of the three to the same boundary. A block with a bord
 **Shadows imply one light source.** Pick a small elevation scale (two or three levels) and use it consistently, with the light always coming from the same direction - a soft shadow offset downwards, larger and softer the higher the element sits. Never ring an element with shadow on all sides, stack several shadows on one element, or use elevation decoratively on something that is not raised above the page.
 
 **Fewer, larger, quieter.** Prefer one padded region over four nested ones; consistent padding over per-block variation; and type weight, size and colour over outlines when establishing hierarchy. If a screen looks busy, the fix is almost always to delete containers, not to restyle them.
+
+---
+
+## Icon Actions (Words Only Where No Glyph Speaks)
+
+Text in the chrome is the same problem as an extra border: it costs width, it repeats on every row, and it makes the screen slower to scan. An action that has a universally read glyph is an ICON button, not a word. Apply this by default, without being asked.
+
+**Iconify the repeated actions.** Copy, edit, rename, duplicate, remove, delete, download/export, upload/import, refresh, share, open externally, expand/collapse, close: one icon, no label. These appear once per row or per card, so a word there is paid N times over. Take every glyph from the project's ONE icon set (never emoji, never a second library for one icon), and keep paired directions mirrored: export/download is a downward arrow, import/upload an upward one.
+
+**An icon button is not done until it has a name.** Removing the visible word removes the meaning for anyone who cannot see or does not recognize the glyph, so replace it in the accessibility layer, always:
+
+- `aria-label` naming the action AND what it acts on ("Remove account Work", not "Remove"). This is what a screen reader announces, and what makes a list of identical buttons distinguishable.
+- `title` with the short action ("Remove") so pointer users get the hover tooltip.
+- `aria-hidden="true"` on the inline SVG, so the icon is not announced twice. An `<img>` icon carries the same text as its `alt` instead.
+- Keep the touch target at ~44px with padding even though the glyph is 15-16px, and keep the press state (Perceived Performance): an icon button gives less visible feedback than a labelled one, so it needs the `:active` shade more, not less.
+
+**Keep the word when the word is doing the work.** This is a default, not an absolute. A written label stays when:
+
+- No conventional glyph exists for the action ("Reuse session", "Log in", "Provider", "Inherit global"). An invented glyph is worse than a word, because a tooltip does not exist on touch.
+- It is the primary action of a form, dialog or page ("Save changes", "Publish", "Send"), including the destructive confirm, which must name what it destroys ("Delete project 'Acme'").
+- It reports state rather than triggering an action (an Enabled/Disabled toggle reads its own value).
+- The design, the brief, or the user asks for a label. Their call wins.
+
+The guardrail `fe-icon-action-button` blocks a button whose entire content is a bare action verb. For a deliberate exception, mark the line with an `enigma:` note or add `enigma:allow-text-actions` to the file.
 
 ---
 

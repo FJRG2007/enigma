@@ -226,3 +226,34 @@ matrix("ui-no-em-dash", false, [
     { name: "build output is excluded", file: "apps/dist/main.js", code: `t("x ${EM_DASH} y")` },
     { name: "vendored tree is excluded", file: "vendor/pkg/ui.js", code: `el.textContent = "a ${EM_DASH} b";` },
 ]);
+
+// --- fe-icon-action-button ---------------------------------------------------------
+// The "ignores" table is the load-bearing half: a button that already has an icon, a
+// label that is a whole phrase, and a primary form action must all stay untouched, or
+// the rule would flag correct markup on every screen that has a form.
+
+matrix("fe-icon-action-button", true, [
+    { name: "bare Copy button in JSX", file: "src/Row.tsx", code: "<button onClick={copy}>Copy</button>" },
+    { name: "bare Remove button", file: "src/Member.tsx", code: "<button className=\"danger\" onClick={onRemove}>Remove</button>" },
+    { name: "capitalized Button component", file: "src/Row.tsx", code: "<Button variant=\"ghost\" onClick={onEdit}>Edit</Button>" },
+    { name: "table row Delete in plain HTML", file: "assets/review.html", code: "<td><button class=\"btn-delete\" onclick=\"deleteRow(1)\">Delete</button></td>" },
+    { name: "string-concatenated row action", file: "assets/index.html", code: "const html = '<button type=\"button\" data-name=\"' + esc(s.name) + '\" data-action=\"remove\">Remove</button>';" },
+    { name: "Rename in a profile row", file: "assets/index.html", code: "'<button type=\"button\" class=\"toggle\" data-prof-act=\"rename\">Rename</button>'" },
+    { name: "Refresh with surrounding whitespace", file: "src/Panel.vue", code: "<button class=\"ghost\"> Refresh </button>" },
+    { name: "Download action", file: "src/Export.svelte", code: "<button on:click={save}>Download</button>" },
+]);
+
+matrix("fe-icon-action-button", false, [
+    { name: "already an icon button with an accessible name", file: "src/Row.tsx", code: "<button title=\"Copy\" aria-label=\"Copy token\"><CopyIcon aria-hidden=\"true\" /></button>" },
+    { name: "inline svg inside the button", file: "assets/index.html", code: "<button type=\"button\" class=\"iconbtn\" title=\"Refresh\" aria-label=\"Refresh\"><svg viewBox=\"0 0 24 24\"><path d=\"M23 4v6h-6\"/></svg></button>" },
+    { name: "icon beside the label is not the defect", file: "src/Row.tsx", code: "<button onClick={copy}><CopyIcon aria-hidden=\"true\" />Copy</button>" },
+    { name: "multi-word label names what it acts on", file: "src/Danger.tsx", code: "<button onClick={destroy}>Delete project</button>" },
+    { name: "primary form action keeps its text", file: "src/Form.tsx", code: "<button type=\"submit\">Save</button>" },
+    { name: "cancel is not an iconified action", file: "src/Form.tsx", code: "<button onClick={close}>Cancel</button>" },
+    { name: "the verb as a heading, not a button", file: "src/Row.tsx", code: "<span className=\"label\">Copy</span>" },
+    { name: "the verb in an option, not a button", file: "src/Menu.tsx", code: "<option value=\"copy\">Copy</option>" },
+    { name: "deliberate text label marked on the line", file: "src/Dialog.tsx", code: "<button className=\"destructive\" onClick={destroy}>Delete</button> // enigma: confirmation dialog reads as text" },
+    { name: "file-wide opt-out", file: "src/Dialog.tsx", code: "// enigma:allow-text-actions\n<button onClick={destroy}>Delete</button>" },
+    { name: "test fixture is excluded", file: "src/__tests__/Row.test.tsx", code: "<button>Copy</button>" },
+    { name: "build output is excluded", file: "apps/dist/main.js", code: "h('<button class=\"x\">Remove</button>')" },
+]);

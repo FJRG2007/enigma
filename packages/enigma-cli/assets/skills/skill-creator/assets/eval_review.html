@@ -32,8 +32,10 @@
     .toggle .slider::before { content: ""; position: absolute; width: 18px; height: 18px; left: 3px; bottom: 3px; background: white; border-radius: 50%; transition: 0.2s; }
     .toggle input:checked + .slider { background: #d97757; }
     .toggle input:checked + .slider::before { transform: translateX(20px); }
-    .btn-delete { background: #c44; color: white; padding: 0.3rem 0.6rem; border: none; border-radius: 4px; cursor: pointer; font-size: 0.75rem; font-family: 'Poppins', sans-serif; }
+    .btn-delete { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; background: #c44; color: white; padding: 0; border: none; border-radius: 4px; cursor: pointer; }
     .btn-delete:hover { background: #a33; }
+    .btn-delete:active { transform: scale(0.93); }
+    .btn-delete svg { width: 14px; height: 14px; display: block; }
     .summary { margin-top: 1rem; color: #b0aea5; font-size: 0.875rem; }
   </style>
 </head>
@@ -61,6 +63,9 @@
 
   <script>
     const EVAL_DATA = __EVAL_DATA_PLACEHOLDER__;
+
+    // Row actions are icons, not words: the label lives in title/aria-label so the row stays narrow.
+    const TRASH_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>';
 
     let evalItems = [...EVAL_DATA];
 
@@ -95,7 +100,7 @@
             </label>
             <span style="margin-left:8px;font-size:0.8rem;color:#b0aea5">${item.should_trigger ? 'Yes' : 'No'}</span>
           </td>
-          <td><button class="btn-delete" onclick="deleteRow(${idx})">Delete</button></td>
+          <td><button class="btn-delete" onclick="deleteRow(${idx})" title="Delete" aria-label="Delete this query">${TRASH_ICON}</button></td>
         `;
         tbody.appendChild(tr);
       });
