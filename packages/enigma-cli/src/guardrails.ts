@@ -378,6 +378,17 @@ export const BUILTIN_RULES: GuardrailRule[] = [
         severity: "block",
         skill: "technical-writing-policy",
     },
+    // NOTE: there is deliberately no "Save button with no dirty check" rule, even though
+    // no-op detection is one of frontend-policy's headline rules. It has no file-local
+    // signature that survives measurement. The dirtiness normally lives in a parent, a store
+    // or a form library, so its absence from THIS file proves nothing; the policy explicitly
+    // allows an enabled Save that short-circuits on click, so a missing `disabled` is not
+    // evidence of the defect either; and the same markup is correct on a create form, which
+    // has nothing to compare against. Measured on the corpus: 2 save buttons in 108
+    // form-capable files (no signal), and the interaction-based dirty flag that WOULD be a
+    // precise signature (a dirty/hasChanges flag assigned a literal true) returned 0 real
+    // hits and 2 false ones, a CLI tracking whether it had rewritten a config file. A rule
+    // here would fire on correct code, so it stays guidance in frontend-policy.
     // NOTE: there is deliberately no "card inside a card" or "border with no information"
     // rule, even though both are named in frontend-policy. They are RELATIONAL defects: a
     // container is redundant only relative to the ancestor it sits in and the spacing around
