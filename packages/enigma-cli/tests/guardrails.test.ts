@@ -182,9 +182,43 @@ test("flags hand-rolled AI chat UI, and never an RBAC role check", () => {
     expect(hit("apps/_build/x/Chat.tsx", "{m.role === \"assistant\" && <Bubble/>}")).toBe(false);
 });
 
+test("flags a typographic dash in UI copy, never one the code is handling", () => {
+    // Built from their code points so this file stays ASCII; the content passed to checkFile
+    // holds the real U+2014 / U+2013.
+    const EM = String.fromCharCode(0x2014);
+    const EN = String.fromCharCode(0x2013);
+    const hit = (file: string, src: string) => checkFile(file, src, null).some((x) => x.ruleId === "ui-no-em-dash");
+    // Copy a person reads, in markup and in the module that holds the strings.
+    expect(checkFile("src/Card.tsx", `<p>Saves tokens ${EM} automatically</p>`, null).some((x) => x.ruleId === "ui-no-em-dash" && x.severity === "block")).toBe(true);
+    expect(hit("src/copy.ts", `export const EMPTY = "No results ${EM} try another filter";`)).toBe(true);
+    expect(hit("index.html", `<h1>Fast ${EN} and quiet</h1>`)).toBe(true);
+    // Code that HANDLES the character is data, not copy - never flagged.
+    expect(hit("src/clean.ts", `const s = raw.replace(/${EM}/g, "-");`)).toBe(false);
+    expect(hit("src/text.ts", `export const normalizeDashes = (s: string) => s.split("${EM}").join("-");`)).toBe(false);
+    expect(hit("src/entities.ts", `const mdash = "${EM}";`)).toBe(false);
+    expect(hit("src/ascii.ts", `if (ch === String.fromCharCode(0x2014)) out += "${EM}";`)).toBe(false);
+    // A developer note is not UI copy: the engine only skips a line that STARTS as a comment,
+    // so a trailing one is excluded here. A URL keeps its slashes without silencing the line.
+    expect(hit("src/pool.ts", `const web = toWeb(res); // one stream ${EM} one consumer`)).toBe(false);
+    expect(hit("src/Link.tsx", `<a href="https://x.dev">Read the guide ${EM} it is short</a>`)).toBe(true);
+    // Both escape hatches: a marked line, and a file-wide opt-out for quoted text.
+    expect(hit("src/Quote.tsx", `<blockquote>{"To be ${EM} or not"}</blockquote> // enigma: verbatim quote`)).toBe(false);
+    expect(hit("src/Quote.tsx", `// enigma:allow-dash - verbatim source text\nexport const q = "To be ${EM} or not";`)).toBe(false);
+    // The standalone glyph is a symbol, not copy: an empty-cell placeholder, a separator or a
+    // CLI bullet stays untouched. This is what keeps the rule quiet on real UI code.
+    expect(hit("src/table.tsx", `const cell = (v) => v ?? "${EM}";`)).toBe(false);
+    expect(hit("src/Row.tsx", `<span className="muted">${EM}</span>`)).toBe(false);
+    expect(hit("src/log.ts", `out(\`  \${yellow("${EN}")} \${label}\`);`)).toBe(false);
+    // A plain hyphen is the correct form, and prose files/tests/build output are out of scope.
+    expect(hit("src/Card.tsx", "<p>Saves tokens - automatically</p>")).toBe(false);
+    expect(hit("docs/guide.md", `Saves tokens ${EM} automatically`)).toBe(false);
+    expect(hit("src/__tests__/Card.test.tsx", `<p>x ${EM} y</p>`)).toBe(false);
+    expect(hit("apps/dist/main.js", `t("x ${EM} y")`)).toBe(false);
+});
+
 test("built-in rules cover the documented conventions", () => {
     const ids = BUILTIN_RULES.map((r) => r.id);
-    for (const id of ["db-uuid-pk", "db-ts-orm-prisma", "be-validate-input-ts", "be-validate-input-py", "fe-password-input", "fe-no-native-dialog", "fe-skeleton-loading", "fe-viewport-meta", "fe-ai-elements-chat"]) {
+    for (const id of ["db-uuid-pk", "db-ts-orm-prisma", "be-validate-input-ts", "be-validate-input-py", "fe-password-input", "fe-no-native-dialog", "fe-skeleton-loading", "fe-viewport-meta", "fe-ai-elements-chat", "ui-no-em-dash"]) {
         expect(ids).toContain(id);
     }
     // Go/Rust input-validation rules are deliberately absent (imprecise - see guardrails.ts).

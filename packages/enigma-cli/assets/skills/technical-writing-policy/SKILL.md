@@ -1,6 +1,6 @@
 ---
 name: technical-writing-policy
-description: Concise, realistic technical copy - UI microcopy, labels, descriptions, setting hints, empty/error states, and README/doc prose that informs without over-explaining, restating the obvious, or leaking implementation detail. Use whenever writing or reviewing user-facing text: a dashboard/app label or description, a settings hint, a panel intro, a button, a skill/package description, a README section, or any doc copy. Also use when the user complains that descriptions are too long, over-explained, obvious, or "cutre".
+description: Concise, realistic technical copy - UI microcopy, labels, descriptions, setting hints, empty/error states, and README/doc prose that informs without over-explaining, restating the obvious, or leaking implementation detail, and that never uses an em dash. Use whenever writing or reviewing user-facing text: a dashboard/app label or description, a settings hint, a panel intro, a button, a skill/package description, a README section, or any doc copy. Also use when the user complains that descriptions are too long, over-explained, obvious, or "cutre".
 ---
 
 # Technical Writing Policy (Concise, Realistic Copy)
@@ -62,6 +62,13 @@ microcopy - the reader shouldn't have to study it.
 - READMEs: assume a competent reader. Explain what is non-obvious or load-bearing (how to
   run it, the one surprising constraint, why a choice was made) and skip what the audience
   already knows or can infer from the code. Lead with the point; cut the throat-clearing.
+- Never use a typographic dash in user-facing copy. The em dash (`—`) and en dash (`–`) are
+  the single most recognizable tell of AI-written text in an interface, and no product's UI
+  needs them: use a plain hyphen "-", a comma, a colon, or two sentences, and write a range
+  as "5 to 10". This applies to every string a person reads - labels, hints, empty and error
+  states, tooltips, toasts, docs and README prose. Keep one only when the dash is the
+  subject (a typography guide, a punctuation rule) or when quoting text verbatim, and, as
+  with every rule here, when the user explicitly asks for it.
 - Do NOT volunteer a "Project Structure" section with an ASCII/box-drawing file tree and a
   folder-by-folder explanation ("src/ contains the files of the application", "public/:
   contains static files") on your own initiative. It is the hallmark of an AI-written README:

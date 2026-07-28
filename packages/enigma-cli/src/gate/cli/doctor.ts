@@ -27,7 +27,7 @@ export async function runDoctorCli(paths: Paths): Promise<void> {
     let allOK = true;
 
     const ok = (label: string, detail: string): void => out(`  ${sGreen("✓")} ${sDim(label)}  ${detail}\n`);
-    const warn = (label: string, detail: string): void => out(`  ${sYellow("–")} ${sDim(label)}  ${detail}\n`);
+    const warn = (label: string, detail: string): void => out(`  ${sYellow("-")} ${sDim(label)}  ${detail}\n`);
     const fail = (label: string, detail: string): void => out(`  ${sRed("✗")} ${sDim(label)}  ${detail}\n`);
 
     out(`  ${sCyan("System")}\n`);

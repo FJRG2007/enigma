@@ -309,6 +309,50 @@ export const BUILTIN_RULES: GuardrailRule[] = [
         skill: "technical-writing-policy",
     },
     {
+        id: "ui-no-em-dash",
+        label: "No typographic dash in UI copy",
+        // Files that render text to a person: markup, components and the modules that hold
+        // their strings. Markdown is deliberately NOT here - prose files legitimately quote
+        // and vendor third-party text, so scanning them would flag content nobody wrote.
+        files: ["*.tsx", "*.jsx", "*.vue", "*.svelte", "*.astro", "*.html", "*.htm", "*.ts", "*.js", "*.mts", "*.cts"],
+        // The generated/vendored trees are listed twice: `**/x/**` needs a leading segment, so
+        // it does NOT match a root-level `dist/main.js` - the usual place for build output.
+        excludeFiles: [
+            "*.test.*", "*.spec.*", "**/tests/**", "**/__tests__/**", "**/fixtures/**", "*.min.js",
+            "**/dist/**", "**/build/**", "**/_build/**", "**/node_modules/**", "**/vendor/**",
+            "dist/**", "build/**", "_build/**", "node_modules/**", "vendor/**",
+        ],
+        scope: "file",
+        // An em dash (U+2014) or en dash (U+2013) used as PROSE PUNCTUATION: the character
+        // must sit between two pieces of text ("saves time - automatically", "60-95%"). Both
+        // are written as regex escapes so this file never contains the characters it forbids.
+        // Two things keep this precise. (1) The text-on-both-sides requirement skips the
+        // standalone glyph - `return "-"` for an empty table cell, a `<span>-</span>`
+        // separator, a CLI bullet - which is a deliberate symbol, not copy, and was the only
+        // real false-positive class when the rule was measured over ~1100 real UI files.
+        // (2) The leading lookahead drops lines where the character is DATA rather than copy:
+        // a sanitizer (.replace / normalize), a character or entity table (mdash, ndash,
+        // fromCharCode, an escaped \u201x), a line the author marked with `enigma:`, or a
+        // line carrying a TRAILING comment - the engine only skips a line that STARTS as a
+        // comment, and a dash in a developer note is not user-facing text. `//` is matched
+        // only when it is not preceded by a colon, so a URL does not silence a line.
+        // `absent` gives a whole file an opt-out for genuinely quoted text.
+        // HTML entities (&mdash;) are deliberately not matched: to a line regex an entity
+        // table and an entity in copy are identical, so matching them would cost more than
+        // it catches.
+        pattern: "^(?!.*(?:enigma:|\\.replace|normali|fromCharCode|charCodeAt|mdash|ndash|\\\\u201|(?<!:)//|/\\*)).*[A-Za-z0-9)\\].,:%!?]\\s*[\\u2014\\u2013]\\s*[A-Za-z0-9(\\[\"'`]",
+        absent: "enigma:allow-dash",
+        message: "Typographic dash in user-facing text. The em dash and en dash are the clearest tell of AI-written copy and no interface needs them: use a plain hyphen \"-\", a comma, a colon, or two sentences, and write a range as \"5 to 10\". Keep one only when the dash is the subject (a typography guide) or the text is quoted verbatim - then mark the line with an `enigma:` note or add `enigma:allow-dash` to the file (technical-writing-policy).",
+        severity: "block",
+        skill: "technical-writing-policy",
+    },
+    // NOTE: there is deliberately no "card inside a card" or "border with no information"
+    // rule, even though both are named in frontend-policy. They are RELATIONAL defects: a
+    // container is redundant only relative to the ancestor it sits in and the spacing around
+    // it, and a border is legitimate on an input, a table edge or a flush row list. Neither
+    // has a single-line signature, so a regex over `rounded-lg border` would flag correct
+    // markup on almost every screen. Visual density stays guidance in frontend-policy.
+    {
         id: "be-no-leak-internal-error",
         label: "Do not leak internal errors to the client",
         files: ["*.ts", "*.js", "*.mts", "*.cts"],

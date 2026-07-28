@@ -191,3 +191,38 @@ matrix("be-no-leak-internal-error", false, [
     { name: "generic 500, no error internals", file: "src/api.ts", code: "res.status(500).json({ error: \"internal_error\" });" },
     { name: "test file is excluded", file: "src/api.test.ts", code: "res.status(500).json({ error: err.message });" },
 ]);
+
+// --- ui-no-em-dash -----------------------------------------------------------------
+// The dashes are built from their code points so this file stays ASCII. Every "ignores"
+// case below is a real shape found while scanning ~1100 UI files across reference repos.
+
+const EM_DASH = String.fromCharCode(0x2014);
+const EN_DASH = String.fromCharCode(0x2013);
+
+matrix("ui-no-em-dash", true, [
+    { name: "JSX copy", file: "src/Hero.tsx", code: `<p>Saves tokens ${EM_DASH} automatically</p>` },
+    { name: "string constant holding an empty state", file: "src/copy.ts", code: `export const EMPTY = "No results ${EM_DASH} try another filter";` },
+    { name: "page title in an HTML document", file: "index.html", code: `<title>Enigma ${EM_DASH} local dashboard</title>` },
+    { name: "metadata description in a layout", file: "app/layout.tsx", code: `default: "Headroom ${EM_DASH} Context Optimization Layer",` },
+    { name: "console message a person reads", file: "src/cli.js", code: `console.log("Account rotated ${EM_DASH} switching on the next request");` },
+    { name: "numeric range with an en dash", file: "src/Stats.tsx", code: `<span>60${EN_DASH}95% fewer tokens</span>` },
+    { name: "no spaces around the dash", file: "src/Hero.tsx", code: `<h2>fast${EM_DASH}quiet</h2>` },
+]);
+
+matrix("ui-no-em-dash", false, [
+    { name: "plain hyphen is the correct form", file: "src/Hero.tsx", code: "<p>Saves tokens - automatically</p>" },
+    { name: "standalone glyph as an empty-cell placeholder", file: "src/table.tsx", code: `const cell = (v) => v ?? "${EM_DASH}";` },
+    { name: "standalone glyph in markup", file: "src/Row.tsx", code: `<span class="muted">${EM_DASH}</span>` },
+    { name: "standalone glyph as a CLI bullet", file: "src/log.ts", code: `out(\`  \${yellow("${EN_DASH}")} \${label}\`);` },
+    { name: "dash-stripping sanitizer", file: "src/clean.ts", code: `const s = raw.replace(/${EM_DASH}/g, "-");` },
+    { name: "normalizer helper", file: "src/text.ts", code: `export const normalizeDashes = (s) => s.split("${EM_DASH}").join("-");` },
+    { name: "entity/character table", file: "src/entities.ts", code: `const mdash = "${EM_DASH}";` },
+    { name: "code point comparison", file: "src/ascii.ts", code: `if (ch === String.fromCharCode(0x2014)) out += "${EM_DASH}";` },
+    { name: "trailing developer comment, not UI copy", file: "src/pool.ts", code: `const web = toWeb(res); // one stream ${EM_DASH} one consumer` },
+    { name: "line marked with an enigma note", file: "src/Quote.tsx", code: `<blockquote>{"To be ${EM_DASH} or not"}</blockquote> // enigma: verbatim quote` },
+    { name: "file-wide opt-out for quoted source text", file: "src/Quote.tsx", code: `// enigma:allow-dash\nexport const q = "To be ${EM_DASH} or not";` },
+    { name: "markdown prose is out of scope", file: "docs/guide.md", code: `Saves tokens ${EM_DASH} automatically` },
+    { name: "test fixture is excluded", file: "src/__tests__/Hero.test.tsx", code: `<p>x ${EM_DASH} y</p>` },
+    { name: "build output is excluded", file: "apps/dist/main.js", code: `t("x ${EM_DASH} y")` },
+    { name: "vendored tree is excluded", file: "vendor/pkg/ui.js", code: `el.textContent = "a ${EM_DASH} b";` },
+]);
