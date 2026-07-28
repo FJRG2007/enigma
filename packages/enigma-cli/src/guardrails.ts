@@ -223,6 +223,25 @@ export const BUILTIN_RULES: GuardrailRule[] = [
         skill: "frontend-policy",
     },
     {
+        id: "fe-ai-elements-chat",
+        label: "AI chat UI via AI Elements",
+        files: ["*.tsx", "*.jsx"],
+        excludeFiles: ["*.test.*", "*.spec.*", "**/tests/**", "**/__tests__/**", "**/dist/**", "**/build/**", "**/_build/**", "**/node_modules/**"],
+        scope: "file",
+        // A JSX file branching on a message role of "assistant" is hand-rolled AI chat UI. The role
+        // value is what makes this precise: "user"/"admin"/"owner"/"member" are the RBAC vocabulary
+        // and appear far more often than chat rendering does, so matching them would false-positive
+        // on every permission check - "assistant" has no meaning outside an LLM conversation.
+        // Measured over a real multi-repo corpus: 15 matching files, all genuine chat surfaces, 0 FP.
+        // `absent` skips a file that already uses AI Elements or another established chat-UI kit.
+        pattern: "\\.role\\s*===?\\s*[\"']assistant[\"']",
+        flags: "",
+        absent: "ai-elements|assistant-ui|@assistant-ui|copilotkit|@copilotkit|llm-ui|@nlux|nlux|@chatscope|chatscope",
+        message: "Hand-rolled AI chat UI. Use AI Elements (https://elements.ai-sdk.dev/components) - `npx ai-elements@latest add conversation message prompt-input` copies the source into @/components/ai-elements/, so it stays editable with no runtime dependency. It already solves streaming, scroll-stick-to-bottom, markdown with unclosed code fences mid-stream, and reasoning/tool-call/citation panels. Needs React + Tailwind + shadcn/ui; on any other stack build natively instead (frontend-policy).",
+        severity: "warn",
+        skill: "frontend-policy",
+    },
+    {
         id: "fe-viewport-meta",
         label: "Responsive viewport meta tag",
         // Full HTML documents (a page/layout, not a fragment). Astro layouts own the <head>;

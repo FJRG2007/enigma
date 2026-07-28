@@ -1,6 +1,6 @@
 ---
 name: frontend-policy
-description: Frontend architecture - reusable components, abstraction thresholds, state management, no-op detection (skip any operation whose result equals the current state - form saves, toggles, filters, reorders - not just saves), client-side caching (localStorage/sessionStorage to avoid redundant server calls and survive rate limits), instant first paint (render the shell immediately, load data async via the API, show skeletons - never block render on data), perceived performance and responsiveness (instant interaction feedback, prefetch on intent, debounce/throttle, cancel stale requests, avoid request waterfalls, lazy-load heavy widgets), large-list rendering (virtualized infinite scroll vs pagination, skeletons, progressive/parallel loading, short-TTL caching), optimistic UI with rollback, responsive/adaptive layout (fluid units, breakpoints, no overlap or horizontal overflow, viewport meta, touch targets), and periodic React code-health audits (react-doctor). Use when building or changing UI components, client state, forms/save flows, data fetching/caching, lists that show lots of data, loading states, dashboards/panels, layout/responsiveness, making the UI feel fast, or any frontend structure.
+description: Frontend architecture - reusable components, abstraction thresholds, state management, no-op detection (skip any operation whose result equals the current state - form saves, toggles, filters, reorders - not just saves), client-side caching (localStorage/sessionStorage to avoid redundant server calls and survive rate limits), instant first paint (render the shell immediately, load data async via the API, show skeletons - never block render on data), perceived performance and responsiveness (instant interaction feedback, prefetch on intent, debounce/throttle, cancel stale requests, avoid request waterfalls, lazy-load heavy widgets), large-list rendering (virtualized infinite scroll vs pagination, skeletons, progressive/parallel loading, short-TTL caching), optimistic UI with rollback, responsive/adaptive layout (fluid units, breakpoints, no overlap or horizontal overflow, viewport meta, touch targets), AI chat/assistant/agent interfaces (use Vercel's AI Elements registry for message threads, streaming, reasoning and tool-call panels, prompt inputs - never hand-roll chat UI in React), and periodic React code-health audits (react-doctor). Use when building or changing UI components, client state, forms/save flows, data fetching/caching, lists that show lots of data, loading states, dashboards/panels, layout/responsiveness, making the UI feel fast, building a chat/AI/agent/LLM interface, or any frontend structure.
 ---
 
 # Frontend Architecture Policy
@@ -281,6 +281,29 @@ For a user-facing search box or finder over a list, use fuse.js (fuzzy search) r
 
 - Reach for fuse.js whenever the input is a search/filter box the user types free text into. Keep a plain equality/predicate filter only for exact, structured filtering (a status dropdown, a tag toggle) where fuzziness would be wrong.
 - Configure the searched `keys` and a sensible `threshold`, and run the search over the already-loaded client list where possible (reuse the data, per Client-Side Caching) before falling back to a server query.
+
+---
+
+## AI Chat & Agent Interfaces
+
+When building a chat, assistant, or agent UI in React, use **AI Elements** (Vercel, Apache-2.0 - https://elements.ai-sdk.dev/components) instead of hand-rolling the surface. Chat UI has a long tail of details that look trivial and are not: sticking the scroll to the bottom only while the user has not scrolled away, rendering markdown whose code fence is still unclosed mid-stream, message parts that arrive out of order, reasoning and tool-call panels, citation rendering, and an input that handles attachments, submit-vs-newline, and a streaming stop button. Rebuilding that per project is where the time goes, and the hand-rolled version is usually the janky part of the product.
+
+- It is a **shadcn/ui registry, not a runtime dependency**: `npx ai-elements@latest add <component>` copies the component SOURCE into `@/components/ai-elements/`, so it is yours to edit and restyle with no version lock-in. This is the vendoring preference in dependency-policy, not a new dependency to justify.
+- Prerequisites: React with Tailwind CSS in CSS-variables mode, shadcn/ui initialized (`npx shadcn@latest init`), and the AI SDK. The components are typed against AI SDK message parts and pair with `useChat`.
+- Add only the components actually used. Bare `npx ai-elements@latest` installs the whole registry and drags in every peer dependency (shiki, `@xyflow/react`, media-chrome, rive, ...) - do not pull 40+ components in for one message list (anti-overengineering-policy).
+
+### What already exists (do not rebuild these)
+
+- Chat shell: `conversation`, `message`, `prompt-input`, `suggestion`, `attachments`, `context`, `persona`, `panel`, `toolbar`, `controls`, `queue`, `checkpoint`, `confirmation`, `open-in-chat`.
+- Model work: `reasoning`, `chain-of-thought`, `tool`, `task`, `plan`, `agent`, `artifact`, `shimmer`.
+- Rendered content: `code-block`, `snippet`, `image`, `jsx-preview`, `schema-display`, `file-tree`, `terminal`, `stack-trace`, `test-results`, `web-preview`, `sandbox`, `commit`, `package-info`, `environment-variables`.
+- Citations: `sources`, `inline-citation`. Voice: `speech-input`, `transcription`, `audio-player`, `mic-selector`, `voice-selector`. Models: `model-selector`. Graph: `canvas`, `node`, `edge`, `connection`.
+
+### Boundaries
+
+- This is a React + Tailwind + shadcn library. If the project is Vue, Svelte, Angular, React Native, or plain HTML, or has no Tailwind/shadcn, do NOT bolt that toolchain on to get it - build natively and borrow the composition model instead (a container owning scroll-stick-to-bottom, a message that renders parts by type, a separate prompt input, streaming state held outside the bubble).
+- Once installed they are ordinary project components: the Component Reuse rules above still apply - configure variants through props, and never fork a second copy per screen.
+- A single static message list with no streaming does not need the library. Match the tool to the problem.
 
 ---
 

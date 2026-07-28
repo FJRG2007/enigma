@@ -165,9 +165,26 @@ test("viewport rule never flags email/print docs (cross-stack false-positive gua
     expect(checkFile("server/pdf/invoice.html", "<head><title>inv</title></head>", null).some((x) => x.ruleId === "fe-viewport-meta")).toBe(false);
 });
 
+test("flags hand-rolled AI chat UI, and never an RBAC role check", () => {
+    const hit = (file: string, src: string) => checkFile(file, src, null).some((x) => x.ruleId === "fe-ai-elements-chat");
+    // Branching on an assistant message role in JSX is chat rendering.
+    expect(checkFile("src/Chat.tsx", "{m.role === \"assistant\" ? <Bubble/> : <User/>}", null).some((x) => x.ruleId === "fe-ai-elements-chat" && x.severity === "warn")).toBe(true);
+    expect(hit("src/Chat.jsx", "if (message.role === 'assistant') return <Md text={message.content}/>;")).toBe(true);
+    // RBAC vocabulary must never match - this is why the rule keys on "assistant" alone.
+    for (const role of ["user", "admin", "owner", "member"]) {
+        expect(hit("src/Nav.tsx", `if (user.role === "${role}") return <AdminMenu/>;`)).toBe(false);
+    }
+    // Already using AI Elements (or another chat kit) -> nothing to suggest.
+    expect(hit("src/Chat.tsx", "import { Message } from \"@/components/ai-elements/message\";\n{m.role === \"assistant\" && <Message/>}")).toBe(false);
+    expect(hit("src/Chat.tsx", "import { Thread } from \"@assistant-ui/react\";\n{m.role === \"assistant\" && <Thread/>}")).toBe(false);
+    // Non-JSX and build output are out of scope.
+    expect(hit("src/api/route.ts", "if (m.role === \"assistant\") tokens += n;")).toBe(false);
+    expect(hit("apps/_build/x/Chat.tsx", "{m.role === \"assistant\" && <Bubble/>}")).toBe(false);
+});
+
 test("built-in rules cover the documented conventions", () => {
     const ids = BUILTIN_RULES.map((r) => r.id);
-    for (const id of ["db-uuid-pk", "db-ts-orm-prisma", "be-validate-input-ts", "be-validate-input-py", "fe-password-input", "fe-no-native-dialog", "fe-skeleton-loading", "fe-viewport-meta"]) {
+    for (const id of ["db-uuid-pk", "db-ts-orm-prisma", "be-validate-input-ts", "be-validate-input-py", "fe-password-input", "fe-no-native-dialog", "fe-skeleton-loading", "fe-viewport-meta", "fe-ai-elements-chat"]) {
         expect(ids).toContain(id);
     }
     // Go/Rust input-validation rules are deliberately absent (imprecise - see guardrails.ts).
