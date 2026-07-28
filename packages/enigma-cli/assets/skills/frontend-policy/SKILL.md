@@ -1,6 +1,6 @@
 ---
 name: frontend-policy
-description: Frontend architecture - reusable components, abstraction thresholds, state management, no-op detection (skip any operation whose result equals the current state - form saves, toggles, filters, reorders - not just saves), client-side caching (localStorage/sessionStorage to avoid redundant server calls and survive rate limits), instant first paint (render the shell immediately, load data async via the API, show skeletons - never block render on data), perceived performance and responsiveness (instant interaction feedback, prefetch on intent, debounce/throttle, cancel stale requests, avoid request waterfalls, lazy-load heavy widgets), large-list rendering (virtualized infinite scroll vs pagination, skeletons, progressive/parallel loading, short-TTL caching), optimistic UI with rollback, responsive/adaptive layout (fluid units, breakpoints, no overlap or horizontal overflow, viewport meta, touch targets), AI chat/assistant/agent interfaces (use Vercel's AI Elements registry for message threads, streaming, reasoning and tool-call panels, prompt inputs - never hand-roll chat UI in React), and periodic React code-health audits (react-doctor). Use when building or changing UI components, client state, forms/save flows, data fetching/caching, lists that show lots of data, loading states, dashboards/panels, layout/responsiveness, making the UI feel fast, building a chat/AI/agent/LLM interface, or any frontend structure.
+description: Frontend architecture - reusable components, abstraction thresholds, state management, no-op detection (skip any operation whose result equals the current state - form saves, toggles, filters, reorders - not just saves), client-side caching (localStorage/sessionStorage to avoid redundant server calls and survive rate limits), instant first paint (render the shell immediately, load data async via the API, show skeletons - never block render on data), perceived performance and responsiveness (instant interaction feedback, prefetch on intent, debounce/throttle, cancel stale requests, avoid request waterfalls, lazy-load heavy widgets), large-list rendering (virtualized infinite scroll vs pagination, skeletons, progressive/parallel loading, short-TTL caching), optimistic UI with rollback, visual restraint (never a card inside a card, borders only where they carry information, spacing and background tone before chrome), responsive/adaptive layout (fluid units, breakpoints, no overlap or horizontal overflow, viewport meta, touch targets), AI chat/assistant/agent interfaces (use Vercel's AI Elements registry for message threads, streaming, reasoning and tool-call panels, prompt inputs - never hand-roll chat UI in React), and periodic React code-health audits (react-doctor). Use when building or changing UI components, client state, forms/save flows, data fetching/caching, lists that show lots of data, loading states, dashboards/panels, layout/responsiveness, making the UI feel fast, building a chat/AI/agent/LLM interface, or any frontend structure.
 ---
 
 # Frontend Architecture Policy
@@ -66,11 +66,23 @@ description: Frontend architecture - reusable components, abstraction thresholds
 
 ## Visual Hierarchy & Layout Restraint
 
-Keep surfaces flat and let spacing, not chrome, do the grouping.
+Less is more. Chrome - borders, boxes, cards, shadows, dividers - is the most overused tool in generated UI, and every extra layer of it makes the screen harder to read, not more organized. Grouping is done with space first; a container is the last resort, not the default wrapper.
 
-- Do not nest a card inside another card. A card already establishes a surface; wrapping cards in cards stacks backgrounds, paddings, and shadows into visual noise. Group related content inside one card with spacing, a heading, or a light divider - not a second bordered container.
-- Do not add borders, boxes, or dividers that carry no information. A border is justified only when it marks a real boundary the user needs (a distinct interactive region, a table edge); otherwise prefer whitespace, type weight, and grouping over outlines, and reach for a divider only when spacing alone cannot convey the separation.
-- Avoid redundant containers in general: one elevation/background per surface, minimal wrapping, and consistent padding read cleaner and are easier to maintain than deeply nested boxed layouts.
+**One surface level.** A card already IS a surface. Do not put a card inside a card, and never nest a third: stacked backgrounds, paddings and shadows read as visual noise and shrink the usable content width at every level. Related content inside a card is grouped with spacing, a heading, or at most a light divider - not with a second bordered box. If a block genuinely needs its own container, promote it to a sibling card rather than nesting it.
+
+**Separate with space before you separate with lines.** There are three ways to show that two blocks are distinct, in order of preference:
+
+1. Spacing - more space between groups than within them. This is almost always enough, and it is what a border is usually compensating for.
+2. A second background tone - the same neutral one step lighter or darker. Use it for a genuinely different surface (a sidebar, a highlighted panel), not for every block.
+3. A border or divider - only when the two blocks must sit flush with no room for space, such as a table edge or a list of rows.
+
+Never apply more than one of the three to the same boundary. A block with a border AND a shadow AND a background tint is three solutions to one problem.
+
+**A border must carry information.** It is justified when it marks a real boundary the user acts on (an input, a distinct interactive region, a table edge). A border drawn around content just to make it "look contained" carries none, so remove it. The same goes for a divider between two blocks that already have space between them.
+
+**Shadows imply one light source.** Pick a small elevation scale (two or three levels) and use it consistently, with the light always coming from the same direction - a soft shadow offset downwards, larger and softer the higher the element sits. Never ring an element with shadow on all sides, stack several shadows on one element, or use elevation decoratively on something that is not raised above the page.
+
+**Fewer, larger, quieter.** Prefer one padded region over four nested ones; consistent padding over per-block variation; and type weight, size and colour over outlines when establishing hierarchy. If a screen looks busy, the fix is almost always to delete containers, not to restyle them.
 
 ---
 
