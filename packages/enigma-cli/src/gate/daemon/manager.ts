@@ -28,14 +28,15 @@
 import { log } from "../log";
 import { track } from "../telemetry";
 import type { Paths } from "../paths";
+import { writeSnapshot } from "./snapshot";
 import { type Agent } from "../agent/agent";
-import { type Event } from "../ipc/protocol";
 import type { Step } from "../pipeline/types";
 import { Executor } from "../pipeline/executor";
 import { withSteering } from "../agent/steering";
 import { allPipelineSteps } from "../pipeline/steps";
 import { createAgent, lookPath } from "../agent/factory";
 import type { PushReceivedParams } from "../ipc/protocol";
+import { EventLogChunk, type Event } from "../ipc/protocol";
 import {
     merge,
     loadRepo,
@@ -157,8 +158,15 @@ export class RunManager {
         return { events, unsubscribe };
     }
 
-    /** Sends an event to all subscribers of the event's run (drops to slow ones). */
+    /**
+     * Sends an event to all subscribers of the event's run (drops to slow ones),
+     * and refreshes the status-bar snapshot. The snapshot is updated before the
+     * fan-out and regardless of whether anyone is subscribed, because the status
+     * bar is a file reader rather than an IPC subscriber. Log chunks are skipped:
+     * they carry no state the bar shows and arrive far too often to rewrite on.
+     */
     private broadcast = (event: Event): void => {
+        if (event.type !== EventLogChunk) writeSnapshot(this.db, this.paths, event.runId);
         const subs = this.subscribers.get(event.runId);
         if (!subs) return;
         for (const sub of subs) this.pushEvent(sub, event);

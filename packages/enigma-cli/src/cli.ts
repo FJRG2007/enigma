@@ -295,11 +295,11 @@ Commands:
                        target codex/opencode); pass tool args after '--'
   seal                 Maintenance: (re)compute skill content hashes
   check                Integrity gate: verify skills are well-formed and sealed
-  statusline           Print the [ENIGMA] badge for an agent status bar (shows the active level)
+  statusline           Render the agent status bar (badge, model, context, cost, live gate progress)
   help, version
 
 Config keys: commit-emoji, update-notifier, auto-sync, remote-skills, fullscreen,
-             parallel-subagents, output-style (off|lite|full|ultra),
+             statusline, parallel-subagents, output-style (off|lite|full|ultra),
              minimal-code (off|lite|full|ultra), compress, claude-attribution,
              claude-survey, gh-telemetry, permission-bypass, bypass-claude,
              bypass-codex, bypass-opencode

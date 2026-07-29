@@ -19,7 +19,7 @@ import { applyDashboardMode } from "./dashboard";
 import { applyGateToggle } from "./command-deploy";
 import type { DashboardMode } from "./config";
 import { getGhTelemetryCached, ghTelemetryBlocker, hasGhCli, setGhTelemetry } from "./github";
-import { getClaudeAttribution, setClaudeAttribution, getClaudeFeedbackSurvey, setClaudeFeedbackSurvey } from "./claude";
+import { getClaudeAttribution, setClaudeAttribution, getClaudeFeedbackSurvey, setClaudeFeedbackSurvey, getClaudeStatusline, setClaudeStatusline, hasCustomClaudeStatusline } from "./claude";
 import { BYPASS_SUPPORTED, getBypass, setBypass } from "./permissions";
 import { GUARD_PROTECTIONS, GUARD_LISTS, readGlobalGuard, setGuardProtection, setGuardList } from "./guard-config";
 import type { GuardListMeta } from "./guard-config";
@@ -183,6 +183,18 @@ function writeGhTelemetry(enabled: boolean): ApplyResult {
     return { changed };
 }
 
+/**
+ * Install or remove enigma's statusline. A statusline the user wrote themselves is
+ * never overwritten, so turning this on while one is configured cannot work - report
+ * that instead of a silent no-op the surfaces would render as success.
+ */
+function setStatusline(on: boolean, scope: Scope): ApplyResult {
+    if (on && hasCustomClaudeStatusline(scope)) {
+        return { changed: false, error: "a different statusLine is already set in Claude Code's settings.json - remove it first" };
+    }
+    return { changed: setClaudeStatusline(scope, on) };
+}
+
 /** Persist the gate toggle and deploy/remove the /gate command immediately. */
 function setGate(on: boolean, scope: Scope): ApplyResult {
     const path = setEnigmaToggle("gate", on, scope);
@@ -264,6 +276,13 @@ const RAW_CATEGORIES: Category[] = [
                 writeChoice: (value, scope) => ({ path: setEnigmaValue("skillUpdatePolicy", value, scope), changed: true }),
             },
             enigmaToggle("fullscreen", "fullscreen", "Full-screen TUI", "clear the screen for a clean TUI view; off renders inline among existing output"),
+            {
+                key: "statusline",
+                label: "Agent status bar",
+                hint: "show the [ENIGMA] badge, model, context and cost in Claude Code's status bar, plus live gate progress while a run is in flight",
+                read: (scope) => getClaudeStatusline(scope),
+                write: (value, scope) => setStatusline(value, scope),
+            },
             enigmaToggle("parallel-subagents", "parallelSubagents", "Parallel sub-agents", "let agents split long tasks across sub-agents running in parallel; edits the memory file - restart your agent to apply", true),
             enigmaChoice("output-style", "outputStyle", "Token-efficient output", "compress prose replies (off|lite|full|ultra); on = full; edits the memory file - restart your agent to apply", OUTPUT_STYLES, "full", true),
             enigmaChoice("minimal-code", "minimalCode", "Minimal code (anti-overengineering)", "prefer the laziest solution that works (off|lite|full|ultra); on = full; edits the anti-overengineering skill - restart your agent to apply", MINIMAL_CODE_LEVELS, "full", false, "off", true),
