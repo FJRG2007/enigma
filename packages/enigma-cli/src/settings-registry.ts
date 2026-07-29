@@ -184,15 +184,24 @@ function writeGhTelemetry(enabled: boolean): ApplyResult {
 }
 
 /**
- * Install or remove enigma's statusline. A statusline the user wrote themselves is
- * never overwritten, so turning this on while one is configured cannot work - report
- * that instead of a silent no-op the surfaces would render as success.
+ * Persist the status-bar preference and apply it to Claude's settings.json immediately.
+ *
+ * The flag is the intent and settings.json is the effect, the same split `setGate` uses.
+ * Storing only the effect would make "the user turned it off" indistinguishable from
+ * "never installed", and `syncDeployed` - which re-asserts on-by-default wiring on every
+ * update - would silently reinstall a bar they deliberately removed.
+ *
+ * A statusline the user wrote themselves is never overwritten, so turning this on while
+ * one is configured cannot take effect; that reports an error rather than the silent
+ * no-op every surface would render as success.
  */
 function setStatusline(on: boolean, scope: Scope): ApplyResult {
     if (on && hasCustomClaudeStatusline(scope)) {
         return { changed: false, error: "a different statusLine is already set in Claude Code's settings.json - remove it first" };
     }
-    return { changed: setClaudeStatusline(scope, on) };
+    const path = setEnigmaToggle("statusline", on, scope);
+    setClaudeStatusline(scope, on);
+    return { path, changed: true };
 }
 
 /** Persist the gate toggle and deploy/remove the /gate command immediately. */
@@ -280,7 +289,7 @@ const RAW_CATEGORIES: Category[] = [
                 key: "statusline",
                 label: "Agent status bar",
                 hint: "show the [ENIGMA] badge, model, context and cost in Claude Code's status bar, plus live gate progress while a run is in flight",
-                read: (scope) => getClaudeStatusline(scope),
+                read: () => readConfig().config.statusline,
                 write: (value, scope) => setStatusline(value, scope),
             },
             enigmaToggle("parallel-subagents", "parallelSubagents", "Parallel sub-agents", "let agents split long tasks across sub-agents running in parallel; edits the memory file - restart your agent to apply", true),
