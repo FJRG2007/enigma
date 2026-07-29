@@ -80,12 +80,35 @@ routes the statusline through the same spawn helper as hooks, which does pass
 If console windows ever come back, `disableClaudeStatusline` removes it, or the user
 deletes the `statusLine` key from `~/.claude/settings.json`.
 
-## Cost
+## Refresh interval (a spawn budget, not a taste call)
 
-`refreshInterval: 1` re-spawns the Node launcher once a second for as long as a
-session is open. Raising it to 2 or 3 halves or thirds that at the price of a slower
-spinner; the value is written by `enableClaudeStatusline` and can be edited directly
-in `settings.json`.
+`refreshInterval` is 10 seconds. Every refresh spawns a process, and on Windows each
+spawn creates console hosts. Measured on a Windows 11 box with Windows Terminal as the
+default terminal, sampling process creation for 14s with the bar off and then on:
+
+| statusLine | conhost.exe created | node.exe created |
+| ---------- | ------------------- | ---------------- |
+| off (baseline: Docker/VS Code polling) | 36 | 0 |
+| on, `refreshInterval: 1` | 95 | 14 |
+
+That is ~4 console hosts per refresh on top of the machine's baseline, which made the
+status bar the single busiest process spawner on the box. It is also the mechanism
+behind the console-window flash reported in
+[#54590](https://github.com/anthropics/claude-code/issues/54590) (closed as a duplicate
+of #51867; neither was ever fixed).
+
+Pointing the command at `node <launcher>` instead of the npm `.cmd` shim roughly halves
+the churn (61 vs 95 conhost for the same 13 refreshes), but it hardcodes an absolute
+install path into `settings.json`, which breaks on reinstall. Not worth it once the
+interval is sane.
+
+Ten seconds is also where the established projects landed - ccstatusline defaults fresh
+installs to 10 (range 1-60), claude-powerline documents 10 as "within ~10s of reality".
+Pipeline steps run for minutes, so the information the gate line carries is not
+meaningfully staler at 10s; only the spinner stops reading as a smooth animation.
+
+The value is written by `enableClaudeStatusline` and can be edited directly in
+`settings.json` for anyone who wants a faster spinner and does not care about the spawns.
 
 ## Tests
 

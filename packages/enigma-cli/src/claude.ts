@@ -19,6 +19,12 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
  */
 const STATUSLINE_COMMAND = "enigma statusline";
 
+/**
+ * Seconds between status-bar refreshes. See `enableClaudeStatusline` for why this is 10
+ * rather than the documented minimum of 1 - it is a process-spawn budget, not a taste call.
+ */
+const STATUSLINE_REFRESH_SECONDS = 10;
+
 /** Settings file Claude Code reads for a given scope. */
 function claudeSettingsPath(scope: "global" | "local"): string {
     return scope === "global"
@@ -225,21 +231,27 @@ export function enableClaudeBypass(scope: "global" | "local", dryRun: boolean): 
  *
  * `refreshInterval` is what makes the gate line move: the event-driven triggers all fire
  * at turn boundaries, so without a timer the bar would freeze for exactly as long as a
- * pipeline blocks, which is the case it exists to report on. One second is the documented
- * minimum; raising it cuts the idle cost of re-spawning the launcher at the price of a
- * slower spinner.
+ * pipeline blocks, which is the case it exists to report on.
  *
- * Windows used to be excluded here: Claude Code spawned the statusline without
- * `windowsHide`, so every refresh popped a console window (#54590, closed as a duplicate
- * of #51867 and never fixed on the tracker). The shipped client now routes the statusline
- * through the same spawn helper as hooks, which does pass `windowsHide`, so the exclusion
- * is gone. If console windows ever reappear, `disableClaudeStatusline` removes it again.
+ * Ten seconds, not the documented minimum of one. Every refresh spawns a process, and on
+ * Windows each spawn creates console hosts: measured here, a one-second interval added
+ * ~4 conhost.exe per refresh over the machine's baseline, making the status bar the single
+ * busiest spawner on the box. That churn is what surfaced as the console-window flash in
+ * anthropics/claude-code#54590 (closed as a duplicate of #51867, neither ever fixed). Ten
+ * is also what the established statusline projects settle on - ccstatusline defaults fresh
+ * installs to 10, claude-powerline documents 10 as "within ~10s of reality" - and pipeline
+ * steps run for minutes, so it costs nothing that matters here.
+ *
+ * Windows used to be excluded outright. The shipped client now routes the statusline
+ * through the same spawn helper as hooks, which does pass `windowsHide`, so the console it
+ * creates stays hidden and the exclusion is gone. If windows ever become visible again,
+ * `disableClaudeStatusline` (or `enigma config statusline off`) removes it.
  */
 export function enableClaudeStatusline(scope: "global" | "local"): boolean {
     const path = claudeSettingsPath(scope);
     const current = readJson<Record<string, unknown>>(path) || {};
     if (current.statusLine !== undefined) return false;
-    const statusLine = { type: "command", command: STATUSLINE_COMMAND, padding: 0, refreshInterval: 1 };
+    const statusLine = { type: "command", command: STATUSLINE_COMMAND, padding: 0, refreshInterval: STATUSLINE_REFRESH_SECONDS };
     writeClaudeSettings(path, { ...current, statusLine });
     return true;
 }
