@@ -51,6 +51,16 @@ export class Paths {
         return join(this.rootDir, "update-check.json");
     }
 
+    /**
+     * Snapshot of the active run for an agent status bar. Kept outside the
+     * database because the status line runs on enigma's Node launcher, which
+     * never loads the Bun runtime that `bun:sqlite` needs. Mirrored by
+     * `bin/statusline.mjs`, which resolves the same path independently.
+     */
+    statuslineFile(): string {
+        return join(this.rootDir, "statusline.json");
+    }
+
     reposDir(): string {
         return join(this.rootDir, "repos");
     }

@@ -12,6 +12,13 @@ import { join } from "node:path";
 import { enigmaHome, isDir, readJson } from "./util";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 
+/**
+ * The command enigma points Claude Code's statusLine at. Also the marker that tells
+ * an enigma-managed statusline apart from a user's own, so every read/write path
+ * must compare against this one constant.
+ */
+const STATUSLINE_COMMAND = "enigma statusline";
+
 /** Settings file Claude Code reads for a given scope. */
 function claudeSettingsPath(scope: "global" | "local"): string {
     return scope === "global"
@@ -211,34 +218,69 @@ export function enableClaudeBypass(scope: "global" | "local", dryRun: boolean): 
 }
 
 /**
- * Point Claude Code's statusline at `enigma statusline`, which shows an [ENIGMA] badge
- * (with the token-efficient level when active, e.g. [ENIGMA:FULL]). Only writes when no
- * statusline is configured yet - it never clobbers a user's own. Returns true if written.
+ * Point Claude Code's statusline at `enigma statusline`: the [ENIGMA] badge (carrying the
+ * token-efficient level when active), session context and cost, plus live gate progress
+ * while a run is in flight. Only writes when no statusline is configured yet - it never
+ * clobbers a user's own. Returns true if written.
+ *
+ * `refreshInterval` is what makes the gate line move: the event-driven triggers all fire
+ * at turn boundaries, so without a timer the bar would freeze for exactly as long as a
+ * pipeline blocks, which is the case it exists to report on. One second is the documented
+ * minimum; raising it cuts the idle cost of re-spawning the launcher at the price of a
+ * slower spinner.
+ *
+ * Windows used to be excluded here: Claude Code spawned the statusline without
+ * `windowsHide`, so every refresh popped a console window (#54590, closed as a duplicate
+ * of #51867 and never fixed on the tracker). The shipped client now routes the statusline
+ * through the same spawn helper as hooks, which does pass `windowsHide`, so the exclusion
+ * is gone. If console windows ever reappear, `disableClaudeStatusline` removes it again.
  */
 export function enableClaudeStatusline(scope: "global" | "local"): boolean {
-    // Windows: an `enigma statusline` command resolves to the npm `.cmd` shim, and Claude
-    // Code re-spawns the statusline on every refresh without windowsHide, popping a console
-    // window each time (anthropics/claude-code#54590). Never install it there.
-    if (process.platform === "win32") return false;
     const path = claudeSettingsPath(scope);
     const current = readJson<Record<string, unknown>>(path) || {};
     if (current.statusLine !== undefined) return false;
-    const next = { ...current, statusLine: { type: "command", command: "enigma statusline", padding: 0 } };
-    writeClaudeSettings(path, next);
+    const statusLine = { type: "command", command: STATUSLINE_COMMAND, padding: 0, refreshInterval: 1 };
+    writeClaudeSettings(path, { ...current, statusLine });
     return true;
+}
+
+/** Reads the statusLine block Claude Code has configured for a scope, if any. */
+function claudeStatusline(scope: "global" | "local"): Record<string, unknown> | undefined {
+    return readJson<Record<string, unknown>>(claudeSettingsPath(scope))?.statusLine as Record<string, unknown> | undefined;
+}
+
+/** Reports whether the configured statusline is enigma's own. */
+export function getClaudeStatusline(scope: "global" | "local"): boolean {
+    return claudeStatusline(scope)?.command === STATUSLINE_COMMAND;
+}
+
+/**
+ * Reports whether a statusline is configured that enigma did not write. Neither
+ * enable nor disable will touch it, so the surfaces use this to explain why the
+ * toggle refused rather than reporting a silent no-op as success.
+ */
+export function hasCustomClaudeStatusline(scope: "global" | "local"): boolean {
+    const line = claudeStatusline(scope);
+    return line !== undefined && line.command !== STATUSLINE_COMMAND;
+}
+
+/** Installs or removes enigma's statusline. Returns true when the file changed. */
+export function setClaudeStatusline(scope: "global" | "local", enabled: boolean): boolean {
+    return enabled ? enableClaudeStatusline(scope) : disableClaudeStatusline(scope);
 }
 
 /**
  * Remove enigma's own statusline from a settings.json, leaving a user's custom one
- * untouched. Used on Windows, where the statusline triggers Claude Code's console-flash
- * bug (#54590) by opening a cmd window on every refresh. Returns true when the file changed.
+ * untouched. The escape hatch for anyone who does not want it - and the revert if a
+ * client regression brings back the Windows console flash described above. Returns
+ * true when the file changed.
  */
 export function disableClaudeStatusline(scope: "global" | "local"): boolean {
     const path = claudeSettingsPath(scope);
     const current = readJson<Record<string, unknown>>(path);
     if (!current) return false;
     const line = current.statusLine as Record<string, unknown> | undefined;
-    if (line?.command !== "enigma statusline") return false;
+    if (line?.command !== STATUSLINE_COMMAND) return false;
     const next = { ...current };
     delete next.statusLine;
     writeClaudeSettings(path, next);
@@ -304,14 +346,10 @@ export function mirrorClaudeSettings(accountDir: string): boolean {
     if (Object.keys(env).length) next.env = env;
     else delete next.env;
 
-    // Statusline: propagate enigma's statusline when the account has none - except on
-    // Windows, where it triggers Claude Code's console-flash bug (#54590); there, strip an
-    // enigma-managed one that an older install left behind.
+    // Statusline: propagate enigma's statusline when the account has none, so an account
+    // launched via `enigma claude <account>` gets the same bar. A custom one is left alone.
     const globalLine = global.statusLine as Record<string, unknown> | undefined;
-    const accountLine = next.statusLine as Record<string, unknown> | undefined;
-    if (process.platform === "win32") {
-        if (accountLine?.command === "enigma statusline") delete next.statusLine;
-    } else if (next.statusLine === undefined && globalLine?.command === "enigma statusline") {
+    if (next.statusLine === undefined && globalLine?.command === STATUSLINE_COMMAND) {
         next.statusLine = { ...globalLine };
     }
 

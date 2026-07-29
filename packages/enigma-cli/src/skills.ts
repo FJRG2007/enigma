@@ -28,8 +28,8 @@ import type { OutputStyle, MinimalCode, DashboardMode } from "./config";
 import { isDir, isNewer, readJson, listFilesRel, computeContentSha } from "./util";
 import { resolveBypassSelection, applyBypass, mirrorAccountSettings } from "./permissions";
 import { cachedRemoteSkills, refreshRemoteSkills, shouldCheckRemote } from "./skills-remote";
+import { disableClaudeAttribution, disableClaudeFeedbackSurvey, enableClaudeStatusline } from "./claude";
 import { existsSync, readdirSync, readFileSync, writeFileSync, statSync, cpSync, mkdirSync, rmSync } from "node:fs";
-import { disableClaudeAttribution, disableClaudeFeedbackSurvey, disableClaudeStatusline, enableClaudeStatusline } from "./claude";
 import { AGENTS, MANAGED_PROVIDER, isManagedProvider, discoverAgents, runningStatus, localTargetsAt } from "./agents";
 import { readConfig, setEnigmaValue, setSkillDiscarded, setSkillAgentOff, OUTPUT_STYLES, MINIMAL_CODE_LEVELS, DASHBOARD_MODES } from "./config";
 
@@ -1038,14 +1038,8 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
         if (disableClaudeFeedbackSurvey(claudeScope)) {
             reporter.info("Claude Code: disabled the session feedback survey (re-enable with 'enigma config claude-survey on').");
         }
-        if (process.platform === "win32") {
-            // Windows: never install the statusline, and clean up one an older install
-            // wrote - it triggers Claude Code's console-window bug (#54590).
-            if (disableClaudeStatusline(claudeScope)) {
-                reporter.info("Claude Code: removed the enigma statusline on Windows (it was popping a console window every refresh, #54590).");
-            }
-        } else if (enableClaudeStatusline(claudeScope)) {
-            reporter.info("Claude Code: statusline shows an [ENIGMA] badge while token-efficient output is active.");
+        if (enableClaudeStatusline(claudeScope)) {
+            reporter.info("Claude Code: statusline shows the [ENIGMA] badge, context and cost, plus live gate progress during a run.");
         }
     };
 
