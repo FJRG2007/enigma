@@ -99,8 +99,10 @@ test("statusline is installed on every platform, with the timer that drives the 
     expect(enableClaudeStatusline("global")).toBe(true);
     const line = readJson(GLOBAL).statusLine as Record<string, unknown> | undefined;
     expect(line?.command).toBe("enigma statusline");
-    // Without a timer the bar freezes for exactly as long as a pipeline blocks.
-    expect(line?.refreshInterval).toBe(1);
+    // Without a timer the bar freezes for exactly as long as a pipeline blocks. Ten
+    // seconds rather than the minimum of one: every refresh spawns a process, and on
+    // Windows each spawn creates console hosts.
+    expect(line?.refreshInterval).toBe(10);
     // Unrelated settings survive.
     expect((readJson(GLOBAL).env as Record<string, unknown>).FOO).toBe("bar");
     // A user's own statusline is never replaced.
