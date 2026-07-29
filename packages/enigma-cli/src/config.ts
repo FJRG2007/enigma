@@ -101,6 +101,14 @@ export interface EnigmaConfig {
     logoColorPolicy: LogoColorPolicy;
     /** Silently re-deploy updated skills/memory when launching a tool through enigma. */
     autoSync: boolean;
+    /**
+     * Agent status bar (default on): points Claude Code's statusLine at `enigma statusline`,
+     * which shows the badge, model, context and cost, plus live gate progress during a run.
+     * This records the INTENT; the effect lives in Claude's settings.json. Both are needed:
+     * without the flag, "the user turned it off" would be indistinguishable from "never
+     * installed", and every sync would silently reinstall a bar they deliberately removed.
+     */
+    statusline: boolean;
     /** Fetch newer skills from the GitHub repo (install/update) without a package update. */
     remoteSkills: boolean;
     /** On update, overwrite (default) or keep a skill the user edited locally. */
@@ -294,7 +302,7 @@ export interface EnigmaConfig {
  */
 export const CONFIG_DEFAULTS: EnigmaConfig = {
     commitEmoji: true, updateNotifier: true, fullscreen: true, parallelSubagents: false, outputStyle: "off", minimalCode: "full", logoColorPolicy: "ask",
-    autoSync: true, remoteSkills: true, skillUpdatePolicy: "overwrite", permissionBypass: true, autoLint: false, guardrails: true, verify: true, verifyCommand: "", compress: false, codeGraph: false, gate: false, dashboard: "off", tokenPrice: 0, tokenSpeed: 0, usageStats: false, recall: false, recallLlm: true, recallProvider: "claude-local", recallModel: "", recallApiBase: "", recallApiKey: "", proxy: false, usageApi: false, promptSecretGuard: false, promptSecretMode: "redact",
+    autoSync: true, statusline: true, remoteSkills: true, skillUpdatePolicy: "overwrite", permissionBypass: true, autoLint: false, guardrails: true, verify: true, verifyCommand: "", compress: false, codeGraph: false, gate: false, dashboard: "off", tokenPrice: 0, tokenSpeed: 0, usageStats: false, recall: false, recallLlm: true, recallProvider: "claude-local", recallModel: "", recallApiBase: "", recallApiKey: "", proxy: false, usageApi: false, promptSecretGuard: false, promptSecretMode: "redact",
     planSessionLimit: 0, planWeeklyLimit: 0, planWeeklySonnetLimit: 0, planWeeklyOpusLimit: 0, planWeeklyReset: "mon 00:00",
     dashboardLive: true, dashboardPort: 0, dashboardBind: "loopback", dashboardBindAddress: "", apiPort: 8000, apiAccount: "", apiProfile: "", apiPack: "", toolPaths: {}, bypassDisabled: [], discardedSkills: [], skillAgentsOff: {}, packs: [], packAccounts: {},
 };

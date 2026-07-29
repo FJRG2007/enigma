@@ -1038,7 +1038,7 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
         if (disableClaudeFeedbackSurvey(claudeScope)) {
             reporter.info("Claude Code: disabled the session feedback survey (re-enable with 'enigma config claude-survey on').");
         }
-        if (enableClaudeStatusline(claudeScope)) {
+        if (readConfig().config.statusline && enableClaudeStatusline(claudeScope)) {
             reporter.info("Claude Code: statusline shows the [ENIGMA] badge, context and cost, plus live gate progress during a run.");
         }
     };
@@ -1395,6 +1395,15 @@ export function syncDeployed(agentNames?: string[]): string[] {
         // rather than letting the user first meet the gate as an unexplained blocked turn.
         if (agent.name === "claude" && hasDeployment(agent, "global") && applyVerifyWiring() && isVerifyOn()) {
             notices.push("Completion checks are on: when the agent reports work as finished, enigma now verifies that against the change. Turn off with 'enigma config verify off'.");
+        }
+        // Same reasoning: the status bar is on by default and is settings.json WIRING, not a
+        // file the copy loop above touches, so an existing deployment has to pick it up on
+        // update rather than only on an explicit install. Gated on the config flag, so a bar
+        // the user turned off stays off, and `enableClaudeStatusline` never replaces a custom
+        // one - which makes this safe to re-run on every sync.
+        if (agent.name === "claude" && hasDeployment(agent, "global") && readConfig().config.statusline
+            && enableClaudeStatusline("global")) {
+            notices.push("Status bar is on: Claude Code now shows the enigma badge, context and cost, plus live gate progress during a run. Turn off with 'enigma config statusline off'.");
         }
     }
     return notices;

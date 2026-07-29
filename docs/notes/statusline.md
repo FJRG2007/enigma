@@ -68,6 +68,28 @@ sit parked at a gate for a long time.
 - A negative elapsed time (snapshot and reader disagreeing about the clock) drops the
   segment rather than printing a confident `0s`.
 
+## The toggle, and why it needs a config flag
+
+`enigma config statusline on|off` (also in the TUI and the dashboard settings panel).
+The flag lives in `.enigma.json` and defaults to ON; Claude's `settings.json` carries
+the effect. Both are needed: with only the effect, "the user turned it off" is
+indistinguishable from "never installed".
+
+That matters because `syncDeployed` re-asserts the bar on every sync - the same
+treatment the completion gate gets, and for the same reason. The status bar is
+settings.json WIRING, not a file the sync's copy loop touches, so an existing
+deployment would otherwise only pick it up on an explicit `enigma install`. Since
+`enigma update` calls `syncDeployed`, that re-assert is what makes `enigma update`
+actually deliver the feature.
+
+The re-assert is safe to run on every sync because it is gated on the config flag and
+because `enableClaudeStatusline` never replaces a statusline the user wrote themselves.
+
+One ordering caveat: `runUpdateCli` syncs BEFORE it self-updates the npm package, so the
+running process is still the old code. A default introduced in version N therefore lands
+on the *next* sync - the following `enigma update`, or the next `enigma claude` launch
+with `autoSync` on, whichever comes first.
+
 ## Windows
 
 The statusline used to be excluded on Windows: Claude Code spawned it without

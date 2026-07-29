@@ -145,17 +145,22 @@ test("the statusline toggle reads, installs, removes, and refuses to touch a cus
     expect((readJson(GLOBAL).statusLine as Record<string, unknown>).command).toBe("my-own-bar");
 });
 
-test("the registry surfaces an error instead of a silent no-op on a custom bar", async () => {
+test("the registry records intent in config and applies it to settings.json", async () => {
     const { ALL_SETTINGS } = await import("../src/settings-registry");
     const setting = ALL_SETTINGS.find((s) => s.key === "statusline");
     expect(setting).toBeDefined();
 
-    expect(setting!.write(true, "global")).toMatchObject({ changed: true });
+    // On by default, and the flag is what the surfaces read.
     expect(setting!.read("global")).toBe(true);
+
+    expect(setting!.write(true, "global")).toMatchObject({ changed: true });
+    expect(getClaudeStatusline("global")).toBe(true);
+
+    // Turning it off must persist as intent, not only as an absent settings.json key -
+    // otherwise the next sync cannot tell it apart from a fresh machine.
     expect(setting!.write(false, "global")).toMatchObject({ changed: true });
     expect(setting!.read("global")).toBe(false);
-    // Already off: a no-op, and still not an error.
-    expect(setting!.write(false, "global").error).toBeUndefined();
+    expect(getClaudeStatusline("global")).toBe(false);
 
     writeJson(GLOBAL, { statusLine: { type: "command", command: "my-own-bar" } });
     const refused = setting!.write(true, "global");
