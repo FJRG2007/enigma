@@ -50,6 +50,7 @@ Subsystems (read the one you are touching):
 - `autoskills.md` - stack detection and community stack-skill installation.
 - `guardrails.md` - the convention rule engine, its rules and the three-tier routing doctrine. Read before adding a rule.
 - `verified-completion.md` - the turn-end gate against false "done" claims (`enigma verify`), parity check, loop safety.
+- `eof-trim.md` - removing the blank line agents leave at the end of a file (`enigma trim`): the conservative rule, the stat/tail/truncate cost model, partial-staging, and the vendored-tree ignore list.
 - `secret-protection.md` - commit guard lists and the prompt secret guard.
 - `tool-launch-path.md` - repairing a tool that is installed but not on PATH.
 - `system-resources.md` - process/port/WSL/Docker cleanup.

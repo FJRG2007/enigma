@@ -66,7 +66,7 @@ export function killTree(child: ChildProcess): void {
     if (pid === undefined) return;
     if (process.platform === "win32") {
         try {
-            execFileSync("taskkill", ["/T", "/F", "/PID", String(pid)], { stdio: "ignore" });
+            execFileSync("taskkill", ["/T", "/F", "/PID", String(pid)], { stdio: "ignore", windowsHide: true });
         } catch {
             try {
                 child.kill("SIGKILL");
@@ -376,7 +376,8 @@ function shellCommandOutput(name: string, ...args: string[]): string {
     return execFileSync(name, args, {
         encoding: "utf8",
         timeout: shellCommandTimeout,
-        maxBuffer: 16 * 1024 * 1024
+        maxBuffer: 16 * 1024 * 1024,
+        windowsHide: true
     });
 }
 

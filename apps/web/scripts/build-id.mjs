@@ -7,7 +7,7 @@ import { execSync } from "node:child_process";
 
 export function buildId() {
     try {
-        return execSync("git rev-parse --short HEAD", { stdio: ["ignore", "pipe", "ignore"] }).toString().trim();
+        return execSync("git rev-parse --short HEAD", { stdio: ["ignore", "pipe", "ignore"], windowsHide: true }).toString().trim();
     } catch {
         return Date.now().toString(36);
     }

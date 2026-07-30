@@ -32,7 +32,7 @@ const EXCLUDE = new Set([
 ]);
 
 function git(args, opts = {}) {
-    const res = spawnSync("git", args, { stdio: ["ignore", "pipe", "inherit"], encoding: "utf8", ...opts });
+    const res = spawnSync("git", args, { stdio: ["ignore", "pipe", "inherit"], encoding: "utf8", windowsHide: true, ...opts });
     if (res.status !== 0) throw new Error(`git ${args.join(" ")} failed (${res.status})`);
     return res.stdout.trim();
 }

@@ -41,7 +41,7 @@ function detectOsVersion(): string {
     try {
         if (process.platform === "win32") return `${os.version()} ${os.release()}`.trim();
         if (process.platform === "darwin") {
-            const out = spawnSync("sw_vers", ["-productVersion"], { encoding: "utf8", timeout: 3000 });
+            const out = spawnSync("sw_vers", ["-productVersion"], { encoding: "utf8", timeout: 3000, windowsHide: true });
             const product = out.status === 0 ? out.stdout.trim() : "";
             return product ? `macOS ${product}` : `Darwin ${os.release()}`;
         }

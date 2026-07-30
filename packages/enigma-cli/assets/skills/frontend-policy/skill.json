@@ -5,5 +5,5 @@
   "description": "Frontend architecture: reusable components, abstraction thresholds, state management, no-op detection (skip any operation whose result equals current state, not just form saves; dirty means different from the loaded snapshot, not touched), instant first paint (render the shell, load data async, skeletons), perceived performance (prefetch on intent, debounce/throttle, cancel stale requests, avoid waterfalls, lazy widgets), large-list rendering (infinite scroll/pagination, virtualization, skeletons, progressive loading), optimistic UI with rollback, visual restraint (one card level, spacing before borders, one elevation scale), icon actions (repeated row/card actions are icon-only buttons with aria-label plus title, not text labels), responsive/adaptive layout (fluid units, breakpoints, no overlap/overflow, viewport meta, touch targets), variable-length text (min-width:0 in flex/grid, wrap vs truncate, long unbroken strings, worst-case content checks), and AI chat/agent interfaces via Vercel's AI Elements registry instead of hand-rolled message threads.",
   "updated": "2026-07-29T01:26:14+02:00",
   "cliVersion": "1.32.1",
-  "sha": "71ebc71510c8aa54d7925445a7dffc55dbce9eba209fb6a63bae05d119217d79"
+  "sha": "a9750bd74505373aea8d9265515fc3b7f0fddf3e822d9e046248223e24ff96af"
 }

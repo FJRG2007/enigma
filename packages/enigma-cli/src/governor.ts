@@ -196,7 +196,7 @@ function applyAffinity(pid: number, mask: number): boolean {
             );
             return true;
         }
-        execFileSync("taskset", ["-p", mask.toString(16), String(pid)], { stdio: "ignore", timeout: 5000 });
+        execFileSync("taskset", ["-p", mask.toString(16), String(pid)], { stdio: "ignore", timeout: 5000, windowsHide: true });
         return true;
     } catch {
         return false;

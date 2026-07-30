@@ -60,6 +60,13 @@ export interface GuardrailRule {
      * across every statement importing that module, so splitting one import in two cannot dodge it.
      */
     maxNamedImports?: number;
+    /**
+     * file scope: id of a coded check in FILE_CHECKS, for a violation with no regex form that
+     * still lives inside one file (e.g. a call whose options object is missing a key, which
+     * needs paren balancing to read across the lines the call spans). Like PROJECT_CHECKS these
+     * are code, not data, so a user cannot add one from JSON - add a function there instead.
+     */
+    fileCheck?: string;
     /** Feedback shown to the model; should name the owning skill so the fix is traceable. */
     message: string;
     severity: Severity;
@@ -273,6 +280,20 @@ export const BUILTIN_RULES: GuardrailRule[] = [
         severity: "warn",
         skill: "frontend-policy",
     },
+    // NOTE: there is deliberately no "a pinned sidebar needs its own scroll" rule, and no
+    // "a URL in UI copy must be a link" rule, though both conventions were asked for. Neither
+    // has a file-local signature this engine can read.
+    //   - The sidebar defect is a RELATION between three declarations (pinned + height bound +
+    //     overflow) that real stylesheets spread over several lines of one block, which a
+    //     line-based scan cannot correlate; the Tailwind one-line form would be the exception,
+    //     and the corpus (this repo, apps/web, references/repos) holds exactly two real
+    //     sidebars, neither of them Tailwind - zero measured true positives, which is the same
+    //     evidence that got the no-op-save rule rejected. It is also not a defect until the
+    //     sidebar's content outgrows the viewport, so a rule would flag correct short ones.
+    //   - The link one cannot tell COPY from DATA: a URL in a string is far more often an API
+    //     endpoint, a default, or a docs reference in a comment than a piece of UI text, and
+    //     nothing in the string says which. Both live in frontend-policy instead (Persistent
+    //     Chrome Stays Put, Links In Copy Are Links).
     // NOTE: there is deliberately no "truncating flex item needs min-w-0" rule. It was written
     // and then removed after measuring it in a browser: per CSS Flexbox 4.5 a flex item's
     // automatic minimum size only applies while its computed overflow is visible, and Tailwind's
@@ -455,6 +476,26 @@ export const BUILTIN_RULES: GuardrailRule[] = [
         severity: "block",
         skill: "ciphera-style-policy",
     },
+    {
+        id: "proc-windows-hide",
+        label: "Spawned process must not pop a console window",
+        files: ["*.ts", "*.tsx", "*.mts", "*.cts", "*.js", "*.mjs", "*.cjs", "*.jsx"],
+        // Tests run in a terminal that already has a console, so a flashing window is not a
+        // defect there. Same two-form generated/vendored excludes as the rules above.
+        excludeFiles: [
+            "*.test.*", "*.spec.*", "**/tests/**", "**/__tests__/**", "**/fixtures/**", "*.min.js", "*.d.ts",
+            "**/dist/**", "**/build/**", "**/_build/**", "**/node_modules/**", "**/vendor/**",
+            "dist/**", "build/**", "_build/**", "node_modules/**", "vendor/**",
+        ],
+        scope: "file",
+        // A call spanning several lines has no line-regex form, hence a coded check (see
+        // missingWindowsHide for the three shapes it deliberately leaves alone). BLOCK for the
+        // ui-no-em-dash reason: a warn exits 0 and never reaches the model, the symptom is
+        // invisible to whoever writes the code on macOS or Linux, and the fix is one key.
+        fileCheck: "proc-windows-hide",
+        message: "Process spawned without windowsHide. On Windows a console child started by a process that has no console of its own - a daemon, an editor hook, a detached background task - pops a real console window on screen and closes it again, which reads as something crashing. Add `windowsHide: true` to the options object; it is inert on macOS and Linux, and inert on Windows when the parent already has a console, so it is safe on every call that is not deliberately opening a terminal for the user. For one that IS (a login flow that must show a terminal), mark the call with an `enigma:` note.",
+        severity: "block",
+    },
 ];
 
 /**
@@ -473,6 +514,73 @@ export const PROJECT_CHECKS: Record<string, (projectRoot: string) => boolean> = 
         return !("prisma" in pkg || "@prisma/client" in pkg);
     },
 };
+
+/**
+ * Named file-level checks (return one entry per violation). Same rationale as PROJECT_CHECKS:
+ * they need logic rather than a line regex, so they are code and not user-authorable from JSON.
+ * Keyed by GuardrailRule.fileCheck; `detail` is appended to the rule message.
+ */
+export const FILE_CHECKS: Record<string, (content: string) => { line: number; detail: string }[]> = {
+    "proc-windows-hide": (content) => missingWindowsHide(content),
+};
+
+/** The child_process functions that start a process (and so can create a console window). */
+const SPAWNERS = new Set(["spawn", "spawnSync", "exec", "execSync", "execFile", "execFileSync"]);
+
+/**
+ * Local names a file binds to a process-spawning child_process function, covering both
+ * `import { spawn } from "node:child_process"` and `const { spawn } = require("child_process")`,
+ * and renames (`spawnSync as run` is tracked as `run`). Everything else the module exports is
+ * ignored, which is what keeps `regex.exec` and `db.exec` out of the scan.
+ */
+function spawnerBindings(content: string): string[] {
+    const names = new Set<string>();
+    const stmt = /(?:import|(?:const|let|var))\s*\{([^}]*)\}\s*(?:from\s*|=\s*require\(\s*)["'](?:node:)?child_process["']/g;
+    for (const m of content.matchAll(stmt)) {
+        for (const part of m[1]!.split(",")) {
+            const [orig, alias] = part.trim().split(/\s+as\s+/).map((s) => s.trim());
+            if (orig && SPAWNERS.has(orig)) names.add(alias || orig);
+        }
+    }
+    return [...names];
+}
+
+/**
+ * Process-spawning calls whose inline options object omits `windowsHide`. On Windows a child
+ * console application spawned from a process without a console of its own (a daemon, a hook, a
+ * detached background task) pops a visible console window; `windowsHide: true` suppresses it.
+ *
+ * Precision (the reason this is code and not a regex): the call is read by BALANCING PARENS, so
+ * an options object spread over several lines is judged as a whole rather than line by line, and
+ * three shapes are deliberately not flagged because the file does not prove a defect -
+ *   - `stdio: "inherit"`: the child runs in the user's own terminal on purpose;
+ *   - options passed as a variable (`spawn(bin, args, opts)`, no inline object): unknowable here;
+ *   - an object that spreads another (`{ ...spawnOpts, env }`): the spread may carry the flag.
+ * An `enigma:` note inside the call is the explicit escape hatch (e.g. a deliberately visible
+ * terminal). Only calls to bindings actually imported from child_process are considered, which
+ * is what keeps `regex.exec(...)` and `db.exec(...)` out of the results.
+ */
+export function missingWindowsHide(content: string): { line: number; detail: string }[] {
+    const names = spawnerBindings(content);
+    if (names.length === 0) return [];
+    const out: { line: number; detail: string }[] = [];
+    const call = new RegExp(`(?<![.\\w$])(${names.join("|")})\\s*\\(`, "g");
+    for (const m of content.matchAll(call)) {
+        let i = m.index + m[0].length;
+        for (let depth = 1; i < content.length && depth > 0; i++) {
+            if (content[i] === "(") depth++;
+            else if (content[i] === ")") depth--;
+        }
+        // Read to the end of the closing line too, so a trailing `// enigma:` note counts.
+        const eol = content.indexOf("\n", i);
+        const text = content.slice(m.index, eol === -1 ? content.length : eol);
+        if (/windowsHide|enigma:|"inherit"|'inherit'/.test(text)) continue;
+        if (!text.includes("{")) continue;                 // options come from a variable, if at all
+        if (/\{[^{}]*\.\.\.[A-Za-z_$]/.test(text)) continue; // spread may already carry it
+        out.push({ line: content.slice(0, m.index).split("\n").length, detail: m[1]! });
+    }
+    return out;
+}
 
 /**
  * One named-import statement: an optional default binding, an optional `type` keyword, the brace
@@ -586,6 +694,11 @@ export function checkFile(file: string, content: string, projectRoot: string | n
             for (const w of wideNamedImports(content, rule.maxNamedImports)) {
                 out.push({ ...base, line: w.line, message: `${rule.message} (${w.count} bindings from "${w.module}", budget ${rule.maxNamedImports})` });
             }
+        } else if (rule.scope === "file" && rule.fileCheck) {
+            const check = FILE_CHECKS[rule.fileCheck];
+            for (const hit of check ? check(content) : []) {
+                out.push({ ...base, line: hit.line, message: `${rule.message} (${hit.detail})` });
+            }
         } else if (rule.scope === "file" && rule.pattern) {
             // "X without Y": if the mitigation regex is present anywhere, the rule does not apply.
             if (rule.absent) { try { if (new RegExp(rule.absent, "i").test(content)) continue; } catch { /* bad absent regex: ignore the guard */ } }
@@ -651,7 +764,7 @@ export function runGuardrailsHook(payload?: string): number {
 // --- standalone commit/CI backstop -------------------------------------------------
 
 function gitFiles(all: boolean): string[] {
-    const out = execFileSync("git", all ? ["ls-files"] : ["diff", "--cached", "--name-only", "--diff-filter=ACM"], { encoding: "utf8" });
+    const out = execFileSync("git", all ? ["ls-files"] : ["diff", "--cached", "--name-only", "--diff-filter=ACM"], { encoding: "utf8", windowsHide: true });
     return out.split("\n").map((s) => s.trim()).filter(Boolean);
 }
 

@@ -64,7 +64,7 @@ if (has("--real")) {
             // The error listener is required: a missing opener surfaces as an async
             // `error` event, which an EventEmitter with no listener would rethrow.
             try {
-                const child = spawn(cmd[0], cmd[1], { stdio: "ignore", detached: true });
+                const child = spawn(cmd[0], cmd[1], { stdio: "ignore", detached: true, windowsHide: true });
                 child.on("error", () => { /* user opens it manually */ });
                 child.unref();
             } catch { /* user opens it manually */ }

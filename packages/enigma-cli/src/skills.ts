@@ -19,6 +19,7 @@ import { execFileSync } from "node:child_process";
 import type { SecurityOptions } from "./security";
 import { dirname, join, resolve } from "node:path";
 import { applyLintWiring, mirrorLintWiring } from "./lint";
+import { applyTrimWiring, mirrorTrimWiring } from "./trim-deploy";
 import { applyVerifyWiring, isVerifyOn, mirrorVerifyWiring } from "./verify-deploy";
 import { applyGuardrailsWiring, mirrorGuardrailsWiring } from "./guardrails-deploy";
 import type { RemoteRefreshResult } from "./skills-remote";
@@ -711,7 +712,7 @@ function gitLastCommitISO(name: string): string | null {
         const out = execFileSync(
             "git",
             ["log", "-1", "--format=%cI", "--", name, `:(exclude)${name}/skill.json`],
-            { cwd: SKILLS_ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
+            { cwd: SKILLS_ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], windowsHide: true },
         ).trim();
         return out || null;
     } catch { return null; }
@@ -1074,6 +1075,10 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
     // (default on). Same side-effect shape as the lint hook; skipped on a dry run.
     const applyGuardrailsConfig = (): void => { if (!opts.dryRun) applyGuardrailsWiring(); };
 
+    // EOF trimmer: re-assert the post-edit hook wiring to match the toggle (default on),
+    // same side-effect shape as the guardrails hook; skipped on a dry run.
+    const applyTrimConfig = (): void => { if (!opts.dryRun) applyTrimWiring(); };
+
     // Completion gate: re-assert the turn-end hook wiring to match the toggle (default
     // on). Same side-effect shape as the guardrails hook; skipped on a dry run.
     const applyVerifyConfig = (): void => { if (!opts.dryRun) applyVerifyWiring(); };
@@ -1215,6 +1220,7 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
         applyBypassConfig();
         applyLintConfig();
         applyGuardrailsConfig();
+        applyTrimConfig();
         applyVerifyConfig();
         applyMcpConfig();
         await maybeOfferGitHooks(interactive, opts);
@@ -1284,6 +1290,7 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
     applyBypassConfig();
     applyLintConfig();
     applyGuardrailsConfig();
+    applyTrimConfig();
     applyVerifyConfig();
     applyMcpConfig();
     await maybeOfferGitHooks(interactive, opts);
@@ -1536,6 +1543,7 @@ export function syncAccount(toolName: string, dir: string): string[] {
     mirrorAccountSettings(toolName, dir);
     mirrorLintWiring(toolName, dir);
     mirrorGuardrailsWiring(toolName, dir);
+    mirrorTrimWiring(toolName, dir);
     mirrorVerifyWiring(toolName, dir);
     const mcpChanged = applyMcpForAccount(toolName, dir);
     const total = changed + (mcpChanged ? 1 : 0);

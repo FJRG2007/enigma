@@ -156,6 +156,8 @@
         .set-meta { flex: 1; min-width: 0; }
         .set-name { font-size: 13px; color: var(--text); }
         .set-hint { font-size: 12px; color: var(--muted); margin-top: 2px; }
+        /* A URL inside a hint is a real link (see linkify), so it needs to read as one. */
+        .set-hint a { color: var(--accent); overflow-wrap: anywhere; }
         .ssh-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
         .ssh-form label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
         .ssh-form .ssh-check { flex-direction: row; align-items: center; gap: 8px; color: var(--fg); align-self: end; }
@@ -2881,6 +2883,16 @@ export {
         // --- settings subpage (mirrors the TUI registry over /api/settings) ---
         function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
 
+        // Escaped text with any URL in it turned into a real link, so copy that names a
+        // destination is reachable instead of being an address the user has to select by hand.
+        // Escaping runs FIRST and the match is taken from the escaped string, so nothing here
+        // can reintroduce markup: by that point the text holds no <, > or " at all. Trailing
+        // sentence punctuation is left outside the link (it is not part of the address).
+        function linkify(s) {
+            return esc(s).replace(/\bhttps?:\/\/[^\s<]*[^\s<.,;:!?)]/g, (u) =>
+                '<a href="' + u + '" target="_blank" rel="noopener noreferrer">' + u + "</a>");
+        }
+
         // --- Toasts (vanilla port of Sonner) -------------------------------------------------
         // A stacked, self-dismissing notification system: the newest sits in front, older ones
         // peek behind and fan out on hover; rich-coloured per type; swipe- or click-to-close.
@@ -3134,7 +3146,7 @@ export {
                     + '" placeholder="' + esc(s.itemHint || "add an entry...") + '">'
                     + '<button type="button" class="laddb" data-skey="' + esc(s.key) + '">Add</button></div>';
                 return '<div class="set-row list"><div class="set-meta"><div class="set-name">' + settingIcon(s.key) + labelWithBadges(s.label) + "</div>"
-                    + '<div class="set-hint">' + esc(s.hint) + (s.globalOnly ? " · global" : "") + "</div>"
+                    + '<div class="set-hint">' + linkify(s.hint) + (s.globalOnly ? " · global" : "") + "</div>"
                     + chips + adder + "</div></div>";
             }
             // A 2-value choice whose "off" is one of the two values is really a boolean, so
@@ -3147,7 +3159,7 @@ export {
                 : '<button type="button" class="toggle' + (s.value ? " on" : "") + '" data-skey="' + esc(s.key)
                     + '" data-kind="bool" data-on="' + (s.value ? 1 : 0) + '">' + (s.value ? "On" : "Off") + "</button>";
             return '<div class="set-row"><div class="set-meta"><div class="set-name">' + settingIcon(s.key) + labelWithBadges(s.label) + "</div>"
-                + '<div class="set-hint">' + esc(s.hint) + (s.globalOnly ? " · global" : "") + "</div></div>"
+                + '<div class="set-hint">' + linkify(s.hint) + (s.globalOnly ? " · global" : "") + "</div></div>"
                 + '<div class="set-ctl">' + ctl + "</div></div>";
         }
 
@@ -3424,6 +3436,7 @@ export {
                 + item("Parallel sub-agents", boolPill(s.parallelSubagents))
                 + item("Auto-lint on edit", boolPill(s.autoLint))
                 + item("Convention guardrails", s.guardrails ? boolPill(s.guardrails.on) + (s.guardrails.on ? ' <span class="tag">' + s.guardrails.rules + " rules</span>" : "") : boolPill(false))
+                + item("Trim blank line at end of file", boolPill(s.trim))
                 + item("Verify completion claims", s.verify ? boolPill(s.verify.on) + (s.verify.on && s.verify.command ? ' <span class="tag">' + esc(s.verify.command) + "</span>" : "") : boolPill(false))
                 + item("Commit emoji", boolPill(s.commitEmoji))
                 + item("Local dashboard", pill(s.dashboard === "off" ? "off" : "lvl", s.dashboard || "off"))

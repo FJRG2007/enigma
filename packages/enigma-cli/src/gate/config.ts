@@ -260,7 +260,7 @@ export function isACPAgent(name: string): boolean {
  */
 export function probeRovoDevSupport(bin: string): Promise<boolean> {
     return new Promise((resolve, reject) => {
-        execFile(bin, ["rovodev", "--help"], { timeout: 2000 }, (err, stdout, stderr) => {
+        execFile(bin, ["rovodev", "--help"], { timeout: 2000, windowsHide: true }, (err, stdout, stderr) => {
             if (!err) {
                 resolve(true);
                 return;

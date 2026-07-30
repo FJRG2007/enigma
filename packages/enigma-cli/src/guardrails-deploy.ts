@@ -81,8 +81,9 @@ export const EnigmaGuardrails = async () => ({
             const file = input.args && (input.args.filePath || input.args.path);
             if (!file) return;
             // The command resolves the enigma binary on PATH; shell:true lets Windows resolve enigma.cmd.
+            // windowsHide keeps that shell from flashing a console window on every edit.
             const payload = JSON.stringify({ tool_input: { file_path: file } });
-            const r = spawnSync("enigma", ["__guardrails-hook"], { input: payload, encoding: "utf8", timeout: 30000, shell: process.platform === "win32" });
+            const r = spawnSync("enigma", ["__guardrails-hook"], { input: payload, encoding: "utf8", timeout: 30000, shell: process.platform === "win32", windowsHide: true });
             const findings = ((r.stderr || "") + (r.stdout || "")).trim();
             if (findings) output.output += "\\n\\n[enigma-guardrails]\\n" + findings;
         } catch { /* never break the tool on a guardrails failure */ }

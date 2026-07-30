@@ -43,6 +43,16 @@ function findGuardrailsSrc(): string | null {
     return candidates.find((c) => existsSync(c)) ?? null;
 }
 
+/** The built, self-contained EOF trimmer to copy into target repos as the commit-time backstop. */
+function findTrimSrc(): string | null {
+    const candidates = [
+        ...(process.env.ENIGMA_TRIM_PATH ? [process.env.ENIGMA_TRIM_PATH] : []),
+        join(__dirname, "trim.js"),
+        join(__dirname, "..", "dist", "trim.js"),
+    ];
+    return candidates.find((c) => existsSync(c)) ?? null;
+}
+
 // The protection metadata + global guard config live in the light guard-config module so
 // the settings registry can surface them (TUI + dashboard) without importing this clack-heavy
 // module. Imported for local use here and re-exported for the existing `enigma security` call sites.
@@ -56,7 +66,7 @@ export interface SecurityOptions {
 }
 
 function currentHooksPath(root: string): string {
-    try { return execFileSync("git", ["-C", root, "config", "--get", "core.hooksPath"], { encoding: "utf8" }).trim(); }
+    try { return execFileSync("git", ["-C", root, "config", "--get", "core.hooksPath"], { encoding: "utf8", windowsHide: true }).trim(); }
     catch { return ""; }
 }
 
@@ -120,6 +130,13 @@ export async function setupGitHooks(opts: SecurityOptions, interactive: boolean,
     if (guardrailsSrc) cpSync(guardrailsSrc, guardrailsDest, { force: true });
     else if (existsSync(guardrailsDest)) rmSync(guardrailsDest, { force: true });
 
+    // EOF trimmer, same presence-is-the-switch shape: it fixes the staged files and re-stages
+    // them, which is also what makes the cleanup retroactive as a repo's files get touched.
+    const trimDest = join(hooksDir, "trim.mjs");
+    const trimSrc = readConfig().config.trim ? findTrimSrc() : null;
+    if (trimSrc) cpSync(trimSrc, trimDest, { force: true });
+    else if (existsSync(trimDest)) rmSync(trimDest, { force: true });
+
     const shimPath = join(hooksDir, "pre-commit");
     const shim = [
         "#!/bin/sh",
@@ -129,6 +146,9 @@ export async function setupGitHooks(opts: SecurityOptions, interactive: boolean,
         'root="$(git rev-parse --show-toplevel)"',
         'node "$root/.githooks/guard.mjs" "$@" || exit 1',
         '[ -f "$root/.githooks/guardrails.mjs" ] && { node "$root/.githooks/guardrails.mjs" "$@" || exit 1; }',
+        // Last, so it tidies what the checks above have already approved. It never blocks a
+        // commit, so its exit code is deliberately ignored.
+        '[ -f "$root/.githooks/trim.mjs" ] && node "$root/.githooks/trim.mjs" "$@"',
         "exit 0",
         "",
     ].join("\n");
@@ -136,9 +156,10 @@ export async function setupGitHooks(opts: SecurityOptions, interactive: boolean,
     try { chmodSync(shimPath, 0o755); } catch { /* no-op on Windows */ }
     try { chmodSync(join(hooksDir, "guard.mjs"), 0o755); } catch { /* no-op on Windows */ }
     if (existsSync(guardrailsDest)) { try { chmodSync(guardrailsDest, 0o755); } catch { /* no-op on Windows */ } }
+    if (existsSync(trimDest)) { try { chmodSync(trimDest, 0o755); } catch { /* no-op on Windows */ } }
 
     try {
-        execFileSync("git", ["-C", root, "config", "core.hooksPath", ".githooks"]);
+        execFileSync("git", ["-C", root, "config", "core.hooksPath", ".githooks"], { windowsHide: true });
     } catch (err) {
         reporter.error(`Failed to set core.hooksPath: ${(err as Error).message}`);
         return false;

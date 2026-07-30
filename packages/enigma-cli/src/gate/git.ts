@@ -233,6 +233,7 @@ export function findGitRoot(path: string): string {
             cwd: abs,
             encoding: "utf8",
             stdio: ["ignore", "pipe", "ignore"],
+            windowsHide: true,
         }).trim();
     } catch {
         throw new Error(`not a git repository: ${abs}`);
@@ -257,6 +258,7 @@ export function findMainRepoRoot(path: string): string {
             cwd: abs,
             encoding: "utf8",
             stdio: ["ignore", "pipe", "ignore"],
+            windowsHide: true,
         }).trim();
     } catch {
         throw new Error(`not a git repository: ${abs}`);

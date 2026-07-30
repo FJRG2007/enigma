@@ -20,7 +20,8 @@
     "guardrails": "tsx src/guardrails.ts --all",
     "verify": "npm run typecheck && npm run check && npm run guard && npm run guardrails",
     "prepublishOnly": "npm run verify && npm run build",
-    "postinstall": "node bin/postinstall.mjs"
+    "postinstall": "node bin/postinstall.mjs",
+    "trim": "tsx src/trim.ts --all"
   },
   "files": [
     "bin",

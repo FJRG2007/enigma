@@ -199,6 +199,20 @@ var BUILTIN_RULES = [
     severity: "warn",
     skill: "frontend-policy"
   },
+  // NOTE: there is deliberately no "a pinned sidebar needs its own scroll" rule, and no
+  // "a URL in UI copy must be a link" rule, though both conventions were asked for. Neither
+  // has a file-local signature this engine can read.
+  //   - The sidebar defect is a RELATION between three declarations (pinned + height bound +
+  //     overflow) that real stylesheets spread over several lines of one block, which a
+  //     line-based scan cannot correlate; the Tailwind one-line form would be the exception,
+  //     and the corpus (this repo, apps/web, references/repos) holds exactly two real
+  //     sidebars, neither of them Tailwind - zero measured true positives, which is the same
+  //     evidence that got the no-op-save rule rejected. It is also not a defect until the
+  //     sidebar's content outgrows the viewport, so a rule would flag correct short ones.
+  //   - The link one cannot tell COPY from DATA: a URL in a string is far more often an API
+  //     endpoint, a default, or a docs reference in a comment than a piece of UI text, and
+  //     nothing in the string says which. Both live in frontend-policy instead (Persistent
+  //     Chrome Stays Put, Links In Copy Are Links).
   // NOTE: there is deliberately no "truncating flex item needs min-w-0" rule. It was written
   // and then removed after measuring it in a browser: per CSS Flexbox 4.5 a flex item's
   // automatic minimum size only applies while its computed overflow is visible, and Tailwind's
@@ -415,6 +429,40 @@ var BUILTIN_RULES = [
     message: 'Too many named bindings from one module. Import it as a namespace instead - `import * as <ns> from "<module>"`, then call `<ns>.thing()` - so the import stays one short line, each call site says where the symbol comes from, and a new export never widens the import again. The count sums every named import of that module in this file, so splitting the statement in two does not help; name the namespace for the module, and pick a distinct name when the natural one is already a local variable. Keep named imports for a handful of symbols. Mark a deliberate exception with an `enigma:` note on the import line (ciphera-style-policy).',
     severity: "block",
     skill: "ciphera-style-policy"
+  },
+  {
+    id: "proc-windows-hide",
+    label: "Spawned process must not pop a console window",
+    files: ["*.ts", "*.tsx", "*.mts", "*.cts", "*.js", "*.mjs", "*.cjs", "*.jsx"],
+    // Tests run in a terminal that already has a console, so a flashing window is not a
+    // defect there. Same two-form generated/vendored excludes as the rules above.
+    excludeFiles: [
+      "*.test.*",
+      "*.spec.*",
+      "**/tests/**",
+      "**/__tests__/**",
+      "**/fixtures/**",
+      "*.min.js",
+      "*.d.ts",
+      "**/dist/**",
+      "**/build/**",
+      "**/_build/**",
+      "**/node_modules/**",
+      "**/vendor/**",
+      "dist/**",
+      "build/**",
+      "_build/**",
+      "node_modules/**",
+      "vendor/**"
+    ],
+    scope: "file",
+    // A call spanning several lines has no line-regex form, hence a coded check (see
+    // missingWindowsHide for the three shapes it deliberately leaves alone). BLOCK for the
+    // ui-no-em-dash reason: a warn exits 0 and never reaches the model, the symptom is
+    // invisible to whoever writes the code on macOS or Linux, and the fix is one key.
+    fileCheck: "proc-windows-hide",
+    message: "Process spawned without windowsHide. On Windows a console child started by a process that has no console of its own - a daemon, an editor hook, a detached background task - pops a real console window on screen and closes it again, which reads as something crashing. Add `windowsHide: true` to the options object; it is inert on macOS and Linux, and inert on Windows when the parent already has a console, so it is safe on every call that is not deliberately opening a terminal for the user. For one that IS (a login flow that must show a terminal), mark the call with an `enigma:` note.",
+    severity: "block"
   }
 ];
 var PROJECT_CHECKS = {
@@ -428,6 +476,41 @@ var PROJECT_CHECKS = {
     return !("prisma" in pkg || "@prisma/client" in pkg);
   }
 };
+var FILE_CHECKS = {
+  "proc-windows-hide": (content) => missingWindowsHide(content)
+};
+var SPAWNERS = /* @__PURE__ */ new Set(["spawn", "spawnSync", "exec", "execSync", "execFile", "execFileSync"]);
+function spawnerBindings(content) {
+  const names = /* @__PURE__ */ new Set();
+  const stmt = /(?:import|(?:const|let|var))\s*\{([^}]*)\}\s*(?:from\s*|=\s*require\(\s*)["'](?:node:)?child_process["']/g;
+  for (const m of content.matchAll(stmt)) {
+    for (const part of m[1].split(",")) {
+      const [orig, alias] = part.trim().split(/\s+as\s+/).map((s) => s.trim());
+      if (orig && SPAWNERS.has(orig)) names.add(alias || orig);
+    }
+  }
+  return [...names];
+}
+function missingWindowsHide(content) {
+  const names = spawnerBindings(content);
+  if (names.length === 0) return [];
+  const out = [];
+  const call = new RegExp(`(?<![.\\w$])(${names.join("|")})\\s*\\(`, "g");
+  for (const m of content.matchAll(call)) {
+    let i = m.index + m[0].length;
+    for (let depth = 1; i < content.length && depth > 0; i++) {
+      if (content[i] === "(") depth++;
+      else if (content[i] === ")") depth--;
+    }
+    const eol = content.indexOf("\n", i);
+    const text = content.slice(m.index, eol === -1 ? content.length : eol);
+    if (/windowsHide|enigma:|"inherit"|'inherit'/.test(text)) continue;
+    if (!text.includes("{")) continue;
+    if (/\{[^{}]*\.\.\.[A-Za-z_$]/.test(text)) continue;
+    out.push({ line: content.slice(0, m.index).split("\n").length, detail: m[1] });
+  }
+  return out;
+}
 var NAMED_IMPORT = /^import[ \t]+(?:[\w$]+[ \t]*,[ \t]*)?(?:type[ \t]+)?\{([^}]*)\}[ \t]*from[ \t]*["']([^"']+)["'].*$/gm;
 var INTERNAL_MODULE = /^\.|^#|^[@~]\//;
 function wideNamedImports(content, max) {
@@ -508,6 +591,11 @@ function checkFile(file, content, projectRoot) {
       for (const w of wideNamedImports(content, rule.maxNamedImports)) {
         out.push({ ...base, line: w.line, message: `${rule.message} (${w.count} bindings from "${w.module}", budget ${rule.maxNamedImports})` });
       }
+    } else if (rule.scope === "file" && rule.fileCheck) {
+      const check = FILE_CHECKS[rule.fileCheck];
+      for (const hit of check ? check(content) : []) {
+        out.push({ ...base, line: hit.line, message: `${rule.message} (${hit.detail})` });
+      }
     } else if (rule.scope === "file" && rule.pattern) {
       if (rule.absent) {
         try {
@@ -575,7 +663,7 @@ Fix the above before continuing.
   return 0;
 }
 function gitFiles(all) {
-  const out = execFileSync("git", all ? ["ls-files"] : ["diff", "--cached", "--name-only", "--diff-filter=ACM"], { encoding: "utf8" });
+  const out = execFileSync("git", all ? ["ls-files"] : ["diff", "--cached", "--name-only", "--diff-filter=ACM"], { encoding: "utf8", windowsHide: true });
   return out.split("\n").map((s) => s.trim()).filter(Boolean);
 }
 function runGuardrailsScan(all) {
@@ -627,12 +715,14 @@ if (isGrEntry && fileURLToPath(import.meta.url) === grEntry) {
 }
 export {
   BUILTIN_RULES,
+  FILE_CHECKS,
   PROJECT_CHECKS,
   checkFile,
   checkPath,
   findProjectRoot,
   formatFindings,
   loadRules,
+  missingWindowsHide,
   runGuardrailsHook,
   runGuardrailsScan,
   runGuardrailsScanCli,

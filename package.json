@@ -22,7 +22,8 @@
     "verify": "npm run -w enigma-cli verify",
     "lint": "npm run -w @enigmax/linter dev --",
     "lint:test": "npm run -w @enigmax/linter test",
-    "lint:changed": "tsx scripts/lint-changed.mjs"
+    "lint:changed": "tsx scripts/lint-changed.mjs",
+    "trim": "npm run -w enigma-cli trim"
   },
   "engines": {
     "node": ">=18"

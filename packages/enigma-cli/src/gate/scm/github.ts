@@ -140,7 +140,7 @@ export const execFileCmdFactory: CmdFactory = (signal, name, ...args) => {
             const child = execFile(
                 name,
                 args,
-                { signal, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
+                { signal, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, windowsHide: true },
                 (error, stdout, stderr) => {
                     const out = combined ? String(stdout) + String(stderr) : String(stdout);
                     resolve({ out, err: error ?? null });

@@ -137,7 +137,7 @@ function hasCommits(cwd: string): boolean {
  * report a clean pass over work nobody looked at.
  */
 function gitTry(cwd: string, args: string[]): string | null {
-    try { return execFileSync("git", args, { cwd, encoding: "utf8", maxBuffer: 32 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] }); }
+    try { return execFileSync("git", args, { cwd, encoding: "utf8", maxBuffer: 32 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"], windowsHide: true }); }
     catch { return null; }
 }
 
@@ -371,7 +371,7 @@ export function runVerifyCommand(cwd: string, command: string): VerifyGap | null
     // A real test suite is verbose, and Node's 1 MiB default output buffer would kill a
     // PASSING one and report it as a failure - a false block, which is how a gate like this
     // gets switched off. result.error separates "could not run it" from "it failed".
-    const result = spawnSync(command, { cwd, shell: true, encoding: "utf8", timeout: TIMEOUT_MS, maxBuffer: 64 * 1024 * 1024 });
+    const result = spawnSync(command, { cwd, shell: true, encoding: "utf8", timeout: TIMEOUT_MS, maxBuffer: 64 * 1024 * 1024, windowsHide: true });
     const output = `${result.stdout || ""}${result.stderr || ""}`.trim().slice(-1500);
     // A timeout also arrives as result.error, so it has to be told apart from "no such command"
     // first - otherwise someone with a merely slow test suite is sent looking for a typo.

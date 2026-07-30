@@ -121,7 +121,17 @@ const onPacksHub = space === "packs" && !pack;
     aside .packhdr { font-family: var(--mono); font-size: 15px; font-weight: 600; color: var(--text); margin: 2px 0 6px; }
 
     .layout { max-width: 1180px; margin: 0 auto; padding: 0 24px; display: grid; grid-template-columns: 210px 1fr; gap: 40px; }
-    aside { position: sticky; top: 72px; align-self: start; height: max-content; padding: 28px 0; }
+    /*
+     * Pinned, and able to scroll on its own. `position: sticky` alone only pins the TOP of the
+     * sidebar: once its content is taller than the viewport the rest keeps scrolling away with
+     * the page and the last entries are unreachable. Bounding the height to the space under the
+     * nav and giving it its own overflow is what makes it behave like a real sidebar; the
+     * overscroll containment stops the page from scrolling on when the list hits its end.
+     */
+    aside {
+        position: sticky; top: 72px; align-self: start; padding: 28px 0;
+        max-height: calc(100vh - 72px); overflow-y: auto; overscroll-behavior: contain;
+    }
     aside .grp { font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.7px; color: var(--accent); margin: 18px 0 8px; }
     aside a { display: block; color: var(--muted); font-size: 13px; padding: 4px 0; }
     aside a:hover { color: var(--text); }
@@ -173,7 +183,12 @@ const onPacksHub = space === "packs" && !pack;
 
     footer { border-top: 1px solid var(--border-soft); margin-top: 40px; padding: 24px; text-align: center; color: var(--muted); font-size: 13px; }
 
-    @media (max-width: 820px) { .layout { grid-template-columns: 1fr; } aside { position: static; padding: 16px 0 0; } }
+    /* Stacked on narrow screens: the sidebar is part of the page flow again, so it must drop
+       the viewport height cap and its own scrollbar or it becomes a tiny scrolling box. */
+    @media (max-width: 820px) {
+        .layout { grid-template-columns: 1fr; }
+        aside { position: static; padding: 16px 0 0; max-height: none; overflow-y: visible; }
+    }
 </style>
 
 <script>

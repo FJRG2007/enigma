@@ -88,7 +88,8 @@ function posixProcessStartTime(pid: number): Date | null {
     const out = execFileSync("ps", ["-p", String(pid), "-o", "lstart="], {
         encoding: "utf8",
         env: { ...process.env, LC_ALL: "C", LANG: "C" },
-        stdio: ["ignore", "pipe", "ignore"]
+        stdio: ["ignore", "pipe", "ignore"],
+        windowsHide: true
     }).trim();
     if (out === "") return null;
     // Format: "Mon Jan 2 15:04:05 2006" (locale forced to C above).
@@ -100,7 +101,10 @@ function windowsProcessStartTime(pid: number): Date | null {
     const script = `(Get-Process -Id ${pid} -ErrorAction Stop).StartTime.ToUniversalTime().ToString('o')`;
     const out = execFileSync("powershell", ["-NoProfile", "-NonInteractive", "-Command", script], {
         encoding: "utf8",
-        stdio: ["ignore", "pipe", "ignore"]
+        stdio: ["ignore", "pipe", "ignore"],
+        // Without this the daemon (which has no console of its own) pops a visible
+        // PowerShell window on every probe - see the note in shellenv.ts.
+        windowsHide: true
     }).trim();
     if (out === "") return null;
     const parsed = new Date(out);
@@ -331,7 +335,7 @@ function shouldSkipOrphanRecord(info: ServerPIDInfo): boolean {
 export function terminateOrphanProcessGroup(pid: number): void {
     if (process.platform === "win32") {
         try {
-            execFileSync("taskkill", ["/PID", String(pid), "/T", "/F"], { stdio: ["ignore", "ignore", "ignore"] });
+            execFileSync("taskkill", ["/PID", String(pid), "/T", "/F"], { stdio: ["ignore", "ignore", "ignore"], windowsHide: true });
         } catch (err) {
             if (processRunning(pid) === false) return;
             throw new Error(`taskkill pid ${pid}: ${errMessage(err)}`);

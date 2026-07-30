@@ -100,7 +100,7 @@ export function isRegisteredProject(path: string): boolean {
 /** Run `git -C <path> config --get <key>`, returning the value or null (git absent / unset). */
 function gitConfig(path: string, key: string): string | null {
     try {
-        const out = execFileSync("git", ["-C", path, "config", "--get", key], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+        const out = execFileSync("git", ["-C", path, "config", "--get", key], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], windowsHide: true }).trim();
         return out || null;
     } catch { return null; }
 }

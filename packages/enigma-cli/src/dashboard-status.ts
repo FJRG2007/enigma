@@ -31,6 +31,8 @@ export interface SystemsStatus {
     autoLint: boolean;
     /** Convention guardrails on edit, plus the active rule count. */
     guardrails: { on: boolean; rules: number };
+    /** End-of-file blank-line trimming on edit and at commit time. */
+    trim: boolean;
     /** Completion claims checked at turn end, plus the project's verification command when set. */
     verify: { on: boolean; command: string };
     /** Real tool-usage stats (transcript reading). */
@@ -79,6 +81,7 @@ export function systemsStatus(): SystemsStatus {
         parallelSubagents: c.parallelSubagents,
         autoLint: c.autoLint,
         guardrails: { on: c.guardrails, rules: c.guardrails ? loadRules().length : 0 },
+        trim: c.trim,
         // Global, matching what actually runs: the hook is wired from the global toggle and a
         // repo-local verifyCommand is never executed, so showing either merged would misreport.
         verify: { on: readGlobalConfig().verify, command: readGlobalConfig().verifyCommand },

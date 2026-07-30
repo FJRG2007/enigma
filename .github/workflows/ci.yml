@@ -118,6 +118,12 @@ jobs:
       - name: Test guardrails deployment
         run: bun test tests/guardrails-deploy.test.ts
         working-directory: packages/enigma-cli
+      - name: Test EOF trimmer
+        run: bun test tests/trim.test.ts
+        working-directory: packages/enigma-cli
+      - name: Test EOF trimmer deployment
+        run: bun test tests/trim-deploy.test.ts
+        working-directory: packages/enigma-cli
       - name: Test completion gate
         run: bun test tests/verify.test.ts
         working-directory: packages/enigma-cli

@@ -7,6 +7,8 @@
 #      (e.g. non-UUID primary keys). Toggle with 'enigma config guardrails'.
 #   3. Ciphera-style lint on the ADDED/MODIFIED lines of staged files (a ratchet):
 #      new or edited lines must be clean; a file's pre-existing warnings do not block.
+#   4. enigma trim - removes the blank line agents leave at the end of a file and
+#      re-stages what it fixed. Never blocks; toggle with 'enigma config trim'.
 # Bypass once (all layers): git commit --no-verify
 root="$(git rev-parse --show-toplevel)"
 
@@ -15,3 +17,5 @@ node "$root/.githooks/guard.mjs" "$@" || exit 1
 node "$root/.githooks/guardrails.mjs" "$@" || exit 1
 
 npm --prefix "$root" run -s lint:changed -- --staged || exit 1
+
+node "$root/.githooks/trim.mjs" "$@"

@@ -155,8 +155,8 @@ async function runAgent(adapter: AgentAdapter, prompt: string, opts: CompletionO
 
     return new Promise<RunResult>((resolve, reject) => {
         const child = useShell
-            ? spawn([binary, ...args].map(quoteWinArg).join(" "), { env, shell: true, stdio: ["pipe", "pipe", "pipe"] })
-            : spawn(binary, args, { env, stdio: ["pipe", "pipe", "pipe"] });
+            ? spawn([binary, ...args].map(quoteWinArg).join(" "), { env, shell: true, stdio: ["pipe", "pipe", "pipe"], windowsHide: true })
+            : spawn(binary, args, { env, stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
 
         const summary: RunResult = { text: "", sessionId: opts.sessionId ?? null, inputTokens: 0, outputTokens: 0, isError: false };
         let stdoutBuf = "";

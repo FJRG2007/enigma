@@ -131,9 +131,9 @@ export function discoverAgents(): DiscoveredAgent[] {
 function processSnapshot(): string | null {
     try {
         if (process.platform === "win32") {
-            return execFileSync("tasklist", ["/fo", "csv", "/nh"], { encoding: "utf8" }).toLowerCase();
+            return execFileSync("tasklist", ["/fo", "csv", "/nh"], { encoding: "utf8", windowsHide: true }).toLowerCase();
         }
-        return execFileSync("ps", ["-A", "-o", "comm="], { encoding: "utf8" }).toLowerCase();
+        return execFileSync("ps", ["-A", "-o", "comm="], { encoding: "utf8", windowsHide: true }).toLowerCase();
     } catch {
         return null;
     }

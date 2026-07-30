@@ -11,6 +11,7 @@
 
 import * as conf from "./config";
 import { AGENTS } from "./agents";
+import { setTrim } from "./trim-deploy";
 import { clampCapPercent } from "./governor";
 import { setVerify } from "./verify-deploy";
 import { applyMcpToggle } from "./mcp-deploy";
@@ -382,6 +383,13 @@ const RAW_CATEGORIES: Category[] = [
                 hint: "enforce project conventions (e.g. UUID primary keys, Prisma as the default ORM) via a post-edit hook that feeds violations back to the model; toggling applies immediately (Claude + opencode); enigma default: on",
                 read: () => conf.readConfig().config.guardrails,
                 write: (value, scope) => ({ path: setGuardrails(scope, value), changed: true }),
+            },
+            {
+                key: "trim",
+                label: "Trim the blank line at end of file",
+                hint: "remove the empty last line agents leave behind - after each edit (Claude + opencode) and on the staged files at commit time, which also fixes it retroactively; only a file with content followed by blank lines is touched; sweep a repo with 'enigma trim --all'; enigma default: on",
+                read: () => conf.readConfig().config.trim,
+                write: (value, scope) => ({ path: setTrim(scope, value), changed: true }),
             },
             {
                 key: "verify",

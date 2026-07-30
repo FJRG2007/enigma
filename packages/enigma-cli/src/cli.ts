@@ -44,7 +44,7 @@ const PKG = readJson<{ version?: string }>(join(__dirname, "..", "package.json")
 // Fixed commands plus one launch command per supported tool (e.g. `enigma claude`).
 const COMMANDS = new Set<string>([
     "install", "update", "security", "guard", "seal", "check", "config", "account", "accounts",
-    "profile", "profiles", "skill", "skills", "issue", "improve", "compress", "guardrails", "verify", "mcp", "api", "gate", "dashboard", "dash", "fix-path", "resources", "recall", "codegraph", "autoskills", "statusline", "help", "version",
+    "profile", "profiles", "skill", "skills", "issue", "improve", "compress", "guardrails", "trim", "verify", "mcp", "api", "gate", "dashboard", "dash", "fix-path", "resources", "recall", "codegraph", "autoskills", "statusline", "help", "version",
     "pack", "packs", "ssh",
     ...acct.TOOL_NAMES,
     ...packs.PACKS.map((p) => p.id),
@@ -223,6 +223,10 @@ Commands:
                        Prisma as default ORM). No arg lists rules; check <file> runs them;
                        disable/enable <id> toggles a built-in; remove <id> drops a custom
                        rule. Toggle the feature with 'config guardrails on|off'
+  trim [--all]         Remove the blank line agents leave at the end of a file. No arg fixes
+                       the staged files and re-stages them (the pre-commit step); --all sweeps
+                       every tracked file. Only a file with content followed by blank lines is
+                       touched. It also runs after each agent edit ('config trim on|off')
   verify [cmd]         Check that work reported as finished actually is. No arg checks the
                        current change for evidence of unfinished work and runs the
                        configured verification command; --all sweeps every tracked file;
@@ -1767,6 +1771,14 @@ export async function run(argv: string[]): Promise<void> {
     // when the agent's own "this is finished" claim is contradicted by what the turn
     // produced, which denies the stop and feeds the evidence back. Same early dispatch and
     // synchronous stdin read as the guardrails hook, for the same reasons.
+    // Hidden: the post-edit EOF trimmer. Same early dispatch and synchronous stdin read as
+    // the guardrails hook, for the same reasons. Always exits 0 - it is a silent tidy, not a gate.
+    if (argv[0] === "__trim-hook") {
+        let payload = "";
+        try { payload = readFileSync(0, "utf8"); } catch { /* no stdin */ }
+        const { runTrimHook } = await import("./trim");
+        process.exit(await runTrimHook(payload));
+    }
     if (argv[0] === "__verify-hook") {
         let payload = "";
         try { payload = readFileSync(0, "utf8"); } catch { /* no stdin */ }
@@ -1829,6 +1841,10 @@ export async function run(argv: string[]): Promise<void> {
     if (opts.command === "issue") { process.exit(await runIssueCli(opts.positionals[0], version, interactive)); }
     if (opts.command === "compress") { process.exit(runCompressCli(opts)); }
     if (opts.command === "guardrails") { process.exit(runGuardrailsCli(opts.positionals)); }
+    if (opts.command === "trim") {
+        const { runTrimScanCli } = await import("./trim");
+        process.exit(await runTrimScanCli(opts.all));
+    }
     if (opts.command === "verify") { process.exit(await runVerifyCli(opts.positionals, opts.all)); }
     if (opts.command === "dashboard") { process.exit(await runDashboardCli(version, opts)); }
     if (opts.command === "fix-path") { process.exit(runFixPathCli(opts.positionals[0], opts.scope)); }

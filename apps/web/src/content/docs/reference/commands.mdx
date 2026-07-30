@@ -140,6 +140,14 @@ Enforce project conventions via a post-edit hook that feeds violations back to t
 No argument lists the rules; `check <file>` runs them against a file; `disable`/`enable <id>` toggles a built-in; `remove <id>` drops a custom rule. Toggle the feature with `enigma config guardrails on|off`.
 </Cmd>
 
+## trim
+
+Remove the blank line agents leave at the end of a file. On by default: it runs after each agent edit and, at commit time, over the staged files, re-staging what it fixed.
+
+<Cmd name="enigma trim [--all]" ex={["enigma trim", "enigma trim --all", "enigma config trim off"]}>
+No argument fixes the staged files and re-stages them; `--all` sweeps every tracked file, which is how you clean a repo retroactively. A file is only changed when it has real content followed by one or more blank lines at the end, so an empty file, a file of only blank lines, and a last line with no closing newline are all left alone. A staged file that also has unstaged edits is fixed on disk but not re-staged, so `git add` never pulls unrelated work into the commit.
+</Cmd>
+
 ## verify
 
 Check that work reported as finished actually is. Runs automatically at turn end (on by default). See <a href={docHref("concepts/verify")}>Verified completion</a> for detail.

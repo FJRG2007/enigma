@@ -18,7 +18,7 @@ import { lintFiles } from "../packages/linter/src/index.ts";
 const EXTENSIONS = [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs", ".astro", ".vue", ".svelte", ".py", ".rs", ".prisma"];
 
 function git(args) {
-    return execFileSync("git", args, { encoding: "utf8" });
+    return execFileSync("git", args, { encoding: "utf8", windowsHide: true });
 }
 
 /** Parse `--staged` / `--range <range>` from argv. */

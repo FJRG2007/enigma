@@ -259,9 +259,42 @@ test("leaves imports that are already fine, and honours the deliberate exception
     expect(checkFile("dist/bundle.js", `import { ${names(10)} } from "./config";\n`, null)).toEqual([]);
 });
 
+test("flags a spawn that can pop a console window on Windows", () => {
+    const src = 'import { execFileSync } from "node:child_process";\nexecFileSync("git", ["log"], { encoding: "utf8" });\n';
+    const f = checkFile("src/repo.ts", src, null);
+    expect(f.length).toBe(1);
+    expect(f[0]!.ruleId).toBe("proc-windows-hide");
+    expect(f[0]!.severity).toBe("block");
+    expect(f[0]!.line).toBe(2);
+    expect(f[0]!.message).toContain("execFileSync");
+    // The options object is read by balancing parens, so a call spanning lines is judged whole.
+    const multiline = 'import { execFile } from "node:child_process";\nexecFile(\n    name,\n    args,\n    { signal, encoding: "utf8" },\n    cb\n);\n';
+    expect(checkFile("src/gh.ts", multiline, null).map((x) => x.ruleId)).toEqual(["proc-windows-hide"]);
+    // A rename is still the same function.
+    const aliased = 'import { spawnSync as run } from "node:child_process";\nrun("git", ["log"], { encoding: "utf8" });\n';
+    expect(checkFile("src/repo.ts", aliased, null).length).toBe(1);
+});
+
+test("never flags a spawn that is fine, deliberate, or unknowable", () => {
+    const head = 'import { spawn, spawnSync, execFile } from "node:child_process";\n';
+    for (const call of [
+        "spawnSync('git', ['log'], { encoding: 'utf8', windowsHide: true });",       // the fix
+        "spawn(bin, args, { stdio: 'inherit', env });",                              // runs in the user's terminal
+        "spawn(bin, args, opts);",                                                   // options come from a variable
+        "spawn(bin, args, { ...spawnOpts, env });",                                  // the spread may carry it
+        "spawn(bin, args, { detached: true, windowsHide: false });",                 // deliberately visible
+        "spawn(bin, args, { detached: true }); // enigma: opens a terminal on purpose",
+    ]) expect(checkFile("src/a.ts", `${head}${call}\n`, null)).toEqual([]);
+    // Only bindings imported from child_process count, so these two common shapes stay quiet.
+    expect(checkFile("src/a.ts", `const RE = /x/g;\nRE.exec(s);\ndb.exec({ a: 1 });\n`, null)).toEqual([]);
+    // A test runs in a terminal that already has a console, so it is out of scope.
+    const bad = `import { execFileSync } from "node:child_process";\nexecFileSync("git", ["log"], { encoding: "utf8" });\n`;
+    expect(checkFile("tests/repo.test.ts", bad, null)).toEqual([]);
+});
+
 test("built-in rules cover the documented conventions", () => {
     const ids = BUILTIN_RULES.map((r) => r.id);
-    for (const id of ["db-uuid-pk", "db-ts-orm-prisma", "be-validate-input-ts", "be-validate-input-py", "fe-password-input", "fe-no-native-dialog", "fe-skeleton-loading", "fe-viewport-meta", "fe-ai-elements-chat", "ui-no-em-dash", "ts-import-namespace"]) {
+    for (const id of ["db-uuid-pk", "db-ts-orm-prisma", "be-validate-input-ts", "be-validate-input-py", "fe-password-input", "fe-no-native-dialog", "fe-skeleton-loading", "fe-viewport-meta", "fe-ai-elements-chat", "ui-no-em-dash", "ts-import-namespace", "proc-windows-hide"]) {
         expect(ids).toContain(id);
     }
     // Go/Rust input-validation rules are deliberately absent (imprecise - see guardrails.ts).

@@ -123,6 +123,30 @@ Build every UI to adapt to the viewport; never assume a desktop width. A layout 
 
 ---
 
+## Persistent Chrome Stays Put (Sidebars, Nav, Panels)
+
+Navigation and any other persistent chrome must stay where the user left it while the CONTENT scrolls. A sidebar that scrolls up and off the top with the page is one of the most common generated-layout defects, and it makes a long page unnavigable: the user has to scroll back up to reach any other link.
+
+- Put the scroll on the content, not on the page. The reliable shape is a viewport-height shell whose sidebar and main are siblings, each owning its own overflow: `position: sticky` with a `top` offset (simplest - the sidebar stays in the grid and needs no width duplication), or a `position: fixed` sidebar with matching padding on the content. Tailwind's `sticky top-0` / `h-screen sticky` do the same thing.
+- **Pinning alone is not enough, and this is the part that gets missed.** `position: sticky` only pins the element's TOP edge: as soon as the sidebar's own content is taller than the viewport, the rest keeps scrolling away with the page and the last entries can never be reached. A pinned sidebar therefore needs BOTH a height bounded by the viewport (`max-height: calc(100vh - <header height>)`, or `h-screen`) AND its own `overflow-y: auto`. A sidebar with a content-sized height (`height: max-content`, `fit-content`, or none at all) plus `overflow: visible` is the broken pattern, even though it looks correct until the list grows.
+- Add `overscroll-behavior: contain` to the sidebar's scroll container so reaching its end does not start scrolling the page behind it.
+- Undo it where the layout stacks. At the mobile breakpoint the sidebar usually returns to normal flow (`position: static`), and the viewport height cap has to be lifted with it (`max-height: none; overflow-y: visible`) or it turns into a small scrolling box inside the page.
+- The same rule covers a sticky header, toolbar, filter rail or side panel: pinned, bounded, and independently scrollable. Keep pinned chrome shallow - it eats vertical space on small screens, so collapse it into a drawer or a top bar there rather than pinning it over half the viewport.
+- Verify by scrolling to the BOTTOM of a long page and confirming the sidebar is still on screen with its last entry reachable. Mechanically: the sidebar's `getBoundingClientRect().top` stays at its offset as the page scrolls, and `scrollHeight <= clientHeight` holds for it, or it can scroll itself.
+
+---
+
+## Links In Copy Are Links
+
+When UI copy names a destination - a URL, a doc page, a dashboard, a settings screen, an external service - make it reachable from where it is written. Printing a bare URL as plain text in a hint, description, empty state or error message leaves the user to select and copy it by hand, which is exactly the work the interface exists to remove.
+
+- A URL inside a sentence becomes an inline anchor on the words that name it, not a raw address dropped mid-paragraph: "Leave empty to use the [deployment default](https://example.com)" reads better than repeating the URL. Show the bare address only when the exact value is the information (a host to whitelist, an endpoint to paste elsewhere) - and then pair it with a copy button rather than expecting a manual selection.
+- External links carry `target="_blank"` with `rel="noopener noreferrer"`, and say where they go when the destination is not obvious from the text. In-app destinations use the router, never a full page reload.
+- Choose the affordance by weight, not by habit: an inline anchor for a reference inside a sentence, a button for the primary action of a panel or empty state ("Open dashboard"), an icon button where it repeats per row (Icon Actions above). A whole sentence is never a link - link the noun.
+- The same applies to anything else with a natural affordance: a file path gets a copy button, an email gets `mailto:`, a referenced setting gets a link to that settings screen. If the copy tells the user to go somewhere, take them there.
+
+---
+
 ## Text That Does Not Fit (Variable-Length Content)
 
 Every string is variable-length; the value on screen during development is one sample. Text escaping its card or colliding with a neighbour is the most common layout defect, it is invisible until the content changes, and it is the responsibility of whoever writes the layout - not something to be pointed out afterwards.

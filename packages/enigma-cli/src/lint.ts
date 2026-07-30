@@ -190,7 +190,7 @@ export const EnigmaLint = async () => ({
             if (!FILE_TOOLS.has(input.tool)) return;
             const file = input.args && (input.args.filePath || input.args.path);
             if (!file) return;
-            const r = spawnSync("node", [RUNNER, file], { encoding: "utf8", timeout: 30000 });
+            const r = spawnSync("node", [RUNNER, file], { encoding: "utf8", timeout: 30000, windowsHide: true });
             const findings = (r.stderr || "").trim();
             if (findings) output.output += "\\n\\n[enigmax-lint]\\n" + findings;
         } catch { /* never break the tool on a lint failure */ }
