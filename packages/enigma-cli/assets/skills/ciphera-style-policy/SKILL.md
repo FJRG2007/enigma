@@ -1,6 +1,6 @@
 ---
 name: ciphera-style-policy
-description: Ciphera code style conventions - mandatory formatting and language idioms for source code (TypeScript-first, applies to every language) - American-English naming, double quotes, string interpolation, length-sorted imports, 4-space indentation, comment/JSDoc format, compact single-line blocks, and code-level anti-patterns (barrel files, external CDN/hosting dependencies). Use whenever writing, refactoring, or reviewing source code.
+description: Ciphera code style conventions - mandatory formatting and language idioms for source code (TypeScript-first, applies to every language) - American-English naming, double quotes, string interpolation, length-sorted imports, one statement per module and a namespace import (`import * as ns`) instead of a long named list from a project module, 4-space indentation, comment/JSDoc format, compact single-line blocks, and code-level anti-patterns (barrel files, external CDN/hosting dependencies). Use whenever writing, refactoring, or reviewing source code.
 ---
 
 # Ciphera Code Style Policy
@@ -60,6 +60,22 @@ const path = `/path/to/${folderName}/file`;
 ## Imports
 
 - Sort imports by line length, shortest first.
+- One statement per module: never import the same module twice in a file (a value import plus a `type` import of the same module is still one statement, with `type` on the members).
+- When you need many symbols from one of the project's own modules, import the module as a NAMESPACE instead of listing them. A named list is fine for a handful; past that the line stops being readable, and every new export widens it again. The namespace also makes each call site say where the symbol comes from.
+- Name the namespace after the module. When that name is already a local variable in the file, pick a distinct one (`conf` for a config module whose values are held in `config` variables, `gateDb` for a `db` module) rather than shadowing it.
+- This applies to modules the project owns (relative paths, path aliases). Standard-library and package imports stay named: their surface is fixed and the ecosystem reads them that way.
+
+```ts
+// Bad: 13 symbols on one line, and it grows with every new export.
+import { readConfig, readGlobalConfig, CONFIG_DEFAULTS, setEnigmaToggle, setEnigmaValue, OUTPUT_STYLES, DASHBOARD_MODES } from "./config";
+
+// Good
+import * as conf from "./config";
+
+const { config } = conf.readConfig();
+if (!conf.OUTPUT_STYLES.includes(style)) return;
+```
+
 - Do not import from external hostings or CDNs; depend on a package name, not a remote URL.
 - For obscure libraries, vendor the needed code into the project utilities instead of adding a fragile dependency.
 
