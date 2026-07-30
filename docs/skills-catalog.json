@@ -1,6 +1,6 @@
 {
   "generator": "enigma seal",
-  "cliVersion": "1.32.0",
+  "cliVersion": "1.32.1",
   "count": 19,
   "skills": [
     {
@@ -32,7 +32,7 @@
       "version": "1.2.0",
       "description": "Ciphera code style conventions (formatting, naming, imports incl. namespace imports for wide module surfaces, comments, code-level anti-patterns; TypeScript-first, language-agnostic).",
       "provider": "FJRG2007/enigma",
-      "updated": "2026-06-26T13:40:52+02:00",
+      "updated": "2026-07-30T15:47:21+02:00",
       "sha": "05dc812da459071110d96ee41c5201b1ee230471d635352415e10ef8b220c267"
     },
     {
