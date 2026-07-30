@@ -5,7 +5,7 @@
 
 import { homedir } from "node:os";
 import { createHash } from "node:crypto";
-import { join, relative, sep } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { existsSync, statSync, readFileSync, readdirSync } from "node:fs";
 
 /** True if `pth` exists and is a directory. */
@@ -22,6 +22,21 @@ export function isDir(pth: string): boolean {
  */
 export function enigmaHome(): string {
     return process.env.ENIGMA_CONFIG_HOME || homedir();
+}
+
+/**
+ * Walk up from `start` to find the git repository root, or null. Stat-only (no git
+ * spawn), so it is cheap enough for launch-path code. Lives here rather than in
+ * security.ts so light modules can reuse it without pulling in that module's prompts.
+ */
+export function findGitRoot(start: string): string | null {
+    let dir = resolve(start);
+    for (;;) {
+        if (existsSync(join(dir, ".git"))) return dir;
+        const parent = dirname(dir);
+        if (parent === dir) return null;
+        dir = parent;
+    }
 }
 
 /**

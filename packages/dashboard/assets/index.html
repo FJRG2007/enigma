@@ -3118,7 +3118,7 @@ export {
             let svg = "", title = "";
             const bp = /^bypass-(claude|codex|opencode)$/.exec(key);
             if (bp) { svg = (typeof AGENT_ICONS !== "undefined" && AGENT_ICONS[bp[1]]) || ""; title = AGENT_LABEL_BY_NAME[bp[1]]; }
-            else if (key === "claude-attribution" || key === "claude-survey" || key === "proxy") { svg = (typeof AGENT_ICONS !== "undefined" && AGENT_ICONS.claude) || ""; title = "Claude Code"; }
+            else if (key === "claude-attribution" || key === "claude-survey" || key === "claude-trust" || key === "proxy") { svg = (typeof AGENT_ICONS !== "undefined" && AGENT_ICONS.claude) || ""; title = "Claude Code"; }
             else if (key === "gh-telemetry") { svg = GH_ICON; title = "GitHub"; }
             return svg ? '<span class="aicon set-ic" title="' + esc(title) + '" aria-hidden="true">' + svg + "</span>" : "";
         }

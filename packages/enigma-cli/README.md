@@ -369,6 +369,25 @@ enigma config claude-survey off       # disable again
 enigma config claude-survey off -g    # global (~/.claude/settings.json)
 ```
 
+## Claude workspace trust (default on)
+
+Claude Code asks "Is this a project you trust?" the first time it starts in a
+folder, and in your home directory it asks *every* time - the answer is never
+persisted there. enigma answers it for you, for any path, by recording the trust
+in Claude's own `.claude.json`: the filesystem root (which Claude inherits down
+every directory) plus each workspace you launch in.
+
+This is a security trade-off, and the reason it is a toggle: that prompt is what
+makes you look at unfamiliar code before an agent runs in it.
+
+```bash
+enigma config claude-trust off        # keep Claude's trust prompt
+enigma config claude-trust on         # answer it once and for all (default)
+```
+
+Turning it off stops the blanket, and leaves the folders already trusted alone -
+it never re-asks for projects you accepted yourself.
+
 ## Commit emojis
 
 By default the policy skills make commit subjects carry a leading type emoji

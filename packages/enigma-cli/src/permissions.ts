@@ -20,7 +20,7 @@ import * as p from "@clack/prompts";
 import { AGENTS } from "./agents";
 import { isDir, readJson } from "./util";
 import { readConfig, setBypassDisabled } from "./config";
-import { enableClaudeBypass, getClaudeBypass, mirrorClaudeSettings, setClaudeBypass } from "./claude";
+import { enableClaudeBypass, getClaudeBypass, mirrorClaudeSettings, mirrorClaudeTrust, setClaudeBypass } from "./claude";
 import type { Agent } from "./agents";
 
 /** Agents that expose a permission-bypass switch. */
@@ -130,14 +130,16 @@ export function setBypass(name: string, scope: "global" | "local", on: boolean, 
  * Mirror enigma-managed agent-native settings from the user's default/global
  * config into a managed account's config dir, so `enigma <tool> <account>`
  * behaves like the default account: Claude's settings.json knobs (attribution,
- * bypass, statusline), Codex's approval_policy/sandbox_mode in config.toml, and
- * opencode's "*" permission catch-all in opencode.json. Mirrors presence AND
- * absence (turning a knob off propagates); every other account setting is kept.
+ * bypass, statusline) plus its workspace trust (a second file, `.claude.json`),
+ * Codex's approval_policy/sandbox_mode in config.toml, and opencode's "*" permission
+ * catch-all in opencode.json. Mirrors presence AND absence (turning a knob off
+ * propagates); every other account setting is kept.
  */
 export function mirrorAccountSettings(toolName: string, accountDir: string): void {
     switch (toolName) {
         case "claude":
             mirrorClaudeSettings(accountDir);
+            mirrorClaudeTrust(accountDir);
             return;
         case "codex":
             mirrorCodexConfig(accountDir);

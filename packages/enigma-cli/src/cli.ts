@@ -301,8 +301,8 @@ Commands:
 Config keys: commit-emoji, update-notifier, auto-sync, remote-skills, fullscreen,
              statusline, parallel-subagents, output-style (off|lite|full|ultra),
              minimal-code (off|lite|full|ultra), compress, claude-attribution,
-             claude-survey, gh-telemetry, permission-bypass, bypass-claude,
-             bypass-codex, bypass-opencode
+             claude-survey, claude-trust, gh-telemetry, permission-bypass,
+             bypass-claude, bypass-codex, bypass-opencode
 
 Install options:
   -g, --global         Install at user level

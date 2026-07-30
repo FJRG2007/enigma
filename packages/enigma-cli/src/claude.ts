@@ -2,14 +2,15 @@
  * Claude Code specific configuration. Deterministically disables the automatic
  * "Co-Authored-By: Claude" commit trailer / "Generated with Claude Code" PR
  * footer, and (opt-in) sets the permission bypass mode, by writing the real
- * settings.json knobs.
+ * settings.json knobs. Workspace trust is the one knob that lives in Claude's
+ * user-global `.claude.json` instead - see the trust section below.
  *
  * A skill rule only persuades the model; this writes the real settings.json knob
  * so the behavior is enforced regardless of what the model does.
  */
 
-import { join } from "node:path";
-import { enigmaHome, isDir, readJson } from "./util";
+import { join, normalize, parse, resolve } from "node:path";
+import { enigmaHome, findGitRoot, isDir, readJson } from "./util";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 
 /**
@@ -300,6 +301,155 @@ export function disableClaudeStatusline(scope: "global" | "local"): boolean {
 }
 
 /**
+ * Claude Code asks "Is this a project you trust?" the first time it starts in a
+ * workspace and records the answer as `projects[<workspace>].hasTrustDialogAccepted`
+ * in its user-global `.claude.json` (not settings.json). Two details in the client
+ * make that prompt recur instead of being a one-off:
+ *
+ *   - In the home directory the answer is kept for the SESSION only and never
+ *     persisted, so every start there asks again.
+ *   - Trust is inherited from parent directories, but the second form of the prompt
+ *     (the backstop for settings that grant permissions) is skipped only when the
+ *     workspace's OWN entry is trusted - and it fires for any repo whose local
+ *     settings carry `permissions.allow` rules, which is most of them.
+ *
+ * So retiring the prompt takes both keys: the filesystem root, which the client's
+ * parent walk turns into "every path on this drive" (the home directory included),
+ * and the workspace itself.
+ *
+ * This is a deliberate security trade-off, which is why it is a toggle: the prompt
+ * exists to make you look at code you did not write before an agent runs in it.
+ */
+
+/** Claude Code's user-global state file, where workspace trust is recorded. */
+function claudeStatePath(): string {
+    return join(enigmaHome(), ".claude.json");
+}
+
+const TRUST_KEY = "hasTrustDialogAccepted";
+
+/**
+ * The project entry Claude Code creates for a workspace it has not seen. Written
+ * verbatim for a new entry so the file stays exactly what the client would produce.
+ */
+const CLAUDE_PROJECT_DEFAULTS: Record<string, unknown> = {
+    allowedTools: [],
+    mcpContextUris: [],
+    mcpServers: {},
+    enabledMcpjsonServers: [],
+    disabledMcpjsonServers: [],
+    hasTrustDialogAccepted: false,
+    projectOnboardingSeenCount: 0,
+    hasClaudeMdExternalIncludesApproved: false,
+    hasClaudeMdExternalIncludesWarningShown: false,
+};
+
+/**
+ * The key Claude Code files a workspace under: the git repository root when the
+ * directory is inside one, else the directory itself, with forward slashes. It has to
+ * match the client's own computation, since an entry under any other key is one it
+ * never reads. A linked worktree is the one case where the client keys the MAIN
+ * repository root instead; trust there comes from the inherited root entry.
+ */
+export function claudeWorkspaceKey(dir: string): string {
+    return normalize(findGitRoot(dir) ?? resolve(dir)).replaceAll("\\", "/");
+}
+
+/** Filesystem roots to trust: the drive of the config home and of `dir` (usually one). */
+function trustRoots(dir: string): string[] {
+    const roots = [parse(enigmaHome()).root, parse(resolve(dir)).root]
+        .map((r) => normalize(r).replaceAll("\\", "/"));
+    return [...new Set(roots)];
+}
+
+/**
+ * Whether enigma's blanket trust is in place in `file` (every filesystem root marked
+ * trusted). Deliberately ignores per-workspace entries: those are also what accepting
+ * the prompt by hand writes, so reading them would report a user's own answer as this
+ * setting being on.
+ */
+function hasTrustRoots(file: string, dir: string): boolean {
+    const projects = readJson<Record<string, unknown>>(file)?.projects as Record<string, Record<string, unknown>> | undefined;
+    if (!projects) return false;
+    return trustRoots(dir).every((root) => projects[root]?.[TRUST_KEY] === true);
+}
+
+/** Reports whether Claude Code's workspace trust prompt is currently pre-answered. */
+export function getClaudeTrust(): boolean {
+    return hasTrustRoots(claudeStatePath(), process.cwd());
+}
+
+/**
+ * Mark the filesystem roots and `dir` as trusted in a Claude state file, leaving every
+ * other project entry untouched. Returns true when the file changed - so a caller that
+ * runs on every launch (the sync path) stays a no-op once the trust is recorded.
+ * Refuses to write a file it cannot parse: overwriting it would discard the user's
+ * login and per-project state.
+ */
+export function trustClaudeWorkspaces(file: string, dir: string): boolean {
+    const current = existsSync(file) ? readJson<Record<string, unknown>>(file) : {};
+    if (current === null) return false;
+    const projects = (typeof current.projects === "object" && current.projects !== null)
+        ? { ...current.projects as Record<string, Record<string, unknown>> }
+        : {};
+
+    let changed = false;
+    for (const key of [...trustRoots(dir), claudeWorkspaceKey(dir)]) {
+        const entry = projects[key];
+        if (entry?.[TRUST_KEY] === true) continue;
+        projects[key] = { ...CLAUDE_PROJECT_DEFAULTS, ...entry, [TRUST_KEY]: true };
+        changed = true;
+    }
+    if (!changed) return false;
+
+    writeClaudeSettings(file, { ...current, projects });
+    return true;
+}
+
+/**
+ * Drop the blanket root trust from a Claude state file. Individual workspaces keep
+ * theirs: those entries are indistinguishable from the ones the user accepted by hand,
+ * and clearing them would re-ask for every project they already trusted. Returns true
+ * when the file changed.
+ */
+export function untrustClaudeWorkspaces(file: string): boolean {
+    const current = readJson<Record<string, unknown>>(file);
+    if (!current) return false;
+    const projects = (typeof current.projects === "object" && current.projects !== null)
+        ? { ...current.projects as Record<string, Record<string, unknown>> }
+        : {};
+
+    let changed = false;
+    for (const root of trustRoots(process.cwd())) {
+        const entry = projects[root];
+        if (!entry || entry[TRUST_KEY] !== true) continue;
+        projects[root] = { ...entry, [TRUST_KEY]: false };
+        changed = true;
+    }
+    if (!changed) return false;
+
+    writeClaudeSettings(file, { ...current, projects });
+    return true;
+}
+
+/** Applies or revokes the trust pre-answer in Claude's global state. Returns true when written. */
+export function setClaudeTrust(on: boolean): boolean {
+    const file = claudeStatePath();
+    return on ? trustClaudeWorkspaces(file, process.cwd()) : untrustClaudeWorkspaces(file);
+}
+
+/**
+ * Propagate the trust pre-answer into a managed account's config dir, which has its own
+ * `.claude.json` and therefore its own trust state - without this, `enigma claude
+ * <account>` would meet the prompt the default account no longer shows. Mirrors absence
+ * too, so turning the setting off reaches the accounts.
+ */
+export function mirrorClaudeTrust(accountDir: string): boolean {
+    const file = join(accountDir, ".claude.json");
+    return getClaudeTrust() ? trustClaudeWorkspaces(file, process.cwd()) : untrustClaudeWorkspaces(file);
+}
+
+/**
  * Mirror the enigma-managed settings.json knobs from the user's global Claude
  * settings into a managed account's config dir, so an account launched via
  * `enigma claude <account>` behaves like the default one. Mirrored knobs:
@@ -373,7 +523,7 @@ export function mirrorClaudeSettings(accountDir: string): boolean {
     return true;
 }
 
-/** Write Claude settings.json, creating the parent directory if needed. */
+/** Write a Claude Code JSON config (settings.json or `.claude.json`), creating its directory. */
 function writeClaudeSettings(path: string, data: Record<string, unknown>): void {
     const dir = join(path, "..");
     if (!isDir(dir)) mkdirSync(dir, { recursive: true });

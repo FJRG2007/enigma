@@ -19,7 +19,7 @@ import { applyDashboardMode } from "./dashboard";
 import { applyGateToggle } from "./command-deploy";
 import type { DashboardMode } from "./config";
 import { getGhTelemetryCached, ghTelemetryBlocker, hasGhCli, setGhTelemetry } from "./github";
-import { getClaudeAttribution, setClaudeAttribution, getClaudeFeedbackSurvey, setClaudeFeedbackSurvey, getClaudeStatusline, setClaudeStatusline, hasCustomClaudeStatusline } from "./claude";
+import { getClaudeAttribution, setClaudeAttribution, getClaudeFeedbackSurvey, setClaudeFeedbackSurvey, getClaudeStatusline, setClaudeStatusline, hasCustomClaudeStatusline, setClaudeTrust } from "./claude";
 import { BYPASS_SUPPORTED, getBypass, setBypass } from "./permissions";
 import { GUARD_PROTECTIONS, GUARD_LISTS, readGlobalGuard, setGuardProtection, setGuardList } from "./guard-config";
 import type { GuardListMeta } from "./guard-config";
@@ -201,6 +201,22 @@ function setStatusline(on: boolean, scope: Scope): ApplyResult {
     }
     const path = setEnigmaToggle("statusline", on, scope);
     setClaudeStatusline(scope, on);
+    return { path, changed: true };
+}
+
+/**
+ * Persist the workspace-trust preference and apply it to Claude's own state file now.
+ *
+ * Same intent/effect split as `setStatusline`: the flag says what the user wants and
+ * `.claude.json` carries the effect. Without the flag an off would be indistinguishable
+ * from a machine that never had it, so the next install or sync would silently re-answer
+ * a prompt the user asked to see. Turning it off leaves the workspaces already trusted
+ * alone (see untrustClaudeWorkspaces) - it stops the blanket, it does not re-ask for
+ * every project the user has already accepted.
+ */
+function setTrust(on: boolean, scope: Scope): ApplyResult {
+    const path = setEnigmaToggle("claudeTrust", on, scope);
+    setClaudeTrust(on);
     return { path, changed: true };
 }
 
@@ -571,9 +587,19 @@ const RAW_CATEGORIES: Category[] = [
     },
     {
         title: "Permissions",
-        blurb: "approval-prompt bypass (security trade-off; on by default)",
+        blurb: "approval and trust prompts enigma answers for you (security trade-off; on by default)",
         settings: [
             enigmaToggle("permission-bypass", "permissionBypass", "Permission bypass (default)", "on: every install bypasses each agent's approval prompts unless opted out per-agent; off: never bypass by default"),
+            {
+                key: "claude-trust",
+                label: "Skip workspace trust prompt",
+                hint: "answer Claude Code's 'Is this a project you trust?' once and for all, for any path - including your home directory, where Claude never remembers the answer; a security trade-off: that prompt is what makes you look at unfamiliar code before an agent runs in it; Claude Code only; enigma default: on",
+                // The trust store is Claude's user-global .claude.json; there is no project-local
+                // form, so a local write would report success and change nothing.
+                globalOnly: true,
+                read: () => readConfig().config.claudeTrust,
+                write: (value, scope) => setTrust(value, scope),
+            },
             ...BYPASS_SUPPORTED.map((name): Setting => ({
                 key: `bypass-${name}`,
                 label: `${AGENTS[name]?.label || name} approval bypass`,

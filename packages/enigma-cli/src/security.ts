@@ -11,7 +11,7 @@ import { dirname, join, resolve, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 import * as p from "@clack/prompts";
-import { isOnPath } from "./util";
+import { findGitRoot, isOnPath } from "./util";
 import { readConfig } from "./config";
 import { clackReporter } from "./reporter";
 import type { Reporter } from "./reporter";
@@ -53,17 +53,6 @@ export interface SecurityOptions {
     force?: boolean;
     protections?: string[];
     security?: boolean;
-}
-
-/** Walk up from `start` to find the git repository root, or null. */
-export function findGitRoot(start: string): string | null {
-    let dir = resolve(start);
-    for (;;) {
-        if (existsSync(join(dir, ".git"))) return dir;
-        const parent = dirname(dir);
-        if (parent === dir) return null;
-        dir = parent;
-    }
 }
 
 function currentHooksPath(root: string): string {
