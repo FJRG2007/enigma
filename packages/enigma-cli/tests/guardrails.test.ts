@@ -227,9 +227,41 @@ test("flags an agent memory file over its context budget, and only that file kin
     expect(checkFile("CLAUDE.md", "# notes\nan index, not a knowledge base\n", null)).toEqual([]);
 });
 
+test("flags a wide named import of a project module, and points at the module and the count", () => {
+    const names = (n: number) => Array.from({ length: n }, (_, i) => `n${i}`).join(", ");
+    const f = checkFile("src/registry.ts", `import { ${names(10)} } from "./config";\n`, null);
+    expect(f.length).toBe(1);
+    expect(f[0]!.ruleId).toBe("ts-import-namespace");
+    expect(f[0]!.severity).toBe("block");
+    expect(f[0]!.line).toBe(1);
+    expect(f[0]!.message).toContain('10 bindings from "./config"');
+    // The budget is the whole file's use of that module, so splitting the statement does not dodge it.
+    const split = `import { ${names(5)} } from "./config";\nimport type { A, B, C, D, E } from "./config";\n`;
+    expect(checkFile("src/registry.ts", split, null).map((x) => x.ruleId)).toEqual(["ts-import-namespace"]);
+    // Nor does spreading the list over several lines.
+    expect(checkFile("src/registry.ts", `import {\n    ${names(10).replace(/, /g, ",\n    ")}\n} from "./db";\n`, null).length).toBe(1);
+    // A path alias is still the project's own module.
+    expect(checkFile("src/registry.ts", `import { ${names(10)} } from "@/lib/config";\n`, null).length).toBe(1);
+});
+
+test("leaves imports that are already fine, and honours the deliberate exception", () => {
+    const names = (n: number) => Array.from({ length: n }, (_, i) => `n${i}`).join(", ");
+    // At the budget, not over it.
+    expect(checkFile("src/a.ts", `import { ${names(9)} } from "./config";\n`, null)).toEqual([]);
+    // The fix.
+    expect(checkFile("src/a.ts", `import * as conf from "./config";\n`, null)).toEqual([]);
+    // A bare specifier is a fixed surface the ecosystem writes as named imports.
+    expect(checkFile("src/a.ts", `import { ${names(12)} } from "node:fs";\n`, null)).toEqual([]);
+    expect(checkFile("src/a.ts", `import { ${names(12)} } from "@clack/prompts";\n`, null)).toEqual([]);
+    // Escape hatch on the import line, and generated/declaration files stay out of scope.
+    expect(checkFile("src/a.ts", `import { ${names(10)} } from "./gen"; // enigma: generated surface\n`, null)).toEqual([]);
+    expect(checkFile("src/types.d.ts", `import { ${names(10)} } from "./config";\n`, null)).toEqual([]);
+    expect(checkFile("dist/bundle.js", `import { ${names(10)} } from "./config";\n`, null)).toEqual([]);
+});
+
 test("built-in rules cover the documented conventions", () => {
     const ids = BUILTIN_RULES.map((r) => r.id);
-    for (const id of ["db-uuid-pk", "db-ts-orm-prisma", "be-validate-input-ts", "be-validate-input-py", "fe-password-input", "fe-no-native-dialog", "fe-skeleton-loading", "fe-viewport-meta", "fe-ai-elements-chat", "ui-no-em-dash"]) {
+    for (const id of ["db-uuid-pk", "db-ts-orm-prisma", "be-validate-input-ts", "be-validate-input-py", "fe-password-input", "fe-no-native-dialog", "fe-skeleton-loading", "fe-viewport-meta", "fe-ai-elements-chat", "ui-no-em-dash", "ts-import-namespace"]) {
         expect(ids).toContain(id);
     }
     // Go/Rust input-validation rules are deliberately absent (imprecise - see guardrails.ts).

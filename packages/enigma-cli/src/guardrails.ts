@@ -54,6 +54,12 @@ export interface GuardrailRule {
     check?: string;
     /** file scope: fires when the file is larger than this many bytes (size has no regex form). */
     maxBytes?: number;
+    /**
+     * file scope: fires when a single project-internal module contributes more than this many
+     * named import bindings to the file. A count has no regex form, and the bindings are summed
+     * across every statement importing that module, so splitting one import in two cannot dodge it.
+     */
+    maxNamedImports?: number;
     /** Feedback shown to the model; should name the owning skill so the fix is traceable. */
     message: string;
     severity: Severity;
@@ -426,6 +432,29 @@ export const BUILTIN_RULES: GuardrailRule[] = [
         message: "This memory file loads into every session in the project, so its cost is paid on every task regardless of relevance. Keep it an INDEX: move each subsystem's detail into its own doc (docs/notes/<topic>.md) and leave one line here saying what the note covers and when to read it. Route new conventions by tier - a file-local syntactic signature becomes a guardrail rule, a domain-scoped rule belongs in the owning skill (loaded on demand), and only a truly universal rule stays in memory. Turn this off with `enigma guardrails disable ctx-memory-budget`.",
         severity: "block",
     },
+    {
+        id: "ts-import-namespace",
+        label: "Namespace import for a wide module surface",
+        files: ["*.ts", "*.tsx", "*.mts", "*.cts", "*.js", "*.mjs", "*.cjs", "*.jsx"],
+        // Two-form generated/vendored excludes (`**/x/**` misses a root-level dist/). Declaration
+        // files are excluded too: a .d.ts re-declares another module's surface, it has no call sites.
+        excludeFiles: [
+            "*.min.js", "*.d.ts",
+            "**/dist/**", "**/build/**", "**/_build/**", "**/node_modules/**", "**/vendor/**",
+            "dist/**", "build/**", "_build/**", "node_modules/**", "vendor/**",
+        ],
+        scope: "file",
+        // A count has no regex form, hence maxNamedImports. 9 is the budget: past that the import
+        // line stops being readable, and every new export of the module widens it again. Only the
+        // project's OWN modules are counted - a bare specifier (node builtin, npm package) is a
+        // fixed surface the ecosystem writes as named imports, so counting those would flag
+        // idiomatic code. BLOCK for the ui-no-em-dash reason: a warn exits 0 and never reaches
+        // the model, and the fix is mechanical.
+        maxNamedImports: 9,
+        message: "Too many named bindings from one module. Import it as a namespace instead - `import * as <ns> from \"<module>\"`, then call `<ns>.thing()` - so the import stays one short line, each call site says where the symbol comes from, and a new export never widens the import again. The count sums every named import of that module in this file, so splitting the statement in two does not help; name the namespace for the module, and pick a distinct name when the natural one is already a local variable. Keep named imports for a handful of symbols. Mark a deliberate exception with an `enigma:` note on the import line (ciphera-style-policy).",
+        severity: "block",
+        skill: "ciphera-style-policy",
+    },
 ];
 
 /**
@@ -444,6 +473,36 @@ export const PROJECT_CHECKS: Record<string, (projectRoot: string) => boolean> = 
         return !("prisma" in pkg || "@prisma/client" in pkg);
     },
 };
+
+/**
+ * One named-import statement: an optional default binding, an optional `type` keyword, the brace
+ * list (which may span lines - `[^}]` crosses newlines), the specifier, and the rest of the line
+ * so a trailing `// enigma:` note is part of the match.
+ */
+const NAMED_IMPORT = /^import[ \t]+(?:[\w$]+[ \t]*,[ \t]*)?(?:type[ \t]+)?\{([^}]*)\}[ \t]*from[ \t]*["']([^"']+)["'].*$/gm;
+
+/** A module the project owns: relative, a subpath import, or a path alias. */
+const INTERNAL_MODULE = /^\.|^#|^[@~]\//;
+
+/**
+ * Modules contributing more than `max` named bindings to one file. Counts are aggregated per
+ * module across every statement, so two half-sized imports of the same module still add up.
+ * A statement carrying an `enigma:` note is a deliberate exception and clears its module.
+ */
+export function wideNamedImports(content: string, max: number): { line: number; module: string; count: number }[] {
+    const per = new Map<string, { count: number; line: number; allowed: boolean }>();
+    for (const m of content.matchAll(NAMED_IMPORT)) {
+        const mod = m[2]!;
+        if (!INTERNAL_MODULE.test(mod)) continue;
+        const entry = per.get(mod) ?? { count: 0, line: content.slice(0, m.index).split("\n").length, allowed: false };
+        entry.count += m[1]!.split(",").filter((s) => s.trim()).length;
+        if (m[0].includes("enigma:")) entry.allowed = true;
+        per.set(mod, entry);
+    }
+    return [...per]
+        .filter(([, v]) => !v.allowed && v.count > max)
+        .map(([module, v]) => ({ line: v.line, module, count: v.count }));
+}
 
 /** Merged dependency map (deps + devDeps + optional/peer) of a project's package.json, or null. */
 function readPkgDeps(root: string): Record<string, string> | null {
@@ -523,6 +582,10 @@ export function checkFile(file: string, content: string, projectRoot: string | n
         if (rule.scope === "file" && rule.maxBytes) {
             const bytes = Buffer.byteLength(content, "utf8");
             if (bytes > rule.maxBytes) out.push({ ...base, message: `${rule.message} (${bytes} bytes, budget ${rule.maxBytes})` });
+        } else if (rule.scope === "file" && rule.maxNamedImports) {
+            for (const w of wideNamedImports(content, rule.maxNamedImports)) {
+                out.push({ ...base, line: w.line, message: `${rule.message} (${w.count} bindings from "${w.module}", budget ${rule.maxNamedImports})` });
+            }
         } else if (rule.scope === "file" && rule.pattern) {
             // "X without Y": if the mitigation regex is present anywhere, the rule does not apply.
             if (rule.absent) { try { if (new RegExp(rule.absent, "i").test(content)) continue; } catch { /* bad absent regex: ignore the guard */ } }

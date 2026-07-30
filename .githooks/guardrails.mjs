@@ -336,6 +336,17 @@ var BUILTIN_RULES = [
     severity: "block",
     skill: "technical-writing-policy"
   },
+  // NOTE: there is deliberately no "Save button with no dirty check" rule, even though
+  // no-op detection is one of frontend-policy's headline rules. It has no file-local
+  // signature that survives measurement. The dirtiness normally lives in a parent, a store
+  // or a form library, so its absence from THIS file proves nothing; the policy explicitly
+  // allows an enabled Save that short-circuits on click, so a missing `disabled` is not
+  // evidence of the defect either; and the same markup is correct on a create form, which
+  // has nothing to compare against. Measured on the corpus: 2 save buttons in 108
+  // form-capable files (no signal), and the interaction-based dirty flag that WOULD be a
+  // precise signature (a dirty/hasChanges flag assigned a literal true) returned 0 real
+  // hits and 2 false ones, a CLI tracking whether it had rewritten a config file. A rule
+  // here would fire on correct code, so it stays guidance in frontend-policy.
   // NOTE: there is deliberately no "card inside a card" or "border with no information"
   // rule, even though both are named in frontend-policy. They are RELATIONAL defects: a
   // container is redundant only relative to the ancestor it sits in and the spacing around
@@ -372,6 +383,38 @@ var BUILTIN_RULES = [
     maxBytes: 4e4,
     message: "This memory file loads into every session in the project, so its cost is paid on every task regardless of relevance. Keep it an INDEX: move each subsystem's detail into its own doc (docs/notes/<topic>.md) and leave one line here saying what the note covers and when to read it. Route new conventions by tier - a file-local syntactic signature becomes a guardrail rule, a domain-scoped rule belongs in the owning skill (loaded on demand), and only a truly universal rule stays in memory. Turn this off with `enigma guardrails disable ctx-memory-budget`.",
     severity: "block"
+  },
+  {
+    id: "ts-import-namespace",
+    label: "Namespace import for a wide module surface",
+    files: ["*.ts", "*.tsx", "*.mts", "*.cts", "*.js", "*.mjs", "*.cjs", "*.jsx"],
+    // Two-form generated/vendored excludes (`**/x/**` misses a root-level dist/). Declaration
+    // files are excluded too: a .d.ts re-declares another module's surface, it has no call sites.
+    excludeFiles: [
+      "*.min.js",
+      "*.d.ts",
+      "**/dist/**",
+      "**/build/**",
+      "**/_build/**",
+      "**/node_modules/**",
+      "**/vendor/**",
+      "dist/**",
+      "build/**",
+      "_build/**",
+      "node_modules/**",
+      "vendor/**"
+    ],
+    scope: "file",
+    // A count has no regex form, hence maxNamedImports. 9 is the budget: past that the import
+    // line stops being readable, and every new export of the module widens it again. Only the
+    // project's OWN modules are counted - a bare specifier (node builtin, npm package) is a
+    // fixed surface the ecosystem writes as named imports, so counting those would flag
+    // idiomatic code. BLOCK for the ui-no-em-dash reason: a warn exits 0 and never reaches
+    // the model, and the fix is mechanical.
+    maxNamedImports: 9,
+    message: 'Too many named bindings from one module. Import it as a namespace instead - `import * as <ns> from "<module>"`, then call `<ns>.thing()` - so the import stays one short line, each call site says where the symbol comes from, and a new export never widens the import again. The count sums every named import of that module in this file, so splitting the statement in two does not help; name the namespace for the module, and pick a distinct name when the natural one is already a local variable. Keep named imports for a handful of symbols. Mark a deliberate exception with an `enigma:` note on the import line (ciphera-style-policy).',
+    severity: "block",
+    skill: "ciphera-style-policy"
   }
 ];
 var PROJECT_CHECKS = {
@@ -385,6 +428,20 @@ var PROJECT_CHECKS = {
     return !("prisma" in pkg || "@prisma/client" in pkg);
   }
 };
+var NAMED_IMPORT = /^import[ \t]+(?:[\w$]+[ \t]*,[ \t]*)?(?:type[ \t]+)?\{([^}]*)\}[ \t]*from[ \t]*["']([^"']+)["'].*$/gm;
+var INTERNAL_MODULE = /^\.|^#|^[@~]\//;
+function wideNamedImports(content, max) {
+  const per = /* @__PURE__ */ new Map();
+  for (const m of content.matchAll(NAMED_IMPORT)) {
+    const mod = m[2];
+    if (!INTERNAL_MODULE.test(mod)) continue;
+    const entry = per.get(mod) ?? { count: 0, line: content.slice(0, m.index).split("\n").length, allowed: false };
+    entry.count += m[1].split(",").filter((s) => s.trim()).length;
+    if (m[0].includes("enigma:")) entry.allowed = true;
+    per.set(mod, entry);
+  }
+  return [...per].filter(([, v]) => !v.allowed && v.count > max).map(([module, v]) => ({ line: v.line, module, count: v.count }));
+}
 function readPkgDeps(root) {
   try {
     const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
@@ -447,6 +504,10 @@ function checkFile(file, content, projectRoot) {
     if (rule.scope === "file" && rule.maxBytes) {
       const bytes = Buffer.byteLength(content, "utf8");
       if (bytes > rule.maxBytes) out.push({ ...base, message: `${rule.message} (${bytes} bytes, budget ${rule.maxBytes})` });
+    } else if (rule.scope === "file" && rule.maxNamedImports) {
+      for (const w of wideNamedImports(content, rule.maxNamedImports)) {
+        out.push({ ...base, line: w.line, message: `${rule.message} (${w.count} bindings from "${w.module}", budget ${rule.maxNamedImports})` });
+      }
     } else if (rule.scope === "file" && rule.pattern) {
       if (rule.absent) {
         try {
@@ -574,5 +635,6 @@ export {
   loadRules,
   runGuardrailsHook,
   runGuardrailsScan,
-  runGuardrailsScanCli
+  runGuardrailsScanCli,
+  wideNamedImports
 };
