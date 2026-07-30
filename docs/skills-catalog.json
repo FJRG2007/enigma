@@ -1,6 +1,6 @@
 {
   "generator": "enigma seal",
-  "cliVersion": "1.32.2",
+  "cliVersion": "1.32.3",
   "count": 20,
   "skills": [
     {
@@ -136,7 +136,7 @@
       "version": "1.4.0",
       "description": "Exhaustive completion discipline for long/multi-item tasks - inventory, coverage ledger, verified done.",
       "provider": "FJRG2007/enigma",
-      "updated": "2026-07-27T17:22:17+02:00",
+      "updated": "2026-07-30T20:10:24+02:00",
       "sha": "2f82288d83dca3676d6bc49955c89477cc298f77fa56b4e414cd95ff858fa261"
     },
     {
