@@ -8,15 +8,12 @@
  * cannot do it - the "launch" action returns the command for the UI to show instead.
  */
 
+import * as packsMod from "./packs";
 import { DEFAULT_TOOL } from "./accounts";
-import {
-    listPacks, getPack, ensurePackInstalled, disablePack, enablePack, refreshPack,
-    installedPackVersion, setupPackMcp, setPackDefaultAccount, type PackView,
-} from "./packs";
 
 /** Marketplace listing of every pack with its install/enable state. */
-export function listPacksForDashboard(): PackView[] {
-    return listPacks();
+export function listPacksForDashboard(): packsMod.PackView[] {
+    return packsMod.listPacks();
 }
 
 export interface PackActionResult {
@@ -26,7 +23,7 @@ export interface PackActionResult {
     /** Set by "launch": the shell command the user runs to start the pack (browser cannot spawn). */
     command?: string;
     /** The refreshed list after a mutating action. */
-    packs?: PackView[];
+    packs?: packsMod.PackView[];
 }
 
 /**
@@ -39,27 +36,27 @@ export interface PackActionResult {
  *  - launch      : return the command to run (the browser cannot spawn an agent).
  */
 export async function applyPackAction(id: string, action: string, value?: string): Promise<PackActionResult> {
-    const pack = getPack(id);
+    const pack = packsMod.getPack(id);
     if (!pack) return { ok: false, error: `unknown pack: ${id}` };
-    const list = (): PackView[] => listPacks();
+    const list = (): packsMod.PackView[] => packsMod.listPacks();
     switch (action) {
         case "install":
-            if (!ensurePackInstalled(id)) return { ok: false, error: "could not fetch the pack (network or npm)" };
-            enablePack(id);
+            if (!packsMod.ensurePackInstalled(id)) return { ok: false, error: "could not fetch the pack (network or npm)" };
+            packsMod.enablePack(id);
             return { ok: true, note: `${pack.label} added. Launch it with: enigma ${id}`, packs: list() };
         case "remove":
-            disablePack(id);
+            packsMod.disablePack(id);
             return { ok: true, note: `${pack.label} removed.`, packs: list() };
         case "update": {
-            const changed = refreshPack(id);
-            return { ok: true, note: changed ? `${pack.label} updated to ${installedPackVersion(id)}.` : `${pack.label} is up to date.`, packs: list() };
+            const changed = packsMod.refreshPack(id);
+            return { ok: true, note: changed ? `${pack.label} updated to ${packsMod.installedPackVersion(id)}.` : `${pack.label} is up to date.`, packs: list() };
         }
         case "setup": {
-            const added = setupPackMcp(id, DEFAULT_TOOL);
+            const added = packsMod.setupPackMcp(id, DEFAULT_TOOL);
             return { ok: true, note: added.length ? `Registered MCP: ${added.join(", ")} (needs Python 3).` : "No MCP servers registered.", packs: list() };
         }
         case "set-account": {
-            try { setPackDefaultAccount(id, DEFAULT_TOOL, value ? value : null); }
+            try { packsMod.setPackDefaultAccount(id, DEFAULT_TOOL, value ? value : null); }
             catch (e) { return { ok: false, error: (e as Error).message }; }
             return { ok: true, note: value ? `${pack.label} will seed with account '${value}'.` : `${pack.label} follows the active account.`, packs: list() };
         }

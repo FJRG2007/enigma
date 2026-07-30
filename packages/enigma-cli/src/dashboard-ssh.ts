@@ -10,34 +10,29 @@
  * typed here travels only over the origin-guarded loopback and is stored encrypted at rest.
  */
 
+import * as sshLib from "./ssh";
 import {
   listTunnels, addTunnel, updateTunnel, removeTunnel, startTunnel, stopTunnel,
   type TunnelView,
 } from "./ssh-tunnels";
-import {
-  listConnections, getConnection, addConnection, updateConnection, removeConnection,
-  addForward, removeForward, parseForward, describeForward, sshTarget, portIssue,
-  RESERVED_CONNECTION_KEYS,
-  type SshConnectionView, type SshInput,
-} from "./ssh";
 
 /** A connection shaped for the UI: the redacted view plus human forward descriptions. */
-export interface SshRow extends SshConnectionView {
+export interface SshRow extends sshLib.SshConnectionView {
   target: string;
   forwardLabels: string[];
 }
 
-function rowOf(c: SshConnectionView): SshRow {
+function rowOf(c: sshLib.SshConnectionView): SshRow {
   return {
     ...c,
-    target: sshTarget(c as never),
-    forwardLabels: (c.forwards ?? []).map(describeForward),
+    target: sshLib.sshTarget(c as never),
+    forwardLabels: (c.forwards ?? []).map(sshLib.describeForward),
   };
 }
 
 /** All saved connections for the SSH subpage. */
 export function listSshForDashboard(): SshRow[] {
-  return listConnections().map(rowOf);
+  return sshLib.listConnections().map(rowOf);
 }
 
 export interface SshActionResult {
@@ -55,7 +50,7 @@ export interface SshActionResult {
 }
 
 /** The editable fields the dashboard sends for add/edit. */
-interface SshPayload extends SshInput {
+interface SshPayload extends sshLib.SshInput {
   alias?: string;
   /** The connection's alternate name key (distinct from a forward's `name` below). */
   serverName?: string;
@@ -88,13 +83,13 @@ export function listSshData(): { connections: SshRow[]; tunnels: TunnelView[]; r
   return {
     connections: listSshForDashboard(),
     tunnels: listTunnels(),
-    reserved: { connection: RESERVED_CONNECTION_KEYS },
+    reserved: { connection: sshLib.RESERVED_CONNECTION_KEYS },
   };
 }
 
 /** Turn the loose payload into a validated SshInput (options split, forwards ignored here). */
-function toInput(p: SshPayload): SshInput {
-  const input: SshInput = {};
+function toInput(p: SshPayload): sshLib.SshInput {
+  const input: sshLib.SshInput = {};
   if (p.serverName !== undefined) input.name = String(p.serverName).trim();
   if (p.host !== undefined) input.host = String(p.host).trim();
   if (p.user !== undefined) input.user = String(p.user).trim();
@@ -121,31 +116,31 @@ export async function applySshAction(action: string, payload: SshPayload): Promi
   const tName = typeof payload.tunnelName === "string" ? payload.tunnelName : "";
   const data = () => listSshData();
   if (action === "add" || action === "edit") {
-    const bad = payload.port === undefined ? null : portIssue(payload.port);
+    const bad = payload.port === undefined ? null : sshLib.portIssue(payload.port);
     if (bad) return { ok: false, error: bad };
   }
   switch (action) {
     case "add": {
-      const res = addConnection(alias, toInput(payload));
+      const res = sshLib.addConnection(alias, toInput(payload));
       return res.ok ? { ok: true, note: `Saved '${alias}'.`, ...data() } : { ok: false, error: res.error };
     }
     case "edit": {
-      const res = updateConnection(alias, toInput(payload));
+      const res = sshLib.updateConnection(alias, toInput(payload));
       return res.ok ? { ok: true, note: `Updated '${alias}'.`, ...data() } : { ok: false, error: res.error };
     }
     case "remove":
-      if (!removeConnection(alias)) return { ok: false, error: `Unknown connection '${alias}'.` };
+      if (!sshLib.removeConnection(alias)) return { ok: false, error: `Unknown connection '${alias}'.` };
       return { ok: true, note: `Removed '${alias}'.`, ...data() };
     case "forward-add": {
-      const pf = payload.spec ? parseForward(payload.spec) : null;
+      const pf = payload.spec ? sshLib.parseForward(payload.spec) : null;
       if (!pf) return { ok: false, error: "Bad forward spec. Examples: 8080  9090:8080  9090:db:5432  R:8080:localhost:80  D:1080" };
       const nm = typeof payload.name === "string" ? payload.name.trim() : "";
       if (nm) pf.name = nm;
-      const res = addForward(alias, pf);
-      return res.ok ? { ok: true, note: `Added forward: ${describeForward(pf)}`, ...data() } : { ok: false, error: res.error };
+      const res = sshLib.addForward(alias, pf);
+      return res.ok ? { ok: true, note: `Added forward: ${sshLib.describeForward(pf)}`, ...data() } : { ok: false, error: res.error };
     }
     case "forward-remove": {
-      const res = removeForward(alias, Number(payload.index));
+      const res = sshLib.removeForward(alias, Number(payload.index));
       return res.ok ? { ok: true, note: "Forward removed.", ...data() } : { ok: false, error: res.error };
     }
     // --- standalone tunnels ---
@@ -170,7 +165,7 @@ export async function applySshAction(action: string, payload: SshPayload): Promi
     }
     case "connect":
     case "tunnel": {
-      if (!getConnection(alias)) return { ok: false, error: `Unknown connection '${alias}'.` };
+      if (!sshLib.getConnection(alias)) return { ok: false, error: `Unknown connection '${alias}'.` };
       const cmd = action === "tunnel" ? `enigma ssh tunnel ${alias}` : `enigma ssh ${alias}`;
       return { ok: true, command: cmd, note: `Run "${cmd}" in a terminal.` };
     }

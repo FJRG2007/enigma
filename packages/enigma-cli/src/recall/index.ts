@@ -6,6 +6,7 @@
  */
 
 import { join } from "node:path";
+import * as store from "./store";
 import { readConfig } from "../config";
 import { extractSession } from "./extract";
 import { buildSecretMatchers } from "../guard";
@@ -17,7 +18,6 @@ import { claudeProjectsDirs, listJsonl } from "../claude-transcripts";
 import { recallDir, recallAvailable, recallDbBytes, openDb } from "./db";
 import type { Observation, ObservationHit, ObservationType, RecallStats, SessionSummary } from "./types";
 import { statSync, readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
-import { insertObservation, insertSession, insertSummary, recallStats, searchObservations, hybridSearch, recentObservations, listSummaries, listProjects, getObservations, clearRecall, backfillVectors, timelineAround, listSessions, prune, sessionsNeedingEnrichment, observationsOfSession, applyEnrichment, markSessionEnriched, deleteObservation, type QueryOptions, type SessionRow } from "./store";
 
 export type { Observation, ObservationHit, RecallStats, RecallSource, SessionSummary, ObservationType } from "./types";
 export { recallAvailable, RecallUnavailableError } from "./db";
@@ -73,41 +73,41 @@ export function syncRecall(): SyncResult {
             changed++;
             const result = extractSession(path, "claude", matchers);
             if (!result) continue;
-            insertSession(result.session, db);
+            store.insertSession(result.session, db);
             sessions++;
-            for (const o of result.observations) if (insertObservation(o, db)) observations++;
-            if (result.summary) insertSummary(result.summary, db);
+            for (const o of result.observations) if (store.insertObservation(o, db)) observations++;
+            if (result.summary) store.insertSummary(result.summary, db);
         }
     }
     // Safety net: embed any observation a bulk path may have inserted without a vector
     // (normal inserts embed inline, so this is usually a no-op).
-    backfillVectors(db);
+    store.backfillVectors(db);
     writeState(next);
     return { available: true, scanned, changed, sessions, observations };
 }
 
 /** Search the memory store (hybrid keyword + vector, falling back to recent for an empty query). */
-export function searchRecall(query: string, opts: QueryOptions = {}): ObservationHit[] {
+export function searchRecall(query: string, opts: store.QueryOptions = {}): ObservationHit[] {
     if (!recallAvailable()) return [];
-    return hybridSearch(query, opts);
+    return store.hybridSearch(query, opts);
 }
 
 /** Chronological context around an observation or project (the search -> timeline step). */
 export function recallTimeline(opts: { id?: number; project?: string; before?: number; after?: number }): ObservationHit[] {
     if (!recallAvailable()) return [];
-    return timelineAround(opts);
+    return store.timelineAround(opts);
 }
 
 /** Recent sessions with their observation counts. */
-export function recallSessions(opts: { project?: string; source?: string; limit?: number } = {}): SessionRow[] {
+export function recallSessions(opts: { project?: string; source?: string; limit?: number } = {}): store.SessionRow[] {
     if (!recallAvailable()) return [];
-    return listSessions(opts);
+    return store.listSessions(opts);
 }
 
 /** Bound the store: drop observations older than maxAgeDays and/or beyond maxRows. */
 export function pruneRecall(opts: { maxAgeDays?: number; maxRows?: number }): number {
     if (!recallAvailable()) return 0;
-    return prune(opts);
+    return store.prune(opts);
 }
 
 export { enrichAvailable } from "./enrich";
@@ -136,8 +136,8 @@ export async function enrichRecall(opts: { maxSessions?: number; force?: boolean
     lastEnrich = now;
     const db = openDb();
     const max = Math.max(1, Math.min(opts.maxSessions ?? 8, 50));
-    for (const sid of sessionsNeedingEnrichment(max, db)) {
-        const obs = observationsOfSession(sid, db);
+    for (const sid of store.sessionsNeedingEnrichment(max, db)) {
+        const obs = store.observationsOfSession(sid, db);
         if (!obs.length) continue;
         const project = obs[0]!.project;
         const result = await enrichSession(project, obs);
@@ -147,11 +147,11 @@ export async function enrichRecall(opts: { maxSessions?: number; force?: boolean
         // its <skip_summary>. The per-session summary below still records the session.
         for (const o of obs) {
             const f = result.perId[o.id!];
-            if (f) { applyEnrichment(o.id!, f, db); out.observations++; }
-            else { deleteObservation(o.id!, db); }
+            if (f) { store.applyEnrichment(o.id!, f, db); out.observations++; }
+            else { store.deleteObservation(o.id!, db); }
         }
-        markSessionEnriched(sid, db);
-        if (result.summary) insertSummary({
+        store.markSessionEnriched(sid, db);
+        if (result.summary) store.insertSummary({
             sessionId: sid, project, source: obs[0]!.source,
             request: result.summary.request, learned: result.summary.learned,
             completed: result.summary.completed, nextSteps: result.summary.nextSteps,
@@ -173,22 +173,22 @@ export interface RecallStatus {
 
 export function recallStatus(): RecallStatus {
     if (!recallAvailable()) return { available: false, stats: null, lastSync: 0, projects: [] };
-    const stats = recallStats();
+    const stats = store.recallStats();
     stats.dbBytes = recallDbBytes();
-    return { available: true, stats, lastSync: readState().lastSync, projects: listProjects() };
+    return { available: true, stats, lastSync: readState().lastSync, projects: store.listProjects() };
 }
 
 /** Wipe all stored memories. */
 export function resetRecall(): void {
     if (!recallAvailable()) return;
-    clearRecall();
+    store.clearRecall();
     writeState({ files: {}, lastSync: 0 });
 }
 
 /** Delete one stored memory by id (its FTS row and vector follow via trigger/cascade). */
 export function deleteRecallObservation(id: number): void {
     if (!recallAvailable() || !Number.isInteger(id) || id <= 0) return;
-    deleteObservation(id, openDb());
+    store.deleteObservation(id, openDb());
 }
 
 /** Fields for a user-authored ("manual") memory; only the title is required. */
@@ -227,7 +227,7 @@ function buildManualObservation(input: ManualObservationInput): Observation | nu
 export function createObservation(input: ManualObservationInput): boolean {
     if (!recallAvailable()) return false;
     const obs = buildManualObservation(input);
-    return obs ? insertObservation(obs, openDb()) : false;
+    return obs ? store.insertObservation(obs, openDb()) : false;
 }
 
 /** Outcome of an LLM generation request. */
@@ -254,8 +254,8 @@ export async function generateObservation(note: string, project?: string): Promi
 export function recallContext(opts: { project?: string; source?: string; limit?: number } = {}): string {
     if (!recallAvailable()) return "";
     const limit = Math.max(1, Math.min(opts.limit ?? 15, 50));
-    const summaries = listSummaries({ project: opts.project, source: opts.source, limit: 5 });
-    const observations = recentObservations({ project: opts.project, source: opts.source, limit });
+    const summaries = store.listSummaries({ project: opts.project, source: opts.source, limit: 5 });
+    const observations = store.recentObservations({ project: opts.project, source: opts.source, limit });
     if (!summaries.length && !observations.length) return "";
     const lines: string[] = [];
     lines.push(`# Project memory${opts.project ? `: ${opts.project}` : ""}`);

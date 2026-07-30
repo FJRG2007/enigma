@@ -10,25 +10,8 @@
  * error, and return `null` where Go returned a nil pointer with a nil error.
  */
 
+import * as types from "./types";
 import { PROVIDER_BITBUCKET, type Provider } from "./host";
-import {
-    ERR_UNSUPPORTED,
-    PR_STATE_OPEN,
-    PR_STATE_CLOSED,
-    PR_STATE_MERGED,
-    CHECK_BUCKET_FAIL,
-    CHECK_BUCKET_PASS,
-    CHECK_BUCKET_CANCEL,
-    CHECK_BUCKET_PENDING,
-    type PR,
-    type Host,
-    type Check,
-    type PRState,
-    type PRContent,
-    type Capabilities,
-    type CheckBucket,
-    type MergeableState
-} from "./types";
 
 const DEFAULT_API_BASE_URL = "https://api.bitbucket.org";
 const ENV_EMAIL = "ENIGMA_BITBUCKET_EMAIL";
@@ -431,7 +414,7 @@ function lookupEnv(env: string[], key: string): string {
 }
 
 /** Host implements the SCM Host contract for Bitbucket via the REST API client. */
-export class BitbucketHost implements Host {
+export class BitbucketHost implements types.Host {
     private readonly client: Client | null;
     private readonly repo: RepoRef;
 
@@ -446,7 +429,7 @@ export class BitbucketHost implements Host {
 
     // Bitbucket's REST API does not expose a reliable merge-conflict probe, so
     // MergeableState is off.
-    capabilities(): Capabilities {
+    capabilities(): types.Capabilities {
         return { mergeableState: false, failedCheckLogs: true };
     }
 
@@ -454,18 +437,18 @@ export class BitbucketHost implements Host {
         if (this.client === null) throw new Error("bitbucket client is not configured");
     }
 
-    async findPR(branch: string, base: string, signal?: AbortSignal): Promise<PR | null> {
+    async findPR(branch: string, base: string, signal?: AbortSignal): Promise<types.PR | null> {
         const pr = await this.client!.findOpenPRBySourceBranch(this.repo, branch, base, signal);
         if (pr === null) return null;
         return this.toPR(pr);
     }
 
-    async createPR(branch: string, base: string, content: PRContent, signal?: AbortSignal): Promise<PR | null> {
+    async createPR(branch: string, base: string, content: types.PRContent, signal?: AbortSignal): Promise<types.PR | null> {
         const pr = await this.client!.createPR(this.repo, branch, base, content.title, content.body, signal);
         return this.toPR(pr);
     }
 
-    async updatePR(pr: PR, content: PRContent, signal?: AbortSignal): Promise<PR | null> {
+    async updatePR(pr: types.PR, content: types.PRContent, signal?: AbortSignal): Promise<types.PR | null> {
         let id: number;
         try {
             id = atoi(pr.number);
@@ -476,14 +459,14 @@ export class BitbucketHost implements Host {
         return this.toPR(updated);
     }
 
-    async getPRState(pr: PR, signal?: AbortSignal): Promise<PRState> {
+    async getPRState(pr: types.PR, signal?: AbortSignal): Promise<types.PRState> {
         const id = atoi(pr.number);
         const got = await this.client!.getPR(this.repo, id, signal);
         if (got === null) return "";
         return normalizePRState(got.state);
     }
 
-    async getChecks(pr: PR, signal?: AbortSignal): Promise<Check[]> {
+    async getChecks(pr: types.PR, signal?: AbortSignal): Promise<types.Check[]> {
         const id = atoi(pr.number);
         const statuses = latestStatuses(await this.client!.listPRStatuses(this.repo, id, signal));
         return statuses.map((status) => ({
@@ -492,12 +475,12 @@ export class BitbucketHost implements Host {
         }));
     }
 
-    async getMergeableState(_pr: PR, _signal?: AbortSignal): Promise<MergeableState> {
-        throw ERR_UNSUPPORTED;
+    async getMergeableState(_pr: types.PR, _signal?: AbortSignal): Promise<types.MergeableState> {
+        throw types.ERR_UNSUPPORTED;
     }
 
     async fetchFailedCheckLogs(
-        pr: PR,
+        pr: types.PR,
         _branch: string,
         headSHA: string,
         failingNames: string[],
@@ -554,7 +537,7 @@ export class BitbucketHost implements Host {
         return "";
     }
 
-    private toPR(pr: PullRequest | null): PR | null {
+    private toPR(pr: PullRequest | null): types.PR | null {
         if (pr === null) return null;
         return { number: String(pr.id), url: prURL(this.repo, pr.id, pr.url) };
     }
@@ -567,16 +550,16 @@ function prURL(repo: RepoRef, prID: number, rawURL: string): string {
     return `https://bitbucket.org/${repo.workspace}/${repo.repoSlug}/pull-requests/${prID}`;
 }
 
-function normalizePRState(raw: string): PRState {
+function normalizePRState(raw: string): types.PRState {
     switch (raw.trim().toUpperCase()) {
         case "OPEN":
-            return PR_STATE_OPEN;
+            return types.PR_STATE_OPEN;
         case "MERGED":
-            return PR_STATE_MERGED;
+            return types.PR_STATE_MERGED;
         case "DECLINED":
         case "CLOSED":
         case "SUPERSEDED":
-            return PR_STATE_CLOSED;
+            return types.PR_STATE_CLOSED;
         default:
             return raw;
     }
@@ -609,21 +592,21 @@ function statusName(status: CommitStatus): string {
     return status.key.trim();
 }
 
-function statusBucket(state: string): CheckBucket {
+function statusBucket(state: string): types.CheckBucket {
     switch (state.trim().toUpperCase()) {
         case "SUCCESSFUL":
         case "SUCCESS":
-            return CHECK_BUCKET_PASS;
+            return types.CHECK_BUCKET_PASS;
         case "FAILED":
         case "FAILURE":
         case "ERROR":
-            return CHECK_BUCKET_FAIL;
+            return types.CHECK_BUCKET_FAIL;
         case "STOPPED":
-            return CHECK_BUCKET_CANCEL;
+            return types.CHECK_BUCKET_CANCEL;
         case "INPROGRESS":
         case "IN_PROGRESS":
         case "PENDING":
-            return CHECK_BUCKET_PENDING;
+            return types.CHECK_BUCKET_PENDING;
         default:
             return "";
     }

@@ -4,6 +4,7 @@
  * selected agent; the matching memory file comes from assets/memory.
  */
 
+import * as conf from "./config";
 import { homedir } from "node:os";
 import * as p from "@clack/prompts";
 import { getTool } from "./accounts";
@@ -24,14 +25,12 @@ import type { RemoteRefreshResult } from "./skills-remote";
 import { setGhTelemetry, starRepoInBackground } from "./github";
 import type { Agent, AgentTarget, DiscoveredAgent } from "./agents";
 import { applyMcpForAgent, applyMcpForAccount } from "./mcp-deploy";
-import type { OutputStyle, MinimalCode, DashboardMode } from "./config";
 import { isDir, isNewer, readJson, listFilesRel, computeContentSha } from "./util";
 import { resolveBypassSelection, applyBypass, mirrorAccountSettings } from "./permissions";
 import { cachedRemoteSkills, refreshRemoteSkills, shouldCheckRemote } from "./skills-remote";
 import { disableClaudeAttribution, disableClaudeFeedbackSurvey, enableClaudeStatusline, getClaudeTrust, setClaudeTrust } from "./claude";
 import { existsSync, readdirSync, readFileSync, writeFileSync, statSync, cpSync, mkdirSync, rmSync } from "node:fs";
 import { AGENTS, MANAGED_PROVIDER, isManagedProvider, discoverAgents, runningStatus, localTargetsAt } from "./agents";
-import { readConfig, setEnigmaValue, setSkillDiscarded, setSkillAgentOff, OUTPUT_STYLES, MINIMAL_CODE_LEVELS, DASHBOARD_MODES } from "./config";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PKG_ROOT = resolve(__dirname, "..");
@@ -174,7 +173,7 @@ function stripMarkedBlock(content: string, id: string): string {
  * Everything else is passed through verbatim, preserving the exact trailing newline.
  */
 function renderMemory(srcFile: string): string {
-    const cfg = readConfig().config;
+    const cfg = conf.readConfig().config;
     let out = readFileSync(srcFile, "utf8");
     if (!cfg.parallelSubagents) out = stripMarkedBlock(out, "parallel-subagents");
     if (cfg.outputStyle === "off") out = stripMarkedBlock(out, "output-style");
@@ -204,7 +203,7 @@ function memoryStatus(srcFile: string, destFile: string): "install" | "identical
 function renderSkill(srcSkillMd: string, keys: string[] | undefined): string {
     let out = readFileSync(srcSkillMd, "utf8");
     if (!keys?.length) return out;
-    const cfg = readConfig().config as unknown as Record<string, unknown>;
+    const cfg = conf.readConfig().config as unknown as Record<string, unknown>;
     out = out.replace(
         /<!-- enigma:case:([A-Za-z0-9]+)=(\S+) -->\n?([\s\S]*?)<!-- enigma:case:end -->\n?/g,
         (_m, key: string, val: string, body: string) => (String(cfg[key]) === val ? body : ""),
@@ -310,7 +309,7 @@ function bundledCommands(): CommandEntry[] {
     // /gate is experimental and off by default: only deploy it to agents once the
     // user opts in with `enigma config gate on`, so enigma never surfaces the gate
     // to the agent without consent.
-    const gateOn = readConfig().config.gate;
+    const gateOn = conf.readConfig().config.gate;
     return readdirSync(COMMANDS_ROOT)
         .filter((e) => e.endsWith(".md") && !isDir(join(COMMANDS_ROOT, e)))
         .filter((e) => e !== "gate.md" || gateOn)
@@ -356,12 +355,12 @@ export function inspectSkills(): SkillEntry[] {
 
 /** The set of skill names the user discarded (skipped by installs/updates, pruned everywhere). */
 function discardedSkillNames(): Set<string> {
-    return new Set(readConfig().config.discardedSkills);
+    return new Set(conf.readConfig().config.discardedSkills);
 }
 
 /** skillName -> agents it is turned off for (per-agent opt-out, on top of the global discard). */
 function skillAgentsOffMap(): Record<string, string[]> {
-    return readConfig().config.skillAgentsOff || {};
+    return conf.readConfig().config.skillAgentsOff || {};
 }
 
 /** True when `skill` is turned off for `agentName` (per-agent opt-out). */
@@ -394,7 +393,7 @@ export function listSkillsStatus(): SkillInfo[] {
  * the sync notices for display.
  */
 export function discardSkill(name: string, discarded: boolean): string[] {
-    setSkillDiscarded(name, discarded);
+    conf.setSkillDiscarded(name, discarded);
     return syncDeployed();
 }
 
@@ -404,7 +403,7 @@ export function discardSkill(name: string, discarded: boolean): string[] {
  * re-deployed to (on) that agent's existing deployments. Returns sync notices.
  */
 export function setSkillAgent(name: string, agentName: string, off: boolean): string[] {
-    setSkillAgentOff(name, agentName, off);
+    conf.setSkillAgentOff(name, agentName, off);
     return syncDeployed([agentName]);
 }
 
@@ -841,8 +840,8 @@ export function checkSources(): void {
  */
 async function resolveOutputStyle(opts: InstallOptions, scope: "global" | "local", interactive: boolean, reporter: Reporter): Promise<void> {
     let style = opts.outputStyle?.toLowerCase() ?? null;
-    if (style && !OUTPUT_STYLES.includes(style as OutputStyle)) {
-        reporter.warn(`Ignoring --output-style '${opts.outputStyle}': use one of ${OUTPUT_STYLES.join(", ")}.`);
+    if (style && !conf.OUTPUT_STYLES.includes(style as conf.OutputStyle)) {
+        reporter.warn(`Ignoring --output-style '${opts.outputStyle}': use one of ${conf.OUTPUT_STYLES.join(", ")}.`);
         style = null;
     }
     if (!style && interactive && !opts.dryRun) {
@@ -854,13 +853,13 @@ async function resolveOutputStyle(opts: InstallOptions, scope: "global" | "local
                 { value: "full", label: "Full", hint: "drop articles and use fragments (most compressed)" },
                 { value: "ultra", label: "Ultra", hint: "telegraphic, maximum compression" },
             ],
-            initialValue: readConfig().config.outputStyle,
+            initialValue: conf.readConfig().config.outputStyle,
         });
         if (p.isCancel(r)) return;          // keep the current value; do not abort the whole install
         style = r as string;
     }
-    if (style && !opts.dryRun && style !== readConfig().config.outputStyle) {
-        setEnigmaValue("outputStyle", style, scope);
+    if (style && !opts.dryRun && style !== conf.readConfig().config.outputStyle) {
+        conf.setEnigmaValue("outputStyle", style, scope);
         reporter.info(`Token-efficient output: ${style} (${scope}).`);
     }
 }
@@ -873,8 +872,8 @@ async function resolveOutputStyle(opts: InstallOptions, scope: "global" | "local
  */
 async function resolveMinimalCode(opts: InstallOptions, scope: "global" | "local", interactive: boolean, reporter: Reporter): Promise<void> {
     let level = opts.minimalCode?.toLowerCase() ?? null;
-    if (level && !MINIMAL_CODE_LEVELS.includes(level as MinimalCode)) {
-        reporter.warn(`Ignoring --minimal-code '${opts.minimalCode}': use one of ${MINIMAL_CODE_LEVELS.join(", ")}.`);
+    if (level && !conf.MINIMAL_CODE_LEVELS.includes(level as conf.MinimalCode)) {
+        reporter.warn(`Ignoring --minimal-code '${opts.minimalCode}': use one of ${conf.MINIMAL_CODE_LEVELS.join(", ")}.`);
         level = null;
     }
     if (!level && interactive && !opts.dryRun) {
@@ -886,13 +885,13 @@ async function resolveMinimalCode(opts: InstallOptions, scope: "global" | "local
                 { value: "full", label: "Full", hint: "YAGNI ladder enforced - stdlib/native first, shortest diff (default)" },
                 { value: "ultra", label: "Ultra", hint: "YAGNI extremist - deletion before addition" },
             ],
-            initialValue: readConfig().config.minimalCode,
+            initialValue: conf.readConfig().config.minimalCode,
         });
         if (p.isCancel(r)) return;          // keep the current value; do not abort the whole install
         level = r as string;
     }
-    if (level && !opts.dryRun && level !== readConfig().config.minimalCode) {
-        setEnigmaValue("minimalCode", level, scope);
+    if (level && !opts.dryRun && level !== conf.readConfig().config.minimalCode) {
+        conf.setEnigmaValue("minimalCode", level, scope);
         reporter.info(`Minimal-code discipline: ${level} (${scope}).`);
     }
 }
@@ -904,8 +903,8 @@ async function resolveMinimalCode(opts: InstallOptions, scope: "global" | "local
  */
 async function resolveDashboard(opts: InstallOptions, scope: "global" | "local", interactive: boolean, reporter: Reporter): Promise<void> {
     let mode = opts.dashboard?.toLowerCase() ?? null;
-    if (mode && !DASHBOARD_MODES.includes(mode as DashboardMode)) {
-        reporter.warn(`Ignoring --dashboard '${opts.dashboard}': use one of ${DASHBOARD_MODES.join(", ")}.`);
+    if (mode && !conf.DASHBOARD_MODES.includes(mode as conf.DashboardMode)) {
+        reporter.warn(`Ignoring --dashboard '${opts.dashboard}': use one of ${conf.DASHBOARD_MODES.join(", ")}.`);
         mode = null;
     }
     if (!mode && interactive && !opts.dryRun) {
@@ -916,14 +915,14 @@ async function resolveDashboard(opts: InstallOptions, scope: "global" | "local",
                 { value: "on-demand", label: "On-demand", hint: "runs only while 'enigma dashboard' is open - zero idle cost (recommended)" },
                 { value: "always", label: "Always on", hint: "lightweight background daemon, reachable any time" },
             ],
-            initialValue: readConfig().config.dashboard,
+            initialValue: conf.readConfig().config.dashboard,
         });
         if (p.isCancel(r)) return;          // keep the current value; do not abort the whole install
         mode = r as string;
     }
-    if (mode && !opts.dryRun && mode !== readConfig().config.dashboard) {
-        setEnigmaValue("dashboard", mode, scope);
-        const result = applyDashboardMode(mode as DashboardMode);
+    if (mode && !opts.dryRun && mode !== conf.readConfig().config.dashboard) {
+        conf.setEnigmaValue("dashboard", mode, scope);
+        const result = applyDashboardMode(mode as conf.DashboardMode);
         reporter.info(`Local dashboard: ${mode} (${scope}).`);
         if (result.hosts?.needsAdmin) {
             reporter.warn(`Could not map http://enigma (needs admin). Add this line to ${result.hosts.path} manually, or just use http://localhost:24282:\n  127.0.0.1 enigma`);
@@ -932,8 +931,8 @@ async function resolveDashboard(opts: InstallOptions, scope: "global" | "local",
     // Choosing a dashboard turns on real tool-usage stats by default, so it actually reflects
     // your Claude Code usage. It reads local transcripts on demand (no background process), so
     // there is no idle cost; turn it off any time with `enigma config usage-stats off`.
-    if (mode && mode !== "off" && !opts.dryRun && !readConfig().config.usageStats) {
-        setEnigmaValue("usageStats", true, scope);
+    if (mode && mode !== "off" && !opts.dryRun && !conf.readConfig().config.usageStats) {
+        conf.setEnigmaValue("usageStats", true, scope);
         reporter.info("Enabled real tool-usage stats for the dashboard (off: enigma config usage-stats off).");
     }
 }
@@ -945,7 +944,7 @@ async function resolveDashboard(opts: InstallOptions, scope: "global" | "local",
  */
 async function resolveSecretGuard(opts: InstallOptions, scope: "global" | "local", interactive: boolean, reporter: Reporter): Promise<void> {
     let enable = opts.promptSecretGuard;
-    if (enable === null && interactive && !opts.dryRun && !readConfig().config.promptSecretGuard) {
+    if (enable === null && interactive && !opts.dryRun && !conf.readConfig().config.promptSecretGuard) {
         const r = await p.confirm({
             message: "Enable the prompt secret guard? Blocks API keys/secrets pasted into Claude Code chat before they reach the model (Claude Code only, via a local proxy). Default: off.",
             initialValue: false,
@@ -953,9 +952,9 @@ async function resolveSecretGuard(opts: InstallOptions, scope: "global" | "local
         if (p.isCancel(r)) return;          // keep current value; do not abort the install
         enable = r;
     }
-    if (enable && !opts.dryRun && !readConfig().config.promptSecretGuard) {
-        setEnigmaValue("promptSecretGuard", true, scope);
-        reporter.info(`Prompt secret guard: on (mode ${readConfig().config.promptSecretMode}); applies when you launch 'enigma claude'. Off: enigma config prompt-secret-guard off.`);
+    if (enable && !opts.dryRun && !conf.readConfig().config.promptSecretGuard) {
+        conf.setEnigmaValue("promptSecretGuard", true, scope);
+        reporter.info(`Prompt secret guard: on (mode ${conf.readConfig().config.promptSecretMode}); applies when you launch 'enigma claude'. Off: enigma config prompt-secret-guard off.`);
     }
 }
 
@@ -1038,13 +1037,13 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
         if (disableClaudeFeedbackSurvey(claudeScope)) {
             reporter.info("Claude Code: disabled the session feedback survey (re-enable with 'enigma config claude-survey on').");
         }
-        if (readConfig().config.statusline && enableClaudeStatusline(claudeScope)) {
+        if (conf.readConfig().config.statusline && enableClaudeStatusline(claudeScope)) {
             reporter.info("Claude Code: statusline shows the [ENIGMA] badge, context and cost, plus live gate progress during a run.");
         }
         // Workspace trust: pre-answer the "do you trust this folder" prompt (default on).
         // Only ever applied when the flag is on - a user who turned it off keeps the prompt,
         // and the workspaces they already trusted are left alone either way.
-        if (readConfig().config.claudeTrust && !getClaudeTrust() && setClaudeTrust(true)) {
+        if (conf.readConfig().config.claudeTrust && !getClaudeTrust() && setClaudeTrust(true)) {
             reporter.info("Claude Code: workspace trust pre-answered, so it stops asking in every folder (undo with 'enigma config claude-trust off').");
         }
     };
@@ -1084,7 +1083,7 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
     // Same side-effect shape as the bypass/claude/gh/lint hooks; skipped on dry run.
     const applyMcpConfig = (): void => {
         if (opts.dryRun) return;
-        const cfg = readConfig().config;
+        const cfg = conf.readConfig().config;
         const enabled = cfg.compress || cfg.recall || cfg.codeGraph;
         const changed: string[] = [];
         for (const agent of chosenAgents) if (applyMcpForAgent(agent.name, scope)) changed.push(agent.label);
@@ -1407,7 +1406,7 @@ export function syncDeployed(agentNames?: string[]): string[] {
         // update rather than only on an explicit install. Gated on the config flag, so a bar
         // the user turned off stays off, and `enableClaudeStatusline` never replaces a custom
         // one - which makes this safe to re-run on every sync.
-        if (agent.name === "claude" && hasDeployment(agent, "global") && readConfig().config.statusline
+        if (agent.name === "claude" && hasDeployment(agent, "global") && conf.readConfig().config.statusline
             && enableClaudeStatusline("global")) {
             notices.push("Status bar is on: Claude Code now shows the enigma badge, context and cost, plus live gate progress during a run. Turn off with 'enigma config statusline off'.");
         }
@@ -1418,7 +1417,7 @@ export function syncDeployed(agentNames?: string[]): string[] {
         // the user ever meeting the prompt. See tests/sync-trust.test.ts. Silent after the first:
         // the notice is gated on the blanket not being in place yet, while the per-workspace
         // entry keeps being added quietly as new directories show up.
-        if (agent.name === "claude" && hasDeployment(agent, "global") && readConfig().config.claudeTrust) {
+        if (agent.name === "claude" && hasDeployment(agent, "global") && conf.readConfig().config.claudeTrust) {
             const firstTime = !getClaudeTrust();
             if (setClaudeTrust(true) && firstTime) {
                 notices.push("Workspace trust is pre-answered: Claude Code no longer asks whether you trust a folder. Turn off with 'enigma config claude-trust off'.");
@@ -1452,7 +1451,7 @@ function syncTarget(target: AccountTarget, memory: MemoryEntry[], skills: SkillE
     let changed = 0;
     // skillUpdatePolicy governs a locally-edited (tampered) skill on update: "overwrite"
     // (default) replaces it with the shipped version; "keep" preserves the user's edits.
-    const keepEdited = readConfig().config.skillUpdatePolicy === "keep";
+    const keepEdited = conf.readConfig().config.skillUpdatePolicy === "keep";
     if (target.skills) {
         for (const sk of skills) {
             const dest = join(target.skills, sk.name);

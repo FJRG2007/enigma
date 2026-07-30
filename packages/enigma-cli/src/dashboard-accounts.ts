@@ -13,14 +13,9 @@
  * lazily inside the add branch so the module stays cheap to load.
  */
 
+import * as acct from "./accounts";
 import { accountTokenState, packSessionSources } from "./packs";
 import { sessionState, sessionEmail, isUsableSession, transferSession, type SessionState } from "./claude-oauth";
-import {
-    DEFAULT_NAME, TOOL_NAMES, getTool, listAccounts, listProfiles, openLoginTerminal,
-    setActive, addAccount, renameAccount, removeAccount, resolveConfigDir,
-    setActiveProfile, addProfile, renameProfile, removeProfile, setProfileAccount, unsetProfileAccount,
-    setAccountProvider, providerFromPreset, PROVIDER_PRESETS, type ProviderInput,
-} from "./accounts";
 
 export interface DashAccount {
     tool: string;
@@ -82,8 +77,8 @@ export interface AccountsPayload {
  * OAuth session is a portable file (see claude-oauth.ts). Used by the "Transfer session" flow.
  */
 export function serializeSessionSources(): DashSessionSource[] {
-    if (!TOOL_NAMES.includes("claude")) return [];
-    const sources: DashSessionSource[] = listAccounts("claude").map((a) => {
+    if (!acct.TOOL_NAMES.includes("claude")) return [];
+    const sources: DashSessionSource[] = acct.listAccounts("claude").map((a) => {
         const state = sessionState(a.dir);
         return { id: `account:${a.name}`, kind: "account" as const, tool: "claude", label: a.name, email: a.email ?? sessionEmail(a.dir), state, usable: isUsableSession(state) };
     });
@@ -97,7 +92,7 @@ export function serializeSessionSources(): DashSessionSource[] {
 /** Resolve a session-source id ("account:<name>" | "pack:<id>") to its config dir, or null. */
 function sessionSourceDir(id: string): string | null {
     if (id.startsWith("account:")) {
-        try { return resolveConfigDir("claude", id.slice("account:".length)); } catch { return null; }
+        try { return acct.resolveConfigDir("claude", id.slice("account:".length)); } catch { return null; }
     }
     if (id.startsWith("pack:")) {
         return packSessionSources("claude").find((s) => s.id === id.slice("pack:".length))?.dir ?? null;
@@ -107,8 +102,8 @@ function sessionSourceDir(id: string): string | null {
 
 /** Snapshot every tool's accounts and all profiles for the browser. */
 export function serializeAccounts(): AccountsPayload {
-    const accounts: DashAccount[] = TOOL_NAMES.flatMap((tool) =>
-        listAccounts(tool).map((a) => {
+    const accounts: DashAccount[] = acct.TOOL_NAMES.flatMap((tool) =>
+        acct.listAccounts(tool).map((a) => {
             // For Claude, "logged in" means a USABLE token, not just a cached email - so a stale
             // account (e.g. its token expired) is shown as such and can be re-authenticated.
             const loginState = tool === "claude" ? accountTokenState(tool, a.name) : undefined;
@@ -116,7 +111,7 @@ export function serializeAccounts(): AccountsPayload {
             return {
             tool, toolLabel: a.toolLabel, name: a.name, dir: a.dir,
             email: a.email ?? a.displayName,
-            active: a.active, removable: a.name !== DEFAULT_NAME,
+            active: a.active, removable: a.name !== acct.DEFAULT_NAME,
             loggedIn, loginState,
             supportsProvider: a.supportsProvider,
             provider: a.provider
@@ -124,12 +119,12 @@ export function serializeAccounts(): AccountsPayload {
                 : null,
             };
         }));
-    const profiles: DashProfile[] = listProfiles().map((p) => ({
+    const profiles: DashProfile[] = acct.listProfiles().map((p) => ({
         name: p.name, active: p.active, accounts: p.accounts,
         summary: Object.entries(p.accounts).map(([t, a]) => `${t}=${a}`).join("  ") || "(no accounts pinned)",
     }));
-    const presets: DashPreset[] = PROVIDER_PRESETS.map((p) => ({ id: p.id, label: p.label, tool: p.tool, baseUrl: p.baseUrl, model: p.model, tokenUrl: p.tokenUrl }));
-    return { tools: TOOL_NAMES.map((t) => ({ name: t, label: getTool(t).label })), accounts, profiles, presets, sessionSources: serializeSessionSources() };
+    const presets: DashPreset[] = acct.PROVIDER_PRESETS.map((p) => ({ id: p.id, label: p.label, tool: p.tool, baseUrl: p.baseUrl, model: p.model, tokenUrl: p.tokenUrl }));
+    return { tools: acct.TOOL_NAMES.map((t) => ({ name: t, label: acct.getTool(t).label })), accounts, profiles, presets, sessionSources: serializeSessionSources() };
 }
 
 export interface AccountActionResult { ok: boolean; error?: string; note?: string; data: AccountsPayload; }
@@ -160,20 +155,20 @@ export async function applyAccountAction(op: string, payload: AccountActionPaylo
     const profile = typeof payload.profile === "string" ? payload.profile : "";
     try {
         switch (op) {
-            case "account.activate": setActive(tool, name); break;
+            case "account.activate": acct.setActive(tool, name); break;
             case "account.add": {
-                const account = addAccount(tool, name);
+                const account = acct.addAccount(tool, name);
                 try { const { syncAccount } = await import("./skills"); syncAccount(tool, account.dir); }
                 catch { /* seeded on first launch instead */ }
                 break;
             }
-            case "account.rename": renameAccount(tool, name, newName); break;
-            case "account.remove": removeAccount(tool, name); break;
+            case "account.rename": acct.renameAccount(tool, name, newName); break;
+            case "account.remove": acct.removeAccount(tool, name); break;
             case "account.login": {
                 // Spawn the tool's interactive login in a new terminal window (the browser can't
                 // host a TUI login). Falls back to telling the user the command when no terminal opens.
-                const opened = openLoginTerminal(tool, name);
-                const cmd = `enigma ${tool}${name === DEFAULT_NAME ? "" : ` ${name}`}`;
+                const opened = acct.openLoginTerminal(tool, name);
+                const cmd = `enigma ${tool}${name === acct.DEFAULT_NAME ? "" : ` ${name}`}`;
                 return opened
                     ? { ok: true, note: `Opened a terminal to log in '${name}'. Complete /login there, then refresh.`, data: serializeAccounts() }
                     : { ok: false, error: `Could not open a terminal. Run this yourself:  ${cmd}`, data: serializeAccounts() };
@@ -185,33 +180,33 @@ export async function applyAccountAction(op: string, payload: AccountActionPaylo
                 const source = typeof payload.source === "string" ? payload.source : "";
                 const sourceDir = sessionSourceDir(source);
                 if (!sourceDir) throw new Error(`Unknown session source '${source}'.`);
-                const targetDir = resolveConfigDir("claude", name);
+                const targetDir = acct.resolveConfigDir("claude", name);
                 const res = transferSession(sourceDir, targetDir);
                 if (!res.ok) return { ok: false, error: res.error || "transfer failed", data: serializeAccounts() };
                 return { ok: true, note: `Session moved into '${name}'. It shares the login now - no re-login needed.`, data: serializeAccounts() };
             }
             case "account.provider": {
                 const p = payload.provider;
-                if (p === null || p === undefined) { setAccountProvider(tool, name, null); break; }
-                let input: ProviderInput | null;
+                if (p === null || p === undefined) { acct.setAccountProvider(tool, name, null); break; }
+                let input: acct.ProviderInput | null;
                 if (p.preset) {
-                    input = providerFromPreset(p.preset, p.token);
+                    input = acct.providerFromPreset(p.preset, p.token);
                     if (!input) throw new Error(`Unknown preset '${p.preset}'.`);
                     if (p.baseUrl) input.baseUrl = p.baseUrl;
                     if (p.model) input.model = p.model;
                 } else {
                     input = { baseUrl: p.baseUrl || "", model: p.model, preset: "custom", token: p.token };
                 }
-                setAccountProvider(tool, name, input);
+                acct.setAccountProvider(tool, name, input);
                 break;
             }
-            case "profile.activate": setActiveProfile(name || null); break;
-            case "profile.add": addProfile(name); break;
-            case "profile.rename": renameProfile(name, newName); break;
-            case "profile.remove": removeProfile(name); break;
+            case "profile.activate": acct.setActiveProfile(name || null); break;
+            case "profile.add": acct.addProfile(name); break;
+            case "profile.rename": acct.renameProfile(name, newName); break;
+            case "profile.remove": acct.removeProfile(name); break;
             case "profile.setAccount":
-                if (payload.account === null || payload.account === "") unsetProfileAccount(profile, tool);
-                else setProfileAccount(profile, tool, String(payload.account));
+                if (payload.account === null || payload.account === "") acct.unsetProfileAccount(profile, tool);
+                else acct.setProfileAccount(profile, tool, String(payload.account));
                 break;
             default: return { ok: false, error: `unknown action: ${op}`, data: serializeAccounts() };
         }

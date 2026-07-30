@@ -10,56 +10,15 @@
  * frames until the run completes, the connection drops, or `cancel` is called.
  */
 
+import * as proto from "./protocol";
 import type { Socket } from "node:net";
 import { dial, readLines } from "./transport";
-import {
-    Event,
-    RPCError,
-    RunInfo,
-    Request,
-    Response,
-    newRequest,
-    decodeEvent,
-    RerunParams,
-    MethodRerun,
-    MethodHealth,
-    RespondParams,
-    MethodGetRun,
-    MethodRespond,
-    MethodGetRuns,
-    MethodShutdown,
-    decodeRunInfo,
-    MethodSubscribe,
-    MethodCancelRun,
-    SubscribeParams,
-    encodeRerunParams,
-    decodeRerunResult,
-    decodeHealthResult,
-    encodeGetRunParams,
-    encodeRespondParams,
-    decodeGetRunResult,
-    MethodGetActiveRun,
-    encodeGetRunsParams,
-    PushReceivedParams,
-    MethodPushReceived,
-    decodeRespondResult,
-    decodeGetRunsResult,
-    decodeShutdownResult,
-    encodeSubscribeParams,
-    encodeCancelRunParams,
-    decodeCancelRunResult,
-    GetActiveRunParams,
-    encodeGetActiveRunParams,
-    decodeGetActiveRunResult,
-    encodePushReceivedParams,
-    decodePushReceivedResult
-} from "./protocol";
 
 /** Read deadline for a unary call, matching the Go client's 30s read deadline. */
 const CALL_TIMEOUT_MS = 30_000;
 
 interface Pending {
-    resolve: (resp: Response) => void;
+    resolve: (resp: proto.Response) => void;
     reject: (err: Error) => void;
     timer: ReturnType<typeof setTimeout>;
 }
@@ -94,58 +53,58 @@ export class Client {
     }
 
     /** Notifies the daemon a push arrived and returns the created run ID. */
-    async pushReceived(params: PushReceivedParams): Promise<string> {
-        const raw = await this.call(MethodPushReceived, encodePushReceivedParams(params));
-        return decodePushReceivedResult(raw).runId;
+    async pushReceived(params: proto.PushReceivedParams): Promise<string> {
+        const raw = await this.call(proto.MethodPushReceived, proto.encodePushReceivedParams(params));
+        return proto.decodePushReceivedResult(raw).runId;
     }
 
     /** Returns a single run by ID, or null when absent. */
-    async getRun(runId: string): Promise<RunInfo | null> {
-        const raw = await this.call(MethodGetRun, encodeGetRunParams({ runId }));
-        return decodeGetRunResult(raw).run;
+    async getRun(runId: string): Promise<proto.RunInfo | null> {
+        const raw = await this.call(proto.MethodGetRun, proto.encodeGetRunParams({ runId }));
+        return proto.decodeGetRunResult(raw).run;
     }
 
     /** Returns all runs for a repo. */
-    async getRuns(repoId: string): Promise<RunInfo[]> {
-        const raw = await this.call(MethodGetRuns, encodeGetRunsParams({ repoId }));
-        return decodeGetRunsResult(raw).runs;
+    async getRuns(repoId: string): Promise<proto.RunInfo[]> {
+        const raw = await this.call(proto.MethodGetRuns, proto.encodeGetRunsParams({ repoId }));
+        return proto.decodeGetRunsResult(raw).runs;
     }
 
     /** Returns the active run for a repo (preferring `branch`), or null when none. */
-    async getActiveRun(params: GetActiveRunParams): Promise<RunInfo | null> {
-        const raw = await this.call(MethodGetActiveRun, encodeGetActiveRunParams(params));
-        return decodeGetActiveRunResult(raw).run;
+    async getActiveRun(params: proto.GetActiveRunParams): Promise<proto.RunInfo | null> {
+        const raw = await this.call(proto.MethodGetActiveRun, proto.encodeGetActiveRunParams(params));
+        return proto.decodeGetActiveRunResult(raw).run;
     }
 
     /** Requests a new run for the latest gate head on a branch; returns the run ID. */
-    async rerun(params: RerunParams): Promise<string> {
-        const raw = await this.call(MethodRerun, encodeRerunParams(params));
-        return decodeRerunResult(raw).runId;
+    async rerun(params: proto.RerunParams): Promise<string> {
+        const raw = await this.call(proto.MethodRerun, proto.encodeRerunParams(params));
+        return proto.decodeRerunResult(raw).runId;
     }
 
     /** Sends a user action for a step awaiting approval; returns whether accepted. */
-    async respond(params: RespondParams): Promise<boolean> {
-        const raw = await this.call(MethodRespond, encodeRespondParams(params));
-        return decodeRespondResult(raw).ok;
+    async respond(params: proto.RespondParams): Promise<boolean> {
+        const raw = await this.call(proto.MethodRespond, proto.encodeRespondParams(params));
+        return proto.decodeRespondResult(raw).ok;
     }
 
     /** Cancels an active pipeline run; returns whether the request was accepted. */
     async cancelRun(runId: string): Promise<boolean> {
-        const raw = await this.call(MethodCancelRun, encodeCancelRunParams({ runId }));
-        return decodeCancelRunResult(raw).ok;
+        const raw = await this.call(proto.MethodCancelRun, proto.encodeCancelRunParams({ runId }));
+        return proto.decodeCancelRunResult(raw).ok;
     }
 
     /** Pings the daemon and returns its reported status. */
     async health(): Promise<string> {
-        const raw = await this.call(MethodHealth, {});
-        return decodeHealthResult(raw).status;
+        const raw = await this.call(proto.MethodHealth, {});
+        return proto.decodeHealthResult(raw).status;
     }
 
     /** Asks the daemon to shut down; returns whether shutdown was initiated. */
     async shutdown(): Promise<boolean> {
         try {
-            const raw = await this.call(MethodShutdown, {});
-            return decodeShutdownResult(raw).ok;
+            const raw = await this.call(proto.MethodShutdown, {});
+            return proto.decodeShutdownResult(raw).ok;
         } catch (err) {
             // The daemon closes the connection as it shuts down, so the socket
             // closing without a response IS the shutdown confirmation, not a failure.
@@ -164,7 +123,7 @@ export class Client {
                 reject(new Error("read response: connection closed"));
                 return;
             }
-            const req = newRequest(method, params);
+            const req = proto.newRequest(method, params);
             const timer = setTimeout(() => {
                 if (this.pending.delete(req.id)) reject(new Error("read response: timeout"));
             }, CALL_TIMEOUT_MS);
@@ -173,7 +132,7 @@ export class Client {
                 timer,
                 reject,
                 resolve: (resp) => {
-                    if (resp.error) reject(new RPCError(resp.error.code, resp.error.message));
+                    if (resp.error) reject(new proto.RPCError(resp.error.code, resp.error.message));
                     else resolve(resp.result);
                 }
             });
@@ -183,9 +142,9 @@ export class Client {
 
     private onLine(line: string): void {
         if (line.length === 0) return;
-        let resp: Response;
+        let resp: proto.Response;
         try {
-            resp = JSON.parse(line) as Response;
+            resp = JSON.parse(line) as proto.Response;
         } catch {
             return; // ignore unparseable frames
         }
@@ -207,7 +166,7 @@ export class Client {
 
 /** A live event subscription: an async stream of events plus a cancel function. */
 export interface Subscription {
-    events: AsyncIterableIterator<Event>;
+    events: AsyncIterableIterator<proto.Event>;
     cancel: () => void;
 }
 
@@ -217,7 +176,7 @@ export interface Subscription {
  * when the run completes, the connection drops, or `cancel` is called. A JSON-RPC
  * error on the initial response rejects.
  */
-export async function subscribe(socketPath: string, params: SubscribeParams): Promise<Subscription> {
+export async function subscribe(socketPath: string, params: proto.SubscribeParams): Promise<Subscription> {
     let socket: Socket;
     try {
         socket = await dial(socketPath);
@@ -225,19 +184,19 @@ export async function subscribe(socketPath: string, params: SubscribeParams): Pr
         throw new Error(`dial ipc: ${(e as Error).message}`);
     }
 
-    const queue: Event[] = [];
-    let waiting: ((res: IteratorResult<Event>) => void) | null = null;
+    const queue: proto.Event[] = [];
+    let waiting: ((res: IteratorResult<proto.Event>) => void) | null = null;
     let done = false;
     let cancelled = false;
 
     const endStream = () => {
         done = true;
         if (waiting) {
-            waiting({ value: undefined as unknown as Event, done: true });
+            waiting({ value: undefined as unknown as proto.Event, done: true });
             waiting = null;
         }
     };
-    const pushEvent = (e: Event) => {
+    const pushEvent = (e: proto.Event) => {
         if (waiting) {
             waiting({ value: e, done: false });
             waiting = null;
@@ -252,20 +211,20 @@ export async function subscribe(socketPath: string, params: SubscribeParams): Pr
         socket.destroy();
     };
 
-    const events: AsyncIterableIterator<Event> = {
+    const events: AsyncIterableIterator<proto.Event> = {
         [Symbol.asyncIterator]() {
             return this;
         },
-        next(): Promise<IteratorResult<Event>> {
+        next(): Promise<IteratorResult<proto.Event>> {
             if (queue.length > 0) return Promise.resolve({ value: queue.shift()!, done: false });
-            if (done) return Promise.resolve({ value: undefined as unknown as Event, done: true });
+            if (done) return Promise.resolve({ value: undefined as unknown as proto.Event, done: true });
             return new Promise((res) => {
                 waiting = res;
             });
         },
-        return(): Promise<IteratorResult<Event>> {
+        return(): Promise<IteratorResult<proto.Event>> {
             cancel();
-            return Promise.resolve({ value: undefined as unknown as Event, done: true });
+            return Promise.resolve({ value: undefined as unknown as proto.Event, done: true });
         }
     };
 
@@ -275,16 +234,16 @@ export async function subscribe(socketPath: string, params: SubscribeParams): Pr
         readLines(socket, (line) => {
             if (!gotInitial) {
                 gotInitial = true;
-                let resp: Response;
+                let resp: proto.Response;
                 try {
-                    resp = JSON.parse(line) as Response;
+                    resp = JSON.parse(line) as proto.Response;
                 } catch (e) {
                     reject(new Error(`parse response: ${(e as Error).message}`));
                     socket.destroy();
                     return;
                 }
                 if (resp.error) {
-                    reject(new RPCError(resp.error.code, resp.error.message));
+                    reject(new proto.RPCError(resp.error.code, resp.error.message));
                     socket.destroy();
                     return;
                 }
@@ -292,7 +251,7 @@ export async function subscribe(socketPath: string, params: SubscribeParams): Pr
                 return;
             }
             try {
-                pushEvent(decodeEvent(JSON.parse(line)));
+                pushEvent(proto.decodeEvent(JSON.parse(line)));
             } catch {
                 // Skip malformed events.
             }
@@ -304,7 +263,7 @@ export async function subscribe(socketPath: string, params: SubscribeParams): Pr
         socket.on("error", (err) => {
             if (!gotInitial) reject(err);
         });
-        const req = newRequest(MethodSubscribe, encodeSubscribeParams(params));
+        const req = proto.newRequest(proto.MethodSubscribe, proto.encodeSubscribeParams(params));
         socket.write(`${JSON.stringify(req)}\n`);
     });
 

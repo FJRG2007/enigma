@@ -11,6 +11,7 @@
  */
 
 import { log } from "../log";
+import * as gateDb from "../db";
 import { diffHead } from "../git";
 import { type Agent } from "../agent/agent";
 import { track, type Fields } from "../telemetry";
@@ -44,31 +45,6 @@ import {
     autoFixableFindingsJSON,
     combineSelectedFindingIDs
 } from "./findings";
-import {
-    type Run,
-    type Repo,
-    type Database,
-    type StepResult,
-    failStep,
-    startStep,
-    updateRunStatus,
-    insertStepRound,
-    getStepsByRun,
-    setStepFindings,
-    clearStepFindings,
-    stepFindingStats,
-    updateStepStatus,
-    insertStepResult,
-    setRunAwaitingAgent,
-    setStepRoundUserFindings,
-    clearRunAwaitingAgent,
-    setStepRoundSelection,
-    updateRunErrorStatus,
-    completeStepWithStatus,
-    updateStepStatusWithDuration,
-    RoundSelectionSourceUser,
-    RoundSelectionSourceAutoFix
-} from "../db";
 
 /** Called when a pipeline event occurs, for streaming to subscribers. */
 export type EventFunc = (event: Event) => void;
@@ -108,7 +84,7 @@ export class Executor {
     private bufferedResponse: ApprovalResponse | null = null;
 
     constructor(
-        private readonly db: Database,
+        private readonly db: gateDb.Database,
         private readonly paths: { runLogDir(runId: string): string },
         private readonly config: Config | null,
         private readonly agent: Agent,
@@ -159,8 +135,8 @@ export class Executor {
      * where steps execute (typically a git worktree). Throws the run error on
      * failure (the run status is persisted before throwing).
      */
-    async execute(signal: AbortSignal, run: Run, repo: Repo, workDir: string): Promise<void> {
-        updateRunStatus(this.db, run.id, "running");
+    async execute(signal: AbortSignal, run: gateDb.Run, repo: gateDb.Repo, workDir: string): Promise<void> {
+        gateDb.updateRunStatus(this.db, run.id, "running");
         run.status = "running";
         this.emitRunEvent(EventRunUpdated, run, repo);
 
@@ -169,9 +145,9 @@ export class Executor {
         mkdirSync(logDir, { recursive: true });
 
         // Create step result records.
-        const stepRecords = new Map<StepName, StepResult>();
+        const stepRecords = new Map<StepName, gateDb.StepResult>();
         for (const step of this.steps) {
-            stepRecords.set(step.name(), insertStepResult(this.db, run.id, step.name()));
+            stepRecords.set(step.name(), gateDb.insertStepResult(this.db, run.id, step.name()));
         }
 
         for (let i = 0; i < this.steps.length; i++) {
@@ -180,7 +156,7 @@ export class Executor {
 
             const sr = stepRecords.get(step.name())!;
             if (this.skips.has(step.name())) {
-                completeStepWithStatus(this.db, sr.id, "skipped", 0, 0, "");
+                gateDb.completeStepWithStatus(this.db, sr.id, "skipped", 0, 0, "");
                 this.emitStepEvent2(EventStepCompleted, run, repo, step.name(), "skipped", "", "", "", undefined);
                 continue;
             }
@@ -194,7 +170,7 @@ export class Executor {
                 for (const remaining of this.steps.slice(i + 1)) {
                     const rsr = stepRecords.get(remaining.name())!;
                     try {
-                        completeStepWithStatus(this.db, rsr.id, "skipped", 0, 0, "");
+                        gateDb.completeStepWithStatus(this.db, rsr.id, "skipped", 0, 0, "");
                     } catch (dbErr) {
                         log.warn("failed to finalize skipped step", "step", remaining.name(), "error", String(dbErr));
                     }
@@ -204,7 +180,7 @@ export class Executor {
             }
         }
 
-        updateRunStatus(this.db, run.id, "completed");
+        gateDb.updateRunStatus(this.db, run.id, "completed");
         run.status = "completed";
         this.emitRunEvent(EventRunCompleted, run, repo);
     }
@@ -213,9 +189,9 @@ export class Executor {
     private async executeStep(
         signal: AbortSignal,
         step: Step,
-        sr: StepResult,
-        run: Run,
-        repo: Repo,
+        sr: gateDb.StepResult,
+        run: gateDb.Run,
+        repo: gateDb.Repo,
         workDir: string,
         logDir: string
     ): Promise<boolean> {
@@ -225,7 +201,7 @@ export class Executor {
         const logPath = join(logDir, `${stepName}.log`);
         let finalExitCode = 0;
 
-        startStep(this.db, sr.id);
+        gateDb.startStep(this.db, sr.id);
         this.emitStepEvent(EventStepStarted, run, repo, stepName, "running");
 
         let phaseStart = Date.now();
@@ -287,7 +263,7 @@ export class Executor {
                     const msg = String((err as Error)?.message ?? err);
                     writeLog(`\nerror: ${msg}\n`);
                     try {
-                        failStep(this.db, sr.id, msg, durationMS);
+                        gateDb.failStep(this.db, sr.id, msg, durationMS);
                     } catch (dbErr) {
                         log.warn("failed to mark step as failed in db", "step", stepName, "error", String(dbErr));
                     }
@@ -301,14 +277,14 @@ export class Executor {
                 finalExitCode = outcome.exitCode;
                 durationOverrideMS += outcome.durationOverrideMS;
 
-                if (outcome.findings !== "") setStepFindings(this.db, sr.id, outcome.findings);
-                else clearStepFindings(this.db, sr.id);
+                if (outcome.findings !== "") gateDb.setStepFindings(this.db, sr.id, outcome.findings);
+                else gateDb.clearStepFindings(this.db, sr.id);
 
                 // Persist this execution round.
                 const findingsPtr = outcome.findings !== "" ? outcome.findings : null;
                 const fixSummaryPtr = outcome.fixSummary !== "" ? outcome.fixSummary : null;
                 try {
-                    const inserted = insertStepRound(this.db, sr.id, roundNum, nextTrigger, findingsPtr, fixSummaryPtr, roundDuration);
+                    const inserted = gateDb.insertStepRound(this.db, sr.id, roundNum, nextTrigger, findingsPtr, fixSummaryPtr, roundDuration);
                     currentRoundID = inserted.id;
                 } catch (dbErr) {
                     currentRoundID = "";
@@ -329,10 +305,10 @@ export class Executor {
                         track("fix", this.fixTelemetryFields("auto", stepName, findingsCount(fixableFindings), autoFixAttempts));
                         log.info("auto-fixing step", "step", stepName, "attempt", autoFixAttempts, "max", autoFixLimitVal);
                         executionMS += Date.now() - phaseStart;
-                        updateStepStatus(this.db, sr.id, "fixing");
+                        gateDb.updateStepStatus(this.db, sr.id, "fixing");
                         if (currentRoundID !== "") {
                             const idsJSON = findingIDsJSON(fixableFindings);
-                            if (idsJSON !== "") setStepRoundSelection(this.db, currentRoundID, idsJSON, RoundSelectionSourceAutoFix);
+                            if (idsJSON !== "") gateDb.setStepRoundSelection(this.db, currentRoundID, idsJSON, gateDb.RoundSelectionSourceAutoFix);
                         }
                         this.emitStepEvent2(EventStepCompleted, run, repo, stepName, "fixing", "", "", "", undefined);
                         phaseStart = Date.now();
@@ -370,21 +346,21 @@ export class Executor {
                 this.waitingStep = stepName;
 
                 // Surface the park as a pollable run-level signal (observability only).
-                setRunAwaitingAgent(this.db, run.id);
+                gateDb.setRunAwaitingAgent(this.db, run.id);
 
-                updateStepStatusWithDuration(this.db, sr.id, approvalStatus, executionMS);
+                gateDb.updateStepStatusWithDuration(this.db, sr.id, approvalStatus, executionMS);
                 this.emitStepEvent2(EventStepCompleted, run, repo, stepName, approvalStatus, outcome.findings, diffText, "", executionMS);
 
                 let response: ApprovalResponse;
                 try {
                     response = await this.waitForApproval(signal);
                 } catch (err) {
-                    clearRunAwaitingAgent(this.db, run.id);
-                    failStep(this.db, sr.id, (err as Error).message, executionMS);
+                    gateDb.clearRunAwaitingAgent(this.db, run.id);
+                    gateDb.failStep(this.db, sr.id, (err as Error).message, executionMS);
                     this.emitStepEvent2(EventStepCompleted, run, repo, stepName, "failed", "", "", (err as Error).message, executionMS);
                     throw new Error(`step ${stepName}: waiting for approval: ${(err as Error).message}`);
                 }
-                clearRunAwaitingAgent(this.db, run.id);
+                gateDb.clearRunAwaitingAgent(this.db, run.id);
 
                 const approvalFields: Fields = {
                     step: stepName,
@@ -401,17 +377,17 @@ export class Executor {
                     phaseStart = Date.now();
                     break;
                 } else if (response.action === "skip") {
-                    completeStepWithStatus(this.db, sr.id, "skipped", finalExitCode, executionMS, logPath);
+                    gateDb.completeStepWithStatus(this.db, sr.id, "skipped", finalExitCode, executionMS, logPath);
                     this.emitStepEvent2(EventStepCompleted, run, repo, stepName, "skipped", "", "", "", executionMS);
                     return false;
                 } else if (response.action === "abort") {
-                    failStep(this.db, sr.id, "aborted by user", executionMS);
+                    gateDb.failStep(this.db, sr.id, "aborted by user", executionMS);
                     this.emitStepEvent2(EventStepCompleted, run, repo, stepName, "failed", "", "", "aborted by user", executionMS);
                     throw new Error(`step ${stepName}: aborted by user`);
                 } else if (response.action === "fix") {
                     track("fix", this.fixTelemetryFields("user", stepName, selectedFindingCount(outcome.findings, response.findingIDs), 0));
                     phaseStart = Date.now();
-                    updateStepStatus(this.db, sr.id, "fixing");
+                    gateDb.updateStepStatus(this.db, sr.id, "fixing");
                     sctx.fixing = true;
                     const selectedFindings = filterFindingsJSON(outcome.findings, response.findingIDs);
                     const mergedFindings = mergeUserOverridesJSON(selectedFindings, response.instructions, response.addedFindings);
@@ -420,9 +396,9 @@ export class Executor {
                     if (currentRoundID !== "") {
                         const allSelectedIDs = combineSelectedFindingIDs(response.findingIDs, mergedFindings);
                         const idsJSON = marshalFindingIDs(allSelectedIDs);
-                        if (idsJSON !== "") setStepRoundSelection(this.db, currentRoundID, idsJSON, RoundSelectionSourceUser);
+                        if (idsJSON !== "") gateDb.setStepRoundSelection(this.db, currentRoundID, idsJSON, gateDb.RoundSelectionSourceUser);
                         if (mergedFindings !== "" && mergedFindings !== selectedFindings) {
-                            setStepRoundUserFindings(this.db, currentRoundID, mergedFindings);
+                            gateDb.setStepRoundUserFindings(this.db, currentRoundID, mergedFindings);
                         }
                     }
                     this.emitStepEvent2(EventStepCompleted, run, repo, stepName, "fixing", "", "", "", undefined);
@@ -435,7 +411,7 @@ export class Executor {
             let durationMS = executionMS + (Date.now() - phaseStart);
             if (durationOverrideMS > 0) durationMS = durationOverrideMS;
             const status: StepStatus = stepSkipped ? "skipped" : "completed";
-            completeStepWithStatus(this.db, sr.id, status, finalExitCode, durationMS, logPath);
+            gateDb.completeStepWithStatus(this.db, sr.id, status, finalExitCode, durationMS, logPath);
             this.emitStepEvent2(EventStepCompleted, run, repo, stepName, status, "", "", "", durationMS);
             return skipRemaining;
         } finally {
@@ -477,18 +453,18 @@ export class Executor {
     }
 
     /** Marks a run failed (using the abort cause when present) and returns it. */
-    private failRun(run: Run, repo: Repo, err: Error, signal?: AbortSignal): never {
+    private failRun(run: gateDb.Run, repo: gateDb.Repo, err: Error, signal?: AbortSignal): never {
         let errMsg = err.message;
         if (signal) {
             const cause = causeMessage(signal);
             if (cause !== "") errMsg = cause;
         }
-        let runStatus: Run["status"] = "failed";
+        let runStatus: gateDb.Run["status"] = "failed";
         if (errMsg === RUN_CANCEL_REASON_ABORTED_BY_USER || errMsg === RUN_CANCEL_REASON_SUPERSEDED) {
             runStatus = "cancelled";
         }
         try {
-            updateRunErrorStatus(this.db, run.id, errMsg, runStatus);
+            gateDb.updateRunErrorStatus(this.db, run.id, errMsg, runStatus);
         } catch (dbErr) {
             log.error("failed to update run error status", "run", run.id, "error", String(dbErr));
         }
@@ -500,7 +476,7 @@ export class Executor {
 
     // --- event helpers ---
 
-    private emitRunEvent(eventType: EventType, run: Run, repo: Repo): void {
+    private emitRunEvent(eventType: EventType, run: gateDb.Run, repo: gateDb.Repo): void {
         this.onEvent({
             type: eventType,
             runId: run.id,
@@ -512,14 +488,14 @@ export class Executor {
         });
     }
 
-    private emitStepEvent(eventType: EventType, run: Run, repo: Repo, stepName: StepName, status: string): void {
+    private emitStepEvent(eventType: EventType, run: gateDb.Run, repo: gateDb.Repo, stepName: StepName, status: string): void {
         this.emitStepEvent2(eventType, run, repo, stepName, status, "", "", "", undefined);
     }
 
     private emitStepEvent2(
         eventType: EventType,
-        run: Run,
-        repo: Repo,
+        run: gateDb.Run,
+        repo: gateDb.Repo,
         stepName: StepName,
         status: string,
         findings: string,
@@ -555,16 +531,16 @@ export class Executor {
     }
 
     private findingStatsForStep(runID: string, stepName: StepName): { stepName: StepName; reportedFindings: number; fixedFindings: number } {
-        let steps: StepResult[];
+        let steps: gateDb.StepResult[];
         try {
-            steps = getStepsByRun(this.db, runID);
+            steps = gateDb.getStepsByRun(this.db, runID);
         } catch {
             return { stepName, reportedFindings: 0, fixedFindings: 0 };
         }
         for (const step of steps) {
             if (step.stepName !== stepName) continue;
             try {
-                return stepFindingStats(this.db, step);
+                return gateDb.stepFindingStats(this.db, step);
             } catch {
                 return { stepName, reportedFindings: 0, fixedFindings: 0 };
             }
@@ -572,7 +548,7 @@ export class Executor {
         return { stepName, reportedFindings: 0, fixedFindings: 0 };
     }
 
-    private emitLogChunk(run: Run, repo: Repo, stepName: StepName, content: string): void {
+    private emitLogChunk(run: gateDb.Run, repo: gateDb.Repo, stepName: StepName, content: string): void {
         this.onEvent({ type: EventLogChunk, runId: run.id, repoId: repo.id, stepName, content });
     }
 

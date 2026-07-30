@@ -17,35 +17,13 @@
 import { getRun } from "../../db";
 import { buildHost } from "./host";
 import { autoFixCI } from "./ciFix";
+import * as scm from "../../scm/types";
+import * as ciChecks from "./ciChecks";
 import { DEFAULT_CI_TIMEOUT } from "../../config";
 import { type StepName, STEP_CI } from "../../types";
 import { resolveDefaultBranchTip } from "./commonGit";
 import { type Provider, detectProvider, PROVIDER_UNKNOWN } from "../../scm/host";
 import { type Step, type StepContext, type StepOutcome, newStepOutcome } from "../types";
-import {
-    type PR,
-    type Host,
-    type Check,
-    type PRState,
-    type MergeableState,
-    PR_STATE_MERGED,
-    PR_STATE_CLOSED,
-    MERGEABLE_OK,
-    MERGEABLE_CONFLICT,
-    extractPRNumber
-} from "../../scm/types";
-import {
-    pollInterval,
-    hasPendingChecks,
-    failingCheckNames,
-    failingCheckCompletedAfter,
-    pendingCheckMatchesLastFixed,
-    encodeLastFixedChecks,
-    failingCheckCompletionTimes,
-    ciFailureOutcome,
-    ciMergeabilityOutcome,
-    ciMonitoringTimeoutOutcome
-} from "./ciChecks";
 
 /** Minimum wait (ms) before trusting empty CI checks. */
 const DEFAULT_CHECKS_GRACE_PERIOD = 60 * 1000;
@@ -93,13 +71,13 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
 }
 
 /** Reports whether the state indicates a known merge conflict. */
-function mergeStateConflict(s: MergeableState): boolean {
-    return s === MERGEABLE_CONFLICT;
+function mergeStateConflict(s: scm.MergeableState): boolean {
+    return s === scm.MERGEABLE_CONFLICT;
 }
 
 /** Reports whether the state is final (MERGEABLE or CONFLICTING). */
-function mergeStateResolved(s: MergeableState): boolean {
-    return s === MERGEABLE_OK || s === MERGEABLE_CONFLICT;
+function mergeStateResolved(s: scm.MergeableState): boolean {
+    return s === scm.MERGEABLE_OK || s === scm.MERGEABLE_CONFLICT;
 }
 
 /** Truncates a SHA to its first 12 characters for log readability. */
@@ -224,11 +202,11 @@ export class CIStep implements Step {
 
         let prNumber: string;
         try {
-            prNumber = extractPRNumber(prURL);
+            prNumber = scm.extractPRNumber(prURL);
         } catch (err) {
             throw new Error(`extract PR number: ${errMessage(err)}`);
         }
-        const pr: PR = { number: prNumber, url: prURL };
+        const pr: scm.PR = { number: prNumber, url: prURL };
 
         // CITimeout semantics: <0 means never self-terminate; 0 means the value
         // was never configured, so fall back to the default; >0 is an explicit
@@ -271,16 +249,16 @@ export class CIStep implements Step {
         const timeoutOutcome = (): StepOutcome => {
             sctx.log("CI timeout reached");
             if (timeoutFailingChecks.length > 0 || timeoutMergeConflict) {
-                return ciFailureOutcome(
+                return ciChecks.ciFailureOutcome(
                     timeoutFailingChecks,
                     timeoutMergeConflict,
                     "CI timed out with known failures still present"
                 );
             }
             if (mergeabilityBlockedReason !== "") {
-                return ciMergeabilityOutcome("mergeability check timed out", mergeabilityBlockedReason);
+                return ciChecks.ciMergeabilityOutcome("mergeability check timed out", mergeabilityBlockedReason);
             }
-            return ciMonitoringTimeoutOutcome();
+            return ciChecks.ciMonitoringTimeoutOutcome();
         };
 
         for (;;) {
@@ -322,11 +300,11 @@ export class CIStep implements Step {
             // Check PR state (merged/closed -> exit).
             let prStateKnown = true;
             try {
-                const state: PRState = await host.getPRState(pr, signal);
-                if (state === PR_STATE_MERGED) {
+                const state: scm.PRState = await host.getPRState(pr, signal);
+                if (state === scm.PR_STATE_MERGED) {
                     sctx.log("PR has been merged!");
                     return newStepOutcome({});
-                } else if (state === PR_STATE_CLOSED) {
+                } else if (state === scm.PR_STATE_CLOSED) {
                     sctx.log("PR has been closed");
                     return newStepOutcome({});
                 }
@@ -340,7 +318,7 @@ export class CIStep implements Step {
             let mergeabilityKnown = true;
             if (host.capabilities().mergeableState) {
                 try {
-                    const mergeState: MergeableState = await host.getMergeableState(pr, signal);
+                    const mergeState: scm.MergeableState = await host.getMergeableState(pr, signal);
                     mergeConflict = mergeStateConflict(mergeState);
                     mergeabilityKnown = mergeStateResolved(mergeState);
                     if (!mergeabilityKnown) {
@@ -359,7 +337,7 @@ export class CIStep implements Step {
 
             // Check CI status - wait for all checks to complete before fixing.
             const ciFixLimit = sctx.config.autoFix.ci;
-            let checks: Check[] | null = null;
+            let checks: scm.Check[] | null = null;
             try {
                 checks = await host.getChecks(pr, signal);
             } catch (err) {
@@ -367,8 +345,8 @@ export class CIStep implements Step {
                 sctx.log(`warning: could not check CI: ${errMessage(err)}`);
             }
             if (checks !== null) {
-                const pending = hasPendingChecks(checks);
-                const failing = failingCheckNames(checks);
+                const pending = ciChecks.hasPendingChecks(checks);
+                const failing = ciChecks.failingCheckNames(checks);
                 failing.sort();
                 const hasFailures = failing.length > 0;
                 const hasIssues = hasFailures || mergeConflict;
@@ -379,14 +357,14 @@ export class CIStep implements Step {
                 // pending between polls). Treat this as a new iteration so the
                 // retry path can fire rather than looping on "fix already
                 // attempted" until timeout.
-                if (failingCheckCompletedAfter(checks, this.lastFixedCompletedAt)) {
+                if (ciChecks.failingCheckCompletedAfter(checks, this.lastFixedCompletedAt)) {
                     this.lastFixedChecks = "";
                     this.lastFixedCompletedAt = null;
                 }
 
                 if (hasIssues && pending) {
                     lastMonitorLog = "";
-                    if (pendingCheckMatchesLastFixed(checks, this.lastFixedChecks)) {
+                    if (ciChecks.pendingCheckMatchesLastFixed(checks, this.lastFixedChecks)) {
                         this.lastFixedChecks = "";
                         this.lastFixedCompletedAt = null;
                     }
@@ -394,8 +372,8 @@ export class CIStep implements Step {
                 } else if (hasIssues) {
                     lastMonitorLog = "";
                     // All checks done, issues present - fix or report.
-                    const fixKey = encodeLastFixedChecks(failing, mergeConflict);
-                    const fixCompletedAt = failingCheckCompletionTimes(checks);
+                    const fixKey = ciChecks.encodeLastFixedChecks(failing, mergeConflict);
+                    const fixCompletedAt = ciChecks.failingCheckCompletionTimes(checks);
                     let issueDesc = failing.join(", ");
                     if (mergeConflict) {
                         if (issueDesc !== "") {
@@ -422,7 +400,7 @@ export class CIStep implements Step {
                             this.lastFixedCompletedAt = fixCompletedAt;
                         } else {
                             sctx.log("CI fix produced no changes, returning for manual intervention...");
-                            return ciFailureOutcome(
+                            return ciChecks.ciFailureOutcome(
                                 failing,
                                 mergeConflict,
                                 "CI fix produced no changes - failures require manual intervention"
@@ -434,12 +412,12 @@ export class CIStep implements Step {
                         sctx.log(
                             `issues detected: ${issueDesc} - auto-fix disabled, waiting for manual intervention...`
                         );
-                        return ciFailureOutcome(failing, mergeConflict, "CI failures require manual intervention");
+                        return ciChecks.ciFailureOutcome(failing, mergeConflict, "CI failures require manual intervention");
                     } else if (this.ciFixAttempts >= ciFixLimit) {
                         sctx.log(
                             `issues detected: ${issueDesc} - max auto-fix attempts (${ciFixLimit}) reached, waiting for manual intervention...`
                         );
-                        return ciFailureOutcome(
+                        return ciChecks.ciFailureOutcome(
                             failing,
                             mergeConflict,
                             "CI failures still present after auto-fix attempts"
@@ -495,7 +473,7 @@ export class CIStep implements Step {
 
             // Sleep for the poll interval.
             let interval = this.pollIntervalOverride;
-            if (interval === 0) interval = pollInterval(now() - started);
+            if (interval === 0) interval = ciChecks.pollInterval(now() - started);
             if (!unlimited) {
                 const remaining = timeout - (now() - timeoutAnchor);
                 if (remaining < interval) interval = remaining;

@@ -4,8 +4,12 @@
  * disable each one. Subcommands run a single feature non-interactively.
  */
 
+import * as packs from "./packs";
+import * as acct from "./accounts";
 import * as p from "@clack/prompts";
+import * as dash from "./dashboard";
 import { runGuardCli } from "./guard";
+import * as skillsMod from "./skills";
 import { isDir, readJson } from "./util";
 import { DASHBOARD_BINDS, readConfig, setEnigmaValue, type DashboardBind } from "./config";
 import { readFileSync } from "node:fs";
@@ -16,7 +20,6 @@ import { runConfigCli } from "./settings";
 import { collectReporter } from "./reporter";
 import { hostname, userInfo } from "node:os";
 import type { ContentType } from "./compress";
-import type { InstallOptions } from "./skills";
 import { starRepoInBackground } from "./github";
 import { buildIssueUrl, isHeadless, openUrl } from "./issue";
 import { ensureDashboardToken, readDashboardToken } from "./dashboard-token";
@@ -31,24 +34,6 @@ import { ensureLinterInstalled, isLinterInstalled, refreshLinterPkg } from "./li
 import { checkLatestNow, getAvailableUpdate, notifyUpdate, performUpdateCheck, runUpdate } from "./update";
 import { isUsableSession, sessionEmail, sessionState, transferSession, type SessionState } from "./claude-oauth";
 import { ensureDashboardCurrent, isDashboardPkgCurrent, isDashboardPkgInstalled, refreshDashboardPkg } from "./dashboard-pkg";
-import { clearDaemon, daemonError, dashboardUrl, ensureHostsEntry, repoBindOverrideIgnored, resolveBind, restartDashboardDaemon, runningDaemon, serveDashboardDaemon, startDashboardServer, tokenizedUrl, writeDaemon } from "./dashboard";
-import {
-    PACKS, disablePack, enablePack, getPack, installedPackVersion, isPackInstalled,
-    launchPack, listPacks, packSessionSources, refreshPack, setupPackMcp,
-} from "./packs";
-import {
-    checkSources, discardSkill, hasAccountDeployment, hasDeployment, installSkills,
-    listSkillsStatus, refreshSkillsFromGitHub, sealSources, setSkillAgent, shouldCheckRemote,
-    syncAccount, syncDeployed,
-} from "./skills";
-import {
-    DEFAULT_NAME, DEFAULT_TOOL, TOOL_NAMES, addAccount, addProfile, getActive, getTool,
-    isToolName, launchTool, listAccounts, listProfiles, loginTool, removeAccount, spawnInherit,
-    removeProfile, renameAccount, renameProfile, resolveConfigDir, resolveLaunchAccount,
-    setActive, setActiveProfile, setProfileAccount, unsetProfileAccount,
-    getAccountProvider, setAccountProvider, providerFromPreset, presetsForTool, PROVIDER_PRESETS,
-    type ProviderInput,
-} from "./accounts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 // In the compiled binary __dirname lives in Bun's virtual fs (no package.json on
@@ -61,11 +46,11 @@ const COMMANDS = new Set<string>([
     "install", "update", "security", "guard", "seal", "check", "config", "account", "accounts",
     "profile", "profiles", "skill", "skills", "issue", "improve", "compress", "guardrails", "verify", "mcp", "api", "gate", "dashboard", "dash", "fix-path", "resources", "recall", "codegraph", "autoskills", "statusline", "help", "version",
     "pack", "packs", "ssh",
-    ...TOOL_NAMES,
-    ...PACKS.map((p) => p.id),
+    ...acct.TOOL_NAMES,
+    ...packs.PACKS.map((p) => p.id),
 ]);
 
-interface CliOptions extends InstallOptions {
+interface CliOptions extends skillsMod.InstallOptions {
     command: string | null;
     positionals: string[];
     /** Args after a literal `--`, forwarded verbatim to the launched agent. */
@@ -109,7 +94,7 @@ interface CliOptions extends InstallOptions {
 
 function parseArgs(argv: string[]): CliOptions {
     const opts: CliOptions = {
-        command: null, positionals: [], passthrough: [], tool: DEFAULT_TOOL,
+        command: null, positionals: [], passthrough: [], tool: acct.DEFAULT_TOOL,
         scope: null, agents: [], allAgents: false, skills: [],
         skillsOnly: false, memoryOnly: false, prune: true, keepModified: false,
         bypass: null, noBypass: false, outputStyle: null, minimalCode: null, dashboard: null, promptSecretGuard: null,
@@ -404,11 +389,11 @@ It has two modes:
 function syncForLaunch(tool: string, account: string): void {
     const auto = readConfig().config.autoSync;
     try {
-        if (auto) for (const notice of syncDeployed([tool])) console.log(`enigma: synced ${notice}.`);
-        if (account === DEFAULT_NAME) return;
-        const dir = resolveConfigDir(tool, account);
-        if (!auto && hasAccountDeployment(tool, dir)) return;
-        for (const notice of syncAccount(tool, dir)) console.log(`enigma: synced ${notice}.`);
+        if (auto) for (const notice of skillsMod.syncDeployed([tool])) console.log(`enigma: synced ${notice}.`);
+        if (account === acct.DEFAULT_NAME) return;
+        const dir = acct.resolveConfigDir(tool, account);
+        if (!auto && skillsMod.hasAccountDeployment(tool, dir)) return;
+        for (const notice of skillsMod.syncAccount(tool, dir)) console.log(`enigma: synced ${notice}.`);
     } catch (err) {
         console.error(`enigma: skill auto-sync failed (${(err as Error).message}); launching anyway.`);
     }
@@ -427,7 +412,7 @@ function syncForLaunch(tool: string, account: string): void {
 /** Sync an account's deployment, then run the tool's login flow for it. */
 async function loginWithSync(tool: string, name: string): Promise<number> {
     syncForLaunch(tool, name);
-    return loginTool(tool, name);
+    return acct.loginTool(tool, name);
 }
 
 /**
@@ -436,7 +421,7 @@ async function loginWithSync(tool: string, name: string): Promise<number> {
  * A failure is non-fatal: the next launch seeds it instead.
  */
 function seedAccount(tool: string, dir: string): void {
-    try { syncAccount(tool, dir); } catch { /* seeded on first launch instead */ }
+    try { skillsMod.syncAccount(tool, dir); } catch { /* seeded on first launch instead */ }
 }
 
 /**
@@ -446,10 +431,10 @@ function seedAccount(tool: string, dir: string): void {
  * failure-tolerant, so an unreachable GitHub or npm never blocks the others.
  */
 async function runUpdateCli(version: string): Promise<void> {
-    if (shouldCheckRemote(true)) {
+    if (skillsMod.shouldCheckRemote(true)) {
         const s = p.spinner();
         s.start("Checking GitHub for skill updates...");
-        const r = await refreshSkillsFromGitHub(true);
+        const r = await skillsMod.refreshSkillsFromGitHub(true);
         if (r.error) s.stop(`Skill update check failed (${r.error}); keeping bundled/cached skills.`);
         else if (r.updated.length) s.stop(`Skill update(s) from GitHub: ${r.updated.join(", ")}.`);
         else s.stop("Skills are up to date with GitHub.");
@@ -457,7 +442,7 @@ async function runUpdateCli(version: string): Promise<void> {
         p.log.info("Remote skill updates are off (enable with 'enigma config remote-skills on').");
     }
     try {
-        for (const notice of syncDeployed()) p.log.info(`Synced ${notice}.`);
+        for (const notice of skillsMod.syncDeployed()) p.log.info(`Synced ${notice}.`);
     } catch (err) {
         p.log.warn(`Skill sync failed: ${(err as Error).message}`);
     }
@@ -477,11 +462,11 @@ async function runUpdateCli(version: string): Promise<void> {
         ls.stop("Linter updated to latest.");
     }
     // Marketplace packs the user has actually installed (never fetch one they don't use).
-    for (const pack of listPacks().filter((pk) => isPackInstalled(pk.id))) {
+    for (const pack of packs.listPacks().filter((pk) => packs.isPackInstalled(pk.id))) {
         const ps = p.spinner();
         ps.start(`Updating the ${pack.label} pack (@enigmax/${pack.id})...`);
-        const changed = refreshPack(pack.id);
-        ps.stop(changed ? `${pack.label} pack updated to ${installedPackVersion(pack.id)}.` : `${pack.label} pack is up to date.`);
+        const changed = packs.refreshPack(pack.id);
+        ps.stop(changed ? `${pack.label} pack updated to ${packs.installedPackVersion(pack.id)}.` : `${pack.label} pack is up to date.`);
     }
     // Self-update: ALWAYS reinstall enigma-cli@latest on an explicit `enigma update`, rather
     // than gating on a cached "is newer" check that a stale registry cache could get wrong.
@@ -495,7 +480,7 @@ async function runUpdateCli(version: string): Promise<void> {
     // An always-on dashboard daemon is still running the pre-update binary (version baked in at
     // spawn), so restart it on the new binary - otherwise the running dashboard keeps showing the
     // old version and a stale "update available" banner, which is what makes "Update now" look dead.
-    try { if (restartDashboardDaemon()) p.log.info("Restarted the dashboard on the new version."); } catch { /* best-effort */ }
+    try { if (dash.restartDashboardDaemon()) p.log.info("Restarted the dashboard on the new version."); } catch { /* best-effort */ }
 }
 
 /**
@@ -504,11 +489,11 @@ async function runUpdateCli(version: string): Promise<void> {
  * No argument fixes every supported tool. Returns 0 when every target is launchable.
  */
 function runFixPathCli(tool: string | undefined, scope: "global" | "local" | null): number {
-    const targets = tool ? [tool] : TOOL_NAMES;
+    const targets = tool ? [tool] : acct.TOOL_NAMES;
     let allOk = true;
     for (const t of targets) {
-        if (!isToolName(t)) {
-            console.error(`Unknown tool '${t}'. Known tools: ${TOOL_NAMES.join(", ")}.`);
+        if (!acct.isToolName(t)) {
+            console.error(`Unknown tool '${t}'. Known tools: ${acct.TOOL_NAMES.join(", ")}.`);
             allOk = false;
             continue;
         }
@@ -749,10 +734,10 @@ async function connectSsh(ssh: typeof import("./ssh"), alias: string, opts: impo
         console.error(`Opening tunnel to ${alias} (${ssh.sshTarget(conn)}):`);
         for (const f of forwards) console.error(`  ${ssh.describeForward(f)}`);
         console.error("Keep this terminal open (the tunnel stays up while it runs); Ctrl+C to close.\nFor a background tunnel with start/stop and live status, use: enigma ssh tunnel start <name>.");
-        return spawnInherit(launcher.command, launcher.args, launcher.env);
+        return acct.spawnInherit(launcher.command, launcher.args, launcher.env);
     }
     console.error(`Connecting to ${alias} (${ssh.sshTarget(conn)})...`);
-    return spawnInherit(launcher.command, launcher.args, launcher.env);
+    return acct.spawnInherit(launcher.command, launcher.args, launcher.env);
 }
 
 /**
@@ -763,10 +748,10 @@ async function connectSsh(ssh: typeof import("./ssh"), alias: string, opts: impo
  */
 async function runPackCli(args: string[], passthrough: string[], toolOpt?: string): Promise<number> {
     const [sub, id, value] = args;
-    const tool = toolOpt && isToolName(toolOpt) ? toolOpt : DEFAULT_TOOL;
+    const tool = toolOpt && acct.isToolName(toolOpt) ? toolOpt : acct.DEFAULT_TOOL;
     if (!sub || sub === "list") {
         console.log("Packs (optional isolated harnesses):\n");
-        for (const p of listPacks()) {
+        for (const p of packs.listPacks()) {
             const state = p.installed ? (p.version ? `installed ${p.version}` : "installed") : "not installed";
             const acct = p.defaultAccount ? `account ${p.defaultAccount}` : `account ${p.resolvedAccount} (follows active)`;
             console.log(`  ${p.id.padEnd(10)} ${p.label}  [${state}${p.enabled ? ", added" : ""}]`);
@@ -777,32 +762,32 @@ async function runPackCli(args: string[], passthrough: string[], toolOpt?: strin
         console.log("\nUse: enigma pack <install|remove|update|setup|use|run> <id>   (or just `enigma <id>` to launch)");
         return 0;
     }
-    if (!id || !getPack(id)) { console.error(`Unknown pack '${id ?? ""}'. Known: ${PACKS.map((p) => p.id).join(", ")}.`); return 1; }
-    const pack = getPack(id)!;
+    if (!id || !packs.getPack(id)) { console.error(`Unknown pack '${id ?? ""}'. Known: ${packs.PACKS.map((p) => p.id).join(", ")}.`); return 1; }
+    const pack = packs.getPack(id)!;
     switch (sub) {
         case "install": {
             process.stdout.write(`Fetching the ${pack.label} pack (${pack.pkg})...\n`);
             const { ensurePackInstalled } = await import("./packs");
             if (!ensurePackInstalled(id)) { console.error("Could not fetch the pack. Check your network and npm."); return 1; }
-            enablePack(id);
+            packs.enablePack(id);
             console.log(`${pack.label} added. Launch it with: enigma ${id}`);
             return 0;
         }
         case "remove":
-            disablePack(id);
+            packs.disablePack(id);
             console.log(`${pack.label} removed (managed files and context deleted).`);
             return 0;
         case "update": {
-            if (!isPackInstalled(id)) { console.error(`${pack.label} is not installed. Run: enigma pack install ${id}.`); return 1; }
-            const changed = refreshPack(id);
-            console.log(changed ? `${pack.label} updated to ${installedPackVersion(id)}.` : `${pack.label} is already up to date.`);
+            if (!packs.isPackInstalled(id)) { console.error(`${pack.label} is not installed. Run: enigma pack install ${id}.`); return 1; }
+            const changed = packs.refreshPack(id);
+            console.log(changed ? `${pack.label} updated to ${packs.installedPackVersion(id)}.` : `${pack.label} is already up to date.`);
             return 0;
         }
         case "setup": {
-            const added = setupPackMcp(id, DEFAULT_TOOL);
+            const added = packs.setupPackMcp(id, acct.DEFAULT_TOOL);
             console.log(added.length
                 ? `Registered MCP server(s) in the ${pack.label} context: ${added.join(", ")}. They need Python 3 and the pack's tooling on PATH.`
-                : `No MCP servers were registered for ${pack.label} (none available, or not supported for ${DEFAULT_TOOL}).`);
+                : `No MCP servers were registered for ${pack.label} (none available, or not supported for ${acct.DEFAULT_TOOL}).`);
             return 0;
         }
         case "use": {
@@ -820,7 +805,7 @@ async function runPackCli(args: string[], passthrough: string[], toolOpt?: strin
             return 0;
         }
         case "run":
-            return launchPack(id, tool, passthrough, value);
+            return packs.launchPack(id, tool, passthrough, value);
         default:
             console.error(`Unknown subcommand '${sub}'. Use: enigma pack <list|install|remove|update|setup|use|run> <id>.`);
             return 1;
@@ -1079,11 +1064,11 @@ interface ClaudeSessionSource { id: string; label: string; dir: string; email?: 
  * unusable, `ok` before `refreshable`) so an auto-picked transfer source is the best available.
  */
 function claudeSessionSources(): ClaudeSessionSource[] {
-    const rows: ClaudeSessionSource[] = listAccounts("claude").map((a) => {
+    const rows: ClaudeSessionSource[] = acct.listAccounts("claude").map((a) => {
         const state = sessionState(a.dir);
         return { id: `account:${a.name}`, label: a.name, dir: a.dir, email: a.email ?? sessionEmail(a.dir), state, usable: isUsableSession(state) };
     });
-    for (const s of packSessionSources("claude")) {
+    for (const s of packs.packSessionSources("claude")) {
         const state = sessionState(s.dir);
         rows.push({ id: `pack:${s.id}`, label: `pack ${s.label}`, dir: s.dir, email: sessionEmail(s.dir), state, usable: isUsableSession(state) });
     }
@@ -1094,19 +1079,19 @@ function claudeSessionSources(): ClaudeSessionSource[] {
 async function runAccountCli(opts: CliOptions, interactive: boolean): Promise<number> {
     const [sub, name] = opts.positionals;
     const tool = opts.tool;
-    if (!isToolName(tool)) { console.error(`Unknown tool '${tool}'. Known tools: ${TOOL_NAMES.join(", ")}.`); return 1; }
-    const spec = getTool(tool);
+    if (!acct.isToolName(tool)) { console.error(`Unknown tool '${tool}'. Known tools: ${acct.TOOL_NAMES.join(", ")}.`); return 1; }
+    const spec = acct.getTool(tool);
 
     switch (sub) {
         case undefined:
         case "list":
         case "ls": {
-            const accounts = listAccounts(tool);
+            const accounts = acct.listAccounts(tool);
             console.log(`${spec.label} accounts:\n`);
             for (const a of accounts) {
                 const marker = a.active ? "*" : " ";
                 const identity = a.email ?? a.displayName ?? "(not logged in)";
-                const meta = a.name === DEFAULT_NAME ? "(existing config)" : a.lastUsed ? `last used ${a.lastUsed}` : "never used";
+                const meta = a.name === acct.DEFAULT_NAME ? "(existing config)" : a.lastUsed ? `last used ${a.lastUsed}` : "never used";
                 console.log(` ${marker} ${a.name.padEnd(14)} ${identity.padEnd(30)} ${meta}`);
                 console.log(`     ${a.dir}`);
                 if (a.provider) {
@@ -1114,24 +1099,24 @@ async function runAccountCli(opts: CliOptions, interactive: boolean): Promise<nu
                     console.log(`     provider: ${label}${a.provider.model ? ` (${a.provider.model})` : ""}`);
                 }
             }
-            console.log(`\nActive: ${getActive(tool)}. Launch with: enigma ${tool} [account].`);
+            console.log(`\nActive: ${acct.getActive(tool)}. Launch with: enigma ${tool} [account].`);
             return 0;
         }
         case "add": {
             if (!name) { console.error(`Usage: enigma account add <name> [--login] [--tool ${tool}]`); return 1; }
             try {
-                const account = addAccount(tool, name);
+                const account = acct.addAccount(tool, name);
                 seedAccount(tool, account.dir);
                 console.log(`Account '${account.name}' ready at ${account.dir} (skills, memory and settings deployed).`);
-                if (opts.login) return loginTool(tool, account.name);
-                console.log(`Log in with: enigma account login ${account.name}${tool === DEFAULT_TOOL ? "" : ` --tool ${tool}`}.`);
+                if (opts.login) return acct.loginTool(tool, account.name);
+                console.log(`Log in with: enigma account login ${account.name}${tool === acct.DEFAULT_TOOL ? "" : ` --tool ${tool}`}.`);
                 return 0;
             } catch (err) { console.error((err as Error).message); return 1; }
         }
         case "use":
         case "switch": {
             if (!name) { console.error("Usage: enigma account use <name>"); return 1; }
-            try { setActive(tool, name); console.log(`Active ${tool} account is now '${name}'.`); return 0; }
+            try { acct.setActive(tool, name); console.log(`Active ${tool} account is now '${name}'.`); return 0; }
             catch (err) { console.error((err as Error).message); return 1; }
         }
         case "login": {
@@ -1141,13 +1126,13 @@ async function runAccountCli(opts: CliOptions, interactive: boolean): Promise<nu
         }
         case "run": {
             if (!name) { console.error("Usage: enigma account run <name>"); return 1; }
-            try { syncForLaunch(tool, name); return await launchTool(tool, name, opts.passthrough); }
+            try { syncForLaunch(tool, name); return await acct.launchTool(tool, name, opts.passthrough); }
             catch (err) { console.error((err as Error).message); return 1; }
         }
         case "rename": {
             const to = opts.positionals[2];
             if (!name || !to) { console.error("Usage: enigma account rename <old> <new>"); return 1; }
-            try { renameAccount(tool, name, to); console.log(`Renamed ${tool} account '${name}' to '${to}'.`); return 0; }
+            try { acct.renameAccount(tool, name, to); console.log(`Renamed ${tool} account '${name}' to '${to}'.`); return 0; }
             catch (err) { console.error((err as Error).message); return 1; }
         }
         case "remove":
@@ -1158,12 +1143,12 @@ async function runAccountCli(opts: CliOptions, interactive: boolean): Promise<nu
                 const ok = await p.confirm({ message: `Remove ${tool} account '${name}' and delete its config directory?` });
                 if (p.isCancel(ok) || !ok) { console.log("Aborted."); return 0; }
             }
-            try { removeAccount(tool, name); console.log(`Removed ${tool} account '${name}'.`); return 0; }
+            try { acct.removeAccount(tool, name); console.log(`Removed ${tool} account '${name}'.`); return 0; }
             catch (err) { console.error((err as Error).message); return 1; }
         }
         case "provider": {
-            const presets = presetsForTool(tool);
-            if (!presets.length && !getTool(tool).providerEnv) { console.error(`${spec.label} does not support a provider override.`); return 1; }
+            const presets = acct.presetsForTool(tool);
+            if (!presets.length && !acct.getTool(tool).providerEnv) { console.error(`${spec.label} does not support a provider override.`); return 1; }
             if (!name) {
                 console.error("Usage: enigma account provider <name> [--preset <id> | --base <url> [--model <id>]] [--token <key>] [--clear]");
                 if (presets.length) console.error(`Presets for ${tool}: ${presets.map((pr) => pr.id).join(", ")}.`);
@@ -1172,7 +1157,7 @@ async function runAccountCli(opts: CliOptions, interactive: boolean): Promise<nu
             try {
                 // No mutating flag -> show the current override.
                 if (!opts.preset && !opts.base && opts.token === null && !opts.clear && !opts.providerModel) {
-                    const prov = getAccountProvider(tool, name);
+                    const prov = acct.getAccountProvider(tool, name);
                     if (!prov) { console.log(`'${name}' uses ${spec.label}'s default backend (Anthropic).`); return 0; }
                     console.log(`'${name}' provider:`);
                     console.log(`  base   ${prov.baseUrl}`);
@@ -1182,13 +1167,13 @@ async function runAccountCli(opts: CliOptions, interactive: boolean): Promise<nu
                     return 0;
                 }
                 if (opts.clear) {
-                    setAccountProvider(tool, name, null);
+                    acct.setAccountProvider(tool, name, null);
                     console.log(`Cleared the provider override for '${name}' (back to ${spec.label}'s default).`);
                     return 0;
                 }
-                let input: ProviderInput | null = null;
+                let input: acct.ProviderInput | null = null;
                 if (opts.preset) {
-                    input = providerFromPreset(opts.preset, opts.token ?? undefined);
+                    input = acct.providerFromPreset(opts.preset, opts.token ?? undefined);
                     if (!input) { console.error(`Unknown preset '${opts.preset}'. Available: ${presets.map((pr) => pr.id).join(", ") || "(none)"}.`); return 1; }
                     if (opts.base) input.baseUrl = opts.base;
                     if (opts.providerModel) input.model = opts.providerModel;
@@ -1196,11 +1181,11 @@ async function runAccountCli(opts: CliOptions, interactive: boolean): Promise<nu
                     input = { baseUrl: opts.base, model: opts.providerModel ?? undefined, preset: "custom", token: opts.token ?? undefined };
                 } else {
                     // Only a token/model given: update an existing override in place.
-                    const cur = getAccountProvider(tool, name);
+                    const cur = acct.getAccountProvider(tool, name);
                     if (!cur) { console.error("Set a provider first with --preset <id> or --base <url>."); return 1; }
                     input = { baseUrl: cur.baseUrl, model: opts.providerModel ?? cur.model, env: cur.env, preset: cur.preset, token: opts.token ?? undefined };
                 }
-                setAccountProvider(tool, name, input);
+                acct.setAccountProvider(tool, name, input);
                 const label = input.preset && input.preset !== "custom" ? input.preset : input.baseUrl;
                 console.log(`'${name}' now uses ${label}${opts.token ? " (token set)" : ""}. Launch it with: enigma ${tool} ${name}.`);
                 return 0;
@@ -1223,7 +1208,7 @@ async function runAccountCli(opts: CliOptions, interactive: boolean): Promise<nu
             if (tool !== "claude") { console.error("Session transfer is Claude-only."); return 1; }
             if (!name) { console.error("Usage: enigma account transfer <target-account> [source-id]"); return 1; }
             let targetDir: string;
-            try { targetDir = resolveConfigDir(tool, name); } catch (err) { console.error((err as Error).message); return 1; }
+            try { targetDir = acct.resolveConfigDir(tool, name); } catch (err) { console.error((err as Error).message); return 1; }
             const sources = claudeSessionSources().filter((s) => s.dir !== targetDir);
             const explicit = opts.positionals[2];
             let src: ClaudeSessionSource | undefined;
@@ -1258,7 +1243,7 @@ async function runProfileCli(opts: CliOptions, interactive: boolean): Promise<nu
             case undefined:
             case "list":
             case "ls": {
-                const profiles = listProfiles();
+                const profiles = acct.listProfiles();
                 if (!profiles.length) {
                     console.log("No profiles yet. Create one with: enigma profile add <name>.");
                     return 0;
@@ -1274,33 +1259,33 @@ async function runProfileCli(opts: CliOptions, interactive: boolean): Promise<nu
             }
             case "add": {
                 if (!name) { console.error("Usage: enigma profile add <name>"); return 1; }
-                addProfile(name);
+                acct.addProfile(name);
                 console.log(`Profile '${name}' ready. Pin accounts with: enigma profile set ${name} <tool> <account>.`);
                 return 0;
             }
             case "use":
             case "switch": {
                 if (!name) { console.error("Usage: enigma profile use <name|none>"); return 1; }
-                setActiveProfile(name === "none" ? null : name);
+                acct.setActiveProfile(name === "none" ? null : name);
                 console.log(name === "none" ? "No active profile (tools use their own active accounts)." : `Active profile is now '${name}'.`);
                 return 0;
             }
             case "set": {
                 if (!name || !tool || !account) { console.error("Usage: enigma profile set <name> <tool> <account>"); return 1; }
-                setProfileAccount(name, tool, account);
+                acct.setProfileAccount(name, tool, account);
                 console.log(`Profile '${name}': ${tool} -> '${account}'.`);
                 return 0;
             }
             case "unset": {
                 if (!name || !tool) { console.error("Usage: enigma profile unset <name> <tool>"); return 1; }
-                unsetProfileAccount(name, tool);
+                acct.unsetProfileAccount(name, tool);
                 console.log(`Profile '${name}': ${tool} mapping removed.`);
                 return 0;
             }
             case "rename": {
                 const to = opts.positionals[2];
                 if (!name || !to) { console.error("Usage: enigma profile rename <old> <new>"); return 1; }
-                renameProfile(name, to);
+                acct.renameProfile(name, to);
                 console.log(`Renamed profile '${name}' to '${to}'.`);
                 return 0;
             }
@@ -1311,7 +1296,7 @@ async function runProfileCli(opts: CliOptions, interactive: boolean): Promise<nu
                     const ok = await p.confirm({ message: `Remove profile '${name}'? (its accounts are kept)` });
                     if (p.isCancel(ok) || !ok) { console.log("Aborted."); return 0; }
                 }
-                removeProfile(name);
+                acct.removeProfile(name);
                 console.log(`Removed profile '${name}'.`);
                 return 0;
             }
@@ -1337,7 +1322,7 @@ function runSkillsCli(opts: CliOptions): number {
         case "list":
         case "ls": {
             console.log("Skills:\n");
-            for (const s of listSkillsStatus()) {
+            for (const s of skillsMod.listSkillsStatus()) {
                 const ver = s.version ? `v${s.version}` : "";
                 const state = s.discarded ? "discarded" : s.agentsOff.length ? `off for ${s.agentsOff.join(", ")}` : "active";
                 console.log(` ${s.discarded ? "-" : s.agentsOff.length ? "~" : "*"} ${s.name.padEnd(26)} ${ver.padEnd(8)} ${state}`);
@@ -1351,23 +1336,23 @@ function runSkillsCli(opts: CliOptions): number {
         case "disable":
         case "enable": {
             if (!name) { console.error(`Usage: enigma skills ${sub} <name> [agent]`); return 1; }
-            const skill = listSkillsStatus().find((s) => s.name === name);
+            const skill = skillsMod.listSkillsStatus().find((s) => s.name === name);
             if (!skill) { console.error(`Unknown skill '${name}'. See: enigma skills list.`); return 1; }
             const off = sub === "discard" || sub === "disable";
 
             // With an agent argument: per-agent opt-out. Without: the global discard.
             if (agent) {
-                if (!isToolName(agent)) { console.error(`Unknown agent '${agent}'. Use one of: ${TOOL_NAMES.join(", ")}.`); return 1; }
+                if (!acct.isToolName(agent)) { console.error(`Unknown agent '${agent}'. Use one of: ${acct.TOOL_NAMES.join(", ")}.`); return 1; }
                 if (skill.discarded) { console.log(`Skill '${name}' is globally discarded; restore it first (enigma skills enable ${name}).`); return 0; }
                 const already = skill.agentsOff.includes(agent);
                 if (already === off) { console.log(`Skill '${name}' is already ${off ? "off" : "on"} for ${agent}.`); return 0; }
-                for (const notice of setSkillAgent(name, agent, off)) console.log(`Synced ${notice}.`);
+                for (const notice of skillsMod.setSkillAgent(name, agent, off)) console.log(`Synced ${notice}.`);
                 console.log(`Skill '${name}' is now ${off ? "off" : "on"} for ${agent} (${off ? "removed from" : "deployed to"} that agent).`);
                 return 0;
             }
 
             if (skill.discarded === off) { console.log(`Skill '${name}' is already ${off ? "discarded" : "active"}.`); return 0; }
-            for (const notice of discardSkill(name, off)) console.log(`Synced ${notice}.`);
+            for (const notice of skillsMod.discardSkill(name, off)) console.log(`Synced ${notice}.`);
             console.log(off
                 ? `Skill '${name}' discarded: removed from every agent and skipped by future installs and updates.`
                 : `Skill '${name}' restored: it deploys again on installs and syncs.`);
@@ -1595,18 +1580,18 @@ async function runDashboardCli(version: string, opts: CliOptions): Promise<numbe
     }
     // Best-effort: map http://enigma -> loopback so the URL is pretty (falls back to
     // localhost when hosts is unwritable). No-op when the entry already exists.
-    ensureHostsEntry();
+    dash.ensureHostsEntry();
     // The bind comes from the global config only, so a repo asking for one is dropped. Say it
     // rather than leaving the user to wonder why their setting had no effect.
-    if (repoBindOverrideIgnored()) console.error("Note: this project's .enigma.json sets dashboard-bind; it is ignored (the bind is a per-machine setting, so repo content cannot open a port here). Use 'enigma config dashboard-bind <mode> -g'.");
+    if (dash.repoBindOverrideIgnored()) console.error("Note: this project's .enigma.json sets dashboard-bind; it is ignored (the bind is a per-machine setting, so repo content cannot open a port here). Use 'enigma config dashboard-bind <mode> -g'.");
     // A background dashboard that failed to start leaves its reason behind; surface it here,
     // since the daemon itself is detached with nowhere to print.
-    const failure = daemonError();
+    const failure = dash.daemonError();
     if (failure && mode === "always") console.error(`Note: the background dashboard is not running: ${failure}`);
     // Only one dashboard at a time: if one is already serving (the "always" daemon OR
     // another foreground `enigma dashboard`), open its URL instead of starting a second
     // server on a different port. Stale records are cleaned by runningDaemon().
-    const running = runningDaemon();
+    const running = dash.runningDaemon();
     if (running) {
         // A live server cannot move to another interface, so --expose cannot be honoured here.
         // Say so instead of printing a loopback URL and exiting 0: with `dashboard: always`
@@ -1621,11 +1606,11 @@ async function runDashboardCli(version: string, opts: CliOptions): Promise<numbe
         const tag = mode === "always" ? "(always) " : "";
         // A daemon on an exposed bind is only reachable with its token, so print that link.
         let token: string | null = null;
-        try { token = resolveBind().token; } catch { /* misconfigured bind: it is not serving anyway */ }
-        console.log(`enigma dashboard already running ${tag}-> ${tokenizedUrl(running.url, token)}`);
+        try { token = dash.resolveBind().token; } catch { /* misconfigured bind: it is not serving anyway */ }
+        console.log(`enigma dashboard already running ${tag}-> ${dash.tokenizedUrl(running.url, token)}`);
         // The tokenized URL, or a browser here lands on the "needs a token" banner. The
         // fragment never reaches the server, so this is the same link that was printed.
-        openUrl(tokenizedUrl(running.url, token));
+        openUrl(dash.tokenizedUrl(running.url, token));
         return 0;
     }
     // Ask before binding, not after: the answer decides which interface we listen on.
@@ -1633,25 +1618,25 @@ async function runDashboardCli(version: string, opts: CliOptions): Promise<numbe
     // Exposing is only ever allowed with a token, so mint one now rather than letting the
     // server refuse to start on a choice the user just made.
     if (bindOverride && bindOverride !== "loopback") ensureDashboardToken();
-    let server: Awaited<ReturnType<typeof startDashboardServer>>;
-    try { server = await startDashboardServer(version, bindOverride ?? undefined); }
+    let server: Awaited<ReturnType<typeof dash.startDashboardServer>>;
+    try { server = await dash.startDashboardServer(version, bindOverride ?? undefined); }
     catch (err) { console.error(`Could not start the dashboard: ${(err as Error).message}`); return 1; }
     // Publish a record of this foreground server so a second invocation finds it and
     // defers instead of spawning another. Cleared on exit (and self-healed if we crash).
-    writeDaemon({ pid: process.pid, port: server.port, url: server.url, startedAt: Date.now() });
+    dash.writeDaemon({ pid: process.pid, port: server.port, url: server.url, startedAt: Date.now() });
     if (server.bind.token) {
         // The tokenized URL is the only way in, and on a headless host the terminal is the
         // only channel we have to deliver it.
-        console.log(`enigma dashboard -> ${tokenizedUrl(server.url, server.bind.token)}`);
+        console.log(`enigma dashboard -> ${dash.tokenizedUrl(server.url, server.bind.token)}`);
         console.log(`Bound to ${server.bind.host}:${server.port}. That link grants full control of this machine - treat it as a password.`);
     } else {
         console.log(`enigma dashboard -> ${server.url}`);
         if (isHeadless()) console.log(`No browser here. Reach it from your machine with:\n  ${sshTunnelHint(server.port)}\nthen open http://localhost:${server.port}`);
     }
     console.log("Press Ctrl+C to stop.");
-    openUrl(tokenizedUrl(server.url, server.bind.token));
+    openUrl(dash.tokenizedUrl(server.url, server.bind.token));
     return await new Promise<number>((resolveExit) => {
-        const stop = (): void => { clearDaemon(); server.close(); resolveExit(0); };
+        const stop = (): void => { dash.clearDaemon(); server.close(); resolveExit(0); };
         process.on("SIGINT", stop);
         process.on("SIGTERM", stop);
     });
@@ -1757,7 +1742,7 @@ export async function run(argv: string[]): Promise<void> {
     if (argv[0] === "__dashboard-install") { ensureDashboardCurrent(); return; }
     // Hidden: the detached dashboard daemon (dashboard=always). Serves the savings
     // dashboard forever and publishes its pidfile. Silent by contract.
-    if (argv[0] === "__dashboard-serve") { await serveDashboardDaemon(process.env.ENIGMA_VERSION || PKG.version || "0.0.0"); return; }
+    if (argv[0] === "__dashboard-serve") { await dash.serveDashboardDaemon(process.env.ENIGMA_VERSION || PKG.version || "0.0.0"); return; }
     // MCP stdio server: stdout is the JSON-RPC channel, so dispatch BEFORE any clack
     // intro/notice/parse noise and never print to stdout from here on.
     if (argv[0] === "mcp") {
@@ -1819,23 +1804,23 @@ export async function run(argv: string[]): Promise<void> {
 
     // Direct (non-menu) maintenance and feature commands. Machine/CI commands
     // (seal, check, guard, config) skip the update notice to keep their output clean.
-    if (opts.command === "seal") return sealSources();
-    if (opts.command === "check") return checkSources();
+    if (opts.command === "seal") return skillsMod.sealSources();
+    if (opts.command === "check") return skillsMod.checkSources();
     if (opts.command === "guard") { process.exit(runGuardCli(opts.all)); }
     if (opts.command === "config") { process.exit(await runConfigCli(opts.positionals, opts.scope, interactive)); }
-    if (opts.command && isToolName(opts.command)) {
+    if (opts.command && acct.isToolName(opts.command)) {
         // Resolve the account up front (explicit > active profile > tool active) so
         // the pre-launch sync targets the same config dir the tool will read.
-        const account = opts.positionals[0] ?? resolveLaunchAccount(opts.command);
+        const account = opts.positionals[0] ?? acct.resolveLaunchAccount(opts.command);
         syncForLaunch(opts.command, account);
-        process.exit(await launchTool(opts.command, account, opts.passthrough));
+        process.exit(await acct.launchTool(opts.command, account, opts.passthrough));
     }
     // Pack shortcut: `enigma helio [account] [--tool <t>] [-- args]` launches the pack's
     // isolated agent, seeding the chosen account's login (default: the pack's pinned account,
     // else the active profile / tool-active account).
-    if (opts.command && getPack(opts.command)) {
-        const tool = opts.tool && isToolName(opts.tool) ? opts.tool : DEFAULT_TOOL;
-        process.exit(await launchPack(opts.command, tool, opts.passthrough, opts.positionals[0]));
+    if (opts.command && packs.getPack(opts.command)) {
+        const tool = opts.tool && acct.isToolName(opts.tool) ? opts.tool : acct.DEFAULT_TOOL;
+        process.exit(await packs.launchPack(opts.command, tool, opts.passthrough, opts.positionals[0]));
     }
     if (opts.command === "pack" || opts.command === "packs") { process.exit(await runPackCli(opts.positionals, opts.passthrough, opts.tool)); }
     if (opts.command === "account") { process.exit(await runAccountCli(opts, interactive)); }
@@ -1861,7 +1846,7 @@ export async function run(argv: string[]): Promise<void> {
     }
     if (opts.command === "install") {
         p.intro("enigma - install agent skills");
-        await installSkills(opts, interactive);
+        await skillsMod.installSkills(opts, interactive);
         p.outro("Done.");
         await notifyUpdate(version, interactive);
         return;
@@ -1876,7 +1861,7 @@ export async function run(argv: string[]): Promise<void> {
 
     // No command: non-interactive default installs skills; a TTY gets the hub.
     if (!interactive) {
-        await installSkills(opts, interactive);
+        await skillsMod.installSkills(opts, interactive);
         await notifyUpdate(version, interactive);
         return;
     }
@@ -1890,79 +1875,79 @@ export async function run(argv: string[]): Promise<void> {
     // Account rows for every supported tool, mapped to the renderer-neutral shape;
     // each tool's "default" (its existing config dir) is not removable.
     const hubAccounts = (): HubAccount[] =>
-        TOOL_NAMES.flatMap((tool) =>
-            listAccounts(tool).map((a) => ({
+        acct.TOOL_NAMES.flatMap((tool) =>
+            acct.listAccounts(tool).map((a) => ({
                 tool, toolLabel: a.toolLabel, name: a.name, dir: a.dir,
-                email: a.email ?? a.displayName, active: a.active, removable: a.name !== DEFAULT_NAME,
+                email: a.email ?? a.displayName, active: a.active, removable: a.name !== acct.DEFAULT_NAME,
                 supportsProvider: a.supportsProvider,
                 provider: a.provider ? { baseUrl: a.provider.baseUrl, model: a.provider.model, preset: a.provider.preset, hasToken: a.provider.hasToken } : null,
             })));
     const hubProfiles = (): HubProfile[] =>
-        listProfiles().map((p) => ({
+        acct.listProfiles().map((p) => ({
             name: p.name, active: p.active,
             summary: Object.entries(p.accounts).map(([t, a]) => `${t}=${a}`).join("  ") || "(no accounts pinned)",
         }));
     const hubSkills = (): HubSkill[] =>
-        listSkillsStatus().map((s) => ({ name: s.name, version: s.version, discarded: s.discarded, agentsOff: s.agentsOff }));
+        skillsMod.listSkillsStatus().map((s) => ({ name: s.name, version: s.version, discarded: s.discarded, agentsOff: s.agentsOff }));
     const discovered = discoverAgents();
     const buildCtx = () => ({
         agents: discovered.map((a) => ({ name: a.name, label: a.label, installed: a.installed })),
         protections: GUARD_PROTECTIONS,
         // First run = nothing deployed anywhere: the hub preselects the install action
         // and shows a setup banner so the first install is a couple of keystrokes.
-        firstRun: !discovered.some((a) => hasDeployment(a, "global") || hasDeployment(a, "local")),
+        firstRun: !discovered.some((a) => skillsMod.hasDeployment(a, "global") || skillsMod.hasDeployment(a, "local")),
         update: getAvailableUpdate(version) ?? undefined,
         skills: hubSkills(),
-        setSkillDiscarded: (name: string, discarded: boolean) => { discardSkill(name, discarded); return hubSkills(); },
-        setSkillAgent: (name: string, agent: string, off: boolean) => { setSkillAgent(name, agent, off); return hubSkills(); },
+        setSkillDiscarded: (name: string, discarded: boolean) => { skillsMod.discardSkill(name, discarded); return hubSkills(); },
+        setSkillAgent: (name: string, agent: string, off: boolean) => { skillsMod.setSkillAgent(name, agent, off); return hubSkills(); },
         accounts: hubAccounts(),
-        activateAccount: (tool: string, name: string) => { setActive(tool, name); return hubAccounts(); },
-        removeAccount: (tool: string, name: string) => { removeAccount(tool, name); return hubAccounts(); },
+        activateAccount: (tool: string, name: string) => { acct.setActive(tool, name); return hubAccounts(); },
+        removeAccount: (tool: string, name: string) => { acct.removeAccount(tool, name); return hubAccounts(); },
         addAccount: (tool: string, name: string) => {
             try {
-                const account = addAccount(tool, name);
+                const account = acct.addAccount(tool, name);
                 seedAccount(tool, account.dir);
                 return { ok: true, accounts: hubAccounts() };
             }
             catch (err) { return { ok: false, error: (err as Error).message, accounts: hubAccounts() }; }
         },
         renameAccount: (tool: string, oldName: string, newName: string) => {
-            try { renameAccount(tool, oldName, newName); return { ok: true, accounts: hubAccounts() }; }
+            try { acct.renameAccount(tool, oldName, newName); return { ok: true, accounts: hubAccounts() }; }
             catch (err) { return { ok: false, error: (err as Error).message, accounts: hubAccounts() }; }
         },
-        providerPresets: PROVIDER_PRESETS.map((p) => ({ id: p.id, label: p.label, tool: p.tool, baseUrl: p.baseUrl, model: p.model, tokenUrl: p.tokenUrl })),
+        providerPresets: acct.PROVIDER_PRESETS.map((p) => ({ id: p.id, label: p.label, tool: p.tool, baseUrl: p.baseUrl, model: p.model, tokenUrl: p.tokenUrl })),
         setAccountProvider: (tool: string, name: string, input: { baseUrl: string; model?: string; preset?: string; token?: string } | null) => {
             try {
-                let resolved: ProviderInput | null = input;
+                let resolved: acct.ProviderInput | null = input;
                 // A real preset id fills baseUrl/model/env; "custom" (and null) pass through as-is.
                 if (input && input.preset && input.preset !== "custom") {
-                    const fromPreset = providerFromPreset(input.preset, input.token);
+                    const fromPreset = acct.providerFromPreset(input.preset, input.token);
                     if (!fromPreset) throw new Error(`Unknown preset '${input.preset}'.`);
                     if (input.baseUrl) fromPreset.baseUrl = input.baseUrl;
                     if (input.model) fromPreset.model = input.model;
                     resolved = fromPreset;
                 }
-                setAccountProvider(tool, name, resolved);
+                acct.setAccountProvider(tool, name, resolved);
                 return { ok: true, accounts: hubAccounts() };
             } catch (err) { return { ok: false, error: (err as Error).message, accounts: hubAccounts() }; }
         },
-        tools: TOOL_NAMES.map((t) => ({ name: t, label: getTool(t).label })),
+        tools: acct.TOOL_NAMES.map((t) => ({ name: t, label: acct.getTool(t).label })),
         toolPaths: toolPathStatuses().map((t) => ({ name: t.name, label: t.label, status: t.status })),
         profiles: hubProfiles(),
-        activateProfile: (name: string) => { setActiveProfile(name || null); return hubProfiles(); },
+        activateProfile: (name: string) => { acct.setActiveProfile(name || null); return hubProfiles(); },
         addProfile: (name: string) => {
-            try { addProfile(name); return { ok: true, profiles: hubProfiles() }; }
+            try { acct.addProfile(name); return { ok: true, profiles: hubProfiles() }; }
             catch (err) { return { ok: false, error: (err as Error).message, profiles: hubProfiles() }; }
         },
         renameProfile: (oldName: string, newName: string) => {
-            try { renameProfile(oldName, newName); return { ok: true, profiles: hubProfiles() }; }
+            try { acct.renameProfile(oldName, newName); return { ok: true, profiles: hubProfiles() }; }
             catch (err) { return { ok: false, error: (err as Error).message, profiles: hubProfiles() }; }
         },
-        removeProfile: (name: string) => { removeProfile(name); return hubProfiles(); },
+        removeProfile: (name: string) => { acct.removeProfile(name); return hubProfiles(); },
         setProfileAccount: (profile: string, tool: string, account: string | null) => {
             try {
-                if (account === null) unsetProfileAccount(profile, tool);
-                else setProfileAccount(profile, tool, account);
+                if (account === null) acct.unsetProfileAccount(profile, tool);
+                else acct.setProfileAccount(profile, tool, account);
                 return { ok: true, profiles: hubProfiles() };
             } catch (err) { return { ok: false, error: (err as Error).message, profiles: hubProfiles() }; }
         },
@@ -1971,12 +1956,12 @@ export async function run(argv: string[]): Promise<void> {
             const title = req.action === "skills" ? "Install agent skills" : req.action === "fix-path" ? "Fix tool paths" : "Git security hooks";
             try {
                 if (req.action === "skills") {
-                    await installSkills({ ...opts, scope: req.scope ?? opts.scope, agents: req.agents ?? [], allAgents: !(req.agents && req.agents.length) }, false, reporter);
+                    await skillsMod.installSkills({ ...opts, scope: req.scope ?? opts.scope, agents: req.agents ?? [], allAgents: !(req.agents && req.agents.length) }, false, reporter);
                     return { ok: true, title, lines: reporter.lines };
                 }
                 if (req.action === "fix-path") {
                     // No selection means every supported tool; persist config + PATH globally.
-                    const tools = req.agents && req.agents.length ? req.agents : TOOL_NAMES;
+                    const tools = req.agents && req.agents.length ? req.agents : acct.TOOL_NAMES;
                     let ok = true;
                     for (const t of tools) {
                         const result = ensureLaunchable(t, req.scope ?? "global");

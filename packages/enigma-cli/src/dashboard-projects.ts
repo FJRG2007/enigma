@@ -16,7 +16,7 @@
  * the routes are origin-guarded (see dashboard.ts).
  */
 
-import type { EnigmaConfigKey } from "./config";
+import * as conf from "./config";
 import { ALL_SETTINGS } from "./settings-registry";
 import { inspectSkills, readSkillMeta } from "./skills";
 import { execFile, execFileSync } from "node:child_process";
@@ -24,7 +24,6 @@ import { dirname, join, resolve, basename, isAbsolute } from "node:path";
 import { isDir, readJson, resolveBin, enigmaHome } from "./util";
 import { localTargetsAt, discoverAgents, isManagedProvider } from "./agents";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, cpSync, rmSync } from "node:fs";
-import { CONFIG_FILE, readConfigAt, readProjectConfig, setEnigmaValueAt, unsetEnigmaValueAt } from "./config";
 
 export interface ProjectEntry { path: string; label: string; description?: string; }
 
@@ -144,7 +143,7 @@ function statusOf(entry: ProjectEntry): ProjectStatus {
         exists,
         isGitRepo: exists && existsSync(join(path, ".git")),
         skills: skillNames.size,
-        hasLocalConfig: exists && existsSync(join(path, CONFIG_FILE)),
+        hasLocalConfig: exists && existsSync(join(path, conf.CONFIG_FILE)),
         hooks: exists && hooksInstalled(path),
         gate: exists && gateInitialized(path),
     };
@@ -218,13 +217,13 @@ export function removeProject(path: string): { projects: ProjectStatus[] } {
 const PROJECT_SETTING_KEYS = ["gate", "auto-sync", "compress", "output-style", "minimal-code", "parallel-subagents", "skill-update-policy"];
 
 /** kebab CLI key -> camelCase EnigmaConfig field (the registry's documented convention). */
-function configField(cliKey: string): EnigmaConfigKey {
-    return cliKey.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase()) as EnigmaConfigKey;
+function configField(cliKey: string): conf.EnigmaConfigKey {
+    return cliKey.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase()) as conf.EnigmaConfigKey;
 }
 
 function projectConfig(projectPath: string): ProjectSettingValue[] {
-    const eff = readConfigAt(projectPath) as unknown as Record<string, unknown>;
-    const own = readProjectConfig(projectPath) as unknown as Record<string, unknown>;
+    const eff = conf.readConfigAt(projectPath) as unknown as Record<string, unknown>;
+    const own = conf.readProjectConfig(projectPath) as unknown as Record<string, unknown>;
     const out: ProjectSettingValue[] = [];
     for (const key of PROJECT_SETTING_KEYS) {
         const s = ALL_SETTINGS.find((x) => x.key === key);
@@ -252,9 +251,9 @@ function setProjectConfig(projectPath: string, key: string, value: boolean | str
     const field = configField(key);
     if (typeof value === "string") {
         if (!s?.choices?.includes(value)) return { ok: false, error: `Invalid value for ${key}: ${value}` };
-        setEnigmaValueAt(projectPath, field, value);
+        conf.setEnigmaValueAt(projectPath, field, value);
     } else {
-        setEnigmaValueAt(projectPath, field, value);
+        conf.setEnigmaValueAt(projectPath, field, value);
     }
     return { ok: true };
 }
@@ -376,7 +375,7 @@ export async function applyProjectAction(path: string, payload: ProjectActionPay
                 : { ok: false, error: "Missing key/value." };
             break;
         case "config-unset":
-            if (payload.key && PROJECT_SETTING_KEYS.includes(payload.key)) { unsetEnigmaValueAt(norm, configField(payload.key)); result = { ok: true }; }
+            if (payload.key && PROJECT_SETTING_KEYS.includes(payload.key)) { conf.unsetEnigmaValueAt(norm, configField(payload.key)); result = { ok: true }; }
             else result = { ok: false, error: "Missing or invalid key." };
             break;
         case "autoskills-detect":

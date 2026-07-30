@@ -22,6 +22,7 @@
  * posture holds. (Apache-2.0; its license notice is retained inside the asset, logo hidden.)
  */
 
+import * as conf from "./config";
 import { isIPv6 } from "node:net";
 import { resolveBin } from "./util";
 import { fileURLToPath } from "node:url";
@@ -33,7 +34,6 @@ import { homedir, hostname, networkInterfaces } from "node:os";
 import { readStats, readHistory, ccrCacheStats } from "./compress";
 import { bearerOf, readDashboardToken, tokenMatches } from "./dashboard-token";
 import { readUpdateStatusCached, spawnEnigmaUpdate } from "./dashboard-updates";
-import { DASHBOARD_BINDS, readConfig, readGlobalConfig, readProjectConfig, setEnigmaValue, type DashboardBind } from "./config";
 import { existsSync, mkdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { dashboardAssetsDir, installedDashboardVersion, spawnDashboardPkgInstall } from "./dashboard-pkg";
 
@@ -231,7 +231,7 @@ const SERVER_BOOT = Date.now();
 function statsPayload(version: string): string {
     const now = Date.now();
     if (snapshot && now < snapshot.expires) return snapshot.payload;
-    const cfg = readConfig().config;
+    const cfg = conf.readConfig().config;
     const payload = JSON.stringify({
         version, generatedAt: now, boot: SERVER_BOOT,
         // Version of the served UI bundle (@enigmax/dashboard). The page reloads when this
@@ -283,7 +283,7 @@ function isLocalRequest(req: import("node:http").IncomingMessage): boolean {
 // --- bind + authentication ------------------------------------------------------
 
 export interface BindResolution {
-    mode: DashboardBind;
+    mode: conf.DashboardBind;
     /** Interface to listen on. */
     host: string;
     /** Shared secret every /api/* request must present, or null when loopback (none needed). */
@@ -303,9 +303,9 @@ export interface BindResolution {
  * machine opens a port - which is also the invariant dashboard-config-io.ts keeps by refusing
  * to carry these keys in an exported bundle.
  */
-export function resolveBind(override?: DashboardBind): BindResolution {
-    const cfg = readGlobalConfig();
-    const configured = DASHBOARD_BINDS.includes(cfg.dashboardBind) ? cfg.dashboardBind : "loopback";
+export function resolveBind(override?: conf.DashboardBind): BindResolution {
+    const cfg = conf.readGlobalConfig();
+    const configured = conf.DASHBOARD_BINDS.includes(cfg.dashboardBind) ? cfg.dashboardBind : "loopback";
     // `override` is the "just this once" path: it binds for this run without persisting.
     const mode = override || configured;
     if (mode === "loopback") return { mode, host: LOOPBACK, token: null };
@@ -321,7 +321,7 @@ export function resolveBind(override?: DashboardBind): BindResolution {
  * ignored. Silently dropping a setting the user wrote is worse than refusing it out loud.
  */
 export function repoBindOverrideIgnored(): boolean {
-    const local = readProjectConfig(process.cwd());
+    const local = conf.readProjectConfig(process.cwd());
     return local.dashboardBind !== undefined || local.dashboardBindAddress !== undefined;
 }
 
@@ -360,7 +360,7 @@ function serveSettings(res: import("node:http").ServerResponse): void {
     // the boolean/choice registry (numeric), like token-price/token-speed and the plan limits.
     import("./dashboard-settings")
         .then(({ serializeSettings }) => {
-            const payload = { categories: serializeSettings("global"), dashboardPort: readConfig().config.dashboardPort, runningPort: boundPort };
+            const payload = { categories: serializeSettings("global"), dashboardPort: conf.readConfig().config.dashboardPort, runningPort: boundPort };
             res.writeHead(200, JSON_HDR); res.end(JSON.stringify(payload));
         })
         .catch(() => { res.writeHead(500, JSON_HDR); res.end('{"error":"settings unavailable"}'); });
@@ -375,7 +375,7 @@ function writeDashboardPort(req: import("node:http").IncomingMessage, res: impor
         try { parsed = JSON.parse(body || "{}"); } catch { res.writeHead(400, JSON_HDR); res.end('{"error":"bad json"}'); return; }
         const n = Number(parsed.value);
         if (!Number.isInteger(n) || n < 0 || n > 65535) { res.writeHead(400, JSON_HDR); res.end('{"error":"port must be 0 (auto) or 1-65535"}'); return; }
-        setEnigmaValue("dashboardPort", n, "global");
+        conf.setEnigmaValue("dashboardPort", n, "global");
         const restartNote = n === boundPort || (n === 0 && [80, 24282].includes(boundPort))
             ? "" : "Restart the dashboard (enigma dashboard) to bind the new port.";
         res.writeHead(200, JSON_HDR); res.end(JSON.stringify({ ok: true, dashboardPort: n, runningPort: boundPort, restartNote }));
@@ -813,11 +813,11 @@ function writePlan(req: import("node:http").IncomingMessage, res: import("node:h
         const field = typeof parsed.key === "string" ? PLAN_FIELDS[parsed.key as keyof typeof PLAN_FIELDS] : undefined;
         if (!field) { res.writeHead(400, JSON_HDR); res.end('{"error":"unknown plan key"}'); return; }
         if (field === "planWeeklyReset") {
-            setEnigmaValue("planWeeklyReset", String(parsed.value || "mon 00:00"), "global");
+            conf.setEnigmaValue("planWeeklyReset", String(parsed.value || "mon 00:00"), "global");
         } else {
             const n = Number(parsed.value);
             if (!Number.isFinite(n) || n < 0) { res.writeHead(400, JSON_HDR); res.end('{"error":"bad number"}'); return; }
-            setEnigmaValue(field, n, "global");
+            conf.setEnigmaValue(field, n, "global");
         }
         snapshot = null; // force the next /api/stats to recompute the windows with the new limit
         res.writeHead(200, JSON_HDR); res.end('{"ok":true}');
@@ -1048,7 +1048,7 @@ let boundPort = 0;
  * reports EADDRNOTAVAIL. Enigma ships as a bun binary, so the misleading one is the default.
  */
 async function listenWithFallback(server: Server, host: string): Promise<number> {
-    const preferred = readConfig().config.dashboardPort;
+    const preferred = conf.readConfig().config.dashboardPort;
     const valid = Number.isInteger(preferred) && preferred > 0 && preferred <= 65535;
     const candidates = [...(valid ? [preferred] : []), ...PORTS, 0].filter((p, i, a) => a.indexOf(p) === i);
     let last = "";
@@ -1071,7 +1071,7 @@ export interface RunningServer {
  * Start the HTTP server and resolve once it is listening. Caller owns its lifecycle.
  * Rejects rather than binding an exposed interface without a token (see resolveBind).
  */
-export async function startDashboardServer(version: string, bindOverride?: DashboardBind): Promise<RunningServer> {
+export async function startDashboardServer(version: string, bindOverride?: conf.DashboardBind): Promise<RunningServer> {
     const bind = resolveBind(bindOverride);
     activeBind = bind;
     const server = createDashboardServer(version);

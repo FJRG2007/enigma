@@ -13,23 +13,11 @@
  */
 
 import * as path from "node:path";
+import * as types from "../../types";
 import { testEvidenceRoot } from "./evidence";
 import { isFixRound, type StepResult, type StepRound } from "../../db";
 import { sanitizePromptText, sanitizePromptMultilineText } from "./common";
 import { statSync, readFileSync, openSync, readSync, closeSync, realpathSync } from "node:fs";
-import {
-    parseFindingsJSON,
-    STEP_PR,
-    STEP_CI,
-    STEP_TEST,
-    STEP_REVIEW,
-    STEP_REBASE,
-    STEP_DOCUMENT,
-    STEP_LINT,
-    STEP_PUSH,
-    type Findings,
-    type StepName
-} from "../../types";
 
 const maxEmbeddedArtifactBytes = 16 * 1024;
 const maxEmbeddedArtifactsTotalBytes = 32 * 1024;
@@ -146,7 +134,7 @@ function buildTestingSummaryWithOptions(
     opts: TestingSummaryOptions
 ): string {
     for (const sr of steps) {
-        if (sr.stepName !== STEP_TEST) continue;
+        if (sr.stepName !== types.STEP_TEST) continue;
 
         const stepRounds = rounds.get(sr.id) ?? [];
         const [line] = buildStepEntry(sr, stepRounds);
@@ -273,9 +261,9 @@ function collectTestingSummary(sr: StepResult, rounds: StepRound[]): string {
 
 function testingSummaryFromFindings(raw: string | null): string {
     if (raw === null || raw.trim() === "") return "";
-    let findings: Findings;
+    let findings: types.Findings;
     try {
-        findings = parseFindingsJSON(raw);
+        findings = types.parseFindingsJSON(raw);
     } catch {
         return "";
     }
@@ -310,9 +298,9 @@ function testingEvidenceFindingsJSON(sr: StepResult, rounds: StepRound[]): (stri
 
 function hasTestingEvidenceMetadata(raw: string | null): boolean {
     if (raw === null || raw.trim() === "") return false;
-    let findings: Findings;
+    let findings: types.Findings;
     try {
-        findings = parseFindingsJSON(raw);
+        findings = types.parseFindingsJSON(raw);
     } catch {
         return false;
     }
@@ -330,9 +318,9 @@ function appendTestingArtifacts(
     opts: TestingSummaryOptions
 ): SanitizedArtifact[] {
     if (raw === null || raw.trim() === "") return artifacts;
-    let findings: Findings;
+    let findings: types.Findings;
     try {
-        findings = parseFindingsJSON(raw);
+        findings = types.parseFindingsJSON(raw);
     } catch {
         return artifacts;
     }
@@ -355,9 +343,9 @@ function appendTestingArtifacts(
 
 function appendTestingDetails(details: string[], seen: Set<string>, raw: string | null): string[] {
     if (raw === null || raw.trim() === "") return details;
-    let findings: Findings;
+    let findings: types.Findings;
     try {
-        findings = parseFindingsJSON(raw);
+        findings = types.parseFindingsJSON(raw);
     } catch {
         return details;
     }
@@ -840,11 +828,11 @@ function buildStepEntry(sr: StepResult, rounds: StepRound[]): [string, string] {
     }
 
     // Parse the final findings on the step result (last state).
-    let finalFindings: Findings | null = null;
+    let finalFindings: types.Findings | null = null;
     let finalFindingsParsed = sr.findingsJson === null;
     if (sr.findingsJson !== null) {
         try {
-            finalFindings = parseFindingsJSON(sr.findingsJson);
+            finalFindings = types.parseFindingsJSON(sr.findingsJson);
             finalFindingsParsed = true;
         } catch {
             // Unreadable final findings.
@@ -852,22 +840,22 @@ function buildStepEntry(sr: StepResult, rounds: StepRound[]): [string, string] {
     }
 
     // Parse initial round findings (round 1) for the full story.
-    let initialFindings: Findings | null = null;
+    let initialFindings: types.Findings | null = null;
     if (rounds.length > 0 && rounds[0].findingsJson !== null) {
         try {
-            initialFindings = parseFindingsJSON(rounds[0].findingsJson);
+            initialFindings = types.parseFindingsJSON(rounds[0].findingsJson);
         } catch {
             // Leave initialFindings null.
         }
     }
 
     // Parse latest round findings for risk fallback when final state is cleared.
-    let latestRoundFindings: Findings | null = null;
+    let latestRoundFindings: types.Findings | null = null;
     if (rounds.length > 0) {
         const last = rounds[rounds.length - 1];
         if (last.findingsJson !== null) {
             try {
-                latestRoundFindings = parseFindingsJSON(last.findingsJson);
+                latestRoundFindings = types.parseFindingsJSON(last.findingsJson);
             } catch {
                 // Leave latestRoundFindings null.
             }
@@ -882,7 +870,7 @@ function buildStepEntry(sr: StepResult, rounds: StepRound[]): [string, string] {
     const hasUnreadableFinalFindings = sr.findingsJson !== null && !finalFindingsParsed;
     const wasFixed = hadFindings && rounds.length > 1 && !hasUnreadableFinalFindings && !hasFinalFindings;
     let riskLevel = "";
-    if (sr.stepName === STEP_REVIEW) {
+    if (sr.stepName === types.STEP_REVIEW) {
         let src = finalFindings;
         if (src === null && !hasUnreadableFinalFindings) {
             src = latestRoundFindings;
@@ -895,7 +883,7 @@ function buildStepEntry(sr: StepResult, rounds: StepRound[]): [string, string] {
         return buildDetail(`⚠️ **${name}** - findings unavailable`);
     }
 
-    if (sr.stepName === STEP_REVIEW && (riskLevel === "medium" || riskLevel === "high") && !hadAnyFindings) {
+    if (sr.stepName === types.STEP_REVIEW && (riskLevel === "medium" || riskLevel === "high") && !hadAnyFindings) {
         return buildDetail(`${riskEmoji(riskLevel)} **${name}** - ${riskLevel} risk`);
     }
 
@@ -927,13 +915,13 @@ function buildStepEntry(sr: StepResult, rounds: StepRound[]): [string, string] {
 
 function extractRiskLine(steps: StepResult[], rounds: Map<string, StepRound[]>): string {
     for (const sr of steps) {
-        if (sr.stepName !== STEP_REVIEW) continue;
+        if (sr.stepName !== types.STEP_REVIEW) continue;
 
-        let finalFindings: Findings | null = null;
+        let finalFindings: types.Findings | null = null;
         let hasUnreadableFinal = false;
         if (sr.findingsJson !== null) {
             try {
-                finalFindings = parseFindingsJSON(sr.findingsJson);
+                finalFindings = types.parseFindingsJSON(sr.findingsJson);
             } catch {
                 hasUnreadableFinal = true;
             }
@@ -946,7 +934,7 @@ function extractRiskLine(steps: StepResult[], rounds: Map<string, StepRound[]>):
                 const last = stepRounds[stepRounds.length - 1];
                 if (last.findingsJson !== null) {
                     try {
-                        src = parseFindingsJSON(last.findingsJson);
+                        src = types.parseFindingsJSON(last.findingsJson);
                     } catch {
                         // Leave src null.
                     }
@@ -987,9 +975,9 @@ function riskEmoji(level: string): string {
 function roundsHaveFindings(rounds: StepRound[]): boolean {
     for (const r of rounds) {
         if (r.findingsJson === null) continue;
-        let f: Findings;
+        let f: types.Findings;
         try {
-            f = parseFindingsJSON(r.findingsJson);
+            f = types.parseFindingsJSON(r.findingsJson);
         } catch {
             continue;
         }
@@ -1002,7 +990,7 @@ function roundsHaveParseFailure(rounds: StepRound[]): boolean {
     for (const r of rounds) {
         if (r.findingsJson === null) continue;
         try {
-            parseFindingsJSON(r.findingsJson);
+            types.parseFindingsJSON(r.findingsJson);
         } catch {
             return true;
         }
@@ -1015,7 +1003,7 @@ function buildFixResultText(rounds: StepRound[]): string {
     let initialCount = 0;
     if (rounds.length > 0 && rounds[0].findingsJson !== null) {
         try {
-            initialCount = parseFindingsJSON(rounds[0].findingsJson).items.length;
+            initialCount = types.parseFindingsJSON(rounds[0].findingsJson).items.length;
         } catch {
             // Leave initialCount at zero.
         }
@@ -1079,9 +1067,9 @@ function buildStepDetails(summaryLine: string, sr: StepResult, rounds: StepRound
             continue;
         }
 
-        let findings: Findings;
+        let findings: types.Findings;
         try {
-            findings = parseFindingsJSON(r.findingsJson);
+            findings = types.parseFindingsJSON(r.findingsJson);
         } catch {
             b.write("failed to parse findings\n\n");
             continue;
@@ -1118,7 +1106,7 @@ function fixRoundLine(r: StepRound): string {
     return `🔧 Fix: ${htmlEscape(summary)}`;
 }
 
-function writeFindingItems(b: StrBuilder, sr: StepResult, findings: Findings): void {
+function writeFindingItems(b: StrBuilder, sr: StepResult, findings: types.Findings): void {
     for (const f of findings.items) {
         const emoji = severityEmoji(f.severity);
         let loc = "";
@@ -1134,8 +1122,8 @@ function writeFindingItems(b: StrBuilder, sr: StepResult, findings: Findings): v
     writeTestedDetails(b, sr, findings);
 }
 
-function writeTestedDetails(b: StrBuilder, sr: StepResult, findings: Findings): void {
-    if (sr.stepName !== STEP_TEST) return;
+function writeTestedDetails(b: StrBuilder, sr: StepResult, findings: types.Findings): void {
+    if (sr.stepName !== types.STEP_TEST) return;
     for (const detail of findings.tested ?? []) {
         const rendered = renderTestedDetail(detail);
         if (rendered === "") continue;
@@ -1181,10 +1169,10 @@ function writeStepStatusDetail(b: StrBuilder, sr: StepResult): void {
 
 function shouldOmitPipelineStep(sr: StepResult | null): boolean {
     if (sr === null) return false;
-    return sr.stepName === STEP_PR || sr.stepName === STEP_CI;
+    return sr.stepName === types.STEP_PR || sr.stepName === types.STEP_CI;
 }
 
-function countFindingsBySeverity(findings: Findings | null): string {
+function countFindingsBySeverity(findings: types.Findings | null): string {
     if (findings === null || findings.items.length === 0) return "0 issues";
 
     const counts = new Map<string, number>();
@@ -1231,23 +1219,23 @@ function severityEmoji(severity: string): string {
     }
 }
 
-function stepDisplayName(name: StepName): string {
+function stepDisplayName(name: types.StepName): string {
     switch (name) {
-        case STEP_REBASE:
+        case types.STEP_REBASE:
             return "Rebase";
-        case STEP_REVIEW:
+        case types.STEP_REVIEW:
             return "Review";
-        case STEP_TEST:
+        case types.STEP_TEST:
             return "Test";
-        case STEP_DOCUMENT:
+        case types.STEP_DOCUMENT:
             return "Document";
-        case STEP_LINT:
+        case types.STEP_LINT:
             return "Lint";
-        case STEP_PUSH:
+        case types.STEP_PUSH:
             return "Push";
-        case STEP_PR:
+        case types.STEP_PR:
             return "PR";
-        case STEP_CI:
+        case types.STEP_CI:
             return "CI";
         default:
             return name;

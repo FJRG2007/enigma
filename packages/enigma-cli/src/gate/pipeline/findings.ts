@@ -7,30 +7,19 @@
  * that with a deterministic string key over the identity fields.
  */
 
-import {
-    type Finding,
-    type Findings,
-    filterFindings,
-    excludeFindings,
-    parseFindingsJSON,
-    normalizeFindings,
-    mergeUserOverrides,
-    marshalFindingsJSON,
-    autoFixableFindings,
-    hasAskUserFindings
-} from "../types";
+import * as types from "../types";
 
 /** Identity key ignoring id/action/source/userInstructions (Go findingKey). */
-function findingKey(item: Finding): string {
+function findingKey(item: types.Finding): string {
     return JSON.stringify([item.severity, item.file ?? "", item.line ?? 0, item.description]);
 }
 
 /** Identity key also ignoring line (Go findingFingerprint). */
-function findingFingerprint(item: Finding): string {
+function findingFingerprint(item: types.Finding): string {
     return JSON.stringify([item.severity, item.file ?? "", 0, item.description]);
 }
 
-function countFindingFingerprints(items: Finding[]): Map<string, number> {
+function countFindingFingerprints(items: types.Finding[]): Map<string, number> {
     const counts = new Map<string, number>();
     for (const item of items) {
         const fp = findingFingerprint(item);
@@ -40,7 +29,7 @@ function countFindingFingerprints(items: Finding[]): Map<string, number> {
 }
 
 function hasFindingMatch(
-    item: Finding,
+    item: types.Finding,
     exact: Set<string>,
     itemCounts: Map<string, number>,
     candidateCounts: Map<string, number>
@@ -50,7 +39,7 @@ function hasFindingMatch(
     return itemCounts.get(fp) === 1 && candidateCounts.get(fp) === 1;
 }
 
-function carryFields(f: Findings): Findings {
+function carryFields(f: types.Findings): types.Findings {
     return {
         items: [],
         summary: f.summary,
@@ -64,9 +53,9 @@ function carryFields(f: Findings): Findings {
 /** Encodes the finding IDs of a payload as a JSON array string ("" if none). */
 export function findingIDsJSON(raw: string): string {
     if (raw === "") return "";
-    let findings: Findings;
+    let findings: types.Findings;
     try {
-        findings = parseFindingsJSON(raw);
+        findings = types.parseFindingsJSON(raw);
     } catch {
         return "";
     }
@@ -83,14 +72,14 @@ export function marshalFindingIDs(ids: string[]): string {
 /** Assigns deterministic IDs to a findings payload, returning re-encoded JSON. */
 export function normalizeFindingsJSON(raw: string, prefix: string): string {
     if (raw === "") return "";
-    let findings: Findings;
+    let findings: types.Findings;
     try {
-        findings = parseFindingsJSON(raw);
+        findings = types.parseFindingsJSON(raw);
     } catch {
         return raw;
     }
     try {
-        return marshalFindingsJSON(normalizeFindings(findings, prefix));
+        return types.marshalFindingsJSON(types.normalizeFindings(findings, prefix));
     } catch {
         return raw;
     }
@@ -99,16 +88,16 @@ export function normalizeFindingsJSON(raw: string, prefix: string): string {
 /** Drops findings with the given IDs; "" when none remain. */
 export function excludeFindingsJSON(raw: string, ids: string[]): string {
     if (raw === "" || ids.length === 0) return "";
-    let findings: Findings;
+    let findings: types.Findings;
     try {
-        findings = parseFindingsJSON(raw);
+        findings = types.parseFindingsJSON(raw);
     } catch {
         return "";
     }
-    const excluded = excludeFindings(findings, ids);
+    const excluded = types.excludeFindings(findings, ids);
     if (excluded.items.length === 0) return "";
     try {
-        return marshalFindingsJSON(excluded);
+        return types.marshalFindingsJSON(excluded);
     } catch {
         return "";
     }
@@ -118,15 +107,15 @@ export function excludeFindingsJSON(raw: string, ids: string[]): string {
 export function mergeFindingsJSON(existingRaw: string, additionalRaw: string): string {
     if (existingRaw === "") return additionalRaw;
     if (additionalRaw === "") return existingRaw;
-    let existing: Findings;
-    let additional: Findings;
+    let existing: types.Findings;
+    let additional: types.Findings;
     try {
-        existing = parseFindingsJSON(existingRaw);
+        existing = types.parseFindingsJSON(existingRaw);
     } catch {
         return additionalRaw;
     }
     try {
-        additional = parseFindingsJSON(additionalRaw);
+        additional = types.parseFindingsJSON(additionalRaw);
     } catch {
         return existingRaw;
     }
@@ -147,7 +136,7 @@ export function mergeFindingsJSON(existingRaw: string, additionalRaw: string): s
     }
     if (merged.items.length === 0) return "";
     try {
-        return marshalFindingsJSON(merged);
+        return types.marshalFindingsJSON(merged);
     } catch {
         return existingRaw;
     }
@@ -156,15 +145,15 @@ export function mergeFindingsJSON(existingRaw: string, additionalRaw: string): s
 /** Removes findings matching `removeRaw` from `existingRaw`. */
 export function removeMatchingFindingsJSON(existingRaw: string, removeRaw: string): string {
     if (existingRaw === "" || removeRaw === "") return existingRaw;
-    let existing: Findings;
-    let remove: Findings;
+    let existing: types.Findings;
+    let remove: types.Findings;
     try {
-        existing = parseFindingsJSON(existingRaw);
+        existing = types.parseFindingsJSON(existingRaw);
     } catch {
         return existingRaw;
     }
     try {
-        remove = parseFindingsJSON(removeRaw);
+        remove = types.parseFindingsJSON(removeRaw);
     } catch {
         return existingRaw;
     }
@@ -179,7 +168,7 @@ export function removeMatchingFindingsJSON(existingRaw: string, removeRaw: strin
     }
     if (filtered.items.length === 0) return "";
     try {
-        return marshalFindingsJSON(filtered);
+        return types.marshalFindingsJSON(filtered);
     } catch {
         return existingRaw;
     }
@@ -188,15 +177,15 @@ export function removeMatchingFindingsJSON(existingRaw: string, removeRaw: strin
 /** Keeps only findings in `existingRaw` that match `keepRaw`. */
 export function retainMatchingFindingsJSON(existingRaw: string, keepRaw: string): string {
     if (existingRaw === "" || keepRaw === "") return "";
-    let existing: Findings;
-    let keep: Findings;
+    let existing: types.Findings;
+    let keep: types.Findings;
     try {
-        existing = parseFindingsJSON(existingRaw);
+        existing = types.parseFindingsJSON(existingRaw);
     } catch {
         return "";
     }
     try {
-        keep = parseFindingsJSON(keepRaw);
+        keep = types.parseFindingsJSON(keepRaw);
     } catch {
         return "";
     }
@@ -211,7 +200,7 @@ export function retainMatchingFindingsJSON(existingRaw: string, keepRaw: string)
     }
     if (filtered.items.length === 0) return "";
     try {
-        return marshalFindingsJSON(filtered);
+        return types.marshalFindingsJSON(filtered);
     } catch {
         return "";
     }
@@ -220,16 +209,16 @@ export function retainMatchingFindingsJSON(existingRaw: string, keepRaw: string)
 /** Keeps only auto-fixable findings; "" when none. */
 export function autoFixableFindingsJSON(raw: string): string {
     if (raw === "") return "";
-    let findings: Findings;
+    let findings: types.Findings;
     try {
-        findings = parseFindingsJSON(raw);
+        findings = types.parseFindingsJSON(raw);
     } catch {
         return raw;
     }
-    const fixable = autoFixableFindings(findings);
+    const fixable = types.autoFixableFindings(findings);
     if (fixable.items.length === 0) return "";
     try {
-        return marshalFindingsJSON(fixable);
+        return types.marshalFindingsJSON(fixable);
     } catch {
         return raw;
     }
@@ -239,7 +228,7 @@ export function autoFixableFindingsJSON(raw: string): string {
 export function hasAskUserFindingsJSON(raw: string): boolean {
     if (raw === "") return false;
     try {
-        return hasAskUserFindings(parseFindingsJSON(raw));
+        return types.hasAskUserFindings(types.parseFindingsJSON(raw));
     } catch {
         return false;
     }
@@ -252,9 +241,9 @@ export function hasAskUserFindingsJSON(raw: string): boolean {
  */
 export function combineSelectedFindingIDs(selected: string[], mergedFindings: string): string[] {
     if (mergedFindings === "") return selected;
-    let merged: Findings;
+    let merged: types.Findings;
     try {
-        merged = parseFindingsJSON(mergedFindings);
+        merged = types.parseFindingsJSON(mergedFindings);
     } catch {
         return selected;
     }
@@ -279,19 +268,19 @@ export function combineSelectedFindingIDs(selected: string[], mergedFindings: st
 export function mergeUserOverridesJSON(
     raw: string,
     instructions: Record<string, string> | null | undefined,
-    added: Finding[] | null | undefined
+    added: types.Finding[] | null | undefined
 ): string {
     const hasInstr = instructions && Object.keys(instructions).length > 0;
     const hasAdded = added && added.length > 0;
     if (!hasInstr && !hasAdded) return raw;
-    let base: Findings;
+    let base: types.Findings;
     try {
-        base = parseFindingsJSON(raw);
+        base = types.parseFindingsJSON(raw);
     } catch {
         base = { items: [], summary: "", riskLevel: "", riskRationale: "" };
     }
     try {
-        return marshalFindingsJSON(mergeUserOverrides(base, instructions, added));
+        return types.marshalFindingsJSON(types.mergeUserOverrides(base, instructions, added));
     } catch {
         return raw;
     }
@@ -300,13 +289,13 @@ export function mergeUserOverridesJSON(
 /** Filters a payload to selected IDs; empty selection yields "0 selected findings". */
 export function filterFindingsJSON(raw: string, ids: string[]): string {
     if (raw === "") return raw;
-    let findings: Findings;
+    let findings: types.Findings;
     try {
-        findings = parseFindingsJSON(raw);
+        findings = types.parseFindingsJSON(raw);
     } catch {
         return raw;
     }
-    let filtered = filterFindings(findings, ids);
+    let filtered = types.filterFindings(findings, ids);
     if (ids.length === 0) {
         filtered = {
             items: [],
@@ -318,7 +307,7 @@ export function filterFindingsJSON(raw: string, ids: string[]): string {
         };
     }
     try {
-        return marshalFindingsJSON(filtered);
+        return types.marshalFindingsJSON(filtered);
     } catch {
         return raw;
     }

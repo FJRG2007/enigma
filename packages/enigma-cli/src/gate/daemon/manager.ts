@@ -26,6 +26,7 @@
  */
 
 import { log } from "../log";
+import * as gateDb from "../db";
 import { track } from "../telemetry";
 import type { Paths } from "../paths";
 import { writeSnapshot } from "./snapshot";
@@ -63,18 +64,6 @@ import {
     fetchRemoteBranch,
     copyLocalUserIdentity
 } from "../git";
-import {
-    type Run,
-    type Repo,
-    type Database,
-    getRepo,
-    insertRun,
-    getStepsByRun,
-    updateRunError,
-    updateRunIntent,
-    getRunsByRepo,
-    updateRunErrorStatus
-} from "../db";
 
 /** Builds the pipeline steps for a run; defaults to `allPipelineSteps`. */
 export type StepFactory = () => Step[];
@@ -112,7 +101,7 @@ export class RunManager {
 
     /** Creates a RunManager. Pass undefined for stepFactory to use default steps. */
     constructor(
-        private readonly db: Database,
+        private readonly db: gateDb.Database,
         private readonly paths: Paths,
         stepFactory?: StepFactory
     ) {
@@ -223,9 +212,9 @@ export class RunManager {
             throw new Error("ref deletion push, no pipeline to run");
         }
         const repoID = repoIDFromGatePath(params.gate);
-        let repo: Repo | null;
+        let repo: gateDb.Repo | null;
         try {
-            repo = getRepo(this.db, repoID);
+            repo = gateDb.getRepo(this.db, repoID);
         } catch (err) {
             throw new Error(`get repo: ${errMessage(err)}`);
         }
@@ -241,9 +230,9 @@ export class RunManager {
      * when one exists, else the latest run's base for that branch.
      */
     async handleRerun(repoID: string, branch: string, skipSteps: StepName[], intent: string): Promise<string> {
-        let repo: Repo | null;
+        let repo: gateDb.Repo | null;
         try {
-            repo = getRepo(this.db, repoID);
+            repo = gateDb.getRepo(this.db, repoID);
         } catch (err) {
             throw new Error(`get repo: ${errMessage(err)}`);
         }
@@ -257,15 +246,15 @@ export class RunManager {
             throw new Error(`resolve gate head: ${errMessage(err)}`);
         }
 
-        let runs: Run[];
+        let runs: gateDb.Run[];
         try {
-            runs = getRunsByRepo(this.db, repoID);
+            runs = gateDb.getRunsByRepo(this.db, repoID);
         } catch (err) {
             throw new Error(`get runs: ${errMessage(err)}`);
         }
 
-        let latestForBranch: Run | null = null;
-        let matchingHead: Run | null = null;
+        let latestForBranch: gateDb.Run | null = null;
+        let matchingHead: gateDb.Run | null = null;
         for (const run of runs) {
             if (run.branch !== branch) continue;
             if (latestForBranch === null) latestForBranch = run;
@@ -286,7 +275,7 @@ export class RunManager {
      * pipeline in the background. Serialized per repo+branch.
      */
     private async startRun(
-        repo: Repo,
+        repo: gateDb.Repo,
         branch: string,
         headSHA: string,
         baseSHA: string,
@@ -316,7 +305,7 @@ export class RunManager {
     }
 
     private async startRunLocked(
-        repo: Repo,
+        repo: gateDb.Repo,
         branch: string,
         headSHA: string,
         baseSHA: string,
@@ -329,9 +318,9 @@ export class RunManager {
         // Cancel any active run for this repo+branch and wait for it to exit.
         await this.cancelActiveRuns(repo.id, branch);
 
-        let run: Run;
+        let run: gateDb.Run;
         try {
-            run = insertRun(this.db, repo.id, branch, headSHA, baseSHA);
+            run = gateDb.insertRun(this.db, repo.id, branch, headSHA, baseSHA);
         } catch (err) {
             trackStartFailure("create_run");
             throw new Error(`create run: ${errMessage(err)}`);
@@ -342,7 +331,7 @@ export class RunManager {
         const trimmed = intent.trim();
         if (trimmed !== "") {
             try {
-                updateRunIntent(this.db, run.id, { summary: trimmed, source: "agent", sessionId: "", score: 1 });
+                gateDb.updateRunIntent(this.db, run.id, { summary: trimmed, source: "agent", sessionId: "", score: 1 });
                 run.intent = trimmed;
                 run.intentSource = "agent";
                 run.intentScore = 1;
@@ -357,7 +346,7 @@ export class RunManager {
         try {
             await worktreeAdd(gateDir, wtDir, headSHA);
         } catch (err) {
-            updateRunError(this.db, run.id, `create worktree: ${errMessage(err)}`);
+            gateDb.updateRunError(this.db, run.id, `create worktree: ${errMessage(err)}`);
             trackStartFailure("create_worktree");
             throw new Error(`create worktree: ${errMessage(err)}`);
         }
@@ -367,7 +356,7 @@ export class RunManager {
         try {
             await copyLocalUserIdentity(repo.workingPath, wtDir);
         } catch (err) {
-            updateRunError(this.db, run.id, `configure worktree git identity: ${errMessage(err)}`);
+            gateDb.updateRunError(this.db, run.id, `configure worktree git identity: ${errMessage(err)}`);
             trackStartFailure("configure_worktree_identity");
             throw new Error(`configure worktree git identity: ${errMessage(err)}`);
         }
@@ -409,7 +398,7 @@ export class RunManager {
             try {
                 globalCfg = loadGlobal(this.paths.configFile());
             } catch (err) {
-                updateRunError(this.db, run.id, `load config: ${errMessage(err)}`);
+                gateDb.updateRunError(this.db, run.id, `load config: ${errMessage(err)}`);
                 trackStartFailure("load_global_config");
                 throw new Error(`load global config: ${errMessage(err)}`);
             }
@@ -417,7 +406,7 @@ export class RunManager {
             try {
                 repoCfg = loadRepo(wtDir);
             } catch (err) {
-                updateRunError(this.db, run.id, `load config: ${errMessage(err)}`);
+                gateDb.updateRunError(this.db, run.id, `load config: ${errMessage(err)}`);
                 trackStartFailure("load_repo_config");
                 throw new Error(`load repo config: ${errMessage(err)}`);
             }
@@ -442,14 +431,14 @@ export class RunManager {
             try {
                 await resolveAgent(cfg, lookPath);
             } catch (err) {
-                updateRunError(this.db, run.id, errMessage(err));
+                gateDb.updateRunError(this.db, run.id, errMessage(err));
                 trackStartFailure("resolve_agent");
                 throw err;
             }
             try {
                 ag = createAgent(cfg, this.paths, { acpRegistryOverrides: cfg.acpRegistryOverrides });
             } catch (err) {
-                updateRunError(this.db, run.id, `create agent: ${errMessage(err)}`);
+                gateDb.updateRunError(this.db, run.id, `create agent: ${errMessage(err)}`);
                 trackStartFailure("create_agent");
                 throw new Error(`create agent: ${errMessage(err)}`);
             }
@@ -494,8 +483,8 @@ export class RunManager {
         executor: Executor,
         controller: AbortController,
         ag: Agent,
-        run: Run,
-        repo: Repo,
+        run: gateDb.Run,
+        repo: gateDb.Repo,
         gateDir: string,
         wtDir: string,
         trigger: string,
@@ -528,7 +517,7 @@ export class RunManager {
                 run.status = "failed";
                 run.error = msg;
                 try {
-                    updateRunErrorStatus(this.db, run.id, msg, "failed");
+                    gateDb.updateRunErrorStatus(this.db, run.id, msg, "failed");
                 } catch (dbErr) {
                     log.error("failed to update run after panic", "run_id", run.id, "error", errMessage(dbErr));
                 }
@@ -604,9 +593,9 @@ export class RunManager {
      * waits for their tasks to finish, preventing concurrent pushes to upstream.
      */
     private async cancelActiveRuns(repoID: string, branch: string): Promise<void> {
-        let runs: Run[];
+        let runs: gateDb.Run[];
         try {
-            runs = getRunsByRepo(this.db, repoID);
+            runs = gateDb.getRunsByRepo(this.db, repoID);
         } catch (err) {
             log.error("failed to query active runs for cancellation", "repo", repoID, "branch", branch, "error", errMessage(err));
             return;
@@ -630,7 +619,7 @@ export class RunManager {
     /** Returns the name of the first failed step of a run, or "" when none. */
     private failedStepName(runID: string): string {
         try {
-            const steps = getStepsByRun(this.db, runID);
+            const steps = gateDb.getStepsByRun(this.db, runID);
             for (const step of steps) {
                 if (step.status === "failed") return step.stepName;
             }

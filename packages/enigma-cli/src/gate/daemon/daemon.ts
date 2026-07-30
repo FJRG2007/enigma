@@ -11,10 +11,11 @@
  */
 
 import { log } from "../log";
+import * as gateDb from "../db";
 import { join } from "node:path";
 import { Paths } from "../paths";
-import { Database } from "../db";
 import { Server } from "../ipc/server";
+import * as proto from "../ipc/protocol";
 import { applyToProcess } from "../shellenv";
 import { StepFactory, RunManager } from "./manager";
 import { worktreeRemove, run as gitRun } from "../git";
@@ -41,46 +42,6 @@ import {
     existsSync,
     unlinkSync
 } from "node:fs";
-import {
-    getRun,
-    getRepo,
-    type Run,
-    getActiveRun,
-    getRunsByRepo,
-    getStepsByRun,
-    stepFixSummaries,
-    stepFindingStats,
-    recoverStaleRuns,
-    type Database as DatabaseType
-} from "../db";
-import {
-    type RunInfo,
-    runToInfo,
-    stepToInfo,
-    MethodRerun,
-    MethodHealth,
-    MethodGetRun,
-    MethodRespond,
-    MethodGetRuns,
-    MethodShutdown,
-    MethodSubscribe,
-    MethodCancelRun,
-    encodeRerunResult,
-    decodeGetRunParams,
-    decodeRerunParams,
-    decodeRespondParams,
-    encodeGetRunResult,
-    MethodGetActiveRun,
-    decodeGetRunsParams,
-    MethodPushReceived,
-    encodeGetRunsResult,
-    decodeCancelRunParams,
-    decodeSubscribeParams,
-    decodeGetActiveRunParams,
-    encodeGetActiveRunResult,
-    decodePushReceivedParams,
-    encodePushReceivedResult
-} from "../ipc/protocol";
 
 function errMessage(err: unknown): string {
     return err instanceof Error ? err.message : String(err);
@@ -99,7 +60,7 @@ export async function run(): Promise<void> {
     const globalCfg = loadGlobal(p.configFile());
     initLogger(globalCfg.logLevel);
 
-    const d = new Database(p.db());
+    const d = new gateDb.Database(p.db());
     try {
         await runWithResources(p, d);
     } finally {
@@ -142,12 +103,12 @@ function initLogger(level: string): void {
 }
 
 /** Starts the daemon with pre-initialized paths and DB (default steps). */
-export function runWithResources(p: Paths, d: Database): Promise<void> {
+export function runWithResources(p: Paths, d: gateDb.Database): Promise<void> {
     return runWithOptions(p, d);
 }
 
 /** Starts the daemon with optional step-factory override (for testing). */
-export async function runWithOptions(p: Paths, d: Database, stepFactory?: StepFactory): Promise<void> {
+export async function runWithOptions(p: Paths, d: gateDb.Database, stepFactory?: StepFactory): Promise<void> {
     await recoverOnStartup(d, p);
 
     // Point the agent package at our PID dir so managed servers we spawn leave
@@ -247,13 +208,13 @@ function removeQuietly(path: string): void {
  * migrates gate bare repos in place, marks stale runs/steps failed, and removes
  * orphaned worktree directories.
  */
-async function recoverOnStartup(d: Database, p: Paths): Promise<void> {
+async function recoverOnStartup(d: gateDb.Database, p: Paths): Promise<void> {
     reapOrphanedServers(p);
     await migrateGateConfigs(p);
 
     let count: number;
     try {
-        count = recoverStaleRuns(d, "daemon crashed during execution");
+        count = gateDb.recoverStaleRuns(d, "daemon crashed during execution");
     } catch (err) {
         log.error("failed to recover stale runs", "error", errMessage(err));
         return;
@@ -346,61 +307,61 @@ async function removeOrphanedWorktrees(p: Paths): Promise<void> {
 }
 
 /** Registers all IPC handlers (unary + the subscribe stream) on the server. */
-function registerHandlers(srv: Server, mgr: RunManager, d: Database, shutdown: () => void): void {
-    srv.handle(MethodHealth, () => ({ status: "ok" }));
+function registerHandlers(srv: Server, mgr: RunManager, d: gateDb.Database, shutdown: () => void): void {
+    srv.handle(proto.MethodHealth, () => ({ status: "ok" }));
 
-    srv.handle(MethodShutdown, () => {
+    srv.handle(proto.MethodShutdown, () => {
         shutdown();
         return { ok: true };
     });
 
-    srv.handle(MethodGetRun, params => {
-        const { runId } = decodeGetRunParams(params ?? {});
-        const r = getRun(d, runId);
+    srv.handle(proto.MethodGetRun, params => {
+        const { runId } = proto.decodeGetRunParams(params ?? {});
+        const r = gateDb.getRun(d, runId);
         if (r === null) throw new Error(`run not found: ${runId}`);
-        return encodeGetRunResult({ run: runInfoFor(d, r) });
+        return proto.encodeGetRunResult({ run: runInfoFor(d, r) });
     });
 
-    srv.handle(MethodGetRuns, params => {
-        const { repoId } = decodeGetRunsParams(params ?? {});
-        const runs = getRunsByRepo(d, repoId);
-        return encodeGetRunsResult({ runs: runs.map(r => runInfoFor(d, r)) });
+    srv.handle(proto.MethodGetRuns, params => {
+        const { repoId } = proto.decodeGetRunsParams(params ?? {});
+        const runs = gateDb.getRunsByRepo(d, repoId);
+        return proto.encodeGetRunsResult({ runs: runs.map(r => runInfoFor(d, r)) });
     });
 
-    srv.handle(MethodGetActiveRun, params => {
-        const { repoId, branch } = decodeGetActiveRunParams(params ?? {});
-        const r = getActiveRun(d, repoId, branch ?? "");
-        if (r === null) return encodeGetActiveRunResult({ run: null });
-        return encodeGetActiveRunResult({ run: runInfoFor(d, r) });
+    srv.handle(proto.MethodGetActiveRun, params => {
+        const { repoId, branch } = proto.decodeGetActiveRunParams(params ?? {});
+        const r = gateDb.getActiveRun(d, repoId, branch ?? "");
+        if (r === null) return proto.encodeGetActiveRunResult({ run: null });
+        return proto.encodeGetActiveRunResult({ run: runInfoFor(d, r) });
     });
 
-    srv.handle(MethodRerun, async params => {
-        const p = decodeRerunParams(params ?? {});
+    srv.handle(proto.MethodRerun, async params => {
+        const p = proto.decodeRerunParams(params ?? {});
         const runId = await mgr.handleRerun(p.repoId, p.branch, p.skipSteps ?? [], p.intent ?? "");
-        return encodeRerunResult({ runId });
+        return proto.encodeRerunResult({ runId });
     });
 
-    srv.handle(MethodPushReceived, async params => {
-        const p = decodePushReceivedParams(params ?? {});
+    srv.handle(proto.MethodPushReceived, async params => {
+        const p = proto.decodePushReceivedParams(params ?? {});
         log.info("push received", "ref", p.ref, "old", p.old, "new", p.new, "gate", p.gate);
         const runId = await mgr.handlePushReceived(p);
-        return encodePushReceivedResult({ runId });
+        return proto.encodePushReceivedResult({ runId });
     });
 
-    srv.handle(MethodRespond, params => {
-        const p = decodeRespondParams(params ?? {});
+    srv.handle(proto.MethodRespond, params => {
+        const p = proto.decodeRespondParams(params ?? {});
         mgr.handleRespondWithOverrides(p.runId, p.step, p.action, p.findingIds ?? [], p.instructions ?? null, p.addedFindings ?? null);
         return { ok: true };
     });
 
-    srv.handle(MethodCancelRun, params => {
-        const { runId } = decodeCancelRunParams(params ?? {});
+    srv.handle(proto.MethodCancelRun, params => {
+        const { runId } = proto.decodeCancelRunParams(params ?? {});
         mgr.handleCancel(runId);
         return { ok: true };
     });
 
-    srv.handleStream(MethodSubscribe, async (params, send) => {
-        const { runId } = decodeSubscribeParams(params ?? {});
+    srv.handleStream(proto.MethodSubscribe, async (params, send) => {
+        const { runId } = proto.decodeSubscribeParams(params ?? {});
         const sub = mgr.subscribe(runId);
         try {
             for await (const event of sub.events) send(event);
@@ -411,23 +372,23 @@ function registerHandlers(srv: Server, mgr: RunManager, d: Database, shutdown: (
 }
 
 /** Builds an IPC RunInfo for a run, including per-step finding stats + summaries. */
-function runInfoFor(d: DatabaseType, run: Run): RunInfo {
-    const steps = getStepsByRun(d, run.id);
+function runInfoFor(d: gateDb.Database, run: gateDb.Run): proto.RunInfo {
+    const steps = gateDb.getStepsByRun(d, run.id);
     const stepInfos = steps.map(s => {
         const extras: { reportedFindings?: number; fixedFindings?: number; fixSummaries?: string[] } = {};
         try {
-            const stats = stepFindingStats(d, s);
+            const stats = gateDb.stepFindingStats(d, s);
             extras.reportedFindings = stats.reportedFindings;
             extras.fixedFindings = stats.fixedFindings;
         } catch {
             // Stats are best-effort, matching the Go handler.
         }
         try {
-            extras.fixSummaries = stepFixSummaries(d, s.id);
+            extras.fixSummaries = gateDb.stepFixSummaries(d, s.id);
         } catch {
             // Summaries are best-effort.
         }
-        return stepToInfo(s, extras);
+        return proto.stepToInfo(s, extras);
     });
-    return runToInfo(run, stepInfos);
+    return proto.runToInfo(run, stepInfos);
 }

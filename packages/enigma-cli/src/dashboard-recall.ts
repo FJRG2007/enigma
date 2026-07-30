@@ -8,9 +8,8 @@
  * shape usage.ts uses), so the user rarely needs the manual "Sync now" button.
  */
 
-import { readConfig, setEnigmaValue, setRecallApiKey, RECALL_PROVIDERS, type RecallProvider } from "./config";
-import type { ObservationHit, RecallStats } from "./recall";
-import { recallAvailable, recallStatus, searchRecall, recentObservations, resetRecall, syncRecall, enrichRecall, recallTimeline, deleteRecallObservation, createObservation, generateObservation } from "./recall";
+import * as conf from "./config";
+import * as recall from "./recall";
 
 /** One observation row as the dashboard renders it (full fields, so the detail view needs no refetch). */
 export interface RecallItem {
@@ -28,7 +27,7 @@ export interface RecallItem {
     createdAt: number;
 }
 
-function toItem(o: ObservationHit): RecallItem {
+function toItem(o: recall.ObservationHit): RecallItem {
     return {
         id: o.id, type: o.type, title: o.title, subtitle: o.subtitle, project: o.project, source: o.source,
         files: o.filesModified, filesRead: o.filesRead, facts: o.facts, concepts: o.concepts,
@@ -38,7 +37,7 @@ function toItem(o: ObservationHit): RecallItem {
 
 /** The recall LLM-provider config, surfaced to the dashboard (the key value is never sent). */
 export interface RecallProviderView {
-    provider: RecallProvider;
+    provider: conf.RecallProvider;
     model: string;
     base: string;
     /** Whether a key is set in config or via ENIGMA_RECALL_API_KEY (the value is never exposed). */
@@ -47,7 +46,7 @@ export interface RecallProviderView {
     keyFromEnv: boolean;
     /** LLM curation on (recallLlm). */
     llm: boolean;
-    providers: readonly RecallProvider[];
+    providers: readonly conf.RecallProvider[];
 }
 
 /** Everything the Recall tab needs in one payload. */
@@ -56,7 +55,7 @@ export interface RecallView {
     available: boolean;
     /** config.recall is on. */
     enabled: boolean;
-    stats: RecallStats | null;
+    stats: recall.RecallStats | null;
     lastSync: number;
     projects: string[];
     query: string;
@@ -65,12 +64,12 @@ export interface RecallView {
 }
 
 function providerView(): RecallProviderView {
-    const c = readConfig().config;
+    const c = conf.readConfig().config;
     const envKey = !!process.env.ENIGMA_RECALL_API_KEY;
     return {
         provider: c.recallProvider, model: c.recallModel, base: c.recallApiBase,
         hasKey: envKey || !!c.recallApiKey, keyFromEnv: envKey, llm: c.recallLlm,
-        providers: RECALL_PROVIDERS,
+        providers: conf.RECALL_PROVIDERS,
     };
 }
 
@@ -88,22 +87,22 @@ function maybeBackgroundSync(): void {
     if (now - lastSyncAttempt < SYNC_THROTTLE_MS) return;
     lastSyncAttempt = now;
     setTimeout(() => {
-        try { syncRecall(); } catch { /* best-effort */ }
-        void enrichRecall().catch(() => { /* best-effort */ });
+        try { recall.syncRecall(); } catch { /* best-effort */ }
+        void recall.enrichRecall().catch(() => { /* best-effort */ });
     }, 0);
 }
 
 /** Build the Recall view: search results when a query is given, else recent observations. */
 export function recallDashboard(opts: { q?: string; project?: string; type?: string } = {}): RecallView {
-    const enabled = readConfig().config.recall;
-    const available = recallAvailable();
+    const enabled = conf.readConfig().config.recall;
+    const available = recall.recallAvailable();
     if (!available || !enabled) return { available, enabled, stats: null, lastSync: 0, projects: [], query: opts.q || "", items: [], provider: providerView() };
     maybeBackgroundSync();
-    const st = recallStatus();
+    const st = recall.recallStatus();
     const q = (opts.q || "").trim();
     const hits = q
-        ? searchRecall(q, { project: opts.project, type: opts.type, limit: 50 })
-        : recentObservations({ project: opts.project, type: opts.type, limit: 50 });
+        ? recall.searchRecall(q, { project: opts.project, type: opts.type, limit: 50 })
+        : recall.recentObservations({ project: opts.project, type: opts.type, limit: 50 });
     return {
         available: true,
         enabled: true,
@@ -118,8 +117,8 @@ export function recallDashboard(opts: { q?: string; project?: string; type?: str
 
 /** Chronological context around an observation, for the dashboard timeline view. */
 export function recallTimelineView(id: number): RecallItem[] {
-    if (!recallAvailable() || !readConfig().config.recall) return [];
-    return recallTimeline({ id }).map(toItem);
+    if (!recall.recallAvailable() || !conf.readConfig().config.recall) return [];
+    return recall.recallTimeline({ id }).map(toItem);
 }
 
 /**
@@ -137,47 +136,47 @@ export interface RecallActionPayload {
 
 /** Apply a Recall action and return the refreshed view. */
 export async function applyRecallAction(op: string, payload: RecallActionPayload = {}): Promise<{ ok: boolean; error?: string; view?: RecallView }> {
-    if (!recallAvailable()) return { ok: false, error: "recall needs the enigma binary" };
+    if (!recall.recallAvailable()) return { ok: false, error: "recall needs the enigma binary" };
     if (op === "sync") {
-        syncRecall();
+        recall.syncRecall();
         // Curate in the background (opt-in via recallLlm): a set of model calls must never block
         // the response, and the dashboard's poll surfaces curated rows as they land. Forced so the
         // explicit button bypasses the inter-pass throttle.
-        void enrichRecall({ force: true }).catch(() => { /* best-effort */ });
+        void recall.enrichRecall({ force: true }).catch(() => { /* best-effort */ });
         return { ok: true, view: recallDashboard() };
     }
-    if (op === "clear") { resetRecall(); return { ok: true, view: recallDashboard() }; }
+    if (op === "clear") { recall.resetRecall(); return { ok: true, view: recallDashboard() }; }
     if (op === "delete") {
         const ids = Array.isArray(payload.ids)
             ? payload.ids.filter((n): n is number => typeof n === "number" && Number.isInteger(n))
             : (typeof payload.id === "number" ? [payload.id] : []);
         if (!ids.length) return { ok: false, error: "missing memory id" };
-        for (const id of ids) deleteRecallObservation(id);
+        for (const id of ids) recall.deleteRecallObservation(id);
         return { ok: true, view: recallDashboard() };
     }
     if (op === "create") {
         if (!payload.title || !payload.title.trim()) return { ok: false, error: "a title is required" };
-        const ok = createObservation({
+        const ok = recall.createObservation({
             type: payload.type, title: payload.title, project: payload.project,
             narrative: payload.narrative, facts: payload.facts, concepts: payload.concepts,
         });
         return ok ? { ok: true, view: recallDashboard() } : { ok: false, error: "could not store the memory" };
     }
     if (op === "generate") {
-        const out = await generateObservation(payload.prompt || "", payload.project);
+        const out = await recall.generateObservation(payload.prompt || "", payload.project);
         return out.ok ? { ok: true, view: recallDashboard() } : { ok: false, error: out.error };
     }
     if (op === "set-provider") {
         if (payload.provider !== undefined) {
-            if (!RECALL_PROVIDERS.includes(payload.provider as RecallProvider)) return { ok: false, error: "unknown provider" };
-            setEnigmaValue("recallProvider", payload.provider, "global");
+            if (!conf.RECALL_PROVIDERS.includes(payload.provider as conf.RecallProvider)) return { ok: false, error: "unknown provider" };
+            conf.setEnigmaValue("recallProvider", payload.provider, "global");
         }
-        if (typeof payload.model === "string") setEnigmaValue("recallModel", payload.model.trim(), "global");
-        if (typeof payload.base === "string") setEnigmaValue("recallApiBase", payload.base.trim(), "global");
+        if (typeof payload.model === "string") conf.setEnigmaValue("recallModel", payload.model.trim(), "global");
+        if (typeof payload.base === "string") conf.setEnigmaValue("recallApiBase", payload.base.trim(), "global");
         // Empty string clears the key; undefined leaves it as-is (so the UI never has to echo it).
         // Stored encrypted at rest (secret-box.ts).
-        if (typeof payload.key === "string") setRecallApiKey(payload.key, "global");
-        if (typeof payload.llm === "boolean") setEnigmaValue("recallLlm", payload.llm, "global");
+        if (typeof payload.key === "string") conf.setRecallApiKey(payload.key, "global");
+        if (typeof payload.llm === "boolean") conf.setEnigmaValue("recallLlm", payload.llm, "global");
         return { ok: true, view: recallDashboard() };
     }
     return { ok: false, error: `unknown op '${op}'` };

@@ -9,27 +9,25 @@
  * framework is imported here, so it stays cheap to load from any surface.
  */
 
+import * as conf from "./config";
 import { AGENTS } from "./agents";
 import { clampCapPercent } from "./governor";
 import { setVerify } from "./verify-deploy";
 import { applyMcpToggle } from "./mcp-deploy";
 import { isAutoLintOn, setAutoLint } from "./lint";
 import { setGuardrails } from "./guardrails-deploy";
-import { readConfig, readGlobalConfig, CONFIG_DEFAULTS, setEnigmaToggle, setEnigmaValue, setRecallApiKey, RECALL_PROVIDERS, OUTPUT_STYLES, MINIMAL_CODE_LEVELS, LOGO_COLOR_POLICIES, DASHBOARD_MODES, PROMPT_SECRET_MODES, SKILL_UPDATE_POLICIES } from "./config";
 import { applyDashboardMode } from "./dashboard";
 import { applyGateToggle } from "./command-deploy";
-import type { DashboardMode } from "./config";
 import { getGhTelemetryCached, ghTelemetryBlocker, hasGhCli, setGhTelemetry } from "./github";
 import { getClaudeAttribution, setClaudeAttribution, getClaudeFeedbackSurvey, setClaudeFeedbackSurvey, getClaudeStatusline, setClaudeStatusline, hasCustomClaudeStatusline, setClaudeTrust } from "./claude";
 import { BYPASS_SUPPORTED, getBypass, setBypass } from "./permissions";
 import { GUARD_PROTECTIONS, GUARD_LISTS, readGlobalGuard, setGuardProtection, setGuardList } from "./guard-config";
 import type { GuardListMeta } from "./guard-config";
-import type { EnigmaConfig, EnigmaConfigKey } from "./config";
 
 export type Scope = "global" | "local";
 
 /** Keys of EnigmaConfig whose value is a boolean (the on/off toggles). */
-type BooleanConfigKey = { [K in EnigmaConfigKey]: EnigmaConfig[K] extends boolean ? K : never }[EnigmaConfigKey];
+type BooleanConfigKey = { [K in conf.EnigmaConfigKey]: conf.EnigmaConfig[K] extends boolean ? K : never }[conf.EnigmaConfigKey];
 
 /**
  * `error` is set when the write could not be performed at all (as opposed to `changed:
@@ -110,8 +108,8 @@ export interface Category {
 function enigmaToggle(key: string, field: BooleanConfigKey, label: string, hint: string, affectsMemory = false): Setting {
     return {
         key, label, hint, affectsMemory,
-        read: () => readConfig().config[field],
-        write: (value, scope) => ({ path: setEnigmaToggle(field, value, scope), changed: true }),
+        read: () => conf.readConfig().config[field],
+        write: (value, scope) => ({ path: conf.setEnigmaToggle(field, value, scope), changed: true }),
     };
 }
 
@@ -121,35 +119,35 @@ function enigmaToggle(key: string, field: BooleanConfigKey, label: string, hint:
  * still drive it, plus choice accessors so the CLI can set an exact value.
  */
 function enigmaChoice(
-    key: string, field: EnigmaConfigKey, label: string, hint: string,
+    key: string, field: conf.EnigmaConfigKey, label: string, hint: string,
     choices: readonly string[], enabledDefault: string, affectsMemory = false, offValue = "off", affectsSkills = false,
 ): Setting {
     return {
         key, label, hint, affectsMemory, affectsSkills, choices, offChoice: offValue,
-        read: () => readConfig().config[field] !== offValue,
-        write: (value, scope) => ({ path: setEnigmaValue(field, value ? enabledDefault : offValue, scope), changed: true }),
-        readChoice: () => String(readConfig().config[field]),
-        writeChoice: (value, scope) => ({ path: setEnigmaValue(field, value, scope), changed: true }),
+        read: () => conf.readConfig().config[field] !== offValue,
+        write: (value, scope) => ({ path: conf.setEnigmaValue(field, value ? enabledDefault : offValue, scope), changed: true }),
+        readChoice: () => String(conf.readConfig().config[field]),
+        writeChoice: (value, scope) => ({ path: conf.setEnigmaValue(field, value, scope), changed: true }),
     };
 }
 
 /** Persist the dashboard mode and apply its side effects (hosts entry, daemon). */
 function setDashboard(value: string, scope: Scope): ApplyResult {
-    const path = setEnigmaValue("dashboard", value, scope);
-    applyDashboardMode(value as DashboardMode);
+    const path = conf.setEnigmaValue("dashboard", value, scope);
+    applyDashboardMode(value as conf.DashboardMode);
     return { path, changed: true };
 }
 
 /** Persist the compress toggle and deploy/remove the MCP server immediately. */
 function setCompress(on: boolean, scope: Scope): ApplyResult {
-    const path = setEnigmaToggle("compress", on, scope);
+    const path = conf.setEnigmaToggle("compress", on, scope);
     applyMcpToggle(scope);
     return { path, changed: true };
 }
 
 /** Persist the codeGraph toggle and (de)register the enigma MCP server, which hosts its tools. */
 function setCodeGraph(on: boolean, scope: Scope): ApplyResult {
-    const path = setEnigmaToggle("codeGraph", on, scope);
+    const path = conf.setEnigmaToggle("codeGraph", on, scope);
     applyMcpToggle(scope);
     return { path, changed: true };
 }
@@ -161,7 +159,7 @@ function setCodeGraph(on: boolean, scope: Scope): ApplyResult {
  * "use recall" note when on (stripped when off), so a restart is needed to pick it up.
  */
 function setRecall(on: boolean, scope: Scope): ApplyResult {
-    const path = setEnigmaToggle("recall", on, scope);
+    const path = conf.setEnigmaToggle("recall", on, scope);
     applyMcpToggle(scope);
     if (on) {
         // Deferred, best-effort: build the store from existing transcripts right away.
@@ -200,7 +198,7 @@ function setStatusline(on: boolean, scope: Scope): ApplyResult {
     if (on && hasCustomClaudeStatusline(scope)) {
         return { changed: false, error: "a different statusLine is already set in Claude Code's settings.json - remove it first" };
     }
-    const path = setEnigmaToggle("statusline", on, scope);
+    const path = conf.setEnigmaToggle("statusline", on, scope);
     setClaudeStatusline(scope, on);
     return { path, changed: true };
 }
@@ -216,14 +214,14 @@ function setStatusline(on: boolean, scope: Scope): ApplyResult {
  * every project the user has already accepted.
  */
 function setTrust(on: boolean, scope: Scope): ApplyResult {
-    const path = setEnigmaToggle("claudeTrust", on, scope);
+    const path = conf.setEnigmaToggle("claudeTrust", on, scope);
     setClaudeTrust(on);
     return { path, changed: true };
 }
 
 /** Persist the gate toggle and deploy/remove the /gate command immediately. */
 function setGate(on: boolean, scope: Scope): ApplyResult {
-    const path = setEnigmaToggle("gate", on, scope);
+    const path = conf.setEnigmaToggle("gate", on, scope);
     applyGateToggle(scope);
     return { path, changed: true };
 }
@@ -295,10 +293,10 @@ const RAW_CATEGORIES: Category[] = [
                 hint: "share of the machine work an agent runs may take: cores, build concurrency, and a lowered scheduling priority so your own work stays responsive (default 60%)",
                 kind: "value",
                 valueHint: "percent, 1-100 (default 60)",
-                read: () => readConfig().config.resourceCap !== CONFIG_DEFAULTS.resourceCap,
+                read: () => conf.readConfig().config.resourceCap !== conf.CONFIG_DEFAULTS.resourceCap,
                 write: () => ({ changed: false }),
-                readValue: () => String(readConfig().config.resourceCap),
-                writeValue: (value, scope) => ({ path: setEnigmaValue("resourceCap", clampCapPercent(value, CONFIG_DEFAULTS.resourceCap), scope), changed: true }),
+                readValue: () => String(conf.readConfig().config.resourceCap),
+                writeValue: (value, scope) => ({ path: conf.setEnigmaValue("resourceCap", clampCapPercent(value, conf.CONFIG_DEFAULTS.resourceCap), scope), changed: true }),
             },
             {
                 key: "low-memory-cap",
@@ -308,10 +306,10 @@ const RAW_CATEGORIES: Category[] = [
                 globalOnly: true,
                 kind: "value",
                 valueHint: "percent, 1-100 (default 80)",
-                read: () => readGlobalConfig().lowMemoryCap !== CONFIG_DEFAULTS.lowMemoryCap,
+                read: () => conf.readGlobalConfig().lowMemoryCap !== conf.CONFIG_DEFAULTS.lowMemoryCap,
                 write: () => ({ changed: false }),
-                readValue: () => String(readGlobalConfig().lowMemoryCap),
-                writeValue: (value, scope) => ({ path: setEnigmaValue("lowMemoryCap", clampCapPercent(value, CONFIG_DEFAULTS.lowMemoryCap), scope), changed: true }),
+                readValue: () => String(conf.readGlobalConfig().lowMemoryCap),
+                writeValue: (value, scope) => ({ path: conf.setEnigmaValue("lowMemoryCap", clampCapPercent(value, conf.CONFIG_DEFAULTS.lowMemoryCap), scope), changed: true }),
             },
             {
                 key: "skill-update-policy",
@@ -319,48 +317,48 @@ const RAW_CATEGORIES: Category[] = [
                 hint: "when a skill you edited is updated: overwrite (replace with the new version) or keep (preserve your local edits); enigma default: overwrite",
                 globalOnly: true,
                 // No offChoice in the choice list, so this renders as a select (overwrite/keep), not a switch.
-                choices: SKILL_UPDATE_POLICIES,
-                read: () => readConfig().config.skillUpdatePolicy === "overwrite",
-                write: (value, scope) => ({ path: setEnigmaValue("skillUpdatePolicy", value ? "overwrite" : "keep", scope), changed: true }),
-                readChoice: () => readConfig().config.skillUpdatePolicy,
-                writeChoice: (value, scope) => ({ path: setEnigmaValue("skillUpdatePolicy", value, scope), changed: true }),
+                choices: conf.SKILL_UPDATE_POLICIES,
+                read: () => conf.readConfig().config.skillUpdatePolicy === "overwrite",
+                write: (value, scope) => ({ path: conf.setEnigmaValue("skillUpdatePolicy", value ? "overwrite" : "keep", scope), changed: true }),
+                readChoice: () => conf.readConfig().config.skillUpdatePolicy,
+                writeChoice: (value, scope) => ({ path: conf.setEnigmaValue("skillUpdatePolicy", value, scope), changed: true }),
             },
             enigmaToggle("fullscreen", "fullscreen", "Full-screen TUI", "clear the screen for a clean TUI view; off renders inline among existing output"),
             {
                 key: "statusline",
                 label: "Agent status bar",
                 hint: "show the [ENIGMA] badge, model, context and cost in Claude Code's status bar, plus live gate progress while a run is in flight",
-                read: () => readConfig().config.statusline,
+                read: () => conf.readConfig().config.statusline,
                 write: (value, scope) => setStatusline(value, scope),
             },
             enigmaToggle("parallel-subagents", "parallelSubagents", "Parallel sub-agents", "let agents split long tasks across sub-agents running in parallel; edits the memory file - restart your agent to apply", true),
-            enigmaChoice("output-style", "outputStyle", "Token-efficient output", "compress prose replies (off|lite|full|ultra); on = full; edits the memory file - restart your agent to apply", OUTPUT_STYLES, "full", true),
-            enigmaChoice("minimal-code", "minimalCode", "Minimal code (anti-overengineering)", "prefer the laziest solution that works (off|lite|full|ultra); on = full; edits the anti-overengineering skill - restart your agent to apply", MINIMAL_CODE_LEVELS, "full", false, "off", true),
+            enigmaChoice("output-style", "outputStyle", "Token-efficient output", "compress prose replies (off|lite|full|ultra); on = full; edits the memory file - restart your agent to apply", conf.OUTPUT_STYLES, "full", true),
+            enigmaChoice("minimal-code", "minimalCode", "Minimal code (anti-overengineering)", "prefer the laziest solution that works (off|lite|full|ultra); on = full; edits the anti-overengineering skill - restart your agent to apply", conf.MINIMAL_CODE_LEVELS, "full", false, "off", true),
             {
                 key: "logo-color-policy",
                 label: "Logo contrast resolution",
                 hint: "the agent always sources real logos (never invents them); this only picks how a logo/background contrast clash is fixed: ask | adapt-background | adapt-logo; edits the logo skill - restart your agent to apply; enigma default: ask",
                 affectsSkills: true,
-                choices: LOGO_COLOR_POLICIES,
+                choices: conf.LOGO_COLOR_POLICIES,
                 // No off state - a mode is always set; the boolean face stays "on" so the row reads green.
                 offChoice: "__none__",
                 read: () => true,
                 write: () => ({ changed: false }),
-                readChoice: () => readConfig().config.logoColorPolicy,
-                writeChoice: (value, scope) => ({ path: setEnigmaValue("logoColorPolicy", value, scope), changed: true }),
+                readChoice: () => conf.readConfig().config.logoColorPolicy,
+                writeChoice: (value, scope) => ({ path: conf.setEnigmaValue("logoColorPolicy", value, scope), changed: true }),
             },
             {
                 key: "compress",
                 label: "Context compression MCP",
                 hint: "deploy enigma's token-compression MCP server (enigma_compress/retrieve/stats) into managed agents; toggling applies immediately to already-deployed agents; off removes it; enigma default: off",
-                read: () => readConfig().config.compress,
+                read: () => conf.readConfig().config.compress,
                 write: (value, scope) => setCompress(value, scope),
             },
             {
                 key: "code-graph",
                 label: "Codebase memory (code graph)",
                 hint: "expose enigma's native code-graph tools (index a codebase into a knowledge graph of symbols, imports and references) to your agents over MCP; toggling applies immediately; off removes them; enigma default: off",
-                read: () => readConfig().config.codeGraph,
+                read: () => conf.readConfig().config.codeGraph,
                 write: (value, scope) => setCodeGraph(value, scope),
             },
             {
@@ -368,7 +366,7 @@ const RAW_CATEGORIES: Category[] = [
                 label: "AI quality gate (experimental)",
                 hint: "EXPERIMENTAL, off by default: deploy the /gate command AND tell agents to auto-drive the gate (review/test/lint/PR/CI) after finishing work on a feature branch - no need to ask or run `enigma gate init`; per-project opt-out via `.enigma.json` gate:false; edits the memory file - restart your agent to apply",
                 affectsMemory: true,
-                read: () => readConfig().config.gate,
+                read: () => conf.readConfig().config.gate,
                 write: (value, scope) => setGate(value, scope),
             },
             {
@@ -382,7 +380,7 @@ const RAW_CATEGORIES: Category[] = [
                 key: "guardrails",
                 label: "Convention guardrails on edit",
                 hint: "enforce project conventions (e.g. UUID primary keys, Prisma as the default ORM) via a post-edit hook that feeds violations back to the model; toggling applies immediately (Claude + opencode); enigma default: on",
-                read: () => readConfig().config.guardrails,
+                read: () => conf.readConfig().config.guardrails,
                 write: (value, scope) => ({ path: setGuardrails(scope, value), changed: true }),
             },
             {
@@ -394,7 +392,7 @@ const RAW_CATEGORIES: Category[] = [
                 // it at runtime, against the directory the turn actually ran in.
                 globalOnly: true,
                 hint: "when the agent reports work as finished, check the claim against what the turn produced (incompleteness markers, plus 'verify-command' when set) and deny the stop on evidence it is false; Claude Code only; set verify: false in a repo's .enigma.json to skip that project; enigma default: on",
-                read: () => readGlobalConfig().verify,
+                read: () => conf.readGlobalConfig().verify,
                 write: (value, scope) => ({ path: setVerify(scope, value), changed: true }),
             },
             {
@@ -407,10 +405,10 @@ const RAW_CATEGORIES: Category[] = [
                 // Global, matching what actually runs: a repo-local verifyCommand is deliberately
                 // never executed, so displaying one would advertise a command that cannot run -
                 // and let a cloned repository put alarming text on the user's settings screen.
-                read: () => !!readGlobalConfig().verifyCommand,
+                read: () => !!conf.readGlobalConfig().verifyCommand,
                 write: () => ({ changed: false }),
-                readValue: () => readGlobalConfig().verifyCommand,
-                writeValue: (value, scope) => ({ path: setEnigmaValue("verifyCommand", value.trim(), scope), changed: true }),
+                readValue: () => conf.readGlobalConfig().verifyCommand,
+                writeValue: (value, scope) => ({ path: conf.setEnigmaValue("verifyCommand", value.trim(), scope), changed: true }),
             },
         ],
     },
@@ -422,11 +420,11 @@ const RAW_CATEGORIES: Category[] = [
                 key: "dashboard",
                 label: "Local dashboard",
                 hint: "manage enigma (accounts, skills, settings, resources) and see savings; open with 'enigma dashboard' at http://enigma; off | on-demand (runs only while open, no idle cost; default when enabled) | always (lightweight background daemon)",
-                choices: DASHBOARD_MODES,
+                choices: conf.DASHBOARD_MODES,
                 offChoice: "off",
-                read: () => readConfig().config.dashboard !== "off",
+                read: () => conf.readConfig().config.dashboard !== "off",
                 write: (value, scope) => setDashboard(value ? "on-demand" : "off", scope),
-                readChoice: () => readConfig().config.dashboard,
+                readChoice: () => conf.readConfig().config.dashboard,
                 writeChoice: (value, scope) => setDashboard(value, scope),
             },
             {
@@ -434,8 +432,8 @@ const RAW_CATEGORIES: Category[] = [
                 label: "Real tool-usage stats",
                 hint: "let the dashboard read the agent's own session transcripts (Claude Code) for real token usage + prompt-cache savings; reads your own session logs; enigma default: off",
                 globalOnly: true,
-                read: () => readConfig().config.usageStats,
-                write: (value, scope) => ({ path: setEnigmaToggle("usageStats", value, scope), changed: true }),
+                read: () => conf.readConfig().config.usageStats,
+                write: (value, scope) => ({ path: conf.setEnigmaToggle("usageStats", value, scope), changed: true }),
             },
             enigmaToggle("dashboard-live", "dashboardLive", "Live auto-refresh", "the dashboard refreshes its data automatically while the tab is focused; off = refresh only with the button"),
             {
@@ -443,16 +441,16 @@ const RAW_CATEGORIES: Category[] = [
                 label: "Claude Code proxy (experimental)",
                 hint: "route `enigma claude` through a local loopback proxy that forwards to Anthropic and measures real token usage; never stores auth or message content; Claude Code only; enigma default: off",
                 globalOnly: true,
-                read: () => readConfig().config.proxy,
-                write: (value, scope) => ({ path: setEnigmaToggle("proxy", value, scope), changed: true }),
+                read: () => conf.readConfig().config.proxy,
+                write: (value, scope) => ({ path: conf.setEnigmaToggle("proxy", value, scope), changed: true }),
             },
             {
                 key: "usage-api",
                 label: "Live usage windows",
                 hint: "show the real usage %/reset Claude's UI shows by probing Anthropic with your local Claude Code login (no proxy needed); reads your OAuth token, never stores it, and uses a tiny bit of quota; needs real tool-usage stats on; Claude Code only; enigma default: off",
                 globalOnly: true,
-                read: () => readConfig().config.usageApi,
-                write: (value, scope) => ({ path: setEnigmaToggle("usageApi", value, scope), changed: true }),
+                read: () => conf.readConfig().config.usageApi,
+                write: (value, scope) => ({ path: conf.setEnigmaToggle("usageApi", value, scope), changed: true }),
             },
             {
                 key: "recall",
@@ -460,7 +458,7 @@ const RAW_CATEGORIES: Category[] = [
                 hint: "build a searchable local memory of your coding sessions from transcripts (Claude Code), exposed to agents via MCP; reads your own session logs and stays on this machine; enabling syncs it and tells the agent to use it; enigma default: off",
                 globalOnly: true,
                 affectsMemory: true,
-                read: () => readConfig().config.recall,
+                read: () => conf.readConfig().config.recall,
                 write: (value, scope) => setRecall(value, scope),
             },
             {
@@ -468,21 +466,21 @@ const RAW_CATEGORIES: Category[] = [
                 label: "Recall LLM curation",
                 hint: "use an LLM (via your local Claude login) to curate recall: it keeps only the observations worth remembering and discards trivial ones, like claude-mem; runs in the background, needs recall on; with no login it falls back to the deterministic heuristic; enigma default: on",
                 globalOnly: true,
-                read: () => readConfig().config.recallLlm,
-                write: (value, scope) => ({ path: setEnigmaToggle("recallLlm", value, scope), changed: true }),
+                read: () => conf.readConfig().config.recallLlm,
+                write: (value, scope) => ({ path: conf.setEnigmaToggle("recallLlm", value, scope), changed: true }),
             },
             {
                 key: "recall-provider",
                 label: "Recall LLM provider",
-                hint: `which model curates recall memory: ${RECALL_PROVIDERS.join(" | ")} (claude-local reuses your Claude Code login, anthropic/openai need an API key); enigma default: claude-local`,
+                hint: `which model curates recall memory: ${conf.RECALL_PROVIDERS.join(" | ")} (claude-local reuses your Claude Code login, anthropic/openai need an API key); enigma default: claude-local`,
                 globalOnly: true,
-                choices: RECALL_PROVIDERS,
+                choices: conf.RECALL_PROVIDERS,
                 // No off state - a provider is always set; the boolean face stays "on" so the row reads green.
                 offChoice: "__none__",
                 read: () => true,
                 write: () => ({ changed: false }),
-                readChoice: () => readConfig().config.recallProvider,
-                writeChoice: (value, scope) => ({ path: setEnigmaValue("recallProvider", value, scope), changed: true }),
+                readChoice: () => conf.readConfig().config.recallProvider,
+                writeChoice: (value, scope) => ({ path: conf.setEnigmaValue("recallProvider", value, scope), changed: true }),
             },
             {
                 key: "recall-model",
@@ -491,10 +489,10 @@ const RAW_CATEGORIES: Category[] = [
                 globalOnly: true,
                 kind: "value",
                 valueHint: "model id (blank = provider default)",
-                read: () => !!readConfig().config.recallModel,
+                read: () => !!conf.readConfig().config.recallModel,
                 write: () => ({ changed: false }),
-                readValue: () => readConfig().config.recallModel,
-                writeValue: (value, scope) => ({ path: setEnigmaValue("recallModel", value.trim(), scope), changed: true }),
+                readValue: () => conf.readConfig().config.recallModel,
+                writeValue: (value, scope) => ({ path: conf.setEnigmaValue("recallModel", value.trim(), scope), changed: true }),
             },
             {
                 key: "recall-api-base",
@@ -503,10 +501,10 @@ const RAW_CATEGORIES: Category[] = [
                 globalOnly: true,
                 kind: "value",
                 valueHint: "https://... (blank = provider default)",
-                read: () => !!readConfig().config.recallApiBase,
+                read: () => !!conf.readConfig().config.recallApiBase,
                 write: () => ({ changed: false }),
-                readValue: () => readConfig().config.recallApiBase,
-                writeValue: (value, scope) => ({ path: setEnigmaValue("recallApiBase", value.trim(), scope), changed: true }),
+                readValue: () => conf.readConfig().config.recallApiBase,
+                writeValue: (value, scope) => ({ path: conf.setEnigmaValue("recallApiBase", value.trim(), scope), changed: true }),
             },
             {
                 key: "recall-api-key",
@@ -516,11 +514,11 @@ const RAW_CATEGORIES: Category[] = [
                 kind: "value",
                 secret: true,
                 valueHint: "paste API key (blank to clear)",
-                read: () => !!readConfig().config.recallApiKey,
+                read: () => !!conf.readConfig().config.recallApiKey,
                 write: () => ({ changed: false }),
                 // Never expose the stored key: report only whether one is set.
-                readValue: () => readConfig().config.recallApiKey ? "set" : "",
-                writeValue: (value, scope) => ({ path: setRecallApiKey(value.trim(), scope), changed: true }),
+                readValue: () => conf.readConfig().config.recallApiKey ? "set" : "",
+                writeValue: (value, scope) => ({ path: conf.setRecallApiKey(value.trim(), scope), changed: true }),
             },
         ],
     },
@@ -592,8 +590,8 @@ const RAW_CATEGORIES: Category[] = [
                 label: "Prompt secret guard (experimental)",
                 hint: "scan outgoing chat messages and block secrets (API keys, tokens) before they reach Claude; routes `enigma claude` through the local proxy; uses the same patterns as the commit guard, plus your custom secret patterns; Claude Code only; enigma default: off",
                 globalOnly: true,
-                read: () => readConfig().config.promptSecretGuard,
-                write: (value, scope) => ({ path: setEnigmaToggle("promptSecretGuard", value, scope), changed: true }),
+                read: () => conf.readConfig().config.promptSecretGuard,
+                write: (value, scope) => ({ path: conf.setEnigmaToggle("promptSecretGuard", value, scope), changed: true }),
             },
             {
                 key: "prompt-secret-mode",
@@ -602,11 +600,11 @@ const RAW_CATEGORIES: Category[] = [
                 globalOnly: true,
                 // No offChoice: redact/reject are two equal actions, not on/off, so this
                 // renders as a select (not a switch). The boolean face is a fallback only.
-                choices: PROMPT_SECRET_MODES,
-                read: () => readConfig().config.promptSecretMode === "reject",
-                write: (value, scope) => ({ path: setEnigmaValue("promptSecretMode", value ? "reject" : "redact", scope), changed: true }),
-                readChoice: () => readConfig().config.promptSecretMode,
-                writeChoice: (value, scope) => ({ path: setEnigmaValue("promptSecretMode", value, scope), changed: true }),
+                choices: conf.PROMPT_SECRET_MODES,
+                read: () => conf.readConfig().config.promptSecretMode === "reject",
+                write: (value, scope) => ({ path: conf.setEnigmaValue("promptSecretMode", value ? "reject" : "redact", scope), changed: true }),
+                readChoice: () => conf.readConfig().config.promptSecretMode,
+                writeChoice: (value, scope) => ({ path: conf.setEnigmaValue("promptSecretMode", value, scope), changed: true }),
             },
         ],
     },
@@ -622,7 +620,7 @@ const RAW_CATEGORIES: Category[] = [
                 // The trust store is Claude's user-global .claude.json; there is no project-local
                 // form, so a local write would report success and change nothing.
                 globalOnly: true,
-                read: () => readConfig().config.claudeTrust,
+                read: () => conf.readConfig().config.claudeTrust,
                 write: (value, scope) => setTrust(value, scope),
             },
             ...BYPASS_SUPPORTED.map((name): Setting => ({

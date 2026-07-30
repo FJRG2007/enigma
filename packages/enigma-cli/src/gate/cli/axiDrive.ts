@@ -17,6 +17,7 @@
 import { Paths } from "../paths";
 import { join } from "node:path";
 import { REMOTE_NAME } from "../init";
+import * as render from "./axiRender";
 import { readFileSync } from "node:fs";
 import type { RunInfo } from "../ipc/protocol";
 import { parseAddFinding, splitLogLines } from "./axiQuery";
@@ -38,20 +39,6 @@ import {
     parseFindingsJSON,
     hasActionableFindings
 } from "../types";
-import {
-    type AxiIO,
-    type RunView,
-    type StepView,
-    emitDoc,
-    emitError,
-    fixRows,
-    gateFields,
-    awaitingStep,
-    outcomeFor,
-    runViewFromIPC,
-    terminalStatus,
-    runObjectField
-} from "./axiRender";
 
 /** How often the drive loop re-reads run state. */
 const drivePollInterval = 250;
@@ -163,7 +150,7 @@ function tryParseFindings(json: string) {
  * so the run converges). Gates with only non-actionable findings, no findings, or
  * actionable findings carrying no IDs are approved.
  */
-function gateResolution(gate: StepView, alreadyFixed: boolean): [ApprovalAction, string[]] {
+function gateResolution(gate: render.StepView, alreadyFixed: boolean): [ApprovalAction, string[]] {
     if (alreadyFixed || gate.status === "fix_review") return ["approve", []];
     const parsed = tryParseFindings(gate.findingsJSON);
     if (parsed === null || !hasActionableFindings(parsed)) return ["approve", []];
@@ -207,7 +194,7 @@ async function waitStepLeavesGate(
     for (;;) {
         checkAborted(signal);
         const run = await getRunInfo(client, runID);
-        if (run === null || terminalStatus(run.status)) return;
+        if (run === null || render.terminalStatus(run.status)) return;
         for (const s of run.steps) {
             if (s.stepName === step) {
                 if (s.status !== gateStatus) return;
@@ -222,7 +209,7 @@ async function waitStepLeavesGate(
  * Reports whether the CI step is actively monitoring and its logs show all checks
  * passed, meaning the PR is ready for a human to merge.
  */
-function ciReadyToMerge(rv: RunView, ciLogs: string[]): boolean {
+function ciReadyToMerge(rv: render.RunView, ciLogs: string[]): boolean {
     for (const s of rv.steps) {
         if (s.name === STEP_CI) return s.status === "running" && checksPassed(ciLogs);
     }
@@ -251,7 +238,7 @@ interface DriveResult {
  * streaming step transitions to progress (stderr). Throws on error or abort.
  */
 async function driveRun(
-    io: AxiIO,
+    io: render.AxiIO,
     client: AxiEnv["client"],
     runID: string,
     autoApprove: boolean,
@@ -266,10 +253,10 @@ async function driveRun(
         if (run === null) throw new Error(`run ${runID} not found`);
         pp.update(run);
 
-        const rv = runViewFromIPC(run);
-        if (terminalStatus(rv.status)) return { run, ciReady: false };
+        const rv = render.runViewFromIPC(run);
+        if (render.terminalStatus(rv.status)) return { run, ciReady: false };
 
-        const gate = awaitingStep(rv);
+        const gate = render.awaitingStep(rv);
         if (gate !== null) {
             if (!autoApprove) return { run, ciReady: false };
             const [action, findingIDs] = gateResolution(gate, fixedSteps.has(gate.name));
@@ -305,7 +292,7 @@ async function activeRunID(env: AxiEnv, branch: string, headSHA: string): Promis
 
 /** Returns the run only when it is non-terminal and matches headSHA. */
 function activeRunInfoForHead(run: RunInfo | null, headSHA: string): RunInfo | null {
-    if (run === null || terminalStatus(run.status) || run.headSha !== headSHA) return null;
+    if (run === null || render.terminalStatus(run.status) || run.headSha !== headSHA) return null;
     return run;
 }
 
@@ -371,18 +358,18 @@ async function triggerRun(
  */
 async function preflightGuard(deps: AxiDeps, env: AxiEnv, branch: string): Promise<number | null> {
     if (env.repo.defaultBranch !== "" && branch === env.repo.defaultBranch) {
-        return emitError(deps.io, 1, `refusing to validate "${branch}": it is the default branch`,
+        return render.emitError(deps.io, 1, `refusing to validate "${branch}": it is the default branch`,
             "Put your changes on a feature branch: `git switch -c <branch>`, then re-run");
     }
     let dirty: boolean;
     try {
         dirty = await hasUncommittedChanges(".", deps.signal);
     } catch (err) {
-        return emitError(deps.io, 1, `inspect working tree: ${errMessage(err)}`,
+        return render.emitError(deps.io, 1, `inspect working tree: ${errMessage(err)}`,
             "Run `git status` to check the repository state, then re-run");
     }
     if (dirty) {
-        return emitError(deps.io, 1, "uncommitted changes in the working tree",
+        return render.emitError(deps.io, 1, "uncommitted changes in the working tree",
             "Commit your work before validating: `git add -A && git commit -m \"...\"`, then re-run",
             "Run `git status` to see what is uncommitted");
     }
@@ -409,9 +396,9 @@ function successReportHelp(fixes: string[][]): string[] {
  * (exit 0), or the terminal outcome (exit 0 passed, exit 1 blocked/failed/
  * cancelled). Successful outcomes carry applied fixes and reporting instructions.
  */
-function renderDriveResult(io: AxiIO, run: RunInfo, ciReady: boolean): number {
-    const rv = runViewFromIPC(run);
-    const fields: ToonField[] = [runObjectField(rv)];
+function renderDriveResult(io: render.AxiIO, run: RunInfo, ciReady: boolean): number {
+    const rv = render.runViewFromIPC(run);
+    const fields: ToonField[] = [render.runObjectField(rv)];
 
     if (ciReady) {
         fields.push(field("outcome", "checks-passed"));
@@ -419,36 +406,36 @@ function renderDriveResult(io: AxiIO, run: RunInfo, ciReady: boolean): number {
         if (rv.prURL !== "") {
             merge = `CI checks passed - the PR is ready. Ask the user to review and merge it: ${rv.prURL}`;
         }
-        const fixes = fixRows(rv);
+        const fixes = render.fixRows(rv);
         appendFixesField(fields, fixes);
         fields.push(toonHelp([merge, ...successReportHelp(fixes)]));
-        emitDoc(io, fields);
+        render.emitDoc(io, fields);
         return 0;
     }
 
-    const gate = awaitingStep(rv);
+    const gate = render.awaitingStep(rv);
     if (gate !== null) {
-        fields.push(...gateFields(gate));
-        emitDoc(io, fields);
+        fields.push(...render.gateFields(gate));
+        render.emitDoc(io, fields);
         return 0;
     }
 
-    fields.push(field("outcome", outcomeFor(rv.status)));
+    fields.push(field("outcome", render.outcomeFor(rv.status)));
     if (run.error !== null && run.error !== "") fields.push(field("error", run.error));
 
     if (rv.status === "completed") {
-        const fixes = fixRows(rv);
+        const fixes = render.fixRows(rv);
         appendFixesField(fields, fixes);
         const help: string[] = [];
         if (rv.prURL !== "") help.push(`Open the PR: ${rv.prURL}`);
         help.push(...successReportHelp(fixes));
         fields.push(toonHelp(help));
-        emitDoc(io, fields);
+        render.emitDoc(io, fields);
         return 0;
     }
 
     if (rv.prURL !== "") fields.push(toonHelp([`Open the PR: ${rv.prURL}`]));
-    emitDoc(io, fields);
+    render.emitDoc(io, fields);
     return 1;
 }
 
@@ -459,17 +446,17 @@ export async function runAxiRun(deps: AxiDeps, autoYes: boolean, skipSteps: Step
     try {
         env = await openAxiEnv(deps, true);
     } catch (err) {
-        return emitError(deps.io, 1, errMessage(err), ...repoInitHelp(err));
+        return render.emitError(deps.io, 1, errMessage(err), ...repoInitHelp(err));
     }
     try {
         let branch: string;
         try {
             branch = await currentBranch(".", signal);
         } catch (err) {
-            return emitError(deps.io, 1, `get current branch: ${errMessage(err)}`);
+            return render.emitError(deps.io, 1, `get current branch: ${errMessage(err)}`);
         }
         if (branch === "HEAD") {
-            return emitError(deps.io, 1, "detached HEAD: check out a branch before validating",
+            return render.emitError(deps.io, 1, "detached HEAD: check out a branch before validating",
                 "Run `git switch -c <branch>` to put your commits on a branch");
         }
 
@@ -477,7 +464,7 @@ export async function runAxiRun(deps: AxiDeps, autoYes: boolean, skipSteps: Step
         try {
             headSHA = await gitRun(".", ["rev-parse", "HEAD"], signal);
         } catch (err) {
-            return emitError(deps.io, 1, `get current HEAD: ${errMessage(err)}`);
+            return render.emitError(deps.io, 1, `get current HEAD: ${errMessage(err)}`);
         }
 
         let runID = await activeRunID(env, branch, headSHA);
@@ -485,7 +472,7 @@ export async function runAxiRun(deps: AxiDeps, autoYes: boolean, skipSteps: Step
             // Intent is mandatory when starting a run: the driving agent knows the
             // change's intent, so we take it directly instead of inferring it.
             if (intent.trim() === "") {
-                return emitError(deps.io, 2, "--intent is required to start a run",
+                return render.emitError(deps.io, 2, "--intent is required to start a run",
                     "Pass what the user set out to accomplish: enigma gate axi run --intent \"the user's goal\"");
             }
             const guard = await preflightGuard(deps, env, branch);
@@ -493,7 +480,7 @@ export async function runAxiRun(deps: AxiDeps, autoYes: boolean, skipSteps: Step
             try {
                 runID = await triggerRun(env, branch, headSHA, skipSteps, intent, signal);
             } catch (err) {
-                return emitError(deps.io, 1, errMessage(err));
+                return render.emitError(deps.io, 1, errMessage(err));
             }
         }
 
@@ -501,7 +488,7 @@ export async function runAxiRun(deps: AxiDeps, autoYes: boolean, skipSteps: Step
         try {
             result = await driveRun(deps.io, env.client, runID, autoYes, ciLogReader(env.p), signal);
         } catch (err) {
-            return emitError(deps.io, 1, `drive run: ${errMessage(err)}`);
+            return render.emitError(deps.io, 1, `drive run: ${errMessage(err)}`);
         }
         return renderDriveResult(deps.io, result.run, result.ciReady);
     } finally {
@@ -545,11 +532,11 @@ export async function runAxiRespond(deps: AxiDeps, ra: RespondArgs): Promise<num
 
     const actStr = ra.action.trim();
     if (actStr === "") {
-        return emitError(deps.io, 2, "--action is required",
+        return render.emitError(deps.io, 2, "--action is required",
             "Run `enigma gate axi respond --action approve|fix|skip`");
     }
     if (actStr !== "approve" && actStr !== "fix" && actStr !== "skip") {
-        return emitError(deps.io, 2, `unknown action "${ra.action}"`, "Valid actions: approve, fix, skip");
+        return render.emitError(deps.io, 2, `unknown action "${ra.action}"`, "Valid actions: approve, fix, skip");
     }
     const act = actStr as ApprovalAction;
 
@@ -557,24 +544,24 @@ export async function runAxiRespond(deps: AxiDeps, ra: RespondArgs): Promise<num
     try {
         env = await openAxiEnv(deps, true);
     } catch (err) {
-        return emitError(deps.io, 1, errMessage(err), ...repoInitHelp(err));
+        return render.emitError(deps.io, 1, errMessage(err), ...repoInitHelp(err));
     }
     try {
         let branch: string;
         try {
             branch = await currentBranch(".", signal);
         } catch (err) {
-            return emitError(deps.io, 1, `get current branch: ${errMessage(err)}`);
+            return render.emitError(deps.io, 1, `get current branch: ${errMessage(err)}`);
         }
 
         let active: RunInfo | null;
         try {
             active = await env.client!.getActiveRun({ repoId: env.repo.id, branch });
         } catch (err) {
-            return emitError(deps.io, 1, `get active run: ${errMessage(err)}`);
+            return render.emitError(deps.io, 1, `get active run: ${errMessage(err)}`);
         }
         if (active === null) {
-            return emitError(deps.io, 1, "no active run to respond to", "Run `enigma gate axi run` to start one");
+            return render.emitError(deps.io, 1, "no active run to respond to", "Run `enigma gate axi run` to start one");
         }
         const runID = active.id;
 
@@ -586,15 +573,15 @@ export async function runAxiRespond(deps: AxiDeps, ra: RespondArgs): Promise<num
             loadErr = err;
         }
         if (run === null) {
-            return emitError(deps.io, 1, `load run: ${loadErr === null ? "" : errMessage(loadErr)}`);
+            return render.emitError(deps.io, 1, `load run: ${loadErr === null ? "" : errMessage(loadErr)}`);
         }
-        const rv = runViewFromIPC(run);
+        const rv = render.runViewFromIPC(run);
 
         let stepNameStr = ra.step.trim();
         if (stepNameStr === "") {
-            const gate = awaitingStep(rv);
+            const gate = render.awaitingStep(rv);
             if (gate === null) {
-                return emitError(deps.io, 1, "no step is awaiting approval",
+                return render.emitError(deps.io, 1, "no step is awaiting approval",
                     "Run `enigma gate axi status` to see the run state");
             }
             stepNameStr = gate.name;
@@ -607,14 +594,14 @@ export async function runAxiRespond(deps: AxiDeps, ra: RespondArgs): Promise<num
 
         if (act === "fix") {
             if (findingIDs.length === 0 && ra.addFinding === "") {
-                return emitError(deps.io, 2, "--action fix requires --findings <id,...> or --add-finding <json>",
+                return render.emitError(deps.io, 2, "--action fix requires --findings <id,...> or --add-finding <json>",
                     "Run `enigma gate axi status` to list finding IDs");
             }
             let note: string;
             try {
                 note = readInstructions(ra.instructions);
             } catch (err) {
-                return emitError(deps.io, 2, errMessage(err),
+                return render.emitError(deps.io, 2, errMessage(err),
                     "Pass the text directly, or @<path> to read it from a file");
             }
             if (note !== "" && findingIDs.length > 0) {
@@ -626,7 +613,7 @@ export async function runAxiRespond(deps: AxiDeps, ra: RespondArgs): Promise<num
                 try {
                     f = parseAddFinding(ra.addFinding);
                 } catch (err) {
-                    return emitError(deps.io, 2, `invalid --add-finding: ${errMessage(err)}`,
+                    return render.emitError(deps.io, 2, `invalid --add-finding: ${errMessage(err)}`,
                         "Expected a JSON object, e.g. {\"description\":\"...\",\"action\":\"auto-fix\"}");
                 }
                 added = [f];
@@ -636,7 +623,7 @@ export async function runAxiRespond(deps: AxiDeps, ra: RespondArgs): Promise<num
         try {
             await sendRespond(env.client, runID, stepName, act, findingIDs, instructions, added);
         } catch (err) {
-            return emitError(deps.io, 1, `respond to ${stepName}: ${errMessage(err)}`);
+            return render.emitError(deps.io, 1, `respond to ${stepName}: ${errMessage(err)}`);
         }
 
         // Let the executor consume the response before we re-read state, so we do
@@ -644,14 +631,14 @@ export async function runAxiRespond(deps: AxiDeps, ra: RespondArgs): Promise<num
         try {
             await waitStepLeavesGate(env.client, runID, stepName, gateStatusFor(rv, stepName), signal);
         } catch (err) {
-            return emitError(deps.io, 1, `wait for ${stepName}: ${errMessage(err)}`);
+            return render.emitError(deps.io, 1, `wait for ${stepName}: ${errMessage(err)}`);
         }
 
         let result: DriveResult;
         try {
             result = await driveRun(deps.io, env.client, runID, ra.autoYes, ciLogReader(env.p), signal);
         } catch (err) {
-            return emitError(deps.io, 1, `drive run: ${errMessage(err)}`);
+            return render.emitError(deps.io, 1, `drive run: ${errMessage(err)}`);
         }
         return renderDriveResult(deps.io, result.run, result.ciReady);
     } finally {
@@ -663,7 +650,7 @@ export async function runAxiRespond(deps: AxiDeps, ra: RespondArgs): Promise<num
  * Returns the current status of step in rv, defaulting to the awaiting-approval
  * status so the post-respond wait still functions if the step was not found.
  */
-function gateStatusFor(rv: RunView, step: string): string {
+function gateStatusFor(rv: render.RunView, step: string): string {
     for (const s of rv.steps) {
         if (s.name === step) return s.status;
     }
@@ -679,35 +666,35 @@ export async function runAxiAbort(deps: AxiDeps, runID: string): Promise<number>
     try {
         env = await openAxiEnv(deps, true);
     } catch (err) {
-        return emitError(deps.io, 1, errMessage(err), ...repoInitHelp(err));
+        return render.emitError(deps.io, 1, errMessage(err), ...repoInitHelp(err));
     }
     try {
         let branch: string;
         try {
             branch = await currentBranch(".", signal);
         } catch (err) {
-            return emitError(deps.io, 1, `get current branch: ${errMessage(err)}`);
+            return render.emitError(deps.io, 1, `get current branch: ${errMessage(err)}`);
         }
 
         let active: RunInfo | null;
         try {
             active = await env.client!.getActiveRun({ repoId: env.repo.id, branch });
         } catch (err) {
-            return emitError(deps.io, 1, `get active run: ${errMessage(err)}`);
+            return render.emitError(deps.io, 1, `get active run: ${errMessage(err)}`);
         }
 
         if (active === null) {
             // Idempotent: nothing to abort is a successful no-op.
-            emitDoc(deps.io, [field("aborted", false), field("detail", "no active run (no-op)")]);
+            render.emitDoc(deps.io, [field("aborted", false), field("detail", "no active run (no-op)")]);
             return 0;
         }
 
         try {
             await env.client!.cancelRun(active.id);
         } catch (err) {
-            return emitError(deps.io, 1, `abort run: ${errMessage(err)}`);
+            return render.emitError(deps.io, 1, `abort run: ${errMessage(err)}`);
         }
-        emitDoc(deps.io, [field("aborted", true), field("run", active.id), field("branch", active.branch)]);
+        render.emitDoc(deps.io, [field("aborted", true), field("run", active.id), field("branch", active.branch)]);
         return 0;
     } finally {
         env.close();
@@ -724,12 +711,12 @@ async function runAxiAbortByRunID(deps: AxiDeps, runID: string): Promise<number>
     try {
         p = deps.paths ?? Paths.resolve();
     } catch (err) {
-        return emitError(deps.io, 1, `resolve paths: ${errMessage(err)}`);
+        return render.emitError(deps.io, 1, `resolve paths: ${errMessage(err)}`);
     }
     try {
         p.ensureDirs();
     } catch (err) {
-        return emitError(deps.io, 1, `create directories: ${errMessage(err)}`);
+        return render.emitError(deps.io, 1, `create directories: ${errMessage(err)}`);
     }
 
     let alive: boolean;
@@ -739,7 +726,7 @@ async function runAxiAbortByRunID(deps: AxiDeps, runID: string): Promise<number>
         alive = false;
     }
     if (!alive) {
-        emitDoc(deps.io, [
+        render.emitDoc(deps.io, [
             field("aborted", false),
             field("run", runID),
             field("detail", "daemon not running, so no active run to cancel (no-op)")
@@ -752,7 +739,7 @@ async function runAxiAbortByRunID(deps: AxiDeps, runID: string): Promise<number>
         const { Client } = await import("../ipc/client");
         client = await Client.dial(p.socket());
     } catch (err) {
-        return emitError(deps.io, 1, `connect to daemon: ${errMessage(err)}`);
+        return render.emitError(deps.io, 1, `connect to daemon: ${errMessage(err)}`);
     }
     try {
         try {
@@ -760,16 +747,16 @@ async function runAxiAbortByRunID(deps: AxiDeps, runID: string): Promise<number>
         } catch (err) {
             // The daemon reports an unknown/inactive run id as "no active run <id>".
             if (errMessage(err).includes("no active run")) {
-                emitDoc(deps.io, [
+                render.emitDoc(deps.io, [
                     field("aborted", false),
                     field("run", runID),
                     field("detail", "no active run with that id (no-op)")
                 ]);
                 return 0;
             }
-            return emitError(deps.io, 1, `abort run: ${errMessage(err)}`);
+            return render.emitError(deps.io, 1, `abort run: ${errMessage(err)}`);
         }
-        emitDoc(deps.io, [field("aborted", true), field("run", runID)]);
+        render.emitDoc(deps.io, [field("aborted", true), field("run", runID)]);
         return 0;
     } finally {
         client.close();

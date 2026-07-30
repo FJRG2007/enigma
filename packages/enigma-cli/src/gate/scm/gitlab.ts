@@ -11,30 +11,9 @@
  * return `null` where Go returned a nil pointer with a nil error ("not found").
  */
 
+import * as types from "./types";
 import { execFile } from "node:child_process";
 import { PROVIDER_GITLAB, type Provider } from "./host";
-import {
-    MERGEABLE_OK,
-    extractPRNumber,
-    PR_STATE_OPEN,
-    PR_STATE_CLOSED,
-    PR_STATE_MERGED,
-    MERGEABLE_PENDING,
-    CHECK_BUCKET_FAIL,
-    CHECK_BUCKET_PASS,
-    CHECK_BUCKET_SKIP,
-    MERGEABLE_CONFLICT,
-    CHECK_BUCKET_CANCEL,
-    CHECK_BUCKET_PENDING,
-    type PR,
-    type Host,
-    type Check,
-    type PRState,
-    type PRContent,
-    type Capabilities,
-    type CheckBucket,
-    type MergeableState
-} from "./types";
 
 /** Cap on captured glab output; pipeline JSON can be large, so this is generous. */
 const MAX_BUFFER = 32 * 1024 * 1024;
@@ -126,10 +105,10 @@ function toMrPayload(obj: Record<string, unknown>): MrPayload {
     };
 }
 
-function mrToPR(p: MrPayload): PR {
+function mrToPR(p: MrPayload): types.PR {
     let url = p.webUrl.trim();
     if (url === "") url = p.url.trim();
-    const pr: PR = { number: "", url };
+    const pr: types.PR = { number: "", url };
     if (p.iid > 0) pr.number = String(p.iid);
     return pr;
 }
@@ -182,12 +161,12 @@ function toJobs(arr: unknown[]): GitlabJob[] {
     });
 }
 
-function jobsToChecks(jobs: GitlabJob[]): Check[] {
+function jobsToChecks(jobs: GitlabJob[]): types.Check[] {
     return jobs.map((job) => ({ name: job.name, bucket: gitlabStatusBucket(job.status) }));
 }
 
 /** glab may return a single pipeline object with nested jobs, or a bare job array. */
-function parseGitlabJobs(out: string): Check[] {
+function parseGitlabJobs(out: string): types.Check[] {
     const trimmed = bytesTrimToJSON(out);
     if (trimmed === "") return [];
     let value: unknown;
@@ -243,41 +222,41 @@ function findFailedJobID(out: string, failingNames: string[]): number {
     return 0;
 }
 
-function gitlabStatusBucket(state: string): CheckBucket {
+function gitlabStatusBucket(state: string): types.CheckBucket {
     switch (state.trim().toLowerCase()) {
         case "success":
-            return CHECK_BUCKET_PASS;
+            return types.CHECK_BUCKET_PASS;
         case "failed":
-            return CHECK_BUCKET_FAIL;
+            return types.CHECK_BUCKET_FAIL;
         case "canceled":
         case "cancelled":
-            return CHECK_BUCKET_CANCEL;
+            return types.CHECK_BUCKET_CANCEL;
         case "skipped":
-            return CHECK_BUCKET_SKIP;
+            return types.CHECK_BUCKET_SKIP;
         case "manual":
-            return CHECK_BUCKET_SKIP;
+            return types.CHECK_BUCKET_SKIP;
         case "pending":
         case "running":
         case "created":
         case "waiting_for_resource":
         case "preparing":
         case "scheduled":
-            return CHECK_BUCKET_PENDING;
+            return types.CHECK_BUCKET_PENDING;
         default:
             return "";
     }
 }
 
-function normalizePRState(raw: string): PRState {
+function normalizePRState(raw: string): types.PRState {
     switch (raw.trim().toLowerCase()) {
         case "opened":
         case "open":
-            return PR_STATE_OPEN;
+            return types.PR_STATE_OPEN;
         case "merged":
-            return PR_STATE_MERGED;
+            return types.PR_STATE_MERGED;
         case "closed":
         case "locked":
-            return PR_STATE_CLOSED;
+            return types.PR_STATE_CLOSED;
         default:
             return raw.toUpperCase();
     }
@@ -322,7 +301,7 @@ function isUnsupportedMRFlagError(out: string): boolean {
 }
 
 /** Host talks to GitLab through the glab CLI. */
-export class GitLabHost implements Host {
+export class GitLabHost implements types.Host {
     private readonly cmd: CmdFactory;
     private readonly cliAvailable: (() => boolean) | null;
 
@@ -335,7 +314,7 @@ export class GitLabHost implements Host {
         return PROVIDER_GITLAB;
     }
 
-    capabilities(): Capabilities {
+    capabilities(): types.Capabilities {
         return { mergeableState: true, failedCheckLogs: true };
     }
 
@@ -347,7 +326,7 @@ export class GitLabHost implements Host {
         if (err !== null) throw new Error("glab CLI is not authenticated");
     }
 
-    async findPR(branch: string, base: string, signal?: AbortSignal): Promise<PR | null> {
+    async findPR(branch: string, base: string, signal?: AbortSignal): Promise<types.PR | null> {
         const args = ["mr", "list", "--source-branch", branch];
         if (base.trim() !== "") args.push("--target-branch", base);
         args.push("--state", "opened", "--output", "json");
@@ -369,7 +348,7 @@ export class GitLabHost implements Host {
         return pr;
     }
 
-    async createPR(branch: string, base: string, content: PRContent, signal?: AbortSignal): Promise<PR | null> {
+    async createPR(branch: string, base: string, content: types.PRContent, signal?: AbortSignal): Promise<types.PR | null> {
         const [out, err] = await this.cmd(
             signal,
             "glab",
@@ -387,20 +366,20 @@ export class GitLabHost implements Host {
         ).combinedOutput();
         if (err !== null) throw new Error(`glab mr create: ${out.trim()}: ${err.message}`);
         const url = extractMRURL(out);
-        const pr: PR = { number: "", url };
+        const pr: types.PR = { number: "", url };
         try {
-            pr.number = extractPRNumber(url);
+            pr.number = types.extractPRNumber(url);
         } catch {
             // Go leaves Number empty when ExtractPRNumber fails.
         }
         return pr;
     }
 
-    async updatePR(pr: PR, content: PRContent, signal?: AbortSignal): Promise<PR | null> {
+    async updatePR(pr: types.PR, content: types.PRContent, signal?: AbortSignal): Promise<types.PR | null> {
         let id = pr.number;
         if (id === "") {
             try {
-                id = extractPRNumber(pr.url);
+                id = types.extractPRNumber(pr.url);
             } catch {
                 // Go keeps the empty id, then falls through to the URL.
             }
@@ -422,31 +401,31 @@ export class GitLabHost implements Host {
         return pr;
     }
 
-    async getPRState(pr: PR, signal?: AbortSignal): Promise<PRState> {
+    async getPRState(pr: types.PR, signal?: AbortSignal): Promise<types.PRState> {
         const mr = await this.viewMR(pr.number, signal);
         return normalizePRState(mr.state);
     }
 
-    async getMergeableState(pr: PR, signal?: AbortSignal): Promise<MergeableState> {
+    async getMergeableState(pr: types.PR, signal?: AbortSignal): Promise<types.MergeableState> {
         const mr = await this.viewMR(pr.number, signal);
-        if (mr.hasConflicts) return MERGEABLE_CONFLICT;
+        if (mr.hasConflicts) return types.MERGEABLE_CONFLICT;
         // detailed_merge_status is preferred; merge_status is the legacy field.
         let status = mr.detailedMergeStatus.trim().toLowerCase();
         if (status === "") status = mr.mergeStatus.trim().toLowerCase();
         switch (status) {
             case "mergeable":
             case "can_be_merged":
-                return MERGEABLE_OK;
+                return types.MERGEABLE_OK;
             case "broken_status":
             case "cannot_be_merged":
-                return MERGEABLE_CONFLICT;
+                return types.MERGEABLE_CONFLICT;
             case "checking":
             case "unchecked":
             case "ci_still_running":
             case "":
-                return MERGEABLE_PENDING;
+                return types.MERGEABLE_PENDING;
             default:
-                return MERGEABLE_OK;
+                return types.MERGEABLE_OK;
         }
     }
 
@@ -458,7 +437,7 @@ export class GitLabHost implements Host {
         return mr;
     }
 
-    async getChecks(pr: PR, signal?: AbortSignal): Promise<Check[]> {
+    async getChecks(pr: types.PR, signal?: AbortSignal): Promise<types.Check[]> {
         // glab ci status --mr <id> --output json lists jobs for the MR's latest pipeline.
         // Not all glab versions support --mr; fall back to listing pipeline jobs via view.
         const [out, err] = await this.cmd(
@@ -480,7 +459,7 @@ export class GitLabHost implements Host {
         return parseGitlabJobs(out);
     }
 
-    private async getChecksFallback(pr: PR, signal?: AbortSignal): Promise<Check[]> {
+    private async getChecksFallback(pr: types.PR, signal?: AbortSignal): Promise<types.Check[]> {
         // Try fetching the MR's pipeline and listing its jobs.
         const [out, err] = await this.cmd(signal, "glab", "mr", "view", pr.number, "--output", "json").combinedOutput();
         if (err !== null) throw new Error(`glab mr view: ${out.trim()}: ${err.message}`);
@@ -506,7 +485,7 @@ export class GitLabHost implements Host {
     }
 
     async fetchFailedCheckLogs(
-        pr: PR,
+        pr: types.PR,
         _branch: string,
         _headSHA: string,
         failingNames: string[],
