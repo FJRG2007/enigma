@@ -17,7 +17,9 @@
  */
 
 import { log } from "./log";
+import { readConfig } from "../config";
 import { userInfo, type UserInfo } from "node:os";
+import { applyBudget, resourceBudget } from "../governor";
 import { join, basename, delimiter } from "node:path";
 import { execFileSync, spawn } from "node:child_process";
 import type { ChildProcess, SpawnOptions } from "node:child_process";
@@ -95,6 +97,10 @@ export function spawnConfigured(
 ): ChildProcess {
     const { signal, ...rest } = options;
     const child = spawn(command, args, configureSpawnOptions(rest));
+    // A gate agent is background work on someone's workstation: it gets a share of the
+    // machine, not all of it. Applied after spawn and never fatal - a refused scheduling
+    // hint must not fail the step (see governor.ts).
+    applyBudget(child, resourceBudget({ cap: readConfig().config.resourceCap }));
     if (signal) {
         const onAbort = (): void => { killTree(child); };
         if (signal.aborted) {

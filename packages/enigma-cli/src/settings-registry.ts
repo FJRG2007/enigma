@@ -10,11 +10,12 @@
  */
 
 import { AGENTS } from "./agents";
+import { clampCapPercent } from "./governor";
 import { setVerify } from "./verify-deploy";
 import { applyMcpToggle } from "./mcp-deploy";
 import { isAutoLintOn, setAutoLint } from "./lint";
 import { setGuardrails } from "./guardrails-deploy";
-import { readConfig, readGlobalConfig, setEnigmaToggle, setEnigmaValue, setRecallApiKey, RECALL_PROVIDERS, OUTPUT_STYLES, MINIMAL_CODE_LEVELS, LOGO_COLOR_POLICIES, DASHBOARD_MODES, PROMPT_SECRET_MODES, SKILL_UPDATE_POLICIES } from "./config";
+import { readConfig, readGlobalConfig, CONFIG_DEFAULTS, setEnigmaToggle, setEnigmaValue, setRecallApiKey, RECALL_PROVIDERS, OUTPUT_STYLES, MINIMAL_CODE_LEVELS, LOGO_COLOR_POLICIES, DASHBOARD_MODES, PROMPT_SECRET_MODES, SKILL_UPDATE_POLICIES } from "./config";
 import { applyDashboardMode } from "./dashboard";
 import { applyGateToggle } from "./command-deploy";
 import type { DashboardMode } from "./config";
@@ -288,6 +289,30 @@ const RAW_CATEGORIES: Category[] = [
             enigmaToggle("update-notifier", "updateNotifier", "Update notifications", "notify when a newer enigma-cli is published"),
             enigmaToggle("auto-sync", "autoSync", "Auto-sync on launch", "refresh already-deployed skills/memory when launching a tool via enigma (e.g. enigma claude)"),
             enigmaToggle("remote-skills", "remoteSkills", "Remote skill updates", "fetch newer skills from the GitHub repo on install/update, without waiting for a package release"),
+            {
+                key: "resource-cap",
+                label: "Agent resource cap",
+                hint: "share of the machine work an agent runs may take: cores, build concurrency, and a lowered scheduling priority so your own work stays responsive (default 60%)",
+                kind: "value",
+                valueHint: "percent, 1-100 (default 60)",
+                read: () => readConfig().config.resourceCap !== CONFIG_DEFAULTS.resourceCap,
+                write: () => ({ changed: false }),
+                readValue: () => String(readConfig().config.resourceCap),
+                writeValue: (value, scope) => ({ path: setEnigmaValue("resourceCap", clampCapPercent(value, CONFIG_DEFAULTS.resourceCap), scope), changed: true }),
+            },
+            {
+                key: "low-memory-cap",
+                label: "Low-memory ceiling",
+                hint: "on a machine with 16 GB of RAM or less, the memory use above which an agent stops launching heavy work instead of throttling it; the cap above is also halved there (default 80%)",
+                // A property of the machine, not of a repo: a cloned project must not raise it.
+                globalOnly: true,
+                kind: "value",
+                valueHint: "percent, 1-100 (default 80)",
+                read: () => readGlobalConfig().lowMemoryCap !== CONFIG_DEFAULTS.lowMemoryCap,
+                write: () => ({ changed: false }),
+                readValue: () => String(readGlobalConfig().lowMemoryCap),
+                writeValue: (value, scope) => ({ path: setEnigmaValue("lowMemoryCap", clampCapPercent(value, CONFIG_DEFAULTS.lowMemoryCap), scope), changed: true }),
+            },
             {
                 key: "skill-update-policy",
                 label: "Customized-skill updates",

@@ -161,6 +161,25 @@ test("denies the stop only when a claim is contradicted by evidence", () => {
     expect(runVerifyHook(payload(dir, "All done.", { stop_hook_active: true }))).toBe(2);
 });
 
+test("stands aside inside a gate step agent", () => {
+    // A gate step answers with the structured JSON its step asked for, so there is no
+    // completion claim to judge - and denying the stop would spend another agent turn inside
+    // a pipeline that already owns review, test and lint. Same payload, both directions.
+    const dir = repoWith();
+    write(dir, "src/new.ts", "// TODO: finish this\n"); // enigma:verify-ignore
+    const claim = payload(dir, "All done, everything is implemented.");
+    expect(runVerifyHook(claim)).toBe(2);
+
+    const previous = process.env.ENIGMA_GATE;
+    process.env.ENIGMA_GATE = "1";
+    try {
+        expect(runVerifyHook(payload(dir, "All done, everything is implemented."))).toBe(0);
+    } finally {
+        if (previous === undefined) delete process.env.ENIGMA_GATE;
+        else process.env.ENIGMA_GATE = previous;
+    }
+});
+
 test("a moved marker does not buy a fresh block budget", () => {
     // The budget is keyed on the findings, not their position: inserting a line above an
     // untouched marker must not reset it, or the cap can be dodged indefinitely.

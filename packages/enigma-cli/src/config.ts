@@ -159,6 +159,10 @@ export interface EnigmaConfig {
     tokenPrice: number;
     /** Dashboard time estimate: model prefill speed in tokens/sec; 0 = use the default rate. */
     tokenSpeed: number;
+    /** Percentage of the machine work an agent executes may occupy (cores, concurrency). */
+    resourceCap: number;
+    /** On a machine with 16 GB RAM or less, the memory-use percentage that blocks heavy work. */
+    lowMemoryCap: number;
     /** Read the agent's own session transcripts for real token usage + cache savings (opt-in). */
     usageStats: boolean;
     /** Build a local session-memory store from transcripts (recall), searchable + MCP-exposed (opt-in). */
@@ -311,6 +315,7 @@ export interface EnigmaConfig {
 export const CONFIG_DEFAULTS: EnigmaConfig = {
     commitEmoji: true, updateNotifier: true, fullscreen: true, parallelSubagents: false, outputStyle: "off", minimalCode: "full", logoColorPolicy: "ask",
     autoSync: true, statusline: true, claudeTrust: true, remoteSkills: true, skillUpdatePolicy: "overwrite", permissionBypass: true, autoLint: false, guardrails: true, verify: true, verifyCommand: "", compress: false, codeGraph: false, gate: false, dashboard: "off", tokenPrice: 0, tokenSpeed: 0, usageStats: false, recall: false, recallLlm: true, recallProvider: "claude-local", recallModel: "", recallApiBase: "", recallApiKey: "", proxy: false, usageApi: false, promptSecretGuard: false, promptSecretMode: "redact",
+    resourceCap: 60, lowMemoryCap: 80,
     planSessionLimit: 0, planWeeklyLimit: 0, planWeeklySonnetLimit: 0, planWeeklyOpusLimit: 0, planWeeklyReset: "mon 00:00",
     dashboardLive: true, dashboardPort: 0, dashboardBind: "loopback", dashboardBindAddress: "", apiPort: 8000, apiAccount: "", apiProfile: "", apiPack: "", toolPaths: {}, bypassDisabled: [], discardedSkills: [], skillAgentsOff: {}, packs: [], packAccounts: {},
 };
