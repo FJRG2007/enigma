@@ -32,9 +32,20 @@ export function checkPending(c: Check): boolean {
 
 /**
  * Returns the polling interval (ms) based on elapsed time since CI monitoring
- * started: 30s for the first 5min, 60s for 5-15min, 120s after.
+ * started: 5s for the first 30s, 10s up to 2min, 30s up to 5min, 60s for 5-15min,
+ * 120s after.
+ *
+ * DIVERGENCE from upstream's `pollInterval`, which starts flat at 30s. The monitor
+ * polls first and sleeps after, so the interval is also the detection lag on the
+ * transition that ends the wait; a short pipeline whose checks settle in the first
+ * minutes paid up to 30s of pure sleep for it. The ramp only shortens the early
+ * window - the 5-15min and steady-state tiers stay exactly as upstream sets them,
+ * so long monitoring keeps the same API-call profile. Provider calls in the shortened
+ * window are `gh`/`glab` reads, cheap and un-metered by tokens.
  */
 export function pollInterval(elapsedMS: number): number {
+    if (elapsedMS < 30 * 1000) return 5 * 1000;
+    if (elapsedMS < 2 * 60 * 1000) return 10 * 1000;
     if (elapsedMS < 5 * 60 * 1000) return 30 * 1000;
     if (elapsedMS < 15 * 60 * 1000) return 60 * 1000;
     return 120 * 1000;
