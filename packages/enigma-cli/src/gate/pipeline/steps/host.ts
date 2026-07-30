@@ -46,14 +46,19 @@ function errMessage(err: unknown): string {
 
 /** Wraps a StepCmd to the github client's Cmd shape ({out, err} results). */
 function wrapGitHubCmd(sc: StepCmd): GitHubCmd {
-    return {
+    const cmd: GitHubCmd = {
         run: () => sc.run(),
         output: async () => {
             const r = await sc.output();
             return { out: r.stdout, err: r.err };
         },
-        combinedOutput: () => sc.combinedOutput()
+        combinedOutput: () => sc.combinedOutput(),
+        withStdin: (text: string) => {
+            sc.withStdin(text);
+            return cmd;
+        }
     };
+    return cmd;
 }
 
 /** Wraps a StepCmd to the gitlab client's Cmd shape ([string, err] tuples). */

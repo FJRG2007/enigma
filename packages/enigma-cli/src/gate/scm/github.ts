@@ -23,6 +23,11 @@ export interface Cmd {
     output(): Promise<CmdResult>;
     /** Run and return stdout+stderr plus the exit error (Go: cmd.CombinedOutput()). */
     combinedOutput(): Promise<CmdResult>;
+    /**
+     * Feed `text` to the command's stdin (Go: `cmd.Stdin = strings.NewReader(text)`).
+     * Required so a PR body travels over a pipe instead of argv, which the OS caps.
+     */
+    withStdin(text: string): Cmd;
 }
 
 /** Builds a command in the caller's workdir/env, cancelled via the signal. */
@@ -129,9 +134,10 @@ export function extractPRNumber(prURL: string): string | null {
 
 /** Default CmdFactory that runs `gh` (or any binary) through execFile. */
 export const execFileCmdFactory: CmdFactory = (signal, name, ...args) => {
+    let input: string | undefined;
     const exec = (combined: boolean): Promise<CmdResult> =>
         new Promise<CmdResult>((resolve) => {
-            execFile(
+            const child = execFile(
                 name,
                 args,
                 { signal, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
@@ -140,12 +146,21 @@ export const execFileCmdFactory: CmdFactory = (signal, name, ...args) => {
                     resolve({ out, err: error ?? null });
                 }
             );
+            if (input === undefined) return;
+            // An EPIPE here means the child exited before reading; the exit error reports why.
+            child.stdin?.on("error", () => { /* surfaced through the exit error */ });
+            child.stdin?.end(input);
         });
-    return {
+    const cmd: Cmd = {
         run: () => exec(false).then((r) => r.err),
         output: () => exec(false),
-        combinedOutput: () => exec(true)
+        combinedOutput: () => exec(true),
+        withStdin: (text: string) => {
+            input = text;
+            return cmd;
+        }
     };
+    return cmd;
 };
 
 /** Host talks to GitHub through the `gh` CLI. */
@@ -224,8 +239,8 @@ export class Host {
         content: PRContent
     ): Promise<PR> {
         const args = ["pr", "create", "--head", this.headRef(branch), "--base", base, ...this.repoArgs()];
-        args.push("--title", content.title, "--body", content.body);
-        const { out, err } = await this.cmd(signal, "gh", ...args).combinedOutput();
+        args.push("--title", content.title, "--body-file", "-");
+        const { out, err } = await this.cmd(signal, "gh", ...args).withStdin(content.body).combinedOutput();
         if (err != null) throw new Error(`gh pr create: ${out.trim()}: ${err.message}`);
         const url = out.trim();
         const pr: PR = { number: "", url };
@@ -238,8 +253,8 @@ export class Host {
         let id = pr.number;
         if (id === "") id = pr.url;
         const args = ["pr", "edit", id, ...this.repoArgs()];
-        args.push("--title", content.title, "--body", content.body);
-        const { out, err } = await this.cmd(signal, "gh", ...args).combinedOutput();
+        args.push("--title", content.title, "--body-file", "-");
+        const { out, err } = await this.cmd(signal, "gh", ...args).withStdin(content.body).combinedOutput();
         if (err != null) throw new Error(`gh pr edit: ${out.trim()}: ${err.message}`);
         return pr;
     }

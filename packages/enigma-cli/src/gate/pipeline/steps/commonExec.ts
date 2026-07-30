@@ -39,6 +39,11 @@ export interface StepCmd {
     output(): Promise<{ stdout: string; stderr: string; err: Error | null }>;
     /** Runs and resolves to combined stdout+stderr plus any error (cmd.CombinedOutput). */
     combinedOutput(): Promise<{ out: string; err: Error | null }>;
+    /**
+     * Feeds `text` to the command's stdin (Go: `cmd.Stdin = strings.NewReader(text)`).
+     * Used for payloads too large for argv, such as a generated PR body.
+     */
+    withStdin(text: string): StepCmd;
 }
 
 /** Snapshot of the process environment as `KEY=value` entries (os.Environ). */
@@ -192,9 +197,10 @@ function makeStepCmd(
     signal: AbortSignal,
     presetErr: Error | null
 ): StepCmd {
+    let input: string | undefined;
     const exec = (): Promise<{ stdout: string; stderr: string; code: number; err: Error | null }> =>
         new Promise(resolvePromise => {
-            execFile(
+            const child = execFile(
                 resolved,
                 args,
                 { cwd, env: envObj, signal, maxBuffer: MAX_BUFFER, windowsHide: true, encoding: "utf8" },
@@ -212,8 +218,12 @@ function makeStepCmd(
                     resolvePromise({ stdout: stdout ?? "", stderr: stderr ?? "", code, err: new Error(`exit status ${code}`) });
                 }
             );
+            if (input === undefined) return;
+            // An EPIPE here means the child exited before reading; the exit error reports why.
+            child.stdin?.on("error", () => { /* surfaced through the exit error */ });
+            child.stdin?.end(input);
         });
-    return {
+    const cmd: StepCmd = {
         run: async () => {
             if (presetErr !== null) return presetErr;
             return (await exec()).err;
@@ -227,8 +237,13 @@ function makeStepCmd(
             if (presetErr !== null) return { out: "", err: presetErr };
             const r = await exec();
             return { out: r.stdout + r.stderr, err: r.err };
+        },
+        withStdin: (text: string) => {
+            input = text;
+            return cmd;
         }
     };
+    return cmd;
 }
 
 /**
