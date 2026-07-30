@@ -26,7 +26,7 @@
 
 import { createHash } from "node:crypto";
 import { join, extname } from "node:path";
-import { enigmaHome, readJson } from "./util";
+import { enigmaHome, readJson, isGateAgentRun } from "./util";
 import { readConfigAt, readGlobalConfig } from "./config";
 import { lastAssistantMessage } from "./claude-transcripts";
 import { execFileSync, spawnSync } from "node:child_process";
@@ -545,6 +545,11 @@ function blockMessage(gaps: VerifyGap[], incomplete: { truncated?: boolean; capp
  * (stderr is fed back to the model and the stop is denied), else 0.
  */
 export function runVerifyHook(payload?: string): number {
+    // A gate step agent answers with the structured JSON its step asked for, never with a
+    // completion claim this gate could judge, so there is nothing here to check - and denying
+    // its stop would only spend another agent turn inside a pipeline that already owns
+    // review, test and lint. The pipeline's own steps are the completion gate there.
+    if (isGateAgentRun()) return 0;
     let raw: Record<string, unknown> = {};
     // Strip a leading BOM before parsing: JSON.parse throws on one, and this gate failing
     // open is exactly the silent pass it exists to prevent - so an unreadable payload says so

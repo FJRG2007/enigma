@@ -14,6 +14,19 @@ export function isDir(pth: string): boolean {
 }
 
 /**
+ * Environment marker stamped into every agent the gate spawns for a pipeline step
+ * (see gate/agent/env.ts). Lives here so the hooks can read it without importing
+ * the gate. It is a diagnostic signal, never authorization: it can be forged,
+ * removed, or inherited, so nothing security-relevant may depend on it.
+ */
+export const GATE_ROLE_ENV_VAR = "ENIGMA_GATE";
+
+/** True when this process runs inside an agent the gate spawned for a step. */
+export function isGateAgentRun(): boolean {
+    return process.env[GATE_ROLE_ENV_VAR] === "1";
+}
+
+/**
  * The home directory enigma anchors its config and managed agent dirs to.
  * ENIGMA_CONFIG_HOME overrides it - required because bun on Linux does not reflect
  * a runtime-reassigned $HOME via os.homedir(), so tests (and advanced users) cannot
