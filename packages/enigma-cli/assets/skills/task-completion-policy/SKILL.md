@@ -35,6 +35,8 @@ description: Exhaustive completion discipline for long, complex, or multi-item t
 
 - Work unit by unit (or in coherent batches). Flip a unit to `done` only after its own verification - it compiles/typechecks, its tests pass, or a smoke check ran - never because a similar unit worked.
 - Never silently skip, stub, or simplify a unit. A stub, TODO, or partial implementation keeps the unit `pending` or `blocked` with the reason recorded. Schedule hard units early; difficulty is a reason to start sooner, not to defer.
+- Never pause the run to ask which unit comes next or in what order. The ledger already answers that: order the units yourself (dependencies first, hard ones early) and keep working. "Shall I continue with the rest?", "¿sigo con las tareas 5-8, o prefieres otro orden?", "which should I start with?" are not checkpoints - they hand an unfinished task back to the user, who already asked for all of it, and cost a turn to answer something with one possible answer.
+- The only legitimate pause is a genuine blocker: access or credentials you lack, an irreversible or destructive action, or a decision that is genuinely the user's (business, legal, cost). Record it as `blocked(<reason>)`, report the blocker by name along with everything finished before it, and never phrase it as a request for permission to keep going. Real ambiguity about scope is resolved BEFORE the inventory, not used to pause mid-run.
 - On context compaction, session resume, or sub-agent handback: re-read the ledger FIRST and continue from it. Never reconstruct progress from memory - that is where items get dropped.
 - Sub-agents must report which ledger units they completed and how each was verified; unverified claims stay `pending`.
 
@@ -53,7 +55,7 @@ A completion claim is forbidden unless ALL of these hold:
 
 - If any check fails, the task is NOT done: state exactly what remains and keep working (or report the blocker). Never say "everything is complete", "fully ported", or "all done" while the ledger has open units.
 - Words like "complete", "all", "every", and "fully" in a final report are claims that must be backed by checks 1-5.
-- These checks also run automatically at turn end: when a final message claims the work is finished, enigma re-runs them and denies the stop if the evidence contradicts the claim (see the verify concept). Treat that as a backstop for accidents, never as the thing that does the checking - a claim it has to catch was one that should never have been made.
+- These checks also run automatically at turn end: when a final message claims the work is finished, enigma re-runs them and denies the stop if the evidence contradicts the claim - and it likewise denies a stop whose final message asks whether, or in which order, to continue (see the verify concept). Treat that as a backstop for accidents, never as the thing that does the checking - a claim it has to catch was one that should never have been made.
 
 ---
 

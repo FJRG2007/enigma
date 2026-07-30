@@ -15,7 +15,13 @@
  * which feeds the findings back and denies the stop, so the model must either finish the work
  * or state what is missing.
  *
- * Cost model: the claim check is a regex over one string, so a turn that claims nothing
+ * The same failure has a second face, and this gate catches that one too: a turn that ends by
+ * ASKING whether to continue - "shall I go on with the rest?", "in this order or another?" -
+ * when the user already asked for all of it. Nothing is missing from the code there; the work
+ * simply stopped, and the user has to spend a turn saying "yes" to a question with only one
+ * answer. That one needs no diff at all: the message announces it.
+ *
+ * Cost model: both checks are regexes over one string, so a turn that neither claims nor asks
  * costs nothing, and a turn that does claim pays one git diff. No model tokens are spent
  * unless the gate actually fires, and then only on the findings.
  *
@@ -34,8 +40,11 @@ import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, sta
 
 /** One piece of evidence that the work is not finished. */
 export interface VerifyGap {
-    /** `marker` = an incompleteness marker in produced code; `command` = the project's check failed. */
-    kind: "marker" | "command";
+    /**
+     * `marker` = an incompleteness marker in produced code; `command` = the project's check
+     * failed; `stop-short` = the turn ended asking permission to continue instead of continuing.
+     */
+    kind: "marker" | "command" | "stop-short";
     file?: string;
     line?: number;
     detail: string;
@@ -111,6 +120,98 @@ export function claimsDone(message: string): boolean {
         if (CLAIM_RE.test(sentence)) claim = true;
     }
     return claim;
+}
+
+// --- stop-short detection ------------------------------------------------------------
+
+/**
+ * Questions that hand assigned work back to the user instead of doing it: may I continue,
+ * shall I move on to the next item, in this order or another one. They are the same failure
+ * as a false completion claim seen from the other side - the turn ends with the work
+ * unfinished - except that here the model announces it, so no diff is needed to catch it.
+ *
+ * Matched only inside a sentence that actually asks (it must carry a question mark), so a
+ * progress note saying what comes next is never mistaken for a request for permission.
+ */
+const CONTINUE_ASK_RE = new RegExp([
+    // English: offering to keep working rather than keeping working.
+    "\\b(?:shall|should|can|may)\\s+i\\s+(?:\\w+\\s+){0,3}?(?:continue|proceed|carry\\s+on|keep\\s+going|go\\s+ahead|go\\s+on|move\\s+on|start\\s+(?:with|on)|begin\\s+with)\\b",
+    "\\b(?:do\\s+you\\s+want|would\\s+you\\s+like|want)\\s+me\\s+to\\s+(?:\\w+\\s+){0,3}?(?:continue|proceed|carry\\s+on|keep\\s+going|go\\s+ahead|go\\s+on|move\\s+on)\\b",
+    "\\b(?:ready|ok|okay|fine)\\s+for\\s+me\\s+to\\s+(?:continue|proceed|go\\s+ahead|keep\\s+going)\\b",
+    // English: asking the user to sequence work that was already assigned.
+    "\\bin\\s+(?:this|that|the\\s+same)\\s+order\\b[^?]*\\bor\\b",
+    "\\b(?:which|what)\\s+order\\b",
+    "\\bwhich\\s+(?:one|task|item)\\s+(?:first|should\\s+i)\\b",
+    // Spanish - the exact phrasing this gate was reported for ("¿Sigo con las tareas 5-8...?").
+    "(?:^|[¿\\s])(?:sigo|continúo|continuo|prosigo|procedo|avanzo|empiezo|arranco)\\b",
+    "\\b(?:quieres|querés|prefieres|preferís|te\\s+parece(?:\\s+bien)?)\\s+que\\s+(?:\\w+\\s+){0,3}?(?:siga|sigo|continúe|continue|prosiga|proceda|empiece|avance)\\b",
+    "\\ben\\s+(?:este|ese|el\\s+mismo)\\s+orden\\b",
+    "\\ben\\s+qué\\s+orden\\b",
+    "\\bprefieres\\s+otro\\b",
+].join("|"), "i");
+
+/**
+ * Reasons a turn may legitimately stop and ask, per the completion policy: access the agent
+ * does not have, an irreversible or destructive action, a decision that is genuinely the
+ * user's, a gate finding that must be escalated verbatim, or a check-in the user asked for.
+ *
+ * Matched over the WHOLE message and kept deliberately broad, because the asymmetry runs the
+ * other way here: a missed stop-short costs one nagging question, while a false block on a
+ * question that HAD to be asked is how a gate gets switched off. It also doubles as the way
+ * out - an agent blocked over a genuine blocker only has to name the blocker to pass.
+ */
+const LEGITIMATE_STOP_RE = new RegExp([
+    // Access or credentials the agent cannot obtain by itself.
+    "\\b(?:credentials?|api\\s+key|access\\s+token|password|secret|log\\s?in|sign\\s?in|authenticate|authorization|2fa|otp|no\\s+access|don'?t\\s+have\\s+access|do\\s+not\\s+have\\s+access|permission\\s+to\\s+access)\\b",
+    "\\b(?:credencial(?:es)?|contraseña|clave|token|no\\s+tengo\\s+acceso|sin\\s+acceso|iniciar\\s+sesión|autenticar|permisos?)\\b",
+    // Irreversible or destructive actions, which always need a human yes.
+    "\\b(?:force[-\\s]push|reset\\s+--hard|rebase|drop\\s+(?:the\\s+)?(?:table|database|schema)|delete|remove\\s+permanently|overwrite|truncate|wipe|deploy|publish|release|production|prod|irreversible|destructive|rollback)\\b",
+    "\\b(?:borrar|eliminar|sobrescribir|forzar|producción|desplegar|publicar|irreversible|destructiv[oa])\\b",
+    // Decisions that are the user's to make, not judgment calls.
+    "\\b(?:business\\s+decision|product\\s+decision|breaking\\s+change|pricing|billing|cost|budget|which\\s+account|legal|compliance|your\\s+call|up\\s+to\\s+you)\\b",
+    "\\b(?:decisión\\s+de\\s+negocio|cambio\\s+incompatible|factura(?:ción)?|coste|presupuesto|qué\\s+cuenta|tú\\s+decides)\\b",
+    // A gate run must escalate its ask-user findings verbatim, and a plan is meant to be approved.
+    "\\bask-user\\b|\\benigma\\s+gate\\b",
+    "\\b(?:approve|approval|sign\\s+off|confirm)\\b[^?]*\\bplan\\b|\\bplan\\b[^?]*\\b(?:approve|approval|sounds?\\s+good|looks?\\s+(?:good|right))\\b",
+    "\\b(?:apruebas|apruebo|aprobar)\\b[^?]*\\bplan\\b|\\bplan\\b[^?]*\\b(?:apruebas|te\\s+parece)\\b",
+    // The user explicitly asked to be checked in with - saying so is the documented way out.
+    "\\b(?:as\\s+(?:you\\s+)?(?:asked|requested|instructed)|you\\s+asked\\s+me\\s+to\\s+(?:check|confirm|ask|stop))\\b",
+    "\\b(?:como\\s+(?:me\\s+)?pediste|me\\s+pediste\\s+que\\s+(?:preguntara|confirmara|parara))\\b",
+    // Same escape hatch as the code scan, for a question a repository considers legitimate.
+    "enigma:verify-ignore",
+].join("|"), "i");
+
+/**
+ * Whether the final message ends the turn by asking permission to continue work that was
+ * already assigned, without naming a reason that makes stopping legitimate.
+ *
+ * Returns the question itself (trimmed) so the block can quote it back, or "" for a message
+ * that is free to end the turn.
+ */
+export function asksToContinue(message: string): string {
+    if (!message || typeof message !== "string") return "";
+    if (LEGITIMATE_STOP_RE.test(message)) return "";
+    for (const sentence of message.split(/(?<=[.!?\n])\s+/)) {
+        if (!sentence.includes("?")) continue;
+        if (CONTINUE_ASK_RE.test(sentence)) return sentence.trim().slice(0, 200);
+    }
+    return "";
+}
+
+/**
+ * The message fed back when a turn stops to ask whether to continue. It answers the question
+ * (the answer is always yes) and points at the only exit: name a real blocker instead.
+ */
+function stopShortMessage(question: string): string {
+    return [
+        "enigma verify: STOP. You are ending the turn by asking whether - or in which order - to continue with work you were already asked to do:",
+        "",
+        `  "${question}"`,
+        "",
+        "The answer is yes. It is always yes. Do not ask it: sequencing, ordering and priority among items the user already asked for are routine judgment calls that are yours to make, and a question about them turns finished work into a wait.",
+        "Continue now, in this same turn: pick the most sensible order yourself, work through every remaining item, verify each one actually works, and only then report - completely, honestly, and with what you could not verify named explicitly.",
+        "The only reasons to stop and ask are a genuine blocker: access or credentials you do not have, an irreversible or destructive action, or a decision that is genuinely the user's (business, legal, cost). If that is what this is, say so plainly - name the blocker, why it blocks you, and everything you finished before hitting it - instead of asking for permission to keep going.",
+    ].join("\n");
 }
 
 // --- evidence: what this turn actually produced -------------------------------------
@@ -575,6 +676,18 @@ export function runVerifyHook(payload?: string): number {
         process.stderr.write("enigma verify: the turn-end payload carried no final assistant message and none could be read from the transcript, so the completion check did not run.\n");
         return 0;
     }
+    const session = String(raw.session_id || raw.prompt_id || cwd);
+    // Checked BEFORE the completion claim, and without reading git at all: a turn that reports
+    // progress AND asks whether to continue passes the claim check (nothing it produced is
+    // unfinished) and would end there, leaving the actual problem - the work it stopped short
+    // of - unexamined. Planning is exempt, since a plan is meant to be approved before it runs.
+    const question = raw.permission_mode === "plan" ? "" : asksToContinue(message);
+    if (question) {
+        const asked: VerifyGap = { kind: "stop-short", detail: question };
+        if (!mayBlock(issueKey(session, [asked]), session)) return 0;
+        process.stderr.write(`${stopShortMessage(question)}\n`);
+        return 2;
+    }
     if (!claimsDone(message)) return 0;
 
     const { gaps, truncated, capped, noRepo } = collectGaps(cwd);
@@ -584,7 +697,6 @@ export function runVerifyHook(payload?: string): number {
         return 0;
     }
 
-    const session = String(raw.session_id || raw.prompt_id || cwd);
     if (!mayBlock(issueKey(session, gaps), session)) return 0;
     process.stderr.write(`${blockMessage(gaps, { truncated, capped })}\n`);
     return 2;

@@ -24,6 +24,21 @@ No model tokens are spent unless the gate actually fires, and then only on the f
 
 A message that already discloses what is left - *"the port is complete except for two modules I could not finish"* - is an honest report, and the gate leaves it alone. It exists to catch **silence** about gaps, never to punish naming them.
 
+## The other half: stopping to ask
+
+The same failure has a second face. Instead of claiming done, the turn ends with a question: *"Shall I continue with tasks 5-8 in this order, or do you prefer another?"*. Nothing in the code is marked unfinished - the work simply stopped, and you spend a turn saying yes to a question with only one answer.
+
+So the gate denies that stop too, and answers the question itself: continue, in whatever order makes sense. Sequencing and priority among items you already asked for are the agent's call.
+
+It needs no diff - the message announces it - so this check is free as well. It stands aside whenever stopping is legitimate:
+
+- The message names a **genuine blocker**: credentials or access the agent does not have, an irreversible or destructive action (a force-push, a deletion, a deploy), or a decision that is genuinely yours (business, legal, cost). Naming the blocker is also the way out of a block: an agent told to continue only has to say what actually stops it.
+- The agent is **planning** - a plan is presented precisely so you can approve it.
+- **You asked to be checked in with**, and the message says so.
+- The question is a design question (*"Zod or valibot?"*), not a request for permission to keep going.
+
+Same loop safety as above: after two blocks on the same question the gate stands down.
+
 ## Precision
 
 A false block would just train you to switch this off, so the checks only match unambiguous evidence:

@@ -18,7 +18,7 @@ process.env.USERPROFILE = HOME;
 process.env.HOME = HOME;
 process.env.ENIGMA_CONFIG_HOME = HOME;
 
-const { claimsDone, scanGaps, collectGaps, runVerifyHook } = await import("../src/verify");
+const { claimsDone, asksToContinue, scanGaps, collectGaps, runVerifyHook } = await import("../src/verify");
 const { parityReport, formatParity } = await import("../src/verify-parity");
 
 const repos: string[] = [];
@@ -73,6 +73,62 @@ test("does not treat progress notes or honest reports as a claim", () => {
         "Should I use Zod or valibot here?",
         "",
     ]) expect(claimsDone(message)).toBe(false);
+});
+
+test("recognises a turn that stops to ask whether to continue", () => {
+    for (const message of [
+        "Tasks 1-4 are done. Shall I continue with tasks 5-8 in this order, or do you prefer another?",
+        "Do you want me to keep going with the rest?",
+        "Should I move on to the remaining endpoints?",
+        "Which order should I do them in?",
+        "He terminado las tareas 1-4. ¿Sigo con las tareas 5-8 en este orden, o prefieres otro?",
+        "¿Quieres que siga con el resto?",
+        "¿Continúo con la migración?",
+        "¿Por dónde empiezo?",
+    ]) expect(asksToContinue(message)).not.toBe("");
+});
+
+test("leaves alone a question that genuinely needs the user", () => {
+    for (const message of [
+        // A blocker: the agent cannot get past it on its own.
+        "I finished the client, but I need an API key for the staging environment. Can I continue once you provide it?",
+        "¿Sigo? Necesito las credenciales de producción para el despliegue.",
+        // An irreversible action always needs a human yes.
+        "The rewrite is ready. Shall I proceed with the force-push to main?",
+        "¿Procedo a borrar la tabla antigua?",
+        // A decision that is the user's, not a judgment call.
+        "Should I go ahead with the breaking change to the public API, or keep it backwards compatible?",
+        // A plan is meant to be approved before it runs.
+        "Here is the plan for the migration. Shall I proceed once you approve the plan?",
+        // The user explicitly asked to be checked in with.
+        "As you asked, checking in before the next batch - shall I continue?",
+        // Ordinary work with no question at all.
+        "I ported the parser and moved on to the exporter; continuing with the CLI next.",
+        "Sigo con el exportador y después el CLI.",
+        // A design question is not a request for permission to continue.
+        "Should I use Zod or valibot here?",
+        "",
+    ]) expect(asksToContinue(message)).toBe("");
+});
+
+test("denies the stop when the turn asks permission to continue", () => {
+    // No evidence in the code is needed or read: the message itself says the work stopped.
+    const dir = repoWith();
+    write(dir, "src/new.ts", "export const parse = (s: string): number => Number(s);\n");
+    expect(runVerifyHook(payload(dir, "Tasks 1-4 are done. ¿Sigo con las tareas 5-8 en este orden, o prefieres otro?"))).toBe(2);
+    // Planning is exempt - a plan is presented precisely so the user can approve it.
+    expect(runVerifyHook(payload(dir, "¿Sigo con las tareas 5-8?", { permission_mode: "plan" }))).toBe(0);
+    // Naming a real blocker is the way out, and it must work on the first try.
+    expect(runVerifyHook(payload(dir, "I cannot continue without the deploy credentials. Shall I proceed once you add them?"))).toBe(0);
+});
+
+test("stands down after repeated asks so a turn is never trapped", () => {
+    const dir = repoWith();
+    const same = { session_id: "asking-session" };
+    const question = "Done with the first half. Should I continue with the rest?";
+    expect(runVerifyHook(payload(dir, question, same))).toBe(2);
+    expect(runVerifyHook(payload(dir, question, same))).toBe(2);
+    expect(runVerifyHook(payload(dir, question, same))).toBe(0);
 });
 
 test("flags incompleteness only in what the change produced", () => {
