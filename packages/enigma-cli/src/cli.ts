@@ -14,6 +14,7 @@ import { isDir, readJson } from "./util";
 import { DASHBOARD_BINDS, readConfig, setEnigmaValue, type DashboardBind } from "./config";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { spawnSync } from "node:child_process";
 import type { IssueKind } from "./issue";
 import { discoverAgents } from "./agents";
 import { runConfigCli } from "./settings";
@@ -480,7 +481,25 @@ async function runUpdateCli(version: string): Promise<void> {
     const latest = await checkLatestNow(version);
     s.stop(latest ? `Newer enigma-cli available: ${version} -> ${latest}. Installing...` : `enigma-cli ${version}: reinstalling the latest to be sure...`);
     starRepoInBackground();
-    runUpdate();
+    const updated = runUpdate();
+    // The sync above ran on the OLD binary, so it deployed the OLD skills, memory and
+    // commands - the assets are bundled INTO the version that was just replaced. Run the
+    // NEW binary's sync now, in this same command, or a user who updates and then launches
+    // their agent directly (rather than through `enigma <tool>`) keeps yesterday's policies
+    // while running today's CLI. Best-effort: `enigma` on PATH is the launcher of the
+    // version npm just installed, and a failure here only defers the sync to the next run.
+    if (updated) {
+        const s2 = p.spinner();
+        s2.start("Deploying the new version's skills and memory...");
+        const sync = spawnSync("enigma", ["__sync"], {
+            encoding: "utf8",
+            shell: process.platform === "win32",
+            windowsHide: true,
+        });
+        const lines = String(sync.stdout || "").split("\n").filter((l) => l.trim());
+        if (sync.status === 0) s2.stop(lines.length ? lines.join("; ") : "Skills and memory are up to date.");
+        else s2.stop("Skills and memory will sync on the next enigma run.");
+    }
     // An always-on dashboard daemon is still running the pre-update binary (version baked in at
     // spawn), so restart it on the new binary - otherwise the running dashboard keeps showing the
     // old version and a stale "update available" banner, which is what makes "Update now" look dead.
@@ -1771,6 +1790,19 @@ export async function run(argv: string[]): Promise<void> {
     // when the agent's own "this is finished" claim is contradicted by what the turn
     // produced, which denies the stop and feeds the evidence back. Same early dispatch and
     // synchronous stdin read as the guardrails hook, for the same reasons.
+    // Hidden: deploy this version's skills, memory and commands to every agent that
+    // already has a deployment. `enigma update` spawns it on the NEWLY installed binary
+    // once npm has replaced the old one, since the assets ship inside the version that
+    // was just swapped out. Prints one line per agent it touched and nothing otherwise.
+    if (argv[0] === "__sync") {
+        try {
+            for (const notice of skillsMod.syncDeployed()) console.log(notice);
+            process.exit(0);
+        } catch (err) {
+            console.error(`Sync failed: ${(err as Error).message}`);
+            process.exit(1);
+        }
+    }
     // Hidden: the post-edit EOF trimmer. Same early dispatch and synchronous stdin read as
     // the guardrails hook, for the same reasons. Always exits 0 - it is a silent tidy, not a gate.
     if (argv[0] === "__trim-hook") {

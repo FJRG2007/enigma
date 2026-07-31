@@ -201,8 +201,11 @@ function parkRunningBinary(): void {
  * Clears the npm cache first so a stale cached tarball is never reused, then
  * installs the latest. OS-agnostic: npm is resolved through the shell on Windows
  * (where it is npm.cmd) and spawned directly elsewhere.
+ *
+ * Returns whether the install succeeded, so the caller can run the NEW version's
+ * asset sync in the same command instead of leaving it to the next run.
  */
-export function runUpdate(): void {
+export function runUpdate(): boolean {
     const onWindows = process.platform === "win32";
     try {
         parkRunningBinary();
@@ -214,11 +217,14 @@ export function runUpdate(): void {
             // Drop the cached check so the freshly installed version re-reads the
             // registry on its next run instead of trusting a pre-update snapshot.
             try { rmSync(CACHE_FILE, { force: true }); } catch { /* best-effort */ }
-            console.log("Updated. Re-run enigma to use the new version.");
-        } else console.log(`Update did not complete. Run '${UPDATE_COMMAND}' manually.`);
+            console.log("Updated to the latest enigma-cli.");
+            return true;
+        }
+        console.log(`Update did not complete. Run '${UPDATE_COMMAND}' manually.`);
     } catch {
         console.log(`Could not run the update. Run '${UPDATE_COMMAND}' manually.`);
     }
+    return false;
 }
 
 /**
