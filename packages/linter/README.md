@@ -81,11 +81,14 @@ Container formats (`.ipynb`, `.astro`, `.vue`, `.svelte`) are left untouched by 
 
 The two punctuation fixes stand down when the file sits in a project configured with
 Prettier (a `.prettierrc*` / `prettier.config.*` file, or a `prettier` key in a
-`package.json`, anywhere from the file's directory up to the filesystem root).
+`package.json`, anywhere from the file's directory up to the project root - the first
+directory holding `.git`, so a stray config in a home directory decides nothing).
 Prettier strips a single-line type literal's terminator and defaults to
 `trailingComma: "all"`, so rewriting there would only make the two formatters flip the
-same lines back and forth. The rules still report; only the rewrite is suppressed, and
-every other fix keeps running.
+same lines back and forth. The two rules that report it (`require-semicolons` over type
+members, `no-import-trailing-comma`) go silent there as well, rather than block on a
+finding the fixer refuses to fix. Every other fix and every other rule keeps running,
+including `require-semicolons` over statements.
 
 The bin is `enigmax-lint`. It exits non-zero when any error-severity violation is
 found (URL/CDN imports, hardcoded secrets), so it can gate a commit or CI step.

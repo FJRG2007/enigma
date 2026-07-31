@@ -37,9 +37,13 @@ export const requireSemicolons: Rule = {
     check(ctx) {
         const violations: Violation[] = [];
         const sourceFile = ctx.sourceFile!;
+        // Prettier owns type-member punctuation where it is the project's formatter, and
+        // fixText stands down there, so reporting it would only block on an unfixed finding.
+        // Statement semicolons are not in dispute: Prettier defaults to writing them.
+        const typeMembers = !ctx.prettier;
 
         const visit = (node: ts.Node): void => {
-            if (NEEDS_SEMICOLON.has(node.kind) || isTypeMember(node)) {
+            if (NEEDS_SEMICOLON.has(node.kind) || (typeMembers && isTypeMember(node))) {
                 const text = node.getText(sourceFile).trimEnd();
                 if (!text.endsWith(";")) {
                     const { line, column } = locate(sourceFile, node.getEnd());

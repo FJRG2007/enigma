@@ -11,6 +11,9 @@ export const noImportTrailingComma: Rule = {
     severity: "warning",
     languages: JS_TS,
     check(ctx) {
+        // Prettier defaults to `trailingComma: "all"` and fixText stands down in its projects,
+        // so reporting there would leave a finding nothing is allowed to fix.
+        if (ctx.prettier) return [];
         const violations: Violation[] = [];
         const sourceFile = ctx.sourceFile!;
 

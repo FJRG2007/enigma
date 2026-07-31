@@ -229,7 +229,9 @@ semicolon terminating an interface or type-literal member, and the trailing comm
 named import/export list. Judgement-dependent rules and the security audits are only
 reported. The last two - the punctuation fixes - are skipped in a project configured
 with Prettier (a `.prettierrc*` / `prettier.config.*` file, or a `prettier` key in a
-`package.json`), so the two formatters never fight over the same lines.
+`package.json`, looked up as far as the project root), so the two formatters never fight
+over the same lines; their two rules stay quiet there too, so nothing is reported that
+the hook has refused to fix.
 
 - **Claude Code**: a `PostToolUse` hook in `settings.json` (matcher
   `Edit|Write|MultiEdit|NotebookEdit`). Unfixable findings come back via the hook's

@@ -28,6 +28,9 @@ export interface RuleContext {
     /** True when `text` is a fragment extracted from a container file (notebook cell, SFC script,
      *  Astro frontmatter), not a whole file. Rules that check file boundaries must skip them. */
     embedded?: boolean;
+    /** True when the file belongs to a project configured with Prettier. Rules whose fix stands
+     *  down there (the punctuation ones) must stay silent rather than block on an unfixed finding. */
+    prettier?: boolean;
 }
 
 /** A region of source extracted from a container file, with its lines mapped back to the file. */

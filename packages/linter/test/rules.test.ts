@@ -356,32 +356,61 @@ test("fix: the length sort sees declarations at their post-punctuation length", 
     assert.ok(!lintText("a.ts", fixed).some((v) => v.rule === "length-sorted-imports"));
 });
 
+/**
+ * Create a throwaway project directory. The `.git` marker bounds the upward Prettier
+ * walk at it, so an ancestor config (on Windows the temp dir sits under the user
+ * profile) can never decide the outcome of these tests.
+ */
+function tempProject(files: Record<string, string> = {}): string {
+    const root = mkdtempSync(join(tmpdir(), "enigmax-lint-"));
+    mkdirSync(join(root, ".git"));
+    for (const [name, content] of Object.entries(files)) writeFileSync(join(root, name), content);
+    return root;
+}
+
 test("fix: the punctuation pass stands down in a Prettier project", () => {
     const source = "import {\n    a,\n    type B,\n} from \"./x\";\n\ntype L = { a: string, b: number };\n";
-    const root = mkdtempSync(join(tmpdir(), "enigmax-lint-"));
+    const plain = tempProject();
+    const project = tempProject({ ".prettierrc": "{}\n" });
+    const viaPkg = tempProject({ "package.json": "{ \"name\": \"p\", \"prettier\": { \"semi\": true } }\n" });
     try {
         // Without a Prettier config the punctuation is normalized as usual...
-        const plain = join(root, "plain.ts");
-        assert.equal(fixText(plain, source), "import {\n    a,\n    type B\n} from \"./x\";\n\ntype L = { a: string; b: number; };\n");
+        assert.equal(fixText(join(plain, "plain.ts"), source),
+            "import {\n    a,\n    type B\n} from \"./x\";\n\ntype L = { a: string; b: number; };\n");
 
         // ...and with one it is left exactly as written, while the other fixes still run.
-        const project = mkdtempSync(join(tmpdir(), "enigmax-lint-"));
-        writeFileSync(join(project, ".prettierrc"), "{}\n");
         mkdirSync(join(project, "src"));
         assert.equal(fixText(join(project, "src", "nested.ts"), source), source);
         assert.equal(fixText(join(project, "src", "nested.ts"), "type L = { a: string }  \n\n\n\n"), "type L = { a: string }\n");
-        rmSync(project, { recursive: true, force: true });
 
         // A `prettier` key in package.json marks the project just the same.
-        const viaPkg = mkdtempSync(join(tmpdir(), "enigmax-lint-"));
-        writeFileSync(join(viaPkg, "package.json"), "{ \"name\": \"p\", \"prettier\": { \"semi\": true } }\n");
         assert.equal(fixText(join(viaPkg, "app.ts"), source), source);
-        rmSync(viaPkg, { recursive: true, force: true });
 
-        // A relative or in-memory path has no project to inspect: the fix applies.
+        // A relative or in-memory name resolves against the working directory, whose
+        // project (this repo) has no Prettier config: the fix applies.
         assert.notEqual(fixText("a.ts", source), source);
     } finally {
-        rmSync(root, { recursive: true, force: true });
+        for (const dir of [plain, project, viaPkg]) rmSync(dir, { recursive: true, force: true });
+    }
+});
+
+test("lint: the punctuation rules stay silent in a Prettier project", () => {
+    const source = "import { a, b, } from \"./x\";\n\ntype L = { a: string };\n\nconst x = 1\n";
+    const plain = tempProject();
+    const project = tempProject({ ".prettierrc": "{}\n" });
+    try {
+        const without = lintText(join(plain, "a.ts"), source).map((v) => v.rule);
+        assert.ok(without.includes("no-import-trailing-comma"));
+        assert.ok(without.includes("require-semicolons"));
+
+        const withPrettier = lintText(join(project, "a.ts"), source);
+        assert.ok(!withPrettier.some((v) => v.rule === "no-import-trailing-comma"));
+        // The statement-level missing semicolon still reports, and only that one.
+        const semicolons = withPrettier.filter((v) => v.rule === "require-semicolons");
+        assert.equal(semicolons.length, 1);
+        assert.equal(semicolons[0]!.line, 5);
+    } finally {
+        for (const dir of [plain, project]) rmSync(dir, { recursive: true, force: true });
     }
 });
 

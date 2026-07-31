@@ -1,11 +1,11 @@
 /** Programmatic API: lint in-memory source or files on disk. */
 
-import { fixText } from "./fix";
 import { RULES } from "./registry";
 import { extname } from "node:path";
 import { parseSource } from "./parse";
 import { discoverFiles } from "./discover";
 import { extractEmbedded } from "./embedded";
+import { fixText, usesPrettier } from "./fix";
 import { readFileSync, writeFileSync } from "node:fs";
 import { JS_TS, isContainer, languageFor } from "./languages";
 import type { Rule, Language, Category, Violation, RuleContext } from "./types";
@@ -47,10 +47,14 @@ function runRules(ctx: RuleContext, options: LintOptions): Violation[] {
     return rules.flatMap((rule) => rule.check(ctx));
 }
 
-/** Prepare a rule context, parsing the AST for JavaScript/TypeScript sources. */
+/**
+ * Prepare a rule context, parsing the AST for JavaScript/TypeScript sources. The Prettier
+ * verdict is resolved once here, from the container file's path, so an embedded block
+ * answers exactly like the file it was extracted from and no rule touches the filesystem.
+ */
 function buildContext(file: string, text: string, language: Language, ext: string, embedded: boolean): RuleContext {
     const sourceFile = JS_TS.includes(language) ? parseSource(file, text, ext) : undefined;
-    return { file, text, lines: text.split("\n"), language, sourceFile, embedded };
+    return { file, text, lines: text.split("\n"), language, sourceFile, embedded, prettier: usesPrettier(file) };
 }
 
 /** The parser extension to use for an embedded script block of the given language. */
