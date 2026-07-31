@@ -278,6 +278,26 @@ Cache on the client to avoid redundant server round-trips and to keep the app us
 - Prefer stale-while-revalidate for non-critical data: serve cached, refresh in the background.
 - Never serve stale data for security-, money-, or correctness-critical reads.
 
+### Show the last snapshot, then patch only what changed
+
+The strongest version of stale-while-revalidate: persist the last response and render it on entry, so a returning user sees the screen already populated while the real request is still in flight. It is what makes a view backed by something slow (a NAS, a device on the LAN, a third-party API, anything you do not control) feel loaded instantly, because between two visits almost nothing usually changed.
+
+- On mount, render from the persisted snapshot and fire the request at the same time. No spinner over content you can already show; a small "refreshing" marker is enough. Skeletons are for the first ever load, when there is no snapshot.
+- When the response lands, RECONCILE, do not replace. Diff against what is on screen and apply only the differences: rows added, rows removed, fields whose value actually changed. Wholesale replacement is what produces the flash, the scroll jump, and the lost selection, and it is exactly what the snapshot was meant to avoid.
+- Keep identity stable. Key rows by their real id (never the array index), and reuse the existing object for an unchanged row instead of a fresh one, so the framework re-renders the rows that changed and nothing else. Preserve scroll position, selection, expanded rows, in-progress edits, and focus across the refresh.
+- If the whole response is equal to the snapshot, do nothing at all: no state write, no re-render. This is No-Op Detection applied to reads, and it is the common case.
+- Detect "nothing changed" as cheaply as the backend allows: an `ETag` with `If-None-Match` (a `304` costs you a header exchange and no body), a `Last-Modified`/`updatedAt` cursor, or a content hash of the payload. Falling back to comparing the parsed objects is fine for small payloads, and hashing is fine for large ones - just do not deep-compare a huge tree on every poll.
+- Stamp the snapshot with the time it was taken and show it ("updated 2 minutes ago"). A stale number no one can date is worse than a spinner.
+- Never let the snapshot outlive its usefulness: version the stored shape (drop it when the app's schema changes), give it a TTL, cap what you store, and clear it on sign-out. localStorage is small, synchronous, and shared with every script on the page.
+- Sensitive or fast-moving data does not get this treatment: money, permissions, live status, anything that would mislead if it were a minute old. Showing an old value is a correctness decision, not just a UX one.
+
+### Caching is not free
+
+- Every cache is a second copy of the truth, and the cost is invalidation, staleness bugs, and the memory or storage it occupies. Add one when there is a measured round-trip to save, not by default.
+- Prefer the client cache: it removes the request entirely, so it costs the server nothing and scales with the number of users rather than against it. A server cache (Redis, see backend-policy) is for what the client cannot hold - expensive shared computations, data too large or too sensitive to sit on a device - and it is one more thing to size, evict, and invalidate.
+- Cache the response, not the render. Storing derived UI state means re-deriving it on every schema change and getting it wrong when the derivation does.
+- Coalesce and throttle rather than cache harder: one in-flight request per resource, no refetch on every focus event, and no polling loop that runs while the tab is hidden.
+
 ---
 
 ## Instant First Paint (Shell First, Data Async)

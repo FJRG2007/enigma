@@ -52,6 +52,8 @@ Cache expensive or hot reads on the server to reduce database load, complementin
 ### When to cache
 
 - Cache read-heavy, expensive-to-compute, or frequently requested data.
+- Reach for the client cache first (frontend-policy): it removes the request instead of serving it faster, so it costs this service nothing. A server cache is for what the client cannot hold - an expensive computation shared across users, a payload too large or too sensitive to sit on a device, or a rate-limited upstream you are shielding.
+- Support the client's revalidation instead of making it re-download: answer with an `ETag`/`Last-Modified` and honour `If-None-Match`/`If-Modified-Since` with a `304`, so an unchanged resource costs a header exchange and no body.
 - Do not cache data that must always be strongly consistent unless invalidation is immediate and reliable.
 - Never cache secrets or sensitive data without encryption and strict access control.
 

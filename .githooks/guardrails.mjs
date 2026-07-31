@@ -464,6 +464,12 @@ var BUILTIN_RULES = [
     message: "Process spawned without windowsHide. On Windows a console child started by a process that has no console of its own - a daemon, an editor hook, a detached background task - pops a real console window on screen and closes it again, which reads as something crashing. Add `windowsHide: true` to the options object; it is inert on macOS and Linux, and inert on Windows when the parent already has a console, so it is safe on every call that is not deliberately opening a terminal for the user. For one that IS (a login flow that must show a terminal), mark the call with an `enigma:` note.",
     severity: "block"
   },
+  // NOTE: no rule for "render the cached snapshot, then patch only what changed". Whether a
+  // fresh response REPLACES the rendered list or is reconciled into it is a property of the
+  // state update, which normally lives in a store, a query library's cache or a parent - and
+  // `setRows(data)` is correct code in the many views that have no snapshot to reconcile
+  // against. There is no file-local evidence of the defect, so it stays in frontend-policy's
+  // Client-Side Caching section.
   {
     id: "fe-mobile-drawer-full-width",
     label: "An off-canvas panel fills the phone screen",
