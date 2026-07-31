@@ -19,7 +19,7 @@ function cellSource(source: unknown): string {
  * `language_info`; only Python notebooks are linted (others would misfire the Python lexer).
  */
 export function extractNotebookBlocks(text: string): EmbeddedBlock[] {
-    let notebook: { cells?: unknown[]; metadata?: { kernelspec?: { language?: string }; language_info?: { name?: string } } };
+    let notebook: { cells?: unknown[]; metadata?: { kernelspec?: { language?: string; }; language_info?: { name?: string; }; }; };
     try { notebook = JSON.parse(text); } catch { return []; }
     if (!notebook || !Array.isArray(notebook.cells)) return [];
     if (!isPython(notebook)) return [];
@@ -30,7 +30,7 @@ export function extractNotebookBlocks(text: string): EmbeddedBlock[] {
 
     for (const cell of notebook.cells) {
         if (!cell || typeof cell !== "object") continue;
-        const record = cell as { cell_type?: unknown; source?: unknown };
+        const record = cell as { cell_type?: unknown; source?: unknown; };
         if (record.cell_type !== "code") continue;
 
         const source = cellSource(record.source);
@@ -57,7 +57,7 @@ export function extractNotebookBlocks(text: string): EmbeddedBlock[] {
 }
 
 /** A notebook is treated as Python when its kernel/language metadata says so, or says nothing. */
-function isPython(notebook: { metadata?: { kernelspec?: { language?: string }; language_info?: { name?: string } } }): boolean {
+function isPython(notebook: { metadata?: { kernelspec?: { language?: string; }; language_info?: { name?: string; }; }; }): boolean {
     const language = (notebook.metadata?.kernelspec?.language ?? notebook.metadata?.language_info?.name ?? "python").toLowerCase();
     return language.includes("python");
 }

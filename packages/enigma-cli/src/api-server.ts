@@ -25,15 +25,15 @@ import {
     DEFAULT_MODEL,
     type AgentAdapter,
     type CompletionOptions,
-    type ImageBlock,
+    type ImageBlock
 } from "./api-agents";
 
 /** A content part in an OpenAI/Anthropic message: text, an OpenAI image_url, or an Anthropic image. */
 interface ContentPart {
     type?: string;
     text?: string;
-    image_url?: { url?: string } | string;
-    source?: { type?: string; media_type?: string; data?: string; url?: string };
+    image_url?: { url?: string; } | string;
+    source?: { type?: string; media_type?: string; data?: string; url?: string; };
 }
 
 /** Minimal chat message (content may be a string or a content-part array with text and images). */
@@ -91,9 +91,9 @@ export function extractImages(messages: ChatMessage[]): ImageBlock[] {
  * the model keeps the exchange context. The last system message wins (mirrors OpenAI semantics)
  * and is returned separately so an adapter can apply it as the agent's system prompt.
  */
-export function messagesToPrompt(messages: ChatMessage[]): { prompt: string; system: string | null } {
+export function messagesToPrompt(messages: ChatMessage[]): { prompt: string; system: string | null; } {
     let system: string | null = null;
-    const turns: Array<{ role: string; text: string }> = [];
+    const turns: Array<{ role: string; text: string; }> = [];
     for (const m of messages) {
         const text = contentToText(m.content);
         if (m.role === "system") system = text;
@@ -117,7 +117,7 @@ export function streamChunk(id: string, model: string, delta: Record<string, unk
     return `data: ${JSON.stringify(payload)}\n\n`;
 }
 
-interface RunResult { text: string; sessionId: string | null; inputTokens: number; outputTokens: number; isError: boolean; errorMessage?: string }
+interface RunResult { text: string; sessionId: string | null; inputTokens: number; outputTokens: number; isError: boolean; errorMessage?: string; }
 
 /**
  * Resolve the adapter's agent binary + account-scoped env, spawn it in headless mode, and drive
@@ -262,7 +262,7 @@ function quoteWinArg(arg: string): string {
 
 // --- HTTP layer -------------------------------------------------------------
 
-interface SessionRecord { createdAt: number; lastAccessed: number; messageCount: number }
+interface SessionRecord { createdAt: number; lastAccessed: number; messageCount: number; }
 const sessions = new Map<string, SessionRecord>();
 
 function touchSession(id: string | null, turns: number): void {
@@ -313,7 +313,7 @@ function authorized(req: IncomingMessage, apiKey: string | null): boolean {
 }
 
 /** Server-wide defaults for the backing context, overridable per request. */
-interface ServerDefaults { tool: string; account?: string | null; profile?: string | null; pack?: string | null }
+interface ServerDefaults { tool: string; account?: string | null; profile?: string | null; pack?: string | null; }
 
 /** Merge the per-request account/profile/pack over the server defaults (request wins). */
 function contextOf(body: Record<string, unknown>, defaults: ServerDefaults): Pick<CompletionOptions, "account" | "profile" | "pack"> {
@@ -344,7 +344,7 @@ async function handleChatCompletions(req: IncomingMessage, res: ServerResponse, 
             const result = await runAgent(adapter, prompt, opts, (t) => res.write(streamChunk(id, model, { content: t })));
             touchSession(result.sessionId, messages.length + 1);
             if (result.isError) res.write(streamChunk(id, model, { content: `\n[error] ${result.errorMessage ?? "unknown error"}` }));
-            const includeUsage = (body.stream_options as { include_usage?: boolean } | undefined)?.include_usage === true;
+            const includeUsage = (body.stream_options as { include_usage?: boolean; } | undefined)?.include_usage === true;
             const finalPayload: Record<string, unknown> = {
                 id, object: "chat.completion.chunk", created: Math.floor(Date.now() / 1000), model,
                 choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
@@ -431,7 +431,7 @@ export interface ApiServerOptions {
 }
 
 /** Result of a started server: the bound URL/port and a close handle. */
-export interface RunningApi { url: string; port: number; close: () => void }
+export interface RunningApi { url: string; port: number; close: () => void; }
 
 /**
  * Start the loopback OpenAI-compatible API server. Resolves once it is listening. Each request
@@ -477,7 +477,7 @@ export function startApiServer(options: ApiServerOptions): Promise<RunningApi> {
     return new Promise((resolve, reject) => {
         server.once("error", reject);
         server.listen(options.port, "127.0.0.1", () => {
-            const port = (server.address() as { port: number }).port;
+            const port = (server.address() as { port: number; }).port;
             resolve({ url: `http://127.0.0.1:${port}`, port, close: () => { try { server.close(); } catch { /* */ } } });
         });
     });
