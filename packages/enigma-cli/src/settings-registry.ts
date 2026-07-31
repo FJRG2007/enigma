@@ -365,10 +365,23 @@ const RAW_CATEGORIES: Category[] = [
             {
                 key: "gate",
                 label: "AI quality gate (experimental)",
-                hint: "EXPERIMENTAL, off by default: deploy the /gate command AND tell agents to auto-drive the gate (review/test/lint/PR/CI) after finishing work on a feature branch - no need to ask or run `enigma gate init`; per-project opt-out via `.enigma.json` gate:false; edits the memory file - restart your agent to apply",
+                hint: "on by default, still experimental: deploys the /gate command AND tells agents to auto-drive the gate (review/test/lint/PR/CI) once a code task is committed, on whatever branch it is on - no need to ask or run `enigma gate init`; turn it off here, per project via `.enigma.json` gate:false, or from your agent with `/gate off`; edits the memory file - restart your agent to apply",
                 affectsMemory: true,
                 read: () => conf.readConfig().config.gate,
                 write: (value, scope) => setGate(value, scope),
+            },
+            {
+                key: "gate-protected-branches",
+                label: "Branches the gate leaves alone",
+                hint: "branch names the gate refuses to validate, exact match (e.g. main). Empty by default: the gate runs on whatever branch the work is on. On the default branch it opens no PR and pushes straight to it, so list that branch here when it must only be reached through review; a project's own `.enigma.json` list overrides this one",
+                kind: "list",
+                itemHint: "branch name, e.g. main",
+                read: () => conf.readConfig().config.gateProtectedBranches.length > 0,
+                // Lists are edited via add/remove; a boolean write is a no-op so on/off surfaces stay inert.
+                write: () => ({ changed: false }),
+                listValues: (scope) => conf.readEnigmaList("gateProtectedBranches", scope),
+                addItem: (item, scope) => ({ path: conf.updateEnigmaList("gateProtectedBranches", item.trim(), true, scope), changed: true }),
+                removeItem: (item, scope) => ({ path: conf.updateEnigmaList("gateProtectedBranches", item.trim(), false, scope), changed: true }),
             },
             {
                 key: "auto-lint",

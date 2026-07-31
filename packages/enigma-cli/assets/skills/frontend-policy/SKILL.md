@@ -134,6 +134,16 @@ Navigation and any other persistent chrome must stay where the user left it whil
 - The same rule covers a sticky header, toolbar, filter rail or side panel: pinned, bounded, and independently scrollable. Keep pinned chrome shallow - it eats vertical space on small screens, so collapse it into a drawer or a top bar there rather than pinning it over half the viewport.
 - Verify by scrolling to the BOTTOM of a long page and confirming the sidebar is still on screen with its last entry reachable. Mechanically: the sidebar's `getBoundingClientRect().top` stays at its offset as the page scrolls, and `scrollHeight <= clientHeight` holds for it, or it can scroll itself.
 
+### On a phone the sidebar takes the whole screen
+
+A sidebar keeps its desktop width only while there is a desktop to put it in. On a phone it becomes a full-screen surface, unless the design or the user says otherwise. Apply this by default to any off-canvas chrome: the nav sidebar, a filter rail, a details drawer, a settings panel.
+
+- Full width AND full height: `w-full` (`100%`, `100vw`) with the desktop width added at a breakpoint (`w-full md:w-80`) or capped by `max-w-*`. Prefer `100dvh` over `100vh` for the height so the mobile browser's collapsing toolbar does not cut the panel off.
+- A fixed width on a phone is the defect either way it lands: 320px on a 360px screen leaves a useless sliver of dead content, and anything wider than the viewport is simply cut off.
+- The stacked variant counts as full width: when the layout collapses to one column and the sidebar returns to normal flow, it already spans the screen. Nothing more to do there.
+- Being full screen makes it modal, so treat it as one: a visible close control, dismissal by backdrop tap and Escape, focus moved into the panel and trapped while it is open, focus restored to the trigger on close, and the page behind it locked from scrolling.
+- The exceptions are real but explicit: a design that deliberately keeps a peek of the content behind, and a panel that is hidden on phones entirely because a different component serves that size. Say so in the code rather than leaving it to be read as an oversight.
+
 ---
 
 ## Links In Copy Are Links
@@ -219,6 +229,20 @@ When the user edits a value that must be unique within a set the client already 
 - Apply whenever duplicates are disallowed (unique names, slugs, one-per-parent constraints, "already in use", reserved values). Skip it when repeats are legitimate - never gate a value the model has no basis to treat as unique.
 - Check on every change/blur and block submission while a conflict stands; surface the conflict inline, not only on submit.
 - The cross-record rule itself - mirror the server's exact check (trim, case-fold, scope, reserved values), exclude the edited record's own value, and keep the server as the authority since client data can be stale - is owned by validation-policy. This client check is a UX and request-saving accelerator, never the sole validation layer.
+
+---
+
+## Sign-In, Sign-Up and Recovery Screens
+
+Auth is the first screen a user meets and the one most often shipped half-built. Treat the four screens as one flow: sign in, sign up, forgot password, set a new password. The server-side rules (token lifetime, rate limits, what an answer may reveal) are owned by security-policy; what follows is the UI half.
+
+- Every sign-in form with a password field carries a visible "Forgot your password?" link next to that field, leading to a real reset flow. Building the login screen without it is shipping a dead end.
+- The reset request screen confirms in the same words whether or not the address is registered ("If that address has an account, we have sent a link"). Never render "no account with that email" - the screen would be an account-existence oracle.
+- The new-password screen validates in real time against the same schema the server uses, uses the shared Input (which brings the show/hide toggle), and compares the confirmation field as the user types. Keep Submit disabled until both are valid, with the reason visible.
+- After sign-up the user lands inside the app, already signed in. If the account still needs email verification, say so in the app with a way to resend, and block only the actions that need it.
+- Surface throttling honestly. On a `429`, show how long the wait is (from `Retry-After`), keep the button disabled with a countdown, and never swallow the response into a generic "something went wrong".
+- A one-time-code field is one input with `autocomplete="one-time-code"`, `inputmode="numeric"`, paste of the whole code, and no clearing of what the user typed on a wrong attempt. Say how many attempts are left only if the server chose to reveal it.
+- Never keep a password, token, or code in `localStorage`, a query string, or an analytics payload. A reset token in the URL stays out of logs and out of any third-party script on the page.
 
 ---
 

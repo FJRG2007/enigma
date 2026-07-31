@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "provider": "FJRG2007/enigma",
   "description": "Application and AI-agent security: secrets, authn/authz (least privilege), OWASP Top 10, transport/crypto baseline, secure logging, and agent/MCP/tool-use safety.",
-  "updated": "2026-06-01T00:45:28+02:00",
-  "cliVersion": "1.32.3",
-  "sha": "9971e9d9127397d0152e89d24aad3191e2935e55a8483db7fd15f5d4d7a60e7a"
+  "updated": "2026-07-31T16:26:45+02:00",
+  "cliVersion": "1.32.4",
+  "sha": "e5e7ac2791919e4b8483115ee8b83800c5ebdf4eebde019650d974b400417c55"
 }

@@ -257,3 +257,107 @@ matrix("fe-icon-action-button", false, [
     { name: "test fixture is excluded", file: "src/__tests__/Row.test.tsx", code: "<button>Copy</button>" },
     { name: "build output is excluded", file: "apps/dist/main.js", code: "h('<button class=\"x\">Remove</button>')" },
 ]);
+
+// --- auth-password-reset-entry ------------------------------------------------------
+
+matrix("auth-password-reset-entry", true, [
+    { name: "sign-in form with no way to recover the password", file: "src/app/oauth/login/page.tsx", code: "<form onSubmit={onSubmit}>\n  <Input autoComplete=\"username\" />\n  <Input type=\"password\" autoComplete=\"current-password\" />\n  <Button type=\"submit\">Sign in</Button>\n</form>" },
+    { name: "named login form component", file: "src/components/login-form.tsx", code: "<input type=\"password\" name=\"password\" />" },
+    { name: "App Router sign-in segment", file: "app/(auth)/sign-in/page.tsx", code: "<input type=\"password\" />" },
+    { name: "root-level login segment", file: "login/page.jsx", code: "<input type=\"password\" />" },
+    { name: "Vue sign-in view", file: "src/views/login/Index.vue", code: "<input type=\"password\" v-model=\"credentials.password\" />" },
+    { name: "JSX expression form of the type prop", file: "src/SignIn.tsx", code: "<Input type={\"password\"} value={pw} />" },
+]);
+
+matrix("auth-password-reset-entry", false, [
+    { name: "the forgot-password link is right there", file: "src/app/login/page.tsx", code: "<input type=\"password\" />\n<a href=\"/forgot-password\">Forgot your password?</a>" },
+    { name: "reset route spelled the other way", file: "src/views/login/Index.vue", code: "<input type=\"password\" />\n<router-link to=\"auth/reset/password\">{{ $t('LOGIN.FORGOT_PASSWORD') }}</router-link>" },
+    { name: "Spanish copy", file: "src/pages/login.tsx", code: "<input type=\"password\" />\n<a href=\"/recuperar\">Olvide mi contrasena</a>" },
+    { name: "passwordless magic-link form", file: "src/app/login/page.tsx", code: "<input type=\"password\" />\n// magic-link fallback offered below" },
+    { name: "the page only composes the form", file: "src/app/login/page.tsx", code: "export default function Page() {\n  return <LoginForm />;\n}" },
+    { name: "deliberate opt-out", file: "src/app/login/page.tsx", code: "// enigma:allow-no-reset internal tool, SSO only\n<input type=\"password\" />" },
+    { name: "a password field outside any sign-in surface", file: "src/settings/profile.tsx", code: "<input type=\"password\" name=\"newPassword\" />" },
+    { name: "storybook fixture is excluded", file: "src/app/login/page.stories.tsx", code: "<input type=\"password\" />" },
+]);
+
+// --- auth-signup-auto-login ---------------------------------------------------------
+
+matrix("auth-signup-auto-login", true, [
+    { name: "registration pushes the user to the login screen", file: "src/app/register/page.tsx", code: "await createAccount(values);\nrouter.push(\"/login\");" },
+    { name: "signup redirect helper", file: "app/(auth)/signup/actions.ts", code: "await db.user.create({ data });\nredirect(\"/sign-in\");" },
+    { name: "location assignment", file: "src/pages/sign-up.jsx", code: "await api.register(form);\nwindow.location.href = \"/signin?registered=1\";" },
+    { name: "named route push", file: "src/views/signup/Index.vue", code: "await register(credentials);\nrouter.push({ name: \"login\" });" },
+]);
+
+matrix("auth-signup-auto-login", false, [
+    { name: "signs the user in after registering", file: "src/app/register/page.tsx", code: "await createAccount(values);\nawait signIn(\"credentials\", { email, password });\nrouter.push(\"/app\");" },
+    { name: "session established server-side", file: "app/signup/actions.ts", code: "const user = await db.user.create({ data });\nawait createSession(user.id);\nredirect(\"/dashboard\");" },
+    { name: "the 'already have an account' link is not a redirect", file: "src/app/register/page.tsx", code: "<p>Already have an account? <a href=\"/login\">Sign in</a></p>" },
+    { name: "verification step instead of the login form", file: "src/views/signup/Index.vue", code: "await register(credentials);\nrouter.push({ name: \"auth_verify_email\" });" },
+    { name: "deliberate redirect", file: "src/app/register/page.tsx", code: "// enigma:allow-login-redirect admin creates the account, the user signs in themselves\nrouter.push(\"/login\");" },
+    { name: "test file is excluded", file: "src/app/register/page.test.tsx", code: "router.push(\"/login\");" },
+]);
+
+// --- auth-rate-limit ----------------------------------------------------------------
+
+matrix("auth-rate-limit", true, [
+    { name: "App Router login handler with no limiter", file: "app/api/auth/login/route.ts", code: "export async function POST(request: Request) {\n  const { email, password } = await request.json();\n  return NextResponse.json(await verify(email, password));\n}" },
+    { name: "express register route", file: "src/routes/register.ts", code: "router.post(\"/register\", async (req, res) => {\n  const user = await createUser(req.body);\n  res.json(user);\n});" },
+    { name: "2FA verification endpoint", file: "app/api/auth/2fa/route.ts", code: "export const POST = async (req: Request) => verifyTotp(await req.json());" },
+    { name: "OTP check in FastAPI", file: "api/otp.py", code: "@app.post(\"/otp/verify\")\nasync def verify(payload: OtpIn):\n    return check(payload.code)" },
+    { name: "server action reachable from the sign-in page", file: "src/app/oauth/login/actions.ts", code: "\"use server\";\n\nexport async function resolveIdentifier(identifier: string) {\n  return prisma.user.findUnique({ where: { username: identifier } });\n}" },
+]);
+
+matrix("auth-rate-limit", false, [
+    { name: "upstash ratelimit in the handler", file: "app/api/auth/login/route.ts", code: "const ratelimit = new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(5, \"60 s\") });\nexport async function POST(request: Request) {\n  const { success } = await ratelimit.limit(ip);\n  if (!success) return new Response(null, { status: 429 });\n}" },
+    { name: "express-rate-limit middleware on the route", file: "src/routes/login.ts", code: "import rateLimit from \"express-rate-limit\";\nrouter.post(\"/login\", rateLimit({ windowMs: 60000, max: 5 }), handler);" },
+    { name: "server action that throttles the probe", file: "src/app/oauth/login/actions.ts", code: "\"use server\";\nimport { rateLimit } from \"@/lib/rate-limit-service\";\nexport async function resolveIdentifier(value: string) {\n  const throttle = await rateLimit(`hint:${value}`, 10, 600000);\n  if (!throttle.ok) return null;\n}" },
+    { name: "failed-attempt accounting per account", file: "api/login.py", code: "@app.post(\"/login\")\nasync def login(body: LoginIn):\n    if attempts_remaining(body.email) <= 0:\n        raise HTTPException(429)" },
+    { name: "a CLI that signs in against a remote API", file: "src/commands/login.ts", code: "const res = await fetch(`${apiUrl}/api/tokens`, { method: \"POST\", body });" },
+    { name: "a local admin reset script", file: "apps/dokploy/reset-password.ts", code: "(async () => {\n  const owner = await findOwner();\n  await db.update(account).set({ password });\n})();" },
+    { name: "the client component that posts to the endpoint", file: "src/app/login/page.tsx", code: "await fetch(\"/api/auth/login\", { method: \"POST\", body: JSON.stringify(values) });" },
+    { name: "limit enforced upstream, noted in the file", file: "app/api/auth/login/route.ts", code: "// enigma:allow-unlimited-auth the gateway limits this route\nexport async function POST(request: Request) { return handle(request); }" },
+    { name: "test file is excluded", file: "app/api/auth/login/route.test.ts", code: "export async function POST(request: Request) { return handle(request); }" },
+]);
+
+// --- file-name casing (ignoreFileCase) ----------------------------------------------
+
+matrix("auth-password-reset-entry", true, [
+    { name: "PascalCase component name", file: "src/components/LoginForm.tsx", code: "<input type=\"password\" />" },
+    { name: "PascalCase sign-in file", file: "src/pages/SignIn.tsx", code: "<input type=\"password\" />" },
+    { name: "capitalized directory segment", file: "src/views/Login/Index.vue", code: "<input type=\"password\" />" },
+]);
+
+test("case-insensitive matching is opt-in per rule, so an exact-name glob stays exact", () => {
+    // ctx-memory-budget owns CLAUDE.md/AGENTS.md by their exact names: a lowercase claude.md is
+    // somebody's ordinary doc, not the always-on memory file, and must not inherit its budget.
+    const big = "x".repeat(41_000);
+    expect(flagged("ctx-memory-budget", "CLAUDE.md", big)).toBe(true);
+    expect(flagged("ctx-memory-budget", "docs/claude.md", big)).toBe(false);
+});
+
+// --- fe-mobile-drawer-full-width ----------------------------------------------------
+
+matrix("fe-mobile-drawer-full-width", true, [
+    // The two real defects the reference corpus produced, verbatim.
+    { name: "520px drawer pinned to the edge", file: "dashboard/templates/dashboard.html", code: "<div class=\"fixed top-0 right-0 h-full w-[520px] bg-surface border-l border-border z-50 flex flex-col\">" },
+    { name: "200px mobile sidebar", file: "src/components/sidebar/Sidebar.vue", code: "<aside class=\"flex flex-col fixed top-0 ltr:left-0 h-full z-40 w-[200px] md:w-auto\">" },
+    { name: "Tailwind step width on an inset panel", file: "src/components/Drawer.tsx", code: "<div className=\"fixed inset-y-0 right-0 w-96 bg-white shadow-xl\">" },
+    { name: "three-quarter sheet, the shadcn default", file: "src/components/ui/sheet.tsx", code: "<SheetPrimitive.Content className=\"fixed inset-y-0 right-0 h-full w-3/4 border-l\" />" },
+    { name: "rem width", file: "src/Panel.svelte", code: "<div class=\"fixed inset-y-0 start-0 w-[20rem] bg-surface\">" },
+    { name: "width declared before the panel classes", file: "src/Nav.tsx", code: "<nav className=\"w-80 fixed inset-y-0 left-0 bg-card\">" },
+]);
+
+matrix("fe-mobile-drawer-full-width", false, [
+    { name: "full width with the desktop size at a breakpoint", file: "src/components/Drawer.tsx", code: "<div className=\"fixed inset-y-0 right-0 w-full md:w-96 bg-white\">" },
+    { name: "capped by max-w-full", file: "src/EditContact.vue", code: "<div class=\"fixed inset-y-0 ltr:right-0 z-50 flex flex-col w-[30rem] max-w-full h-full bg-n-surface-2\">" },
+    { name: "full width capped at a max on larger screens", file: "src/Drilldown.vue", code: "<aside class=\"fixed inset-y-0 end-0 flex w-full max-w-xl flex-col bg-n-solid-1\">" },
+    { name: "hidden on phones, a drawer serves that size", file: "packages/ui/src/shell/app-shell.tsx", code: "<aside className=\"sticky top-14 hidden h-[calc(100vh-3.5rem)] w-60 shrink-0 self-start overflow-y-auto md:block\">" },
+    { name: "hairline chart cursor", file: "packages/ui/src/components/charts.tsx", code: "<div className=\"absolute inset-y-0 w-px bg-foreground/25\" />" },
+    { name: "resize handle", file: "src/components/sidebar/Sidebar.vue", code: "<div class=\"absolute top-0 h-full w-px ltr:right-0 bg-transparent group-hover:bg-n-brand\" />" },
+    { name: "pseudo-element guide line", file: "src/components/sidebar/SidebarSubGroup.vue", code: "<div class=\"before:absolute before:top-0 before:bottom-0 before:w-0.5 before:bg-n-slate-4\" />" },
+    { name: "a wide element that is not an off-canvas panel", file: "src/Card.tsx", code: "<section className=\"w-96 rounded-lg border p-4\">Settings</section>" },
+    { name: "deliberate partial panel marked on the line", file: "src/Peek.tsx", code: "<div className=\"fixed inset-y-0 right-0 w-80\"> {/* enigma: the design keeps the page visible behind the peek */}" },
+    { name: "file-wide opt-out", file: "src/Peek.tsx", code: "// enigma:allow-partial-drawer\n<div className=\"fixed inset-y-0 right-0 w-80\">" },
+    { name: "build output is excluded", file: "apps/web/dist/index.html", code: "<div class=\"fixed inset-y-0 right-0 w-[520px]\">" },
+]);

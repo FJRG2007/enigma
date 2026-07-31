@@ -83,8 +83,9 @@ Non-negotiable, language-agnostic defaults - apply them by default without being
 <!-- enigma:gate:start -->
 ### AI Quality Gate (Automatic)
 
-- The AI quality gate is active. When you finish a code task on a feature branch (changes committed, non-default branch), drive the gate yourself before reporting the work done - the user should not have to ask for it or run any setup command.
-- Scope is per project: skip automatic driving when the repo's `.enigma.json` sets `gate: false`, when there is nothing committed to validate, or when you are on the default branch (commit the work to a feature branch first).
+- The AI quality gate is active. When you finish a code task and the changes are committed, drive the gate yourself before reporting the work done - on WHATEVER branch the work is on, the default branch included. The user should not have to ask for it or run any setup command.
+- Skip automatic driving only when: the user told you to skip it, the repo's `.enigma.json` sets `gate: false`, there is nothing committed to validate, or `axi run` refuses the branch as protected (`gate-protected-branches`) - then say so and leave the work unvalidated rather than switching branches on your own. To stop it for good the user runs `/gate off` (this project) or `enigma config gate off -g` (everywhere); offer that instead of quietly not running it.
+- On the default branch the pipeline opens no PR and its push lands directly on that branch. That is the intended behavior there; report it as the outcome instead of waiting for a PR link.
 - If the repo is not initialized yet (`enigma gate axi` says so), run `enigma gate init` once yourself, then proceed. If `enigma gate` itself misbehaves, `enigma gate doctor` reports why.
 - Drive it through the `/gate` workflow (`enigma gate axi run --intent "<what the user set out to accomplish>"`): authorize `auto-fix` and `no-op` findings on your own judgment, but STOP and escalate every `ask-user` finding verbatim. Do NOT pass `--yes` and do NOT merge the PR yourself - on `checks-passed`, leave the PR ready and ask the user to review and merge it.
 - While a run is active never edit code to fix a finding; the pipeline owns the fixes (respond with `--action fix`). The full command reference lives in the gate skill / `/gate` command.

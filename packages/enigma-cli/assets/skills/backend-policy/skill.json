@@ -4,6 +4,6 @@
   "provider": "FJRG2007/enigma",
   "description": "Backend/API architecture: controller-service-repository layering, API and request optimization (batching, avoiding redundant calls, skipping no-op writes), server-side caching (Redis), and Zod boundary validation.",
   "updated": "2026-07-23T04:41:39+02:00",
-  "cliVersion": "1.32.3",
+  "cliVersion": "1.32.4",
   "sha": "d091e8708888d23ee14cdd6c0e71f386861f2252d95360895a31c73db090a689"
 }

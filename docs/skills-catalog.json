@@ -1,6 +1,6 @@
 {
   "generator": "enigma seal",
-  "cliVersion": "1.32.3",
+  "cliVersion": "1.32.4",
   "count": 20,
   "skills": [
     {
@@ -96,8 +96,8 @@
       "version": "1.20.0",
       "description": "Frontend architecture: reusable components, abstraction thresholds, state management, no-op detection (skip any operation whose result equals current state, not just form saves; dirty means different from the loaded snapshot, not touched), instant first paint (render the shell, load data async, skeletons), perceived performance (prefetch on intent, debounce/throttle, cancel stale requests, avoid waterfalls, lazy widgets), large-list rendering (infinite scroll/pagination, virtualization, skeletons, progressive loading), optimistic UI with rollback, visual restraint (one card level, spacing before borders, one elevation scale), icon actions (repeated row/card actions are icon-only buttons with aria-label plus title, not text labels), responsive/adaptive layout (fluid units, breakpoints, no overlap/overflow, viewport meta, touch targets), variable-length text (min-width:0 in flex/grid, wrap vs truncate, long unbroken strings, worst-case content checks), and AI chat/agent interfaces via Vercel's AI Elements registry instead of hand-rolled message threads.",
       "provider": "FJRG2007/enigma",
-      "updated": "2026-07-30T19:29:05+02:00",
-      "sha": "a9750bd74505373aea8d9265515fc3b7f0fddf3e822d9e046248223e24ff96af"
+      "updated": "2026-07-31T16:26:45+02:00",
+      "sha": "39a47d023d64ea1bb9b72fa872276b617cb8c85d910e5b8fb2f23d4ae44f5ef5"
     },
     {
       "name": "git-policy",
@@ -120,8 +120,8 @@
       "version": "1.0.0",
       "description": "Application and AI-agent security: secrets, authn/authz (least privilege), OWASP Top 10, transport/crypto baseline, secure logging, and agent/MCP/tool-use safety.",
       "provider": "FJRG2007/enigma",
-      "updated": "2026-06-01T00:45:28+02:00",
-      "sha": "9971e9d9127397d0152e89d24aad3191e2935e55a8483db7fd15f5d4d7a60e7a"
+      "updated": "2026-07-31T16:26:45+02:00",
+      "sha": "e5e7ac2791919e4b8483115ee8b83800c5ebdf4eebde019650d974b400417c55"
     },
     {
       "name": "skill-creator",

@@ -9,7 +9,7 @@ import { docHref } from "../../../lib/url";
 
 The quality gate puts an AI-driven validation pipeline in front of your real remote. Instead of pushing straight to `origin`, you push through the gate: it spins up a **disposable worktree**, runs the pipeline, and only forwards the branch to your push target - and opens a clean PR - once every check passes. Your own checkout is never touched.
 
-It is **experimental and off by default**. Nothing happens, and the `/gate` command is not deployed to your agents, until you opt in.
+It is **on by default**, and still **experimental**: its commands, findings and output may change between releases. It costs nothing until a code task is committed, and it switches off per project or globally.
 
 ## How it works
 
@@ -35,21 +35,39 @@ Each step either passes on its own or stops with a **finding** for you to act on
 
 Safe, mechanical fixes are applied automatically; anything that touches your intent is escalated for you to **approve**, **fix**, or **skip**. Nothing reaches the configured push target until every check is green.
 
-## Enable it
+## Set it up
 
-The gate is opt-in. Turn it on, then initialize it in a repo:
+The gate is already on: installing enigma deploys the `/gate` command to your agents, and `enigma update` delivers it to a deployment you installed earlier. What is left is one command per repo:
 
-<Cmd name="enigma config gate on" ex={["enigma config gate on", "enigma gate init"]}>
-`config gate on` enables the feature and makes the `/gate` command available to your agents. `enigma gate init` sets up the gate in the current repo: a disposable bare repo that fronts your real remote, a post-receive hook, and a git remote named `gate`.
+<Cmd name="enigma gate init" ex={["enigma gate init", "enigma config gate"]}>
+`enigma gate init` sets up the gate in the current repo: a disposable bare repo that fronts your real remote, a post-receive hook, and a git remote named `gate`. Your agent runs it on its own the first time it needs it. `enigma config gate` prints whether the gate is on where you are.
 </Cmd>
 
-The repo needs an `origin` remote (the gate routes PRs to it), and your work must be **committed on a feature branch** - the gate validates committed history, not the default branch.
+The repo needs an `origin` remote (the gate routes PRs to it), and your work must be **committed** - the gate validates committed history.
+
+## Turn it off
+
+Per project, everywhere, or from inside your agent:
+
+<Cmd name="enigma config gate off" ex={["enigma config gate off -l", "enigma config gate off -g", "/gate off"]}>
+`-l` writes `gate: false` into this repo's `.enigma.json` and leaves your other projects alone; `-g` switches it off everywhere. `/gate off` does the project-scoped one from your agent, and `/gate status` reads the current value. Restart the agent afterwards - memory is read at startup.
+</Cmd>
+
+## Which branch
+
+Any branch, including the default one. On a feature branch the pipeline ends by opening a PR and watching its checks. On the default branch there is nothing to open a PR against, so the PR and CI steps are skipped and the validated push lands directly on that branch - review, tests, docs and lint still run in full.
+
+If a branch must only ever be reached through review, list it:
+
+<Cmd name="enigma config gate-protected-branches add main" ex={["enigma config gate-protected-branches add main", "enigma config gate-protected-branches", "enigma config gate-protected-branches remove main"]}>
+Branch names are matched exactly. `axi run` then refuses that branch and says how to lift the protection. The list is empty by default, lives in `.enigma.json`, and a project's own list overrides the global one.
+</Cmd>
 
 ## Automatic driving
 
-With the gate on, you do not have to ask your agent to run it or initialize repos by hand. Enabling it renders an always-on instruction into the deployed agent memory: after the agent finishes a code task on a feature branch, it **drives the gate itself** - running `enigma gate init` once if the repo is not set up yet - then applies the safe `auto-fix`/`no-op` findings, escalates every `ask-user` finding to you, and leaves the PR ready for you to review and merge (it never merges on its own).
+You do not have to ask your agent to run the gate or initialize repos by hand. The deployed agent memory carries an always-on instruction: once the agent has committed a code task, it **drives the gate itself** on whatever branch that work is on - running `enigma gate init` once if the repo is not set up yet - then applies the safe `auto-fix`/`no-op` findings, escalates every `ask-user` finding to you, and leaves the PR ready for you to review and merge (it never merges on its own).
 
-This is **per project**. To opt a single repo out while the gate stays on everywhere else, set `gate: false` in that repo's `.enigma.json`; the agent skips automatic driving there. Restart your agent after toggling the gate - memory is read at startup.
+This is **per project**. To opt a single repo out while the gate stays on everywhere else, set `gate: false` in that repo's `.enigma.json` (or run `/gate off` there); the agent skips automatic driving there.
 
 ## Three ways to trigger it
 

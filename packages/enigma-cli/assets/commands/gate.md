@@ -1,6 +1,6 @@
 ---
-description: Validate code changes through the enigma gate pipeline - automated review, tests, lint, docs, push, PR, and CI - before they reach the configured push target. Use when the user asks to run the gate, gate/ship/validate their changes, push safely, do a task and then validate it, or invokes /gate.
-argument-hint: [task] | (bare to gate already-committed work) | "skip the lint step"-style requests
+description: Validate code changes through the enigma gate pipeline - automated review, tests, lint, docs, push, PR, and CI - before they reach the configured push target. Use when the user asks to run the gate, gate/ship/validate their changes, push safely, do a task and then validate it, or invokes /gate. Also the way to turn the gate on or off (/gate on, /gate off, /gate status) when the user asks to enable, disable, or stop it running automatically.
+argument-hint: [task] | (bare to gate already-committed work) | on | off | status | "skip the lint step"-style requests
 ---
 
 # /gate
@@ -18,6 +18,33 @@ for something specific, translate it into the matching `axi run` flags yourself 
 for example "skip the lint step" becomes `--skip=lint`. Run
 `enigma gate axi run --help` to see the flags.
 
+## Turning the gate on and off
+
+`/gate on`, `/gate off` and `/gate status` are settings, not runs - handle them
+first and stop there, without touching the pipeline.
+
+| Invocation | Command to run |
+| --- | --- |
+| `/gate status` | `enigma config gate` (prints the value in force here) |
+| `/gate off` | `enigma config gate off -l` |
+| `/gate on` | `enigma config gate on -l` |
+| `/gate off --global` (or "everywhere", "in every project") | `enigma config gate off -g` |
+| `/gate on --global` | `enigma config gate on -g` |
+
+Scope matters, so be explicit about it. Plain `/gate off` switches the gate off
+for **this project only** by writing `gate: false` into its `.enigma.json` -
+narrow and reversible, and it leaves every other repo alone. Only go global when
+the user actually says so. Report which of the two you applied.
+
+Toggling rewrites the agent memory file, which is read at startup: tell the user
+the change takes effect in their **next** session. In this one, keep honouring
+what they just asked for - if they turned the gate off, do not drive it again.
+
+One asymmetry worth stating when it applies: a **global** off also removes this
+command from the agent, so tell the user that turning it back on is
+`enigma config gate on -g` from a terminal. A project-scoped off leaves `/gate`
+in place, so `/gate on` works there.
+
 ## Two ways to invoke
 
 - **Validate-only** - bare `/gate` (optionally with flag-style requests like
@@ -27,15 +54,19 @@ for example "skip the lint step" becomes `--skip=lint`. Run
   carry out the task yourself, then validate:
   1. **Check scope.** Inspect `git status` before changing or committing anything.
      Preserve unrelated uncommitted changes; commit only what belongs to the task.
-  2. **Do the work**, then **commit it on a feature branch**. If the user is on
-     the default branch, create a feature branch first - the gate validates
-     committed history on a non-default branch.
+  2. **Do the work**, then **commit it**. The gate validates committed history on
+     whatever branch the user is on - never switch or create a branch just to run
+     it.
   3. **Then validate**, passing the user's task as your `--intent` (the goal in
      their words), enriched with the decisions and tradeoffs you made.
 
 ## Before you start
 
-- The work must be **committed** on a **feature branch** (not the default branch).
+- The work must be **committed**. Any branch qualifies, the default branch
+  included - there the pipeline opens no PR and its push lands directly on that
+  branch, which is the intended behavior. The only exception is a branch the user
+  listed in `gate-protected-branches`: `axi run` refuses it, and the answer is to
+  tell the user, not to move their work to another branch.
 - The repository must be initialized with `enigma gate init`.
 
 If any precondition fails, `axi run` returns an `error:` with the exact fix -
@@ -92,7 +123,9 @@ uses `--intent` to tell a deliberate choice from a mistake.
      driving. Tell the user the PR is ready and ask them to review and merge it
      (link in the `help` line). The gate keeps monitoring the PR in the
      background; do not poll for the merge.
-   - `passed` - cleared the gate and the PR was merged or closed.
+   - `passed` - cleared the gate and the PR was merged or closed. On the default
+     branch this is the normal ending: no PR is opened and CI monitoring is
+     skipped, so the run finishes here once the push lands.
    - `failed` / `cancelled` - read the output, fix what it points at, commit on
      the same branch, and drive again (`axi run` for a fresh run, or
      `enigma gate rerun`). Do not leave the user at a failed outcome without
