@@ -39,6 +39,25 @@ import { dashboardAssetsDir, installedDashboardVersion, spawnDashboardPkgInstall
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+/**
+ * The enigma-cli version sitting on disk right now. `enigma update` replaces the package
+ * under the running process, so `ENIGMA_VERSION` - stamped into the env by the launcher
+ * that started THIS process - is the version we booted with, not the installed one. The
+ * launcher also points `ENIGMA_ASSETS_DIR` at `<pkgRoot>/assets`, so the package manifest
+ * beside it answers the question honestly. Falls back to the env value (dev, or an
+ * unreadable manifest), which is correct whenever no update has happened underneath us.
+ */
+function installedCliVersion(): string {
+    const assets = process.env.ENIGMA_ASSETS_DIR;
+    if (assets) {
+        try {
+            const pkg = JSON.parse(readFileSync(join(dirname(assets), "package.json"), "utf8")) as { version?: unknown; };
+            if (typeof pkg.version === "string" && pkg.version) return pkg.version;
+        } catch { /* fall through to the env value */ }
+    }
+    return process.env.ENIGMA_VERSION || "";
+}
+
 /** The vendored charting library file name, served locally - never a CDN. */
 const LIB_FILE = "chart.min.js";
 
@@ -420,7 +439,7 @@ function serveUpdate(res: import("node:http").ServerResponse): void {
             const changed = parts.length > 0;
             const note = (changed ? parts.join("; ") : "Already up to date") + ". For a CLI update run `enigma update` in a terminal.";
             res.writeHead(200, JSON_HDR);
-            res.end(JSON.stringify({ ok: true, changed, version: process.env.ENIGMA_VERSION || "", note }));
+            res.end(JSON.stringify({ ok: true, changed, version: installedCliVersion(), note }));
         })
         .catch(() => { res.writeHead(500, JSON_HDR); res.end('{"ok":false,"error":"update failed"}'); });
 }
@@ -1243,6 +1262,11 @@ export function restartDashboardDaemon(): boolean {
     if (!runningDaemon()) return false;
     stopDashboardDaemon();
     try {
+        // The child inherits THIS process's env, and during `enigma update` that env carries
+        // the version the OLD launcher started us with. The respawned daemon would then keep
+        // advertising it and the page's "update available" banner would survive the very
+        // update it is asking for, so the version is re-read from the package on disk.
+        const env = { ...process.env, ENIGMA_VERSION: installedCliVersion() };
         // Respawn the SAME way spawnDashboardDaemon does - process.execPath, no shell - which is
         // windowless on Windows (a .exe with windowsHide). Using the enigma.cmd launcher + shell:true
         // popped a visible Node/cmd console on every `enigma update`. This still picks up the new
@@ -1252,7 +1276,7 @@ export function restartDashboardDaemon(): boolean {
         const args = (exe === "node" || exe === "node.exe" || exe === "bun" || exe === "bun.exe")
             ? [process.argv[1]!, "__dashboard-serve"]
             : ["__dashboard-serve"];
-        const child = spawn(process.execPath, args, { detached: true, stdio: "ignore", windowsHide: true });
+        const child = spawn(process.execPath, args, { detached: true, stdio: "ignore", windowsHide: true, env });
         child.on("error", () => { /* the daemon just won't come back until the next open */ });
         child.unref();
         return true;
