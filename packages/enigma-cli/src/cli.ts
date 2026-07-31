@@ -10,28 +10,28 @@ import * as p from "@clack/prompts";
 import * as dash from "./dashboard";
 import { runGuardCli } from "./guard";
 import * as skillsMod from "./skills";
-import { isDir, readJson } from "./util";
-import { DASHBOARD_BINDS, readConfig, setEnigmaValue, type DashboardBind } from "./config";
 import { readFileSync } from "node:fs";
+import { isDir, readJson } from "./util";
 import { fileURLToPath } from "node:url";
-import { spawnSync } from "node:child_process";
 import type { IssueKind } from "./issue";
 import { discoverAgents } from "./agents";
 import { runConfigCli } from "./settings";
 import { collectReporter } from "./reporter";
 import { hostname, userInfo } from "node:os";
 import type { ContentType } from "./compress";
+import { spawnSync } from "node:child_process";
 import { starRepoInBackground } from "./github";
-import { buildIssueUrl, isHeadless, openUrl } from "./issue";
-import { ensureDashboardToken, readDashboardToken } from "./dashboard-token";
 import { dirname, join, resolve } from "node:path";
+import { buildIssueUrl, isHeadless, openUrl } from "./issue";
 import { setupGitHooks, GUARD_PROTECTIONS } from "./security";
 import { ensureLaunchable, toolPathStatuses } from "./tool-path";
 import { compress, retrieve, readStats, clearCcr } from "./compress";
 import { BUILTIN_RULES, checkPath, formatFindings } from "./guardrails";
-import { readGuardrailsConfig, disableRule, enableRule, removeRule } from "./guardrails-config";
+import { ensureDashboardToken, readDashboardToken } from "./dashboard-token";
 import type { HubAccount, HubExitAction, HubProfile, HubSkill } from "./tui/types";
 import { ensureLinterInstalled, isLinterInstalled, refreshLinterPkg } from "./lint";
+import { DASHBOARD_BINDS, readConfig, setEnigmaValue, type DashboardBind } from "./config";
+import { readGuardrailsConfig, disableRule, enableRule, removeRule } from "./guardrails-config";
 import { checkLatestNow, getAvailableUpdate, notifyUpdate, performUpdateCheck, runUpdate } from "./update";
 import { isUsableSession, sessionEmail, sessionState, transferSession, type SessionState } from "./claude-oauth";
 import { ensureDashboardCurrent, isDashboardPkgCurrent, isDashboardPkgInstalled, refreshDashboardPkg } from "./dashboard-pkg";
@@ -1834,7 +1834,13 @@ export async function run(argv: string[]): Promise<void> {
     // -L 9090:db:5432, ...) never reach enigma's own argument parser.
     if (argv[0] === "ssh") { process.exit(await runSshCli(argv.slice(1), Boolean(process.stdout.isTTY))); }
     const opts = parseArgs(argv);
-    const interactive = Boolean(process.stdout.isTTY) && !opts.yes;
+    // BOTH ends must be a terminal. A prompt writes to stdout and READS FROM STDIN, so with a
+    // non-tty stdin (`curl ... | sh`, a redirect, a CI runner) every prompt gets EOF, which
+    // clack reports as a cancel - and the installer's first select treats that as "aborted"
+    // and installs nothing. Gating on stdout alone made that failure look like a broken
+    // selector; requiring stdin too takes the non-interactive path, which installs the
+    // defaults instead of giving up.
+    const interactive = Boolean(process.stdout.isTTY) && Boolean(process.stdin.isTTY) && !opts.yes;
     const version = process.env.ENIGMA_VERSION || PKG.version || "0.0.0";
     // Statusline: fast, silent badge for an agent's status bar (e.g. Claude Code). No
     // update notice or other output. The Node launcher also short-circuits this before

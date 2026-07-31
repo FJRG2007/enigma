@@ -16,16 +16,39 @@ echo "enigma: clearing the npm cache (forces the latest version)..."
 npm cache clean --force >/dev/null 2>&1 || true
 
 echo "enigma: installing enigma-cli globally..."
-npm install -g enigma-cli@latest
+# A global install needs write access to npm's prefix, which a system Node on macOS does
+# not grant without sudo. That is not fatal here: npx runs the same package without one.
+if npm install -g enigma-cli@latest; then
+  global_install=yes
+else
+  global_install=no
+  echo "enigma: the global install failed - continuing with npx for this run." >&2
+fi
+
+# The package can be installed and still not be on this shell's PATH (a fresh npm prefix),
+# so resolve the command instead of assuming it is there.
+if [ "$global_install" = yes ] && command -v enigma >/dev/null 2>&1; then
+  run_enigma() { enigma "$@"; }
+else
+  if [ "$global_install" = yes ]; then
+    echo "enigma: 'enigma' is not on this shell's PATH yet - using npx (open a new shell to get the command)." >&2
+  fi
+  run_enigma() { npx --yes enigma-cli@latest "$@"; }
+fi
 
 echo "enigma: setting up your agents (answer the prompts)..."
-# Read prompts from the controlling terminal, not the curl pipe (rustup's trick); fall
-# back to a no-prompt default deploy when there is no terminal (CI / headless).
-if [ -e /dev/tty ]; then
-  enigma install </dev/tty
+# Prompts must read the controlling terminal, not the curl pipe (rustup's trick). TRY to
+# open it in a subshell rather than testing that the file exists: on macOS /dev/tty is
+# always present and the open still fails when the process has no controlling terminal,
+# so the old `[ -e /dev/tty ]` test passed, the prompt then read EOF, and the installer
+# treated that as a cancel and installed nothing. The subshell keeps a failed open from
+# taking this script down with it - `exec` is a special built-in, and a redirection error
+# on one exits a non-interactive shell outright.
+if (exec </dev/tty) 2>/dev/null; then
+  run_enigma install </dev/tty
 else
-  echo "enigma: no terminal detected - deploying defaults (run 'enigma' later to customize)."
-  enigma install --all --yes
+  echo "enigma: no terminal available - deploying defaults (run 'enigma' later to customize)."
+  run_enigma install --all --yes
 fi
 
 echo "enigma: done. Run 'enigma' anytime for the interactive hub."
