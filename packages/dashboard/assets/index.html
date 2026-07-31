@@ -36,8 +36,25 @@
                 radial-gradient(820px 520px at 2% 2%, rgba(111,207,151,0.045), transparent 52%),
                 var(--bg);
             background-attachment: fixed;
-            -webkit-font-smoothing: antialiased; padding: 30px 30px 48px; max-width: 1560px;
+            -webkit-font-smoothing: antialiased;
         }
+        /* Shell: a fixed-width rail beside the scrolling content. The rail owns its own
+           overflow so a long section list stays reachable at the bottom of a long page. */
+        .shell { display: flex; align-items: flex-start; min-height: 100vh; }
+        .sidebar {
+            position: sticky; top: 0; z-index: 30; flex: 0 0 214px; width: 214px;
+            height: 100vh; display: flex; flex-direction: column; gap: 14px;
+            padding: 22px 14px 16px; background: rgba(0,0,0,0.28);
+            border-right: 1px solid var(--border-soft); overflow-y: auto; overscroll-behavior: contain;
+        }
+        .side-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; padding: 0 6px; }
+        /* Both carry .iconbtn, which is declared later in this sheet, so these need the
+           two-class form to win: a bare .side-x would lose to it on source order. */
+        .iconbtn.side-x { display: none; }
+        .side-foot { margin-top: auto; padding: 12px 6px 0; border-top: 1px solid var(--border-soft); }
+        .content { flex: 1; min-width: 0; padding: 30px 30px 48px; max-width: 1560px; }
+        .iconbtn.nav-burger { display: none; }
+        .nav-scrim { position: fixed; inset: 0; z-index: 25; background: rgba(0,0,0,0.6); }
         a { color: var(--accent2); }
         /* Quality floor: one visible keyboard-focus ring for every interactive control
            (the custom-styled buttons/tabs/links carry no native outline otherwise). */
@@ -65,14 +82,15 @@
         }
         @keyframes caret { 0%, 50% { opacity: 1; } 50.01%, 100% { opacity: 0; } }
         .sub { font-family: var(--mono); color: var(--muted); font-size: 10.5px; text-transform: uppercase; letter-spacing: 1.6px; }
-        /* Tabs as a segmented control: one inset track, the active tab a raised accent pill. */
-        .tabs { display: flex; gap: 2px; padding: 4px; background: rgba(0,0,0,0.25); border: 1px solid var(--border-soft); border-radius: 13px; }
+        /* Sections as a vertical rail: the sidebar is already the surface, so the active
+           entry is a filled pill and the rest are plain rows. */
+        .tabs { display: flex; flex-direction: column; gap: 2px; }
         .tabs .tab {
-            font-family: var(--mono); text-decoration: none; color: var(--muted); font-size: 12px; font-weight: 600;
-            padding: 7px 15px; border-radius: 9px; border: 1px solid transparent; transition: background .15s, color .15s, border-color .15s;
+            font-family: var(--mono); text-decoration: none; color: var(--muted); font-size: 12.5px; font-weight: 600;
+            padding: 8px 12px; border-radius: 9px; border: 1px solid transparent; transition: background .15s, color .15s, border-color .15s;
         }
-        .tabs .tab:hover { color: var(--text); }
-        .tabs .tab.active { color: var(--accent); background: var(--surface2); border-color: var(--border); box-shadow: var(--shadow-1); }
+        .tabs .tab:hover { color: var(--text); background: rgba(255,255,255,0.03); }
+        .tabs .tab.active { color: var(--accent); background: var(--surface2); border-color: var(--border); }
         .live { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; font-family: var(--mono); padding: 5px 12px; background: rgba(0,0,0,0.25); border: 1px solid var(--border-soft); border-radius: 999px; }
         .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--good); box-shadow: 0 0 8px var(--good); }
         .dot.stale { background: var(--muted); box-shadow: none; }
@@ -449,13 +467,49 @@
         .cstatus.warn .cdot { background: var(--warn); }
         .cstatus.orange .cdot { background: var(--accent); }
         .cstatus.bad .cdot { background: var(--bad); box-shadow: 0 0 8px var(--bad); }
+        /* Quality gate: a YAML editor plus one row per run carrying its pipeline strip. */
+        .gate-yaml {
+            width: 100%; min-height: 300px; font-family: var(--mono); font-size: 12.5px; line-height: 1.55;
+            resize: vertical; white-space: pre; overflow-wrap: normal; overflow-x: auto; tab-size: 2;
+        }
+        .gate-run { padding: 13px 0; border-top: 1px solid var(--border-soft); }
+        .gate-run:first-child { border-top: 0; padding-top: 4px; }
+        .gate-run-h { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+        .gate-run-b { font-family: var(--mono); font-size: 13px; color: var(--text); overflow-wrap: anywhere; }
+        .gate-run-meta { font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
+        .gate-steps { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 9px; }
+        .gate-step {
+            font-family: var(--mono); font-size: 11px; padding: 3px 8px; border-radius: 7px;
+            border: 1px solid var(--border-soft); color: var(--muted); background: rgba(0,0,0,0.22);
+        }
+        .gate-step.completed { color: var(--good); border-color: rgba(111,207,151,0.32); }
+        .gate-step.running { color: var(--accent); border-color: rgba(224,164,88,0.38); }
+        .gate-step.failed, .gate-step.cancelled { color: var(--bad); border-color: rgba(224,108,88,0.38); }
+        .gate-step.awaiting_approval, .gate-step.fix_review, .gate-step.fixing { color: var(--warn); border-color: rgba(224,180,88,0.38); }
+        .gate-find { margin-top: 9px; padding-left: 11px; border-left: 2px solid var(--border); }
+        .gate-find-row { font-size: 12.5px; color: var(--muted); padding: 3px 0; }
+        .gate-find-row b { color: var(--text); font-family: var(--mono); font-size: 12px; font-weight: 600; }
+        /* Below this width the rail becomes a full-screen drawer: a 214px panel on a phone
+           would leave a useless sliver of content beside it. */
+        @media (max-width: 900px) {
+            .sidebar {
+                position: fixed; inset: 0; width: 100%; height: 100dvh; flex-basis: auto;
+                transform: translateX(-100%); transition: transform .18s ease-out; padding: 20px;
+                /* Opaque here: as a rail the translucent tint sits over the page background,
+                   but as an overlay panel it would let the content read through it. */
+                background: var(--bg); border-right: 0;
+            }
+            .sidebar.open { transform: none; }
+            .iconbtn.side-x, .iconbtn.nav-burger { display: inline-flex; }
+            .content { padding: 18px; }
+            .tabs .tab { padding: 11px 12px; font-size: 13.5px; }
+            body.nav-open { overflow: hidden; }
+        }
         @media (max-width: 720px) {
-            body { padding: 16px; }
+            .content { padding: 16px; }
             .grid { grid-template-columns: repeat(2, 1fr); }
             header { gap: 12px; }
-            .tabs { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
-            .tabs .tab { white-space: nowrap; }
-            .nav { margin-left: 0; }
+            .nav { margin-left: auto; flex-wrap: wrap; gap: 10px; }
         }
         /* Pretty scrollbars across the whole dashboard (thin, rounded, themed). */
         * { scrollbar-width: thin; scrollbar-color: #2b3340 transparent; }
@@ -560,10 +614,16 @@
     </style>
 </head>
 <body>
-    <header>
-        <div class="brand">
-            <div class="wordmark">Enigma<span aria-hidden="true">.</span></div>
-            <div class="sub">Control panel</div>
+<div class="shell">
+    <aside id="sidebar" class="sidebar" aria-label="Sections">
+        <div class="side-head">
+            <div class="brand">
+                <div class="wordmark">Enigma<span aria-hidden="true">.</span></div>
+                <div class="sub">Control panel</div>
+            </div>
+            <button type="button" id="navClose" class="iconbtn side-x" title="Close" aria-label="Close the menu">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+            </button>
         </div>
         <nav class="tabs">
             <a href="#/" data-view="savings" class="tab active">Savings</a>
@@ -571,6 +631,7 @@
             <a href="#/accounts" data-view="accounts" class="tab">Accounts</a>
             <a href="#/skills" data-view="skills" class="tab">Skills</a>
             <a href="#/settings" data-view="settings" class="tab">Settings</a>
+            <a href="#/gate" data-view="gate" class="tab">Quality gate</a>
             <a href="#/resources" data-view="resources" class="tab">Resources</a>
             <a href="#/recall" data-view="recall" class="tab">Recall</a>
             <a href="#/codegraph" data-view="codegraph" class="tab">Code graph</a>
@@ -578,9 +639,7 @@
             <a href="#/packs" data-view="packs" class="tab">Packs</a>
             <a href="#/ssh" data-view="ssh" class="tab">SSH</a>
         </nav>
-        <div class="nav">
-            <label class="scope-wrap" title="Scope: global config or a specific project"><span class="scope-lbl">Scope</span><select id="scopeSel" class="scope-sel"><option value="global">Global</option></select></label>
-            <span class="live"><span id="dot" class="dot stale"></span><span id="updated">Connecting...</span></span>
+        <div class="side-foot">
             <nav class="links">
                 <a href="https://github.com/FJRG2007/enigma" target="_blank" rel="noopener noreferrer" title="GitHub repository" aria-label="GitHub repository">
                     <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.52 11.52 0 0 1 12 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222 0 1.606-.014 2.898-.014 3.293 0 .322.216.694.825.576C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>
@@ -592,6 +651,17 @@
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 8h1a4 4 0 1 1 0 8h-1"/><path d="M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4Z"/><line x1="6" y1="2" x2="6" y2="4"/><line x1="14" y1="2" x2="14" y2="4"/></svg>
                 </a>
             </nav>
+        </div>
+    </aside>
+    <div id="navScrim" class="nav-scrim" hidden></div>
+    <div class="content">
+    <header>
+        <button type="button" id="navOpen" class="iconbtn nav-burger" title="Menu" aria-label="Open the menu" aria-expanded="false" aria-controls="sidebar">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+        </button>
+        <div class="nav">
+            <label class="scope-wrap" title="Scope: global config or a specific project"><span class="scope-lbl">Scope</span><select id="scopeSel" class="scope-sel"><option value="global">Global</option></select></label>
+            <span class="live"><span id="dot" class="dot stale"></span><span id="updated">Connecting...</span></span>
         </div>
     </header>
 
@@ -836,6 +906,46 @@
         </div>
     </section>
 
+    <section id="view-gate" style="display:none">
+        <div class="page-head" style="display:flex;align-items:flex-start;gap:16px">
+            <div style="flex:1">
+                <h1>Quality gate</h1>
+                <p>The pipeline your agent drives before a change reaches the push target: review, tests, docs, lint, PR and CI. Switch the scope selector to a project to see that repository's runs and its own config.</p>
+            </div>
+            <button id="gateRefresh" type="button" class="iconbtn" title="Refresh" aria-label="Refresh the gate view"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg></button>
+        </div>
+        <div class="grid">
+            <div class="card"><div class="label">Gate</div><div id="gateOn" class="value">-</div><div class="foot">Auto-driven after a code task</div></div>
+            <div class="card"><div class="label">Daemon</div><div id="gateDaemon" class="value">-</div><div class="foot">Runs the pipeline in the background</div></div>
+            <div class="card"><div class="label">Repository</div><div id="gateRepo" class="value">-</div><div id="gateRepoFoot" class="foot">Scope</div></div>
+        </div>
+
+        <div class="panel">
+            <div class="panel-head"><h2>Runs <small id="gateRunsSub">most recent first</small></h2></div>
+            <div id="gateRuns"><div class="empty" style="padding:12px 0">Loading...</div></div>
+        </div>
+
+        <div class="panel">
+            <div class="set-cat-h">Global configuration <code id="gateCfgPath"></code></div>
+            <div class="sub" style="margin-bottom:10px">Agent, CI timeout, log level, per-step commands and auto-fix limits. Saved only when it parses, so a typo here never reaches the daemon.</div>
+            <textarea id="gateCfg" class="linput gate-yaml" spellcheck="false" autocapitalize="none" autocorrect="off" aria-label="Global gate configuration"></textarea>
+            <div class="ladd" style="gap:8px;align-items:center">
+                <button id="gateCfgSave" type="button" class="toggle on" disabled title="No changes to save">Save</button>
+                <span id="gateCfgNote" class="set-hint"></span>
+            </div>
+        </div>
+
+        <div class="panel" id="gateRepoPanel" style="display:none">
+            <div class="set-cat-h">Repository configuration <code id="gateRepoCfgPath"></code></div>
+            <div class="sub" style="margin-bottom:10px">Committed with the repository and merged over the global config. Only the fields the gate trusts from a branch take effect.</div>
+            <textarea id="gateRepoCfg" class="linput gate-yaml" spellcheck="false" autocapitalize="none" autocorrect="off" aria-label="Repository gate configuration"></textarea>
+            <div class="ladd" style="gap:8px;align-items:center">
+                <button id="gateRepoCfgSave" type="button" class="toggle on" disabled title="No changes to save">Save</button>
+                <span id="gateRepoCfgNote" class="set-hint"></span>
+            </div>
+        </div>
+    </section>
+
     <section id="view-resources" style="display:none">
         <div class="page-head" style="display:flex;align-items:flex-start;gap:16px">
             <div style="flex:1">
@@ -1068,6 +1178,8 @@
         Polling pauses automatically when this tab is hidden, and the server caches each snapshot - so an open dashboard costs almost nothing.
         Data source: <code>~/.enigma/ccr/stats.json</code> + <code>history.jsonl</code> - reset it with <code>enigma compress --clear</code>. Enigma <span id="ver"></span>
     </footer>
+    </div>
+</div>
 
     <!-- Vendored @github/relative-time-element v5.2.0 (MIT) - inlined so there is no CDN and no extra server route; defines <relative-time>. -->
     <script>
@@ -4002,11 +4114,132 @@ export {
             } catch { setNote("settingsNote", "Could not reach the server to import.", "err"); }
         }
 
+        // --- quality gate subpage ---------------------------------------------------
+        // Two halves with independent availability: the YAML configs are plain files and
+        // always render, while the run history needs enigma's own binary (the gate database
+        // is Bun-only), so an unavailable history reports itself instead of blanking the page.
+        const gateSaved = { global: "", repo: "" };
+        let gateWritable = true;
+        function gateEls(which) {
+            return which === "global"
+                ? { area: $("gateCfg"), btn: $("gateCfgSave"), note: "gateCfgNote" }
+                : { area: $("gateRepoCfg"), btn: $("gateRepoCfgSave"), note: "gateRepoCfgNote" };
+        }
+        // Dirty means different from what was loaded, so an edit typed and undone disables Save again.
+        function syncGateSave(which) {
+            const { area, btn } = gateEls(which);
+            const dirty = area.value !== gateSaved[which];
+            btn.disabled = !dirty || !gateWritable;
+            btn.title = !gateWritable ? "Read-only in this runtime" : dirty ? "Save this configuration" : "No changes to save";
+        }
+        function gateDur(ms) {
+            if (!ms && ms !== 0) return "";
+            if (ms < 1000) return ms + "ms";
+            if (ms < 60000) return (ms / 1000).toFixed(1) + "s";
+            return Math.round(ms / 60000) + "m " + Math.round((ms % 60000) / 1000) + "s";
+        }
+        function gateRunRow(r) {
+            const pr = r.prUrl ? ' <a href="' + esc(r.prUrl) + '" target="_blank" rel="noopener noreferrer">PR</a>' : "";
+            const steps = (r.steps || []).map((s) =>
+                '<span class="gate-step ' + esc(s.status) + '">' + esc(s.name)
+                + (s.durationMs ? " · " + esc(gateDur(s.durationMs)) : "")
+                + (s.findings ? " · " + s.findings : "") + "</span>").join("");
+            const findings = (r.findings || []).length
+                ? '<div class="gate-find">' + r.findings.map((f) =>
+                    '<div class="gate-find-row"><b>' + esc(f.id) + "</b> · " + esc(f.severity) + " · " + esc(f.action)
+                    + (f.file ? " · " + esc(f.file) : "") + "<br>" + esc(f.description) + "</div>").join("") + "</div>"
+                : "";
+            const err = r.error ? '<div class="gate-find-row" style="color:var(--bad)">' + esc(r.error) + "</div>" : "";
+            return '<div class="gate-run"><div class="gate-run-h">'
+                + '<span class="gate-run-b">' + esc(r.branch) + "</span>"
+                + '<span class="cstatus ' + (r.status === "completed" ? "ok" : r.status === "running" ? "orange" : r.status === "failed" ? "bad" : "") + '"><span class="cdot"></span>' + esc(r.status) + (r.awaitingAgent ? " · parked" : "") + "</span>"
+                + '<span class="gate-run-meta">' + esc(r.headSha) + pr + "</span>"
+                + "</div>" + '<div class="gate-steps">' + steps + "</div>" + findings + err + "</div>";
+        }
+        function renderGate(g) {
+            g = g || {};
+            $("gateOn").textContent = g.on ? "On" : "Off";
+            $("gateOn").className = "value " + (g.on ? "good" : "");
+            $("gateDaemon").textContent = g.daemon ? "Running" : "Stopped";
+            $("gateDaemon").className = "value " + (g.daemon ? "good" : "");
+            const repo = g.repo;
+            $("gateRepo").textContent = repo ? (repo.initialized ? "Initialized" : "Not initialized") : "Global";
+            $("gateRepoFoot").textContent = repo ? repo.path : "Every active run on this machine";
+            $("gateRunsSub").textContent = repo ? "most recent first, this repository" : "active runs across every repository";
+            const runs = g.runs || [];
+            $("gateRuns").innerHTML = runs.length
+                ? runs.map(gateRunRow).join("")
+                : '<div class="empty" style="padding:12px 0">' + (g.runsAvailable === false ? esc(g.runsNote || "Run history unavailable.") : (repo ? "No runs recorded for this repository yet." : "No run in flight.")) + "</div>";
+            $("gateCfgPath").textContent = (g.globalConfig || {}).path || "";
+            gateSaved.global = (g.globalConfig || {}).text || "";
+            $("gateCfg").value = gateSaved.global;
+            // A runtime that cannot parse a gate config must not write one: read-only, with the reason.
+            gateWritable = g.canWrite !== false;
+            $("gateCfg").readOnly = !gateWritable;
+            $("gateRepoCfg").readOnly = !gateWritable;
+            if (!gateWritable) { setNote("gateCfgNote", g.writeNote || "Read-only here.", "err"); setNote("gateRepoCfgNote", g.writeNote || "Read-only here.", "err"); }
+            syncGateSave("global");
+            $("gateRepoPanel").style.display = repo ? "" : "none";
+            if (repo) {
+                $("gateRepoCfgPath").textContent = repo.configPath || "";
+                gateSaved.repo = repo.text || "";
+                $("gateRepoCfg").value = gateSaved.repo;
+                syncGateSave("repo");
+            }
+        }
+        async function loadGate() {
+            const q = isProjectScope() ? "?path=" + encodeURIComponent(currentScope) : "";
+            try { renderGate(await (await fetch("/api/gate" + q, { cache: "no-store" })).json()); }
+            catch { $("gateRuns").innerHTML = '<div class="empty" style="padding:12px 0">Could not reach the server.</div>'; }
+        }
+        async function saveGateCfg(which) {
+            const { area, note } = gateEls(which);
+            if (area.value === gateSaved[which]) return; // no-op: nothing changed
+            setNote(note, "Saving...");
+            const payload = { scope: which === "global" ? "global" : "repo", text: area.value };
+            if (which === "repo") payload.path = currentScope;
+            try {
+                const out = await (await fetch("/api/gate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })).json();
+                setNote(note, out.message || (out.ok ? "Saved." : "Not saved."), out.ok ? "ok" : "err");
+                if (out.ok) { gateSaved[which] = area.value; syncGateSave(which); }
+            } catch { setNote(note, "Could not reach the server.", "err"); }
+        }
+        $("gateRefresh").addEventListener("click", loadGate);
+        $("gateCfg").addEventListener("input", () => syncGateSave("global"));
+        $("gateRepoCfg").addEventListener("input", () => syncGateSave("repo"));
+        $("gateCfgSave").addEventListener("click", () => saveGateCfg("global"));
+        $("gateRepoCfgSave").addEventListener("click", () => saveGateCfg("repo"));
+
+        // --- section rail (a full-screen drawer below 900px) ---
+        const sidebarEl = $("sidebar"), navScrimEl = $("navScrim"), navOpenBtn = $("navOpen");
+        let navReturnFocus = null;
+        function setNav(open) {
+            sidebarEl.classList.toggle("open", open);
+            navScrimEl.hidden = !open;
+            document.body.classList.toggle("nav-open", open);
+            navOpenBtn.setAttribute("aria-expanded", open ? "true" : "false");
+            if (open) {
+                navReturnFocus = document.activeElement;
+                const first = sidebarEl.querySelector(".tab.active") || sidebarEl.querySelector(".tab");
+                if (first) first.focus();
+            } else if (navReturnFocus) {
+                try { navReturnFocus.focus(); } catch { /* gone from the DOM */ }
+                navReturnFocus = null;
+            }
+        }
+        navOpenBtn.addEventListener("click", () => setNav(true));
+        $("navClose").addEventListener("click", () => setNav(false));
+        navScrimEl.addEventListener("click", () => setNav(false));
+        // Picking a section closes the drawer; on a wide viewport the rail is always visible.
+        sidebarEl.addEventListener("click", (e) => { if (e.target.closest(".tab")) setNav(false); });
+        document.addEventListener("keydown", (e) => { if (e.key === "Escape" && sidebarEl.classList.contains("open")) setNav(false); });
+        window.matchMedia("(min-width: 901px)").addEventListener("change", (e) => { if (e.matches) setNav(false); });
+
         // --- hash routing between the subpages ---
         // Single source of truth for the subpage ids (savings is the default/fallback).
-        const VIEWS = ["savings", "usage", "accounts", "skills", "settings", "resources", "recall", "codegraph", "playground", "packs", "ssh"];
+        const VIEWS = ["savings", "usage", "accounts", "skills", "settings", "gate", "resources", "recall", "codegraph", "playground", "packs", "ssh"];
         // Views that apply to a single project; the rest are global/machine-level only.
-        const PROJECT_VIEWS = ["settings", "skills"];
+        const PROJECT_VIEWS = ["settings", "skills", "gate"];
         let activeView = "savings";
         function route() {
             const project = isProjectScope();
@@ -4023,6 +4256,7 @@ export {
             else if (v === "skills") loadSkills();
             else if (v === "accounts") { if (!accountsLoaded) { accountsLoaded = true; loadAccounts(); } }
             else if (v === "usage") { loadProviderStatus(); if (!usageAccountsLoaded) { usageAccountsLoaded = true; loadUsageAccounts(); } }
+            else if (v === "gate") loadGate();
             else if (v === "resources") loadResources();
             else if (v === "recall") loadRecall();
             else if (v === "codegraph") loadCodeGraph();

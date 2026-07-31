@@ -726,6 +726,44 @@ function serveMemory(req: import("node:http").IncomingMessage, res: import("node
     send();
 }
 
+/** Gate view: the pipeline's YAML config, the daemon's state, and the recorded runs. */
+function serveGate(req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse): void {
+    const project = new URL(req.url || "/", "http://x").searchParams.get("path") || undefined;
+    const send = (): void => {
+        import("./dashboard-gate")
+            .then(({ gateOverview }) => gateOverview(project || null))
+            .then((out) => { res.writeHead(200, JSON_HDR); res.end(JSON.stringify(out)); })
+            .catch(() => { res.writeHead(500, JSON_HDR); res.end('{"error":"gate unavailable"}'); });
+    };
+    if (project) { ensureRegisteredProject(project, res, send); return; }
+    send();
+}
+
+/** Save one of the two gate configs from a POST body { scope, text, path? }. */
+function writeGate(req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse): void {
+    let body = "";
+    req.on("data", (chunk) => { body += chunk; if (body.length > 128 * 1024) req.destroy(); });
+    req.on("end", () => {
+        let parsed: { scope?: unknown; text?: unknown; path?: unknown; };
+        try { parsed = JSON.parse(body || "{}"); } catch { res.writeHead(400, JSON_HDR); res.end('{"error":"bad json"}'); return; }
+        const scope = parsed.scope === "repo" ? "repo" : "global";
+        const project = typeof parsed.path === "string" && parsed.path ? parsed.path : undefined;
+        const run = (): void => {
+            import("./dashboard-gate")
+                .then(({ saveGateConfig }) => saveGateConfig(scope, typeof parsed.text === "string" ? parsed.text : "", project || null))
+                .then((out) => { res.writeHead(out.ok ? 200 : 400, JSON_HDR); res.end(JSON.stringify(out)); })
+                .catch(() => { res.writeHead(500, JSON_HDR); res.end('{"error":"save failed"}'); });
+        };
+        // A repo config is written inside a project folder, so it takes the same guard as memory.
+        if (scope === "repo") {
+            if (!project) { res.writeHead(400, JSON_HDR); res.end('{"error":"missing project"}'); return; }
+            ensureRegisteredProject(project, res, run);
+            return;
+        }
+        run();
+    });
+}
+
 /** Apply a memory action from a POST body { id, action, content?, path? } (read/save/reset). */
 function writeMemoryAction(req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse): void {
     let body = "";
@@ -898,6 +936,12 @@ function createDashboardServer(version: string): Server {
         if (url === "/api/skills") {
             if (method === "GET") { serveSkills(res); return; }
             if (method === "POST") { writeSkill(req, res); return; }
+            res.writeHead(405).end(); return;
+        }
+        // AI quality gate: its YAML config plus the runs recorded for a project.
+        if (url === "/api/gate") {
+            if (method === "GET") { serveGate(req, res); return; }
+            if (method === "POST") { writeGate(req, res); return; }
             res.writeHead(405).end(); return;
         }
         // Agent memory editor (CLAUDE.md / AGENTS.md), global or per project.

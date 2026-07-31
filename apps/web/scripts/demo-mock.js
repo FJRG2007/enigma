@@ -399,6 +399,36 @@
         return { ok: false, error: "unknown action" };
     }
 
+    // Quality gate: one finished run and one parked on a review finding, so the demo shows
+    // both the pipeline strip and what a decision point looks like.
+    var GATE_YAML = "# enigma gate global configuration\n\n# Agent to use for code generation\nagent: auto\n\n# How long the CI monitor babysits an open PR\nci_timeout: \"168h\"\n\n# Log level for daemon output\nlog_level: info\n";
+    function gateRun(id, branch, status, steps, findings) {
+        return {
+            id: id, branch: branch, status: status, headSha: id.slice(0, 8), prUrl: status === "completed" ? "https://github.com/FJRG2007/enigma/pull/114" : null,
+            error: null, awaitingAgent: !!(findings && findings.length), intent: null, createdAt: Date.now() / 1000, updatedAt: Date.now() / 1000,
+            steps: steps, findings: findings || [],
+        };
+    }
+    function gateStep(name, status, ms, findings) { return { name: name, status: status, durationMs: ms, findings: findings || 0 }; }
+    function gateView(project) {
+        var done = gateRun("a1b2c3d4e5", "feat/dashboard-sidebar", "completed", [
+            gateStep("intent", "completed", 2), gateStep("rebase", "completed", 1374), gateStep("review", "completed", 393273, 3),
+            gateStep("test", "completed", 61200), gateStep("document", "completed", 8100), gateStep("lint", "completed", 4300),
+            gateStep("push", "completed", 2200), gateStep("pr", "completed", 1900), gateStep("ci", "completed", 41000),
+        ]);
+        var parked = gateRun("f6a7b8c9d0", "fix/token-refresh", "running", [
+            gateStep("intent", "completed", 2), gateStep("rebase", "completed", 1290), gateStep("review", "awaiting_approval", 220400, 1),
+            gateStep("test", "pending", null), gateStep("document", "pending", null), gateStep("lint", "pending", null),
+            gateStep("push", "pending", null), gateStep("pr", "pending", null), gateStep("ci", "pending", null),
+        ], [{ id: "token-refresh-race", severity: "warning", action: "auto-fix", file: "src/auth/token.ts", description: "Two concurrent requests can both refresh the token, so the second overwrites the first with an older value." }]);
+        return {
+            on: true, runsAvailable: true, runsNote: "", daemon: true, root: "~/.enigma/gate",
+            globalConfig: { path: "~/.enigma/gate/config.yaml", text: GATE_YAML },
+            repo: project ? { path: project, initialized: true, configPath: `${project}/.enigma-gate.yaml`, text: "# Repository gate configuration\n\ncommands:\n  test: npm test\n", exists: true } : null,
+            runs: project ? [done] : [parked, done],
+        };
+    }
+
     function route(path, method, body) {
         if (path.indexOf("/api/stats") !== -1) { STATS.generatedAt = Date.now(); return STATS; }
         // Provider status pill: report everything operational (the real server proxies the
@@ -413,6 +443,10 @@
         }
         if (path.indexOf("/api/skills") !== -1) return method === "POST" ? applySkillPost(body) : SKILLS;
         if (path.indexOf("/api/memory") !== -1) return method === "POST" ? applyMemoryPost(body) : { groups: MEMORY_GROUPS, project: qparam(path, "path") || null };
+        if (path.indexOf("/api/gate") !== -1) {
+            if (method === "POST") return { ok: true, message: "Demo - the config was not written." };
+            return gateView(qparam(path, "path"));
+        }
         if (path.indexOf("/api/projects/detail") !== -1) { var pd = projFind(qparam(path, "path")); return pd ? projDetail(pd) : { error: "Project is not registered." }; }
         if (path.indexOf("/api/projects/action") !== -1) return applyProjectActionPost(body);
         if (path.indexOf("/api/projects") !== -1) return method === "POST" ? applyProjectsPost(body) : projList();

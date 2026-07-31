@@ -20,8 +20,8 @@ import * as conf from "./config";
 import { ALL_SETTINGS } from "./settings-registry";
 import { inspectSkills, readSkillMeta } from "./skills";
 import { execFile, execFileSync } from "node:child_process";
-import { dirname, join, resolve, basename, isAbsolute } from "node:path";
 import { isDir, readJson, resolveBin, enigmaHome } from "./util";
+import { dirname, join, resolve, basename, isAbsolute } from "node:path";
 import { localTargetsAt, discoverAgents, isManagedProvider } from "./agents";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, cpSync, rmSync } from "node:fs";
 
@@ -126,7 +126,7 @@ function hooksInstalled(projectPath: string): boolean {
     return existsSync(join(projectPath, ".githooks", "guard.mjs"));
 }
 
-function gateInitialized(projectPath: string): boolean {
+export function gateInitialized(projectPath: string): boolean {
     // `enigma gate init` adds a git remote named "gate" pointing at the local bare gate repo.
     return gitConfig(projectPath, "remote.gate.url") !== null;
 }
