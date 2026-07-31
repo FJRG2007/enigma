@@ -194,6 +194,7 @@
         .fld-err { color: var(--bad); font-size: 11px; min-height: 0; }
         .fld-err:empty { display: none; }
         .linput.bad { border-color: var(--bad); }
+        .tbl-scroll { overflow-x: auto; }
         .tun-table { width: 100%; border-collapse: collapse; }
         .tun-table th { text-align: left; font-size: 12px; color: var(--muted); font-weight: 500; padding: 6px 10px; border-bottom: 1px solid var(--border); }
         .tun-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
@@ -336,7 +337,10 @@
         }
         @media (prefers-reduced-motion) { .etoast, .etoast > * { transition: opacity .2s !important; } }
         /* Settings: two-column grid of rows on wide screens, so a long config list stays compact. */
-        .set-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 0 32px; }
+        /* min(420px, 100%) rather than a bare 420px: a fixed track floor never shrinks below
+           itself, so on a narrow viewport the row would keep claiming 420px and push the page
+           sideways. The min() lets the single column collapse to whatever space there is. */
+        .set-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr)); gap: 0 32px; }
         .set-grid .set-row { padding: 10px 0; }
         .panel > .set-cat-h { margin-top: 0; }
         .tag {
@@ -510,6 +514,18 @@
             .grid { grid-template-columns: repeat(2, 1fr); }
             header { gap: 12px; }
             .nav { margin-left: auto; flex-wrap: wrap; gap: 10px; }
+            /* A settings row is label + controls side by side, and the control cluster is
+               flex-shrink: 0 so a wide one (account actions, a select plus three buttons)
+               pushes the row past the viewport. Here the row wraps and the cluster is
+               allowed to shrink and wrap its own buttons instead. */
+            /* A heading and its action cluster sit side by side; on a phone the cluster
+               drops below instead of pushing the page sideways. */
+            .page-head, .panel-head { flex-wrap: wrap; }
+            /* A data table cannot fold, so below this width it scrolls inside its own box.
+               `display: block` is what gives the table element its own scroll container. */
+            .tbl { display: block; overflow-x: auto; white-space: nowrap; }
+            .set-row { flex-wrap: wrap; align-items: flex-start; }
+            .set-ctl { flex-shrink: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
         }
         /* Pretty scrollbars across the whole dashboard (thin, rounded, themed). */
         * { scrollbar-width: thin; scrollbar-color: #2b3340 transparent; }
@@ -4509,7 +4525,9 @@ export {
                     + ' ' + ibtn('data-tun-remove="' + esc(t.name) + '"', 'danger', ICO.trash, 'Delete') + '</td>'
                     + '</tr>';
             }).join("");
-            body.innerHTML = '<table class="tun-table"><thead><tr><th>Name</th><th>Server</th><th>Forward</th><th>Status</th><th>Actions</th></tr></thead><tbody>' + rows + '</tbody></table>';
+            // The table has five columns and cannot fold; it scrolls inside its own box so the
+            // page never scrolls sideways with it.
+            body.innerHTML = '<div class="tbl-scroll"><table class="tun-table"><thead><tr><th>Name</th><th>Server</th><th>Forward</th><th>Status</th><th>Actions</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
         }
         async function loadSsh() {
             setNote("sshNote", "");
