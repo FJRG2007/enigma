@@ -8,8 +8,11 @@
  */
 
 import { test } from "node:test";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import assert from "node:assert/strict";
 import { fixText, lintText } from "../src/index";
+import { rmSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 
 /** True if `text` produces a violation for `rule`. */
 function flags(text: string, rule: string): boolean {
@@ -351,6 +354,35 @@ test("fix: the length sort sees declarations at their post-punctuation length", 
     assert.equal(fixed, "import { ef } from \"./yy\";\nimport { abcd } from \"./x\";\n");
     assert.equal(fixText("a.ts", fixed), fixed);
     assert.ok(!lintText("a.ts", fixed).some((v) => v.rule === "length-sorted-imports"));
+});
+
+test("fix: the punctuation pass stands down in a Prettier project", () => {
+    const source = "import {\n    a,\n    type B,\n} from \"./x\";\n\ntype L = { a: string, b: number };\n";
+    const root = mkdtempSync(join(tmpdir(), "enigmax-lint-"));
+    try {
+        // Without a Prettier config the punctuation is normalized as usual...
+        const plain = join(root, "plain.ts");
+        assert.equal(fixText(plain, source), "import {\n    a,\n    type B\n} from \"./x\";\n\ntype L = { a: string; b: number; };\n");
+
+        // ...and with one it is left exactly as written, while the other fixes still run.
+        const project = mkdtempSync(join(tmpdir(), "enigmax-lint-"));
+        writeFileSync(join(project, ".prettierrc"), "{}\n");
+        mkdirSync(join(project, "src"));
+        assert.equal(fixText(join(project, "src", "nested.ts"), source), source);
+        assert.equal(fixText(join(project, "src", "nested.ts"), "type L = { a: string }  \n\n\n\n"), "type L = { a: string }\n");
+        rmSync(project, { recursive: true, force: true });
+
+        // A `prettier` key in package.json marks the project just the same.
+        const viaPkg = mkdtempSync(join(tmpdir(), "enigmax-lint-"));
+        writeFileSync(join(viaPkg, "package.json"), "{ \"name\": \"p\", \"prettier\": { \"semi\": true } }\n");
+        assert.equal(fixText(join(viaPkg, "app.ts"), source), source);
+        rmSync(viaPkg, { recursive: true, force: true });
+
+        // A relative or in-memory path has no project to inspect: the fix applies.
+        assert.notEqual(fixText("a.ts", source), source);
+    } finally {
+        rmSync(root, { recursive: true, force: true });
+    }
 });
 
 test("fix: does not collapse blank lines guarded by a docstring or comment", () => {

@@ -6,14 +6,16 @@
  * codemod), and type-member/import-list punctuation. The remaining AST style rules
  * (quotes, statement semicolons) and the audit rules (secrets, URL imports) have no
  * mechanical fix. Container formats are left untouched - their wrapper (JSON, HTML)
- * is owned by the tooling that produced them.
+ * is owned by the tooling that produced them, and the punctuation pass stands down in
+ * a project that already has Prettier as its formatter.
  */
 
 import ts from "typescript";
-import { extname } from "node:path";
 import { guardedLines } from "./guarded";
 import { isTypeMember, parseSource } from "./parse";
+import { readdirSync, readFileSync } from "node:fs";
 import { JS_TS, isContainer, languageFor } from "./languages";
+import { join, dirname, extname, isAbsolute } from "node:path";
 
 /** A replacement of `[start, end)` in the source with `text` (an insertion when start === end). */
 interface Edit {
@@ -65,14 +67,67 @@ function sortImportGroups(file: string, body: string): string {
     return applyEdits(body, edits);
 }
 
+/** Config filenames that mark a directory as the root of a Prettier-formatted project. */
+const PRETTIER_CONFIGS = new Set([
+    ".prettierrc",
+    ".prettierrc.json", ".prettierrc.json5", ".prettierrc.yaml", ".prettierrc.yml", ".prettierrc.toml",
+    ".prettierrc.js", ".prettierrc.cjs", ".prettierrc.mjs", ".prettierrc.ts",
+    "prettier.config.js", "prettier.config.cjs", "prettier.config.mjs", "prettier.config.ts",
+]);
+
+/** Memoized `usesPrettier` verdict per directory, so a `fixFiles` sweep walks each chain once. */
+const prettierDirs = new Map<string, boolean>();
+
+/** True when `dir` holds a Prettier config file or a `package.json` carrying a `prettier` key. */
+function hasPrettierConfig(dir: string): boolean {
+    let entries: string[];
+    try { entries = readdirSync(dir); } catch { return false; }
+    if (entries.some((entry) => PRETTIER_CONFIGS.has(entry))) return true;
+    if (!entries.includes("package.json")) return false;
+    try {
+        const pkg: unknown = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
+        return !!pkg && typeof pkg === "object" && "prettier" in pkg;
+    } catch { return false; }
+}
+
+/**
+ * True when `file` belongs to a project configured with Prettier, found by walking up
+ * from its directory to the filesystem root. A relative or unreadable path answers
+ * false: an in-memory snippet has no project to inspect, and a lookup that cannot be
+ * resolved must never widen the carve-out.
+ */
+function usesPrettier(file: string): boolean {
+    if (!isAbsolute(file)) return false;
+    const chain: string[] = [];
+    let dir = dirname(file);
+    let verdict = false;
+    for (;;) {
+        const cached = prettierDirs.get(dir);
+        if (cached !== undefined) { verdict = cached; break; }
+        if (hasPrettierConfig(dir)) { prettierDirs.set(dir, true); verdict = true; break; }
+        chain.push(dir);
+        const parent = dirname(dir);
+        if (parent === dir) { prettierDirs.set(dir, false); break; }
+        dir = parent;
+    }
+    for (const seen of chain) prettierDirs.set(seen, verdict);
+    return verdict;
+}
+
 /**
  * Terminate every interface/type-literal member with a semicolon (including the last
  * member of a single-line literal, and members a comma separates) and drop the
  * trailing comma from a named import/export list. Punctuation only: TypeScript treats
  * `;`, `,` and nothing as the same type-member separator and ignores a trailing comma
  * in a specifier list, so neither edit can change what the program does.
+ *
+ * Skipped entirely for a file in a Prettier-formatted project (see `usesPrettier`):
+ * Prettier strips a single-line type literal's terminator and re-adds the trailing
+ * comma, so applying this here would only make the two formatters flip the same lines
+ * on every save. The matching rules still report; only the rewrite stands down.
  */
 function fixPunctuation(file: string, body: string): string {
+    if (usesPrettier(file)) return body;
     const sourceFile = parseSource(file, body, extname(file).toLowerCase());
     const edits: Edit[] = [];
 
@@ -99,6 +154,8 @@ function fixPunctuation(file: string, body: string): string {
  * Return `text` with the safe formatting fixes applied, or unchanged when the file
  * is a container format or an unknown extension. Idempotent: fixing fixed text is a
  * no-op, so the caller can compare the result to detect whether anything changed.
+ * In a Prettier-formatted project the punctuation pass stands down (see
+ * `fixPunctuation`); every other fix still applies and every rule still reports.
  */
 export function fixText(file: string, text: string): string {
     if (!text || isContainer(file)) return text;
@@ -123,9 +180,9 @@ export function fixText(file: string, text: string): string {
     }
     body = kept.join("\n");
 
-    // 2b. Normalize type-member and import-list punctuation, then reorder contiguous
-    //     import groups by length (length-sorted-imports). Punctuation runs first so
-    //     the length sort sees each declaration at its final length.
+    // 2b. Normalize type-member and import-list punctuation (skipped in a Prettier
+    //     project), then reorder contiguous import groups by length. Punctuation runs
+    //     first so the length sort sees each declaration at its final length.
     if (JS_TS.includes(language)) body = sortImportGroups(file, fixPunctuation(file, body));
 
     // 3. Drop leading blank lines, and 4. end with exactly one trailing newline.

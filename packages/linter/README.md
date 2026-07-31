@@ -79,6 +79,14 @@ import/export list. The judgement-dependent style rules (quotes, statement
 semicolons, concatenation) and the security audits are reported, never rewritten.
 Container formats (`.ipynb`, `.astro`, `.vue`, `.svelte`) are left untouched by `--fix`.
 
+The two punctuation fixes stand down when the file sits in a project configured with
+Prettier (a `.prettierrc*` / `prettier.config.*` file, or a `prettier` key in a
+`package.json`, anywhere from the file's directory up to the filesystem root).
+Prettier strips a single-line type literal's terminator and defaults to
+`trailingComma: "all"`, so rewriting there would only make the two formatters flip the
+same lines back and forth. The rules still report; only the rewrite is suppressed, and
+every other fix keeps running.
+
 The bin is `enigmax-lint`. It exits non-zero when any error-severity violation is
 found (URL/CDN imports, hardcoded secrets), so it can gate a commit or CI step.
 

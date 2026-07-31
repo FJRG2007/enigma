@@ -218,9 +218,18 @@ enigma config auto-lint off   # removes the hooks
 ```
 
 The hook is designed for minimum token cost: it auto-fixes the safe formatting rules
-(whitespace, blank lines, final newline) in place, and surfaces **only the unfixable
-findings** (hardcoded secrets, URL imports, style issues that need judgement) back to
-the agent. A clean file produces no output at all - zero added tokens.
+in place, and surfaces **only the unfixable findings** (hardcoded secrets, URL imports,
+style issues that need judgement) back to the agent. A clean file produces no output at
+all - zero added tokens.
+
+It rewrites the whole edited file, so it is worth knowing exactly what it changes:
+trailing whitespace, blank lines (collapsed, leading/trailing removed), the final
+newline, the order of a contiguous import group (shortest declaration first), the
+semicolon terminating an interface or type-literal member, and the trailing comma in a
+named import/export list. Judgement-dependent rules and the security audits are only
+reported. The last two - the punctuation fixes - are skipped in a project configured
+with Prettier (a `.prettierrc*` / `prettier.config.*` file, or a `prettier` key in a
+`package.json`), so the two formatters never fight over the same lines.
 
 - **Claude Code**: a `PostToolUse` hook in `settings.json` (matcher
   `Edit|Write|MultiEdit|NotebookEdit`). Unfixable findings come back via the hook's
