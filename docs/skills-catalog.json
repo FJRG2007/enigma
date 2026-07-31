@@ -1,6 +1,6 @@
 {
   "generator": "enigma seal",
-  "cliVersion": "1.32.5",
+  "cliVersion": "1.33.0",
   "count": 20,
   "skills": [
     {
@@ -32,7 +32,7 @@
       "version": "1.2.0",
       "description": "Ciphera code style conventions (formatting, naming, imports incl. namespace imports for wide module surfaces, comments, code-level anti-patterns; TypeScript-first, language-agnostic).",
       "provider": "FJRG2007/enigma",
-      "updated": "2026-07-30T15:48:04+02:00",
+      "updated": "2026-07-31T21:32:28+02:00",
       "sha": "d6a86c28ad39ee502607a5ca8f6f361c8aa52b8fa946156165ec78c6139e495f"
     },
     {
@@ -56,7 +56,7 @@
       "version": "1.2.0",
       "description": "Senior database architecture policy: engine selection (PostgreSQL by default, SQLite only for local-first/embedded stores), query optimization, anti-duplication/normalization, scalability, and RGPD/GDPR encryption.",
       "provider": "FJRG2007/enigma",
-      "updated": "2026-06-03T14:19:50+02:00",
+      "updated": "2026-07-31T19:05:08+02:00",
       "sha": "b21ae85a015305106f787be2eb0a022661b2e984bc42c6bc66703954256e3c53"
     },
     {
@@ -96,7 +96,7 @@
       "version": "1.22.0",
       "description": "Frontend architecture: reusable components, abstraction thresholds, state management, no-op detection (skip any operation whose result equals current state, not just form saves; dirty means different from the loaded snapshot, not touched), instant first paint (render the shell, load data async, skeletons), perceived performance (prefetch on intent, debounce/throttle, cancel stale requests, avoid waterfalls, lazy widgets), large-list rendering (infinite scroll/pagination, virtualization, skeletons, progressive loading), optimistic UI with rollback, visual restraint (one card level, spacing before borders, one elevation scale), icon actions (repeated row/card actions are icon-only buttons with aria-label plus title, not text labels), responsive/adaptive layout (fluid units, breakpoints, no overlap/overflow, viewport meta, touch targets), form fields that declare their keyboard and casing (autocapitalize/autocomplete/inputmode per field kind, set once in the shared Input, normalized on blur), variable-length text (min-width:0 in flex/grid, wrap vs truncate, long unbroken strings, worst-case content checks), and AI chat/agent interfaces via Vercel's AI Elements registry instead of hand-rolled message threads.",
       "provider": "FJRG2007/enigma",
-      "updated": "2026-07-31T16:34:48+02:00",
+      "updated": "2026-07-31T19:05:08+02:00",
       "sha": "79816cdc63a7fd64336b93296aada3520bab26b38a7f65600f5ca27745de3a65"
     },
     {
@@ -160,7 +160,7 @@
       "version": "1.4.0",
       "description": "Strict frontend + backend schema validation, normalization before validation (shared normalizers: trim, lowercase email, capitalize names, canonicalize links and handles), schema consistency, and safe client-facing error handling.",
       "provider": "FJRG2007/enigma",
-      "updated": "2026-07-22T01:41:06+02:00",
+      "updated": "2026-07-31T19:05:08+02:00",
       "sha": "84bb43cc570aa927ab5c0311c17242b4158287961aa04af111cf83eb4eec6ce4"
     }
   ]
