@@ -4189,8 +4189,15 @@ export {
         }
         async function loadGate() {
             const q = isProjectScope() ? "?path=" + encodeURIComponent(currentScope) : "";
-            try { renderGate(await (await fetch("/api/gate" + q, { cache: "no-store" })).json()); }
-            catch { $("gateRuns").innerHTML = '<div class="empty" style="padding:12px 0">Could not reach the server.</div>'; }
+            const note = (msg) => { $("gateRuns").innerHTML = '<div class="empty" style="padding:12px 0">' + msg + "</div>"; };
+            try {
+                const res = await fetch("/api/gate" + q, { cache: "no-store" });
+                // The UI bundle updates on its own; the route it calls ships with the CLI, so a
+                // 404 here means the running server predates this view rather than being down.
+                if (res.status === 404 || res.status === 405) { note("This view needs a newer enigma CLI: the running server has no /api/gate route yet. Run <code>enigma update</code> once the next release ships."); return; }
+                if (!res.ok) { note("The server refused the request (" + res.status + ")."); return; }
+                renderGate(await res.json());
+            } catch { note("Could not reach the server."); }
         }
         async function saveGateCfg(which) {
             const { area, note } = gateEls(which);
