@@ -192,7 +192,7 @@ Exposing a dashboard directly to the public internet is not a supported setup - 
 
 ## gate
 
-An experimental, opt-in AI quality gate that validates a branch through a review/test/docs/lint/push/PR/CI pipeline in a disposable worktree before it reaches your push target. Off by default. See <a href={docHref("concepts/gate")}>Quality gate</a> for detail.
+An experimental AI quality gate that validates a branch through a review/test/docs/lint/push/PR/CI pipeline in a disposable worktree before it reaches your push target. On by default; turn it off with <code>enigma config gate off</code> (add <code>-l</code> for this project only). See <a href={docHref("concepts/gate")}>Quality gate</a> for detail.
 
 <Cmd name="enigma gate <init|status|runs|rerun|doctor|eject|daemon|axi>" ex={["enigma config gate on", "enigma gate init", "enigma gate status"]}>
 Enable it with `enigma config gate on`, then `enigma gate init` in a repo. `init` sets up the gate (and the `gate` git remote); `status`/`runs` inspect runs; `rerun` re-runs the branch; `doctor` diagnoses; `eject` removes it; `axi` is the machine interface the `/gate` skill drives.

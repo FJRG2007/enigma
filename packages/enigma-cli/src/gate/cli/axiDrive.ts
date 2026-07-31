@@ -19,6 +19,7 @@ import { join } from "node:path";
 import { REMOTE_NAME } from "../init";
 import * as render from "./axiRender";
 import { readFileSync } from "node:fs";
+import { readConfig } from "../../config";
 import type { RunInfo } from "../ipc/protocol";
 import { parseAddFinding, splitLogLines } from "./axiQuery";
 import { field, toonHelp, toonTable, type ToonField } from "../toon";
@@ -353,13 +354,31 @@ async function triggerRun(
 }
 
 /**
+ * Reports whether the branch is one the user asked the gate to leave alone
+ * (`gate-protected-branches`). Names are compared exactly, after trimming: a
+ * branch is a concrete ref, and pattern matching would let a typo silently widen
+ * the rule to branches the user never meant to protect.
+ */
+export function isProtectedBranch(branch: string, protectedBranches: string[]): boolean {
+    const name = branch.trim();
+    if (name === "") return false;
+    return protectedBranches.some(entry => entry.trim() === name);
+}
+
+/**
  * Returns the first unmet pre-flight emitter (already emitted, returning its exit
  * code) when starting a new run, or null when the branch is ready to validate.
+ *
+ * Any branch validates, the default branch included - the pipeline already handles
+ * it (rebase skips the branch targets, and the PR step opens nothing, since there is
+ * no base to open a PR against). Only a branch the user listed in
+ * `gate-protected-branches` is refused.
  */
-async function preflightGuard(deps: AxiDeps, env: AxiEnv, branch: string): Promise<number | null> {
-    if (env.repo.defaultBranch !== "" && branch === env.repo.defaultBranch) {
-        return render.emitError(deps.io, 1, `refusing to validate "${branch}": it is the default branch`,
-            "Put your changes on a feature branch: `git switch -c <branch>`, then re-run");
+async function preflightGuard(deps: AxiDeps, branch: string): Promise<number | null> {
+    if (isProtectedBranch(branch, readConfig().config.gateProtectedBranches)) {
+        return render.emitError(deps.io, 1, `refusing to validate "${branch}": it is a protected branch`,
+            "Put your changes on another branch: `git switch -c <branch>`, then re-run",
+            `Or stop protecting it: \`enigma config gate-protected-branches remove ${branch}\``);
     }
     let dirty: boolean;
     try {
@@ -475,7 +494,7 @@ export async function runAxiRun(deps: AxiDeps, autoYes: boolean, skipSteps: Step
                 return render.emitError(deps.io, 2, "--intent is required to start a run",
                     "Pass what the user set out to accomplish: enigma gate axi run --intent \"the user's goal\"");
             }
-            const guard = await preflightGuard(deps, env, branch);
+            const guard = await preflightGuard(deps, branch);
             if (guard !== null) return guard;
             try {
                 runID = await triggerRun(env, branch, headSHA, skipSteps, intent, signal);

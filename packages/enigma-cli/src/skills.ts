@@ -299,6 +299,9 @@ function computePrune(destSkillsDir: string, sourceNames: string[]): PruneEntry[
         .filter((s) => isManagedProvider(s.meta.provider));
 }
 
+/** The one bundled command whose deployment is conditional (the `gate` toggle). */
+const GATE_COMMAND = "gate.md";
+
 /**
  * Slash commands bundled with this package: every *.md under assets/commands. Each
  * is deployed verbatim to an agent's command dir (Claude commands, opencode command,
@@ -307,13 +310,13 @@ function computePrune(destSkillsDir: string, sourceNames: string[]): PruneEntry[
  */
 function bundledCommands(): CommandEntry[] {
     if (!isDir(COMMANDS_ROOT)) return [];
-    // /gate is experimental and off by default: only deploy it to agents once the
-    // user opts in with `enigma config gate on`, so enigma never surfaces the gate
-    // to the agent without consent.
+    // /gate follows the `gate` toggle, which is ON by default: the command ships to
+    // agents unless the user turned the gate off (globally or for this project), in
+    // which case it is left out of the set and `applyGateToggle` removes any copy.
     const gateOn = conf.readConfig().config.gate;
     return readdirSync(COMMANDS_ROOT)
         .filter((e) => e.endsWith(".md") && !isDir(join(COMMANDS_ROOT, e)))
-        .filter((e) => e !== "gate.md" || gateOn)
+        .filter((e) => e !== GATE_COMMAND || gateOn)
         .map((e) => ({ name: e, src: join(COMMANDS_ROOT, e) }));
 }
 
@@ -1392,12 +1395,21 @@ export function syncDeployed(agentNames?: string[]): string[] {
     for (const agent of discoverAgents()) {
         if (agentNames && !agentNames.includes(agent.name)) continue;
         const skills = currentSkillSet(agent.name);
+        // The /gate command IS carried by the copy loop below (bundledCommands filters it by
+        // the toggle), so unlike the wiring re-asserts further down it needs no extra write -
+        // only the "did it just arrive" observation, since the loop reports a bare item count
+        // and the gate changes how the agent behaves enough to deserve one sentence.
+        const gateCommand = agent.targets.global?.commands ? join(agent.targets.global.commands, GATE_COMMAND) : null;
+        const gateBefore = gateCommand !== null && existsSync(gateCommand);
         for (const scope of ["global", "local"] as const) {
             const target = agent.targets[scope];
             if (!target || !hasDeployment(agent, scope)) continue;
             const changed = syncTarget(target, inspectMemory(agent), skills, commands, false);
             const mcpChanged = applyMcpForAgent(agent.name, scope);
             if (changed || mcpChanged) notices.push(`${agent.label}: ${changed + (mcpChanged ? 1 : 0)} item(s) updated (${scope})`);
+        }
+        if (gateCommand !== null && !gateBefore && existsSync(gateCommand)) {
+            notices.push("Quality gate is on: once your work is committed the agent validates it (review, tests, docs, lint) before reporting it done. Turn off with 'enigma config gate off', or '/gate off' from the agent.");
         }
         // The completion gate is hook WIRING, not a file this loop copies, so re-assert it
         // here too: an on-by-default gate has to reach an existing deployment (and disappear

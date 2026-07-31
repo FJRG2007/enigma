@@ -227,9 +227,15 @@ export async function runConfigCli(positionals: string[], scope: Scope | null, i
     }
 
     const usage = setting.choices ? `<${setting.choices.join("|")}> (or on|off)` : "<on|off>";
+    // A bare key READS, matching the list and value kinds above - `enigma config gate` used to
+    // be the one way to ask "is this on?" that answered with an error. The value shown is the
+    // effective one (nearest-wins), which is what the feature actually obeys.
     if (rawValue === undefined) {
-        console.error(`Missing value for '${rawKey}'. Usage: enigma config ${rawKey} ${usage} [-g|-l]`);
-        return 1;
+        const read: Scope = setting.globalOnly ? "global" : (scope || "global");
+        const current = setting.readChoice ? setting.readChoice(read) : valueLabel(setting.read(read));
+        console.log(`${rawKey}: ${current}`);
+        console.log(`Change it with: enigma config ${rawKey} ${usage} [-g|-l]`);
+        return 0;
     }
 
     const target: Scope = setting.globalOnly ? "global" : (scope || "global");

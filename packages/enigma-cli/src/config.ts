@@ -157,8 +157,17 @@ export interface EnigmaConfig {
     compress: boolean;
     /** Expose enigma's native code-graph tools (index a codebase into a knowledge graph of symbols/imports/references) to agents over MCP (opt-in). */
     codeGraph: boolean;
-    /** EXPERIMENTAL, default off: the local AI quality gate. Enabling deploys the /gate command AND renders an always-on memory block telling agents to auto-drive the gate after finishing work on a feature branch (auto `enigma gate init`, no prompt needed); per-project opt-out via a repo `.enigma.json` gate:false (nearest-wins). */
+    /** EXPERIMENTAL but ON by default: the local AI quality gate. Deploys the /gate command AND renders an always-on memory block telling agents to auto-drive the gate once a code task is committed (auto `enigma gate init`, no prompt needed); per-project opt-out via a repo `.enigma.json` gate:false (nearest-wins). */
     gate: boolean;
+    /**
+     * Branches the gate refuses to validate, by exact name. Empty by default: the gate runs on
+     * whatever branch the work is on, the default branch included. List a branch here to keep the
+     * pipeline off it - the one thing to know is that on the default branch the pipeline opens no
+     * PR (there is nothing to open it against) and its push lands straight on that branch, so a
+     * repository where the default branch must only ever be reached through review belongs here.
+     * Merged nearest-wins like every other key, so a repo's own .enigma.json overrides the global list.
+     */
+    gateProtectedBranches: string[];
     /** Local savings dashboard: off | on-demand (default when enabled) | always (background daemon). */
     dashboard: DashboardMode;
     /** Dashboard money estimate: USD per 1M input tokens; 0 = use per-source defaults. */
@@ -305,6 +314,12 @@ export interface EnigmaConfig {
  * blocks on the same findings (and an absolute ceiling per session), so it cannot trap a
  * turn. verifyCommand stays empty by default - running a project command automatically is
  * the user's explicit choice.
+ * gate is ON by default despite being experimental: work that never reaches the gate is
+ * work nothing reviewed, so the pipeline has to be the default path rather than something
+ * the user remembers to switch on. It costs nothing until a code task is committed, and it
+ * opts out per project (a repo `.enigma.json` gate: false) as well as globally. Both effects
+ * - the /gate command and the memory block - are re-asserted by syncDeployed, so `enigma
+ * update` delivers them to an existing deployment instead of waiting for a fresh install.
  * compress is opt-in (off): when on, installs/syncs register enigma's compression
  * MCP server (enigma_compress/retrieve/stats) in each managed agent's config so the
  * agent can shrink large tool outputs. Adding an MCP server to the user's agents is
@@ -320,10 +335,10 @@ export interface EnigmaConfig {
  */
 export const CONFIG_DEFAULTS: EnigmaConfig = {
     commitEmoji: true, updateNotifier: true, fullscreen: true, parallelSubagents: false, outputStyle: "off", minimalCode: "full", logoColorPolicy: "ask",
-    autoSync: true, statusline: true, claudeTrust: true, remoteSkills: true, skillUpdatePolicy: "overwrite", permissionBypass: true, autoLint: false, guardrails: true, trim: true, verify: true, verifyCommand: "", compress: false, codeGraph: false, gate: false, dashboard: "off", tokenPrice: 0, tokenSpeed: 0, usageStats: false, recall: false, recallLlm: true, recallProvider: "claude-local", recallModel: "", recallApiBase: "", recallApiKey: "", proxy: false, usageApi: false, promptSecretGuard: false, promptSecretMode: "redact",
+    autoSync: true, statusline: true, claudeTrust: true, remoteSkills: true, skillUpdatePolicy: "overwrite", permissionBypass: true, autoLint: false, guardrails: true, trim: true, verify: true, verifyCommand: "", compress: false, codeGraph: false, gate: true, dashboard: "off", tokenPrice: 0, tokenSpeed: 0, usageStats: false, recall: false, recallLlm: true, recallProvider: "claude-local", recallModel: "", recallApiBase: "", recallApiKey: "", proxy: false, usageApi: false, promptSecretGuard: false, promptSecretMode: "redact",
     resourceCap: 60, lowMemoryCap: 80,
     planSessionLimit: 0, planWeeklyLimit: 0, planWeeklySonnetLimit: 0, planWeeklyOpusLimit: 0, planWeeklyReset: "mon 00:00",
-    dashboardLive: true, dashboardPort: 0, dashboardBind: "loopback", dashboardBindAddress: "", apiPort: 8000, apiAccount: "", apiProfile: "", apiPack: "", toolPaths: {}, bypassDisabled: [], discardedSkills: [], skillAgentsOff: {}, packs: [], packAccounts: {},
+    dashboardLive: true, dashboardPort: 0, dashboardBind: "loopback", dashboardBindAddress: "", apiPort: 8000, apiAccount: "", apiProfile: "", apiPack: "", toolPaths: {}, bypassDisabled: [], discardedSkills: [], skillAgentsOff: {}, packs: [], packAccounts: {}, gateProtectedBranches: [],
 };
 
 export type EnigmaConfigKey = keyof EnigmaConfig;
@@ -460,18 +475,27 @@ export function setPackAccount(key: string, account: string | null, scope: "glob
     return path;
 }
 
-/** Keys of EnigmaConfig holding a string list, maintained as a set in the global file. */
+/** Keys of EnigmaConfig holding a string list, maintained as a set in the config file. */
 type ListConfigKey = { [K in EnigmaConfigKey]: EnigmaConfig[K] extends string[] ? K : never }[EnigmaConfigKey];
 
 /**
- * Add (include=true) or remove (false) an entry in one of the global .enigma.json
- * string-list keys. Operates on the global file's own list, not the merged view,
- * so a deliberate opt-out survives future installs.
+ * Add (include=true) or remove (false) an entry in one of the .enigma.json string-list
+ * keys. Operates on that scope's own list, not the merged view, so a deliberate opt-out
+ * survives future installs and a project list never absorbs the global one.
  */
-function updateGlobalList(key: ListConfigKey, name: string, include: boolean): void {
-    const set = new Set((readJson<Partial<EnigmaConfig>>(configPath("global")) || {})[key] || []);
+export function updateEnigmaList(key: ListConfigKey, name: string, include: boolean, scope: "global" | "local"): string {
+    const set = new Set((readJson<Partial<EnigmaConfig>>(configPath(scope)) || {})[key] || []);
     if (include) set.add(name); else set.delete(name);
-    setEnigmaValue(key, [...set], "global");
+    return setEnigmaValue(key, [...set], scope);
+}
+
+/** Reads one scope's own string list, bypassing the merged view (for editing surfaces). */
+export function readEnigmaList(key: ListConfigKey, scope: "global" | "local"): string[] {
+    return (readJson<Partial<EnigmaConfig>>(configPath(scope)) || {})[key] || [];
+}
+
+function updateGlobalList(key: ListConfigKey, name: string, include: boolean): void {
+    updateEnigmaList(key, name, include, "global");
 }
 
 /**

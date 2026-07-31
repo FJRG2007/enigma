@@ -60,12 +60,13 @@ export function gateSubcommandHelp(sub: string): string {
 
 /** Dispatches a gate subcommand. Returns the process exit code. */
 export async function runGateCli(argv: string[]): Promise<number> {
-    // The gate is EXPERIMENTAL and off by default. It does nothing (and the /gate
-    // command is not deployed to agents) until the user opts in.
+    // The gate is on by default, so reaching this means the user switched it off -
+    // globally, or for this project via its own .enigma.json. Say both, since the
+    // second is easy to forget about in a repo someone else configured.
     if (!readConfig().config.gate) {
-        process.stderr.write("enigma gate is experimental and off by default.\n");
-        process.stderr.write("Enable it with:  enigma config gate on\n");
-        process.stderr.write("Then `enigma gate init` in a repo, and the /gate command becomes available to your agent.\n");
+        process.stderr.write("enigma gate is switched off here.\n");
+        process.stderr.write("Turn it back on with:  enigma config gate on\n");
+        process.stderr.write("If only this project is off, its .enigma.json carries `gate: false` - remove it or run `enigma config gate on -l`.\n");
         return 1;
     }
     const sub = argv[0] ?? "";
