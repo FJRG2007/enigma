@@ -4,6 +4,6 @@
   "provider": "FJRG2007/enigma",
   "description": "Ciphera code style conventions (formatting, naming, imports incl. namespace imports for wide module surfaces, comments, code-level anti-patterns; TypeScript-first, language-agnostic).",
   "updated": "2026-07-30T15:48:04+02:00",
-  "cliVersion": "1.32.4",
+  "cliVersion": "1.32.5",
   "sha": "05dc812da459071110d96ee41c5201b1ee230471d635352415e10ef8b220c267"
 }
