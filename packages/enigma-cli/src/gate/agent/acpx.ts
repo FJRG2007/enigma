@@ -192,7 +192,7 @@ async function parseAcpxJSONEvents(
     stdout: Readable,
     onChunk: ((text: string) => void) | undefined,
     usage: TokenUsage
-): Promise<{ text: string; stdoutErr: string }> {
+): Promise<{ text: string; stdoutErr: string; }> {
     stdout.setEncoding("utf8");
     let output = "";
     let stdoutErr = "";

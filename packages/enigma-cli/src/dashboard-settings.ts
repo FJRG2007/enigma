@@ -92,7 +92,7 @@ export async function applySetting(key: string, value: unknown, scope: Scope = "
 
     // List settings: value is { op: "add" | "remove", item: string }.
     if (setting.kind === "list") {
-        const op = value && typeof value === "object" ? value as { op?: string; item?: unknown } : null;
+        const op = value && typeof value === "object" ? value as { op?: string; item?: unknown; } : null;
         const item = typeof op?.item === "string" ? op.item.trim() : "";
         if (!op || (op.op !== "add" && op.op !== "remove")) return { ok: false, error: `list setting ${key} needs { op: "add"|"remove", item }` };
         if (!item) return { ok: false, error: "empty item" };

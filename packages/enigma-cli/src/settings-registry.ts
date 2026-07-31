@@ -235,7 +235,7 @@ function setGate(on: boolean, scope: Scope): ApplyResult {
 // surface within the TTL. Writes are never cached.
 
 const READ_TTL_MS = 2500;
-const readCache = new Map<string, { value: boolean | string; at: number }>();
+const readCache = new Map<string, { value: boolean | string; at: number; }>();
 
 /** Drop every cached read (called after writes and external-change signals). */
 export function invalidateSettingReads(): void {

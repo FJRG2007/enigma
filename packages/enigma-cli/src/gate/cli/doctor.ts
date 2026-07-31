@@ -14,7 +14,7 @@ import { isDaemonRunning } from "./daemonCmd";
 import { out, sRed, sCyan, sDim, sGreen, sYellow, errMessage } from "./common";
 
 /** The native agents probed by doctor, with their default binary names. */
-const AGENTS: ReadonlyArray<{ name: string; binary: string }> = [
+const AGENTS: ReadonlyArray<{ name: string; binary: string; }> = [
     { name: "claude", binary: "claude" },
     { name: "codex", binary: "codex" },
     { name: "rovodev", binary: "acli" },

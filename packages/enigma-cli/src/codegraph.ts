@@ -43,8 +43,8 @@ function writeJson(file: string, value: unknown): void {
 
 export type SymbolKind = "function" | "class" | "interface" | "type" | "struct" | "enum" | "trait" | "module" | "method";
 
-export interface CodeSymbol { name: string; kind: SymbolKind; line: number }
-export interface CodeFile { path: string; lang: string; loc: number; symbols: CodeSymbol[]; imports: string[] }
+export interface CodeSymbol { name: string; kind: SymbolKind; line: number; }
+export interface CodeFile { path: string; lang: string; loc: number; symbols: CodeSymbol[]; imports: string[]; }
 
 export interface CodeGraph {
     id: string;
@@ -60,7 +60,7 @@ export interface CodeGraph {
     externalModules: Record<string, number>;
 }
 
-export interface ProjectEntry { id: string; name: string; root: string; indexedAt: number; files: number; symbols: number }
+export interface ProjectEntry { id: string; name: string; root: string; indexedAt: number; files: number; symbols: number; }
 
 /** One indexed project as the dashboard/CLI list it. */
 export type CodeGraphProject = ProjectEntry;
@@ -86,7 +86,7 @@ const MAX_FILES = 8000;
 const MAX_FILE_BYTES = 512 * 1024;
 
 /** A regex that captures a symbol name in group 1, tagged with the kind it declares. */
-interface SymRule { kind: SymbolKind; re: RegExp }
+interface SymRule { kind: SymbolKind; re: RegExp; }
 
 function symRules(lang: string): SymRule[] {
     switch (lang) {
@@ -179,7 +179,7 @@ function lineResolver(content: string): (idx: number) => number {
 }
 
 /** Extract the symbols and import specifiers declared in one file's content. */
-function extractFile(lang: string, content: string): { symbols: CodeSymbol[]; imports: string[] } {
+function extractFile(lang: string, content: string): { symbols: CodeSymbol[]; imports: string[]; } {
     const lineAt = lineResolver(content);
     const symbols: CodeSymbol[] = [];
     const seen = new Set<string>();
@@ -235,7 +235,7 @@ function resolveRelative(fromFileAbs: string, spec: string, root: string, known:
  * persisting anything. The read-only half of indexing, shared with the parity checker
  * (verify-parity.ts) so comparing two codebases never writes to the code-graph store.
  */
-export function scanFiles(rootDir?: string): { root: string; files: CodeFile[]; truncated: boolean } {
+export function scanFiles(rootDir?: string): { root: string; files: CodeFile[]; truncated: boolean; } {
     const root = resolve(rootDir || process.cwd());
     const files: CodeFile[] = [];
     // Both caps are reported, not just applied: a caller that compares two trees (the parity
@@ -344,9 +344,9 @@ export interface Architecture {
     symbols: number;
     importEdges: number;
     entryPoints: string[];
-    hotspots: { name: string; refs: number }[];
+    hotspots: { name: string; refs: number; }[];
     packages: Record<string, number>;
-    externalModules: { name: string; count: number }[];
+    externalModules: { name: string; count: number; }[];
 }
 
 /** Architecture overview for a project (languages, entry points, hotspots, packages, deps). */
@@ -372,7 +372,7 @@ export function codeGraphArchitecture(project?: string): Architecture | null {
     return { project: g.name, languages, files: g.files.length, symbols, importEdges: g.importEdges.length, entryPoints, hotspots, packages, externalModules };
 }
 
-export interface GraphSchema { nodes: Record<string, number>; edges: Record<string, number> }
+export interface GraphSchema { nodes: Record<string, number>; edges: Record<string, number>; }
 
 /** Node/edge label counts for a project's graph. */
 export function codeGraphSchema(project?: string): GraphSchema | null {
@@ -387,10 +387,10 @@ export function codeGraphSchema(project?: string): GraphSchema | null {
     return { nodes, edges: { IMPORTS: g.importEdges.length, REFERENCES: totalRefs } };
 }
 
-export interface SymbolHit { name: string; kind: SymbolKind; file: string; line: number }
+export interface SymbolHit { name: string; kind: SymbolKind; file: string; line: number; }
 
 /** Search a project's symbols by name (regex or substring) and optional kind. */
-export function searchGraph(project: string | undefined, opts: { name?: string; kind?: string; limit?: number } = {}): SymbolHit[] {
+export function searchGraph(project: string | undefined, opts: { name?: string; kind?: string; limit?: number; } = {}): SymbolHit[] {
     const g = loadGraph(project);
     if (!g) return [];
     let re: RegExp | null = null;
@@ -417,6 +417,6 @@ export function resetCodeGraph(): void {
 export function codeGraphAvailable(): boolean { return true; }
 
 /** Compact state for the dashboard "Enigma Systems" panel. */
-export function codeGraphStatus(): { enabled: boolean; available: boolean; projects: number } {
+export function codeGraphStatus(): { enabled: boolean; available: boolean; projects: number; } {
     return { enabled: readConfig().config.codeGraph, available: true, projects: listProjects().length };
 }

@@ -88,7 +88,7 @@ export class Client {
         clauses.push(`state=${goQuote("OPEN")}`);
         query.set("q", clauses.join(" AND "));
 
-        const response = await this.doJSON<{ values?: unknown[] }>("GET", repoPRPath(repo), query, null, signal);
+        const response = await this.doJSON<{ values?: unknown[]; }>("GET", repoPRPath(repo), query, null, signal);
         const values = response.values ?? [];
         if (values.length === 0) return null;
         return toPullRequest(values[0]);
@@ -136,7 +136,7 @@ export class Client {
         let next = `${repoPRPath(repo)}/${prID}/statuses?${query.toString()}`;
         const statuses: CommitStatus[] = [];
         while (next !== "") {
-            const response = await this.doJSONPathOrURL<{ values?: unknown[]; next?: string }>(
+            const response = await this.doJSONPathOrURL<{ values?: unknown[]; next?: string; }>(
                 "GET",
                 next,
                 null,
@@ -163,7 +163,7 @@ export class Client {
         let next = `${this.baseURL}/2.0/repositories/${repo.workspace}/${repo.repoSlug}/pipelines?${query.toString()}`;
         const pipelines: Pipeline[] = [];
         while (next !== "") {
-            const response = await this.doJSONPathOrURL<{ values?: unknown[]; next?: string }>(
+            const response = await this.doJSONPathOrURL<{ values?: unknown[]; next?: string; }>(
                 "GET",
                 next,
                 null,
@@ -186,7 +186,7 @@ export class Client {
         let next = `${this.baseURL}/2.0/repositories/${repo.workspace}/${repo.repoSlug}/pipelines/${pipelineUUID}/steps`;
         const steps: PipelineStep[] = [];
         while (next !== "") {
-            const response = await this.doJSONPathOrURL<{ values?: unknown[]; next?: string }>(
+            const response = await this.doJSONPathOrURL<{ values?: unknown[]; next?: string; }>(
                 "GET",
                 next,
                 null,

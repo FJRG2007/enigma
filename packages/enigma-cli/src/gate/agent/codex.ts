@@ -77,7 +77,7 @@ export class CodexAgent implements Agent {
             }
             cleanupDir = dir;
             schemaPath = join(dir, "schema.json");
-            let normalized: { value: unknown; json: string };
+            let normalized: { value: unknown; json: string; };
             try {
                 normalized = codexOutputSchema(opts.jsonSchema);
             } catch (err) {
@@ -128,7 +128,7 @@ export class CodexAgent implements Agent {
         const stderrPromise = collectStream(child.stderr);
 
         const usage = emptyTokenUsage();
-        let parsed: { lastMessage: string; codexErr: string };
+        let parsed: { lastMessage: string; codexErr: string; };
         try {
             parsed = await parseCodexEvents(child.stdout, signal, opts.onChunk, usage);
         } catch (err) {
@@ -196,7 +196,7 @@ async function parseCodexEvents(
     signal: AbortSignal | undefined,
     onChunk: ((text: string) => void) | undefined,
     usage: TokenUsage
-): Promise<{ lastMessage: string; codexErr: string }> {
+): Promise<{ lastMessage: string; codexErr: string; }> {
     let lastMessage = "";
     let codexErr = "";
 
@@ -244,7 +244,7 @@ async function parseCodexEvents(
 }
 
 /** Normalizes a parsed JSON Schema for codex's --output-schema (clone + mutate). */
-function codexOutputSchema(schema: unknown): { value: unknown; json: string } {
+function codexOutputSchema(schema: unknown): { value: unknown; json: string; } {
     const value: unknown = JSON.parse(JSON.stringify(schema));
     addAdditionalPropertiesFalse(value);
     return { value, json: JSON.stringify(value) };

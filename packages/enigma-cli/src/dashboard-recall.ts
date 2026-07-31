@@ -93,7 +93,7 @@ function maybeBackgroundSync(): void {
 }
 
 /** Build the Recall view: search results when a query is given, else recent observations. */
-export function recallDashboard(opts: { q?: string; project?: string; type?: string } = {}): RecallView {
+export function recallDashboard(opts: { q?: string; project?: string; type?: string; } = {}): RecallView {
     const enabled = conf.readConfig().config.recall;
     const available = recall.recallAvailable();
     if (!available || !enabled) return { available, enabled, stats: null, lastSync: 0, projects: [], query: opts.q || "", items: [], provider: providerView() };
@@ -135,7 +135,7 @@ export interface RecallActionPayload {
 }
 
 /** Apply a Recall action and return the refreshed view. */
-export async function applyRecallAction(op: string, payload: RecallActionPayload = {}): Promise<{ ok: boolean; error?: string; view?: RecallView }> {
+export async function applyRecallAction(op: string, payload: RecallActionPayload = {}): Promise<{ ok: boolean; error?: string; view?: RecallView; }> {
     if (!recall.recallAvailable()) return { ok: false, error: "recall needs the enigma binary" };
     if (op === "sync") {
         recall.syncRecall();

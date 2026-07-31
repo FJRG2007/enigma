@@ -43,7 +43,7 @@ export function clackReporter(): Reporter {
 }
 
 /** Reporter that buffers lines for the TUI result panel; never touches stdout. */
-export function collectReporter(): Reporter & { readonly lines: string[] } {
+export function collectReporter(): Reporter & { readonly lines: string[]; } {
     const lines: string[] = [];
     const push = (prefix: string, message: string): void => {
         for (const line of message.split("\n")) lines.push(prefix ? `${prefix} ${line}` : line);

@@ -56,7 +56,7 @@ test("forwards to the upstream verbatim and records the measured usage", async (
         res.end(SSE);
     });
     await new Promise<void>((r) => upstream.listen(0, "127.0.0.1", () => r()));
-    process.env.ENIGMA_PROXY_UPSTREAM = `http://127.0.0.1:${(upstream.address() as { port: number }).port}`;
+    process.env.ENIGMA_PROXY_UPSTREAM = `http://127.0.0.1:${(upstream.address() as { port: number; }).port}`;
 
     const proxy = await startMeasuringProxy();
     try {
@@ -97,7 +97,7 @@ test("prompt secret guard redacts a secret out of the outgoing message body", as
         req.on("end", () => { received = Buffer.concat(chunks).toString("utf8"); res.writeHead(200, { "content-type": "text/event-stream" }); res.end(SSE); });
     });
     await new Promise<void>((r) => upstream.listen(0, "127.0.0.1", () => r()));
-    process.env.ENIGMA_PROXY_UPSTREAM = `http://127.0.0.1:${(upstream.address() as { port: number }).port}`;
+    process.env.ENIGMA_PROXY_UPSTREAM = `http://127.0.0.1:${(upstream.address() as { port: number; }).port}`;
 
     const proxy = await startMeasuringProxy({ scanPrompts: true, mode: "redact" });
     try {
@@ -124,12 +124,12 @@ test("prompt secret guard in reject mode blocks the request before it reaches Cl
     let upstreamHit = false;
     const upstream = createServer((req, res) => { upstreamHit = true; res.writeHead(200); res.end(SSE); });
     await new Promise<void>((r) => upstream.listen(0, "127.0.0.1", () => r()));
-    process.env.ENIGMA_PROXY_UPSTREAM = `http://127.0.0.1:${(upstream.address() as { port: number }).port}`;
+    process.env.ENIGMA_PROXY_UPSTREAM = `http://127.0.0.1:${(upstream.address() as { port: number; }).port}`;
 
     const proxy = await startMeasuringProxy({ scanPrompts: true, mode: "reject" });
     try {
         const r = await fetch(proxy.url + "/v1/messages", { method: "POST", body: JSON.stringify({ messages: [{ role: "user", content: KEY }] }) });
-        const body = await r.json() as { type?: string; error?: { message?: string } };
+        const body = await r.json() as { type?: string; error?: { message?: string; }; };
         expect(r.status).toBe(400);
         expect(body.type).toBe("error");
         expect(body.error?.message).toContain("Anthropic API key");
@@ -162,7 +162,7 @@ test("captures Anthropic's unified rate-limit headers (the real usage windows)",
         res.end(SSE);
     });
     await new Promise<void>((r) => upstream.listen(0, "127.0.0.1", () => r()));
-    process.env.ENIGMA_PROXY_UPSTREAM = `http://127.0.0.1:${(upstream.address() as { port: number }).port}`;
+    process.env.ENIGMA_PROXY_UPSTREAM = `http://127.0.0.1:${(upstream.address() as { port: number; }).port}`;
 
     const proxy = await startMeasuringProxy();
     try {
@@ -194,7 +194,7 @@ test("a clean message passes through untouched when the guard is on", async () =
         req.on("end", () => { received = Buffer.concat(chunks).toString("utf8"); res.writeHead(200); res.end(SSE); });
     });
     await new Promise<void>((r) => upstream.listen(0, "127.0.0.1", () => r()));
-    process.env.ENIGMA_PROXY_UPSTREAM = `http://127.0.0.1:${(upstream.address() as { port: number }).port}`;
+    process.env.ENIGMA_PROXY_UPSTREAM = `http://127.0.0.1:${(upstream.address() as { port: number; }).port}`;
 
     const proxy = await startMeasuringProxy({ scanPrompts: true, mode: "redact" });
     try {

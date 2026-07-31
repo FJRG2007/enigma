@@ -16,7 +16,7 @@ import { enigmaHome, readJson } from "./util";
 import { existsSync, writeFileSync } from "node:fs";
 import {
   getConnection, resolveLauncher, forwardSpec, describeForward, parseForward,
-  sshTarget, tunnelNameIssue, type PortForward,
+  sshTarget, tunnelNameIssue, type PortForward
 } from "./ssh";
 
 /** A named, server-bound port forward that can be run as a background process. */
@@ -40,7 +40,7 @@ export interface TunnelView extends Tunnel {
 }
 
 interface TunnelStore { tunnels: Tunnel[]; }
-interface RunState { [name: string]: { pid: number; startedAt: number }; }
+interface RunState { [name: string]: { pid: number; startedAt: number; }; }
 
 function storePath(): string { return join(enigmaHome(), "ssh-tunnels.json"); }
 function statePath(): string { return join(enigmaHome(), "ssh-tunnels-state.json"); }
@@ -105,7 +105,7 @@ export function getTunnel(name: string): Tunnel | null {
 }
 
 /** Create a tunnel from a name, a server (alias or name) and a spec (e.g. "9090:db:5432"). */
-export function addTunnel(name: string, server: string, spec: string): { ok: boolean; error?: string } {
+export function addTunnel(name: string, server: string, spec: string): { ok: boolean; error?: string; } {
   const issue = tunnelNameIssue(name);
   if (issue) return { ok: false, error: issue };
   const store = readStore();
@@ -119,7 +119,7 @@ export function addTunnel(name: string, server: string, spec: string): { ok: boo
 }
 
 /** Edit a tunnel: re-point its server, rename, or change the forward spec. */
-export function updateTunnel(name: string, patch: { server?: string; spec?: string; newName?: string }): { ok: boolean; error?: string } {
+export function updateTunnel(name: string, patch: { server?: string; spec?: string; newName?: string; }): { ok: boolean; error?: string; } {
   const store = readStore();
   const t = store.tunnels.find((x) => x.name === name);
   if (!t) return { ok: false, error: `Unknown tunnel '${name}'.` };
@@ -159,7 +159,7 @@ export function removeTunnel(name: string): boolean {
 // --- lifecycle (background ssh -N) ----------------------------------------------
 
 /** Start a tunnel as a detached background `ssh -N`. No-op (ok) when already running. */
-export function startTunnel(name: string): { ok: boolean; error?: string } {
+export function startTunnel(name: string): { ok: boolean; error?: string; } {
   const t = getTunnel(name);
   if (!t) return { ok: false, error: `Unknown tunnel '${name}'.` };
   if (tunnelActive(name)) return { ok: true };
@@ -183,7 +183,7 @@ export function startTunnel(name: string): { ok: boolean; error?: string } {
 }
 
 /** Stop a running tunnel. */
-export function stopTunnel(name: string): { ok: boolean; error?: string } {
+export function stopTunnel(name: string): { ok: boolean; error?: string; } {
   const state = readState();
   const rec = state[name];
   if (!rec) return { ok: true }; // already stopped
@@ -194,7 +194,7 @@ export function stopTunnel(name: string): { ok: boolean; error?: string } {
 }
 
 /** Dispatch a named tunnel action (for the CLI/dashboard). */
-export function runTunnelAction(op: string, name: string): { ok: boolean; error?: string } {
+export function runTunnelAction(op: string, name: string): { ok: boolean; error?: string; } {
   switch (op) {
     case "start": case "up": return startTunnel(name);
     case "stop": case "down": return stopTunnel(name);

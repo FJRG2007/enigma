@@ -44,7 +44,7 @@ interface FieldStat {
 }
 
 /** Crush every crushable array in `content`; returns the new JSON + rows dropped. */
-export function crushJson(content: string, opts: CrushOptions = CRUSH_DEFAULTS): { compressed: string; offloaded: number } {
+export function crushJson(content: string, opts: CrushOptions = CRUSH_DEFAULTS): { compressed: string; offloaded: number; } {
     let parsed: Json;
     try { parsed = JSON.parse(content); } catch { return { compressed: content, offloaded: 0 }; }
     let offloaded = 0;
@@ -69,7 +69,7 @@ export function crushJson(content: string, opts: CrushOptions = CRUSH_DEFAULTS):
 }
 
 /** Crush a single array if it is an analyzable, crushable array of objects. */
-function crushArray(arr: Json[], opts: CrushOptions): { rows: Json[]; offloaded: number } {
+function crushArray(arr: Json[], opts: CrushOptions): { rows: Json[]; offloaded: number; } {
     if (arr.length < opts.minItems || !arr.every((x) => x !== null && typeof x === "object" && !Array.isArray(x))) {
         return { rows: arr, offloaded: 0 };
     }
@@ -139,7 +139,7 @@ function analyzeFields(items: Obj[], opts: CrushOptions): Map<string, FieldStat>
             uniqueRatio: items.length ? uniq / items.length : 0,
         };
         if (type === "numeric") {
-            const nums: { i: number; v: number }[] = [];
+            const nums: { i: number; v: number; }[] = [];
             values.forEach((v, i) => { if (typeof v === "number" && Number.isFinite(v)) nums.push({ i, v }); });
             if (nums.length >= 2) {
                 const mean = nums.reduce((s, n) => s + n.v, 0) / nums.length;

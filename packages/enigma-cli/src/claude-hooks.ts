@@ -16,10 +16,10 @@ import { dirname } from "node:path";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 
 /** One hook entry as Claude Code's settings.json stores it. */
-export interface HookEntry { type?: string; command?: string; timeout?: number }
+export interface HookEntry { type?: string; command?: string; timeout?: number; }
 
 /** A group of hooks under one event, optionally narrowed by a tool matcher. */
-export interface HookGroup { matcher?: string; hooks?: HookEntry[] }
+export interface HookGroup { matcher?: string; hooks?: HookEntry[]; }
 
 /**
  * What a hook write did. `refused` is kept distinct from `unchanged` on purpose: they both

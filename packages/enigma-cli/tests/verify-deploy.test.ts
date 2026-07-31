@@ -32,7 +32,7 @@ function read(path: string): Record<string, unknown> {
 test("adds the Stop hook and is idempotent", () => {
     const path = settingsFile();
     expect(applyClaudeVerifyHook(path, true)).toBe(true);
-    const stop = read(path).hooks as { Stop: Array<{ hooks: Array<{ command: string }> }> };
+    const stop = read(path).hooks as { Stop: Array<{ hooks: Array<{ command: string; }>; }>; };
     expect(stop.Stop.length).toBe(1);
     expect(stop.Stop[0]!.hooks[0]!.command).toBe("enigma __verify-hook");
     // A second apply changes nothing.
@@ -45,11 +45,11 @@ test("removes only its own hook, leaving the user's settings intact", () => {
         hooks: { Stop: [{ hooks: [{ type: "command", command: "my-own-notifier" }] }] },
     }));
     applyClaudeVerifyHook(path, true);
-    expect((read(path).hooks as { Stop: unknown[] }).Stop.length).toBe(2);
+    expect((read(path).hooks as { Stop: unknown[]; }).Stop.length).toBe(2);
 
     expect(applyClaudeVerifyHook(path, false)).toBe(true);
     const after = read(path);
-    const stop = (after.hooks as { Stop: Array<{ hooks: Array<{ command: string }> }> }).Stop;
+    const stop = (after.hooks as { Stop: Array<{ hooks: Array<{ command: string; }>; }>; }).Stop;
     expect(stop.length).toBe(1);
     expect(stop[0]!.hooks[0]!.command).toBe("my-own-notifier");
     expect(after.model).toBe("opus");

@@ -58,7 +58,7 @@ export function claudeConfigPath(dir: string): string {
 /** Read and parse the OAuth payload of a config dir, or null when absent/unreadable. */
 function readOAuth(dir: string): ClaudeOAuth | null {
     try {
-        const parsed = JSON.parse(readFileSync(credentialsPath(dir), "utf8")) as { claudeAiOauth?: ClaudeOAuth };
+        const parsed = JSON.parse(readFileSync(credentialsPath(dir), "utf8")) as { claudeAiOauth?: ClaudeOAuth; };
         return parsed.claudeAiOauth && typeof parsed.claudeAiOauth === "object" ? parsed.claudeAiOauth : null;
     } catch {
         return null;
@@ -99,7 +99,7 @@ function freshnessScore(dir: string): number {
 /** Email of the account signed into a config dir (from `.claude.json` oauthAccount), or undefined. */
 export function sessionEmail(dir: string): string | undefined {
     try {
-        const cfg = JSON.parse(readFileSync(claudeConfigPath(dir), "utf8")) as { oauthAccount?: { emailAddress?: string } };
+        const cfg = JSON.parse(readFileSync(claudeConfigPath(dir), "utf8")) as { oauthAccount?: { emailAddress?: string; }; };
         const email = cfg.oauthAccount?.emailAddress;
         return typeof email === "string" ? email : undefined;
     } catch {

@@ -741,7 +741,7 @@ export const PROJECT_CHECKS: Record<string, (projectRoot: string) => boolean> = 
  * they need logic rather than a line regex, so they are code and not user-authorable from JSON.
  * Keyed by GuardrailRule.fileCheck; `detail` is appended to the rule message.
  */
-export const FILE_CHECKS: Record<string, (content: string) => { line: number; detail: string }[]> = {
+export const FILE_CHECKS: Record<string, (content: string) => { line: number; detail: string; }[]> = {
     "proc-windows-hide": (content) => missingWindowsHide(content),
 };
 
@@ -781,10 +781,10 @@ function spawnerBindings(content: string): string[] {
  * terminal). Only calls to bindings actually imported from child_process are considered, which
  * is what keeps `regex.exec(...)` and `db.exec(...)` out of the results.
  */
-export function missingWindowsHide(content: string): { line: number; detail: string }[] {
+export function missingWindowsHide(content: string): { line: number; detail: string; }[] {
     const names = spawnerBindings(content);
     if (names.length === 0) return [];
-    const out: { line: number; detail: string }[] = [];
+    const out: { line: number; detail: string; }[] = [];
     const call = new RegExp(`(?<![.\\w$])(${names.join("|")})\\s*\\(`, "g");
     for (const m of content.matchAll(call)) {
         let i = m.index + m[0].length;
@@ -818,8 +818,8 @@ const INTERNAL_MODULE = /^\.|^#|^[@~]\//;
  * module across every statement, so two half-sized imports of the same module still add up.
  * A statement carrying an `enigma:` note is a deliberate exception and clears its module.
  */
-export function wideNamedImports(content: string, max: number): { line: number; module: string; count: number }[] {
-    const per = new Map<string, { count: number; line: number; allowed: boolean }>();
+export function wideNamedImports(content: string, max: number): { line: number; module: string; count: number; }[] {
+    const per = new Map<string, { count: number; line: number; allowed: boolean; }>();
     for (const m of content.matchAll(NAMED_IMPORT)) {
         const mod = m[2]!;
         if (!INTERNAL_MODULE.test(mod)) continue;

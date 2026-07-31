@@ -26,7 +26,7 @@ function flagged(ruleId: string, file: string, code: string): boolean {
 }
 
 /** Run a table of {name, file, code} against `ruleId`, asserting the expected flag outcome. */
-function matrix(ruleId: string, expected: boolean, cases: Array<{ name: string; file: string; code: string }>): void {
+function matrix(ruleId: string, expected: boolean, cases: Array<{ name: string; file: string; code: string; }>): void {
     for (const c of cases) {
         test(`${ruleId} ${expected ? "flags" : "ignores"}: ${c.name}`, () => {
             expect(flagged(ruleId, c.file, c.code)).toBe(expected);

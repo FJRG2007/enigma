@@ -81,7 +81,7 @@ ${transcript}
         }
 
         if (result.output !== undefined && result.output !== null) {
-            const obj = result.output as { summary?: unknown };
+            const obj = result.output as { summary?: unknown; };
             if (typeof obj.summary === "string" && obj.summary.trim() !== "") {
                 return obj.summary.trim();
             }

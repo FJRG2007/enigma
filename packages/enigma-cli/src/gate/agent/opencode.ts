@@ -374,7 +374,7 @@ export class OpencodeAgent implements Agent {
             const eventResp = await this.connectEventStream(streamController.signal, baseURL);
             try {
                 const msgController = derivedController(signal);
-                let msgValue: { resp?: OpencodeMessageResponse; err?: unknown } | undefined;
+                let msgValue: { resp?: OpencodeMessageResponse; err?: unknown; } | undefined;
                 const msgPromise = this.sendMessage(msgController.signal, baseURL, sessionID, prompt, opts.jsonSchema)
                     .then(resp => { msgValue = { resp }; })
                     .catch(err => { msgValue = { err }; });
@@ -458,7 +458,7 @@ export class OpencodeAgent implements Agent {
             throw new Error(`opencode create session: ${errMessage(err)}`);
         }
         try {
-            const result = JSON.parse(resp) as { id?: string };
+            const result = JSON.parse(resp) as { id?: string; };
             return result.id ?? "";
         } catch (err) {
             throw new Error(`opencode create session parse: ${errMessage(err)}`);

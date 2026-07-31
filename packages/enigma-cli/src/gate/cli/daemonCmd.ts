@@ -479,7 +479,7 @@ export async function runDaemonStatusCli(paths: Paths): Promise<void> {
 }
 
 /** Hidden `gate daemon run`: run the daemon in the foreground. */
-export async function runDaemonRunCli(opts: { root?: string }, _paths: Paths): Promise<void> {
+export async function runDaemonRunCli(opts: { root?: string; }, _paths: Paths): Promise<void> {
     if (opts.root !== undefined && opts.root !== "") {
         process.env.ENIGMA_GATE_HOME = opts.root;
     }
@@ -507,7 +507,7 @@ export async function runDaemonCli(argv: string[], paths: Paths): Promise<void> 
 }
 
 /** Extracts the `--root <dir>` / `--root=<dir>` flag for `daemon run`. */
-function parseRootFlag(argv: string[]): { root?: string } {
+function parseRootFlag(argv: string[]): { root?: string; } {
     for (let i = 0; i < argv.length; i++) {
         const token = argv[i];
         if (token === "--root") return { root: argv[i + 1] ?? "" };

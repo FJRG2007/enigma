@@ -36,7 +36,7 @@ const UPSTREAM_HOST = "api.anthropic.com";
  * (e.g. http://127.0.0.1:PORT for tests, or an https mirror) overrides it. The override is
  * the only way the upstream changes, so the default install can only ever reach Anthropic.
  */
-function upstream(): { host: string; port: number; request: typeof httpsRequest } {
+function upstream(): { host: string; port: number; request: typeof httpsRequest; } {
     const raw = process.env.ENIGMA_PROXY_UPSTREAM;
     if (raw) {
         try {
@@ -62,7 +62,7 @@ export interface ProxyUsage {
     rejected: number;
     /** Epoch ms of the last time the prompt secret guard acted (redact or reject). */
     lastBlockedAt: number;
-    byModel: Record<string, { calls: number; input: number; output: number; cacheRead: number; cacheCreation: number }>;
+    byModel: Record<string, { calls: number; input: number; output: number; cacheRead: number; cacheCreation: number; }>;
 }
 
 const EMPTY: ProxyUsage = { calls: 0, input: 0, output: 0, cacheRead: 0, cacheCreation: 0, lastRequestAt: 0, redacted: 0, rejected: 0, lastBlockedAt: 0, byModel: {} };
@@ -298,7 +298,7 @@ export function startMeasuringProxy(options: ProxyOptions = {}): Promise<Running
     return new Promise((resolve, reject) => {
         server.once("error", reject);
         server.listen(0, "127.0.0.1", () => {
-            const port = (server.address() as { port: number }).port;
+            const port = (server.address() as { port: number; }).port;
             resolve({ url: `http://127.0.0.1:${port}`, port, close: () => { try { server.close(); } catch { /* */ } } });
         });
     });

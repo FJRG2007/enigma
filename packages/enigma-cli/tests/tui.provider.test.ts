@@ -23,7 +23,7 @@ const accounts: HubAccount[] = [
     { tool: "claude", toolLabel: "Claude Code", name: "default", dir: "C:/fake/claude", email: "me@example.com", active: true, removable: false, supportsProvider: true, provider: null },
     { tool: "claude", toolLabel: "Claude Code", name: "mm", dir: "C:/fake/claude-mm", active: false, removable: true, supportsProvider: true, provider: null },
 ];
-let provCall: { tool: string; name: string; input: unknown } | null = null;
+let provCall: { tool: string; name: string; input: unknown; } | null = null;
 const hub: HubContext = {
     agents: [{ name: "claude", label: "Claude Code", installed: true }],
     protections: [{ value: "secrets", label: "Secrets", hint: "block secrets" }],

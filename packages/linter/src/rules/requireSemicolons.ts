@@ -1,8 +1,12 @@
-/** Ciphera: statements that take a semicolon must end with one (no ASI). */
+/**
+ * Ciphera: statements that take a semicolon must end with one (no ASI), and every
+ * member of an interface or type literal is terminated with one - including the last
+ * member of a single-line literal (`{ url?: string; }`) and members a comma separates.
+ */
 
 import ts from "typescript";
-import { locate } from "../parse";
 import { JS_TS } from "../languages";
+import { locate, isTypeMember } from "../parse";
 import type { Rule, Violation } from "../types";
 
 // Declarations whose body already terminates them (function/class) are intentionally absent: a
@@ -33,14 +37,22 @@ export const requireSemicolons: Rule = {
     check(ctx) {
         const violations: Violation[] = [];
         const sourceFile = ctx.sourceFile!;
+        // Prettier owns type-member punctuation where it is the project's formatter, and
+        // fixText stands down there, so reporting it would only block on an unfixed finding.
+        // Statement semicolons are not in dispute: Prettier defaults to writing them.
+        const typeMembers = !ctx.prettier;
 
         const visit = (node: ts.Node): void => {
-            if (NEEDS_SEMICOLON.has(node.kind) && !node.getText(sourceFile).trimEnd().endsWith(";")) {
-                const { line, column } = locate(sourceFile, node.getEnd());
-                violations.push({
-                    rule: "require-semicolons", category: "style", severity: "warning",
-                    file: ctx.file, line, column, message: "missing semicolon",
-                });
+            if (NEEDS_SEMICOLON.has(node.kind) || (typeMembers && isTypeMember(node))) {
+                const text = node.getText(sourceFile).trimEnd();
+                if (!text.endsWith(";")) {
+                    const { line, column } = locate(sourceFile, node.getEnd());
+                    violations.push({
+                        rule: "require-semicolons", category: "style", severity: "warning",
+                        file: ctx.file, line, column,
+                        message: text.endsWith(",") ? "type members are separated by a semicolon, not a comma" : "missing semicolon",
+                    });
+                }
             }
             ts.forEachChild(node, visit);
         };

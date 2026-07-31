@@ -8,8 +8,11 @@
  */
 
 import { test } from "node:test";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import assert from "node:assert/strict";
 import { fixText, lintText } from "../src/index";
+import { rmSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 
 /** True if `text` produces a violation for `rule`. */
 function flags(text: string, rule: string): boolean {
@@ -57,6 +60,27 @@ test("require-semicolons: enforced for declarations, imports, exports, directive
     assert.ok(!flags("function f() {}\n", "require-semicolons"));
     assert.ok(!flags("class C {}\n", "require-semicolons"));
     assert.ok(!flags("class C { f() {} }\n", "require-semicolons"));
+});
+
+test("require-semicolons: terminates interface and type-literal members", () => {
+    assert.ok(flags("interface A { url?: string }\n", "require-semicolons"));
+    assert.ok(flags("interface A {\n    image?: { url?: string } | string;\n}\n", "require-semicolons"));
+    assert.ok(flags("type L = { a: string, b: number };\n", "require-semicolons"));
+    assert.ok(flags("interface A {\n    m(x: number): void\n}\n", "require-semicolons"));
+    assert.ok(!flags("interface A { url?: string; }\n", "require-semicolons"));
+    assert.ok(!flags("interface A {\n    image?: { url?: string; } | string;\n}\n", "require-semicolons"));
+    // A class or object-literal accessor is terminated by its own body: it is not a type member.
+    assert.ok(!flags("class C { get x() { return 1; } }\n", "require-semicolons"));
+    assert.ok(!flags("const o = { get y() { return 2; } };\n", "require-semicolons"));
+});
+
+test("no-import-trailing-comma: flags a trailing comma in a specifier list", () => {
+    assert.ok(flags("import {\n    a,\n    type B,\n} from \"./x\";\n", "no-import-trailing-comma"));
+    assert.ok(flags("export { a, b, };\n", "no-import-trailing-comma"));
+    assert.ok(!flags("import { a, type B } from \"./x\";\n", "no-import-trailing-comma"));
+    assert.ok(!flags("export { a, b };\n", "no-import-trailing-comma"));
+    // Only specifier lists: an object literal's trailing comma is out of scope.
+    assert.ok(!flags("const o = { a: 1, };\n", "no-import-trailing-comma"));
 });
 
 test("no-url-imports: flags URL/CDN imports, accepts package names", () => {
@@ -295,6 +319,99 @@ test("fix: is idempotent and leaves clean text untouched", () => {
     const clean = "const a = 1;\n\nconst b = 2;\n";
     assert.equal(fixText("a.ts", clean), clean);
     assert.equal(fixText("a.ts", fixText("a.ts", "x = 1;  \n\n\n\n")), fixText("a.ts", "x = 1;  \n\n\n\n"));
+});
+
+test("fix: terminates type members with a semicolon", () => {
+    assert.equal(fixText("a.ts", "interface A {\n    image?: { url?: string } | string;\n}\n"),
+        "interface A {\n    image?: { url?: string; } | string;\n}\n");
+    assert.equal(fixText("a.ts", "type L = { a: string, b: number };\n"), "type L = { a: string; b: number; };\n");
+    assert.equal(fixText("a.ts", "interface A {\n    m(x: number): void\n}\n"), "interface A {\n    m(x: number): void;\n}\n");
+    // A class accessor keeps its body as the terminator.
+    assert.equal(fixText("a.ts", "class C { get x() { return 1; } }\n"), "class C { get x() { return 1; } }\n");
+});
+
+test("fix: drops the trailing comma from a named import/export list", () => {
+    assert.equal(fixText("a.ts", "import {\n    a,\n    type B,\n} from \"./x\";\n"), "import {\n    a,\n    type B\n} from \"./x\";\n");
+    assert.equal(fixText("a.ts", "export { a, b, };\n"), "export { a, b };\n");
+    // Object literals are out of scope.
+    assert.equal(fixText("a.ts", "const o = { a: 1, };\n"), "const o = { a: 1, };\n");
+    // A comma inside a comment is not the trailing comma.
+    assert.equal(fixText("a.ts", "import {\n    a,\n    b /* x, y */,\n} from \"./x\";\n"),
+        "import {\n    a,\n    b /* x, y */\n} from \"./x\";\n");
+    assert.equal(fixText("a.ts", "export { a, b /* one, two */, };\n"), "export { a, b /* one, two */ };\n");
+});
+
+test("fix: punctuation fixes are idempotent", () => {
+    const source = "import {\n    a,\n    type B,\n} from \"./x\";\n\ntype L = { a: string, b: number };\n";
+    const fixed = fixText("a.ts", source);
+    assert.equal(fixText("a.ts", fixed), fixed);
+});
+
+test("fix: the length sort sees declarations at their post-punctuation length", () => {
+    // Equal length only while the second still carries its trailing comma.
+    const source = "import { abcd } from \"./x\";\nimport { ef, } from \"./yy\";\n";
+    const fixed = fixText("a.ts", source);
+    assert.equal(fixed, "import { ef } from \"./yy\";\nimport { abcd } from \"./x\";\n");
+    assert.equal(fixText("a.ts", fixed), fixed);
+    assert.ok(!lintText("a.ts", fixed).some((v) => v.rule === "length-sorted-imports"));
+});
+
+/**
+ * Create a throwaway project directory. The `.git` marker bounds the upward Prettier
+ * walk at it, so an ancestor config (on Windows the temp dir sits under the user
+ * profile) can never decide the outcome of these tests.
+ */
+function tempProject(files: Record<string, string> = {}): string {
+    const root = mkdtempSync(join(tmpdir(), "enigmax-lint-"));
+    mkdirSync(join(root, ".git"));
+    for (const [name, content] of Object.entries(files)) writeFileSync(join(root, name), content);
+    return root;
+}
+
+test("fix: the punctuation pass stands down in a Prettier project", () => {
+    const source = "import {\n    a,\n    type B,\n} from \"./x\";\n\ntype L = { a: string, b: number };\n";
+    const plain = tempProject();
+    const project = tempProject({ ".prettierrc": "{}\n" });
+    const viaPkg = tempProject({ "package.json": "{ \"name\": \"p\", \"prettier\": { \"semi\": true } }\n" });
+    try {
+        // Without a Prettier config the punctuation is normalized as usual...
+        assert.equal(fixText(join(plain, "plain.ts"), source),
+            "import {\n    a,\n    type B\n} from \"./x\";\n\ntype L = { a: string; b: number; };\n");
+
+        // ...and with one it is left exactly as written, while the other fixes still run.
+        mkdirSync(join(project, "src"));
+        assert.equal(fixText(join(project, "src", "nested.ts"), source), source);
+        assert.equal(fixText(join(project, "src", "nested.ts"), "type L = { a: string }  \n\n\n\n"), "type L = { a: string }\n");
+
+        // A `prettier` key in package.json marks the project just the same.
+        assert.equal(fixText(join(viaPkg, "app.ts"), source), source);
+
+        // A relative or in-memory name resolves against the working directory, whose
+        // project (this repo) has no Prettier config: the fix applies.
+        assert.notEqual(fixText("a.ts", source), source);
+    } finally {
+        for (const dir of [plain, project, viaPkg]) rmSync(dir, { recursive: true, force: true });
+    }
+});
+
+test("lint: the punctuation rules stay silent in a Prettier project", () => {
+    const source = "import { a, b, } from \"./x\";\n\ntype L = { a: string };\n\nconst x = 1\n";
+    const plain = tempProject();
+    const project = tempProject({ ".prettierrc": "{}\n" });
+    try {
+        const without = lintText(join(plain, "a.ts"), source).map((v) => v.rule);
+        assert.ok(without.includes("no-import-trailing-comma"));
+        assert.ok(without.includes("require-semicolons"));
+
+        const withPrettier = lintText(join(project, "a.ts"), source);
+        assert.ok(!withPrettier.some((v) => v.rule === "no-import-trailing-comma"));
+        // The statement-level missing semicolon still reports, and only that one.
+        const semicolons = withPrettier.filter((v) => v.rule === "require-semicolons");
+        assert.equal(semicolons.length, 1);
+        assert.equal(semicolons[0]!.line, 5);
+    } finally {
+        for (const dir of [plain, project]) rmSync(dir, { recursive: true, force: true });
+    }
 });
 
 test("fix: does not collapse blank lines guarded by a docstring or comment", () => {

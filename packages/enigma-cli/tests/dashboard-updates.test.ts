@@ -21,7 +21,7 @@ const registry: Server = createServer((req, res) => {
     res.writeHead(404); res.end("{}");
 });
 await new Promise<void>((r) => registry.listen(0, "127.0.0.1", r));
-process.env.ENIGMA_NPM_REGISTRY = `http://127.0.0.1:${(registry.address() as { port: number }).port}`;
+process.env.ENIGMA_NPM_REGISTRY = `http://127.0.0.1:${(registry.address() as { port: number; }).port}`;
 process.env.ENIGMA_NO_UPDATE_CHECK = "1"; // read the cache without auto-triggering a second fetch
 
 const { refreshUpdateStatus, readUpdateStatusCached } = await import("../src/dashboard-updates");

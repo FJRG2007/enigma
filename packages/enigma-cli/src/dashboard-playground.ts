@@ -19,13 +19,13 @@ import { completeOnce, type CompleteResult } from "./api-server";
 /** Info for populating the playground UI: agents, models, accounts, profiles, packs, port. */
 export interface PlaygroundInfo {
     agents: string[];
-    models: Array<{ tool: string; models: string[] }>;
-    accounts: Array<{ tool: string; name: string }>;
+    models: Array<{ tool: string; models: string[]; }>;
+    accounts: Array<{ tool: string; name: string; }>;
     profiles: string[];
-    packs: Array<{ id: string; label: string; installed: boolean }>;
+    packs: Array<{ id: string; label: string; installed: boolean; }>;
     apiPort: number;
     /** The persisted default context the `enigma api` server runs under (settable here). */
-    defaults: { account: string; profile: string; pack: string };
+    defaults: { account: string; profile: string; pack: string; };
 }
 
 export function playgroundInfo(): PlaygroundInfo {
@@ -44,7 +44,7 @@ export function playgroundInfo(): PlaygroundInfo {
 }
 
 /** Persist the default API context (account/profile/pack) globally; empty values clear a field. */
-export function setApiDefaults(d: { account?: string; profile?: string; pack?: string }): { ok: boolean; defaults: { account: string; profile: string; pack: string } } {
+export function setApiDefaults(d: { account?: string; profile?: string; pack?: string; }): { ok: boolean; defaults: { account: string; profile: string; pack: string; }; } {
     setEnigmaValue("apiAccount", typeof d.account === "string" ? d.account : "", "global");
     setEnigmaValue("apiProfile", typeof d.profile === "string" ? d.profile : "", "global");
     setEnigmaValue("apiPack", typeof d.pack === "string" ? d.pack : "", "global");
@@ -79,7 +79,7 @@ export function formatPath(format: string): string {
 }
 
 /** Parse a data URL into an Anthropic base64 image source, or null. */
-function dataUrlToAnthropicImage(url: string): { type: "image"; source: { type: "base64"; media_type: string; data: string } } | null {
+function dataUrlToAnthropicImage(url: string): { type: "image"; source: { type: "base64"; media_type: string; data: string; }; } | null {
     const m = /^data:([^;]+);base64,(.+)$/i.exec(url);
     return m ? { type: "image", source: { type: "base64", media_type: m[1]!, data: m[2]! } } : null;
 }
@@ -105,7 +105,7 @@ export function buildRequestBody(req: PlaygroundRequest): Record<string, unknown
         applyContext(body, req);
         return body;
     }
-    const messages: Array<{ role: string; content: unknown }> = [];
+    const messages: Array<{ role: string; content: unknown; }> = [];
     if (req.system) messages.push({ role: "system", content: req.system });
     messages.push({ role: "user", content });
     const body: Record<string, unknown> = { model, messages };
@@ -165,7 +165,7 @@ export function isLoopbackTarget(baseUrl: string): boolean {
 }
 
 /** POST a JSON body to a loopback API server and return its raw + parsed response. */
-function forwardHttp(baseUrl: string, format: string, body: Record<string, unknown>, apiKey?: string): Promise<{ status: number; raw: string; json: unknown }> {
+function forwardHttp(baseUrl: string, format: string, body: Record<string, unknown>, apiKey?: string): Promise<{ status: number; raw: string; json: unknown; }> {
     return new Promise((resolve, reject) => {
         let target: URL;
         try { target = new URL(formatPath(format), baseUrl); } catch { reject(new Error("Invalid base URL.")); return; }
@@ -197,7 +197,7 @@ export interface PlaygroundResponse {
     status?: number;
     text?: string;
     response?: unknown;
-    usage?: { input: number; output: number };
+    usage?: { input: number; output: number; };
     curl: string;
 }
 
@@ -246,9 +246,9 @@ function extractText(json: unknown, format: string): string {
     if (!json || typeof json !== "object") return "";
     const obj = json as Record<string, unknown>;
     if (format === "anthropic") {
-        const content = obj.content as Array<{ text?: string }> | undefined;
+        const content = obj.content as Array<{ text?: string; }> | undefined;
         return Array.isArray(content) ? content.map((c) => c.text || "").join("") : "";
     }
-    const choices = obj.choices as Array<{ message?: { content?: string } }> | undefined;
+    const choices = obj.choices as Array<{ message?: { content?: string; }; }> | undefined;
     return choices?.[0]?.message?.content || "";
 }

@@ -472,7 +472,7 @@ export interface SkillEntry {
 }
 
 /** Parse an "owner/repo/skill" reference into its name (last segment) and repo. */
-export function parseSkillRef(skill: string): { repo: string; skillName: string; full: string } {
+export function parseSkillRef(skill: string): { repo: string; skillName: string; full: string; } {
     if (skill.startsWith("http")) return { repo: skill, skillName: "", full: skill };
     const parts = skill.split("/");
     return { repo: parts.slice(0, 2).join("/"), skillName: parts.slice(2).join("/"), full: skill };

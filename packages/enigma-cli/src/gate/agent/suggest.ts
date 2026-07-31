@@ -110,7 +110,7 @@ export async function suggestBranchAndCommit(
     ag: Agent,
     dir: string,
     signal?: AbortSignal
-): Promise<{ branch: string; subject: string }> {
+): Promise<{ branch: string; subject: string; }> {
     let result: Result;
     try {
         result = await ag.run(

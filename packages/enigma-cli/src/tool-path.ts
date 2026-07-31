@@ -193,7 +193,7 @@ export function ensureLaunchable(toolName: string, scope: "global" | "local" = "
 }
 
 /** Per-tool launch-path status for listings: name, label and a one-line description. */
-export function toolPathStatuses(): Array<{ name: string; label: string; status: string; path: string | null }> {
+export function toolPathStatuses(): Array<{ name: string; label: string; status: string; path: string | null; }> {
     return TOOL_NAMES.map((t) => {
         const loc = locateToolBinary(t);
         return { name: t, label: loc.label, status: describeLocation(loc), path: loc.effective };

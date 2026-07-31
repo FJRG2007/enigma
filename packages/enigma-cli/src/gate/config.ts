@@ -270,7 +270,7 @@ export function probeRovoDevSupport(bin: string): Promise<boolean> {
                 resolve(false);
                 return;
             }
-            if ((err as { killed?: boolean }).killed) {
+            if ((err as { killed?: boolean; }).killed) {
                 reject(new Error(`probe rovodev support via "${bin}" timed out`));
                 return;
             }

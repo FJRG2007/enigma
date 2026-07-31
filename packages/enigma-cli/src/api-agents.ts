@@ -19,14 +19,14 @@ import { getTool, isToolName } from "./accounts";
 
 /** One normalized event, agent-agnostic, parsed from a stream-json adapter. */
 export type AgentEvent =
-    | { kind: "init"; sessionId: string | null; model: string | null }
-    | { kind: "text"; text: string }
-    | { kind: "result"; text: string | null; sessionId: string | null; inputTokens: number; outputTokens: number; isError: boolean; errorMessage?: string };
+    | { kind: "init"; sessionId: string | null; model: string | null; }
+    | { kind: "text"; text: string; }
+    | { kind: "result"; text: string | null; sessionId: string | null; inputTokens: number; outputTokens: number; isError: boolean; errorMessage?: string; };
 
 /** An image attached to a request, in Anthropic content-block shape (base64 or url source). */
 export interface ImageBlock {
     type: "image";
-    source: { type: "base64"; media_type: string; data: string } | { type: "url"; url: string };
+    source: { type: "base64"; media_type: string; data: string; } | { type: "url"; url: string; };
 }
 
 /** Options that shape a single headless run, independent of the backing agent. */
@@ -46,7 +46,7 @@ export interface CompletionOptions {
 }
 
 /** What an adapter produces to launch its agent: CLI args plus optional stdin content. */
-export interface AgentCommand { args: string[]; stdin: string | null }
+export interface AgentCommand { args: string[]; stdin: string | null; }
 
 /**
  * Adapter contract. `mode` decides how the server reads stdout: "stream-json" parses each
@@ -106,7 +106,7 @@ export function parseClaudeLine(line: string): AgentEvent | null {
         return { kind: "init", sessionId: (msg.session_id as string) ?? null, model: (msg.model as string) ?? null };
     }
     if (type === "assistant") {
-        const message = msg.message as { content?: Array<{ type?: string; text?: string }> } | undefined;
+        const message = msg.message as { content?: Array<{ type?: string; text?: string; }>; } | undefined;
         const blocks = message?.content;
         if (Array.isArray(blocks)) {
             const text = blocks.filter((b) => b && b.type === "text" && typeof b.text === "string").map((b) => b.text as string).join("");
@@ -115,7 +115,7 @@ export function parseClaudeLine(line: string): AgentEvent | null {
         return null;
     }
     if (type === "result") {
-        const usage = (msg.usage as { input_tokens?: number; output_tokens?: number }) || {};
+        const usage = (msg.usage as { input_tokens?: number; output_tokens?: number; }) || {};
         const isError = msg.is_error === true || (typeof msg.subtype === "string" && msg.subtype !== "success");
         return {
             kind: "result",
@@ -171,18 +171,18 @@ export function parseCodexLine(line: string): AgentEvent | null {
         return { kind: "init", sessionId: id, model: null };
     }
     if (type === "item.completed") {
-        const item = msg.item as { type?: string; text?: string } | undefined;
+        const item = msg.item as { type?: string; text?: string; } | undefined;
         if (item && item.type === "agent_message" && typeof item.text === "string" && item.text) {
             return { kind: "text", text: item.text };
         }
         return null;
     }
     if (type === "turn.completed") {
-        const usage = (msg.usage as { input_tokens?: number; output_tokens?: number }) || {};
+        const usage = (msg.usage as { input_tokens?: number; output_tokens?: number; }) || {};
         return { kind: "result", text: null, sessionId: null, inputTokens: usage.input_tokens ?? 0, outputTokens: usage.output_tokens ?? 0, isError: false };
     }
     if (type === "turn.failed" || type === "error") {
-        const error = msg.error as { message?: string } | undefined;
+        const error = msg.error as { message?: string; } | undefined;
         return { kind: "result", text: null, sessionId: null, inputTokens: 0, outputTokens: 0, isError: true, errorMessage: error?.message || "Codex reported an error." };
     }
     return null;

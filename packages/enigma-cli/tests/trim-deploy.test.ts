@@ -36,12 +36,12 @@ test("coexists with the guardrails hook instead of replacing it", () => {
     const settings = join(HOME, "both.json");
     applyClaudeGuardrailsHook(settings, true);
     applyClaudeTrimHook(settings, true);
-    const commands = JSON.parse(readFileSync(settings, "utf8")).hooks.PostToolUse.map((g: { hooks: { command: string }[] }) => g.hooks[0]!.command);
+    const commands = JSON.parse(readFileSync(settings, "utf8")).hooks.PostToolUse.map((g: { hooks: { command: string; }[]; }) => g.hooks[0]!.command);
     expect(commands.some((c: string) => c.includes("__guardrails-hook"))).toBe(true);
     expect(commands.some((c: string) => c.includes("__trim-hook"))).toBe(true);
     // Removing one leaves the other in place.
     applyClaudeTrimHook(settings, false);
-    const left = JSON.parse(readFileSync(settings, "utf8")).hooks.PostToolUse.map((g: { hooks: { command: string }[] }) => g.hooks[0]!.command);
+    const left = JSON.parse(readFileSync(settings, "utf8")).hooks.PostToolUse.map((g: { hooks: { command: string; }[]; }) => g.hooks[0]!.command);
     expect(left.some((c: string) => c.includes("__guardrails-hook"))).toBe(true);
     expect(left.some((c: string) => c.includes("__trim-hook"))).toBe(false);
 });

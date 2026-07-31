@@ -54,7 +54,7 @@ export const INSTALL_METHODS: Record<string, string> = {
 export const INSTALL_STORE_KEY = "enigma-install-method";
 
 export function isWindows(): boolean {
-    const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
+    const nav = navigator as Navigator & { userAgentData?: { platform?: string; }; };
     return /win/i.test(nav.userAgentData?.platform || navigator.platform || navigator.userAgent || "");
 }
 
@@ -62,7 +62,7 @@ export function isWindows(): boolean {
  * Resolve a method id to its command and a short label. The `curl` script has no `sh` on
  * Windows, so it defaults to the PowerShell one-liner there; package-manager methods are OS-agnostic.
  */
-export function resolveInstall(method?: string | null): { id: string; command: string; label: string } {
+export function resolveInstall(method?: string | null): { id: string; command: string; label: string; } {
     let id = method && method in INSTALL_METHODS ? method : "curl";
     if (id === "curl" && isWindows()) id = "powershell";
     const labels: Record<string, string> = { curl: "macOS / Linux", powershell: "Windows (PowerShell)" };

@@ -51,13 +51,13 @@ const SEL_FG = "#ffffff";
 // Registry lookup + staging-key helpers (mirrors ./settings.ts internals).
 const SETTING_BY_KEY = new Map<string, Setting>(ALL_SETTINGS.map((s) => [s.key, s]));
 const stageKey = (key: string, scope: Scope): string => `${scope}/${key}`;
-const parseStageKey = (composite: string): { key: string; scope: Scope } => {
+const parseStageKey = (composite: string): { key: string; scope: Scope; } => {
     const i = composite.indexOf("/");
     return { scope: composite.slice(0, i) as Scope, key: composite.slice(i + 1) };
 };
 
 type ActionKind = "skills" | "security" | "fix-path";
-const ACTION_ITEMS: Array<{ action: ActionKind; title: string; blurb: string }> = [
+const ACTION_ITEMS: Array<{ action: ActionKind; title: string; blurb: string; }> = [
     { action: "skills", title: "Install agent skills", blurb: "Claude Code, Codex, OpenCode" },
     { action: "security", title: "Git security hooks", blurb: "block secrets, .env, node_modules on commit" },
     { action: "fix-path", title: "Fix tool paths", blurb: "detect & repair claude/codex/opencode launch path" },
@@ -80,7 +80,7 @@ export async function runSettingsTui(): Promise<void> {
     await runTui({ showActions: false });
 }
 
-async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise<HubExitAction | null> {
+async function runTui(opts: { showActions: boolean; hub?: HubContext; }): Promise<HubExitAction | null> {
     if (!process.stdout.isTTY) return null;
 
     const React = (await import("react")).default;
@@ -163,7 +163,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
     const panelBox = (borderColor: string, children: RNode[], extra: Record<string, unknown> = {}): RNode =>
         h(box, { border: true, borderStyle: "rounded", borderColor, flexDirection: "column", paddingLeft: 1, paddingRight: 1, flexGrow: 1, ...extra }, ...children);
 
-    const renderSidebar = (items: Array<{ title: string }>, index: number, focusRight: boolean, width: number, onSelect: (i: number) => void, onMove: (delta: 1 | -1) => void): RNode =>
+    const renderSidebar = (items: Array<{ title: string; }>, index: number, focusRight: boolean, width: number, onSelect: (i: number) => void, onMove: (delta: 1 | -1) => void): RNode =>
         h(box, { border: true, borderStyle: "rounded", borderColor: focusRight ? COL.gray : COL.cyan, flexDirection: "column", paddingLeft: 1, paddingRight: 1, width, marginRight: 1, ...wheel(onMove) },
             txt("MENU", { fg: COL.gray, attributes: BOLD }),
             ...items.map((it, i) => txt(` ${it.title} `, {
@@ -176,7 +176,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
 
     const renderChecklist = (s: {
         title: string; blurb: string; focused: boolean;
-        items: Array<{ key: string; label: string; hint: string; section?: string; hintColor?: string }>;
+        items: Array<{ key: string; label: string; hint: string; section?: string; hintColor?: string; }>;
         cursor: number; checked: Record<string, boolean>;
         onToggle: (i: number) => void; onMove: (delta: 1 | -1) => void;
     }): RNode => {
@@ -207,8 +207,8 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
     // Profiles keep their synthetic "(none)" first row (no active profile = each
     // tool uses its own active account); keys act on the row kind under the cursor.
     type IdRow =
-        | { kind: "account"; index: number; account: HubAccount }
-        | { kind: "profile"; index: number; name: string; label: string; active: boolean; summary: string };
+        | { kind: "account"; index: number; account: HubAccount; }
+        | { kind: "profile"; index: number; name: string; label: string; active: boolean; summary: string; };
     const renderIdentity = (s: {
         rows: IdRow[]; focused: boolean; cursor: number;
         onSelect: (i: number) => void; onMove: (delta: 1 | -1) => void;
@@ -255,7 +255,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
     // Name-input overlay for creating an account. The <input> is focused so the
     // renderer routes keystrokes to it; onSubmit fires on Enter. The global key
     // handler short-circuits while this is open so typing does not trigger nav.
-    const renderAddInput = (s: { title: string; placeholder: string; error?: string; maxLength?: number; onSubmit: (value: string) => void }): RNode =>
+    const renderAddInput = (s: { title: string; placeholder: string; error?: string; maxLength?: number; onSubmit: (value: string) => void; }): RNode =>
         h(box, { flexGrow: 1, justifyContent: "center", alignItems: "center" },
             h(box, { border: true, borderStyle: "rounded", borderColor: COL.cyan, flexDirection: "column", paddingLeft: 2, paddingRight: 2, paddingTop: 1, paddingBottom: 1, width: 52 },
                 txt(s.title, { fg: COL.cyan, attributes: BOLD }),
@@ -316,7 +316,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
     // Per-agent skill editor: one row per installed app, green "on" / grey "off", toggled with
     // enter/space (or a click). Mirrors the dashboard's per-app chips for `#/skills`.
     const renderSkillAgentEditor = (s: {
-        title: string; rows: Array<{ label: string; on: boolean }>; cursor: number;
+        title: string; rows: Array<{ label: string; on: boolean; }>; cursor: number;
         onToggle: (i: number) => void; onMove: (delta: 1 | -1) => void;
     }): RNode =>
         h(box, { flexGrow: 1, justifyContent: "center", alignItems: "center" },
@@ -332,7 +332,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
                 txt("up/down move   enter / space toggle   esc done", { fg: COL.gray, marginTop: 1 })));
 
     const renderCategoryPanel = (s: {
-        category: { title: string; blurb: string; settings: Setting[] };
+        category: { title: string; blurb: string; settings: Setting[]; };
         scope: Scope; focusRight: boolean; setIndex: number;
         valueOf: (setting: Setting, sc: Scope) => boolean;
         displayValue: (setting: Setting, sc: Scope) => string;
@@ -383,7 +383,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
     const usd = (n: number): string => "$" + (n || 0).toFixed(2);
 
     /** Read-only Claude usage panel: cost + tokens + the 5h block + top models/sessions. */
-    const renderUsagePanel = (s: { usageOn: boolean; report: (UsageReport & { pending: boolean }) | null }): RNode => {
+    const renderUsagePanel = (s: { usageOn: boolean; report: (UsageReport & { pending: boolean; }) | null; }): RNode => {
         if (!s.usageOn) return panelBox(COL.gray, [
             txt("Claude usage", { fg: COL.cyan, attributes: BOLD }),
             txt("Real tool-usage stats are off.", { fg: COL.yellow, marginTop: 1 }),
@@ -471,7 +471,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         ]);
     };
 
-    const renderRecallPanel = (s: { recallOn: boolean; view: RecallView | null }): RNode => {
+    const renderRecallPanel = (s: { recallOn: boolean; view: RecallView | null; }): RNode => {
         if (!s.recallOn) return panelBox(COL.gray, [
             txt("Recall memory", { fg: COL.cyan, attributes: BOLD }),
             txt("Session memory is off.", { fg: COL.yellow, marginTop: 1 }),
@@ -512,7 +512,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         ]);
     };
 
-    const renderResourcePanel = (s: { status: ResourceStatus | null; cursor: number; note: string; rows: { op: string; value?: number; label: string }[]; focused: boolean }): RNode => {
+    const renderResourcePanel = (s: { status: ResourceStatus | null; cursor: number; note: string; rows: { op: string; value?: number; label: string; }[]; focused: boolean; }): RNode => {
         if (!s.status) return panelBox(COL.cyan, [
             txt("Resources", { fg: COL.cyan, attributes: BOLD }),
             txt("Loading system snapshot...", { fg: COL.gray, marginTop: 1 }),
@@ -533,7 +533,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         ]);
     };
 
-    const renderSshPanel = (s: { conns: SshConnectionView[]; cursor: number; note: string; focused: boolean }): RNode => {
+    const renderSshPanel = (s: { conns: SshConnectionView[]; cursor: number; note: string; focused: boolean; }): RNode => {
         const maxRows = 18;
         const start = Math.max(0, Math.min(s.cursor - (maxRows >> 1), Math.max(0, s.conns.length - maxRows)));
         const slice = s.conns.slice(start, start + maxRows);
@@ -555,7 +555,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
 
     // The editable fields of a connection, as rows for the 'e' field editor. `kind`
     // drives what enter does: open a text input, toggle a boolean, or clear the password.
-    type SshEditRow = { field: string; label: string; kind: "text" | "toggle" | "clearpw" };
+    type SshEditRow = { field: string; label: string; kind: "text" | "toggle" | "clearpw"; };
     const sshEditRows = (c: SshConnectionView): SshEditRow[] => {
         const rows: SshEditRow[] = [
             { field: "name", label: `Name (2nd connect key): ${c.name ?? "-"}`, kind: "text" },
@@ -572,7 +572,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         return rows;
     };
 
-    const renderSshEditor = (s: { title: string; rows: SshEditRow[]; cursor: number; onSelect: (i: number) => void; onMove: (d: 1 | -1) => void }): RNode =>
+    const renderSshEditor = (s: { title: string; rows: SshEditRow[]; cursor: number; onSelect: (i: number) => void; onMove: (d: 1 | -1) => void; }): RNode =>
         h(box, { flexGrow: 1, justifyContent: "center", alignItems: "center" },
             h(box, { border: true, borderStyle: "rounded", borderColor: COL.cyan, flexDirection: "column", paddingLeft: 2, paddingRight: 2, paddingTop: 1, paddingBottom: 1, width: 60, ...wheel(s.onMove) },
                 txt(s.title, { fg: COL.cyan, attributes: BOLD }),
@@ -602,13 +602,13 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
 
     type Mode = "menu" | "running" | "result";
     type SideItem =
-        | { kind: "category"; catIndex: number; title: string }
-        | { kind: "action"; action: ActionKind; title: string; blurb: string }
-        | { kind: "identity"; title: string }
-        | { kind: "usage"; title: string }
-        | { kind: "recall"; title: string }
-        | { kind: "resources"; title: string }
-        | { kind: "ssh"; title: string };
+        | { kind: "category"; catIndex: number; title: string; }
+        | { kind: "action"; action: ActionKind; title: string; blurb: string; }
+        | { kind: "identity"; title: string; }
+        | { kind: "usage"; title: string; }
+        | { kind: "recall"; title: string; }
+        | { kind: "resources"; title: string; }
+        | { kind: "ssh"; title: string; };
     const sideItems: SideItem[] = [
         ...CATEGORIES.map((c, i) => ({ kind: "category" as const, catIndex: i, title: c.title })),
         // The usage view only makes sense in the full hub (it reads session transcripts).
@@ -628,7 +628,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         ? Math.max(0, sideItems.findIndex((it) => it.kind === "action" && it.action === "skills"))
         : 0;
 
-    function App({ onExit }: { onExit: (action?: HubExitAction) => void }) {
+    function App({ onExit }: { onExit: (action?: HubExitAction) => void; }) {
         const dims = useTerminalDimensions();
         const size = { columns: dims.width || 80, rows: dims.height || 24 };
         const [mode, setMode] = useState<Mode>("menu");
@@ -637,7 +637,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         const [focusRight, setFocusRight] = useState(false);
         const [setIndex, setSetIndex] = useState(0);
         const [pending, setPending] = useState<Record<string, boolean | string>>({});
-        const [confirm, setConfirm] = useState<{ index: number } | null>(null);
+        const [confirm, setConfirm] = useState<{ index: number; } | null>(null);
         const [actCursor, setActCursor] = useState(0);
         const [actChecked, setActChecked] = useState<Record<string, boolean>>({});
         const [busyTitle, setBusyTitle] = useState("");
@@ -647,41 +647,41 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         const [setupDone, setSetupDone] = useState(false);
         // Outcome of the last settings save, shown as a banner so a failed write is never
         // silent (the whole point: a write can fail - permissions - and must be surfaced).
-        const [saveStatus, setSaveStatus] = useState<{ kind: "ok" | "err"; msg: string } | null>(null);
+        const [saveStatus, setSaveStatus] = useState<{ kind: "ok" | "err"; msg: string; } | null>(null);
         // Skills rows of the install panel; discarding asks for confirmation because
         // it deletes the deployed copies and opts the skill out of installs/updates.
         const [skills, setSkills] = useState<HubSkill[]>(initialSkills);
-        const [skillConfirm, setSkillConfirm] = useState<{ name: string; index: number } | null>(null);
+        const [skillConfirm, setSkillConfirm] = useState<{ name: string; index: number; } | null>(null);
         // Per-agent skill overlay (enable/disable a skill app-by-app), opened with 'a' on a skill row.
-        const [skillAgents, setSkillAgents] = useState<{ name: string; cursor: number } | null>(null);
+        const [skillAgents, setSkillAgents] = useState<{ name: string; cursor: number; } | null>(null);
         const [accounts, setAccounts] = useState<HubAccount[]>(initialAccounts);
         // Single cursor over the unified Accounts & profiles rows (accounts first).
         const [idCursor, setIdCursor] = useState(0);
-        const [removeConfirm, setRemoveConfirm] = useState<{ tool: string; name: string; index: number } | null>(null);
+        const [removeConfirm, setRemoveConfirm] = useState<{ tool: string; name: string; index: number; } | null>(null);
         // Two-step add flow: pick the tool in a searchable selector, then type the
         // account name. `query`/`cursor` drive the tool step only.
-        const [adding, setAdding] = useState<{ step: "tool" | "name"; tool: string; toolLabel: string; query: string; cursor: number; error?: string } | null>(null);
+        const [adding, setAdding] = useState<{ step: "tool" | "name"; tool: string; toolLabel: string; query: string; cursor: number; error?: string; } | null>(null);
         // Rename overlays: the same name-input dialog as the add flows, pre-targeted
         // at the selected account/profile; errors come back inline from the callback.
-        const [renaming, setRenaming] = useState<{ tool: string; toolLabel: string; name: string; error?: string } | null>(null);
-        const [profRename, setProfRename] = useState<{ name: string; error?: string } | null>(null);
-        const [connectPrompt, setConnectPrompt] = useState<{ tool: string; account: string; index: number } | null>(null);
+        const [renaming, setRenaming] = useState<{ tool: string; toolLabel: string; name: string; error?: string; } | null>(null);
+        const [profRename, setProfRename] = useState<{ name: string; error?: string; } | null>(null);
+        const [connectPrompt, setConnectPrompt] = useState<{ tool: string; account: string; index: number; } | null>(null);
         // Provider-override editor (e.g. point a Claude account at MiniMax). Multi-step: pick a
         // backend (default/preset/custom), then a base URL (custom only), then the token.
-        const [providerEdit, setProviderEdit] = useState<{ tool: string; account: string; step: "backend" | "base" | "token"; cursor: number; query: string; presetId?: string; baseUrl?: string; error?: string } | null>(null);
+        const [providerEdit, setProviderEdit] = useState<{ tool: string; account: string; step: "backend" | "base" | "token"; cursor: number; query: string; presetId?: string; baseUrl?: string; error?: string; } | null>(null);
         const [profiles, setProfiles] = useState<HubProfile[]>(initialProfiles);
         // Profile management overlays: name input, two-step mapping editor
         // (searchable tool -> searchable account incl. "(unpin)"), remove confirm.
-        const [profAdd, setProfAdd] = useState<{ error?: string } | null>(null);
-        const [profEdit, setProfEdit] = useState<{ profile: string; step: "tool" | "account"; tool: string; toolLabel: string; query: string; cursor: number; error?: string } | null>(null);
-        const [profRemove, setProfRemove] = useState<{ name: string; index: number } | null>(null);
+        const [profAdd, setProfAdd] = useState<{ error?: string; } | null>(null);
+        const [profEdit, setProfEdit] = useState<{ profile: string; step: "tool" | "account"; tool: string; toolLabel: string; query: string; cursor: number; error?: string; } | null>(null);
+        const [profRemove, setProfRemove] = useState<{ name: string; index: number; } | null>(null);
         // List-setting editor (guard globs / custom secret patterns): the list view, plus
         // a nested add-input overlay (listAdd) that takes precedence while open.
-        const [listEdit, setListEdit] = useState<{ key: string; cursor: number } | null>(null);
-        const [listAdd, setListAdd] = useState<{ key: string; error?: string } | null>(null);
+        const [listEdit, setListEdit] = useState<{ key: string; cursor: number; } | null>(null);
+        const [listAdd, setListAdd] = useState<{ key: string; error?: string; } | null>(null);
         // Free-text value editor (recall model/base/key): a focused input overlay; on submit it
         // writes the setting immediately (like list add) rather than staging it.
-        const [valueEdit, setValueEdit] = useState<{ key: string; scope: Scope } | null>(null);
+        const [valueEdit, setValueEdit] = useState<{ key: string; scope: Scope; } | null>(null);
 
         const current = sideItems[sideIndex]!;
         const category = current.kind === "category" ? CATEGORIES[current.catIndex]! : null;
@@ -691,7 +691,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         const recallMode = current.kind === "recall";
         const resourceMode = current.kind === "resources";
         const sshMode = current.kind === "ssh";
-        const [usage, setUsage] = useState<(UsageReport & { pending: boolean }) | null>(null);
+        const [usage, setUsage] = useState<(UsageReport & { pending: boolean; }) | null>(null);
         const usageOn = usageMode ? readConfig().config.usageStats : false;
         const [recall, setRecall] = useState<RecallView | null>(null);
         const recallOn = recallMode ? readConfig().config.recall : false;
@@ -699,18 +699,18 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         // over an action list (named actions first, then ports, then processes) and a confirm.
         const [resStatus, setResStatus] = useState<ResourceStatus | null>(null);
         const [resCursor, setResCursor] = useState(0);
-        const [resConfirm, setResConfirm] = useState<{ label: string; op: string; value?: number; index: number } | null>(null);
+        const [resConfirm, setResConfirm] = useState<{ label: string; op: string; value?: number; index: number; } | null>(null);
         const [resNote, setResNote] = useState("");
         // SSH connection panel: the saved connections, a cursor, a note, and a remove confirm.
         const [sshConns, setSshConns] = useState<SshConnectionView[]>([]);
         const [sshCursor, setSshCursor] = useState(0);
         const [sshNote, setSshNote] = useState("");
-        const [sshRemove, setSshRemove] = useState<{ alias: string; index: number } | null>(null);
+        const [sshRemove, setSshRemove] = useState<{ alias: string; index: number; } | null>(null);
         // Field-by-field editor for a saved connection (opened with 'e'): a field list
         // (sshEdit) plus a nested input overlay for one text field (sshField).
-        const [sshEdit, setSshEdit] = useState<{ alias: string; cursor: number } | null>(null);
-        const [sshField, setSshField] = useState<{ alias: string; field: string; label: string; error?: string } | null>(null);
-        const resRows: { op: string; value?: number; label: string }[] = [];
+        const [sshEdit, setSshEdit] = useState<{ alias: string; cursor: number; } | null>(null);
+        const [sshField, setSshField] = useState<{ alias: string; field: string; label: string; error?: string; } | null>(null);
+        const resRows: { op: string; value?: number; label: string; }[] = [];
         if (resStatus) {
             if (resStatus.wslAvailable) resRows.push({ op: "wsl-shutdown", label: `Shut down WSL${resStatus.vmmemRunning ? " - vmmemWSL running, eating RAM" : ""}` });
             if (resStatus.dockerRunning) resRows.push({ op: "docker-quit", label: "Quit Docker Desktop (and WSL backend)" });
@@ -907,7 +907,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
         };
         // Write every staged setting, collecting per-setting failures instead of letting one
         // throw abort the rest or crash the render. Returns the failures + memory restart notes.
-        const persistPending = (): { errors: string[]; notes: string[] } => {
+        const persistPending = (): { errors: string[]; notes: string[]; } => {
             const memoryScopes = new Set<Scope>();
             const skillScopes = new Set<Scope>();
             const errors: string[] = [];
@@ -1155,7 +1155,7 @@ async function runTui(opts: { showActions: boolean; hub?: HubContext }): Promise
                 const items = filterItems(providerBackendItems(s.tool), s.query);
                 return { ...s, cursor: Math.max(0, Math.min(Math.max(0, items.length - 1), s.cursor + delta)) };
             });
-        const applyProvider = (s: NonNullable<typeof providerEdit>, input: { baseUrl: string; model?: string; preset?: string; token?: string } | null): void => {
+        const applyProvider = (s: NonNullable<typeof providerEdit>, input: { baseUrl: string; model?: string; preset?: string; token?: string; } | null): void => {
             if (!setProviderFn) { setProviderEdit(null); return; }
             const res = setProviderFn(s.tool, s.account, input);
             if (!res.ok) { setProviderEdit({ ...s, step: "token", error: res.error }); return; }

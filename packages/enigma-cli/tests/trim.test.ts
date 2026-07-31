@@ -15,7 +15,7 @@ afterAll(() => rmSync(DIR, { recursive: true, force: true }));
 
 let n = 0;
 /** Write `input` verbatim, trim it, and return what is on disk afterwards. latin1 keeps bytes 1:1. */
-async function run(input: string, name = "a.ts"): Promise<{ out: string; changed: boolean }> {
+async function run(input: string, name = "a.ts"): Promise<{ out: string; changed: boolean; }> {
     const path = join(DIR, `${n++}-${name}`);
     writeFileSync(path, input, "latin1");
     const changed = await trimFile(path);

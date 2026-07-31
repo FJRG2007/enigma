@@ -192,7 +192,7 @@ function trimHistory(path: string): void {
 }
 
 /** Reversible-cache stats: how many originals are cached, their disk size, and the cap. */
-export function ccrCacheStats(): { count: number; bytes: number; cap: number } {
+export function ccrCacheStats(): { count: number; bytes: number; cap: number; } {
     const dir = ccrDir();
     let count = 0, bytes = 0;
     try {
@@ -208,7 +208,7 @@ export function ccrCacheStats(): { count: number; bytes: number; cap: number } {
  * Delete all recorded CCR data - cumulative stats, the over-time history, and every
  * cached original - to reset the dashboard and reclaim disk. Returns what was freed.
  */
-export function clearCcr(): { files: number; bytes: number } {
+export function clearCcr(): { files: number; bytes: number; } {
     const dir = ccrDir();
     let files = 0, bytes = 0;
     let names: string[];

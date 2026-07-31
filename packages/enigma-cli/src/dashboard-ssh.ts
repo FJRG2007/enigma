@@ -13,7 +13,7 @@
 import * as sshLib from "./ssh";
 import {
   listTunnels, addTunnel, updateTunnel, removeTunnel, startTunnel, stopTunnel,
-  type TunnelView,
+  type TunnelView
 } from "./ssh-tunnels";
 
 /** A connection shaped for the UI: the redacted view plus human forward descriptions. */
@@ -79,7 +79,7 @@ interface SshPayload extends sshLib.SshInput {
 export interface SshReserved { connection: readonly string[]; }
 
 /** Both lists the SSH subpage renders: connections and standalone tunnels (with live status). */
-export function listSshData(): { connections: SshRow[]; tunnels: TunnelView[]; reserved: SshReserved } {
+export function listSshData(): { connections: SshRow[]; tunnels: TunnelView[]; reserved: SshReserved; } {
   return {
     connections: listSshForDashboard(),
     tunnels: listTunnels(),

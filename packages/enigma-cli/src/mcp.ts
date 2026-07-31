@@ -38,7 +38,7 @@ interface JsonRpcResponse {
     jsonrpc: "2.0";
     id: string | number | null;
     result?: unknown;
-    error?: { code: number; message: string };
+    error?: { code: number; message: string; };
 }
 
 const TOOLS = [
@@ -248,7 +248,7 @@ function callTool(name: string, args: Record<string, unknown>, source?: string):
 
 /** The MCP client name reported in an initialize request, or undefined. */
 export function clientNameOf(req: JsonRpcRequest): string | undefined {
-    const info = req.params?.clientInfo as { name?: unknown } | undefined;
+    const info = req.params?.clientInfo as { name?: unknown; } | undefined;
     return typeof info?.name === "string" && info.name ? info.name : undefined;
 }
 

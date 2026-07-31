@@ -33,7 +33,7 @@
       "description": "Ciphera code style conventions (formatting, naming, imports incl. namespace imports for wide module surfaces, comments, code-level anti-patterns; TypeScript-first, language-agnostic).",
       "provider": "FJRG2007/enigma",
       "updated": "2026-07-30T15:48:04+02:00",
-      "sha": "05dc812da459071110d96ee41c5201b1ee230471d635352415e10ef8b220c267"
+      "sha": "d6a86c28ad39ee502607a5ca8f6f361c8aa52b8fa946156165ec78c6139e495f"
     },
     {
       "name": "code-review-policy",

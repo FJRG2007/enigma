@@ -49,7 +49,7 @@ function managedClaudeNames(): Record<string, string> {
     const map: Record<string, string> = {};
     try {
         const reg = JSON.parse(readFileSync(join(homedir(), ".enigma", "accounts.json"), "utf8")) as {
-            tools?: { claude?: { accounts?: { name?: unknown; dir?: unknown }[] } };
+            tools?: { claude?: { accounts?: { name?: unknown; dir?: unknown; }[]; }; };
         };
         for (const a of reg.tools?.claude?.accounts ?? []) {
             if (typeof a?.name === "string" && typeof a?.dir === "string") map[basename(a.dir)] = a.name;
@@ -111,7 +111,7 @@ export function lastAssistantMessage(transcriptPath: string): string {
     for (let i = lines.length - 1; i >= 0; i--) {
         const line = lines[i]!;
         if (!line.includes("\"assistant\"")) continue;
-        let entry: { message?: { role?: string; content?: unknown } };
+        let entry: { message?: { role?: string; content?: unknown; }; };
         try { entry = JSON.parse(line); } catch { continue; }
         const message = entry.message;
         if (!message || message.role !== "assistant") continue;
@@ -119,7 +119,7 @@ export function lastAssistantMessage(transcriptPath: string): string {
         if (typeof content === "string") { if (content.trim()) return content; continue; }
         if (!Array.isArray(content)) continue;
         const text = content
-            .filter((b): b is { type: string; text: string } => !!b && typeof b === "object" && (b as { type?: string }).type === "text" && typeof (b as { text?: string }).text === "string")
+            .filter((b): b is { type: string; text: string; } => !!b && typeof b === "object" && (b as { type?: string; }).type === "text" && typeof (b as { text?: string; }).text === "string")
             .map((b) => b.text)
             .join("\n")
             .trim();

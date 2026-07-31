@@ -132,7 +132,7 @@ export function pendingCheckMatchesLastFixed(checks: Check[], lastFixedChecks: s
 /** Encodes the failing checks and merge-conflict flag into a stable JSON key. */
 export function encodeLastFixedChecks(failing: string[], mergeConflict: boolean): string {
     if (failing.length === 0 && !mergeConflict) return "";
-    const issues: { checks?: string[]; mergeConflict?: boolean } = {};
+    const issues: { checks?: string[]; mergeConflict?: boolean; } = {};
     if (failing.length > 0) issues.checks = failing;
     if (mergeConflict) issues.mergeConflict = true;
     try {
@@ -146,7 +146,7 @@ export function encodeLastFixedChecks(failing: string[], mergeConflict: boolean)
 export function decodeLastFixedChecks(raw: string): [LastFixedIssues, boolean] {
     const empty: LastFixedIssues = { checks: [], mergeConflict: false };
     if (raw === "") return [empty, false];
-    let parsed: { checks?: string[]; mergeConflict?: boolean };
+    let parsed: { checks?: string[]; mergeConflict?: boolean; };
     try {
         parsed = JSON.parse(raw);
     } catch {

@@ -23,14 +23,14 @@ import { existsSync, mkdirSync, statSync } from "node:fs";
 export interface RecallStatement {
     all(...params: unknown[]): Record<string, unknown>[];
     get(...params: unknown[]): Record<string, unknown> | null;
-    run(...params: unknown[]): { changes: number; lastInsertRowid: number | bigint };
+    run(...params: unknown[]): { changes: number; lastInsertRowid: number | bigint; };
 }
 
 /** A database handle - the slice of bun:sqlite's Database we use. */
 export interface RecallDb {
     exec(sql: string): void;
     query(sql: string): RecallStatement;
-    run(sql: string, ...params: unknown[]): { changes: number; lastInsertRowid: number | bigint };
+    run(sql: string, ...params: unknown[]): { changes: number; lastInsertRowid: number | bigint; };
     transaction<T>(fn: (...args: unknown[]) => T): (...args: unknown[]) => T;
     close(): void;
 }
@@ -151,7 +151,7 @@ export function openDb(): RecallDb {
     let Database: new (path: string) => RecallDb;
     try {
         // Lazy require: bun:sqlite only exists under Bun; a top-level import would crash Node.
-        ({ Database } = require("bun:sqlite") as { Database: new (path: string) => RecallDb });
+        ({ Database } = require("bun:sqlite") as { Database: new (path: string) => RecallDb; });
     } catch {
         throw new RecallUnavailableError();
     }

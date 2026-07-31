@@ -29,7 +29,7 @@ const SERVER_NAME = "enigma";
 type Scope = "global" | "local";
 
 /** The command + args that launch the enigma MCP server, resolved per OS and tool. */
-function invocation(tool: string): { command: string; args: string[] } {
+function invocation(tool: string): { command: string; args: string[]; } {
     const base = resolveBin("enigma") ?? "enigma";
     // claude and opencode spawn the server without a shell, so a Windows `.cmd`
     // launcher needs a `cmd /c` wrapper. Codex resolves `.cmd` via PATHEXT itself.

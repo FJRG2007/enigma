@@ -92,6 +92,8 @@ import DymoAPI from "dymo-api";
 - Use semicolons in languages that use them (e.g. JavaScript/TypeScript).
 - Use 4-space indentation for new code.
 - Use the single-line form for one-line blocks; avoid unnecessary braces, parentheses, and trailing commas.
+- Terminate every interface and type-literal member with a semicolon, including the last member of a single-line literal: `type Image = { url?: string; };`.
+- The trailing-comma rule covers named import and export lists: `import { a, b } from "x";`, not `import { a, b, } from "x";`.
 
 ```ts
 // Bad

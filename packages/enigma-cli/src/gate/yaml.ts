@@ -16,7 +16,7 @@ interface BunYaml {
 
 /** Parses a YAML document into a plain JS value (objects, arrays, scalars). */
 export function parseYaml(text: string): unknown {
-    const bunYaml = (globalThis as { Bun?: { YAML?: BunYaml } }).Bun?.YAML;
+    const bunYaml = (globalThis as { Bun?: { YAML?: BunYaml; }; }).Bun?.YAML;
     if (!bunYaml?.parse) {
         throw new Error("gate config YAML parsing requires the Bun runtime (Bun.YAML)");
     }

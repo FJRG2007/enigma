@@ -61,9 +61,9 @@ Options:
 
 Default path is the current directory. Exits non-zero on any error-severity
 violation (URL/CDN imports, hardcoded secrets); add --strict to also fail on
-warning-severity Ciphera style findings. --fix only touches the mechanical
-formatting rules (whitespace, blank lines, final newline); style and audit rules
-are reported, never rewritten.
+warning-severity Ciphera style findings. --fix only touches the mechanical rules
+(whitespace, blank lines, final newline, import order, type-member semicolons,
+import-list trailing commas); the rest are reported, never rewritten.
 `);
 }
 

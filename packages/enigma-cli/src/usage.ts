@@ -65,7 +65,7 @@ export function priceFor(model: string): ModelPrice | null {
 }
 
 /** Estimated USD cost of one message's token counts under its model's price. */
-export function costOf(model: string, b: { input: number; output: number; cacheRead: number; cacheCreation: number }): number {
+export function costOf(model: string, b: { input: number; output: number; cacheRead: number; cacheCreation: number; }): number {
     const p = priceFor(model);
     if (!p) return 0;
     return b.input * p.input / 1e6 + b.output * p.output / 1e6 + b.cacheRead * p.cacheRead / 1e6 + b.cacheCreation * p.cacheWrite / 1e6;
@@ -379,7 +379,7 @@ const WEEKDAYS: Record<string, number> = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 
  * start date string is local, compared against the UTC day keys of byDay - a sub-day skew
  * at the boundary is acceptable for a weekly gauge.
  */
-function weeklyAnchor(spec: string, now: number): { startDay: string; nextMs: number } {
+function weeklyAnchor(spec: string, now: number): { startDay: string; nextMs: number; } {
     const m = /^([a-z]{3})\s+(\d{1,2}):(\d{2})$/.exec((spec || "").trim().toLowerCase());
     const wd = m && m[1]! in WEEKDAYS ? WEEKDAYS[m[1]!]! : 1;
     const hh = m ? Math.min(23, Number(m[2])) : 0;
@@ -435,7 +435,7 @@ function computeWindows(byDayModel: Record<string, Record<string, UsageBucket>>,
     // utilization is a 0..1 fraction; a passed reset means the window has rolled over (0%).
     const lim = live ? readProxyLimits() : null;
     if (lim) {
-        const apply = (w: UsageWindow, src: { utilization: number; resetsAt: number } | null): void => {
+        const apply = (w: UsageWindow, src: { utilization: number; resetsAt: number; } | null): void => {
             if (!src) return;
             const expired = src.resetsAt > 0 && src.resetsAt < now;
             w.pct = expired ? 0 : Math.min(100, src.utilization <= 1 ? src.utilization * 100 : src.utilization);
@@ -566,7 +566,7 @@ export function buildUsage(): UsageReport {
     return report;
 }
 
-let memo: { report: UsageReport; expires: number } | null = null;
+let memo: { report: UsageReport; expires: number; } | null = null;
 let building = false;
 
 /**
@@ -574,7 +574,7 @@ let building = false;
  * instantly and schedules a background rebuild when it is older than the TTL. The first
  * ever call (cold) returns an empty report with pending=true while the build runs.
  */
-export function readUsageCached(): UsageReport & { pending: boolean } {
+export function readUsageCached(): UsageReport & { pending: boolean; } {
     const now = Date.now();
     if (memo && now < memo.expires) return { ...memo.report, pending: false };
     if (!building) {
