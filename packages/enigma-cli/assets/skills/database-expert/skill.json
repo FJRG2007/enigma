@@ -1,9 +1,9 @@
 {
   "name": "database-expert",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "provider": "FJRG2007/enigma",
-  "description": "Senior database architecture policy: query optimization, anti-duplication/normalization, scalability, and RGPD/GDPR encryption.",
+  "description": "Senior database architecture policy: engine selection (PostgreSQL by default, SQLite only for local-first/embedded stores), query optimization, anti-duplication/normalization, scalability, and RGPD/GDPR encryption.",
   "updated": "2026-06-03T14:19:50+02:00",
-  "cliVersion": "1.32.4",
-  "sha": "2883bcecb3202683ae6f81b073c3d6a9cec9c55029e011bdd06ba7ac3537297e"
+  "cliVersion": "1.32.5",
+  "sha": "b21ae85a015305106f787be2eb0a022661b2e984bc42c6bc66703954256e3c53"
 }

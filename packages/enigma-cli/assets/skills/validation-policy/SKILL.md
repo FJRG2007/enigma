@@ -1,6 +1,6 @@
 ---
 name: validation-policy
-description: Strict frontend + backend schema validation (Zod or equivalent), schema consistency between client and server, and safe client-facing error handling. Use when handling any external input - forms, API request bodies, query params, CLI args, file parsing, or third-party payloads.
+description: Strict frontend + backend schema validation (Zod or equivalent), normalization before validation (one shared normalizer on both sides - trim, lowercase the email, capitalize each word of a name, canonicalize a profile link or handle) and the rule that a check which cannot fail is not validation, schema consistency between client and server, and safe client-facing error handling. Use when handling any external input - forms, API request bodies, query params, CLI args, file parsing, or third-party payloads.
 ---
 
 # Validation & Error Handling Policy
@@ -33,6 +33,7 @@ description: Strict frontend + backend schema validation (Zod or equivalent), sc
 - Use schema-driven validation (e.g. Zod or equivalent).
 - Validation must prevent invalid state before submission.
 - UI must reflect validation state immediately and clearly.
+- **Every field, not only the famous formats.** Email and password get validated because their rules are obvious; the fields next to them (a profile link, a phone, a job title, a website) are the ones shipped open. Give each field a rule and show its error inline: a format check where there is a format, a max length everywhere, and an "empty after trimming" check where the value is required. A field whose only rule is `z.string()` is an unvalidated field.
 - Validate cross-record constraints (uniqueness, availability, "already in use") in real time too, not just per-field type/format. When the client already holds the relevant set (the list of accounts, profiles, names, slugs it just rendered), check the input against that loaded data on every change and block submission on a conflict - do not defer the duplicate check to the server round-trip (this gives instant feedback and spares a redundant request and its DB query). The server still re-validates as the authority (client checks can be stale), but the user must see the conflict as they type. Mirror the server's exact rule (same pattern, case-folding, reserved values, and scope - e.g. unique per parent vs. globally) so the two never disagree; exclude the record's own current value when editing so renaming to the same name is not flagged.
 
 ### Backend / API Validation (Mandatory)
@@ -54,10 +55,40 @@ description: Strict frontend + backend schema validation (Zod or equivalent), sc
 
 ---
 
+## Normalize Before You Validate (Client And Server)
+
+Input arrives shaped by whoever typed it: a leading space from a paste, a name in lowercase from a phone keyboard, an address in mixed case, a profile link carrying tracking parameters. Normalize first, validate the normalized value, store that same value. Both sides do it - the client so the user sees what will be stored, the server because a request does not have to come from your form.
+
+- Keep the normalizers in ONE module that the client and the server both import, next to the schema they belong to. Two copies drift, and the day they disagree the server rejects what the form accepted.
+- Normalize INSIDE the schema wherever the validator supports it, so no caller can forget. Zod: `z.string().trim().toLowerCase().pipe(z.email())`. Order matters: `z.email().trim()` validates before trimming and rejects a pasted `" a@b.com"`. Yup: `.trim().lowercase().email()`. Pydantic: a `field_validator(mode="before")`.
+- Default for every string field: trim both ends, collapse runs of inner whitespace, strip control and zero-width characters, and normalize Unicode to NFC so a composed and a decomposed accent are the same value.
+- The server normalizes again, always. A client that skipped it, an API client, a script, and a replayed request all reach the same handler.
+
+Per field kind (defaults - override only with a reason):
+
+| Field | Normalizes to |
+| --- | --- |
+| Email | trim, lowercase, then validate. Store it lowercased so lookups and uniqueness never miss. |
+| Person name (full name, first, last) | trim, collapse inner spaces, uppercase the first letter of every word - and ONLY that letter, so `McDonald`, `O'Brien`, `van der Berg` and `Jean-Luc` survive. Split on spaces, hyphens and apostrophes. |
+| Username, handle, slug | trim, drop a leading `@`, lowercase when the identifier is case-insensitive, then check the allowed character set. |
+| Profile link (LinkedIn, GitHub, X, Instagram) | accept BOTH a full URL and a bare handle, canonicalize to one stored form, check the host is the expected domain, and drop query and tracking parameters. |
+| URL | trim, add the scheme when missing, lowercase the host, drop a trailing slash. |
+| Phone | strip spaces, dots, dashes and parentheses, keep the leading `+`, store E.164. |
+| Number, date, money | parse into the canonical type at the boundary; never store the localized string. |
+
+### A check that cannot fail is not validation
+
+- Never patch the value into validity and then check the patched value. `z.url().safeParse(v.startsWith("http") ? v : "https://" + v)` accepts `asdf`, `pepe`, and every other single token, because `https://asdf` is a syntactically valid URL. The field looks validated, has an error slot, and rejects nothing.
+- Canonicalizing and validating are two steps, in that order. Canonicalize (add the scheme, strip the `@`), then apply a check the canonical value can still fail: the host contains a dot, the host is the expected domain, the path has the expected shape.
+- Before calling a field done, type three wrong values into it and confirm each is rejected. A validator nobody has watched fail is unverified.
+- The same applies to a permissive fallback: an `.optional()` that swallows `""`, a `catch()` that returns a default, or a `refine` that returns `true` on anything it cannot parse.
+
+---
+
 ## Validation Standards
 
 - Validate type, shape, range, format, and required/optional status.
-- Normalize input (trim, case-fold, canonicalize) before validating equality or storing.
+- Normalize input (trim, case-fold, canonicalize) before validating equality or storing, per the section above.
 - Enforce explicit allowlists over denylists for constrained values.
 - Set explicit limits on size, length, and array cardinality to prevent abuse.
 - Fail closed: unknown or unexpected fields are rejected, not silently ignored, on sensitive endpoints.

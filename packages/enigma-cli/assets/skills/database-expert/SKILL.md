@@ -1,6 +1,6 @@
 ---
 name: database-expert
-description: Senior database architecture - schema design, normalization and anti-duplication, query/index optimization, scalability (partitioning, sharding, replication), and RGPD/GDPR encryption of sensitive data. Use when designing, modifying, migrating, querying, or reviewing any database, schema, SQL, ORM model, or persistence layer.
+description: Senior database architecture - engine selection (PostgreSQL is the default relational engine for anything deployed or multi-writer; SQLite only for local-first, embedded, single-writer stores), schema design, normalization and anti-duplication, query/index optimization, scalability (partitioning, sharding, replication), and RGPD/GDPR encryption of sensitive data. Use when designing, modifying, migrating, querying, or reviewing any database, schema, SQL, ORM model, or persistence layer, and when choosing the datastore for a new project's stack.
 ---
 
 # Database Expert Policy (Senior Data Architecture Standards)
@@ -23,6 +23,18 @@ description: Senior database architecture - schema design, normalization and ant
 
 - These five directives take priority over convenience or speed of implementation.
 - If a request conflicts with them, surface the conflict and propose the compliant alternative before proceeding.
+
+---
+
+## Engine Selection (Default: PostgreSQL)
+
+- For anything that will be deployed, grow, or be written to by more than one process, the default relational engine is **PostgreSQL**. Pick it without being asked; when something else is chosen, say in one line what constraint forced it.
+- What makes it the default and not a preference: real write concurrency (MVCC, no database-wide writer lock), the types the rest of this policy assumes (native `uuid`, `jsonb`, arrays, enums, ranges, `timestamptz`), partial, expression and GIN indexes, generated columns, materialized views, declarative partitioning, logical replication and read replicas, and extensions that each remove a service from the stack (`pgvector` for embeddings, `pg_trgm` for fuzzy search, PostGIS for geo, `pg_cron` for schedules).
+- SQLite is one file with one writer. It is the right default for a local-first or embedded store - a CLI's own state, a desktop or mobile app, an agent's local cache or index, a test fixture, an offline replica - and the wrong one for a web or API backend, anything running more than one instance, anything a background worker writes to, or anything with a managed-hosting story. Starting there and growing out of it is a migration with downtime, not a config change.
+- MySQL/MariaDB only when the platform, the host or the team requires it. SQL Server or Oracle only where it is already the environment.
+- Do not add a second datastore before PostgreSQL runs out. It handles queues (`SELECT ... FOR UPDATE SKIP LOCKED`), full-text search, vectors, JSON documents and counters well past early scale. Add Redis, a search engine or a vector database when a measured limit demands it, not as part of the initial stack.
+- Serverless and edge runtimes still get PostgreSQL: the problem there is connection count, not the engine, so put a pooler in front (PgBouncer, Prisma Accelerate, the provider's pooled endpoint) instead of switching to a file database.
+- Wire it the same way every time: Prisma as the ORM for TypeScript, migrations committed to version control, the connection string from the environment and never in the repo, and pooling configured before the first load test rather than after the first outage.
 
 ---
 

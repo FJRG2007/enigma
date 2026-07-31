@@ -35,6 +35,28 @@ var BUILTIN_RULES = [
     skill: "database-expert"
   },
   {
+    id: "db-sqlite-app-datastore",
+    label: "PostgreSQL as the default relational engine",
+    // Basename glob, so it covers schema.prisma at any depth (a `**/*.prisma` glob would
+    // miss a root-level one - the documented gotcha).
+    files: ["*.prisma"],
+    scope: "file",
+    // A Prisma DATASOURCE on sqlite: the app's own database, declared by the ORM this policy
+    // already defaults to. `provider` also appears in generator blocks, but only a datasource
+    // ever names sqlite, so the value alone is the discriminator.
+    // WHY THIS SHAPE AND NOT A DEPENDENCY CHECK: a Prisma project declares NO sqlite driver in
+    // package.json (Prisma bundles its own), so the package.json signature that would look
+    // natural here misses the exact stack an agent scaffolds. Measured over the corpus: 14
+    // prisma schemas, every datasource already postgresql, and 0 package.json files declaring
+    // a sqlite driver at all - so this rule is a scaffolding guard with no legacy backlog to
+    // flag, which is also why it is the only slice of the convention worth gating.
+    pattern: `provider\\s*=\\s*["']sqlite["']`,
+    absent: "enigma:allow-sqlite",
+    message: "SQLite as the application datastore. SQLite is one file with one writer: it is right for a local-first or embedded store (a CLI's own state, a desktop or mobile app, a local cache or index, a test fixture) and wrong for anything deployed, replicated, or written to by a background worker - and moving off it later is a migration with downtime, not a config change. Default to PostgreSQL: real write concurrency, native uuid/jsonb/arrays/enums/timestamptz, partial and GIN indexes, partitioning and read replicas, plus pgvector, pg_trgm and PostGIS instead of a second service. On serverless put a pooler in front (PgBouncer, Prisma Accelerate, the provider's pooled endpoint); the constraint there is connection count, not the engine. If this datastore is deliberately local-first or embedded, mark it with an `enigma:allow-sqlite` note (database-expert).",
+    severity: "block",
+    skill: "database-expert"
+  },
+  {
     id: "be-validate-input-ts",
     label: "Validate request input (TypeScript)",
     files: ["*.ts", "*.js", "*.mts", "*.cts"],
@@ -66,6 +88,53 @@ var BUILTIN_RULES = [
     severity: "warn",
     skill: "validation-policy"
   },
+  {
+    id: "val-email-normalize",
+    label: "Email is normalized before it is validated",
+    files: ["*.ts", "*.tsx", "*.js", "*.jsx", "*.mts", "*.cts", "*.mjs", "*.vue", "*.svelte"],
+    excludeFiles: [
+      "*.test.*",
+      "*.spec.*",
+      "**/tests/**",
+      "**/__tests__/**",
+      "*.d.ts",
+      "*.min.js",
+      "**/dist/**",
+      "**/build/**",
+      "**/_build/**",
+      "**/node_modules/**",
+      "**/vendor/**",
+      "dist/**",
+      "build/**",
+      "_build/**",
+      "node_modules/**",
+      "vendor/**"
+    ],
+    scope: "file",
+    // An email schema declared with no normalization anywhere in the file. The three forms
+    // cover the ecosystem: `.string()...email(` (zod 3, yup, joi), `z.email(` (zod 4) and
+    // `v.email(` (valibot). Measured over ~2500 files of real product repos: 10 files declare
+    // an email schema, 7 normalize nothing - all 7 genuine (invitation forms, backend request
+    // schemas, an auth route), 0 false positives. `absent` keys on CASE-FOLDING only, not on
+    // trimming: an email schema that trims but keeps the case still lets "A@x.com" and
+    // "a@x.com" become two accounts, which is the defect. It stays file-scoped (the engine has
+    // no line-scoped absent), so a file that lowercases anything at all clears - a deliberate
+    // false negative, precision over recall.
+    pattern: "\\.string\\(\\)[^\\n]*\\.email\\(|\\bz\\.email\\(|\\bv\\.email\\(",
+    absent: "toLowerCase|lowercase\\(|normalizeEmail|enigma:allow-raw-email",
+    message: 'Email schema with no normalization. An address pasted with a leading space or typed in mixed case must reduce to ONE stored value, or the lookup misses, the uniqueness check passes, and the user ends up with a second account. Normalize inside the schema so no caller can forget it: Zod `z.string().trim().toLowerCase().pipe(z.email())` - the order matters, `z.email().trim()` validates first and rejects a pasted " a@b.com" - Yup `.trim().lowercase().email()`, Pydantic a `field_validator(mode="before")`. Use the same schema on the client and the server. If this address must keep its case, mark it with an `enigma:allow-raw-email` note (validation-policy).',
+    severity: "block",
+    skill: "validation-policy"
+  },
+  // NOTE: there is deliberately no "URL check that patches the value first" rule, though that
+  // exact shape is what makes a link field accept anything: `z.url().safeParse(v.startsWith("http")
+  // ? v : "https://" + v)` passes for `asdf`, because `https://asdf` IS a syntactically valid URL.
+  // The signature (a scheme interpolated into the string being parsed) does not survive
+  // measurement: 7 hits across the corpus and 5 are legitimate canonicalization for DISPLAY or
+  // parsing (build a URL to read its hostname), which is the same code shape with none of the
+  // defect. Telling them apart needs to know whether the result is a VERDICT or a value, which
+  // is not in the line. It stays in validation-policy ("A check that cannot fail is not
+  // validation") together with the URL-or-handle canonicalization rule.
   // NOTE: no Go/Rust input-validation rule. Go's manual validation (`if in.X == ""`) is
   // idiomatic and has no detectable signature, and Rust's serde typed deserialization already
   // enforces shape - a rule for either would false-positive. The generic "validate every input"
@@ -83,6 +152,47 @@ var BUILTIN_RULES = [
     absent: "showPassword|setShowPassword|togglePassword|revealPassword|passwordVisible|isPasswordVisible|showPw|hidePassword",
     message: 'Raw <input type="password">: use the shared reusable Input component (which renders a show/hide toggle for passwords) instead of a bare input, or add the toggle (frontend-policy).',
     severity: "warn",
+    skill: "frontend-policy"
+  },
+  {
+    id: "fe-name-input-capitalize",
+    label: "A person-name field capitalizes its words",
+    files: ["*.tsx", "*.jsx", "*.vue", "*.svelte", "*.astro", "*.html", "*.htm"],
+    excludeFiles: [
+      "*.test.*",
+      "*.spec.*",
+      "**/tests/**",
+      "**/__tests__/**",
+      "**/stories/**",
+      "*.stories.*",
+      "*.min.js",
+      "**/dist/**",
+      "**/build/**",
+      "**/_build/**",
+      "**/node_modules/**",
+      "**/vendor/**",
+      "dist/**",
+      "build/**",
+      "_build/**",
+      "node_modules/**",
+      "vendor/**"
+    ],
+    scope: "file",
+    // A field that holds a PERSON's name, with no autocapitalize anywhere in the file. On a
+    // phone the keyboard defaults to sentence capitalization, so the user types "juan perez"
+    // and that is what gets stored; `autocapitalize="words"` is the one attribute that fixes
+    // it, and it is inert on a desktop keyboard.
+    // PRECISION comes from the token set, measured over ~2500 files of real product repos.
+    // Only names that can ONLY be a person's are matched: the HTML autofill tokens (which the
+    // spec defines as the person's name) and first/last/surname/apellido field names. `name`,
+    // `nombre` and `fullname` are deliberately EXCLUDED - every one of their hits in the
+    // corpus was an entity name (a project, a team, a token, a webhook), which must not be
+    // title-cased. With that set: 8 findings, all genuine person-name inputs, 0 false
+    // positives; the one file that already sets autocapitalize is correctly cleared.
+    pattern: `autocomplete=\\{?["'](?:name|given-name|family-name|additional-name|honorific-prefix)["']|(?:\\bname|\\bid|\\bfor|formControlName)=\\{?["'](?:first[-_]?name|last[-_]?name|given[-_]?name|family[-_]?name|surname|apellidos?)["']`,
+    absent: "autocapitalize|enigma:allow-no-capitalize",
+    message: 'Person-name field with no capitalization rule. Phone keyboards capitalize SENTENCES, so a name typed on mobile is stored as "juan perez": add `autocapitalize="words"` (plus `spellcheck="false"` and `autocorrect="off"`, and the matching `autocomplete` token). The attribute only covers typing, so normalize the value too - trim, collapse inner spaces, and uppercase the first letter of every word - on blur and again on the server, uppercasing ONLY that letter so `McDonald`, `O\'Brien` and `van der Berg` survive. Best placed once in the shared Input/TextField component, selected by a prop. For a field that must keep what was typed, add an `enigma:allow-no-capitalize` note (frontend-policy, validation-policy).',
+    severity: "block",
     skill: "frontend-policy"
   },
   {

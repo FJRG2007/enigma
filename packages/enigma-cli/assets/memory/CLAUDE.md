@@ -37,7 +37,8 @@
 Non-negotiable, language-agnostic defaults - apply them by default without being asked, using the stack's idiomatic tool. They restate the cores of validation-policy, backend-policy and frontend-policy so they hold even when a skill does not load.
 
 - Validate EVERY external input (request body, query, params, event payload, form field, CLI arg, webhook/message) against an explicit schema before use - Zod (TS/JS), Pydantic (Python), the language's equivalent elsewhere. Never consume an unvalidated shape or leave it open-ended. When the input is a tagged/event union, validate the discriminant AND that specific variant's body, with the expected fields typed.
-- Frontend forms: validate in real time against the same schema, and use optimistic UI with rollback on failure for user-facing mutations.
+- Normalize before validating, on the client AND the server, from one shared normalizer: trim every string, lowercase the email, capitalize each word of a person's name, canonicalize a link or handle to one stored form. A check that cannot fail is not validation - never patch the value into validity and then check the patched value.
+- Frontend forms: validate in real time against the same schema, on EVERY field that has a rule and not only the ones with a famous format, and use optimistic UI with rollback on failure for user-facing mutations.
 - Cache reads on the client (localStorage/sessionStorage, or the data layer's cache) with a short TTL (~30s or more) to avoid redundant queries and survive rate limits; invalidate on write.
 - Build reusable, composable components instead of duplicating UI - e.g. a single Input that renders a show/hide toggle when the type is password. Reuse before writing new.
 - Never use the browser's native `alert`/`confirm`/`prompt` - use a dialog/modal component that matches the page design.

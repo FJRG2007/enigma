@@ -361,3 +361,68 @@ matrix("fe-mobile-drawer-full-width", false, [
     { name: "file-wide opt-out", file: "src/Peek.tsx", code: "// enigma:allow-partial-drawer\n<div className=\"fixed inset-y-0 right-0 w-80\">" },
     { name: "build output is excluded", file: "apps/web/dist/index.html", code: "<div class=\"fixed inset-y-0 right-0 w-[520px]\">" },
 ]);
+
+// --- fe-name-input-capitalize -------------------------------------------------------
+
+matrix("fe-name-input-capitalize", true, [
+    // The autofill tokens the HTML spec defines as a PERSON's name, in the shapes the corpus uses.
+    { name: "full-name field via the autocomplete token", file: "src/components/account/identity-form.tsx", code: "<TextField label=\"Full name\" autoComplete=\"name\" value={draft.fullName} />" },
+    { name: "given/family name pair", file: "src/app/account/profile/index.tsx", code: "<Input id=\"first\" autoComplete=\"given-name\" />\n<Input id=\"last\" autoComplete=\"family-name\" />" },
+    { name: "sign-up name field", file: "app/(auth)/register/page.tsx", code: "<input autoComplete=\"name\" placeholder=\"Your name\" />" },
+    { name: "field named for the person's first name", file: "src/views/profile/AccountView.tsx", code: "<Controller name='firstname' control={control} />" },
+    { name: "snake_case last name", file: "src/forms/member.vue", code: "<input name=\"last_name\" type=\"text\" />" },
+    { name: "surname in a plain form", file: "public/contact.html", code: "<input id=\"surname\" type=\"text\">" },
+    { name: "Spanish apellidos", file: "src/pages/alta.tsx", code: "<input name=\"apellidos\" type=\"text\" />" },
+]);
+
+matrix("fe-name-input-capitalize", false, [
+    // Already handled: the attribute anywhere in the file clears it (a shared Input sets it once).
+    { name: "the attribute is present", file: "src/app/account/profile/index.tsx", code: "<Input autoComplete=\"given-name\" autoCapitalize=\"words\" />" },
+    { name: "set once in the shared field component", file: "src/components/ui/text-field.tsx", code: "const capitalize = kind === \"name\" ? \"words\" : \"none\";\n<input autoComplete=\"name\" autocapitalize={capitalize} />" },
+    // Entity names are NOT person names: title-casing a project, team, token or webhook is wrong.
+    // Every corpus hit for these tokens was one of those, which is why they are excluded.
+    { name: "a project's name field", file: "src/views/project/DialogEditView.tsx", code: "<Controller name='fullname' control={control} /> {/* label: Name */}" },
+    { name: "a team name", file: "src/views/teams/DialogCreateView.tsx", code: "<TextField id={'fullname'} label={'Team Name'} />" },
+    { name: "a generic entity name input", file: "src/views/developer/DialogCreateToken.tsx", code: "<TextField id='name' label='Token name' />" },
+    { name: "a name prop forwarded to a non-input component", file: "src/components/MemberAvatar.tsx", code: "<MemberAvatar avatar={avatarUrl} name={name} />" },
+    { name: "a username, which must keep its case", file: "src/components/LoginForm.tsx", code: "<input name=\"username\" autoComplete=\"username\" />" },
+    { name: "deliberate opt-out", file: "src/forms/legal.tsx", code: "// enigma:allow-no-capitalize legal names are entered exactly as they appear on the document\n<input name=\"first_name\" />" },
+    { name: "build output is excluded", file: "apps/web/dist/register.html", code: "<input autocomplete=\"name\">" },
+]);
+
+// --- val-email-normalize ------------------------------------------------------------
+
+matrix("val-email-normalize", true, [
+    { name: "zod 4 email schema", file: "src/lib/schemas.ts", code: "const EmailSchema = z.email();" },
+    { name: "zod 3 chained email", file: "src/contracts/api/common.ts", code: "export const EmailSchema = z.string().email();" },
+    { name: "yup form schema", file: "src/views/teams/DialogInvitationView.tsx", code: "const schema = yup.object().shape({\n  email: yup.string().email().required()\n});" },
+    { name: "request body schema on the server", file: "src/routes/reviews.schemas.ts", code: "export const reviewIn = z.object({\n  email: z.string().email(),\n  score: z.number()\n});" },
+    { name: "valibot pipeline", file: "src/lib/validators.ts", code: "const Email = v.pipe(v.string(), v.email());" },
+]);
+
+matrix("val-email-normalize", false, [
+    { name: "normalized inside the schema", file: "src/lib/schemas.ts", code: "export const email = z.string().trim().toLowerCase().pipe(z.email());" },
+    { name: "yup lowercase transform", file: "src/forms/invite.tsx", code: "const schema = yup.object({ email: yup.string().trim().lowercase().email().required() });" },
+    { name: "normalized by a helper before parsing", file: "src/server/auth.ts", code: "const address = normalizeEmail(raw);\nconst parsed = z.string().email().parse(address);" },
+    { name: "deliberate opt-out", file: "src/legacy/import.ts", code: "// enigma:allow-raw-email the upstream export is case-sensitive\nconst schema = z.string().email();" },
+    { name: "no email schema at all", file: "src/lib/schemas.ts", code: "export const name = z.string().min(1).max(120);" },
+    { name: "a method call that is not a schema", file: "src/mailer.ts", code: "await user.email().catch(() => null);" },
+    { name: "tests are excluded", file: "tests/schemas.test.ts", code: "expect(z.string().email().safeParse(\"a@b.com\").success).toBe(true);" },
+    { name: "build output is excluded", file: "dist/schemas.js", code: "const EmailSchema = z.email();" },
+]);
+
+// --- db-sqlite-app-datastore --------------------------------------------------------
+
+matrix("db-sqlite-app-datastore", true, [
+    { name: "prisma datasource on sqlite", file: "prisma/schema.prisma", code: "datasource db {\n  provider = \"sqlite\"\n  url      = env(\"DATABASE_URL\")\n}" },
+    { name: "root-level schema (basename glob)", file: "schema.prisma", code: "datasource db {\n  provider = \"sqlite\"\n  url      = \"file:./dev.db\"\n}" },
+    { name: "single quotes and loose spacing", file: "packages/core/prisma/core.prisma", code: "datasource db {\n  provider='sqlite'\n}" },
+]);
+
+matrix("db-sqlite-app-datastore", false, [
+    { name: "postgres datasource", file: "prisma/schema.prisma", code: "datasource db {\n  provider = \"postgresql\"\n  url      = env(\"DATABASE_URL\")\n}" },
+    { name: "the generator's provider is not a datastore", file: "prisma/schema.prisma", code: "generator client {\n  provider = \"prisma-client-js\"\n}" },
+    { name: "deliberate local-first store", file: "prisma/schema.prisma", code: "// enigma:allow-sqlite the desktop app ships its library as one file\ndatasource db {\n  provider = \"sqlite\"\n}" },
+    { name: "a sqlite mention in a comment", file: "prisma/schema.prisma", code: "// migrated off provider = \"sqlite\" in v2\ndatasource db {\n  provider = \"postgresql\"\n}" },
+    { name: "not a prisma schema", file: "src/db/config.ts", code: "export const config = { provider: \"sqlite\" };" },
+]);
