@@ -19,8 +19,17 @@ export function parseSource(file: string, text: string, ext: string): ts.SourceF
     return ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, kind);
 }
 
+/**
+ * True for a member of an interface or type literal - the nodes Ciphera terminates
+ * with a semicolon. The parent check is load-bearing: `ts.isTypeElement` also accepts
+ * a class or object-literal accessor, whose body already terminates it.
+ */
+export function isTypeMember(node: ts.Node): node is ts.TypeElement {
+    return ts.isTypeElement(node) && !!node.parent && (ts.isInterfaceDeclaration(node.parent) || ts.isTypeLiteralNode(node.parent));
+}
+
 /** Convert a source position to a 1-based line/column. */
-export function locate(sourceFile: ts.SourceFile, pos: number): { line: number; column: number } {
+export function locate(sourceFile: ts.SourceFile, pos: number): { line: number; column: number; } {
     const { line, character } = sourceFile.getLineAndCharacterOfPosition(pos);
     return { line: line + 1, column: character + 1 };
 }

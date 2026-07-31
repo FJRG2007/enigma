@@ -1,18 +1,33 @@
 /**
  * Safe auto-fixes: the mechanical, formatting-only subset of the rules that can be
  * applied without changing program meaning - trailing whitespace, leading/trailing
- * blank lines, the final newline, collapsing runs of blank lines, and reordering
+ * blank lines, the final newline, collapsing runs of blank lines, reordering
  * contiguous import groups by length (length-sorted-imports, a side-effect-free
- * codemod). The remaining AST style rules (quotes, semicolons) and the audit rules
- * (secrets, URL imports) have no mechanical fix. Container formats are left
- * untouched - their wrapper (JSON, HTML) is owned by the tooling that produced them.
+ * codemod), and type-member/import-list punctuation. The remaining AST style rules
+ * (quotes, statement semicolons) and the audit rules (secrets, URL imports) have no
+ * mechanical fix. Container formats are left untouched - their wrapper (JSON, HTML)
+ * is owned by the tooling that produced them.
  */
 
 import ts from "typescript";
 import { extname } from "node:path";
-import { parseSource } from "./parse";
 import { guardedLines } from "./guarded";
+import { isTypeMember, parseSource } from "./parse";
 import { JS_TS, isContainer, languageFor } from "./languages";
+
+/** A replacement of `[start, end)` in the source with `text` (an insertion when start === end). */
+interface Edit {
+    start: number;
+    end: number;
+    text: string;
+}
+
+/** Apply non-overlapping edits, last one first so the earlier offsets stay valid. */
+function applyEdits(body: string, edits: Edit[]): string {
+    let out = body;
+    for (const edit of [...edits].sort((a, b) => b.start - a.start)) out = out.slice(0, edit.start) + edit.text + out.slice(edit.end);
+    return out;
+}
 
 /**
  * Reorder each contiguous block of import declarations by full declaration length,
@@ -36,7 +51,7 @@ function sortImportGroups(file: string, body: string): string {
     }
     if (group.length) groups.push(group);
 
-    const edits: { start: number; end: number; text: string }[] = [];
+    const edits: Edit[] = [];
     for (const g of groups) {
         if (g.length < 2) continue;
         const start = g[0]!.getStart(sourceFile);
@@ -47,10 +62,34 @@ function sortImportGroups(file: string, body: string): string {
         const sorted = [...texts].sort((a, b) => a.length - b.length).join("\n");
         if (sorted !== span) edits.push({ start, end, text: sorted });
     }
-    edits.sort((a, b) => b.start - a.start);
-    let out = body;
-    for (const e of edits) out = out.slice(0, e.start) + e.text + out.slice(e.end);
-    return out;
+    return applyEdits(body, edits);
+}
+
+/**
+ * Terminate every interface/type-literal member with a semicolon (including the last
+ * member of a single-line literal, and members a comma separates) and drop the
+ * trailing comma from a named import/export list. Punctuation only: TypeScript treats
+ * `;`, `,` and nothing as the same type-member separator and ignores a trailing comma
+ * in a specifier list, so neither edit can change what the program does.
+ */
+function fixPunctuation(file: string, body: string): string {
+    const sourceFile = parseSource(file, body, extname(file).toLowerCase());
+    const edits: Edit[] = [];
+
+    const visit = (node: ts.Node): void => {
+        if (isTypeMember(node)) {
+            const end = node.getEnd();
+            if (body[end - 1] === ",") edits.push({ start: end - 1, end, text: ";" });
+            else if (body[end - 1] !== ";") edits.push({ start: end, end, text: ";" });
+        } else if ((ts.isNamedImports(node) || ts.isNamedExports(node)) && node.elements.length && node.elements.hasTrailingComma) {
+            const comma = body.indexOf(",", node.elements[node.elements.length - 1]!.getEnd());
+            if (comma !== -1 && comma < node.getEnd()) edits.push({ start: comma, end: comma + 1, text: "" });
+        }
+        ts.forEachChild(node, visit);
+    };
+
+    visit(sourceFile);
+    return applyEdits(body, edits);
 }
 
 /**
@@ -81,8 +120,9 @@ export function fixText(file: string, text: string): string {
     }
     body = kept.join("\n");
 
-    // 2b. Reorder contiguous import groups by length (length-sorted-imports).
-    if (JS_TS.includes(language)) body = sortImportGroups(file, body);
+    // 2b. Reorder contiguous import groups by length (length-sorted-imports), then
+    //     normalize type-member and import-list punctuation.
+    if (JS_TS.includes(language)) body = fixPunctuation(file, sortImportGroups(file, body));
 
     // 3. Drop leading blank lines, and 4. end with exactly one trailing newline.
     body = body.replace(/^(?:[ \t]*\n)+/, "").replace(/[ \t\n]+$/, "");

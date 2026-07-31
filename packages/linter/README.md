@@ -71,11 +71,13 @@ By default the CLI exits non-zero only on error-severity findings (URL/CDN impor
 hardcoded secrets). `--strict` also fails on warning-severity Ciphera style findings,
 which is what a pre-commit or CI gate over changed files wants.
 
-`--fix` rewrites only the mechanical formatting rules - trailing whitespace, blank
-lines (collapsed, with leading/trailing removed), and the final newline. The AST
-style rules (quotes, semicolons, imports) and the security audits are reported,
-never rewritten, since fixing them safely needs real judgement. Container formats
-(`.ipynb`, `.astro`, `.vue`, `.svelte`) are left untouched by `--fix`.
+`--fix` rewrites only the mechanical rules, the ones whose fix cannot change what the
+program does: trailing whitespace, blank lines (collapsed, with leading/trailing
+removed), the final newline, the order of a contiguous import group, the semicolon
+terminating an interface or type-literal member, and the trailing comma in a named
+import/export list. The judgement-dependent style rules (quotes, statement
+semicolons, concatenation) and the security audits are reported, never rewritten.
+Container formats (`.ipynb`, `.astro`, `.vue`, `.svelte`) are left untouched by `--fix`.
 
 The bin is `enigmax-lint`. It exits non-zero when any error-severity violation is
 found (URL/CDN imports, hardcoded secrets), so it can gate a commit or CI step.
@@ -89,7 +91,8 @@ found (URL/CDN imports, hardcoded secrets), so it can gate a commit or CI step.
 | `length-sorted-imports` | imports not ordered by line length, shortest first |
 | `prefer-double-quotes` | single-quoted strings (where double would work) and no-interpolation template literals |
 | `no-useless-concat` | string concatenation with `+` that should be a template literal |
-| `require-semicolons` | statements missing a terminating semicolon - declarations (`const`/`let`/`var`), imports, exports, directives like `"use strict"`, type aliases, and class fields (function/class declarations are exempt, as their body terminates them) |
+| `require-semicolons` | statements missing a terminating semicolon - declarations (`const`/`let`/`var`), imports, exports, directives like `"use strict"`, type aliases, and class fields (function/class declarations are exempt, as their body terminates them) - plus every interface or type-literal member, including the last one of a single-line literal (`{ url?: string; }`) and members a comma separates |
+| `no-import-trailing-comma` | a trailing comma closing a named import or export list (`export { a, b, };`) |
 | `no-url-imports` | importing from a remote URL / CDN instead of a package name (error) |
 | `no-consecutive-blank-lines` | two or more consecutive blank lines (collapse to one); ignores blanks inside strings/templates and block comments (all languages) |
 | `file-hygiene` | trailing whitespace, missing or extra final newline, leading blank line (all languages) |

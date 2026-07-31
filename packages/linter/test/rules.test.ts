@@ -59,6 +59,27 @@ test("require-semicolons: enforced for declarations, imports, exports, directive
     assert.ok(!flags("class C { f() {} }\n", "require-semicolons"));
 });
 
+test("require-semicolons: terminates interface and type-literal members", () => {
+    assert.ok(flags("interface A { url?: string }\n", "require-semicolons"));
+    assert.ok(flags("interface A {\n    image?: { url?: string } | string;\n}\n", "require-semicolons"));
+    assert.ok(flags("type L = { a: string, b: number };\n", "require-semicolons"));
+    assert.ok(flags("interface A {\n    m(x: number): void\n}\n", "require-semicolons"));
+    assert.ok(!flags("interface A { url?: string; }\n", "require-semicolons"));
+    assert.ok(!flags("interface A {\n    image?: { url?: string; } | string;\n}\n", "require-semicolons"));
+    // A class or object-literal accessor is terminated by its own body: it is not a type member.
+    assert.ok(!flags("class C { get x() { return 1; } }\n", "require-semicolons"));
+    assert.ok(!flags("const o = { get y() { return 2; } };\n", "require-semicolons"));
+});
+
+test("no-import-trailing-comma: flags a trailing comma in a specifier list", () => {
+    assert.ok(flags("import {\n    a,\n    type B,\n} from \"./x\";\n", "no-import-trailing-comma"));
+    assert.ok(flags("export { a, b, };\n", "no-import-trailing-comma"));
+    assert.ok(!flags("import { a, type B } from \"./x\";\n", "no-import-trailing-comma"));
+    assert.ok(!flags("export { a, b };\n", "no-import-trailing-comma"));
+    // Only specifier lists: an object literal's trailing comma is out of scope.
+    assert.ok(!flags("const o = { a: 1, };\n", "no-import-trailing-comma"));
+});
+
 test("no-url-imports: flags URL/CDN imports, accepts package names", () => {
     assert.ok(flags("import a from \"https://esm.sh/a\";\n", "no-url-imports"));
     assert.ok(!flags("import a from \"axios\";\n", "no-url-imports"));
@@ -295,6 +316,28 @@ test("fix: is idempotent and leaves clean text untouched", () => {
     const clean = "const a = 1;\n\nconst b = 2;\n";
     assert.equal(fixText("a.ts", clean), clean);
     assert.equal(fixText("a.ts", fixText("a.ts", "x = 1;  \n\n\n\n")), fixText("a.ts", "x = 1;  \n\n\n\n"));
+});
+
+test("fix: terminates type members with a semicolon", () => {
+    assert.equal(fixText("a.ts", "interface A {\n    image?: { url?: string } | string;\n}\n"),
+        "interface A {\n    image?: { url?: string; } | string;\n}\n");
+    assert.equal(fixText("a.ts", "type L = { a: string, b: number };\n"), "type L = { a: string; b: number; };\n");
+    assert.equal(fixText("a.ts", "interface A {\n    m(x: number): void\n}\n"), "interface A {\n    m(x: number): void;\n}\n");
+    // A class accessor keeps its body as the terminator.
+    assert.equal(fixText("a.ts", "class C { get x() { return 1; } }\n"), "class C { get x() { return 1; } }\n");
+});
+
+test("fix: drops the trailing comma from a named import/export list", () => {
+    assert.equal(fixText("a.ts", "import {\n    a,\n    type B,\n} from \"./x\";\n"), "import {\n    a,\n    type B\n} from \"./x\";\n");
+    assert.equal(fixText("a.ts", "export { a, b, };\n"), "export { a, b };\n");
+    // Object literals are out of scope.
+    assert.equal(fixText("a.ts", "const o = { a: 1, };\n"), "const o = { a: 1, };\n");
+});
+
+test("fix: punctuation fixes are idempotent", () => {
+    const source = "import {\n    a,\n    type B,\n} from \"./x\";\n\ntype L = { a: string, b: number };\n";
+    const fixed = fixText("a.ts", source);
+    assert.equal(fixText("a.ts", fixed), fixed);
 });
 
 test("fix: does not collapse blank lines guarded by a docstring or comment", () => {
