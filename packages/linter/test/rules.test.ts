@@ -332,12 +332,25 @@ test("fix: drops the trailing comma from a named import/export list", () => {
     assert.equal(fixText("a.ts", "export { a, b, };\n"), "export { a, b };\n");
     // Object literals are out of scope.
     assert.equal(fixText("a.ts", "const o = { a: 1, };\n"), "const o = { a: 1, };\n");
+    // A comma inside a comment is not the trailing comma.
+    assert.equal(fixText("a.ts", "import {\n    a,\n    b /* x, y */,\n} from \"./x\";\n"),
+        "import {\n    a,\n    b /* x, y */\n} from \"./x\";\n");
+    assert.equal(fixText("a.ts", "export { a, b /* one, two */, };\n"), "export { a, b /* one, two */ };\n");
 });
 
 test("fix: punctuation fixes are idempotent", () => {
     const source = "import {\n    a,\n    type B,\n} from \"./x\";\n\ntype L = { a: string, b: number };\n";
     const fixed = fixText("a.ts", source);
     assert.equal(fixText("a.ts", fixed), fixed);
+});
+
+test("fix: the length sort sees declarations at their post-punctuation length", () => {
+    // Equal length only while the second still carries its trailing comma.
+    const source = "import { abcd } from \"./x\";\nimport { ef, } from \"./yy\";\n";
+    const fixed = fixText("a.ts", source);
+    assert.equal(fixed, "import { ef } from \"./yy\";\nimport { abcd } from \"./x\";\n");
+    assert.equal(fixText("a.ts", fixed), fixed);
+    assert.ok(!lintText("a.ts", fixed).some((v) => v.rule === "length-sorted-imports"));
 });
 
 test("fix: does not collapse blank lines guarded by a docstring or comment", () => {

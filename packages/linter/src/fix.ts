@@ -82,8 +82,11 @@ function fixPunctuation(file: string, body: string): string {
             if (body[end - 1] === ",") edits.push({ start: end - 1, end, text: ";" });
             else if (body[end - 1] !== ";") edits.push({ start: end, end, text: ";" });
         } else if ((ts.isNamedImports(node) || ts.isNamedExports(node)) && node.elements.length && node.elements.hasTrailingComma) {
-            const comma = body.indexOf(",", node.elements[node.elements.length - 1]!.getEnd());
-            if (comma !== -1 && comma < node.getEnd()) edits.push({ start: comma, end: comma + 1, text: "" });
+            // The element list ends immediately after its trailing comma, before the
+            // close brace's leading trivia - a text scan would hit a comma inside a
+            // comment between the last specifier and the real one.
+            const comma = node.elements.end - 1;
+            if (body[comma] === ",") edits.push({ start: comma, end: comma + 1, text: "" });
         }
         ts.forEachChild(node, visit);
     };
@@ -120,9 +123,10 @@ export function fixText(file: string, text: string): string {
     }
     body = kept.join("\n");
 
-    // 2b. Reorder contiguous import groups by length (length-sorted-imports), then
-    //     normalize type-member and import-list punctuation.
-    if (JS_TS.includes(language)) body = fixPunctuation(file, sortImportGroups(file, body));
+    // 2b. Normalize type-member and import-list punctuation, then reorder contiguous
+    //     import groups by length (length-sorted-imports). Punctuation runs first so
+    //     the length sort sees each declaration at its final length.
+    if (JS_TS.includes(language)) body = sortImportGroups(file, fixPunctuation(file, body));
 
     // 3. Drop leading blank lines, and 4. end with exactly one trailing newline.
     body = body.replace(/^(?:[ \t]*\n)+/, "").replace(/[ \t\n]+$/, "");
