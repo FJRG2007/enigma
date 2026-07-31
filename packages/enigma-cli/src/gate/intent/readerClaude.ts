@@ -289,7 +289,7 @@ function isClaudeSyntheticUserText(text: string): boolean {
 
 /** Reports whether `err` is a filesystem "does not exist" error. */
 export function isNotExist(err: unknown): boolean {
-    return typeof err === "object" && err !== null && (err as { code?: string }).code === "ENOENT";
+    return typeof err === "object" && err !== null && (err as { code?: string; }).code === "ENOENT";
 }
 
 /** Returns `v` when it is a string, otherwise "". Mirrors Go's `x.(string)`. */

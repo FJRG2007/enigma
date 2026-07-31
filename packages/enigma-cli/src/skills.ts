@@ -104,7 +104,7 @@ export interface InstallOptions extends SecurityOptions {
 
 /** This CLI package's own version, stamped into skills at seal time. */
 function cliVersion(): string {
-    return (readJson<{ version?: string }>(join(PKG_ROOT, "package.json")) || {}).version || "0.0.0";
+    return (readJson<{ version?: string; }>(join(PKG_ROOT, "package.json")) || {}).version || "0.0.0";
 }
 
 /**
@@ -431,7 +431,7 @@ export interface SkillReport {
      * is deployed there and whether the user turned it off for that agent (the per-agent
      * opt-out). Lets the UI enable/disable a skill app-by-app. Empty for external skills.
      */
-    agentStates: { name: string; label: string; deployed: boolean; off: boolean }[];
+    agentStates: { name: string; label: string; deployed: boolean; off: boolean; }[];
 }
 
 /** Worst-status escalation: modified beats update beats up-to-date. */
@@ -543,7 +543,7 @@ export function removeExternalSkill(name: string): string[] {
 }
 
 /** Check GitHub for newer enigma skills and re-sync deployments. Returns what changed. */
-export async function checkAndUpdateSkills(): Promise<{ updated: string[]; synced: string[] }> {
+export async function checkAndUpdateSkills(): Promise<{ updated: string[]; synced: string[]; }> {
     const r = await refreshSkillsFromGitHub(true);
     const synced = syncDeployed();
     return { updated: r.updated || [], synced };
@@ -583,7 +583,7 @@ export interface MemoryGroup {
     /** Memory file name (CLAUDE.md / AGENTS.md). */
     file: string;
     /** Agents that read this exact file. */
-    agents: { name: string; label: string }[];
+    agents: { name: string; label: string; }[];
     /** The file exists on disk. */
     deployed: boolean;
     /** Edited via the dashboard and not since superseded (the keep policy applies). */
@@ -621,7 +621,7 @@ function memoryTargetsRaw(project?: string): MemTargetRaw[] {
  * still collapse into one row, and edits fan out to every path (see saveMemoryGroup/resetMemoryGroup).
  */
 export function listMemoryGroups(project?: string): MemoryGroup[] {
-    const byFile = new Map<string, MemoryGroup & { dests: Set<string> }>();
+    const byFile = new Map<string, MemoryGroup & { dests: Set<string>; }>();
     for (const r of memoryTargetsRaw(project)) {
         let g = byFile.get(r.file);
         if (!g) {
@@ -658,7 +658,7 @@ export function readMemoryGroup(id: string, project?: string): string | null {
  * user edit is consent to deploy), marking them edited so the keep policy can preserve them. A
  * shared file (AGENTS.md) is written to each agent's path so they stay in sync. Returns the labels.
  */
-export function saveMemoryGroup(id: string, content: string, project?: string): { ok: boolean; labels: string[] } {
+export function saveMemoryGroup(id: string, content: string, project?: string): { ok: boolean; labels: string[]; } {
     const group = memTargetsForGroup(id, project);
     if (!group.length) return { ok: false, labels: [] };
     const written = new Set<string>();
@@ -675,7 +675,7 @@ export function saveMemoryGroup(id: string, content: string, project?: string): 
 }
 
 /** Restore every file in the group to the managed (rendered) version, clearing the edit markers. */
-export function resetMemoryGroup(id: string, project?: string): { ok: boolean; labels: string[] } {
+export function resetMemoryGroup(id: string, project?: string): { ok: boolean; labels: string[]; } {
     const group = memTargetsForGroup(id, project);
     if (!group.length || !existsSync(group[0]!.src)) return { ok: false, labels: [] };
     const written = new Set<string>();

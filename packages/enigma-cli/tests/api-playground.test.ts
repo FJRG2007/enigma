@@ -12,7 +12,7 @@ import {
     shapeResult,
     buildCurl,
     isLoopbackTarget,
-    type PlaygroundRequest,
+    type PlaygroundRequest
 } from "../src/dashboard-playground";
 
 test("formatPath maps the format to the right endpoint", () => {
@@ -23,7 +23,7 @@ test("formatPath maps the format to the right endpoint", () => {
 
 test("buildRequestBody shapes an OpenAI chat body with system + user", () => {
     const req: PlaygroundRequest = { format: "openai", model: "claude-sonnet-5", system: "Be terse.", message: "Hi", enableTools: true };
-    const body = buildRequestBody(req) as { model: string; messages: Array<{ role: string; content: string }>; enable_tools?: boolean };
+    const body = buildRequestBody(req) as { model: string; messages: Array<{ role: string; content: string; }>; enable_tools?: boolean; };
     expect(body.model).toBe("claude-sonnet-5");
     expect(body.messages[0]).toEqual({ role: "system", content: "Be terse." });
     expect(body.messages[1]).toEqual({ role: "user", content: "Hi" });
@@ -32,29 +32,29 @@ test("buildRequestBody shapes an OpenAI chat body with system + user", () => {
 
 test("buildRequestBody shapes an Anthropic messages body with system split out", () => {
     const req: PlaygroundRequest = { format: "anthropic", model: "claude", system: "Be terse.", message: "Hi" };
-    const body = buildRequestBody(req) as { system?: string; max_tokens: number; messages: Array<{ role: string; content: string }> };
+    const body = buildRequestBody(req) as { system?: string; max_tokens: number; messages: Array<{ role: string; content: string; }>; };
     expect(body.system).toBe("Be terse.");
     expect(body.max_tokens).toBe(4096);
     expect(body.messages).toEqual([{ role: "user", content: "Hi" }]);
 });
 
 test("buildRequestBody folds account/profile/pack context into both formats", () => {
-    const oai = buildRequestBody({ format: "openai", model: "claude", message: "Hi", account: "work", pack: "helio" }) as { account?: string; pack?: string; profile?: string };
+    const oai = buildRequestBody({ format: "openai", model: "claude", message: "Hi", account: "work", pack: "helio" }) as { account?: string; pack?: string; profile?: string; };
     expect(oai.account).toBe("work");
     expect(oai.pack).toBe("helio");
     expect(oai.profile).toBeUndefined();
-    const anth = buildRequestBody({ format: "anthropic", model: "claude", message: "Hi", profile: "team" }) as { profile?: string };
+    const anth = buildRequestBody({ format: "anthropic", model: "claude", message: "Hi", profile: "team" }) as { profile?: string; };
     expect(anth.profile).toBe("team");
 });
 
 test("buildRequestBody attaches an image as parts (image_url for OpenAI, image block for Anthropic)", () => {
     const url = "data:image/png;base64,ABCD";
-    const oai = buildRequestBody({ format: "openai", model: "claude", message: "what is this", imageDataUrl: url }) as { messages: Array<{ content: Array<{ type: string; image_url?: { url: string } }> }> };
+    const oai = buildRequestBody({ format: "openai", model: "claude", message: "what is this", imageDataUrl: url }) as { messages: Array<{ content: Array<{ type: string; image_url?: { url: string; }; }>; }>; };
     const parts = oai.messages[0].content;
     expect(parts[0]).toEqual({ type: "text", text: "what is this" });
     expect(parts[1]).toEqual({ type: "image_url", image_url: { url } });
 
-    const anth = buildRequestBody({ format: "anthropic", model: "claude", message: "what is this", imageDataUrl: url }) as { messages: Array<{ content: Array<{ type: string; source?: { data: string } }> }> };
+    const anth = buildRequestBody({ format: "anthropic", model: "claude", message: "what is this", imageDataUrl: url }) as { messages: Array<{ content: Array<{ type: string; source?: { data: string; }; }>; }>; };
     const ap = anth.messages[0].content;
     expect(ap[1]).toEqual({ type: "image", source: { type: "base64", media_type: "image/png", data: "ABCD" } });
 });
@@ -68,12 +68,12 @@ test("buildCurl truncates long base64 image data for readability", () => {
 
 test("shapeResult wraps a result in the OpenAI or Anthropic envelope", () => {
     const result: CompleteResult = { tool: "claude", model: "claude-sonnet-5", text: "hello", inputTokens: 5, outputTokens: 2, sessionId: "s1", isError: false };
-    const oai = shapeResult(result, "openai") as { object: string; choices: Array<{ message: { content: string } }>; usage: { total_tokens: number } };
+    const oai = shapeResult(result, "openai") as { object: string; choices: Array<{ message: { content: string; }; }>; usage: { total_tokens: number; }; };
     expect(oai.object).toBe("chat.completion");
     expect(oai.choices[0].message.content).toBe("hello");
     expect(oai.usage.total_tokens).toBe(7);
 
-    const anth = shapeResult(result, "anthropic") as { type: string; content: Array<{ text: string }>; usage: { input_tokens: number; output_tokens: number } };
+    const anth = shapeResult(result, "anthropic") as { type: string; content: Array<{ text: string; }>; usage: { input_tokens: number; output_tokens: number; }; };
     expect(anth.type).toBe("message");
     expect(anth.content[0].text).toBe("hello");
     expect(anth.usage).toEqual({ input_tokens: 5, output_tokens: 2 });

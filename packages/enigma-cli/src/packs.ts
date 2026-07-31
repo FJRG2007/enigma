@@ -27,7 +27,7 @@ import { readConfig, setEnigmaValue, setPackAccount } from "./config";
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import {
     DEFAULT_NAME, DEFAULT_TOOL, accountExists, getTool, isToolName, launchInDir,
-    listAccounts, resolveConfigDir, resolveLaunchAccount,
+    listAccounts, resolveConfigDir, resolveLaunchAccount
 } from "./accounts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -44,7 +44,7 @@ export interface PackDef {
     /** Pack homepage (the source repo), shown in the marketplace. */
     homepage: string;
     /** MCP servers the pack ships (registered into the context only by `enigma pack setup`). */
-    mcp?: { name: string; relArgs: string[] }[];
+    mcp?: { name: string; relArgs: string[]; }[];
 }
 
 /** Built-in pack catalog. Add a pack as one entry here; the rest is generic. */
@@ -97,7 +97,7 @@ export function installedPackVersion(id: string): string | null {
     if (!pack) return null;
     const pkgJson = join(installDir(id), "node_modules", ...pack.pkg.split("/"), "package.json");
     try {
-        const v = (JSON.parse(readFileSync(pkgJson, "utf8")) as { version?: unknown }).version;
+        const v = (JSON.parse(readFileSync(pkgJson, "utf8")) as { version?: unknown; }).version;
         return typeof v === "string" ? v : null;
     } catch {
         return null;
@@ -334,7 +334,7 @@ const CRED_FILES: Record<string, string[]> = {
 /** Whether a Claude credentials file already holds a usable OAuth token (non-empty access+refresh). */
 function hasUsableToken(file: string): boolean {
     try {
-        const t = (JSON.parse(readFileSync(file, "utf8")) as { claudeAiOauth?: { accessToken?: string; refreshToken?: string } }).claudeAiOauth;
+        const t = (JSON.parse(readFileSync(file, "utf8")) as { claudeAiOauth?: { accessToken?: string; refreshToken?: string; }; }).claudeAiOauth;
         return Boolean(t?.accessToken && t?.refreshToken);
     } catch {
         return false;
@@ -351,7 +351,7 @@ function hasUsableToken(file: string): boolean {
 function tokenState(file: string): "ok" | "expired" | "empty" | "absent" {
     if (!existsSync(file)) return "absent";
     try {
-        const t = (JSON.parse(readFileSync(file, "utf8")) as { claudeAiOauth?: { accessToken?: string; refreshToken?: string; expiresAt?: number } }).claudeAiOauth;
+        const t = (JSON.parse(readFileSync(file, "utf8")) as { claudeAiOauth?: { accessToken?: string; refreshToken?: string; expiresAt?: number; }; }).claudeAiOauth;
         if (!t?.accessToken) return "empty";
         const past = typeof t.expiresAt === "number" && t.expiresAt > 0 && t.expiresAt < Date.now();
         return past && !t.refreshToken ? "expired" : "ok";
@@ -467,7 +467,7 @@ export function reconcilePackSession(id: string, tool: string, account: string):
 }
 
 /** Claude pack contexts that currently hold a credentials file, as session-transfer sources. */
-export function packSessionSources(tool: string = DEFAULT_TOOL): { id: string; label: string; dir: string }[] {
+export function packSessionSources(tool: string = DEFAULT_TOOL): { id: string; label: string; dir: string; }[] {
     return PACKS
         .map((p) => ({ id: p.id, label: p.label, dir: contextDir(p.id, tool) }))
         .filter((s) => existsSync(join(s.dir, ".credentials.json")));
@@ -520,7 +520,7 @@ export interface PackView {
     /** Account that WILL seed the pack now (resolved default/profile/active), for display. */
     resolvedAccount: string;
     /** Accounts available for the tool, with login freshness so the picker can flag stale logins. */
-    accounts: { name: string; label: string; state: "ok" | "expired" | "empty" | "absent" }[];
+    accounts: { name: string; label: string; state: "ok" | "expired" | "empty" | "absent"; }[];
     /** Login state of the account that will seed the pack now (ok | expired | empty | absent). */
     resolvedState: "ok" | "expired" | "empty" | "absent";
     /** True when the isolated context ALREADY holds a usable token, so no login will be asked

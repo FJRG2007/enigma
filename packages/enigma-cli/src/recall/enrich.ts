@@ -28,7 +28,7 @@ export interface EnrichFields { type?: string; title?: string; narrative?: strin
 /** The enrichment for a whole session: per-observation fields + an improved summary. */
 export interface EnrichResult {
     perId: Record<number, EnrichFields>;
-    summary?: { request?: string; learned?: string; completed?: string; nextSteps?: string };
+    summary?: { request?: string; learned?: string; completed?: string; nextSteps?: string; };
 }
 
 interface Provider { kind: "anthropic-oauth" | "anthropic-key" | "openai"; base: string; key: string; model: string; }
@@ -61,7 +61,7 @@ async function callProvider(p: Provider, prompt: string): Promise<string | null>
                 body: JSON.stringify({ model: p.model, max_tokens: 2000, messages: [{ role: "user", content: prompt }] }),
             });
             if (!res.ok) return null;
-            const j = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+            const j = (await res.json()) as { choices?: { message?: { content?: string; }; }[]; };
             return j.choices?.[0]?.message?.content || null;
         }
         const headers: Record<string, string> = { "content-type": "application/json", "anthropic-version": "2023-06-01" };
@@ -79,7 +79,7 @@ async function callProvider(p: Provider, prompt: string): Promise<string | null>
         } else headers["x-api-key"] = p.key;
         const res = await fetch(`${base}/v1/messages`, { method: "POST", signal: ctrl.signal, headers, body: JSON.stringify(body) });
         if (!res.ok) return null;
-        const j = (await res.json()) as { content?: { type?: string; text?: string }[] };
+        const j = (await res.json()) as { content?: { type?: string; text?: string; }[]; };
         return (j.content || []).filter((b) => b.type === "text").map((b) => b.text || "").join("") || null;
     } catch { return null; } finally { clearTimeout(timer); }
 }
@@ -101,7 +101,7 @@ function parseEnrich(text: string): EnrichResult | null {
     const start = text.indexOf("{");
     const end = text.lastIndexOf("}");
     if (start < 0 || end <= start) return null;
-    let json: { observations?: unknown[]; summary?: Record<string, unknown> };
+    let json: { observations?: unknown[]; summary?: Record<string, unknown>; };
     try { json = JSON.parse(text.slice(start, end + 1)); } catch { return null; }
     const perId: Record<number, EnrichFields> = {};
     for (const o of json.observations || []) {

@@ -26,7 +26,7 @@ export class NoStructuredOutputError extends Error {
 }
 
 /** Classifies an error, reporting whether to retry plus a telemetry label. */
-export type RetryClassifier = (err: unknown) => { label: string; retry: boolean };
+export type RetryClassifier = (err: unknown) => { label: string; retry: boolean; };
 
 /**
  * Package-level backoff between retries; overridable in tests to stay fast
@@ -101,7 +101,7 @@ export async function runWithRetry(
  * Retries both transient API errors and the no-structured-output case that the
  * claude run loop handles.
  */
-export function claudeRetryClassifier(err: unknown): { label: string; retry: boolean } {
+export function claudeRetryClassifier(err: unknown): { label: string; retry: boolean; } {
     if (err instanceof NoStructuredOutputError) return { label: "missing structured output", retry: true };
     return classifyTransient(err);
 }
@@ -111,7 +111,7 @@ const TRANSIENT_STATUS_RE = /\b(429|503|529)\b/;
 // transientNeedles matches case-insensitive substrings emitted by Anthropic API
 // errors, the agent CLIs, or the network stack when the failure is recoverable
 // (load shed, network blip, DNS hiccup, etc.).
-const TRANSIENT_NEEDLES: ReadonlyArray<{ needle: string; label: string }> = [
+const TRANSIENT_NEEDLES: ReadonlyArray<{ needle: string; label: string; }> = [
     { needle: "overloaded_error", label: "overloaded_error" },
     { needle: '"type":"overloaded"', label: "overloaded_error" },
     { needle: "rate_limit_error", label: "rate_limit_error" },
@@ -131,7 +131,7 @@ const TRANSIENT_NEEDLES: ReadonlyArray<{ needle: string; label: string }> = [
  * (cancellation/timeout) errors are never retried, mirroring Go ignoring ctx
  * cancellation/deadline errors.
  */
-export function classifyTransient(err: unknown): { label: string; retry: boolean } {
+export function classifyTransient(err: unknown): { label: string; retry: boolean; } {
     if (err === null || err === undefined) return { label: "", retry: false };
     if (isAbortError(err)) return { label: "", retry: false };
     const msg = errMessage(err).toLowerCase();
@@ -170,7 +170,7 @@ function abortReason(signal: AbortSignal | undefined): unknown {
 }
 
 function isAbortError(err: unknown): boolean {
-    const name = (err as { name?: unknown } | null | undefined)?.name;
+    const name = (err as { name?: unknown; } | null | undefined)?.name;
     return name === "AbortError" || name === "TimeoutError";
 }
 

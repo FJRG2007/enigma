@@ -75,7 +75,7 @@ const MAX_BLOCKS_PER_SESSION = 10;
  * `notNear` suppresses a hit when the preceding lines show it is a legitimate idiom
  * (a Python abstract method raises the unimplemented error by design, for example).
  */
-const INCOMPLETE_PATTERNS: Array<{ id: string; re: RegExp; label: string; notNear?: RegExp }> = [
+const INCOMPLETE_PATTERNS: Array<{ id: string; re: RegExp; label: string; notNear?: RegExp; }> = [
     { id: "todo-marker", re: /(?:^|[^\w])(TODO|FIXME|XXX|HACK)\b/, label: "unfinished-work marker" }, // enigma:verify-ignore
     {
         id: "unimplemented-path",
@@ -431,7 +431,7 @@ function suppressedByContext(cwd: string, file: string, line: number, notNear: R
 }
 
 /** Match the evidence patterns against a set of lines, reporting whether the cap cut it short. */
-function scanLines(cwd: string, lines: AddedLine[]): { gaps: VerifyGap[]; capped: boolean } {
+function scanLines(cwd: string, lines: AddedLine[]): { gaps: VerifyGap[]; capped: boolean; } {
     const gaps: VerifyGap[] = [];
     let capped = false;
     const cache = new Map<string, string[]>();
@@ -519,7 +519,7 @@ export interface VerifyScan {
  * covers the whole branch, so on any branch with earlier commits it is always positive and
  * every conversational turn would have paid.
  */
-export function collectGaps(cwd: string, opts: { all?: boolean; runCommand?: boolean } = {}): VerifyScan {
+export function collectGaps(cwd: string, opts: { all?: boolean; runCommand?: boolean; } = {}): VerifyScan {
     const scan = scanEvidence(cwd, opts.all === true);
     const produced = scan.scanned > 0 && (opts.all === true || hasNewWork(cwd));
     const command = opts.runCommand === false || !produced ? "" : verifyCommandOf();
@@ -622,7 +622,7 @@ function mayBlock(key: string, session: string): boolean {
  * Deliberately framed at maximum stakes: the whole point of this gate is that a false
  * "done" is a worse outcome than an honest "unfinished", and the model must feel that.
  */
-function blockMessage(gaps: VerifyGap[], incomplete: { truncated?: boolean; capped?: boolean } = {}): string {
+function blockMessage(gaps: VerifyGap[], incomplete: { truncated?: boolean; capped?: boolean; } = {}): string {
     const caveat = incomplete.capped
         ? "(Only the first findings are listed - there are more than these.)"
         : incomplete.truncated ? "(The change was too large to scan in full, so there may be more than this.)" : "";

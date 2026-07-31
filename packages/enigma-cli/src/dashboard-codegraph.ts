@@ -15,7 +15,7 @@ import {
     listProjects,
     type Architecture,
     type CodeGraphProject,
-    type GraphSchema,
+    type GraphSchema
 } from "./codegraph";
 
 export interface CodeGraphView {
@@ -34,7 +34,7 @@ export interface CodeGraphView {
 }
 
 /** Build the code-graph view, resolving the selected project's detail. */
-export function codeGraphDashboard(opts: { project?: string } = {}): CodeGraphView {
+export function codeGraphDashboard(opts: { project?: string; } = {}): CodeGraphView {
     const enabled = readConfig().config.codeGraph;
     const projects = listProjects();
     const names = projects.map((p) => p.name);
@@ -51,10 +51,10 @@ export function codeGraphDashboard(opts: { project?: string } = {}): CodeGraphVi
     };
 }
 
-export interface CodeGraphActionPayload { on?: boolean; project?: string; root?: string }
+export interface CodeGraphActionPayload { on?: boolean; project?: string; root?: string; }
 
 /** Apply a code-graph action and return the refreshed view. */
-export function applyCodeGraphAction(op: string, payload: CodeGraphActionPayload = {}): { ok: boolean; error?: string; view?: CodeGraphView } {
+export function applyCodeGraphAction(op: string, payload: CodeGraphActionPayload = {}): { ok: boolean; error?: string; view?: CodeGraphView; } {
     if (op === "toggle") {
         if (typeof payload.on !== "boolean") return { ok: false, error: "missing on flag" };
         setEnigmaValue("codeGraph", payload.on, "global");

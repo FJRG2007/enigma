@@ -26,7 +26,7 @@ const PREFIX = "packages/enigma-cli/assets/skills";
 interface FakeSkill { name: string; version: string; provider?: string; sha?: string; }
 
 /** Author a sealed remote skill the way `enigma seal` would (real content sha). */
-function sealedSkill(s: FakeSkill): { md: string; meta: string } {
+function sealedSkill(s: FakeSkill): { md: string; meta: string; } {
     const md = `---\nname: ${s.name}\ndescription: test skill\n---\n\nBody for ${s.name} v${s.version}.\n`;
     const dir = mkdtempSync(join(tmpdir(), "enigma-test-skill-"));
     writeFileSync(join(dir, "SKILL.md"), md);
@@ -39,9 +39,9 @@ function sealedSkill(s: FakeSkill): { md: string; meta: string } {
  * Stub global fetch with a fake GitHub serving `skills` at a pinned commit.
  * Returns a counter of raw-file fetches, to assert the sha cache skips downloads.
  */
-function stubFetch(skills: FakeSkill[]): { rawCalls: () => number } {
+function stubFetch(skills: FakeSkill[]): { rawCalls: () => number; } {
     const files = new Map<string, string>();
-    const tree: Array<{ path: string; type: string; sha: string; size: number }> = [];
+    const tree: Array<{ path: string; type: string; sha: string; size: number; }> = [];
     let rawCalls = 0;
     for (const s of skills) {
         const { md, meta } = sealedSkill(s);

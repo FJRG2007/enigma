@@ -71,7 +71,7 @@ async function fetchAndCacheLatest(): Promise<void> {
     const t = setTimeout(() => ctrl.abort(), 5000);
     try {
         const res = await fetch(REGISTRY_URL, { signal: ctrl.signal, headers: { "user-agent": "enigma-cli-update-check" } });
-        const data = res.ok ? (await res.json()) as { version?: string } : null;
+        const data = res.ok ? (await res.json()) as { version?: string; } : null;
         if (data?.version) writeFileSync(CACHE_FILE, JSON.stringify({ latest: data.version, checkedAt: Date.now() }));
     } finally {
         clearTimeout(t);
@@ -232,7 +232,7 @@ export function runUpdate(): boolean {
  * newer release is cached, else null. Schedules a background refresh for next time,
  * and stays silent for non-TTY/CI or when the notifier is disabled.
  */
-export function getAvailableUpdate(current: string): { current: string; latest: string } | null {
+export function getAvailableUpdate(current: string): { current: string; latest: string; } | null {
     try {
         if (!process.stdout.isTTY || process.env.CI) return null;
         if (!readConfig().config.updateNotifier) return null;

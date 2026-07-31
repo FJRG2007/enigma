@@ -30,8 +30,8 @@ export interface ConfigBundle {
     guard: Record<string, unknown>;
     /** Account/profile structure - names and mappings only, NEVER auth tokens. */
     accounts: {
-        tools: Record<string, { active: string; accounts: string[] }>;
-        profiles: { active: string | null; items: Record<string, Record<string, string>> };
+        tools: Record<string, { active: string; accounts: string[]; }>;
+        profiles: { active: string | null; items: Record<string, Record<string, string>>; };
     };
 }
 
@@ -63,7 +63,7 @@ function readGlobalConfigFile(): Partial<EnigmaConfig> {
 
 /** Build the secret-free export bundle. */
 export function exportBundle(): ConfigBundle {
-    const tools: Record<string, { active: string; accounts: string[] }> = {};
+    const tools: Record<string, { active: string; accounts: string[]; }> = {};
     for (const tool of acct.TOOL_NAMES) {
         tools[tool] = {
             active: acct.getActive(tool),

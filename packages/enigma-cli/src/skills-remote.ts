@@ -75,7 +75,7 @@ interface SkillSource {
  * minCliVersion, deprecation, ...) are reserved for forward compatibility.
  */
 interface SkillsManifest {
-    source?: { repo?: string; ref?: string; skillsPrefix?: string };
+    source?: { repo?: string; ref?: string; skillsPrefix?: string; };
     apiBase?: string;
     rawBase?: string;
 }
@@ -235,7 +235,7 @@ export function cachedRemoteSkills(): CachedSkill[] {
 }
 
 /** Group the repo tree's blobs into per-skill file lists; oversized/invalid entries poison their skill. */
-function groupTreeBySkill(tree: Array<{ path?: string; type?: string; sha?: string; size?: number }>, skillsPrefix: string): Map<string, RemoteFile[] | null> {
+function groupTreeBySkill(tree: Array<{ path?: string; type?: string; sha?: string; size?: number; }>, skillsPrefix: string): Map<string, RemoteFile[] | null> {
     const skills = new Map<string, RemoteFile[] | null>();
     for (const e of tree) {
         if (e.type !== "blob" || !e.path?.startsWith(skillsPrefix) || !e.sha) continue;
@@ -322,11 +322,11 @@ export async function refreshRemoteSkills(opts: RefreshOptions): Promise<RemoteR
         const source = await resolveSource();
         const head = await fetchWithTimeout(`${source.apiBase}/repos/${source.repo}/commits/${source.ref}`);
         if (!head.ok) return fail(`GitHub API ${head.status}`);
-        const commit = String(((await head.json()) as { sha?: string }).sha || "");
+        const commit = String(((await head.json()) as { sha?: string; }).sha || "");
         if (!/^[0-9a-f]{7,40}$/.test(commit)) return fail("unexpected GitHub API response");
         const treeRes = await fetchWithTimeout(`${source.apiBase}/repos/${source.repo}/git/trees/${commit}?recursive=1`);
         if (!treeRes.ok) return fail(`GitHub API ${treeRes.status}`);
-        const tree = (await treeRes.json()) as { tree?: Array<{ path?: string; type?: string; sha?: string; size?: number }> };
+        const tree = (await treeRes.json()) as { tree?: Array<{ path?: string; type?: string; sha?: string; size?: number; }>; };
         const skills = groupTreeBySkill(tree.tree || [], source.skillsPrefix);
         if (skills.size === 0) return fail("no skills found in the repo tree");
 

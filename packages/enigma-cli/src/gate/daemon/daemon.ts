@@ -375,7 +375,7 @@ function registerHandlers(srv: Server, mgr: RunManager, d: gateDb.Database, shut
 function runInfoFor(d: gateDb.Database, run: gateDb.Run): proto.RunInfo {
     const steps = gateDb.getStepsByRun(d, run.id);
     const stepInfos = steps.map(s => {
-        const extras: { reportedFindings?: number; fixedFindings?: number; fixSummaries?: string[] } = {};
+        const extras: { reportedFindings?: number; fixedFindings?: number; fixSummaries?: string[]; } = {};
         try {
             const stats = gateDb.stepFindingStats(d, s);
             extras.reportedFindings = stats.reportedFindings;

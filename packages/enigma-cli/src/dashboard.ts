@@ -180,7 +180,7 @@ export function dashboardUrl(port: number, bind?: BindResolution): string {
  * sees the new key and re-reads, instead of serving the page cached at server start forever.
  * `fallback` is returned (and not cached) until the asset exists.
  */
-function readAssetCached(cache: { text: string; key: string } | null, path: string | null, fallback: string): { value: string; cache: { text: string; key: string } | null } {
+function readAssetCached(cache: { text: string; key: string; } | null, path: string | null, fallback: string): { value: string; cache: { text: string; key: string; } | null; } {
     if (path) {
         try {
             const st = statSync(path);
@@ -193,7 +193,7 @@ function readAssetCached(cache: { text: string; key: string } | null, path: stri
     return { value: fallback, cache };
 }
 
-let htmlCache: { text: string; key: string } | null = null;
+let htmlCache: { text: string; key: string; } | null = null;
 
 /**
  * The dashboard page from the on-demand @enigmax/dashboard package. Re-read whenever the file
@@ -206,7 +206,7 @@ function dashboardHtml(): string {
     return r.value;
 }
 
-let libCache: { text: string; key: string } | null = null;
+let libCache: { text: string; key: string; } | null = null;
 
 /** The vendored chart library JS, or null if the asset is missing (cards still render). */
 function dashboardLib(): string | null {
@@ -220,7 +220,7 @@ function dashboardLib(): string | null {
 
 const FALLBACK_HTML = "<!doctype html><meta charset=utf-8><title>Enigma</title><meta http-equiv=refresh content=5><body style=\"font-family:sans-serif;background:#0b0e14;color:#e6e6e6;padding:2rem\"><h1>Enigma dashboard</h1><p>Fetching the dashboard UI (<code>@enigmax/dashboard</code>) - this page refreshes automatically. If it persists, run <code>enigma dashboard</code> once with network access. Live numbers are available now at <a style=color:#d7875f href=\"/api/stats\">/api/stats</a>.</p>";
 
-let snapshot: { payload: string; expires: number } | null = null;
+let snapshot: { payload: string; expires: number; } | null = null;
 const SNAPSHOT_TTL_MS = 1000;
 
 // Identifies this server process. The page reloads when it sees this change, so a tab left
@@ -371,7 +371,7 @@ function writeDashboardPort(req: import("node:http").IncomingMessage, res: impor
     let body = "";
     req.on("data", (chunk) => { body += chunk; if (body.length > 1024) req.destroy(); });
     req.on("end", () => {
-        let parsed: { value?: unknown };
+        let parsed: { value?: unknown; };
         try { parsed = JSON.parse(body || "{}"); } catch { res.writeHead(400, JSON_HDR); res.end('{"error":"bad json"}'); return; }
         const n = Number(parsed.value);
         if (!Number.isInteger(n) || n < 0 || n > 65535) { res.writeHead(400, JSON_HDR); res.end('{"error":"port must be 0 (auto) or 1-65535"}'); return; }
@@ -387,7 +387,7 @@ function writeSetting(req: import("node:http").IncomingMessage, res: import("nod
     let body = "";
     req.on("data", (chunk) => { body += chunk; if (body.length > 8192) req.destroy(); });
     req.on("end", () => {
-        let parsed: { key?: unknown; value?: unknown };
+        let parsed: { key?: unknown; value?: unknown; };
         try { parsed = JSON.parse(body || "{}"); } catch { res.writeHead(400, JSON_HDR); res.end('{"error":"bad json"}'); return; }
         if (typeof parsed.key !== "string") { res.writeHead(400, JSON_HDR); res.end('{"error":"missing key"}'); return; }
         import("./dashboard-settings")
@@ -453,7 +453,7 @@ function serveFixPath(req: import("node:http").IncomingMessage, res: import("nod
     let body = "";
     req.on("data", (chunk) => { body += chunk; if (body.length > 4096) req.destroy(); });
     req.on("end", () => {
-        let parsed: { tool?: unknown };
+        let parsed: { tool?: unknown; };
         try { parsed = JSON.parse(body || "{}"); } catch { res.writeHead(400, JSON_HDR); res.end('{"error":"bad json"}'); return; }
         const tool = typeof parsed.tool === "string" && parsed.tool ? parsed.tool : null;
         Promise.all([import("./tool-path"), import("./accounts")])
@@ -488,7 +488,7 @@ function writeResources(req: import("node:http").IncomingMessage, res: import("n
     let body = "";
     req.on("data", (chunk) => { body += chunk; if (body.length > 4096) req.destroy(); });
     req.on("end", () => {
-        let parsed: { op?: unknown; value?: unknown };
+        let parsed: { op?: unknown; value?: unknown; };
         try { parsed = JSON.parse(body || "{}"); } catch { res.writeHead(400, JSON_HDR); res.end('{"error":"bad json"}'); return; }
         if (typeof parsed.op !== "string") { res.writeHead(400, JSON_HDR); res.end('{"error":"missing op"}'); return; }
         const value = typeof parsed.value === "number" ? parsed.value : undefined;
@@ -521,7 +521,7 @@ async function serveProviderStatus(req: import("node:http").IncomingMessage, res
     const timer = setTimeout(() => ctrl.abort(), 8000);
     try {
         const r = await fetch(target, { signal: ctrl.signal, headers: { "User-Agent": "enigma-dashboard", Accept: "application/json" } });
-        const d = (await r.json()) as { status?: { indicator?: string; description?: string } };
+        const d = (await r.json()) as { status?: { indicator?: string; description?: string; }; };
         res.end(JSON.stringify({ indicator: d?.status?.indicator || "unknown", description: d?.status?.description || "Status unknown" }));
     } catch {
         res.end('{"error":"unreachable"}');
@@ -593,7 +593,7 @@ function writeCodeGraph(req: import("node:http").IncomingMessage, res: import("n
     let body = "";
     req.on("data", (chunk) => { body += chunk; if (body.length > 8192) req.destroy(); });
     req.on("end", () => {
-        let parsed: { op?: unknown; on?: unknown; project?: unknown; root?: unknown };
+        let parsed: { op?: unknown; on?: unknown; project?: unknown; root?: unknown; };
         try { parsed = JSON.parse(body || "{}"); } catch { res.writeHead(400, JSON_HDR); res.end('{"error":"bad json"}'); return; }
         if (typeof parsed.op !== "string") { res.writeHead(400, JSON_HDR); res.end('{"error":"missing op"}'); return; }
         const payload = {
@@ -624,7 +624,7 @@ function runPlaygroundRoute(req: import("node:http").IncomingMessage, res: impor
     let body = "";
     req.on("data", (chunk) => { body += chunk; if (body.length > 65536) req.destroy(); });
     req.on("end", () => {
-        let parsed: import("./dashboard-playground").PlaygroundRequest & { op?: string };
+        let parsed: import("./dashboard-playground").PlaygroundRequest & { op?: string; };
         try { parsed = JSON.parse(body || "{}"); } catch { res.writeHead(400, JSON_HDR); res.end('{"error":"bad json"}'); return; }
         void (async () => {
             try {
@@ -660,7 +660,7 @@ function writeSkill(req: import("node:http").IncomingMessage, res: import("node:
     // Larger cap than other writes: the "save" action carries a full SKILL.md document.
     req.on("data", (chunk) => { body += chunk; if (body.length > 512 * 1024) req.destroy(); });
     req.on("end", () => {
-        let parsed: { name?: unknown; action?: unknown; content?: unknown };
+        let parsed: { name?: unknown; action?: unknown; content?: unknown; };
         try { parsed = JSON.parse(body || "{}"); } catch { res.writeHead(400, JSON_HDR); res.end('{"error":"bad json"}'); return; }
         if (typeof parsed.action !== "string") { res.writeHead(400, JSON_HDR); res.end('{"error":"missing action"}'); return; }
         import("./dashboard-skills")
@@ -682,7 +682,7 @@ function writeSsh(req: import("node:http").IncomingMessage, res: import("node:ht
     let body = "";
     req.on("data", (chunk) => { body += chunk; if (body.length > 16 * 1024) req.destroy(); });
     req.on("end", () => {
-        let parsed: { action?: unknown };
+        let parsed: { action?: unknown; };
         try { parsed = JSON.parse(body || "{}"); } catch { res.writeHead(400, JSON_HDR); res.end('{"error":"bad json"}'); return; }
         if (typeof parsed.action !== "string") { res.writeHead(400, JSON_HDR); res.end('{"error":"missing action"}'); return; }
         import("./dashboard-ssh")
@@ -704,7 +704,7 @@ function writePack(req: import("node:http").IncomingMessage, res: import("node:h
     let body = "";
     req.on("data", (chunk) => { body += chunk; if (body.length > 8 * 1024) req.destroy(); });
     req.on("end", () => {
-        let parsed: { id?: unknown; action?: unknown; value?: unknown };
+        let parsed: { id?: unknown; action?: unknown; value?: unknown; };
         try { parsed = JSON.parse(body || "{}"); } catch { res.writeHead(400, JSON_HDR); res.end('{"error":"bad json"}'); return; }
         if (typeof parsed.action !== "string") { res.writeHead(400, JSON_HDR); res.end('{"error":"missing action"}'); return; }
         import("./dashboard-packs")
@@ -732,7 +732,7 @@ function writeMemoryAction(req: import("node:http").IncomingMessage, res: import
     // Larger cap: the "save" action carries a full CLAUDE.md/AGENTS.md document.
     req.on("data", (chunk) => { body += chunk; if (body.length > 512 * 1024) req.destroy(); });
     req.on("end", () => {
-        let parsed: { id?: unknown; action?: unknown; content?: unknown; path?: unknown };
+        let parsed: { id?: unknown; action?: unknown; content?: unknown; path?: unknown; };
         try { parsed = JSON.parse(body || "{}"); } catch { res.writeHead(400, JSON_HDR); res.end('{"error":"bad json"}'); return; }
         if (typeof parsed.action !== "string") { res.writeHead(400, JSON_HDR); res.end('{"error":"missing action"}'); return; }
         const project = typeof parsed.path === "string" && parsed.path ? parsed.path : undefined;
@@ -769,7 +769,7 @@ function writeAccount(req: import("node:http").IncomingMessage, res: import("nod
     let body = "";
     req.on("data", (chunk) => { body += chunk; if (body.length > 16 * 1024) req.destroy(); });
     req.on("end", () => {
-        let parsed: { op?: unknown } & Record<string, unknown>;
+        let parsed: { op?: unknown; } & Record<string, unknown>;
         try { parsed = JSON.parse(body || "{}"); } catch { res.writeHead(400, JSON_HDR); res.end('{"error":"bad json"}'); return; }
         if (typeof parsed.op !== "string") { res.writeHead(400, JSON_HDR); res.end('{"error":"missing op"}'); return; }
         import("./dashboard-accounts")
@@ -808,7 +808,7 @@ function writePlan(req: import("node:http").IncomingMessage, res: import("node:h
     let body = "";
     req.on("data", (chunk) => { body += chunk; if (body.length > 4096) req.destroy(); });
     req.on("end", () => {
-        let parsed: { key?: unknown; value?: unknown };
+        let parsed: { key?: unknown; value?: unknown; };
         try { parsed = JSON.parse(body || "{}"); } catch { res.writeHead(400, JSON_HDR); res.end('{"error":"bad json"}'); return; }
         const field = typeof parsed.key === "string" ? PLAN_FIELDS[parsed.key as keyof typeof PLAN_FIELDS] : undefined;
         if (!field) { res.writeHead(400, JSON_HDR); res.end('{"error":"unknown plan key"}'); return; }
@@ -1053,7 +1053,7 @@ async function listenWithFallback(server: Server, host: string): Promise<number>
     const candidates = [...(valid ? [preferred] : []), ...PORTS, 0].filter((p, i, a) => a.indexOf(p) === i);
     let last = "";
     for (const port of candidates) {
-        try { await tryListen(server, port, host); boundPort = (server.address() as { port: number }).port; return boundPort; }
+        try { await tryListen(server, port, host); boundPort = (server.address() as { port: number; }).port; return boundPort; }
         catch (err) { last = (err as NodeJS.ErrnoException).code || (err as Error).message; }
     }
     throw new Error(`could not bind the dashboard to ${host}: no port worked, including an ephemeral one (${last}) - that points at the interface, not the port. Check \`enigma config dashboard-bind\` / \`dashboard-bind-address\`.`);

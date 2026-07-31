@@ -333,11 +333,11 @@ test("says so when it cannot read the final message at all", () => {
     write(dir, "src/new.ts", "// TODO: finish this\n"); // enigma:verify-ignore
     const said: string[] = [];
     const original = process.stderr.write.bind(process.stderr);
-    (process.stderr as { write: unknown }).write = (chunk: string): boolean => { said.push(String(chunk)); return true; };
+    (process.stderr as { write: unknown; }).write = (chunk: string): boolean => { said.push(String(chunk)); return true; };
     try {
         expect(runVerifyHook(JSON.stringify({ cwd: dir, prompt_id: "no-message-at-all" }))).toBe(0);
     } finally {
-        (process.stderr as { write: unknown }).write = original;
+        (process.stderr as { write: unknown; }).write = original;
     }
     expect(said.join("")).toContain("completion check did not run");
 });

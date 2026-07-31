@@ -182,7 +182,7 @@ export function getClaudeBypass(scope: "global" | "local"): boolean {
  * `permissions.deny` rules are preserved. On `dryRun`, reports the would-be
  * change without writing.
  */
-export function setClaudeBypass(scope: "global" | "local", on: boolean, dryRun: boolean): { path: string; changed: boolean } {
+export function setClaudeBypass(scope: "global" | "local", on: boolean, dryRun: boolean): { path: string; changed: boolean; } {
     if (on) return enableClaudeBypass(scope, dryRun);
 
     const path = claudeSettingsPath(scope);
@@ -209,7 +209,7 @@ export function setClaudeBypass(scope: "global" | "local", on: boolean, dryRun: 
  * take precedence (deny wins). Returns the target path and whether it changed.
  * On `dryRun`, reports the would-be change without writing.
  */
-export function enableClaudeBypass(scope: "global" | "local", dryRun: boolean): { path: string; changed: boolean } {
+export function enableClaudeBypass(scope: "global" | "local", dryRun: boolean): { path: string; changed: boolean; } {
     const path = claudeSettingsPath(scope);
     const current = readJson<Record<string, unknown>>(path) || {};
 

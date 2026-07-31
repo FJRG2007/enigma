@@ -145,7 +145,7 @@ export class RovodevAgent implements Agent {
             throw new Error(`rovodev create session: ${errMessage(err)}`);
         }
         try {
-            const result = JSON.parse(resp) as { session_id?: string };
+            const result = JSON.parse(resp) as { session_id?: string; };
             return result.session_id ?? "";
         } catch (err) {
             throw new Error(`rovodev create session parse: ${errMessage(err)}`);

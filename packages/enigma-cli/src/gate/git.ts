@@ -159,7 +159,7 @@ export async function runRaw(
     dir: string,
     args: string[],
     signal?: AbortSignal,
-): Promise<{ stdout: string; stderr: string; code: number }> {
+): Promise<{ stdout: string; stderr: string; code: number; }> {
     const r = await execGit(args, dir, nonInteractiveEnv(dir), signal);
     if (r.notFound) throw notFoundError(redactText(args.join(" ")));
     return { stdout: r.stdout, stderr: r.stderr, code: r.code };

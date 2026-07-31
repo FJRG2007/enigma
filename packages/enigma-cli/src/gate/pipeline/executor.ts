@@ -85,7 +85,7 @@ export class Executor {
 
     constructor(
         private readonly db: gateDb.Database,
-        private readonly paths: { runLogDir(runId: string): string },
+        private readonly paths: { runLogDir(runId: string): string; },
         private readonly config: Config | null,
         private readonly agent: Agent,
         private readonly steps: Step[],
@@ -530,7 +530,7 @@ export class Executor {
         track("step", fields);
     }
 
-    private findingStatsForStep(runID: string, stepName: StepName): { stepName: StepName; reportedFindings: number; fixedFindings: number } {
+    private findingStatsForStep(runID: string, stepName: StepName): { stepName: StepName; reportedFindings: number; fixedFindings: number; } {
         let steps: gateDb.StepResult[];
         try {
             steps = gateDb.getStepsByRun(this.db, runID);

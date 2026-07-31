@@ -33,7 +33,7 @@ export interface SyncResult {
 }
 
 /** Per-file state so unchanged transcripts are not re-parsed across syncs. */
-interface SyncState { files: Record<string, { mtime: number; size: number }>; lastSync: number; }
+interface SyncState { files: Record<string, { mtime: number; size: number; }>; lastSync: number; }
 
 function statePath(): string { return join(recallDir(), "state.json"); }
 
@@ -93,19 +93,19 @@ export function searchRecall(query: string, opts: store.QueryOptions = {}): Obse
 }
 
 /** Chronological context around an observation or project (the search -> timeline step). */
-export function recallTimeline(opts: { id?: number; project?: string; before?: number; after?: number }): ObservationHit[] {
+export function recallTimeline(opts: { id?: number; project?: string; before?: number; after?: number; }): ObservationHit[] {
     if (!recallAvailable()) return [];
     return store.timelineAround(opts);
 }
 
 /** Recent sessions with their observation counts. */
-export function recallSessions(opts: { project?: string; source?: string; limit?: number } = {}): store.SessionRow[] {
+export function recallSessions(opts: { project?: string; source?: string; limit?: number; } = {}): store.SessionRow[] {
     if (!recallAvailable()) return [];
     return store.listSessions(opts);
 }
 
 /** Bound the store: drop observations older than maxAgeDays and/or beyond maxRows. */
-export function pruneRecall(opts: { maxAgeDays?: number; maxRows?: number }): number {
+export function pruneRecall(opts: { maxAgeDays?: number; maxRows?: number; }): number {
     if (!recallAvailable()) return 0;
     return store.prune(opts);
 }
@@ -124,7 +124,7 @@ const ENRICH_THROTTLE_MS = 60_000;
  * session is left un-enriched to retry on a later pass; a session that returns nothing is
  * still marked done so the queue drains.
  */
-export async function enrichRecall(opts: { maxSessions?: number; force?: boolean } = {}): Promise<EnrichSummary> {
+export async function enrichRecall(opts: { maxSessions?: number; force?: boolean; } = {}): Promise<EnrichSummary> {
     const out: EnrichSummary = { available: recallAvailable(), enabled: false, hasLogin: false, sessions: 0, observations: 0 };
     if (!out.available) return out;
     out.enabled = readConfig().config.recallLlm;
@@ -231,7 +231,7 @@ export function createObservation(input: ManualObservationInput): boolean {
 }
 
 /** Outcome of an LLM generation request. */
-export interface GenerateResult { ok: boolean; error?: string }
+export interface GenerateResult { ok: boolean; error?: string; }
 
 /**
  * Generate one memory from a free-text note via the configured LLM provider, then store it.
@@ -251,7 +251,7 @@ export async function generateObservation(note: string, project?: string): Promi
  * summaries followed by recent observations. This is the "retrieve/inject" output - printed
  * by `enigma recall context` and returned by the MCP recall tools.
  */
-export function recallContext(opts: { project?: string; source?: string; limit?: number } = {}): string {
+export function recallContext(opts: { project?: string; source?: string; limit?: number; } = {}): string {
     if (!recallAvailable()) return "";
     const limit = Math.max(1, Math.min(opts.limit ?? 15, 50));
     const summaries = store.listSummaries({ project: opts.project, source: opts.source, limit: 5 });

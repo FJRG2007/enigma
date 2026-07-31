@@ -24,10 +24,10 @@ export type ToonScalar = string | number | boolean;
 
 /** A TOON value node: a scalar, a nested object, a table, or an inline list. */
 export type ToonValue =
-    | { kind: "scalar"; value: ToonScalar }
-    | { kind: "object"; fields: ToonField[] }
-    | { kind: "table"; columns: string[]; rows: ToonScalar[][] }
-    | { kind: "list"; items: string[] };
+    | { kind: "scalar"; value: ToonScalar; }
+    | { kind: "object"; fields: ToonField[]; }
+    | { kind: "table"; columns: string[]; rows: ToonScalar[][]; }
+    | { kind: "list"; items: string[]; };
 
 /** A keyed TOON field (the unit a document is an ordered list of). */
 export interface ToonField {

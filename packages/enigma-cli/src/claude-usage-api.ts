@@ -68,8 +68,8 @@ export function readOAuthToken(now = Date.now()): OAuthToken | null {
     for (const src of credSources()) {
         let raw: string;
         try { raw = readFileSync(join(src.dir, ".credentials.json"), "utf8"); } catch { continue; }
-        let oauth: { accessToken?: unknown; expiresAt?: unknown } | undefined;
-        try { oauth = (JSON.parse(raw) as { claudeAiOauth?: typeof oauth }).claudeAiOauth; } catch { continue; }
+        let oauth: { accessToken?: unknown; expiresAt?: unknown; } | undefined;
+        try { oauth = (JSON.parse(raw) as { claudeAiOauth?: typeof oauth; }).claudeAiOauth; } catch { continue; }
         const token = oauth && typeof oauth.accessToken === "string" ? oauth.accessToken : "";
         if (!token) continue;
         const expiresAt = oauth && typeof oauth.expiresAt === "number" ? oauth.expiresAt : 0;
@@ -89,7 +89,7 @@ function stampPath(): string {
 
 /** Epoch ms of the last probe attempt (success or failure), 0 if never. */
 function lastProbeAt(): number {
-    try { return Number((JSON.parse(readFileSync(stampPath(), "utf8")) as { at?: number }).at) || 0; }
+    try { return Number((JSON.parse(readFileSync(stampPath(), "utf8")) as { at?: number; }).at) || 0; }
     catch { return 0; }
 }
 

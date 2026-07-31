@@ -19,7 +19,7 @@ function template(line: string): string {
 }
 
 /** Collapse repeated log lines; returns the compressed text and how many lines were dropped. */
-export function crushLogs(content: string): { compressed: string; offloaded: number } {
+export function crushLogs(content: string): { compressed: string; offloaded: number; } {
     const lines = content.split("\n");
     if (lines.length < 6) return { compressed: content, offloaded: 0 };
 

@@ -18,7 +18,7 @@ import { type AxiDaemon } from "./axiEnv";
 import { runDaemonCli, notifyPush, ensureDaemon, isDaemonRunning } from "./daemonCmd";
 
 /** Reads `--fork-url <url>` (or `--fork-url=<url>`) from the init args. */
-function parseForkFlag(args: string[]): { forkUrl?: string } {
+function parseForkFlag(args: string[]): { forkUrl?: string; } {
     for (let i = 0; i < args.length; i++) {
         const a = args[i];
         if (a === "--fork-url") return { forkUrl: args[i + 1] };
@@ -28,7 +28,7 @@ function parseForkFlag(args: string[]): { forkUrl?: string } {
 }
 
 /** Reads `--limit <n>` (or `--limit=<n>`) from the runs args. */
-function parseLimitFlag(args: string[]): { limit?: number } {
+function parseLimitFlag(args: string[]): { limit?: number; } {
     for (let i = 0; i < args.length; i++) {
         const a = args[i];
         if (a === "--limit") {

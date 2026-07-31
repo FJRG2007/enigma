@@ -51,7 +51,7 @@ test("addProject defaults the name to the folder's basename and stores a descrip
     expect(out.ok).toBe(true);
     const p = out.projects.find((x) => x.path === PROJECT2);
     expect(p?.label).toBe(basename(PROJECT2));
-    expect((projectDetail(PROJECT2) as { description?: string }).description).toBe("a demo project");
+    expect((projectDetail(PROJECT2) as { description?: string; }).description).toBe("a demo project");
 });
 
 test("updateProject renames + sets description, and rejects a duplicate name", () => {
@@ -64,7 +64,7 @@ test("updateProject renames + sets description, and rejects a duplicate name", (
 test("project-local config writes to the project's .enigma.json and can be unset", async () => {
     await applyProjectAction(PROJECT, { op: "config-set", key: "gate", value: true });
     expect(readProjectConfig(PROJECT).gate).toBe(true);
-    const detail = projectDetail(PROJECT) as { config: { key: string; value: boolean; overridden: boolean }[] };
+    const detail = projectDetail(PROJECT) as { config: { key: string; value: boolean; overridden: boolean; }[]; };
     expect(detail.config.find((c) => c.key === "gate")).toMatchObject({ value: true, overridden: true });
 
     await applyProjectAction(PROJECT, { op: "config-unset", key: "gate" });
@@ -77,7 +77,7 @@ test("an invalid choice value is rejected", async () => {
 });
 
 test("per-project skill enable/disable deploys then removes the skill dir", async () => {
-    const detail = projectDetail(PROJECT) as { available: { name: string }[] };
+    const detail = projectDetail(PROJECT) as { available: { name: string; }[]; };
     const skill = detail.available[0]?.name;
     expect(typeof skill).toBe("string");
 

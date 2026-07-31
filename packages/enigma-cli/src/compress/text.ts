@@ -16,7 +16,7 @@ export interface TextOptions {
 export const TEXT_DEFAULTS: TextOptions = { ratio: 0.3, minLength: 400 };
 
 /** Truncate `content` keeping head+tail; returns the result and whether it changed. */
-export function crushText(content: string, opts: TextOptions = TEXT_DEFAULTS): { compressed: string; offloaded: number } {
+export function crushText(content: string, opts: TextOptions = TEXT_DEFAULTS): { compressed: string; offloaded: number; } {
     const target = Math.floor(content.length * opts.ratio);
     if (content.length <= opts.minLength || content.length <= target) return { compressed: content, offloaded: 0 };
     const keepStart = Math.floor((target * 2) / 3);

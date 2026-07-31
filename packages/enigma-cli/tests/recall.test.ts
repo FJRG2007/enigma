@@ -119,17 +119,17 @@ test("syncRecall imports transcripts and is idempotent on a second pass", () => 
 test("MCP recall tools are gated by the recall setting", () => {
     setEnigmaValue("recall", false, "global");
     const off = handleMcpRequest({ id: 1, method: "tools/list" }, "1.0")!;
-    const offNames = (off.result as { tools: { name: string }[] }).tools.map((t) => t.name);
+    const offNames = (off.result as { tools: { name: string; }[]; }).tools.map((t) => t.name);
     expect(offNames).not.toContain("enigma_recall");
 
     setEnigmaValue("recall", true, "global");
     const on = handleMcpRequest({ id: 2, method: "tools/list" }, "1.0")!;
-    const onNames = (on.result as { tools: { name: string }[] }).tools.map((t) => t.name);
+    const onNames = (on.result as { tools: { name: string; }[]; }).tools.map((t) => t.name);
     expect(onNames).toContain("enigma_recall");
     expect(onNames).toContain("enigma_recall_get");
 
     const call = handleMcpRequest({ id: 3, method: "tools/call", params: { name: "enigma_recall", arguments: { query: "auth" } } }, "1.0")!;
-    const text = (call.result as { content: { text: string }[] }).content[0]!.text;
+    const text = (call.result as { content: { text: string; }[]; }).content[0]!.text;
     expect(text).toContain("auth"); // returns the matching index, not the "off" notice
 });
 
@@ -185,7 +185,7 @@ test("LLM enrichment is gated by the recall-llm setting; the timeline MCP tool a
     expect((await enrichRecall({ force: true })).enabled).toBe(false);
 
     setEnigmaValue("recall", true, "global");
-    const tools = (handleMcpRequest({ id: 9, method: "tools/list" }, "1.0")!.result as { tools: { name: string }[] }).tools.map((t) => t.name);
+    const tools = (handleMcpRequest({ id: 9, method: "tools/list" }, "1.0")!.result as { tools: { name: string; }[]; }).tools.map((t) => t.name);
     expect(tools).toContain("enigma_recall_timeline");
 });
 

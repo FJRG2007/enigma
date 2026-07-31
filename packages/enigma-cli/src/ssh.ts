@@ -207,7 +207,7 @@ function keyConflict(connections: SshConnection[], selfAlias: string | null, ali
 }
 
 /** Create a connection. Alias (and name, if given) must be unique connect keys; host is required. */
-export function addConnection(alias: string, input: SshInput): { ok: boolean; error?: string } {
+export function addConnection(alias: string, input: SshInput): { ok: boolean; error?: string; } {
   const aliasIssue = connectionKeyIssue(alias);
   if (aliasIssue) return { ok: false, error: aliasIssue };
   const nameIssue = input.name ? connectionKeyIssue(input.name, "Name") : null;
@@ -224,7 +224,7 @@ export function addConnection(alias: string, input: SshInput): { ok: boolean; er
 }
 
 /** Update an existing connection, keyed by alias or name, with the provided fields (others untouched). */
-export function updateConnection(key: string, input: SshInput): { ok: boolean; error?: string } {
+export function updateConnection(key: string, input: SshInput): { ok: boolean; error?: string; } {
   const store = readStore();
   const conn = findConnection(store.connections, key);
   if (!conn) return { ok: false, error: `Unknown connection '${key}'.` };
@@ -329,7 +329,7 @@ export function removeConnection(key: string): boolean {
  * The key may be an alias OR a name (getConnection accepts both); the write goes through the
  * resolved alias so the forward always lands on the connection that was found.
  */
-export function addForward(key: string, forward: PortForward): { ok: boolean; error?: string } {
+export function addForward(key: string, forward: PortForward): { ok: boolean; error?: string; } {
   const conn = getConnection(key);
   if (!conn) return { ok: false, error: `Unknown connection '${key}'.` };
   const nameIssue = forward.name ? forwardNameIssue(forward.name) : null;
@@ -339,7 +339,7 @@ export function addForward(key: string, forward: PortForward): { ok: boolean; er
 }
 
 /** Remove a saved forward by its index (as listed). Keyed by alias or name, like addForward. */
-export function removeForward(key: string, index: number): { ok: boolean; error?: string } {
+export function removeForward(key: string, index: number): { ok: boolean; error?: string; } {
   const conn = getConnection(key);
   if (!conn) return { ok: false, error: `Unknown connection '${key}'.` };
   const forwards = [...(conn.forwards ?? [])];
@@ -428,8 +428,8 @@ export function resolveForwardToken(conn: SshConnection, token: string): PortFor
  * server: `enigma ssh tunnel pg`. Returns the match, "ambiguous" when several servers have a
  * tunnel with that name (the caller asks the user to qualify it), or null when none do.
  */
-export function findNamedForward(name: string): { conn: SshConnection; forward: PortForward } | "ambiguous" | null {
-  const hits: { conn: SshConnection; forward: PortForward }[] = [];
+export function findNamedForward(name: string): { conn: SshConnection; forward: PortForward; } | "ambiguous" | null {
+  const hits: { conn: SshConnection; forward: PortForward; }[] = [];
   for (const conn of readStore().connections)
     for (const forward of conn.forwards ?? [])
       if (forward.name === name) hits.push({ conn, forward });

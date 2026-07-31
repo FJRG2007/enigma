@@ -15,7 +15,7 @@ import {
     adapterFor,
     estimateTokens,
     CLAUDE_MODELS,
-    DEFAULT_MODEL,
+    DEFAULT_MODEL
 } from "../src/api-agents";
 
 test("contentToText flattens string and text-part content", () => {

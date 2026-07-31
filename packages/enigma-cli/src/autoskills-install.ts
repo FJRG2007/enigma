@@ -141,7 +141,7 @@ async function fetchSkillToCache(skillName: string, entry: RegistryEntry): Promi
     // Already cached and complete -> reuse (offline).
     if (entry.files.every((rel) => existsSync(join(skillDir, ...rel.split(/[\\/]/))))) return skillDir;
 
-    const downloaded: { rel: string; buf: Buffer }[] = [];
+    const downloaded: { rel: string; buf: Buffer; }[] = [];
     for (const rel of entry.files) {
         const norm = rel.split("\\").join("/");
         if (norm.toLowerCase().endsWith(".zip")) return null; // refuse archives
@@ -176,7 +176,7 @@ function targetDirs(projectDir: string, agents: string[]): string[] {
 
 function recordLock(projectDir: string, skillName: string, entry: RegistryEntry): void {
     const lockPath = join(projectDir, ".enigma", "autoskills-lock.json");
-    let lock: { version: number; skills: Record<string, unknown> };
+    let lock: { version: number; skills: Record<string, unknown>; };
     try {
         lock = JSON.parse(readFileSync(lockPath, "utf-8"));
         if (!lock?.skills) lock = { version: 1, skills: {} };

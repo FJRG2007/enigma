@@ -22,7 +22,7 @@ function dir(): string {
     return d;
 }
 /** Write a `.credentials.json` with the given OAuth fields into `d`. */
-function creds(d: string, o: { access?: string; refresh?: string; expiresAt?: number }): void {
+function creds(d: string, o: { access?: string; refresh?: string; expiresAt?: number; }): void {
     writeFileSync(join(d, ".credentials.json"), JSON.stringify({
         claudeAiOauth: { accessToken: o.access ?? "", refreshToken: o.refresh ?? "", expiresAt: o.expiresAt ?? 0 },
     }));

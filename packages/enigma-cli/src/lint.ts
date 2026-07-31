@@ -118,7 +118,7 @@ function hookCommand(): string {
     return `node "${LINT_RUNNER_PATH}"`;
 }
 
-interface HookGroup { matcher?: string; hooks?: Array<{ type?: string; command?: string; timeout?: number }>; }
+interface HookGroup { matcher?: string; hooks?: Array<{ type?: string; command?: string; timeout?: number; }>; }
 
 /** Whether a PostToolUse group is the enigma lint hook (identified by the runner path). */
 function isOurGroup(group: HookGroup): boolean {

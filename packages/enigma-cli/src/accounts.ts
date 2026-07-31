@@ -76,7 +76,7 @@ export interface ToolSpec {
      * (e.g. the account email), so it can be shown in listings. Returns undefined
      * fields when the account has not been authenticated yet.
      */
-    accountInfo?: (dir: string) => { email?: string; displayName?: string };
+    accountInfo?: (dir: string) => { email?: string; displayName?: string; };
 }
 
 /** Skills/memory destinations inside a managed account's config dir. */
@@ -120,7 +120,7 @@ const TOOLS: Record<string, ToolSpec> = {
         // Claude Code records the signed-in account under oauthAccount in
         // <config-dir>/.claude.json (no tokens there - those live elsewhere).
         accountInfo: (dir) => {
-            const config = readJson<{ oauthAccount?: { emailAddress?: string; displayName?: string } }>(join(dir, ".claude.json"));
+            const config = readJson<{ oauthAccount?: { emailAddress?: string; displayName?: string; }; }>(join(dir, ".claude.json"));
             return { email: config?.oauthAccount?.emailAddress, displayName: config?.oauthAccount?.displayName };
         },
     },
@@ -142,11 +142,11 @@ const TOOLS: Record<string, ToolSpec> = {
         // needed - it is the user's own local file) and surface ONLY the email;
         // tokens never leave this function.
         accountInfo: (dir) => {
-            const auth = readJson<{ tokens?: { id_token?: string } }>(join(dir, "auth.json"));
+            const auth = readJson<{ tokens?: { id_token?: string; }; }>(join(dir, "auth.json"));
             const jwt = auth?.tokens?.id_token;
             if (!jwt) return {};
             try {
-                const payload = JSON.parse(Buffer.from(jwt.split(".")[1] ?? "", "base64url").toString("utf8")) as { email?: unknown };
+                const payload = JSON.parse(Buffer.from(jwt.split(".")[1] ?? "", "base64url").toString("utf8")) as { email?: unknown; };
                 return { email: typeof payload.email === "string" ? payload.email : undefined };
             } catch {
                 return {};

@@ -45,7 +45,7 @@ test("serves the HTML shell, a stats payload, and 404s the rest", async () => {
 
         const api = await fetch(`${base}/api/stats`);
         expect(api.status).toBe(200);
-        const payload = await api.json() as { version: string; ui: string | null; stats: { calls: number; tokensSaved: number } };
+        const payload = await api.json() as { version: string; ui: string | null; stats: { calls: number; tokensSaved: number; }; };
         expect(payload.version).toBe("test-version");
         // The served UI bundle version drives the browser's auto-reload-on-update; the key is
         // always present (null when no on-demand bundle is installed, as in this test).
@@ -88,7 +88,7 @@ test("settings API reads the registry and writes a setting; cross-origin writes 
         // GET returns the same categories the TUI registry exposes.
         const get = await fetch(`${base}/api/settings`);
         expect(get.status).toBe(200);
-        const data = await get.json() as { categories: { settings: { key: string; value: boolean }[] }[] };
+        const data = await get.json() as { categories: { settings: { key: string; value: boolean; }[]; }[]; };
         const all = data.categories.flatMap((c) => c.settings);
         const commit = all.find((s) => s.key === "commit-emoji");
         expect(commit).toBeDefined();
@@ -100,7 +100,7 @@ test("settings API reads the registry and writes a setting; cross-origin writes 
             body: JSON.stringify({ key: "commit-emoji", value: next }),
         });
         expect(post.status).toBe(200);
-        const out = await post.json() as { ok: boolean; setting?: { value: boolean } };
+        const out = await post.json() as { ok: boolean; setting?: { value: boolean; }; };
         expect(out.ok).toBe(true);
         expect(out.setting?.value).toBe(next);
 
@@ -122,7 +122,7 @@ test("settings expose the dashboard port; the port API validates and persists it
         // The settings payload carries the numeric port knobs (outside the bool/choice registry).
         const data = await (await fetch(`${base}/api/settings`)).json() as {
             dashboardPort: number; runningPort: number;
-            categories: { settings: { key: string; choices: string[] | null; offChoice: string }[] }[];
+            categories: { settings: { key: string; choices: string[] | null; offChoice: string; }[]; }[];
         };
         expect(typeof data.dashboardPort).toBe("number");
         expect(data.runningPort).toBe(server.port); // the live bound port is surfaced
@@ -138,7 +138,7 @@ test("settings expose the dashboard port; the port API validates and persists it
             method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ value: 8137 }),
         });
         expect(ok.status).toBe(200);
-        expect((await (await fetch(`${base}/api/settings`)).json() as { dashboardPort: number }).dashboardPort).toBe(8137);
+        expect((await (await fetch(`${base}/api/settings`)).json() as { dashboardPort: number; }).dashboardPort).toBe(8137);
 
         // Out-of-range is rejected, and a cross-origin write is refused before any change.
         expect((await fetch(`${base}/api/dashboard-port`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ value: 99999 }) })).status).toBe(400);
@@ -154,7 +154,7 @@ test("status API reports the configured state of each system", async () => {
     try {
         const res = await fetch(`${base}/api/status`);
         expect(res.status).toBe(200);
-        const data = await res.json() as { systems: { compress: boolean; outputStyle: string; minimalCode: string; proxy: boolean; proxyStats: { calls: number }; security: { guardProtects: string[] }; skills: { enigma: number } } };
+        const data = await res.json() as { systems: { compress: boolean; outputStyle: string; minimalCode: string; proxy: boolean; proxyStats: { calls: number; }; security: { guardProtects: string[]; }; skills: { enigma: number; }; }; };
         const s = data.systems;
         expect(typeof s.compress).toBe("boolean");
         expect(typeof s.outputStyle).toBe("string");
@@ -188,7 +188,7 @@ test("skills API lists enigma skills and disable/enable round-trips", async () =
     try {
         const get = await fetch(`${base}/api/skills`);
         expect(get.status).toBe(200);
-        const data = await get.json() as { skills: { name: string; source: string; discarded: boolean; update: string | null }[] };
+        const data = await get.json() as { skills: { name: string; source: string; discarded: boolean; update: string | null; }[]; };
         const git = data.skills.find((s) => s.name === "git-policy");
         expect(git).toBeDefined();
         expect(git!.source).toBe("enigma");
@@ -198,7 +198,7 @@ test("skills API lists enigma skills and disable/enable round-trips", async () =
             method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ name: "git-policy", action: "read" }),
         });
-        const rout = await read.json() as { ok: boolean; content?: string };
+        const rout = await read.json() as { ok: boolean; content?: string; };
         expect(rout.ok).toBe(true);
         expect(rout.content).toContain("name: git-policy");
 
@@ -208,7 +208,7 @@ test("skills API lists enigma skills and disable/enable round-trips", async () =
             body: JSON.stringify({ name: "git-policy", action: "disable" }),
         });
         expect(post.status).toBe(200);
-        const out = await post.json() as { ok: boolean; skills?: { name: string; discarded: boolean }[] };
+        const out = await post.json() as { ok: boolean; skills?: { name: string; discarded: boolean; }[]; };
         expect(out.ok).toBe(true);
         expect(out.skills?.find((s) => s.name === "git-policy")?.discarded).toBe(true);
 
@@ -229,7 +229,7 @@ test("packs API lists the Helio pack and a cross-origin write is refused", async
     try {
         const get = await fetch(`${base}/api/packs`);
         expect(get.status).toBe(200);
-        const data = await get.json() as { packs: { id: string; installed: boolean; resolvedAccount?: string; accounts?: unknown[] }[] };
+        const data = await get.json() as { packs: { id: string; installed: boolean; resolvedAccount?: string; accounts?: unknown[]; }[]; };
         const helio = data.packs.find((p) => p.id === "helio");
         expect(helio).toBeDefined();
         expect(helio!.installed).toBe(true); // resolved from the vendored assets
@@ -242,14 +242,14 @@ test("packs API lists the Helio pack and a cross-origin write is refused", async
             method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ id: "helio", action: "set-account", value: "" }),
         });
-        expect((await setAcct.json() as { ok: boolean }).ok).toBe(true);
+        expect((await setAcct.json() as { ok: boolean; }).ok).toBe(true);
 
         // "launch" returns the command to run (the browser cannot spawn an agent).
         const launch = await fetch(`${base}/api/packs`, {
             method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ id: "helio", action: "launch" }),
         });
-        const lout = await launch.json() as { ok: boolean; command?: string };
+        const lout = await launch.json() as { ok: boolean; command?: string; };
         expect(lout.ok).toBe(true);
         expect(lout.command).toBe("enigma helio");
 
@@ -272,7 +272,7 @@ test("ssh API adds a connection, builds the connect command, and refuses cross-o
             method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ action: "add", alias: "server1", serverName: "web-prod", host: "203.0.113.10", user: "root", password: "hunter2" }),
         });
-        const aout = await add.json() as { ok: boolean; connections?: { alias: string; name?: string; hasPassword: boolean }[] };
+        const aout = await add.json() as { ok: boolean; connections?: { alias: string; name?: string; hasPassword: boolean; }[]; };
         expect(aout.ok).toBe(true);
         const conn = aout.connections!.find((c) => c.alias === "server1")!;
         expect(conn.name).toBe("web-prod"); // the second connect key round-trips
@@ -281,20 +281,20 @@ test("ssh API adds a connection, builds the connect command, and refuses cross-o
 
         const list = await fetch(`${base}/api/ssh`);
         expect(list.status).toBe(200);
-        expect((await list.json() as { connections: unknown[] }).connections.length).toBe(1);
+        expect((await list.json() as { connections: unknown[]; }).connections.length).toBe(1);
 
         const connect = await fetch(`${base}/api/ssh`, {
             method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ action: "connect", alias: "server1" }),
         });
-        expect((await connect.json() as { command?: string }).command).toBe("enigma ssh server1");
+        expect((await connect.json() as { command?: string; }).command).toBe("enigma ssh server1");
 
         // A named tunnel is saved on the connection so it can be run by name.
         const fwd = await fetch(`${base}/api/ssh`, {
             method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ action: "forward-add", alias: "server1", spec: "9090:5432", name: "pg" }),
         });
-        const fout = await fwd.json() as { ok: boolean; connections?: { alias: string; forwards?: { name?: string }[] }[] };
+        const fout = await fwd.json() as { ok: boolean; connections?: { alias: string; forwards?: { name?: string; }[]; }[]; };
         expect(fout.ok).toBe(true);
         expect(fout.connections!.find((c) => c.alias === "server1")!.forwards![0]!.name).toBe("pg");
 
@@ -303,7 +303,7 @@ test("ssh API adds a connection, builds the connect command, and refuses cross-o
             method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ action: "tunnel-add", tunnelName: "redis", tunnelServer: "server1", tunnelSpec: "6380:6379" }),
         });
-        const tout = await tadd.json() as { ok: boolean; tunnels?: { name: string; server: string; active: boolean; spec: string }[] };
+        const tout = await tadd.json() as { ok: boolean; tunnels?: { name: string; server: string; active: boolean; spec: string; }[]; };
         expect(tout.ok).toBe(true);
         const rt = tout.tunnels!.find((t) => t.name === "redis")!;
         expect(rt.server).toBe("server1");

@@ -121,7 +121,7 @@ function startTimesMatch(a: Date, b: Date): boolean {
 export function readDaemonPIDFileData(data: string): DaemonPIDFile {
     const text = data.trim();
     try {
-        const obj = JSON.parse(text) as { pid?: unknown; started_at?: unknown };
+        const obj = JSON.parse(text) as { pid?: unknown; started_at?: unknown; };
         const pid = typeof obj.pid === "number" ? obj.pid : 0;
         if (pid <= 0) throw new Error("invalid pid file: pid must be positive");
         const startedAt =

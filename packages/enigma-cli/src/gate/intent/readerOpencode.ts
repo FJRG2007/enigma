@@ -119,7 +119,7 @@ class OpenCodeReader implements Reader {
             } catch (err) {
                 throw new Error(`opencode messages: ${errMessage(err)}`);
             }
-            const msgs = new Map<string, { role: Role; timestamp: Date }>();
+            const msgs = new Map<string, { role: Role; timestamp: Date; }>();
             const ordered: string[] = [];
             for (const row of msgRows) {
                 const id = asString(row[0]);
@@ -145,7 +145,7 @@ class OpenCodeReader implements Reader {
             } catch (err) {
                 throw new Error(`opencode parts: ${errMessage(err)}`);
             }
-            const agg = new Map<string, { text: string; paths: string[] }>();
+            const agg = new Map<string, { text: string; paths: string[]; }>();
             for (const row of partRows) {
                 const msgID = asString(row[0]);
                 const data = asString(row[1]);

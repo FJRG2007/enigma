@@ -54,7 +54,7 @@ export interface ProjectAgentInfo { name: string; label: string; installed: bool
 
 export interface ProjectDetail extends ProjectStatus {
     agents: ProjectAgentInfo[];
-    available: { name: string; description: string | null }[];
+    available: { name: string; description: string | null; }[];
     config: ProjectSettingValue[];
 }
 
@@ -157,7 +157,7 @@ export function listProjects(): ProjectStatus[] {
 
 /** Per-field validation for the create form, mirrored client-side for real-time feedback.
  *  `exceptPath` excludes one project (a rename validating against the others). */
-export function checkProject(path: string, name: string, exceptPath?: string): { pathError: string | null; nameError: string | null } {
+export function checkProject(path: string, name: string, exceptPath?: string): { pathError: string | null; nameError: string | null; } {
     const reg = readRegistry().projects;
     const exNorm = exceptPath ? normalize(exceptPath) : null;
     const raw = (path || "").trim();
@@ -176,7 +176,7 @@ export function checkProject(path: string, name: string, exceptPath?: string): {
     return { pathError, nameError };
 }
 
-export function addProject(path: string, name?: string, description?: string): { ok: boolean; error?: string; projects: ProjectStatus[] } {
+export function addProject(path: string, name?: string, description?: string): { ok: boolean; error?: string; projects: ProjectStatus[]; } {
     const norm = normalize((path || "").trim());
     const nm = (name || "").trim() || basename(norm);
     const { pathError, nameError } = checkProject(path, nm);
@@ -188,7 +188,7 @@ export function addProject(path: string, name?: string, description?: string): {
 }
 
 /** Rename a project and/or change its description (path is the immutable key). */
-export function updateProject(path: string, name?: string, description?: string): { ok: boolean; error?: string; projects: ProjectStatus[] } {
+export function updateProject(path: string, name?: string, description?: string): { ok: boolean; error?: string; projects: ProjectStatus[]; } {
     const norm = normalize(path || "");
     const reg = readRegistry();
     const p = reg.projects.find((x) => normalize(x.path) === norm);
@@ -203,7 +203,7 @@ export function updateProject(path: string, name?: string, description?: string)
     return { ok: true, projects: listProjects() };
 }
 
-export function removeProject(path: string): { projects: ProjectStatus[] } {
+export function removeProject(path: string): { projects: ProjectStatus[]; } {
     const norm = normalize(path || "");
     const reg = readRegistry();
     const next = reg.projects.filter((p) => normalize(p.path) !== norm);
@@ -303,7 +303,7 @@ function runEnigma(cwd: string, args: string[]): Promise<ActionResult> {
 
 // --- detail + dispatch ---------------------------------------------------------
 
-export function projectDetail(path: string): ProjectDetail | { error: string } {
+export function projectDetail(path: string): ProjectDetail | { error: string; } {
     if (!isRegistered(path)) return { error: "Project is not registered." };
     const norm = normalize(path);
     const entry = readRegistry().projects.find((p) => normalize(p.path) === norm);
@@ -334,7 +334,7 @@ export interface AutoskillItem { ref: string; name: string; sources: string[]; }
 
 /** Detect the project's stack and return the matching community skills (no install) - the user
  *  picks which to install. Kept separate from enigma's policy skills. Never throws. */
-async function runAutoskillsDetect(projectDir: string): Promise<ActionResult & { detected?: string; skills?: AutoskillItem[] }> {
+async function runAutoskillsDetect(projectDir: string): Promise<ActionResult & { detected?: string; skills?: AutoskillItem[]; }> {
     const { detectTechnologies, collectSkills, parseSkillRef } = await import("./autoskills");
     const det = detectTechnologies(projectDir);
     const stack = det.detected.map((t) => t.name).join(", ");
@@ -360,11 +360,11 @@ async function runAutoskillsInstall(projectDir: string, selected: string[]): Pro
     return { ok: res.failed === 0, error: res.failed ? res.errors.join("; ") : undefined, note: `Autoskills: ${parts.join(", ")}.` };
 }
 
-export async function applyProjectAction(path: string, payload: ProjectActionPayload): Promise<ActionResult & { detail?: ProjectDetail | { error: string }; detected?: string; skills?: AutoskillItem[] }> {
+export async function applyProjectAction(path: string, payload: ProjectActionPayload): Promise<ActionResult & { detail?: ProjectDetail | { error: string; }; detected?: string; skills?: AutoskillItem[]; }> {
     if (!isRegistered(path)) return { ok: false, error: "Project is not registered." };
     const norm = normalize(path);
     if (!isDir(norm)) return { ok: false, error: "Project directory no longer exists." };
-    let result: ActionResult & { detected?: string; skills?: AutoskillItem[] };
+    let result: ActionResult & { detected?: string; skills?: AutoskillItem[]; };
     switch (payload.op) {
         case "skill":
             result = payload.name ? setProjectSkill(norm, payload.name, Boolean(payload.on), payload.agent) : { ok: false, error: "Missing skill name." };

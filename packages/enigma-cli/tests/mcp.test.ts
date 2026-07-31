@@ -32,7 +32,7 @@ test("notifications get no response", () => {
 
 test("tools/list returns the three enigma tools", () => {
     const res = call("tools/list");
-    const names = ((res?.result as { tools: { name: string }[] }).tools).map((t) => t.name);
+    const names = ((res?.result as { tools: { name: string; }[]; }).tools).map((t) => t.name);
     expect(names).toEqual(["enigma_compress", "enigma_retrieve", "enigma_stats"]);
 });
 
@@ -42,13 +42,13 @@ test("tools/call enigma_compress compresses and enigma_retrieve restores", () =>
     const original = JSON.stringify({ results: arr });
 
     const comp = call("tools/call", { name: "enigma_compress", arguments: { content: original } });
-    const text = (comp?.result as { content: { text: string }[] }).content[0]!.text;
+    const text = (comp?.result as { content: { text: string; }[]; }).content[0]!.text;
     expect(text.length).toBeLessThan(original.length);
     const hash = text.match(/<<enigma:ccr:([0-9a-f]+) /)?.[1];
     expect(hash).toBeTruthy();
 
     const back = call("tools/call", { name: "enigma_retrieve", arguments: { hash } });
-    expect((back?.result as { content: { text: string }[] }).content[0]!.text).toBe(original);
+    expect((back?.result as { content: { text: string; }[]; }).content[0]!.text).toBe(original);
 });
 
 test("unknown method returns JSON-RPC method-not-found", () => {

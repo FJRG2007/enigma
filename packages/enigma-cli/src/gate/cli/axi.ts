@@ -252,7 +252,7 @@ function parseFlags(
     boolNames: Set<string>,
     valueNames: Set<string>,
     alias: Record<string, string>
-): ParsedFlags | { error: string } {
+): ParsedFlags | { error: string; } {
     const values = new Map<string, string>();
     const bools = new Set<string>();
     let i = 0;

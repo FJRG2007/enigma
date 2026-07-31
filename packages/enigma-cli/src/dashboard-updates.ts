@@ -34,7 +34,7 @@ const REGISTRY = (process.env.ENIGMA_NPM_REGISTRY || "https://registry.npmjs.org
 let refreshing = false;
 
 /** The enigma packages currently installed, with their active versions. */
-function installedPackages(cliVersion: string): { name: string; label: string; installed: string }[] {
+function installedPackages(cliVersion: string): { name: string; label: string; installed: string; }[] {
     const list = [{ name: "enigma-cli", label: "Enigma CLI", installed: cliVersion }];
     const dash = installedDashboardVersion();
     if (dash) list.push({ name: "@enigmax/dashboard", label: "Dashboard UI", installed: dash });
@@ -49,7 +49,7 @@ async function npmLatest(name: string): Promise<string | null> {
     const t = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
     try {
         const res = await fetch(`${REGISTRY}/${name}/latest`, { signal: ctrl.signal, headers: { "user-agent": "enigma-cli-update-check" } });
-        const data = res.ok ? (await res.json()) as { version?: string } : null;
+        const data = res.ok ? (await res.json()) as { version?: string; } : null;
         return data?.version ?? null;
     } catch { return null; }
     finally { clearTimeout(t); }

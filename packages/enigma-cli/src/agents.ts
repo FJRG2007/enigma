@@ -29,8 +29,8 @@ export interface AgentTarget {
 export interface AgentDef {
     label: string;
     memoryFile: string;
-    detect: { bins?: string[]; dirs?: string[]; procs?: string[] };
-    targets: { global: AgentTarget; local: AgentTarget };
+    detect: { bins?: string[]; dirs?: string[]; procs?: string[]; };
+    targets: { global: AgentTarget; local: AgentTarget; };
 }
 
 export interface Agent extends AgentDef {
@@ -144,7 +144,7 @@ function processSnapshot(): string | null {
  *   { known: false } when the process list is unavailable
  *   { known: true, running: Set<name> } otherwise
  */
-export function runningStatus(agents: Agent[]): { known: boolean; running: Set<string> } {
+export function runningStatus(agents: Agent[]): { known: boolean; running: Set<string>; } {
     const snap = processSnapshot();
     if (snap == null) return { known: false, running: new Set() };
     const running = new Set<string>();

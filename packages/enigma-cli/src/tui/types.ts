@@ -65,9 +65,9 @@ export interface HubProfile {
  * cli.ts runs it.
  */
 export type HubExitAction =
-    | { type: "connect"; tool: string; account: string }
-    | { type: "ssh-connect"; alias: string; tunnel: boolean }
-    | { type: "update" };
+    | { type: "connect"; tool: string; account: string; }
+    | { type: "ssh-connect"; alias: string; tunnel: boolean; }
+    | { type: "update"; };
 export interface HubContext {
     agents: HubAgent[];
     protections: HubProtection[];
@@ -81,7 +81,7 @@ export interface HubContext {
     /** True when no agent has a skills deployment yet, so the hub guides first-time setup. */
     firstRun?: boolean;
     /** Present when a newer enigma-cli is available, so the hub can offer "update now". */
-    update?: { current: string; latest: string };
+    update?: { current: string; latest: string; };
     /** Tool accounts and the operations the panel can perform without spawning. */
     accounts?: HubAccount[];
     activateAccount?: (tool: string, name: string) => HubAccount[];
@@ -91,32 +91,32 @@ export interface HubContext {
      * validation result so the renderer can show inline errors (bad/duplicate
      * name) without importing the data layer.
      */
-    addAccount?: (tool: string, name: string) => { ok: boolean; error?: string; accounts: HubAccount[] };
+    addAccount?: (tool: string, name: string) => { ok: boolean; error?: string; accounts: HubAccount[]; };
     /** Rename an account (its config dir moves with it); errors come back inline. */
-    renameAccount?: (tool: string, oldName: string, newName: string) => { ok: boolean; error?: string; accounts: HubAccount[] };
+    renameAccount?: (tool: string, oldName: string, newName: string) => { ok: boolean; error?: string; accounts: HubAccount[]; };
     /** Built-in provider presets (e.g. MiniMax) the provider editor offers. */
     providerPresets?: HubPreset[];
     /**
      * Set (object) or clear (null) an account's provider override. An omitted token keeps the
      * stored one; "" clears it. Returns the refreshed list + an inline validation result.
      */
-    setAccountProvider?: (tool: string, name: string, input: { baseUrl: string; model?: string; preset?: string; token?: string } | null) => { ok: boolean; error?: string; accounts: HubAccount[] };
+    setAccountProvider?: (tool: string, name: string, input: { baseUrl: string; model?: string; preset?: string; token?: string; } | null) => { ok: boolean; error?: string; accounts: HubAccount[]; };
     /** Supported tools, for the add-account searchable selector. */
     tools?: HubTool[];
     /**
      * Per-tool launch-path status for the "Fix tool paths" action checklist: each
      * tool's name, label and a one-line status hint (on PATH / off PATH / not installed).
      */
-    toolPaths?: Array<{ name: string; label: string; status: string }>;
+    toolPaths?: Array<{ name: string; label: string; status: string; }>;
     /** Profiles (one account per tool under a name) and activation; "" deactivates. */
     profiles?: HubProfile[];
     activateProfile?: (name: string) => HubProfile[];
     /** Create a profile; validation errors come back inline like addAccount. */
-    addProfile?: (name: string) => { ok: boolean; error?: string; profiles: HubProfile[] };
+    addProfile?: (name: string) => { ok: boolean; error?: string; profiles: HubProfile[]; };
     /** Rename a profile (mappings and active pointer follow); errors come back inline. */
-    renameProfile?: (oldName: string, newName: string) => { ok: boolean; error?: string; profiles: HubProfile[] };
+    renameProfile?: (oldName: string, newName: string) => { ok: boolean; error?: string; profiles: HubProfile[]; };
     /** Delete a profile (its accounts are kept). */
     removeProfile?: (name: string) => HubProfile[];
     /** Pin a tool's account inside a profile, or unpin it with null. */
-    setProfileAccount?: (profile: string, tool: string, account: string | null) => { ok: boolean; error?: string; profiles: HubProfile[] };
+    setProfileAccount?: (profile: string, tool: string, account: string | null) => { ok: boolean; error?: string; profiles: HubProfile[]; };
 }

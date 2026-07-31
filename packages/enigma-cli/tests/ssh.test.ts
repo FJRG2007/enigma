@@ -73,7 +73,7 @@ test("a name already stored stays editable, so a pre-reserved connection is not 
   // Written straight to the store: this is what a connection saved before the keys were
   // reserved looks like. Every edit form resends the stored name, so re-validating it would
   // make the row uneditable - only a CHANGED name is checked.
-  const store = JSON.parse(readFileSync(join(HOME, "ssh.json"), "utf8")) as { connections: { alias: string; host: string; name?: string }[] };
+  const store = JSON.parse(readFileSync(join(HOME, "ssh.json"), "utf8")) as { connections: { alias: string; host: string; name?: string; }[]; };
   store.connections.push({ alias: "legacy", host: "h", name: "tunnel" });
   writeFileSync(join(HOME, "ssh.json"), JSON.stringify(store));
   expect(ssh.updateConnection("legacy", { name: "tunnel", host: "newhost" }).ok).toBe(true);
@@ -152,7 +152,7 @@ test("an alias wins over another row's name, so a pre-uniqueness store cannot sh
   // Written straight to the store: the keys are unique for anything saved through addConnection,
   // but a hand-edited or pre-uniqueness ssh.json can hold a name that repeats another alias.
   const path = join(HOME, "ssh.json");
-  const store = JSON.parse(readFileSync(path, "utf8")) as { connections: { alias: string; host: string; name?: string }[] };
+  const store = JSON.parse(readFileSync(path, "utf8")) as { connections: { alias: string; host: string; name?: string; }[]; };
   store.connections.push({ alias: "shadower", host: "h", name: "target" }, { alias: "target", host: "h" });
   writeFileSync(path, JSON.stringify(store));
   expect(ssh.getConnection("target")!.alias).toBe("target"); // connect resolves the alias row...
@@ -213,7 +213,7 @@ test("findNamedForward resolves a tunnel by name across servers", () => {
   ssh.addForward("srvA", { ...ssh.parseForward("9090:5432")!, name: "uniq" });
   const hit = ssh.findNamedForward("uniq");
   expect(hit).not.toBeNull();
-  expect((hit as { conn: { alias: string } }).conn.alias).toBe("srvA");
+  expect((hit as { conn: { alias: string; }; }).conn.alias).toBe("srvA");
   // The same name on two servers is ambiguous (the CLI asks the user to qualify it).
   ssh.addForward("srvB", { ...ssh.parseForward("8080:80")!, name: "uniq" });
   expect(ssh.findNamedForward("uniq")).toBe("ambiguous");

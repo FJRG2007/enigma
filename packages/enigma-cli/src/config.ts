@@ -351,7 +351,7 @@ function configPath(scope: "global" | "local"): string {
 }
 
 /** Merge the given .enigma.json files in order (nearest last), over the defaults. */
-function mergeConfigFiles(paths: string[]): { config: EnigmaConfig; sources: string[] } {
+function mergeConfigFiles(paths: string[]): { config: EnigmaConfig; sources: string[]; } {
     const sources: string[] = [];
     let config: EnigmaConfig = { ...CONFIG_DEFAULTS };
     for (const path of paths) {
@@ -362,7 +362,7 @@ function mergeConfigFiles(paths: string[]): { config: EnigmaConfig; sources: str
 }
 
 /** Effective config plus the files that contributed, nearest (local) last. */
-export function readConfig(): { config: EnigmaConfig; sources: string[] } {
+export function readConfig(): { config: EnigmaConfig; sources: string[]; } {
     return mergeConfigFiles([configPath("global"), configPath("local")]);
 }
 

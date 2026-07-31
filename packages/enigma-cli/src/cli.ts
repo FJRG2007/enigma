@@ -40,7 +40,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // In the compiled binary __dirname lives in Bun's virtual fs (no package.json on
 // disk); the launcher passes ENIGMA_VERSION. Reading package.json stays as the
 // dev/tsx fallback.
-const PKG = readJson<{ version?: string }>(join(__dirname, "..", "package.json")) || {};
+const PKG = readJson<{ version?: string; }>(join(__dirname, "..", "package.json")) || {};
 
 // Fixed commands plus one launch command per supported tool (e.g. `enigma claude`).
 const COMMANDS = new Set<string>([
@@ -688,7 +688,7 @@ async function runSshCli(args: string[], interactive: boolean): Promise<number> 
         if (op === "edit") {
             const name = a[0];
             if (!name) { console.error("Usage: enigma ssh tunnel edit <name> [--server s] [--spec 9090:5432] [--name newname]"); return 1; }
-            const patch: { server?: string; spec?: string; newName?: string } = {};
+            const patch: { server?: string; spec?: string; newName?: string; } = {};
             for (let i = 1; i < a.length; i++) {
                 if (a[i] === "--server") patch.server = a[++i];
                 else if (a[i] === "--spec") patch.spec = a[++i];
@@ -1964,7 +1964,7 @@ export async function run(argv: string[]): Promise<void> {
             catch (err) { return { ok: false, error: (err as Error).message, accounts: hubAccounts() }; }
         },
         providerPresets: acct.PROVIDER_PRESETS.map((p) => ({ id: p.id, label: p.label, tool: p.tool, baseUrl: p.baseUrl, model: p.model, tokenUrl: p.tokenUrl })),
-        setAccountProvider: (tool: string, name: string, input: { baseUrl: string; model?: string; preset?: string; token?: string } | null) => {
+        setAccountProvider: (tool: string, name: string, input: { baseUrl: string; model?: string; preset?: string; token?: string; } | null) => {
             try {
                 let resolved: acct.ProviderInput | null = input;
                 // A real preset id fills baseUrl/model/env; "custom" (and null) pass through as-is.
@@ -1999,7 +1999,7 @@ export async function run(argv: string[]): Promise<void> {
                 return { ok: true, profiles: hubProfiles() };
             } catch (err) { return { ok: false, error: (err as Error).message, profiles: hubProfiles() }; }
         },
-        runAction: async (req: { action: "skills" | "security" | "fix-path"; scope?: "global" | "local"; agents?: string[]; protections?: string[] }) => {
+        runAction: async (req: { action: "skills" | "security" | "fix-path"; scope?: "global" | "local"; agents?: string[]; protections?: string[]; }) => {
             const reporter = collectReporter();
             const title = req.action === "skills" ? "Install agent skills" : req.action === "fix-path" ? "Fix tool paths" : "Git security hooks";
             try {

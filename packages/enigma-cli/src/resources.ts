@@ -37,7 +37,7 @@ export interface ResourceStatus {
 /** Run a command, returning stdout, or "" on any error/timeout (best-effort, never throws). */
 function run(cmd: string, args: string[]): string {
     try { return execFileSync(cmd, args, { encoding: "utf8", timeout: 10000, windowsHide: true, maxBuffer: 8 * 1024 * 1024 }); }
-    catch (e) { const out = (e as { stdout?: string }).stdout; return typeof out === "string" ? out : ""; }
+    catch (e) { const out = (e as { stdout?: string; }).stdout; return typeof out === "string" ? out : ""; }
 }
 
 // --- parsers (pure, exported for tests) -----------------------------------------

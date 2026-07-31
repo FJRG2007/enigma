@@ -36,9 +36,9 @@ export interface StepCmd {
     /** Runs and resolves to the failure Error or null on success (cmd.Run). */
     run(): Promise<Error | null>;
     /** Runs and resolves to stdout, stderr, and any failure Error (cmd.Output). */
-    output(): Promise<{ stdout: string; stderr: string; err: Error | null }>;
+    output(): Promise<{ stdout: string; stderr: string; err: Error | null; }>;
     /** Runs and resolves to combined stdout+stderr plus any error (cmd.CombinedOutput). */
-    combinedOutput(): Promise<{ out: string; err: Error | null }>;
+    combinedOutput(): Promise<{ out: string; err: Error | null; }>;
     /**
      * Feeds `text` to the command's stdin (Go: `cmd.Stdin = strings.NewReader(text)`).
      * Used for payloads too large for argv, such as a generated PR body.
@@ -198,7 +198,7 @@ function makeStepCmd(
     presetErr: Error | null
 ): StepCmd {
     let input: string | undefined;
-    const exec = (): Promise<{ stdout: string; stderr: string; code: number; err: Error | null }> =>
+    const exec = (): Promise<{ stdout: string; stderr: string; code: number; err: Error | null; }> =>
         new Promise(resolvePromise => {
             const child = execFile(
                 resolved,

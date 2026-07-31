@@ -13,7 +13,7 @@ import { execFile } from "node:child_process";
 import { Provider, PROVIDER_GITHUB } from "./host";
 
 /** Outcome of a single `gh` invocation: captured text plus a non-null error on failure. */
-export type CmdResult = { out: string; err: Error | null };
+export type CmdResult = { out: string; err: Error | null; };
 
 /** A built command, mirroring the subset of `exec.Cmd` the host uses. */
 export interface Cmd {
@@ -87,7 +87,7 @@ interface RawPR {
     number?: number;
     url?: string;
     headRefName?: string;
-    headRepositoryOwner?: { login?: string } | null;
+    headRepositoryOwner?: { login?: string; } | null;
 }
 
 /** Raw `gh run list` row shape. */
@@ -225,7 +225,7 @@ export class Host {
         return null;
     }
 
-    private matchesHead(headRefName: string, owner: { login?: string } | null, branch: string): boolean {
+    private matchesHead(headRefName: string, owner: { login?: string; } | null, branch: string): boolean {
         if (this.forkOwner === "") return true;
         if (headRefName.trim() !== "" && headRefName !== branch) return false;
         if (owner == null) return false;

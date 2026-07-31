@@ -129,7 +129,7 @@ export function insertSummary(s: SessionSummary, db: RecallDb = openDb()): void 
 }
 
 /** Build a `column = ?` filter clause + params from the common options. */
-function filterClause(opts: QueryOptions, prefix: string): { sql: string; params: unknown[] } {
+function filterClause(opts: QueryOptions, prefix: string): { sql: string; params: unknown[]; } {
     const parts: string[] = [];
     const params: unknown[] = [];
     if (opts.project) { parts.push(`${prefix}project = ?`); params.push(opts.project); }
@@ -241,7 +241,7 @@ export function observationsOfSession(sessionId: string, db: RecallDb = openDb()
 }
 
 /** Apply LLM enrichment to one observation: overwrite the chosen fields, re-embed, mark enriched. */
-export function applyEnrichment(id: number, fields: { type?: string; title?: string; narrative?: string; facts?: string[]; concepts?: string[] }, db: RecallDb = openDb(), embed: EmbeddingProvider = localEmbed): void {
+export function applyEnrichment(id: number, fields: { type?: string; title?: string; narrative?: string; facts?: string[]; concepts?: string[]; }, db: RecallDb = openDb(), embed: EmbeddingProvider = localEmbed): void {
     const cur = getObservations([id], db)[0];
     if (!cur) return;
     const merged: Observation = {
@@ -270,7 +270,7 @@ export function deleteObservation(id: number, db: RecallDb = openDb()): void {
 }
 
 /** Vector-only ranking: cosine of the query embedding against candidate observation vectors. */
-function vectorSearch(query: string, opts: QueryOptions, limit: number, db: RecallDb): { id: number; score: number }[] {
+function vectorSearch(query: string, opts: QueryOptions, limit: number, db: RecallDb): { id: number; score: number; }[] {
     const qv = localEmbed(query);
     const f = filterClause(opts, "o.");
     const rows = db.query(
@@ -313,7 +313,7 @@ export function hybridSearch(query: string, opts: QueryOptions = {}, db: RecallD
  * Chronological context around an observation (the 3-layer search -> timeline step): the
  * observations just before and after the anchor in the same project, oldest-to-newest.
  */
-export function timelineAround(opts: { id?: number; project?: string; before?: number; after?: number }, db: RecallDb = openDb()): ObservationHit[] {
+export function timelineAround(opts: { id?: number; project?: string; before?: number; after?: number; }, db: RecallDb = openDb()): ObservationHit[] {
     const before = Math.max(0, Math.min(opts.before ?? 6, 50));
     const after = Math.max(0, Math.min(opts.after ?? 6, 50));
     let project = opts.project;
@@ -333,7 +333,7 @@ export function timelineAround(opts: { id?: number; project?: string; before?: n
 export interface SessionRow extends RecallSession { observations: number; }
 
 /** Recent sessions (newest first) with their observation counts. */
-export function listSessions(opts: { project?: string; source?: string; limit?: number } = {}, db: RecallDb = openDb()): SessionRow[] {
+export function listSessions(opts: { project?: string; source?: string; limit?: number; } = {}, db: RecallDb = openDb()): SessionRow[] {
     const limit = Math.max(1, Math.min(opts.limit ?? 30, 200));
     const parts: string[] = [];
     const params: unknown[] = [];
@@ -356,7 +356,7 @@ export function listSessions(opts: { project?: string; source?: string; limit?: 
  * maxAgeDays and/or all but the newest maxRows. FTS rows go via the delete trigger, vectors via
  * FK cascade. Returns the number of observations deleted.
  */
-export function prune(opts: { maxAgeDays?: number; maxRows?: number }, db: RecallDb = openDb()): number {
+export function prune(opts: { maxAgeDays?: number; maxRows?: number; }, db: RecallDb = openDb()): number {
     // Count the diff rather than trust .changes: the FTS delete trigger and the vector FK
     // cascade inflate the reported change count.
     const count = (): number => Number(db.query("SELECT COUNT(*) AS n FROM observations").get()?.n ?? 0);

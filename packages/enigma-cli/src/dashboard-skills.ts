@@ -10,7 +10,7 @@
 
 import {
     skillsReport, discardSkill, setSkillAgent, removeExternalSkill, readSkillSource, writeSkillEverywhere,
-    checkAndUpdateSkills, type SkillReport,
+    checkAndUpdateSkills, type SkillReport
 } from "./skills";
 
 /** Snapshot of every skill the user has (enigma + external) with deployment/update state. */
@@ -57,8 +57,8 @@ export async function applySkillAction(name: string, action: string, content?: u
         let text: unknown = content;
         let agents: string[] | undefined;
         if (content && typeof content === "object") {
-            text = (content as { text?: unknown }).text;
-            const a = (content as { agents?: unknown }).agents;
+            text = (content as { text?: unknown; }).text;
+            const a = (content as { agents?: unknown; }).agents;
             if (Array.isArray(a)) agents = a.filter((x): x is string => typeof x === "string");
         }
         if (typeof text !== "string") return { ok: false, error: "missing content" };
@@ -74,7 +74,7 @@ export async function applySkillAction(name: string, action: string, content?: u
         return { ok: true, note: changed.length ? `${verb} ${name} (${changed.join(", ")}).` : `${verb} ${name}.`, skills: skillsReport() };
     }
     if (action === "agent-toggle") {
-        const p = (content && typeof content === "object" ? content : {}) as { agent?: unknown; off?: unknown };
+        const p = (content && typeof content === "object" ? content : {}) as { agent?: unknown; off?: unknown; };
         const agent = typeof p.agent === "string" ? p.agent : "";
         if (!agent) return { ok: false, error: "missing agent" };
         const off = !!p.off;

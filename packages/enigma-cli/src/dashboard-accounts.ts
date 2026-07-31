@@ -33,7 +33,7 @@ export interface DashAccount {
     /** Whether this tool supports a provider override (drives the provider control's visibility). */
     supportsProvider: boolean;
     /** The active provider override (token never included), or null for the default backend. */
-    provider: { baseUrl: string; model?: string; preset?: string; hasToken: boolean } | null;
+    provider: { baseUrl: string; model?: string; preset?: string; hasToken: boolean; } | null;
 }
 
 /** A provider preset the browser can offer (no secrets). */
@@ -62,7 +62,7 @@ export interface DashSessionSource {
 }
 
 export interface AccountsPayload {
-    tools: Array<{ name: string; label: string }>;
+    tools: Array<{ name: string; label: string; }>;
     accounts: DashAccount[];
     profiles: DashProfile[];
     /** Built-in provider presets the UI can offer (e.g. MiniMax), keyed by tool. */
@@ -137,7 +137,7 @@ export interface AccountActionPayload {
     profile?: string;
     account?: string | null;
     /** account.provider: null clears the override; an object sets it (preset or custom base/model + token). */
-    provider?: { preset?: string; baseUrl?: string; model?: string; token?: string } | null;
+    provider?: { preset?: string; baseUrl?: string; model?: string; token?: string; } | null;
     /** account.transfer: id of the session source to copy from ("account:<name>" | "pack:<id>"). */
     source?: string;
 }

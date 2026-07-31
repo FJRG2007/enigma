@@ -38,7 +38,7 @@ interface BypassWrite { path: string; changed: boolean; }
  */
 export async function resolveBypassSelection(
     candidates: Agent[],
-    opts: { bypass: string[] | null; noBypass: boolean },
+    opts: { bypass: string[] | null; noBypass: boolean; },
     interactive: boolean,
 ): Promise<string[]> {
     const supported = candidates.filter((a) => BYPASS_SUPPORTED.includes(a.name));

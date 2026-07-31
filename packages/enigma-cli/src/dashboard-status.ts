@@ -30,11 +30,11 @@ export interface SystemsStatus {
     /** Auto-lint on edit. */
     autoLint: boolean;
     /** Convention guardrails on edit, plus the active rule count. */
-    guardrails: { on: boolean; rules: number };
+    guardrails: { on: boolean; rules: number; };
     /** End-of-file blank-line trimming on edit and at commit time. */
     trim: boolean;
     /** Completion claims checked at turn end, plus the project's verification command when set. */
-    verify: { on: boolean; command: string };
+    verify: { on: boolean; command: string; };
     /** Real tool-usage stats (transcript reading). */
     usageStats: boolean;
     /** Local dashboard mode: off | on-demand | always. */
@@ -56,15 +56,15 @@ export interface SystemsStatus {
      * `lastRequestAt` is epoch ms of the last measured request, `redacted`/`rejected`/
      * `lastBlockedAt` track the prompt secret guard (0 = none yet).
      */
-    proxyStats: { calls: number; input: number; output: number; cacheRead: number; cacheCreation: number; lastRequestAt: number; redacted: number; rejected: number; lastBlockedAt: number };
+    proxyStats: { calls: number; input: number; output: number; cacheRead: number; cacheCreation: number; lastRequestAt: number; redacted: number; rejected: number; lastBlockedAt: number; };
     /** Security posture: permission-bypass state + the commit guard's fixed protections. */
-    security: { permissionBypass: boolean; bypassDisabled: string[]; guardProtects: string[] };
+    security: { permissionBypass: boolean; bypassDisabled: string[]; guardProtects: string[]; };
     /** Skill counts across installed agents. */
-    skills: { total: number; enigma: number; external: number; disabled: number };
+    skills: { total: number; enigma: number; external: number; disabled: number; };
     /** Per-tool launch-path status (name, label, one-line status), for the "Fix tool paths" action. */
-    tools: Array<{ name: string; label: string; status: string }>;
+    tools: Array<{ name: string; label: string; status: string; }>;
     /** Local OpenAI-compatible API server: the configured port, plus the agents it can back. */
-    api: { port: number; agents: string[] };
+    api: { port: number; agents: string[]; };
 }
 
 
