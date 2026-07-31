@@ -39,6 +39,13 @@ export interface GuardrailRule {
     files: string[];
     /** Globs that EXCLUDE a file from the rule even if `files` matches (e.g. test files). */
     excludeFiles?: string[];
+    /**
+     * Match `files`/`excludeFiles` case-insensitively. Off by default, because a glob naming an
+     * exact file (CLAUDE.md) must not also match a different one (claude.md). Rules that key on
+     * a WORD inside the name need it: the same screen is `login/page.tsx` in one project and
+     * `LoginForm.tsx` in the next, and a case-sensitive glob silently covers only the first.
+     */
+    ignoreFileCase?: boolean;
     scope: "file" | "project";
     /** file scope: regex source matching a violation on a line. */
     pattern?: string;
@@ -496,6 +503,131 @@ export const BUILTIN_RULES: GuardrailRule[] = [
         message: "Process spawned without windowsHide. On Windows a console child started by a process that has no console of its own - a daemon, an editor hook, a detached background task - pops a real console window on screen and closes it again, which reads as something crashing. Add `windowsHide: true` to the options object; it is inert on macOS and Linux, and inert on Windows when the parent already has a console, so it is safe on every call that is not deliberately opening a terminal for the user. For one that IS (a login flow that must show a terminal), mark the call with an `enigma:` note.",
         severity: "block",
     },
+    {
+        id: "fe-mobile-drawer-full-width",
+        label: "An off-canvas panel fills the phone screen",
+        files: ["*.tsx", "*.jsx", "*.vue", "*.svelte", "*.astro", "*.html", "*.htm"],
+        excludeFiles: [
+            "*.test.*", "*.spec.*", "**/tests/**", "**/__tests__/**", "**/stories/**", "*.stories.*", "*.min.js",
+            "**/dist/**", "**/build/**", "**/node_modules/**", "**/vendor/**",
+            "dist/**", "build/**", "node_modules/**", "vendor/**",
+        ],
+        scope: "file",
+        // An off-canvas panel (fixed/absolute, pinned for the full height) whose width is a fixed
+        // desktop size with no full-width base. Utility-class frameworks only: the same defect in
+        // a stylesheet lives inside a @media block, which a line scanner cannot see.
+        // PRECISION, measured over the reference corpus: the width must be a PANEL width - 100px
+        // or more, 10rem or more, a Tailwind step of 40 (10rem) or more, or a fraction of the
+        // viewport. Every false positive found was a hairline (`w-px` chart cursors, a `w-px`
+        // resize handle, a `before:w-0.5` guide line), and that one bound removed all of them.
+        // The negative lookahead carries the "unless the design says otherwise" cases: an
+        // already-full-width base, a width capped by `max-w-full`, and a panel that is hidden on
+        // phones anyway (the desktop half of a hidden/drawer pair).
+        pattern: "^(?!.*enigma:)(?!.*(?:\\bw-full\\b|\\bmax-w-full\\b|\\bw-screen\\b|\\bhidden\\s+(?:sm|md|lg|xl):|\\bmd:hidden\\b))(?:.*\\b(?:fixed|absolute)\\b[^\"'`]*\\b(?:inset-y-0|h-full|h-screen)\\b[^\"'`]*\\bw-(?:\\[(?:\\d{3,}px|\\d{2,}rem)\\]|[4-9]\\d\\b|\\d{3}\\b|\\d/\\d\\b)|.*\\bw-(?:\\[(?:\\d{3,}px|\\d{2,}rem)\\]|[4-9]\\d\\b|\\d{3}\\b|\\d/\\d\\b)[^\"'`]*\\b(?:fixed|absolute)\\b[^\"'`]*\\b(?:inset-y-0|h-full|h-screen)\\b)",
+        absent: "enigma:allow-partial-drawer",
+        message: "Off-canvas panel with a desktop width. On a phone a sidebar, drawer or nav panel takes the WHOLE screen - `w-full` as the base, with the desktop width added at a breakpoint (`w-full md:w-80`) or capped by `max-w-*`. A 320px panel on a 360px screen leaves a sliver of dead content behind it, and a panel wider than the viewport is simply cut off. Keep it dismissible: a close control, the backdrop, and Escape. If the design deliberately wants a partial-width panel on mobile, put an `enigma:` note on the line or `enigma:allow-partial-drawer` in the file (frontend-policy).",
+        severity: "block",
+        skill: "frontend-policy",
+    },
+    // AUTH. Three defects an agent building a sign-in flow reproduces constantly, each with a
+    // file-local signature. They fire only in files NAMED for the flow they belong to
+    // (*login*, *register*, *2fa*, ...), which is what keeps them off the rest of a codebase:
+    // "password" and "redirect to /login" appear everywhere, but not in a file called login.tsx
+    // that is not the sign-in surface. The semantic half of each - token lifetime, lockout
+    // policy, what a reset email may reveal - has no signature and lives in security-policy.
+    {
+        id: "auth-password-reset-entry",
+        label: "Login form offers a way to recover the password",
+        ignoreFileCase: true,
+        // Named for the flow, either way a project spells it: in the FILE name (login-form.tsx)
+        // or in the DIRECTORY (app/(auth)/login/page.tsx, the Next App Router shape - a basename
+        // glob would miss every one of those). Dir globs are listed twice because `**/x/**` does
+        // not match a root-level `x/`, the same gotcha the excludes above carry.
+        files: [
+            "*login*.tsx", "*login*.jsx", "*login*.vue", "*login*.svelte", "*login*.astro", "*login*.html",
+            "*signin*.tsx", "*signin*.jsx", "*signin*.vue", "*signin*.svelte", "*signin*.astro", "*signin*.html",
+            "*sign-in*.tsx", "*sign-in*.jsx", "*sign-in*.vue", "*sign-in*.svelte", "*sign-in*.astro", "*sign-in*.html",
+            "**/login/**", "login/**", "**/signin/**", "signin/**", "**/sign-in/**", "sign-in/**",
+        ],
+        excludeFiles: [
+            "*.test.*", "*.spec.*", "**/tests/**", "**/__tests__/**", "**/stories/**", "*.stories.*",
+            "**/dist/**", "**/build/**", "**/node_modules/**", "**/vendor/**",
+            "dist/**", "build/**", "node_modules/**", "vendor/**",
+        ],
+        scope: "file",
+        // The password field is what makes this THE sign-in surface rather than a wrapper or a
+        // route file; a login page that only renders <LoginForm/> has no password field and is
+        // correctly left alone (the form itself is the file that must carry the link).
+        pattern: "type=[\"']password[\"']|type=\\{[\"']password[\"']\\}",
+        // Any recovery affordance clears the file: the link, the route, or a handler named for it.
+        absent: "forgot|reset[-_ ]?password|password[-_ ]?reset|recover|olvid|recuperar|magic[-_ ]?link|enigma:allow-no-reset",
+        message: "Sign-in form with no way out of a forgotten password. Every login form needs a visible \"Forgot your password?\" entry point next to the password field, leading to a real reset flow: ask for the identifier, always answer the same way (never reveal whether the account exists), email a single-use token that expires in ~15-60 minutes, and on success invalidate that token plus every other active session. If this screen is deliberately reset-less (an internal tool, SSO-only, a passwordless magic-link form), mark the file with an `enigma:allow-no-reset` note (frontend-policy, security-policy).",
+        severity: "block",
+        skill: "security-policy",
+    },
+    {
+        id: "auth-signup-auto-login",
+        label: "Registration signs the user in",
+        ignoreFileCase: true,
+        files: [
+            "*register*.tsx", "*register*.jsx", "*register*.ts", "*register*.js", "*register*.vue", "*register*.svelte", "*register*.astro",
+            "*signup*.tsx", "*signup*.jsx", "*signup*.ts", "*signup*.js", "*signup*.vue", "*signup*.svelte", "*signup*.astro",
+            "*sign-up*.tsx", "*sign-up*.jsx", "*sign-up*.ts", "*sign-up*.js", "*sign-up*.vue", "*sign-up*.svelte", "*sign-up*.astro",
+            "**/register/**", "register/**", "**/signup/**", "signup/**", "**/sign-up/**", "sign-up/**",
+        ],
+        excludeFiles: [
+            "*.test.*", "*.spec.*", "**/tests/**", "**/__tests__/**", "**/stories/**", "*.stories.*", "*.d.ts",
+            "**/dist/**", "**/build/**", "**/node_modules/**", "**/vendor/**",
+            "dist/**", "build/**", "node_modules/**", "vendor/**",
+        ],
+        scope: "file",
+        // Only a PROGRAMMATIC redirect to the sign-in route counts. An `href="/login"` is the
+        // "already have an account?" link every sign-up form carries and is not the defect, so
+        // the pattern requires a navigation CALL - which is the code path that runs after the
+        // account is created.
+        pattern: "(?:push|replace|redirect|navigate|goto|assign)\\(\\s*[\"'`][^\"'`]*/(?:login|signin|sign-in)\\b|location(?:\\.href)?\\s*=\\s*[\"'`][^\"'`]*/(?:login|signin|sign-in)\\b|(?:push|replace|navigate)\\(\\s*\\{[^}]*name:\\s*[\"'`](?:login|signin|sign-in)[\"'`]",
+        // Any session-establishing call in the file means the redirect is some other path
+        // (an already-registered branch, an error case), so the file is cleared.
+        absent: "signIn\\(|signInWith|createSession|setSession|startSession|newSession|setAuthCookie|setAuthToken|setToken\\(|setAuth\\(|login\\(|logIn\\(|authenticate\\(|session\\.save|sessionStorage\\.setItem\\([\"'`](?:token|session)|cookies\\(\\)\\.set|setUser\\(|enigma:allow-login-redirect",
+        message: "Registration sends the user to the sign-in screen instead of signing them in. A successful sign-up already proves the credentials: establish the session right there and land the user in the app. Keep email verification asynchronous (let them in, ask them to confirm, and gate only the actions that need a verified address) rather than parking them on a login form to type what they just typed. If this redirect is deliberate (an admin creating someone else's account, an approval queue), mark the file with an `enigma:allow-login-redirect` note (backend-policy, security-policy).",
+        severity: "block",
+        skill: "security-policy",
+    },
+    {
+        id: "auth-rate-limit",
+        label: "Rate-limit the credential endpoints",
+        ignoreFileCase: true,
+        files: [
+            "*login*.ts", "*login*.js", "*login*.mts", "*login*.cts", "*login*.py",
+            "*signin*.ts", "*signin*.js", "*sign-in*.ts", "*sign-in*.js", "*signin*.py", "*sign-in*.py",
+            "*register*.ts", "*register*.js", "*signup*.ts", "*signup*.js", "*sign-up*.ts", "*sign-up*.js",
+            "*register*.py", "*signup*.py", "*sign-up*.py",
+            "*2fa*.ts", "*2fa*.js", "*2fa*.py", "*mfa*.ts", "*mfa*.js", "*mfa*.py", "*otp*.ts", "*otp*.js", "*otp*.py",
+            "*forgot-password*.ts", "*forgot-password*.js", "*forgot-password*.py",
+            "*reset-password*.ts", "*reset-password*.js", "*reset-password*.py",
+            "**/login/**", "login/**", "**/signin/**", "signin/**", "**/sign-in/**", "sign-in/**",
+            "**/register/**", "register/**", "**/signup/**", "signup/**", "**/sign-up/**", "sign-up/**",
+            "**/2fa/**", "2fa/**", "**/mfa/**", "mfa/**", "**/otp/**", "otp/**",
+            "**/forgot-password/**", "forgot-password/**", "**/reset-password/**", "reset-password/**",
+        ],
+        excludeFiles: [
+            "*.test.*", "*.spec.*", "**/tests/**", "**/__tests__/**", "test_*.py", "*_test.py", "*.d.ts",
+            "**/dist/**", "**/build/**", "**/node_modules/**", "**/vendor/**",
+            "dist/**", "build/**", "node_modules/**", "vendor/**",
+        ],
+        scope: "file",
+        // A server-side handler for the flow: the route export/registration, a framework
+        // decorator, or a "use server" module (a Next server action reachable from the sign-in
+        // page is an unauthenticated endpoint like any other, and it is how App Router projects
+        // write this). A client component calling fetch() is deliberately not matched - it
+        // cannot enforce a limit, and the file that must is the one defining the endpoint.
+        pattern: "export\\s+(?:async\\s+)?function\\s+(?:POST|PUT|PATCH)\\b|export\\s+const\\s+(?:POST|PUT|PATCH)\\s*[:=]|\\b(?:router|app|api|server|fastify)\\.(?:post|put|patch)\\s*\\(|@(?:app|router|bp|blueprint)\\.(?:post|route)\\s*\\(|@Post\\s*\\(|^[\"']use server[\"']",
+        // Cleared by any limiter in the file, whatever the library or the wrapper name.
+        absent: "rate[-_]?limit|ratelimit|Ratelimit|RateLimiter|limiter|throttle|slowDown|slow_down|bottleneck|arcjet|leaky|token[-_]?bucket|attempts?[-_]?(?:left|remaining|count)|lockout|too[-_ ]?many[-_ ]?requests|429|enigma:allow-unlimited-auth",
+        message: "Credential endpoint with no rate limiting. Login, registration, password reset and every 2FA/OTP verification are guessing surfaces: limit them BY IP (blunt, stops the broad sweep) AND BY ACCOUNT or identifier (stops the slow distributed attack the IP limit misses), count failures rather than requests, back off exponentially, and answer 429 with Retry-After. Keep the accounting server-side and identical for an unknown account, so the limiter itself does not become an account-existence oracle. If the limit is enforced upstream (gateway, middleware, WAF), note it in the file with an `enigma:allow-unlimited-auth` marker (security-policy, backend-policy).",
+        severity: "block",
+        skill: "security-policy",
+    },
 ];
 
 /**
@@ -626,10 +758,10 @@ function readPkgDeps(root: string): Record<string, string> | null {
  * enigma: duplicated from guard.ts:globToRegExp on purpose - this engine must stay
  * import-free so dist/guardrails.js runs standalone in any repo. Keep the two in sync.
  */
-function globToRegExp(glob: string): RegExp {
+function globToRegExp(glob: string, ignoreCase = false): RegExp {
     const esc = glob.replace(/[.+^${}()|[\]\\]/g, "\\$&");
     const body = esc.replace(/\*\*/g, " ").replace(/\*/g, "[^/]*").replace(/ /g, ".*").replace(/\?/g, "[^/]");
-    return new RegExp(glob.includes("/") ? `^${body}$` : `(^|/)${body}$`);
+    return new RegExp(glob.includes("/") ? `^${body}$` : `(^|/)${body}$`, ignoreCase ? "i" : "");
 }
 
 /** The user-wide guardrails config file (custom rules + disabled built-in ids). ENIGMA_GUARDRAILS_CONFIG relocates it (tests/advanced use). */
@@ -684,8 +816,8 @@ export function checkFile(file: string, content: string, projectRoot: string | n
     const norm = file.replace(/\\/g, "/");
     const out: Finding[] = [];
     for (const rule of loadRules()) {
-        if (!rule.files.some((g) => globToRegExp(g).test(norm))) continue;
-        if (rule.excludeFiles?.some((g) => globToRegExp(g).test(norm))) continue;
+        if (!rule.files.some((g) => globToRegExp(g, rule.ignoreFileCase).test(norm))) continue;
+        if (rule.excludeFiles?.some((g) => globToRegExp(g, rule.ignoreFileCase).test(norm))) continue;
         const base = { ruleId: rule.id, severity: rule.severity, file: norm, message: rule.message, skill: rule.skill };
         if (rule.scope === "file" && rule.maxBytes) {
             const bytes = Buffer.byteLength(content, "utf8");

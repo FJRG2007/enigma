@@ -82,6 +82,9 @@ jobs:
       - name: Test gate pipeline internals
         run: bun test tests/gate/
         working-directory: packages/enigma-cli
+      - name: Test gate delivery on sync
+        run: bun test tests/sync-gate.test.ts
+        working-directory: packages/enigma-cli
       - name: Test Claude session reuse/transfer
         run: bun test tests/claude-oauth.test.ts
         working-directory: packages/enigma-cli
@@ -114,6 +117,9 @@ jobs:
         working-directory: packages/enigma-cli
       - name: Test guardrails engine
         run: bun test tests/guardrails.test.ts
+        working-directory: packages/enigma-cli
+      - name: Test guardrails rule precision
+        run: bun test tests/guardrails-rules.test.ts
         working-directory: packages/enigma-cli
       - name: Test guardrails deployment
         run: bun test tests/guardrails-deploy.test.ts
