@@ -52,7 +52,9 @@
            two-class form to win: a bare .side-x would lose to it on source order. */
         .iconbtn.side-x { display: none; }
         .side-foot { margin-top: auto; padding: 12px 6px 0; border-top: 1px solid var(--border-soft); }
-        .content { flex: 1; min-width: 0; padding: 30px 30px 48px; max-width: 1560px; }
+        /* Auto side margins, not just a max-width: past 1560px + the rail the column would
+           otherwise stay glued to the sidebar with all the empty space piled on the right. */
+        .content { flex: 1; min-width: 0; padding: 30px 30px 48px; max-width: 1560px; margin-inline: auto; }
         .iconbtn.nav-burger { display: none; }
         .nav-scrim { position: fixed; inset: 0; z-index: 25; background: rgba(0,0,0,0.6); }
         a { color: var(--accent2); }
@@ -168,6 +170,8 @@
         .set-cat { margin-bottom: 18px; }
         .set-cat:last-child { margin-bottom: 0; }
         .set-cat-h { font-family: var(--mono); color: var(--accent); font-size: 12px; text-transform: uppercase; letter-spacing: 0.7px; margin-bottom: 4px; }
+        /* A path in a header is a literal: uppercasing it prints something that does not exist. */
+        .set-cat-h code { text-transform: none; letter-spacing: 0; }
         .set-cat-b { color: var(--muted); font-size: 12px; margin-bottom: 8px; }
         .set-row { display: flex; align-items: center; gap: 14px; padding: 9px 0; border-bottom: 1px solid var(--surface2); }
         .set-row:last-child { border-bottom: none; }
