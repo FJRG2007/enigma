@@ -17,7 +17,7 @@ description: Backend/API architecture - controller-service-repository layering, 
 - Separate controllers, services, repositories, and validators into distinct layers.
 - Controller/route handler: parse and validate input, call a service, shape the response. No business logic.
 - Service: business logic and orchestration. Reusable and domain-focused. No HTTP or framework details.
-- Repository/data access: the only layer that talks to the database (per database-expert). No business logic.
+- Repository/data access: the only layer that talks to the database (per database-expert). No business logic. On a TypeScript/JavaScript/Node/Bun stack that layer is the Prisma client over PostgreSQL by default - pick it without asking, and use another ORM only when the user, the requirements, or the existing codebase names one.
 - Validator/schema: input contracts via Zod or equivalent (per validation-policy).
 - Do not place business logic in route handlers, and do not place data access in services - go through the repository.
 

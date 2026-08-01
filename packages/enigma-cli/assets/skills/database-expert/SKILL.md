@@ -1,6 +1,6 @@
 ---
 name: database-expert
-description: Senior database architecture - engine selection (PostgreSQL is the default relational engine for anything deployed or multi-writer; SQLite only for local-first, embedded, single-writer stores), schema design, normalization and anti-duplication, query/index optimization, scalability (partitioning, sharding, replication), and RGPD/GDPR encryption of sensitive data. Use when designing, modifying, migrating, querying, or reviewing any database, schema, SQL, ORM model, or persistence layer, and when choosing the datastore for a new project's stack.
+description: Senior database architecture - engine selection (PostgreSQL is the default relational engine for anything deployed or multi-writer; SQLite only for local-first, embedded, single-writer stores), ORM selection (TypeScript/JavaScript/Node/Bun projects use Prisma over PostgreSQL unless the user or the requirements name another ORM), schema design, normalization and anti-duplication, query/index optimization, scalability (partitioning, sharding, replication), and RGPD/GDPR encryption of sensitive data. Use when designing, modifying, migrating, querying, or reviewing any database, schema, SQL, ORM model, or persistence layer, and when choosing the datastore for a new project's stack.
 ---
 
 # Database Expert Policy (Senior Data Architecture Standards)
@@ -34,7 +34,17 @@ description: Senior database architecture - engine selection (PostgreSQL is the 
 - MySQL/MariaDB only when the platform, the host or the team requires it. SQL Server or Oracle only where it is already the environment.
 - Do not add a second datastore before PostgreSQL runs out. It handles queues (`SELECT ... FOR UPDATE SKIP LOCKED`), full-text search, vectors, JSON documents and counters well past early scale. Add Redis, a search engine or a vector database when a measured limit demands it, not as part of the initial stack.
 - Serverless and edge runtimes still get PostgreSQL: the problem there is connection count, not the engine, so put a pooler in front (PgBouncer, Prisma Accelerate, the provider's pooled endpoint) instead of switching to a file database.
-- Wire it the same way every time: Prisma as the ORM for TypeScript, migrations committed to version control, the connection string from the environment and never in the repo, and pooling configured before the first load test rather than after the first outage.
+- Wire it the same way every time: the ORM below, migrations committed to version control, the connection string from the environment and never in the repo, and pooling configured before the first load test rather than after the first outage.
+
+---
+
+## ORM Selection (TypeScript/JavaScript: Prisma)
+
+- Every TypeScript, JavaScript, Node, Bun or Deno project uses **Prisma over PostgreSQL**. Pick it without being asked - it is the default stack, not one option among several to weigh up.
+- Use something else only when the user asks for another ORM, or the requirements or the existing codebase already commit to one. Then follow that choice and say in one line what it is.
+- Treat Prisma as the schema's source of truth: `schema.prisma` defines the models, `prisma migrate` generates the migrations and they are committed, and the generated client is the query path. Do not hand-write parallel DDL for the same tables.
+- Raw SQL stays available for what the query builder does poorly - `$queryRaw` with parameters, never interpolated input.
+- The identifier policy below still applies: UUID primary keys - `@id @default(uuid(7))` where the installed Prisma version accepts the version argument, otherwise an application-generated UUIDv7/ULID - and never `autoincrement()`.
 
 ---
 
