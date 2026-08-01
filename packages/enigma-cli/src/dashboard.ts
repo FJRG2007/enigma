@@ -1158,7 +1158,18 @@ export function tokenizedUrl(url: string, token: string | null): string {
 
 // --- daemon (always mode) -------------------------------------------------------
 
-export interface DaemonRecord { pid: number; port: number; url: string; startedAt: number; }
+/**
+ * The published record of whatever is serving the dashboard right now. `kind` separates the
+ * detached `always` daemon from a foreground `enigma dashboard`: both publish here so a second
+ * invocation defers instead of fighting for the port, but only the daemon may be killed and
+ * respawned behind the user's back. Doing that to a foreground run orphans it - the terminal is
+ * freed and Ctrl+C no longer reaches anything. Records written before the field existed are
+ * treated as daemons, which is what they were.
+ */
+export interface DaemonRecord { pid: number; port: number; url: string; startedAt: number; kind?: "daemon" | "foreground"; }
+
+/** Whether a record describes the detached daemon rather than a foreground run. */
+export function isDaemonRecord(rec: DaemonRecord): boolean { return rec.kind !== "foreground"; }
 
 function daemonFile(): string {
     return join(homedir(), ".enigma", "dashboard.json");
@@ -1238,12 +1249,16 @@ export function spawnDashboardDaemon(): void {
     } catch { /* best-effort: a failed spawn must never break the calling command */ }
 }
 
-/** Stop the background daemon if one is running. Best-effort. */
-export function stopDashboardDaemon(): void {
+/**
+ * Stop whatever is serving the dashboard - the background daemon, or a foreground run whose
+ * terminal is gone. Best-effort; returns the record it stopped, or null if nothing was running.
+ */
+export function stopDashboardDaemon(): DaemonRecord | null {
     const rec = runningDaemon();
-    if (!rec) { clearDaemon(); return; }
+    if (!rec) { clearDaemon(); return null; }
     try { process.kill(rec.pid); } catch { /* already gone */ }
     clearDaemon();
+    return rec;
 }
 
 /**
@@ -1259,7 +1274,14 @@ export function stopDashboardDaemon(): void {
  * cannot be found (the daemon then simply refreshes on the next `enigma dashboard`).
  */
 export function restartDashboardDaemon(): boolean {
-    if (!runningDaemon()) return false;
+    const running = runningDaemon();
+    if (!running) return false;
+    // A foreground `enigma dashboard` publishes the same record. Killing THAT and respawning it
+    // detached hands the user a server their Ctrl+C no longer reaches (their terminal came back
+    // and the dashboard kept serving), and it turns on-demand mode into a permanent background
+    // process. An update leaves a foreground run alone; it picks up the new version when the
+    // user restarts it.
+    if (!isDaemonRecord(running)) return false;
     stopDashboardDaemon();
     try {
         // The child inherits THIS process's env, and during `enigma update` that env carries
@@ -1302,7 +1324,7 @@ export async function serveDashboardDaemon(version: string): Promise<void> {
         return;
     }
     clearDaemonError();
-    writeDaemon({ pid: process.pid, port: server.port, url: server.url, startedAt: Date.now() });
+    writeDaemon({ pid: process.pid, port: server.port, url: server.url, startedAt: Date.now(), kind: "daemon" });
     // Block until a shutdown signal. Without this the function would return, run() would resolve,
     // and the bin entry's process.exit() would kill the daemon the instant after it bound its port
     // (the pidfile is written but nothing ever answers). The MCP server stays alive the same way.

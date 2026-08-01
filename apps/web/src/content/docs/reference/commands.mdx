@@ -168,8 +168,8 @@ Endpoints under `/v1` (chat/completions, messages, models, sessions). `--port <n
 
 A browser control panel for all of enigma - accounts, skills, settings, system cleanup - that also shows real Claude usage and measured savings. Loopback-only by default: nothing leaves your machine.
 
-<Cmd name="enigma dashboard" ex="enigma dashboard">
-Alias `enigma dash`. Runs while open by default; `enigma config dashboard always` keeps a lightweight background daemon.
+<Cmd name="enigma dashboard" ex={["enigma dashboard", "enigma dashboard stop"]}>
+Alias `enigma dash`. Runs while open by default; `enigma config dashboard always` keeps a lightweight background daemon. `stop` shuts down whichever one is serving - a background daemon has no terminal to Ctrl+C.
 </Cmd>
 
 ### On a server

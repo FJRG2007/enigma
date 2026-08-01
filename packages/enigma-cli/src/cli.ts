@@ -249,11 +249,12 @@ Commands:
   dashboard, dash      Open the local savings dashboard in your browser (http://enigma,
                        or http://localhost:24282 if :80/hosts is unavailable). Runs only
                        while open; 'config dashboard always' keeps a background daemon.
-                       Loopback by default. With no browser (a server over SSH) it prints
-                       the tunnel command and offers to expose it. --expose binds every
-                       interface for this run; 'config dashboard-bind lan' makes it stick.
-                       Exposing always requires a token: 'dashboard token [--new]' prints
-                       or rotates it, and the link carries it as a #token= fragment
+                       'dashboard stop' stops whichever one is serving (a background one
+                       has no Ctrl+C). Loopback by default. With no browser (a server over
+                       SSH) it prints the tunnel command and offers to expose it. --expose
+                       binds every interface for this run; 'config dashboard-bind lan' makes
+                       it stick. Exposing always requires a token: 'dashboard token [--new]'
+                       prints or rotates it, and the link carries it as a #token= fragment
   fix-path [tool]      Detect a tool's install path (OS-agnostic, even off PATH) and
                        repair its launch command so 'enigma <tool>' works; no tool fixes all
   resources [action]   System cleanup: status, or wsl | docker | free-port PORT | kill PID
@@ -1594,6 +1595,7 @@ async function resolveHeadlessBind(expose: boolean): Promise<DashboardBind | nul
 async function runDashboardCli(version: string, opts: CliOptions): Promise<number> {
     const mode = readConfig().config.dashboard;
     if (opts.positionals[0] === "token") return runDashboardTokenCli(opts);
+    if (opts.positionals[0] === "stop") return runDashboardStopCli();
     // The UI bundle (@enigmax/dashboard) ships separately and is fetched on demand. If it
     // is not present yet, install it now so the first open shows the real page, not the
     // fallback. Best-effort: offline just serves the fallback until a later run succeeds.
@@ -1622,15 +1624,20 @@ async function runDashboardCli(version: string, opts: CliOptions): Promise<numbe
         // case --expose exists for.
         if (opts.expose) {
             console.error(`A dashboard is already running on ${running.url} and a running server cannot rebind.`);
-            console.error("Stop it first (Ctrl+C, or 'enigma config dashboard off' for the background one), then run 'enigma dashboard --expose'.");
+            console.error("Stop it first ('enigma dashboard stop', or Ctrl+C in the terminal serving it), then run 'enigma dashboard --expose'.");
             console.error("To expose it permanently instead: 'enigma config dashboard-bind lan', then restart it.");
             return 1;
         }
-        const tag = mode === "always" ? "(always) " : "";
+        // The terminal coming straight back does not mean the dashboard closed - it means
+        // something else is already serving it. Name what, and how to stop it: a background
+        // server has no terminal left to Ctrl+C.
+        const background = dash.isDaemonRecord(running);
+        const tag = !background ? "" : mode === "always" ? "(always) " : "(background) ";
         // A daemon on an exposed bind is only reachable with its token, so print that link.
         let token: string | null = null;
         try { token = dash.resolveBind().token; } catch { /* misconfigured bind: it is not serving anyway */ }
         console.log(`enigma dashboard already running ${tag}-> ${dash.tokenizedUrl(running.url, token)}`);
+        console.log(background ? "Stop it with 'enigma dashboard stop'." : `Serving from another terminal (pid ${running.pid}); Ctrl+C there, or 'enigma dashboard stop'.`);
         // The tokenized URL, or a browser here lands on the "needs a token" banner. The
         // fragment never reaches the server, so this is the same link that was printed.
         openUrl(dash.tokenizedUrl(running.url, token));
@@ -1646,7 +1653,7 @@ async function runDashboardCli(version: string, opts: CliOptions): Promise<numbe
     catch (err) { console.error(`Could not start the dashboard: ${(err as Error).message}`); return 1; }
     // Publish a record of this foreground server so a second invocation finds it and
     // defers instead of spawning another. Cleared on exit (and self-healed if we crash).
-    dash.writeDaemon({ pid: process.pid, port: server.port, url: server.url, startedAt: Date.now() });
+    dash.writeDaemon({ pid: process.pid, port: server.port, url: server.url, startedAt: Date.now(), kind: "foreground" });
     if (server.bind.token) {
         // The tokenized URL is the only way in, and on a headless host the terminal is the
         // only channel we have to deliver it.
@@ -1663,6 +1670,21 @@ async function runDashboardCli(version: string, opts: CliOptions): Promise<numbe
         process.on("SIGINT", stop);
         process.on("SIGTERM", stop);
     });
+}
+
+/**
+ * `enigma dashboard stop`: stop whatever is serving the dashboard. The background daemon has no
+ * terminal to Ctrl+C, and a foreground run can outlive the terminal that started it, so without
+ * this the only way out was `enigma config dashboard off` - which also tears down the hosts entry
+ * and turns the feature off. Leaves the mode setting alone: an `always` daemon comes back on the
+ * next `enigma dashboard` or reboot.
+ */
+function runDashboardStopCli(): number {
+    const stopped = dash.stopDashboardDaemon();
+    if (!stopped) { console.log("No dashboard is running."); return 0; }
+    console.log(`Stopped the dashboard on ${stopped.url} (pid ${stopped.pid}).`);
+    if (readConfig().config.dashboard === "always") console.log("The dashboard setting is 'always', so it starts again on the next 'enigma dashboard' or reboot. Turn it off with 'enigma config dashboard on-demand'.");
+    return 0;
 }
 
 /**

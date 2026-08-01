@@ -4,10 +4,11 @@
  * only on :80; and a stale daemon pidfile is detected as not-running and cleaned up.
  * Temp HOME (set BEFORE import) isolates ~/.enigma, resolved lazily per call.
  */
+import { join } from "node:path";
+import { tmpdir, homedir } from "node:os";
+import { spawn } from "node:child_process";
 import { test, expect, afterAll } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync, readFileSync } from "node:fs";
-import { tmpdir, homedir } from "node:os";
-import { join } from "node:path";
 
 const HOME = mkdtempSync(join(tmpdir(), "enigma-dash-"));
 process.env.USERPROFILE = HOME;
@@ -329,6 +330,27 @@ test("restartDashboardDaemon is a no-op (never spawns) when no daemon is running
     writeFileSync(daemonPath, JSON.stringify({ pid: 2147483646, port: 80, url: "http://localhost", startedAt: 1 }));
     expect(restartDashboardDaemon()).toBe(false);
     expect(runningDaemon()).toBeNull(); // the stale pidfile was cleared
+});
+
+test("restartDashboardDaemon leaves a FOREGROUND dashboard alone", () => {
+    // The daemon and a foreground `enigma dashboard` publish the same pidfile. Restarting the
+    // foreground one (as `enigma update` does) kills the process the user's terminal is blocked
+    // on and respawns it detached: the terminal comes back and the dashboard keeps serving with
+    // no Ctrl+C left to reach it. A live pid is needed here - the guard has to reject the record
+    // before anything is killed.
+    const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 30000)"], { stdio: "ignore" });
+    child.on("error", () => { /* the assertions below fail on their own if it never started */ });
+    const pidfile = join(homedir(), ".enigma", "dashboard.json");
+    mkdirSync(join(homedir(), ".enigma"), { recursive: true });
+    try {
+        writeFileSync(pidfile, JSON.stringify({ pid: child.pid, port: 80, url: "http://enigma", startedAt: 1, kind: "foreground" }));
+        expect(restartDashboardDaemon()).toBe(false);
+        // Untouched: a restart would have killed it and cleared the record.
+        expect(existsSync(pidfile)).toBe(true);
+        expect(runningDaemon()?.pid).toBe(child.pid);
+    } finally {
+        child.kill();
+    }
 });
 
 test("removeHostsEntry strips only the enigma mapping and leaves other hosts intact", () => {
