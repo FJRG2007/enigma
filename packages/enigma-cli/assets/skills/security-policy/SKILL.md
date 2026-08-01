@@ -1,6 +1,6 @@
 ---
 name: security-policy
-description: Application and AI-agent security - secrets management, authentication and authorization (least privilege), credential flows (sign-in, sign-up that establishes the session, password reset, 2FA, and rate limiting per IP and per account), OWASP Top 10 mitigations, transport and crypto baseline, secure logging, and agent/MCP/tool-use safety (prompt injection, untrusted tool output, permission boundaries). Use when handling secrets, auth, login or registration screens, permissions, untrusted data or tool output, or any security-sensitive code, config, or infrastructure.
+description: Application and AI-agent security - secrets management, authentication and authorization (least privilege), credential flows (sign-in, sign-up that establishes the session, password reset, 2FA, breached-password checks against Have I Been Pwned, and rate limiting per IP and per account), cookie attributes and consent gating before non-essential storage, OWASP Top 10 mitigations, transport and crypto baseline, secure logging, and agent/MCP/tool-use safety (prompt injection, untrusted tool output, permission boundaries). Use when handling secrets, auth, login or registration screens, permissions, untrusted data or tool output, or any security-sensitive code, config, or infrastructure.
 ---
 
 # Security Policy
@@ -55,6 +55,16 @@ These four screens are one system: an attacker who cannot guess a password will 
 - On a successful reset: consume the token, rotate the session, and invalidate every other active session and refresh token for that account. Notify the account by email that the password changed.
 - Never send the new password by email, and never embed credentials in the link. The link proves control of the address, nothing more.
 
+### Every new password is checked against the breach corpus
+
+- Any screen where a password is CREATED - sign-up, reset confirmation, change password - checks the candidate against Have I Been Pwned's Pwned Passwords range API before accepting it. A password sitting in a public breach is already in every credential-stuffing list, whatever its length or symbol count says.
+- The API is free, needs no key and no account. Never send the password: SHA-1 the candidate, uppercase the hex, `GET https://api.pwnedpasswords.com/range/<first 5 hex chars>`, and look for the remaining 35 characters in the response, whose lines are `SUFFIX:COUNT`. Only the 5-character prefix ever leaves the client - that k-anonymity split is what the endpoint exists for.
+- Send `Add-Padding: true` so the response length cannot be used to infer which prefix was asked for.
+- Run it in real time while the user types (debounce ~400ms, abort the in-flight request when the value changes) so the answer is on screen before Submit, and run it again server-side on submit. The client check is UX; the server check is the rule.
+- Fail OPEN. If the lookup errors or times out, accept the password and log it: blocking every registration on a third-party outage is the worse failure.
+- Say what happened and what to do - "This password appeared in a data breach. Choose a different one." The breach count is optional; blaming the user is not.
+- Do not stack composition rules on top (one symbol, one digit, forced rotation). NIST SP 800-63B dropped them: a length floor (12+), the breach check and rate limiting are the controls that work.
+
 ### Rate-limit by IP AND by account
 
 - Limit both dimensions on every credential endpoint: sign-in, sign-up, password reset request, reset confirmation, email verification, 2FA/OTP verification, and any "does this identifier exist" helper the sign-in page calls.
@@ -70,6 +80,18 @@ These four screens are one system: an attacker who cannot guess a password will 
 ### Uniform answers
 
 - Wrong password, unknown account, locked account, and unverified account all return the same generic failure to the client. The specifics belong in the server log, not the response.
+
+---
+
+## Cookies & Consent
+
+- The session cookie is `HttpOnly`, `Secure`, `SameSite=Lax` (`Strict` where nothing legitimately enters the app cross-site), `Path=/`, with an explicit lifetime, and host-only unless a subdomain genuinely needs it. A token JavaScript can read is one XSS away from being someone else's session.
+- `SameSite=None` demands `Secure` and a stated reason: it re-opens CSRF, so it comes with a CSRF token on every state-changing request.
+- Use the `__Host-` prefix in production where the browser can enforce it (Secure, `Path=/`, no `Domain`).
+- Classify every cookie before setting it: strictly necessary (session, CSRF, load balancing, the consent record itself) against everything else (analytics, A/B, ads, session replay). Only the first group may be set before the user has answered.
+- Nothing in the second group runs until then. No analytics snippet, no tag manager, no third-party pixel, no `document.cookie` write, no `localStorage` copy of the same data: swapping the storage mechanism does not change the rule.
+- Record the decision - what was accepted, when, against which policy version - and make withdrawing it as easy as giving it.
+- An auth flow never starts with the banner unanswered: require the consent decision before sign-in or sign-up proceeds, so nothing is planted mid-flow behind the user's back. Accepting the non-essential ones must not be the price of an account - a "reject" that still signs the user in is what keeps this lawful under GDPR/ePrivacy, and the session cookie is strictly necessary anyway, so it needs no consent.
 
 ---
 

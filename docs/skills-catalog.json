@@ -24,7 +24,7 @@
       "version": "1.4.0",
       "description": "Backend/API architecture: controller-service-repository layering, API and request optimization (batching, avoiding redundant calls, skipping no-op writes), server-side caching (Redis), and Zod boundary validation.",
       "provider": "FJRG2007/enigma",
-      "updated": "2026-07-31T16:34:48+02:00",
+      "updated": "2026-08-01T15:51:38+02:00",
       "sha": "572fcf9780e3892942c300214367d7205ed6dcde173a64c61c1e519506cf0cfa"
     },
     {
@@ -56,7 +56,7 @@
       "version": "1.3.0",
       "description": "Senior database architecture policy: engine selection (PostgreSQL by default, SQLite only for local-first/embedded stores), ORM selection (Prisma in TypeScript/JavaScript), query optimization, anti-duplication/normalization, scalability, and RGPD/GDPR encryption.",
       "provider": "FJRG2007/enigma",
-      "updated": "2026-07-31T19:05:08+02:00",
+      "updated": "2026-08-01T15:51:38+02:00",
       "sha": "4b7569446786c5bdbb71b2e9102aee0d8dd391b5e3e461d6fb1f05294d446ad9"
     },
     {
@@ -93,11 +93,11 @@
     },
     {
       "name": "frontend-policy",
-      "version": "1.22.0",
-      "description": "Frontend architecture: reusable components, abstraction thresholds, state management, no-op detection (skip any operation whose result equals current state, not just form saves; dirty means different from the loaded snapshot, not touched), instant first paint (render the shell, load data async, skeletons), perceived performance (prefetch on intent, debounce/throttle, cancel stale requests, avoid waterfalls, lazy widgets), large-list rendering (infinite scroll/pagination, virtualization, skeletons, progressive loading), optimistic UI with rollback, visual restraint (one card level, spacing before borders, one elevation scale), icon actions (repeated row/card actions are icon-only buttons with aria-label plus title, not text labels), responsive/adaptive layout (fluid units, breakpoints, no overlap/overflow, viewport meta, touch targets), form fields that declare their keyboard and casing (autocapitalize/autocomplete/inputmode per field kind, set once in the shared Input, normalized on blur), variable-length text (min-width:0 in flex/grid, wrap vs truncate, long unbroken strings, worst-case content checks), and AI chat/agent interfaces via Vercel's AI Elements registry instead of hand-rolled message threads.",
+      "version": "1.23.0",
+      "description": "Frontend architecture: reusable components, abstraction thresholds, state management, no-op detection (skip any operation whose result equals current state, not just form saves; dirty means different from the loaded snapshot, not touched), instant first paint (render the shell, load data async, skeletons), perceived performance (prefetch on intent, debounce/throttle, cancel stale requests, avoid waterfalls, lazy widgets), large-list rendering (infinite scroll/pagination, virtualization, skeletons, progressive loading), optimistic UI with rollback, visual restraint (one card level, spacing before borders, one elevation scale), icon actions (repeated row/card actions are icon-only buttons with aria-label plus title, not text labels), responsive/adaptive layout (fluid units, breakpoints, no overlap/overflow, viewport meta, touch targets), form fields that declare their keyboard and casing (autocapitalize/autocomplete/inputmode per field kind, set once in the shared Input, normalized on blur), variable-length text (min-width:0 in flex/grid, wrap vs truncate, long unbroken strings, worst-case content checks), auth screens (breached-password feedback, strength meter, cookie consent before login/register), and AI chat/agent interfaces via Vercel's AI Elements registry instead of hand-rolled message threads.",
       "provider": "FJRG2007/enigma",
       "updated": "2026-07-31T19:05:08+02:00",
-      "sha": "79816cdc63a7fd64336b93296aada3520bab26b38a7f65600f5ca27745de3a65"
+      "sha": "163f3e66d7a95d9a103a2478501b9ae9646de2a7324fad941fcccc70dd620b07"
     },
     {
       "name": "git-policy",
@@ -117,11 +117,11 @@
     },
     {
       "name": "security-policy",
-      "version": "1.1.0",
-      "description": "Application and AI-agent security: secrets, authn/authz (least privilege), OWASP Top 10, transport/crypto baseline, secure logging, and agent/MCP/tool-use safety.",
+      "version": "1.2.0",
+      "description": "Application and AI-agent security: secrets, authn/authz (least privilege), credential flows with breach-checked passwords (Have I Been Pwned), OWASP Top 10, transport/crypto baseline, cookies and consent, secure logging, and agent/MCP/tool-use safety.",
       "provider": "FJRG2007/enigma",
       "updated": "2026-07-31T16:26:45+02:00",
-      "sha": "e5e7ac2791919e4b8483115ee8b83800c5ebdf4eebde019650d974b400417c55"
+      "sha": "4e222af4b41513380851d2dcfc441ceb6aacd66e300d8793ac3daf322b18c212"
     },
     {
       "name": "skill-creator",
