@@ -12,6 +12,9 @@
  * Writes are validated before they land: a config is parsed by the gate's OWN
  * loader from a temporary file and only renamed into place once it parses, so a
  * typo in the browser can never leave the daemon with a config it cannot read.
+ * The form controls take the same route: each one edits ONE key in place (the
+ * surrounding comments and layout survive) and then goes through that validator,
+ * so the structured editor and the raw YAML editor can never disagree.
  */
 
 import * as conf from "./config";
@@ -19,7 +22,9 @@ import { homedir } from "node:os";
 import { Paths } from "./gate/paths";
 import { dirname, join } from "node:path";
 import * as gateConf from "./gate/config";
+import { lookPath } from "./gate/agent/factory";
 import { gateInitialized } from "./dashboard-projects";
+import { processRunning, readDaemonPIDFile } from "./gate/daemon/recover";
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 
 /** One pipeline step of a run, flattened for the browser. */
@@ -28,6 +33,9 @@ export interface GateStepView {
     status: string;
     durationMs: number | null;
     findings: number;
+    /** Unix seconds the step started, so a running step can tick live in the browser. */
+    startedAt: number | null;
+    completedAt: number | null;
 }
 
 /** A finding the pipeline is parked on, flattened for the browser. */
@@ -55,6 +63,25 @@ export interface GateRunView {
     findings: GateFindingView[];
 }
 
+/**
+ * The global config as form controls rather than YAML text. `model` is the value
+ * of the model flag inside `agent_args_override.<agent>` - the single setting that
+ * decides how long a run takes and what it costs, which is why it gets a field of
+ * its own instead of living only in the raw editor.
+ */
+export interface GateSettingsView {
+    agent: string;
+    /** `agent` with `auto` resolved against PATH, so the model row names a real agent. */
+    agentResolved: string;
+    model: string;
+    /** False when the resolved agent takes no model flag enigma knows about. */
+    modelSupported: boolean;
+    ciTimeout: string;
+    logLevel: string;
+    autoFix: Record<string, number>;
+    intentEnabled: boolean;
+}
+
 /** Everything the gate view renders in one payload. */
 export interface GateOverview {
     /** The `gate` toggle: whether agents are told to drive the pipeline on their own. */
@@ -67,7 +94,11 @@ export interface GateOverview {
     runsNote: string;
     daemon: boolean;
     root: string;
+    /** Unix seconds on the server, so the browser can tick a running step without clock drift. */
+    serverNow: number;
     globalConfig: { path: string; text: string; };
+    /** Null when this runtime cannot parse the config, in which case only the raw editor shows. */
+    settings: GateSettingsView | null;
     /** Present only under a project scope. */
     repo: { path: string; initialized: boolean; configPath: string; text: string; exists: boolean; } | null;
     runs: GateRunView[];
@@ -86,13 +117,15 @@ function canValidateConfig(): boolean {
 /** The one message explaining why a config cannot be written in this runtime. */
 const NO_WRITE_NOTE = "This runtime cannot parse a gate config (its YAML loader needs enigma's own binary), so the editors are read-only here.";
 
-/** Whether the gate daemon is alive, by probing the pid in its pidfile. */
+/**
+ * Whether the gate daemon is alive, by probing the pid in its pidfile. Both the
+ * file format and the liveness probe come from the daemon's own module: the file
+ * is JSON (`{"pid":...}`), so a hand-rolled integer parse silently reported every
+ * running daemon as stopped.
+ */
 function daemonAlive(pidFile: string): boolean {
     try {
-        const pid = Number.parseInt(readFileSync(pidFile, "utf8").trim(), 10);
-        if (!Number.isFinite(pid) || pid <= 0) return false;
-        // Signal 0 tests for existence; EPERM means alive but owned by another user.
-        try { process.kill(pid, 0); return true; } catch (err) { return (err as NodeJS.ErrnoException).code === "EPERM"; }
+        return processRunning(readDaemonPIDFile(pidFile).pid) === true;
     } catch { return false; }
 }
 
@@ -164,6 +197,8 @@ async function readRuns(dbPath: string, projectPath: string | null, limit: numbe
                     status: s.status,
                     durationMs: s.durationMs,
                     findings: parseFindings(s.findingsJson).length,
+                    startedAt: s.startedAt,
+                    completedAt: s.completedAt,
                 })),
                 findings: parked ? parseFindings(parked.findingsJson) : [],
             };
@@ -171,6 +206,61 @@ async function readRuns(dbPath: string, projectPath: string | null, limit: numbe
     } catch { return null; } finally {
         try { (db as { close?: () => void; } | null)?.close?.(); } catch { /* already closed */ }
     }
+}
+
+/** Per-agent model flag. An agent absent here gets no model row rather than a guessed flag. */
+const MODEL_FLAG: Record<string, string> = {
+    claude: "--model",
+    codex: "-m",
+    opencode: "--model"
+};
+
+/** The auto-fix limits the form renders, in pipeline order. */
+const AUTO_FIX_STEPS = ["rebase", "review", "test", "document", "lint", "ci"] as const;
+
+/** Renders a resolved CI timeout back to the duration text the config accepts. */
+function ciTimeoutText(ms: number): string {
+    if (ms === gateConf.CI_TIMEOUT_UNLIMITED) return "unlimited";
+    if (ms % 3600000 === 0) return `${ms / 3600000}h`;
+    if (ms % 60000 === 0) return `${ms / 60000}m`;
+    return `${Math.round(ms / 1000)}s`;
+}
+
+/** Reads the model out of an agent's extra args, for either flag spelling. */
+function modelFromArgs(args: string[], flag: string): string {
+    for (let i = 0; i < args.length; i++) {
+        if (args[i] === flag) return args[i + 1] ?? "";
+        if (args[i].startsWith(`${flag}=`)) return args[i].slice(flag.length + 1);
+    }
+    return "";
+}
+
+/**
+ * The global config as form values, or null when this runtime cannot parse it.
+ * Reads through the gate's own loader so the form shows what the daemon will see,
+ * including the defaults for keys the file leaves out.
+ */
+async function readGateSettings(globalPath: string): Promise<GateSettingsView | null> {
+    if (!canValidateConfig()) return null;
+    try {
+        const merged = gateConf.merge(gateConf.loadGlobal(globalPath), gateConf.loadRepoFromBytes(""));
+        const declared = merged.agent;
+        // `auto` only names a real agent after probing PATH; a probe failure is not fatal here.
+        try { await gateConf.resolveAgent(merged, lookPath); } catch { /* left as declared */ }
+        const flag = MODEL_FLAG[merged.agent];
+        const autoFix: Record<string, number> = {};
+        for (const step of AUTO_FIX_STEPS) autoFix[step] = merged.autoFix[step];
+        return {
+            agent: declared,
+            agentResolved: merged.agent,
+            model: flag ? modelFromArgs(merged.agentArgsOverride?.[merged.agent] ?? [], flag) : "",
+            modelSupported: flag !== undefined,
+            ciTimeout: ciTimeoutText(merged.ciTimeout),
+            logLevel: merged.logLevel,
+            autoFix,
+            intentEnabled: merged.intent.enabled
+        };
+    } catch { return null; }
 }
 
 /** The whole gate view payload for the given scope ("global" or a project path). */
@@ -188,7 +278,9 @@ export async function gateOverview(projectPath: string | null): Promise<GateOver
             : "",
         daemon: daemonAlive(paths.pidFile()),
         root: paths.root(),
+        serverNow: Math.floor(Date.now() / 1000),
         globalConfig: { path: globalPath, text: readText(globalPath) },
+        settings: await readGateSettings(globalPath),
         repo: projectPath
             ? {
                 path: projectPath,
@@ -245,4 +337,202 @@ export function saveGateConfig(scope: "global" | "repo", text: string, projectPa
 /** Absolute path of the gate root, for the "where does this live" line in the UI. */
 export function gateRoot(): string {
     return process.env.ENIGMA_GATE_HOME || join(homedir(), ".enigma", "gate");
+}
+
+// --- structured editing of the global config ------------------------------------
+// The form edits ONE key per request, in place. Regenerating the file from parsed
+// values would be shorter but would erase the explanatory comments the config ships
+// with - and those comments are the only documentation most people ever read. So
+// each setter finds the key's own line and rewrites just that line, then hands the
+// whole text to saveGateConfig, which validates it with the daemon's own loader.
+
+/** Dotted keys the form may write, and the shape each one accepts. */
+const SETTABLE_KEYS: Record<string, "string" | "number" | "boolean"> = {
+    agent: "string",
+    ci_timeout: "string",
+    log_level: "string",
+    "intent.enabled": "boolean",
+    ...Object.fromEntries(AUTO_FIX_STEPS.map((s) => [`auto_fix.${s}`, "number" as const]))
+};
+
+/**
+ * Values the gate's own loader accepts without complaint but the daemon then fails
+ * on (it never enumerates agent names or log levels), so the form checks them here.
+ * Without this, a bad pick would save cleanly and only surface on the next push.
+ */
+const ENUM_KEYS: Record<string, (value: string) => boolean> = {
+    agent: (v) => ["auto", "claude", "codex", "rovodev", "opencode", "pi"].includes(v) || v.startsWith("acp:"),
+    log_level: (v) => ["debug", "info", "warn", "error"].includes(v)
+};
+
+/** Escapes a config key for use inside a line-matching regex. */
+function keyPattern(key: string): string {
+    return key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** Matches `<indent><key>:` on an uncommented line. */
+function keyLineRe(key: string, indent: string): RegExp {
+    return new RegExp(`^${indent}${keyPattern(key)}\\s*:`);
+}
+
+/** Renders a value as a YAML scalar, quoting only when a bare word would not parse. */
+function yamlScalar(value: string | number | boolean): string {
+    if (typeof value !== "string") return String(value);
+    return /^[A-Za-z0-9_./-]+$/.test(value) ? value : JSON.stringify(value);
+}
+
+/** Replaces the value on a `key: value` line, keeping any trailing comment. */
+function rewriteValueLine(line: string, key: string, indent: string, scalar: string): string {
+    const comment = /(\s+#.*)$/.exec(line);
+    return `${indent}${key}: ${scalar}${comment ? comment[1] : ""}`;
+}
+
+/**
+ * The half-open line range of the block opened at `open`: every following line that
+ * is blank or indented. A line starting at column 0 (including a comment) closes it,
+ * which is exactly how the shipped config separates its sections.
+ */
+function blockRange(lines: string[], open: number): number {
+    let end = open + 1;
+    while (end < lines.length && (lines[end].trim() === "" || /^\s/.test(lines[end]))) end++;
+    return end;
+}
+
+/** Sets a top-level `key: value`, appending the key when the file does not have it. */
+function setRootKey(lines: string[], key: string, scalar: string): void {
+    const re = keyLineRe(key, "");
+    const i = lines.findIndex((line) => re.test(line));
+    if (i >= 0) { lines[i] = rewriteValueLine(lines[i], key, "", scalar); return; }
+    if (lines.length > 0 && lines[lines.length - 1].trim() !== "") lines.push("");
+    lines.push(`${key}: ${scalar}`);
+}
+
+/** Sets `parent.child`, creating the child line or the whole block as needed. */
+function setNestedKey(lines: string[], parent: string, child: string, scalar: string): void {
+    const parentRe = keyLineRe(parent, "");
+    const p = lines.findIndex((line) => parentRe.test(line));
+    if (p < 0) {
+        if (lines.length > 0 && lines[lines.length - 1].trim() !== "") lines.push("");
+        lines.push(`${parent}:`, `  ${child}: ${scalar}`);
+        return;
+    }
+    const end = blockRange(lines, p);
+    // Indent from the first real entry in the block, so a 4-space config stays 4-space.
+    let indent = "  ";
+    for (let i = p + 1; i < end; i++) {
+        const m = /^(\s+)[^\s#]/.exec(lines[i]);
+        if (m) { indent = m[1]; break; }
+    }
+    const childRe = keyLineRe(child, indent);
+    for (let i = p + 1; i < end; i++) {
+        if (childRe.test(lines[i])) { lines[i] = rewriteValueLine(lines[i], child, indent, scalar); return; }
+    }
+    // No such child: insert after the block's last entry rather than after its trailing blanks.
+    let at = p + 1;
+    for (let i = p + 1; i < end; i++) if (lines[i].trim() !== "") at = i + 1;
+    lines.splice(at, 0, `${indent}${child}: ${scalar}`);
+}
+
+/** Drops the top-level block opened by `key`, if the file has one. */
+function removeRootBlock(lines: string[], key: string): void {
+    const re = keyLineRe(key, "");
+    const i = lines.findIndex((line) => re.test(line));
+    if (i < 0) return;
+    lines.splice(i, blockRange(lines, i) - i);
+}
+
+/**
+ * Rewrites `agent_args_override` so `agent` carries `<flag> <model>` (or no model
+ * flag when `model` is empty), preserving every other flag and every other agent.
+ * This one block IS regenerated rather than line-edited: it is a nested list, and a
+ * machine-managed one, so there are no hand-written comments inside it to lose.
+ */
+function setAgentModel(lines: string[], existing: Record<string, string[]>, agent: string, flag: string, model: string): void {
+    const kept: string[] = [];
+    const args = existing[agent] ?? [];
+    for (let i = 0; i < args.length; i++) {
+        if (args[i] === flag) { i++; continue; }
+        if (args[i].startsWith(`${flag}=`)) continue;
+        kept.push(args[i]);
+    }
+    const next: Record<string, string[]> = { ...existing };
+    if (model) next[agent] = [flag, model, ...kept];
+    else if (kept.length > 0) next[agent] = kept;
+    else delete next[agent];
+
+    removeRootBlock(lines, "agent_args_override");
+    const names = Object.keys(next);
+    if (names.length === 0) return;
+    if (lines.length > 0 && lines[lines.length - 1].trim() !== "") lines.push("");
+    lines.push("agent_args_override:");
+    for (const name of names) {
+        lines.push(`  ${name}: [${next[name].map((a) => JSON.stringify(a)).join(", ")}]`);
+    }
+}
+
+/** Joins edited lines back into a document that ends with exactly one newline. */
+function joinConfig(lines: string[]): string {
+    return `${lines.join("\n").replace(/\n+$/, "")}\n`;
+}
+
+/**
+ * Applies one form control to the global config. Every write goes back through
+ * saveGateConfig, so a change the daemon's loader rejects leaves the file untouched.
+ */
+export async function applyGateSetting(key: string, value: unknown): Promise<GateApplyResult> {
+    if (!canValidateConfig()) return { ok: false, message: NO_WRITE_NOTE };
+    const path = Paths.resolve().configFile();
+    gateConf.ensureDefaultGlobalConfig(path);
+    const lines = readText(path).split("\n");
+
+    if (key === "model") {
+        const model = typeof value === "string" ? value.trim() : "";
+        let current: gateConf.GlobalConfig;
+        try { current = gateConf.loadGlobal(path); } catch (err) {
+            return { ok: false, message: `Not saved: ${err instanceof Error ? err.message : "the config did not parse"}` };
+        }
+        const merged = gateConf.merge(current, gateConf.loadRepoFromBytes(""));
+        try { await gateConf.resolveAgent(merged, lookPath); } catch { /* left as declared */ }
+        const flag = MODEL_FLAG[merged.agent];
+        if (!flag) return { ok: false, message: `enigma does not know a model flag for the ${merged.agent} agent.` };
+        setAgentModel(lines, current.agentArgsOverride ?? {}, merged.agent, flag, model);
+        return saveGateConfig("global", joinConfig(lines), null);
+    }
+
+    const kind = SETTABLE_KEYS[key];
+    if (!kind) return { ok: false, message: "That setting is not editable here." };
+    let scalar: string;
+    if (kind === "boolean") scalar = yamlScalar(value === true || value === "true");
+    else if (kind === "number") {
+        const n = Number(value);
+        if (!Number.isInteger(n) || n < 0 || n > 20) return { ok: false, message: "Use a whole number between 0 and 20." };
+        scalar = yamlScalar(n);
+    } else {
+        const s = String(value ?? "").trim();
+        if (s === "") return { ok: false, message: "That setting cannot be empty." };
+        if (ENUM_KEYS[key] && !ENUM_KEYS[key](s)) return { ok: false, message: `"${s}" is not a valid ${key}.` };
+        scalar = yamlScalar(s);
+    }
+
+    const dot = key.indexOf(".");
+    if (dot < 0) setRootKey(lines, key, scalar);
+    else setNestedKey(lines, key.slice(0, dot), key.slice(dot + 1), scalar);
+    return saveGateConfig("global", joinConfig(lines), null);
+}
+
+/**
+ * Starts or stops the gate daemon. The daemon module reaches into the gate's
+ * Bun-only layers, so it is imported dynamically and an unavailable runtime is
+ * reported rather than thrown.
+ */
+export async function setGateDaemon(on: boolean): Promise<GateApplyResult> {
+    try {
+        const paths = Paths.resolve();
+        const { startDaemon, stopDaemon } = await import("./gate/cli/daemonCmd");
+        if (on) { await startDaemon(paths); return { ok: true, message: "Daemon started." }; }
+        await stopDaemon(paths);
+        return { ok: true, message: "Daemon stopped. It starts again on the next gated push." };
+    } catch (err) {
+        return { ok: false, message: `Could not ${on ? "start" : "stop"} the daemon: ${err instanceof Error ? err.message : "unknown error"}` };
+    }
 }

@@ -758,13 +758,29 @@ function serveGate(req: import("node:http").IncomingMessage, res: import("node:h
     send();
 }
 
-/** Save one of the two gate configs from a POST body { scope, text, path? }. */
+/**
+ * Gate write endpoint. Without an `action` the body is a raw config save
+ * ({ scope, text, path? }); `action` selects a structured edit instead:
+ * "setting" writes one field of the global config, "daemon" starts or stops it.
+ */
 function writeGate(req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse): void {
     let body = "";
     req.on("data", (chunk) => { body += chunk; if (body.length > 128 * 1024) req.destroy(); });
     req.on("end", () => {
-        let parsed: { scope?: unknown; text?: unknown; path?: unknown; };
+        let parsed: { scope?: unknown; text?: unknown; path?: unknown; action?: unknown; key?: unknown; value?: unknown; on?: unknown; };
         try { parsed = JSON.parse(body || "{}"); } catch { res.writeHead(400, JSON_HDR); res.end('{"error":"bad json"}'); return; }
+
+        if (parsed.action === "setting" || parsed.action === "daemon") {
+            const act = parsed.action === "daemon"
+                ? (m: typeof import("./dashboard-gate")) => m.setGateDaemon(parsed.on === true)
+                : (m: typeof import("./dashboard-gate")) => m.applyGateSetting(String(parsed.key ?? ""), parsed.value);
+            import("./dashboard-gate")
+                .then(act)
+                .then((out) => { res.writeHead(out.ok ? 200 : 400, JSON_HDR); res.end(JSON.stringify(out)); })
+                .catch(() => { res.writeHead(500, JSON_HDR); res.end('{"error":"action failed"}'); });
+            return;
+        }
+
         const scope = parsed.scope === "repo" ? "repo" : "global";
         const project = typeof parsed.path === "string" && parsed.path ? parsed.path : undefined;
         const run = (): void => {

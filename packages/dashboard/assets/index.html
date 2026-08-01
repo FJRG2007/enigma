@@ -87,12 +87,27 @@
         /* Sections as a vertical rail: the sidebar is already the surface, so the active
            entry is a filled pill and the rest are plain rows. */
         .tabs { display: flex; flex-direction: column; gap: 2px; }
+        /* Twelve flat entries were a wall of similar words, so they are grouped and iconified
+           (frontend-policy, "Navigation Is Structured"). The group label is a quiet caption,
+           not another bordered box - the rail is already the surface. */
+        .nav-group { display: flex; flex-direction: column; gap: 2px; }
+        .nav-group[hidden] { display: none; }
+        .nav-group + .nav-group { margin-top: 13px; }
+        .nav-group.nav-tail { margin-top: 20px; }
+        .nav-group-t {
+            font-family: var(--mono); font-size: 9.5px; font-weight: 600; text-transform: uppercase;
+            letter-spacing: 1.5px; color: var(--muted); opacity: .6; padding: 0 12px; margin-bottom: 3px;
+        }
         .tabs .tab {
+            display: flex; align-items: center; gap: 9px;
             font-family: var(--mono); text-decoration: none; color: var(--muted); font-size: 12.5px; font-weight: 600;
             padding: 8px 12px; border-radius: 9px; border: 1px solid transparent; transition: background .15s, color .15s, border-color .15s;
         }
+        /* The label carries the meaning here (unlike an icon action), so the glyph is decorative. */
+        .tab-ic { width: 15px; height: 15px; flex: 0 0 15px; opacity: .8; }
         .tabs .tab:hover { color: var(--text); background: rgba(255,255,255,0.03); }
         .tabs .tab.active { color: var(--accent); background: var(--surface2); border-color: var(--border); }
+        .tabs .tab.active .tab-ic { opacity: 1; }
         .live { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; font-family: var(--mono); padding: 5px 12px; background: rgba(0,0,0,0.25); border: 1px solid var(--border-soft); border-radius: 999px; }
         .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--good); box-shadow: 0 0 8px var(--good); }
         .dot.stale { background: var(--muted); box-shadow: none; }
@@ -564,6 +579,51 @@
         }
         .modal-back.show .modal { transform: none; opacity: 1; }
         .modal.wide { max-width: 900px; }
+        /* Command palette: the same backdrop and surface as every other dialog, sat in the top
+           third so the result list grows downwards without moving the input under the caret. */
+        /* The palette lives in the markup instead of being created per open, so it needs this:
+           `display: flex` above beats the UA's `[hidden] { display: none }` on specificity, and a
+           closed backdrop would otherwise sit invisibly over the page eating every click. */
+        .modal-back[hidden] { display: none; }
+        .modal-back.pal-back { align-items: flex-start; padding-top: 12vh; }
+        .modal.pal { max-width: 520px; padding: 12px; }
+        .pal-input {
+            width: 100%; background: transparent; color: var(--text); border: none; border-bottom: 1px solid var(--border);
+            padding: 8px 6px 12px; font-size: 14px; font-family: var(--mono);
+        }
+        .pal-input:focus { outline: none; }
+        .pal-input::-webkit-search-cancel-button { display: none; }
+        .pal-list { max-height: 46vh; overflow-y: auto; overscroll-behavior: contain; margin-top: 8px; }
+        .pal-gt {
+            font-family: var(--mono); font-size: 9.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 1.4px;
+            color: var(--muted); opacity: .6; padding: 10px 8px 4px;
+        }
+        .pal-row {
+            display: flex; align-items: center; gap: 10px; padding: 8px 8px; border-radius: 8px;
+            cursor: pointer; color: var(--muted); font-size: 13px;
+        }
+        .pal-row .tab-ic { opacity: .75; }
+        .pal-row .pal-name { font-family: var(--mono); font-weight: 600; color: var(--text); }
+        .pal-row .pal-hint { margin-left: auto; font-family: var(--mono); font-size: 11px; opacity: .6; }
+        .pal-row.sel { background: var(--surface2); color: var(--text); }
+        .pal-row.sel .tab-ic { opacity: 1; color: var(--accent); }
+        .pal-empty { padding: 18px 8px; color: var(--muted); font-size: 13px; }
+        .pal-foot {
+            display: flex; gap: 14px; padding: 10px 8px 2px; border-top: 1px solid var(--border-soft);
+            font-family: var(--mono); font-size: 10.5px; color: var(--muted); opacity: .7;
+        }
+        .kbd {
+            font-family: var(--mono); font-size: 10px; padding: 1px 5px; border: 1px solid var(--border);
+            border-radius: 4px; background: var(--surface2);
+        }
+        /* The shortcut has to be discoverable, so the palette also has a clickable entry point. */
+        .cmdk {
+            display: inline-flex; align-items: center; gap: 8px; cursor: pointer; color: var(--muted);
+            background: rgba(0,0,0,0.25); border: 1px solid var(--border-soft); border-radius: 999px;
+            padding: 5px 8px 5px 12px; font-family: var(--mono); font-size: 12px;
+        }
+        .cmdk:hover { color: var(--text); border-color: var(--border); }
+        .cmdk svg { width: 13px; height: 13px; }
         .as-top { display: flex; gap: 8px; margin: 14px 0 6px; }
         .as-list { max-height: 50vh; overflow: auto; border: 1px solid var(--border); border-radius: 8px; padding: 4px 12px; }
         .as-row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--surface2); cursor: pointer; }
@@ -646,18 +706,68 @@
             </button>
         </div>
         <nav class="tabs">
-            <a href="#/" data-view="savings" class="tab active">Savings</a>
-            <a href="#/usage" data-view="usage" class="tab">Usage</a>
-            <a href="#/accounts" data-view="accounts" class="tab">Accounts</a>
-            <a href="#/skills" data-view="skills" class="tab">Skills</a>
-            <a href="#/settings" data-view="settings" class="tab">Settings</a>
-            <a href="#/gate" data-view="gate" class="tab">Quality gate</a>
-            <a href="#/resources" data-view="resources" class="tab">Resources</a>
-            <a href="#/recall" data-view="recall" class="tab">Recall</a>
-            <a href="#/codegraph" data-view="codegraph" class="tab">Code graph</a>
-            <a href="#/playground" data-view="playground" class="tab">Playground</a>
-            <a href="#/packs" data-view="packs" class="tab">Packs</a>
-            <a href="#/ssh" data-view="ssh" class="tab">SSH</a>
+            <div class="nav-group" role="group" aria-labelledby="ng-overview">
+                <div class="nav-group-t" id="ng-overview">Overview</div>
+                <a href="#/" data-view="savings" class="tab active">
+                    <svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><path d="M12 18V6"/></svg>
+                    <span>Savings</span>
+                </a>
+                <a href="#/usage" data-view="usage" class="tab">
+                    <svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+                    <span>Usage</span>
+                </a>
+            </div>
+            <div class="nav-group" role="group" aria-labelledby="ng-agents">
+                <div class="nav-group-t" id="ng-agents">Agents</div>
+                <a href="#/accounts" data-view="accounts" class="tab">
+                    <svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                    <span>Accounts</span>
+                </a>
+                <a href="#/skills" data-view="skills" class="tab">
+                    <svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>
+                    <span>Skills</span>
+                </a>
+                <a href="#/packs" data-view="packs" class="tab">
+                    <svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>
+                    <span>Packs</span>
+                </a>
+                <a href="#/playground" data-view="playground" class="tab">
+                    <svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 17 6-6-6-6"/><path d="M12 19h8"/></svg>
+                    <span>Playground</span>
+                </a>
+            </div>
+            <div class="nav-group" role="group" aria-labelledby="ng-code">
+                <div class="nav-group-t" id="ng-code">Code</div>
+                <a href="#/gate" data-view="gate" class="tab">
+                    <svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg>
+                    <span>Quality gate</span>
+                </a>
+                <a href="#/codegraph" data-view="codegraph" class="tab">
+                    <svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 13.5 6.8 4"/><path d="m15.4 6.5-6.8 4"/></svg>
+                    <span>Code graph</span>
+                </a>
+                <a href="#/recall" data-view="recall" class="tab">
+                    <svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>
+                    <span>Recall</span>
+                </a>
+            </div>
+            <div class="nav-group" role="group" aria-labelledby="ng-system">
+                <div class="nav-group-t" id="ng-system">System</div>
+                <a href="#/resources" data-view="resources" class="tab">
+                    <svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="16" height="16" x="4" y="4" rx="2"/><rect width="6" height="6" x="9" y="9" rx="1"/><path d="M15 2v2"/><path d="M15 20v2"/><path d="M2 15h2"/><path d="M2 9h2"/><path d="M20 15h2"/><path d="M20 9h2"/><path d="M9 2v2"/><path d="M9 20v2"/></svg>
+                    <span>Resources</span>
+                </a>
+                <a href="#/ssh" data-view="ssh" class="tab">
+                    <svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="16" y="16" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="9" y="2" width="6" height="6" rx="1"/><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3"/><path d="M12 12V8"/></svg>
+                    <span>SSH</span>
+                </a>
+            </div>
+            <div class="nav-group nav-tail">
+                <a href="#/settings" data-view="settings" class="tab">
+                    <svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 4h-7"/><path d="M10 4H3"/><path d="M21 12h-9"/><path d="M8 12H3"/><path d="M21 20h-5"/><path d="M12 20H3"/><path d="M14 2v4"/><path d="M8 10v4"/><path d="M16 18v4"/></svg>
+                    <span>Settings</span>
+                </a>
+            </div>
         </nav>
         <div class="side-foot">
             <nav class="links">
@@ -674,12 +784,30 @@
         </div>
     </aside>
     <div id="navScrim" class="nav-scrim" hidden></div>
+    <div id="palBack" class="modal-back pal-back" hidden>
+        <div class="modal pal" role="dialog" aria-modal="true" aria-label="Search views and projects">
+            <input id="palInput" class="pal-input" type="search" role="combobox" aria-expanded="true"
+                   aria-controls="palList" aria-autocomplete="list" placeholder="Jump to a view or a project"
+                   autocomplete="off" autocapitalize="none" spellcheck="false" enterkeyhint="go">
+            <div id="palList" class="pal-list" role="listbox" aria-label="Results"></div>
+            <div class="pal-foot">
+                <span><span class="kbd">up</span> <span class="kbd">down</span> move</span>
+                <span><span class="kbd">enter</span> open</span>
+                <span><span class="kbd">esc</span> close</span>
+            </div>
+        </div>
+    </div>
     <div class="content">
     <header>
         <button type="button" id="navOpen" class="iconbtn nav-burger" title="Menu" aria-label="Open the menu" aria-expanded="false" aria-controls="sidebar">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
         </button>
         <div class="nav">
+            <button type="button" id="palOpen" class="cmdk" aria-label="Search views and projects" aria-haspopup="dialog">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+                <span>Search</span>
+                <span class="kbd" id="palHint">Ctrl K</span>
+            </button>
             <label class="scope-wrap" title="Scope: global config or a specific project"><span class="scope-lbl">Scope</span><select id="scopeSel" class="scope-sel"><option value="global">Global</option></select></label>
             <span class="live"><span id="dot" class="dot stale"></span><span id="updated">Connecting...</span></span>
         </div>
@@ -935,19 +1063,55 @@
             <button id="gateRefresh" type="button" class="iconbtn" title="Refresh" aria-label="Refresh the gate view"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg></button>
         </div>
         <div class="grid">
-            <div class="card"><div class="label">Gate</div><div id="gateOn" class="value">-</div><div class="foot">Auto-driven after a code task</div></div>
-            <div class="card"><div class="label">Daemon</div><div id="gateDaemon" class="value">-</div><div class="foot">Runs the pipeline in the background</div></div>
+            <div class="card">
+                <div class="label">Gate</div><div id="gateOn" class="value">-</div>
+                <div class="foot" style="display:flex;align-items:center;gap:8px">Auto-driven after a code task<button id="gateOnBtn" type="button" class="toggle" data-kind="bool" role="switch" aria-checked="false" aria-label="AI quality gate"></button></div>
+            </div>
+            <div class="card">
+                <div class="label">Daemon</div><div id="gateDaemon" class="value">-</div>
+                <div class="foot" style="display:flex;align-items:center;gap:8px">Runs the pipeline in the background<button id="gateDaemonBtn" type="button" class="toggle" data-kind="bool" role="switch" aria-checked="false" aria-label="Gate daemon"></button></div>
+            </div>
             <div class="card"><div class="label">Repository</div><div id="gateRepo" class="value">-</div><div id="gateRepoFoot" class="foot">Scope</div></div>
         </div>
 
         <div class="panel">
-            <div class="panel-head"><h2>Runs <small id="gateRunsSub">most recent first</small></h2></div>
+            <div class="panel-head"><h2>Runs <small id="gateRunsSub">most recent first</small></h2><span id="gateLive" class="set-hint"></span></div>
             <div id="gateRuns"><div class="empty" style="padding:12px 0">Loading...</div></div>
         </div>
 
+        <div class="panel" id="gateSetPanel">
+            <div class="set-cat-h">Pipeline settings <code id="gateCfgPath"></code></div>
+            <div class="sub" style="margin-bottom:10px">What the daemon runs and how hard it tries. Model and auto-fix limits are what a run's duration and token cost actually hang on.</div>
+            <div class="set-grid">
+                <div class="set-row">
+                    <div class="set-meta"><div class="set-name">Agent</div><div class="set-hint" id="gateAgentHint">which coding agent the pipeline drives</div></div>
+                    <div class="set-ctl"><select id="gateAgent" class="linput"><option value="auto">auto</option><option value="claude">claude</option><option value="codex">codex</option><option value="opencode">opencode</option><option value="rovodev">rovodev</option><option value="pi">pi</option></select></div>
+                </div>
+                <div class="set-row" id="gateModelRow">
+                    <div class="set-meta"><div class="set-name">Model</div><div class="set-hint" id="gateModelHint">the model every step runs on; a smaller one cuts run time and tokens</div></div>
+                    <div class="set-ctl ladd" style="align-items:center"><input id="gateModel" class="linput" style="flex:none;width:210px" spellcheck="false" autocapitalize="none" autocorrect="off" placeholder="agent default"><button id="gateModelSave" type="button" class="toggle on">Save</button></div>
+                </div>
+                <div class="set-row">
+                    <div class="set-meta"><div class="set-name">CI timeout</div><div class="set-hint">how long the CI step babysits an idle PR: 168h, 24h, or unlimited</div></div>
+                    <div class="set-ctl ladd" style="align-items:center"><input id="gateCiTimeout" class="linput" style="flex:none;width:120px" spellcheck="false" autocapitalize="none" autocorrect="off" placeholder="168h"><button id="gateCiSave" type="button" class="toggle on">Save</button></div>
+                </div>
+                <div class="set-row">
+                    <div class="set-meta"><div class="set-name">Log level</div><div class="set-hint">daemon output verbosity</div></div>
+                    <div class="set-ctl"><select id="gateLogLevel" class="linput"><option value="debug">debug</option><option value="info">info</option><option value="warn">warn</option><option value="error">error</option></select></div>
+                </div>
+                <div class="set-row">
+                    <div class="set-meta"><div class="set-name">Read intent from transcripts</div><div class="set-hint">feeds what you were trying to do to every step; off makes the agents work from the diff alone</div></div>
+                    <div class="set-ctl"><button id="gateIntent" type="button" class="toggle" data-kind="bool" role="switch" aria-checked="false" aria-label="Read intent from transcripts"></button></div>
+                </div>
+            </div>
+            <div class="set-cat-h" style="margin-top:18px">Auto-fix attempts</div>
+            <div class="sub" style="margin-bottom:10px">Follow-up rounds a step gets before it pauses for you. Every round is another full agent pass over the diff, so this is the setting that multiplies a run's cost. 0 pauses immediately.</div>
+            <div class="set-grid" id="gateAutoFix"></div>
+        </div>
+
         <div class="panel">
-            <div class="set-cat-h">Global configuration <code id="gateCfgPath"></code></div>
-            <div class="sub" style="margin-bottom:10px">Agent, CI timeout, log level, per-step commands and auto-fix limits. Saved only when it parses, so a typo here never reaches the daemon.</div>
+            <div class="set-cat-h">Global configuration <code class="gate-cfg-path"></code></div>
+            <div class="sub" style="margin-bottom:10px">The same file as raw YAML, for the keys with no control above (agent paths, ACP targets, ignore patterns, evidence). Saved only when it parses, so a typo here never reaches the daemon.</div>
             <textarea id="gateCfg" class="linput gate-yaml" spellcheck="false" autocapitalize="none" autocorrect="off" aria-label="Global gate configuration"></textarea>
             <div class="ladd" style="gap:8px;align-items:center">
                 <button id="gateCfgSave" type="button" class="toggle on" disabled title="No changes to save">Save</button>
@@ -4158,12 +4322,29 @@ export {
             if (ms < 60000) return (ms / 1000).toFixed(1) + "s";
             return Math.round(ms / 60000) + "m " + Math.round((ms % 60000) / 1000) + "s";
         }
+        // Server-minus-browser clock offset, so a step's live elapsed is measured against the
+        // clock that stamped started_at rather than against this machine's.
+        let gateClockSkew = 0;
+        // A step only gets its duration written when a round ends, so a step that is running or
+        // in a fix round would otherwise freeze at its last round. Tick it from started_at instead.
+        const GATE_ACTIVE_STEP = { running: 1, fixing: 1, awaiting_approval: 1, fix_review: 1 };
+        function gateStepDur(s) {
+            if (GATE_ACTIVE_STEP[s.status] && s.startedAt) {
+                return gateDur(Math.max(0, Date.now() + gateClockSkew - s.startedAt * 1000));
+            }
+            return s.durationMs ? gateDur(s.durationMs) : "";
+        }
+        function gateStepsHtml(steps) {
+            return (steps || []).map((s) => {
+                const d = gateStepDur(s);
+                return '<span class="gate-step ' + esc(s.status) + '">' + esc(s.name)
+                    + (d ? " · " + esc(d) : "")
+                    + (s.findings ? " · " + s.findings : "") + "</span>";
+            }).join("");
+        }
         function gateRunRow(r) {
             const pr = r.prUrl ? ' <a href="' + esc(r.prUrl) + '" target="_blank" rel="noopener noreferrer">PR</a>' : "";
-            const steps = (r.steps || []).map((s) =>
-                '<span class="gate-step ' + esc(s.status) + '">' + esc(s.name)
-                + (s.durationMs ? " · " + esc(gateDur(s.durationMs)) : "")
-                + (s.findings ? " · " + s.findings : "") + "</span>").join("");
+            const steps = gateStepsHtml(r.steps);
             const findings = (r.findings || []).length
                 ? '<div class="gate-find">' + r.findings.map((f) =>
                     '<div class="gate-find-row"><b>' + esc(f.id) + "</b> · " + esc(f.severity) + " · " + esc(f.action)
@@ -4176,21 +4357,78 @@ export {
                 + '<span class="gate-run-meta">' + esc(r.headSha) + pr + "</span>"
                 + "</div>" + '<div class="gate-steps">' + steps + "</div>" + findings + err + "</div>";
         }
-        function renderGate(g) {
+        // The two on/off switches at the top of the page. Both are optimistic: the switch flips
+        // first and rolls back if the server refuses, like every other control here.
+        function gateBool(btn, on) {
+            btn.textContent = on ? "on" : "off";
+            btn.classList.toggle("on", !!on);
+            btn.dataset.on = on ? "1" : "0";
+            btn.setAttribute("aria-checked", on ? "true" : "false");
+        }
+        const GATE_AUTOFIX = [
+            ["rebase", "conflicts and stale-base failures"],
+            ["review", "0 by default: review findings are yours to approve"],
+            ["test", "failing tests"],
+            ["document", "gaps the initial documentation pass left"],
+            ["lint", "lint and formatting failures"],
+            ["ci", "CI failures and merge conflicts on the open PR"]
+        ];
+        // Rendered once per non-live load; the number inputs write on change, so a re-render
+        // mid-edit would drop what is being typed.
+        function renderGateSettings(s) {
+            const panel = $("gateSetPanel");
+            if (!s) { panel.style.display = "none"; return; }
+            panel.style.display = "";
+            // An `acp:<target>` agent set from the raw editor is not one of the fixed options;
+            // carry it as one so the select shows the truth instead of going blank.
+            const agentSel = $("gateAgent");
+            if (!Array.prototype.some.call(agentSel.options, (o) => o.value === s.agent)) {
+                agentSel.add(new Option(s.agent, s.agent));
+            }
+            agentSel.value = s.agent;
+            syncDD(agentSel);
+            $("gateAgentHint").textContent = s.agent === "auto"
+                ? "auto: first agent found on PATH - currently " + s.agentResolved
+                : "which coding agent the pipeline drives";
+            $("gateModelRow").style.display = s.modelSupported ? "" : "none";
+            $("gateModel").value = s.model || "";
+            $("gateModelHint").textContent = "passed to " + s.agentResolved
+                + " on every step; a smaller model is the one change that cuts both run time and tokens";
+            $("gateCiTimeout").value = s.ciTimeout || "";
+            $("gateLogLevel").value = s.logLevel;
+            syncDD($("gateLogLevel"));
+            gateBool($("gateIntent"), s.intentEnabled);
+            $("gateAutoFix").innerHTML = GATE_AUTOFIX.map(([step, hint]) =>
+                '<div class="set-row"><div class="set-meta"><div class="set-name">' + esc(step) + '</div><div class="set-hint">' + esc(hint) + "</div></div>"
+                + '<div class="set-ctl"><input type="number" min="0" max="20" step="1" inputmode="numeric" class="linput" style="flex:none;width:80px" data-gate-af="' + esc(step) + '" value="' + Number(s.autoFix[step] || 0) + '"></div></div>').join("");
+            const ctls = panel.querySelectorAll("input, select, button");
+            for (const c of ctls) c.disabled = !gateWritable;
+        }
+        // `live` marks a poll refresh: it repaints the run strip and the two switches, and leaves
+        // every editor alone so a poll can never overwrite what is being typed.
+        function renderGate(g, live) {
             g = g || {};
+            if (typeof g.serverNow === "number") gateClockSkew = g.serverNow * 1000 - Date.now();
             $("gateOn").textContent = g.on ? "On" : "Off";
             $("gateOn").className = "value " + (g.on ? "good" : "");
+            gateBool($("gateOnBtn"), g.on);
             $("gateDaemon").textContent = g.daemon ? "Running" : "Stopped";
             $("gateDaemon").className = "value " + (g.daemon ? "good" : "");
+            gateBool($("gateDaemonBtn"), g.daemon);
             const repo = g.repo;
             $("gateRepo").textContent = repo ? (repo.initialized ? "Initialized" : "Not initialized") : "Global";
             $("gateRepoFoot").textContent = repo ? repo.path : "Every active run on this machine";
             $("gateRunsSub").textContent = repo ? "most recent first, this repository" : "active runs across every repository";
             const runs = g.runs || [];
+            gateRuns = runs;
             $("gateRuns").innerHTML = runs.length
                 ? runs.map(gateRunRow).join("")
                 : '<div class="empty" style="padding:12px 0">' + (g.runsAvailable === false ? esc(g.runsNote || "Run history unavailable.") : (repo ? "No runs recorded for this repository yet." : "No run in flight.")) + "</div>";
-            $("gateCfgPath").textContent = (g.globalConfig || {}).path || "";
+            gatePoll();
+            if (live) return;
+            const cfgPath = (g.globalConfig || {}).path || "";
+            $("gateCfgPath").textContent = cfgPath;
+            for (const el of document.querySelectorAll(".gate-cfg-path")) el.textContent = cfgPath;
             gateSaved.global = (g.globalConfig || {}).text || "";
             $("gateCfg").value = gateSaved.global;
             // A runtime that cannot parse a gate config must not write one: read-only, with the reason.
@@ -4199,6 +4437,7 @@ export {
             $("gateRepoCfg").readOnly = !gateWritable;
             if (!gateWritable) { setNote("gateCfgNote", g.writeNote || "Read-only here.", "err"); setNote("gateRepoCfgNote", g.writeNote || "Read-only here.", "err"); }
             syncGateSave("global");
+            renderGateSettings(g.settings);
             $("gateRepoPanel").style.display = repo ? "" : "none";
             if (repo) {
                 $("gateRepoCfgPath").textContent = repo.configPath || "";
@@ -4207,18 +4446,48 @@ export {
                 syncGateSave("repo");
             }
         }
-        async function loadGate() {
+
+        // --- keeping the run strip live -------------------------------------------------
+        // A gate run takes tens of minutes and the page has no push channel, so without this the
+        // strip shows whatever was true when the page was opened. Two loops: a 5s refetch while
+        // something is in flight (20s when idle) and a 1s repaint so the active step's elapsed
+        // counts up between fetches. Both stop when the tab is hidden or the view is not open.
+        let gateRuns = [], gateFetchTimer = null, gateTickTimer = null;
+        function gateBusy() {
+            return gateRuns.some((r) => r.status === "running" || r.status === "awaiting_approval");
+        }
+        function gateStopPoll() {
+            clearTimeout(gateFetchTimer); gateFetchTimer = null;
+            clearInterval(gateTickTimer); gateTickTimer = null;
+            $("gateLive").textContent = "";
+        }
+        function gatePoll() {
+            gateStopPoll();
+            if (activeView !== "gate" || document.hidden) return;
+            const busy = gateBusy();
+            $("gateLive").textContent = busy ? "live" : "";
+            gateFetchTimer = setTimeout(() => loadGate(true), busy ? 5000 : 20000);
+            if (!busy) return;
+            // Repaint only the step strips: replacing whole rows every second would drop a text
+            // selection inside the findings of a parked run.
+            gateTickTimer = setInterval(() => {
+                const strips = $("gateRuns").querySelectorAll(".gate-steps");
+                strips.forEach((el, i) => { if (gateRuns[i]) el.innerHTML = gateStepsHtml(gateRuns[i].steps); });
+            }, 1000);
+        }
+        async function loadGate(live) {
             const q = isProjectScope() ? "?path=" + encodeURIComponent(currentScope) : "";
-            const note = (msg) => { $("gateRuns").innerHTML = '<div class="empty" style="padding:12px 0">' + msg + "</div>"; };
+            const note = (msg) => { gateStopPoll(); $("gateRuns").innerHTML = '<div class="empty" style="padding:12px 0">' + msg + "</div>"; };
             try {
                 const res = await fetch("/api/gate" + q, { cache: "no-store" });
                 // The UI bundle updates on its own; the route it calls ships with the CLI, so a
                 // 404 here means the running server predates this view rather than being down.
                 if (res.status === 404 || res.status === 405) { note("This view needs a newer enigma CLI: the running server has no /api/gate route yet. Run <code>enigma update</code> once the next release ships."); return; }
                 if (!res.ok) { note("The server refused the request (" + res.status + ")."); return; }
-                renderGate(await res.json());
+                renderGate(await res.json(), live);
             } catch { note("Could not reach the server."); }
         }
+        document.addEventListener("visibilitychange", () => { if (activeView === "gate") { if (document.hidden) gateStopPoll(); else loadGate(true); } });
         async function saveGateCfg(which) {
             const { area, note } = gateEls(which);
             if (area.value === gateSaved[which]) return; // no-op: nothing changed
@@ -4231,11 +4500,52 @@ export {
                 if (out.ok) { gateSaved[which] = area.value; syncGateSave(which); }
             } catch { setNote(note, "Could not reach the server.", "err"); }
         }
-        $("gateRefresh").addEventListener("click", loadGate);
+        /** One form control -> one key of the global config. Reloads so the file stays the truth. */
+        async function saveGateSetting(key, value, label) {
+            setNote("gateCfgNote", "Saving " + label + "...");
+            try {
+                const out = await (await fetch("/api/gate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "setting", key, value }) })).json();
+                setNote("gateCfgNote", out.message || (out.ok ? "Saved." : "Not saved."), out.ok ? "ok" : "err");
+                await loadGate();
+            } catch { setNote("gateCfgNote", "Could not reach the server.", "err"); await loadGate(); }
+        }
+        async function gateDaemonPost(on) {
+            gateBool($("gateDaemonBtn"), on); // optimistic; the reload below is the truth
+            setNote("gateCfgNote", on ? "Starting the daemon..." : "Stopping the daemon...");
+            try {
+                const out = await (await fetch("/api/gate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "daemon", on }) })).json();
+                setNote("gateCfgNote", out.message || (out.ok ? "Done." : "Failed."), out.ok ? "ok" : "err");
+            } catch { setNote("gateCfgNote", "Could not reach the server.", "err"); }
+            await loadGate();
+        }
+        // The gate on/off flag is a normal enigma setting, so it goes through the settings route
+        // the Settings page uses rather than growing a second writer for the same key.
+        async function gateOnPost(on) {
+            gateBool($("gateOnBtn"), on);
+            setNote("gateCfgNote", on ? "Turning the gate on..." : "Turning the gate off...");
+            try {
+                const out = await (await fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: "gate", value: on }) })).json();
+                setNote("gateCfgNote", out.ok ? (out.restartNote || "Saved. Restart your agent to apply.") : ("Could not change the gate: " + (out.error || "error")), out.ok ? "warn" : "err");
+            } catch { setNote("gateCfgNote", "Could not reach the server.", "err"); }
+            await loadGate();
+        }
+        $("gateRefresh").addEventListener("click", () => loadGate());
         $("gateCfg").addEventListener("input", () => syncGateSave("global"));
         $("gateRepoCfg").addEventListener("input", () => syncGateSave("repo"));
         $("gateCfgSave").addEventListener("click", () => saveGateCfg("global"));
         $("gateRepoCfgSave").addEventListener("click", () => saveGateCfg("repo"));
+        $("gateOnBtn").addEventListener("click", () => gateOnPost($("gateOnBtn").dataset.on !== "1"));
+        $("gateDaemonBtn").addEventListener("click", () => gateDaemonPost($("gateDaemonBtn").dataset.on !== "1"));
+        $("gateAgent").addEventListener("change", (e) => saveGateSetting("agent", e.target.value, "the agent"));
+        $("gateLogLevel").addEventListener("change", (e) => saveGateSetting("log_level", e.target.value, "the log level"));
+        $("gateIntent").addEventListener("click", () => saveGateSetting("intent.enabled", $("gateIntent").dataset.on !== "1", "intent extraction"));
+        $("gateModelSave").addEventListener("click", () => saveGateSetting("model", $("gateModel").value.trim(), "the model"));
+        $("gateCiSave").addEventListener("click", () => saveGateSetting("ci_timeout", $("gateCiTimeout").value.trim(), "the CI timeout"));
+        // Number inputs commit on change (blur or Enter), so typing "12" is not read as "1" then "12".
+        $("gateAutoFix").addEventListener("change", (e) => {
+            const step = e.target.dataset && e.target.dataset.gateAf;
+            if (step) saveGateSetting("auto_fix." + step, Number(e.target.value), "the " + step + " limit");
+        });
 
         // --- section rail (a full-screen drawer below 900px) ---
         const sidebarEl = $("sidebar"), navScrimEl = $("navScrim"), navOpenBtn = $("navOpen");
@@ -4262,6 +4572,149 @@ export {
         document.addEventListener("keydown", (e) => { if (e.key === "Escape" && sidebarEl.classList.contains("open")) setNav(false); });
         window.matchMedia("(min-width: 901px)").addEventListener("change", (e) => { if (e.matches) setNav(false); });
 
+        // --- command palette (Cmd/Ctrl+K) ---------------------------------------------
+        // Twelve views plus every registered project is more than the rail can answer by
+        // pointing, so typing is the second way in (frontend-policy, "Ctrl+K Opens A Command
+        // Palette"). enigma: the dashboard is a single dependency-free HTML file served over
+        // loopback, so the ~20-line matcher below stands in for fuse.js - upgrade to fuse.js
+        // if this page ever gains a build step.
+        const palBack = $("palBack"), palInput = $("palInput"), palList = $("palList");
+        const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+        let palItems = [], palSel = 0, palReturnFocus = null;
+        $("palHint").textContent = IS_MAC ? "Cmd K" : "Ctrl K";
+
+        /**
+         * Fuzzy rank of `query` inside `text`: -1 when the query is not a subsequence, otherwise
+         * a score that rewards consecutive runs and word starts. Beats a substring filter because
+         * "qgate" finds "Quality gate" and "plyg" finds "Playground", which .includes() cannot.
+         */
+        function palScore(query, text) {
+            const q = query.toLowerCase(), t = text.toLowerCase();
+            if (!q) return 0;
+            let at = 0, from = 0, score = 0, run = 0;
+            for (let i = 0; i < q.length; i++) {
+                at = t.indexOf(q[i], from);
+                if (at === -1) return -1;
+                run = (i > 0 && at === from) ? run + 1 : 0;
+                const wordStart = at === 0 || /[^a-z0-9]/.test(t[at - 1]);
+                score += 10 + run * 6 + (wordStart ? 8 : 0) - Math.min(at - from, 6);
+                from = at + 1;
+            }
+            return score;
+        }
+
+        /** Built from the live DOM on every open, so it can never drift from the rail or the scopes. */
+        function palIndex() {
+            const out = [];
+            document.querySelectorAll(".tabs .tab").forEach((t) => {
+                if (t.classList.contains("disabled")) return; // out of reach in this scope
+                const group = t.closest(".nav-group");
+                const label = (t.querySelector("span") || t).textContent.trim();
+                const icon = t.querySelector(".tab-ic");
+                out.push({
+                    kind: "View", name: label, hint: t.getAttribute("href"),
+                    icon: icon ? icon.outerHTML : "",
+                    group: group && group.querySelector(".nav-group-t") ? group.querySelector(".nav-group-t").textContent.trim() : "",
+                    run: () => { location.hash = t.getAttribute("href"); },
+                });
+            });
+            const sel = $("scopeSel");
+            if (sel) Array.from(sel.options).forEach((o) => {
+                if (o.value === "__create__" || o.value === currentScope) return;
+                out.push({
+                    kind: "Scope", name: o.textContent.trim(), hint: o.value === "global" ? "" : "project", icon: "", group: "",
+                    run: () => { sel.value = o.value; syncDD(sel); sel.dispatchEvent(new Event("change")); },
+                });
+            });
+            return out;
+        }
+
+        function palRender(query) {
+            const q = query.trim();
+            const all = palIndex();
+            palItems = (!q ? all : all
+                .map((it) => ({ it, s: Math.max(palScore(q, it.name), palScore(q, it.kind + " " + it.name) - 4) }))
+                .filter((r) => r.s >= 0)
+                .sort((a, b) => b.s - a.s)
+                .map((r) => r.it));
+            palSel = 0;
+            if (!palItems.length) {
+                palList.innerHTML = '<div class="pal-empty">No view or project matches "' + esc(q) + '".</div>';
+                palInput.removeAttribute("aria-activedescendant");
+                return;
+            }
+            let html = "", kind = null;
+            palItems.forEach((it, i) => {
+                if (it.kind !== kind) { kind = it.kind; html += '<div class="pal-gt">' + esc(kind === "View" ? "Views" : "Switch scope") + "</div>"; }
+                html += '<div class="pal-row' + (i === 0 ? " sel" : "") + '" role="option" id="pal-o' + i + '"'
+                    + ' aria-selected="' + (i === 0 ? "true" : "false") + '" data-i="' + i + '">'
+                    + it.icon
+                    + '<span class="pal-name">' + esc(it.name) + "</span>"
+                    + (it.group ? '<span class="pal-hint">' + esc(it.group) + "</span>" : (it.hint ? '<span class="pal-hint">' + esc(it.hint) + "</span>" : ""))
+                    + "</div>";
+            });
+            palList.innerHTML = html;
+            palMove(0);
+        }
+
+        function palMove(next) {
+            if (!palItems.length) return;
+            const rows = palList.querySelectorAll(".pal-row");
+            palSel = (next + palItems.length) % palItems.length;
+            rows.forEach((r, i) => {
+                const on = i === palSel;
+                r.classList.toggle("sel", on);
+                r.setAttribute("aria-selected", on ? "true" : "false");
+                if (on) { r.scrollIntoView({ block: "nearest" }); palInput.setAttribute("aria-activedescendant", r.id); }
+            });
+        }
+
+        function palOpen() {
+            if (!palBack.hidden) return;
+            palReturnFocus = document.activeElement;
+            palBack.hidden = false;
+            document.body.classList.add("nav-open"); // reuses the drawer's scroll lock
+            requestAnimationFrame(() => palBack.classList.add("show"));
+            palInput.value = "";
+            palRender("");
+            palInput.focus();
+        }
+        function palClose() {
+            if (palBack.hidden) return;
+            palBack.classList.remove("show");
+            setTimeout(() => { palBack.hidden = true; }, 200);
+            if (!sidebarEl.classList.contains("open")) document.body.classList.remove("nav-open");
+            if (palReturnFocus) { try { palReturnFocus.focus(); } catch { /* gone from the DOM */ } palReturnFocus = null; }
+        }
+        function palRun() {
+            const it = palItems[palSel];
+            if (!it) return;
+            palClose();
+            setNav(false);
+            it.run();
+        }
+
+        $("palOpen").addEventListener("click", palOpen);
+        palInput.addEventListener("input", () => palRender(palInput.value));
+        palList.addEventListener("mousemove", (e) => { const r = e.target.closest(".pal-row"); if (r) palMove(Number(r.dataset.i)); });
+        palList.addEventListener("click", (e) => { const r = e.target.closest(".pal-row"); if (r) { palMove(Number(r.dataset.i)); palRun(); } });
+        palBack.addEventListener("mousedown", (e) => { if (e.target === palBack) palClose(); });
+        // Focus stays inside: the dialog holds one input and a list driven from it.
+        palBack.addEventListener("keydown", (e) => {
+            if (e.key === "ArrowDown") { e.preventDefault(); palMove(palSel + 1); }
+            else if (e.key === "ArrowUp") { e.preventDefault(); palMove(palSel - 1); }
+            else if (e.key === "Enter") { e.preventDefault(); palRun(); }
+            // Escape closes the topmost surface only: the drawer behind it stays open.
+            else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); palClose(); }
+            else if (e.key === "Tab") e.preventDefault();
+        });
+        document.addEventListener("keydown", (e) => {
+            // Ctrl+K is the browser's own search-bar shortcut, so it has to be taken explicitly.
+            if (e.key.toLowerCase() !== "k" || !(IS_MAC ? e.metaKey : e.ctrlKey) || e.altKey) return;
+            e.preventDefault();
+            if (palBack.hidden) palOpen(); else palClose();
+        });
+
         // --- hash routing between the subpages ---
         // Single source of truth for the subpage ids (savings is the default/fallback).
         const VIEWS = ["savings", "usage", "accounts", "skills", "settings", "gate", "resources", "recall", "codegraph", "playground", "packs", "ssh"];
@@ -4277,7 +4730,20 @@ export {
             if (project && PROJECT_VIEWS.indexOf(v) === -1) v = "settings";
             activeView = v;
             VIEWS.forEach((view) => { $("view-" + view).style.display = view === v ? "" : "none"; });
-            document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.view === v));
+            document.querySelectorAll(".tab").forEach((t) => {
+                const on = t.dataset.view === v;
+                t.classList.toggle("active", on);
+                // Colour alone does not carry the active state to a screen reader.
+                if (on) t.setAttribute("aria-current", "page"); else t.removeAttribute("aria-current");
+            });
+            // A group whose every entry is out of scope would otherwise render as a lone caption.
+            document.querySelectorAll(".nav-group").forEach((g) => {
+                const tabs = Array.from(g.querySelectorAll(".tab"));
+                g.hidden = tabs.length > 0 && tabs.every((t) => t.classList.contains("disabled"));
+            });
+            // Leaving the view must not keep polling for runs. Kept OUT of the chain below: an
+            // `if` in the middle of it detaches every later `else if` from the dispatch.
+            if (v !== "gate") gateStopPoll();
             // Settings + Skills always reload (they are scope-dependent); the rest keep their once-load.
             if (v === "settings") loadSettings();
             else if (v === "skills") loadSkills();
