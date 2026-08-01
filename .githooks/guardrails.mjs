@@ -4,8 +4,8 @@
 import { homedir } from "os";
 import { fileURLToPath } from "url";
 import { execFileSync } from "child_process";
-import { readFileSync, statSync, existsSync } from "fs";
 import { dirname, join, resolve } from "path";
+import { readFileSync, writeFileSync, statSync, existsSync } from "fs";
 var COMMENT_LINE = /^\s*(\/\/|#|\*|--|<!--|\{?\/\*)/;
 var BUILTIN_RULES = [
   {
@@ -194,6 +194,163 @@ var BUILTIN_RULES = [
     message: 'Person-name field with no capitalization rule. Phone keyboards capitalize SENTENCES, so a name typed on mobile is stored as "juan perez": add `autocapitalize="words"` (plus `spellcheck="false"` and `autocorrect="off"`, and the matching `autocomplete` token). The attribute only covers typing, so normalize the value too - trim, collapse inner spaces, and uppercase the first letter of every word - on blur and again on the server, uppercasing ONLY that letter so `McDonald`, `O\'Brien` and `van der Berg` survive. Best placed once in the shared Input/TextField component, selected by a prop. For a field that must keep what was typed, add an `enigma:allow-no-capitalize` note (frontend-policy, validation-policy).',
     severity: "block",
     skill: "frontend-policy"
+  },
+  {
+    id: "fe-name-value-normalize",
+    label: "A person-name value is normalized, not just autocapitalized",
+    files: ["*.tsx", "*.jsx", "*.vue", "*.svelte", "*.astro", "*.html", "*.htm"],
+    excludeFiles: [
+      "*.test.*",
+      "*.spec.*",
+      "**/tests/**",
+      "**/__tests__/**",
+      "**/stories/**",
+      "*.stories.*",
+      "*.min.js",
+      "**/dist/**",
+      "**/build/**",
+      "**/_build/**",
+      "**/node_modules/**",
+      "**/vendor/**",
+      "dist/**",
+      "build/**",
+      "_build/**",
+      "node_modules/**",
+      "vendor/**"
+    ],
+    scope: "file",
+    // The twin of fe-name-input-capitalize, and the half that actually reaches the stored
+    // value: `autocapitalize` is a KEYBOARD hint. A phone honours it, a physical keyboard
+    // ignores it entirely, so "juan perez" typed on a laptop is stored exactly like that and
+    // the field looks broken to the user who typed it. The attribute alone clears the other
+    // rule, which is how a form ends up with the attribute and no normalization at all.
+    // Same person-name token set (see there for why `name`/`fullname` are excluded).
+    pattern: `autocomplete=\\{?["'](?:name|given-name|family-name|additional-name|honorific-prefix)["']|(?:\\bname|\\bid|\\bfor|formControlName)=\\{?["'](?:first[-_]?name|last[-_]?name|given[-_]?name|family[-_]?name|surname|apellidos?)["']`,
+    absent: "capitalizeWords|capitalizeName|capitalizeEach|toTitleCase|titleCase|startCase|properCase|normalizeName|normalizePerson|capitalize\\(|charAt\\(0\\)\\.toUpperCase|enigma:allow-no-capitalize",
+    message: 'Person-name field with no value normalization. `autocapitalize="words"` only shapes the phone keyboard - a physical keyboard ignores it, so "juan perez" is stored verbatim. Normalize the VALUE with the shared normalizer (validation-policy): trim, collapse inner spaces, and uppercase the first letter of every word, ONLY that letter, so `McDonald`, `O\'Brien` and `van der Berg` survive. Run it on blur (never on every keystroke - it moves the caret and breaks IME composition) and again on the server, which is the copy that decides what is stored. Put it in the shared Input/TextField so the next form gets it by construction. For a field that must keep exactly what was typed, add an `enigma:allow-no-capitalize` note (validation-policy, frontend-policy).',
+    severity: "block",
+    skill: "validation-policy"
+  },
+  {
+    id: "sec-password-breach-check",
+    label: "A new password is checked against the breach corpus",
+    files: ["*.tsx", "*.jsx", "*.vue", "*.svelte", "*.astro", "*.html", "*.htm", "*.ts", "*.js"],
+    excludeFiles: [
+      "*.test.*",
+      "*.spec.*",
+      "**/tests/**",
+      "**/__tests__/**",
+      "**/stories/**",
+      "*.stories.*",
+      "*.min.js",
+      "**/dist/**",
+      "**/build/**",
+      "**/_build/**",
+      "**/node_modules/**",
+      "**/vendor/**",
+      "dist/**",
+      "build/**",
+      "_build/**",
+      "node_modules/**",
+      "vendor/**"
+    ],
+    scope: "file",
+    // `autocomplete="new-password"` is the spec's own marker for a password being CREATED -
+    // sign-up, reset confirmation, change password - and never appears on a sign-in form
+    // (that one is `current-password`). So it selects exactly the screens where the check
+    // belongs, with no path guessing. Any mention of the check anywhere in the file clears
+    // it, including a call into a shared hook whose name carries `pwned`/`breach`.
+    pattern: `autocomplete=\\{?["']new-password["']`,
+    absent: "pwnedpasswords|haveibeenpwned|hibp|pwned|breach|enigma:allow-no-breach-check",
+    message: "A password is created here with no breach check. Length and symbol rules do not stop a password that is already in a credential-stuffing list. Check it against Have I Been Pwned's Pwned Passwords range API - free, no key, and the password never leaves the client: SHA-1 it, uppercase the hex, GET https://api.pwnedpasswords.com/range/<first 5 chars> with `Add-Padding: true`, and look for the remaining 35 characters in the `SUFFIX:COUNT` lines. Debounce it as the user types, abort the in-flight request when the value changes, repeat the check server-side on submit, and fail OPEN if the lookup errors so an outage never blocks a signup. For a flow that genuinely cannot reach it, add an `enigma:allow-no-breach-check` note (security-policy).",
+    severity: "block",
+    skill: "security-policy"
+  },
+  {
+    id: "sec-password-identity-match",
+    label: "A new password is not the account's own identity",
+    files: ["*.tsx", "*.jsx", "*.vue", "*.svelte", "*.astro", "*.html", "*.htm", "*.ts", "*.js"],
+    excludeFiles: [
+      "*.test.*",
+      "*.spec.*",
+      "**/tests/**",
+      "**/__tests__/**",
+      "**/stories/**",
+      "*.stories.*",
+      "*.min.js",
+      "**/dist/**",
+      "**/build/**",
+      "**/_build/**",
+      "**/node_modules/**",
+      "**/vendor/**",
+      "dist/**",
+      "build/**",
+      "_build/**",
+      "node_modules/**",
+      "vendor/**"
+    ],
+    scope: "file",
+    // The twin of sec-password-breach-check over the same selector, for the same reason the
+    // name rules are two: one `absent` cannot express "breach check AND identity check", and
+    // a file that does one is routinely missing the other. Same precision inheritance -
+    // `autocomplete="new-password"` marks a password being CREATED and nothing else.
+    // The `absent` set is deliberately NOT `email|username`: every sign-up form on earth
+    // mentions both, so keying on them would clear the rule everywhere it matters. It clears
+    // only on evidence of a COMPARISON - zxcvbn fed the user's own inputs (advisory, but a
+    // form gating on its score is a real implementation), Django's similarity validator, a
+    // helper named for the check, or password and an identifier on the same line either side
+    // of an equality/containment operator.
+    pattern: `autocomplete=\\{?["']new-password["']`,
+    absent: "userInputs|user_inputs|UserAttributeSimilarity|sameAs(?:Email|Username|Identity)|matchesIdentity|containsIdentity|identityMatch|notIdentity|personalInfo|(?:password|passwd|pwd)[^\\n]{0,60}(?:===|==|!==|\\.includes\\(|\\.indexOf\\(|\\.startsWith\\(|localeCompare)[^\\n]{0,60}(?:email|username|user_?name|handle)|(?:email|username|user_?name|handle)[^\\n]{0,60}(?:===|==|!==|\\.includes\\(|\\.indexOf\\(|\\.startsWith\\(|localeCompare)[^\\n]{0,60}(?:password|passwd|pwd)|enigma:allow-identity-password",
+    message: "A password is created here with nothing stopping it from being the account's own identity. `Fjrg2007` for the user `fjrg2007` is one guess for anyone who knows the email address. Refuse a candidate that equals, contains (4 characters or more), or closely resembles the email, its local part, the username, the display name or the site name - comparing NORMALIZED values on both sides (lowercase, trim, NFKD then strip accents, drop everything that is not a letter or a digit), so `F.J.R.G_2007` and `fjrg2007` are the same string and casing is never a difference. Declare it on the OBJECT schema, since a password field cannot see the email beside it, and run it again on the server where the real identity lives. A strength meter fed `userInputs` scores this badly but is advisory - keep the refusal as its own rule. For a flow with no identity to compare against, add an `enigma:allow-identity-password` note (security-policy, validation-policy).",
+    severity: "block",
+    skill: "security-policy"
+  },
+  // NOTE: no rule for the navigation conventions - nav entries carrying icons, a long nav
+  // grouped into labelled sections, and a Cmd/Ctrl+K command palette once the app has enough
+  // to hunt through. All three were measured and rejected; they live in frontend-policy's
+  // "Navigation Is Structured, Not A Growing List" and "Search & Filtering" sections only.
+  // The signature would have to be DENSITY - a file rendering many destinations - and density
+  // does not separate the app shell (where these belong) from a landing page or a docs page
+  // (where an icon per link and a palette would both be wrong). Measured over the corpus:
+  // 174 UI files, 29 with 8 or more links, and of the 4 with no search affordance every one
+  // is marketing or static docs - zero true positives, the same evidence that rejected the
+  // no-op-save and pinned-sidebar rules. Keying on a *sidebar*/*nav* filename instead found
+  // 2 candidates in the whole corpus, both terminal (ink) menus, so it has no signal either.
+  {
+    id: "fe-tracking-before-consent",
+    label: "Non-essential tracking waits for consent",
+    files: ["*.tsx", "*.jsx", "*.vue", "*.svelte", "*.astro", "*.html", "*.htm", "*.ts", "*.js", "*.mts", "*.cts"],
+    excludeFiles: [
+      "*.test.*",
+      "*.spec.*",
+      "**/tests/**",
+      "**/__tests__/**",
+      "**/stories/**",
+      "*.stories.*",
+      "*.min.js",
+      "**/dist/**",
+      "**/build/**",
+      "**/_build/**",
+      "**/node_modules/**",
+      "**/vendor/**",
+      "dist/**",
+      "build/**",
+      "_build/**",
+      "node_modules/**",
+      "vendor/**"
+    ],
+    scope: "file",
+    // The loaders and call sites of the common analytics/ads/replay vendors. Each one sets
+    // non-essential storage the moment it runs, so what matters is whether ANY consent
+    // handling exists in the same file - the gate, a Consent Mode default, or the stored
+    // decision being read. `consent` on its own clears it, deliberately generous: this rule
+    // catches the snippet pasted straight into the layout, not a considered implementation.
+    pattern: "googletagmanager\\.com|google-analytics\\.com|gtag\\(|dataLayer\\.push|connect\\.facebook\\.net|fbq\\(|mixpanel\\.|posthog\\.(?:init|capture)|amplitude\\.(?:init|getInstance)|static\\.hotjar\\.com|clarity\\.ms|cdn\\.segment\\.com",
+    absent: "consent|gdpr|cookieBanner|cookie-banner|CookieConsent|enigma:allow-no-consent",
+    message: "Analytics, ads or session replay loading with no consent gate in sight. Everything outside the strictly necessary group (session, CSRF, load balancing, the consent record) stays off until the user answers the banner - swapping the cookie for `localStorage` does not change that. Load the vendor only after the stored decision says so (or start in Consent Mode with everything denied and update on accept), make Reject as reachable as Accept, and keep the decision withdrawable. If this file genuinely runs after the gate, add an `enigma:allow-no-consent` note (security-policy, frontend-policy).",
+    severity: "block",
+    skill: "security-policy"
   },
   {
     id: "fe-no-native-dialog",
@@ -856,6 +1013,43 @@ var PROJECT_CHECKS = {
 var FILE_CHECKS = {
   "proc-windows-hide": (content) => missingWindowsHide(content)
 };
+var FIXERS = {
+  "fe-name-input-capitalize": (line, file) => {
+    if (/autocapitalize/i.test(line)) return null;
+    const tags = line.match(/<input\b/gi);
+    if (!tags || tags.length !== 1) return null;
+    const attr = /\.[jt]sx$/i.test(file) ? 'autoCapitalize="words"' : 'autocapitalize="words"';
+    return line.replace(/<input\b/i, `<input ${attr}`);
+  }
+};
+function applyFixes(file, findings) {
+  const fixable = findings.filter((f) => f.line && FIXERS[f.ruleId]);
+  if (!fixable.length) return { fixed: [], remaining: findings };
+  let content;
+  try {
+    content = readFileSync(file, "utf8");
+  } catch {
+    return { fixed: [], remaining: findings };
+  }
+  const lines = content.split("\n");
+  const fixed = [];
+  for (const f of fixable) {
+    const idx = f.line - 1;
+    const before = lines[idx];
+    if (before === void 0) continue;
+    const after = FIXERS[f.ruleId](before, file);
+    if (after === null || after === before) continue;
+    lines[idx] = after;
+    fixed.push(f);
+  }
+  if (!fixed.length) return { fixed: [], remaining: findings };
+  try {
+    writeFileSync(file, lines.join("\n"));
+  } catch {
+    return { fixed: [], remaining: findings };
+  }
+  return { fixed, remaining: checkPath(file) };
+}
 var SPAWNERS = /* @__PURE__ */ new Set(["spawn", "spawnSync", "exec", "execSync", "execFile", "execFileSync"]);
 function spawnerBindings(content) {
   const names = /* @__PURE__ */ new Set();
@@ -1023,7 +1217,12 @@ function runGuardrailsHook(payload) {
   } catch {
   }
   if (!file || typeof file !== "string") return 0;
-  const findings = checkPath(file);
+  const found = checkPath(file);
+  if (!found.length) return 0;
+  const { fixed, remaining: findings } = applyFixes(file, found);
+  if (fixed.length) process.stdout.write(`enigma guardrails (fixed)
+${fixed.map((f) => `${f.file}:${f.line} (${f.ruleId})`).join("\n")}
+`);
   if (!findings.length) return 0;
   const warns = findings.filter((f) => f.severity === "warn");
   const blocks = findings.filter((f) => f.severity === "block");
@@ -1093,7 +1292,9 @@ if (isGrEntry && fileURLToPath(import.meta.url) === grEntry) {
 export {
   BUILTIN_RULES,
   FILE_CHECKS,
+  FIXERS,
   PROJECT_CHECKS,
+  applyFixes,
   checkFile,
   checkPath,
   findProjectRoot,

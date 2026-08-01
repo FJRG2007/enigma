@@ -300,6 +300,43 @@ export const BUILTIN_RULES: GuardrailRule[] = [
         skill: "security-policy",
     },
     {
+        id: "sec-password-identity-match",
+        label: "A new password is not the account's own identity",
+        files: ["*.tsx", "*.jsx", "*.vue", "*.svelte", "*.astro", "*.html", "*.htm", "*.ts", "*.js"],
+        excludeFiles: [
+            "*.test.*", "*.spec.*", "**/tests/**", "**/__tests__/**", "**/stories/**", "*.stories.*", "*.min.js",
+            "**/dist/**", "**/build/**", "**/_build/**", "**/node_modules/**", "**/vendor/**",
+            "dist/**", "build/**", "_build/**", "node_modules/**", "vendor/**",
+        ],
+        scope: "file",
+        // The twin of sec-password-breach-check over the same selector, for the same reason the
+        // name rules are two: one `absent` cannot express "breach check AND identity check", and
+        // a file that does one is routinely missing the other. Same precision inheritance -
+        // `autocomplete="new-password"` marks a password being CREATED and nothing else.
+        // The `absent` set is deliberately NOT `email|username`: every sign-up form on earth
+        // mentions both, so keying on them would clear the rule everywhere it matters. It clears
+        // only on evidence of a COMPARISON - zxcvbn fed the user's own inputs (advisory, but a
+        // form gating on its score is a real implementation), Django's similarity validator, a
+        // helper named for the check, or password and an identifier on the same line either side
+        // of an equality/containment operator.
+        pattern: "autocomplete=\\{?[\"']new-password[\"']",
+        absent: "userInputs|user_inputs|UserAttributeSimilarity|sameAs(?:Email|Username|Identity)|matchesIdentity|containsIdentity|identityMatch|notIdentity|personalInfo|(?:password|passwd|pwd)[^\\n]{0,60}(?:===|==|!==|\\.includes\\(|\\.indexOf\\(|\\.startsWith\\(|localeCompare)[^\\n]{0,60}(?:email|username|user_?name|handle)|(?:email|username|user_?name|handle)[^\\n]{0,60}(?:===|==|!==|\\.includes\\(|\\.indexOf\\(|\\.startsWith\\(|localeCompare)[^\\n]{0,60}(?:password|passwd|pwd)|enigma:allow-identity-password",
+        message: "A password is created here with nothing stopping it from being the account's own identity. `Fjrg2007` for the user `fjrg2007` is one guess for anyone who knows the email address. Refuse a candidate that equals, contains (4 characters or more), or closely resembles the email, its local part, the username, the display name or the site name - comparing NORMALIZED values on both sides (lowercase, trim, NFKD then strip accents, drop everything that is not a letter or a digit), so `F.J.R.G_2007` and `fjrg2007` are the same string and casing is never a difference. Declare it on the OBJECT schema, since a password field cannot see the email beside it, and run it again on the server where the real identity lives. A strength meter fed `userInputs` scores this badly but is advisory - keep the refusal as its own rule. For a flow with no identity to compare against, add an `enigma:allow-identity-password` note (security-policy, validation-policy).",
+        severity: "block",
+        skill: "security-policy",
+    },
+    // NOTE: no rule for the navigation conventions - nav entries carrying icons, a long nav
+    // grouped into labelled sections, and a Cmd/Ctrl+K command palette once the app has enough
+    // to hunt through. All three were measured and rejected; they live in frontend-policy's
+    // "Navigation Is Structured, Not A Growing List" and "Search & Filtering" sections only.
+    // The signature would have to be DENSITY - a file rendering many destinations - and density
+    // does not separate the app shell (where these belong) from a landing page or a docs page
+    // (where an icon per link and a palette would both be wrong). Measured over the corpus:
+    // 174 UI files, 29 with 8 or more links, and of the 4 with no search affordance every one
+    // is marketing or static docs - zero true positives, the same evidence that rejected the
+    // no-op-save and pinned-sidebar rules. Keying on a *sidebar*/*nav* filename instead found
+    // 2 candidates in the whole corpus, both terminal (ink) menus, so it has no signal either.
+    {
         id: "fe-tracking-before-consent",
         label: "Non-essential tracking waits for consent",
         files: ["*.tsx", "*.jsx", "*.vue", "*.svelte", "*.astro", "*.html", "*.htm", "*.ts", "*.js", "*.mts", "*.cts"],

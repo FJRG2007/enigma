@@ -5,5 +5,5 @@
   "description": "Application and AI-agent security: secrets, authn/authz (least privilege), credential flows with breach-checked passwords (Have I Been Pwned), OWASP Top 10, transport/crypto baseline, cookies and consent, secure logging, and agent/MCP/tool-use safety.",
   "updated": "2026-08-01T16:09:10+02:00",
   "cliVersion": "1.33.2",
-  "sha": "4e222af4b41513380851d2dcfc441ceb6aacd66e300d8793ac3daf322b18c212"
+  "sha": "c9eac7999b326e4564816b10f3f681b9f6b2a88595d56244909757fb4bbc3c7f"
 }

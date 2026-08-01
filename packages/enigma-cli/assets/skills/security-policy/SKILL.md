@@ -1,6 +1,6 @@
 ---
 name: security-policy
-description: Application and AI-agent security - secrets management, authentication and authorization (least privilege), credential flows (sign-in, sign-up that establishes the session, password reset, 2FA, breached-password checks against Have I Been Pwned, and rate limiting per IP and per account), cookie attributes and consent gating before non-essential storage, OWASP Top 10 mitigations, transport and crypto baseline, secure logging, and agent/MCP/tool-use safety (prompt injection, untrusted tool output, permission boundaries). Use when handling secrets, auth, login or registration screens, permissions, untrusted data or tool output, or any security-sensitive code, config, or infrastructure.
+description: Application and AI-agent security - secrets management, authentication and authorization (least privilege), credential flows (sign-in, sign-up that establishes the session, password reset, 2FA, breached-password checks against Have I Been Pwned, refusing a password that repeats the username, email or display name in any casing, and rate limiting per IP and per account), cookie attributes and consent gating before non-essential storage, OWASP Top 10 mitigations, transport and crypto baseline, secure logging, and agent/MCP/tool-use safety (prompt injection, untrusted tool output, permission boundaries). Use when handling secrets, auth, login or registration screens, permissions, untrusted data or tool output, or any security-sensitive code, config, or infrastructure.
 ---
 
 # Security Policy
@@ -63,7 +63,18 @@ These four screens are one system: an attacker who cannot guess a password will 
 - Run it in real time while the user types (debounce ~400ms, abort the in-flight request when the value changes) so the answer is on screen before Submit, and run it again server-side on submit. The client check is UX; the server check is the rule.
 - Fail OPEN. If the lookup errors or times out, accept the password and log it: blocking every registration on a third-party outage is the worse failure.
 - Say what happened and what to do - "This password appeared in a data breach. Choose a different one." The breach count is optional; blaming the user is not.
-- Do not stack composition rules on top (one symbol, one digit, forced rotation). NIST SP 800-63B dropped them: a length floor (12+), the breach check and rate limiting are the controls that work.
+- Do not stack composition rules on top (one symbol, one digit, forced rotation). NIST SP 800-63B dropped them: a length floor (12+), the breach check, the identity check below and rate limiting are the controls that work.
+
+### A password may not be the account's own identity
+
+The same screens that check the breach corpus reject a password built out of the identity it protects. `Fjrg2007` for the user `fjrg2007` is one guess for anyone holding the email address, and it is the first thing a targeted attacker tries. NIST SP 800-63B names context-specific words - the username, the service name, the address - as the other list to refuse, next to the breach corpus.
+
+- Compare against every identifier the account is known by: the email, the email's local part, the username or handle, the display name, and the site or company name. Check each one separately; a password equal to the local part passes a check that only compared the full address.
+- **Compare NORMALIZED values, never raw ones.** Lowercase both sides, trim, normalize Unicode to NFKD and strip the accents, then drop everything that is not a letter or a digit. `F.J.R.G_2007`, `FJRG2007` and `fjrg 2007` all reduce to `fjrg2007`, which is the point: case, punctuation and spacing are not differences an attacker has to guess. Reuse the shared normalizer that already canonicalizes the email and the handle (validation-policy).
+- Reject on three relations, not just equality: the normalized password EQUALS an identifier, CONTAINS one that is 4 characters or longer (`myfjrg2007pass` still hands over the pattern), or is a near-match. For the near-match use a similarity ratio (Django's `UserAttributeSimilarityValidator` uses `SequenceMatcher` at 0.7); a padded year or a leetspeak swap (`fjrg2007!`, `fjrg20o7`) is the case that catches.
+- **The server is the authority.** It holds the real identity, so it runs the comparison on every password-creating request even when the client already did. On sign-up the values come from the submitted form; on reset and change they come from the account being modified, never from the request body.
+- A strength meter fed the user's own email and name (`@zxcvbn-ts/core` with `userInputs`) will score this password badly, and that is not the same thing: the meter is advisory and a score threshold is not a gate. Keep the equality, containment and similarity check as its own rule with its own refusal.
+- Say which rule refused and what to change: "Your password cannot contain your email address or username." At creation time the user already knows their own identifiers, so this reveals nothing an attacker could use, unlike a sign-in error.
 
 ### Rate-limit by IP AND by account
 

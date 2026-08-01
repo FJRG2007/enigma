@@ -428,6 +428,28 @@ matrix("sec-password-breach-check", false, [
     { name: "build output is excluded", file: "apps/web/dist/signup.html", code: "<input type=\"password\" autocomplete=\"new-password\">" },
 ]);
 
+// --- sec-password-identity-match ----------------------------------------------------
+
+matrix("sec-password-identity-match", true, [
+    { name: "sign-up form with only a length rule", file: "app/(auth)/register/page.tsx", code: "const schema = z.object({ email: z.email(), password: z.string().min(12) });\n<input type=\"password\" autoComplete=\"new-password\" />" },
+    { name: "reset confirmation screen", file: "src/pages/reset-password.tsx", code: "<Input type=\"password\" autoComplete=\"new-password\" />" },
+    { name: "plain change-password form", file: "public/account/password.html", code: "<input type=\"password\" autocomplete=\"new-password\">" },
+    // The email being PRESENT in the file is the normal case, not evidence of a comparison -
+    // this is why `absent` cannot key on the identifier names themselves.
+    { name: "email field beside it but never compared", file: "src/pages/signup.tsx", code: "<input name=\"email\" type=\"email\" />\n<input type=\"password\" autoComplete=\"new-password\" />" },
+]);
+
+matrix("sec-password-identity-match", false, [
+    { name: "sign-in form is the other autofill token", file: "app/(auth)/login/page.tsx", code: "<input type=\"password\" autoComplete=\"current-password\" />" },
+    { name: "direct comparison against the email", file: "src/pages/signup.tsx", code: "if (pwd.toLowerCase() === email.toLowerCase()) return \"Password cannot be your email\";\n<input type=\"password\" autoComplete=\"new-password\" />" },
+    { name: "containment check the other way round", file: "src/pages/signup.tsx", code: "const bad = username && password.includes(username);\n<input type=\"password\" autoComplete=\"new-password\" />" },
+    { name: "zxcvbn fed the user's own inputs", file: "src/pages/signup.tsx", code: "const res = zxcvbn(pw, { userInputs: [email, name] });\n<input type=\"password\" autoComplete=\"new-password\" />" },
+    { name: "django-style similarity validator", file: "src/auth/password.ts", code: "validators: [UserAttributeSimilarityValidator]\n<input type=\"password\" autocomplete=\"new-password\">" },
+    { name: "delegated to a named helper", file: "src/pages/signup.tsx", code: "const err = sameAsEmail(pw, form.email);\n<Input type=\"password\" autoComplete=\"new-password\" />" },
+    { name: "deliberate opt-out", file: "src/pages/device-enroll.tsx", code: "// enigma:allow-identity-password no account identity exists at enrolment\n<input type=\"password\" autoComplete=\"new-password\" />" },
+    { name: "build output is excluded", file: "apps/web/dist/signup.html", code: "<input type=\"password\" autocomplete=\"new-password\">" },
+]);
+
 // --- fe-tracking-before-consent -----------------------------------------------------
 
 matrix("fe-tracking-before-consent", true, [

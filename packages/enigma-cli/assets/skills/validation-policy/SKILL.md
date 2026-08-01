@@ -1,6 +1,6 @@
 ---
 name: validation-policy
-description: Strict frontend + backend schema validation (Zod or equivalent), normalization before validation (one shared normalizer on both sides - trim, lowercase the email, capitalize each word of a name, canonicalize a profile link or handle) and the rule that a check which cannot fail is not validation, schema consistency between client and server, and safe client-facing error handling. Use when handling any external input - forms, API request bodies, query params, CLI args, file parsing, or third-party payloads.
+description: Strict frontend + backend schema validation (Zod or equivalent), normalization before validation (one shared normalizer on both sides - trim, lowercase the email, capitalize each word of a name, canonicalize a profile link or handle) and the rule that a check which cannot fail is not validation, cross-field rules declared on the object schema rather than the field (password against the email or username, confirmation fields, date ranges), schema consistency between client and server, and safe client-facing error handling. Use when handling any external input - forms, API request bodies, query params, CLI args, file parsing, or third-party payloads.
 ---
 
 # Validation & Error Handling Policy
@@ -82,6 +82,15 @@ Per field kind (defaults - override only with a reason):
 - Canonicalizing and validating are two steps, in that order. Canonicalize (add the scheme, strip the `@`), then apply a check the canonical value can still fail: the host contains a dot, the host is the expected domain, the path has the expected shape.
 - Before calling a field done, type three wrong values into it and confirm each is rejected. A validator nobody has watched fail is unverified.
 - The same applies to a permissive fallback: an `.optional()` that swallows `""`, a `catch()` that returns a default, or a `refine` that returns `true` on anything it cannot parse.
+
+### A rule about two fields lives on the object, not the field
+
+Some rules cannot be expressed where the field is declared, because the field cannot see its siblings. `z.string().min(12)` for a password is a complete-looking schema that has no way to know the email sitting next to it, which is how "the password may not be your email" ends up unimplemented on a form that otherwise validates everything.
+
+- Put cross-field rules on the OBJECT schema (`.superRefine`/`.refine` in Zod, a `model_validator` in Pydantic), and attach the error to the field the user has to change so it renders in that field's error slot, not at the top of the form.
+- The recurring ones: password against the email, its local part, the username, the display name and the site name (normalized on both sides, per security-policy); the confirmation field against the password; a start date against an end date; a "one of these is required" pair.
+- Give the object schema everything it needs to compare. On the server the identity usually comes from the account being modified rather than the request body, so build the schema with that value in scope (a factory that takes the identifiers and returns the schema) instead of trusting whatever the client sent.
+- The client mirrors the same object schema so the conflict shows as the user types, and the server runs it again as the authority.
 
 ---
 
