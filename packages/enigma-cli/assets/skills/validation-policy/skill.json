@@ -4,6 +4,6 @@
   "provider": "FJRG2007/enigma",
   "description": "Strict frontend + backend schema validation, normalization before validation (shared normalizers: trim, lowercase email, capitalize names, canonicalize links and handles), schema consistency, and safe client-facing error handling.",
   "updated": "2026-07-31T19:05:08+02:00",
-  "cliVersion": "1.33.1",
+  "cliVersion": "1.33.2",
   "sha": "84bb43cc570aa927ab5c0311c17242b4158287961aa04af111cf83eb4eec6ce4"
 }

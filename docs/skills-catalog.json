@@ -1,6 +1,6 @@
 {
   "generator": "enigma seal",
-  "cliVersion": "1.33.1",
+  "cliVersion": "1.33.2",
   "count": 20,
   "skills": [
     {
@@ -96,7 +96,7 @@
       "version": "1.23.0",
       "description": "Frontend architecture: reusable components, abstraction thresholds, state management, no-op detection (skip any operation whose result equals current state, not just form saves; dirty means different from the loaded snapshot, not touched), instant first paint (render the shell, load data async, skeletons), perceived performance (prefetch on intent, debounce/throttle, cancel stale requests, avoid waterfalls, lazy widgets), large-list rendering (infinite scroll/pagination, virtualization, skeletons, progressive loading), optimistic UI with rollback, visual restraint (one card level, spacing before borders, one elevation scale), icon actions (repeated row/card actions are icon-only buttons with aria-label plus title, not text labels), responsive/adaptive layout (fluid units, breakpoints, no overlap/overflow, viewport meta, touch targets), form fields that declare their keyboard and casing (autocapitalize/autocomplete/inputmode per field kind, set once in the shared Input, normalized on blur), variable-length text (min-width:0 in flex/grid, wrap vs truncate, long unbroken strings, worst-case content checks), auth screens (breached-password feedback, strength meter, cookie consent before login/register), and AI chat/agent interfaces via Vercel's AI Elements registry instead of hand-rolled message threads.",
       "provider": "FJRG2007/enigma",
-      "updated": "2026-07-31T19:05:08+02:00",
+      "updated": "2026-08-01T16:09:10+02:00",
       "sha": "163f3e66d7a95d9a103a2478501b9ae9646de2a7324fad941fcccc70dd620b07"
     },
     {
@@ -120,7 +120,7 @@
       "version": "1.2.0",
       "description": "Application and AI-agent security: secrets, authn/authz (least privilege), credential flows with breach-checked passwords (Have I Been Pwned), OWASP Top 10, transport/crypto baseline, cookies and consent, secure logging, and agent/MCP/tool-use safety.",
       "provider": "FJRG2007/enigma",
-      "updated": "2026-07-31T16:26:45+02:00",
+      "updated": "2026-08-01T16:09:10+02:00",
       "sha": "4e222af4b41513380851d2dcfc441ceb6aacd66e300d8793ac3daf322b18c212"
     },
     {
