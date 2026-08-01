@@ -4489,7 +4489,7 @@ export {
             ],
         };
         const GATE_MODEL_CUSTOM = "__custom__";
-        let gateSavedModel = "";
+        let gateSavedModel = "", gateModelAgent = "";
 
         /**
          * Rebuilds the model dropdown for `agent` and selects `model` (empty = the agent default).
@@ -4499,7 +4499,10 @@ export {
          */
         function renderGateModel(agent, model) {
             const sel = $("gateModelSel"), inp = $("gateModel");
-            const opts = [["", "auto (agent default)"]].concat(GATE_MODELS[agent] || [], [[GATE_MODEL_CUSTOM, "Custom model id..."]]);
+            gateModelAgent = agent || "";
+            // Naming the agent in the default option is the whole point of it: clearing the model
+            // drops the `--model` flag, so the step runs on whatever that agent picks for itself.
+            const opts = [["", "auto (" + (agent || "agent") + " default)"]].concat(GATE_MODELS[agent] || [], [[GATE_MODEL_CUSTOM, "Custom model id..."]]);
             sel.innerHTML = opts.map(([v, label]) => '<option value="' + esc(v) + '">' + esc(label) + "</option>").join("");
             const listed = opts.some(([v]) => v === model && v !== GATE_MODEL_CUSTOM);
             sel.value = listed ? model : GATE_MODEL_CUSTOM;
@@ -4515,7 +4518,15 @@ export {
             $("gateModelSave").style.display = custom ? "" : "none";
             // Select + field + Save is wider than one settings column; the row takes the full width.
             $("gateModelRow").classList.toggle("wide", custom);
+            syncGateModelHint();
             syncGateModelSave();
+        }
+        /** The hint has to follow the selection: on auto, nothing is passed to the agent at all. */
+        function syncGateModelHint() {
+            const agent = gateModelAgent || "the agent";
+            $("gateModelHint").textContent = $("gateModelSel").value === ""
+                ? "auto: " + agent + " runs on its own default model"
+                : "passed to " + agent + " on every step; a smaller model cuts run time and tokens";
         }
         /** No-op rule: nothing to save while the typed id still equals the stored one. */
         function syncGateModelSave() {
@@ -4540,9 +4551,7 @@ export {
                 ? "auto: first agent found on PATH - currently " + s.agentResolved
                 : "which coding agent the pipeline drives";
             $("gateModelRow").style.display = s.modelSupported ? "" : "none";
-            renderGateModel(s.agentResolved || s.agent, s.model || "");
-            $("gateModelHint").textContent = "passed to " + s.agentResolved
-                + " on every step; a smaller model is the one change that cuts both run time and tokens";
+            renderGateModel(s.agentResolved || s.agent, s.model || ""); // also writes the hint
             $("gateCiTimeout").value = s.ciTimeout || "";
             $("gateLogLevel").value = s.logLevel;
             syncDD($("gateLogLevel"));
