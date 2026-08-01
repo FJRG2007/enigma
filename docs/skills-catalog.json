@@ -1,6 +1,6 @@
 {
   "generator": "enigma seal",
-  "cliVersion": "1.33.2",
+  "cliVersion": "1.33.3",
   "count": 20,
   "skills": [
     {
@@ -96,7 +96,7 @@
       "version": "1.23.0",
       "description": "Frontend architecture: reusable components, abstraction thresholds, state management, no-op detection (skip any operation whose result equals current state, not just form saves; dirty means different from the loaded snapshot, not touched), instant first paint (render the shell, load data async, skeletons), perceived performance (prefetch on intent, debounce/throttle, cancel stale requests, avoid waterfalls, lazy widgets), large-list rendering (infinite scroll/pagination, virtualization, skeletons, progressive loading), optimistic UI with rollback, visual restraint (one card level, spacing before borders, one elevation scale), icon actions (repeated row/card actions are icon-only buttons with aria-label plus title, not text labels), responsive/adaptive layout (fluid units, breakpoints, no overlap/overflow, viewport meta, touch targets), form fields that declare their keyboard and casing (autocapitalize/autocomplete/inputmode per field kind, set once in the shared Input, normalized on blur), variable-length text (min-width:0 in flex/grid, wrap vs truncate, long unbroken strings, worst-case content checks), auth screens (breached-password feedback, strength meter, cookie consent before login/register), and AI chat/agent interfaces via Vercel's AI Elements registry instead of hand-rolled message threads.",
       "provider": "FJRG2007/enigma",
-      "updated": "2026-08-01T16:09:10+02:00",
+      "updated": "2026-08-01T17:44:16+02:00",
       "sha": "434b0bb9dd8e19d68dc823198df64feb873e3644ae483bcd14b75d9e3d0f74ef"
     },
     {
@@ -120,7 +120,7 @@
       "version": "1.2.0",
       "description": "Application and AI-agent security: secrets, authn/authz (least privilege), credential flows with breach-checked passwords (Have I Been Pwned), OWASP Top 10, transport/crypto baseline, cookies and consent, secure logging, and agent/MCP/tool-use safety.",
       "provider": "FJRG2007/enigma",
-      "updated": "2026-08-01T16:09:10+02:00",
+      "updated": "2026-08-01T17:44:16+02:00",
       "sha": "c9eac7999b326e4564816b10f3f681b9f6b2a88595d56244909757fb4bbc3c7f"
     },
     {
@@ -160,7 +160,7 @@
       "version": "1.4.0",
       "description": "Strict frontend + backend schema validation, normalization before validation (shared normalizers: trim, lowercase email, capitalize names, canonicalize links and handles), schema consistency, and safe client-facing error handling.",
       "provider": "FJRG2007/enigma",
-      "updated": "2026-07-31T19:05:08+02:00",
+      "updated": "2026-08-01T17:44:16+02:00",
       "sha": "225e1e26f4a49fac70714b1bebc104ea42143203cc8fcc9e3330b29f05b6e025"
     }
   ]
