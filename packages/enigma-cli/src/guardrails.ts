@@ -23,8 +23,8 @@
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
-import { readFileSync, statSync, existsSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
+import { readFileSync, writeFileSync, statSync, existsSync } from "node:fs";
 
 export type Severity = "block" | "warn";
 
@@ -255,6 +255,70 @@ export const BUILTIN_RULES: GuardrailRule[] = [
         message: "Person-name field with no capitalization rule. Phone keyboards capitalize SENTENCES, so a name typed on mobile is stored as \"juan perez\": add `autocapitalize=\"words\"` (plus `spellcheck=\"false\"` and `autocorrect=\"off\"`, and the matching `autocomplete` token). The attribute only covers typing, so normalize the value too - trim, collapse inner spaces, and uppercase the first letter of every word - on blur and again on the server, uppercasing ONLY that letter so `McDonald`, `O'Brien` and `van der Berg` survive. Best placed once in the shared Input/TextField component, selected by a prop. For a field that must keep what was typed, add an `enigma:allow-no-capitalize` note (frontend-policy, validation-policy).",
         severity: "block",
         skill: "frontend-policy",
+    },
+    {
+        id: "fe-name-value-normalize",
+        label: "A person-name value is normalized, not just autocapitalized",
+        files: ["*.tsx", "*.jsx", "*.vue", "*.svelte", "*.astro", "*.html", "*.htm"],
+        excludeFiles: [
+            "*.test.*", "*.spec.*", "**/tests/**", "**/__tests__/**", "**/stories/**", "*.stories.*", "*.min.js",
+            "**/dist/**", "**/build/**", "**/_build/**", "**/node_modules/**", "**/vendor/**",
+            "dist/**", "build/**", "_build/**", "node_modules/**", "vendor/**",
+        ],
+        scope: "file",
+        // The twin of fe-name-input-capitalize, and the half that actually reaches the stored
+        // value: `autocapitalize` is a KEYBOARD hint. A phone honours it, a physical keyboard
+        // ignores it entirely, so "juan perez" typed on a laptop is stored exactly like that and
+        // the field looks broken to the user who typed it. The attribute alone clears the other
+        // rule, which is how a form ends up with the attribute and no normalization at all.
+        // Same person-name token set (see there for why `name`/`fullname` are excluded).
+        pattern: "autocomplete=\\{?[\"'](?:name|given-name|family-name|additional-name|honorific-prefix)[\"']|(?:\\bname|\\bid|\\bfor|formControlName)=\\{?[\"'](?:first[-_]?name|last[-_]?name|given[-_]?name|family[-_]?name|surname|apellidos?)[\"']",
+        absent: "capitalizeWords|capitalizeName|capitalizeEach|toTitleCase|titleCase|startCase|properCase|normalizeName|normalizePerson|capitalize\\(|charAt\\(0\\)\\.toUpperCase|enigma:allow-no-capitalize",
+        message: "Person-name field with no value normalization. `autocapitalize=\"words\"` only shapes the phone keyboard - a physical keyboard ignores it, so \"juan perez\" is stored verbatim. Normalize the VALUE with the shared normalizer (validation-policy): trim, collapse inner spaces, and uppercase the first letter of every word, ONLY that letter, so `McDonald`, `O'Brien` and `van der Berg` survive. Run it on blur (never on every keystroke - it moves the caret and breaks IME composition) and again on the server, which is the copy that decides what is stored. Put it in the shared Input/TextField so the next form gets it by construction. For a field that must keep exactly what was typed, add an `enigma:allow-no-capitalize` note (validation-policy, frontend-policy).",
+        severity: "block",
+        skill: "validation-policy",
+    },
+    {
+        id: "sec-password-breach-check",
+        label: "A new password is checked against the breach corpus",
+        files: ["*.tsx", "*.jsx", "*.vue", "*.svelte", "*.astro", "*.html", "*.htm", "*.ts", "*.js"],
+        excludeFiles: [
+            "*.test.*", "*.spec.*", "**/tests/**", "**/__tests__/**", "**/stories/**", "*.stories.*", "*.min.js",
+            "**/dist/**", "**/build/**", "**/_build/**", "**/node_modules/**", "**/vendor/**",
+            "dist/**", "build/**", "_build/**", "node_modules/**", "vendor/**",
+        ],
+        scope: "file",
+        // `autocomplete="new-password"` is the spec's own marker for a password being CREATED -
+        // sign-up, reset confirmation, change password - and never appears on a sign-in form
+        // (that one is `current-password`). So it selects exactly the screens where the check
+        // belongs, with no path guessing. Any mention of the check anywhere in the file clears
+        // it, including a call into a shared hook whose name carries `pwned`/`breach`.
+        pattern: "autocomplete=\\{?[\"']new-password[\"']",
+        absent: "pwnedpasswords|haveibeenpwned|hibp|pwned|breach|enigma:allow-no-breach-check",
+        message: "A password is created here with no breach check. Length and symbol rules do not stop a password that is already in a credential-stuffing list. Check it against Have I Been Pwned's Pwned Passwords range API - free, no key, and the password never leaves the client: SHA-1 it, uppercase the hex, GET https://api.pwnedpasswords.com/range/<first 5 chars> with `Add-Padding: true`, and look for the remaining 35 characters in the `SUFFIX:COUNT` lines. Debounce it as the user types, abort the in-flight request when the value changes, repeat the check server-side on submit, and fail OPEN if the lookup errors so an outage never blocks a signup. For a flow that genuinely cannot reach it, add an `enigma:allow-no-breach-check` note (security-policy).",
+        severity: "block",
+        skill: "security-policy",
+    },
+    {
+        id: "fe-tracking-before-consent",
+        label: "Non-essential tracking waits for consent",
+        files: ["*.tsx", "*.jsx", "*.vue", "*.svelte", "*.astro", "*.html", "*.htm", "*.ts", "*.js", "*.mts", "*.cts"],
+        excludeFiles: [
+            "*.test.*", "*.spec.*", "**/tests/**", "**/__tests__/**", "**/stories/**", "*.stories.*", "*.min.js",
+            "**/dist/**", "**/build/**", "**/_build/**", "**/node_modules/**", "**/vendor/**",
+            "dist/**", "build/**", "_build/**", "node_modules/**", "vendor/**",
+        ],
+        scope: "file",
+        // The loaders and call sites of the common analytics/ads/replay vendors. Each one sets
+        // non-essential storage the moment it runs, so what matters is whether ANY consent
+        // handling exists in the same file - the gate, a Consent Mode default, or the stored
+        // decision being read. `consent` on its own clears it, deliberately generous: this rule
+        // catches the snippet pasted straight into the layout, not a considered implementation.
+        pattern: "googletagmanager\\.com|google-analytics\\.com|gtag\\(|dataLayer\\.push|connect\\.facebook\\.net|fbq\\(|mixpanel\\.|posthog\\.(?:init|capture)|amplitude\\.(?:init|getInstance)|static\\.hotjar\\.com|clarity\\.ms|cdn\\.segment\\.com",
+        absent: "consent|gdpr|cookieBanner|cookie-banner|CookieConsent|enigma:allow-no-consent",
+        message: "Analytics, ads or session replay loading with no consent gate in sight. Everything outside the strictly necessary group (session, CSRF, load balancing, the consent record) stays off until the user answers the banner - swapping the cookie for `localStorage` does not change that. Load the vendor only after the stored decision says so (or start in Consent Mode with everything denied and update on accept), make Reject as reachable as Accept, and keep the decision withdrawable. If this file genuinely runs after the gate, add an `enigma:allow-no-consent` note (security-policy, frontend-policy).",
+        severity: "block",
+        skill: "security-policy",
     },
     {
         id: "fe-no-native-dialog",
@@ -745,6 +809,61 @@ export const FILE_CHECKS: Record<string, (content: string) => { line: number; de
     "proc-windows-hide": (content) => missingWindowsHide(content),
 };
 
+/**
+ * Deterministic repairs, keyed by rule id and applied by the post-edit hook before anything is
+ * reported. A violation code can fix costs the model nothing: no message, no turn, no tokens.
+ * Everything else falls back to the normal block, which is the point - a fixer exists only where
+ * the correct edit is mechanical and cannot be wrong.
+ *
+ * CONTRACT, and it is narrow on purpose: a fixer receives ONE line (the flagged one) and returns
+ * its replacement, or null to decline. It can therefore never touch a byte the rule did not point
+ * at. Declining is always safe; guessing is not, so a fixer returns null on anything ambiguous.
+ * Coded here rather than declared in the rule for the same reason as FILE_CHECKS/PROJECT_CHECKS:
+ * it needs logic, and a rule from ~/.enigma-guardrails.json must never be able to rewrite a file.
+ */
+export const FIXERS: Record<string, (line: string, file: string) => string | null> = {
+    "fe-name-input-capitalize": (line, file) => {
+        if (/autocapitalize/i.test(line)) return null;
+        // Only a plain DOM <input>. A custom <Input>/<TextField>/<Controller> may not forward an
+        // attribute it does not know, so writing one there would clear the rule while leaving the
+        // field exactly as broken - the one outcome worse than reporting it.
+        const tags = line.match(/<input\b/gi);
+        if (!tags || tags.length !== 1) return null; // two inputs on one line: which one is ambiguous
+        // JSX wants the DOM property casing; every other target takes the HTML attribute.
+        const attr = /\.[jt]sx$/i.test(file) ? "autoCapitalize=\"words\"" : "autocapitalize=\"words\"";
+        // Inserted straight after the tag name: valid wherever the tag is, and it needs no guess
+        // about where the tag ENDS (it may well end several lines further down).
+        return line.replace(/<input\b/i, `<input ${attr}`);
+    },
+};
+
+/**
+ * Apply every available fixer to a file's findings and re-check it. Returns what was fixed and
+ * the findings that remain (re-derived from the file on disk, so a fixer that did not actually
+ * clear its finding is reported rather than trusted).
+ */
+export function applyFixes(file: string, findings: Finding[]): { fixed: Finding[]; remaining: Finding[]; } {
+    const fixable = findings.filter((f) => f.line && FIXERS[f.ruleId]);
+    if (!fixable.length) return { fixed: [], remaining: findings };
+    let content: string;
+    try { content = readFileSync(file, "utf8"); } catch { return { fixed: [], remaining: findings }; }
+    const lines = content.split("\n");
+    const fixed: Finding[] = [];
+    for (const f of fixable) {
+        const idx = f.line! - 1;
+        const before = lines[idx];
+        if (before === undefined) continue;
+        const after = FIXERS[f.ruleId]!(before, file);
+        if (after === null || after === before) continue;
+        lines[idx] = after;
+        fixed.push(f);
+    }
+    if (!fixed.length) return { fixed: [], remaining: findings };
+    try { writeFileSync(file, lines.join("\n")); }
+    catch { return { fixed: [], remaining: findings }; } // read-only file: report instead of fixing
+    return { fixed, remaining: checkPath(file) };
+}
+
 /** The child_process functions that start a process (and so can create a console window). */
 const SPAWNERS = new Set(["spawn", "spawnSync", "exec", "execSync", "execFile", "execFileSync"]);
 
@@ -970,7 +1089,11 @@ export function runGuardrailsHook(payload?: string): number {
     let file: string | undefined;
     try { file = JSON.parse(payload ?? readFileSync(0, "utf8"))?.tool_input?.file_path; } catch { /* no/invalid payload */ }
     if (!file || typeof file !== "string") return 0;
-    const findings = checkPath(file);
+    const found = checkPath(file);
+    if (!found.length) return 0;
+    // Repair what code can repair first: the model is only told about what is left.
+    const { fixed, remaining: findings } = applyFixes(file, found);
+    if (fixed.length) process.stdout.write(`enigma guardrails (fixed)\n${fixed.map((f) => `${f.file}:${f.line} (${f.ruleId})`).join("\n")}\n`);
     if (!findings.length) return 0;
     const warns = findings.filter((f) => f.severity === "warn");
     const blocks = findings.filter((f) => f.severity === "block");

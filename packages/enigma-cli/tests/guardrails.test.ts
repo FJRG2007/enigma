@@ -7,7 +7,7 @@
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { test, expect, afterAll, beforeEach } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync } from "node:fs";
 
 const HOME = mkdtempSync(join(tmpdir(), "enigma-guardrails-"));
 process.env.USERPROFILE = HOME;
@@ -15,7 +15,7 @@ process.env.HOME = HOME;
 const CONFIG = join(HOME, "guardrails.json");
 process.env.ENIGMA_GUARDRAILS_CONFIG = CONFIG;
 
-const { checkFile, checkPath, formatFindings, loadRules, findProjectRoot, BUILTIN_RULES } = await import("../src/guardrails");
+const { checkFile, checkPath, applyFixes, formatFindings, loadRules, findProjectRoot, BUILTIN_RULES } = await import("../src/guardrails");
 const { disableRule, enableRule, addRule, removeRule } = await import("../src/guardrails-config");
 
 afterAll(() => rmSync(HOME, { recursive: true, force: true }));
@@ -294,7 +294,7 @@ test("never flags a spawn that is fine, deliberate, or unknowable", () => {
 
 test("built-in rules cover the documented conventions", () => {
     const ids = BUILTIN_RULES.map((r) => r.id);
-    for (const id of ["db-uuid-pk", "db-ts-orm-prisma", "be-validate-input-ts", "be-validate-input-py", "val-email-normalize", "db-sqlite-app-datastore", "fe-password-input", "fe-name-input-capitalize", "fe-no-native-dialog", "fe-skeleton-loading", "fe-viewport-meta", "fe-ai-elements-chat", "ui-no-em-dash", "ts-import-namespace", "proc-windows-hide"]) {
+    for (const id of ["db-uuid-pk", "db-ts-orm-prisma", "be-validate-input-ts", "be-validate-input-py", "val-email-normalize", "db-sqlite-app-datastore", "fe-password-input", "fe-name-input-capitalize", "fe-name-value-normalize", "sec-password-breach-check", "fe-tracking-before-consent", "fe-no-native-dialog", "fe-skeleton-loading", "fe-viewport-meta", "fe-ai-elements-chat", "ui-no-em-dash", "ts-import-namespace", "proc-windows-hide"]) {
         expect(ids).toContain(id);
     }
     // Go/Rust input-validation rules are deliberately absent (imprecise - see guardrails.ts).
@@ -306,6 +306,52 @@ test("comment lines never trigger a rule (no false positive from a mention in a 
     expect(checkFile("src/a.ts", "// reads req.body then validates it elsewhere", null)).toEqual([]);
     expect(checkFile("src/a.ts", " * @example req.body.name", null)).toEqual([]);
     expect(checkFile("api/v.py", "# request.get_json() is validated by the decorator", null)).toEqual([]);
+});
+
+test("the fixer repairs a plain input in place, and the finding is gone", () => {
+    const dir = mkdtempSync(join(tmpdir(), "gr-fix-"));
+    const file = join(dir, "register.html");
+    writeFileSync(file, "<form>\n  <input id=\"surname\" type=\"text\">\n</form>\n");
+    const before = checkPath(file);
+    expect(before.some((f) => f.ruleId === "fe-name-input-capitalize")).toBe(true);
+    const { fixed, remaining } = applyFixes(file, before);
+    expect(fixed.map((f) => f.ruleId)).toEqual(["fe-name-input-capitalize"]);
+    // Written to disk, with the HTML attribute casing, and only that line touched.
+    expect(readFileSync(file, "utf8")).toBe("<form>\n  <input autocapitalize=\"words\" id=\"surname\" type=\"text\">\n</form>\n");
+    expect(remaining.some((f) => f.ruleId === "fe-name-input-capitalize")).toBe(false);
+    // The value-normalization half is NOT fixable by code, so it survives for the agent.
+    expect(remaining.some((f) => f.ruleId === "fe-name-value-normalize")).toBe(true);
+    rmSync(dir, { recursive: true, force: true });
+});
+
+test("the fixer declines what it cannot fix safely and leaves the file untouched", () => {
+    const dir = mkdtempSync(join(tmpdir(), "gr-nofix-"));
+    // A custom component may not forward an attribute it does not know: writing one there would
+    // clear the rule and leave the field broken, so the fixer must decline and let the agent fix it.
+    const jsx = join(dir, "profile.tsx");
+    const source = "<TextField autoComplete=\"given-name\" label=\"First name\" />\n";
+    writeFileSync(jsx, source);
+    const found = checkPath(jsx);
+    const r = applyFixes(jsx, found);
+    expect(r.fixed).toEqual([]);
+    expect(readFileSync(jsx, "utf8")).toBe(source);
+    expect(r.remaining.some((f) => f.ruleId === "fe-name-input-capitalize")).toBe(true);
+    // Two inputs on one line: which one the finding points at is ambiguous, so it declines too.
+    const two = join(dir, "pair.html");
+    const pair = "<input id=\"first_name\"><input id=\"last_name\">\n";
+    writeFileSync(two, pair);
+    expect(applyFixes(two, checkPath(two)).fixed).toEqual([]);
+    expect(readFileSync(two, "utf8")).toBe(pair);
+    rmSync(dir, { recursive: true, force: true });
+});
+
+test("the fixer writes JSX property casing in a .tsx file", () => {
+    const dir = mkdtempSync(join(tmpdir(), "gr-fix-jsx-"));
+    const file = join(dir, "signup.tsx");
+    writeFileSync(file, "export const F = () => <input autoComplete=\"name\" placeholder=\"Your name\" />;\n");
+    applyFixes(file, checkPath(file));
+    expect(readFileSync(file, "utf8")).toContain("<input autoCapitalize=\"words\" autoComplete=\"name\"");
+    rmSync(dir, { recursive: true, force: true });
 });
 
 test("findProjectRoot locates the nearest package.json ancestor", () => {

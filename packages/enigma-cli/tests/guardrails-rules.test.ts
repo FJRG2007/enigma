@@ -390,6 +390,62 @@ matrix("fe-name-input-capitalize", false, [
     { name: "build output is excluded", file: "apps/web/dist/register.html", code: "<input autocomplete=\"name\">" },
 ]);
 
+// --- fe-name-value-normalize --------------------------------------------------------
+
+matrix("fe-name-value-normalize", true, [
+    // The exact shape the user hit: the attribute is there, so fe-name-input-capitalize is
+    // clear, and the value is still stored as it was typed on a physical keyboard.
+    { name: "attribute present but nothing normalizes the value", file: "app/(auth)/register/page.tsx", code: "<input autoComplete=\"name\" autoCapitalize=\"words\" placeholder=\"Your name\" />" },
+    { name: "given/family pair with no normalizer", file: "src/app/account/profile/index.tsx", code: "<Input autoComplete=\"given-name\" />\n<Input autoComplete=\"family-name\" />" },
+    { name: "plain form field", file: "public/contact.html", code: "<input id=\"surname\" type=\"text\">" },
+]);
+
+matrix("fe-name-value-normalize", false, [
+    { name: "shared normalizer called on blur", file: "src/components/account/identity-form.tsx", code: "<input autoComplete=\"name\" onBlur={(e) => setName(capitalizeWords(e.target.value))} />" },
+    { name: "normalizer imported from the schema module", file: "src/forms/member.vue", code: "import { normalizeName } from \"@/lib/normalize\";\n<input name=\"last_name\" type=\"text\" />" },
+    { name: "lodash startCase", file: "src/pages/alta.tsx", code: "<input name=\"apellidos\" onBlur={(e) => set(startCase(e.target.value))} />" },
+    { name: "inline first-letter uppercase", file: "src/views/profile/AccountView.tsx", code: "const fix = (s) => s.charAt(0).toUpperCase() + s.slice(1);\n<Controller name='firstname' control={control} />" },
+    { name: "deliberate opt-out", file: "src/forms/legal.tsx", code: "// enigma:allow-no-capitalize legal names are entered exactly as they appear on the document\n<input name=\"first_name\" />" },
+    { name: "an entity name is not a person name", file: "src/views/developer/DialogCreateToken.tsx", code: "<TextField id='name' label='Token name' />" },
+    { name: "build output is excluded", file: "apps/web/dist/register.html", code: "<input autocomplete=\"name\">" },
+]);
+
+// --- sec-password-breach-check ------------------------------------------------------
+
+matrix("sec-password-breach-check", true, [
+    { name: "sign-up password field", file: "app/(auth)/register/page.tsx", code: "<input type=\"password\" autoComplete=\"new-password\" value={pw} onChange={onChange} />" },
+    { name: "reset confirmation screen", file: "src/pages/reset-password.tsx", code: "<Input type=\"password\" autoComplete=\"new-password\" />\n<Input type=\"password\" autoComplete=\"new-password\" />" },
+    { name: "plain change-password form", file: "public/account/password.html", code: "<input type=\"password\" autocomplete=\"new-password\">" },
+]);
+
+matrix("sec-password-breach-check", false, [
+    // The sign-in form is the other autofill token, and a breach check there would be wrong:
+    // the password already exists, and telling the user at login is not the moment to change it.
+    { name: "sign-in form", file: "app/(auth)/login/page.tsx", code: "<input type=\"password\" autoComplete=\"current-password\" />" },
+    { name: "the range API is called in the same file", file: "src/pages/signup.tsx", code: "const res = await fetch(`https://api.pwnedpasswords.com/range/${prefix}`);\n<input type=\"password\" autoComplete=\"new-password\" />" },
+    { name: "delegated to a shared hook", file: "src/pages/signup.tsx", code: "const { breached } = usePwnedPassword(pw);\n<input type=\"password\" autoComplete=\"new-password\" />" },
+    { name: "deliberate opt-out", file: "src/pages/kiosk-enroll.tsx", code: "// enigma:allow-no-breach-check offline kiosk, no outbound network\n<input type=\"password\" autoComplete=\"new-password\" />" },
+    { name: "build output is excluded", file: "apps/web/dist/signup.html", code: "<input type=\"password\" autocomplete=\"new-password\">" },
+]);
+
+// --- fe-tracking-before-consent -----------------------------------------------------
+
+matrix("fe-tracking-before-consent", true, [
+    { name: "GA snippet pasted into the layout", file: "app/layout.tsx", code: "<Script src=\"https://www.googletagmanager.com/gtag/js?id=G-XYZ\" />" },
+    { name: "dataLayer push on load", file: "src/analytics.ts", code: "window.dataLayer = window.dataLayer || [];\ndataLayer.push({ event: \"page_view\" });" },
+    { name: "meta pixel", file: "public/index.html", code: "<script>fbq('init', '123');</script>" },
+    { name: "posthog init at module scope", file: "src/lib/posthog.ts", code: "posthog.init(KEY, { api_host: HOST });" },
+    { name: "hotjar loader", file: "src/app/head.astro", code: "<script src=\"https://static.hotjar.com/c/hotjar-1.js\"></script>" },
+]);
+
+matrix("fe-tracking-before-consent", false, [
+    { name: "loaded behind the stored decision", file: "src/lib/analytics.ts", code: "if (consent.analytics) posthog.init(KEY);" },
+    { name: "consent mode denied by default", file: "app/layout.tsx", code: "gtag('consent', 'default', { analytics_storage: 'denied' });\n<Script src=\"https://www.googletagmanager.com/gtag/js?id=G-XYZ\" />" },
+    { name: "the banner component itself", file: "src/components/CookieBanner.tsx", code: "export function CookieBanner() { return <button onClick={acceptAll}>Accept</button>; }" },
+    { name: "deliberate opt-out", file: "src/lib/replay.ts", code: "// enigma:allow-no-consent this module is mounted by the gate itself\nload(\"https://www.clarity.ms/tag/abc\");" },
+    { name: "build output is excluded", file: "apps/web/dist/index.html", code: "<script src=\"https://www.googletagmanager.com/gtag/js\"></script>" },
+]);
+
 // --- val-email-normalize ------------------------------------------------------------
 
 matrix("val-email-normalize", true, [
