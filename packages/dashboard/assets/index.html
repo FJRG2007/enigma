@@ -128,6 +128,21 @@
         .card .value.accent { color: var(--accent); }
         .card .value.good { color: var(--good); }
         .card .foot { position: relative; color: var(--muted); font-size: 12px; margin-top: 5px; }
+        /* Gate status strip. Two booleans and a path do not each need a 30px stat card:
+           one surface, three inline items (frontend-policy, Visual Hierarchy). */
+        .gate-bar {
+            display: flex; flex-wrap: wrap; align-items: center; gap: 12px 28px;
+            background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+            padding: 13px 18px; margin-bottom: 18px; box-shadow: var(--shadow-1);
+        }
+        .gate-stat { display: flex; align-items: center; gap: 10px; min-width: 0; }
+        .gate-stat-t { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+        .gate-stat-n { font-family: var(--mono); color: var(--muted); font-size: 10.5px; text-transform: uppercase; letter-spacing: .8px; }
+        .gate-stat-v { font-family: var(--mono); font-size: 13px; font-weight: 600; color: var(--text); }
+        .gate-stat-v.good { color: var(--good); }
+        /* Takes the remaining width so the path truncates instead of wrapping the strip. */
+        .gate-stat-scope { flex: 1 1 220px; min-width: 0; }
+        .gate-stat-f { min-width: 0; font-size: 11.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .panel { position: relative; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px 22px; margin-bottom: 18px; box-shadow: var(--shadow-1); }
         .panel-head { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
         /* Section heading: a mono eyebrow led by a short accent rule (structure as signal). */
@@ -1062,16 +1077,19 @@
             </div>
             <button id="gateRefresh" type="button" class="iconbtn" title="Refresh" aria-label="Refresh the gate view"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg></button>
         </div>
-        <div class="grid">
-            <div class="card">
-                <div class="label">Gate</div><div id="gateOn" class="value">-</div>
-                <div class="foot" style="display:flex;align-items:center;gap:8px">Auto-driven after a code task<button id="gateOnBtn" type="button" class="toggle" data-kind="bool" role="switch" aria-checked="false" aria-label="AI quality gate"></button></div>
+        <div class="gate-bar">
+            <div class="gate-stat">
+                <button id="gateOnBtn" type="button" class="toggle" data-kind="bool" role="switch" aria-checked="false" aria-label="AI quality gate" title="Auto-driven after a code task"></button>
+                <div class="gate-stat-t"><span class="gate-stat-n">Gate</span><span id="gateOn" class="gate-stat-v">-</span></div>
             </div>
-            <div class="card">
-                <div class="label">Daemon</div><div id="gateDaemon" class="value">-</div>
-                <div class="foot" style="display:flex;align-items:center;gap:8px">Runs the pipeline in the background<button id="gateDaemonBtn" type="button" class="toggle" data-kind="bool" role="switch" aria-checked="false" aria-label="Gate daemon"></button></div>
+            <div class="gate-stat">
+                <button id="gateDaemonBtn" type="button" class="toggle" data-kind="bool" role="switch" aria-checked="false" aria-label="Gate daemon" title="Runs the pipeline in the background"></button>
+                <div class="gate-stat-t"><span class="gate-stat-n">Daemon</span><span id="gateDaemon" class="gate-stat-v">-</span></div>
             </div>
-            <div class="card"><div class="label">Repository</div><div id="gateRepo" class="value">-</div><div id="gateRepoFoot" class="foot">Scope</div></div>
+            <div class="gate-stat gate-stat-scope">
+                <div class="gate-stat-t"><span class="gate-stat-n">Scope</span><span id="gateRepo" class="gate-stat-v">-</span></div>
+                <span id="gateRepoFoot" class="gate-stat-f"></span>
+            </div>
         </div>
 
         <div class="panel">
@@ -1089,7 +1107,7 @@
                 </div>
                 <div class="set-row" id="gateModelRow">
                     <div class="set-meta"><div class="set-name">Model</div><div class="set-hint" id="gateModelHint">the model every step runs on; a smaller one cuts run time and tokens</div></div>
-                    <div class="set-ctl ladd" style="align-items:center"><input id="gateModel" class="linput" style="flex:none;width:210px" spellcheck="false" autocapitalize="none" autocorrect="off" placeholder="agent default"><button id="gateModelSave" type="button" class="toggle on">Save</button></div>
+                    <div class="set-ctl ladd" style="align-items:center"><select id="gateModelSel" class="linput" style="flex:none;width:240px"></select><input id="gateModel" class="linput" style="flex:none;width:200px" spellcheck="false" autocapitalize="none" autocorrect="off" placeholder="model id"><button id="gateModelSave" type="button" class="toggle on">Save</button></div>
                 </div>
                 <div class="set-row">
                     <div class="set-meta"><div class="set-name">CI timeout</div><div class="set-hint">how long the CI step babysits an idle PR: 168h, 24h, or unlimited</div></div>
@@ -4375,6 +4393,46 @@ export {
         ];
         // Rendered once per non-live load; the number inputs write on change, so a re-render
         // mid-edit would drop what is being typed.
+        // Model choices per agent. Claude Code's `--model` takes these aliases, so they can be
+        // offered as a real list; codex and opencode take a provider-specific string, and a
+        // guessed list there would be worse than none - they get auto plus Custom.
+        const GATE_MODELS = {
+            claude: [
+                ["claude-opus-5", "claude-opus-5 (most capable)"],
+                ["claude-sonnet-5", "claude-sonnet-5 (faster, cheaper)"],
+                ["claude-haiku-4-5", "claude-haiku-4-5 (fastest)"],
+                ["claude-opus-4-8", "claude-opus-4-8 (previous Opus)"],
+            ],
+        };
+        const GATE_MODEL_CUSTOM = "__custom__";
+        let gateSavedModel = "";
+
+        /** Rebuilds the model dropdown for `agent` and selects `model` (empty = the agent default). */
+        function renderGateModel(agent, model) {
+            const sel = $("gateModelSel"), inp = $("gateModel");
+            const opts = [["", "auto (agent default)"]].concat(GATE_MODELS[agent] || [], [[GATE_MODEL_CUSTOM, "Custom model id..."]]);
+            sel.innerHTML = opts.map(([v, label]) => '<option value="' + esc(v) + '">' + esc(label) + "</option>").join("");
+            const listed = opts.some(([v]) => v === model && v !== GATE_MODEL_CUSTOM);
+            sel.value = listed ? model : GATE_MODEL_CUSTOM;
+            syncDD(sel);
+            inp.value = model;
+            gateSavedModel = model;
+            gateModelMode();
+        }
+        /** Shows the free-text field and its Save only while "Custom" is selected. */
+        function gateModelMode() {
+            const custom = $("gateModelSel").value === GATE_MODEL_CUSTOM;
+            $("gateModel").style.display = custom ? "" : "none";
+            $("gateModelSave").style.display = custom ? "" : "none";
+            syncGateModelSave();
+        }
+        /** No-op rule: nothing to save while the typed id still equals the stored one. */
+        function syncGateModelSave() {
+            const btn = $("gateModelSave"), dirty = $("gateModel").value.trim() !== gateSavedModel;
+            btn.disabled = !gateWritable || !dirty;
+            btn.title = dirty ? "" : "No changes to save";
+        }
+
         function renderGateSettings(s) {
             const panel = $("gateSetPanel");
             if (!s) { panel.style.display = "none"; return; }
@@ -4391,7 +4449,7 @@ export {
                 ? "auto: first agent found on PATH - currently " + s.agentResolved
                 : "which coding agent the pipeline drives";
             $("gateModelRow").style.display = s.modelSupported ? "" : "none";
-            $("gateModel").value = s.model || "";
+            renderGateModel(s.agent, s.model || "");
             $("gateModelHint").textContent = "passed to " + s.agentResolved
                 + " on every step; a smaller model is the one change that cuts both run time and tokens";
             $("gateCiTimeout").value = s.ciTimeout || "";
@@ -4403,6 +4461,7 @@ export {
                 + '<div class="set-ctl"><input type="number" min="0" max="20" step="1" inputmode="numeric" class="linput" style="flex:none;width:80px" data-gate-af="' + esc(step) + '" value="' + Number(s.autoFix[step] || 0) + '"></div></div>').join("");
             const ctls = panel.querySelectorAll("input, select, button");
             for (const c of ctls) c.disabled = !gateWritable;
+            syncGateModelSave(); // after the sweep, which would otherwise re-enable a clean Save
         }
         // `live` marks a poll refresh: it repaints the run strip and the two switches, and leaves
         // every editor alone so a poll can never overwrite what is being typed.
@@ -4410,14 +4469,15 @@ export {
             g = g || {};
             if (typeof g.serverNow === "number") gateClockSkew = g.serverNow * 1000 - Date.now();
             $("gateOn").textContent = g.on ? "On" : "Off";
-            $("gateOn").className = "value " + (g.on ? "good" : "");
+            $("gateOn").className = "gate-stat-v " + (g.on ? "good" : "");
             gateBool($("gateOnBtn"), g.on);
             $("gateDaemon").textContent = g.daemon ? "Running" : "Stopped";
-            $("gateDaemon").className = "value " + (g.daemon ? "good" : "");
+            $("gateDaemon").className = "gate-stat-v " + (g.daemon ? "good" : "");
             gateBool($("gateDaemonBtn"), g.daemon);
             const repo = g.repo;
             $("gateRepo").textContent = repo ? (repo.initialized ? "Initialized" : "Not initialized") : "Global";
             $("gateRepoFoot").textContent = repo ? repo.path : "Every active run on this machine";
+            $("gateRepoFoot").title = $("gateRepoFoot").textContent; // the path truncates; keep it recoverable
             $("gateRunsSub").textContent = repo ? "most recent first, this repository" : "active runs across every repository";
             const runs = g.runs || [];
             gateRuns = runs;
@@ -4539,6 +4599,14 @@ export {
         $("gateAgent").addEventListener("change", (e) => saveGateSetting("agent", e.target.value, "the agent"));
         $("gateLogLevel").addEventListener("change", (e) => saveGateSetting("log_level", e.target.value, "the log level"));
         $("gateIntent").addEventListener("click", () => saveGateSetting("intent.enabled", $("gateIntent").dataset.on !== "1", "intent extraction"));
+        // A listed model commits on pick, like the agent and log-level selects; "Custom" reveals
+        // the field and waits for Save, since a half-typed model id must not be written.
+        $("gateModelSel").addEventListener("change", () => {
+            gateModelMode();
+            if ($("gateModelSel").value === GATE_MODEL_CUSTOM) { $("gateModel").focus(); return; }
+            saveGateSetting("model", $("gateModelSel").value, "the model");
+        });
+        $("gateModel").addEventListener("input", syncGateModelSave);
         $("gateModelSave").addEventListener("click", () => saveGateSetting("model", $("gateModel").value.trim(), "the model"));
         $("gateCiSave").addEventListener("click", () => saveGateSetting("ci_timeout", $("gateCiTimeout").value.trim(), "the CI timeout"));
         // Number inputs commit on change (blur or Enter), so typing "12" is not read as "1" then "12".

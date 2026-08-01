@@ -423,6 +423,13 @@
         ], [{ id: "token-refresh-race", severity: "warning", action: "auto-fix", file: "src/auth/token.ts", description: "Two concurrent requests can both refresh the token, so the second overwrites the first with an older value." }]);
         return {
             on: true, runsAvailable: true, runsNote: "", daemon: true, root: "~/.enigma/gate",
+            canWrite: true, writeNote: "", serverNow: Math.floor(Date.now() / 1000),
+            // The pipeline-settings panel renders from this; without it the whole panel hides.
+            settings: {
+                agent: "claude", agentResolved: "claude", model: "", modelSupported: true,
+                ciTimeout: "168h", logLevel: "info", intentEnabled: true,
+                autoFix: { rebase: 2, review: 0, test: 2, document: 1, lint: 2, ci: 2 },
+            },
             globalConfig: { path: "~/.enigma/gate/config.yaml", text: GATE_YAML },
             repo: project ? { path: project, initialized: true, configPath: `${project}/.enigma-gate.yaml`, text: "# Repository gate configuration\n\ncommands:\n  test: npm test\n", exists: true } : null,
             runs: project ? [done] : [parked, done],
