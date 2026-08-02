@@ -288,6 +288,19 @@ Where this lives and when it runs:
 
 ---
 
+## A Textarea Is Bounded At Both Ends
+
+A textarea is the only input the user can resize, so it is the only one whose size can break a layout after the page has rendered. Give every textarea a floor and a ceiling; the `fe-textarea-size-bounds` guardrail blocks a new one that has neither.
+
+- Floor: `rows` (or a `min-height`) so it never collapses to a line and a half. A bare `<textarea>` defaults to about two rows and can be dragged smaller than the text it holds.
+- Ceiling: a `max-height`, so dragging the handle cannot push the rest of the page off the screen. Past the ceiling the textarea scrolls its own content; the page does not grow.
+- Prefer `resize: vertical` over free resize: horizontal dragging escapes the column and breaks a form grid that everything else respects. `resize: none` is acceptable only when the size is genuinely fixed, and it removes an affordance the user expects, so do not reach for it first.
+- An autosizing textarea (`field-sizing: content`, a `scrollHeight` assignment, an autosize package) MUST carry the ceiling: growing with content is exactly the case where a long paste otherwise pushes the submit button out of reach.
+- Put the bounds on the shared Textarea component or one base rule, not on each usage. A per-usage fix is one component away from being forgotten, and the rule is cleared by any bound in the file precisely so the base fix is the one that scales.
+- The exceptions, and they are real: a surface that owns its viewport (a full-page editor, a code or log pane sized to its container) and any case the design deliberately calls otherwise. Mark that line `enigma:allow-unbounded-textarea` so the intent is recorded rather than re-litigated.
+
+---
+
 ## Sign-In, Sign-Up and Recovery Screens
 
 Auth is the first screen a user meets and the one most often shipped half-built. Treat the four screens as one flow: sign in, sign up, forgot password, set a new password. The server-side rules (token lifetime, rate limits, what an answer may reveal) are owned by security-policy; what follows is the UI half.

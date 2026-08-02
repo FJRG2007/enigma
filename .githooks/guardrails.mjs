@@ -446,6 +446,22 @@ var BUILTIN_RULES = [
     skill: "frontend-policy"
   },
   {
+    id: "fe-textarea-size-bounds",
+    label: "Textarea declares a minimum and a maximum size",
+    files: ["*.tsx", "*.jsx", "*.vue", "*.svelte", "*.astro", "*.html", "*.htm"],
+    excludeFiles: ["*.test.*", "*.spec.*", "**/tests/**", "**/__tests__/**", "**/dist/**", "dist/**", "**/build/**", "build/**", "**/.next/**", ".next/**", "**/node_modules/**"],
+    scope: "file",
+    // DIFF stage, for the reason the measurement gave: 17 corpus textarea sites carry no upper
+    // bound, so an edit-stage rule would report a project's existing forms on every unrelated
+    // edit to the same file. Against the lines a change adds there is no backlog, and the rule
+    // can be as strict as the convention actually is.
+    stage: "diff",
+    fileCheck: "fe-textarea-size-bounds",
+    message: "A textarea is the only input the user can resize, so it is the only one that can break a layout after it has rendered. Give it both bounds: `rows` (or a min-height) so it never collapses below a usable size, and a max-height so dragging it - or letting it grow with its content - cannot push the page apart. Prefer `resize: vertical` so the column width survives, and put the bounds on the shared Textarea component rather than on each usage. Mark the line `enigma:allow-unbounded-textarea` when the surface owns its viewport (a full-page editor, a code surface) or the design calls for something else (frontend-policy).",
+    severity: "block",
+    skill: "frontend-policy"
+  },
+  {
     id: "fe-ai-elements-chat",
     label: "AI chat UI via AI Elements",
     files: ["*.tsx", "*.jsx"],
@@ -1214,6 +1230,7 @@ var PROJECT_CHECKS = {
 var FILE_CHECKS = {
   "proc-windows-hide": (content) => missingWindowsHide(content),
   "fe-server-first-mutation": (content) => serverFirstMutation(content),
+  "fe-textarea-size-bounds": (content) => textareaSizeBounds(content),
   "ts-import-extension": (content, file) => extensionImports(content, file),
   "ts-alias-deep-relative": (content, file) => deepRelativeImports(content, file),
   "ts-alias-paths": (content, file) => missingPathAlias(content, file)
@@ -1289,7 +1306,7 @@ function missingWindowsHide(content) {
 }
 var MUTATING_REQUEST = /method:\s*["'`](POST|PUT|PATCH|DELETE)|\b(?:axios|api|\$fetch|http|client)\.(?:post|put|patch|delete)\s*\(/i;
 var ENTITY_WRITE = /\bset[A-Z]\w*\s*\(\s*(?:\(?\w+\)?\s*=>\s*)?[\w.]*\.(?:filter|map|slice|concat)\s*\(|\bset[A-Z]\w*\s*\(\s*!/;
-var OPTIMISTIC_SIGNAL = /useOptimistic|onMutate|optimisticData|setQueryData|rollback|revert|previous[A-Z_]/;
+var OPTIMISTIC_SIGNAL = /useOptimistic|onMutate|optimisticData|setQueryData|rollbackOnError|\brollback\s*[(:]|\brevert\s*[(:]|previous[A-Z_]/;
 var ALLOW_SERVER_FIRST = /enigma:allow-server-first/;
 var RESULT_BINDING = /(?:const|let|var)\s+(\w+)\s*=\s*(?:await\s+)?/;
 var BLOCK_LOOKBACK = 120;
@@ -1350,6 +1367,28 @@ function serverFirstMutation(content) {
       return !uses?.test(l.slice(at.index));
     });
     if (write) out.push({ line: i + 1, detail: `the UI is only updated after the request resolves: ${write.trim().slice(0, 80)}` });
+  }
+  return out;
+}
+var TEXTAREA = /<textarea\b/;
+var TEXTAREA_LOWER = /\brows\s*=|\brows:\s*\d|min-h-|min-height|minHeight|\bh-\[|\bh-\d|height\s*:\s*\d/;
+var TEXTAREA_UPPER = /max-h-|max-height|maxHeight/;
+var TEXTAREA_FIXED = /resize-none|resize\s*:\s*none/;
+var TEXTAREA_AUTOSIZE = /field-?sizing|scrollHeight|autosize|auto-size|TextareaAutosize|textarea-autosize/i;
+function textareaSizeBounds(content) {
+  const lower = TEXTAREA_LOWER.test(content);
+  const upper = TEXTAREA_UPPER.test(content);
+  const fixed = TEXTAREA_FIXED.test(content) && !TEXTAREA_AUTOSIZE.test(content);
+  if (lower && (upper || fixed)) return [];
+  const out = [];
+  const lines = content.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (COMMENT_LINE.test(line) || /enigma:/.test(line) || !TEXTAREA.test(line)) continue;
+    const missing = [];
+    if (!lower) missing.push("no minimum size: no rows, min-height or fixed height");
+    if (!upper && !fixed) missing.push("no maximum size: no max-height, and it can be dragged or grows with its content");
+    if (missing.length) out.push({ line: i + 1, detail: missing.join("; ") });
   }
   return out;
 }
@@ -1627,7 +1666,7 @@ function recordedToday(day) {
 function recordFindings(findings, outcome, stage = "edit") {
   if (!findings.length) return;
   const at = (/* @__PURE__ */ new Date()).toISOString();
-  const seen = stage === "diff" ? recordedToday(at.slice(0, 10)) : null;
+  const seen = stage === "diff" || outcome !== "blocked" ? recordedToday(at.slice(0, 10)) : null;
   const rows = [];
   for (const f of findings) {
     if (seen) {
@@ -1774,5 +1813,6 @@ export {
   runGuardrailsScanCli,
   serverFirstMutation,
   summarizeLedger,
+  textareaSizeBounds,
   wideNamedImports
 };

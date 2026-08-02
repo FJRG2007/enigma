@@ -621,10 +621,17 @@ test("the sweep does not re-count a violation it already recorded today", () => 
     recordFindings([finding], "blocked", "diff");
     recordFindings([{ ...finding, line: 9 }], "warned", "diff");
     expect(readLedger().length).toBe(3);
-    // The post-edit stage keeps every row: there each one is an edit the model made and was
-    // answered on, which is a real encounter rather than the same finding seen again.
+    // A post-edit WARN is deduped too. The edit hook re-scans the whole file on every write, so
+    // without this an agent touching one line of a legacy route appends a row per pre-existing
+    // violation on every edit - counting code it never wrote in the column that is supposed to
+    // mean "it was told and shipped it anyway".
     recordFindings([finding], "warned");
     recordFindings([finding], "warned");
+    expect(readLedger().length).toBe(3);
+    // A post-edit BLOCK is the one repeat that is genuinely new: the hook exited 2, the model was
+    // stopped and answered it, so seeing it again means the violation was written again.
+    recordFindings([{ ...finding, line: 21 }], "blocked");
+    recordFindings([{ ...finding, line: 21 }], "blocked");
     expect(readLedger().length).toBe(5);
     expect(countLedger(1)).toBe(5);
     delete process.env.ENIGMA_GUARDRAILS_LOG;
@@ -683,4 +690,45 @@ test("an explicit check of one file runs every listed rule, diff-stage ones incl
     expect(checkPath(file).some((f) => f.ruleId === "fe-server-first-mutation")).toBe(false);
     expect(checkPath(file, "diff").some((f) => f.ruleId === "fe-server-first-mutation")).toBe(true);
     rmSync(dir, { recursive: true, force: true });
+});
+
+test("a textarea needs a floor and a ceiling, and the file's own bound clears it", () => {
+    const bare = '<textarea id="bio" class="w-full" />';
+    const flagged = checkFile("src/Form.tsx", bare, null, "diff");
+    expect(flagged.length).toBe(1);
+    expect(flagged[0]!.ruleId).toBe("fe-textarea-size-bounds");
+    expect(flagged[0]!.severity).toBe("block");
+    // The edit stage sees whole files, where this defect already exists in most projects.
+    expect(checkFile("src/Form.tsx", bare, null)).toEqual([]);
+    for (const markup of [
+        // Both bounds present.
+        '<textarea rows={4} class="max-h-64 w-full" />',
+        '<textarea class="min-h-24 max-h-[40vh]" />',
+        // A stylesheet expressing the same thing, which is where the fix that scales lives.
+        "textarea { min-height: 100px; max-height: 50vh; resize: vertical; }\n<textarea id=\"bio\"></textarea>",
+        // It cannot be dragged and does not grow, so its rows already fix the size.
+        '<textarea rows={3} class="resize-none" />',
+        // Explicitly allowed.
+        "<textarea rows={3} /> <!-- enigma:allow-unbounded-textarea -->",
+    ]) expect(checkFile("src/Form.tsx", markup, null, "diff")).toEqual([]);
+    // resize-none does NOT clear the ceiling when the content itself moves the height.
+    const autosize = '<textarea rows={3} class="resize-none" style={{ fieldSizing: "content" }} />';
+    expect(checkFile("src/Form.tsx", autosize, null, "diff").length).toBe(1);
+    // A capitalised <Textarea> is a component: its own file carries the bounds, so it is not matched.
+    expect(checkFile("src/Form.tsx", "<Textarea placeholder=\"Bio\" />", null, "diff")).toEqual([]);
+});
+
+test("the optimistic signal is code, not a word that happens to appear", () => {
+    // A file that merely mentions rollback or revert must not switch the mutation rule off.
+    const server = [
+        "const remove = async (id) => {",
+        "    await fetch(`/api/items/${id}`, { method: \"DELETE\" });",
+        "    setItems((prev) => prev.filter((item) => item.id !== id));",
+        "};",
+        "export const rollbackMigration = () => runner.revertChanges();",
+    ].join("\n");
+    expect(checkFile("src/Rows.tsx", server, null, "diff").length).toBe(1);
+    // A real rollback call still clears it.
+    const real = server.replace("export const rollbackMigration = () => runner.revertChanges();", "const undo = () => rollback(previousItems);");
+    expect(checkFile("src/Rows.tsx", real, null, "diff")).toEqual([]);
 });

@@ -546,9 +546,17 @@ export function scanConventions(cwd: string, scanned?: ScannedLines): Convention
     let files = 0;
     for (const [file, numbers] of added) {
         if (++files > MAX_CONVENTION_FILES) { scan.capped = true; break; }
-        const text = readTextFile(join(cwd, file), MAX_UNTRACKED_BYTES);
+        const full = join(cwd, file);
+        const text = readTextFile(full, MAX_UNTRACKED_BYTES);
         if (text === null) continue;
         let findings: Finding[];
+        // The ABSOLUTE path is what the engine gets. Three block-severity rules resolve from disk
+        // through this argument (the import-extension and path-alias checks read the file's nearest
+        // tsconfig), and a repo-relative path sends them to process.cwd() instead of the payload cwd
+        // this hook threads everywhere else - so they would read the wrong tsconfig, or none, and
+        // decide a blocking finding on it. The findings are reported under the relative path below,
+        // which is what the diff and the model's file list use.
+        //
         // No project root, so project-scope rules stand down here: their findings carry no line,
         // are dropped by the intersection below, and resolving a root per file means walking the
         // ancestors of every file in the change for a result nothing reads.
@@ -556,13 +564,13 @@ export function scanConventions(cwd: string, scanned?: ScannedLines): Convention
         // The engine is deliberately self-contained and never throws for a bad rule, but a
         // hand-authored custom rule is still user input reaching a turn-end hook: a failure here
         // must cost the sweep, never the turn.
-        try { findings = checkFile(file, text, null, "diff", rules); }
+        try { findings = checkFile(full, text, null, "diff", rules); }
         catch { continue; }
         for (const f of findings) {
             if (!f.line || !numbers.has(f.line)) continue;
             const gap: VerifyGap = { kind: "convention", file, line: f.line, detail: `${f.ruleId}: ${f.message}` };
             (f.severity === "block" ? scan.gaps : scan.notes).push(gap);
-            scan.findings.push(f);
+            scan.findings.push({ ...f, file });
             // Say when the list was cut short, for the same reason the marker scan does: the model
             // fixes everything it was shown and is blocked again by findings it was never told of.
             if (scan.gaps.length + scan.notes.length >= MAX_GAPS) { scan.capped = true; return scan; }

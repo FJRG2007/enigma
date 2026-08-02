@@ -474,6 +474,22 @@ export const BUILTIN_RULES: GuardrailRule[] = [
         skill: "frontend-policy",
     },
     {
+        id: "fe-textarea-size-bounds",
+        label: "Textarea declares a minimum and a maximum size",
+        files: ["*.tsx", "*.jsx", "*.vue", "*.svelte", "*.astro", "*.html", "*.htm"],
+        excludeFiles: ["*.test.*", "*.spec.*", "**/tests/**", "**/__tests__/**", "**/dist/**", "dist/**", "**/build/**", "build/**", "**/.next/**", ".next/**", "**/node_modules/**"],
+        scope: "file",
+        // DIFF stage, for the reason the measurement gave: 17 corpus textarea sites carry no upper
+        // bound, so an edit-stage rule would report a project's existing forms on every unrelated
+        // edit to the same file. Against the lines a change adds there is no backlog, and the rule
+        // can be as strict as the convention actually is.
+        stage: "diff",
+        fileCheck: "fe-textarea-size-bounds",
+        message: "A textarea is the only input the user can resize, so it is the only one that can break a layout after it has rendered. Give it both bounds: `rows` (or a min-height) so it never collapses below a usable size, and a max-height so dragging it - or letting it grow with its content - cannot push the page apart. Prefer `resize: vertical` so the column width survives, and put the bounds on the shared Textarea component rather than on each usage. Mark the line `enigma:allow-unbounded-textarea` when the surface owns its viewport (a full-page editor, a code surface) or the design calls for something else (frontend-policy).",
+        severity: "block",
+        skill: "frontend-policy",
+    },
+    {
         id: "fe-ai-elements-chat",
         label: "AI chat UI via AI Elements",
         files: ["*.tsx", "*.jsx"],
@@ -1029,6 +1045,7 @@ export const PROJECT_CHECKS: Record<string, (projectRoot: string) => boolean> = 
 export const FILE_CHECKS: Record<string, (content: string, file: string) => { line: number; detail: string; }[]> = {
     "proc-windows-hide": (content) => missingWindowsHide(content),
     "fe-server-first-mutation": (content) => serverFirstMutation(content),
+    "fe-textarea-size-bounds": (content) => textareaSizeBounds(content),
     "ts-import-extension": (content, file) => extensionImports(content, file),
     "ts-alias-deep-relative": (content, file) => deepRelativeImports(content, file),
     "ts-alias-paths": (content, file) => missingPathAlias(content, file),
@@ -1160,8 +1177,15 @@ const MUTATING_REQUEST = /method:\s*["'`](POST|PUT|PATCH|DELETE)|\b(?:axios|api|
  */
 const ENTITY_WRITE = /\bset[A-Z]\w*\s*\(\s*(?:\(?\w+\)?\s*=>\s*)?[\w.]*\.(?:filter|map|slice|concat)\s*\(|\bset[A-Z]\w*\s*\(\s*!/;
 
-/** Evidence the file already applies an optimistic update and can undo it. */
-const OPTIMISTIC_SIGNAL = /useOptimistic|onMutate|optimisticData|setQueryData|rollback|revert|previous[A-Z_]/;
+/**
+ * Evidence the file already applies an optimistic update and can undo it.
+ *
+ * The undo half is matched as CODE, not as a word: bare `rollback|revert` also matched
+ * `rollbackMigration`, `revertChanges`, a `revert` class name or a comment, and any one of those
+ * silently turned the rule off for every mutation in the file. Requiring a call or a known option
+ * name keeps the mitigation meaningful while still clearing a real implementation.
+ */
+const OPTIMISTIC_SIGNAL = /useOptimistic|onMutate|optimisticData|setQueryData|rollbackOnError|\brollback\s*[(:]|\brevert\s*[(:]|previous[A-Z_]/;
 
 /**
  * The escape hatch, and it is scoped to the HANDLER rather than the file. The rule's message tells
@@ -1256,6 +1280,55 @@ export function serverFirstMutation(content: string): { line: number; detail: st
             return !uses?.test(l.slice(at.index));
         });
         if (write) out.push({ line: i + 1, detail: `the UI is only updated after the request resolves: ${write.trim().slice(0, 80)}` });
+    }
+    return out;
+}
+
+// --- textarea: the one input the user can resize ---------------------------------------
+
+/** A real DOM textarea. Case-SENSITIVE: a capitalised <Textarea> is a component whose own file owns the bounds. */
+const TEXTAREA = /<textarea\b/;
+
+/** A lower bound on the height: the rows attribute, an explicit minimum, or a fixed height. */
+const TEXTAREA_LOWER = /\brows\s*=|\brows:\s*\d|min-h-|min-height|minHeight|\bh-\[|\bh-\d|height\s*:\s*\d/;
+
+/** An upper bound, in the dialects a project writes it in. */
+const TEXTAREA_UPPER = /max-h-|max-height|maxHeight/;
+
+/** The element cannot be dragged, so its rows or height already fix its size. */
+const TEXTAREA_FIXED = /resize-none|resize\s*:\s*none/;
+
+/** It grows with its CONTENT, so an upper bound is needed even when it cannot be dragged. */
+const TEXTAREA_AUTOSIZE = /field-?sizing|scrollHeight|autosize|auto-size|TextareaAutosize|textarea-autosize/i;
+
+/**
+ * Textareas with no floor or no ceiling on their size.
+ *
+ * Both bounds are read from the WHOLE file, deliberately: the fix that scales is one rule on the
+ * shared component or one base stylesheet rule, and a check that kept firing after that fix would
+ * train the model to ignore it. `resize-none` clears only the CEILING, and only when nothing in the
+ * file autosizes - an element that cannot be dragged and does not grow is already bounded by its
+ * rows, while one that grows with its content is not.
+ *
+ * MEASURED over a 2762-file UI corpus, 38 files of which hold a lowercase <textarea>: 17 sites in
+ * 12 files carry no upper bound, every one a genuine resizable textarea, and 0 carry no lower bound
+ * - so the ceiling half has a real backlog, which is what puts the rule at the diff stage, while the
+ * floor half is a scaffolding guard that only fires on a bare <textarea> written from now on.
+ */
+export function textareaSizeBounds(content: string): { line: number; detail: string; }[] {
+    const lower = TEXTAREA_LOWER.test(content);
+    const upper = TEXTAREA_UPPER.test(content);
+    const fixed = TEXTAREA_FIXED.test(content) && !TEXTAREA_AUTOSIZE.test(content);
+    if (lower && (upper || fixed)) return [];
+    const out: { line: number; detail: string; }[] = [];
+    const lines = content.split("\n");
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i]!;
+        if (COMMENT_LINE.test(line) || /enigma:/.test(line) || !TEXTAREA.test(line)) continue;
+        const missing: string[] = [];
+        if (!lower) missing.push("no minimum size: no rows, min-height or fixed height");
+        if (!upper && !fixed) missing.push("no maximum size: no max-height, and it can be dragged or grows with its content");
+        if (missing.length) out.push({ line: i + 1, detail: missing.join("; ") });
     }
     return out;
 }
@@ -1678,13 +1751,18 @@ function recordedToday(day: string): Set<string> {
  * directory or a corrupt file must never turn a convention check into a broken edit, so nothing
  * here throws and nothing here blocks.
  *
- * The diff stage is deduplicated per day (see recordedToday); the edit stage is not, because there
- * every row is a distinct edit the model made and was answered on, which is a real encounter.
+ * Deduplicated per day EXCEPT for an edit-stage block. That one exception is the only case where a
+ * repeat is a genuinely new encounter: the hook exited 2, the model was stopped and answered it, so
+ * seeing the same rule again means it wrote the violation again. Everything else is the same
+ * violation seen twice. The edit hook re-scans the WHOLE file on every write, so without this an
+ * agent touching one line of a legacy route file appends a row per pre-existing violation, on every
+ * edit of that file - inflating precisely the "the agent got away with it" column with code the
+ * agent never wrote, which is the one number this ledger exists to report.
  */
 export function recordFindings(findings: Finding[], outcome: Outcome, stage: Stage = "edit"): void {
     if (!findings.length) return;
     const at = new Date().toISOString();
-    const seen = stage === "diff" ? recordedToday(at.slice(0, 10)) : null;
+    const seen = stage === "diff" || outcome !== "blocked" ? recordedToday(at.slice(0, 10)) : null;
     const rows: string[] = [];
     for (const f of findings) {
         if (seen) {
