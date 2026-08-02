@@ -58,6 +58,7 @@ Enables:
 - Route-to-controller mapping — find endpoints with missing auth decorators
 - Dangerous function scan: eval, exec, unserialize, raw SQL concat
 - Cross-reference source findings with live endpoint scan
+- Persistent per-repo ledger under `docs/vulnerabilities/` (team-owned repos only): read it first to skip already-known findings and flag regressions, write each confirmed finding back so devs and future scans do not repeat the same bug. Format and rules: `rules/source-audit.md` section 11.
 
 ## Browser Mode (--browser)
 

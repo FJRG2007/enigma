@@ -47,7 +47,7 @@ TUI-agnostic bug bounty and VAPT framework supporting Claude Code, OpenCode, and
 
 - `rules/hunting.md` — 29 always-active hunting rules (incl. false positive exclusions, reachability/exploitability classification, framework-aware FP filters, confidence scoring, hard scope lock, MCP browser policy, OSS production verification)
 - `rules/reporting.md` — Reporting standards (STRIDE/CWE table, structured PoC format, reachability + exploitability labels)
-- `rules/source-audit.md` — White-box source code audit methodology (trust boundaries, cross-file analysis, security checklist, calibration examples)
+- `rules/source-audit.md` — White-box source code audit methodology (trust boundaries, cross-file analysis, security checklist, calibration examples, the persistent per-repo `docs/vulnerabilities/` ledger)
 
 ### AI Knowledge Docs
 
@@ -337,6 +337,88 @@ Always active:
 9. NEVER present a finding without a working PoC (or OSS code-path + passive version confirmation)
 10. NEVER use theoretical language in any finding description: no "could potentially", "may allow", "might be possible"
 11. NEVER report a vulnerability whose only entry point requires first exploiting a DIFFERENT vulnerability — that is a chain, not a standalone finding. Report the full confirmed chain as ONE submission or don't report it at all.
+12. WHITE-BOX ONLY: when auditing a repo you have filesystem access to and the team owns, keep a persistent per-repo ledger under `docs/vulnerabilities/`. READ it before hunting (skip already-known findings, flag regressions of fixed ones); WRITE each confirmed finding there after validation (create `docs/` and `docs/vulnerabilities/` if absent). It is the project's own security memory for the devs and future scans, so the same bug class is not repeated. Redact real secrets/PII; never write a ledger into a third-party target you do not own. Full format below.
+
+## Persistent Vulnerability Ledger (white-box, always active)
+
+When auditing a repo you have filesystem access to AND the team owns (the --source-code /
+white-box path), maintain a security findings ledger under `docs/vulnerabilities/` at the repo
+root. It is committed with the code so the devs and any future scan (yours or another agent's)
+see which flaws already happened here and do not repeat them. This is separate from your own
+hunt memory (SESSION.md, hunt journal, /remember) -- that is transient, helio-side state; the
+ledger is durable and dev-facing. Keep both.
+
+Do this only on repos the user or their team controls. NEVER write a ledger into a third-party
+target you do not own. Redact live secrets, tokens and real customer PII to placeholders
+(`ATTACKER_TOKEN`, `victim@example.com`). Only CONFIRMED findings that pass the validation gate
+(confidence >= 70, not a framework FP, reachable) go in.
+
+BEFORE hunting -- read it first:
+- If `docs/vulnerabilities/` exists, read `README.md` and every `VULN-*.md`. Key entries by
+  (cwe, location/component, bug class).
+- A candidate matching an OPEN entry is already known -> reference its id, do not re-file it.
+- A candidate matching a `fixed` entry but present in the code again is a REGRESSION -> flag it.
+
+AFTER confirming a finding -- write it back:
+- Ensure `docs/` exists (create if absent), then `docs/vulnerabilities/` and its `README.md`.
+- New -> allocate the next id, add a file and an index row. Already open and still present ->
+  update `last_seen`. Fixed but back -> `status: regressed` + a History line. Now patched in code
+  -> `status: fixed`, set `fixed` date (and `fix_commit` if known).
+
+Entry file `docs/vulnerabilities/VULN-NNNN-<slug>.md` (4-digit id, kebab slug):
+
+```markdown
+---
+id: VULN-0001
+title: IDOR in src/api/invoices.ts allows any authenticated user to read others' invoices
+status: open              # open | fixed | regressed | false-positive | accepted-risk
+severity: high            # critical | high | medium | low | info
+cwe: CWE-639
+stride: Information Disclosure
+cvss: "6.5"
+cvss_vector: CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N
+location: src/api/invoices.ts:42
+component: billing
+reachability: AUTHENTICATED   # EXTERNAL | AUTHENTICATED | INTERNAL
+exploitability: EASY          # EASY | MEDIUM | HARD
+confidence: 90
+discovered: 2026-08-02
+last_seen: 2026-08-02
+fixed: null
+fix_commit: null
+---
+
+## Summary
+Impact-first prose: what an attacker can do, and where.
+
+## Root cause / data flow
+External input -> (missing check) -> sink. Name the exact functions and lines.
+
+## Evidence
+Structured PoC (Payload / Request / Expected / Actual), or the traced code path plus passive
+version proof. Secrets and PII redacted.
+
+## Impact
+Prose, quantified: what data, how many records, which actor.
+
+## Remediation
+One or two specific sentences -- the concrete fix.
+
+## History
+- 2026-08-02: discovered by Helio (source audit), status open.
+```
+
+`docs/vulnerabilities/README.md` opens with two lines on what the folder is, then a table sorted
+open/regressed first and by severity:
+
+```markdown
+| ID | Title | Severity | Status | Location | CWE | Discovered |
+|----|-------|----------|--------|----------|-----|------------|
+| VULN-0001 | IDOR in invoices endpoint | High | Open | src/api/invoices.ts:42 | CWE-639 | 2026-08-02 |
+```
+
+Write the ledger in the same ASCII-only human style as reports: no em-dash, no unicode arrows
+(use `->`), no emojis, no decorative separators.
 
 ## Report and PoC Style (always active, regardless of how a report is requested)
 

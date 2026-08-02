@@ -366,4 +366,111 @@ subprocess.run(["convert", filename, "-resize", f"{width}x{height}", "output.jpg
 ```
 - Sink: subprocess.run with list args (no shell=True)
 - Language protection: list args prevent shell interpretation
-- Verdict: FALSE POSITIVE — no shell injection possible with list argv. Kill it.
+- Verdict: FALSE POSITIVE -- no shell injection possible with list argv. Kill it.
+
+---
+
+## 11. PERSISTENT VULNERABILITY LEDGER (docs/vulnerabilities/)
+
+When you audit a repo you have filesystem access to (white-box / --source-code), keep a
+durable, in-repo record of every confirmed finding under `docs/vulnerabilities/`. This is the
+project's own security memory: it lets a future scan skip what is already known, catches a
+fixed bug that came back, and shows the devs and any other agent on the project which classes
+of mistake have already happened here so they are not repeated.
+
+This is NOT helio's private hunt memory. `targets/<t>/SESSION.md`, the hunt journal, and
+`/remember` are transient, per-hunt, helio-side state. The ledger is committed into the
+audited repo and is written for the people who maintain it. Keep both -- they serve different
+readers.
+
+**Scope and safety (hard rules):**
+- Only for a repo the user or their team owns and controls. NEVER create a ledger inside a
+  third-party bug-bounty target you do not own.
+- Redact live secrets, tokens, credentials and real customer PII from every entry -- replace
+  with placeholders (`ATTACKER_TOKEN`, `victim@example.com`). The ledger documents the flaw so
+  it can be fixed; it must not become a committed copy of real secrets.
+- Only CONFIRMED findings that pass the validation gate (confidence >= 70, not a framework FP,
+  reachable) go in the ledger. Do not pollute it with weak leads.
+
+### Before the audit -- READ the ledger first
+
+1. If `docs/vulnerabilities/` exists, read `README.md` and every `VULN-*.md` entry.
+2. Build a known-set keyed by `(cwe, normalized location/component, bug class)`.
+3. Use it while hunting:
+   - A candidate that matches an OPEN entry is already documented -> reference its id, do not
+     re-file it as a new finding.
+   - A candidate that matches a `fixed` entry but is present in the code again is a REGRESSION
+     -> high signal, flag it explicitly.
+   - A `false-positive` / `accepted-risk` entry -> do not resurface it unless the context changed.
+
+### After confirming a finding -- WRITE the ledger
+
+1. Ensure `docs/` exists at the repo root (create it if absent), then `docs/vulnerabilities/`
+   and its `README.md` index.
+2. Reconcile against the known-set:
+   - New finding -> allocate the next id, create its file, add a row to the index.
+   - Matches an open entry, still present -> update `last_seen`, do not duplicate.
+   - Matched a `fixed` entry, present again -> set `status: regressed`, append a History line.
+   - A previously open entry you can now confirm is patched in the code -> set `status: fixed`,
+     set the `fixed` date (and `fix_commit` if you know the commit that closed it).
+
+### Entry format
+
+One file per finding: `docs/vulnerabilities/VULN-NNNN-<slug>.md` (4-digit id, kebab slug, e.g.
+`VULN-0001-idor-invoices-endpoint.md`).
+
+```markdown
+---
+id: VULN-0001
+title: IDOR in src/api/invoices.ts allows any authenticated user to read others' invoices
+status: open              # open | fixed | regressed | false-positive | accepted-risk
+severity: high            # critical | high | medium | low | info
+cwe: CWE-639
+stride: Information Disclosure
+cvss: "6.5"
+cvss_vector: CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N
+location: src/api/invoices.ts:42
+component: billing
+reachability: AUTHENTICATED   # EXTERNAL | AUTHENTICATED | INTERNAL
+exploitability: EASY          # EASY | MEDIUM | HARD
+confidence: 90
+discovered: 2026-08-02
+last_seen: 2026-08-02
+fixed: null                   # YYYY-MM-DD once remediated, else null
+fix_commit: null              # commit sha that closed it, else null
+---
+
+## Summary
+Impact-first prose. What an attacker can do, and where.
+
+## Root cause / data flow
+External input -> (missing ownership check) -> sink. Name the exact functions and lines.
+
+## Evidence
+Structured PoC (Payload / Request / Expected / Actual) or, for code-only confirmation, the
+traced path plus passive version proof. Secrets and PII redacted to placeholders.
+
+## Impact
+Prose, quantified: what data, how many records, which actor.
+
+## Remediation
+One or two specific sentences. The concrete fix, not "add validation".
+
+## History
+- 2026-08-02: discovered by Helio (source audit), status open.
+```
+
+### Index format
+
+`docs/vulnerabilities/README.md` opens with two lines on what the folder is (a security
+findings ledger; new scans read it first to avoid repeats), then a table:
+
+```markdown
+| ID | Title | Severity | Status | Location | CWE | Discovered |
+|----|-------|----------|--------|----------|-----|------------|
+| VULN-0001 | IDOR in invoices endpoint | High | Open | src/api/invoices.ts:42 | CWE-639 | 2026-08-02 |
+```
+
+Sort open/regressed above fixed, and highest severity first. Keep the prose in the same
+ASCII-only, human style as reports (see `rules/reporting.md`): no em-dash, no unicode arrows
+(use `->`), no emojis, no decorative separators.
