@@ -39,15 +39,6 @@ import { createAgent, lookPath } from "../agent/factory";
 import type { PushReceivedParams } from "../ipc/protocol";
 import { EventLogChunk, type Event } from "../ipc/protocol";
 import {
-    merge,
-    loadRepo,
-    loadGlobal,
-    resolveAgent,
-    type RepoConfig,
-    effectiveRepoConfig,
-    loadRepoFromBytes
-} from "../config";
-import {
     type StepName,
     type Finding,
     type ApprovalAction,
@@ -64,6 +55,17 @@ import {
     fetchRemoteBranch,
     copyLocalUserIdentity
 } from "../git";
+import {
+    merge,
+    loadRepo,
+    agentArgs,
+    loadGlobal,
+    resolveAgent,
+    configForStep,
+    type RepoConfig,
+    effectiveRepoConfig,
+    loadRepoFromBytes
+} from "../config";
 
 /** Builds the pipeline steps for a run; defaults to `allPipelineSteps`. */
 export type StepFactory = () => Step[];
@@ -444,6 +446,34 @@ export class RunManager {
             }
             ag = withSteering(ag) as Agent;
 
+            // Per-step agent backends. A step whose args resolve to the run-wide
+            // set reuses `ag`; a step with its own args (typically a cheaper
+            // model for the mechanical steps) gets a backend of its own, cached
+            // so repeated rounds of the same step do not respawn one. Every
+            // extra backend is closed with the run.
+            const extraAgents = new Map<string, Agent>();
+            const baseArgs = JSON.stringify(agentArgs(cfg));
+            const stepAgent = (step: StepName): Agent => {
+                const key = JSON.stringify(agentArgs(cfg, step));
+                if (key === baseArgs) return ag;
+                const cached = extraAgents.get(key);
+                if (cached !== undefined) return cached;
+                let stepAg: Agent;
+                try {
+                    stepAg = createAgent(configForStep(cfg, step), this.paths, {
+                        acpRegistryOverrides: cfg.acpRegistryOverrides
+                    });
+                } catch (err) {
+                    // A bad per-step override must not kill the run: fall back to
+                    // the run-wide backend and say so.
+                    log.warn("per-step agent unavailable, using run agent", "run_id", run.id, "step", step, "error", errMessage(err));
+                    return ag;
+                }
+                stepAg = withSteering(stepAg) as Agent;
+                extraAgents.set(key, stepAg);
+                return stepAg;
+            };
+
             const execSteps = this.steps();
             track("run", {
                 action: "started",
@@ -457,7 +487,7 @@ export class RunManager {
             // Create the executor with a cancellable controller (the cancel cause
             // drives the run's cancelled/failed message).
             const controller = new AbortController();
-            const executor = new Executor(this.db, this.paths, cfg, ag, execSteps, this.broadcast);
+            const executor = new Executor(this.db, this.paths, cfg, ag, execSteps, this.broadcast, stepAgent);
             executor.setSkippedSteps(skipSteps);
 
             this.executors.set(run.id, executor);
@@ -465,7 +495,7 @@ export class RunManager {
 
             // The background task now owns worktree cleanup.
             bgOwnsWorktree = true;
-            const task = this.runPipeline(executor, controller, ag, run, repo, gateDir, wtDir, trigger, branchRole, cfg.agent, execSteps.length);
+            const task = this.runPipeline(executor, controller, ag, run, repo, gateDir, wtDir, trigger, branchRole, cfg.agent, execSteps.length, extraAgents);
             this.dones.set(run.id, task);
 
             return run.id;
@@ -490,7 +520,8 @@ export class RunManager {
         trigger: string,
         branchRole: string,
         agentName: string,
-        stepCount: number
+        stepCount: number,
+        extraAgents?: Map<string, Agent>
     ): Promise<void> {
         const startedAt = Date.now();
         const finishedFields = () => ({
@@ -531,6 +562,13 @@ export class RunManager {
                 await ag.close();
             } catch {
                 // Agent close is best-effort.
+            }
+            for (const extra of extraAgents?.values() ?? []) {
+                try {
+                    await extra.close();
+                } catch {
+                    // Agent close is best-effort.
+                }
             }
             this.closeSubscribers(run.id);
             try {

@@ -89,9 +89,18 @@ export class Executor {
         private readonly config: Config | null,
         private readonly agent: Agent,
         private readonly steps: Step[],
-        onEvent?: EventFunc
+        onEvent?: EventFunc,
+        private readonly stepAgent?: (step: StepName) => Agent
     ) {
         this.onEvent = onEvent ?? (() => {});
+    }
+
+    /**
+     * Agent backend for one step. Without a per-step resolver every step shares
+     * the single run agent, which is the unconfigured behavior.
+     */
+    private agentForStep(step: StepName): Agent {
+        return this.stepAgent?.(step) ?? this.agent;
     }
 
     /** Configures steps to mark skipped without running. */
@@ -218,7 +227,7 @@ export class Executor {
                 run,
                 repo,
                 workDir,
-                agent: this.agent,
+                agent: this.agentForStep(step.name()),
                 config: this.config as Config,
                 db: this.db,
                 stepResultID: sr.id,

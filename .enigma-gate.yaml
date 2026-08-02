@@ -1,0 +1,31 @@
+# Per-repo gate config, merged over ~/.enigma/gate/config.yaml.
+#
+# commands.* and agent are read from the DEFAULT BRANCH, never the pushed SHA
+# (manager.ts effectiveRepoConfig), so a change to them only takes effect once
+# committed to main. ignore_patterns come from the pushed branch.
+
+# Left empty, the test and lint steps spend a full agent pass DETECTING how this
+# project is tested and linted. Set, they become a shell exec plus an exit code.
+# Measured over 72 runs: lint averaged 3.6 min purely as a detection pass.
+commands:
+  test: npm run verify
+  lint: npm run lint:changed
+
+# review and document read the whole diff. A file matched here is dropped from
+# it, and when EVERY changed file matches, the step is skipped outright
+# (review.ts hasReviewableChanges, document.ts hasNonIgnoredDocumentChanges).
+# Only generated or vendored paths belong here; anything hand-edited stays
+# reviewable.
+#
+# Pattern syntax (commonDiff.ts matchIgnorePattern) is NOT full globbing:
+#   "<prefix>/**" is a literal prefix test - "**/dist/**" matches nothing.
+#   A pattern with no "/" matches the BASENAME.
+#   Anything else is a whole-path match.
+ignore_patterns:
+  - package-lock.json
+  - "*.lock"
+  # Regenerated wholesale by `npm run seal`; the SKILL.md sources stay reviewed.
+  - docs/skills-catalog.json
+  # Vendored upstream reference (no-mistakes), read-only here.
+  - "references/**"
+  - "packages/dashboard/dist/**"

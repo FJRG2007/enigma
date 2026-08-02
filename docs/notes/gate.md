@@ -19,13 +19,32 @@ full agent pass over the diff, and every fix round is *two more* full passes (on
 fixes, one to re-review). A run parked on review for 40 minutes is normal, not stuck - check
 `~/.enigma/gate/logs/<run-id>/review.log` mtime to tell the difference.
 
+Measured over 72 runs of this repo (`state.sqlite`, `step_results` summed by `step_name`),
+39h of gate time split: **review 46.8%** (avg 15.6m, median 8.7m, p90 37.3m, 1.57 rounds per
+review), **ci 32.2%** (avg 47m but median ~9.5m - the mean is three stuck workflows, one of
+430m), test 14%, document and lint 6.5% combined, everything else under 1%. Re-run that query
+before optimizing anything; the shape is not what it feels like from the status line.
+
 The levers that actually change a run's duration and token cost, in order:
 
-1. **The model.** Each adapter spawns its agent's CLI with no model flag, so the gate inherits
-   whatever that CLI defaults to (Claude Code: your configured model). Set it explicitly with
-   `agent_args_override.<agent>` in the global config - `["--model", "claude-sonnet-5"]` for
-   claude/opencode, `["-m", ...]` for codex. `RESERVED_AGENT_ARGS` in `gate/config.ts` lists
-   what a user may NOT override (the flags enigma manages); the model is not one of them.
+1. **The model, per step.** Each adapter spawns its agent's CLI with no model flag, so the gate
+   inherits whatever that CLI defaults to (Claude Code: your configured model). Set it globally
+   with `agent_args_override.<agent>` - `["--model", "claude-sonnet-5"]` for claude/opencode,
+   `["-m", ...]` for codex - or **per step** with `agent_step_args_override.<agent>.<step>`,
+   which layers over it. Review is where the judgment is; test, document, lint, rebase, pr and
+   intent are mechanical, so giving only those a smaller model cuts the run without touching
+   review quality. A step absent from the map keeps the agent-wide args, and with neither key
+   set `configForStep` returns the config object unchanged, so the unconfigured path is exactly
+   the old one. `RESERVED_AGENT_ARGS` in `gate/config.ts` lists what a user may NOT override
+   (the flags enigma manages); the model is not one of them.
+   Mechanism: all five adapters read their extra args from `agentArgsOverride[agent]`, so
+   `configForStep(cfg, step)` folds the step's args into a cloned config and no adapter needed
+   changing. `manager.startRun` caches one backend per distinct arg set and closes them all
+   with the run.
+   **Rollout order matters**: `loadGlobal` THROWS on an unknown field (`config.ts`, the
+   `GLOBAL_KNOWN_KEYS` check), so writing `agent_step_args_override` into
+   `~/.enigma/gate/config.yaml` before the binary that knows it is installed breaks every gate
+   command instantly. Install first, then write the config.
 2. **Fix rounds.** `auto_fix.review` is 0 by default, so review pauses for approval. Every
    `axi respond --action fix` is another two passes. Batch every finding into ONE fix round.
 3. **`ignore_patterns`** in the repo's `.enigma-gate.yaml`: review and document read the whole

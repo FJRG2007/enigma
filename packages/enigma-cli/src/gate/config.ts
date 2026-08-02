@@ -14,6 +14,7 @@ import { parseYaml, asRecord } from "./yaml";
 import { execFile } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import {
+    allSteps,
     type StepName,
     AGENT_PI,
     AGENT_AUTO,
@@ -103,6 +104,7 @@ export interface GlobalConfig {
     acpRegistryOverrides?: Record<string, string>;
     agentPathOverride?: Record<string, string>;
     agentArgsOverride?: Record<string, string[]>;
+    agentStepArgsOverride?: Record<string, Record<string, string[]>>;
     ciTimeout: number;
     logLevel: string;
     autoFix: AutoFixRaw;
@@ -134,6 +136,7 @@ export interface Config {
     acpRegistryOverrides?: Record<string, string>;
     agentPathOverride?: Record<string, string>;
     agentArgsOverride?: Record<string, string[]>;
+    agentStepArgsOverride?: Record<string, Record<string, string[]>>;
     ciTimeout: number;
     logLevel: string;
     commands: Commands;
@@ -201,6 +204,17 @@ log_level: info
 #   codex:
 #     - -m
 #     - gpt-5.4
+
+# Per-step flags, layered over agent_args_override (optional, global only).
+# review is where the judgment is; test, document and lint are mechanical, and
+# running them on a smaller model is the single biggest cut to a run's wall
+# clock and cost that does not weaken the review. A step listed here uses ONLY
+# its own flags; a step absent from the map keeps the agent-wide ones.
+# agent_step_args_override:
+#   claude:
+#     test: ["--model", "claude-sonnet-5"]
+#     document: ["--model", "claude-sonnet-5"]
+#     lint: ["--model", "claude-sonnet-5"]
 #
 # Maximum follow-up auto-fix attempts per step (0 = disabled after the initial pass)
 # Document fixes are attempted during the initial document pass.
@@ -329,9 +343,33 @@ export function agentPath(cfg: Config): string {
     return DEFAULT_BINARY[cfg.agent] ?? cfg.agent;
 }
 
-/** Extra CLI args for the configured native agent, or empty when unset. */
-export function agentArgs(cfg: Config): string[] {
+/**
+ * Extra CLI args for the configured native agent, or empty when unset. With a
+ * step, a per-step override for that step wins over the agent-wide one; steps
+ * without an entry fall back to it, so an unconfigured gate behaves exactly as
+ * before.
+ */
+export function agentArgs(cfg: Config, step?: StepName): string[] {
+    if (step !== undefined) {
+        const perStep = cfg.agentStepArgsOverride?.[cfg.agent]?.[step];
+        if (perStep !== undefined) return perStep;
+    }
     return cfg.agentArgsOverride?.[cfg.agent] ?? [];
+}
+
+/**
+ * Projects a config onto one step by folding that step's arg override into
+ * `agentArgsOverride`. Every agent adapter derives its extra args from that map,
+ * so a per-step model reaches all five backends without touching any of them.
+ * Returns the original config when the step resolves to the agent-wide args.
+ */
+export function configForStep(cfg: Config, step: StepName): Config {
+    const stepArgs = agentArgs(cfg, step);
+    const runArgs = agentArgs(cfg);
+    // Compare by value: with no override configured each call builds a fresh
+    // empty array, so an identity check would clone on every step.
+    if (stepArgs.length === runArgs.length && stepArgs.every((a, i) => a === runArgs[i])) return cfg;
+    return { ...cfg, agentArgsOverride: { ...cfg.agentArgsOverride, [cfg.agent]: stepArgs } };
 }
 
 const AGENT_ARGS_OVERRIDE_AGENTS = new Set([AGENT_CLAUDE, AGENT_CODEX, AGENT_ROVODEV, AGENT_OPENCODE, AGENT_PI]);
@@ -369,6 +407,30 @@ export function validateAgentArgsOverride(override: Record<string, string[]>): v
     }
 }
 
+const AGENT_STEP_ARGS_OVERRIDE_STEPS = new Set<string>(allSteps());
+
+/**
+ * Validates agent_step_args_override: known agent keys, known step keys, and the
+ * same reserved-flag rules each per-step list must satisfy.
+ */
+export function validateAgentStepArgsOverride(override: Record<string, Record<string, string[]>>): void {
+    for (const [name, steps] of Object.entries(override)) {
+        if (!AGENT_ARGS_OVERRIDE_AGENTS.has(name)) {
+            throw new Error(
+                `invalid agent name in agent_step_args_override: "${name}" (valid: claude, codex, rovodev, opencode, pi)`
+            );
+        }
+        for (const [step, args] of Object.entries(steps)) {
+            if (!AGENT_STEP_ARGS_OVERRIDE_STEPS.has(step)) {
+                throw new Error(
+                    `invalid step in agent_step_args_override.${name}: "${step}" (valid: intent, rebase, review, test, document, lint, push, pr, ci)`
+                );
+            }
+            validateAgentArgsOverride({ [name]: args });
+        }
+    }
+}
+
 /** Writes the default config file at path if it does not exist (best-effort). */
 export function ensureDefaultGlobalConfig(path: string): void {
     if (existsSync(path)) return;
@@ -386,6 +448,7 @@ const GLOBAL_KNOWN_KEYS = new Set([
     "acp_registry_overrides",
     "agent_path_override",
     "agent_args_override",
+    "agent_step_args_override",
     "ci_timeout",
     "babysit_timeout",
     "log_level",
@@ -406,6 +469,15 @@ function toStringArrayMap(value: unknown): Record<string, string[]> | undefined 
     const out: Record<string, string[]> = {};
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
         out[k] = Array.isArray(v) ? v.map(String) : [];
+    }
+    return out;
+}
+
+function toStringArrayMapMap(value: unknown): Record<string, Record<string, string[]>> | undefined {
+    if (!value || typeof value !== "object") return undefined;
+    const out: Record<string, Record<string, string[]>> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+        out[k] = toStringArrayMap(v) ?? {};
     }
     return out;
 }
@@ -478,6 +550,11 @@ export function loadGlobal(path: string): GlobalConfig {
     if (argsOverride) {
         validateAgentArgsOverride(argsOverride);
         cfg.agentArgsOverride = argsOverride;
+    }
+    const stepArgsOverride = toStringArrayMapMap(raw.agent_step_args_override);
+    if (stepArgsOverride) {
+        validateAgentStepArgsOverride(stepArgsOverride);
+        cfg.agentStepArgsOverride = stepArgsOverride;
     }
     let timeoutValue = typeof raw.ci_timeout === "string" ? raw.ci_timeout : "";
     if (timeoutValue === "" && typeof raw.babysit_timeout === "string") timeoutValue = raw.babysit_timeout;
@@ -702,6 +779,7 @@ export function merge(global: GlobalConfig, repo: RepoConfig): Config {
         acpRegistryOverrides: global.acpRegistryOverrides,
         agentPathOverride: global.agentPathOverride,
         agentArgsOverride: global.agentArgsOverride,
+        agentStepArgsOverride: global.agentStepArgsOverride,
         ciTimeout: global.ciTimeout,
         logLevel: global.logLevel,
         commands: repo.commands,
