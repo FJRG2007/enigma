@@ -40,7 +40,7 @@
       "version": "1.1.0",
       "description": "Pre-delivery self-review gate, prioritized review dimensions, and change-quality criteria.",
       "provider": "FJRG2007/enigma",
-      "updated": "2026-06-01T00:45:28+02:00",
+      "updated": "2026-08-02T04:15:47+02:00",
       "sha": "b35f0bb4a29f2346d9a1b00a4bfee9557a9b6a44116d9e6e59abcd945466dbcb"
     },
     {
@@ -48,8 +48,8 @@
       "version": "1.13.0",
       "description": "Core engineering execution policy and harness orchestration (highest-authority rules), including the generalization rule that treats a named example as a class to sweep and fix.",
       "provider": "FJRG2007/enigma",
-      "updated": "2026-07-30T19:29:19+02:00",
-      "sha": "98ed50cd77ec21f6e55b961a9849dec8f721f9792433f144ad7461f3acd46d82"
+      "updated": "2026-08-02T04:15:47+02:00",
+      "sha": "95091678d4e72e3a9b1ef3ad0514e503a2a631f0d134bf772b4a1b3c66881995"
     },
     {
       "name": "database-expert",
@@ -64,7 +64,7 @@
       "version": "1.1.0",
       "description": "Reproduce-isolate-fix debugging methodology with root-cause discipline and regression verification.",
       "provider": "FJRG2007/enigma",
-      "updated": "2026-06-01T00:45:28+02:00",
+      "updated": "2026-08-02T04:15:47+02:00",
       "sha": "968876bcac9ce6e5a20be05c89ac97191b112c9e08679a8dc506d150c375fec4"
     },
     {
@@ -136,7 +136,7 @@
       "version": "1.5.0",
       "description": "Exhaustive completion discipline for long/multi-item tasks - inventory, coverage ledger, verified done.",
       "provider": "FJRG2007/enigma",
-      "updated": "2026-07-30T20:10:24+02:00",
+      "updated": "2026-08-02T04:15:47+02:00",
       "sha": "4c2197954135dd3375f32d839238b82a95c0e93e976ddf5a9cbc4a0cf0146e97"
     },
     {

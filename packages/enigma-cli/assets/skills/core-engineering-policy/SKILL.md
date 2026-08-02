@@ -32,7 +32,7 @@ description: Highest-authority engineering rules - priority hierarchy, modular a
   4. Encode the rule so it holds without you, routed by tier:
      - Mechanically checkable from a file-local signature -> a lint, guardrail, or CI rule. Deterministic and costs no context.
      - Semantic but domain-scoped -> the owning policy skill, so it loads only when that domain is in scope.
-     - Semantic and universal -> the always-on memory kernel.
+     - Semantic and universal -> the project's own always-on memory file (its root CLAUDE.md / AGENTS.md). When the rule belongs in the enigma-managed global kernel instead, change it through enigma's own memory channel (the dashboard memory editor, which records the edit) - never hand-edit the deployed file. An unrecorded edit makes that file no longer enigma-written, and sync skips it from then on, silently opting the user out of every future kernel update.
      - Never encode one rule in two tiers; the most deterministic tier that can express it wins.
   5. Report the rule inferred, the sites fixed, and where the rule was encoded.
 - Stay on the single instance only when the user scoped it there ("only here", "just this one"), or when generalizing would require a destructive action or a decision that is genuinely the user's. Then say explicitly what was left unfixed and why - silently narrowing the scope is the failure this rule exists to prevent.
