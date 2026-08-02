@@ -135,8 +135,9 @@ test("formatFindings labels block vs warn", () => {
 });
 
 test("flags a blank/spinner loading guard without a skeleton, but not when a skeleton is present", () => {
-    // Whole-component guard returns null -> blank until data resolves.
-    expect(checkFile("src/Panel.tsx", "if (isLoading) return null;", null).some((x) => x.ruleId === "fe-skeleton-loading" && x.severity === "warn")).toBe(true);
+    // Whole-component guard returns null -> blank until data resolves. It BLOCKS: as a warn it
+    // exited 0 and was never fed back to the model, which is why the defect kept shipping.
+    expect(checkFile("src/Panel.tsx", "if (isLoading) return null;", null).some((x) => x.ruleId === "fe-skeleton-loading" && x.severity === "block")).toBe(true);
     // A bare spinner for the whole component also flags.
     expect(checkFile("src/Panel.tsx", "if (loading) return <Spinner/>;", null).some((x) => x.ruleId === "fe-skeleton-loading")).toBe(true);
     // A skeleton anywhere in the file clears it (absent mechanism).
@@ -292,9 +293,156 @@ test("never flags a spawn that is fine, deliberate, or unknowable", () => {
     expect(checkFile("tests/repo.test.ts", bad, null)).toEqual([]);
 });
 
+test("the shell renders while only the waiting region is a placeholder", () => {
+    // The correct shape the blocking rule exists to push toward: the component returns its
+    // layout on the first tick and the skeleton stands in for the missing rows alone.
+    const shell = "export function Panel() {\n    return <Table header={<Th/>} rows={isLoading ? <RowSkeleton /> : rows} />;\n}\n";
+    expect(checkFile("src/Panel.tsx", shell, null)).toEqual([]);
+});
+
+test("flags an icon that will be squashed by the text beside it", () => {
+    // The reported shape: a flex row whose label is long and whose icon carries a size but no guard.
+    const row = '<a class="flex items-center gap-2 text-sm text-primary" href="/x">Monitor Samsung Odyssey Neo G95NC 57"<svg class="lucide lucide-external-link h-3.5 w-3.5"><path d="M15 3h6v6"/></svg></a>';
+    const f = checkFile("src/Row.tsx", row, null);
+    expect(f.length).toBe(1);
+    expect(f[0]!.ruleId).toBe("fe-icon-shrink");
+    expect(f[0]!.severity).toBe("block");
+    // A component tag counts as the icon, and a stylesheet rule sizing one is the same defect.
+    expect(checkFile("src/Row.tsx", '<div className="flex items-center gap-2"><ExternalLink className="h-4 w-4" /><span>{name}</span></div>', null).map((x) => x.ruleId)).toEqual(["fe-icon-shrink"]);
+    expect(checkFile("src/app.css", ".achip svg { width: 14px; height: 14px; display: block; }", null).map((x) => x.ruleId)).toEqual(["fe-icon-shrink"]);
+});
+
+test("never flags an icon that is pinned, or a picture that should shrink", () => {
+    for (const [file, markup] of [
+        // The fix, in both styling models.
+        ["src/Row.tsx", '<div className="flex items-center gap-2"><ExternalLink className="h-4 w-4 shrink-0" /><span className="truncate">{name}</span></div>'],
+        ["src/app.css", ".achip svg { width: 14px; height: 14px; flex-shrink: 0; }"],
+        // A picture at 640px is not an icon: pinning it would break the responsive sizing.
+        ["src/app.css", ".hero img { width: 640px; height: 320px; }"],
+        // Not an icon element, and not in a flex row.
+        ["src/app.css", ".chart canvas { width: 32px; }"],
+        ["src/Row.tsx", '<div className="grid gap-2"><Card className="h-4 w-4" /></div>'],
+        ["src/Row.tsx", '<CheckIcon className="size-3.5" />'],
+        // The escape hatch and a commented-out rule.
+        ["src/Row.tsx", '<div className="flex"><Icon className="h-4 w-4" /></div> {/* enigma: shrinks on purpose */}'],
+        ["src/app.css", "/* .achip svg { width: 14px; } was the old rule */"],
+    ] as [string, string][]) expect(checkFile(file, markup, null)).toEqual([]);
+    // A file that already pins an icon anywhere has made the decision; the base rule is the fix.
+    const guarded = "svg { flex-shrink: 0; }\n.achip svg { width: 14px; height: 14px; }\n";
+    expect(checkFile("src/app.css", guarded, null)).toEqual([]);
+});
+
+// --- TypeScript module graph (path alias, import extensions, modern resolution) --------
+//
+// These three rules are decided against the project's tsconfig, not the edited line, so each
+// test builds a real project on disk. `id` keeps every project in its own directory, which also
+// keeps the engine's per-directory tsconfig cache from carrying one test's answer into the next.
+let projectId = 0;
+function project(tsconfig: string, files: Record<string, string> = {}): string {
+    const root = join(HOME, `proj-${++projectId}`);
+    mkdirSync(join(root, "src"), { recursive: true });
+    writeFileSync(join(root, "tsconfig.json"), tsconfig);
+    for (const [rel, body] of Object.entries(files)) {
+        mkdirSync(join(root, rel, ".."), { recursive: true });
+        writeFileSync(join(root, rel), body);
+    }
+    return root;
+}
+
+const BUNDLER = '{ "compilerOptions": { "target": "es2022", "module": "esnext", "moduleResolution": "bundler" } }';
+const ALIASED = '{ "compilerOptions": { "target": "es2022", "moduleResolution": "bundler", "baseUrl": ".", "paths": { "@/*": ["./src/*"] } } }';
+
+test("flags a module specifier carrying a file extension, and says what to write instead", () => {
+    const root = project(BUNDLER);
+    const f = checkFile(join(root, "src/client.ts"), 'import { compress } from "./compress.js";\n', root);
+    expect(f.length).toBe(1);
+    expect(f[0]!.ruleId).toBe("ts-import-extension");
+    expect(f[0]!.severity).toBe("block");
+    expect(f[0]!.line).toBe(1);
+    expect(f[0]!.message).toContain('"./compress.js" -> "./compress"');
+    // A TypeScript extension gets no file-system pass: the source file always exists under that
+    // name, so the existence guard would silence the very shape the rule is for.
+    const tsx = checkFile(join(root, "src/main.tsx"), 'import App from "./App.tsx";\n', root);
+    expect(tsx.map((x) => x.ruleId)).toEqual(["ts-import-extension"]);
+});
+
+test("never flags an extension that is required or real", () => {
+    // Node's own ESM resolution: the extension is mandatory there, so flagging it would be wrong.
+    const nodenext = project('{ "compilerOptions": { "module": "nodenext", "moduleResolution": "nodenext" } }');
+    expect(checkFile(join(nodenext, "src/a.ts"), 'import { b } from "./b.js";\n', nodenext)).toEqual([]);
+    // A real JS module imported from TS: the extension IS the file's name.
+    const root = project(BUNDLER, { "src/legacy.js": "export const x = 1;\n" });
+    expect(checkFile(join(root, "src/a.ts"), 'import { x } from "./legacy.js";\n', root)).toEqual([]);
+    // A non-module asset keeps its extension, and a bare specifier is never a relative import.
+    expect(checkFile(join(root, "src/a.ts"), 'import s from "./table.css";\nimport z from "zod";\n', root)).toEqual([]);
+    // The escape hatch, and a declaration file is out of scope.
+    expect(checkFile(join(root, "src/a.ts"), 'import { b } from "./b.js"; // enigma: emitted by tsc\n', root)).toEqual([]);
+    expect(checkFile(join(root, "src/a.d.ts"), 'import { b } from "./b.js";\n', root)).toEqual([]);
+});
+
+test("flags a deep relative import when the project declares an alias covering it", () => {
+    const root = project(ALIASED);
+    const f = checkFile(join(root, "src/gate/pipeline/steps/ci.ts"), 'import { open } from "../../db";\n', root);
+    expect(f.length).toBe(1);
+    expect(f[0]!.ruleId).toBe("ts-alias-deep-relative");
+    expect(f[0]!.severity).toBe("block");
+    // The suggestion resolves against the importing file, so it points at src/gate/db - not src/db.
+    expect(f[0]!.message).toContain('"../../db" -> "@/gate/db"');
+});
+
+test("leaves a relative import that is right, or that the alias cannot express", () => {
+    const root = project(ALIASED);
+    const file = join(root, "src/gate/pipeline/steps/ci.ts");
+    // A sibling and a parent say "this belongs with me", which is information worth keeping.
+    expect(checkFile(file, 'import { a } from "./common";\nimport { b } from "../types";\n', root)).toEqual([]);
+    // The fix.
+    expect(checkFile(file, 'import { open } from "@/gate/db";\n', root)).toEqual([]);
+    // Climbing out of the aliased root: there is no alias to write instead.
+    expect(checkFile(file, 'import { s } from "../../../../scripts/seed";\n', root)).toEqual([]);
+    // Escape hatch, test files, and a project with no alias at all.
+    expect(checkFile(file, 'import { open } from "../../db"; // enigma: keeps the codemod honest\n', root)).toEqual([]);
+    expect(checkFile(join(root, "tests/gate/db.test.ts"), 'import { open } from "../../src/gate/db";\n', root)).toEqual([]);
+    const plain = project(BUNDLER);
+    expect(checkFile(join(plain, "src/a/b/c.ts"), 'import { open } from "../../db";\n', plain)).toEqual([]);
+});
+
+test("flags a TypeScript project that declares no path alias", () => {
+    const root = project(BUNDLER);
+    const cfg = join(root, "tsconfig.json");
+    const f = checkFile(cfg, readFileSync(cfg, "utf8"), root);
+    expect(f.map((x) => x.ruleId)).toEqual(["ts-alias-paths"]);
+    expect(f[0]!.severity).toBe("block");
+    expect(f[0]!.message).toContain("no alias for ./src");
+    // Declared, inherited from a base config, or nothing to alias: all clear.
+    const aliased = project(ALIASED);
+    expect(checkFile(join(aliased, "tsconfig.json"), readFileSync(join(aliased, "tsconfig.json"), "utf8"), aliased)).toEqual([]);
+    expect(checkFile(cfg, '{ "extends": "astro/tsconfigs/strict" }', root)).toEqual([]);
+    expect(checkFile(join(HOME, "docs/tsconfig.json"), BUNDLER, HOME)).toEqual([]);
+    // The split config a bundler generates compiles one config file and is not in scope.
+    expect(checkFile(join(root, "tsconfig.node.json"), BUNDLER, root)).toEqual([]);
+});
+
+test("flags a legacy module resolution or target, and only those", () => {
+    // A config with no source tree beside it, so only the resolution rule can speak here.
+    const cfg = join(HOME, "standalone/tsconfig.json");
+    const legacy = '{\n  "compilerOptions": {\n    "moduleResolution": "node",\n    "target": "es2022"\n  }\n}';
+    const f = checkFile(cfg, legacy, null);
+    expect(f.map((x) => x.ruleId)).toEqual(["ts-legacy-module-resolution"]);
+    expect(f[0]!.severity).toBe("block");
+    expect(f[0]!.line).toBe(3);
+    expect(checkFile(cfg, '{ "compilerOptions": { "target": "es5" } }', null).map((x) => x.ruleId)).toEqual(["ts-legacy-module-resolution"]);
+    // The two modern answers, and the deliberate exception.
+    expect(checkFile(cfg, '{ "compilerOptions": { "moduleResolution": "bundler", "target": "es2022" } }', null)).toEqual([]);
+    // The gate stops short of the advice on purpose: es2017 is create-next-app's own default, and
+    // blocking the ecosystem's stock template is how a rule teaches people to ignore it.
+    expect(checkFile(cfg, '{ "compilerOptions": { "moduleResolution": "bundler", "target": "ES2017" } }', null)).toEqual([]);
+    expect(checkFile(cfg, '{ "compilerOptions": { "moduleResolution": "nodenext", "target": "es2023" } }', null)).toEqual([]);
+    expect(checkFile(cfg, '{ "compilerOptions": { "target": "es5" } } // enigma: ships to IE11', null)).toEqual([]);
+});
+
 test("built-in rules cover the documented conventions", () => {
     const ids = BUILTIN_RULES.map((r) => r.id);
-    for (const id of ["db-uuid-pk", "db-ts-orm-prisma", "be-validate-input-ts", "be-validate-input-py", "val-email-normalize", "db-sqlite-app-datastore", "fe-password-input", "fe-name-input-capitalize", "fe-name-value-normalize", "sec-password-breach-check", "fe-tracking-before-consent", "fe-no-native-dialog", "fe-skeleton-loading", "fe-viewport-meta", "fe-ai-elements-chat", "ui-no-em-dash", "ts-import-namespace", "proc-windows-hide"]) {
+    for (const id of ["db-uuid-pk", "db-ts-orm-prisma", "be-validate-input-ts", "be-validate-input-py", "val-email-normalize", "db-sqlite-app-datastore", "fe-password-input", "fe-name-input-capitalize", "fe-name-value-normalize", "sec-password-breach-check", "fe-tracking-before-consent", "fe-no-native-dialog", "fe-skeleton-loading", "fe-viewport-meta", "fe-ai-elements-chat", "ui-no-em-dash", "fe-icon-shrink", "ts-import-namespace", "ts-alias-paths", "ts-alias-deep-relative", "ts-import-extension", "ts-legacy-module-resolution", "proc-windows-hide"]) {
         expect(ids).toContain(id);
     }
     // Go/Rust input-validation rules are deliberately absent (imprecise - see guardrails.ts).

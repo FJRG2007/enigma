@@ -23,7 +23,7 @@
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve, sep } from "node:path";
 import { readFileSync, writeFileSync, statSync, existsSync } from "node:fs";
 
 export type Severity = "block" | "warn";
@@ -424,8 +424,13 @@ export const BUILTIN_RULES: GuardrailRule[] = [
         // precision (a multi-line block is not matched: precision > recall).
         pattern: "\\bif\\s*\\(\\s*(isLoading|isPending|isFetching|loading|pending)\\s*\\)\\s*return\\s+(null\\b|<\\s*\\w*(Spinner|Loader|Loading|CircularProgress)\\b)",
         absent: "skeleton|animate-pulse|shimmer|Suspense|ContentLoader|content-loader|<\\s*Placeholder",
-        message: "Component returns nothing (or only a spinner) while data loads, so the page stays blank until the fetch resolves. Render the shell/layout on first paint and show skeleton placeholders shaped like the final content (reserve their space to avoid layout shift) while data loads async via the API (frontend-policy).",
-        severity: "warn",
+        message: "Component returns nothing (or only a spinner) while data loads, so the whole page stays blank until the fetch resolves. Render the shell on first paint - nav, headings, card frames, table chrome, filters, and any value you already hold - and skeleton ONLY the region whose data is missing, shaped like the real content with its space reserved so nothing shifts when it lands. A region that does not depend on this request is not loading and must render now (frontend-policy).",
+        // BLOCK, changed from warn: this is the rule for the defect users keep reporting (a page
+        // that renders nothing until its data arrives), and as a warn it exited 0 - printed to
+        // stdout and never fed back to the model, which is precisely why the model kept writing
+        // it. Same reasoning as ui-no-em-dash. The pattern is a terse one-line guard cleared by
+        // any placeholder signal in the file, so there is no legacy backlog to flag.
+        severity: "block",
         skill: "frontend-policy",
     },
     {
@@ -607,6 +612,21 @@ export const BUILTIN_RULES: GuardrailRule[] = [
     // precise signature (a dirty/hasChanges flag assigned a literal true) returned 0 real
     // hits and 2 false ones, a CLI tracking whether it had rewritten a config file. A rule
     // here would fire on correct code, so it stays guidance in frontend-policy.
+    // NOTE: there is deliberately no rule for "a server component awaits its data before it
+    // returns markup". It is the other half of the blank-first-paint complaint, but the shape
+    // (`export default async function Page()` with an awaited value and no Suspense boundary) is
+    // ALSO how a correct statically-generated page is written - the corpus's one match is a docs
+    // page awaiting its MDX at build time, where there is no runtime wait to hide. Whether the
+    // await costs the user anything depends on where the page renders and whether the data is
+    // static, and none of that is in the file. It stays in frontend-policy's Instant First Paint.
+    // NOTE: there is deliberately no rule for "a fixed-length one-time code submits itself when
+    // the last digit lands". The selector would be precise (`autocomplete="one-time-code"`, the
+    // same marker sec-password-breach-check keys on), but the DEFECT has no file-local form: the
+    // submit normally lives in a parent, a form library or a mutation hook, so its absence from
+    // the field's file proves nothing, and the three guards that make auto-submit safe (once per
+    // distinct complete value, no re-fire after a failure, no auto-retry on 429) are behaviour a
+    // regex cannot read at all. It stays in frontend-policy's auth section, with the attempt-cap
+    // half in security-policy.
     // NOTE: there is deliberately no "card inside a card" or "border with no information"
     // rule, even though both are named in frontend-policy. They are RELATIONAL defects: a
     // container is redundant only relative to the ancestor it sits in and the spacing around
@@ -666,6 +686,125 @@ export const BUILTIN_RULES: GuardrailRule[] = [
         message: "Too many named bindings from one module. Import it as a namespace instead - `import * as <ns> from \"<module>\"`, then call `<ns>.thing()` - so the import stays one short line, each call site says where the symbol comes from, and a new export never widens the import again. The count sums every named import of that module in this file, so splitting the statement in two does not help; name the namespace for the module, and pick a distinct name when the natural one is already a local variable. Keep named imports for a handful of symbols. Mark a deliberate exception with an `enigma:` note on the import line (ciphera-style-policy).",
         severity: "block",
         skill: "ciphera-style-policy",
+    },
+    {
+        id: "fe-icon-shrink",
+        label: "An icon does not shrink to make room for text",
+        files: ["*.css", "*.scss", "*.html", "*.htm", "*.astro", "*.vue", "*.svelte", "*.tsx", "*.jsx"],
+        excludeFiles: [
+            "*.test.*", "*.spec.*", "**/tests/**", "**/__tests__/**", "**/stories/**", "*.stories.*", "*.min.css",
+            "**/dist/**", "**/build/**", "**/node_modules/**", "**/vendor/**",
+            "dist/**", "build/**", "node_modules/**", "vendor/**",
+        ],
+        scope: "file",
+        // `flex-shrink: 1` is the default, so in a row of icon plus text the browser takes width
+        // from BOTH when the text runs long - and the icon, having no content to reflow, is simply
+        // squashed. An explicit width/height does not protect it (that is the base size, not the
+        // minimum) and an <svg> scales with its viewBox rather than clipping, so it deforms
+        // silently instead of overflowing visibly.
+        // Two gateable shapes, one per styling model. (a) A STYLESHEET rule sizing an svg/img on
+        // one line: the size bound (<= 64px) is what makes it an ICON rather than a picture -
+        // a hero image at 640px SHOULD shrink with the viewport, and pinning it would be the
+        // wrong fix. (b) A UTILITY-CLASS line carrying a flex container, an icon element and an
+        // icon size class together; the flex requirement is what keeps this off the rest of the
+        // markup, and it is why a multi-line JSX icon is out of reach by construction (the same
+        // accepted recall loss as fe-icon-action-button). Case-SENSITIVE so `[A-Z]\w*` means a
+        // component tag (<ExternalLink>, <Avatar>) and not every lowercase element.
+        pattern: "^(?!.*enigma:)(?:(?=.*\\bflex\\b)(?=.*<(?:svg|img|[A-Z][A-Za-z0-9]*)\\b).*\\b(?:h-\\d(?:\\.\\d)?[ \\t]+w-\\d(?:\\.\\d)?|w-\\d(?:\\.\\d)?[ \\t]+h-\\d(?:\\.\\d)?|size-\\d(?:\\.\\d)?)\\b|[^{}/]*\\b(?:svg|img)[ \\t]*(?:,[^{}]*)?\\{[^}]*\\bwidth:[ \\t]*(?:[1-9]|[1-5]\\d|6[0-4])px)",
+        flags: "",
+        // A file that already pins an icon anywhere is treated as having made the decision. This
+        // is deliberately leaky (one guarded rule clears the file) because the fix that scales is
+        // a single base rule - `svg { flex-shrink: 0 }` - not a repetition per selector, and a
+        // rule that kept firing after that fix would train the model to ignore it.
+        absent: "flex-shrink:\\s*0|\\bshrink-0\\b|\\bflex-none\\b|flex:\\s*(?:none|0 0)|enigma:allow-shrinking-icon",
+        message: "Icon sized but not pinned. `flex-shrink: 1` is the default, so when the text beside it runs long the browser takes width from the ICON too - and having no content to reflow, a 14px glyph ends up rendered 4px wide next to a long name. The explicit width/height does not prevent it: that is the base size, not the minimum, and an svg scales with its viewBox instead of clipping, so it deforms silently. Give anything with a fixed intrinsic size - icon, avatar, badge, status dot, spinner - `flex-shrink: 0` (Tailwind `shrink-0`), and let the TEXT be what truncates. Set it once where the icons are defined (`svg { flex-shrink: 0 }` in the base stylesheet, or inside the shared Icon component) rather than per row. Mark a deliberate exception with an `enigma:` note on the line or `enigma:allow-shrinking-icon` in the file (frontend-policy).",
+        severity: "block",
+        skill: "frontend-policy",
+    },
+    // TYPESCRIPT MODULE GRAPH. Three rules that keep a TS project's imports stable as it grows:
+    // the project declares an alias, deep climbs go through it, and no specifier carries a build
+    // artifact's extension. All three are decided against the project's tsconfig rather than the
+    // edited line, which is why each is a coded check (see the module-graph block below).
+    {
+        id: "ts-alias-paths",
+        label: "TypeScript project declares a path alias",
+        // The exact basename only: the split configs a bundler generates (tsconfig.node.json,
+        // tsconfig.app.json) exist to compile one config file and have no source tree to alias.
+        files: ["tsconfig.json"],
+        excludeFiles: [
+            "**/node_modules/**", "**/dist/**", "**/build/**", "**/vendor/**",
+            "node_modules/**", "dist/**", "build/**", "vendor/**",
+        ],
+        scope: "file",
+        fileCheck: "ts-alias-paths",
+        message: "This TypeScript project declares no path alias. Add one - `\"baseUrl\": \".\"` plus `\"paths\": { \"@/*\": [\"./src/*\"] }` - and import through it (`@/services/user`) instead of counting directories. A relative chain encodes where the importing file happens to sit, so moving either file rewrites specifiers that had nothing to do with the change; an alias is stable under both. Bundlers, tsx and Bun resolve it from tsconfig with no extra config; for Jest add moduleNameMapper. If this config is not the project's source config, mark it with an `enigma:` note (ciphera-style-policy).",
+        severity: "block",
+        skill: "ciphera-style-policy",
+    },
+    {
+        id: "ts-alias-deep-relative",
+        label: "Deep relative import goes through the path alias",
+        files: ["*.ts", "*.tsx", "*.mts", "*.cts"],
+        // Tests are excluded on purpose: a runner that has not been told about the alias (Jest
+        // without moduleNameMapper) cannot resolve it, so the import that is right in src is not
+        // automatically right in a test file. Same two-form generated/vendored excludes as above.
+        excludeFiles: [
+            "*.test.*", "*.spec.*", "**/tests/**", "**/__tests__/**", "**/fixtures/**", "*.d.ts",
+            "**/dist/**", "**/build/**", "**/_build/**", "**/node_modules/**", "**/vendor/**",
+            "dist/**", "build/**", "_build/**", "node_modules/**", "vendor/**",
+        ],
+        scope: "file",
+        // Fires only when the project HAS an alias covering the target: the climb on its own is
+        // correct code in a project with none, and a target outside the aliased root cannot be
+        // written any other way. Measured over the corpus: every project that declares an alias
+        // already uses it everywhere, so this is a scaffolding guard, not a backlog.
+        fileCheck: "ts-alias-deep-relative",
+        message: "Deep relative import in a project that declares a path alias. Write it through the alias instead: the chain of `../` names the directory the importing file sits in today, so moving either file breaks specifiers that had nothing to do with the change, and a reader has to count directories to see what is being imported. Keep `./sibling` and `../` for a file in the same or the parent folder - the alias is for anything further. Mark a deliberate exception with an `enigma:` note on the line (ciphera-style-policy).",
+        severity: "block",
+        skill: "ciphera-style-policy",
+    },
+    {
+        id: "ts-import-extension",
+        label: "No file extension in a module specifier",
+        files: ["*.ts", "*.tsx"],
+        // .mts/.cts are out of scope by construction: those extensions exist to pin a file to
+        // Node's dual-module resolution, where the specifier extension is mandatory.
+        excludeFiles: [
+            "*.d.ts",
+            "**/dist/**", "**/build/**", "**/_build/**", "**/node_modules/**", "**/vendor/**",
+            "dist/**", "build/**", "_build/**", "node_modules/**", "vendor/**",
+        ],
+        scope: "file",
+        // Only under bundler/preserve resolution, and only when no such file actually exists -
+        // see extensionImports for why both guards are what keep this at zero false positives.
+        fileCheck: "ts-import-extension",
+        message: "File extension in a module specifier. Under `\"moduleResolution\": \"bundler\"` the resolver finds the source file on its own, so an extension only pins the import to a build artifact - `.js` names a file that does not exist in the source tree, and `.ts` needs allowImportingTsExtensions and breaks the moment the project emits. Drop it and let the resolver do the work. If this project has to emit for Node's own ESM resolution instead, that is a tsconfig decision (`\"module\": \"nodenext\"`), and there the extension is required - make it once in tsconfig rather than per import (backend-policy, ciphera-style-policy).",
+        severity: "block",
+        skill: "ciphera-style-policy",
+    },
+    {
+        id: "ts-legacy-module-resolution",
+        label: "Modern TypeScript module resolution and target",
+        files: ["tsconfig.json", "tsconfig.*.json"],
+        excludeFiles: [
+            "**/node_modules/**", "**/dist/**", "**/build/**", "**/vendor/**",
+            "node_modules/**", "dist/**", "build/**", "vendor/**",
+        ],
+        scope: "file",
+        // `node`/`node10` is TypeScript's own legacy resolver: it predates package.json "exports",
+        // so a modern dependency resolves to the wrong entry point or not at all. A pre-ES2017
+        // target is the same class of decision - it downlevels async/await itself. Both are
+        // single, unambiguous values, which is what makes this a pattern rule rather than a
+        // check; a project that genuinely needs ES5 output marks the line.
+        // THE TARGET BOUND IS DELIBERATELY LOWER THAN THE ADVICE. backend-policy asks for es2022,
+        // but `"target": "es2017"` is what create-next-app still ships and what several stock
+        // configs default to, and in a Next app SWC compiles the output anyway so the value
+        // barely matters - blocking the ecosystem's own template is how a rule teaches people to
+        // ignore it. The skill persuades toward es2022; the gate only stops what is unambiguous.
+        pattern: "^(?!.*enigma:).*(?:[\"']moduleResolution[\"']\\s*:\\s*[\"']node(?:10)?[\"']|[\"']target[\"']\\s*:\\s*[\"']es(?:3|5|6|2015|2016)[\"'])",
+        message: "Legacy TypeScript configuration. `\"moduleResolution\": \"node\"` is the pre-2022 resolver: it ignores a package's `exports` map, so a modern dependency resolves to the wrong entry point or not at all, and a pre-ES2017 target downlevels async/await itself. For a backend built by a bundler or run by tsx/Bun use `\"module\": \"esnext\"` with `\"moduleResolution\": \"bundler\"`; for one emitted by tsc for Node's own loader use `\"module\": \"nodenext\"` (and then specifiers DO carry `.js`). Pair either with `\"target\": \"es2022\"` and `\"strict\": true`. Mark a deliberate legacy target with an `enigma:` note on the line (backend-policy).",
+        severity: "block",
+        skill: "backend-policy",
     },
     {
         id: "proc-windows-hide",
@@ -841,9 +980,17 @@ export const PROJECT_CHECKS: Record<string, (projectRoot: string) => boolean> = 
  * Named file-level checks (return one entry per violation). Same rationale as PROJECT_CHECKS:
  * they need logic rather than a line regex, so they are code and not user-authorable from JSON.
  * Keyed by GuardrailRule.fileCheck; `detail` is appended to the rule message.
+ *
+ * A check receives the file PATH as well as its content, because some conventions are only a
+ * defect relative to something outside the file: whether the import extension is required is a
+ * property of the project's module resolution, and whether an alias exists is a property of its
+ * tsconfig. A check that needs neither simply ignores the second argument.
  */
-export const FILE_CHECKS: Record<string, (content: string) => { line: number; detail: string; }[]> = {
+export const FILE_CHECKS: Record<string, (content: string, file: string) => { line: number; detail: string; }[]> = {
     "proc-windows-hide": (content) => missingWindowsHide(content),
+    "ts-import-extension": (content, file) => extensionImports(content, file),
+    "ts-alias-deep-relative": (content, file) => deepRelativeImports(content, file),
+    "ts-alias-paths": (content, file) => missingPathAlias(content, file),
 };
 
 /**
@@ -957,6 +1104,151 @@ export function missingWindowsHide(content: string): { line: number; detail: str
         out.push({ line: content.slice(0, m.index).split("\n").length, detail: m[1]! });
     }
     return out;
+}
+
+// --- TypeScript module graph: path aliases and import specifiers ----------------------
+//
+// Three rules share this block. What they have in common is that none of them can be decided
+// from the edited line alone: whether a `.js` in a specifier is required, whether an alias
+// exists to import through, and where that alias points are all properties of the project's
+// tsconfig, which is why they are coded checks rather than rule patterns.
+
+/**
+ * Any module specifier the file imports: `from "x"`, a bare `import "x"`, `import("x")`,
+ * `require("x")`. The static forms are ANCHORED at the start of a line, which is what keeps an
+ * import statement written as DATA out of the results - a test, a codemod or a generator holds
+ * `'import { a } from "./a.js"'` inside a string literal, and an unanchored `from` matched it.
+ * `[^;]*?` still crosses newlines, so a brace list spread over several lines is one statement.
+ */
+const SPECIFIER = /^[ \t]*(?:import|export)\b[^;]*?\bfrom\s*["']([^"']+)["']|^[ \t]*import\s*["']([^"']+)["']|\bimport\(\s*["']([^"']+)["']|\brequire\(\s*["']([^"']+)["']/gm;
+
+/** Module extensions that never belong in a specifier when the bundler resolves the import. */
+const MODULE_EXT = /\.(ts|tsx|mts|cts|js|jsx|mjs|cjs)$/i;
+
+/** The half of MODULE_EXT that can legitimately name a real file: a JS module imported from TS. */
+const JS_EXT = /\.(js|jsx|mjs|cjs)$/i;
+
+/** tsconfig.json lookups are repeated for every file in a directory, so the read is cached per dir. */
+const tsconfigCache = new Map<string, { dir: string; text: string; } | null>();
+
+/**
+ * The nearest tsconfig.json at or above a file, with its directory. Read as TEXT, never parsed:
+ * a real tsconfig carries comments and trailing commas, so JSON.parse would throw on exactly the
+ * hand-written files this has to read. Every consumer below matches a specific key instead.
+ */
+function nearestTsconfig(file: string): { dir: string; text: string; } | null {
+    let dir = dirname(resolve(file));
+    const seen: string[] = [];
+    for (let i = 0; i < 20; i++) {
+        const cached = tsconfigCache.get(dir);
+        if (cached !== undefined) {
+            for (const d of seen) tsconfigCache.set(d, cached);
+            return cached;
+        }
+        seen.push(dir);
+        const candidate = join(dir, "tsconfig.json");
+        if (existsSync(candidate)) {
+            let found: { dir: string; text: string; } | null = null;
+            try { found = { dir, text: readFileSync(candidate, "utf8") }; } catch { found = null; }
+            for (const d of seen) tsconfigCache.set(d, found);
+            return found;
+        }
+        const parent = dirname(dir);
+        if (parent === dir) break;
+        dir = parent;
+    }
+    for (const d of seen) tsconfigCache.set(d, null);
+    return null;
+}
+
+/** The `@/*` -> `./src/*` alias a tsconfig declares, as an absolute root and the prefix to write. */
+function pathAlias(cfg: { dir: string; text: string; }): { prefix: string; root: string; } | null {
+    const m = /["']([^"']+)\/\*["']\s*:\s*\[\s*["']([^"']+)\/\*["']/.exec(cfg.text);
+    if (!m) return null;
+    const baseUrl = /["']baseUrl["']\s*:\s*["']([^"']+)["']/.exec(cfg.text)?.[1] ?? ".";
+    return { prefix: m[1]!, root: resolve(cfg.dir, baseUrl, m[2]!) };
+}
+
+/** Every import specifier in a file, skipping the ones sitting on a comment or `enigma:` line. */
+function specifiers(content: string): { spec: string; line: number; }[] {
+    const lines = content.split("\n");
+    const out: { spec: string; line: number; }[] = [];
+    for (const m of content.matchAll(SPECIFIER)) {
+        const spec = m[1] ?? m[2] ?? m[3] ?? m[4];
+        if (!spec) continue;
+        const line = content.slice(0, m.index).split("\n").length;
+        const text = lines[line - 1] ?? "";
+        if (COMMENT_LINE.test(text) || text.includes("enigma:")) continue;
+        out.push({ spec, line });
+    }
+    return out;
+}
+
+/**
+ * Relative specifiers carrying a module extension, in a project whose resolution is `bundler` or
+ * `preserve`. The resolution mode is the whole precision story: under `node16`/`nodenext` - and
+ * under plain Node ESM, which is what a `node`/`node10` project emitting ESM actually runs on -
+ * the extension is REQUIRED, so flagging it there would be flagging correct code. Measured over
+ * the reference corpus: 1448 extension-carrying specifiers live in such projects and are
+ * deliberately left alone, against 99 in bundler-resolution projects where every one is noise.
+ *
+ * The second guard is the file system, and it applies to a JS extension ONLY: `./legacy.js` is
+ * correct when a real `legacy.js` sits there (a JS module imported from TS under allowJs), so a
+ * specifier resolving to a file that exists is not flagged. A TypeScript extension gets no such
+ * pass - the source file always exists under its own name, so the check would never fire, and
+ * `./thing.ts` is the shape that needs allowImportingTsExtensions and breaks on the day the
+ * project emits.
+ */
+export function extensionImports(content: string, file: string): { line: number; detail: string; }[] {
+    const cfg = nearestTsconfig(file);
+    if (!cfg || !/["']module(?:Resolution)?["']\s*:\s*["'](?:bundler|preserve)["']/i.test(cfg.text)) return [];
+    const dir = dirname(resolve(file));
+    const out: { line: number; detail: string; }[] = [];
+    for (const { spec, line } of specifiers(content)) {
+        if (!/^\.\.?\//.test(spec) || !MODULE_EXT.test(spec)) continue;
+        if (JS_EXT.test(spec) && existsSync(resolve(dir, spec))) continue; // really is a JS file
+        out.push({ line, detail: `"${spec}" -> "${spec.replace(MODULE_EXT, "")}"` });
+    }
+    return out;
+}
+
+/**
+ * Specifiers climbing two or more directories in a project that declares a path alias covering
+ * the target. Both halves are required: the climb alone is correct code in a project with no
+ * alias to use instead, and an alias that does not cover the target (a file outside the aliased
+ * root) cannot be written any other way. Tests are excluded by the rule, because a runner that
+ * has not been told about the alias (jest without moduleNameMapper) would fail to resolve it.
+ */
+export function deepRelativeImports(content: string, file: string): { line: number; detail: string; }[] {
+    const cfg = nearestTsconfig(file);
+    const alias = cfg && pathAlias(cfg);
+    if (!alias) return [];
+    const dir = dirname(resolve(file));
+    const out: { line: number; detail: string; }[] = [];
+    for (const { spec, line } of specifiers(content)) {
+        if (!/^(?:\.\.\/){2,}/.test(spec)) continue;
+        const target = resolve(dir, spec);
+        const rel = target.slice(alias.root.length + 1).replace(/\\/g, "/");
+        if (!target.startsWith(`${alias.root}${sep}`) || !rel) continue; // outside the aliased root
+        out.push({ line, detail: `"${spec}" -> "${alias.prefix}/${rel}"` });
+    }
+    return out;
+}
+
+/**
+ * A tsconfig.json that declares no path alias. Two guards keep it to the files where an alias is
+ * actually the answer: a config that `extends` another may inherit `paths` (an accepted false
+ * negative - the base is not read), and a config with no source directory beside it has nothing
+ * to alias. Only the exact `tsconfig.json` basename is in scope, so the split configs a bundler
+ * generates (tsconfig.node.json and friends, which exist to compile one config file) are out.
+ */
+export function missingPathAlias(content: string, file: string): { line: number; detail: string; }[] {
+    if (/["'](?:paths|extends)["']\s*:/.test(content)) return [];
+    const dir = dirname(resolve(file));
+    const src = ["src", "app", "lib"].find((d) => existsSync(join(dir, d)));
+    if (!src) return [];
+    const anchor = content.split("\n").findIndex((l) => /["']compilerOptions["']/.test(l));
+    return [{ line: anchor === -1 ? 1 : anchor + 1, detail: `no alias for ./${src}` }];
 }
 
 /**
@@ -1073,7 +1365,7 @@ export function checkFile(file: string, content: string, projectRoot: string | n
             }
         } else if (rule.scope === "file" && rule.fileCheck) {
             const check = FILE_CHECKS[rule.fileCheck];
-            for (const hit of check ? check(content) : []) {
+            for (const hit of check ? check(content, file) : []) {
                 out.push({ ...base, line: hit.line, message: `${rule.message} (${hit.detail})` });
             }
         } else if (rule.scope === "file" && rule.pattern) {

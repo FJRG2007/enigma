@@ -1,6 +1,6 @@
 ---
 name: backend-policy
-description: Backend/API architecture - controller-service-repository layering, request/response handling, API and request optimization (batching, avoiding redundant calls), server-side caching (Redis) with invalidation, and Zod boundary validation. Use when designing or changing API endpoints, services, controllers, server business logic, or backend request flow.
+description: Backend/API architecture - controller-service-repository layering, modern TypeScript project configuration (target/module/moduleResolution, strict flags, and the `@/*` path alias), request/response handling, API and request optimization (batching, avoiding redundant calls), server-side caching (Redis) with invalidation, and Zod boundary validation. Use when designing or changing API endpoints, services, controllers, server business logic, or backend request flow, and when scaffolding or fixing a backend's tsconfig.
 ---
 
 # Backend & API Architecture Policy
@@ -8,7 +8,44 @@ description: Backend/API architecture - controller-service-repository layering, 
 ## Activation Scope
 
 - Apply whenever the task involves API endpoints, server business logic, services, controllers, or backend request flow.
-- Owns server-side layering, API/request optimization, and server-side caching. Strict input validation rules live in validation-policy; persistence and query rules live in database-expert.
+- Owns server-side layering, the TypeScript project configuration a backend is built on, API/request optimization, and server-side caching. Strict input validation rules live in validation-policy; persistence and query rules live in database-expert; import style lives in ciphera-style-policy.
+
+---
+
+## TypeScript Project Configuration
+
+The tsconfig is set once, at scaffold time, and every import in the project inherits the consequences. Get it wrong and the cost shows up as noise in thousands of specifiers.
+
+- Pick the emit story first, because it decides everything else:
+  - **Bundled or run from source** - tsup/esbuild/Vite/Next, or executed by tsx or Bun. This is the default for a service or a CLI. Use `"module": "esnext"` with `"moduleResolution": "bundler"`, and specifiers carry no file extension.
+  - **Emitted by `tsc` for Node's own ESM loader** - a published library that ships plain `.js` and has no build step beyond `tsc`. Use `"module": "nodenext"`, and then every relative specifier MUST end in `.js` (Node's loader does no extension guessing). That is the price of the choice; do not pay it by accident on a service that is bundled anyway.
+- Never `"moduleResolution": "node"` (or `"node10"`). It is the pre-2022 resolver and it ignores a package's `exports` map, so a modern dependency resolves to the wrong entry point or fails outright. Never a `"target"` below `es2022` either - it downlevels syntax every runtime you support has shipped for years.
+- Baseline for a new backend:
+
+```jsonc
+{
+  "compilerOptions": {
+    "target": "es2022",
+    "lib": ["es2023"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,   // arr[i] is T | undefined, which is the truth
+    "verbatimModuleSyntax": true,       // type imports erase predictably, no surprise runtime import
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "noEmit": true,                     // the bundler emits; tsc only typechecks
+    "baseUrl": ".",
+    "paths": { "@/*": ["./src/*"] }
+  },
+  "include": ["src"]
+}
+```
+
+- The `paths` alias is part of the baseline, not an optional extra: services, repositories and schemas are imported across the whole tree, and `../../../lib/db` is the shape that makes moving a module a repo-wide edit. Import through `@/` and specifier stability comes for free (ciphera-style-policy owns the import-style rules).
+- Declare the alias in every consumer that resolves modules itself, or it only works in the editor: the bundler config where it does not read tsconfig, `moduleNameMapper` for Jest, `vite-tsconfig-paths` for Vitest. Bun and tsx read tsconfig directly and need nothing.
+- Typechecking is a gate, not an editor feature: `tsc --noEmit` runs in the same command as the tests.
 
 ---
 

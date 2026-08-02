@@ -1,6 +1,6 @@
 ---
 name: database-expert
-description: Senior database architecture - engine selection (PostgreSQL is the default relational engine for anything deployed or multi-writer; SQLite only for local-first, embedded, single-writer stores), ORM selection (TypeScript/JavaScript/Node/Bun projects use Prisma over PostgreSQL unless the user or the requirements name another ORM), schema design, normalization and anti-duplication, query/index optimization, scalability (partitioning, sharding, replication), and RGPD/GDPR encryption of sensitive data. Use when designing, modifying, migrating, querying, or reviewing any database, schema, SQL, ORM model, or persistence layer, and when choosing the datastore for a new project's stack.
+description: Senior database architecture - engine selection (PostgreSQL is the default relational engine for anything deployed or multi-writer; SQLite only for local-first, embedded, single-writer stores), ORM selection (TypeScript/JavaScript/Node/Bun projects use Prisma over PostgreSQL unless the user or the requirements name another ORM), schema design, normalization and anti-duplication, query/index optimization, query cost and latency discipline (bounded reads, filtering and paginating in the database rather than in application code, round-trip count, expensive COUNT(*) totals, precomputed aggregates, statement timeouts and pooling, EXPLAIN on realistic data), scalability (partitioning, sharding, replication), and RGPD/GDPR encryption of sensitive data. Use when designing, modifying, migrating, querying, or reviewing any database, schema, SQL, ORM model, or persistence layer, and when choosing the datastore for a new project's stack.
 ---
 
 # Database Expert Policy (Senior Data Architecture Standards)
@@ -135,6 +135,21 @@ Any denormalized or duplicated value MUST have:
 - Validate every non-trivial query with EXPLAIN / EXPLAIN ANALYZE and confirm index usage before shipping.
 - Use parameterized/prepared statements exclusively - never build SQL by string concatenation.
 
+### Cost, Latency & Round Trips (Know What The Query Costs)
+
+Every query has a price - rows examined, IO, CPU, connection time, and on a managed database an actual bill. Write it knowing the number, not hoping it is small. "It was fast locally" is not a measurement: a seq scan over 200 development rows and over 20 million production rows look identical from the app.
+
+- **Every query is bounded.** A read that can return an unbounded set carries an explicit `LIMIT` (and the pagination that goes with it). A list endpoint with no cap is an outage waiting for the row count to grow.
+- **Filter, sort, aggregate and paginate in the DATABASE.** Fetching a table to slice, sort, count or sum it in application code moves the whole result over the wire and throws most of it away - and no index can help once the rows have left the engine.
+- **Count the round trips, not just the queries.** A loop issuing one query per item pays the network latency every iteration: replace it with one set-based statement (a single `IN`, a join, or the ORM's `include`/`select` for the relation). Two round trips at 30 ms are cheaper than twenty perfect queries.
+- **Ask only for what you use.** Column lists over `SELECT *`, and on an ORM an explicit `select` - it is also what makes an index-only scan possible, and it keeps a `TEXT`/`JSONB` column you never read out of every row you fetch.
+- **Total counts are expensive.** `COUNT(*)` with the same filters as the page is a second full pass over the matched rows. Prefer "load more"/keyset paging with no total, an approximate count (`reltuples`, a cheap estimator) for a scale hint, or a maintained counter when the exact number is genuinely part of the product.
+- **Aggregations over large tables are precomputed, not recomputed per request.** A rollup table, a materialized view refreshed on a schedule, or an incrementally maintained counter - a dashboard that aggregates the whole history on every load will not survive its own success.
+- **Give every statement a timeout** (`statement_timeout` per role or per transaction) so one pathological query cannot pin a connection and cascade into pool exhaustion. Pair it with a pool sized to the database's real connection ceiling, through a pooler in serverless (a function per request otherwise opens a connection per request).
+- **Never hold a transaction open across an external call.** An HTTP request or a queue publish inside a transaction holds its locks for the remote service's latency, including its timeouts.
+- **Measure against realistic volume before shipping.** `EXPLAIN ANALYZE` on production-like data, and read the two numbers that matter: rows examined versus rows returned. A large ratio means the index does not match the predicate you actually wrote, whatever the plan calls itself.
+- **Set a budget for the hot path and check it.** Name the target (a simple read in single-digit milliseconds; a page load's queries in tens, not hundreds), keep the query count per request visible in logs or traces, and treat a regression as a defect. Caching an expensive read is the last step, not the fix for a query that was never designed (backend-policy owns the cache layer and its invalidation).
+
 ---
 
 ## Scalability (Design for Large Scale by Default)
@@ -233,6 +248,9 @@ Any denormalized or duplicated value MUST have:
 ## Anti-Patterns (Never Do)
 
 - Using auto-increment / serial / IDENTITY integer primary keys, or exposing sequential numeric IDs instead of UUIDs.
+- Shipping a query whose cost was never measured on realistic data, or an unbounded read with no `LIMIT`.
+- Fetching rows to filter, sort, count or paginate them in application code.
+- Querying inside a loop when one set-based statement would do.
 - Duplicating data without a documented sync strategy and justification.
 - Storing easily computable values that should be derived at read time.
 - SELECT * on hot paths or fetching columns that are not used.

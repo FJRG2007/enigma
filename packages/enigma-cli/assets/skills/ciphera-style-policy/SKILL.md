@@ -1,6 +1,6 @@
 ---
 name: ciphera-style-policy
-description: Ciphera code style conventions - mandatory formatting and language idioms for source code (TypeScript-first, applies to every language) - American-English naming, double quotes, string interpolation, length-sorted imports, one statement per module and a namespace import (`import * as ns`) instead of a long named list from a project module, 4-space indentation, comment/JSDoc format, compact single-line blocks, and code-level anti-patterns (barrel files, external CDN/hosting dependencies). Use whenever writing, refactoring, or reviewing source code.
+description: Ciphera code style conventions - mandatory formatting and language idioms for source code (TypeScript-first, applies to every language) - American-English naming, double quotes, string interpolation, length-sorted imports, one statement per module and a namespace import (`import * as ns`) instead of a long named list from a project module, path-alias specifiers (`@/x`) instead of deep relative chains and no file extension in an import, 4-space indentation, comment/JSDoc format, compact single-line blocks, and code-level anti-patterns (barrel files, external CDN/hosting dependencies). Use whenever writing, refactoring, or reviewing source code.
 ---
 
 # Ciphera Code Style Policy
@@ -78,6 +78,31 @@ if (!conf.OUTPUT_STYLES.includes(style)) return;
 
 - Do not import from external hostings or CDNs; depend on a package name, not a remote URL.
 - For obscure libraries, vendor the needed code into the project utilities instead of adding a fragile dependency.
+
+### Specifiers: alias over directory counting
+
+- A TypeScript project declares a path alias and imports through it. In `tsconfig.json`: `"baseUrl": "."` plus `"paths": { "@/*": ["./src/*"] }`. Set this up when you scaffold the project, not once the chains get long.
+- Use the alias for anything outside the importing file's own neighbourhood: `@/services/user`, `@/lib/db`, `@/components/Input`.
+- Keep a relative specifier for a file in the same folder (`./helpers`) or its parent (`../types`). Those say "this belongs with me", which is information; `../../../` says only where the file happens to sit today.
+- A relative chain encodes the position of BOTH files. Move either one and specifiers that had nothing to do with the change have to be rewritten, so a refactor that should be a rename becomes a diff across the tree. An alias is stable under both moves and reads as an absolute address.
+- The alias is a resolver convention, not a runtime one: bundlers (Vite, webpack, esbuild, tsup, Next), tsx and Bun all read it from tsconfig with no extra setup. Jest needs the same map in `moduleNameMapper`; if the test runner has not been told about it, keep the test's import relative rather than leaving it broken.
+- One alias prefix per project. Adding `~/`, `#/` and `@app/` beside `@/` just moves the counting problem into deciding which prefix to write.
+
+### No file extensions in specifiers
+
+- Write `@/services/user` and `./helpers`, never `./helpers.ts`, `./helpers.js`, or `./helpers.tsx`. The resolver finds the source file; the extension only pins the import to a build artifact.
+- `.js` on a TypeScript file names something that does not exist in the source tree, so the specifier stops matching the file it points at and a reader has to translate it back. `.ts` needs `allowImportingTsExtensions` and breaks the day the project emits.
+- The one case where extensions are mandatory is a project emitted by `tsc` for Node's own ESM loader (`"module": "nodenext"`). That is a tsconfig decision, taken once for the project - see backend-policy for which side to be on - not a choice made per import. When the project is built by a bundler or run by tsx/Bun, `"moduleResolution": "bundler"` is the setting and specifiers carry no extension.
+- A non-module asset keeps its real extension, because that IS its name: `import styles from "./table.css"`, `import icon from "./logo.svg"`.
+
+```ts
+// Bad: counts directories, and names a .js file that does not exist in src/.
+import { createUser } from "../../../services/user.js";
+
+// Good
+import { createUser } from "@/services/user";
+import { formatRow } from "./helpers";
+```
 
 ```ts
 // Good
