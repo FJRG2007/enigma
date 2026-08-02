@@ -15,7 +15,7 @@ process.env.HOME = HOME;
 const CONFIG = join(HOME, "guardrails.json");
 process.env.ENIGMA_GUARDRAILS_CONFIG = CONFIG;
 
-const { checkFile, checkPath, applyFixes, formatFindings, loadRules, findProjectRoot, recordFindings, readLedger, summarizeLedger, BUILTIN_RULES } = await import("../src/guardrails");
+const { checkFile, checkPath, applyFixes, formatFindings, loadRules, findProjectRoot, recordFindings, readLedger, countLedger, summarizeLedger, BUILTIN_RULES } = await import("../src/guardrails");
 const { disableRule, enableRule, addRule, removeRule } = await import("../src/guardrails-config");
 
 afterAll(() => rmSync(HOME, { recursive: true, force: true }));
@@ -602,4 +602,85 @@ test("the ledger records what happened to each finding and reports it per rule",
     expect(readLedger(1)).toEqual([]);
     expect(readLedger().length).toBe(1);
     delete process.env.ENIGMA_GUARDRAILS_LOG;
+});
+
+test("the sweep does not re-count a violation it already recorded today", () => {
+    // The turn-end sweep reads the whole branch diff every turn, so an unfixed violation is found
+    // again on every later turn - including conversational ones. Appending each of those turned one
+    // violation into dozens of rows, all in the "got away with it" column the ledger exists for.
+    const log = join(HOME, "dedupe.jsonl");
+    process.env.ENIGMA_GUARDRAILS_LOG = log;
+    rmSync(log, { force: true });
+    const finding = { ruleId: "fe-server-first-mutation", severity: "block" as const, file: "src/Rows.tsx", line: 3, message: "m" };
+    recordFindings([finding], "warned", "diff");
+    recordFindings([finding], "warned", "diff");
+    recordFindings([finding, finding], "warned", "diff");
+    expect(readLedger().length).toBe(1);
+    expect(countLedger()).toBe(1);
+    // A different outcome, line or rule is a different encounter, not a repeat of this one.
+    recordFindings([finding], "blocked", "diff");
+    recordFindings([{ ...finding, line: 9 }], "warned", "diff");
+    expect(readLedger().length).toBe(3);
+    // The post-edit stage keeps every row: there each one is an edit the model made and was
+    // answered on, which is a real encounter rather than the same finding seen again.
+    recordFindings([finding], "warned");
+    recordFindings([finding], "warned");
+    expect(readLedger().length).toBe(5);
+    expect(countLedger(1)).toBe(5);
+    delete process.env.ENIGMA_GUARDRAILS_LOG;
+});
+
+test("a mutation handler is judged on its own block, not on the code after it", () => {
+    // Regression pin: the block scan inferred "found" from `start !== index`, so a handler that
+    // OPENS its block on the flagged line never tripped the sentinel - the scan snapped to the
+    // enclosing component and the forward window reached an unrelated handler's state write.
+    const source = [
+        "export function Panel(props) {",
+        "    const charge = async (id) => { await fetch(\"/api/charge/\" + id, { method: \"POST\" });",
+        "        toast(\"charged\");",
+        "    };",
+        "    const dropLocally = (id) => {",
+        "        props.setItems((prev) => prev.filter((i) => i.id !== id));",
+        "    };",
+        "}",
+    ].join("\n");
+    expect(checkFile("src/Panel.tsx", source, null, "diff")).toEqual([]);
+});
+
+test("the server-first escape hatch exempts the handler it marks, not the whole file", () => {
+    // The rule's message says to mark the line, so honouring the marker file-wide granted a much
+    // wider exemption than the one that was asked for - and silently.
+    const source = [
+        "export function Panel({ setRows, setItems }) {",
+        "    const charge = async (id) => {",
+        "        await fetch(\"/api/charge\", { method: \"POST\" }); // enigma:allow-server-first",
+        "        setRows((prev) => prev.filter((r) => r.id !== id));",
+        "    };",
+        "    const remove = async (id) => {",
+        "        await fetch(\"/api/items\", { method: \"DELETE\" });",
+        "        setItems((prev) => prev.filter((i) => i.id !== id));",
+        "    };",
+        "}",
+    ].join("\n");
+    const found = checkFile("src/Panel.tsx", source, null, "diff");
+    expect(found.length).toBe(1);
+    expect(found[0]!.line).toBe(7);
+});
+
+test("an explicit check of one file runs every listed rule, diff-stage ones included", () => {
+    // `list` shows the rule as [on] and `stats` reports it by name, so the command a person uses to
+    // reproduce a finding must be able to report it too.
+    const dir = mkdtempSync(join(tmpdir(), "enigma-guardrails-check-"));
+    const file = join(dir, "Rows.tsx");
+    writeFileSync(file, [
+        "export function Rows({ setItems }) {",
+        "    const remove = async (id) => {",
+        "        await fetch(\"/api/items/\" + id, { method: \"DELETE\" });",
+        "        setItems((prev) => prev.filter((item) => item.id !== id));",
+        "    };",
+        "}",
+    ].join("\n"));
+    expect(checkPath(file).some((f) => f.ruleId === "fe-server-first-mutation")).toBe(false);
+    expect(checkPath(file, "diff").some((f) => f.ruleId === "fe-server-first-mutation")).toBe(true);
+    rmSync(dir, { recursive: true, force: true });
 });

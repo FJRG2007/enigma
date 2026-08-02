@@ -1499,7 +1499,11 @@ function runGuardrailsCli(positionals: string[]): number {
     const [sub, arg] = positionals;
     if (sub === "check") {
         if (!arg) { console.error("Usage: enigma guardrails check <file>"); return 1; }
-        const findings = checkPath(arg);
+        // Every listed rule runs here, diff-stage ones included. An explicit check on one named
+        // file is the surface a person uses to reproduce a finding they were blocked by, and at the
+        // hook's own stage it could never report the rule that blocked them - while `list` showed
+        // it as [on] and `stats` reported it by name.
+        const findings = checkPath(arg, "diff");
         if (!findings.length) { console.log(`No guardrail violations in ${arg}.`); return 0; }
         console.log(formatFindings(findings));
         return findings.some((f) => f.severity === "block") ? 1 : 0;
@@ -1576,7 +1580,7 @@ async function runVerifyCli(positionals: string[], all: boolean): Promise<number
     const command = verifyCommandOf();
     // Conventions are part of "is this change finished": the same rules the turn-end hook enforces,
     // so running the command by hand answers the same question the gate would.
-    const { gaps, truncated, capped, noRepo, ranCommand } = collectGaps(process.cwd(), { all, conventions: !all });
+    const { gaps, notes, truncated, capped, noRepo, ranCommand } = collectGaps(process.cwd(), { all, conventions: !all });
     // Announced after the fact, because the scan decides whether it runs at all: saying it ran
     // on a turn that produced nothing would be the same kind of unearned reassurance this
     // command exists to remove.
@@ -1588,11 +1592,14 @@ async function runVerifyCli(positionals: string[], all: boolean): Promise<number
     // Never present a partial scan, or a partial list, as the whole picture.
     const partial = capped ? " (only the first findings are listed - there are more)"
         : truncated ? " (scan truncated: too large to read in full, so coverage is incomplete)" : "";
+    // Advisory findings are printed either way and never touch the exit code: the same "also worth
+    // doing while you are here" list the turn-end gate shows, so both surfaces answer one question.
+    const suggestions = notes?.length ? `\nAlso flagged as suggestions (not blocking):\n${formatGaps(notes)}` : "";
     if (!gaps.length) {
-        console.log(`No evidence of unfinished work in ${all ? "any tracked file" : "the current change"}${ranCommand ? ", and the verification command passed" : ""}.${partial}`);
+        console.log(`No evidence of unfinished work in ${all ? "any tracked file" : "the current change"}${ranCommand ? ", and the verification command passed" : ""}.${partial}${suggestions}`);
         return 0;
     }
-    console.error(`enigma verify: ${gaps.length} item(s) suggest the work is not finished${partial}:\n${formatGaps(gaps)}`);
+    console.error(`enigma verify: ${gaps.length} item(s) suggest the work is not finished${partial}:\n${formatGaps(gaps)}${suggestions}`);
     return 1;
 }
 

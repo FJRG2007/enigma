@@ -36,7 +36,7 @@ import { readConfigAt, readGlobalConfig } from "./config";
 import { lastAssistantMessage } from "./claude-transcripts";
 import { execFileSync, spawnSync } from "node:child_process";
 import { enigmaHome, readJson, isGateAgentRun } from "./util";
-import { checkFile, findProjectRoot, recordFindings, type Finding } from "./guardrails";
+import { checkFile, loadRules, recordFindings, type Finding } from "./guardrails";
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, statSync, writeFileSync } from "node:fs";
 
 /** One piece of evidence that the work is not finished. */
@@ -453,16 +453,20 @@ function scanLines(cwd: string, lines: AddedLine[]): { gaps: VerifyGap[]; capped
     return { gaps, capped };
 }
 
-/** Evidence of unfinished work in the code this change produced, with the scan's coverage. */
-function scanEvidence(cwd: string, all: boolean): VerifyScan {
-    const scanned = all ? trackedLines(cwd) : addedLines(cwd);
+/**
+ * Evidence of unfinished work in the code this change produced, with the scan's coverage. Returns
+ * the lines it read alongside the result: the convention sweep needs the same diff, and computing
+ * it twice per turn is a second full `git diff` for nothing.
+ */
+function scanEvidence(cwd: string, all: boolean, reuse?: ScannedLines): { scan: VerifyScan; lines: ScannedLines; } {
+    const scanned = reuse ?? (all ? trackedLines(cwd) : addedLines(cwd));
     const { gaps, capped } = scanLines(cwd, scanned.lines);
-    return { gaps, truncated: scanned.truncated, capped, noRepo: scanned.noRepo, scanned: scanned.lines.length, ranCommand: false };
+    return { scan: { gaps, truncated: scanned.truncated, capped, noRepo: scanned.noRepo, scanned: scanned.lines.length, ranCommand: false }, lines: scanned };
 }
 
 /** Evidence of unfinished work in the code this change produced. */
 export function scanGaps(cwd: string, all = false): VerifyGap[] {
-    return scanEvidence(cwd, all).gaps;
+    return scanEvidence(cwd, all).scan.gaps;
 }
 
 // --- conventions: the rules the produced code breaks -----------------------------------
@@ -491,6 +495,8 @@ export interface ConventionScan {
     notes: VerifyGap[];
     /** Everything found, for the ledger. */
     findings: Finding[];
+    /** There were more findings than the lists hold: a cap cut the sweep short. */
+    capped: boolean;
 }
 
 /**
@@ -514,7 +520,7 @@ export interface ConventionScan {
  * fire on code the current change added.
  */
 export function scanConventions(cwd: string, scanned?: ScannedLines): ConventionScan {
-    const empty: ConventionScan = { gaps: [], notes: [], findings: [] };
+    const empty: ConventionScan = { gaps: [], notes: [], findings: [], capped: false };
     if (readConfigAt(cwd).guardrails === false) return empty;
     const lines = (scanned ?? addedLines(cwd)).lines;
     if (!lines.length) return empty;
@@ -525,24 +531,33 @@ export function scanConventions(cwd: string, scanned?: ScannedLines): Convention
         if (!set) { set = new Set(); added.set(entry.file, set); }
         set.add(entry.line);
     }
-    const scan: ConventionScan = { gaps: [], notes: [], findings: [] };
+    const scan: ConventionScan = { gaps: [], notes: [], findings: [], capped: false };
+    // Loaded ONCE for the sweep. checkFile otherwise re-reads and re-parses the rules config for
+    // every file a change touched, inside a hook that runs at the end of every turn.
+    const rules = loadRules();
     let files = 0;
     for (const [file, numbers] of added) {
-        if (++files > MAX_CONVENTION_FILES) break;
+        if (++files > MAX_CONVENTION_FILES) { scan.capped = true; break; }
         const text = readTextFile(join(cwd, file), MAX_UNTRACKED_BYTES);
         if (text === null) continue;
         let findings: Finding[];
+        // No project root, so project-scope rules stand down here: their findings carry no line,
+        // are dropped by the intersection below, and resolving a root per file means walking the
+        // ancestors of every file in the change for a result nothing reads.
+        //
         // The engine is deliberately self-contained and never throws for a bad rule, but a
         // hand-authored custom rule is still user input reaching a turn-end hook: a failure here
         // must cost the sweep, never the turn.
-        try { findings = checkFile(file, text, findProjectRoot(join(cwd, file)), "diff"); }
+        try { findings = checkFile(file, text, null, "diff", rules); }
         catch { continue; }
         for (const f of findings) {
             if (!f.line || !numbers.has(f.line)) continue;
             const gap: VerifyGap = { kind: "convention", file, line: f.line, detail: `${f.ruleId}: ${f.message}` };
             (f.severity === "block" ? scan.gaps : scan.notes).push(gap);
             scan.findings.push(f);
-            if (scan.gaps.length + scan.notes.length >= MAX_GAPS) return scan;
+            // Say when the list was cut short, for the same reason the marker scan does: the model
+            // fixes everything it was shown and is blocked again by findings it was never told of.
+            if (scan.gaps.length + scan.notes.length >= MAX_GAPS) { scan.capped = true; return scan; }
         }
     }
     return scan;
@@ -553,12 +568,13 @@ export function scanConventions(cwd: string, scanned?: ScannedLines): Convention
  * states the two ways out - fix it, or mark the line - because a gate with no exit is a gate that
  * gets disabled the first time it is wrong.
  */
-function conventionMessage(gaps: VerifyGap[], notes: VerifyGap[] = []): string {
+function conventionMessage(gaps: VerifyGap[], notes: VerifyGap[] = [], capped = false): string {
     return [
         "enigma verify: STOP. The code this change added breaks conventions this project enforces:",
         "",
         formatGaps(gaps),
         ...(notes.length ? ["", "Also flagged as suggestions on the same change (not blocking, worth doing while you are here):", formatGaps(notes)] : []),
+        ...(capped ? ["", "(Only the first findings are listed - the sweep was cut short, so there are more than these.)"] : []),
         "",
         "These are not style preferences: each one is a rule that was written down because the defect kept shipping, and each was measured against real code before it was turned on. You wrote these lines in this turn, so they are yours to fix now - not in a follow-up, and not by mentioning them in your reply.",
         "Fix every finding above, then end the turn. If one of them is genuinely wrong for this code - the operation really does need the server's answer first, the design really does call for the other shape - mark that specific line with the escape hatch the rule names (an `enigma:` note) and say in your reply which one you marked and why. Silently leaving it is the one option that is not available.",
@@ -597,6 +613,11 @@ export function verifyCommandOf(): string {
 /** The result of a full check: what it found, and whether it managed to look everywhere. */
 export interface VerifyScan {
     gaps: VerifyGap[];
+    /**
+     * Advisory convention findings on the same change: reported, never counted as gaps, because a
+     * warn is advice and must not decide an exit code (see scanConventions).
+     */
+    notes?: VerifyGap[];
     /** A cap stopped the scan before it had read everything. */
     truncated: boolean;
     /** There were more findings than the report shows. */
@@ -621,11 +642,18 @@ export interface VerifyScan {
  * covers the whole branch, so on any branch with earlier commits it is always positive and
  * every conversational turn would have paid.
  */
-export function collectGaps(cwd: string, opts: { all?: boolean; runCommand?: boolean; conventions?: boolean; } = {}): VerifyScan {
-    const scan = scanEvidence(cwd, opts.all === true);
+export function collectGaps(cwd: string, opts: { all?: boolean; runCommand?: boolean; conventions?: boolean; scanned?: ScannedLines; } = {}): VerifyScan {
+    const { scan, lines } = scanEvidence(cwd, opts.all === true, opts.scanned);
     // The CLI asks for these; the hook runs the sweep itself, before the claim path, because a
-    // broken convention has to be reported whether or not the turn claimed anything.
-    if (opts.conventions) scan.gaps.push(...scanConventions(cwd).gaps);
+    // broken convention has to be reported whether or not the turn claimed anything. The advisory
+    // findings travel too: dropping them here made the command answer a narrower question than the
+    // gate does, on the one surface a person runs by hand to see what the gate would say.
+    if (opts.conventions) {
+        const conventions = scanConventions(cwd, opts.all === true ? undefined : lines);
+        scan.gaps.push(...conventions.gaps);
+        scan.notes = conventions.notes;
+        if (conventions.capped) scan.capped = true;
+    }
     const produced = scan.scanned > 0 && (opts.all === true || hasNewWork(cwd));
     const command = opts.runCommand === false || !produced ? "" : verifyCommandOf();
     if (command) {
@@ -701,11 +729,16 @@ function rememberVerifiedHead(cwd: string): void {
  * per set of findings, and again by an absolute ceiling per session, because a model that
  * produces a slightly different finding set each round would otherwise earn a fresh budget
  * forever and the stop/continue cycle would never end.
+ *
+ * `channel` is that session ceiling's namespace, and the convention sweep has its own. Sharing one
+ * pool let a handful of heuristic convention findings early in a session spend the whole budget,
+ * after which the completion-claim gate - the primary one, and the reason this module exists -
+ * silently stopped firing for the rest of the session. Each channel now stands down on its own.
  */
-function mayBlock(key: string, session: string): boolean {
+function mayBlock(key: string, session: string, channel = "total"): boolean {
     const path = statePath();
     const state = readJson<Record<string, number>>(path) || {};
-    const sessionKey = `total:${session}`;
+    const sessionKey = `${channel}:${session}`;
     const total = (Number(state[sessionKey]) || 0) + 1;
     if (total > MAX_BLOCKS_PER_SESSION) return false;
     const count = (state[key] || 0) + 1;
@@ -798,26 +831,31 @@ export function runVerifyHook(payload?: string): number {
     // this is the only channel that reaches the model with one, since the post-edit hook can print
     // a warning but never feed it back. Checked before the claim path so the concrete, fixable
     // finding is what the model gets first.
-    const conventions = scanConventions(cwd);
-    if (conventions.findings.length) {
+    const claims = claimsDone(message);
+    const sweeps = readConfigAt(cwd).guardrails !== false;
+    // ONE diff for the turn, shared by both checks. Each of them reads the same branch diff plus
+    // every untracked file, and running that twice on a claiming turn is the whole cost paid over.
+    const scanned = sweeps || claims ? addedLines(cwd) : undefined;
+    const conventions = sweeps && scanned ? scanConventions(cwd, scanned) : null;
+    if (conventions?.findings.length) {
         // Recorded either way, and that is the point of the ledger: a finding the loop-safety
         // budget stood down on - or one that was only ever advisory - is a rule the agent got away
         // with skipping, which is exactly what was previously invisible. mayBlock has a side
         // effect, so it is called once, and only when there is something blocking to spend it on.
-        const blocking = conventions.gaps.length > 0 && mayBlock(issueKey(session, conventions.gaps), session);
+        const blocking = conventions.gaps.length > 0 && mayBlock(`conventions:${issueKey(session, conventions.gaps)}`, session, "conventions");
         // Per FINDING, not per turn: an advisory finding that merely rode along in a blocking
         // message was never enforced, and recording it as "blocked" would overstate the one column
         // the ledger exists for - what the agent was actually stopped over.
         recordFindings(conventions.findings.filter((f) => f.severity === "block"), blocking ? "blocked" : "warned", "diff");
         recordFindings(conventions.findings.filter((f) => f.severity === "warn"), "warned", "diff");
         if (blocking) {
-            process.stderr.write(`${conventionMessage(conventions.gaps, conventions.notes)}\n`);
+            process.stderr.write(`${conventionMessage(conventions.gaps, conventions.notes, conventions.capped)}\n`);
             return 2;
         }
     }
-    if (!claimsDone(message)) return 0;
+    if (!claims) return 0;
 
-    const { gaps, truncated, capped, noRepo } = collectGaps(cwd);
+    const { gaps, truncated, capped, noRepo } = collectGaps(cwd, { scanned });
     if (!gaps.length) {
         if (noRepo) process.stderr.write("enigma verify: this directory is not a git repository, so there was no change to check this claim against.\n");
         else if (truncated) process.stderr.write("enigma verify: the change was too large to scan in full, so this claim was only partially checked.\n");

@@ -1289,41 +1289,44 @@ function missingWindowsHide(content) {
 }
 var MUTATING_REQUEST = /method:\s*["'`](POST|PUT|PATCH|DELETE)|\b(?:axios|api|\$fetch|http|client)\.(?:post|put|patch|delete)\s*\(/i;
 var ENTITY_WRITE = /\bset[A-Z]\w*\s*\(\s*(?:\(?\w+\)?\s*=>\s*)?[\w.]*\.(?:filter|map|slice|concat)\s*\(|\bset[A-Z]\w*\s*\(\s*!/;
-var OPTIMISTIC_SIGNAL = /useOptimistic|onMutate|optimisticData|setQueryData|rollback|revert|previous[A-Z_]|enigma:allow-server-first/;
+var OPTIMISTIC_SIGNAL = /useOptimistic|onMutate|optimisticData|setQueryData|rollback|revert|previous[A-Z_]/;
+var ALLOW_SERVER_FIRST = /enigma:allow-server-first/;
 var RESULT_BINDING = /(?:const|let|var)\s+(\w+)\s*=\s*(?:await\s+)?/;
 var BLOCK_LOOKBACK = 120;
 var BLOCK_LOOKAHEAD = 200;
 function enclosingBlock(lines, index) {
   let depth = 0;
   let start = index;
-  for (let i = index; i >= 0 && index - i < BLOCK_LOOKBACK; i--) {
+  let foundStart = false;
+  for (let i = index; i >= 0 && index - i < BLOCK_LOOKBACK && !foundStart; i--) {
     const line = lines[i];
     for (let c = line.length - 1; c >= 0; c--) {
       if (line[c] === "}") depth++;
       else if (line[c] === "{") {
         if (depth === 0) {
           start = i;
+          foundStart = true;
           break;
         }
         depth--;
       }
     }
-    if (start !== index) break;
   }
   depth = 0;
   let end = index;
-  for (let i = start; i < lines.length && i - start < BLOCK_LOOKAHEAD; i++) {
+  let foundEnd = false;
+  for (let i = start; i < lines.length && i - start < BLOCK_LOOKAHEAD && !foundEnd; i++) {
     for (const ch of lines[i]) {
       if (ch === "{") depth++;
       else if (ch === "}") {
         depth--;
         if (depth === 0) {
           end = i;
+          foundEnd = true;
           break;
         }
       }
     }
-    if (end !== index) break;
   }
   return { start, end: Math.max(end, index) };
 }
@@ -1335,6 +1338,7 @@ function serverFirstMutation(content) {
     const line = lines[i];
     if (COMMENT_LINE.test(line) || !MUTATING_REQUEST.test(line)) continue;
     const { start, end } = enclosingBlock(lines, i);
+    if (lines.slice(start, end + 1).some((l) => ALLOW_SERVER_FIRST.test(l))) continue;
     if (lines.slice(start, i).some((l) => ENTITY_WRITE.test(l))) continue;
     let binding = "";
     for (let b = i; b >= Math.max(0, i - 4) && !binding; b--) binding = RESULT_BINDING.exec(lines[b])?.[1] ?? "";
@@ -1462,6 +1466,16 @@ function globToRegExp(glob, ignoreCase = false) {
   const body = esc.replace(/\*\*/g, " ").replace(/\*/g, "[^/]*").replace(/ /g, ".*").replace(/\?/g, "[^/]");
   return new RegExp(glob.includes("/") ? `^${body}$` : `(^|/)${body}$`, ignoreCase ? "i" : "");
 }
+var globCache = /* @__PURE__ */ new Map();
+function globRe(glob, ignoreCase = false) {
+  const key = `${ignoreCase ? "i" : "s"}:${glob}`;
+  let re = globCache.get(key);
+  if (!re) {
+    re = globToRegExp(glob, ignoreCase);
+    globCache.set(key, re);
+  }
+  return re;
+}
 function guardrailsConfigPath() {
   return process.env.ENIGMA_GUARDRAILS_CONFIG || join(homedir(), ".enigma-guardrails.json");
 }
@@ -1501,13 +1515,13 @@ function findProjectRoot(file) {
   }
   return null;
 }
-function checkFile(file, content, projectRoot, stage = "edit") {
+function checkFile(file, content, projectRoot, stage = "edit", rules = loadRules()) {
   const norm = file.replace(/\\/g, "/");
   const out = [];
-  for (const rule of loadRules()) {
+  for (const rule of rules) {
     if (stage === "edit" && rule.stage === "diff") continue;
-    if (!rule.files.some((g) => globToRegExp(g, rule.ignoreFileCase).test(norm))) continue;
-    if (rule.excludeFiles?.some((g) => globToRegExp(g, rule.ignoreFileCase).test(norm))) continue;
+    if (!rule.files.some((g) => globRe(g, rule.ignoreFileCase).test(norm))) continue;
+    if (rule.excludeFiles?.some((g) => globRe(g, rule.ignoreFileCase).test(norm))) continue;
     const base = { ruleId: rule.id, severity: rule.severity, file: norm, message: rule.message, skill: rule.skill };
     if (rule.scope === "file" && rule.maxBytes) {
       const bytes = Buffer.byteLength(content, "utf8");
@@ -1600,10 +1614,30 @@ var LEDGER_KEEP = 2e3;
 function ledgerPath() {
   return process.env.ENIGMA_GUARDRAILS_LOG || join(homedir(), ".enigma", "guardrail-log.jsonl");
 }
+function ledgerKey(rule, outcome, file, line) {
+  return JSON.stringify([rule, outcome, file, line ?? null]);
+}
+function recordedToday(day) {
+  const seen = /* @__PURE__ */ new Set();
+  eachLedgerEntry(1, (e) => {
+    if (e.at.slice(0, 10) === day) seen.add(ledgerKey(e.rule, e.outcome, e.file, e.line));
+  });
+  return seen;
+}
 function recordFindings(findings, outcome, stage = "edit") {
   if (!findings.length) return;
   const at = (/* @__PURE__ */ new Date()).toISOString();
-  const rows = findings.map((f) => JSON.stringify({ at, rule: f.ruleId, severity: f.severity, outcome, stage, file: f.file, line: f.line }));
+  const seen = stage === "diff" ? recordedToday(at.slice(0, 10)) : null;
+  const rows = [];
+  for (const f of findings) {
+    if (seen) {
+      const key = ledgerKey(f.ruleId, outcome, f.file, f.line);
+      if (seen.has(key)) continue;
+      seen.add(key);
+    }
+    rows.push(JSON.stringify({ at, rule: f.ruleId, severity: f.severity, outcome, stage, file: f.file, line: f.line }));
+  }
+  if (!rows.length) return;
   const path = ledgerPath();
   try {
     mkdirSync(dirname(path), { recursive: true });
@@ -1622,26 +1656,36 @@ function recordFindings(findings, outcome, stage = "edit") {
   } catch {
   }
 }
-function readLedger(sinceDays = 0) {
+function eachLedgerEntry(sinceDays, visit) {
   let text;
   try {
     text = readFileSync(ledgerPath(), "utf8");
   } catch {
-    return [];
+    return;
   }
   const cutoff = sinceDays > 0 ? Date.now() - sinceDays * 864e5 : 0;
-  const out = [];
   for (const line of text.split("\n")) {
     if (!line.trim()) continue;
     try {
       const entry = JSON.parse(line);
       if (typeof entry?.rule !== "string") continue;
       if (cutoff && Date.parse(entry.at) < cutoff) continue;
-      out.push(entry);
+      visit(entry);
     } catch {
     }
   }
+}
+function readLedger(sinceDays = 0) {
+  const out = [];
+  eachLedgerEntry(sinceDays, (entry) => out.push(entry));
   return out;
+}
+function countLedger(sinceDays = 0) {
+  let count = 0;
+  eachLedgerEntry(sinceDays, () => {
+    count++;
+  });
+  return count;
 }
 function summarizeLedger(entries) {
   const by = /* @__PURE__ */ new Map();
@@ -1715,6 +1759,7 @@ export {
   applyFixes,
   checkFile,
   checkPath,
+  countLedger,
   deepRelativeImports,
   extensionImports,
   findProjectRoot,

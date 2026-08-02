@@ -12,7 +12,7 @@ import { skillsReport } from "./skills";
 import { readProxyStats } from "./proxy";
 import { toolPathStatuses } from "./tool-path";
 import { availableAdapters } from "./api-agents";
-import { loadRules, readLedger } from "./guardrails";
+import { countLedger, loadRules } from "./guardrails";
 import { readConfig, readGlobalConfig } from "./config";
 import { GUARD_PROTECTIONS, readGlobalGuard } from "./guard-config";
 
@@ -83,7 +83,7 @@ export function systemsStatus(): SystemsStatus {
         minimalCode: c.minimalCode,
         parallelSubagents: c.parallelSubagents,
         autoLint: c.autoLint,
-        guardrails: { on: c.guardrails, rules: c.guardrails ? loadRules().length : 0, findings: c.guardrails ? readLedger(7).length : 0 },
+        guardrails: { on: c.guardrails, rules: c.guardrails ? loadRules().length : 0, findings: c.guardrails ? countLedger(7) : 0 },
         trim: c.trim,
         // Global, matching what actually runs: the hook is wired from the global toggle and a
         // repo-local verifyCommand is never executed, so showing either merged would misreport.

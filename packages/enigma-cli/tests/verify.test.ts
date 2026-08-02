@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { execFileSync } from "node:child_process";
 import { test, expect, afterAll } from "bun:test";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, readFileSync, writeFileSync } from "node:fs";
 
 const HOME = mkdtempSync(join(tmpdir(), "enigma-verify-"));
 process.env.USERPROFILE = HOME;
@@ -489,4 +489,46 @@ test("a suggestion never denies the stop, but it is recorded", () => {
     expect(scan.notes.some((n) => n.detail.includes("be-validate-input-ts"))).toBe(true);
     expect(runVerifyHook(payload(dir, "Added the handler.", { session_id: "warn-only" }))).toBe(0);
     expect(readLedger().some((e) => e.rule === "be-validate-input-ts" && e.outcome === "warned")).toBe(true);
+});
+
+test("a hand-run check reports the suggestions too, without failing on them", () => {
+    // The turn-end hook shows these; dropping them here made the command a person runs by hand
+    // answer a narrower question than the gate it is supposed to stand in for.
+    const dir = repoWith();
+    write(dir, "src/route.ts", "export const handler = (req, res) => {\n    const body = req.body;\n    res.json(body);\n};\n");
+    const scan = collectGaps(dir, { conventions: true, runCommand: false });
+    expect(scan.gaps).toEqual([]);
+    expect(scan.notes?.some((n) => n.detail.includes("be-validate-input-ts"))).toBe(true);
+});
+
+test("the convention sweep says when its list was cut short", () => {
+    // Shown-is-all would let the model fix everything it was given and be blocked again next turn
+    // by findings it was never told about - and the dropped ones never reach the ledger either.
+    const dir = repoWith();
+    const handlers = Array.from({ length: 26 }, (_, n) => [
+        `    const remove${n} = async (id) => {`,
+        '        await fetch("/api/items/" + id, { method: "DELETE" });',
+        "        setItems((prev) => prev.filter((item) => item.id !== id));",
+        "    };",
+    ].join("\n")).join("\n");
+    write(dir, "src/Many.tsx", `export function Rows({ setItems }) {\n${handlers}\n}\n`);
+    const scan = scanConventions(dir);
+    expect(scan.gaps.length).toBe(25);
+    expect(scan.capped).toBe(true);
+});
+
+test("convention blocks spend their own budget, not the completion gate's", () => {
+    // Both channels counted against one session-wide ceiling, so a handful of heuristic convention
+    // findings early in a session could exhaust it - and the completion-claim gate, the primary one
+    // and the reason this module exists, then stopped firing silently for the rest of that session.
+    const dir = repoWith();
+    const session = "own-budget";
+    write(dir, "src/New.tsx", SERVER_FIRST);
+    expect(runVerifyHook(payload(dir, "Added the delete action.", { session_id: session }))).toBe(2);
+    const state = JSON.parse(readFileSync(join(HOME, ".enigma", "verify-state.json"), "utf8"));
+    expect(state[`conventions:${session}`]).toBe(1);
+    expect(state[`total:${session}`]).toBeUndefined();
+    // The same issue still stands down on its own after two blocks, so a turn is never trapped.
+    expect(runVerifyHook(payload(dir, "Added the delete action.", { session_id: session }))).toBe(2);
+    expect(runVerifyHook(payload(dir, "Added the delete action.", { session_id: session }))).toBe(0);
 });
