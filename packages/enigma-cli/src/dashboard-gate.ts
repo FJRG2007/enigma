@@ -80,6 +80,21 @@ export interface GateSettingsView {
     logLevel: string;
     autoFix: Record<string, number>;
     intentEnabled: boolean;
+    /**
+     * What each control above falls back to when the config leaves it out. The view shows it
+     * in every hint and drives the per-row reset, so a number nobody remembers changing can
+     * be read and undone in place instead of hunting for it in the YAML.
+     */
+    defaults: GateSettingsDefaults;
+}
+
+/** The default value of every gate setting the form exposes as its own control. */
+export interface GateSettingsDefaults {
+    agent: string;
+    ciTimeout: string;
+    logLevel: string;
+    autoFix: Record<string, number>;
+    intentEnabled: boolean;
 }
 
 /** Everything the gate view renders in one payload. */
@@ -250,7 +265,21 @@ async function readGateSettings(globalPath: string): Promise<GateSettingsView | 
         const flag = MODEL_FLAG[merged.agent];
         const autoFix: Record<string, number> = {};
         for (const step of AUTO_FIX_STEPS) autoFix[step] = merged.autoFix[step];
+        // The defaults come from the gate's own loader rather than a second copy of the
+        // numbers: loadGlobal returns them verbatim when the file is missing, so pointing it
+        // at a path that cannot exist yields exactly what an empty config would resolve to.
+        // Any future change to a default reaches this form for free.
+        const base = gateConf.merge(gateConf.loadGlobal(join(dirname(globalPath), ".enigma-gate.defaults-probe")), gateConf.loadRepoFromBytes(""));
+        const autoFixDefaults: Record<string, number> = {};
+        for (const step of AUTO_FIX_STEPS) autoFixDefaults[step] = base.autoFix[step];
         return {
+            defaults: {
+                agent: base.agent,
+                ciTimeout: ciTimeoutText(base.ciTimeout),
+                logLevel: base.logLevel,
+                autoFix: autoFixDefaults,
+                intentEnabled: base.intent.enabled
+            },
             agent: declared,
             agentResolved: merged.agent,
             model: flag ? modelFromArgs(merged.agentArgsOverride?.[merged.agent] ?? [], flag) : "",

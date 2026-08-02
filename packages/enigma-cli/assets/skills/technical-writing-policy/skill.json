@@ -4,6 +4,6 @@
   "provider": "FJRG2007/enigma",
   "description": "Concise, realistic technical copy - UI microcopy, descriptions, hints, empty/error states, and README/doc prose that informs without over-explaining or restating the obvious, and never uses a typographic dash.",
   "updated": "2026-07-28T20:30:23+02:00",
-  "cliVersion": "1.33.4",
+  "cliVersion": "1.33.5",
   "sha": "a4b792103eb1f9dad93b9d70ea79dc18fe9cbbc318facf5adb47ae5907d842f9"
 }

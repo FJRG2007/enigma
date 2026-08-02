@@ -70,12 +70,35 @@ export async function refreshUpdateStatus(cliVersion: string): Promise<void> {
 }
 
 /**
+ * Re-derive a cached status against what is installed RIGHT NOW.
+ *
+ * `enigma update` swaps the packages without touching this cache, so a status written before
+ * it keeps advertising the update the user just applied - for the rest of the poll interval,
+ * and indefinitely when the number it compares against is the one a long-lived daemon booted
+ * with. The npm `latest` values stay valid across that, so recomputing `hasUpdate` from them
+ * costs nothing, needs no registry call, and clears the alert on the very next poll.
+ *
+ * A package missing from the installed set (uninstalled since the check) is dropped rather
+ * than reported against a version that is no longer there.
+ */
+function reconcileInstalled(cached: UpdateStatus | null, cliVersion: string): UpdateStatus | null {
+    if (!cached || !Array.isArray(cached.packages)) return null;
+    const live = installedPackages(cliVersion);
+    const packages = cached.packages.flatMap((p) => {
+        const now = live.find((l) => l.name === p.name);
+        if (!now) return [];
+        return [{ ...p, installed: now.installed, hasUpdate: !!p.latest && isNewer(p.latest, now.installed) }];
+    });
+    return { ...cached, packages, available: packages.some((p) => p.hasUpdate) };
+}
+
+/**
  * Stats-hot-path read: return the cached update status instantly and, when it is stale,
  * kick off a single background npm refresh (the next poll then sees the fresh result). One
  * refresh at a time per process; the registry is hit at most once every POLL_INTERVAL_MS.
  */
 export function readUpdateStatusCached(cliVersion: string): UpdateStatus | null {
-    const cached = readJson<UpdateStatus>(STATUS_FILE);
+    const cached = reconcileInstalled(readJson<UpdateStatus>(STATUS_FILE), cliVersion);
     // Escape hatch so tests (and anyone who wants it off) never trigger a registry call.
     if (process.env.ENIGMA_NO_UPDATE_CHECK) return cached;
     const stale = !cached || Date.now() - cached.checkedAt > POLL_INTERVAL_MS;

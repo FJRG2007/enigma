@@ -720,6 +720,10 @@
         .modal-ok.danger { background: var(--accent2); border-color: var(--accent2); color: #2a0f08; }
         .modal-ok:disabled { opacity: .45; cursor: not-allowed; }
         .modal-err { color: var(--bad); font-size: 12px; margin-top: 8px; }
+            /* The default value printed beside a setting hint: quiet, so it reads as an annotation
+           rather than a second label competing with the name. */
+        .set-def{opacity:.72;font-variant-numeric:tabular-nums;white-space:nowrap}
+        .set-ctl .gate-reset{flex:none}
     </style>
 </head>
 <body>
@@ -1118,7 +1122,7 @@
             <div class="set-grid">
                 <div class="set-row">
                     <div class="set-meta"><div class="set-name">Agent</div><div class="set-hint" id="gateAgentHint">which coding agent the pipeline drives</div></div>
-                    <div class="set-ctl"><select id="gateAgent" class="linput"><option value="auto">auto</option><option value="claude">claude</option><option value="codex">codex</option><option value="opencode">opencode</option><option value="rovodev">rovodev</option><option value="pi">pi</option></select></div>
+                    <div class="set-ctl ladd" style="align-items:center"><select id="gateAgent" class="linput"><option value="auto">auto</option><option value="claude">claude</option><option value="codex">codex</option><option value="opencode">opencode</option><option value="rovodev">rovodev</option><option value="pi">pi</option></select></div>
                 </div>
                 <div class="set-row" id="gateModelRow">
                     <div class="set-meta"><div class="set-name">Model</div><div class="set-hint" id="gateModelHint">the model every step runs on; a smaller one cuts run time and tokens</div></div>
@@ -1130,11 +1134,11 @@
                 </div>
                 <div class="set-row">
                     <div class="set-meta"><div class="set-name">Log level</div><div class="set-hint">daemon output verbosity</div></div>
-                    <div class="set-ctl"><select id="gateLogLevel" class="linput"><option value="debug">debug</option><option value="info">info</option><option value="warn">warn</option><option value="error">error</option></select></div>
+                    <div class="set-ctl ladd" style="align-items:center"><select id="gateLogLevel" class="linput"><option value="debug">debug</option><option value="info">info</option><option value="warn">warn</option><option value="error">error</option></select></div>
                 </div>
                 <div class="set-row">
                     <div class="set-meta"><div class="set-name">Read intent from transcripts</div><div class="set-hint">feeds what you were trying to do to every step; off makes the agents work from the diff alone</div></div>
-                    <div class="set-ctl"><button id="gateIntent" type="button" class="toggle" data-kind="bool" role="switch" aria-checked="false" aria-label="Read intent from transcripts"></button></div>
+                    <div class="set-ctl ladd" style="align-items:center"><button id="gateIntent" type="button" class="toggle" data-kind="bool" role="switch" aria-checked="false" aria-label="Read intent from transcripts"></button></div>
                 </div>
             </div>
             <div class="set-cat-h" style="margin-top:18px">Auto-fix attempts</div>
@@ -4467,6 +4471,57 @@ export {
             btn.dataset.on = on ? "1" : "0";
             btn.setAttribute("aria-checked", on ? "true" : "false");
         }
+        // Defaults for every gate setting, straight from the gate's own config loader (the
+        // server resolves an empty config rather than keeping a second copy of the numbers).
+        // They drive the "default N" hint and the per-row reset below.
+        let gateDefaults = null;
+        // A per-setting reset. These values are mostly small integers that get nudged once and
+        // then forgotten, and nothing on screen said what they started as - so the default is
+        // printed in the hint AND made one click away. Icon-only with a name, per the icon
+        // action rules; the title carries the value so a disabled reset still answers "what
+        // was it?" without the user opening the YAML.
+        function resetBtn(key, def, label) {
+            if (def === null || def === undefined) return "";
+            return '<button type="button" class="iconbtn gate-reset" data-gate-reset="' + esc(key) + '" data-gate-def="' + esc(String(def)) + '" data-gate-label="' + esc(label) + '"'
+                + ' title="Reset to the default (' + esc(String(def)) + ')" aria-label="Reset ' + esc(label) + ' to the default (' + esc(String(def)) + ')">'
+                + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 2v6h6"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L3 8"/></svg></button>';
+        }
+        /** Put (or refresh) a reset button in the cell of a control rendered by the static markup. */
+        function mountGateReset(key, label, def) {
+            const el = gateCtlFor(key);
+            if (!el || def === null || def === undefined || def === "") return;
+            const cell = el.parentElement;
+            if (!cell) return;
+            const old = cell.querySelector("[data-gate-reset]");
+            if (old) old.remove();
+            cell.insertAdjacentHTML("beforeend", resetBtn(key, def, label));
+        }
+        /** The control a reset key writes, so the button can compare against what is on screen. */
+        function gateCtlFor(key) {
+            if (key.indexOf("auto_fix.") === 0) return document.querySelector('[data-gate-af="' + key.slice("auto_fix.".length) + '"]');
+            if (key === "agent") return $("gateAgent");
+            if (key === "log_level") return $("gateLogLevel");
+            if (key === "ci_timeout") return $("gateCiTimeout");
+            if (key === "intent.enabled") return $("gateIntent");
+            return null;
+        }
+        /** Current value of a reset-able control, as the string its default is compared against. */
+        function gateCtlValue(key, el) {
+            if (!el) return null;
+            if (key === "intent.enabled") return el.dataset.on === "1" ? "true" : "false";
+            return String(el.value).trim();
+        }
+        // Nothing to reset is not the same as nothing to say: the button stays visible and
+        // disabled (never hidden), because its title is where the default value is written.
+        function syncGateResets() {
+            for (const b of document.querySelectorAll("[data-gate-reset]")) {
+                const key = b.dataset.gateReset;
+                const cur = gateCtlValue(key, gateCtlFor(key));
+                const isDefault = cur !== null && cur === b.dataset.gateDef;
+                b.disabled = isDefault || !gateWritable;
+                b.title = isDefault ? "Already the default (" + b.dataset.gateDef + ")" : "Reset to the default (" + b.dataset.gateDef + ")";
+            }
+        }
         const GATE_AUTOFIX = [
             ["rebase", "conflicts and stale-base failures"],
             ["review", "0 by default: review findings are yours to approve"],
@@ -4556,12 +4611,26 @@ export {
             $("gateLogLevel").value = s.logLevel;
             syncDD($("gateLogLevel"));
             gateBool($("gateIntent"), s.intentEnabled);
-            $("gateAutoFix").innerHTML = GATE_AUTOFIX.map(([step, hint]) =>
-                '<div class="set-row"><div class="set-meta"><div class="set-name">' + esc(step) + '</div><div class="set-hint">' + esc(hint) + "</div></div>"
-                + '<div class="set-ctl"><input type="number" min="0" max="20" step="1" inputmode="numeric" class="linput" style="flex:none;width:80px" data-gate-af="' + esc(step) + '" value="' + Number(s.autoFix[step] || 0) + '"></div></div>').join("");
+            gateDefaults = s.defaults || null;
+            $("gateAutoFix").innerHTML = GATE_AUTOFIX.map(([step, hint]) => {
+                const def = gateDefaults && gateDefaults.autoFix ? Number(gateDefaults.autoFix[step] || 0) : null;
+                return '<div class="set-row"><div class="set-meta"><div class="set-name">' + esc(step) + '</div><div class="set-hint">' + esc(hint)
+                    + (def === null ? "" : ' <span class="set-def">default ' + def + "</span>") + "</div></div>"
+                    + '<div class="set-ctl ladd" style="align-items:center"><input type="number" min="0" max="20" step="1" inputmode="numeric" class="linput" style="flex:none;width:80px" data-gate-af="' + esc(step) + '" value="' + Number(s.autoFix[step] || 0) + '">'
+                    + resetBtn("auto_fix." + step, def, "the " + step + " limit") + "</div></div>";
+            }).join("");
+            // The fixed rows get their reset mounted here rather than in the static markup,
+            // because only the payload knows what each default actually is.
+            if (gateDefaults) {
+                mountGateReset("agent", "the agent", gateDefaults.agent);
+                mountGateReset("log_level", "the log level", gateDefaults.logLevel);
+                mountGateReset("ci_timeout", "the CI timeout", gateDefaults.ciTimeout);
+                mountGateReset("intent.enabled", "intent extraction", String(gateDefaults.intentEnabled));
+            }
             const ctls = panel.querySelectorAll("input, select, button");
             for (const c of ctls) c.disabled = !gateWritable;
             syncGateModelSave(); // after the sweep, which would otherwise re-enable a clean Save
+            syncGateResets();    // likewise: the sweep would re-enable a reset with nothing to reset
         }
         // `live` marks a poll refresh: it repaints the run strip and the two switches, and leaves
         // every editor alone so a poll can never overwrite what is being typed.
@@ -4718,6 +4787,25 @@ export {
         $("gateAutoFix").addEventListener("change", (e) => {
             const step = e.target.dataset && e.target.dataset.gateAf;
             if (step) saveGateSetting("auto_fix." + step, Number(e.target.value), "the " + step + " limit");
+        });
+        // Live feedback while typing: the reset greys out the moment the value is back to the
+        // default, so the row answers "am I still overriding this?" without a save.
+        $("gateAutoFix").addEventListener("input", syncGateResets);
+        $("gateCiTimeout").addEventListener("input", syncGateResets);
+        // One delegated handler for every reset in the panel. The write goes through the same
+        // saveGateSetting as the control itself, so it reloads the gate afterwards - which is
+        // what reconciles the optimistic paint and rolls it back if the save did not land.
+        $("gateSetPanel").addEventListener("click", (e) => {
+            const b = e.target.closest && e.target.closest("[data-gate-reset]");
+            if (!b || b.disabled) return;
+            const key = b.dataset.gateReset, def = b.dataset.gateDef, el = gateCtlFor(key);
+            if (el) {
+                if (key === "intent.enabled") gateBool(el, def === "true");
+                else { el.value = def; if (el.tagName === "SELECT") syncDD(el); }
+                syncGateResets();
+            }
+            const value = key.indexOf("auto_fix.") === 0 ? Number(def) : (key === "intent.enabled" ? def === "true" : def);
+            saveGateSetting(key, value, b.dataset.gateLabel);
         });
 
         // --- section rail (a full-screen drawer below 900px) ---

@@ -251,15 +251,22 @@ function statsPayload(version: string): string {
     const now = Date.now();
     if (snapshot && now < snapshot.expires) return snapshot.payload;
     const cfg = conf.readConfig().config;
+    // `version` is what THIS process booted with. `enigma update` replaces the package under
+    // a long-lived daemon, so reporting it leaves "Enigma CLI x -> y" on screen for good: the
+    // update lands on disk, the daemon keeps comparing npm's latest against its own stale
+    // number, and only a dashboard restart clears the alert. Re-read from disk (the same
+    // reason serveUpdate and the daemon respawn already do) so the banner clears itself on
+    // the next poll. Falls back to the boot value when the manifest is unreadable.
+    const live = installedCliVersion() || version;
     const payload = JSON.stringify({
-        version, generatedAt: now, boot: SERVER_BOOT,
+        version: live, generatedAt: now, boot: SERVER_BOOT,
         // Version of the served UI bundle (@enigmax/dashboard). The page reloads when this
         // changes, so a background update to a newer bundle swaps the UI without a restart.
         ui: installedDashboardVersion(),
         // Which installed enigma packages (CLI, dashboard, linter) have a newer npm release.
         // Read from a 30-min-throttled cache so polling never hits the registry; drives the
         // top-of-page "update available" alert.
-        updates: readUpdateStatusCached(version),
+        updates: readUpdateStatusCached(live),
         priceOverride: cfg.tokenPrice, speedOverride: cfg.tokenSpeed,
         stats: readStats(), history: readHistory(), cache: ccrCacheStats(),
         usage: cfg.usageStats ? readUsageCached() : null,
