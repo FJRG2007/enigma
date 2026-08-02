@@ -30,6 +30,7 @@ Before declaring a change complete, verify:
 4. No secrets, credentials, or sensitive data are included.
 5. Existing patterns, naming, and structure are followed (per core-engineering-policy).
 6. Tests exist and pass for the changed behavior (per testing-policy).
+7. The change covers the whole class the request implied, not only the example the user named (per core-engineering-policy's Generalization Rule) - or states which siblings were deliberately left and why.
 
 ---
 
@@ -65,4 +66,5 @@ A change should not be delivered if it:
 - Breaks or skips tests, or ships untested critical behavior.
 - Duplicates logic that already exists, or stores duplicated/derivable data without justification.
 - Mixes unrelated concerns in one change.
+- Fixes the reported instance while identical instances of the same defect stay untouched in the codebase.
 - Leaves the codebase less consistent than it found it.

@@ -37,19 +37,19 @@
     },
     {
       "name": "code-review-policy",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "description": "Pre-delivery self-review gate, prioritized review dimensions, and change-quality criteria.",
       "provider": "FJRG2007/enigma",
       "updated": "2026-06-01T00:45:28+02:00",
-      "sha": "3d3bbe0602d5bbb4afe37648fe3c2fa39376b1bcbac5d8c441f01fad1e866ed0"
+      "sha": "b35f0bb4a29f2346d9a1b00a4bfee9557a9b6a44116d9e6e59abcd945466dbcb"
     },
     {
       "name": "core-engineering-policy",
-      "version": "1.12.0",
-      "description": "Core engineering execution policy and harness orchestration (highest-authority rules).",
+      "version": "1.13.0",
+      "description": "Core engineering execution policy and harness orchestration (highest-authority rules), including the generalization rule that treats a named example as a class to sweep and fix.",
       "provider": "FJRG2007/enigma",
       "updated": "2026-07-30T19:29:19+02:00",
-      "sha": "6a881d8589926fa7f48058314fd26d7042fd2ac82f1c87a6c11ffb54d1fda22b"
+      "sha": "98ed50cd77ec21f6e55b961a9849dec8f721f9792433f144ad7461f3acd46d82"
     },
     {
       "name": "database-expert",
@@ -61,11 +61,11 @@
     },
     {
       "name": "debugging-policy",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "description": "Reproduce-isolate-fix debugging methodology with root-cause discipline and regression verification.",
       "provider": "FJRG2007/enigma",
       "updated": "2026-06-01T00:45:28+02:00",
-      "sha": "14b0064c8b33a0dc85e51464b05005cf5801c756b1101789a6924b9548420f6b"
+      "sha": "968876bcac9ce6e5a20be05c89ac97191b112c9e08679a8dc506d150c375fec4"
     },
     {
       "name": "dependency-policy",
@@ -133,11 +133,11 @@
     },
     {
       "name": "task-completion-policy",
-      "version": "1.4.0",
+      "version": "1.5.0",
       "description": "Exhaustive completion discipline for long/multi-item tasks - inventory, coverage ledger, verified done.",
       "provider": "FJRG2007/enigma",
       "updated": "2026-07-30T20:10:24+02:00",
-      "sha": "2f82288d83dca3676d6bc49955c89477cc298f77fa56b4e414cd95ff858fa261"
+      "sha": "4c2197954135dd3375f32d839238b82a95c0e93e976ddf5a9cbc4a0cf0146e97"
     },
     {
       "name": "technical-writing-policy",

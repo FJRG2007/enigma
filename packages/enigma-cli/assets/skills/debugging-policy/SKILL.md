@@ -29,7 +29,7 @@ description: Reproduce-isolate-fix debugging methodology with root-cause discipl
 5. Confirm: prove the hypothesis (the failing case maps to the identified cause) before fixing.
 6. Fix: address the underlying cause at the right layer.
 7. Verify: add a regression test that fails before the fix and passes after (per testing-policy), then run the relevant suite.
-8. Review: assess whether the same class of bug exists elsewhere.
+8. Generalize: the reported failure is one instance of a class. Search deterministically for every other occurrence of the same root cause, fix them in this same change, and encode the invariant where it can be checked without you (core-engineering-policy's Generalization Rule).
 
 ---
 
@@ -49,6 +49,7 @@ description: Reproduce-isolate-fix debugging methodology with root-cause discipl
 - Distinguish the trigger (what surfaced it) from the cause (what is actually wrong).
 - A workaround is acceptable only as an explicit, temporary measure with the real cause documented.
 - When the cause spans multiple components, fix it where the invariant is actually owned.
+- The reported symptom is a sample, not the population. Once the cause is known, find its other victims by searching for the CAUSE (the wrong call, the missing guard, the unchecked shape), not for the symptom the user happened to notice.
 
 ---
 

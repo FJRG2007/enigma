@@ -1,9 +1,9 @@
 {
   "name": "debugging-policy",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "provider": "FJRG2007/enigma",
   "description": "Reproduce-isolate-fix debugging methodology with root-cause discipline and regression verification.",
   "updated": "2026-06-01T00:45:28+02:00",
   "cliVersion": "1.33.6",
-  "sha": "14b0064c8b33a0dc85e51464b05005cf5801c756b1101789a6924b9548420f6b"
+  "sha": "968876bcac9ce6e5a20be05c89ac97191b112c9e08679a8dc506d150c375fec4"
 }

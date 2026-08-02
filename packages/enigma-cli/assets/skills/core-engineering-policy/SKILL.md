@@ -22,6 +22,24 @@ description: Highest-authority engineering rules - priority hierarchy, modular a
 
 ---
 
+## Generalization Rule (Example -> Class)
+
+- A report, complaint, or request that names a concrete case is an EXAMPLE of a class, not the boundary of the task. "This label overflows", "this endpoint is unvalidated", "this action should be an icon", "this table has no empty state" all describe an invariant that is being violated in more than one place. Fixing only the named instance leaves its siblings broken and guarantees the same report returns, one site at a time.
+- Procedure, in this order:
+  1. Name the rule. Restate the example as a general invariant ("every X must Y") at the widest scope where it stays true. If it genuinely cannot be stated generally, the request really was a one-off - say so and move on.
+  2. Sweep. Enumerate every place the rule applies with deterministic commands (grep, AST or type search, route/component listings), never by recalling or sampling. The result is an inventory: when it spans many sites, run it through task-completion-policy's ledger instead of fixing whatever the first search happened to surface.
+  3. Fix the whole class in this same change. Verify each site, not only the one that was reported.
+  4. Encode the rule so it holds without you, routed by tier:
+     - Mechanically checkable from a file-local signature -> a lint, guardrail, or CI rule. Deterministic and costs no context.
+     - Semantic but domain-scoped -> the owning policy skill, so it loads only when that domain is in scope.
+     - Semantic and universal -> the always-on memory kernel.
+     - Never encode one rule in two tiers; the most deterministic tier that can express it wins.
+  5. Report the rule inferred, the sites fixed, and where the rule was encoded.
+- Stay on the single instance only when the user scoped it there ("only here", "just this one"), or when generalizing would require a destructive action or a decision that is genuinely the user's. Then say explicitly what was left unfixed and why - silently narrowing the scope is the failure this rule exists to prevent.
+- Bug sweeps search for the root cause, not the symptom (debugging-policy). The pre-delivery check that no sibling was left behind is in code-review-policy.
+
+---
+
 ## Skill Activation Discipline (Use the Harness)
 
 - This is a modular harness. Each domain has a dedicated skill; the agent MUST apply the matching skill whenever its domain is in scope, not just this core policy.
@@ -79,7 +97,7 @@ If rules conflict, apply this priority order:
 
 This core policy owns orchestration, architecture, and the global rules. Each concern below is owned by its own skill:
 
-- core-engineering-policy: highest-authority orchestration, priority hierarchy, language, output, modular architecture, reuse, security baseline, documentation. (this skill)
+- core-engineering-policy: highest-authority orchestration, priority hierarchy, the generalization rule (a named example is a class), language, output, modular architecture, reuse, security baseline, documentation. (this skill)
 - database-expert: schema design, normalization/anti-duplication, query and index optimization, scalability, RGPD/GDPR encryption, migrations.
 - validation-policy: strict frontend + backend schema validation (Zod), schema consistency, client-facing error handling.
 - frontend-policy: frontend structure, reusable components, abstraction threshold, client-side caching, optimistic UI and rollback.

@@ -9,6 +9,7 @@ description: Exhaustive completion discipline for long, complex, or multi-item t
 
 - Apply to any task with more than a handful of work units: 1:1 ports, language/framework migrations, repo-wide refactors, "implement all X", multi-feature builds, large integrations.
 - Also apply when a single user message bundles multiple distinct asks or questions, even just two, three, or four of them: enumerate every ask up front and cover all of them. Answering the first and silently dropping, postponing, or leaving the rest "pending" is exactly the failure this policy exists to prevent.
+- Also apply when a one-line request generalizes. Once an example has been turned into a rule (core-engineering-policy's Generalization Rule), the sweep for every site that rule touches IS an inventory: enumerate it here and track it in the ledger, instead of fixing whatever the first search happened to surface.
 - Owns inventory, coverage tracking, and completion claims. Subtask decomposition lives in core-engineering-policy; per-change review lives in code-review-policy; test strategy lives in testing-policy.
 
 ---
