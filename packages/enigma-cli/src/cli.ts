@@ -45,7 +45,7 @@ const PKG = readJson<{ version?: string; }>(join(__dirname, "..", "package.json"
 // Fixed commands plus one launch command per supported tool (e.g. `enigma claude`).
 const COMMANDS = new Set<string>([
     "install", "update", "security", "guard", "seal", "check", "config", "account", "accounts",
-    "profile", "profiles", "skill", "skills", "issue", "improve", "compress", "guardrails", "trim", "verify", "mcp", "api", "gate", "dashboard", "dash", "fix-path", "resources", "recall", "codegraph", "autoskills", "statusline", "help", "version",
+    "profile", "profiles", "skill", "skills", "issue", "improve", "qa", "compress", "guardrails", "trim", "verify", "mcp", "api", "gate", "dashboard", "dash", "fix-path", "resources", "recall", "codegraph", "autoskills", "statusline", "help", "version",
     "pack", "packs", "ssh",
     ...acct.TOOL_NAMES,
     ...packs.PACKS.map((p) => p.id),
@@ -216,6 +216,9 @@ Commands:
                        detected agents autocompleted; default: bug)
   improve [--help]     Explain the /improve slash command (it runs inside your
                        agent - Claude Code, Codex, OpenCode - not in this CLI)
+  qa [--help]          Explain the /qa slash command: use the product as a demanding
+                       user and fix what fails them (dead ends, empty/error states,
+                       accessibility, real-data extremes). Also agent-side, not CLI
   compress [file]      Compress JSON/logs/text to fewer tokens (reversible via CCR);
                        reads a file or stdin. --retrieve <hash> restores an original,
                        --stats shows cumulative savings, --clear wipes all dashboard
@@ -377,6 +380,43 @@ It has two modes:
 
   Advisor mode never edits source, never mutates the working tree, and never prints
   secret values.
+
+  Make sure it is deployed:  enigma install
+`);
+}
+
+/**
+ * `enigma qa` / `enigma qa --help`: the /qa twin of printImproveHelp - the command
+ * runs inside the agent, enigma only deploys it. /qa reviews the experience (use
+ * the thing, find where it fails the user) where /improve reviews the code.
+ */
+function printQaHelp(): void {
+    console.log(`
+/qa - a slash command, not a CLI command
+
+  enigma deploys /qa into your coding agents (Claude Code, Codex, OpenCode);
+  you run it INSIDE the agent (type "/qa ..." there), not from this CLI.
+  There is nothing to run here - this is just the explanation.
+
+  It uses the product the way someone who depends on it would, then fixes what
+  fails them. /improve reviews the code; /qa reviews the experience.
+
+  Scope:
+    /qa                         The current branch's changes (the default)
+    /qa all                     The whole product surface, busiest flows first
+    /qa <route|feature|path>    One area and whatever it navigates into
+    /qa audit                   Report and rank only, change nothing
+
+  Lenses (narrow it to one pass):
+    /qa a11y                    Keyboard, focus, names, contrast, semantics
+    /qa states                  Empty, loading, error, partial failure, stale
+    /qa data                    Extremes: longest value, zero rows, thousands, unicode
+    /qa mobile                  Real viewports: overlap, clipping, sideways scroll
+    /qa flow                    Step count for the frequent task, dead ends
+
+  It finds what a green build cannot: a name in a table that leads nowhere, an
+  empty state with no way out, a raw JSON blob in a cell, an icon button with no
+  accessible name, a destroy behind one unguarded click.
 
   Make sure it is deployed:  enigma install
 `);
@@ -1871,6 +1911,7 @@ export async function run(argv: string[]): Promise<void> {
     // /improve runs inside the agent, not the CLI; `enigma improve [--help]` only
     // explains it. Handled before the generic --help so `improve --help` shows this.
     if (opts.command === "improve") { printImproveHelp(); await notifyUpdate(version, interactive); return; }
+    if (opts.command === "qa") { printQaHelp(); await notifyUpdate(version, interactive); return; }
     if (opts.help || opts.command === "help") { printHelp(); await notifyUpdate(version, interactive); return; }
     if (opts.version || opts.command === "version") { console.log(version); await notifyUpdate(version, interactive); return; }
 

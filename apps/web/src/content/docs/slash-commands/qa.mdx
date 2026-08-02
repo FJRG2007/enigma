@@ -1,0 +1,78 @@
+---
+title: /qa
+description: The /qa slash command - use the product the way someone who depends on it would, then fix what fails them.
+group: Slash commands
+order: 30
+---
+
+`/qa` is a slash command enigma deploys into your coding agents. Where [`/improve`](/enigma/docs/slash-commands/improve/) reviews the **code**, `/qa` reviews the **experience**: it opens the thing, walks the real flows, and fixes what gets in the user's way.
+
+It is deployed to **Claude Code**, **OpenAI Codex** and **opencode** (authored once, copied into each app's command/prompt directory). Run it inside the agent as `/qa <args>`.
+
+> The role is wider than the name: usability, accessibility and practicality of real use, not just "does it break". A screen can be typed correctly, tested green, and still be a dead end.
+
+## Why it is a separate command
+
+A green build proves the code runs. It says nothing about whether the person using it can get anywhere. `/qa` finds the defects that only show up when you actually use the thing:
+
+- A name in a table that names a user, project or run and links nowhere, so the reader has to go hunting through the nav for the same record.
+- An empty state that says "nothing here" and offers no way out, or that cannot tell "nothing yet" from "nothing matches your filters".
+- A raw JSON payload or a machine code like `runner.pool.delete` dumped into a cell with no human label.
+- An icon-only button with no accessible name, a dialog that does not return focus, a flow that cannot be completed by keyboard.
+- A destroy behind one unguarded click, or an optimistic update that leaves a lie on screen when the request failed.
+
+## Scope
+
+| Invocation | Scope |
+|---|---|
+| `/qa` | The current branch's changes - the screens and flows touched since the merge-base. The default. |
+| `/qa all` | The whole product surface, busiest flows first. Aliases: `site`, `app`, `everything`. |
+| `/qa <route\|feature\|path>` | One area, plus whatever it navigates into. |
+| `/qa audit` | Report and rank only, change nothing. Composes with any scope. Alias: `report`. |
+
+```bash
+/qa
+/qa all
+/qa /settings/accounts
+/qa audit all
+```
+
+## Lenses
+
+A lens token narrows the run to one pass. Without one, all of them run.
+
+| Lens | Pass |
+|---|---|
+| `a11y` | Keyboard traversal, focus order and return, accessible names, contrast, semantics, reduced motion, target size. |
+| `states` | First load, both kinds of empty, error per region, partial failure, slow network, stale data, refresh mid-task, browser Back. |
+| `data` | Extremes: longest and shortest realistic value, zero rows, one row, thousands, nulls, huge numbers, unicode and RTL, unbroken strings. |
+| `mobile` | Real viewports: overlap, clipping, sideways page scroll, pinned chrome, off-canvas panels as real dialogs. |
+| `flow` | Step count for the frequent task, dead ends, and what would remove a step. |
+
+## How it works
+
+It **uses** the thing rather than reading it: starts the project the way it is meant to be started, walks flows end to end with real intent, and looks at the result (screenshots or a driven browser where the environment allows). If the project genuinely cannot be run in that environment it says so, traces the flow through the code instead, and labels every finding as coming from a static walkthrough - it never implies it exercised something it did not.
+
+Outside `audit` mode it fixes as it goes: the cheap, contained things (a missing link, an accessible name, an empty state, a confirmation, a keyboard trap, a raw value that needs a label) get fixed and re-walked to confirm the defect is gone. Anything needing a new backend route, a schema change, a design decision or a rewrite is reported with what it would take, never silently deferred and never silently done.
+
+It reads and applies your repo's own guidance (`CLAUDE.md`/`AGENTS.md` and any frontend, design or accessibility policy available) - it enforces your conventions rather than importing its own taste.
+
+## Severity
+
+| Severity | Meaning |
+|---|---|
+| **Blocker** | The task cannot be completed, work or data is lost, the interface misleads about what happened, or it is unusable by keyboard or screen reader. |
+| **Major** | Completable but badly hurt: a dead end forcing a hunt elsewhere, a state that renders as broken, a layout defect at a real viewport, an unguarded destructive action. |
+| **Minor** | Friction and polish: an extra step, a missing shortcut, imprecise copy, an inconsistency. |
+
+## What it will not report
+
+Padding the list costs your attention and churns working code, so `/qa` says "this is fine" often. A tradeoff your repo records in a doc or an ADR is settled, not a finding. A small, bounded, read-once surface does not need search, filters, export or virtualization. Taste alone is not a finding unless it costs the user something nameable. And a missing feature is a product suggestion, kept separate and clearly labelled - not a QA finding.
+
+## From the CLI
+
+`/qa` runs inside the agent, but the same reference is one command away in your terminal:
+
+```bash
+enigma qa --help
+```

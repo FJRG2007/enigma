@@ -1,6 +1,6 @@
 ---
 name: frontend-policy
-description: Frontend architecture - reusable components, abstraction thresholds, state management, no-op detection (skip any operation whose result equals the current state - form saves, toggles, filters, reorders - not just saves; dirty means the values DIFFER from the loaded snapshot, not that the user touched the field, so a value edited and put back leaves Save disabled), client-side caching (localStorage/sessionStorage to avoid redundant server calls and survive rate limits), instant first paint (render the shell immediately, load data async via the API, show skeletons - never block render on data), perceived performance and responsiveness (instant interaction feedback, prefetch on intent, debounce/throttle, cancel stale requests, avoid request waterfalls, lazy-load heavy widgets), large-list rendering (virtualized infinite scroll vs pagination, skeletons, progressive/parallel loading, short-TTL caching), optimistic UI with rollback, visual restraint (never a card inside a card, borders only where they carry information, spacing and background tone before chrome), icon actions (repeated row/card actions like copy, edit, rename, remove, download, refresh are icon-only buttons carrying aria-label plus title, never a text label), navigation that is iconified and grouped into labelled sections once it outgrows a flat list, a Cmd/Ctrl+K command palette with fuse.js fuzzy search over the loaded data once the app has enough destinations and records to hunt through, responsive/adaptive layout (fluid units, breakpoints, no overlap or horizontal overflow, viewport meta, touch targets), form fields that declare their keyboard and casing (autocapitalize/autocomplete/inputmode/spellcheck per field kind, set once in the shared Input, normalized on blur rather than on every keystroke, with an inline error on every field that has a rule), auth screens (breached-password feedback, strength meter, cookie consent answered before login/register), AI chat/assistant/agent interfaces (use Vercel's AI Elements registry for message threads, streaming, reasoning and tool-call panels, prompt inputs - never hand-roll chat UI in React), and periodic React code-health audits (react-doctor). Use when building or changing UI components, client state, forms/save flows, data fetching/caching, lists that show lots of data, loading states, dashboards/panels, layout/responsiveness, making the UI feel fast, building a chat/AI/agent/LLM interface, or any frontend structure.
+description: Frontend architecture - reusable components, abstraction thresholds, state management, no-op detection (skip any operation whose result equals the current state - form saves, toggles, filters, reorders - not just saves; dirty means the values DIFFER from the loaded snapshot, not that the user touched the field, so a value edited and put back leaves Save disabled), client-side caching (localStorage/sessionStorage to avoid redundant server calls and survive rate limits), instant first paint (render the shell immediately, load data async via the API, show skeletons - never block render on data), perceived performance and responsiveness (instant interaction feedback, prefetch on intent, debounce/throttle, cancel stale requests, avoid request waterfalls, lazy-load heavy widgets), large-list rendering (virtualized infinite scroll as the preferred default with pagination as the deliberate exception when the design or the user calls for it, skeletons, progressive/parallel loading, short-TTL caching), optimistic UI with rollback, visual restraint (never a card inside a card, borders only where they carry information, spacing and background tone before chrome), icon actions (repeated row/card actions like copy, edit, rename, remove, download, refresh are icon-only buttons carrying aria-label plus title, never a text label), navigation that is iconified and grouped into labelled sections once it outgrows a flat list, a Cmd/Ctrl+K command palette with fuse.js fuzzy search over the loaded data once the app has enough destinations and records to hunt through, data views that ship their own affordances by default (a log, expense, transaction or history table is not done when the rows render - it needs the search, the filters its column kinds imply, a date range, sort, filter state kept in the URL, and an export of the filtered set), every reference to an entity being a way into it (a name, id, project or path in a row links to that record, reveals it in a hover card, or at minimum copies and filters by it - never inert text, with machine codes given human labels and raw payloads never dumped into a cell), responsive/adaptive layout (fluid units, breakpoints, no overlap or horizontal overflow, viewport meta, touch targets), form fields that declare their keyboard and casing (autocapitalize/autocomplete/inputmode/spellcheck per field kind, set once in the shared Input, normalized on blur rather than on every keystroke, with an inline error on every field that has a rule), auth screens (breached-password feedback, strength meter, cookie consent answered before login/register), AI chat/assistant/agent interfaces (use Vercel's AI Elements registry for message threads, streaming, reasoning and tool-call panels, prompt inputs - never hand-roll chat UI in React), and periodic React code-health audits (react-doctor). Use when building or changing UI components, client state, forms/save flows, data fetching/caching, lists that show lots of data, a log/activity/expenses/transactions/history table, loading states, dashboards/panels, layout/responsiveness, making the UI feel fast, building a chat/AI/agent/LLM interface, or any frontend structure.
 ---
 
 # Frontend Architecture Policy
@@ -172,6 +172,20 @@ When UI copy names a destination - a URL, a doc page, a dashboard, a settings sc
 - External links carry `target="_blank"` with `rel="noopener noreferrer"`, and say where they go when the destination is not obvious from the text. In-app destinations use the router, never a full page reload.
 - Choose the affordance by weight, not by habit: an inline anchor for a reference inside a sentence, a button for the primary action of a panel or empty state ("Open dashboard"), an icon button where it repeats per row (Icon Actions above). A whole sentence is never a link - link the noun.
 - The same applies to anything else with a natural affordance: a file path gets a copy button, an email gets `mailto:`, a referenced setting gets a link to that settings screen. If the copy tells the user to go somewhere, take them there.
+
+---
+
+## Every Reference To An Entity Is A Way Into It
+
+A table, log, activity feed or detail panel is full of values that NAME something the app already knows about: the user who performed the action, the project it happened in, the run it belongs to, the file it touched, the account it was billed to. Rendered as inert text, each one is a dead end - the reader now knows a name and can do nothing with it, so they go hunting through the nav for that same record by hand. That is precisely the work the screen existed to save. Wire the affordance while building the view; waiting to be asked for it costs the user a round trip for something that was always obviously needed.
+
+- **If the app has a page for it, the value is a link to that page.** An actor column showing a person's name opens that user; a project name opens the project; a run id opens the run; a file path opens the file.
+- **If there is no page but there is more to know, reveal it in place**: a hover card or popover with the essentials (full name, avatar, role, last seen), a click-to-expand row for the underlying payload, a tooltip carrying the full value behind a truncated one. Not every reference deserves a route, but none deserves to be inert.
+- **If there is genuinely nothing behind it, make it operable anyway**: a copy button on an id, hash, IP or path, and a click that filters the view to that value ("everything this user did"), which is where this meets the filters above.
+- **Translate machine values.** A code like `enrollment.cancel` or `runner.pool.delete` gets a human label, and a raw JSON payload is rendered as fields or collapsed behind a toggle - never dumped as a blob into a cell where it wrecks the row height and tells the reader nothing.
+- **A timestamp is both forms**: relative for reading ("2 hours ago") with the exact localized value available on hover, per Dates & Timestamps above.
+
+The check to run while building, not afterwards: go column by column and ask what the reader wants to do NEXT with that value. If the answer is "find out more about that thing" or "see the others like it", the cell needs an affordance now.
 
 ---
 
@@ -374,11 +388,12 @@ Never render an unbounded or large dataset in one shot (no fetch-everything then
 
 ### Choose a load strategy per case
 
-- Infinite scroll (default for feeds, large or unknown-size sets, and exploratory browsing): fetch one page at a time as the user nears the end, using keyset/cursor paging (per backend-policy / database-expert), not offset for deep lists.
+- Infinite scroll (the default - feeds, large or unknown-size sets, exploratory browsing, and most data views): fetch one page at a time as the user nears the end, using keyset/cursor paging (per backend-policy / database-expert), not offset for deep lists.
   - It MUST be virtualized/windowed once the list grows: render only the viewport plus a small buffer and recycle offscreen rows so a long session (a user scrolling for an hour) does not accumulate thousands of nodes and lag. Drop far-offscreen items from the DOM and restore them on scroll-back, preserving scroll position (the TikTok model: only a handful of items live in the DOM at once).
   - Only start dropping/recycling once there is genuinely a lot rendered or the context demands it; do not over-engineer it for a small list.
 - Pagination (when users need to jump to or deep-link a specific page, the set is bounded, totals/position matter, or results must be SEO-indexable): classic page controls backed by efficient server paging.
-- Pick whichever fits; do not infinite-scroll a 30-row admin table or paginate a social feed. A short, bounded list needs neither - just render it (anti-overengineering-policy).
+- **Infinite scroll is the preferred default; pagination is the deliberate exception.** Continuous scrolling is what most lists want and what most users now expect, so reach for it first and switch to pages only when one of the reasons above genuinely applies, when the design has nowhere to scroll (a fixed-height panel, a print or export layout, a table meant to be read position by position), or when the user asks for pages. The design and the user's request outrank the default; what does not is skipping the choice and rendering the whole set.
+- Do not infinite-scroll a 30-row admin table or paginate a social feed. A short, bounded list needs neither - just render it (anti-overengineering-policy).
 
 ### Skeletons while loading
 
@@ -447,6 +462,33 @@ For a user-facing search box or finder over a list, use fuse.js (fuzzy search) r
 
 - Reach for fuse.js whenever the input is a search/filter box the user types free text into. Keep a plain equality/predicate filter only for exact, structured filtering (a status dropdown, a tag toggle) where fuzziness would be wrong.
 - Configure the searched `keys` and a sensible `threshold`, and run the search over the already-loaded client list where possible (reuse the data, per Client-Side Caching) before falling back to a server query.
+
+### A Data View Ships Its Own Search, Filters And Export
+
+A list, table, log or history view is not finished when the rows render. Anything the user comes back to - expenses, activity logs, HTTP requests, transactions, audit trails, sessions, runs - is something they will need to find one row in, narrow to a slice of, and take away. Build those affordances WITH the view, by default and without being asked; shipping a bare table of a few hundred rows leaves the user scrolling and reading.
+
+**Read the affordances off the data.** Each column kind implies its own control, so pick them from what the view actually shows rather than adding a generic search box and stopping:
+
+- Free text (message, path, description, merchant, user agent): one fuse.js box over the meaningful text columns, not one per column.
+- Bounded set (status, level, method, category, account, tag): multi-select filters listing the values actually present with a count each, not a hardcoded enum.
+- Numeric, currency or duration (amount, latency, size): a min/max range plus whatever presets the domain reads by.
+- Timestamp: a date range with relative presets (today, 7 days, 30 days, this month) and a custom range. A view whose data accumulates is read through this filter first, so it is the one that must exist.
+- Identifier (IP, request id, hash, user id): exact match, never fuzzy - half an IP address means nothing.
+
+An HTTP log table therefore gets: search over path and user agent, filters for status code, method and host, a date range, a duration range, and an export. An expense list gets: search over merchant and description, filters for category and account, an amount range, a date range, and an export.
+
+**The rest of the contract:**
+
+- Filters compose - AND across kinds, OR within one kind - and stack with the search rather than replacing it.
+- The active filter set is visible and individually removable: a row of chips with a "Clear all", never state that only exists inside a closed dropdown.
+- Keep the search, filters, sort and page in the URL query string. That is what makes a filtered view shareable, bookmarkable, and able to survive a reload and the back button, so "look at yesterday's failing requests" is one link instead of a screenshot.
+- Show what is displayed against the total ("128 of 4,391"), and give the filtered-to-nothing case its own empty state that names the active filters and offers to clear them - not the same empty state as "no data yet".
+- Sort by the columns that have a natural order (time, amount, duration, status) with the sensible default already applied: newest first for a log, not insertion order.
+- Filter and sort over the loaded rows with no request while the client holds the whole set; move both server-side once it outgrows that (per Large Lists above), keeping the same URL contract.
+- The rows themselves load incrementally - infinite scroll by default, pagination where the design or the user calls for it (Large Lists above). A view like this accumulates, so it never renders the full set in one shot.
+- Export what is currently filtered, not the whole table, and label it so. CSV covers the spreadsheet case; add JSON where rows are nested or machine-read. Name the file for the view and its range (`http-logs-2026-07-01_2026-07-31.csv`). Generate it client-side from the loaded rows, and hand it to the server only when the filtered set is bigger than the client holds.
+
+**Scale it to the view.** A settings screen with six rows, or a list read once and abandoned, needs none of this (anti-overengineering-policy). The trigger is a view that grows unbounded or that the user returns to. When unsure, ask whether the data accumulates over time: if it does, it needs at least the date range and the export.
 
 ### Ctrl+K Opens A Command Palette Once There Is Enough To Hunt For
 

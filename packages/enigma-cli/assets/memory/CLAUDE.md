@@ -42,6 +42,7 @@ Non-negotiable, language-agnostic defaults - apply them by default without being
 - Cache reads on the client (localStorage/sessionStorage, or the data layer's cache) with a short TTL (~30s or more) to avoid redundant queries and survive rate limits; invalidate on write.
 - Build reusable, composable components instead of duplicating UI - e.g. a single Input that renders a show/hide toggle when the type is password. Reuse before writing new.
 - Never use the browser's native `alert`/`confirm`/`prompt` - use a dialog/modal component that matches the page design.
+- Build for how the thing will actually be USED, not only for what was literally described. Before calling it done, walk it once as the person who has to use it daily and once as a QA trying to break it. Whatever they would obviously reach for next is part of THIS task, not a follow-up to be requested: a name or id shown in a table opens or reveals that record instead of sitting there as text, a value they will want to copy/filter/export has that affordance, a machine code is given a human label, an error says what to do about it, and the empty, loading and failure states exist. Having to come back and ask for the obvious next affordance is a defect, not a feature request.
 
 ### Task Execution (Always-On)
 
