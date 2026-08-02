@@ -13,12 +13,12 @@ const DIR = mkdtempSync(join(tmpdir(), "enigma-gate-exec-"));
 process.env.USERPROFILE = DIR;
 process.env.HOME = DIR;
 
-const { Database, newId, insertRepoWithIDAndFork, insertRun, getRun, getStepsByRun } = await import("../../src/gate/db");
-const { Executor } = await import("../../src/gate/pipeline/executor");
-const { newStepOutcome } = await import("../../src/gate/pipeline/types");
-const { merge, loadGlobal, loadRepoFromBytes } = await import("../../src/gate/config");
-import type { StepName } from "../../src/gate/types";
-import type { Step, StepContext, StepOutcome } from "../../src/gate/pipeline/types";
+const { Database, newId, insertRepoWithIDAndFork, insertRun, getRun, getStepsByRun } = await import("@/gate/db");
+const { Executor } = await import("@/gate/pipeline/executor");
+const { newStepOutcome } = await import("@/gate/pipeline/types");
+const { merge, loadGlobal, loadRepoFromBytes } = await import("@/gate/config");
+import type { StepName } from "@/gate/types";
+import type { Step, StepContext, StepOutcome } from "@/gate/pipeline/types";
 
 afterAll(() => rmSync(DIR, { recursive: true, force: true }));
 

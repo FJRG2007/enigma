@@ -17,9 +17,9 @@ process.env.HOME = DIR;
 
 const REPO_PATH = join(DIR, "repo").replace(/\\/g, "/");
 
-const { Database, newId, insertRepoWithIDAndFork, insertRun, insertStepResult, startStep, completeStepWithStatus, updateRunStatus } = await import("../../src/gate/db");
-const { Paths } = await import("../../src/gate/paths");
-const { writeSnapshot } = await import("../../src/gate/daemon/snapshot");
+const { Database, newId, insertRepoWithIDAndFork, insertRun, insertStepResult, startStep, completeStepWithStatus, updateRunStatus } = await import("@/gate/db");
+const { Paths } = await import("@/gate/paths");
+const { writeSnapshot } = await import("@/gate/daemon/snapshot");
 const { render, readSnapshot } = await import("../../bin/statusline.mjs");
 
 // Windows keeps a handle on SQLite's WAL files a moment after close, so a failed

@@ -13,25 +13,25 @@
  * maps to an `AbortSignal`; Go `(value, error)` maps to throw.
  */
 
-import { log } from "../../log";
-import * as git from "../../git";
+import { log } from "@/gate/log";
+import * as git from "@/gate/git";
 import { userInfo } from "node:os";
-import { track } from "../../telemetry";
-import { STEP_INTENT } from "../../types";
+import { track } from "@/gate/telemetry";
+import { STEP_INTENT } from "@/gate/types";
 import { newStepOutcome } from "../types";
-import { updateRunIntent } from "../../db";
-import type { Result } from "../../intent";
-import type { StepName } from "../../types";
-import type { Fields } from "../../telemetry";
-import { newDBCache } from "../../intent/cache";
-import { allReaders } from "../../intent/readers";
+import { updateRunIntent } from "@/gate/db";
+import type { Result } from "@/gate/intent";
+import type { StepName } from "@/gate/types";
+import type { Fields } from "@/gate/telemetry";
+import { newDBCache } from "@/gate/intent/cache";
+import { allReaders } from "@/gate/intent/readers";
 import { sanitizePromptMultilineText } from "./common";
 import { mergeBaseWithDefaultBranch } from "./commonGit";
-import { newAgentSummarizer } from "../../intent/summarizer";
-import { extract, ErrNoMatch, isNoMatch } from "../../intent";
+import { newAgentSummarizer } from "@/gate/intent/summarizer";
+import { extract, ErrNoMatch, isNoMatch } from "@/gate/intent";
 import type { Step, StepContext, StepOutcome } from "../types";
-import { redactSecrets, stripAdversarial } from "../../intent/redact";
-import { newAgentDisambiguator, isDisambiguatorCleanup } from "../../intent/disambiguator";
+import { redactSecrets, stripAdversarial } from "@/gate/intent/redact";
+import { newAgentDisambiguator, isDisambiguatorCleanup } from "@/gate/intent/disambiguator";
 
 /** Caps total wall-clock time spent on intent extraction (5 minutes, in ms). */
 const intentExtractTimeout = 300 * 1000;

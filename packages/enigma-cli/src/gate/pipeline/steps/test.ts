@@ -9,23 +9,23 @@
  * upstream; it is ported here as a private helper until review.ts is ported.
  */
 
-import * as git from "../../git";
+import * as git from "@/gate/git";
 import { mkdirSync } from "node:fs";
-import { STEP_TEST } from "../../types";
+import { STEP_TEST } from "@/gate/types";
 import { newStepOutcome } from "../types";
 import { testFindingsSchema } from "./common";
-import type { Result } from "../../agent/agent";
+import type { Result } from "@/gate/agent/agent";
 import { detectNewTestFiles } from "./commonDiff";
 import { runStepShellCommand } from "./commonExec";
 import { resolveBranchBaseSHA } from "./commonGit";
 import { sep, relative, isAbsolute } from "node:path";
 import type { TestEvidenceLocation } from "./evidence";
 import { roundHistoryPromptSection } from "./roundHistory";
-import type { StepName, Finding, Findings } from "../../types";
+import type { StepName, Finding, Findings } from "@/gate/types";
 import type { Step, StepContext, StepOutcome } from "../types";
 import { executeFixMode, hasBlockingFindings } from "./commonFix";
 import { executionContextPromptSection } from "./executionContext";
-import { parseFindingsJSON, marshalFindingsJSON } from "../../types";
+import { parseFindingsJSON, marshalFindingsJSON } from "@/gate/types";
 import { cleanedUserIntent, userIntentPromptSection } from "./intent";
 import { resolveTestEvidenceLocation, testEvidenceDir } from "./evidence";
 import { sanitizePromptText, sanitizePromptMultilineText } from "./common";

@@ -19,7 +19,7 @@
  */
 
 import { nonInteractiveEnv } from "../git";
-import { GATE_ROLE_ENV_VAR } from "../../util";
+import { GATE_ROLE_ENV_VAR } from "@/util";
 
 /**
  * Returns the environment for a spawned agent subprocess with git forced into

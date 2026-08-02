@@ -13,10 +13,10 @@
  * here (reusing the exported deterministicFixCommitMessage/normalizedBranchRef).
  */
 
-import * as git from "../../git";
+import * as git from "@/gate/git";
 import { findingsSchema } from "./common";
-import { updateRunHeadSHA } from "../../db";
-import type { Result } from "../../agent/agent";
+import { updateRunHeadSHA } from "@/gate/db";
+import type { Result } from "@/gate/agent/agent";
 import { runStepShellCommand } from "./commonExec";
 import { userIntentPromptSection } from "./intentPrompt";
 import { roundHistoryPromptSection } from "./roundHistory";
@@ -32,7 +32,7 @@ import {
     STEP_LINT,
     type Findings,
     type StepName
-} from "../../types";
+} from "@/gate/types";
 
 /** Returns the message of an unknown thrown value, mirroring Go's `%w` wrap. */
 function errMessage(err: unknown): string {

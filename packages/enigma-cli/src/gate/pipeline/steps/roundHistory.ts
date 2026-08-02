@@ -11,14 +11,14 @@
  */
 
 import type { StepContext } from "../types";
-import { parseFindingsJSON } from "../../types";
+import { parseFindingsJSON } from "@/gate/types";
 import { sanitizePromptText, sanitizePromptMultilineText } from "./common";
 import {
     type StepRound,
     getRoundsByStep,
     RoundSelectionSourceUser,
     RoundSelectionSourceAutoFix
-} from "../../db";
+} from "@/gate/db";
 
 /** Approximates Go's `%q` verb for the sanitized strings used in the section. */
 function goQuote(s: string): string {

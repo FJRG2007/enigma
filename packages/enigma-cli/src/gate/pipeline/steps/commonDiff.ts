@@ -10,7 +10,7 @@
  * follow the host OS, matching Go's `filepath.Separator`.
  */
 
-import * as git from "../../git";
+import * as git from "@/gate/git";
 import { sep, basename } from "node:path";
 
 /** OS path separator, matching Go's filepath.Separator. */

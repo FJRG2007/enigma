@@ -13,16 +13,16 @@
  * strictness so a non-object payload falls through to the deterministic fallback.
  */
 
-import { log } from "../../log";
-import * as git from "../../git";
+import { log } from "@/gate/log";
+import * as git from "@/gate/git";
 import { buildHost } from "./host";
-import type { Result } from "../../agent/agent";
-import { detectProvider } from "../../scm/host";
+import type { Result } from "@/gate/agent/agent";
+import { detectProvider } from "@/gate/scm/host";
 import { resolveBranchBaseSHA } from "./commonGit";
-import type { PR, PRContent } from "../../scm/types";
-import { STEP_PR, type StepName } from "../../types";
+import type { PR, PRContent } from "@/gate/scm/types";
+import { STEP_PR, type StepName } from "@/gate/types";
 import { executionContextPromptSection } from "./executionContext";
-import { RELEASE_TYPE_RULE, tightenTitle } from "../../conventional";
+import { RELEASE_TYPE_RULE, tightenTitle } from "@/gate/conventional";
 import { userIntentPromptSection, cleanedUserIntent } from "./intentPrompt";
 import { buildPipelineSummary, buildTestingSummaryForPR } from "./prsummary";
 import { newStepOutcome, type Step, type StepContext, type StepOutcome } from "../types";
@@ -32,7 +32,7 @@ import {
     updateRunPRURL,
     type StepResult,
     type StepRound
-} from "../../db";
+} from "@/gate/db";
 
 /** Returns the message of an unknown thrown value, mirroring Go's `%v`. */
 function errMessage(err: unknown): string {

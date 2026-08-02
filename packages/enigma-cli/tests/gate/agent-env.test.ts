@@ -9,8 +9,8 @@
  */
 import { join } from "node:path";
 import { test, expect } from "bun:test";
-import { gitSafeEnv } from "../../src/gate/agent/env";
-import { GATE_ROLE_ENV_VAR, isGateAgentRun } from "../../src/util";
+import { gitSafeEnv } from "@/gate/agent/env";
+import { GATE_ROLE_ENV_VAR, isGateAgentRun } from "@/util";
 
 test("gitSafeEnv stamps the gate-role marker and keeps git non-interactive", () => {
     const dir = join(process.cwd(), "worktree");

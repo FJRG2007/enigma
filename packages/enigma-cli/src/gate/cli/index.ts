@@ -11,9 +11,9 @@ import { runRunsCli } from "./runs";
 import { runInitCli } from "./init";
 import { runEjectCli } from "./eject";
 import { runRerunCli } from "./rerun";
+import { readConfig } from "@/config";
 import { runDoctorCli } from "./doctor";
 import { runStatusCli } from "./status";
-import { readConfig } from "../../config";
 import { type AxiDaemon } from "./axiEnv";
 import { runDaemonCli, notifyPush, ensureDaemon, isDaemonRunning } from "./daemonCmd";
 

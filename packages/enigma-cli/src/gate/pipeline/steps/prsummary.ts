@@ -13,9 +13,9 @@
  */
 
 import * as path from "node:path";
-import * as types from "../../types";
+import * as types from "@/gate/types";
 import { testEvidenceRoot } from "./evidence";
-import { isFixRound, type StepResult, type StepRound } from "../../db";
+import { isFixRound, type StepResult, type StepRound } from "@/gate/db";
 import { sanitizePromptText, sanitizePromptMultilineText } from "./common";
 import { statSync, readFileSync, openSync, readSync, closeSync, realpathSync } from "node:fs";
 

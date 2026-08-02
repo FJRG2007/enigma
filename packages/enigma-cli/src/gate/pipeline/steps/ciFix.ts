@@ -10,14 +10,14 @@
  * fix prompt is its only consumer in the ported step set.
  */
 
-import { log } from "../../log";
+import { log } from "@/gate/log";
 import type { StepContext } from "../types";
 import { trimLogOutput } from "./ciBitbucket";
-import type { Host, PR } from "../../scm/types";
-import { ERR_UNSUPPORTED } from "../../scm/types";
+import type { Host, PR } from "@/gate/scm/types";
+import { ERR_UNSUPPORTED } from "@/gate/scm/types";
 import { sanitizePromptMultilineText } from "./common";
-import { repoPushURL, updateRunHeadSHA } from "../../db";
-import { redactSecrets, stripAdversarial } from "../../intent/redact";
+import { repoPushURL, updateRunHeadSHA } from "@/gate/db";
+import { redactSecrets, stripAdversarial } from "@/gate/intent/redact";
 import { stepGitRun, stepGitHeadSHA, stepGitLsRemote, stepGitPush } from "./commonExec";
 import { resolveBranchBaseSHA, resolveDefaultBranchTipSHA, normalizedBranchRef } from "./commonGit";
 

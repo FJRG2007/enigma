@@ -7,7 +7,7 @@
  * upstream sets them so long monitoring keeps its API-call profile.
  */
 import { test, expect } from "bun:test";
-import { pollInterval } from "../../src/gate/pipeline/steps/ciChecks";
+import { pollInterval } from "@/gate/pipeline/steps/ciChecks";
 
 const SECOND = 1000;
 const MINUTE = 60 * SECOND;

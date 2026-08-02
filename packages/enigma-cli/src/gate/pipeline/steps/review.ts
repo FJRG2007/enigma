@@ -13,8 +13,8 @@
  * stays here, matching Go's file, and is imported by lint.ts.
  */
 
-import * as git from "../../git";
-import type { Result } from "../../agent/agent";
+import * as git from "@/gate/git";
+import type { Result } from "@/gate/agent/agent";
 import { matchIgnorePattern } from "./commonDiff";
 import { resolveBranchBaseSHA } from "./commonGit";
 import { userIntentPromptSection } from "./intentPrompt";
@@ -30,7 +30,7 @@ import {
     STEP_REVIEW,
     type Findings,
     type StepName
-} from "../../types";
+} from "@/gate/types";
 
 /** Returns the message of an unknown thrown value, mirroring Go's `%w` wrap. */
 function errMessage(err: unknown): string {

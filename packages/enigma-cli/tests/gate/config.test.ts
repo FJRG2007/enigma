@@ -13,7 +13,7 @@ import {
     effectiveRepoConfig,
     CI_TIMEOUT_UNLIMITED,
     DEFAULT_CI_TIMEOUT
-} from "../../src/gate/config";
+} from "@/gate/config";
 
 const repo = (over: Partial<ReturnType<typeof loadRepoFromBytes>> = {}) => ({
     agent: "",

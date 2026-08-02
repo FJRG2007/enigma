@@ -14,15 +14,15 @@
  * grace-period pacing are unaffected. Re-arming only ever extends the deadline.
  */
 
-import { getRun } from "../../db";
+import { getRun } from "@/gate/db";
 import { buildHost } from "./host";
 import { autoFixCI } from "./ciFix";
-import * as scm from "../../scm/types";
+import * as scm from "@/gate/scm/types";
 import * as ciChecks from "./ciChecks";
-import { DEFAULT_CI_TIMEOUT } from "../../config";
-import { type StepName, STEP_CI } from "../../types";
+import { DEFAULT_CI_TIMEOUT } from "@/gate/config";
+import { type StepName, STEP_CI } from "@/gate/types";
 import { resolveDefaultBranchTip } from "./commonGit";
-import { type Provider, detectProvider, PROVIDER_UNKNOWN } from "../../scm/host";
+import { type Provider, detectProvider, PROVIDER_UNKNOWN } from "@/gate/scm/host";
 import { type Step, type StepContext, type StepOutcome, newStepOutcome } from "../types";
 
 /** Minimum wait (ms) before trusting empty CI checks. */

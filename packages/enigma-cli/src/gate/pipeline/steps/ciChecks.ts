@@ -11,8 +11,8 @@
  */
 
 import { type StepOutcome, newStepOutcome } from "../types";
-import { type Check, CHECK_BUCKET_FAIL, CHECK_BUCKET_PENDING } from "../../scm/types";
-import { type Finding, type Findings, ACTION_ASKUSER, marshalFindingsJSON } from "../../types";
+import { type Check, CHECK_BUCKET_FAIL, CHECK_BUCKET_PENDING } from "@/gate/scm/types";
+import { type Finding, type Findings, ACTION_ASKUSER, marshalFindingsJSON } from "@/gate/types";
 
 /** Decoded form of an encoded last-fixed-issues key. */
 interface LastFixedIssues {

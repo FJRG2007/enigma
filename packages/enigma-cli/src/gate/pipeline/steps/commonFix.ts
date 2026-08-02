@@ -9,12 +9,12 @@
  * json.Unmarshal; here `result.output` is already the parsed structured value.
  */
 
-import * as git from "../../git";
-import type { Finding } from "../../types";
-import { updateRunHeadSHA } from "../../db";
-import type { StepName } from "../../types";
+import * as git from "@/gate/git";
+import type { Finding } from "@/gate/types";
+import { updateRunHeadSHA } from "@/gate/db";
+import type { StepName } from "@/gate/types";
 import type { StepContext } from "../types";
-import type { Result } from "../../agent/agent";
+import type { Result } from "@/gate/agent/agent";
 import { normalizedBranchRef } from "./commonGit";
 
 /** Options driving a single executeFixMode invocation. */

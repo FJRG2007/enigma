@@ -14,16 +14,16 @@
  * enigma: move userIntentPromptSection to intent_prompt.ts when it is ported.
  */
 
-import * as git from "../../git";
+import * as git from "@/gate/git";
 import { statSync } from "node:fs";
 import { join, isAbsolute } from "node:path";
 import { commitSummarySchema } from "./commonFix";
 import { resolveBranchBaseSHA } from "./commonGit";
 import { sanitizePromptMultilineText } from "./common";
-import { repoPushURL, updateRunHeadSHA } from "../../db";
-import { redactSecrets, stripAdversarial } from "../../intent/redact";
+import { repoPushURL, updateRunHeadSHA } from "@/gate/db";
+import { redactSecrets, stripAdversarial } from "@/gate/intent/redact";
 import { newStepOutcome, type Step, type StepContext, type StepOutcome } from "../types";
-import { STEP_REBASE, type StepName, type Finding, type Findings, marshalFindingsJSON } from "../../types";
+import { STEP_REBASE, type StepName, type Finding, type Findings, marshalFindingsJSON } from "@/gate/types";
 
 const forkBranchRefPrefix = "refs/remotes/enigma-push/";
 

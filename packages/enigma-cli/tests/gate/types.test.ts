@@ -3,8 +3,8 @@
  * `items` + `requires_human_review` wire keys), filter/exclude/auto-fix/merge,
  * and the fixed 9-step pipeline order. Pure - no filesystem or runtime state.
  */
+import * as types from "@/gate/types";
 import { test, expect } from "bun:test";
-import * as types from "../../src/gate/types";
 
 test("allSteps is the fixed 9-step order", () => {
     expect(types.allSteps()).toEqual(["intent", "rebase", "review", "test", "document", "lint", "push", "pr", "ci"]);

@@ -14,7 +14,7 @@
 
 import { tmpdir } from "node:os";
 import { lstatSync } from "node:fs";
-import type { Evidence } from "../../config";
+import type { Evidence } from "@/gate/config";
 import { join, sep, isAbsolute, normalize } from "node:path";
 
 export function testEvidenceRoot(): string {

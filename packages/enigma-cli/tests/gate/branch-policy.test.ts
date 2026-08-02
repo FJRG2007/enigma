@@ -24,8 +24,8 @@ const CWD = process.cwd();
 // global-config writes into this temp dir.
 const PRIOR_CONFIG_HOME = process.env.ENIGMA_CONFIG_HOME;
 
-const { isProtectedBranch } = await import("../../src/gate/cli/axiDrive");
-const { readConfig, readEnigmaList, updateEnigmaList, CONFIG_DEFAULTS } = await import("../../src/config");
+const { isProtectedBranch } = await import("@/gate/cli/axiDrive");
+const { readConfig, readEnigmaList, updateEnigmaList, CONFIG_DEFAULTS } = await import("@/config");
 
 afterAll(() => {
     process.chdir(CWD);

@@ -9,7 +9,7 @@
  * consumed by `ciFix.ts` when embedding failed-check logs into the fix prompt.
  */
 
-import { parseRepoRef, type RepoRef } from "../../scm/bitbucket";
+import { parseRepoRef, type RepoRef } from "@/gate/scm/bitbucket";
 
 /**
  * Parses a Bitbucket repo reference from the upstream URL, falling back to the

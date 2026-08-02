@@ -15,15 +15,15 @@
 
 import type { StepContext } from "../types";
 import { stepCmd, stepCLIAvailable, type StepCmd } from "./commonExec";
-import { newClientFromEnv, newBitbucketHost, parseRepoRef, type RepoRef } from "../../scm/bitbucket";
-import { newGitLabHost, type Cmd as GitLabCmd, type CmdFactory as GitLabCmdFactory } from "../../scm/gitlab";
+import { newClientFromEnv, newBitbucketHost, parseRepoRef, type RepoRef } from "@/gate/scm/bitbucket";
+import { newGitLabHost, type Cmd as GitLabCmd, type CmdFactory as GitLabCmdFactory } from "@/gate/scm/gitlab";
 import {
     type Provider,
     repoSlug,
     PROVIDER_GITHUB,
     PROVIDER_GITLAB,
     PROVIDER_BITBUCKET
-} from "../../scm/host";
+} from "@/gate/scm/host";
 import {
     type PR,
     type Host,
@@ -32,13 +32,13 @@ import {
     type Capabilities,
     type PRState,
     type MergeableState
-} from "../../scm/types";
+} from "@/gate/scm/types";
 import {
     NewWithFork as newGitHubHostWithFork,
     type Host as GitHubHost,
     type Cmd as GitHubCmd,
     type CmdFactory as GitHubCmdFactory
-} from "../../scm/github";
+} from "@/gate/scm/github";
 
 function errMessage(err: unknown): string {
     return err instanceof Error ? err.message : String(err);

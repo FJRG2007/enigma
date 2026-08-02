@@ -9,7 +9,7 @@
  * with `--body-file -` instead (upstream PR 370).
  */
 import { test, expect } from "bun:test";
-import { New, type Cmd, type CmdFactory } from "../../src/gate/scm/github";
+import { New, type Cmd, type CmdFactory } from "@/gate/scm/github";
 
 interface Invocation {
     args: string[];

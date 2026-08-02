@@ -28,7 +28,7 @@ const {
     startStep,
     completeStepWithStatus,
     getStepsByRun
-} = await import("../../src/gate/db");
+} = await import("@/gate/db");
 
 afterAll(() => rmSync(DIR, { recursive: true, force: true }));
 

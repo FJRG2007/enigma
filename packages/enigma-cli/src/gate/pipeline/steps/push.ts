@@ -10,13 +10,13 @@
  * helpers from Go's `test.go`/`push.go`, inlined here until test.ts is ported.
  */
 
-import * as git from "../../git";
+import * as git from "@/gate/git";
 import { readdirSync } from "node:fs";
-import { redact } from "../../safeurl";
+import { redact } from "@/gate/safeurl";
 import { normalizedBranchRef } from "./commonGit";
 import { runStepShellCommand } from "./commonExec";
-import { STEP_PUSH, type StepName } from "../../types";
-import { repoPushURL, updateRunHeadSHA } from "../../db";
+import { STEP_PUSH, type StepName } from "@/gate/types";
+import { repoPushURL, updateRunHeadSHA } from "@/gate/db";
 import { resolveTestEvidenceLocation } from "./evidence";
 import { join, relative, sep, isAbsolute } from "node:path";
 import { newStepOutcome, type Step, type StepContext, type StepOutcome } from "../types";

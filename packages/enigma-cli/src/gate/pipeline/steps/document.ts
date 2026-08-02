@@ -15,9 +15,9 @@
  * enigma: drop the local commitAgentFixes once commonFix.ts exports it.
  */
 
-import * as git from "../../git";
-import { updateRunHeadSHA } from "../../db";
-import type { Result } from "../../agent/agent";
+import * as git from "@/gate/git";
+import { updateRunHeadSHA } from "@/gate/db";
+import type { Result } from "@/gate/agent/agent";
 import { matchIgnorePattern } from "./commonDiff";
 import { userIntentPromptSection } from "./rebase";
 import { roundHistoryPromptSection } from "./roundHistory";
@@ -33,7 +33,7 @@ import {
     type Findings,
     parseFindingsJSON,
     marshalFindingsJSON
-} from "../../types";
+} from "@/gate/types";
 
 /** DocumentStep updates project documentation to reflect code changes. */
 export class DocumentStep implements Step {

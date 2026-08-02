@@ -17,9 +17,9 @@
 import { Paths } from "../paths";
 import { join } from "node:path";
 import { REMOTE_NAME } from "../init";
+import { readConfig } from "@/config";
 import * as render from "./axiRender";
 import { readFileSync } from "node:fs";
-import { readConfig } from "../../config";
 import type { RunInfo } from "../ipc/protocol";
 import { parseAddFinding, splitLogLines } from "./axiQuery";
 import { field, toonHelp, toonTable, type ToonField } from "../toon";

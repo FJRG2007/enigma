@@ -9,7 +9,7 @@
  * try/catch.
  */
 
-import * as git from "../../git";
+import * as git from "@/gate/git";
 
 /**
  * Returns a usable base SHA for diff/log operations. When baseSHA is the zero ref

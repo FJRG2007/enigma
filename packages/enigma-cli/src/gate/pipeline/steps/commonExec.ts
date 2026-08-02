@@ -12,18 +12,18 @@
  * isolation + whole-tree kill on cancel, mirroring Go's ConfigureShellCommand.
  */
 
-import { redactText } from "../../safeurl";
+import { redactText } from "@/gate/safeurl";
 import type { StepContext } from "../types";
 import { execFile } from "node:child_process";
 import { statSync, type Stats } from "node:fs";
-import { spawnConfigured } from "../../shellenv";
+import { spawnConfigured } from "@/gate/shellenv";
 import { join, sep, extname, delimiter, isAbsolute } from "node:path";
 import {
     type Provider,
     PROVIDER_GITHUB,
     PROVIDER_GITLAB,
     PROVIDER_BITBUCKET
-} from "../../scm/host";
+} from "@/gate/scm/host";
 
 /** Cap on captured subprocess output; git diffs can be large, so generous. */
 const MAX_BUFFER = 256 * 1024 * 1024;

@@ -12,7 +12,7 @@
 
 import type { StepContext } from "../types";
 import { sanitizePromptMultilineText } from "./common";
-import { redactSecrets, stripAdversarial } from "../../intent/redact";
+import { redactSecrets, stripAdversarial } from "@/gate/intent/redact";
 
 /**
  * Returns a prompt fragment describing the inferred user intent for the change

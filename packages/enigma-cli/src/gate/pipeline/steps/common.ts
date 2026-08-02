@@ -12,7 +12,7 @@
  * their single home until review.ts is ported.
  */
 
-export type { Finding, Findings } from "../../types";
+export type { Finding, Findings } from "@/gate/types";
 
 /** JSON Schema for structured findings output (review/lint/document). */
 export const findingsSchema = {
