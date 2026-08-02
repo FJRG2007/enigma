@@ -108,11 +108,22 @@ rights). Provenance needs `id-token: write`, already set in the workflow.
 `publish.yml` also runs on:
 
 - `workflow_dispatch` - manual run from the Actions tab (no tag check).
-- a push to `main` whose head commit message contains `publish:` - convenient
-  for a quick release without cutting a GitHub Release. It still skips cleanly if
-  the version is already on npm, so remember to bump first.
+- a push to `main` whose head commit message contains the publish marker
+  (`publish` followed by a colon) - convenient for a quick release without
+  cutting a GitHub Release by hand. It still skips cleanly if the version is
+  already on npm, so remember to bump first.
 
-A plain push to `main` without `publish:` does not publish; it only runs CI.
+A plain push to `main` without that marker does not publish; it only runs CI.
+
+On these two paths nothing has created the release the binaries are uploaded to,
+so the upload step creates it (tagged `v<version>`, from the pushed commit)
+before uploading. That is not cosmetic: the installed CLI downloads its binary
+from that release, so a version on npm without one cannot run. It also means the
+git tag is cut for you, keeping npm and git in sync.
+
+> Beware when writing commit messages: the trigger matches the marker anywhere in
+> the head commit message, body included. Mentioning it while describing the
+> release process is enough to fire a publish run.
 
 ## Publishing manually (without CI)
 

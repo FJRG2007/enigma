@@ -134,14 +134,29 @@ jobs:
             console.log("checksums.json:", out);
           '
 
-      # Upload the binaries to the Release tagged v<version> (must already exist for a
-      # release trigger; for dispatch/push the tag/release must have been created).
+      # Upload the binaries to the Release tagged v<version>, creating that release when
+      # nothing did it first. A release trigger always has one; the `publish:`-on-push and
+      # workflow_dispatch paths do not, and the upload used to die there with "release not
+      # found" AFTER building every binary, before npm was ever reached. Creating it here
+      # is what makes those two paths self-sufficient, and it is required rather than
+      # cosmetic: the installed CLI downloads its binary from this release, so a version
+      # on npm without one cannot run.
+      #
+      # Creating it with the default GITHUB_TOKEN does NOT re-trigger this workflow -
+      # Actions does not raise events from that token - so there is no second run and no
+      # double publish. The tag is created from the pushed commit as part of this, which
+      # is also what keeps npm and git in sync on the push path.
       - name: Upload binaries to Release
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.meta.outputs.tag }}
         run: |
           shopt -s extglob
-          gh release upload "${{ steps.meta.outputs.tag }}" \
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            echo "no release $TAG yet - creating it from $GITHUB_SHA"
+            gh release create "$TAG" --title "$TAG" --generate-notes --target "$GITHUB_SHA"
+          fi
+          gh release upload "$TAG" \
             packages/enigma-cli/dist-bin/!(*.sha256) --clobber
 
       - name: Determine if version is new
