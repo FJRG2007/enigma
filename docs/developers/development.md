@@ -74,8 +74,11 @@ Skills and memory only persuade the model; correctness is enforced mechanically.
 - `npm run typecheck` - `tsc --noEmit`. Type errors. tsup does not typecheck on
   its own (it only transpiles), so this is the only type gate.
 - `npm run seal` - recompute each skill's content hash (`sha`) into its
-  `skill.json`, and stamp the current CLI version (`cliVersion`) and canonical
-  `provider`. Run this after editing ANY `SKILL.md` or `skill.json` content.
+  `skill.json`, and stamp the current CLI version (`cliVersion`), the canonical
+  `provider`, and `updated` (the last commit that changed the skill's content).
+  It also rewrites `docs/skills-catalog.json`, the catalog the website reads, so
+  expect that file in the diff. Run this after editing ANY `SKILL.md` or
+  `skill.json` content.
 - `npm run check` - integrity gate. Verifies every skill has valid frontmatter,
   a `skill.json`, the managed provider, a `version`, a `cliVersion` that matches
   the current CLI version, and a `sha` that matches the current content. Fails
