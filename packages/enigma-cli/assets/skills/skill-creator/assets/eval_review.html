@@ -9,6 +9,8 @@
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600&family=Lora:wght@400;500&display=swap" rel="stylesheet">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
+    /* An icon never gives up its size to the text beside it: a flex item shrinks by default. */
+    svg { flex-shrink: 0; }
     body { font-family: 'Lora', Georgia, serif; background: #faf9f5; padding: 2rem; color: #141413; }
     h1 { font-family: 'Poppins', sans-serif; margin-bottom: 0.5rem; font-size: 1.5rem; }
     .description { color: #b0aea5; margin-bottom: 1.5rem; font-style: italic; max-width: 900px; }

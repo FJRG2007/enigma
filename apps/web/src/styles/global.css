@@ -10,6 +10,10 @@
 }
 
 * { box-sizing: border-box; }
+/* An icon never gives up its size to the text beside it: a flex item shrinks by default, so a
+   long label in a nav entry or a palette result squeezes the glyph down to a sliver. Every svg
+   on this site is an icon, and the text is what truncates. */
+svg { flex-shrink: 0; }
 html { scroll-behavior: smooth; }
 body {
     margin: 0; color: var(--text); font-family: var(--sans); line-height: 1.6;

@@ -27,6 +27,10 @@
             --shadow-2: 0 18px 40px -22px rgba(0,0,0,0.75);
         }
         * { box-sizing: border-box; }
+        /* An icon never gives up its size to the text beside it. Every svg here is an icon, and
+           a flex item shrinks by default, so an account name or a toast message long enough to
+           fill the row squeezes the glyph down to a sliver. The text is what truncates. */
+        svg { flex-shrink: 0; }
         body {
             margin: 0 auto; color: var(--text); font-family: var(--sans);
             /* Atmospheric depth: a faint amber glow upper-right (the brand accent) and a
