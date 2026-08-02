@@ -142,7 +142,10 @@ sync. Prefer the CI release flow; manual publish is a fallback.
 ## CI summary
 
 - `.github/workflows/ci.yml` - on push to `main` and on every PR: `npm ci`,
-  `npm run verify`, `npm run build`. This is the merge gate.
+  `npm run verify`, the `bun test` suites (one step per test file, so a new
+  `tests/*.test.ts` only runs in CI once it is listed there), and
+  `npm run build`. A second `linter` job gates `@enigmax/linter` and runs the
+  Ciphera-style lint over the diff's changed lines. This is the merge gate.
 - `.github/workflows/publish.yml` - on release / dispatch / `publish:` push:
   verify, build, tag-vs-version check (releases only), skip-if-already-published,
   then `npm publish`.
