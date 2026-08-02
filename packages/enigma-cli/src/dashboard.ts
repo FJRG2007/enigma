@@ -73,6 +73,8 @@ const LOOPBACK = "127.0.0.1";
 const HOSTNAME = "enigma";
 /** Try :80 first (pretty URL, no port), then a high fallback, then an ephemeral port. */
 const PORTS: readonly number[] = [80, 24282];
+/** What `/health` calls itself, so a liveness probe can tell this server from any other. */
+const HEALTH_SERVICE = "enigma-dashboard";
 const HOSTS_MARKER = "# enigma-dashboard (managed by enigma; remove to disable http://enigma)";
 
 // --- hosts file -----------------------------------------------------------------
@@ -1099,7 +1101,10 @@ function createDashboardServer(version: string): Server {
         if (url === "/api/provider-status") { void serveProviderStatus(req, res); return; }
         if (url === "/health") {
             res.writeHead(200, { "Content-Type": "application/json" });
-            res.end(JSON.stringify({ status: "ok", version }));
+            // `service` is the marker the CLI's liveness probe matches on, so a foreign listener
+            // that happens to hold the port cannot pass for the dashboard. The pid goes only to
+            // same-machine callers: it names the process to stop, and is nobody else's business.
+            res.end(JSON.stringify({ status: "ok", service: HEALTH_SERVICE, version, pid: isLocalRequest(req) ? process.pid : undefined }));
             return;
         }
         res.writeHead(404, { "Content-Type": "text/plain" });
@@ -1188,8 +1193,18 @@ export function tokenizedUrl(url: string, token: string | null): string {
  * respawned behind the user's back. Doing that to a foreground run orphans it - the terminal is
  * freed and Ctrl+C no longer reaches anything. Records written before the field existed are
  * treated as daemons, which is what they were.
+ *
+ * `beat` is refreshed by the serving process while it lives (see publishDashboard). A pid alone
+ * is not an identity - the OS recycles it the moment the dashboard dies - so the heartbeat is
+ * what a record needs to still be believed. Absent on records written before the field existed.
  */
-export interface DaemonRecord { pid: number; port: number; url: string; startedAt: number; kind?: "daemon" | "foreground"; }
+export interface DaemonRecord { pid: number; port: number; url: string; startedAt: number; kind?: "daemon" | "foreground"; beat?: number; }
+
+/** How often the serving process refreshes its record, and how long a record outlives a beat. */
+const BEAT_MS = 20_000;
+const BEAT_STALE_MS = 120_000;
+/** A dashboard on this machine answers `/health` well inside this; past it, nothing is there. */
+const PROBE_MS = 800;
 
 /** Whether a record describes the detached daemon rather than a foreground run. */
 export function isDaemonRecord(rec: DaemonRecord): boolean { return rec.kind !== "foreground"; }
@@ -1243,7 +1258,70 @@ function isProcessAlive(pid: number): boolean {
 export function runningDaemon(): DaemonRecord | null {
     const rec = readDaemon();
     if (!rec) return null;
-    if (isProcessAlive(rec.pid)) return rec;
+    // A live pid is necessary but NOT sufficient. Pids are recycled - aggressively so on Windows -
+    // and a record whose process died points at whatever inherited the number next, which is how
+    // `enigma dashboard` came to announce a dashboard "already running" on a URL that answered
+    // nothing, and how `dashboard stop` could kill the innocent process that inherited it. The
+    // heartbeat cannot be forged by that process, so it is what makes the record expire.
+    // A record written before the field existed has no beat and keeps the old pid-only behaviour
+    // until its process is replaced; liveDashboard() is what settles those authoritatively.
+    const fresh = rec.beat === undefined || Date.now() - rec.beat < BEAT_STALE_MS;
+    if (isProcessAlive(rec.pid) && fresh) return rec;
+    clearDaemon();
+    return null;
+}
+
+/**
+ * Publish this process as the one serving the dashboard, and keep the record provably fresh
+ * until it stops. Returns the teardown to run on shutdown. The timer is unref'd: the http
+ * server is what keeps the process alive, and a heartbeat must never be the reason it lingers.
+ */
+export function publishDashboard(rec: Omit<DaemonRecord, "beat">): () => void {
+    const beat = (): void => writeDaemon({ ...rec, beat: Date.now() });
+    beat();
+    const timer = setInterval(beat, BEAT_MS);
+    timer.unref?.();
+    return () => { clearInterval(timer); clearDaemon(); };
+}
+
+/** Addresses to ask whether a record is still serving: loopback first, then its own URL. */
+function probeUrls(rec: DaemonRecord): string[] {
+    const local = `http://127.0.0.1:${rec.port}/health`;
+    const own = `${rec.url.replace(/\/$/, "")}/health`;
+    // Loopback answers a default bind without touching DNS or the hosts entry; the record's own
+    // URL is the fallback that covers an exposed bind, which does not listen on 127.0.0.1 at all.
+    return own === local ? [local] : [local, own];
+}
+
+/**
+ * Ask the recorded server whether it is really there. `/health` needs no token (it carries no
+ * data) and names the service, so neither a dead record nor a foreign listener holding the port
+ * can pass for the dashboard. Same-machine callers also get the pid back, which catches the last
+ * case: a recycled record pid while a DIFFERENT dashboard answers on that port.
+ */
+async function probeDashboard(rec: DaemonRecord): Promise<boolean> {
+    for (const url of probeUrls(rec)) {
+        try {
+            const res = await fetch(url, { signal: AbortSignal.timeout(PROBE_MS) });
+            if (!res.ok) continue;
+            const body = await res.json() as { service?: string; pid?: number; };
+            if (body.service !== HEALTH_SERVICE) continue;
+            return body.pid === undefined || body.pid === rec.pid;
+        } catch { /* not answering on this address - try the next one */ }
+    }
+    return false;
+}
+
+/**
+ * The record ONLY if it still answers as this dashboard; a phantom record is cleaned up. This is
+ * the authoritative check and the one the user-facing commands use: `runningDaemon()` stays
+ * synchronous for the callers that cannot await, but only an answer from the port itself proves
+ * a dashboard is there. Costs one loopback request.
+ */
+export async function liveDashboard(): Promise<DaemonRecord | null> {
+    const rec = runningDaemon();
+    if (!rec) return null;
+    if (await probeDashboard(rec)) return rec;
     clearDaemon();
     return null;
 }
@@ -1285,6 +1363,20 @@ export function stopDashboardDaemon(): DaemonRecord | null {
 }
 
 /**
+ * Verify-then-kill twin of stopDashboardDaemon, for the callers that can await. Killing by pid
+ * on a record's word alone is how an unrelated process that inherited the number gets shot; the
+ * probe means nothing is signalled unless a dashboard actually answers there. The synchronous
+ * version stays for `applyDashboardMode`, which is called from write paths that cannot await.
+ */
+export async function stopDashboard(): Promise<DaemonRecord | null> {
+    const rec = await liveDashboard();
+    if (!rec) { clearDaemon(); return null; }
+    try { process.kill(rec.pid); } catch { /* already gone */ }
+    clearDaemon();
+    return rec;
+}
+
+/**
  * Restart a running dashboard daemon on the freshly installed binary. Called at the end of
  * `enigma update`: an `always`-mode daemon is a long-lived process still running the PRE-update
  * binary (with its version baked in at spawn), so without this it keeps serving the old page and
@@ -1305,6 +1397,12 @@ export function restartDashboardDaemon(): boolean {
     // process. An update leaves a foreground run alone; it picks up the new version when the
     // user restarts it.
     if (!isDaemonRecord(running)) return false;
+    // Only `always` owns a background daemon. Under on-demand (or off) a daemon record is a
+    // leftover - an earlier `always`, or a crash - and respawning it hands that user a permanent
+    // detached server they never asked for, on a fresh port every update because the previous one
+    // is often still holding 24282. That is how a single machine ends up with several dashboards
+    // and an `enigma dashboard` that reports a different URL each time it is run.
+    if (conf.readConfig().config.dashboard !== "always") return false;
     stopDashboardDaemon();
     try {
         // The child inherits THIS process's env, and during `enigma update` that env carries
@@ -1347,12 +1445,12 @@ export async function serveDashboardDaemon(version: string): Promise<void> {
         return;
     }
     clearDaemonError();
-    writeDaemon({ pid: process.pid, port: server.port, url: server.url, startedAt: Date.now(), kind: "daemon" });
+    const unpublish = publishDashboard({ pid: process.pid, port: server.port, url: server.url, startedAt: Date.now(), kind: "daemon" });
     // Block until a shutdown signal. Without this the function would return, run() would resolve,
     // and the bin entry's process.exit() would kill the daemon the instant after it bound its port
     // (the pidfile is written but nothing ever answers). The MCP server stays alive the same way.
     await new Promise<void>((resolve) => {
-        const shutdown = (): void => { clearDaemon(); server.close(); resolve(); };
+        const shutdown = (): void => { unpublish(); server.close(); resolve(); };
         process.on("SIGTERM", shutdown);
         process.on("SIGINT", shutdown);
     });

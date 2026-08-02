@@ -21,7 +21,30 @@ process.env.ENIGMA_PACKS_DIR = join(HOME, "packs");
 process.env.ENIGMA_HELIO_ASSETS = join(__dirname, "..", "..", "helio", "assets");
 
 const { startDashboardServer, dashboardUrl, runningDaemon, removeHostsEntry, restartDashboardDaemon } = await import("../src/dashboard");
+const { liveDashboard, stopDashboard, publishDashboard } = await import("../src/dashboard");
+const { setEnigmaValue, readConfig } = await import("../src/config");
 const { recordStats } = await import("../src/compress/ccr");
+
+/** A port nothing is listening on: bind an ephemeral one, note it, hand it back to the OS. */
+async function freePort(): Promise<number> {
+    const { createServer } = await import("node:net");
+    const probe = createServer();
+    await new Promise<void>((res) => probe.listen(0, "127.0.0.1", () => res()));
+    const port = (probe.address() as { port: number; }).port;
+    await new Promise<void>((res) => probe.close(() => res()));
+    return port;
+}
+
+/** A live process that is emphatically NOT the dashboard, standing in for a recycled pid. */
+function decoy(): { pid: number; alive: () => boolean; kill: () => void; } {
+    const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 30000)"], { stdio: "ignore" });
+    child.on("error", () => { /* the assertions fail on their own if it never started */ });
+    return {
+        pid: child.pid!,
+        alive: () => { try { process.kill(child.pid!, 0); return true; } catch { return false; } },
+        kill: () => child.kill(),
+    };
+}
 
 afterAll(() => rmSync(HOME, { recursive: true, force: true }));
 
@@ -380,6 +403,80 @@ test("dashboardUrl omits the port only on :80", () => {
     expect(dashboardUrl(80)).not.toContain(":80");
     expect(dashboardUrl(24282)).toContain(":24282");
     expect(dashboardUrl(24282)).toMatch(/^http:\/\//);
+});
+
+test("a record whose port answers nothing is a phantom, not a running dashboard", async () => {
+    // The bug this guards: a pid is only a number, and once the dashboard dies the OS hands that
+    // number to the next process. The record then names a LIVE pid, so the old liveness probe
+    // said "already running" and `enigma dashboard` printed a URL that answered nothing - which
+    // is what made opening the dashboard work only sometimes.
+    const d = decoy();
+    try {
+        publishDashboard({ pid: d.pid, port: await freePort(), url: "http://localhost:1", startedAt: Date.now(), kind: "daemon" });
+        expect(runningDaemon()).not.toBeNull();       // the pid IS alive - that was never the question
+        expect(await liveDashboard()).toBeNull();     // but nothing serves there
+        expect(existsSync(join(homedir(), ".enigma", "dashboard.json"))).toBe(false);
+    } finally {
+        d.kill();
+    }
+});
+
+test("stopDashboard refuses to kill a process that only inherited the pid", async () => {
+    const d = decoy();
+    try {
+        publishDashboard({ pid: d.pid, port: await freePort(), url: "http://localhost:1", startedAt: Date.now(), kind: "daemon" });
+        expect(await stopDashboard()).toBeNull();
+        expect(d.alive()).toBe(true);
+    } finally {
+        d.kill();
+    }
+});
+
+test("liveDashboard confirms a server that really is serving", async () => {
+    const server = await startDashboardServer("probe-version");
+    const stop = publishDashboard({ pid: process.pid, port: server.port, url: server.url, startedAt: Date.now(), kind: "foreground" });
+    try {
+        const live = await liveDashboard();
+        expect(live?.port).toBe(server.port);
+        // /health names the service so a foreign listener on the port cannot pass for it.
+        const health = await (await fetch(`http://127.0.0.1:${server.port}/health`)).json() as { service: string; pid: number; };
+        expect(health.service).toBe("enigma-dashboard");
+        expect(health.pid).toBe(process.pid);
+    } finally {
+        stop();
+        server.close();
+    }
+});
+
+test("a record whose heartbeat stopped reads as not running", () => {
+    const d = decoy();
+    try {
+        // Same live pid, but the beat is older than the window: the process that wrote it is gone.
+        writeFileSync(
+            join(homedir(), ".enigma", "dashboard.json"),
+            JSON.stringify({ pid: d.pid, port: 80, url: "http://enigma", startedAt: 1, kind: "daemon", beat: Date.now() - 600_000 }),
+        );
+        expect(runningDaemon()).toBeNull();
+    } finally {
+        d.kill();
+    }
+});
+
+test("restartDashboardDaemon does not resurrect a daemon under on-demand", () => {
+    // `enigma update` restarts the daemon so it picks up the new binary. Only `always` has one:
+    // doing it under on-demand turns a leftover record into a permanent background server on a
+    // fresh port, which is how one machine ends up with several dashboards fighting for 24282.
+    const previous = readConfig().config.dashboard;
+    const d = decoy();
+    try {
+        setEnigmaValue("dashboard", "on-demand", "global");
+        publishDashboard({ pid: d.pid, port: 80, url: "http://enigma", startedAt: Date.now(), kind: "daemon" });
+        expect(restartDashboardDaemon()).toBe(false);
+        expect(d.alive()).toBe(true);
+    } finally {
+        setEnigmaValue("dashboard", previous, "global");
+        d.kill();
+    }
 });
 
 test("a stale daemon pidfile reads as not running and is cleaned up", () => {

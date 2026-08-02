@@ -1635,7 +1635,7 @@ async function resolveHeadlessBind(expose: boolean): Promise<DashboardBind | nul
 async function runDashboardCli(version: string, opts: CliOptions): Promise<number> {
     const mode = readConfig().config.dashboard;
     if (opts.positionals[0] === "token") return runDashboardTokenCli(opts);
-    if (opts.positionals[0] === "stop") return runDashboardStopCli();
+    if (opts.positionals[0] === "stop") return await runDashboardStopCli();
     // The UI bundle (@enigmax/dashboard) ships separately and is fetched on demand. If it
     // is not present yet, install it now so the first open shows the real page, not the
     // fallback. Best-effort: offline just serves the fallback until a later run succeeds.
@@ -1655,8 +1655,10 @@ async function runDashboardCli(version: string, opts: CliOptions): Promise<numbe
     if (failure && mode === "always") console.error(`Note: the background dashboard is not running: ${failure}`);
     // Only one dashboard at a time: if one is already serving (the "always" daemon OR
     // another foreground `enigma dashboard`), open its URL instead of starting a second
-    // server on a different port. Stale records are cleaned by runningDaemon().
-    const running = dash.runningDaemon();
+    // server on a different port. This asks the recorded port to answer rather than trusting
+    // the record: a pid outlives its process only as a number, and announcing a dashboard on a
+    // URL that answers nothing is worse than starting one. A phantom record is cleaned up here.
+    const running = await dash.liveDashboard();
     if (running) {
         // A live server cannot move to another interface, so --expose cannot be honoured here.
         // Say so instead of printing a loopback URL and exiting 0: with `dashboard: always`
@@ -1693,7 +1695,7 @@ async function runDashboardCli(version: string, opts: CliOptions): Promise<numbe
     catch (err) { console.error(`Could not start the dashboard: ${(err as Error).message}`); return 1; }
     // Publish a record of this foreground server so a second invocation finds it and
     // defers instead of spawning another. Cleared on exit (and self-healed if we crash).
-    dash.writeDaemon({ pid: process.pid, port: server.port, url: server.url, startedAt: Date.now(), kind: "foreground" });
+    const unpublish = dash.publishDashboard({ pid: process.pid, port: server.port, url: server.url, startedAt: Date.now(), kind: "foreground" });
     if (server.bind.token) {
         // The tokenized URL is the only way in, and on a headless host the terminal is the
         // only channel we have to deliver it.
@@ -1706,7 +1708,7 @@ async function runDashboardCli(version: string, opts: CliOptions): Promise<numbe
     console.log("Press Ctrl+C to stop.");
     openUrl(dash.tokenizedUrl(server.url, server.bind.token));
     return await new Promise<number>((resolveExit) => {
-        const stop = (): void => { dash.clearDaemon(); server.close(); resolveExit(0); };
+        const stop = (): void => { unpublish(); server.close(); resolveExit(0); };
         process.on("SIGINT", stop);
         process.on("SIGTERM", stop);
     });
@@ -1719,8 +1721,8 @@ async function runDashboardCli(version: string, opts: CliOptions): Promise<numbe
  * and turns the feature off. Leaves the mode setting alone: an `always` daemon comes back on the
  * next `enigma dashboard` or reboot.
  */
-function runDashboardStopCli(): number {
-    const stopped = dash.stopDashboardDaemon();
+async function runDashboardStopCli(): Promise<number> {
+    const stopped = await dash.stopDashboard();
     if (!stopped) { console.log("No dashboard is running."); return 0; }
     console.log(`Stopped the dashboard on ${stopped.url} (pid ${stopped.pid}).`);
     if (readConfig().config.dashboard === "always") console.log("The dashboard setting is 'always', so it starts again on the next 'enigma dashboard' or reboot. Turn it off with 'enigma config dashboard on-demand'.");
