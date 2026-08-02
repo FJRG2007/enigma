@@ -11,13 +11,11 @@
  * own policy skills (different provider, tracked in the project skills lock).
  */
 import { homedir } from "node:os";
-import { fileURLToPath } from "node:url";
-import { join, resolve, dirname } from "node:path";
+import { join, resolve } from "node:path";
+import { ASSETS_DIR } from "./assets-dir";
 import { readFileSync, existsSync, readdirSync } from "node:fs";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const ASSETS = process.env.ENIGMA_ASSETS_DIR ?? join(resolve(__dirname, ".."), "assets");
-const MAP_PATH = join(ASSETS, "autoskills", "skills-map.json");
+const MAP_PATH = join(ASSETS_DIR, "autoskills", "skills-map.json");
 
 // ── Dataset types (mirror of the bundled JSON) ───────────────
 

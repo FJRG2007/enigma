@@ -9,20 +9,16 @@
  * applyCompressToggle in the light mcp-deploy module.
  */
 
+import { join } from "node:path";
 import { AGENTS } from "./agents";
 import { readConfig } from "./config";
-import { fileURLToPath } from "node:url";
-import { dirname, join, resolve } from "node:path";
+import { ASSETS_DIR } from "./assets-dir";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 
 type Scope = "global" | "local";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-// gate.md ships under assets/commands; the launcher points ENIGMA_ASSETS_DIR at the
-// real assets in the compiled binary, with the package path as the dev/tsx fallback
-// (mirrors skills.ts ASSETS resolution - duplicated here to avoid importing skills.ts).
-const ASSETS = process.env.ENIGMA_ASSETS_DIR ?? join(resolve(__dirname, ".."), "assets");
-const GATE_SRC = join(ASSETS, "commands", "gate.md");
+// gate.md ships under assets/commands - see assets-dir.ts for how that root is resolved.
+const GATE_SRC = join(ASSETS_DIR, "commands", "gate.md");
 const GATE_FILE = "gate.md";
 
 /**

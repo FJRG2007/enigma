@@ -16,6 +16,7 @@
 import { homedir } from "node:os";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
+import { ASSETS_DIR } from "./assets-dir";
 import { parseSkillRef } from "./autoskills";
 import type { SkillEntry } from "./autoskills";
 import { join, dirname, resolve } from "node:path";
@@ -25,7 +26,7 @@ import { existsSync, mkdirSync, writeFileSync, readFileSync, rmSync, readdirSync
 // not pulled from a third-party registry. The CLI reads a bundled in-repo copy
 // offline-first (when present under ASSETS/skills-registry), otherwise fetches from
 // enigma's raw URL. Override the origin with ENIGMA_AUTOSKILLS_REGISTRY.
-const SKILLS_ROOT = process.env.ENIGMA_ASSETS_DIR ?? join(resolve(dirname(fileURLToPath(import.meta.url)), ".."), "assets");
+const SKILLS_ROOT = ASSETS_DIR;
 const REGISTRY_MAIN = process.env.ENIGMA_AUTOSKILLS_REGISTRY
     ?? "https://raw.githubusercontent.com/FJRG2007/enigma/main/assets/skills-registry";
 const FETCH_TIMEOUT_MS = 15000;

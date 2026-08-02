@@ -10,6 +10,7 @@ import * as p from "@clack/prompts";
 import { getTool } from "./accounts";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
+import { ASSETS_DIR } from "./assets-dir";
 import { clackReporter } from "./reporter";
 import type { Reporter } from "./reporter";
 import { maybeOfferGitHooks } from "./security";
@@ -19,26 +20,25 @@ import { execFileSync } from "node:child_process";
 import type { SecurityOptions } from "./security";
 import { dirname, join, resolve } from "node:path";
 import { applyLintWiring, mirrorLintWiring } from "./lint";
-import { applyTrimWiring, mirrorTrimWiring } from "./trim-deploy";
-import { applyVerifyWiring, isVerifyOn, mirrorVerifyWiring } from "./verify-deploy";
-import { applyGuardrailsWiring, mirrorGuardrailsWiring } from "./guardrails-deploy";
 import type { RemoteRefreshResult } from "./skills-remote";
 import { setGhTelemetry, starRepoInBackground } from "./github";
+import { applyTrimWiring, mirrorTrimWiring } from "./trim-deploy";
 import type { Agent, AgentTarget, DiscoveredAgent } from "./agents";
 import { applyMcpForAgent, applyMcpForAccount } from "./mcp-deploy";
 import { isDir, isNewer, readJson, listFilesRel, computeContentSha } from "./util";
+import { applyVerifyWiring, isVerifyOn, mirrorVerifyWiring } from "./verify-deploy";
+import { applyGuardrailsWiring, mirrorGuardrailsWiring } from "./guardrails-deploy";
 import { resolveBypassSelection, applyBypass, mirrorAccountSettings } from "./permissions";
 import { cachedRemoteSkills, refreshRemoteSkills, shouldCheckRemote } from "./skills-remote";
-import { disableClaudeAttribution, disableClaudeFeedbackSurvey, enableClaudeStatusline, getClaudeTrust, setClaudeTrust } from "./claude";
 import { existsSync, readdirSync, readFileSync, writeFileSync, statSync, cpSync, mkdirSync, rmSync } from "node:fs";
 import { AGENTS, MANAGED_PROVIDER, isManagedProvider, discoverAgents, runningStatus, localTargetsAt } from "./agents";
+import { disableClaudeAttribution, disableClaudeFeedbackSurvey, enableClaudeStatusline, getClaudeTrust, setClaudeTrust } from "./claude";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PKG_ROOT = resolve(__dirname, "..");
-// In the compiled binary the assets are not on disk next to the code (they live in
-// Bun's virtual fs); the launcher points ENIGMA_ASSETS_DIR at the real assets shipped
-// in the main npm package. The __dirname path stays as the dev/tsx fallback.
-const ASSETS = process.env.ENIGMA_ASSETS_DIR ?? join(PKG_ROOT, "assets");
+// Assets beside the code when they are on disk (dev/tsx, dist), else the launcher's
+// ENIGMA_ASSETS_DIR for the compiled binary - see assets-dir.ts.
+const ASSETS = ASSETS_DIR;
 export const SKILLS_ROOT = join(ASSETS, "skills");
 export const MEMORY_ROOT = join(ASSETS, "memory");
 export const COMMANDS_ROOT = join(ASSETS, "commands");
