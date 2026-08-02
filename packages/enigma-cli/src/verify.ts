@@ -32,19 +32,21 @@
 
 import { createHash } from "node:crypto";
 import { join, extname } from "node:path";
-import { enigmaHome, readJson, isGateAgentRun } from "./util";
 import { readConfigAt, readGlobalConfig } from "./config";
 import { lastAssistantMessage } from "./claude-transcripts";
 import { execFileSync, spawnSync } from "node:child_process";
+import { enigmaHome, readJson, isGateAgentRun } from "./util";
+import { checkFile, findProjectRoot, recordFindings, type Finding } from "./guardrails";
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, statSync, writeFileSync } from "node:fs";
 
 /** One piece of evidence that the work is not finished. */
 export interface VerifyGap {
     /**
      * `marker` = an incompleteness marker in produced code; `command` = the project's check
-     * failed; `stop-short` = the turn ended asking permission to continue instead of continuing.
+     * failed; `stop-short` = the turn ended asking permission to continue instead of continuing;
+     * `convention` = a guardrail rule the produced code breaks (see scanConventions).
      */
-    kind: "marker" | "command" | "stop-short";
+    kind: "marker" | "command" | "stop-short" | "convention";
     file?: string;
     line?: number;
     detail: string;
@@ -463,6 +465,106 @@ export function scanGaps(cwd: string, all = false): VerifyGap[] {
     return scanEvidence(cwd, all).gaps;
 }
 
+// --- conventions: the rules the produced code breaks -----------------------------------
+//
+// WHY THIS IS HERE AND NOT ONLY IN THE POST-EDIT HOOK. The guardrails engine runs per edit over a
+// WHOLE file, which forces every rule to be precise enough that a repository's existing code never
+// fires it - and a convention whose defect is already common (a mutation that waits for the server
+// before touching the UI, measured in 116 of 140 mutating UI files) cannot meet that bar, so it
+// simply had no gate at all. It also has no way to reach the model with a WARNING: a warn exits 0,
+// which the hook prints to stdout and the model never sees, so a suggestion is a suggestion nobody
+// receives.
+//
+// Running the same rules over the lines the change ADDED fixes both. There is no legacy backlog by
+// construction, so a rule may be as demanding as the convention actually is, and the turn-end hook
+// can deny the stop - which is the only channel that reaches the model at all. The cost is one
+// diff per turn that produced code, and nothing when it produced none.
+
+/** How many files one sweep will open, so a large branch cannot stall the end of a turn. */
+const MAX_CONVENTION_FILES = 200;
+
+/** A convention sweep: the gaps to report, and the findings behind them for the ledger. */
+export interface ConventionScan {
+    /** Blocking violations: these deny the stop. */
+    gaps: VerifyGap[];
+    /** Advisory findings, carried along when a block already fires - a warn never denies a stop. */
+    notes: VerifyGap[];
+    /** Everything found, for the ledger. */
+    findings: Finding[];
+}
+
+/**
+ * Guardrail violations on lines this change ADDED. Reported as gaps so they travel through the
+ * same block, budget and message machinery as every other piece of evidence.
+ *
+ * Intersecting findings with the added lines is the ratchet the changed-line linter uses: a
+ * violation that was already in the file is not this change's to answer for, and blocking on one
+ * is how a gate gets switched off. A finding with no line (a whole-file budget, a project-level
+ * check) is deliberately dropped here - it is not anchored to anything the change added, and the
+ * post-edit hook already owns it.
+ *
+ * SEVERITY IS NOT REDEFINED HERE, deliberately. It would have been easy to let this channel deny
+ * the stop over a warning too - the turn-end hook is the only one that can reach the model at all,
+ * and every warn rule is otherwise printed into the void. But a warn is advisory BY DESIGN (use
+ * fuse.js for that search box, consider AI Elements for that chat), and a gate that stops a turn
+ * over advice is a gate that gets switched off, which costs the blocking rules too. So a warn
+ * rides along in the message when something blocking already fired, and is always recorded in the
+ * ledger - and a convention that genuinely must not be skipped is expressed the honest way, by
+ * being a `block` rule. The diff stage is what makes that affordable: a demanding rule can only
+ * fire on code the current change added.
+ */
+export function scanConventions(cwd: string, scanned?: ScannedLines): ConventionScan {
+    const empty: ConventionScan = { gaps: [], notes: [], findings: [] };
+    if (readConfigAt(cwd).guardrails === false) return empty;
+    const lines = (scanned ?? addedLines(cwd)).lines;
+    if (!lines.length) return empty;
+    const added = new Map<string, Set<number>>();
+    for (const entry of lines) {
+        if (IGNORE_RE.test(entry.text)) continue;
+        let set = added.get(entry.file);
+        if (!set) { set = new Set(); added.set(entry.file, set); }
+        set.add(entry.line);
+    }
+    const scan: ConventionScan = { gaps: [], notes: [], findings: [] };
+    let files = 0;
+    for (const [file, numbers] of added) {
+        if (++files > MAX_CONVENTION_FILES) break;
+        const text = readTextFile(join(cwd, file), MAX_UNTRACKED_BYTES);
+        if (text === null) continue;
+        let findings: Finding[];
+        // The engine is deliberately self-contained and never throws for a bad rule, but a
+        // hand-authored custom rule is still user input reaching a turn-end hook: a failure here
+        // must cost the sweep, never the turn.
+        try { findings = checkFile(file, text, findProjectRoot(join(cwd, file)), "diff"); }
+        catch { continue; }
+        for (const f of findings) {
+            if (!f.line || !numbers.has(f.line)) continue;
+            const gap: VerifyGap = { kind: "convention", file, line: f.line, detail: `${f.ruleId}: ${f.message}` };
+            (f.severity === "block" ? scan.gaps : scan.notes).push(gap);
+            scan.findings.push(f);
+            if (scan.gaps.length + scan.notes.length >= MAX_GAPS) return scan;
+        }
+    }
+    return scan;
+}
+
+/**
+ * The message fed back when the produced code breaks a convention. It states the rule, and it
+ * states the two ways out - fix it, or mark the line - because a gate with no exit is a gate that
+ * gets disabled the first time it is wrong.
+ */
+function conventionMessage(gaps: VerifyGap[], notes: VerifyGap[] = []): string {
+    return [
+        "enigma verify: STOP. The code this change added breaks conventions this project enforces:",
+        "",
+        formatGaps(gaps),
+        ...(notes.length ? ["", "Also flagged as suggestions on the same change (not blocking, worth doing while you are here):", formatGaps(notes)] : []),
+        "",
+        "These are not style preferences: each one is a rule that was written down because the defect kept shipping, and each was measured against real code before it was turned on. You wrote these lines in this turn, so they are yours to fix now - not in a follow-up, and not by mentioning them in your reply.",
+        "Fix every finding above, then end the turn. If one of them is genuinely wrong for this code - the operation really does need the server's answer first, the design really does call for the other shape - mark that specific line with the escape hatch the rule names (an `enigma:` note) and say in your reply which one you marked and why. Silently leaving it is the one option that is not available.",
+    ].join("\n");
+}
+
 /**
  * Run the project's own verification command and report a gap when it fails. Read from
  * the GLOBAL config only: a repo-local .enigma.json travels with a clone, so honouring
@@ -519,8 +621,11 @@ export interface VerifyScan {
  * covers the whole branch, so on any branch with earlier commits it is always positive and
  * every conversational turn would have paid.
  */
-export function collectGaps(cwd: string, opts: { all?: boolean; runCommand?: boolean; } = {}): VerifyScan {
+export function collectGaps(cwd: string, opts: { all?: boolean; runCommand?: boolean; conventions?: boolean; } = {}): VerifyScan {
     const scan = scanEvidence(cwd, opts.all === true);
+    // The CLI asks for these; the hook runs the sweep itself, before the claim path, because a
+    // broken convention has to be reported whether or not the turn claimed anything.
+    if (opts.conventions) scan.gaps.push(...scanConventions(cwd).gaps);
     const produced = scan.scanned > 0 && (opts.all === true || hasNewWork(cwd));
     const command = opts.runCommand === false || !produced ? "" : verifyCommandOf();
     if (command) {
@@ -687,6 +792,28 @@ export function runVerifyHook(payload?: string): number {
         if (!mayBlock(issueKey(session, [asked]), session)) return 0;
         process.stderr.write(`${stopShortMessage(question)}\n`);
         return 2;
+    }
+    // Conventions are checked whether or not the turn claims anything. A claim is what makes an
+    // UNFINISHED item a lie, but a rule broken in the produced code is a defect on its own - and
+    // this is the only channel that reaches the model with one, since the post-edit hook can print
+    // a warning but never feed it back. Checked before the claim path so the concrete, fixable
+    // finding is what the model gets first.
+    const conventions = scanConventions(cwd);
+    if (conventions.findings.length) {
+        // Recorded either way, and that is the point of the ledger: a finding the loop-safety
+        // budget stood down on - or one that was only ever advisory - is a rule the agent got away
+        // with skipping, which is exactly what was previously invisible. mayBlock has a side
+        // effect, so it is called once, and only when there is something blocking to spend it on.
+        const blocking = conventions.gaps.length > 0 && mayBlock(issueKey(session, conventions.gaps), session);
+        // Per FINDING, not per turn: an advisory finding that merely rode along in a blocking
+        // message was never enforced, and recording it as "blocked" would overstate the one column
+        // the ledger exists for - what the agent was actually stopped over.
+        recordFindings(conventions.findings.filter((f) => f.severity === "block"), blocking ? "blocked" : "warned", "diff");
+        recordFindings(conventions.findings.filter((f) => f.severity === "warn"), "warned", "diff");
+        if (blocking) {
+            process.stderr.write(`${conventionMessage(conventions.gaps, conventions.notes)}\n`);
+            return 2;
+        }
     }
     if (!claimsDone(message)) return 0;
 

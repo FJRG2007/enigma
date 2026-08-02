@@ -24,9 +24,12 @@ import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 import { basename, dirname, join, resolve, sep } from "node:path";
-import { readFileSync, writeFileSync, statSync, existsSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync, statSync, existsSync } from "node:fs";
 
 export type Severity = "block" | "warn";
+
+/** When a rule runs: on the edited file, or over the lines a change added (see GuardrailRule.stage). */
+export type Stage = "edit" | "diff";
 
 /** A line whose trimmed start is a comment - the pattern scan skips these to avoid false positives. */
 const COMMENT_LINE = /^\s*(\/\/|#|\*|--|<!--|\{?\/\*)/;
@@ -47,6 +50,17 @@ export interface GuardrailRule {
      */
     ignoreFileCase?: boolean;
     scope: "file" | "project";
+    /**
+     * WHEN the rule runs. "edit" (the default) is the post-edit hook and the commit backstop,
+     * which see a WHOLE file - so a rule there has to be precise enough that a repository's
+     * pre-existing code does not fire it, or it blocks every unrelated edit and gets switched off.
+     *
+     * "diff" runs ONLY in the turn-end sweep, against the lines the current change ADDED. That
+     * removes the legacy backlog by construction, which is what makes a rule affordable when the
+     * defect is common in existing code but must not be written again: it can only fire on code
+     * the agent just produced, and it is reported once per turn rather than per edit.
+     */
+    stage?: Stage;
     /** file scope: regex source matching a violation on a line. */
     pattern?: string;
     /** file scope: regex flags (default "i"). Never include "g" - the engine tests line by line. */
@@ -430,6 +444,23 @@ export const BUILTIN_RULES: GuardrailRule[] = [
         // stdout and never fed back to the model, which is precisely why the model kept writing
         // it. Same reasoning as ui-no-em-dash. The pattern is a terse one-line guard cleared by
         // any placeholder signal in the file, so there is no legacy backlog to flag.
+        severity: "block",
+        skill: "frontend-policy",
+    },
+    {
+        id: "fe-server-first-mutation",
+        label: "Optimistic update for a reversible mutation",
+        files: ["*.tsx", "*.jsx", "*.vue", "*.svelte"],
+        excludeFiles: ["*.test.*", "*.spec.*", "**/tests/**", "**/__tests__/**", "**/dist/**", "dist/**", "**/build/**", "build/**", "**/.next/**", ".next/**", "**/node_modules/**"],
+        scope: "file",
+        // DIFF stage, and that is the whole reason this rule can exist. Measured over 2762 UI files
+        // of real product repositories, 116 of the 140 files that mutate anything hold no optimistic
+        // update at all - a legacy backlog an edit-stage rule would fire on forever, which is how a
+        // gate teaches people to ignore it. Against the lines a turn ADDED there is no backlog: it
+        // fires only on a mutation the agent just wrote.
+        stage: "diff",
+        fileCheck: "fe-server-first-mutation",
+        message: "This mutation waits for the server before it touches the UI: the row is only dropped (or the flag only flipped) after the request resolves, so the interface freezes for the whole round trip on an action that cannot really fail in an interesting way. Apply the change to local state FIRST, then send the request, and on failure restore the value you saved and say what failed - a silent revert is worse than the wait. Where the delete is reversible, prefer acting immediately with an Undo affordance over a confirmation prompt. Mark the line `enigma:allow-server-first` when the server's response is genuinely required before the UI may change (a payment, a server-assigned identifier, an irreversible action) (frontend-policy).",
         severity: "block",
         skill: "frontend-policy",
     },
@@ -988,6 +1019,7 @@ export const PROJECT_CHECKS: Record<string, (projectRoot: string) => boolean> = 
  */
 export const FILE_CHECKS: Record<string, (content: string, file: string) => { line: number; detail: string; }[]> = {
     "proc-windows-hide": (content) => missingWindowsHide(content),
+    "fe-server-first-mutation": (content) => serverFirstMutation(content),
     "ts-import-extension": (content, file) => extensionImports(content, file),
     "ts-alias-deep-relative": (content, file) => deepRelativeImports(content, file),
     "ts-alias-paths": (content, file) => missingPathAlias(content, file),
@@ -1102,6 +1134,103 @@ export function missingWindowsHide(content: string): { line: number; detail: str
         if (!text.includes("{")) continue;                 // options come from a variable, if at all
         if (/\{[^{}]*\.\.\.[A-Za-z_$]/.test(text)) continue; // spread may already carry it
         out.push({ line: content.slice(0, m.index).split("\n").length, detail: m[1]! });
+    }
+    return out;
+}
+
+// --- optimistic UI: a reversible mutation that waits for the server -------------------
+
+/** An awaited call that CHANGES server state, in the shapes a UI file actually writes. */
+const MUTATING_REQUEST = /method:\s*["'`](POST|PUT|PATCH|DELETE)|\b(?:axios|api|\$fetch|http|client)\.(?:post|put|patch|delete)\s*\(/i;
+
+/**
+ * A write of the ENTITY the mutation is about: drop it from the list, patch it in place, or flip
+ * its flag. Chrome flags (`setSaving(false)`, `setOpen(false)`) are deliberately NOT this shape -
+ * every handler has them, including the ones that legitimately wait for the server, so counting
+ * them was what produced every false positive in the first measurement.
+ */
+const ENTITY_WRITE = /\bset[A-Z]\w*\s*\(\s*(?:\(?\w+\)?\s*=>\s*)?[\w.]*\.(?:filter|map|slice|concat)\s*\(|\bset[A-Z]\w*\s*\(\s*!/;
+
+/** Evidence the file already applies an optimistic update and can undo it, plus the escape hatch. */
+const OPTIMISTIC_SIGNAL = /useOptimistic|onMutate|optimisticData|setQueryData|rollback|revert|previous[A-Z_]|enigma:allow-server-first/;
+
+/** The binding an awaited call's result was assigned to (`const updated = await ...`), if any. */
+const RESULT_BINDING = /(?:const|let|var)\s+(\w+)\s*=\s*(?:await\s+)?/;
+
+/** How far the block scan looks in each direction, so a pathological file cannot stall the hook. */
+const BLOCK_LOOKBACK = 120;
+const BLOCK_LOOKAHEAD = 200;
+
+/** The innermost brace block containing `index`, found by balancing outwards from that line. */
+function enclosingBlock(lines: string[], index: number): { start: number; end: number; } {
+    let depth = 0;
+    let start = index;
+    for (let i = index; i >= 0 && index - i < BLOCK_LOOKBACK; i--) {
+        const line = lines[i]!;
+        for (let c = line.length - 1; c >= 0; c--) {
+            if (line[c] === "}") depth++;
+            else if (line[c] === "{") {
+                if (depth === 0) { start = i; break; }
+                depth--;
+            }
+        }
+        if (start !== index) break;
+    }
+    depth = 0;
+    let end = index;
+    for (let i = start; i < lines.length && i - start < BLOCK_LOOKAHEAD; i++) {
+        for (const ch of lines[i]!) {
+            if (ch === "{") depth++;
+            else if (ch === "}") {
+                depth--;
+                if (depth === 0) { end = i; break; }
+            }
+        }
+        if (end !== index) break;
+    }
+    return { start, end: Math.max(end, index) };
+}
+
+/**
+ * Handlers that change server state and only then touch the UI - the row is dropped, or the flag
+ * flipped, AFTER the round trip - with nothing optimistic anywhere in the file.
+ *
+ * Three conditions make it precise, and each one removed a measured class of false positive:
+ * the state write must be an ENTITY write and not a chrome flag; it must not consume the awaited
+ * call's own result (a value only the server can produce cannot be applied before the call, so
+ * `setPref(updated)` is correct code); and no entity write may precede the call, which is what an
+ * already-optimistic handler looks like. Measured over 2762 UI files / 386 mutating request sites
+ * of real product repositories: 5 findings, every one the same genuine shape (delete a row, wait,
+ * then filter it out of the list), 0 false positives.
+ *
+ * The `absent`-style exclusion is applied HERE rather than on the rule because checkFile only
+ * honours `absent` for pattern rules - a fileCheck owns its own mitigation test.
+ */
+export function serverFirstMutation(content: string): { line: number; detail: string; }[] {
+    if (OPTIMISTIC_SIGNAL.test(content)) return [];
+    const lines = content.split("\n");
+    const out: { line: number; detail: string; }[] = [];
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i]!;
+        if (COMMENT_LINE.test(line) || !MUTATING_REQUEST.test(line)) continue;
+        const { start, end } = enclosingBlock(lines, i);
+        if (lines.slice(start, i).some((l) => ENTITY_WRITE.test(l))) continue;
+        // The result binding may sit a few lines above the flagged line, since the options object
+        // a request is written with routinely puts `method:` below the call it belongs to.
+        let binding = "";
+        for (let b = i; b >= Math.max(0, i - 4) && !binding; b--) binding = RESULT_BINDING.exec(lines[b]!)?.[1] ?? "";
+        const uses = binding ? new RegExp(`\\b${binding}\\b`) : null;
+        const write = lines.slice(i + 1, end + 1).find((l) => {
+            if (COMMENT_LINE.test(l)) return false;
+            const at = ENTITY_WRITE.exec(l);
+            if (!at) return false;
+            // The response only excuses the wait when its value FLOWS INTO the update, so the test
+            // is on the setter's argument alone. `if (res.ok) setItems(...)` uses the response as a
+            // GUARD - the update still waits for the round trip, which is the defect itself - and
+            // testing the whole line read that as legitimate and let it through.
+            return !uses?.test(l.slice(at.index));
+        });
+        if (write) out.push({ line: i + 1, detail: `the UI is only updated after the request resolves: ${write.trim().slice(0, 80)}` });
     }
     return out;
 }
@@ -1348,11 +1477,21 @@ export function findProjectRoot(file: string): string | null {
     return null;
 }
 
-/** Run every applicable rule against one file's content. `projectRoot` may be null (project rules then skip). */
-export function checkFile(file: string, content: string, projectRoot: string | null): Finding[] {
+/**
+ * Run every applicable rule against one file's content. `projectRoot` may be null (project rules
+ * then skip).
+ *
+ * `stage` decides which rules apply. At "edit" (the post-edit hook and the commit backstop) a
+ * diff-stage rule is skipped: it is written for code a change ADDED, and running it over a whole
+ * file would report a repository's existing code as a violation of the current turn. At "diff"
+ * EVERY rule runs, because the turn-end sweep is also the second chance for anything the model was
+ * told about mid-turn and did not fix - including the warnings the post-edit hook can only print.
+ */
+export function checkFile(file: string, content: string, projectRoot: string | null, stage: Stage = "edit"): Finding[] {
     const norm = file.replace(/\\/g, "/");
     const out: Finding[] = [];
     for (const rule of loadRules()) {
+        if (stage === "edit" && rule.stage === "diff") continue;
         if (!rule.files.some((g) => globToRegExp(g, rule.ignoreFileCase).test(norm))) continue;
         if (rule.excludeFiles?.some((g) => globToRegExp(g, rule.ignoreFileCase).test(norm))) continue;
         const base = { ruleId: rule.id, severity: rule.severity, file: norm, message: rule.message, skill: rule.skill };
@@ -1401,11 +1540,11 @@ export function formatFindings(findings: Finding[]): string {
 }
 
 /** Check a single file path directly (used by `enigma guardrails check <file>`). Returns findings. */
-export function checkPath(file: string): Finding[] {
+export function checkPath(file: string, stage: Stage = "edit"): Finding[] {
     let content: string;
     try { content = readFileSync(file, "utf8"); } catch { return []; }
     if (content.includes("\0")) return [];
-    return checkFile(file, content, findProjectRoot(file));
+    return checkFile(file, content, findProjectRoot(file), stage);
 }
 
 /**
@@ -1423,15 +1562,109 @@ export function runGuardrailsHook(payload?: string): number {
     // Repair what code can repair first: the model is only told about what is left.
     const { fixed, remaining: findings } = applyFixes(file, found);
     if (fixed.length) process.stdout.write(`enigma guardrails (fixed)\n${fixed.map((f) => `${f.file}:${f.line} (${f.ruleId})`).join("\n")}\n`);
+    recordFindings(fixed, "fixed");
     if (!findings.length) return 0;
     const warns = findings.filter((f) => f.severity === "warn");
     const blocks = findings.filter((f) => f.severity === "block");
+    recordFindings(warns, "warned");
+    recordFindings(blocks, "blocked");
     if (warns.length) process.stdout.write(`enigma guardrails (suggestions)\n${formatFindings(warns)}\n`);
     if (blocks.length) {
         process.stderr.write(`enigma guardrails\n${formatFindings(blocks)}\nFix the above before continuing.\n`);
         return 2;
     }
     return 0;
+}
+
+// --- compliance ledger ----------------------------------------------------------------
+//
+// WHY IT EXISTS: a rule that is skipped leaves no trace. A block is fed back and then forgotten,
+// a warn exits 0 and is never seen at all, and an auto-fix is silent by design - so "the agent
+// keeps ignoring this convention" has never been answerable with anything but a memory of it.
+// The ledger is the measurement channel: one line per finding the model was actually confronted
+// with, which turns "it skips optimistic UI" into a count per rule, and tells a rule that fires
+// constantly (a candidate for a fixer, or for being wrong) from one that never fires at all.
+//
+// Deliberately only the MODEL-FACING channels write here - the post-edit hook and the turn-end
+// sweep. The commit backstop re-scans whole files, so recording there would bury the signal under
+// a repository's pre-existing code, which is exactly what this is meant to measure the absence of.
+
+/** What happened to a finding: repaired by code, blocked the agent, or only advised it. */
+export type Outcome = "fixed" | "blocked" | "warned";
+
+/** One recorded encounter between the agent and a rule. */
+export interface LedgerEntry {
+    at: string;
+    rule: string;
+    severity: Severity;
+    outcome: Outcome;
+    stage: Stage;
+    file: string;
+    line?: number;
+}
+
+/** Keep the ledger bounded: past this size the oldest half of the entries is dropped. */
+const LEDGER_MAX_BYTES = 512 * 1024;
+const LEDGER_KEEP = 2000;
+
+/** Where the ledger lives. ENIGMA_GUARDRAILS_LOG relocates it (required by the tests, which must never write to the real one). */
+function ledgerPath(): string {
+    return process.env.ENIGMA_GUARDRAILS_LOG || join(homedir(), ".enigma", "guardrail-log.jsonl");
+}
+
+/**
+ * Append findings to the ledger. Best-effort in every failure mode: a read-only home, a missing
+ * directory or a corrupt file must never turn a convention check into a broken edit, so nothing
+ * here throws and nothing here blocks.
+ */
+export function recordFindings(findings: Finding[], outcome: Outcome, stage: Stage = "edit"): void {
+    if (!findings.length) return;
+    const at = new Date().toISOString();
+    const rows = findings.map((f) => JSON.stringify({ at, rule: f.ruleId, severity: f.severity, outcome, stage, file: f.file, line: f.line } satisfies LedgerEntry));
+    const path = ledgerPath();
+    try {
+        mkdirSync(dirname(path), { recursive: true });
+        let size = 0;
+        try { size = statSync(path).size; } catch { /* first write */ }
+        if (size > LEDGER_MAX_BYTES) {
+            const kept = readFileSync(path, "utf8").split("\n").filter(Boolean).slice(-LEDGER_KEEP);
+            writeFileSync(path, `${kept.join("\n")}\n`);
+        }
+        appendFileSync(path, `${rows.join("\n")}\n`);
+    } catch { /* the ledger is a measurement, never a gate */ }
+}
+
+/** Read the ledger, newest last. A malformed line is skipped rather than failing the read. */
+export function readLedger(sinceDays = 0): LedgerEntry[] {
+    let text: string;
+    try { text = readFileSync(ledgerPath(), "utf8"); } catch { return []; }
+    const cutoff = sinceDays > 0 ? Date.now() - sinceDays * 86_400_000 : 0;
+    const out: LedgerEntry[] = [];
+    for (const line of text.split("\n")) {
+        if (!line.trim()) continue;
+        try {
+            const entry = JSON.parse(line) as LedgerEntry;
+            if (typeof entry?.rule !== "string") continue;
+            if (cutoff && Date.parse(entry.at) < cutoff) continue;
+            out.push(entry);
+        } catch { /* a truncated write is one lost line, not a broken report */ }
+    }
+    return out;
+}
+
+/** Per-rule totals, most-violated first - the answer to "which convention does the agent keep skipping". */
+export function summarizeLedger(entries: LedgerEntry[]): { rule: string; total: number; blocked: number; warned: number; fixed: number; last: string; }[] {
+    const by = new Map<string, { rule: string; total: number; blocked: number; warned: number; fixed: number; last: string; }>();
+    for (const e of entries) {
+        const row = by.get(e.rule) || { rule: e.rule, total: 0, blocked: 0, warned: 0, fixed: 0, last: e.at };
+        row.total++;
+        if (e.outcome === "blocked") row.blocked++;
+        else if (e.outcome === "warned") row.warned++;
+        else row.fixed++;
+        if (e.at > row.last) row.last = e.at;
+        by.set(e.rule, row);
+    }
+    return [...by.values()].sort((a, b) => b.total - a.total || a.rule.localeCompare(b.rule));
 }
 
 // --- standalone commit/CI backstop -------------------------------------------------

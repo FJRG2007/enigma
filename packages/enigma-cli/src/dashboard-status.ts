@@ -10,9 +10,9 @@
 
 import { skillsReport } from "./skills";
 import { readProxyStats } from "./proxy";
-import { loadRules } from "./guardrails";
 import { toolPathStatuses } from "./tool-path";
 import { availableAdapters } from "./api-agents";
+import { loadRules, readLedger } from "./guardrails";
 import { readConfig, readGlobalConfig } from "./config";
 import { GUARD_PROTECTIONS, readGlobalGuard } from "./guard-config";
 
@@ -29,8 +29,12 @@ export interface SystemsStatus {
     parallelSubagents: boolean;
     /** Auto-lint on edit. */
     autoLint: boolean;
-    /** Convention guardrails on edit, plus the active rule count. */
-    guardrails: { on: boolean; rules: number; };
+    /**
+     * Convention guardrails on edit, the active rule count, and how many findings the agent has
+     * actually run into over the last week - the number that says whether the conventions are
+     * being followed or merely declared.
+     */
+    guardrails: { on: boolean; rules: number; findings: number; };
     /** End-of-file blank-line trimming on edit and at commit time. */
     trim: boolean;
     /** Completion claims checked at turn end, plus the project's verification command when set. */
@@ -67,7 +71,6 @@ export interface SystemsStatus {
     api: { port: number; agents: string[]; };
 }
 
-
 /** Read the current configured state of every enigma system, plus skill counts. */
 export function systemsStatus(): SystemsStatus {
     const c = readConfig().config;
@@ -80,7 +83,7 @@ export function systemsStatus(): SystemsStatus {
         minimalCode: c.minimalCode,
         parallelSubagents: c.parallelSubagents,
         autoLint: c.autoLint,
-        guardrails: { on: c.guardrails, rules: c.guardrails ? loadRules().length : 0 },
+        guardrails: { on: c.guardrails, rules: c.guardrails ? loadRules().length : 0, findings: c.guardrails ? readLedger(7).length : 0 },
         trim: c.trim,
         // Global, matching what actually runs: the hook is wired from the global toggle and a
         // repo-local verifyCommand is never executed, so showing either merged would misreport.

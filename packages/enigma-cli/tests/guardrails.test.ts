@@ -15,7 +15,7 @@ process.env.HOME = HOME;
 const CONFIG = join(HOME, "guardrails.json");
 process.env.ENIGMA_GUARDRAILS_CONFIG = CONFIG;
 
-const { checkFile, checkPath, applyFixes, formatFindings, loadRules, findProjectRoot, BUILTIN_RULES } = await import("../src/guardrails");
+const { checkFile, checkPath, applyFixes, formatFindings, loadRules, findProjectRoot, recordFindings, readLedger, summarizeLedger, BUILTIN_RULES } = await import("../src/guardrails");
 const { disableRule, enableRule, addRule, removeRule } = await import("../src/guardrails-config");
 
 afterAll(() => rmSync(HOME, { recursive: true, force: true }));
@@ -508,4 +508,98 @@ test("findProjectRoot locates the nearest package.json ancestor", () => {
     mkdirSync(join(root, "a", "b"), { recursive: true });
     expect(findProjectRoot(join(root, "a", "b", "f.ts"))).toBe(root);
     rmSync(root, { recursive: true, force: true });
+});
+
+test("a diff-stage rule is invisible to the post-edit stage and fires in the sweep", () => {
+    const source = [
+        "export function Rows({ items, setItems }) {",
+        "    const remove = async (id) => {",
+        "        await fetch(`/api/items/${id}`, { method: \"DELETE\" });",
+        "        setItems((prev) => prev.filter((item) => item.id !== id));",
+        "    };",
+        "}",
+    ].join("\n");
+    // Edit stage sees a whole file, where this defect is common in existing code; it must stay
+    // silent there, or every unrelated edit to a legacy component blocks.
+    expect(checkFile("src/Rows.tsx", source, null)).toEqual([]);
+    const swept = checkFile("src/Rows.tsx", source, null, "diff");
+    expect(swept.length).toBe(1);
+    expect(swept[0]!.ruleId).toBe("fe-server-first-mutation");
+    expect(swept[0]!.severity).toBe("block");
+    expect(swept[0]!.line).toBe(3);
+});
+
+test("the server-first check clears optimistic code, the escape hatch, and response-derived state", () => {
+    const cases = [
+        // The update is applied first and restored on failure: the pattern the rule asks for.
+        [
+            "const remove = async (id) => {",
+            "    const previous = items;",
+            "    setItems((prev) => prev.filter((i) => i.id !== id));",
+            "    const res = await fetch(`/api/items/${id}`, { method: \"DELETE\" });",
+            "    if (!res.ok) setItems(previous);",
+            "};",
+        ],
+        // The escape hatch, for an action whose result the UI may not assume.
+        [
+            "const charge = async (id) => {",
+            "    await fetch(`/api/charge/${id}`, { method: \"POST\" }); // enigma:allow-server-first",
+            "    setRows((prev) => prev.filter((r) => r.id !== id));",
+            "};",
+        ],
+        // The new value comes from the server, so it cannot be applied before the call.
+        [
+            "const rename = async (id, name) => {",
+            "    const updated = await api(`/api/items/${id}`, { method: \"PATCH\", body: { name } });",
+            "    setItems((cur) => cur.map((i) => (i.id === id ? updated : i)));",
+            "};",
+        ],
+        // Chrome flags are not the entity: every handler resets one, including correct ones.
+        [
+            "const save = async () => {",
+            "    await fetch(\"/api/save\", { method: \"POST\" });",
+            "    setSaving(false);",
+            "    setOpen(false);",
+            "};",
+        ],
+    ];
+    for (const lines of cases) expect(checkFile("src/Panel.tsx", lines.join("\n"), null, "diff")).toEqual([]);
+});
+
+test("a response used only as a guard does not excuse the wait", () => {
+    // Regression pin: testing the whole line read `if (res.ok) setItems(...)` as response-derived
+    // and let the defect through, when the response is a GUARD there and the update still waits.
+    const source = [
+        "const remove = async (id) => {",
+        "    const res = await fetch(`/api/items/${id}`, { method: \"DELETE\" });",
+        "    if (res.ok) setItems((prev) => prev.filter((item) => item.id !== id));",
+        "};",
+    ].join("\n");
+    const found = checkFile("src/List.jsx", source, null, "diff");
+    expect(found.length).toBe(1);
+    expect(found[0]!.ruleId).toBe("fe-server-first-mutation");
+});
+
+test("the ledger records what happened to each finding and reports it per rule", () => {
+    const log = join(HOME, "ledger.jsonl");
+    process.env.ENIGMA_GUARDRAILS_LOG = log;
+    rmSync(log, { force: true });
+    const finding = { ruleId: "fe-server-first-mutation", severity: "block" as const, file: "src/Rows.tsx", line: 3, message: "m" };
+    recordFindings([finding], "blocked", "diff");
+    recordFindings([finding], "warned", "diff");
+    recordFindings([{ ...finding, ruleId: "fe-name-input-capitalize", severity: "block" as const }], "fixed");
+    const entries = readLedger();
+    expect(entries.length).toBe(3);
+    expect(entries[0]!.stage).toBe("diff");
+    const rows = summarizeLedger(entries);
+    expect(rows[0]!.rule).toBe("fe-server-first-mutation");
+    expect(rows[0]!.blocked).toBe(1);
+    expect(rows[0]!.warned).toBe(1);
+    expect(rows[1]!.fixed).toBe(1);
+    // A day window drops nothing recorded now, and everything recorded long ago.
+    expect(readLedger(1).length).toBe(3);
+    writeFileSync(log, `${JSON.stringify({ at: "2000-01-01T00:00:00.000Z", rule: "old", severity: "warn", outcome: "warned", stage: "edit", file: "a.ts" })}\nnot json\n`);
+    expect(readLedger(1)).toEqual([]);
+    expect(readLedger().length).toBe(1);
+    delete process.env.ENIGMA_GUARDRAILS_LOG;
 });

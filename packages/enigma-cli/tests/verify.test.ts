@@ -17,13 +17,16 @@ const HOME = mkdtempSync(join(tmpdir(), "enigma-verify-"));
 process.env.USERPROFILE = HOME;
 process.env.HOME = HOME;
 process.env.ENIGMA_CONFIG_HOME = HOME;
+// The turn-end sweep records what it found, and it must never append to the real ledger.
+process.env.ENIGMA_GUARDRAILS_LOG = join(HOME, "guardrail-log.jsonl");
 // The hook stands aside inside a gate step agent, so an ambient ENIGMA_GATE=1 (the suite run
 // from inside an enigma gate pipeline) would make every case below pass open and fail here.
 // The one test that exercises that path sets the variable itself.
 delete process.env.ENIGMA_GATE;
 
-const { claimsDone, asksToContinue, scanGaps, collectGaps, runVerifyHook } = await import("../src/verify");
+const { claimsDone, asksToContinue, scanGaps, scanConventions, collectGaps, runVerifyHook } = await import("../src/verify");
 const { parityReport, formatParity } = await import("../src/verify-parity");
+const { readLedger } = await import("../src/guardrails");
 
 const repos: string[] = [];
 afterAll(() => {
@@ -422,4 +425,68 @@ test("parity accepts a faithful port across naming conventions", () => {
     expect(report.absent).toEqual([]);
     expect(report.partial).toEqual([]);
     expect(report.coverage).toBe(100);
+});
+
+/** A handler that changes server state and only then touches the UI - the shape the rule names. */
+const SERVER_FIRST = [
+    "export function Rows({ items, setItems }) {",
+    "    const remove = async (id) => {",
+    "        await fetch(`/api/items/${id}`, { method: \"DELETE\" });",
+    "        setItems((prev) => prev.filter((item) => item.id !== id));",
+    "    };",
+    "}",
+].join("\n");
+
+test("the convention sweep reports only what the change added", () => {
+    // The committed file breaks the same rule: a repository's existing code is not this change's
+    // to answer for, and blocking on it is how a gate gets switched off. Same ratchet as markers.
+    const dir = repoWith({ "src/Legacy.tsx": SERVER_FIRST });
+    write(dir, "src/New.tsx", SERVER_FIRST);
+    const { gaps, findings } = scanConventions(dir);
+    expect(gaps.length).toBe(1);
+    expect(gaps[0]!.kind).toBe("convention");
+    expect(gaps[0]!.file).toBe("src/New.tsx");
+    expect(gaps[0]!.detail).toContain("fe-server-first-mutation");
+    expect(findings[0]!.ruleId).toBe("fe-server-first-mutation");
+});
+
+test("a broken convention denies the stop even when the turn claims nothing", () => {
+    // The claim path cannot catch this: nothing about the code is unfinished, it is wrong - and a
+    // warn from the post-edit hook exits 0, so this is the only channel that reaches the model.
+    const dir = repoWith();
+    write(dir, "src/New.tsx", SERVER_FIRST);
+    expect(runVerifyHook(payload(dir, "Added the delete action.", { session_id: "conv-1" }))).toBe(2);
+    // Fixed: the update is applied first and rolled back on failure, so the sweep is silent.
+    write(dir, "src/New.tsx", [
+        "export function Rows({ items, setItems }) {",
+        "    const remove = async (id) => {",
+        "        const previous = items;",
+        "        setItems((prev) => prev.filter((item) => item.id !== id));",
+        "        const res = await fetch(`/api/items/${id}`, { method: \"DELETE\" });",
+        "        if (!res.ok) setItems(previous);",
+        "    };",
+        "}",
+    ].join("\n"));
+    expect(runVerifyHook(payload(dir, "Added the delete action.", { session_id: "conv-2" }))).toBe(0);
+});
+
+test("the convention sweep stands aside when guardrails are off for the project", () => {
+    const dir = repoWith();
+    write(dir, "src/New.tsx", SERVER_FIRST);
+    write(dir, ".enigma.json", JSON.stringify({ guardrails: false }));
+    expect(scanConventions(dir).gaps).toEqual([]);
+});
+
+test("a suggestion never denies the stop, but it is recorded", () => {
+    // Severity keeps its meaning here: a warn rule is advice, and a gate that stops a turn over
+    // advice is a gate that gets switched off - which would cost the blocking rules too. What it
+    // must NOT do is vanish, which is what happened before: the post-edit hook prints a warn to
+    // stdout, exits 0, and nothing anywhere remembers that the rule was skipped.
+    const dir = repoWith();
+    write(dir, "src/route.ts", "export const handler = (req, res) => {\n    const body = req.body;\n    res.json(body);\n};\n");
+    const scan = scanConventions(dir);
+    expect(scan.gaps).toEqual([]);
+    expect(scan.notes.some((n) => n.detail.includes("be-validate-input-ts"))).toBe(true);
+    expect(runVerifyHook(payload(dir, "Added the handler.", { session_id: "warn-only" }))).toBe(0);
+    expect(readLedger().some((e) => e.rule === "be-validate-input-ts" && e.outcome === "warned")).toBe(true);
 });

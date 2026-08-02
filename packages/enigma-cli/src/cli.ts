@@ -26,12 +26,12 @@ import { buildIssueUrl, isHeadless, openUrl } from "./issue";
 import { setupGitHooks, GUARD_PROTECTIONS } from "./security";
 import { ensureLaunchable, toolPathStatuses } from "./tool-path";
 import { compress, retrieve, readStats, clearCcr } from "./compress";
-import { BUILTIN_RULES, checkPath, formatFindings } from "./guardrails";
 import { ensureDashboardToken, readDashboardToken } from "./dashboard-token";
 import type { HubAccount, HubExitAction, HubProfile, HubSkill } from "./tui/types";
 import { ensureLinterInstalled, isLinterInstalled, refreshLinterPkg } from "./lint";
 import { DASHBOARD_BINDS, readConfig, setEnigmaValue, type DashboardBind } from "./config";
 import { readGuardrailsConfig, disableRule, enableRule, removeRule } from "./guardrails-config";
+import { BUILTIN_RULES, checkPath, formatFindings, readLedger, summarizeLedger } from "./guardrails";
 import { checkLatestNow, getAvailableUpdate, notifyUpdate, performUpdateCheck, runUpdate } from "./update";
 import { isUsableSession, sessionEmail, sessionState, transferSession, type SessionState } from "./claude-oauth";
 import { ensureDashboardCurrent, isDashboardPkgCurrent, isDashboardPkgInstalled, refreshDashboardPkg } from "./dashboard-pkg";
@@ -225,6 +225,7 @@ Commands:
                        data (stats/history/cache), --type forces the content type
   guardrails [cmd]     Convention rules enforced by a post-edit hook (e.g. UUID keys,
                        Prisma as default ORM). No arg lists rules; check <file> runs them;
+                       stats [days] reports which rules the agent keeps breaking;
                        disable/enable <id> toggles a built-in; remove <id> drops a custom
                        rule. Toggle the feature with 'config guardrails on|off'
   trim [--all]         Remove the blank line agents leave at the end of a file. No arg fixes
@@ -1489,9 +1490,10 @@ function runCompressCli(opts: CliOptions): number {
 
 /**
  * `enigma guardrails` surface: inspect and manage the convention rules the post-edit hook
- * enforces. No subcommand lists rules; `check <file>` runs them against a file; `disable`/
- * `enable <id>` toggles a built-in; `remove <id>` deletes a custom rule. Custom rules are
- * authored in ~/.enigma-guardrails.json. Returns an exit code.
+ * enforces. No subcommand lists rules; `check <file>` runs them against a file; `stats [days]`
+ * reports the compliance ledger (which rules the agent breaks, and whether it was stopped or got
+ * away with it); `disable`/`enable <id>` toggles a built-in; `remove <id>` deletes a custom rule.
+ * Custom rules are authored in ~/.enigma-guardrails.json. Returns an exit code.
  */
 function runGuardrailsCli(positionals: string[]): number {
     const [sub, arg] = positionals;
@@ -1514,8 +1516,22 @@ function runGuardrailsCli(positionals: string[]): number {
         if (!arg) { console.error("Usage: enigma guardrails remove <rule-id>"); return 1; }
         removeRule(arg); console.log(`Removed custom rule '${arg}'.`); return 0;
     }
+    if (sub === "stats") {
+        const days = Number(arg) > 0 ? Number(arg) : 0;
+        const rows = summarizeLedger(readLedger(days));
+        const scope = days ? `the last ${days} day(s)` : "all recorded runs";
+        if (!rows.length) {
+            console.log(`No guardrail findings recorded for ${scope}. Either the conventions are being followed, or the hooks are not wired (check 'enigma guardrails' and 'enigma config verify').`);
+            return 0;
+        }
+        console.log(`Guardrail findings, ${scope} - which conventions the agent keeps breaking:\n`);
+        console.log("  blocked  warned   fixed  rule");
+        for (const r of rows) console.log(`  ${String(r.blocked).padStart(7)}  ${String(r.warned).padStart(6)}  ${String(r.fixed).padStart(6)}  ${r.rule} (last ${r.last.slice(0, 10)})`);
+        console.log("\nblocked = the agent was stopped and had to fix it; warned = it was told, or the gate stood down, and the code shipped anyway; fixed = repaired by code with no turn spent.");
+        return 0;
+    }
     if (sub && sub !== "list") {
-        console.error(`Unknown guardrails command '${sub}'. Use: list | check <file> | disable <id> | enable <id> | remove <id>.`);
+        console.error(`Unknown guardrails command '${sub}'. Use: list | check <file> | stats [days] | disable <id> | enable <id> | remove <id>.`);
         return 1;
     }
     const cfg = readGuardrailsConfig();
@@ -1558,7 +1574,9 @@ async function runVerifyCli(positionals: string[], all: boolean): Promise<number
     }
     const { collectGaps, formatGaps, verifyCommandOf } = await import("./verify");
     const command = verifyCommandOf();
-    const { gaps, truncated, capped, noRepo, ranCommand } = collectGaps(process.cwd(), { all });
+    // Conventions are part of "is this change finished": the same rules the turn-end hook enforces,
+    // so running the command by hand answers the same question the gate would.
+    const { gaps, truncated, capped, noRepo, ranCommand } = collectGaps(process.cwd(), { all, conventions: !all });
     // Announced after the fact, because the scan decides whether it runs at all: saying it ran
     // on a turn that produced nothing would be the same kind of unearned reassurance this
     // command exists to remove.

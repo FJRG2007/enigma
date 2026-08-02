@@ -425,10 +425,15 @@ Never render an unbounded or large dataset in one shot (no fetch-everything then
 
 ## Optimistic UI & Rollback
 
-- Use optimistic UI updates when the operation is safe and likely to succeed.
-- Always implement rollback handling for failed operations.
-- Reconcile optimistic state with the server response; never leave the UI in a divergent state.
-- Keep the optimistic update and any client cache consistent with each other.
+For a reversible user action, optimistic is the DEFAULT and not an enhancement to add later. The order is: apply the change to local state, then send the request, then reconcile - never request, await, and only then touch the UI.
+
+- The defect has a name and a shape: a handler that awaits the mutation and updates state afterwards (`await fetch(...)` then `setItems(prev => prev.filter(...))`, or `await api.patch(...)` then a refetch). The user pays the whole round trip for an action whose outcome was never in doubt. The `fe-server-first-mutation` guardrail catches the clearest form of this on the lines a change adds; the rest is on you, because the rule cannot see a handler that hides the wait behind a parent refetch (`await onChanged()`, `await load()`, `router.refresh()`) - that is the same defect and it is the most common one.
+- Which actions: toggle a flag, remove a row, rename, reorder, mark read, add a tag, favourite, vote - anything the client can compute the result of. Optimistic is wrong when only the server knows the outcome: a payment or charge, a server-assigned identifier the UI must display, a uniqueness check, a long job whose result IS the response, anything irreversible.
+- Rollback is part of the feature, not a follow-up. Capture the previous value BEFORE mutating (`const previous = items`), restore it on failure, and say what failed - a silent revert reads as a UI bug and is worse than the wait. Do not roll back a value the user has since edited: reconcile against the server's response rather than blindly restoring.
+- Reconcile optimistic state with the server response; never leave the UI in a divergent state, and keep the optimistic update and any client cache consistent with each other (invalidate or patch the cache, do not leave a stale list beside a fresh one).
+- Where a delete is reversible, the optimistic update plus an Undo affordance replaces the confirmation prompt entirely (see Destructive & Irreversible Actions).
+- Guard against the double-apply: an in-flight mutation that the user triggers again must not stack two optimistic updates, and a re-render must not re-apply one.
+- With a data layer that owns this (TanStack Query `onMutate` + `onError` rollback + `onSettled` invalidate, SWR `optimisticData` + `rollbackOnError`, React `useOptimistic`), use it instead of hand-rolling local state - it already solves the cache reconciliation.
 - Surface failures to the user clearly without exposing internal error details (see validation-policy).
 
 ---
