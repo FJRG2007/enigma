@@ -15,6 +15,12 @@ process.env.USERPROFILE = HOME;
 process.env.HOME = HOME;
 // Keep the stats payload's update check from making a real npm request during the test.
 process.env.ENIGMA_NO_UPDATE_CHECK = "1";
+// The stats payload reports the version installed on disk, read from the manifest beside
+// ENIGMA_ASSETS_DIR and falling back to ENIGMA_VERSION. Both are stamped by the launcher, so
+// running the suite under an installed enigma would report that install instead of the
+// version handed to startDashboardServer here.
+delete process.env.ENIGMA_ASSETS_DIR;
+delete process.env.ENIGMA_VERSION;
 // Resolve the Helio pack from the in-repo vendored assets (no npm fetch) and isolate its
 // managed dir, so the /api/packs route is exercised network-free.
 process.env.ENIGMA_PACKS_DIR = join(HOME, "packs");

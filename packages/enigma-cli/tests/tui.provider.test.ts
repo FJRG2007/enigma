@@ -72,7 +72,7 @@ test.skipIf(SKIP_HEADLESS_LINUX)("provider editor: 'p' on a managed Claude accou
     await until((f) => f.includes("MENU"), "menu");
 
     // Navigate the sidebar to the identity entry (last item) and focus the panel.
-    const identityIndex = CATEGORIES.length + 6; // categories + usage + recall + resources + 3 actions
+    const identityIndex = CATEGORIES.length + 7; // categories + usage + recall + resources + ssh + 3 actions (skills, security, fix-path)
     await press(...Array(identityIndex).fill("ARROW_DOWN"));
     await setup.mockInput.pressKey("RETURN");
     await until((f) => f.includes("ACCOUNTS"), "identity panel");

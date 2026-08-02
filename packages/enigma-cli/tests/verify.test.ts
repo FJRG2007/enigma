@@ -17,6 +17,10 @@ const HOME = mkdtempSync(join(tmpdir(), "enigma-verify-"));
 process.env.USERPROFILE = HOME;
 process.env.HOME = HOME;
 process.env.ENIGMA_CONFIG_HOME = HOME;
+// The hook stands aside inside a gate step agent, so an ambient ENIGMA_GATE=1 (the suite run
+// from inside an enigma gate pipeline) would make every case below pass open and fail here.
+// The one test that exercises that path sets the variable itself.
+delete process.env.ENIGMA_GATE;
 
 const { claimsDone, asksToContinue, scanGaps, collectGaps, runVerifyHook } = await import("../src/verify");
 const { parityReport, formatParity } = await import("../src/verify-parity");
