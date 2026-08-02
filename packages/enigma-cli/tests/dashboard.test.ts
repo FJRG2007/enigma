@@ -391,7 +391,8 @@ test("removeHostsEntry strips only the enigma mapping and leaves other hosts int
             "# enigma-dashboard (managed by enigma; remove to disable http://enigma)",
             "127.0.0.1 enigma",
             "10.0.0.5 internal.example",
-        ].join("\n") + "\n");
+            "",
+        ].join("\n"));
         const r = removeHostsEntry();
         expect(r.ok).toBe(true);
         const after = readFileSync(hostsPath, "utf8");
