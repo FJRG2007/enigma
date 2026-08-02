@@ -5,6 +5,7 @@ group: Concepts
 order: 37
 ---
 import Cmd from "../../../components/Cmd.astro";
+import { docHref } from "../../../lib/url";
 
 Skills only **persuade** the model, and they load only when it decides to (progressive disclosure). So a convention that lives only in a skill - "use UUID primary keys", "prefer Prisma as the ORM for TypeScript" - is often skipped: the agent never reads the skill. Guardrails **enforces** conventions instead, outside the model.
 
@@ -30,17 +31,36 @@ One rule is about cost rather than correctness: `ctx-memory-budget` blocks an ed
 
 The seed set is deliberately tiny and precise - it matches only unambiguous violations, so a false positive never trains the agent (or you) to ignore it. Add your own rules by dropping an entry in `~/.enigma-guardrails.json`.
 
+## Two stages: the edited file, or the lines a change added
+
+A rule also declares **when** it runs (`stage`):
+
+- **`edit`** (the default) is the post-edit hook and the commit backstop. They see a **whole file**, so a rule here has to be precise enough that your repository's existing code never fires it - otherwise it blocks every unrelated edit and you switch it off.
+- **`diff`** runs only in the **turn-end sweep**, against the lines the current change **added**. There is no legacy backlog by construction, so the rule can only fire on code the agent just wrote.
+
+That second stage is what makes a demanding convention affordable. `fe-server-first-mutation` is the first of them: it blocks a handler that awaits a mutation and only then touches the UI (`await fetch(...)`, then drop the row from the list) - the optimistic-UI defect `frontend-policy` describes. In a measured corpus of real UI files, most components that mutate anything hold no optimistic update at all, so as a whole-file rule it would have fired forever on code nobody wrote today. Mark the line `enigma:allow-server-first` when the server's answer really is required first (a payment, a server-assigned id, an irreversible action).
+
+The sweep runs inside the turn-end completion hook (see <a href={docHref("concepts/verify")}>Verified completion</a>): blocking findings deny the stop, warnings ride along in the same message, and both are recorded. It is also the only channel that can reach the model with a warning at all - a post-edit warning exits zero and is printed where the model never reads it.
+
 ## Where it runs
 
-- **Claude Code** - a `PostToolUse` hook (matcher `Edit|Write|MultiEdit|NotebookEdit`).
-- **opencode** - an auto-loaded plugin that runs after each write/edit.
+- **Claude Code** - a `PostToolUse` hook (matcher `Edit|Write|MultiEdit|NotebookEdit`) for the edit stage, and the turn-end `Stop` hook for the diff-stage sweep.
+- **opencode** - an auto-loaded plugin that runs after each write/edit. It has no turn-end hook that can answer the model, so diff-stage rules do not run there.
 - **Codex** has no per-edit hook mechanism, so it is skipped (like auto-lint).
-- **Commit / CI backstop** - `enigma security` also copies the engine into `.githooks/`, so the same rules block a commit even if the agent hook was off or bypassed.
+- **Commit / CI backstop** - `enigma security` also copies the engine into `.githooks/`, so the same rules block a commit even if the agent hook was off or bypassed. Diff-stage rules stand down here: they are written for the lines a change added, not for a whole file.
+
+## What it keeps skipping
+
+A rule that gets skipped leaves no trace. A block is fed back and forgotten, a warning exits zero, and an auto-fix is silent by design - so "the agent keeps ignoring this one" was never a number you could look at.
+
+Every finding the agent is actually confronted with is appended to a local ledger (`~/.enigma/guardrail-log.jsonl`, one JSON line each, kept bounded). `enigma guardrails stats` reports it per rule in three columns: **blocked** (it was stopped and had to fix it), **warned** (it was told - or the turn-end gate stood down - and the code shipped anyway), **fixed** (repaired by code, no turn spent). The warned column is the point: it counts what the agent *got away with*, which is what tells a rule that should be promoted to `block` from one that only ever fires wrongly and should go.
+
+Only the model-facing channels write to it - the post-edit hook and the turn-end sweep, never the commit backstop, whose whole-file scan would bury the signal under code nobody wrote today. The dashboard's "Enigma Systems" row shows the 7-day count beside the active rule count.
 
 ## Use it
 
-<Cmd name="enigma guardrails [cmd]" ex={["enigma guardrails", "enigma guardrails check db/schema.sql", "enigma guardrails disable db-uuid-pk", "enigma guardrails enable db-uuid-pk", "enigma config guardrails off"]}>
-No argument lists the rules (built-in and custom, with their on/off state); `check <file>` runs the rules against a file; `disable`/`enable <id>` toggles a built-in; `remove <id>` drops a custom rule. Toggle the whole feature with `enigma config guardrails on|off` (applies immediately to Claude Code and opencode).
+<Cmd name="enigma guardrails [cmd]" ex={["enigma guardrails", "enigma guardrails check db/schema.sql", "enigma guardrails stats 30", "enigma guardrails disable db-uuid-pk", "enigma guardrails enable db-uuid-pk", "enigma config guardrails off"]}>
+No argument lists the rules (built-in and custom, with their on/off state); `check <file>` runs the rules against a file (every rule, diff-stage ones included, so you can reproduce a finding you were blocked by); `stats [days]` reports which rules the agent keeps breaking, over the last `days` or over everything recorded; `disable`/`enable <id>` toggles a built-in; `remove <id>` drops a custom rule. Toggle the whole feature with `enigma config guardrails on|off` (applies immediately to Claude Code and opencode); `guardrails: false` in a repository's `.enigma.json` stands the turn-end sweep down for that project.
 </Cmd>
 
 ## Add a custom rule
@@ -65,12 +85,14 @@ Custom rules live in `~/.enigma-guardrails.json`. A file rule is a regex over th
 }
 ```
 
-`disabled` turns off a built-in by id. That's the whole authoring surface - one JSON entry per convention, no code.
+`disabled` turns off a built-in by id. Add `"stage": "diff"` to a rule that should only be judged on the lines a change adds - that is how you write a demanding rule for a convention your existing code does not follow yet. That's the whole authoring surface - one JSON entry per convention, no code.
 
 ## What guardrails can't check
 
-Guardrails see the **syntax** of the edited file, not intent or behaviour. Some conventions have no reliable syntactic signature - "the UI is optimistic", "reads are cached for 30s", "the form validates in real time". A regex for those is either impossible or pure noise. Those live in enigma's **always-on memory** instead (the "Engineering Defaults" block), stated once, language-agnostic, so the agent applies them by default without a hook. Guardrails back up the syntactic half; the memory covers the semantic half.
+Guardrails see the **syntax** of the code, not intent or behaviour. Some conventions have no reliable syntactic signature - "reads are cached for 30s", "the form validates in real time". A regex for those is either impossible or pure noise. Those live in enigma's **always-on memory** instead (the "Engineering Defaults" block), stated once, language-agnostic, so the agent applies them by default without a hook. Guardrails back up the syntactic half; the memory covers the semantic half.
+
+A rule also only sees the file it is scanning. `fe-server-first-mutation` catches the clearest shape of a server-first mutation, but a handler that hides the wait behind a parent refetch (`await onChanged()`, `await load()`) is the same defect with no local state write to judge - that half stays persuasion, and `frontend-policy` says so explicitly.
 
 ## Privacy
 
-Everything runs in-process on your machine; nothing is sent anywhere. Turning the setting off removes the hooks from your agents.
+Everything runs in-process on your machine; nothing is sent anywhere. The ledger is a local file holding rule ids, file paths and line numbers - never file contents. Turning the setting off removes the hooks from your agents.

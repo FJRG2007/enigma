@@ -241,8 +241,9 @@ enigma compress [file] Compress JSON/logs/text to fewer tokens (reversible);
                        --retrieve <hash> restores, --stats shows total savings,
                        --clear wipes all dashboard data (stats/history/cache)
 enigma verify          Check that work reported as finished actually is: scans the change for
-                       unfinished work and runs your verification command. parity <src> <dst>
-                       compares a codebase against a port of it. Also runs at turn end
+                       unfinished work and broken conventions, and runs your verification
+                       command. parity <src> <dst> compares a codebase against a port of it.
+                       Also runs at turn end
 enigma mcp             Run the context-compression MCP server over stdio
 enigma api             Serve a local OpenAI-compatible API for your agents (Claude Code, and
                        Codex/OpenCode where installed); route per request by the model field.

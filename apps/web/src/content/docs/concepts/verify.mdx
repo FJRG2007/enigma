@@ -5,6 +5,7 @@ group: Concepts
 order: 38
 ---
 import Cmd from "../../../components/Cmd.astro";
+import { docHref } from "../../../lib/url";
 
 Agents say "done" when they are not. A module never written, a hard function replaced by a placeholder, a real parser quietly swapped for a regex because the faithful port was tedious - and the final message still reads *everything is complete*. You only find out later, reading the code yourself.
 
@@ -39,6 +40,14 @@ It needs no diff - the message announces it - so this check is free as well. It 
 
 Same loop safety as above: after two blocks on the same question the gate stands down.
 
+## The third check: conventions
+
+The same hook checks one thing that has nothing to do with a claim: whether the code the turn added breaks a convention this project enforces. It runs the <a href={docHref("concepts/guardrails")}>guardrails</a> rules over the **added** lines and denies the stop on a blocking finding - a broken convention is a defect whether or not the turn said "done", and this is the only channel that can hand one back to the model at all (a post-edit warning exits zero, where nothing reads it).
+
+Severity is not redefined here. A `block` rule denies the stop; a `warn` rides along in the same message when something blocking already fired, and is otherwise only recorded. Stopping a turn over advice is how a gate gets switched off, which would cost the blocking rules too - so a convention that genuinely must not be skipped is written as a `block` rule instead.
+
+It costs one diff on a turn that produced code and nothing on a turn that produced none, it has its own loop-safety budget (so convention findings can never spend the completion gate's), and `guardrails: false` in a repository's `.enigma.json` stands it down there.
+
 ## Precision
 
 A false block would just train you to switch this off, so the checks only match unambiguous evidence:
@@ -64,7 +73,7 @@ Coverage matches symbol **names**: it proves a counterpart exists, never that it
 ## Use it
 
 <Cmd name="enigma verify [cmd]" ex={["enigma verify", "enigma verify --all", "enigma verify parity ../original .", "enigma config verify-command \"npm test\"", "enigma config verify off"]}>
-No argument checks the current change and runs your verification command when there is new work to check - the same check the turn-end hook runs, on demand. `--all` sweeps every tracked file. It returns a non-zero exit code when something is unfinished, and also when it could not check at all (outside a git repository), so it works as a pre-merge or CI check.
+No argument checks the current change, sweeps it for convention violations, and runs your verification command when there is new work to check - the same check the turn-end hook runs, on demand. Advisory convention findings are printed as suggestions and never affect the exit code. `--all` sweeps every tracked file for unfinished work (the convention sweep is scoped to the change, so it is skipped there). It returns a non-zero exit code when something is unfinished, and also when it could not check at all (outside a git repository), so it works as a pre-merge or CI check.
 </Cmd>
 
 Set `verify-command` to whatever proves your project works (`npm test`, `make check`, `pytest -q`). It is read from your **global** config only, never from a repository's own `.enigma.json`, and it is excluded from config import and export: a cloned repository or an imported bundle must never be able to choose a command to run on your machine.

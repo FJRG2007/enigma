@@ -21,9 +21,17 @@
  * simply stopped, and the user has to spend a turn saying "yes" to a question with only one
  * answer. That one needs no diff at all: the message announces it.
  *
- * Cost model: both checks are regexes over one string, so a turn that neither claims nor asks
- * costs nothing, and a turn that does claim pays one git diff. No model tokens are spent
- * unless the gate actually fires, and then only on the findings.
+ * A third check is not about a claim at all: the CONVENTION SWEEP (scanConventions) runs the
+ * guardrails rules at their diff stage over the lines the change added, and denies the stop on a
+ * blocking finding. A broken convention is a defect whether or not the turn claimed anything, and
+ * this is the only channel that can reach the model with one - the post-edit hook can print a
+ * warning but never feed it back. Severity is not redefined here: a warn rides along in the
+ * message and never decides the exit code.
+ *
+ * Cost model: the claim and stop-short checks are regexes over one string, so a turn that neither
+ * claims nor asks pays for neither, and a turn that does claim pays one git diff - the same one
+ * the sweep reads, computed once and shared. The sweep costs nothing on a turn that added no
+ * lines. No model tokens are spent unless the gate actually fires, and then only on the findings.
  *
  * Precision over recall throughout: a false block would train the user to switch this
  * off, so every pattern matches only unambiguous evidence, documents legitimately

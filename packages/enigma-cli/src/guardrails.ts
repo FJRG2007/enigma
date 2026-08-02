@@ -18,6 +18,15 @@
  * Severity model (consistent across the agent hook and the commit backstop):
  *   - block: enforced. Agent hook exits 2 (stderr fed back to the model); commit fails.
  *   - warn:  advisory. Agent hook exits 0 (printed, non-blocking); commit prints, passes.
+ *
+ * Stage model (GuardrailRule.stage):
+ *   - edit (default): the post-edit hook and the commit backstop, which see a WHOLE file.
+ *   - diff: only the turn-end sweep in verify.ts, over the lines the change ADDED - which is
+ *     what makes a rule affordable when the defect is common in code that already exists.
+ *
+ * Every finding the model is actually confronted with is appended to the compliance ledger
+ * (recordFindings, reported by `enigma guardrails stats`), so a convention the agent keeps
+ * skipping is a number rather than a memory.
  */
 
 import { homedir } from "node:os";

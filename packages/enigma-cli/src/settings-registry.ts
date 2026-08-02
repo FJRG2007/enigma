@@ -12,18 +12,18 @@
 import * as conf from "./config";
 import { AGENTS } from "./agents";
 import { setTrim } from "./trim-deploy";
-import { clampCapPercent } from "./governor";
 import { setVerify } from "./verify-deploy";
+import { clampCapPercent } from "./governor";
 import { applyMcpToggle } from "./mcp-deploy";
-import { isAutoLintOn, setAutoLint } from "./lint";
-import { setGuardrails } from "./guardrails-deploy";
 import { applyDashboardMode } from "./dashboard";
+import { isAutoLintOn, setAutoLint } from "./lint";
 import { applyGateToggle } from "./command-deploy";
-import { getGhTelemetryCached, ghTelemetryBlocker, hasGhCli, setGhTelemetry } from "./github";
-import { getClaudeAttribution, setClaudeAttribution, getClaudeFeedbackSurvey, setClaudeFeedbackSurvey, getClaudeStatusline, setClaudeStatusline, hasCustomClaudeStatusline, setClaudeTrust } from "./claude";
-import { BYPASS_SUPPORTED, getBypass, setBypass } from "./permissions";
-import { GUARD_PROTECTIONS, GUARD_LISTS, readGlobalGuard, setGuardProtection, setGuardList } from "./guard-config";
+import { setGuardrails } from "./guardrails-deploy";
 import type { GuardListMeta } from "./guard-config";
+import { BYPASS_SUPPORTED, getBypass, setBypass } from "./permissions";
+import { getGhTelemetryCached, ghTelemetryBlocker, hasGhCli, setGhTelemetry } from "./github";
+import { GUARD_PROTECTIONS, GUARD_LISTS, readGlobalGuard, setGuardProtection, setGuardList } from "./guard-config";
+import { getClaudeAttribution, setClaudeAttribution, getClaudeFeedbackSurvey, setClaudeFeedbackSurvey, getClaudeStatusline, setClaudeStatusline, hasCustomClaudeStatusline, setClaudeTrust } from "./claude";
 
 export type Scope = "global" | "local";
 
@@ -393,7 +393,7 @@ const RAW_CATEGORIES: Category[] = [
             {
                 key: "guardrails",
                 label: "Convention guardrails on edit",
-                hint: "enforce project conventions (e.g. UUID primary keys, Prisma as the default ORM) via a post-edit hook that feeds violations back to the model; toggling applies immediately (Claude + opencode); enigma default: on",
+                hint: "enforce project conventions (e.g. UUID primary keys, Prisma as the default ORM) via a post-edit hook that feeds violations back to the model, plus a turn-end sweep of the lines the change added for the rules that only apply to new code; 'enigma guardrails stats' reports which ones keep being broken; toggling applies immediately (Claude + opencode); enigma default: on",
                 read: () => conf.readConfig().config.guardrails,
                 write: (value, scope) => ({ path: setGuardrails(scope, value), changed: true }),
             },
@@ -412,7 +412,7 @@ const RAW_CATEGORIES: Category[] = [
                 // still works - put verify: false in that repo's .enigma.json and the hook honours
                 // it at runtime, against the directory the turn actually ran in.
                 globalOnly: true,
-                hint: "when the agent reports work as finished, check the claim against what the turn produced (incompleteness markers, plus 'verify-command' when set) and deny the stop on evidence it is false; Claude Code only; set verify: false in a repo's .enigma.json to skip that project; enigma default: on",
+                hint: "when the agent reports work as finished, check the claim against what the turn produced (incompleteness markers, plus 'verify-command' when set) and deny the stop on evidence it is false; the same hook sweeps the added lines for guardrail violations, claim or no claim; Claude Code only; set verify: false in a repo's .enigma.json to skip that project; enigma default: on",
                 read: () => conf.readGlobalConfig().verify,
                 write: (value, scope) => ({ path: setVerify(scope, value), changed: true }),
             },

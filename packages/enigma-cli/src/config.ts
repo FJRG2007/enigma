@@ -129,7 +129,9 @@ export interface EnigmaConfig {
      * Enforce project conventions via a post-edit hook (default on): after an agent writes a
      * file, data-driven rules run (e.g. UUID primary keys, Prisma as the default ORM) and any
      * violation is fed back so the model self-corrects in the same turn. Rules live in
-     * ~/.enigma-guardrails.json and guardrails.ts; a commit/CI backstop mirrors them. See guardrails.ts.
+     * ~/.enigma-guardrails.json and guardrails.ts; a commit/CI backstop mirrors them. Rules marked
+     * `stage: "diff"` run instead in the turn-end sweep, over the lines the change added (verify.ts),
+     * which a repo-local `guardrails: false` stands down for that project. See guardrails.ts.
      */
     guardrails: boolean;
     /**

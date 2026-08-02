@@ -233,8 +233,9 @@ Commands:
                        every tracked file. Only a file with content followed by blank lines is
                        touched. It also runs after each agent edit ('config trim on|off')
   verify [cmd]         Check that work reported as finished actually is. No arg checks the
-                       current change for evidence of unfinished work and runs the
-                       configured verification command; --all sweeps every tracked file;
+                       current change for evidence of unfinished work, sweeps the lines it
+                       added for convention violations, and runs the configured
+                       verification command; --all sweeps every tracked file;
                        parity <source> <target> compares a codebase against a port or
                        clone of it and reports what was never carried over. The same check
                        runs automatically at turn end ('config verify on|off')
