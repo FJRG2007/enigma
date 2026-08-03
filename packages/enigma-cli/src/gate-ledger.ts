@@ -24,15 +24,43 @@ const LEDGER_VERSION = 1;
 /** How many repositories to keep. Oldest entries drop, so the file stays small. */
 const MAX_REPOS = 100;
 
+/** Statuses that mean the run stopped without clearing anything (`gate/types.ts`). */
+const ABANDONED = new Set(["failed", "cancelled"]);
+
 /** One repository's most recent run. */
 export interface GateRunRecord {
     /** Repository working root, as the gate recorded it. */
     repoPath: string;
+    /**
+     * The run this record is about, so a later state of the SAME run replaces it instead of
+     * displacing the run before it. Absent in records written before this field existed, which
+     * only costs the carry below one generation.
+     */
+    runId?: string;
     branch: string;
     headSha: string;
     status: string;
     /** Unix seconds at which the run last changed state. */
     at: number;
+    /**
+     * The run that vouched for this repository before this one, kept so a run that ends failed
+     * or cancelled does not erase the run that really did validate the work.
+     */
+    prior?: GateRunRecord;
+}
+
+/**
+ * The run that vouches for a repository's work, or null when none does.
+ *
+ * A run that ended `failed` or `cancelled` looked at the commits and did NOT clear them, so it
+ * cannot stand the completion gate down - otherwise starting a run and aborting it would clear
+ * the very check the gate exists for. Every other status still counts, in-flight ones included:
+ * a turn that ends while the pipeline is parked awaiting the driving agent did not skip it.
+ */
+export function validatingRun(record: GateRunRecord | null | undefined): GateRunRecord | null {
+    if (!record || typeof record.at !== "number") return null;
+    if (!ABANDONED.has(String(record.status).toLowerCase())) return record;
+    return validatingRun(record.prior);
 }
 
 /** The serialized file. */
@@ -85,6 +113,12 @@ function readLedger(path: string): Ledger {
 /**
  * Records a run against its repository, replacing that repository's previous entry.
  *
+ * The entry it replaces is not simply lost: a NEW run carries the run that last vouched for
+ * this repository forward as `prior`, so when this one ends failed or cancelled the earlier
+ * one still answers for the commits it validated. A later state of the same run inherits that
+ * carry unchanged, which is what stops a run's own `pending`/`running` stamps from vouching
+ * for it after it is aborted.
+ *
  * Written atomically (temp file plus rename) because the reader is a turn-end hook that
  * must never parse half a file, and failures are swallowed: bookkeeping must never be
  * able to disturb a run. `path` is the ledger the caller is already using, so a test or an
@@ -93,7 +127,11 @@ function readLedger(path: string): Ledger {
 export function recordGateRun(record: GateRunRecord, path = gateLedgerPath()): void {
     try {
         const ledger = readLedger(path);
-        ledger.repos[record.repoPath] = record;
+        const previous = ledger.repos[record.repoPath];
+        const prior = previous && previous.runId === record.runId ? previous.prior : validatingRun(previous);
+        // Flattened to one generation: `prior` is already a validating run, so its own carry
+        // answers for nothing this reader would ever reach.
+        ledger.repos[record.repoPath] = { ...record, prior: prior ? { ...prior, prior: undefined } : undefined };
         const entries = Object.entries(ledger.repos);
         if (entries.length > MAX_REPOS) {
             entries.sort((a, b) => b[1].at - a[1].at);

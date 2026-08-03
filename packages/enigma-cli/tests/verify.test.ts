@@ -28,7 +28,7 @@ process.env.ENIGMA_GATE_HOME = join(HOME, "gate");
 delete process.env.ENIGMA_GATE;
 
 const { claimsDone, asksToContinue, gateSkipped, scanGaps, scanConventions, collectGaps, runVerifyHook } = await import("../src/verify");
-const { recordGateRun, lastGateRun } = await import("../src/gate-ledger");
+const { recordGateRun, lastGateRun, validatingRun } = await import("../src/gate-ledger");
 const { parityReport, formatParity } = await import("../src/verify-parity");
 const { readLedger } = await import("../src/guardrails");
 
@@ -332,6 +332,19 @@ test("reads a turn that hands the quality gate back as a skip", () => {
         "The gate pipeline docs are now in docs/notes/gate.md. Tell me if you want a shorter version.",
         "Documented the gate ledger. Shall I run the tests as well?",
         "The gate daemon was not started in this session.",
+        // `gate` as the head of a compound noun survives a RUN verb in front of it too, and the
+        // verb itself must be a whole word - `Restarted` is not `start`.
+        "I ran the gate tests but did not run the full suite.",
+        "Restarted the gate daemon; the dashboard bridge was not started.",
+        // An everyday closer whose verb only spells a run verb in the other language: `corr`,
+        // `pas` and `start` against a bare `it` turned "correct it" into an offer to run.
+        "The quality gate flagged a stray import. Let me know if you want me to correct it.",
+        "The quality gate found one failing test. Tell me if you want me to start it locally.",
+        // The gate could not be stood up at all. Not a policy reason but a fact about the
+        // machine, and it has to be an exit or the block orders something that cannot succeed.
+        "The gate did not run because the daemon failed to start.",
+        "The quality gate has not run: this repo has no origin remote, so `enigma gate init` cannot complete.",
+        "El gate sigue sin ejecutarse: no hay remoto configurado en este repo.",
         // Reported as run, with an offer about something else entirely.
         "The gate run passed all checks and the PR is ready. Let me know if you want anything changed before merging.",
     ]) expect(gateSkipped(message)).toBe("");
@@ -418,6 +431,43 @@ test("a run on another branch does not vouch for this one", () => {
     expect(runVerifyHook(payload(dir, "All done, everything is implemented."))).toBe(2);
     recordGateRun({ repoPath: dir, branch: "feature", headSha: "abc1234", status: "completed", at });
     expect(runVerifyHook(payload(dir, "All done, everything is implemented."))).toBe(0);
+});
+
+test("a run that was aborted or failed vouches for nothing", () => {
+    // Otherwise the whole check has a one-command way out: start a run, abort it, and the
+    // ledger entry it leaves behind stands the gate down for those commits forever.
+    recordGateRun({ repoPath: join(tmpdir(), "a-fifth-repo"), branch: "main", headSha: "0".repeat(7), status: "completed", at: 1 });
+    const dir = repoWith({ "src/app.ts": "export const a = 1;\n" });
+    git(dir, "checkout", "-q", "-b", "feature");
+    const commit = (file: string): void => {
+        write(dir, file, "export const total = 1;\n");
+        git(dir, "add", "-A");
+        git(dir, "commit", "-qm", "work");
+    };
+
+    commit("src/one.ts");
+    expect(runVerifyHook(payload(dir, "All done, everything is implemented."))).toBe(0);
+    commit("src/two.ts");
+    expect(runVerifyHook(payload(dir, "All done, everything is implemented."))).toBe(2);
+    const at = Math.floor(Date.now() / 1000) + 5;
+
+    // A run recorded in flight clears the turn - being parked awaiting the driving agent is
+    // not a skip - but its own in-flight stamps must not survive it being aborted.
+    recordGateRun({ repoPath: dir, runId: "run-a", branch: "feature", headSha: "abc1234", status: "running", at });
+    expect(runVerifyHook(payload(dir, "All done, everything is implemented."))).toBe(0);
+    recordGateRun({ repoPath: dir, runId: "run-a", branch: "feature", headSha: "abc1234", status: "cancelled", at });
+    expect(runVerifyHook(payload(dir, "All done, everything is implemented."))).toBe(2);
+
+    // A run that really did clear this work, then a later one that dies: the failure must not
+    // take the earlier run's answer with it, or an aborted retry becomes a false block.
+    recordGateRun({ repoPath: dir, runId: "run-b", branch: "feature", headSha: "abc1234", status: "completed", at });
+    expect(runVerifyHook(payload(dir, "All done, everything is implemented."))).toBe(0);
+    recordGateRun({ repoPath: dir, runId: "run-c", branch: "feature", headSha: "def5678", status: "running", at: at + 10 });
+    recordGateRun({ repoPath: dir, runId: "run-c", branch: "feature", headSha: "def5678", status: "failed", at: at + 10 });
+    expect(runVerifyHook(payload(dir, "All done, everything is implemented."))).toBe(0);
+    expect(lastGateRun(dir)?.status).toBe("failed");
+    expect(validatingRun(lastGateRun(dir))?.status).toBe("completed");
+    expect(validatingRun(lastGateRun(dir))?.at).toBe(at);
 });
 
 test("keeps the gate's watch anchor when the block-counter state is pruned", () => {

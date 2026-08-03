@@ -105,6 +105,13 @@ half needs `bun:sqlite` and is imported dynamically.
 - Every state change is recorded, in-flight runs included. A turn that ends while the pipeline
   is parked awaiting the driving agent did NOT skip the gate, and blocking it would be a false
   block - the one thing that gets a gate switched off.
+- The STATUS is read, though, and `failed`/`cancelled` vouch for nothing (`validatingRun`).
+  `broadcast` records the `EventRunCompleted` the executor emits for a run it failed or
+  aborted too, so without that rule `axi run` followed by `axi abort` left a fresh entry that
+  stood both checks down permanently - the enforcement cleared by the two commands that do the
+  least work. The catch is that an abort must not erase the run that DID clear the work, so a
+  record carries the run it displaced as `prior` (flattened to one generation) and a `runId`,
+  which is what keeps a run's own `pending`/`running` stamps from vouching for it after it dies.
 - The `branch` a record carries is READ, not decoration: the pipeline reviews, fixes and pushes
   one branch, so `verify.ts` only lets a run vouch for the branch it ran on. Without that a run
   on `feature` stood the check down over commits sitting on `main` that nothing ever looked at.

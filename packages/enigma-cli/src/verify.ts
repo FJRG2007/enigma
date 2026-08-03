@@ -49,9 +49,9 @@ import { createHash } from "node:crypto";
 import { join, extname } from "node:path";
 import { readConfigAt, readGlobalConfig } from "./config";
 import { lastAssistantMessage } from "./claude-transcripts";
-import { gateLedgerReady, lastGateRun } from "./gate-ledger";
 import { execFileSync, spawnSync } from "node:child_process";
 import { enigmaHome, readJson, isGateAgentRun } from "./util";
+import { gateLedgerReady, lastGateRun, validatingRun } from "./gate-ledger";
 import { checkFile, loadRules, recordFindings, type Finding } from "./guardrails";
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, statSync, writeFileSync } from "node:fs";
 
@@ -248,8 +248,32 @@ function stopShortMessage(question: string): string {
 
 // --- the quality gate: announced as skipped, or never told about the work --------------
 
-/** Verbs that mean putting the gate through a run, in both languages. */
-const RUN_VERB = "(?:run|runs|ran|running|launch\\w*|start\\w*|execut\\w*|driv\\w*|kick\\s+off|ejecut\\w*|lanz\\w*|corr\\w*|pas\\w*|inicializ\\w*|inicialic\\w*)";
+/** English verbs that mean putting the gate through a run. */
+const RUN_VERB_EN = "(?:run|runs|ran|running|re-?runs?|re-?ran|launch\\w*|start\\w*|execut\\w*|driv\\w*|kick\\s+off)";
+
+/**
+ * The Spanish ones, kept in their own list because their stems spell English words: `corr\w*`
+ * is `correct`, `pas\w*` is `passed`, `inicializ\w*` is nothing at all. Reading those as run
+ * verbs turned everyday English closers into an offer to run the gate.
+ */
+const RUN_VERB_ES = "(?:ejecut\\w*|lanz\\w*|corr\\w*|pas\\w*|inicializ\\w*|inicialic\\w*)";
+
+/** Either language, for the matches that require the word `gate` right after the verb. */
+const RUN_VERB = `(?:${RUN_VERB_EN}|${RUN_VERB_ES})`;
+
+/**
+ * The subset of English run verbs unambiguous enough to read a bare `it` as the gate. `start
+ * it`, `correct it`, `pass it` are what an ordinary closer about the code says.
+ */
+const RUN_VERB_IT = "(?:run|runs|ran|running|re-?runs?|re-?ran|launch(?:es|ed|ing)?|execute[sd]?|executing|drive[sn]?|driving|kick\\s+off)";
+
+/**
+ * What may follow `gate` for it to still BE the pipeline rather than the head of a compound
+ * noun: the end of its clause, or a word that carries the same sentence on about it. The gate
+ * tests, the gate daemon, the gate docs are this repository's daily vocabulary, so `ran the
+ * gate tests` must not read as a run of the pipeline.
+ */
+const GATE_TAIL = "(?=\\s*(?:[,;:.!?)\\]\"']|$)|\\s+(?:it|again|now|yet|first|then|later|already|still|before|after|once|myself|yourself|here|locally|manually|and|but|so|because|since|when|while|if|on|in|for|from|to|with|without|over|against|todav[ií]a|a[uú]n|ahora|luego|primero|antes|despu[eé]s|otra|y|pero|porque|cuando|si|en|sobre|para|por|con|sin)\\b)";
 
 /**
  * The quality gate as the SUBJECT of a sentence, so nothing below fires on an unrelated
@@ -268,8 +292,9 @@ const GATE_TOPIC_RE = new RegExp([
     "\\bgate\\s+(?:pipeline|run|de\\s+calidad)\\b",
     // The gate as subject: followed by what it did, or by the end of its clause.
     "\\b(?:the|el|la)\\s+gate\\b(?=\\s*(?:[,;:.!?)]|$)|\\s+(?:has|have|had|was|were|is|are|did|does|do|never|still|already|ran|run|runs|passed|failed|parked|blocked|reported|se|sigue|siguen|no|ya|está|esta|pasó|paso|falló|fallo|terminó|corrió)\\b)",
-    // The gate as the object of running it ("run the gate", "lanzar el gate").
-    `${RUN_VERB}\\s+(?:the\\s+|el\\s+|la\\s+)?(?:quality\\s+)?gate\\b`,
+    // The gate as the object of running it ("run the gate", "lanzar el gate"), under the same
+    // guard: `ran the gate tests` is a sentence about the test suite, not about a run.
+    `\\b${RUN_VERB}\\s+(?:the\\s+|el\\s+|la\\s+)?(?:quality\\s+)?gate\\b${GATE_TAIL}`,
 ].join("|"), "i");
 
 /**
@@ -315,9 +340,15 @@ const GATE_OFFER_RE = new RegExp([
 /**
  * Running the gate as the thing being offered: the pipeline named, or standing in as the
  * pronoun the offer that follows a report about it always uses ("run it", "que lo lance").
+ *
+ * The pronoun is the delicate half - it is the offer's object in every language and says
+ * nothing about what is being offered - so it only counts after a verb that cannot mean
+ * anything else, and the Spanish verbs never reach it at all.
  */
 const GATE_RUN_ACTION_RE = new RegExp([
-    `${RUN_VERB}\\s+(?:the\\s+|el\\s+|la\\s+)?(?:quality\\s+)?(?:gate|axi|it)\\b`,
+    `\\b${RUN_VERB_EN}\\s+(?:the\\s+)?(?:quality\\s+)?(?:gate|axi)\\b`,
+    `\\b${RUN_VERB_ES}\\s+(?:el\\s+|la\\s+)?(?:quality\\s+)?(?:gate|axi)\\b`,
+    `\\b${RUN_VERB_IT}\\s+it\\b`,
     "\\benigma\\s+gate\\b|\\bgate\\s+axi\\b|\\baxi\\s+run\\b|\\/gate\\b",
     "\\b(?:lo|la)\\s+(?:lance|lanzo|lanzamos|ejecute|ejecuto|ejecutamos|corra|corro|pase|paso|inicialice|valide)\\b",
     "\\b(?:lanzar|ejecutar|correr|pasar|validar|inicializar)(?:lo|la)\\b",
@@ -326,7 +357,13 @@ const GATE_RUN_ACTION_RE = new RegExp([
 /**
  * The only reasons the kernel accepts for work not going through an enabled gate: the user
  * said so, the repository or the branch is opted out, there is nothing committed to
- * validate, or the run itself parked on a finding that must be escalated verbatim.
+ * validate, the run itself parked on a finding that must be escalated verbatim, or the gate
+ * could not be stood up here at all.
+ *
+ * That last one is not a policy reason but a fact about the machine, and it has to be an exit
+ * or the block becomes a trap: `enigma gate init` needs an `origin` remote and throws without
+ * one, and the daemon can fail to come up. An instruction that cannot succeed, blocked twice,
+ * with no phrasing that clears it, is the worst shape this check can take.
  *
  * Matched over the WHOLE message and deliberately broad, exactly like LEGITIMATE_STOP_RE:
  * naming the reason is the documented way out, and a false block here would land on a turn
@@ -345,6 +382,13 @@ const GATE_EXCUSE_RE = new RegExp([
     "\\bnothing\\s+(?:committed|to\\s+validate|to\\s+gate)\\b|\\bno\\s+commits?\\s+to\\b",
     "\\bnada\\s+que\\s+(?:validar|commitear|gatear)\\b|\\bsin\\s+nada\\s+committead",
     "\\bask-user\\b",
+    // The gate cannot be stood up here: no remote for `gate init`, or init/the daemon failing.
+    "\\bgate\\s+doctor\\b",
+    "\\b(?:no|without\\s+an?)\\s+(?:git\\s+)?(?:remote|origin)\\b|\\b(?:remote|origin)\\s+(?:is\\s+)?(?:not\\s+configured|missing|unset)\\b",
+    "\\b(?:daemon|demonio)\\b[^.?!]{0,40}?\\b(?:failed|could\\s+not|cannot|can'?t|would\\s+not|did\\s*n[o']?t)\\s+(?:to\\s+)?(?:start|launch|come\\s+up|run)\\b",
+    "\\b(?:could\\s+not|cannot|can'?t|unable\\s+to|failed\\s+to)\\s+(?:\\w+\\s+){0,3}?(?:start|launch|initiali[sz]e|init|run)\\s+(?:the\\s+)?(?:gate|daemon|pipeline|axi)\\b",
+    "\\bno\\s+(?:hay|existe|tiene)\\s+(?:un\\s+)?(?:remoto|origin)\\b|\\bsin\\s+remoto\\b",
+    "\\bno\\s+(?:se\\s+)?(?:pudo|puede|he\\s+podido)\\s+(?:\\w+\\s+){0,3}?(?:iniciar|arrancar|lanzar|inicializar)\\b",
     // The run left a PR, and handing THAT back is the prescribed ending, not a skip - same
     // alternative LEGITIMATE_STOP_RE carries, for the same reason.
     "\\b(?:review|merge|revisar|fusionar|mergear)\\b[^?]*\\b(?:pull\\s+request|\\bpr\\b)|\\b(?:pull\\s+request|\\bpr\\b)[^?]*\\b(?:review|merge|revisar|fusionar|mergear)\\b",
@@ -378,25 +422,45 @@ export function gateSkipped(message: string): string {
     return "";
 }
 
+/** What both gate checks need to know about `cwd`, read once per hook invocation. */
+interface GateContext {
+    /**
+     * Whether the gate is expected to have validated the work here: enabled for this project
+     * (nearest .enigma.json wins) and the branch not one the user listed as protected, which
+     * `axi run` refuses outright.
+     */
+    expected: boolean;
+    /** The branch the work is on, or "" when git names none. */
+    branch: string;
+}
+
 /**
- * Whether the gate is expected to have validated the work in `cwd`: enabled for this
- * project (nearest .enigma.json wins) and the branch not one the user listed as protected,
- * which `axi run` refuses outright.
+ * Resolves that context. Both facts cost a subprocess or a config merge and every check below
+ * wants them, so they are read ONCE and passed down - this runs at the end of every turn.
+ * Deliberately not memoized across invocations: the same process serves many turns in tests,
+ * and a branch or a setting can change between two of them.
  */
-function gateExpectedAt(cwd: string): boolean {
+function gateContextAt(cwd: string): GateContext {
     const config = readConfigAt(cwd);
-    if (!config.gate) return false;
     const branch = gitOut(cwd, ["rev-parse", "--abbrev-ref", "HEAD"]).trim();
     // A hand-edited .enigma.json can carry anything, and this runs inside a turn-end hook:
     // a throw here would break the turn over a malformed setting.
     const protectedBranches = Array.isArray(config.gateProtectedBranches) ? config.gateProtectedBranches : [];
-    return branch !== "" && !protectedBranches.some((entry) => String(entry).trim() === branch);
+    const expected = Boolean(config.gate) && branch !== "" && !protectedBranches.some((entry) => String(entry).trim() === branch);
+    return { expected, branch };
 }
 
-/** Unix seconds of the newest commit in `cwd`, or null when there is none to read. */
+/**
+ * Unix seconds of the newest commit in `cwd`, or null when there is none to read.
+ *
+ * `gitOut` swallows a failure into "", and `Number("")` is 0 - a timestamp older than every
+ * recorded run, so reading it as a number would let any record stand the check down. Anything
+ * that is not a real time is the same answer as no answer.
+ */
 function headCommittedAt(cwd: string): number | null {
-    const at = Number(gitOut(cwd, ["log", "-1", "--format=%ct", "HEAD"]).trim());
-    return Number.isFinite(at) ? at : null;
+    const raw = gitOut(cwd, ["log", "-1", "--format=%ct", "HEAD"]).trim();
+    const at = Number(raw);
+    return raw !== "" && Number.isFinite(at) && at > 0 ? at : null;
 }
 
 /**
@@ -410,16 +474,19 @@ function headCommittedAt(cwd: string): number | null {
  * record, an unreadable HEAD) is not held against the run - the timestamp still decides there,
  * since a false block is the worse failure.
  *
+ * A run that ended failed or cancelled vouches for nothing (`validatingRun`), or starting a run
+ * and aborting it would be the way past the check this exists for; the run it displaced still
+ * answers for the commits it did clear.
+ *
  * `committedAt` is passed by callers that already read it, so the common path costs one
  * `git log` rather than two.
  */
-function gateValidatedHead(cwd: string, committedAt?: number): boolean {
+function gateValidatedHead(cwd: string, gate: GateContext, committedAt?: number): boolean {
     const at = committedAt ?? headCommittedAt(cwd);
     if (at === null) return false;
-    const last = lastGateRun(cwd);
+    const last = validatingRun(lastGateRun(cwd));
     if (last === null || last.at < at) return false;
-    const branch = gitOut(cwd, ["rev-parse", "--abbrev-ref", "HEAD"]).trim();
-    return branch === "" || typeof last.branch !== "string" || last.branch === "" || last.branch === branch;
+    return gate.branch === "" || typeof last.branch !== "string" || last.branch === "" || last.branch === gate.branch;
 }
 
 /**
@@ -437,7 +504,7 @@ function gateValidatedHead(cwd: string, committedAt?: number): boolean {
  * Returns null when the question cannot be answered - not a git repository, no commits, an
  * unreadable status, no resolvable branch point - rather than guessing, since this denies a stop.
  */
-function unvalidatedCommits(cwd: string): { count: number; since: number; } | null {
+function unvalidatedCommits(cwd: string, gate: GateContext): { count: number; since: number; } | null {
     if (!inGitRepo(cwd) || !hasCommits(cwd)) return null;
     const status = gitTry(cwd, ["status", "--porcelain"]);
     if (status === null || status.trim() !== "") return null;
@@ -447,7 +514,7 @@ function unvalidatedCommits(cwd: string): { count: number; since: number; } | nu
     if (!Number.isInteger(ahead) || ahead <= 0) return null;
     const committedAt = headCommittedAt(cwd);
     if (committedAt === null) return null;
-    if (gateValidatedHead(cwd, committedAt)) return null;
+    if (gateValidatedHead(cwd, gate, committedAt)) return null;
     return { count: ahead, since: committedAt };
 }
 
@@ -463,16 +530,23 @@ function unvalidatedCommits(cwd: string): { count: number; since: number; } | nu
  * The watch is anchored to the REPOSITORY, not to the payload's cwd: a turn run from a
  * subdirectory is the same repository, and keying it by cwd would hand it a fresh first
  * sighting - a free exemption for every commit made so far.
+ *
+ * A commit stamped with the very second the watch was armed IS charged (`<`, not `<=`), and
+ * that boundary is deliberate: git stamps commits to the second, and the flow this check exists
+ * for - the agent commits and the turn ends - puts the commit and the arming inside the same
+ * second. Reading that second as backlog would hand the one shape being enforced against a free
+ * pass, while charging it can only ever reach a commit made moments before the first sighting,
+ * which is this session's unvalidated work rather than the old backlog the exemption is for.
  */
-function gateGap(cwd: string): VerifyGap | null {
-    if (!gateExpectedAt(cwd) || !gateLedgerReady()) return null;
+function gateGap(cwd: string, gate: GateContext): VerifyGap | null {
+    if (!gate.expected || !gateLedgerReady()) return null;
     const watchKey = `gatewatch:${repoRootOf(cwd)}`;
     const watching = Number(stateValue(watchKey)) || 0;
     if (!watching) {
         setStateValue(watchKey, String(Math.floor(Date.now() / 1000)));
         return null;
     }
-    const pending = unvalidatedCommits(cwd);
+    const pending = unvalidatedCommits(cwd, gate);
     if (pending === null || pending.since < watching) return null;
     const head = gitOut(cwd, ["rev-parse", "--short", "HEAD"]).trim() || "HEAD";
     const plural = pending.count === 1 ? "commit" : "commits";
@@ -488,7 +562,7 @@ function gateMessage(reason: VerifyGap): string {
         "",
         "The gate being enabled IS the decision - it was taken when it was switched on, so there is nothing here to ask about and nothing to hand back. Drive it yourself now, in this same turn: `enigma gate axi run --intent \"<what the user set out to accomplish>\"`, on whatever branch the work is on, the default branch included. If the repository was never initialized, run `enigma gate init` first - an uninitialized repo is a setup step you can perform, not a blocker. The run refuses a dirty working tree, so commit the work before driving it: committing what you just finished is part of finishing it, not a separate decision to ask about.",
         "Authorize `auto-fix` and `no-op` findings on your own judgment, escalate every `ask-user` finding verbatim, never pass `--yes`, and never merge the PR yourself: on `checks-passed`, leave it ready and ask the user to review and merge.",
-        "The only ways this turn may end unvalidated are the ones the policy names, and each has to be stated: the user told you to skip or bypass it, the repository sets `gate: false`, the branch is listed in `gate-protected-branches`, or there is nothing committed to validate. If one of those is the case, say which - do not ask for permission to run something that is already turned on.",
+        "The only ways this turn may end unvalidated are the ones the policy names, and each has to be stated: the user told you to skip or bypass it, the repository sets `gate: false`, the branch is listed in `gate-protected-branches`, or there is nothing committed to validate. There is one more, and it is a fact rather than a decision: the gate cannot be stood up here at all - the repository has no `origin` remote for `enigma gate init`, or init or the daemon failed to start. Say that, with what `enigma gate doctor` reports, and this stands down. If one of those is the case, say which - do not ask for permission to run something that is already turned on.",
     ].join("\n");
 }
 
@@ -1108,7 +1182,13 @@ export function runVerifyHook(payload?: string): number {
     // with nothing changed, which is precisely the behaviour being gated. Loop safety comes from
     // the evidence-keyed budget below instead, which bounds repeats without excusing them.
     const cwd = typeof raw.cwd === "string" && existsSync(raw.cwd) ? raw.cwd : process.cwd();
-    if (!readConfigAt(cwd).verify) return 0;
+    const config = readConfigAt(cwd);
+    if (!config.verify) return 0;
+    // Resolved at most ONCE per invocation, and only if a gate check actually runs: both facts
+    // cost a config merge and a git subprocess, and a turn that neither claims nor mentions the
+    // gate must keep costing nothing at all.
+    let context: GateContext | null = null;
+    const gate = (): GateContext => (context ??= gateContextAt(cwd));
 
     // The whole gate hangs off the final message, so losing it must be loud rather than a
     // permanent silent no-op that reads exactly like "nothing to report".
@@ -1139,7 +1219,7 @@ export function runVerifyHook(payload?: string): number {
     // know if...") carries an offer that reads exactly like the skipped one. Blocking there would
     // order a pipeline that just ran, with no phrasing left that could clear it.
     const skipped = raw.permission_mode === "plan" ? "" : gateSkipped(message);
-    if (skipped && gateExpectedAt(cwd) && !gateValidatedHead(cwd)) {
+    if (skipped && gate().expected && !gateValidatedHead(cwd, gate())) {
         const gap: VerifyGap = { kind: "gate", detail: skipped };
         if (mayBlock(`gate:${issueKey(session, [gap])}`, session, "gate")) {
             process.stderr.write(`${gateMessage(gap)}\n`);
@@ -1152,7 +1232,7 @@ export function runVerifyHook(payload?: string): number {
     // a warning but never feed it back. Checked before the claim path so the concrete, fixable
     // finding is what the model gets first.
     const claims = claimsDone(message);
-    const sweeps = readConfigAt(cwd).guardrails !== false;
+    const sweeps = config.guardrails !== false;
     // ONE diff for the turn, shared by both checks. Each of them reads the same branch diff plus
     // every untracked file, and running that twice on a claiming turn is the whole cost paid over.
     const scanned = sweeps || claims ? addedLines(cwd) : undefined;
@@ -1189,7 +1269,7 @@ export function runVerifyHook(payload?: string): number {
     // Checked LAST, because it is the only gap that is not about the code: everything this turn
     // produced can be finished, honest and clean, and still be work nothing reviewed. A claim is
     // what makes it a gap - the gate is about to be reported as complete, and it was not.
-    const unvalidated = gateGap(cwd);
+    const unvalidated = gateGap(cwd, gate());
     if (unvalidated && mayBlock(`gate:${issueKey(session, [unvalidated])}`, session, "gate")) {
         process.stderr.write(`${gateMessage(unvalidated)}\n`);
         return 2;
