@@ -1,6 +1,6 @@
 {
   "generator": "enigma seal",
-  "cliVersion": "1.34.0",
+  "cliVersion": "1.34.1",
   "count": 20,
   "skills": [
     {
@@ -96,7 +96,7 @@
       "version": "1.27.0",
       "description": "Frontend architecture: reusable components, abstraction thresholds, state management, no-op detection (skip any operation whose result equals current state, not just form saves; dirty means different from the loaded snapshot, not touched), instant first paint (render the shell, load data async, skeletons), perceived performance (prefetch on intent, debounce/throttle, cancel stale requests, avoid waterfalls, lazy widgets), large-list rendering (infinite scroll is the preferred default, pagination the deliberate exception when the design or the user calls for it, virtualization, skeletons, progressive loading), data views that ship their own affordances by default (a log, expense, transaction or history table is not done when the rows render: fuse.js search, the filters its column kinds imply, a date range, sort, filter state in the URL, and an export of the filtered set), every reference to an entity being a way into it (a name, id, project or path in a row links to that record, reveals it in a hover card, or at minimum copies and filters by it, never inert text; machine codes get human labels and raw payloads are never dumped into a cell), optimistic UI with rollback, visual restraint (one card level, spacing before borders, one elevation scale), icon actions (repeated row/card actions are icon-only buttons with aria-label plus title, not text labels), responsive/adaptive layout (fluid units, breakpoints, no overlap/overflow, viewport meta, touch targets), form fields that declare their keyboard and casing (autocapitalize/autocomplete/inputmode per field kind, set once in the shared Input, normalized on blur), variable-length text (min-width:0 in flex/grid, wrap vs truncate, long unbroken strings, worst-case content checks), auth screens (breached-password feedback, strength meter, cookie consent before login/register), and AI chat/agent interfaces via Vercel's AI Elements registry instead of hand-rolled message threads.",
       "provider": "FJRG2007/enigma",
-      "updated": "2026-08-02T22:52:54+02:00",
+      "updated": "2026-08-03T00:16:54+02:00",
       "sha": "6c4b973c41ca7c12e1839a4fba76f26ede4e04a57567392687ca61e7f6687d9b"
     },
     {
@@ -128,7 +128,7 @@
       "version": "1.0.0",
       "description": "Create new skills, modify and improve existing skills, and measure skill performance with evals and benchmarks.",
       "provider": "FJRG2007/enigma",
-      "updated": "2026-08-02T19:58:42+02:00",
+      "updated": "2026-08-03T00:16:54+02:00",
       "sha": "a49f6166f57d734e0f13487332da37903e925f32257447856af0fbd6a5f1dc84"
     },
     {
