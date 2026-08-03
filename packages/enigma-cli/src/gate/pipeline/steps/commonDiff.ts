@@ -87,6 +87,20 @@ export function matchIgnorePattern(path: string, pattern: string): boolean {
     return filepathMatch(pattern, path);
 }
 
+/** Returns true when the path matches any of the ignore patterns. */
+export function isIgnoredPath(path: string, patterns: string[]): boolean {
+    return patterns.some(pattern => matchIgnorePattern(path, pattern));
+}
+
+/**
+ * Returns true when at least one path survives the ignore patterns, i.e. the
+ * step has something to act on. Every step that decides "nothing to do" from a
+ * name-only diff asks this, so the empty-list verdict is decided in one place.
+ */
+export function hasNonIgnoredPath(paths: string[], patterns: string[]): boolean {
+    return paths.some(path => !isIgnoredPath(path, patterns));
+}
+
 /**
  * Removes diff sections for files matching any ignore pattern. Input is a unified
  * diff; output is the same diff with matching file sections removed. Returns the
@@ -102,14 +116,7 @@ export function filterDiff(diff: string, patterns: string[]): string {
     for (const line of lines) {
         // Detect the start of a new file section.
         if (line.startsWith("diff --git ")) {
-            const path = extractDiffPath(line);
-            skip = false;
-            for (const p of patterns) {
-                if (matchIgnorePattern(path, p)) {
-                    skip = true;
-                    break;
-                }
-            }
+            skip = isIgnoredPath(extractDiffPath(line), patterns);
         }
         if (!skip) result.push(line);
     }

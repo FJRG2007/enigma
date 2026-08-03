@@ -14,11 +14,12 @@
  * grace-period pacing are unaffected. Re-arming only ever extends the deadline.
  */
 
+import { log } from "@/gate/log";
 import { getRun } from "@/gate/db";
 import { buildHost } from "./host";
 import { autoFixCI } from "./ciFix";
-import * as scm from "@/gate/scm/types";
 import * as ciChecks from "./ciChecks";
+import * as scm from "@/gate/scm/types";
 import { DEFAULT_CI_TIMEOUT } from "@/gate/config";
 import { type StepName, STEP_CI } from "@/gate/types";
 import { resolveDefaultBranchTip } from "./commonGit";
@@ -278,7 +279,16 @@ export class CIStep implements Step {
                     resolveWindow = remaining;
                 }
                 const tipSignal = AbortSignal.any([signal, AbortSignal.timeout(resolveWindow)]);
-                const [tip, resolved] = await baseBranchTip(tipSignal);
+                // The resolve window is this loop's own deadline: expiring it aborts
+                // the lookup, which is a skipped poll, not a run failure.
+                let tip = "";
+                let resolved = false;
+                try {
+                    [tip, resolved] = await baseBranchTip(tipSignal);
+                } catch (err) {
+                    if (signal.aborted) throw signalError(signal);
+                    log.warn("resolve base branch tip", "err", errMessage(err));
+                }
                 if (resolved && tip !== "") {
                     if (lastBaseTip === "") {
                         lastBaseTip = tip;

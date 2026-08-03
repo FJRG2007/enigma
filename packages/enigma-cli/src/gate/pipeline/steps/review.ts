@@ -15,7 +15,7 @@
 
 import * as git from "@/gate/git";
 import type { Result } from "@/gate/agent/agent";
-import { matchIgnorePattern } from "./commonDiff";
+import { hasNonIgnoredPath } from "./commonDiff";
 import { resolveBranchBaseSHA } from "./commonGit";
 import { userIntentPromptSection } from "./intentPrompt";
 import { roundHistoryPromptSection } from "./roundHistory";
@@ -114,22 +114,7 @@ ${previousFindings}`;
             throw new Error(`get changed files: ${errMessage(err)}`);
         }
 
-        let hasReviewableChanges = false;
-        for (const path of changedFiles) {
-            let ignored = false;
-            for (const pattern of sctx.config.ignorePatterns) {
-                if (matchIgnorePattern(path, pattern)) {
-                    ignored = true;
-                    break;
-                }
-            }
-            if (!ignored) {
-                hasReviewableChanges = true;
-                break;
-            }
-        }
-
-        if (!hasReviewableChanges) {
+        if (!hasNonIgnoredPath(changedFiles, sctx.config.ignorePatterns)) {
             sctx.log("no changes to review");
             const noChangeFindings: Findings = {
                 items: [],

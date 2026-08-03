@@ -15,7 +15,7 @@
 import * as git from "@/gate/git";
 import { commitAgentFixes } from "./commonFix";
 import type { Result } from "@/gate/agent/agent";
-import { matchIgnorePattern } from "./commonDiff";
+import { hasNonIgnoredPath } from "./commonDiff";
 import { resolveBranchBaseSHA } from "./commonGit";
 import { userIntentPromptSection } from "./rebase";
 import { roundHistoryPromptSection } from "./roundHistory";
@@ -55,7 +55,7 @@ export class DocumentStep implements Step {
         } catch (err) {
             throw new Error(`get changed files: ${errMessage(err)}`);
         }
-        if (!hasNonIgnoredDocumentChanges(changedFiles, sctx.config.ignorePatterns)) {
+        if (!hasNonIgnoredPath(changedFiles, sctx.config.ignorePatterns)) {
             sctx.log("no changes to document");
             return newStepOutcome();
         }
@@ -188,20 +188,6 @@ function documentApprovalOutcome(summary: string): StepOutcome {
         findings: marshalFindingsJSON(findings),
         fixSummary: summary
     });
-}
-
-function hasNonIgnoredDocumentChanges(changedFiles: string[], ignorePatterns: string[]): boolean {
-    for (const path of changedFiles) {
-        let ignored = false;
-        for (const pattern of ignorePatterns) {
-            if (matchIgnorePattern(path, pattern)) {
-                ignored = true;
-                break;
-            }
-        }
-        if (!ignored) return true;
-    }
-    return false;
 }
 
 function fallbackDocumentSummary(text: string): string {

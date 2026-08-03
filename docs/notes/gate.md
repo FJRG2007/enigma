@@ -118,6 +118,26 @@ noisier without failing. The empty tree stays the correct base for a genuinely e
 what it must never be is a silent catch-all for a broken base. An unusable base is now either
 corrected or loud where it is being paid for, never silently vacuous.
 
+Every path into that fallback reports, not just the one where a non-zero base failed
+`rev-parse`. The zero ref (new-branch push) reaching the empty tree - default branch never
+fetched into the disposable worktree, orphan branch, or an empty `defaultBranch` - is the more
+common trigger, and it says so in its own words rather than claiming a broken base. A zero ref
+that does find a merge-base is the expected new-branch path and stays quiet. The same
+`ScopeNotifier` threads through `resolveDefaultBranchTip`/`unresolvedDefaultBranchTip`, whose
+substitution feeds the rebase target in `ciFix.ts`.
+
+Two traps that fall out of "a failing git call means this revision is unusable". First, a
+cancelled run fails every git call the same way, so the fallbacks would print `base commit does
+not resolve` at an operator who merely pressed cancel - a false diagnosis of exactly the kind
+this work exists to remove. Every catch in `commonGit.ts` rethrows when the signal is aborted.
+That makes the CI monitor's bounded tip lookup (`AbortSignal.any` with a resolve-window timeout)
+throw where it used to swallow, so `ci.ts` owns its own deadline: it catches, rethrows only when
+the run signal aborted, and otherwise treats the window expiring as a skipped poll. Second,
+`git.diffRange` refuses a blank base outright instead of emitting `..HEAD`. `resolveBaseSHA` is
+what keeps a blank base from reaching it; the funnel is what makes a regression there loud.
+`tests/gate/common-git.test.ts` pins both invariants against real temp repositories, because a
+silent pass is the one failure mode a green pipeline cannot show you.
+
 The base a step diffs against is now canonical (`resolveBaseSHA` returns what git resolved, so
 a ref name or CR-tainted value is normalized), and `intent.ts` shares that resolver instead of
 keeping its own copy. None of this reproduces the original failure: why `run.baseSha` held an

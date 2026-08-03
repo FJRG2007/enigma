@@ -72,7 +72,8 @@ export async function autoFixCI(
         sctx.workDir,
         sctx.repo.upstreamUrl,
         sctx.run.baseSha,
-        sctx.repo.defaultBranch
+        sctx.repo.defaultBranch,
+        sctx.log
     );
     let promptBaseSHA = baseSHA;
     if (mergeConflict) promptBaseSHA = rebaseBaseSHA;

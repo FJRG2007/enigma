@@ -274,9 +274,26 @@ export function findMainRepoRoot(path: string): string {
     }
 }
 
+/**
+ * Builds the revision argument for a diff: `<base>..<head>`, or the bare base
+ * when head is empty (compare base against the working tree).
+ *
+ * A blank base is rejected rather than passed through: git reads an empty left
+ * side of a range as HEAD, so `..HEAD` becomes HEAD..HEAD and exits 0 with no
+ * output, which every caller reads as "nothing changed" instead of as the
+ * failure it is. resolveBaseSHA is what keeps a blank base from getting here;
+ * this is the funnel that makes a regression there loud instead of silent.
+ */
+function diffRange(base: string, head: string): string {
+    const from = base.trim();
+    if (from === "") throw new Error("diff range: empty base revision");
+    const to = head.trim();
+    return to === "" ? from : `${from}..${to}`;
+}
+
 /** Diff returns the unified diff between two commits. */
 export async function diff(dir: string, base: string, head: string, signal?: AbortSignal): Promise<string> {
-    return run(dir, ["diff", `${base}..${head}`, "--"], signal);
+    return run(dir, ["diff", diffRange(base, head), "--"], signal);
 }
 
 /** Options for diffNameOnly. */
@@ -305,8 +322,7 @@ export async function diffNameOnly(
     head: string,
     options: DiffNameOnlyOptions = {},
 ): Promise<string[]> {
-    const rev = head.trim() === "" ? base : `${base}..${head}`;
-    const args = ["diff", "--name-only", ...(options.extraArgs ?? []), rev, "--"];
+    const args = ["diff", "--name-only", ...(options.extraArgs ?? []), diffRange(base, head), "--"];
     const out = await run(dir, args, options.signal);
     const files: string[] = [];
     for (const line of out.split("\n")) {

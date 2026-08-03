@@ -13,6 +13,16 @@ import { log } from "@/gate/log";
 import * as git from "@/gate/git";
 
 /**
+ * Rethrows a git failure that is really a cancellation. Every helper here treats
+ * a failing git call as "this revision is unusable" and falls back, but a
+ * cancelled run fails every call the same way, which would turn a cancellation
+ * into a run-visible claim that the operator's base commit is broken.
+ */
+function rethrowIfAborted(signal: AbortSignal, err: unknown): void {
+    if (signal.aborted) throw err;
+}
+
+/**
  * Resolves a revision to its canonical commit SHA, or null when git cannot.
  *
  * Every base SHA that reaches a `<base>..<head>` range goes through here: git
@@ -31,7 +41,8 @@ export async function resolveCommitSHA(
     try {
         const out = await git.run(workDir, ["rev-parse", "--verify", "--quiet", `${trimmed}^{commit}`], signal);
         return out.trim() === "" ? null : out.trim();
-    } catch {
+    } catch (err) {
+        rethrowIfAborted(signal, err);
         return null;
     }
 }
@@ -47,16 +58,34 @@ function branchLabel(defaultBranch: string): string {
     return defaultBranch.trim() === "" ? "the default branch" : defaultBranch.trim();
 }
 
-function reportUnusableBase(
+function reportBaseSubstitution(
     notify: ScopeNotifier | undefined,
     workDir: string,
     baseSHA: string,
+    cause: string,
     outcome: string
 ): void {
-    const shown = baseSHA.trim() === "" ? "(empty)" : baseSHA.trim();
-    const text = `base commit ${shown} does not resolve to a commit in this worktree; ${outcome}`;
+    const text = `${cause}; ${outcome}`;
     log.warn(text, "base_sha", baseSHA, "work_dir", workDir);
     notify?.(text);
+}
+
+function shownSHA(sha: string): string {
+    return sha.trim() === "" ? "(empty)" : sha.trim();
+}
+
+/** Why the caller-supplied base could not be used, in operator-facing wording. */
+function unusableBaseCause(baseSHA: string): string {
+    return `base commit ${shownSHA(baseSHA)} does not resolve to a commit in this worktree`;
+}
+
+function zeroBaseCause(): string {
+    return "base commit is the zero ref (new branch with no pushed history)";
+}
+
+/** Wording for the empty-tree fallback, shared by both unusable-base causes. */
+function emptyTreeOutcome(defaultBranch: string): string {
+    return `no merge-base with ${branchLabel(defaultBranch)} either, so this step diffs against the empty tree and treats every tracked file as changed`;
 }
 
 /**
@@ -66,9 +95,10 @@ function reportUnusableBase(
  * unusable, tries git merge-base against the default branch and falls back to
  * the empty tree SHA, so the range covers everything rather than nothing.
  *
- * The empty tree is the right base for a genuinely empty history, but for a
- * broken base it silently widens every later diff to the whole repository, so
- * both substitutions are reported through `notify` when one is supplied.
+ * The empty tree is the right base for a genuinely empty history, but it also
+ * silently widens every later diff to the whole repository, so every path that
+ * reaches it is reported through `notify` when one is supplied - including the
+ * zero ref, which is the more common way a run gets there than a broken base.
  */
 export async function resolveBaseSHA(
     signal: AbortSignal,
@@ -77,28 +107,29 @@ export async function resolveBaseSHA(
     defaultBranch: string,
     notify?: ScopeNotifier
 ): Promise<string> {
-    let unusable = false;
-    if (!git.isZeroSHA(baseSHA)) {
+    const zero = git.isZeroSHA(baseSHA);
+    if (!zero) {
         const resolved = await resolveCommitSHA(signal, workDir, baseSHA);
         if (resolved !== null) return resolved;
-        unusable = true;
     }
     const mb = await mergeBaseWithDefaultBranch(signal, workDir, defaultBranch);
     if (mb !== "") {
-        if (unusable) {
-            reportUnusableBase(
+        // A zero ref resolving to a merge-base is the expected new-branch path,
+        // not a substitution worth a warning; a broken base still is one.
+        if (!zero) {
+            reportBaseSubstitution(
                 notify, workDir, baseSHA,
+                unusableBaseCause(baseSHA),
                 `using merge-base ${mb} with ${branchLabel(defaultBranch)} instead`
             );
         }
         return mb;
     }
-    if (unusable) {
-        reportUnusableBase(
-            notify, workDir, baseSHA,
-            `no merge-base with ${branchLabel(defaultBranch)} either, so this step diffs against the empty tree and treats every tracked file as changed`
-        );
-    }
+    reportBaseSubstitution(
+        notify, workDir, baseSHA,
+        zero ? zeroBaseCause() : unusableBaseCause(baseSHA),
+        emptyTreeOutcome(defaultBranch)
+    );
     return git.EMPTY_TREE_SHA;
 }
 
@@ -119,14 +150,22 @@ export async function resolveBranchBaseSHA(
     return resolveBaseSHA(signal, workDir, fallbackBaseSHA, defaultBranch, notify);
 }
 
+/**
+ * The tip this resolves feeds the rebase target, so its substitutions take the
+ * same optional `notify` as the diff base: a caller that acts on the returned
+ * SHA regardless of the resolved flag should pass the run-visible channel.
+ */
 export async function resolveDefaultBranchTipSHA(
     signal: AbortSignal,
     workDir: string,
     upstreamURL: string,
     fallbackBaseSHA: string,
-    defaultBranch: string
+    defaultBranch: string,
+    notify?: ScopeNotifier
 ): Promise<string> {
-    const [sha] = await resolveDefaultBranchTip(signal, workDir, upstreamURL, fallbackBaseSHA, defaultBranch);
+    const [sha] = await resolveDefaultBranchTip(
+        signal, workDir, upstreamURL, fallbackBaseSHA, defaultBranch, notify
+    );
     return sha;
 }
 
@@ -135,32 +174,39 @@ export async function resolveDefaultBranchTip(
     workDir: string,
     upstreamURL: string,
     fallbackBaseSHA: string,
-    defaultBranch: string
+    defaultBranch: string,
+    notify?: ScopeNotifier
 ): Promise<[string, boolean]> {
     if (defaultBranch.trim() !== "") {
         const remoteName = await resolveUpstreamRemoteName(signal, workDir, upstreamURL);
         try {
             await git.fetchRemoteBranch(workDir, remoteName, defaultBranch, signal);
-        } catch {
-            return [await unresolvedDefaultBranchTip(signal, workDir, fallbackBaseSHA, defaultBranch), false];
+        } catch (err) {
+            rethrowIfAborted(signal, err);
+            return [
+                await unresolvedDefaultBranchTip(signal, workDir, fallbackBaseSHA, defaultBranch, notify),
+                false
+            ];
         }
         for (const ref of [`${remoteName}/${defaultBranch}`, defaultBranch]) {
             try {
                 const sha = await git.run(workDir, ["rev-parse", "--verify", ref], signal);
                 if (sha.trim() !== "") return [sha.trim(), true];
-            } catch {
+            } catch (err) {
+                rethrowIfAborted(signal, err);
                 // err -> try the next ref.
             }
         }
     }
-    return [await resolveBaseSHA(signal, workDir, fallbackBaseSHA, defaultBranch), false];
+    return [await resolveBaseSHA(signal, workDir, fallbackBaseSHA, defaultBranch, notify), false];
 }
 
 export async function unresolvedDefaultBranchTip(
     signal: AbortSignal,
     workDir: string,
     fallbackBaseSHA: string,
-    defaultBranch: string
+    defaultBranch: string,
+    notify?: ScopeNotifier
 ): Promise<string> {
     if (!git.isZeroSHA(fallbackBaseSHA)) {
         const resolved = await resolveCommitSHA(signal, workDir, fallbackBaseSHA);
@@ -169,9 +215,13 @@ export async function unresolvedDefaultBranchTip(
     try {
         const sha = await git.run(workDir, ["rev-parse", "--verify", defaultBranch], signal);
         if (sha.trim() !== "") return sha.trim();
-    } catch {
+    } catch (err) {
+        rethrowIfAborted(signal, err);
         // localErr -> fall back to the empty tree SHA.
     }
+    const text = `${branchLabel(defaultBranch)} tip does not resolve in this worktree, and neither does base commit ${shownSHA(fallbackBaseSHA)}; this step falls back to the empty tree and treats every tracked file as changed`;
+    log.warn(text, "base_sha", fallbackBaseSHA, "default_branch", defaultBranch, "work_dir", workDir);
+    notify?.(text);
     return git.EMPTY_TREE_SHA;
 }
 
@@ -184,14 +234,16 @@ export async function resolveUpstreamRemoteName(
     let remotes: string;
     try {
         remotes = await git.run(workDir, ["remote"], signal);
-    } catch {
+    } catch (err) {
+        rethrowIfAborted(signal, err);
         return "origin";
     }
     for (const remote of remotes.split(/\s+/).filter(part => part !== "")) {
         try {
             const url = await git.getRemoteURL(workDir, remote, signal);
             if (url.trim() === upstreamURL.trim()) return remote;
-        } catch {
+        } catch (err) {
+            rethrowIfAborted(signal, err);
             // urlErr -> try the next remote.
         }
     }
@@ -208,7 +260,8 @@ export async function mergeBaseWithDefaultBranch(
         try {
             const mb = await git.run(workDir, ["merge-base", "HEAD", ref], signal);
             if (mb.trim() !== "") return mb.trim();
-        } catch {
+        } catch (err) {
+            rethrowIfAborted(signal, err);
             // err -> try the next ref.
         }
     }
