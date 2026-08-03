@@ -13,7 +13,7 @@ commands:
 
 # review and document read the whole diff. A file matched here is dropped from
 # it, and when EVERY changed file matches, the step is skipped outright
-# (review.ts hasReviewableChanges, document.ts hasNonIgnoredDocumentChanges).
+# (review.ts and document.ts both call commonDiff.ts hasNonIgnoredPath).
 # Only generated or vendored paths belong here; anything hand-edited stays
 # reviewable.
 #
