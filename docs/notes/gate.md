@@ -25,6 +25,60 @@ review), **ci 32.2%** (avg 47m but median ~9.5m - the mean is three stuck workfl
 430m), test 14%, document and lint 6.5% combined, everything else under 1%. Re-run that query
 before optimizing anything; the shape is not what it feels like from the status line.
 
+Re-measured at 93 runs: median run **22.8m**, p90 59.1m, mean 30.9m (max 465m, a stuck CI).
+So the "the gate always takes an hour" complaint is the p90, not the floor - quote the median.
+
+### Head-to-head against upstream, on the same diff
+
+Six runs over one 12-line diff (3 files), same agent and model, isolated gate homes,
+`--skip push,pr,ci`, fresh clone each time, run sequentially so they never competed for the
+API. Upstream binary was the `v1.45.3` release; the scaffolding is reproducible from this note.
+
+|                       | no-mistakes            | enigma                 |
+| --------------------- | ---------------------- | ---------------------- |
+| total                 | 329 / 551 / 562 s      | 635 / 698 / 603 s      |
+| review, initial pass  | 45.8 / 64.4 / 60.8 s   | 54.9 / 74.9 / 51.2 s   |
+| review, fix round     | 228.3 / 198.8 (2 of 3) | 226.7 / 327 / 297 s    |
+| test                  | 213.3 / 194.1 / 202.5  | 243.6 / 227.2 / 167.7  |
+| document              | 63.8 / 59.4 / 95.1     | 106.5 / 65.4 / 83.7    |
+
+**Per pass the two are indistinguishable** - the port costs what upstream costs, and the Go/TS
+difference is noise next to an agent pass. The totals gap is entirely how often the review
+returned `auto-fix` findings and bought a fix round (enigma 3 of 3, upstream 2 of 3); the
+review prompt is byte-identical between `review.go` and `review.ts`, so that is model sampling,
+not drift. The same run legitimately costs 5.5 or 10.6 minutes depending on the draw.
+
+Two facts worth keeping from that floor:
+
+- On a 12-line diff, **`test` + `document` were 46% of the run** while the initial review - the
+  only pass that does what the product claims - was ~1 minute. `--skip test,document` is the
+  honest lever for a throwaway change.
+- **`test` spends a full agent pass even when `commands.test` is a shell no-op.** `test.ts`
+  gates the evidence agent on `testCmd === "" || cleanedUserIntent(sctx) !== ""`, and `--intent`
+  is mandatory to start a run, so a configured test command makes the step thorough, not cheap.
+
+### What `agent_step_args_override` actually bought
+
+Same harness, two more runs with `claude-sonnet-5` mapped onto intent, rebase, test, document,
+lint and pr, review deliberately left on the strong model as the control:
+
+| step     | default model             | mechanical steps on Sonnet |
+| -------- | ------------------------- | -------------------------- |
+| review   | 281.6 / 401.9 / 348.2 s   | 360 / 333.9 s (unchanged)  |
+| test     | 243.6 / 227.2 / 167.7 s   | **65.1 / 65.5 s**          |
+| document | 106.5 / 65.4 / 83.7 s     | 78.2 / 81.9 s              |
+| total    | 635 / 698 / 603 s         | **506 / 485 s**            |
+
+`test` fell 69% and is where the whole win comes from - it was spending a strong-model pass on
+gathering evidence. `document` did not move (its cost is the diff read, not the reasoning), and
+review staying inside its baseline range is what proves the map only touched the steps named in
+it. Net 23% off the run for no quality change on the step that finds things.
+
+Windows long-path bug found while building the harness: with the repo under a deep path, the
+run died at review with `git diff --name-only <base>..<head>: exit status 128: fatal: failed to
+stat '<base>..<head>': Filename too long`. Git fell back to treating the range as a pathspec.
+Reproducible by cloning into a ~150-char path; not yet fixed.
+
 The levers that actually change a run's duration and token cost, in order:
 
 1. **The model, per step.** Each adapter spawns its agent's CLI with no model flag, so the gate

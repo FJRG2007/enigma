@@ -87,6 +87,43 @@ tradeoffs, constraints ruled in or out, and anything explicitly asked for that
 might look surprising in the diff. A few sentences is normal - the review step
 uses `--intent` to tell a deliberate choice from a mistake.
 
+## What a run costs, and what you may skip
+
+Almost all of a run is agent passes, so the wall clock tracks how many you cause,
+not how large the diff is. Measured over a 12-line diff with `commands.test` and
+`commands.lint` configured:
+
+| Pass | Cost |
+| --- | --- |
+| review, initial | ~1 min |
+| review, one fix round | 3.3-5.5 min |
+| test | ~3.5 min |
+| document | 1-1.8 min |
+| lint, rebase, intent | under 2 s with commands configured |
+
+What follows from that:
+
+- **One fix round, not three.** Every `--action fix` is two full passes, one to
+  apply and one to re-review. Select every finding you intend to fix in a single
+  `--findings` list instead of responding once per finding.
+- **Skip `test` and `document` on a throwaway diff** (a typo, a comment, a
+  version bump): `--skip test,document` roughly halves the run. Say in your report
+  which steps you skipped, so the user knows what was and was not validated.
+- **Never skip `review`.** It is the cheapest agent pass and the only one that
+  justifies the gate.
+- **`test` costs a full pass even when `commands.test` is set.** The step runs its
+  evidence agent when the test command is empty *or* the run supplied intent, and
+  `--intent` is mandatory, so a configured command makes the step thorough, not
+  cheap. `--skip test` is the only way to not pay it.
+- **Batch the work, not the runs.** The floor above is paid per run whatever the
+  diff size, so gating one coherent unit of work beats gating each small commit
+  that composes it.
+
+Steps also take their model from `agent_step_args_override` in
+`~/.enigma/gate/config.yaml`, keyed per step. If the user complains about run
+duration, that is the lever to point at: the mechanical steps can run on a smaller
+model while review keeps the strong one.
+
 ## Validate and decide
 
 1. Start the run. It blocks until the first decision point or the end:
