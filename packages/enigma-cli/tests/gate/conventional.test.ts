@@ -9,7 +9,7 @@
  * Must run under Bun: bun test tests/gate/conventional.test.ts
  */
 import { test, expect } from "bun:test";
-import { isTitle, stripSubjectEmoji, tightenTitle } from "@/gate/conventional";
+import { isTitle, stripCommitLogEmoji, stripSubjectEmoji, tightenTitle } from "@/gate/conventional";
 
 test("a leading type emoji is dropped, the rest of the subject is untouched", () => {
     expect(stripSubjectEmoji("🐛 fix(gate): tighten skip detection")).toBe("fix(gate): tighten skip detection");
@@ -35,4 +35,28 @@ test("stripping first keeps tightenTitle from prefixing a type onto the emoji", 
 
 test("a subject that is only an emoji strips to empty so the caller can fall back", () => {
     expect(stripSubjectEmoji("🔧")).toBe("");
+    expect(tightenTitle(stripSubjectEmoji("🔧"))).toBe("");
+});
+
+test("every oneline log subject is stripped while the shas stay untouched", () => {
+    const commitLog = [
+        "dabe050 🔧 enigma(push): apply agent fixes",
+        "ea744a0 🐛 fix(gate): honor commit-emoji in pipeline commit subjects",
+        "4dd1f3c enigma(document): document skipped-gate enforcement",
+        "a774fbd 🔖 chore(release): 1.34.1"
+    ].join("\n");
+    expect(stripCommitLogEmoji(commitLog)).toBe(
+        [
+            "dabe050 enigma(push): apply agent fixes",
+            "ea744a0 fix(gate): honor commit-emoji in pipeline commit subjects",
+            "4dd1f3c enigma(document): document skipped-gate enforcement",
+            "a774fbd chore(release): 1.34.1"
+        ].join("\n")
+    );
+});
+
+test("an empty log, a bare sha, and an emoji-only subject survive stripping", () => {
+    expect(stripCommitLogEmoji("")).toBe("");
+    expect(stripCommitLogEmoji("dabe050")).toBe("dabe050");
+    expect(stripCommitLogEmoji("dabe050 🔧")).toBe("dabe050");
 });

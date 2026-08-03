@@ -42,6 +42,24 @@ export function stripSubjectEmoji(subject: string): string {
     return subject.replace(LEADING_EMOJI_RE, "").trim();
 }
 
+/**
+ * Applies `stripSubjectEmoji` to the subject of every `<sha> <subject>` line of a
+ * `git log --oneline` range, leaving the shas untouched. PR text embeds that log
+ * verbatim, so the strip happens once at the source every PR surface reads from.
+ */
+export function stripCommitLogEmoji(commitLog: string): string {
+    return commitLog
+        .split("\n")
+        .map(line => {
+            const idx = line.indexOf(" ");
+            if (idx < 0 || idx + 1 >= line.length) return line;
+            const subject = stripSubjectEmoji(line.slice(idx + 1));
+            if (subject === "") return line.slice(0, idx);
+            return `${line.slice(0, idx)} ${subject}`;
+        })
+        .join("\n");
+}
+
 /** Reports whether `title` is a well-formed conventional-commit subject. */
 export function isTitle(title: string): boolean {
     const m = TITLE_RE.exec(title.trim());

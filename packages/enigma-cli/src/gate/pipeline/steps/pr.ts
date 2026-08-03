@@ -24,8 +24,8 @@ import { STEP_PR, type StepName } from "@/gate/types";
 import { executionContextPromptSection } from "./executionContext";
 import { userIntentPromptSection, cleanedUserIntent } from "./intentPrompt";
 import { buildPipelineSummary, buildTestingSummaryForPR } from "./prsummary";
-import { RELEASE_TYPE_RULE, stripSubjectEmoji, tightenTitle } from "@/gate/conventional";
 import { newStepOutcome, type Step, type StepContext, type StepOutcome } from "../types";
+import { RELEASE_TYPE_RULE, stripCommitLogEmoji, stripSubjectEmoji, tightenTitle } from "@/gate/conventional";
 import {
     getStepsByRun,
     getRoundsByStep,
@@ -145,7 +145,7 @@ export class PRStep implements Step {
         const signal = sctx.signal;
         let commitLog = "";
         try {
-            commitLog = await git.log(sctx.workDir, baseSHA, sctx.run.headSha, signal);
+            commitLog = stripCommitLogEmoji(await git.log(sctx.workDir, baseSHA, sctx.run.headSha, signal));
         } catch {
             commitLog = "";
         }
@@ -205,9 +205,10 @@ ${diffStat}${pipelineContext}${userIntentPromptSection(sctx)}${executionContextP
             content.body = content.body.trim();
             content.body = unwrapNestedPRBody(content.body);
             content.body = stripGeneratedSections(content.body);
-            if (content.title !== "" && content.body !== "") {
-                const originalTitle = content.title;
-                content.title = tightenTitle(stripSubjectEmoji(content.title));
+            const originalTitle = content.title;
+            const title = tightenTitle(stripSubjectEmoji(content.title));
+            if (title !== "" && content.body !== "") {
+                content.title = title;
                 if (content.title !== originalTitle) {
                     log.warn("tightened agent PR title type", "from", originalTitle, "to", content.title);
                 }

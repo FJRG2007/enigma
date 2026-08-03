@@ -81,9 +81,13 @@ rather than keeping their own copies), AND the two that used to be hardcoded str
 `push.ts` ("apply agent fixes") and `ciFix.ts` ("apply CI fixes"). A new commit site must call
 it too, or the setting silently stops holding for that step.
 
-PR text is the exception: it stays emoji-free. `pr.ts` runs a candidate title through
-`stripSubjectEmoji` before `tightenTitle`, since a leading emoji makes the conventional-commit
-regex miss and would otherwise yield `chore: <emoji> fix(...): ...`.
+PR text is the exception: it stays emoji-free, title and body. `pr.ts` runs a candidate title
+through `stripSubjectEmoji` before `tightenTitle`, since a leading emoji makes the
+conventional-commit regex miss and would otherwise yield `chore: <emoji> fix(...): ...`; a title
+that was only an emoji strips to empty and drops to `fallbackPRContent` rather than reaching
+`gh pr create --title ""`. The body is covered at the source: the `git log --oneline` range is
+passed through `stripCommitLogEmoji` the moment it is read, so neither the fallback
+"## What Changed" section nor the commit history handed to the PR-content agent carries one.
 
 The setting is read from `sctx.repo.workingPath`, not `sctx.workDir`: the worktree only carries
 a `.enigma.json` that is committed, while the user's own may be untracked in the repo itself.
