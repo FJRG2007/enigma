@@ -4,15 +4,21 @@
  * ci_timeout parsing (Go-style durations -> ms, "unlimited" sentinel), and the
  * global+repo merge. Pure parsing; YAML loaders run under Bun (Bun.YAML).
  */
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { test, expect } from "bun:test";
+import { canAutoResolve } from "@/gate/cli/axiDrive";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import {
     merge,
     loadGlobal,
+    FIX_POLICIES,
     loadRepoFromBytes,
     parseCITimeout,
     effectiveRepoConfig,
     CI_TIMEOUT_UNLIMITED,
-    DEFAULT_CI_TIMEOUT
+    DEFAULT_CI_TIMEOUT,
+    DEFAULT_FIX_POLICY
 } from "@/gate/config";
 
 const repo = (over: Partial<ReturnType<typeof loadRepoFromBytes>> = {}) => ({
@@ -63,6 +69,54 @@ test("loadGlobal returns defaults when the file is absent", () => {
     expect(g.agent).toBe("auto");
     expect(g.ciTimeout).toBe(DEFAULT_CI_TIMEOUT);
     expect(g.logLevel).toBe("info");
+});
+
+test("fix_policy: defaults to assisted, parses the three values, rejects anything else", () => {
+    const dir = mkdtempSync(join(tmpdir(), "enigma-gate-cfg-"));
+    const path = join(dir, "config.yaml");
+
+    expect(loadGlobal("/no/such/config.yaml").fixPolicy).toBe(DEFAULT_FIX_POLICY);
+    expect(DEFAULT_FIX_POLICY).toBe("assisted");
+
+    for (const value of FIX_POLICIES) {
+        writeFileSync(path, `fix_policy: ${value}\n`);
+        expect(loadGlobal(path).fixPolicy).toBe(value);
+        // The merged config is what the drive loop reads, and a repo cannot set this one.
+        expect(merge(loadGlobal(path), loadRepoFromBytes("agent: codex\n")).fixPolicy).toBe(value);
+    }
+
+    // A typo must fail loudly: silently reading as "never ask" is the dangerous direction.
+    writeFileSync(path, "fix_policy: whenever\n");
+    expect(() => loadGlobal(path)).toThrow(/fix_policy/);
+
+    rmSync(dir, { recursive: true, force: true });
+});
+
+test("canAutoResolve: only `assisted` looks at what the gate actually found", () => {
+    const gate = (findings: unknown[]) => ({
+        name: "review",
+        status: "awaiting_approval",
+        findingsJSON: JSON.stringify({ items: findings, summary: "" })
+    } as Parameters<typeof canAutoResolve>[1]);
+
+    const mechanical = gate([{ id: "a", severity: "warning", description: "d", action: "auto-fix" }]);
+    const judgment = gate([
+        { id: "a", severity: "warning", description: "d", action: "auto-fix" },
+        { id: "b", severity: "warning", description: "e", action: "ask-user" }
+    ]);
+
+    // `ask` hands every gate back; `auto` answers every gate.
+    expect(canAutoResolve("ask", mechanical)).toBe(false);
+    expect(canAutoResolve("ask", judgment)).toBe(false);
+    expect(canAutoResolve("auto", mechanical)).toBe(true);
+    expect(canAutoResolve("auto", judgment)).toBe(true);
+
+    // `assisted` settles the mechanical one and escalates the one carrying a decision.
+    expect(canAutoResolve("assisted", mechanical)).toBe(true);
+    expect(canAutoResolve("assisted", judgment)).toBe(false);
+    // Unparseable findings are treated as none, so a broken payload does not park the run.
+    expect(canAutoResolve("assisted", gate([]))).toBe(true);
+    expect(canAutoResolve("assisted", { name: "review", status: "awaiting_approval", findingsJSON: "{{" } as Parameters<typeof canAutoResolve>[1])).toBe(true);
 });
 
 test("loadRepoFromBytes parses YAML and merge lets repo agent override global", () => {

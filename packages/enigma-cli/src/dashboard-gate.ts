@@ -38,6 +38,15 @@ export interface GateStepView {
     completedAt: number | null;
 }
 
+/** The step a run is currently working on, with the tail of what it is writing. */
+export interface GateActivityView {
+    step: string;
+    status: string;
+    startedAt: number | null;
+    /** Last lines of that step's log, oldest first, so the view shows live progress. */
+    tail: string[];
+}
+
 /** A finding the pipeline is parked on, flattened for the browser. */
 export interface GateFindingView {
     id: string;
@@ -59,6 +68,10 @@ export interface GateRunView {
     intent: string | null;
     createdAt: number;
     updatedAt: number;
+    /** True while the run can still be stopped, which is what gates the Stop action. */
+    live: boolean;
+    /** Null once the run is terminal: there is nothing in progress to report. */
+    activity: GateActivityView | null;
     steps: GateStepView[];
     findings: GateFindingView[];
 }
@@ -78,6 +91,8 @@ export interface GateSettingsView {
     modelSupported: boolean;
     ciTimeout: string;
     logLevel: string;
+    /** Who settles a finding the pipeline parks on: `auto`, `assisted` or `ask`. */
+    fixPolicy: string;
     autoFix: Record<string, number>;
     intentEnabled: boolean;
     /**
@@ -93,6 +108,7 @@ export interface GateSettingsDefaults {
     agent: string;
     ciTimeout: string;
     logLevel: string;
+    fixPolicy: string;
     autoFix: Record<string, number>;
     intentEnabled: boolean;
 }
@@ -111,7 +127,11 @@ export interface GateOverview {
     root: string;
     /** Unix seconds on the server, so the browser can tick a running step without clock drift. */
     serverNow: number;
-    globalConfig: { path: string; text: string; };
+    /**
+     * Only the path: the view has a control for every global setting and no raw editor, and
+     * the file itself would otherwise ride along on every 3s poll of a live run.
+     */
+    globalConfig: { path: string; };
     /** Null when this runtime cannot parse the config, in which case only the raw editor shows. */
     settings: GateSettingsView | null;
     /** Present only under a project scope. */
@@ -169,6 +189,51 @@ function parseFindings(json: string | null): GateFindingView[] {
     } catch { return []; }
 }
 
+/** Step statuses that mean the pipeline is still working on (or parked at) that step. */
+const ACTIVE_STEP_STATUS = new Set(["running", "fixing", "awaiting_approval", "fix_review"]);
+
+/** Run statuses that can still be stopped. Anything else has already ended. */
+const LIVE_RUN_STATUS = new Set(["pending", "running", "awaiting_approval"]);
+
+/** How many log lines the activity tail carries, and how wide each one may be. */
+const TAIL_LINES = 8;
+const TAIL_LINE_CHARS = 300;
+
+/**
+ * The tail of a step's log, oldest line first.
+ *
+ * Read whole and sliced rather than seeked: a step log is the transcript of one
+ * agent pass, and the ones that matter here are the ones being written right now,
+ * so they are small. The read is capped anyway - only the last TAIL_LINES survive,
+ * and a run that is not live never gets read at all.
+ */
+function logTail(dir: string, step: string): string[] {
+    let text: string;
+    try { text = readFileSync(join(dir, `${step}.log`), "utf8"); } catch { return []; }
+    return text.split(/\r?\n/)
+        .filter((line) => line.trim() !== "")
+        .slice(-TAIL_LINES)
+        .map((line) => (line.length > TAIL_LINE_CHARS ? `${line.slice(0, TAIL_LINE_CHARS)}...` : line));
+}
+
+/**
+ * What a live run is doing right now: the step in flight and the tail of its log.
+ * The pipeline runs one step at a time, so the last active step in pipeline order
+ * is the current one.
+ */
+function runActivity(runId: string, steps: GateStepView[], live: boolean): GateActivityView | null {
+    if (!live) return null;
+    let current: GateStepView | null = null;
+    for (const step of steps) if (ACTIVE_STEP_STATUS.has(step.status)) current = step;
+    if (current === null) return null;
+    return {
+        step: current.name,
+        status: current.status,
+        startedAt: current.startedAt,
+        tail: logTail(Paths.resolve().runLogDir(runId), current.name)
+    };
+}
+
 /**
  * Read the runs for one repo path (or every active run when no project is given).
  * Returns null when this runtime has no `bun:sqlite`, which the caller reports as
@@ -194,8 +259,17 @@ async function readRuns(dbPath: string, projectPath: string | null, limit: numbe
             runs = runMod.getActiveRuns(handle);
         }
         return runs.slice(0, limit).map((run) => {
-            const steps = stepMod.getStepsByRun(handle, run.id);
-            const parked = steps.find((s) => s.status === "awaiting_approval" || s.status === "fix_review");
+            const rows = stepMod.getStepsByRun(handle, run.id);
+            const parked = rows.find((s) => s.status === "awaiting_approval" || s.status === "fix_review");
+            const live = LIVE_RUN_STATUS.has(run.status);
+            const steps: GateStepView[] = rows.map((s) => ({
+                name: s.stepName,
+                status: s.status,
+                durationMs: s.durationMs,
+                findings: parseFindings(s.findingsJson).length,
+                startedAt: s.startedAt,
+                completedAt: s.completedAt,
+            }));
             return {
                 id: run.id,
                 branch: run.branch,
@@ -207,14 +281,9 @@ async function readRuns(dbPath: string, projectPath: string | null, limit: numbe
                 intent: run.intent,
                 createdAt: run.createdAt,
                 updatedAt: run.updatedAt,
-                steps: steps.map((s) => ({
-                    name: s.stepName,
-                    status: s.status,
-                    durationMs: s.durationMs,
-                    findings: parseFindings(s.findingsJson).length,
-                    startedAt: s.startedAt,
-                    completedAt: s.completedAt,
-                })),
+                live,
+                activity: runActivity(run.id, steps, live),
+                steps,
                 findings: parked ? parseFindings(parked.findingsJson) : [],
             };
         });
@@ -277,6 +346,7 @@ async function readGateSettings(globalPath: string): Promise<GateSettingsView | 
                 agent: base.agent,
                 ciTimeout: ciTimeoutText(base.ciTimeout),
                 logLevel: base.logLevel,
+                fixPolicy: base.fixPolicy,
                 autoFix: autoFixDefaults,
                 intentEnabled: base.intent.enabled
             },
@@ -286,6 +356,7 @@ async function readGateSettings(globalPath: string): Promise<GateSettingsView | 
             modelSupported: flag !== undefined,
             ciTimeout: ciTimeoutText(merged.ciTimeout),
             logLevel: merged.logLevel,
+            fixPolicy: merged.fixPolicy,
             autoFix,
             intentEnabled: merged.intent.enabled
         };
@@ -308,7 +379,7 @@ export async function gateOverview(projectPath: string | null): Promise<GateOver
         daemon: daemonAlive(paths.pidFile()),
         root: paths.root(),
         serverNow: Math.floor(Date.now() / 1000),
-        globalConfig: { path: globalPath, text: readText(globalPath) },
+        globalConfig: { path: globalPath },
         settings: await readGateSettings(globalPath),
         repo: projectPath
             ? {
@@ -380,6 +451,7 @@ const SETTABLE_KEYS: Record<string, "string" | "number" | "boolean"> = {
     agent: "string",
     ci_timeout: "string",
     log_level: "string",
+    fix_policy: "string",
     "intent.enabled": "boolean",
     ...Object.fromEntries(AUTO_FIX_STEPS.map((s) => [`auto_fix.${s}`, "number" as const]))
 };
@@ -391,7 +463,9 @@ const SETTABLE_KEYS: Record<string, "string" | "number" | "boolean"> = {
  */
 const ENUM_KEYS: Record<string, (value: string) => boolean> = {
     agent: (v) => ["auto", "claude", "codex", "rovodev", "opencode", "pi"].includes(v) || v.startsWith("acp:"),
-    log_level: (v) => ["debug", "info", "warn", "error"].includes(v)
+    log_level: (v) => ["debug", "info", "warn", "error"].includes(v),
+    // fix_policy is range-checked by the loader too, so this only buys a better message.
+    fix_policy: (v) => gateConf.asFixPolicy(v) !== null
 };
 
 /** Escapes a config key for use inside a line-matching regex. */
@@ -547,6 +621,37 @@ export async function applyGateSetting(key: string, value: unknown): Promise<Gat
     if (dot < 0) setRootKey(lines, key, scalar);
     else setNestedKey(lines, key.slice(0, dot), key.slice(dot + 1), scalar);
     return saveGateConfig("global", joinConfig(lines), null);
+}
+
+/**
+ * Cancels an in-flight run, the same way `enigma gate axi abort --run <id>` does:
+ * a run lives in the daemon's memory, so the cancellation is an IPC call and there
+ * is nothing to stop when the daemon is down.
+ *
+ * Idempotent by design - a run that already ended is reported as a no-op rather
+ * than an error, because by the time a click arrives the run may well have finished
+ * on its own.
+ */
+export async function abortGateRun(runId: string): Promise<GateApplyResult> {
+    const id = String(runId ?? "").trim();
+    if (id === "") return { ok: false, message: "No run to stop." };
+    try {
+        const paths = Paths.resolve();
+        if (!daemonAlive(paths.pidFile())) return { ok: true, message: "The daemon is not running, so no run is in flight." };
+        const { Client } = await import("./gate/ipc/client");
+        const client = await Client.dial(paths.socket());
+        try {
+            await client.cancelRun(id);
+            return { ok: true, message: "Run stopped." };
+        } finally {
+            client.close();
+        }
+    } catch (err) {
+        const message = err instanceof Error ? err.message : "unknown error";
+        // The daemon words an unknown or already-finished run this way; it is not a failure.
+        if (message.includes("no active run")) return { ok: true, message: "That run had already finished." };
+        return { ok: false, message: `Could not stop the run: ${message}` };
+    }
 }
 
 /**

@@ -15,10 +15,25 @@ import type { AxiIO } from "./axiRender";
 import type { Client } from "../ipc/client";
 import { findGitRoot, findMainRepoRoot } from "../git";
 import { Database, getRepoByPath, type Repo } from "../db";
+import { type FixPolicy, DEFAULT_FIX_POLICY, loadGlobal } from "../config";
 
 /** Returns a string message for any thrown value. */
 export function errMessage(err: unknown): string {
     return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * The configured `fix_policy`, which decides how much of a gate the driving agent
+ * settles on its own. Any failure to read it falls back to the default rather than
+ * the permissive end: a config the loader cannot parse must never be the reason the
+ * user stops being asked.
+ */
+export function readFixPolicy(p: Paths): FixPolicy {
+    try {
+        return loadGlobal(p.configFile()).fixPolicy;
+    } catch {
+        return DEFAULT_FIX_POLICY;
+    }
 }
 
 /** Starts (if needed) and checks the gate daemon. Provided by the wiring layer. */

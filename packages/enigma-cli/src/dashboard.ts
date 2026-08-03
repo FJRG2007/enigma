@@ -776,13 +776,15 @@ function writeGate(req: import("node:http").IncomingMessage, res: import("node:h
     let body = "";
     req.on("data", (chunk) => { body += chunk; if (body.length > 128 * 1024) req.destroy(); });
     req.on("end", () => {
-        let parsed: { scope?: unknown; text?: unknown; path?: unknown; action?: unknown; key?: unknown; value?: unknown; on?: unknown; };
+        let parsed: { scope?: unknown; text?: unknown; path?: unknown; action?: unknown; key?: unknown; value?: unknown; on?: unknown; run?: unknown; };
         try { parsed = JSON.parse(body || "{}"); } catch { res.writeHead(400, JSON_HDR); res.end('{"error":"bad json"}'); return; }
 
-        if (parsed.action === "setting" || parsed.action === "daemon") {
+        if (parsed.action === "setting" || parsed.action === "daemon" || parsed.action === "abort") {
             const act = parsed.action === "daemon"
                 ? (m: typeof import("./dashboard-gate")) => m.setGateDaemon(parsed.on === true)
-                : (m: typeof import("./dashboard-gate")) => m.applyGateSetting(String(parsed.key ?? ""), parsed.value);
+                : parsed.action === "abort"
+                    ? (m: typeof import("./dashboard-gate")) => m.abortGateRun(String(parsed.run ?? ""))
+                    : (m: typeof import("./dashboard-gate")) => m.applyGateSetting(String(parsed.key ?? ""), parsed.value);
             import("./dashboard-gate")
                 .then(act)
                 .then((out) => { res.writeHead(out.ok ? 200 : 400, JSON_HDR); res.end(JSON.stringify(out)); })

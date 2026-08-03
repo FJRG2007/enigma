@@ -35,6 +35,16 @@ Each step either passes on its own or stops with a **finding** for you to act on
 
 Safe, mechanical fixes are applied automatically; anything that touches your intent is escalated for you to **approve**, **fix**, or **skip**. Nothing reaches the configured push target until every check is green.
 
+## How much it asks you
+
+Who settles a finding is yours to set, in the dashboard's **Quality gate** view or as `fix_policy` in `~/.enigma/gate/config.yaml`:
+
+- **Fix, and ask about the rest** (`assisted`, the default) - the agent settles what the review marked mechanical and comes back only for an `ask-user` finding.
+- **Fix without asking** (`auto`) - the agent settles everything and never checks back.
+- **Always ask** (`ask`) - nothing is fixed until you say so; every finding reaches you first.
+
+The setting governs the run, not just the wording your agent uses: the drive loop stops at exactly the gates the policy says are yours. Driving a single run with `--yes` still overrides it.
+
 Each fix lands on your branch as `enigma(<step>): <summary>`, with the same leading type emoji your agent's own commits carry; PR titles and bodies stay emoji-free. See <a href={docHref("reference/configuration")}>Configuration</a> for the `commit-emoji` toggle that turns those emojis off.
 
 ## Set it up
@@ -67,7 +77,7 @@ Branch names are matched exactly. `axi run` then refuses that branch and says ho
 
 ## Automatic driving
 
-You do not have to ask your agent to run the gate or initialize repos by hand. The deployed agent memory carries an always-on instruction: once the agent has committed a code task, it **drives the gate itself** on whatever branch that work is on - running `enigma gate init` once if the repo is not set up yet - then applies the safe `auto-fix`/`no-op` findings, escalates every `ask-user` finding to you, and leaves the PR ready for you to review and merge (it never merges on its own).
+You do not have to ask your agent to run the gate or initialize repos by hand. The deployed agent memory carries an always-on instruction: once the agent has committed a code task, it **drives the gate itself** on whatever branch that work is on - running `enigma gate init` once if the repo is not set up yet - then handles findings the way `fix_policy` says (by default: applies the safe `auto-fix`/`no-op` ones, escalates every `ask-user` one to you), and leaves the PR ready for you to review and merge (it never merges on its own).
 
 This is **per project**. To opt a single repo out while the gate stays on everywhere else, set `gate: false` in that repo's `.enigma.json` (or run `/gate off` there); the agent skips automatic driving there.
 

@@ -32,6 +32,29 @@ export const DEFAULT_CI_TIMEOUT = 7 * 24 * 60 * 60 * 1000;
 /** Sentinel: monitor until the PR is merged/closed/aborted - never self-terminate. */
 export const CI_TIMEOUT_UNLIMITED = -1;
 
+/**
+ * How the driving agent answers an approval gate, an enigma extension over the
+ * upstream pipeline (which only ever knew "wait for a response"). It decides who
+ * settles a finding, never what the pipeline itself is allowed to do:
+ *
+ * - `ask` - every gate comes back to the user, whatever it found.
+ * - `assisted` - the agent settles what the review marked mechanical and comes
+ *   back only for a finding marked `ask-user`, which is a judgment call.
+ * - `auto` - the agent settles every gate, including `ask-user` findings.
+ */
+export type FixPolicy = "ask" | "assisted" | "auto";
+
+/** Accepted `fix_policy` values, in the order the dashboard offers them. */
+export const FIX_POLICIES: FixPolicy[] = ["auto", "assisted", "ask"];
+
+/** Asking only about what a machine cannot decide is the sane middle ground. */
+export const DEFAULT_FIX_POLICY: FixPolicy = "assisted";
+
+/** Narrows an arbitrary string to a FixPolicy, or null when it is not one. */
+export function asFixPolicy(value: string): FixPolicy | null {
+    return (FIX_POLICIES as string[]).includes(value) ? value as FixPolicy : null;
+}
+
 /** Optional per-repo command overrides. */
 export interface Commands {
     lint: string;
@@ -107,6 +130,8 @@ export interface GlobalConfig {
     agentStepArgsOverride?: Record<string, Record<string, string[]>>;
     ciTimeout: number;
     logLevel: string;
+    /** Who settles an approval gate. Global only - it is a user preference, not a repo's. */
+    fixPolicy: FixPolicy;
     autoFix: AutoFixRaw;
     intent: IntentRaw;
     test: TestRaw;
@@ -139,6 +164,7 @@ export interface Config {
     agentStepArgsOverride?: Record<string, Record<string, string[]>>;
     ciTimeout: number;
     logLevel: string;
+    fixPolicy: FixPolicy;
     commands: Commands;
     ignorePatterns: string[];
     autoFix: AutoFix;
@@ -193,6 +219,14 @@ ci_timeout: "168h"
 # Log level for daemon output
 # Options: debug, info, warn, error
 log_level: info
+
+# Who settles a review finding when the pipeline parks for approval.
+#   auto     - the agent fixes everything and never checks back
+#   assisted - the agent fixes what the review marked mechanical and asks you
+#              only about a finding marked ask-user (a judgment call)
+#   ask      - every gate comes back to you
+# Passing --yes to "enigma gate axi run" forces auto for that run.
+fix_policy: assisted
 
 # Override native agent binary paths (optional)
 # agent_path_override:
@@ -452,6 +486,7 @@ const GLOBAL_KNOWN_KEYS = new Set([
     "ci_timeout",
     "babysit_timeout",
     "log_level",
+    "fix_policy",
     "auto_fix",
     "intent",
     "test"
@@ -523,6 +558,7 @@ export function loadGlobal(path: string): GlobalConfig {
         acpxPath: "",
         ciTimeout: DEFAULT_CI_TIMEOUT,
         logLevel: "info",
+        fixPolicy: DEFAULT_FIX_POLICY,
         autoFix: {},
         intent: {},
         test: { evidence: {} }
@@ -560,6 +596,14 @@ export function loadGlobal(path: string): GlobalConfig {
     if (timeoutValue === "" && typeof raw.babysit_timeout === "string") timeoutValue = raw.babysit_timeout;
     if (timeoutValue !== "") cfg.ciTimeout = parseCITimeout(timeoutValue);
     if (typeof raw.log_level === "string" && raw.log_level !== "") cfg.logLevel = raw.log_level;
+    // Range-checked here rather than left to the daemon: this one governs whether the
+    // user is asked at all, so a typo must fail at load instead of silently reading as
+    // "never ask". Every writer goes through this loader, so the check holds everywhere.
+    if (raw.fix_policy !== undefined && raw.fix_policy !== null) {
+        const policy = asFixPolicy(String(raw.fix_policy));
+        if (policy === null) throw new Error(`parse global config: fix_policy must be one of ${FIX_POLICIES.join(", ")}`);
+        cfg.fixPolicy = policy;
+    }
     cfg.autoFix = parseAutoFixRaw(raw.auto_fix);
     if (cfg.autoFix.ci === undefined || cfg.autoFix.ci === null) cfg.autoFix.ci = cfg.autoFix.babysit;
     cfg.intent = parseIntentRaw(raw.intent);
@@ -782,6 +826,7 @@ export function merge(global: GlobalConfig, repo: RepoConfig): Config {
         agentStepArgsOverride: global.agentStepArgsOverride,
         ciTimeout: global.ciTimeout,
         logLevel: global.logLevel,
+        fixPolicy: global.fixPolicy,
         commands: repo.commands,
         ignorePatterns: repo.ignorePatterns,
         autoFix: af,

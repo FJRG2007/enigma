@@ -7,6 +7,7 @@
  * split is preserved: TOON documents go to stdout, progress to stderr.
  */
 
+import type { FixPolicy } from "../config";
 import type { Run, StepResult } from "../db";
 import type { RunInfo } from "../ipc/protocol";
 import {
@@ -288,10 +289,25 @@ export function runObjectFieldWithKey(key: string, rv: RunView): ToonField {
 }
 
 /**
- * Renders the active approval gate: the awaiting step, its findings table, and
- * the next-step commands an agent can run to clear it.
+ * What the configured `fix_policy` means for the agent standing at this gate.
+ * The drive loop already enforces the policy by deciding which gates it hands
+ * back at all; this line only tells the agent why it is holding one, so it does
+ * not escalate a finding the user asked it to settle (or settle one the user
+ * asked to be consulted about).
  */
-export function gateFields(gate: StepView): ToonField[] {
+const FIX_POLICY_HELP: Record<FixPolicy, string> = {
+    auto: "fix_policy is `auto`: the user asked you to settle every finding yourself. This gate came back because the run needs a response, not a decision - respond without checking back.",
+    assisted: "fix_policy is `assisted`: findings the review could settle mechanically are already handled, so this gate carries a judgment call. Escalate its ask-user findings to the user verbatim.",
+    ask: "fix_policy is `ask`: the user wants every finding put to them before anything is fixed. Relay this gate's findings and let them choose, rather than deciding yourself."
+};
+
+/**
+ * Renders the active approval gate: the awaiting step, its findings table, and
+ * the next-step commands an agent can run to clear it. `policy` adds the line
+ * telling the agent how much of the decision is its own; pass null when the
+ * caller has no config in hand.
+ */
+export function gateFields(gate: StepView, policy: FixPolicy | null = null): ToonField[] {
     const parsed = tryParseFindings(gate.findingsJSON);
     const gfields: ToonField[] = [
         field("step", gate.name),
@@ -308,9 +324,12 @@ export function gateFields(gate: StepView): ToonField[] {
     ]);
     gfields.push(toonTable("findings", ["id", "severity", "file", "action", "description"], rows));
 
+    if (policy !== null) gfields.push(field("fix_policy", policy));
+
     return [
         field("gate", toonObject(gfields)),
         toonHelp([
+            ...(policy === null ? [] : [FIX_POLICY_HELP[policy]]),
             "Run `enigma gate axi respond --action approve` to accept this step and continue",
             "Run `enigma gate axi respond --action fix --findings <ids>` to have the pipeline fix the selected findings (do not edit files yourself)",
             "Run `enigma gate axi respond --action skip` to skip this step",

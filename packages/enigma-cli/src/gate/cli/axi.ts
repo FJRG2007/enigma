@@ -40,7 +40,8 @@ import {
     type AxiDaemon,
     errMessage,
     openAxiEnv,
-    repoInitHelp
+    repoInitHelp,
+    readFixPolicy
 } from "./axiEnv";
 import {
     type AxiIO,
@@ -168,7 +169,7 @@ export async function runAxiHome(deps: AxiDeps): Promise<number> {
             const gate = awaitingStep(rv);
             if (gate !== null) {
                 gated = true;
-                fields.push(...gateFields(gate));
+                fields.push(...gateFields(gate, readFixPolicy(env.p)));
             }
         } else if (otherActive !== null) {
             const steps = getStepsByRun(env.d, otherActive.id);

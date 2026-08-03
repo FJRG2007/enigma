@@ -107,6 +107,15 @@ uses `--intent` to tell a deliberate choice from a mistake.
    - `ask-user` - a judgment call only the user can make. STOP and escalate it
      (see below) before responding.
 
+   The gate object also carries `fix_policy`, the user's standing answer to "who
+   decides?". Follow it - the `help` line spells out what it means for the gate in
+   front of you, and it is the user's setting, not a suggestion:
+   - `assisted` (default) - anything mechanical was already settled before this
+     gate reached you, so what is left is the judgment call. Escalate it.
+   - `ask` - the user wants every finding put to them, `auto-fix` ones included.
+     Relay them and let the user choose instead of authorizing anything yourself.
+   - `auto` - the user asked you to settle everything. Respond without checking back.
+
    Choose one response:
    ```sh
    enigma gate axi respond --action approve
@@ -140,13 +149,19 @@ acknowledge those and list each fix.
 
 A finding marked `ask-user` is the user's decision, not yours. Relay it verbatim
 (its `id`, `file`, full `description`) - do not paraphrase or pre-judge - ask how
-to proceed, then translate their answer into the matching `respond` call. The one
-exception is `--yes` (below): standing consent to drive every gate unattended.
+to proceed, then translate their answer into the matching `respond` call. The
+exceptions are `fix_policy: auto` and `--yes` (below), both of which are standing
+consent to drive every gate unattended.
 
 If you have clear consent to drive the whole run automatically, pass `--yes` to
 `axi run` or `axi respond`: it treats every actionable finding (auto-fix and
 ask-user alike) as consent to fix, accepts the resulting fix review, and approves
-no-op-only gates. Only use it when the user asked you to drive without checking back.
+no-op-only gates. Only use it when the user asked you to drive without checking
+back - it overrides `fix_policy` for that run.
+
+The user sets `fix_policy` themselves, in the dashboard's Quality gate view or as
+`fix_policy` in `~/.enigma/gate/config.yaml`. If they ask you to stop checking back
+(or to start), point them there rather than passing `--yes` from then on.
 
 ## Inspecting state
 

@@ -47,6 +47,8 @@ The levers that actually change a run's duration and token cost, in order:
    command instantly. Install first, then write the config.
 2. **Fix rounds.** `auto_fix.review` is 0 by default, so review pauses for approval. Every
    `axi respond --action fix` is another two passes. Batch every finding into ONE fix round.
+   Note this is the PIPELINE's own fixing; who answers the resulting pause is `fix_policy`,
+   below.
 3. **`ignore_patterns`** in the repo's `.enigma-gate.yaml`: review and document read the whole
    diff, so lockfiles, generated clients, migrations and snapshots are pure cost.
 4. **Explicit `commands.test` / `commands.lint`.** Left empty, those steps spend an agent pass
@@ -63,6 +65,33 @@ path behind `canValidateConfig()` and degrades instead of failing.
 
 `loadGlobal` does NOT enumerate `agent` or `log_level`; it accepts any string and the daemon
 only fails later, at run time. Any new writer must range-check those itself (see `ENUM_KEYS`).
+`fix_policy` is the exception and deliberately so: it is range-checked IN `loadGlobal`, which
+throws on anything else, because the failure mode of a typo there is the run silently deciding
+not to ask the user - and every writer goes through that loader, so one check covers them all.
+
+## `fix_policy`: who answers a gate (an enigma extension)
+
+Upstream's pipeline only knows "park and wait for a response"; WHO produces that response was
+always the driving agent, guided by prose in the `/gate` command. Prose is skippable (this
+repo's own thesis), and the user had no way to say "stop asking me about typos". So the global
+config gained `fix_policy` - `ask` | `assisted` (default) | `auto` - and the DRIVE LOOP enforces
+it, not the executor:
+
+- The pipeline's semantics are untouched. `driveRun` already returned at the first gate without
+  `--yes` and answered every gate with it; the policy just decides that per gate, through
+  `canAutoResolve(policy, gate)` in `axiDrive.ts`.
+- `assisted` is the only one that reads the findings: it hands the gate back when it carries an
+  `ask-user` finding and answers it otherwise. So a review that only found mechanical nits is
+  fixed and re-reviewed without a round trip through the user, and one carrying a judgment call
+  still stops. Unparseable findings count as none - the same fallback `gateResolution` takes.
+- `--yes` still wins for that run: an explicit flag is standing consent and outranks a setting.
+- The gate object emitted to the agent carries `fix_policy` plus a `help` line saying what it
+  means, because the agent's default instinct (authorize auto-fix, escalate ask-user) is exactly
+  wrong under `ask`, where the user asked to see everything first.
+- `readFixPolicy(p)` lives in `axiEnv.ts`, NOT `axiDrive.ts`: `axiQuery` needs it too and
+  `axiDrive` already imports from `axiQuery`, so putting it there would close a cycle. It falls
+  back to the default on any read failure - a config that will not parse must never be the
+  reason the user stops being asked.
 
 Note the gate reads one setting from the OTHER config (`.enigma.json`, not `.enigma-gate.yaml`):
 `commitEmoji`. See the commit subjects section below.
@@ -109,9 +138,22 @@ half needs `bun:sqlite` and is imported dynamically.
 - **Live runs.** A step's `duration_ms` is only written when a round ENDS, so a step that is
   `running` or `fixing` would otherwise show a frozen number for its whole life. The view sends
   `started_at` plus a `serverNow` stamp and the browser ticks the active step against that,
-  polling every 5s while a run is in flight and 20s when idle. Polling stops when the tab is
+  polling every 3s while a run is in flight and 20s when idle. Polling stops when the tab is
   hidden or the view is left, and a poll refresh repaints only the run strip - never an editor,
   or it would overwrite what is being typed.
+- **What a run is DOING**, not just which step it is on. A run carries `activity` = the step in
+  flight plus the tail of `<gate home>/logs/<run-id>/<step>.log`, which is the only place the
+  pipeline says what it is actually working on. Computed ONLY for a live run (`LIVE_RUN_STATUS`),
+  so a page listing twelve finished runs reads no log files at all; the tail is capped at 8 lines
+  of 300 chars. The 1s tick repaints the elapsed counters only (`.gate-steps` and `.gate-act-h`),
+  never the log block - replacing it every second would drop a text selection and reset its
+  scroll.
+- **Stopping a run.** `abortGateRun(runId)` is `axi abort --run <id>` without the CLI: a run
+  lives in the DAEMON's memory, so this is an IPC `cancelRun` over `Paths.socket()`, and a dead
+  daemon means there is nothing in flight. Idempotent on purpose - by the time a click lands the
+  run may have finished, so "no active run" reports success, not an error. The button only
+  renders on a run the payload marked `live`, and it confirms first (naming the branch, not the
+  run id) because a stopped pipeline cannot be resumed.
 
 ## The run ledger (`src/gate-ledger.ts` + `daemon/ledger.ts`)
 

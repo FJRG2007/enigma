@@ -20,6 +20,7 @@ import { REMOTE_NAME } from "../init";
 import { readConfig } from "@/config";
 import * as render from "./axiRender";
 import { readFileSync } from "node:fs";
+import type { FixPolicy } from "../config";
 import type { RunInfo } from "../ipc/protocol";
 import { parseAddFinding, splitLogLines } from "./axiQuery";
 import { field, toonHelp, toonTable, type ToonField } from "../toon";
@@ -30,7 +31,8 @@ import {
     type AxiDeps,
     errMessage,
     openAxiEnv,
-    repoInitHelp
+    repoInitHelp,
+    readFixPolicy
 } from "./axiEnv";
 import {
     type Finding,
@@ -38,6 +40,7 @@ import {
     STEP_CI,
     type ApprovalAction,
     parseFindingsJSON,
+    hasAskUserFindings,
     hasActionableFindings
 } from "../types";
 
@@ -160,6 +163,21 @@ function gateResolution(gate: render.StepView, alreadyFixed: boolean): [Approval
     return ["fix", ids];
 }
 
+/**
+ * Reports whether the drive loop may answer this gate itself under `policy`.
+ *
+ * `assisted` is the interesting one: it settles everything the review could act on
+ * mechanically and hands back only a gate carrying an `ask-user` finding, which is
+ * by definition a decision the user has to make. A gate whose findings cannot be
+ * parsed is treated as having none - the same fallback gateResolution already takes.
+ */
+export function canAutoResolve(policy: FixPolicy, gate: render.StepView): boolean {
+    if (policy === "auto") return true;
+    if (policy === "ask") return false;
+    const parsed = tryParseFindings(gate.findingsJSON);
+    return parsed === null || !hasAskUserFindings(parsed);
+}
+
 /** Issues an approval action to the daemon for a step. */
 async function sendRespond(
     client: AxiEnv["client"],
@@ -235,14 +253,15 @@ interface DriveResult {
 }
 
 /**
- * Polls a run until it reaches an approval gate, a terminal state, or CI-ready,
- * streaming step transitions to progress (stderr). Throws on error or abort.
+ * Polls a run until it reaches an approval gate the policy hands back, a terminal
+ * state, or CI-ready, streaming step transitions to progress (stderr). Throws on
+ * error or abort.
  */
 async function driveRun(
     io: render.AxiIO,
     client: AxiEnv["client"],
     runID: string,
-    autoApprove: boolean,
+    policy: FixPolicy,
     readCILog: ((runID: string) => string[]) | null,
     signal?: AbortSignal
 ): Promise<DriveResult> {
@@ -259,7 +278,7 @@ async function driveRun(
 
         const gate = render.awaitingStep(rv);
         if (gate !== null) {
-            if (!autoApprove) return { run, ciReady: false };
+            if (!canAutoResolve(policy, gate)) return { run, ciReady: false };
             const [action, findingIDs] = gateResolution(gate, fixedSteps.has(gate.name));
             if (action === "fix") fixedSteps.add(gate.name);
             try {
@@ -415,7 +434,7 @@ function successReportHelp(fixes: string[][]): string[] {
  * (exit 0), or the terminal outcome (exit 0 passed, exit 1 blocked/failed/
  * cancelled). Successful outcomes carry applied fixes and reporting instructions.
  */
-function renderDriveResult(io: render.AxiIO, run: RunInfo, ciReady: boolean): number {
+function renderDriveResult(io: render.AxiIO, run: RunInfo, ciReady: boolean, policy: FixPolicy): number {
     const rv = render.runViewFromIPC(run);
     const fields: ToonField[] = [render.runObjectField(rv)];
 
@@ -434,7 +453,7 @@ function renderDriveResult(io: render.AxiIO, run: RunInfo, ciReady: boolean): nu
 
     const gate = render.awaitingStep(rv);
     if (gate !== null) {
-        fields.push(...render.gateFields(gate));
+        fields.push(...render.gateFields(gate, policy));
         render.emitDoc(io, fields);
         return 0;
     }
@@ -503,13 +522,15 @@ export async function runAxiRun(deps: AxiDeps, autoYes: boolean, skipSteps: Step
             }
         }
 
+        // An explicit --yes is standing consent for this run, so it outranks the setting.
+        const policy: FixPolicy = autoYes ? "auto" : readFixPolicy(env.p);
         let result: DriveResult;
         try {
-            result = await driveRun(deps.io, env.client, runID, autoYes, ciLogReader(env.p), signal);
+            result = await driveRun(deps.io, env.client, runID, policy, ciLogReader(env.p), signal);
         } catch (err) {
             return render.emitError(deps.io, 1, `drive run: ${errMessage(err)}`);
         }
-        return renderDriveResult(deps.io, result.run, result.ciReady);
+        return renderDriveResult(deps.io, result.run, result.ciReady, policy);
     } finally {
         env.close();
     }
@@ -653,13 +674,14 @@ export async function runAxiRespond(deps: AxiDeps, ra: RespondArgs): Promise<num
             return render.emitError(deps.io, 1, `wait for ${stepName}: ${errMessage(err)}`);
         }
 
+        const policy: FixPolicy = ra.autoYes ? "auto" : readFixPolicy(env.p);
         let result: DriveResult;
         try {
-            result = await driveRun(deps.io, env.client, runID, ra.autoYes, ciLogReader(env.p), signal);
+            result = await driveRun(deps.io, env.client, runID, policy, ciLogReader(env.p), signal);
         } catch (err) {
             return render.emitError(deps.io, 1, `drive run: ${errMessage(err)}`);
         }
-        return renderDriveResult(deps.io, result.run, result.ciReady);
+        return renderDriveResult(deps.io, result.run, result.ciReady, policy);
     } finally {
         env.close();
     }

@@ -517,6 +517,24 @@
            full grid width while it is showing and its controls wrap instead of squeezing the label. */
         #gateModelRow.wide { grid-column: 1 / -1; }
         #gateModelRow .set-ctl { flex-wrap: wrap; justify-content: flex-end; }
+        /* A row whose control and hint both need the full width of the settings grid. */
+        .set-row.span { grid-column: 1 / -1; }
+        /* What a run is doing right now: the step in flight and the tail of its log. */
+        .gate-act { margin-top: 10px; border-left: 2px solid var(--accent); padding-left: 11px; }
+        .gate-act-h { display: flex; align-items: center; gap: 7px; font-family: var(--mono); font-size: 12px; color: var(--text); }
+        .gate-act-dot {
+            width: 7px; height: 7px; border-radius: 50%; background: var(--accent);
+            flex: none; animation: gate-pulse 1.4s ease-in-out infinite;
+        }
+        @keyframes gate-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+        @media (prefers-reduced-motion: reduce) { .gate-act-dot { animation: none; } }
+        .gate-act-log {
+            margin: 6px 0 0; padding: 8px 10px; max-height: 168px; overflow: auto; overscroll-behavior: contain;
+            background: var(--surface2); border-radius: 7px;
+            font-family: var(--mono); font-size: 11.5px; line-height: 1.5; color: var(--muted);
+            white-space: pre-wrap; overflow-wrap: anywhere;
+        }
+        .gate-act-empty { margin-top: 6px; font-size: 12px; color: var(--muted); }
         .gate-run { padding: 13px 0; border-top: 1px solid var(--border-soft); }
         .gate-run:first-child { border-top: 0; padding-top: 4px; }
         .gate-run-h { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
@@ -1126,7 +1144,7 @@
             <div class="set-grid">
                 <div class="set-row">
                     <div class="set-meta"><div class="set-name">Agent</div><div class="set-hint" id="gateAgentHint">which coding agent the pipeline drives</div></div>
-                    <div class="set-ctl ladd" style="align-items:center"><select id="gateAgent" class="linput"><option value="auto">auto</option><option value="claude">claude</option><option value="codex">codex</option><option value="opencode">opencode</option><option value="rovodev">rovodev</option><option value="pi">pi</option></select></div>
+                    <div class="set-ctl ladd" style="align-items:center"><select id="gateAgent" class="linput" data-dd-icons="agent"><option value="auto">Auto</option><option value="claude">Claude Code</option><option value="codex">Codex</option><option value="opencode">OpenCode</option><option value="rovodev">Rovo Dev</option><option value="pi">Pi</option></select></div>
                 </div>
                 <div class="set-row" id="gateModelRow">
                     <div class="set-meta"><div class="set-name">Model</div><div class="set-hint" id="gateModelHint">the model every step runs on; a smaller one cuts run time and tokens</div></div>
@@ -1145,19 +1163,17 @@
                     <div class="set-ctl ladd" style="align-items:center"><button id="gateIntent" type="button" class="toggle" data-kind="bool" role="switch" aria-checked="false" aria-label="Read intent from transcripts"></button></div>
                 </div>
             </div>
+            <div class="set-cat-h" style="margin-top:18px">Findings</div>
+            <div class="sub" style="margin-bottom:10px">Who decides what happens to something the review turns up.</div>
+            <div class="set-grid">
+                <div class="set-row span">
+                    <div class="set-meta"><div class="set-name">When the gate finds something</div><div class="set-hint" id="gateFixHint"></div></div>
+                    <div class="set-ctl ladd" style="align-items:center"><select id="gateFixPolicy" class="linput" style="flex:none;width:300px"></select></div>
+                </div>
+            </div>
             <div class="set-cat-h" style="margin-top:18px">Auto-fix attempts</div>
             <div class="sub" style="margin-bottom:10px">Follow-up rounds a step gets before it pauses for you. Every round is another full agent pass over the diff, so this is the setting that multiplies a run's cost. 0 pauses immediately.</div>
             <div class="set-grid" id="gateAutoFix"></div>
-        </div>
-
-        <div class="panel">
-            <div class="set-cat-h">Global configuration</div>
-            <div class="sub" style="margin-bottom:10px">The global config as raw YAML, for the keys with no control above (agent paths, ACP targets, ignore patterns, evidence). Saved only when it parses, so a typo here never reaches the daemon.</div>
-            <textarea id="gateCfg" class="linput gate-yaml" spellcheck="false" autocapitalize="none" autocorrect="off" aria-label="Global gate configuration"></textarea>
-            <div class="ladd" style="gap:8px;align-items:center">
-                <button id="gateCfgSave" type="button" class="toggle on" disabled title="No changes to save">Save</button>
-                <span id="gateCfgNote" class="set-hint"></span>
-            </div>
         </div>
 
         <div class="panel" id="gateRepoPanel" style="display:none">
@@ -3925,14 +3941,34 @@ export {
             claude: '<svg viewBox="0 0 100 100" fill="currentColor" aria-hidden="true"><path d="m19.6 66.5 19.7-11 .3-1-.3-.5h-1l-3.3-.2-11.2-.3L14 53l-9.5-.5-2.4-.5L0 49l.2-1.5 2-1.3 2.9.2 6.3.5 9.5.6 6.9.4L38 49.1h1.6l.2-.7-.5-.4-.4-.4L29 41l-10.6-7-5.6-4.1-3-2-1.5-2-.6-4.2 2.7-3 3.7.3.9.2 3.7 2.9 8 6.1L37 36l1.5 1.2.6-.4.1-.3-.7-1.1L33 25l-6-10.4-2.7-4.3-.7-2.6c-.3-1-.4-2-.4-3l3-4.2L28 0l4.2.6L33.8 2l2.6 6 4.1 9.3L47 29.9l2 3.8 1 3.4.3 1h.7v-.5l.5-7.2 1-8.7 1-11.2.3-3.2 1.6-3.8 3-2L61 2.6l2 2.9-.3 1.8-1.1 7.7L59 27.1l-1.5 8.2h.9l1-1.1 4.1-5.4 6.9-8.6 3-3.5L77 13l2.3-1.8h4.3l3.1 4.7-1.4 4.9-4.4 5.6-3.7 4.7-5.3 7.1-3.2 5.7.3.4h.7l12-2.6 6.4-1.1 7.6-1.3 3.5 1.6.4 1.6-1.4 3.4-8.2 2-9.6 2-14.3 3.3-.2.1.2.3 6.4.6 2.8.2h6.8l12.6 1 3.3 2 1.9 2.7-.3 2-5.1 2.6-6.8-1.6-16-3.8-5.4-1.3h-.8v.4l4.6 4.5 8.3 7.5L89 80.1l.5 2.4-1.3 2-1.4-.2-9.2-7-3.6-3-8-6.8h-.5v.7l1.8 2.7 9.8 14.7.5 4.5-.7 1.4-2.6 1-2.7-.6-5.8-8-6-9-4.7-8.2-.5.4-2.9 30.2-1.3 1.5-3 1.2-2.5-2-1.4-3 1.4-6.2 1.6-8 1.3-6.4 1.2-7.9.7-2.6v-.2H49L43 72l-9 12.3-7.2 7.6-1.7.7-3-1.5.3-2.8L24 86l10-12.8 6-7.9 4-4.6-.1-.5h-.3L17.2 77.4l-4.7.6-2-2 .2-3 1-1 8-5.5Z"/></svg>',
             codex: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.872zm16.5963 3.8558L13.1038 8.364 15.1192 7.2a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.407-.667zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.459a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654l2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997Z"/></svg>',
             opencode: '<svg viewBox="0 0 240 300" fill="currentColor" aria-hidden="true"><path d="M180 240H60V120H180V240Z" opacity=".55"/><path fill-rule="evenodd" d="M180 60H60V240H180V60ZM240 300H0V0H240V300Z"/></svg>',
+            // Rovo Dev is Atlassian's agent (it is driven through `acli rovodev`), so it carries
+            // the Atlassian mark - there is no separate Rovo Dev glyph to use.
+            rovodev: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7.12 11.084a.683.683 0 00-1.16.126L.075 22.974a.703.703 0 00.63 1.018h8.19a.678.678 0 00.63-.39c1.767-3.65.696-9.203-2.406-12.52zM11.434.386a15.515 15.515 0 00-.906 15.317l3.95 7.9a.703.703 0 00.628.388h8.19a.703.703 0 00.63-1.017L12.63.38a.664.664 0 00-1.196.006z"/></svg>',
+            // Pi's own mark (pi.dev), already monochrome upstream - it ships a light/dark pair,
+            // which is exactly what currentColor gives us here.
+            pi: '<svg viewBox="0 0 800 800" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M165.29 165.29H517.36V400H400V517.36H282.65V634.72H165.29ZM282.65 282.65V400H400V282.65Z"/><path d="M517.36 400H634.72V634.72H517.36Z"/></svg>',
         };
-        // App label -> internal name. Normalized (substring match) so every label variant maps
-        // to an icon: "Claude Code", "Codex"/"OpenAI Codex", "opencode"/"OpenCode".
+        // Agent id -> the name a person would write. A selector must never show the raw id: the
+        // config stores `opencode` and `rovodev`, the reader sees OpenCode and Rovo Dev.
+        const AGENT_LABELS = {
+            auto: "Auto", claude: "Claude Code", codex: "Codex",
+            opencode: "OpenCode", rovodev: "Rovo Dev", pi: "Pi"
+        };
+        // App label -> internal name. Normalized so every label variant maps to an icon:
+        // "Claude Code", "Codex"/"OpenAI Codex", "opencode"/"OpenCode", "Rovo Dev", "Pi".
+        // Ordered longest-distinctive-first, and `pi` is matched exactly rather than as a
+        // substring, which would otherwise claim anything containing those two letters.
         const agentName = (label) => {
-            const s = String(label || "").toLowerCase();
-            return s.includes("claude") ? "claude" : s.includes("opencode") ? "opencode" : s.includes("codex") ? "codex" : "";
+            const s = String(label || "").trim().toLowerCase();
+            if (s === "pi") return "pi";
+            return s.includes("claude") ? "claude"
+                : s.includes("opencode") ? "opencode"
+                    : s.includes("codex") ? "codex"
+                        : s.includes("rovo") ? "rovodev" : "";
         };
         const agentSvg = (name) => AGENT_ICONS[name] || "";
+        /** The display name for an agent id, falling back to the id when it is not one we know. */
+        const agentLabel = (name) => AGENT_LABELS[agentName(name) || name] || String(name || "");
 
         // Compression sources -> a brand icon. Reuses the app icons; the CLI source is enigma itself
         // (the monochrome cube mark, recoloured to currentColor so it sits uniformly in the tables).
@@ -4389,10 +4425,17 @@ export {
         }
 
         // --- quality gate subpage ---------------------------------------------------
-        // Two halves with independent availability: the YAML configs are plain files and
-        // always render, while the run history needs enigma's own binary (the gate database
-        // is Bun-only), so an unavailable history reports itself instead of blanking the page.
-        const gateSaved = { global: "", repo: "" };
+        // Two halves with independent availability: the config is a plain file and always
+        // renders, while the run history needs enigma's own binary (the gate database is
+        // Bun-only), so an unavailable history reports itself instead of blanking the page.
+        //
+        // The GLOBAL config has no raw YAML editor: every setting it holds has a control in
+        // the panel above, and a textarea of YAML is not a setting anyone should have to edit
+        // to change how the gate behaves. The keys with no control (agent path overrides, ACP
+        // targets, evidence) stay in the file, whose path the info dialog gives you. The
+        // REPOSITORY config keeps its editor - it is committed with the repo, carries keys the
+        // global one does not, and has no structured equivalent yet.
+        let gateRepoSaved = "";
         let gateWritable = true;
         // Where the gate keeps its files, kept for the info dialog instead of printed in the headers.
         let gateWhere = { global: "", repo: "", root: "", note: "" };
@@ -4401,7 +4444,7 @@ export {
         function openGateInfo() {
             openInfoModal({
                 title: "Gate configuration",
-                intro: "Where the gate reads its settings and keeps its run history.",
+                intro: "Where the gate reads its settings and keeps its run history. Everything on this page writes to the global config; edit the file directly only for the advanced keys with no control here.",
                 rows: [
                     { label: "Global config", value: gateWhere.global, hint: "applies to every repository" },
                     { label: "Repository config", value: gateWhere.repo, hint: "committed with the repository, merged over the global config" },
@@ -4414,15 +4457,9 @@ export {
                 ],
             });
         }
-        function gateEls(which) {
-            return which === "global"
-                ? { area: $("gateCfg"), btn: $("gateCfgSave"), note: "gateCfgNote" }
-                : { area: $("gateRepoCfg"), btn: $("gateRepoCfgSave"), note: "gateRepoCfgNote" };
-        }
         // Dirty means different from what was loaded, so an edit typed and undone disables Save again.
-        function syncGateSave(which) {
-            const { area, btn } = gateEls(which);
-            const dirty = area.value !== gateSaved[which];
+        function syncGateSave() {
+            const btn = $("gateRepoCfgSave"), dirty = $("gateRepoCfg").value !== gateRepoSaved;
             btn.disabled = !dirty || !gateWritable;
             btn.title = !gateWritable ? "Read-only in this runtime" : dirty ? "Save this configuration" : "No changes to save";
         }
@@ -4452,6 +4489,29 @@ export {
                     + (s.findings ? " · " + s.findings : "") + "</span>";
             }).join("");
         }
+        // What the run is doing, in the words the status codes stand for. A step name alone
+        // does not say whether the pipeline is working or waiting, and that is the difference
+        // between "leave it alone" and "it needs you".
+        const GATE_ACT_VERB = {
+            running: "Running", fixing: "Fixing findings in",
+            awaiting_approval: "Waiting for a decision on", fix_review: "Waiting on the fix review of"
+        };
+        /** The live header of a run's activity: what it is on and for how long. */
+        function gateActHead(a) {
+            const el = gateStepDur({ status: a.status, startedAt: a.startedAt, durationMs: null });
+            return '<span class="gate-act-dot"></span>' + esc((GATE_ACT_VERB[a.status] || "Running") + " " + a.step)
+                + (el ? " · " + esc(el) : "");
+        }
+        // The tail of the step's log, which is the only place a run says what it is actually
+        // doing. Refreshed by the poll, not the 1s tick: the file only changes server-side.
+        function gateActivityHtml(a) {
+            if (!a) return "";
+            const tail = (a.tail || []).length
+                ? '<pre class="gate-act-log">' + esc((a.tail || []).join("\n")) + "</pre>"
+                : '<div class="gate-act-empty">No output from this step yet.</div>';
+            return '<div class="gate-act"><div class="gate-act-h">' + gateActHead(a) + "</div>" + tail + "</div>";
+        }
+        const STOP_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>';
         function gateRunRow(r) {
             const pr = r.prUrl ? ' <a href="' + esc(r.prUrl) + '" target="_blank" rel="noopener noreferrer">PR</a>' : "";
             const steps = gateStepsHtml(r.steps);
@@ -4461,11 +4521,19 @@ export {
                     + (f.file ? " · " + esc(f.file) : "") + "<br>" + esc(f.description) + "</div>").join("") + "</div>"
                 : "";
             const err = r.error ? '<div class="gate-find-row" style="color:var(--bad)">' + esc(r.error) + "</div>" : "";
+            // Only a run that can still be stopped gets the control; a finished one would
+            // offer an action that does nothing.
+            const stop = r.live
+                ? '<button type="button" class="iconbtn" data-gate-stop="' + esc(r.id) + '" data-gate-branch="' + esc(r.branch) + '"'
+                    + ' title="Stop this run" aria-label="Stop the run on ' + esc(r.branch) + '">' + STOP_ICON + "</button>"
+                : "";
             return '<div class="gate-run"><div class="gate-run-h">'
                 + '<span class="gate-run-b">' + esc(r.branch) + "</span>"
                 + '<span class="cstatus ' + (r.status === "completed" ? "ok" : r.status === "running" ? "orange" : r.status === "failed" ? "bad" : "") + '"><span class="cdot"></span>' + esc(r.status) + (r.awaitingAgent ? " · parked" : "") + "</span>"
                 + '<span class="gate-run-meta">' + esc(r.headSha) + pr + "</span>"
-                + "</div>" + '<div class="gate-steps">' + steps + "</div>" + findings + err + "</div>";
+                + '<span style="flex:1"></span>' + stop
+                + "</div>" + '<div class="gate-steps">' + steps + "</div>"
+                + gateActivityHtml(r.activity) + findings + err + "</div>";
         }
         // The two on/off switches at the top of the page. Both are optimistic: the switch flips
         // first and rolls back if the server refuses, like every other control here.
@@ -4504,6 +4572,7 @@ export {
         function gateCtlFor(key) {
             if (key.indexOf("auto_fix.") === 0) return document.querySelector('[data-gate-af="' + key.slice("auto_fix.".length) + '"]');
             if (key === "agent") return $("gateAgent");
+            if (key === "fix_policy") return $("gateFixPolicy");
             if (key === "log_level") return $("gateLogLevel");
             if (key === "ci_timeout") return $("gateCiTimeout");
             if (key === "intent.enabled") return $("gateIntent");
@@ -4594,12 +4663,36 @@ export {
             btn.title = dirty ? "" : "No changes to save";
         }
 
+        // Who settles a finding the pipeline parks on. The middle option is the default and the
+        // one worth reading: it is what makes the run stop only for a decision a person has to
+        // make, instead of for every mechanical nit.
+        const GATE_FIX_POLICIES = [
+            ["auto", "Fix without asking", "the agent fixes everything the review turns up and never checks back"],
+            ["assisted", "Fix, and ask about the rest", "the agent fixes what the review marked mechanical and asks you only about a finding that needs a judgment call"],
+            ["ask", "Always ask", "nothing is fixed until you say so - every finding comes back to you first"]
+        ];
+        /** The hint follows the selection: each policy hands the decision to someone different. */
+        function syncGateFixHint() {
+            const cur = $("gateFixPolicy").value;
+            const row = GATE_FIX_POLICIES.find(([v]) => v === cur);
+            const def = gateDefaults && gateDefaults.fixPolicy;
+            const suffix = def && def === cur ? ' <span class="set-def">default</span>' : "";
+            $("gateFixHint").innerHTML = esc(row ? row[2] : "") + suffix;
+        }
+        function renderGateFixPolicy(value) {
+            const sel = $("gateFixPolicy");
+            sel.innerHTML = GATE_FIX_POLICIES.map(([v, label]) => '<option value="' + esc(v) + '">' + esc(label) + "</option>").join("");
+            sel.value = GATE_FIX_POLICIES.some(([v]) => v === value) ? value : "assisted";
+            syncDD(sel);
+            syncGateFixHint();
+        }
+
         function renderGateSettings(s) {
             const panel = $("gateSetPanel");
             if (!s) { panel.style.display = "none"; return; }
             panel.style.display = "";
-            // An `acp:<target>` agent set from the raw editor is not one of the fixed options;
-            // carry it as one so the select shows the truth instead of going blank.
+            // An `acp:<target>` agent set in the config file by hand is not one of the fixed
+            // options; carry it as one so the select shows the truth instead of going blank.
             const agentSel = $("gateAgent");
             if (!Array.prototype.some.call(agentSel.options, (o) => o.value === s.agent)) {
                 agentSel.add(new Option(s.agent, s.agent));
@@ -4616,6 +4709,7 @@ export {
             syncDD($("gateLogLevel"));
             gateBool($("gateIntent"), s.intentEnabled);
             gateDefaults = s.defaults || null;
+            renderGateFixPolicy(s.fixPolicy || "assisted"); // after gateDefaults: the hint reads it
             $("gateAutoFix").innerHTML = GATE_AUTOFIX.map(([step, hint]) => {
                 const def = gateDefaults && gateDefaults.autoFix ? Number(gateDefaults.autoFix[step] || 0) : null;
                 return '<div class="set-row"><div class="set-meta"><div class="set-name">' + esc(step) + '</div><div class="set-hint">' + esc(hint)
@@ -4627,6 +4721,7 @@ export {
             // because only the payload knows what each default actually is.
             if (gateDefaults) {
                 mountGateReset("agent", "the agent", gateDefaults.agent);
+                mountGateReset("fix_policy", "the findings policy", gateDefaults.fixPolicy);
                 mountGateReset("log_level", "the log level", gateDefaults.logLevel);
                 mountGateReset("ci_timeout", "the CI timeout", gateDefaults.ciTimeout);
                 mountGateReset("intent.enabled", "intent extraction", String(gateDefaults.intentEnabled));
@@ -4667,31 +4762,27 @@ export {
                 root: g.root || "",
                 note: g.canWrite === false ? (g.writeNote || "") : "",
             };
-            gateSaved.global = (g.globalConfig || {}).text || "";
-            $("gateCfg").value = gateSaved.global;
             // A runtime that cannot parse a gate config must not write one: read-only, with the reason.
             gateWritable = g.canWrite !== false;
-            $("gateCfg").readOnly = !gateWritable;
             $("gateRepoCfg").readOnly = !gateWritable;
-            if (!gateWritable) { setNote("gateCfgNote", g.writeNote || "Read-only here.", "err"); setNote("gateRepoCfgNote", g.writeNote || "Read-only here.", "err"); }
-            syncGateSave("global");
+            if (!gateWritable) setNote("gateNote", g.writeNote || "Read-only here.", "err");
             renderGateSettings(g.settings);
             $("gateRepoPanel").style.display = repo ? "" : "none";
             if (repo) {
-                gateSaved.repo = repo.text || "";
-                $("gateRepoCfg").value = gateSaved.repo;
-                syncGateSave("repo");
+                gateRepoSaved = repo.text || "";
+                $("gateRepoCfg").value = gateRepoSaved;
+                syncGateSave();
             }
         }
 
         // --- keeping the run strip live -------------------------------------------------
         // A gate run takes tens of minutes and the page has no push channel, so without this the
-        // strip shows whatever was true when the page was opened. Two loops: a 5s refetch while
+        // view shows whatever was true when the page was opened. Two loops: a 3s refetch while
         // something is in flight (20s when idle) and a 1s repaint so the active step's elapsed
         // counts up between fetches. Both stop when the tab is hidden or the view is not open.
         let gateRuns = [], gateFetchTimer = null, gateTickTimer = null;
         function gateBusy() {
-            return gateRuns.some((r) => r.status === "running" || r.status === "awaiting_approval");
+            return gateRuns.some((r) => r.live);
         }
         function gateStopPoll() {
             clearTimeout(gateFetchTimer); gateFetchTimer = null;
@@ -4703,13 +4794,20 @@ export {
             if (activeView !== "gate" || document.hidden) return;
             const busy = gateBusy();
             $("gateLive").textContent = busy ? "live" : "";
-            gateFetchTimer = setTimeout(() => loadGate(true), busy ? 5000 : 20000);
+            gateFetchTimer = setTimeout(() => loadGate(true), busy ? 3000 : 20000);
             if (!busy) return;
-            // Repaint only the step strips: replacing whole rows every second would drop a text
-            // selection inside the findings of a parked run.
+            // Repaint only the elapsed counters: replacing whole rows every second would drop a
+            // text selection inside a parked run's findings or a scroll position in its log.
             gateTickTimer = setInterval(() => {
-                const strips = $("gateRuns").querySelectorAll(".gate-steps");
-                strips.forEach((el, i) => { if (gateRuns[i]) el.innerHTML = gateStepsHtml(gateRuns[i].steps); });
+                const rows = $("gateRuns").querySelectorAll(".gate-run");
+                rows.forEach((row, i) => {
+                    const r = gateRuns[i];
+                    if (!r) return;
+                    const strip = row.querySelector(".gate-steps");
+                    if (strip) strip.innerHTML = gateStepsHtml(r.steps);
+                    const head = row.querySelector(".gate-act-h");
+                    if (head && r.activity) head.innerHTML = gateActHead(r.activity);
+                });
             }, 1000);
         }
         async function loadGate(live) {
@@ -4725,56 +4823,80 @@ export {
             } catch { note("Could not reach the server."); }
         }
         document.addEventListener("visibilitychange", () => { if (activeView === "gate") { if (document.hidden) gateStopPoll(); else loadGate(true); } });
-        async function saveGateCfg(which) {
-            const { area, note } = gateEls(which);
-            if (area.value === gateSaved[which]) return; // no-op: nothing changed
-            setNote(note, "Saving...");
-            const payload = { scope: which === "global" ? "global" : "repo", text: area.value };
-            if (which === "repo") payload.path = currentScope;
+        async function saveGateRepoCfg() {
+            const area = $("gateRepoCfg");
+            if (area.value === gateRepoSaved) return; // no-op: nothing changed
+            setNote("gateRepoCfgNote", "Saving...");
             try {
-                const out = await (await fetch("/api/gate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })).json();
-                setNote(note, out.message || (out.ok ? "Saved." : "Not saved."), out.ok ? "ok" : "err");
-                if (out.ok) { gateSaved[which] = area.value; syncGateSave(which); }
-            } catch { setNote(note, "Could not reach the server.", "err"); }
+                const body = JSON.stringify({ scope: "repo", text: area.value, path: currentScope });
+                const out = await (await fetch("/api/gate", { method: "POST", headers: { "Content-Type": "application/json" }, body })).json();
+                setNote("gateRepoCfgNote", out.message || (out.ok ? "Saved." : "Not saved."), out.ok ? "ok" : "err");
+                if (out.ok) { gateRepoSaved = area.value; syncGateSave(); }
+            } catch { setNote("gateRepoCfgNote", "Could not reach the server.", "err"); }
+        }
+        /**
+         * Stops an in-flight run. Destructive and not undoable - the pipeline drops whatever it
+         * was doing - so it confirms first, naming the branch rather than the run id.
+         */
+        async function stopGateRun(runId, branch) {
+            const ok = await openModal({
+                title: "Stop this run?",
+                message: "The gate run on " + branch + " stops where it is. Nothing it already pushed is undone, and you can start a new run afterwards.",
+                danger: true,
+                okLabel: "Stop run"
+            }).then(Boolean);
+            if (!ok) return;
+            setNote("gateNote", "Stopping the run...");
+            try {
+                const body = JSON.stringify({ action: "abort", run: runId });
+                const out = await (await fetch("/api/gate", { method: "POST", headers: { "Content-Type": "application/json" }, body })).json();
+                setNote("gateNote", out.message || (out.ok ? "Run stopped." : "Not stopped."), out.ok ? "ok" : "err");
+            } catch { setNote("gateNote", "Could not reach the server.", "err"); }
+            await loadGate(true);
         }
         /** One form control -> one key of the global config. Reloads so the file stays the truth. */
         async function saveGateSetting(key, value, label) {
-            setNote("gateCfgNote", "Saving " + label + "...");
+            setNote("gateNote", "Saving " + label + "...");
             try {
                 const out = await (await fetch("/api/gate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "setting", key, value }) })).json();
-                setNote("gateCfgNote", out.message || (out.ok ? "Saved." : "Not saved."), out.ok ? "ok" : "err");
+                setNote("gateNote", out.message || (out.ok ? "Saved." : "Not saved."), out.ok ? "ok" : "err");
                 await loadGate();
-            } catch { setNote("gateCfgNote", "Could not reach the server.", "err"); await loadGate(); }
+            } catch { setNote("gateNote", "Could not reach the server.", "err"); await loadGate(); }
         }
         async function gateDaemonPost(on) {
             gateBool($("gateDaemonBtn"), on); // optimistic; the reload below is the truth
-            setNote("gateCfgNote", on ? "Starting the daemon..." : "Stopping the daemon...");
+            setNote("gateNote", on ? "Starting the daemon..." : "Stopping the daemon...");
             try {
                 const out = await (await fetch("/api/gate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "daemon", on }) })).json();
-                setNote("gateCfgNote", out.message || (out.ok ? "Done." : "Failed."), out.ok ? "ok" : "err");
-            } catch { setNote("gateCfgNote", "Could not reach the server.", "err"); }
+                setNote("gateNote", out.message || (out.ok ? "Done." : "Failed."), out.ok ? "ok" : "err");
+            } catch { setNote("gateNote", "Could not reach the server.", "err"); }
             await loadGate();
         }
         // The gate on/off flag is a normal enigma setting, so it goes through the settings route
         // the Settings page uses rather than growing a second writer for the same key.
         async function gateOnPost(on) {
             gateBool($("gateOnBtn"), on);
-            setNote("gateCfgNote", on ? "Turning the gate on..." : "Turning the gate off...");
+            setNote("gateNote", on ? "Turning the gate on..." : "Turning the gate off...");
             try {
                 const out = await (await fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: "gate", value: on }) })).json();
-                setNote("gateCfgNote", out.ok ? (out.restartNote || "Saved. Restart your agent to apply.") : ("Could not change the gate: " + (out.error || "error")), out.ok ? "warn" : "err");
-            } catch { setNote("gateCfgNote", "Could not reach the server.", "err"); }
+                setNote("gateNote", out.ok ? (out.restartNote || "Saved. Restart your agent to apply.") : ("Could not change the gate: " + (out.error || "error")), out.ok ? "warn" : "err");
+            } catch { setNote("gateNote", "Could not reach the server.", "err"); }
             await loadGate();
         }
         $("gateRefresh").addEventListener("click", () => loadGate());
         $("gateInfo").addEventListener("click", openGateInfo);
-        $("gateCfg").addEventListener("input", () => syncGateSave("global"));
-        $("gateRepoCfg").addEventListener("input", () => syncGateSave("repo"));
-        $("gateCfgSave").addEventListener("click", () => saveGateCfg("global"));
-        $("gateRepoCfgSave").addEventListener("click", () => saveGateCfg("repo"));
+        $("gateRepoCfg").addEventListener("input", syncGateSave);
+        $("gateRepoCfgSave").addEventListener("click", saveGateRepoCfg);
         $("gateOnBtn").addEventListener("click", () => gateOnPost($("gateOnBtn").dataset.on !== "1"));
         $("gateDaemonBtn").addEventListener("click", () => gateDaemonPost($("gateDaemonBtn").dataset.on !== "1"));
+        // Delegated: the run rows are rebuilt on every poll, so a per-button listener would be
+        // rebound (or lost) three times a minute.
+        $("gateRuns").addEventListener("click", (e) => {
+            const b = e.target.closest("[data-gate-stop]");
+            if (b) stopGateRun(b.dataset.gateStop, b.dataset.gateBranch);
+        });
         $("gateAgent").addEventListener("change", (e) => saveGateSetting("agent", e.target.value, "the agent"));
+        $("gateFixPolicy").addEventListener("change", (e) => { syncGateFixHint(); saveGateSetting("fix_policy", e.target.value, "the findings policy"); });
         $("gateLogLevel").addEventListener("change", (e) => saveGateSetting("log_level", e.target.value, "the log level"));
         $("gateIntent").addEventListener("click", () => saveGateSetting("intent.enabled", $("gateIntent").dataset.on !== "1", "intent extraction"));
         // A listed model commits on pick, like the agent and log-level selects; "Custom" reveals
@@ -4806,6 +4928,7 @@ export {
             if (el) {
                 if (key === "intent.enabled") gateBool(el, def === "true");
                 else { el.value = def; if (el.tagName === "SELECT") syncDD(el); }
+                if (key === "fix_policy") syncGateFixHint(); // the hint follows the selection
                 syncGateResets();
             }
             const value = key.indexOf("auto_fix.") === 0 ? Number(def) : (key === "intent.enabled" ? def === "true" : def);
@@ -5485,16 +5608,20 @@ export {
         async function loadPlayground() {
             let info = { agents: [], models: [], apiPort: 8000 };
             try { info = await (await fetch("/api/playground", { cache: "no-store" })).json(); } catch { /* keep defaults */ }
-            // Populate the backend/model dropdown from the installed agents' model lists.
+            // Populate the backend/model dropdown from the installed agents' model lists. The
+            // option VALUE is the model id, so the agent logo has to come from the owning tool
+            // via data-icon - `data-dd-icons="agent"` alone would look the id up and find nothing.
             const sel = $("pgModel");
             const opts = [];
-            (info.models || []).forEach((m) => (m.models || []).forEach((id) => opts.push('<option value="' + esc(id) + '">' + esc(id) + " (" + esc(m.tool) + ")</option>")));
-            if (!opts.length) opts.push('<option value="claude">claude (default)</option>');
+            (info.models || []).forEach((m) => (m.models || []).forEach((id) => opts.push(
+                '<option value="' + esc(id) + '" data-icon="' + esc(agentName(m.tool)) + '">' + esc(id) + " (" + esc(agentLabel(m.tool)) + ")</option>")));
+            if (!opts.length) opts.push('<option value="claude" data-icon="claude">Claude Code (default)</option>');
             sel.innerHTML = opts.join("");
             syncDD(sel);
             // Context selectors: account (labeled by tool), profile, pack.
             const acc = $("pgAccount");
-            acc.innerHTML = '<option value="">(active)</option>' + (info.accounts || []).map((a) => '<option value="' + esc(a.name) + '">' + esc(a.name) + " (" + esc(a.tool) + ")</option>").join("");
+            acc.innerHTML = '<option value="">(active)</option>' + (info.accounts || []).map((a) =>
+                '<option value="' + esc(a.name) + '" data-icon="' + esc(agentName(a.tool)) + '">' + esc(a.name) + " (" + esc(agentLabel(a.tool)) + ")</option>").join("");
             syncDD(acc);
             const prof = $("pgProfile");
             prof.innerHTML = '<option value="">(none)</option>' + (info.profiles || []).map((n) => '<option value="' + esc(n) + '">' + esc(n) + "</option>").join("");

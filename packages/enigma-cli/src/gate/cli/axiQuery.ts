@@ -27,7 +27,8 @@ import {
     type AxiDeps,
     errMessage,
     openAxiEnv,
-    repoInitHelp
+    repoInitHelp,
+    readFixPolicy
 } from "./axiEnv";
 import {
     emitDoc,
@@ -117,7 +118,7 @@ export async function runAxiStatus(deps: AxiDeps, runID: string): Promise<number
         const fields = [runObjectField(rv)];
         const gate = awaitingStep(rv);
         if (gate !== null) {
-            fields.push(...gateFields(gate));
+            fields.push(...gateFields(gate, readFixPolicy(env.p)));
         } else if (terminalStatus(rv.status)) {
             fields.push(field("outcome", outcomeFor(rv.status)));
             if (run.error !== null && run.error !== "") fields.push(field("error", run.error));
