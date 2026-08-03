@@ -140,11 +140,11 @@ test("a run is recorded in the ledger the completion gate reads", () => {
     const { db, paths, run } = seed();
     recordRun(db, paths, run.id);
 
-    const record = lastGateRun(join(REPO_PATH, "src", "deep"), paths.root());
+    const record = lastGateRun(join(REPO_PATH, "src", "deep"), paths.runLedgerFile());
     expect(record).not.toBeNull();
     expect(record.branch).toBe("feat/bar");
     expect(record.at).toBeGreaterThan(0);
     // Coverage belongs to one repository: another checkout gets none from this run.
-    expect(lastGateRun(join(DIR, "other-repo"), paths.root())).toBeNull();
+    expect(lastGateRun(join(DIR, "other-repo"), paths.runLedgerFile())).toBeNull();
     db.close();
 });

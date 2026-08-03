@@ -58,6 +58,11 @@ function repoWith(committed: Record<string, string> = {}): string {
     return dir;
 }
 
+/** The branch a throwaway repository landed on - `git init` follows the machine's default. */
+function branchOf(dir: string): string {
+    return execFileSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd: dir, encoding: "utf8" }).trim();
+}
+
 function write(dir: string, path: string, content: string): void {
     const full = join(dir, path);
     mkdirSync(dirname(full), { recursive: true });
@@ -319,6 +324,16 @@ test("reads a turn that hands the quality gate back as a skip", () => {
         // Nothing to do with the gate.
         "I did not run the tests for the docs change.",
         "Refactored the login gateway; it did not run into the retry path.",
+        // Ordinary prose about the gate's own CODE: "the gate <noun>" is not the pipeline, and
+        // an everyday closer is not an offer to run it. This is the daily vocabulary of the
+        // repository the check ships from, so reading it as a skipped run blocks routine turns.
+        "Refactored the gate daemon so the snapshot writer and the ledger share one broadcast. Let me know if you want the docs note updated too.",
+        "I added the gate view to the dashboard. Shall I also wire the settings bridge?",
+        "The gate pipeline docs are now in docs/notes/gate.md. Tell me if you want a shorter version.",
+        "Documented the gate ledger. Shall I run the tests as well?",
+        "The gate daemon was not started in this session.",
+        // Reported as run, with an offer about something else entirely.
+        "The gate run passed all checks and the PR is ready. Let me know if you want anything changed before merging.",
     ]) expect(gateSkipped(message)).toBe("");
 });
 
@@ -369,14 +384,40 @@ test("denies the stop when committed work never reached an enabled gate", () => 
 });
 
 test("lets the ending a successful run prescribes close the turn", () => {
-    // The prescribed report after a passing run hands the PR back, and the offer that goes with
-    // it reads exactly like the skipped one - so the ledger, not the phrasing, has to decide.
+    // The prescribed report after a passing run hands the PR back, and what it offers is a
+    // review, not a run - so no ledger is needed to tell it apart from a skip.
     const dir = repoWith({ "src/app.ts": "export const a = 1;\n" });
-    const message = "The gate run passed all checks and the PR is ready. Let me know if you want anything changed before merging.";
-    expect(runVerifyHook(payload(dir, message))).toBe(2);
-    recordGateRun({ repoPath: dir, branch: "main", headSha: "abc1234", status: "checks-passed", at: Math.floor(Date.now() / 1000) + 5 });
-    expect(runVerifyHook(payload(dir, message))).toBe(0);
+    expect(runVerifyHook(payload(dir, "The gate run passed all checks and the PR is ready. Let me know if you want anything changed before merging."))).toBe(0);
     expect(runVerifyHook(payload(dir, "El gate pasó todos los checks. Te dejo el PR listo; dime si quieres que lo mergee."))).toBe(0);
+
+    // Offering to RUN it is the skipped shape whatever precedes it, and there the ledger - not
+    // the phrasing - decides: a run that already saw this HEAD makes the report true.
+    const offer = "The gate run passed all checks. Let me know if you want me to run it again.";
+    expect(runVerifyHook(payload(dir, offer))).toBe(2);
+    recordGateRun({ repoPath: dir, branch: branchOf(dir), headSha: "abc1234", status: "checks-passed", at: Math.floor(Date.now() / 1000) + 5 });
+    expect(runVerifyHook(payload(dir, offer))).toBe(0);
+});
+
+test("a run on another branch does not vouch for this one", () => {
+    // The pipeline reviews, fixes and pushes ONE branch. A run recorded for a different branch
+    // of the same repository saw none of this work, so it must not stand the check down.
+    recordGateRun({ repoPath: join(tmpdir(), "one-more-repo"), branch: "main", headSha: "0".repeat(7), status: "completed", at: 1 });
+    const dir = repoWith({ "src/app.ts": "export const a = 1;\n" });
+    git(dir, "checkout", "-q", "-b", "feature");
+    const commit = (file: string): void => {
+        write(dir, file, "export const total = 1;\n");
+        git(dir, "add", "-A");
+        git(dir, "commit", "-qm", "work");
+    };
+
+    commit("src/one.ts");
+    expect(runVerifyHook(payload(dir, "All done, everything is implemented."))).toBe(0);
+    commit("src/two.ts");
+    const at = Math.floor(Date.now() / 1000) + 5;
+    recordGateRun({ repoPath: dir, branch: "other", headSha: "abc1234", status: "completed", at });
+    expect(runVerifyHook(payload(dir, "All done, everything is implemented."))).toBe(2);
+    recordGateRun({ repoPath: dir, branch: "feature", headSha: "abc1234", status: "completed", at });
+    expect(runVerifyHook(payload(dir, "All done, everything is implemented."))).toBe(0);
 });
 
 test("keeps the gate's watch anchor when the block-counter state is pruned", () => {

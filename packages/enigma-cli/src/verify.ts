@@ -248,41 +248,79 @@ function stopShortMessage(question: string): string {
 
 // --- the quality gate: announced as skipped, or never told about the work --------------
 
-/**
- * The quality gate as the SUBJECT of a sentence, so nothing below fires on an unrelated
- * "gate". Kept to the names the gate is actually called by, in both languages.
- */
-const GATE_TOPIC_RE = /\benigma\s+gate\b|\bgate\s+axi\b|\baxi\s+run\b|\/gate\b|\b(?:the|el|la)\s+gate\b|\bquality\s+gate\b|\bgate\s+(?:pipeline|run|de\s+calidad)\b/i;
+/** Verbs that mean putting the gate through a run, in both languages. */
+const RUN_VERB = "(?:run|runs|ran|running|launch\\w*|start\\w*|execut\\w*|driv\\w*|kick\\s+off|ejecut\\w*|lanz\\w*|corr\\w*|pas\\w*|inicializ\\w*|inicialic\\w*)";
 
 /**
- * The gate reported as not run, or offered instead of run. Both halves of the same
- * failure: the work ends unvalidated and the user is handed a question whose answer the
- * configuration already gave - the gate is on, so it runs.
+ * The quality gate as the SUBJECT of a sentence, so nothing below fires on an unrelated
+ * "gate". Kept to the names the gate is actually called by, in both languages - and to the
+ * pipeline ITSELF: a bare `the gate` counts where the gate is what the sentence is about
+ * (it ran, it did not, someone runs it), never as the head of a compound noun. The gate
+ * daemon, the gate view, the gate docs are this repository's daily vocabulary, and reading
+ * one of those as the pipeline turned ordinary prose about the code into a report about a run.
  */
-const GATE_SKIP_RE = new RegExp([
-    // English: it did not run.
+const GATE_TOPIC_RE = new RegExp([
+    "\\benigma\\s+gate\\b",
+    "\\bgate\\s+axi\\b",
+    "\\baxi\\s+run\\b",
+    "\\/gate\\b",
+    "\\bquality\\s+gate\\b",
+    "\\bgate\\s+(?:pipeline|run|de\\s+calidad)\\b",
+    // The gate as subject: followed by what it did, or by the end of its clause.
+    "\\b(?:the|el|la)\\s+gate\\b(?=\\s*(?:[,;:.!?)]|$)|\\s+(?:has|have|had|was|were|is|are|did|does|do|never|still|already|ran|run|runs|passed|failed|parked|blocked|reported|se|sigue|siguen|no|ya|está|esta|pasó|paso|falló|fallo|terminó|corrió)\\b)",
+    // The gate as the object of running it ("run the gate", "lanzar el gate").
+    `${RUN_VERB}\\s+(?:the\\s+|el\\s+|la\\s+)?(?:quality\\s+)?gate\\b`,
+].join("|"), "i");
+
+/**
+ * The gate reported as not run. Specific enough to stand on its own, so it is only read in a
+ * sentence that names the gate itself - carrying the topic into it would read an ordinary
+ * "I skipped the flaky test" that happens to follow a sentence about the gate as a skipped run.
+ */
+const GATE_NOT_RUN_RE = new RegExp([
+    // English.
     "\\b(?:did|does|do|has|have|had|was|were|is|are)\\s*n[o']?t\\s+(?:\\w+\\s+){0,3}?(?:run|ran|launch(?:ed)?|start(?:ed)?|execut(?:e|ed)|driv(?:e|en)|gone\\s+through)\\b",
     "\\b(?:skipp?(?:ed|ing)|bypass(?:ed|ing)?|omitted)\\b",
     "\\b(?:never|not\\s+yet|still\\s+pending)\\s+(?:\\w+\\s+){0,3}?(?:run|ran|validated|executed)\\b",
     "\\bleft\\s+(?:it\\s+)?(?:unvalidated|ungated|un-?run)\\b",
     "\\bwithout\\s+(?:running|validating|going\\s+through)\\b",
-    // English: offered rather than run.
-    "\\b(?:shall|should|can|may)\\s+i\\b",
-    "\\b(?:do\\s+you\\s+want|would\\s+you\\s+like|want)\\s+me\\s+to\\b",
-    "\\b(?:let\\s+me\\s+know|tell\\s+me)\\s+if\\b",
-    "\\bif\\s+you\\s+want(?:\\s+me)?\\b",
-    "\\byou\\s+can\\s+(?:run|launch|start)\\b",
-    // Spanish: it did not run - the exact phrasing this check was reported for
+    // Spanish - the exact phrasing this check was reported for
     // ("El gate sigue sin ejecutarse ... dime si quieres que lo lance").
     "\\bsin\\s+(?:ejecutar(?:se)?|lanzar(?:se)?|validar|pasar)\\b",
     "\\bsigue\\s+sin\\b",
     "\\bno\\s+(?:se\\s+|lo\\s+|le\\s+)?(?:ha\\s+|he\\s+|hemos\\s+)?(?:ejecutad|lanzad|corrid|pasad|inicializad|validad)",
     "\\b(?:salt(?:ado|arse|ándome|ármelo|é|o)|omitid[oa]|bypasse?ad[oa])\\b",
-    // Spanish: offered rather than run.
+].join("|"), "i");
+
+/**
+ * Work handed back as a question instead of done. Everyday closers, every one of them - which
+ * is why an offer only counts as a skipped gate when the thing being offered is a RUN
+ * (`GATE_RUN_ACTION_RE`). Without that second half these matched "let me know if you want the
+ * docs note updated too" in any turn whose previous sentence mentioned the gate.
+ */
+const GATE_OFFER_RE = new RegExp([
+    // English.
+    "\\b(?:shall|should|can|may)\\s+i\\b",
+    "\\b(?:do\\s+you\\s+want|would\\s+you\\s+like|want)\\s+me\\s+to\\b",
+    "\\b(?:let\\s+me\\s+know|tell\\s+me)\\s+if\\b",
+    "\\bif\\s+you\\s+want(?:\\s+me)?\\b",
+    "\\byou\\s+can\\s+(?:run|launch|start)\\b",
+    // Spanish.
     "\\b(?:dime|avísame|avisame|me\\s+dices|déjame\\s+saber)\\s+(?:si|cuando)\\b",
     "\\bsi\\s+quieres\\b",
     "\\b(?:quieres|querés|prefieres)\\s+que\\b",
     "\\bpuedes\\s+(?:lanzar|ejecutar|correr)",
+].join("|"), "i");
+
+/**
+ * Running the gate as the thing being offered: the pipeline named, or standing in as the
+ * pronoun the offer that follows a report about it always uses ("run it", "que lo lance").
+ */
+const GATE_RUN_ACTION_RE = new RegExp([
+    `${RUN_VERB}\\s+(?:the\\s+|el\\s+|la\\s+)?(?:quality\\s+)?(?:gate|axi|it)\\b`,
+    "\\benigma\\s+gate\\b|\\bgate\\s+axi\\b|\\baxi\\s+run\\b|\\/gate\\b",
+    "\\b(?:lo|la)\\s+(?:lance|lanzo|lanzamos|ejecute|ejecuto|ejecutamos|corra|corro|pase|paso|inicialice|valide)\\b",
+    "\\b(?:lanzar|ejecutar|correr|pasar|validar|inicializar)(?:lo|la)\\b",
 ].join("|"), "i");
 
 /**
@@ -319,14 +357,13 @@ const GATE_EXCUSE_RE = new RegExp([
  * without naming a reason that makes skipping legitimate.
  *
  * Returns the offending sentence so the block can quote it back, or "" for a message that
- * is free to end the turn. The gate topic carries one sentence forward, because the report
- * and the offer are usually split across two ("The gate has not run. Tell me if you want me
- * to launch it."), and neither half means anything without the other.
+ * is free to end the turn. Only the OFFER carries the gate topic one sentence forward,
+ * because that half is split across two sentences by nature ("The gate has not run. Tell me
+ * if you want me to launch it.") while the report half always names the gate itself.
  *
  * This reads the message alone, so the caller must still ask the ledger whether the gate
- * actually ran (`gateValidatedHead`): carrying the topic forward means a report of a
- * SUCCESSFUL run followed by any ordinary "let me know if..." lands here too, and blocking
- * that would deny the stop over a pipeline that already ran, fixed and pushed.
+ * actually ran (`gateValidatedHead`): a report of a SUCCESSFUL run can still carry an offer
+ * to run it again, and blocking that would deny the stop over a pipeline that already ran.
  */
 export function gateSkipped(message: string): string {
     if (!message || typeof message !== "string") return "";
@@ -334,7 +371,8 @@ export function gateSkipped(message: string): string {
     let topical = false;
     for (const sentence of message.split(/(?<=[.!?\n])\s+/)) {
         const onTopic = GATE_TOPIC_RE.test(sentence);
-        if ((onTopic || topical) && GATE_SKIP_RE.test(sentence)) return sentence.trim().slice(0, 200);
+        const offered = (onTopic || topical) && GATE_OFFER_RE.test(sentence) && GATE_RUN_ACTION_RE.test(sentence);
+        if (offered || (onTopic && GATE_NOT_RUN_RE.test(sentence))) return sentence.trim().slice(0, 200);
         topical = onTopic;
     }
     return "";
@@ -366,6 +404,12 @@ function headCommittedAt(cwd: string): number | null {
  * newest commit - the one fact that stands both gate checks down, because it says the
  * pipeline already saw this work.
  *
+ * A run validates the BRANCH it ran on and no other: the pipeline reviews, fixes and pushes
+ * one branch, so letting a run on `feature` vouch for commits sitting on `main` would stand
+ * the check down over work nothing ever looked at. A branch the ledger cannot name (an older
+ * record, an unreadable HEAD) is not held against the run - the timestamp still decides there,
+ * since a false block is the worse failure.
+ *
  * `committedAt` is passed by callers that already read it, so the common path costs one
  * `git log` rather than two.
  */
@@ -373,7 +417,9 @@ function gateValidatedHead(cwd: string, committedAt?: number): boolean {
     const at = committedAt ?? headCommittedAt(cwd);
     if (at === null) return false;
     const last = lastGateRun(cwd);
-    return last !== null && last.at >= at;
+    if (last === null || last.at < at) return false;
+    const branch = gitOut(cwd, ["rev-parse", "--abbrev-ref", "HEAD"]).trim();
+    return branch === "" || typeof last.branch !== "string" || last.branch === "" || last.branch === branch;
 }
 
 /**
@@ -440,7 +486,7 @@ function gateMessage(reason: VerifyGap): string {
         "",
         `  ${reason.detail}`,
         "",
-        "The gate being enabled IS the decision - it was taken when it was switched on, so there is nothing here to ask about and nothing to hand back. Drive it yourself now, in this same turn: `enigma gate axi run --intent \"<what the user set out to accomplish>\"`, on whatever branch the work is on, the default branch included. If the repository was never initialized, run `enigma gate init` first - an uninitialized repo is a setup step you can perform, not a blocker.",
+        "The gate being enabled IS the decision - it was taken when it was switched on, so there is nothing here to ask about and nothing to hand back. Drive it yourself now, in this same turn: `enigma gate axi run --intent \"<what the user set out to accomplish>\"`, on whatever branch the work is on, the default branch included. If the repository was never initialized, run `enigma gate init` first - an uninitialized repo is a setup step you can perform, not a blocker. The run refuses a dirty working tree, so commit the work before driving it: committing what you just finished is part of finishing it, not a separate decision to ask about.",
         "Authorize `auto-fix` and `no-op` findings on your own judgment, escalate every `ask-user` finding verbatim, never pass `--yes`, and never merge the PR yourself: on `checks-passed`, leave it ready and ask the user to review and merge.",
         "The only ways this turn may end unvalidated are the ones the policy names, and each has to be stated: the user told you to skip or bypass it, the repository sets `gate: false`, the branch is listed in `gate-protected-branches`, or there is nothing committed to validate. If one of those is the case, say which - do not ask for permission to run something that is already turned on.",
     ].join("\n");
@@ -587,7 +633,7 @@ function hasNewWork(cwd: string): boolean {
     // A failed status counts as new work: better to run the check than to skip it silently.
     if (status === null || status.trim() !== "") return true;
     const head = gitOut(cwd, ["rev-parse", "HEAD"]).trim();
-    return head !== "" && head !== stateValue(`head:${cwd}`);
+    return head !== "" && head !== stateValue(`head:${repoRootOf(cwd)}`);
 }
 
 /** Every tracked file's lines, for the whole-repository sweep (`enigma verify --all`). */
@@ -964,10 +1010,17 @@ function setStateValue(key: string, value: string): void {
     } catch { /* a read-only home must not break the gate */ }
 }
 
-/** Record the commit the verification command just passed on, so it is not re-run for it. */
+/**
+ * Record the commit the verification command just passed on, so it is not re-run for it.
+ *
+ * Keyed by the REPOSITORY, like the gate's watch: a turn run from a subdirectory is the same
+ * checkout at the same commit, and keying by cwd both re-ran the command for every directory
+ * a turn ever started in and grew this anchor - which the prune deliberately spares - without
+ * bound.
+ */
 function rememberVerifiedHead(cwd: string): void {
     const head = gitOut(cwd, ["rev-parse", "HEAD"]).trim();
-    if (head) setStateValue(`head:${cwd}`, head);
+    if (head) setStateValue(`head:${repoRootOf(cwd)}`, head);
 }
 
 /**

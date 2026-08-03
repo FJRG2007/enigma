@@ -21,7 +21,7 @@ export function recordRun(db: Database, paths: Paths, runId: string): void {
         if (run === null) return;
         const repo = getRepo(db, run.repoId);
         if (repo === null) return;
-        recordGateRun({ repoPath: repo.workingPath, branch: run.branch, headSha: run.headSha, status: run.status, at: run.updatedAt }, paths.root());
+        recordGateRun({ repoPath: repo.workingPath, branch: run.branch, headSha: run.headSha, status: run.status, at: run.updatedAt }, paths.runLedgerFile());
     } catch (err) {
         log.debug("gate run ledger write failed", "run_id", runId, "error", String(err));
     }

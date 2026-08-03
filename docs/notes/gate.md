@@ -97,12 +97,17 @@ half needs `bun:sqlite` and is imported dynamically.
   on the Node launcher and cannot open `bun:sqlite`. `daemon/ledger.ts` writes
   `<gate home>/last-runs.json` (repo path -> branch, head, status, `updatedAt`) from the same
   `broadcast` that refreshes the snapshot; `gate-ledger.ts` is the Node-safe half both sides
-  share, so the filename and shape have ONE definition (`Paths.runLedgerFile()` delegates to
-  it). Unlike the snapshot it must OUTLIVE the run: a gate that finished an hour ago is exactly
+  share, so the filename and shape have ONE definition: `Paths.runLedgerFile()` delegates to it
+  and is what the writer PASSES (the record/read functions take the file, not a home to
+  re-derive it from), so nothing under a resolved gate home names `last-runs.json` twice.
+  Unlike the snapshot it must OUTLIVE the run: a gate that finished an hour ago is exactly
   what makes the next completion claim legitimate.
 - Every state change is recorded, in-flight runs included. A turn that ends while the pipeline
   is parked awaiting the driving agent did NOT skip the gate, and blocking it would be a false
   block - the one thing that gets a gate switched off.
+- The `branch` a record carries is READ, not decoration: the pipeline reviews, fixes and pushes
+  one branch, so `verify.ts` only lets a run vouch for the branch it ran on. Without that a run
+  on `feature` stood the check down over commits sitting on `main` that nothing ever looked at.
 - Still a derived cache: deleting it costs one extra gate run, not correctness. A repository
   with no entry reads as "never validated here", which is the honest answer.
 

@@ -47,7 +47,14 @@ function gateHome(): string {
     return process.env.ENIGMA_GATE_HOME || join(homedir(), ".enigma", "gate");
 }
 
-/** The ledger file, under `root` when the caller already resolved gate home. */
+/**
+ * The ledger file, under `root` when the caller already resolved gate home.
+ *
+ * The gate side never calls this directly - it goes through `Paths.runLedgerFile()`, which
+ * names the file once for everything that writes under a resolved gate home. Hence the
+ * `path` argument the functions below take: a caller that already has the file passes it,
+ * and only the readers that have nothing but an environment fall back to here.
+ */
 export function gateLedgerPath(root?: string): string {
     return join(root || gateHome(), "last-runs.json");
 }
@@ -62,8 +69,8 @@ export function gateLedgerPath(root?: string): string {
  * unvalidated work would block every turn right after a successful run, so the check that
  * denies a stop asks this first and stands down until the first run is recorded.
  */
-export function gateLedgerReady(root?: string): boolean {
-    return existsSync(gateLedgerPath(root));
+export function gateLedgerReady(path = gateLedgerPath()): boolean {
+    return existsSync(path);
 }
 
 /** Reads the ledger, or an empty one when it is missing, unreadable or unknown. */
@@ -80,11 +87,10 @@ function readLedger(path: string): Ledger {
  *
  * Written atomically (temp file plus rename) because the reader is a turn-end hook that
  * must never parse half a file, and failures are swallowed: bookkeeping must never be
- * able to disturb a run. `root` is the gate home the caller is already using, so a test
- * or an isolated daemon writes where it reads.
+ * able to disturb a run. `path` is the ledger the caller is already using, so a test or an
+ * isolated daemon writes where it reads.
  */
-export function recordGateRun(record: GateRunRecord, root?: string): void {
-    const path = gateLedgerPath(root);
+export function recordGateRun(record: GateRunRecord, path = gateLedgerPath()): void {
     try {
         const ledger = readLedger(path);
         ledger.repos[record.repoPath] = record;
@@ -115,8 +121,8 @@ function isInside(dir: string, root: string): boolean {
  * inside another one (a worktree, a vendored clone) reads its own entry rather than
  * its parent's.
  */
-export function lastGateRun(cwd: string, root?: string): GateRunRecord | null {
-    const ledger = readLedger(gateLedgerPath(root));
+export function lastGateRun(cwd: string, path = gateLedgerPath()): GateRunRecord | null {
+    const ledger = readLedger(path);
     let best: GateRunRecord | null = null;
     for (const record of Object.values(ledger.repos)) {
         if (!record || typeof record.repoPath !== "string" || typeof record.at !== "number") continue;
