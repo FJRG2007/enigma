@@ -3,14 +3,19 @@
  * The regression this pins: pipeline commits were hardcoded to `enigma(<step>): ...` with no
  * emoji, so a gate run left commits that did not match the rest of the history.
  *
+ * The last block covers the other half of the same class: the commit sites in this repo's own
+ * GitHub Actions workflows, which cannot read `.enigma.json` and so hardcode the emoji. The
+ * screenshot workflow's preview-refresh commit was the one that had none.
+ *
  * Temp HOME (set BEFORE the import) isolates ~/.enigma.json; the project scope is a temp dir
  * passed explicitly, so nothing here depends on process.cwd().
  * Must run under Bun: bun test tests/gate/commit-message.test.ts
  */
-import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 import { test, expect, afterAll } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 
 // bun test shares one process across files: leaving this pinned would send the NEXT file's
 // global-config reads into this temp dir, so capture the prior value before overwriting it.
@@ -84,4 +89,39 @@ test("the global opt-out drops the emoji", () => {
     expect(gateCommitMessage(PROJECT, "document", "note the ledger")).toBe("📝 enigma(document): note the ledger");
     writeConfig(HOME, {});
     writeConfig(PROJECT, {});
+});
+
+const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..");
+
+/** git-policy's sanctioned type-to-emoji map, read from the skill rather than restated here. */
+function policyEmojiByType(): Record<string, string> {
+    const md = readFileSync(join(REPO_ROOT, "packages", "enigma-cli", "assets", "skills", "git-policy", "SKILL.md"), "utf8");
+    const map: Record<string, string> = {};
+    for (const line of md.split("\n")) {
+        const entry = /^ {2}- (\S+) ([a-z]+): /.exec(line);
+        if (entry !== null) map[entry[2]] = entry[1];
+    }
+    return map;
+}
+
+test("every hardcoded commit subject in this repo's workflows carries git-policy's type emoji", () => {
+    const emoji = policyEmojiByType();
+    expect(emoji.chore).toBe("🔧");
+
+    const workflows = join(REPO_ROOT, ".github", "workflows");
+    const subjects: string[] = [];
+    for (const file of readdirSync(workflows).filter((f) => f.endsWith(".yml") || f.endsWith(".yaml"))) {
+        for (const line of readFileSync(join(workflows, file), "utf8").split("\n")) {
+            const commit = /git commit\b[^\n]*?-m "([^"]+)"/.exec(line);
+            if (commit !== null) subjects.push(commit[1]);
+        }
+    }
+    // A workflow cannot consult `.enigma.json`, so the emoji is not optional there - it is the
+    // literal text of the commit. Guard against the scan silently matching nothing.
+    expect(subjects.length).toBeGreaterThan(0);
+    for (const subject of subjects) {
+        const parts = /^(\S+) ([a-z]+)(\([^)]*\))?: /.exec(subject);
+        expect(parts, `no "<emoji> <type>: " prefix in workflow commit subject: ${subject}`).not.toBeNull();
+        expect(parts![1], `wrong emoji for type "${parts![2]}" in: ${subject}`).toBe(emoji[parts![2]]);
+    }
 });

@@ -22,7 +22,7 @@ Same doctrine applies to the memory enigma ships (`packages/enigma-cli/assets/me
 
 ## Always-on repo rules
 
-- Style conflicts already resolved: ciphera-style-policy mandates 4-space indent but this repo's own JS uses 2-space - when editing an existing file, match that file; Ciphera style governs new code only (consistency outranks style per the priority hierarchy). Commits follow git-policy (Conventional Commits), never Ciphera's emoji tags.
+- Style conflicts already resolved: ciphera-style-policy mandates 4-space indent but this repo's own JS uses 2-space - when editing an existing file, match that file; Ciphera style governs new code only (consistency outranks style per the priority hierarchy). Commits follow git-policy (Conventional Commits) including its leading type emoji, and that holds for EVERY commit site here - a workflow cannot read `.enigma.json`, so a `git commit -m` inside `.github/workflows/` hardcodes the emoji its type maps to.
 - This shell delivers tool results with delayed/batched flushing. Do not re-issue a tool call because its result has not appeared yet; duplicate Read/Bash calls are wasted.
 
 ## Repo notes index (`docs/notes/`)
