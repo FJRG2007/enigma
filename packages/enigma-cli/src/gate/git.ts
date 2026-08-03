@@ -276,7 +276,7 @@ export function findMainRepoRoot(path: string): string {
 
 /** Diff returns the unified diff between two commits. */
 export async function diff(dir: string, base: string, head: string, signal?: AbortSignal): Promise<string> {
-    return run(dir, ["diff", `${base}..${head}`], signal);
+    return run(dir, ["diff", `${base}..${head}`, "--"], signal);
 }
 
 /**
@@ -329,7 +329,7 @@ export async function diffHead(dir: string, signal?: AbortSignal): Promise<strin
 
 /** Log returns oneline log entries between two commits. */
 export async function log(dir: string, base: string, head: string, signal?: AbortSignal): Promise<string> {
-    return run(dir, ["log", "--oneline", `${base}..${head}`], signal);
+    return run(dir, ["log", "--oneline", `${base}..${head}`, "--"], signal);
 }
 
 /** HeadSHA returns the full SHA of HEAD. */

@@ -86,9 +86,9 @@ the two together crosses the Windows limit and returns ENAMETOOLONG instead of E
 at 160 chars, where the same unresolvable range reports `Invalid revision range` and a
 resolvable one works normally.
 
-Every range call site now passes a trailing `--` (`git.ts diffNameOnly`, `review.ts`,
-`document.ts`, `intent.ts`) so git can never reinterpret a range as a pathspec and the failure
-names the revision instead. That hardens the message, **not** the underlying cause: why the base
+Every range call site now passes a trailing `--` (`git.ts diffNameOnly`, `diff` and `log`,
+plus `review.ts`, `document.ts`, `intent.ts` and the `pr.ts` diffstat) so git can never
+reinterpret a range as a pathspec and the failure names the revision instead. That hardens the message, **not** the underlying cause: why the base
 commit was missing from that worktree is still unreproduced, so do not read a green run under a
 short path as evidence it is fixed.
 

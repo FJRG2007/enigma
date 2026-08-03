@@ -155,7 +155,12 @@ export class PRStep implements Step {
         }
         let diffStat = "";
         try {
-            diffStat = await git.run(sctx.workDir, ["diff", "--stat", `${baseSHA}..${sctx.run.headSha}`], signal);
+            diffStat = await git.run(
+                sctx.workDir,
+                // "--" per git.diffNameOnly.
+                ["diff", "--stat", `${baseSHA}..${sctx.run.headSha}`, "--"],
+                signal
+            );
         } catch {
             diffStat = "";
         }
