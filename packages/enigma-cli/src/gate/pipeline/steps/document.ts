@@ -7,23 +7,19 @@
  * `Result.output` is already the parsed structured value, so the document
  * helpers inspect that value directly instead of unmarshaling bytes.
  *
- * `commitAgentFixes` mirrors the package-shared helper of the same name from
- * Go's `common_fix.go`; it is inlined here (reusing the shared
- * `gateCommitMessage`) because the ported commonFix module keeps its
- * copy private. `sanitizedPreviousFindingsForPrompt` is Go's review.go helper,
- * inlined until review.ts is ported.
- * enigma: drop the local commitAgentFixes once commonFix.ts exports it.
+ * `commitAgentFixes` is the package-shared helper from Go's `common_fix.go`,
+ * imported from the ported commonFix module. `sanitizedPreviousFindingsForPrompt`
+ * is Go's review.go helper, inlined until review.ts is ported.
  */
 
 import * as git from "@/gate/git";
-import { updateRunHeadSHA } from "@/gate/db";
+import { commitAgentFixes } from "./commonFix";
 import type { Result } from "@/gate/agent/agent";
 import { matchIgnorePattern } from "./commonDiff";
+import { resolveBranchBaseSHA } from "./commonGit";
 import { userIntentPromptSection } from "./rebase";
-import { gateCommitMessage } from "./commitMessage";
 import { roundHistoryPromptSection } from "./roundHistory";
 import { executionContextPromptSection } from "./executionContext";
-import { resolveBranchBaseSHA, normalizedBranchRef } from "./commonGit";
 import { newStepOutcome, type Step, type StepContext, type StepOutcome } from "../types";
 import { findingsSchema, sanitizePromptText, sanitizePromptMultilineText } from "./common";
 import {
@@ -283,57 +279,6 @@ function sanitizedPreviousFindingsForPrompt(raw: string): string {
     } catch {
         return sanitizePromptMultilineText(raw);
     }
-}
-
-/**
- * Commits any working-tree changes the agent produced with a deterministic
- * message and advances the run's HEAD. Mirror of Go's package-shared
- * `commitAgentFixes`.
- */
-async function commitAgentFixes(
-    sctx: StepContext,
-    stepName: StepName,
-    summary: string,
-    fallbackSummary: string
-): Promise<void> {
-    const signal = sctx.signal;
-    let status = "";
-    try {
-        status = await git.run(sctx.workDir, ["status", "--porcelain"], signal);
-    } catch {
-        status = "";
-    }
-    if (status.trim() === "") {
-        sctx.log("no agent changes to commit");
-        return;
-    }
-    try {
-        await git.run(sctx.workDir, ["add", "-A"], signal);
-    } catch (err) {
-        throw new Error(`stage ${stepName} changes: ${errMessage(err)}`);
-    }
-    if (summary === "") summary = fallbackSummary;
-    const commitMessage = gateCommitMessage(sctx.repo.workingPath, stepName, summary);
-    try {
-        await git.run(sctx.workDir, ["commit", "-m", commitMessage], signal);
-    } catch (err) {
-        throw new Error(`commit ${stepName} changes: ${errMessage(err)}`);
-    }
-    let headSHA: string;
-    try {
-        headSHA = await git.headSHA(sctx.workDir, signal);
-    } catch (err) {
-        throw new Error(`resolve head after ${stepName} commit: ${errMessage(err)}`);
-    }
-    const ref = normalizedBranchRef(sctx.run.branch);
-    try {
-        await git.run(sctx.workDir, ["update-ref", ref, headSHA], signal);
-    } catch (err) {
-        throw new Error(`update local branch ref: ${errMessage(err)}`);
-    }
-    sctx.run.headSha = headSHA;
-    updateRunHeadSHA(sctx.db, sctx.run.id, headSHA);
-    sctx.log(`committed agent fixes: ${commitMessage}`);
 }
 
 function errMessage(err: unknown): string {

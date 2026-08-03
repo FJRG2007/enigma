@@ -7,25 +7,21 @@
  * `internal/pipeline/steps/lint.go`.
  *
  * Go threaded `context.Context`; here the StepContext carries an `AbortSignal`,
- * and Go's `(value, error)` returns become throws. `extractCommitSummary` and
- * `commitAgentFixes` live in Go's common_fix.go but are unexported in the ported
- * commonFix.ts, so the no-command branch's faithful equivalents are reproduced
- * here (reusing the shared gateCommitMessage/normalizedBranchRef).
+ * and Go's `(value, error)` returns become throws. The no-command branch reuses
+ * `extractCommitSummary` and `commitAgentFixes` from the ported commonFix module,
+ * which is where they live in Go's common_fix.go too.
  */
 
-import * as git from "@/gate/git";
 import { findingsSchema } from "./common";
-import { updateRunHeadSHA } from "@/gate/db";
 import type { Result } from "@/gate/agent/agent";
 import { runStepShellCommand } from "./commonExec";
-import { gateCommitMessage } from "./commitMessage";
+import { resolveBranchBaseSHA } from "./commonGit";
 import { userIntentPromptSection } from "./intentPrompt";
 import { roundHistoryPromptSection } from "./roundHistory";
 import { sanitizedPreviousFindingsForPrompt } from "./review";
-import { executeFixMode, hasBlockingFindings } from "./commonFix";
 import { executionContextPromptSection } from "./executionContext";
-import { resolveBranchBaseSHA, normalizedBranchRef } from "./commonGit";
 import { newStepOutcome, type Step, type StepContext, type StepOutcome } from "../types";
+import { commitAgentFixes, executeFixMode, extractCommitSummary, hasBlockingFindings } from "./commonFix";
 import {
     emptyFindings,
     parseFindingsJSON,
@@ -38,90 +34,6 @@ import {
 /** Returns the message of an unknown thrown value, mirroring Go's `%w` wrap. */
 function errMessage(err: unknown): string {
     return err instanceof Error ? err.message : String(err);
-}
-
-/** Trims any of the cutset characters from both ends of a string (strings.Trim). */
-function trimCutset(s: string, cutset: string): string {
-    const set = new Set(cutset);
-    let start = 0;
-    let end = s.length;
-    while (start < end && set.has(s[start])) start++;
-    while (end > start && set.has(s[end - 1])) end--;
-    return s.slice(start, end);
-}
-
-/**
- * Extracts the one-line commit summary from a fix agent's structured output.
- * Throws when the agent returned no decodable summary. Faithful local copy of
- * the unexported helper in commonFix.ts.
- */
-function extractCommitSummary(result: Result): string {
-    if (result.output === undefined || result.output === null) {
-        throw new Error("agent returned no structured summary");
-    }
-    const out = result.output;
-    if (typeof out !== "object" || Array.isArray(out)) {
-        throw new Error("parse commit summary: cannot decode structured summary");
-    }
-    const raw = (out as Record<string, unknown>).summary;
-    if (raw !== undefined && typeof raw !== "string") {
-        throw new Error("parse commit summary: summary is not a string");
-    }
-    const summary = typeof raw === "string" ? raw : "";
-    let cleaned = summary.split(/\s+/).filter(part => part !== "").join(" ");
-    cleaned = trimCutset(cleaned, " \t\r\n\"'.;:,-");
-    return cleaned;
-}
-
-/**
- * Stages, commits, and advances the run HEAD for any working-tree changes the
- * agent produced; no-ops when the tree is clean. Faithful local copy of the
- * unexported helper in commonFix.ts.
- */
-async function commitAgentFixes(
-    sctx: StepContext,
-    stepName: StepName,
-    summary: string,
-    fallbackSummary: string
-): Promise<void> {
-    const signal = sctx.signal;
-    let status = "";
-    try {
-        status = await git.run(sctx.workDir, ["status", "--porcelain"], signal);
-    } catch {
-        status = "";
-    }
-    if (status.trim() === "") {
-        sctx.log("no agent changes to commit");
-        return;
-    }
-    try {
-        await git.run(sctx.workDir, ["add", "-A"], signal);
-    } catch (err) {
-        throw new Error(`stage ${stepName} changes: ${errMessage(err)}`);
-    }
-    if (summary === "") summary = fallbackSummary;
-    const commitMessage = gateCommitMessage(sctx.repo.workingPath, stepName, summary);
-    try {
-        await git.run(sctx.workDir, ["commit", "-m", commitMessage], signal);
-    } catch (err) {
-        throw new Error(`commit ${stepName} changes: ${errMessage(err)}`);
-    }
-    let headSHA: string;
-    try {
-        headSHA = await git.headSHA(sctx.workDir, signal);
-    } catch (err) {
-        throw new Error(`resolve head after ${stepName} commit: ${errMessage(err)}`);
-    }
-    const ref = normalizedBranchRef(sctx.run.branch);
-    try {
-        await git.run(sctx.workDir, ["update-ref", ref, headSHA], signal);
-    } catch (err) {
-        throw new Error(`update local branch ref: ${errMessage(err)}`);
-    }
-    sctx.run.headSha = headSHA;
-    updateRunHeadSHA(sctx.db, sctx.run.id, headSHA);
-    sctx.log(`committed agent fixes: ${commitMessage}`);
 }
 
 /** Runs linters and asks the agent to fix issues. */

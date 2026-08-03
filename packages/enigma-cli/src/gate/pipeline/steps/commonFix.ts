@@ -57,7 +57,13 @@ function trimCutset(s: string, cutset: string): string {
     return s.slice(start, end);
 }
 
-async function commitAgentFixes(
+/**
+ * Stages, commits, and advances the run HEAD for any working-tree changes the
+ * agent produced; no-ops when the tree is clean. Every commit the pipeline makes
+ * on the agent's behalf goes through here, so `gateCommitMessage` stays the one
+ * place the subject convention is applied.
+ */
+export async function commitAgentFixes(
     sctx: StepContext,
     stepName: StepName,
     summary: string,
@@ -103,7 +109,11 @@ async function commitAgentFixes(
     sctx.log(`committed agent fixes: ${commitMessage}`);
 }
 
-function extractCommitSummary(result: Result): string {
+/**
+ * Extracts the one-line commit summary from a fix agent's structured output.
+ * Throws when the agent returned no decodable summary.
+ */
+export function extractCommitSummary(result: Result): string {
     if (result.output === undefined || result.output === null) {
         throw new Error("agent returned no structured summary");
     }

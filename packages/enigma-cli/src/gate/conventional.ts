@@ -5,6 +5,9 @@
  * the valid-type set, the release-type rule used in agent suggestion prompts,
  * `isTitle`, and `tightenTitle` (with its type-inference fallback). Behavior is
  * preserved; only naming follows enigma's TypeScript conventions.
+ *
+ * `stripSubjectEmoji` has no Go counterpart: upstream commits carried no emoji,
+ * while enigma's do whenever `commitEmoji` is on.
  */
 
 const TITLE_RE = /^([a-z]+)(\([^)]+\))?(!)?: (.+)$/;
@@ -26,6 +29,18 @@ const VALID_TYPES = new Set([
 /** Release-automation guidance shared by the commit/PR title prompts. */
 export const RELEASE_TYPE_RULE =
     "- If the change has any user-facing product impact, the type must use feat or fix so release automation can pick it up. Use feat for a new user-visible capability and fix for a user-visible correction or behavior improvement. Use docs, refactor, chore, test, build, or ci only when the change has no user-facing product behavior impact.";
+
+const LEADING_EMOJI_RE = /^(?:\p{Extended_Pictographic}|[\u{1F3FB}-\u{1F3FF}\u{200D}\u{FE0F}\u{20E3}])+\s*/u;
+
+/**
+ * Drops the leading type emoji git-policy puts on a commit subject when
+ * `commitEmoji` is on. Commit subjects keep it; surfaces that must stay plain
+ * text (PR titles) strip it first, because `tightenTitle` reads the emoji as a
+ * missing type and would prefix an inferred one in front of it.
+ */
+export function stripSubjectEmoji(subject: string): string {
+    return subject.replace(LEADING_EMOJI_RE, "").trim();
+}
 
 /** Reports whether `title` is a well-formed conventional-commit subject. */
 export function isTitle(title: string): boolean {

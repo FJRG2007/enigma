@@ -75,10 +75,15 @@ bare `enigma(<step>): <summary>` when the user turned emojis off. The `enigma(<s
 kept from upstream so a pipeline commit stays recognizable, and the step is what the emoji is
 picked from (review -> the `fix` emoji, document -> `docs`, lint -> `style`, and so on).
 
-Every commit site goes through `gateCommitMessage` - the three agent-fix rounds (commonFix,
-plus the inlined copies in document.ts and lint.ts) AND the two that used to be hardcoded
-strings, `push.ts` ("apply agent fixes") and `ciFix.ts` ("apply CI fixes"). A new commit site
-must call it too, or the setting silently stops holding for that step.
+Every commit site goes through `gateCommitMessage`: the agent-fix rounds all commit through
+the single exported `commitAgentFixes` in `commonFix.ts` (document.ts and lint.ts import it
+rather than keeping their own copies), AND the two that used to be hardcoded strings,
+`push.ts` ("apply agent fixes") and `ciFix.ts` ("apply CI fixes"). A new commit site must call
+it too, or the setting silently stops holding for that step.
+
+PR text is the exception: it stays emoji-free. `pr.ts` runs a candidate title through
+`stripSubjectEmoji` before `tightenTitle`, since a leading emoji makes the conventional-commit
+regex miss and would otherwise yield `chore: <emoji> fix(...): ...`.
 
 The setting is read from `sctx.repo.workingPath`, not `sctx.workDir`: the worktree only carries
 a `.enigma.json` that is committed, while the user's own may be untracked in the repo itself.

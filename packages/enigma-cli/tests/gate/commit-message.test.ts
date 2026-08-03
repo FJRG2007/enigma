@@ -12,15 +12,18 @@ import { tmpdir } from "node:os";
 import { test, expect, afterAll } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 
+// bun test shares one process across files: leaving this pinned would send the NEXT file's
+// global-config reads into this temp dir, so capture the prior value before overwriting it.
+const PRIOR_CONFIG_HOME = process.env.ENIGMA_CONFIG_HOME;
+const PRIOR_HOME = process.env.HOME;
+const PRIOR_USERPROFILE = process.env.USERPROFILE;
+
 const HOME = mkdtempSync(join(tmpdir(), "enigma-gate-msg-home-"));
 process.env.USERPROFILE = HOME;
 process.env.HOME = HOME;
 process.env.ENIGMA_CONFIG_HOME = HOME;
 
 const PROJECT = mkdtempSync(join(tmpdir(), "enigma-gate-msg-project-"));
-// bun test shares one process across files: leaving this pinned would send the NEXT file's
-// global-config reads into this temp dir.
-const PRIOR_CONFIG_HOME = process.env.ENIGMA_CONFIG_HOME;
 
 const { gateCommitMessage } = await import("@/gate/pipeline/steps/commitMessage");
 const { allSteps } = await import("@/gate/types");
@@ -32,6 +35,10 @@ function writeConfig(dir: string, value: Record<string, unknown>): void {
 afterAll(() => {
     if (PRIOR_CONFIG_HOME === undefined) delete process.env.ENIGMA_CONFIG_HOME;
     else process.env.ENIGMA_CONFIG_HOME = PRIOR_CONFIG_HOME;
+    if (PRIOR_HOME === undefined) delete process.env.HOME;
+    else process.env.HOME = PRIOR_HOME;
+    if (PRIOR_USERPROFILE === undefined) delete process.env.USERPROFILE;
+    else process.env.USERPROFILE = PRIOR_USERPROFILE;
     rmSync(HOME, { recursive: true, force: true });
     rmSync(PROJECT, { recursive: true, force: true });
 });

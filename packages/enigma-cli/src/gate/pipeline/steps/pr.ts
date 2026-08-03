@@ -22,9 +22,9 @@ import { resolveBranchBaseSHA } from "./commonGit";
 import type { PR, PRContent } from "@/gate/scm/types";
 import { STEP_PR, type StepName } from "@/gate/types";
 import { executionContextPromptSection } from "./executionContext";
-import { RELEASE_TYPE_RULE, tightenTitle } from "@/gate/conventional";
 import { userIntentPromptSection, cleanedUserIntent } from "./intentPrompt";
 import { buildPipelineSummary, buildTestingSummaryForPR } from "./prsummary";
+import { RELEASE_TYPE_RULE, stripSubjectEmoji, tightenTitle } from "@/gate/conventional";
 import { newStepOutcome, type Step, type StepContext, type StepOutcome } from "../types";
 import {
     getStepsByRun,
@@ -207,7 +207,7 @@ ${diffStat}${pipelineContext}${userIntentPromptSection(sctx)}${executionContextP
             content.body = stripGeneratedSections(content.body);
             if (content.title !== "" && content.body !== "") {
                 const originalTitle = content.title;
-                content.title = tightenTitle(content.title);
+                content.title = tightenTitle(stripSubjectEmoji(content.title));
                 if (content.title !== originalTitle) {
                     log.warn("tightened agent PR title type", "from", originalTitle, "to", content.title);
                 }
@@ -378,7 +378,7 @@ function fallbackPRContent(
         if (line === "") continue;
         const idx = line.indexOf(" ");
         if (idx >= 0 && idx + 1 < line.length) {
-            title = line.slice(idx + 1).trim();
+            title = stripSubjectEmoji(line.slice(idx + 1));
         }
         break;
     }
