@@ -16,7 +16,7 @@
 
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 
 /** Schema version; a reader ignores anything it does not recognize. */
 const LEDGER_VERSION = 1;
@@ -50,6 +50,20 @@ function gateHome(): string {
 /** The ledger file, under `root` when the caller already resolved gate home. */
 export function gateLedgerPath(root?: string): string {
     return join(root || gateHome(), "last-runs.json");
+}
+
+/**
+ * Whether anything is recording runs yet.
+ *
+ * "No entry for this repository" and "nothing writes this file" read identically from a
+ * missing file, and they mean opposite things: the first is work the gate never validated,
+ * the second is a gate whose daemon predates this ledger (the upgrade window, where the
+ * turn-end hook is already new and the running daemon is not). Treating the second as
+ * unvalidated work would block every turn right after a successful run, so the check that
+ * denies a stop asks this first and stands down until the first run is recorded.
+ */
+export function gateLedgerReady(root?: string): boolean {
+    return existsSync(gateLedgerPath(root));
 }
 
 /** Reads the ledger, or an empty one when it is missing, unreadable or unknown. */

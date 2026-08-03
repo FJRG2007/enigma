@@ -47,9 +47,9 @@
 
 import { createHash } from "node:crypto";
 import { join, extname } from "node:path";
-import { lastGateRun } from "./gate-ledger";
 import { readConfigAt, readGlobalConfig } from "./config";
 import { lastAssistantMessage } from "./claude-transcripts";
+import { gateLedgerReady, lastGateRun } from "./gate-ledger";
 import { execFileSync, spawnSync } from "node:child_process";
 import { enigmaHome, readJson, isGateAgentRun } from "./util";
 import { checkFile, loadRules, recordFindings, type Finding } from "./guardrails";
@@ -376,7 +376,7 @@ function unvalidatedCommits(cwd: string): { count: number; since: number; } | nu
  * that decides, so only work committed while the gate was watching counts.
  */
 function gateGap(cwd: string): VerifyGap | null {
-    if (!gateExpectedAt(cwd)) return null;
+    if (!gateExpectedAt(cwd) || !gateLedgerReady()) return null;
     const watchKey = `gatewatch:${cwd}`;
     const watching = Number(stateValue(watchKey)) || 0;
     if (!watching) {

@@ -335,6 +335,10 @@ test("denies the stop when the turn reports the gate as skipped", () => {
 });
 
 test("denies the stop when committed work never reached an enabled gate", () => {
+    // The check stands down entirely until something records runs, so that an install whose
+    // daemon still predates the ledger does not read "no record" as "never validated". One
+    // run for an unrelated repository is enough to prove the recording side is alive.
+    recordGateRun({ repoPath: join(tmpdir(), "some-other-repo"), branch: "main", headSha: "0".repeat(7), status: "completed", at: 1 });
     const dir = repoWith({ "src/app.ts": "export const a = 1;\n" });
     git(dir, "checkout", "-q", "-b", "feature");
     const commit = (file: string): void => {
