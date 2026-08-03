@@ -89,9 +89,11 @@ uses `--intent` to tell a deliberate choice from a mistake.
 
 ## What a run costs, and what you may skip
 
-Almost all of a run is agent passes, so the wall clock tracks how many you cause,
-not how large the diff is. Measured over a 12-line diff with `commands.test` and
-`commands.lint` configured:
+Two scales, and they do not agree. Quote the one that matches the diff in front
+of you.
+
+**The floor**, measured over a 12-line diff with `commands.test` and
+`commands.lint` configured and `--skip push,pr,ci`:
 
 | Pass | Cost |
 | --- | --- |
@@ -101,16 +103,24 @@ not how large the diff is. Measured over a 12-line diff with `commands.test` and
 | document | 1-1.8 min |
 | lint, rebase, intent | under 2 s with commands configured |
 
+**A real run**, measured over 72 runs of this repo: review 46.8% of gate time
+(avg 15.6 min, p90 37.3 min, 1.57 rounds per review), ci 32.2%, test 14%,
+document and lint 6.5% combined. Median run 22.8 min, p90 59.1 min. Review is the
+single most expensive pass at that scale, not the cheapest, and ci is a third of
+the clock while not being an agent pass at all - so do not quote a duration from
+the floor table for a diff larger than the one it was measured on.
+
 What follows from that:
 
 - **One fix round, not three.** Every `--action fix` is two full passes, one to
   apply and one to re-review. Select every finding you intend to fix in a single
   `--findings` list instead of responding once per finding.
-- **Skip `test` and `document` on a throwaway diff** (a typo, a comment, a
-  version bump): `--skip test,document` roughly halves the run. Say in your report
-  which steps you skipped, so the user knows what was and was not validated.
-- **Never skip `review`.** It is the cheapest agent pass and the only one that
-  justifies the gate.
+- **Propose `--skip test,document` on a throwaway diff** (a typo, a comment, a
+  version bump) and let the user decide. Skipping them means no test evidence was
+  gathered and no docs were checked, so it is their call - unless they already
+  asked for speed, in which case skip and say so. Either way, always report which
+  steps were skipped, so the user knows what was and was not validated.
+- **Never skip `review`.** It is the only step that justifies the gate.
 - **`test` costs a full pass even when `commands.test` is set.** The step runs its
   evidence agent when the test command is empty *or* the run supplied intent, and
   `--intent` is mandatory, so a configured command makes the step thorough, not
