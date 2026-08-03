@@ -69,6 +69,8 @@ You do not have to ask your agent to run the gate or initialize repos by hand. T
 
 This is **per project**. To opt a single repo out while the gate stays on everywhere else, set `gate: false` in that repo's `.enigma.json` (or run `/gate off` there); the agent skips automatic driving there.
 
+An instruction on its own gets skipped, so <a href={docHref("concepts/verify")}>verified completion</a> backs it at turn end: while the gate is on here, the stop is denied when the agent's final message reports the gate as not run or offers to run it, and when the turn ends leaving committed work no run has ever seen. The exits are the ones above and each has to be **named** rather than asked about - you told it to skip, `gate: false`, a protected branch, nothing committed to validate, an `ask-user` finding to escalate, or the gate not being able to stand up here at all (no `origin` remote, or init or the daemon failing).
+
 ## Three ways to trigger it
 
 Every change runs through the same pipeline. Pick the entry point that fits how you are working:

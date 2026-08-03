@@ -145,7 +145,9 @@ export interface EnigmaConfig {
      * (default on, Claude Code only - the one agent with a turn-end hook that can deny the
      * stop). When the agent's final message says the work is finished, enigma scans the
      * code that turn produced for incompleteness markers and runs `verifyCommand`; evidence
-     * to the contrary is fed back and the stop is denied. See verify.ts.
+     * to the contrary is fed back and the stop is denied. The same hook denies a stop that
+     * reports an enabled `gate` as skipped, or that leaves committed work no gate run has
+     * seen (`gate-ledger.ts`). See verify.ts.
      */
     verify: boolean;
     /**
