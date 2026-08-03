@@ -510,7 +510,7 @@ function unvalidatedCommits(cwd: string, gate: GateContext): { count: number; si
     if (status === null || status.trim() !== "") return null;
     const base = branchPoint(cwd);
     if (base === null) return null;
-    const ahead = Number(gitOut(cwd, ["rev-list", "--count", `${base}..HEAD`]).trim());
+    const ahead = Number(gitOut(cwd, ["rev-list", "--count", `${base}..HEAD`, "--"]).trim());
     if (!Number.isInteger(ahead) || ahead <= 0) return null;
     const committedAt = headCommittedAt(cwd);
     if (committedAt === null) return null;

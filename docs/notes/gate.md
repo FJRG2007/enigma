@@ -78,19 +78,40 @@ A failure found while building the harness, worth reading before trusting its er
 with the gate home under a deep path, the run died at review with `git diff --name-only
 <base>..<head>: exit status 128: fatal: failed to stat '<base>..<head>': Filename too long`.
 
-That message names neither the real problem nor a real file. Git only stats an argument after
-it has already failed to resolve it as a revision, so **the range was unresolvable and the path
-length only decided which error you got**: the worktree sits at roughly 194 chars
-(`<gate home>/worktrees/<repo id>/<run id>`), a `<sha>..<sha>` range adds 83, and the stat of
-the two together crosses the Windows limit and returns ENAMETOOLONG instead of ENOENT. Verified
-at 160 chars, where the same unresolvable range reports `Invalid revision range` and a
-resolvable one works normally.
+That message names neither the real problem nor a real file, and the error *class* is the
+useful part. Git has two distinct failure paths here, verified against git 2.54:
 
-Every range call site now passes a trailing `--` (`git.ts diffNameOnly`, `diff` and `log`,
-plus `review.ts`, `document.ts`, `intent.ts` and the `pr.ts` diffstat) so git can never
-reinterpret a range as a pathspec and the failure names the revision instead. That hardens the message, **not** the underlying cause: why the base
-commit was missing from that worktree is still unreproduced, so do not read a green run under a
-short path as evidence it is fixed.
+- **It never parsed the value as a revision.** Git falls back to treating the argument as a
+  pathspec and stats it, which is `verify_filename`; errno alone decides the wording, so
+  `failed to stat '<X>'` and `ambiguous argument '<X>'` are the *same* path. A long enough
+  argument turns ENOENT into ENAMETOOLONG, which is where `Filename too long` came from: the
+  worktree sits at roughly 194 chars (`<gate home>/worktrees/<repo id>/<run id>`) and a
+  `<sha>..<sha>` range adds 83.
+- **It parsed the range but an endpoint is not a known object.** That reports
+  `Invalid revision range` and never stats anything, so it is unaffected by a trailing `--`.
+
+That distinction narrows the root cause rather than explaining it away. A full 40-hex base that
+is simply missing from the worktree yields `Invalid revision range`, so it **cannot** produce
+the stat message we saw. The failing base was therefore a value git could not parse as a
+revision at all - an abbreviated SHA, a ref name, or a value carrying stray whitespace such as
+a trailing CR - which points at `run.baseSha` itself, not at object availability.
+
+Two changes follow from that. Every range call site passes a trailing `--` (`git.ts
+diffNameOnly`, `diff` and `log`, plus `review.ts`, `document.ts`, `intent.ts`, the `pr.ts`
+diffstat and `verify.ts`), so git can never reinterpret a range as a pathspec and the failure
+names the revision. And `resolveBaseSHA` in `commonGit.ts` now resolves the incoming base
+through `rev-parse --verify <base>^{commit}` before returning it, falling back to merge-base
+and then the empty tree SHA, logging a warning with the offending value on the way. That guard
+is the one that matters: an empty or unparseable base previously flowed straight into
+`<base>..<head>`, and git reads an empty left side as HEAD, so `git diff --name-only ..HEAD --`
+exits 0 with no output and the review step passes having reviewed nothing. An unusable base is
+now either corrected or loud, never silently vacuous.
+
+The base a step diffs against is now canonical (`resolveBaseSHA` returns what git resolved, so
+a ref name or CR-tainted value is normalized), and `intent.ts` shares that resolver instead of
+keeping its own copy. None of this reproduces the original failure: why `run.baseSha` held an
+unparseable value is still unknown, so do not read a green run under a short path as evidence
+it is fixed - the warning is what will identify it next time.
 
 The levers that actually change a run's duration and token cost, in order:
 

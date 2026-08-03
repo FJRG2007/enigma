@@ -9,12 +9,39 @@
  * try/catch.
  */
 
+import { log } from "@/gate/log";
 import * as git from "@/gate/git";
 
 /**
- * Returns a usable base SHA for diff/log operations. When baseSHA is the zero ref
- * (new branch push), tries git merge-base against the default branch, falling
- * back to the empty tree SHA.
+ * Resolves a revision to its canonical commit SHA, or null when git cannot.
+ *
+ * Every base SHA that reaches a `<base>..<head>` range goes through here: git
+ * reads an empty left side as HEAD, so `git diff --name-only ..HEAD --` exits 0
+ * with no output and a step concludes there is nothing to do instead of failing.
+ * Returning the resolved SHA rather than the input also canonicalizes a ref
+ * name, an abbreviated SHA, or a value carrying stray whitespace.
+ */
+export async function resolveCommitSHA(
+    signal: AbortSignal,
+    workDir: string,
+    rev: string
+): Promise<string | null> {
+    const trimmed = rev.trim();
+    if (trimmed === "") return null;
+    try {
+        const out = await git.run(workDir, ["rev-parse", "--verify", "--quiet", `${trimmed}^{commit}`], signal);
+        return out.trim() === "" ? null : out.trim();
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Returns a usable base SHA for diff/log operations. The caller-supplied SHA is
+ * used only when git resolves it to a commit present in this worktree; when it
+ * is the zero ref (new branch push), orphaned by a force push, or otherwise
+ * unusable, tries git merge-base against the default branch and falls back to
+ * the empty tree SHA, so the range covers everything rather than nothing.
  */
 export async function resolveBaseSHA(
     signal: AbortSignal,
@@ -22,7 +49,15 @@ export async function resolveBaseSHA(
     baseSHA: string,
     defaultBranch: string
 ): Promise<string> {
-    if (!git.isZeroSHA(baseSHA)) return baseSHA;
+    if (!git.isZeroSHA(baseSHA)) {
+        const resolved = await resolveCommitSHA(signal, workDir, baseSHA);
+        if (resolved !== null) return resolved;
+        log.warn(
+            "base SHA does not resolve to a commit in this worktree; falling back to merge-base",
+            "base_sha", baseSHA,
+            "work_dir", workDir
+        );
+    }
     const mb = await mergeBaseWithDefaultBranch(signal, workDir, defaultBranch);
     if (mb !== "") return mb;
     return git.EMPTY_TREE_SHA;
@@ -87,7 +122,10 @@ export async function unresolvedDefaultBranchTip(
     fallbackBaseSHA: string,
     defaultBranch: string
 ): Promise<string> {
-    if (!git.isZeroSHA(fallbackBaseSHA)) return fallbackBaseSHA;
+    if (!git.isZeroSHA(fallbackBaseSHA)) {
+        const resolved = await resolveCommitSHA(signal, workDir, fallbackBaseSHA);
+        if (resolved !== null) return resolved;
+    }
     try {
         const sha = await git.run(workDir, ["rev-parse", "--verify", defaultBranch], signal);
         if (sha.trim() !== "") return sha.trim();

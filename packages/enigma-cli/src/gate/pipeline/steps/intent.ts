@@ -22,11 +22,11 @@ import { STEP_INTENT } from "@/gate/types";
 import { updateRunIntent } from "@/gate/db";
 import type { Result } from "@/gate/intent";
 import type { StepName } from "@/gate/types";
+import { resolveBaseSHA } from "./commonGit";
 import type { Fields } from "@/gate/telemetry";
 import { newDBCache } from "@/gate/intent/cache";
 import { allReaders } from "@/gate/intent/readers";
 import { sanitizePromptMultilineText } from "./common";
-import { mergeBaseWithDefaultBranch } from "./commonGit";
 import { newAgentSummarizer } from "@/gate/intent/summarizer";
 import { extract, ErrNoMatch, isNoMatch } from "@/gate/intent";
 import type { Step, StepContext, StepOutcome } from "../types";
@@ -236,7 +236,7 @@ async function defaultRunIntent(sctx: StepContext, signal: AbortSignal): Promise
         gitWorkDir = repo.workingPath;
     }
 
-    const resolvedBaseSHA = await resolveIntentBaseSHA(signal, gitWorkDir, run.baseSha, repo.defaultBranch);
+    const resolvedBaseSHA = await resolveBaseSHA(signal, gitWorkDir, run.baseSha, repo.defaultBranch);
     const diffFiles = await diffFilesForIntentMatching(signal, gitWorkDir, resolvedBaseSHA, run.headSha);
     if (diffFiles.length === 0) {
         throw errIntentEmptyDiff;
@@ -345,39 +345,6 @@ function splitDiffNameOnly(out: string): string[] {
         if (trimmed !== "") files.push(trimmed);
     }
     return files;
-}
-
-/**
- * Returns a usable base SHA for diff'ing against head. Prefers an explicit
- * run.baseSha when reachable in the worktree, but falls back to merge-base
- * against the default branch when the SHA is the zero ref (new branch push) or
- * has been orphaned by a force push. Final fallback is git's empty-tree SHA so
- * the diff always succeeds.
- */
-async function resolveIntentBaseSHA(
-    signal: AbortSignal,
-    workDir: string,
-    baseSHA: string,
-    defaultBranch: string
-): Promise<string> {
-    if (!git.isZeroSHA(baseSHA) && (await commitReachable(signal, workDir, baseSHA))) {
-        return baseSHA;
-    }
-    const mb = await mergeBaseWithDefaultBranch(signal, workDir, defaultBranch);
-    if (mb !== "") {
-        return mb;
-    }
-    return git.EMPTY_TREE_SHA;
-}
-
-async function commitReachable(signal: AbortSignal, workDir: string, sha: string): Promise<boolean> {
-    if (sha.trim() === "") return false;
-    try {
-        await git.run(workDir, ["cat-file", "-e", `${sha}^{commit}`], signal);
-        return true;
-    } catch {
-        return false;
-    }
 }
 
 /**
