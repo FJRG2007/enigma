@@ -8,8 +8,8 @@
  * helpers inspect that value directly instead of unmarshaling bytes.
  *
  * `commitAgentFixes` mirrors the package-shared helper of the same name from
- * Go's `common_fix.go`; it is inlined here (reusing the exported
- * `deterministicFixCommitMessage`) because the ported commonFix module keeps its
+ * Go's `common_fix.go`; it is inlined here (reusing the shared
+ * `gateCommitMessage`) because the ported commonFix module keeps its
  * copy private. `sanitizedPreviousFindingsForPrompt` is Go's review.go helper,
  * inlined until review.ts is ported.
  * enigma: drop the local commitAgentFixes once commonFix.ts exports it.
@@ -20,8 +20,8 @@ import { updateRunHeadSHA } from "@/gate/db";
 import type { Result } from "@/gate/agent/agent";
 import { matchIgnorePattern } from "./commonDiff";
 import { userIntentPromptSection } from "./rebase";
+import { gateCommitMessage } from "./commitMessage";
 import { roundHistoryPromptSection } from "./roundHistory";
-import { deterministicFixCommitMessage } from "./commonFix";
 import { executionContextPromptSection } from "./executionContext";
 import { resolveBranchBaseSHA, normalizedBranchRef } from "./commonGit";
 import { newStepOutcome, type Step, type StepContext, type StepOutcome } from "../types";
@@ -313,7 +313,7 @@ async function commitAgentFixes(
         throw new Error(`stage ${stepName} changes: ${errMessage(err)}`);
     }
     if (summary === "") summary = fallbackSummary;
-    const commitMessage = deterministicFixCommitMessage(stepName, summary);
+    const commitMessage = gateCommitMessage(sctx.repo.workingPath, stepName, summary);
     try {
         await git.run(sctx.workDir, ["commit", "-m", commitMessage], signal);
     } catch (err) {

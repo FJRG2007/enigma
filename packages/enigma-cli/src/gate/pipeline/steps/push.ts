@@ -15,9 +15,10 @@ import { readdirSync } from "node:fs";
 import { redact } from "@/gate/safeurl";
 import { normalizedBranchRef } from "./commonGit";
 import { runStepShellCommand } from "./commonExec";
+import { gateCommitMessage } from "./commitMessage";
 import { STEP_PUSH, type StepName } from "@/gate/types";
-import { repoPushURL, updateRunHeadSHA } from "@/gate/db";
 import { resolveTestEvidenceLocation } from "./evidence";
+import { repoPushURL, updateRunHeadSHA } from "@/gate/db";
 import { join, relative, sep, isAbsolute } from "node:path";
 import { newStepOutcome, type Step, type StepContext, type StepOutcome } from "../types";
 
@@ -61,7 +62,8 @@ export class PushStep implements Step {
                 throw new Error(`stage agent changes: ${errMessage(err)}`);
             }
             try {
-                await git.run(sctx.workDir, ["commit", "-m", "enigma: apply agent fixes"], signal);
+                const message = gateCommitMessage(sctx.repo.workingPath, STEP_PUSH, "apply agent fixes");
+                await git.run(sctx.workDir, ["commit", "-m", message], signal);
             } catch (err) {
                 throw new Error(`commit agent changes: ${errMessage(err)}`);
             }

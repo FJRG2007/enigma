@@ -64,6 +64,25 @@ path behind `canValidateConfig()` and degrades instead of failing.
 `loadGlobal` does NOT enumerate `agent` or `log_level`; it accepts any string and the daemon
 only fails later, at run time. Any new writer must range-check those itself (see `ENUM_KEYS`).
 
+Note the gate reads one setting from the OTHER config (`.enigma.json`, not `.enigma-gate.yaml`):
+`commitEmoji`. See the commit subjects section below.
+
+## Commit subjects (`pipeline/steps/commitMessage.ts`)
+
+A run commits into the same history the user's agent does, so its subjects honor the same
+`commitEmoji` setting git-policy gives the agent: `<emoji> enigma(<step>): <summary>`, or the
+bare `enigma(<step>): <summary>` when the user turned emojis off. The `enigma(<step>)` type is
+kept from upstream so a pipeline commit stays recognizable, and the step is what the emoji is
+picked from (review -> the `fix` emoji, document -> `docs`, lint -> `style`, and so on).
+
+Every commit site goes through `gateCommitMessage` - the three agent-fix rounds (commonFix,
+plus the inlined copies in document.ts and lint.ts) AND the two that used to be hardcoded
+strings, `push.ts` ("apply agent fixes") and `ciFix.ts` ("apply CI fixes"). A new commit site
+must call it too, or the setting silently stops holding for that step.
+
+The setting is read from `sctx.repo.workingPath`, not `sctx.workDir`: the worktree only carries
+a `.enigma.json` that is committed, while the user's own may be untracked in the repo itself.
+
 ## The dashboard bridge (`dashboard-gate.ts`)
 
 Two halves with independent availability: the config half is plain filesystem work, the run

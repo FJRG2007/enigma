@@ -10,7 +10,7 @@
  * and Go's `(value, error)` returns become throws. `extractCommitSummary` and
  * `commitAgentFixes` live in Go's common_fix.go but are unexported in the ported
  * commonFix.ts, so the no-command branch's faithful equivalents are reproduced
- * here (reusing the exported deterministicFixCommitMessage/normalizedBranchRef).
+ * here (reusing the shared gateCommitMessage/normalizedBranchRef).
  */
 
 import * as git from "@/gate/git";
@@ -18,13 +18,14 @@ import { findingsSchema } from "./common";
 import { updateRunHeadSHA } from "@/gate/db";
 import type { Result } from "@/gate/agent/agent";
 import { runStepShellCommand } from "./commonExec";
+import { gateCommitMessage } from "./commitMessage";
 import { userIntentPromptSection } from "./intentPrompt";
 import { roundHistoryPromptSection } from "./roundHistory";
 import { sanitizedPreviousFindingsForPrompt } from "./review";
+import { executeFixMode, hasBlockingFindings } from "./commonFix";
 import { executionContextPromptSection } from "./executionContext";
 import { resolveBranchBaseSHA, normalizedBranchRef } from "./commonGit";
 import { newStepOutcome, type Step, type StepContext, type StepOutcome } from "../types";
-import { executeFixMode, hasBlockingFindings, deterministicFixCommitMessage } from "./commonFix";
 import {
     emptyFindings,
     parseFindingsJSON,
@@ -100,7 +101,7 @@ async function commitAgentFixes(
         throw new Error(`stage ${stepName} changes: ${errMessage(err)}`);
     }
     if (summary === "") summary = fallbackSummary;
-    const commitMessage = deterministicFixCommitMessage(stepName, summary);
+    const commitMessage = gateCommitMessage(sctx.repo.workingPath, stepName, summary);
     try {
         await git.run(sctx.workDir, ["commit", "-m", commitMessage], signal);
     } catch (err) {

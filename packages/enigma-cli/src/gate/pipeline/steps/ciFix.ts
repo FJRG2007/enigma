@@ -11,10 +11,12 @@
  */
 
 import { log } from "@/gate/log";
+import { STEP_CI } from "@/gate/types";
 import type { StepContext } from "../types";
 import { trimLogOutput } from "./ciBitbucket";
 import type { Host, PR } from "@/gate/scm/types";
 import { ERR_UNSUPPORTED } from "@/gate/scm/types";
+import { gateCommitMessage } from "./commitMessage";
 import { sanitizePromptMultilineText } from "./common";
 import { repoPushURL, updateRunHeadSHA } from "@/gate/db";
 import { redactSecrets, stripAdversarial } from "@/gate/intent/redact";
@@ -163,7 +165,7 @@ export async function commitAndPush(sctx: StepContext): Promise<boolean> {
         throw new Error(`stage CI changes: ${errMessage(err)}`);
     }
     try {
-        await stepGitRun(sctx, "commit", "-m", "enigma: apply CI fixes");
+        await stepGitRun(sctx, "commit", "-m", gateCommitMessage(sctx.repo.workingPath, STEP_CI, "apply CI fixes"));
     } catch (err) {
         throw new Error(`commit: ${errMessage(err)}`);
     }

@@ -397,7 +397,8 @@ it never re-asks for projects you accepted yourself.
 By default the policy skills make commit subjects carry a leading type emoji
 (one per subject, e.g. for `feat`/`fix`); code, prose, and PR text stay
 emoji-free. The convention and its type-to-emoji map live in the `git-policy`
-skill. Opt out per repo or globally:
+skill, and the commits the gate makes for you follow the same setting. Opt out
+per repo or globally:
 
 ```bash
 enigma config commit-emoji off       # disable (writes .enigma.json)

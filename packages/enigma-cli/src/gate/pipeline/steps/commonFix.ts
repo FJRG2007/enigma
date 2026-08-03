@@ -11,11 +11,12 @@
 
 import * as git from "@/gate/git";
 import type { Finding } from "@/gate/types";
+import type { StepContext } from "../types";
 import { updateRunHeadSHA } from "@/gate/db";
 import type { StepName } from "@/gate/types";
-import type { StepContext } from "../types";
 import type { Result } from "@/gate/agent/agent";
 import { normalizedBranchRef } from "./commonGit";
+import { gateCommitMessage } from "./commitMessage";
 
 /** Options driving a single executeFixMode invocation. */
 export interface FixExecutionOptions {
@@ -79,7 +80,7 @@ async function commitAgentFixes(
         throw new Error(`stage ${stepName} changes: ${errMessage(err)}`);
     }
     if (summary === "") summary = fallbackSummary;
-    const commitMessage = deterministicFixCommitMessage(stepName, summary);
+    const commitMessage = gateCommitMessage(sctx.repo.workingPath, stepName, summary);
     try {
         await git.run(sctx.workDir, ["commit", "-m", commitMessage], signal);
     } catch (err) {
@@ -118,11 +119,6 @@ function extractCommitSummary(result: Result): string {
     let cleaned = summary.split(/\s+/).filter(part => part !== "").join(" ");
     cleaned = trimCutset(cleaned, " \t\r\n\"'.;:,-");
     return cleaned;
-}
-
-export function deterministicFixCommitMessage(stepName: StepName, summary: string): string {
-    if (summary === "") summary = "apply fixes";
-    return `enigma(${stepName}): ${summary}`;
 }
 
 /**
