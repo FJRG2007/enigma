@@ -7,7 +7,9 @@
  * port exposes them as free functions over the StepContext (`ci.ts` calls them).
  * Go's `(pushed bool, err error)` maps to a boolean return that throws on error.
  * `userIntentPromptSection` (Go's intent_prompt.go) is inlined here since the CI
- * fix prompt is its only consumer in the ported step set.
+ * fix prompt is its only consumer in the ported step set. The CI fix commit
+ * subject is built with `gateCommitMessage` instead of a fixed string, so
+ * `commitEmoji` holds here like it does for the other steps.
  */
 
 import { log } from "@/gate/log";

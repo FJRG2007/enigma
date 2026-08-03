@@ -11,6 +11,10 @@
  * `result.Output` was raw JSON bytes decoded via json.Unmarshal; here
  * `result.output` is already a parsed value, decoded with the same object/string
  * strictness so a non-object payload falls through to the deterministic fallback.
+ * Upstream commits carried no emoji, so the port adds one thing Go had no need
+ * for: the candidate title and the commit log it reads are run through
+ * `stripSubjectEmoji`/`stripCommitLogEmoji`, keeping PR title and body plain text
+ * while `commitEmoji` is on.
  */
 
 import { log } from "@/gate/log";

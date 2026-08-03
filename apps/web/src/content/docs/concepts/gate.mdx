@@ -35,6 +35,8 @@ Each step either passes on its own or stops with a **finding** for you to act on
 
 Safe, mechanical fixes are applied automatically; anything that touches your intent is escalated for you to **approve**, **fix**, or **skip**. Nothing reaches the configured push target until every check is green.
 
+Each fix lands on your branch as `enigma(<step>): <summary>`, with the same leading type emoji your agent's own commits carry; PR titles and bodies stay emoji-free. See <a href={docHref("reference/configuration")}>Configuration</a> for the `commit-emoji` toggle that turns those emojis off.
+
 ## Set it up
 
 The gate is already on: installing enigma deploys the `/gate` command to your agents, and `enigma update` delivers it to a deployment you installed earlier. What is left is one command per repo:

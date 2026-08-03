@@ -7,6 +7,8 @@
  * The Go `commitSummarySchema` was a `json.RawMessage`; here it is a parsed JS
  * object, matching `agent.RunOpts.jsonSchema`. Go decoded `result.Output` via
  * json.Unmarshal; here `result.output` is already the parsed structured value.
+ * The subject itself comes from `gateCommitMessage` rather than being formatted
+ * here, since every commit site in the pipeline shares that one convention.
  */
 
 import * as git from "@/gate/git";

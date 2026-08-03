@@ -8,6 +8,9 @@
  * helper returns `[output, exitCode]` and throws on spawn failure, so the format
  * branch wraps it in try/catch. `gitIgnoresPath`/`dirHasFiles` are package-local
  * helpers from Go's `test.go`/`push.go`, inlined here until test.ts is ported.
+ * One deliberate deviation: the subject for leftover agent changes is built with
+ * `gateCommitMessage` instead of a fixed string, so `commitEmoji` holds for this
+ * commit site too.
  */
 
 import * as git from "@/gate/git";
