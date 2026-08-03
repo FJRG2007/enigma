@@ -100,10 +100,12 @@ ${previousFindings}`;
 
         // Check whether there are any reviewable changed files after applying ignore patterns.
         let args: string[];
+        // "--" per git.diffNameOnly: an unresolvable revision must be reported as
+        // one, not as a failed stat of a path that never existed.
         if (sctx.fixing) {
-            args = ["diff", "--name-only", baseSHA];
+            args = ["diff", "--name-only", baseSHA, "--"];
         } else {
-            args = ["diff", "--name-only", `${baseSHA}..${sctx.run.headSha}`];
+            args = ["diff", "--name-only", `${baseSHA}..${sctx.run.headSha}`, "--"];
         }
         let changedFiles: string;
         try {

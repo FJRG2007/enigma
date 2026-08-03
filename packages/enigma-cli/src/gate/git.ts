@@ -289,7 +289,13 @@ export async function diffNameOnly(
     head: string,
     signal?: AbortSignal,
 ): Promise<string[]> {
-    const out = await run(dir, ["diff", "--name-only", `${base}..${head}`], signal);
+    // The trailing "--" keeps git from falling back to reading the range as a
+    // pathspec when it cannot resolve it. Without it the fallback stats the
+    // 82-char range relative to the worktree, and under a deep gate worktree
+    // that stat exceeds the Windows path limit, so an unresolvable range is
+    // reported as "failed to stat '<base>..<head>': Filename too long" instead
+    // of naming the revision git could not find.
+    const out = await run(dir, ["diff", "--name-only", `${base}..${head}`, "--"], signal);
     const files: string[] = [];
     for (const line of out.split("\n")) {
         const trimmed = line.trim();

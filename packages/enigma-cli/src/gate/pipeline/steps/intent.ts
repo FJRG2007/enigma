@@ -17,8 +17,8 @@ import { log } from "@/gate/log";
 import * as git from "@/gate/git";
 import { userInfo } from "node:os";
 import { track } from "@/gate/telemetry";
-import { STEP_INTENT } from "@/gate/types";
 import { newStepOutcome } from "../types";
+import { STEP_INTENT } from "@/gate/types";
 import { updateRunIntent } from "@/gate/db";
 import type { Result } from "@/gate/intent";
 import type { StepName } from "@/gate/types";
@@ -325,7 +325,12 @@ async function diffFilesForIntentMatching(
     if (diffFiles.length === 0) {
         return diffFiles;
     }
-    const nonDeletedOut = await git.run(dir, ["diff", "--name-only", "--diff-filter=d", `${base}..${head}`], signal);
+    // "--" per git.diffNameOnly.
+    const nonDeletedOut = await git.run(
+        dir,
+        ["diff", "--name-only", "--diff-filter=d", `${base}..${head}`, "--"],
+        signal
+    );
     const nonDeletedFiles = splitDiffNameOnly(nonDeletedOut);
     if (nonDeletedFiles.length === 0) {
         return diffFiles;

@@ -51,7 +51,8 @@ export class DocumentStep implements Step {
         try {
             changedFiles = await git.run(
                 sctx.workDir,
-                ["diff", "--name-only", `${baseSHA}..${sctx.run.headSha}`],
+                // "--" per git.diffNameOnly.
+                ["diff", "--name-only", `${baseSHA}..${sctx.run.headSha}`, "--"],
                 signal
             );
         } catch (err) {

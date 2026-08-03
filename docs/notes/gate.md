@@ -74,10 +74,23 @@ gathering evidence. `document` did not move (its cost is the diff read, not the 
 review staying inside its baseline range is what proves the map only touched the steps named in
 it. Net 23% off the run for no quality change on the step that finds things.
 
-Windows long-path bug found while building the harness: with the repo under a deep path, the
-run died at review with `git diff --name-only <base>..<head>: exit status 128: fatal: failed to
-stat '<base>..<head>': Filename too long`. Git fell back to treating the range as a pathspec.
-Reproducible by cloning into a ~150-char path; not yet fixed.
+A failure found while building the harness, worth reading before trusting its error message:
+with the gate home under a deep path, the run died at review with `git diff --name-only
+<base>..<head>: exit status 128: fatal: failed to stat '<base>..<head>': Filename too long`.
+
+That message names neither the real problem nor a real file. Git only stats an argument after
+it has already failed to resolve it as a revision, so **the range was unresolvable and the path
+length only decided which error you got**: the worktree sits at roughly 194 chars
+(`<gate home>/worktrees/<repo id>/<run id>`), a `<sha>..<sha>` range adds 83, and the stat of
+the two together crosses the Windows limit and returns ENAMETOOLONG instead of ENOENT. Verified
+at 160 chars, where the same unresolvable range reports `Invalid revision range` and a
+resolvable one works normally.
+
+Every range call site now passes a trailing `--` (`git.ts diffNameOnly`, `review.ts`,
+`document.ts`, `intent.ts`) so git can never reinterpret a range as a pathspec and the failure
+names the revision instead. That hardens the message, **not** the underlying cause: why the base
+commit was missing from that worktree is still unreproduced, so do not read a green run under a
+short path as evidence it is fixed.
 
 The levers that actually change a run's duration and token cost, in order:
 
