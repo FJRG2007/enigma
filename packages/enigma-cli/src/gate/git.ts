@@ -279,23 +279,35 @@ export async function diff(dir: string, base: string, head: string, signal?: Abo
     return run(dir, ["diff", `${base}..${head}`, "--"], signal);
 }
 
+/** Options for diffNameOnly. */
+export interface DiffNameOnlyOptions {
+    signal?: AbortSignal;
+    /** Extra `git diff` flags placed before the revision, e.g. "--diff-filter=d". */
+    extraArgs?: string[];
+}
+
 /**
- * DiffNameOnly returns the list of files changed between base and head. Output
- * is split on newlines with empty entries removed.
+ * DiffNameOnly returns the list of files changed between base and head, or
+ * between base and the working tree when head is empty. Output is split on
+ * newlines with empty entries removed.
+ *
+ * Every name-only listing in the gate goes through here so the trailing "--"
+ * cannot be forgotten at a call site. It keeps git from falling back to reading
+ * the revision as a pathspec when it cannot resolve it: without it the fallback
+ * stats the 82-char range relative to the worktree, and under a deep gate
+ * worktree that stat exceeds the Windows path limit, so an unresolvable range
+ * is reported as "failed to stat '<base>..<head>': Filename too long" instead
+ * of naming the revision git could not find.
  */
 export async function diffNameOnly(
     dir: string,
     base: string,
     head: string,
-    signal?: AbortSignal,
+    options: DiffNameOnlyOptions = {},
 ): Promise<string[]> {
-    // The trailing "--" keeps git from falling back to reading the range as a
-    // pathspec when it cannot resolve it. Without it the fallback stats the
-    // 82-char range relative to the worktree, and under a deep gate worktree
-    // that stat exceeds the Windows path limit, so an unresolvable range is
-    // reported as "failed to stat '<base>..<head>': Filename too long" instead
-    // of naming the revision git could not find.
-    const out = await run(dir, ["diff", "--name-only", `${base}..${head}`, "--"], signal);
+    const rev = head.trim() === "" ? base : `${base}..${head}`;
+    const args = ["diff", "--name-only", ...(options.extraArgs ?? []), rev, "--"];
+    const out = await run(dir, args, options.signal);
     const files: string[] = [];
     for (const line of out.split("\n")) {
         const trimmed = line.trim();

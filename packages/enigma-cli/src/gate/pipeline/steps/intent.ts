@@ -236,7 +236,7 @@ async function defaultRunIntent(sctx: StepContext, signal: AbortSignal): Promise
         gitWorkDir = repo.workingPath;
     }
 
-    const resolvedBaseSHA = await resolveBaseSHA(signal, gitWorkDir, run.baseSha, repo.defaultBranch);
+    const resolvedBaseSHA = await resolveBaseSHA(signal, gitWorkDir, run.baseSha, repo.defaultBranch, sctx.log);
     const diffFiles = await diffFilesForIntentMatching(signal, gitWorkDir, resolvedBaseSHA, run.headSha);
     if (diffFiles.length === 0) {
         throw errIntentEmptyDiff;
@@ -321,30 +321,15 @@ async function diffFilesForIntentMatching(
     base: string,
     head: string
 ): Promise<string[]> {
-    const diffFiles = await git.diffNameOnly(dir, base, head, signal);
+    const diffFiles = await git.diffNameOnly(dir, base, head, { signal });
     if (diffFiles.length === 0) {
         return diffFiles;
     }
-    // "--" per git.diffNameOnly.
-    const nonDeletedOut = await git.run(
-        dir,
-        ["diff", "--name-only", "--diff-filter=d", `${base}..${head}`, "--"],
-        signal
-    );
-    const nonDeletedFiles = splitDiffNameOnly(nonDeletedOut);
+    const nonDeletedFiles = await git.diffNameOnly(dir, base, head, { signal, extraArgs: ["--diff-filter=d"] });
     if (nonDeletedFiles.length === 0) {
         return diffFiles;
     }
     return nonDeletedFiles;
-}
-
-function splitDiffNameOnly(out: string): string[] {
-    const files: string[] = [];
-    for (const line of out.split("\n")) {
-        const trimmed = line.trim();
-        if (trimmed !== "") files.push(trimmed);
-    }
-    return files;
 }
 
 /**

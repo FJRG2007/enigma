@@ -44,7 +44,9 @@ export class LintStep implements Step {
 
     async execute(sctx: StepContext): Promise<StepOutcome> {
         const signal = sctx.signal;
-        const baseSHA = await resolveBranchBaseSHA(signal, sctx.workDir, sctx.run.baseSha, sctx.repo.defaultBranch);
+        const baseSHA = await resolveBranchBaseSHA(
+            signal, sctx.workDir, sctx.run.baseSha, sctx.repo.defaultBranch, sctx.log
+        );
         const lintCmd = sctx.config.commands.lint;
 
         if (lintCmd === "") {

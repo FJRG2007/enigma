@@ -45,7 +45,9 @@ export class ReviewStep implements Step {
 
     async execute(sctx: StepContext): Promise<StepOutcome> {
         const signal = sctx.signal;
-        const baseSHA = await resolveBranchBaseSHA(signal, sctx.workDir, sctx.run.baseSha, sctx.repo.defaultBranch);
+        const baseSHA = await resolveBranchBaseSHA(
+            signal, sctx.workDir, sctx.run.baseSha, sctx.repo.defaultBranch, sctx.log
+        );
         const branch = sctx.run.branch;
         let ignorePatterns = "none";
         if (sctx.config.ignorePatterns.length > 0) {
@@ -99,25 +101,21 @@ ${previousFindings}`;
         }
 
         // Check whether there are any reviewable changed files after applying ignore patterns.
-        let args: string[];
-        // "--" per git.diffNameOnly: an unresolvable revision must be reported as
-        // one, not as a failed stat of a path that never existed.
-        if (sctx.fixing) {
-            args = ["diff", "--name-only", baseSHA, "--"];
-        } else {
-            args = ["diff", "--name-only", `${baseSHA}..${sctx.run.headSha}`, "--"];
-        }
-        let changedFiles: string;
+        // In fix mode the comparison is base against the worktree, so head stays empty.
+        let changedFiles: string[];
         try {
-            changedFiles = await git.run(sctx.workDir, args, signal);
+            changedFiles = await git.diffNameOnly(
+                sctx.workDir,
+                baseSHA,
+                sctx.fixing ? "" : sctx.run.headSha,
+                { signal }
+            );
         } catch (err) {
             throw new Error(`get changed files: ${errMessage(err)}`);
         }
 
         let hasReviewableChanges = false;
-        for (let path of changedFiles.split("\n")) {
-            path = path.trim();
-            if (path === "") continue;
+        for (const path of changedFiles) {
             let ignored = false;
             for (const pattern of sctx.config.ignorePatterns) {
                 if (matchIgnorePattern(path, pattern)) {

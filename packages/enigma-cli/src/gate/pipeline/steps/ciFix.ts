@@ -64,7 +64,9 @@ export async function autoFixCI(
     mergeConflict: boolean
 ): Promise<boolean> {
     const signal = sctx.signal;
-    const baseSHA = await resolveBranchBaseSHA(signal, sctx.workDir, sctx.run.baseSha, sctx.repo.defaultBranch);
+    const baseSHA = await resolveBranchBaseSHA(
+        signal, sctx.workDir, sctx.run.baseSha, sctx.repo.defaultBranch, sctx.log
+    );
     const rebaseBaseSHA = await resolveDefaultBranchTipSHA(
         signal,
         sctx.workDir,

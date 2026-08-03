@@ -21,8 +21,8 @@ import { resolveBranchBaseSHA } from "./commonGit";
 import { sep, relative, isAbsolute } from "node:path";
 import type { TestEvidenceLocation } from "./evidence";
 import { roundHistoryPromptSection } from "./roundHistory";
-import type { StepName, Finding, Findings } from "@/gate/types";
 import type { Step, StepContext, StepOutcome } from "../types";
+import type { StepName, Finding, Findings } from "@/gate/types";
 import { executeFixMode, hasBlockingFindings } from "./commonFix";
 import { executionContextPromptSection } from "./executionContext";
 import { parseFindingsJSON, marshalFindingsJSON } from "@/gate/types";
@@ -95,7 +95,9 @@ export class TestStep implements Step {
 
     async execute(sctx: StepContext): Promise<StepOutcome> {
         const signal = sctx.signal;
-        const baseSHA = await resolveBranchBaseSHA(signal, sctx.workDir, sctx.run.baseSha, sctx.repo.defaultBranch);
+        const baseSHA = await resolveBranchBaseSHA(
+            signal, sctx.workDir, sctx.run.baseSha, sctx.repo.defaultBranch, sctx.log
+        );
 
         // In fix mode, ask the agent to fix test failures first.
         let newTestsFromFix: string[] = [];

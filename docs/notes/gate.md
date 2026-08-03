@@ -96,16 +96,27 @@ the stat message we saw. The failing base was therefore a value git could not pa
 revision at all - an abbreviated SHA, a ref name, or a value carrying stray whitespace such as
 a trailing CR - which points at `run.baseSha` itself, not at object availability.
 
-Two changes follow from that. Every range call site passes a trailing `--` (`git.ts
-diffNameOnly`, `diff` and `log`, plus `review.ts`, `document.ts`, `intent.ts`, the `pr.ts`
-diffstat and `verify.ts`), so git can never reinterpret a range as a pathspec and the failure
-names the revision. And `resolveBaseSHA` in `commonGit.ts` now resolves the incoming base
-through `rev-parse --verify <base>^{commit}` before returning it, falling back to merge-base
-and then the empty tree SHA, logging a warning with the offending value on the way. That guard
-is the one that matters: an empty or unparseable base previously flowed straight into
-`<base>..<head>`, and git reads an empty left side as HEAD, so `git diff --name-only ..HEAD --`
-exits 0 with no output and the review step passes having reviewed nothing. An unusable base is
-now either corrected or loud, never silently vacuous.
+Two changes follow from that. The trailing `--` lives in `git.diffNameOnly`, which every
+name-only listing goes through - `review.ts` (single-rev in fix mode, range otherwise),
+`document.ts` and `intent.ts` (`--diff-filter=d` via `extraArgs`) - so a new call site gets the
+separator for free rather than from a comment telling it to. `git.diff`, `git.log`, the `pr.ts`
+diffstat and `verify.ts` pass it directly, being different command shapes. Git can therefore
+never reinterpret a range as a pathspec, and the failure names the revision.
+
+And `resolveBaseSHA` in `commonGit.ts` resolves the incoming base through `rev-parse --verify
+<base>^{commit}` before returning it, falling back to merge-base and then the empty tree SHA.
+That guard is the one that matters: an empty or unparseable base previously flowed straight
+into `<base>..<head>`, and git reads an empty left side as HEAD, so `git diff --name-only
+..HEAD --` exits 0 with no output and the review step passes having reviewed nothing.
+
+Both substitutions are announced, and where matters. `log.warn` alone lands in the daemon log
+file, which nobody opens unless they already suspect the problem, so the resolver takes an
+optional `ScopeNotifier` and every step passes `sctx.log` - the run-visible channel the
+dashboard and `axi query` read. The empty-tree fallback is the reason: it widens the diff to the
+whole repository, so review reports every tracked file as changed and the run gets slower and
+noisier without failing. The empty tree stays the correct base for a genuinely empty history;
+what it must never be is a silent catch-all for a broken base. An unusable base is now either
+corrected or loud where it is being paid for, never silently vacuous.
 
 The base a step diffs against is now canonical (`resolveBaseSHA` returns what git resolved, so
 a ref name or CR-tainted value is normalized), and `intent.ts` shares that resolver instead of

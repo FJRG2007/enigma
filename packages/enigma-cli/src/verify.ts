@@ -679,7 +679,7 @@ export function addedLines(cwd: string): ScannedLines {
     // header too, and the escaped form neither matches a real file nor can be opened by the
     // idiom exemption - so findings point nowhere and the exemption quietly stops applying.
     const base = branchPoint(cwd);
-    const diff = gitTry(cwd, ["-c", "core.quotepath=false", "diff", "--unified=0", "--no-color", base || "HEAD"]);
+    const diff = gitTry(cwd, ["-c", "core.quotepath=false", "diff", "--unified=0", "--no-color", base || "HEAD", "--"]);
     // Before the first commit there is no HEAD to diff against, and that is not incomplete
     // coverage: every file is untracked and read in full below. Only a real failure counts.
     if (diff === null && hasCommits(cwd)) truncated = true;

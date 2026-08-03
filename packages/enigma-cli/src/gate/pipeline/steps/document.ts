@@ -39,7 +39,9 @@ export class DocumentStep implements Step {
 
     async execute(sctx: StepContext): Promise<StepOutcome> {
         const signal = sctx.signal;
-        const baseSHA = await resolveBranchBaseSHA(signal, sctx.workDir, sctx.run.baseSha, sctx.repo.defaultBranch);
+        const baseSHA = await resolveBranchBaseSHA(
+            signal, sctx.workDir, sctx.run.baseSha, sctx.repo.defaultBranch, sctx.log
+        );
 
         let ignorePatterns = "none";
         if (sctx.config.ignorePatterns.length > 0) {
@@ -47,14 +49,9 @@ export class DocumentStep implements Step {
         }
 
         // Skip entirely when nothing the agent would document has changed.
-        let changedFiles: string;
+        let changedFiles: string[];
         try {
-            changedFiles = await git.run(
-                sctx.workDir,
-                // "--" per git.diffNameOnly.
-                ["diff", "--name-only", `${baseSHA}..${sctx.run.headSha}`, "--"],
-                signal
-            );
+            changedFiles = await git.diffNameOnly(sctx.workDir, baseSHA, sctx.run.headSha, { signal });
         } catch (err) {
             throw new Error(`get changed files: ${errMessage(err)}`);
         }
@@ -193,10 +190,8 @@ function documentApprovalOutcome(summary: string): StepOutcome {
     });
 }
 
-function hasNonIgnoredDocumentChanges(changedFiles: string, ignorePatterns: string[]): boolean {
-    for (const raw of changedFiles.split("\n")) {
-        const path = raw.trim();
-        if (path === "") continue;
+function hasNonIgnoredDocumentChanges(changedFiles: string[], ignorePatterns: string[]): boolean {
+    for (const path of changedFiles) {
         let ignored = false;
         for (const pattern of ignorePatterns) {
             if (matchIgnorePattern(path, pattern)) {

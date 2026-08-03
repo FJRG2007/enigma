@@ -106,7 +106,9 @@ export class PRStep implements Step {
         }
 
         // Resolve the branch base so PR summaries cover the full branch delta.
-        const baseSHA = await resolveBranchBaseSHA(signal, sctx.workDir, sctx.run.baseSha, sctx.repo.defaultBranch);
+        const baseSHA = await resolveBranchBaseSHA(
+            signal, sctx.workDir, sctx.run.baseSha, sctx.repo.defaultBranch, sctx.log
+        );
         const content = await this.buildPRContent(sctx, branch, baseSHA);
 
         sctx.log(`checking for existing pull request on branch ${branch}...`);
@@ -157,7 +159,6 @@ export class PRStep implements Step {
         try {
             diffStat = await git.run(
                 sctx.workDir,
-                // "--" per git.diffNameOnly.
                 ["diff", "--stat", `${baseSHA}..${sctx.run.headSha}`, "--"],
                 signal
             );

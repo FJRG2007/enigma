@@ -504,7 +504,7 @@ async function updateHeadSHA(sctx: StepContext): Promise<StepOutcome> {
     // empty (e.g. branch was already merged), skip remaining steps.
     let defaultBranch = sctx.repo.defaultBranch.trim();
     if (defaultBranch === "") defaultBranch = "main";
-    const baseSHA = await resolveBranchBaseSHA(signal, sctx.workDir, sctx.run.baseSha, defaultBranch);
+    const baseSHA = await resolveBranchBaseSHA(signal, sctx.workDir, sctx.run.baseSha, defaultBranch, sctx.log);
     try {
         const diff = await git.diff(sctx.workDir, baseSHA, "HEAD", signal);
         if (diff.trim() === "") {
