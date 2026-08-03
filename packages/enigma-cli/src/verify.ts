@@ -90,6 +90,14 @@ const MAX_BLOCKS_PER_ISSUE = 2;
 const MAX_BLOCKS_PER_SESSION = 10;
 
 /**
+ * State keys that are ANCHORS rather than block counters: a per-repository point in time
+ * (`gatewatch:`) or commit (`head:`) whose whole value is that it survives. They are written
+ * once and never touched again, so the state file's insertion-order prune would drop them
+ * first - and a dropped anchor does not just lose a count, it changes what the gate sees.
+ */
+const ANCHOR_KEY_RE = /^(?:gatewatch|head):/;
+
+/**
  * Evidence patterns. Each matches only an unambiguous "this is not finished" signal.
  * `notNear` suppresses a hit when the preceding lines show it is a legitimate idiom
  * (a Python abstract method raises the unimplemented error by design, for example).
@@ -299,6 +307,9 @@ const GATE_EXCUSE_RE = new RegExp([
     "\\bnothing\\s+(?:committed|to\\s+validate|to\\s+gate)\\b|\\bno\\s+commits?\\s+to\\b",
     "\\bnada\\s+que\\s+(?:validar|commitear|gatear)\\b|\\bsin\\s+nada\\s+committead",
     "\\bask-user\\b",
+    // The run left a PR, and handing THAT back is the prescribed ending, not a skip - same
+    // alternative LEGITIMATE_STOP_RE carries, for the same reason.
+    "\\b(?:review|merge|revisar|fusionar|mergear)\\b[^?]*\\b(?:pull\\s+request|\\bpr\\b)|\\b(?:pull\\s+request|\\bpr\\b)[^?]*\\b(?:review|merge|revisar|fusionar|mergear)\\b",
     // Same escape hatch as every other check here.
     "enigma:verify-ignore",
 ].join("|"), "i");
@@ -311,6 +322,11 @@ const GATE_EXCUSE_RE = new RegExp([
  * is free to end the turn. The gate topic carries one sentence forward, because the report
  * and the offer are usually split across two ("The gate has not run. Tell me if you want me
  * to launch it."), and neither half means anything without the other.
+ *
+ * This reads the message alone, so the caller must still ask the ledger whether the gate
+ * actually ran (`gateValidatedHead`): carrying the topic forward means a report of a
+ * SUCCESSFUL run followed by any ordinary "let me know if..." lands here too, and blocking
+ * that would deny the stop over a pipeline that already ran, fixed and pushed.
  */
 export function gateSkipped(message: string): string {
     if (!message || typeof message !== "string") return "";
@@ -339,30 +355,53 @@ function gateExpectedAt(cwd: string): boolean {
     return branch !== "" && !protectedBranches.some((entry) => String(entry).trim() === branch);
 }
 
+/** Unix seconds of the newest commit in `cwd`, or null when there is none to read. */
+function headCommittedAt(cwd: string): number | null {
+    const at = Number(gitOut(cwd, ["log", "-1", "--format=%ct", "HEAD"]).trim());
+    return Number.isFinite(at) ? at : null;
+}
+
+/**
+ * Whether a run recorded for this repository (`gate-ledger.ts`) is at least as new as its
+ * newest commit - the one fact that stands both gate checks down, because it says the
+ * pipeline already saw this work.
+ *
+ * `committedAt` is passed by callers that already read it, so the common path costs one
+ * `git log` rather than two.
+ */
+function gateValidatedHead(cwd: string, committedAt?: number): boolean {
+    const at = committedAt ?? headCommittedAt(cwd);
+    if (at === null) return false;
+    const last = lastGateRun(cwd);
+    return last !== null && last.at >= at;
+}
+
 /**
  * Whether this branch carries commits the gate has never seen.
  *
- * Two conditions, both required, because either alone produces a false block. There must be
- * COMMITTED work ahead of the integration branch - a dirty working tree is not something the
- * gate can validate yet, and blocking over it would force a commit the user never asked for -
- * and the newest of those commits must be newer than the last run recorded for this
- * repository (`gate-ledger.ts`), so a pipeline that already ran, fixed and pushed does not
- * get asked to run again. A repository the gate has never run in has no record at all, which
- * is the same answer: nothing validated these commits.
+ * Three conditions, all required, because each one alone produces a false block. The working
+ * tree must be CLEAN - `axi run` refuses a dirty one outright, so ordering a run over
+ * uncommitted work hands the turn an instruction that cannot succeed, and committing to
+ * satisfy it is work the user never asked for. There must be COMMITTED work ahead of the
+ * integration branch. And the newest of those commits must be newer than the last run
+ * recorded for this repository, so a pipeline that already ran, fixed and pushed does not get
+ * asked to run again. A repository the gate has never run in has no record at all, which is
+ * the same answer: nothing validated these commits.
  *
- * Returns null when the question cannot be answered - not a git repository, no commits, no
- * resolvable branch point - rather than guessing, since this check denies a stop.
+ * Returns null when the question cannot be answered - not a git repository, no commits, an
+ * unreadable status, no resolvable branch point - rather than guessing, since this denies a stop.
  */
 function unvalidatedCommits(cwd: string): { count: number; since: number; } | null {
     if (!inGitRepo(cwd) || !hasCommits(cwd)) return null;
+    const status = gitTry(cwd, ["status", "--porcelain"]);
+    if (status === null || status.trim() !== "") return null;
     const base = branchPoint(cwd);
     if (base === null) return null;
     const ahead = Number(gitOut(cwd, ["rev-list", "--count", `${base}..HEAD`]).trim());
     if (!Number.isInteger(ahead) || ahead <= 0) return null;
-    const committedAt = Number(gitOut(cwd, ["log", "-1", "--format=%ct", "HEAD"]).trim());
-    if (!Number.isFinite(committedAt)) return null;
-    const last = lastGateRun(cwd);
-    if (last !== null && last.at >= committedAt) return null;
+    const committedAt = headCommittedAt(cwd);
+    if (committedAt === null) return null;
+    if (gateValidatedHead(cwd, committedAt)) return null;
     return { count: ahead, since: committedAt };
 }
 
@@ -374,10 +413,14 @@ function unvalidatedCommits(cwd: string): { count: number; since: number; } | nu
  * being judged did, and opening with a block over someone else's backlog is exactly the
  * false block that gets a gate switched off. From then on it is the newest commit's time
  * that decides, so only work committed while the gate was watching counts.
+ *
+ * The watch is anchored to the REPOSITORY, not to the payload's cwd: a turn run from a
+ * subdirectory is the same repository, and keying it by cwd would hand it a fresh first
+ * sighting - a free exemption for every commit made so far.
  */
 function gateGap(cwd: string): VerifyGap | null {
     if (!gateExpectedAt(cwd) || !gateLedgerReady()) return null;
-    const watchKey = `gatewatch:${cwd}`;
+    const watchKey = `gatewatch:${repoRootOf(cwd)}`;
     const watching = Number(stateValue(watchKey)) || 0;
     if (!watching) {
         setStateValue(watchKey, String(Math.floor(Date.now() / 1000)));
@@ -414,6 +457,11 @@ export interface ScannedLines { lines: AddedLine[]; truncated: boolean; noRepo?:
 /** Whether `cwd` is inside a git repository at all (git missing counts as "no"). */
 function inGitRepo(cwd: string): boolean {
     return gitOut(cwd, ["rev-parse", "--git-dir"]).trim() !== "";
+}
+
+/** The root of the repository containing `cwd`, or `cwd` itself when git names none. */
+function repoRootOf(cwd: string): string {
+    return gitOut(cwd, ["rev-parse", "--show-toplevel"]).trim() || cwd;
 }
 
 /** Whether the repository has any commit yet - a fresh one has no HEAD to diff against. */
@@ -944,8 +992,12 @@ function mayBlock(key: string, session: string, channel = "total"): boolean {
     if (count > MAX_BLOCKS_PER_ISSUE) return false;
     state[sessionKey] = total;
     state[key] = count;
-    // Keep the file bounded; the newest entries are the only ones a live turn can hit.
-    const keys = Object.keys(state);
+    // Keep the file bounded; the newest entries are the only ones a live turn can hit. ANCHORS
+    // are exempt: they are written once and never rewritten, so pruning by insertion order
+    // evicts them first - and losing `gatewatch:` re-arms the watch at now, permanently
+    // exempting every commit made before that moment, which is the enforcement itself standing
+    // silently down. There is one anchor per repository on this machine, so they stay small.
+    const keys = Object.keys(state).filter((key) => !ANCHOR_KEY_RE.test(key));
     for (const stale of keys.slice(0, Math.max(0, keys.length - 50))) delete state[stale];
     try {
         mkdirSync(stateDir(), { recursive: true });
@@ -1029,8 +1081,12 @@ export function runVerifyHook(payload?: string): number {
     // that the quality gate did not run, or offering to run it. No diff is needed for this
     // either - the message says it - and it is checked before the code paths because a turn
     // that hands the gate back is not going to be fixed by a finding about a TODO.
+    // The ledger overrules the message: a run that already validated this HEAD makes the report
+    // true whatever it says, and the prescribed ending ("checks passed, the PR is ready - let me
+    // know if...") carries an offer that reads exactly like the skipped one. Blocking there would
+    // order a pipeline that just ran, with no phrasing left that could clear it.
     const skipped = raw.permission_mode === "plan" ? "" : gateSkipped(message);
-    if (skipped && gateExpectedAt(cwd)) {
+    if (skipped && gateExpectedAt(cwd) && !gateValidatedHead(cwd)) {
         const gap: VerifyGap = { kind: "gate", detail: skipped };
         if (mayBlock(`gate:${issueKey(session, [gap])}`, session, "gate")) {
             process.stderr.write(`${gateMessage(gap)}\n`);

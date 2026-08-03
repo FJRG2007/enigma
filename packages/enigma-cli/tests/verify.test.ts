@@ -368,6 +368,66 @@ test("denies the stop when committed work never reached an enabled gate", () => 
     expect(runVerifyHook(payload(dir, "Pushed the first half; continuing next turn."))).toBe(0);
 });
 
+test("lets the ending a successful run prescribes close the turn", () => {
+    // The prescribed report after a passing run hands the PR back, and the offer that goes with
+    // it reads exactly like the skipped one - so the ledger, not the phrasing, has to decide.
+    const dir = repoWith({ "src/app.ts": "export const a = 1;\n" });
+    const message = "The gate run passed all checks and the PR is ready. Let me know if you want anything changed before merging.";
+    expect(runVerifyHook(payload(dir, message))).toBe(2);
+    recordGateRun({ repoPath: dir, branch: "main", headSha: "abc1234", status: "checks-passed", at: Math.floor(Date.now() / 1000) + 5 });
+    expect(runVerifyHook(payload(dir, message))).toBe(0);
+    expect(runVerifyHook(payload(dir, "El gate pasó todos los checks. Te dejo el PR listo; dime si quieres que lo mergee."))).toBe(0);
+});
+
+test("keeps the gate's watch anchor when the block-counter state is pruned", () => {
+    recordGateRun({ repoPath: join(tmpdir(), "yet-another-repo"), branch: "main", headSha: "0".repeat(7), status: "completed", at: 1 });
+    const dir = repoWith({ "src/app.ts": "export const a = 1;\n" });
+    git(dir, "checkout", "-q", "-b", "feature");
+    const commit = (file: string): void => {
+        write(dir, file, "export const total = 1;\n");
+        git(dir, "add", "-A");
+        git(dir, "commit", "-qm", "work");
+    };
+    commit("src/one.ts");
+    expect(runVerifyHook(payload(dir, "All done, everything is implemented."))).toBe(0);
+
+    // The state file is shared by every repository and session on this machine and is capped at
+    // its newest keys. The watch is written once and never rewritten, so it is the first thing
+    // an insertion-order prune reaches - and losing it re-arms the watch at now, which exempts
+    // every commit made so far.
+    const state = join(HOME, ".enigma", "verify-state.json");
+    const counters = JSON.parse(readFileSync(state, "utf8")) as Record<string, number>;
+    for (let i = 0; i < 60; i++) counters[`filler:${i}`] = 1;
+    writeFileSync(state, JSON.stringify(counters));
+
+    commit("src/two.ts");
+    expect(runVerifyHook(payload(dir, "All done, everything is implemented."))).toBe(2);
+    expect(Object.keys(JSON.parse(readFileSync(state, "utf8"))).some((key) => key.startsWith("gatewatch:"))).toBe(true);
+    // And the block survives its own pruning, rather than standing down on the next turn.
+    expect(runVerifyHook(payload(dir, "All done, everything is implemented."))).toBe(2);
+});
+
+test("does not order a run the gate CLI would refuse over a dirty tree", () => {
+    recordGateRun({ repoPath: join(tmpdir(), "another-repo"), branch: "main", headSha: "0".repeat(7), status: "completed", at: 1 });
+    const dir = repoWith({ "src/app.ts": "export const a = 1;\n" });
+    git(dir, "checkout", "-q", "-b", "feature");
+    const commit = (file: string): void => {
+        write(dir, file, "export const total = 1;\n");
+        git(dir, "add", "-A");
+        git(dir, "commit", "-qm", "work");
+    };
+
+    commit("src/one.ts");
+    expect(runVerifyHook(payload(dir, "All done, everything is implemented."))).toBe(0);
+    commit("src/two.ts");
+    expect(runVerifyHook(payload(dir, "All done, everything is implemented."))).toBe(2);
+
+    // Same unvalidated commits, plus an uncommitted edit: `axi run` refuses a dirty tree, so
+    // ordering a run here would leave no way out but a commit the user never asked for.
+    write(dir, "src/three.ts", "export const total = 3;\n");
+    expect(runVerifyHook(payload(dir, "All done, everything is implemented."))).toBe(0);
+});
+
 test("stops reporting a marker once it has been removed", () => {
     // Committed evidence has to reflect the CURRENT state: blocking over something already
     // fixed is a false block, and false blocks are how a gate like this gets switched off.
