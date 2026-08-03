@@ -85,6 +85,27 @@ half needs `bun:sqlite` and is imported dynamically.
   hidden or the view is left, and a poll refresh repaints only the run strip - never an editor,
   or it would overwrite what is being typed.
 
+## The run ledger (`src/gate-ledger.ts` + `daemon/ledger.ts`)
+
+- WHY: the reported failure was agents SKIPPING the gate while it was on - either handing it
+  back ("the gate has not run, tell me if you want me to launch it") or ending the turn
+  silently with commits nothing reviewed. The memory kernel already said to drive it, which is
+  this repo's own thesis again: rules persuade, gates enforce. So the completion gate
+  (`verify.ts`) now checks it, and to check it, it has to know whether any run ever saw those
+  commits.
+- MECHANISM: same Bun/Node split that forced the status-line snapshot - the turn-end hook runs
+  on the Node launcher and cannot open `bun:sqlite`. `daemon/ledger.ts` writes
+  `<gate home>/last-runs.json` (repo path -> branch, head, status, `updatedAt`) from the same
+  `broadcast` that refreshes the snapshot; `gate-ledger.ts` is the Node-safe half both sides
+  share, so the filename and shape have ONE definition (`Paths.runLedgerFile()` delegates to
+  it). Unlike the snapshot it must OUTLIVE the run: a gate that finished an hour ago is exactly
+  what makes the next completion claim legitimate.
+- Every state change is recorded, in-flight runs included. A turn that ends while the pipeline
+  is parked awaiting the driving agent did NOT skip the gate, and blocking it would be a false
+  block - the one thing that gets a gate switched off.
+- Still a derived cache: deleting it costs one extra gate run, not correctness. A repository
+  with no entry reads as "never validated here", which is the honest answer.
+
 ## Gotchas
 
 - Windows: worktree teardown routinely logs `git worktree remove failed, falling back to

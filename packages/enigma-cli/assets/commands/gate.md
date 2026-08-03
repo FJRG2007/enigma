@@ -71,8 +71,9 @@ in place, so `/gate on` works there.
 
 If any precondition fails, `axi run` returns an `error:` with the exact fix -
 read it and act on it. If the repo is not initialized, run `enigma gate init`
-first; if `enigma gate` itself misbehaves, `enigma gate doctor` reports what is
-wrong. Before starting, run `enigma gate axi` (home view): if it shows an active
+first - that is a setup step you perform, not a reason to hand the run back with
+a question; if `enigma gate` itself misbehaves, `enigma gate doctor` reports what
+is wrong. Before starting, run `enigma gate axi` (home view): if it shows an active
 run on your branch, resume it or `axi abort` before starting over; on another
 branch, leave it alone and start your own with
 `enigma gate axi run --intent "..."`.

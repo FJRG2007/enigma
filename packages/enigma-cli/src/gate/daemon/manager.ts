@@ -28,6 +28,7 @@
 import { log } from "../log";
 import * as gateDb from "../db";
 import { track } from "../telemetry";
+import { recordRun } from "./ledger";
 import type { Paths } from "../paths";
 import { writeSnapshot } from "./snapshot";
 import { type Agent } from "../agent/agent";
@@ -157,7 +158,10 @@ export class RunManager {
      * they carry no state the bar shows and arrive far too often to rewrite on.
      */
     private broadcast = (event: Event): void => {
-        if (event.type !== EventLogChunk) writeSnapshot(this.db, this.paths, event.runId);
+        if (event.type !== EventLogChunk) {
+            writeSnapshot(this.db, this.paths, event.runId);
+            recordRun(this.db, this.paths, event.runId);
+        }
         const subs = this.subscribers.get(event.runId);
         if (!subs) return;
         for (const sub of subs) this.pushEvent(sub, event);

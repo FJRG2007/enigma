@@ -10,6 +10,7 @@
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { mkdirSync } from "node:fs";
+import { gateLedgerPath } from "../gate-ledger";
 
 /** Accessor for all gate filesystem locations, rooted at a single directory. */
 export class Paths {
@@ -59,6 +60,17 @@ export class Paths {
      */
     statuslineFile(): string {
         return join(this.rootDir, "statusline.json");
+    }
+
+    /**
+     * Durable record of the last run per repository, for readers that cannot open
+     * the database. Same Bun/Node split as the status-line snapshot, but this one
+     * is not a view of the ACTIVE run: the completion gate (`src/verify.ts`) asks
+     * it whether the gate ever saw the commits a turn is about to call done, which
+     * has to survive the run ending.
+     */
+    runLedgerFile(): string {
+        return gateLedgerPath(this.rootDir);
     }
 
     reposDir(): string {

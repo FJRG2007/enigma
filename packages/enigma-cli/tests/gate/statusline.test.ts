@@ -2,7 +2,9 @@
  * The status-bar bridge: `writeSnapshot` (Bun side, reads the gate DB) and the
  * reader/renderer in `bin/statusline.mjs` (Node side, reads only the snapshot).
  * The two never share a runtime, so the round trip is the thing worth testing -
- * plus the rejection rules that keep a stale or foreign run off the bar.
+ * plus the rejection rules that keep a stale or foreign run off the bar. The run
+ * ledger (`recordRun`) crosses the same split for the completion gate, so it is
+ * here too.
  *
  * Must run under Bun: bun test tests/gate/statusline.test.ts
  */
@@ -20,6 +22,8 @@ const REPO_PATH = join(DIR, "repo").replace(/\\/g, "/");
 const { Database, newId, insertRepoWithIDAndFork, insertRun, insertStepResult, startStep, completeStepWithStatus, updateRunStatus } = await import("@/gate/db");
 const { Paths } = await import("@/gate/paths");
 const { writeSnapshot } = await import("@/gate/daemon/snapshot");
+const { recordRun } = await import("@/gate/daemon/ledger");
+const { lastGateRun } = await import("@/gate-ledger");
 const { render, readSnapshot } = await import("../../bin/statusline.mjs");
 
 // Windows keeps a handle on SQLite's WAL files a moment after close, so a failed
@@ -127,5 +131,20 @@ test("the bar never exceeds the terminal width, dropping the least useful parts 
     const tight = at(30);
     expect(tight).not.toContain("feat/bar");
     expect(tight).toContain("review");
+    db.close();
+});
+
+test("a run is recorded in the ledger the completion gate reads", () => {
+    // Second half of the same Bun/Node split: the turn-end gate cannot open the database, so
+    // what it asks - has any run seen this repository, and when - has to survive the run here.
+    const { db, paths, run } = seed();
+    recordRun(db, paths, run.id);
+
+    const record = lastGateRun(join(REPO_PATH, "src", "deep"), paths.root());
+    expect(record).not.toBeNull();
+    expect(record.branch).toBe("feat/bar");
+    expect(record.at).toBeGreaterThan(0);
+    // Coverage belongs to one repository: another checkout gets none from this run.
+    expect(lastGateRun(join(DIR, "other-repo"), paths.root())).toBeNull();
     db.close();
 });

@@ -19,12 +19,16 @@ process.env.HOME = HOME;
 process.env.ENIGMA_CONFIG_HOME = HOME;
 // The turn-end sweep records what it found, and it must never append to the real ledger.
 process.env.ENIGMA_GUARDRAILS_LOG = join(HOME, "guardrail-log.jsonl");
+// Same for the gate run ledger the unvalidated-work check reads: it must be this test's own,
+// or the machine's real gate history would decide the result.
+process.env.ENIGMA_GATE_HOME = join(HOME, "gate");
 // The hook stands aside inside a gate step agent, so an ambient ENIGMA_GATE=1 (the suite run
 // from inside an enigma gate pipeline) would make every case below pass open and fail here.
 // The one test that exercises that path sets the variable itself.
 delete process.env.ENIGMA_GATE;
 
-const { claimsDone, asksToContinue, scanGaps, scanConventions, collectGaps, runVerifyHook } = await import("../src/verify");
+const { claimsDone, asksToContinue, gateSkipped, scanGaps, scanConventions, collectGaps, runVerifyHook } = await import("../src/verify");
+const { recordGateRun, lastGateRun } = await import("../src/gate-ledger");
 const { parityReport, formatParity } = await import("../src/verify-parity");
 const { readLedger } = await import("../src/guardrails");
 
@@ -290,6 +294,74 @@ test("still sees the work after the agent commits it", () => {
 
     expect(scanGaps(dir).length).toBe(1);
     expect(runVerifyHook(payload(dir, "All done, everything is implemented."))).toBe(2);
+});
+
+test("reads a turn that hands the quality gate back as a skip", () => {
+    for (const message of [
+        // The message this check was reported for: the gate named, not run, handed back.
+        "El gate (enigma gate) sigue sin ejecutarse: este repo no tiene .enigma.json. Dime si quieres que lo inicialice y lo lance.",
+        "Todo listo. No he ejecutado el gate porque el repo no está inicializado; si quieres lo lanzo.",
+        "The quality gate has not run yet - let me know if you want me to launch it.",
+        "I skipped the enigma gate for this change.",
+        "Shall I run the gate now?",
+    ]) expect(gateSkipped(message)).not.toBe("");
+
+    for (const message of [
+        // It ran: the PR it leaves ready is the user's to merge, which is not a skip.
+        "The gate ran and every check passed; the PR is ready for you to review and merge.",
+        "El gate pasó todos los checks. Te dejo el PR listo para revisar y mergear.",
+        // Each reason the policy accepts, stated - which is the documented way out.
+        "No he lanzado el gate porque me pediste que me lo saltara.",
+        "The gate was not run: this repo sets gate: false.",
+        "The gate did not run because the branch is a protected branch.",
+        // A run that parked on a finding must be escalated verbatim, not treated as a skip.
+        "The gate parked on an ask-user finding: it wants to know whether to drop the legacy column.",
+        // Nothing to do with the gate.
+        "I did not run the tests for the docs change.",
+        "Refactored the login gateway; it did not run into the retry path.",
+    ]) expect(gateSkipped(message)).toBe("");
+});
+
+test("denies the stop when the turn reports the gate as skipped", () => {
+    // No diff is read for this one either: the message itself says the work ends unvalidated.
+    const dir = repoWith();
+    write(dir, "src/new.ts", "export const total = 1;\n");
+    expect(runVerifyHook(payload(dir, "El refactor está terminado. El gate sigue sin ejecutarse; dime si quieres que lo lance."))).toBe(2);
+    // Naming an accepted reason clears it on the first try, exactly like a real blocker does.
+    expect(runVerifyHook(payload(dir, "El refactor está terminado. No he lanzado el gate porque me pediste que me lo saltara."))).toBe(0);
+    // A repo that opted out is not skipping anything.
+    write(dir, ".enigma.json", JSON.stringify({ gate: false }));
+    expect(runVerifyHook(payload(dir, "Listo. El gate sigue sin ejecutarse, dime si quieres que lo lance."))).toBe(0);
+});
+
+test("denies the stop when committed work never reached an enabled gate", () => {
+    const dir = repoWith({ "src/app.ts": "export const a = 1;\n" });
+    git(dir, "checkout", "-q", "-b", "feature");
+    const commit = (file: string): void => {
+        write(dir, file, "export const total = 1;\n");
+        git(dir, "add", "-A");
+        git(dir, "commit", "-qm", "work");
+    };
+
+    // FIRST SIGHTING ONLY STARTS THE WATCH: commits that predate this check (or the gate being
+    // switched on) are not this turn's doing, and blocking over them would be a false block.
+    commit("src/one.ts");
+    expect(runVerifyHook(payload(dir, "All done, everything is implemented."))).toBe(0);
+
+    // Committed afterwards, with no run recorded for this repository: unvalidated work.
+    commit("src/two.ts");
+    expect(runVerifyHook(payload(dir, "All done, everything is implemented."))).toBe(2);
+
+    // A recorded run that saw those commits clears it - and a stale one does not.
+    recordGateRun({ repoPath: dir, branch: "feature", headSha: "abc1234", status: "completed", at: 1 });
+    expect(runVerifyHook(payload(dir, "All done, everything is implemented."))).toBe(2);
+    recordGateRun({ repoPath: dir, branch: "feature", headSha: "abc1234", status: "completed", at: Math.floor(Date.now() / 1000) + 5 });
+    expect(runVerifyHook(payload(dir, "All done, everything is implemented."))).toBe(0);
+    expect(lastGateRun(join(dir, "src"))?.branch).toBe("feature");
+
+    // A turn that claims nothing is not claiming the unvalidated work is finished.
+    commit("src/three.ts");
+    expect(runVerifyHook(payload(dir, "Pushed the first half; continuing next turn."))).toBe(0);
 });
 
 test("stops reporting a marker once it has been removed", () => {
