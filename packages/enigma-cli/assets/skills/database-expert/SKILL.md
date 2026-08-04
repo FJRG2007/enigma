@@ -106,6 +106,17 @@ Any denormalized or duplicated value MUST have:
 - Persist derived/aggregated values only when recomputation is expensive or required for performance/analytics.
 - When persisting derived data, prefer materialized views or summary tables over scattered duplicate columns.
 
+### A Pure Function Of A Key Needs No Column
+
+The rules above are about a value computed from other columns. A stronger case is worth looking for first: a value that is a pure function of an id you already hold needs no column, no row, and no cache. Same id, same answer, in every process, forever.
+
+- The shapes this covers: a human-readable label for an opaque id (a session, a run, an invite), an avatar colour or identicon, a bucket or shard assignment, a rollout cohort, a deterministic seed. Hash the id with a small stable function you own (FNV-1a, xxHash, or the leading bytes of a digest) and index into a fixed list.
+- The function must be stable across processes and versions of the runtime: no clock, no locale, no random seed, and not a language built-in whose value is unspecified (JavaScript has no string hash at all; a JVM `hashCode` is specified for `String` but not for most other types). Write the few lines yourself rather than depending on a package for them.
+- STATE THE TRADEOFF BEFORE CHOOSING, because it is not reversible in either direction. Derived means the mapping lives in the code, so editing the function or the list silently renames everything that already exists. Stored means the value is fixed forever, at the cost of a column, a write path and a backfill.
+- The test is what the value is FOR. A convenience label the user reads and forgets is derived. An identity they will use to refer to the thing ("the Pegasus run", a share URL, anything they can search or that appears in an invoice) is data: store it on creation, seeded by the same function if you like.
+- Do not derive across a boundary you do not own: a value another system persists, or one the user can rename, is data by definition.
+- The same question applies before adding a row, not only a column: a join table that only ever expresses a rule ("everyone in this org is a member") is a query, and a settings row that only ever holds the defaults is an absence.
+
 ---
 
 ## Query & Index Optimization (Always)

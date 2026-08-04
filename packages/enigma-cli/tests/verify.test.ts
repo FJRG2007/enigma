@@ -27,7 +27,7 @@ process.env.ENIGMA_GATE_HOME = join(HOME, "gate");
 // The one test that exercises that path sets the variable itself.
 delete process.env.ENIGMA_GATE;
 
-const { claimsDone, asksToContinue, gateSkipped, scanGaps, scanConventions, collectGaps, runVerifyHook } = await import("../src/verify");
+const { claimsDone, asksToContinue, gateSkipped, scanGaps, scanConventions, collectGaps, runVerifyHook, unsourcedTrailers } = await import("../src/verify");
 const { recordGateRun, lastGateRun, validatingRun } = await import("../src/gate-ledger");
 const { parityReport, formatParity } = await import("../src/verify-parity");
 const { readLedger } = await import("../src/guardrails");
@@ -461,6 +461,9 @@ test("a run that was aborted or failed vouches for nothing", () => {
     // A run that really did clear this work, then a later one that dies: the failure must not
     // take the earlier run's answer with it, or an aborted retry becomes a false block.
     recordGateRun({ repoPath: dir, runId: "run-b", branch: "feature", headSha: "abc1234", status: "completed", at });
+    // NOTE on the explicit timeout at the end of this test: it drives the hook nine times, far
+    // more than any real turn, and the hook grew one more git subprocess per call when the
+    // co-author source check landed. Nothing here is slow on its own.
     expect(runVerifyHook(payload(dir, "All done, everything is implemented."))).toBe(0);
     recordGateRun({ repoPath: dir, runId: "run-c", branch: "feature", headSha: "def5678", status: "running", at: at + 10 });
     recordGateRun({ repoPath: dir, runId: "run-c", branch: "feature", headSha: "def5678", status: "failed", at: at + 10 });
@@ -468,7 +471,7 @@ test("a run that was aborted or failed vouches for nothing", () => {
     expect(lastGateRun(dir)?.status).toBe("failed");
     expect(validatingRun(lastGateRun(dir))?.status).toBe("completed");
     expect(validatingRun(lastGateRun(dir))?.at).toBe(at);
-});
+}, 20_000);
 
 test("keeps the gate's watch anchor when the block-counter state is pruned", () => {
     recordGateRun({ repoPath: join(tmpdir(), "yet-another-repo"), branch: "main", headSha: "0".repeat(7), status: "completed", at: 1 });
@@ -786,4 +789,89 @@ test("convention blocks spend their own budget, not the completion gate's", () =
     // The same issue still stands down on its own after two blocks, so a turn is never trapped.
     expect(runVerifyHook(payload(dir, "Added the delete action.", { session_id: session }))).toBe(2);
     expect(runVerifyHook(payload(dir, "Added the delete action.", { session_id: session }))).toBe(0);
+});
+
+// --- an identity that came from nowhere ------------------------------------------------
+
+/** A transcript holding one user message and one tool result, in Claude Code's JSONL shape. */
+function transcript(userText: string, toolResult = ""): string {
+    const dir = mkdtempSync(join(tmpdir(), "enigma-verify-tx-"));
+    repos.push(dir);
+    const path = join(dir, "session.jsonl");
+    const lines = [
+        JSON.stringify({ message: { role: "user", content: [{ type: "text", text: userText }] } }),
+        JSON.stringify({ message: { role: "assistant", content: [{ type: "text", text: "on it" }] } }),
+        ...(toolResult ? [JSON.stringify({ message: { role: "user", content: [{ type: "tool_result", content: toolResult }] } })] : []),
+    ];
+    writeFileSync(path, `${lines.join("\n")}\n`);
+    return path;
+}
+
+/** A commit crediting `email` as a co-author, on top of the repository's base commit. */
+function coAuthored(dir: string, email: string, extra = ""): void {
+    write(dir, "feature.txt", "work");
+    git(dir, "add", "-A");
+    git(dir, "commit", "-qm", `feat: add the thing\n\n${extra}Co-authored-by: Someone <${email}>`);
+}
+
+test("blocks a co-author address that came from nowhere", () => {
+    const dir = repoWith();
+    coAuthored(dir, "team.fjrg2007@gmail.com");
+    const gaps = unsourcedTrailers(dir, transcript("Add me as co-contributor, my username is FJRG2007."));
+    expect(gaps.length).toBe(1);
+    expect(gaps[0]!.kind).toBe("source");
+    expect(gaps[0]!.detail).toContain("team.fjrg2007@gmail.com");
+});
+
+test("clears an address the user actually typed", () => {
+    // The whole discrimination: the trailer is identical, only its provenance differs.
+    const dir = repoWith();
+    coAuthored(dir, "team.fjrg2007@gmail.com");
+    expect(unsourcedTrailers(dir, transcript("Add me as co-author: team.fjrg2007@gmail.com"))).toEqual([]);
+    // Case is not provenance - git and mail treat the domain case-insensitively.
+    expect(unsourcedTrailers(dir, transcript("co-author: Team.FJRG2007@Gmail.com"))).toEqual([]);
+});
+
+test("a tool result does not vouch for an address", () => {
+    // The value the agent invented three turns ago comes back through its own tool output, so
+    // reading a tool_result as a source would let a fabrication clear itself.
+    const dir = repoWith();
+    coAuthored(dir, "invented@example.org");
+    const gaps = unsourcedTrailers(dir, transcript("add the co-author", "Co-authored-by: X <invented@example.org>"));
+    expect(gaps.length).toBe(1);
+});
+
+test("clears an address the repository already knows", () => {
+    const dir = repoWith();
+    // The identity that made the base commit is vouched for by definition.
+    coAuthored(dir, "test@example.com");
+    expect(unsourcedTrailers(dir, transcript("add a co-author"))).toEqual([]);
+    // As is one the project recorded in .mailmap without it ever having committed.
+    write(dir, ".mailmap", "Someone Else <known@example.org>\n");
+    git(dir, "add", "-A");
+    git(dir, "commit", "-qm", "chore: mailmap\n\nCo-authored-by: Someone Else <known@example.org>");
+    expect(unsourcedTrailers(dir, transcript("add a co-author"))).toEqual([]);
+});
+
+test("the escape hatch and every unreadable source fail open", () => {
+    const dir = repoWith();
+    coAuthored(dir, "sourced@example.org", "enigma:allow-unsourced-trailer\n\n");
+    expect(unsourcedTrailers(dir, transcript("add a co-author"))).toEqual([]);
+    // No transcript at all is "cannot tell", never "the user never said it".
+    const other = repoWith();
+    coAuthored(other, "unknown@example.org");
+    expect(unsourcedTrailers(other, "")).toEqual([]);
+    expect(unsourcedTrailers(other, join(HOME, "no-such-session.jsonl"))).toEqual([]);
+    // Outside a repository there is nothing to read and nothing to block.
+    const plain = mkdtempSync(join(tmpdir(), "enigma-verify-notrepo-"));
+    repos.push(plain);
+    expect(unsourcedTrailers(plain, transcript("hello"))).toEqual([]);
+});
+
+test("a commit with no co-author trailer is never reported", () => {
+    const dir = repoWith();
+    write(dir, "feature.txt", "work");
+    git(dir, "add", "-A");
+    git(dir, "commit", "-qm", "feat: no trailers here");
+    expect(unsourcedTrailers(dir, transcript("do the thing"))).toEqual([]);
 });

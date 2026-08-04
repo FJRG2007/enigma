@@ -48,9 +48,9 @@
 import { createHash } from "node:crypto";
 import { join, extname } from "node:path";
 import { readConfigAt, readGlobalConfig } from "./config";
-import { lastAssistantMessage } from "./claude-transcripts";
 import { execFileSync, spawnSync } from "node:child_process";
 import { enigmaHome, readJson, isGateAgentRun } from "./util";
+import { lastAssistantMessage, userTyped } from "./claude-transcripts";
 import { gateLedgerReady, lastGateRun, validatingRun } from "./gate-ledger";
 import { checkFile, loadRules, recordFindings, type Finding } from "./guardrails";
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, statSync, writeFileSync } from "node:fs";
@@ -61,9 +61,11 @@ export interface VerifyGap {
      * `marker` = an incompleteness marker in produced code; `command` = the project's check
      * failed; `stop-short` = the turn ended asking permission to continue instead of continuing;
      * `convention` = a guardrail rule the produced code breaks (see scanConventions);
-     * `gate` = the quality gate is on and the committed work never went through it.
+     * `gate` = the quality gate is on and the committed work never went through it;
+     * `source` = the change states a fact about someone that came from nowhere (see
+     * unsourcedTrailers).
      */
-    kind: "marker" | "command" | "stop-short" | "convention" | "gate";
+    kind: "marker" | "command" | "stop-short" | "convention" | "gate" | "source";
     file?: string;
     line?: number;
     detail: string;
@@ -944,6 +946,106 @@ function conventionMessage(gaps: VerifyGap[], notes: VerifyGap[] = [], capped = 
     ].join("\n");
 }
 
+// --- identities the change credits ----------------------------------------------------
+
+/**
+ * A co-author trailer and the address it credits. Anchored per line and case-insensitive,
+ * because git accepts any casing of the token and only cares that it sits at the start.
+ */
+const CO_AUTHOR = /^[^\S\n]*co-authored-by[^\S\n]*:[^<\n]*<([^>\n\s]+)>/gim;
+
+/** Says the address was sourced somewhere this check cannot see. */
+const ALLOW_TRAILER = /enigma:allow-unsourced-trailer/i;
+
+/** Every address the repository itself can vouch for: its own history, its .mailmap, this identity. */
+function vouchedEmails(cwd: string): Set<string> | null {
+    // One walk of the branch, author and committer both. A failure is null rather than an empty
+    // set: an empty set would read as "the repository knows nobody", which is the exact wrong
+    // conclusion to block on.
+    const history = gitTry(cwd, ["log", "--format=%ae%n%ce", "-n", "20000"]);
+    if (history === null) return null;
+    const out = new Set(history.split("\n").map((s) => s.trim().toLowerCase()).filter(Boolean));
+    // .mailmap is where a project records the addresses it knows about, including ones that have
+    // not committed yet, so it is a source in exactly the sense this check means.
+    try { for (const m of readFileSync(join(cwd, ".mailmap"), "utf8").matchAll(/<([^>\s]+)>/g)) out.add(m[1]!.toLowerCase()); }
+    catch { /* no .mailmap is normal */ }
+    // `user.email` and nothing else: git has no `author.email`/`committer.email` config keys (the
+    // author and committer are overridden by GIT_AUTHOR_EMAIL/GIT_COMMITTER_EMAIL, which the log
+    // walk above already covers), so asking for them would be two subprocesses for a value that
+    // cannot exist.
+    const own = gitOut(cwd, ["config", "--get", "user.email"]).trim().toLowerCase();
+    if (own) out.add(own);
+    return out;
+}
+
+/**
+ * Co-author trailers on the commits this piece of work created, crediting an address that came
+ * from nowhere.
+ *
+ * THE DEFECT IS NOT IN THE ARTIFACT, which is what makes this a turn-end check rather than a
+ * commit hook: a correct address and an invented one are the same bytes, and a first-time
+ * co-author is legitimately absent from the repository's history, so no hook reading only the
+ * message could tell them apart without blocking the honest case. What separates them is where
+ * the value CAME FROM, and the transcript is the only place that records it - the user either
+ * typed the address or they did not.
+ *
+ * FAILS SAFE IN EVERY DIRECTION, because a false block here would deny a turn over a correct
+ * commit: no repository, no readable history, no transcript, or a transcript too large to read
+ * whole all mean "cannot tell", and none of them blocks.
+ */
+export function unsourcedTrailers(cwd: string, transcriptPath: string): VerifyGap[] {
+    if (!inGitRepo(cwd)) return [];
+    // UNPUSHED commits, which is the exact set a turn can still fix: an amend or a rebase, with
+    // nobody else's clone to break. Anything already on a remote is history, and telling the model
+    // to amend it would be wrong advice. `--not --remotes` is also the one range that works while
+    // the work sits on the default branch with no feature branch to diff against - the branch
+    // point there resolves to HEAD itself, so a `base..HEAD` range is empty and this check saw
+    // nothing at all, on the workflow that commits straight to main.
+    const log = gitTry(cwd, ["log", "-n", "20", "--format=%H%x1e%B%x1f", "HEAD", "--not", "--remotes"]);
+    if (!log) return [];
+    const out: VerifyGap[] = [];
+    const seen = new Set<string>();
+    let vouched: Set<string> | null | undefined;
+    for (const entry of log.split("\x1f")) {
+        const [sha = "", body = ""] = entry.split("\x1e");
+        if (!body.trim() || ALLOW_TRAILER.test(body)) continue;
+        for (const match of body.matchAll(CO_AUTHOR)) {
+            const email = match[1]!.toLowerCase();
+            if (seen.has(email)) continue;
+            // Resolved lazily and once: a repository with no co-author trailers - which is nearly
+            // all of them, since this project forbids the AI ones - pays for one git log and stops.
+            if (vouched === undefined) vouched = vouchedEmails(cwd);
+            if (vouched === null) return out;
+            if (vouched.has(email)) continue;
+            const typed = transcriptPath ? userTyped(transcriptPath, email) : null;
+            // null is "could not read the session", not "the user never said it".
+            if (typed !== false) continue;
+            seen.add(email);
+            out.push({
+                kind: "source",
+                detail: `commit ${sha.trim().slice(0, 8)} credits <${email}> as a co-author, and that address appears nowhere: not in this repository's history, not in .mailmap, not in your git identity, and at no point in this session did the user write it.`,
+            });
+        }
+    }
+    return out;
+}
+
+/**
+ * The message fed back when a commit carries an identity that came from nowhere. It names the
+ * ways to SOURCE the value rather than telling the model to remove the trailer, because the
+ * co-author is usually real and only the address was invented.
+ */
+function sourceMessage(gaps: VerifyGap[]): string {
+    return [
+        "enigma verify: STOP. This change credits someone using a value you do not have:",
+        "",
+        formatGaps(gaps),
+        "",
+        "A username is not an email, and a plausible address is worse than none: it is wrong in a way that looks right, it enters history permanently, and it credits nobody or the wrong person. Get it from a source - what the user told you, this repository's own history for that person (`git log --author=\"<name>\" --format=\"%an <%ae>\" | sort -u`), or `gh api users/<login> --jq '.id, .login, .email'` - and if none of those has it, ASK. One question costs a turn; a wrong trailer costs a rewrite of history.",
+        "Amend the commit with the sourced address, or drop the trailer and say you need the address. If you did source it somewhere this check cannot see, put `enigma:allow-unsourced-trailer` in the commit message and say in your reply where the value came from.",
+    ].join("\n");
+}
+
 /**
  * Run the project's own verification command and report a gap when it fails. Read from
  * the GLOBAL config only: a repo-local .enigma.json travels with a clone, so honouring
@@ -1225,6 +1327,16 @@ export function runVerifyHook(payload?: string): number {
             process.stderr.write(`${gateMessage(gap)}\n`);
             return 2;
         }
+    }
+    // An invented identity is checked whether or not the turn claims anything, and BEFORE the
+    // code checks, because it is the one finding that gets permanently worse if the turn ends:
+    // a commit is one amend away from correct now and a rewrite of shared history later. Its
+    // own cost guard is inside it - a repository whose new commits carry no co-author trailer
+    // pays for a single git log.
+    const invented = raw.permission_mode === "plan" ? [] : unsourcedTrailers(cwd, typeof raw.transcript_path === "string" ? raw.transcript_path : "");
+    if (invented.length && mayBlock(`source:${issueKey(session, invented)}`, session)) {
+        process.stderr.write(`${sourceMessage(invented)}\n`);
+        return 2;
     }
     // Conventions are checked whether or not the turn claims anything. A claim is what makes an
     // UNFINISHED item a lie, but a rule broken in the produced code is a defect on its own - and

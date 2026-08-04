@@ -55,6 +55,16 @@ description: Commit, branch, and pull request standards - conventional commits, 
 - The commit/PR must read as if the user authored it; no trace of the assistant in author fields, trailers, or footers.
 - Enforcement note: in Claude Code this is also disabled deterministically via settings.json (`attribution.commit` / `attribution.pr` set to "", and `includeCoAuthoredBy: false`); the enigma installer sets this automatically. The rule here still applies on every runtime, settings or not.
 
+### An Attribution Trailer Carries An Identity You Were Given
+
+When the user asks for a human co-author, the trailer is `Co-authored-by: Name <email>` - and the email is a fact about a real person, so it is never inferred, completed, or guessed from a username. Writing a plausible address is worse than writing none: it is wrong in a way that looks right, it goes into history permanently, and it silently credits nobody or the wrong person.
+
+- A username is not an email. `FJRG2007` tells you nothing about the mailbox, and neither `name@gmail.com` nor `team.name@gmail.com` nor a company domain is a deduction - each is an invention that happens to be well-formed.
+- Get it from a source, in this order: what the user told you; the repository's own history for that person (`git log --author="<name>" --format="%an <%ae>" | sort -u`, or `.mailmap`); or GitHub, where `gh api users/<login> --jq '.id, .login, .email'` returns their numeric id and their public email when they have set one.
+- The GitHub no-reply address is only constructible from that id, and its form depends on the account: `ID+LOGIN@users.noreply.github.com` for accounts created after 18 July 2017, and `LOGIN@users.noreply.github.com` for older accounts that enabled email privacy before that date. So it is a value you look up, not one you assemble from a username.
+- For the co-author to be credited, the address must be one attached to their account. If you cannot source it, ask - one question costs a turn, a wrong trailer costs a rewrite of history.
+- The same rule covers every identity a commit or PR can carry: reviewers, `Reported-by`/`Signed-off-by` trailers, an issue or PR number, a CVE id, a release version. If you did not read it somewhere, you do not write it.
+
 ---
 
 ## Commit Strategy

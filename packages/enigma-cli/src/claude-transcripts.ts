@@ -12,7 +12,7 @@
 
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
-import { closeSync, existsSync, fstatSync, openSync, readSync, readdirSync, readFileSync } from "node:fs";
+import { closeSync, existsSync, fstatSync, openSync, readSync, readdirSync, readFileSync, statSync } from "node:fs";
 
 /** One Claude account's transcript source: its display name and its projects directory. */
 export interface ClaudeSource { account: string; dir: string; }
@@ -96,6 +96,47 @@ function tail(path: string, bytes: number): string {
         return length < size ? text.slice(text.indexOf("\n") + 1) : text;
     } catch { return ""; }
     finally { closeSync(fd); }
+}
+
+/**
+ * How much of a transcript `userTyped` reads. Generous, because the question it answers is
+ * about ABSENCE and a window that stopped short would answer it wrongly - hence the null below
+ * rather than a larger constant.
+ */
+const SCAN_BYTES = 8 * 1024 * 1024;
+
+/**
+ * Whether the USER typed `needle` anywhere in this transcript.
+ *
+ * Returns null - never false - when the file could not be read WHOLE, because the one caller
+ * uses a false to conclude that a value came from nowhere, and an unread prefix is not evidence
+ * of that. Only genuine `text` blocks count: a tool_result is content this session produced,
+ * not something the user supplied, and reading one as a source would let a value the agent
+ * invented three turns ago vouch for itself.
+ */
+export function userTyped(transcriptPath: string, needle: string): boolean | null {
+    if (!needle) return null;
+    let raw: string;
+    try {
+        if (statSync(transcriptPath).size > SCAN_BYTES) return null;
+        raw = readFileSync(transcriptPath, "utf8");
+    } catch { return null; }
+    const wanted = needle.toLowerCase();
+    for (const line of raw.split("\n")) {
+        if (!line.includes("\"user\"")) continue;
+        let entry: { message?: { role?: string; content?: unknown; }; };
+        try { entry = JSON.parse(line); } catch { continue; }
+        const content = entry.message?.role === "user" ? entry.message.content : undefined;
+        if (typeof content === "string") { if (content.toLowerCase().includes(wanted)) return true; continue; }
+        if (!Array.isArray(content)) continue;
+        for (const block of content) {
+            if (!block || typeof block !== "object") continue;
+            const b = block as { type?: string; text?: string; };
+            if (b.type !== "text" || typeof b.text !== "string") continue;
+            if (b.text.toLowerCase().includes(wanted)) return true;
+        }
+    }
+    return false;
 }
 
 /**
