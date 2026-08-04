@@ -149,11 +149,19 @@ var BUILTIN_RULES = [
     // A raw lowercase <input type="password"> (not a component) with no show/hide toggle in the
     // file. flags:"" = case-sensitive so a capitalized <Input> component is NOT matched; a
     // literal type="password" only, so a dynamic type={visible?...} toggle is not matched either.
-    pattern: `<input\\b[^>]*type=["']password["']`,
+    pattern: `^(?!.*enigma:).*<input\\b[^>]*type=["']password["']`,
     flags: "",
-    absent: "showPassword|setShowPassword|togglePassword|revealPassword|passwordVisible|isPasswordVisible|showPw|hidePassword",
-    message: 'Raw <input type="password">: use the shared reusable Input component (which renders a show/hide toggle for passwords) instead of a bare input, or add the toggle (frontend-policy).',
-    severity: "warn",
+    absent: "showPassword|setShowPassword|togglePassword|revealPassword|passwordVisible|isPasswordVisible|showPw|hidePassword|enigma:allow-raw-password-input",
+    message: 'Raw <input type="password">: use the shared reusable Input component (which renders a show/hide toggle for passwords) instead of a bare input, or add the toggle (frontend-policy). Mark the line `enigma:` or add `enigma:allow-raw-password-input` to the file where the field is deliberately bare.',
+    // BLOCK for the same reason as fe-ellipsis-without-overflow, and it is the same class of
+    // routing failure: a warn is never fed back by the hook and never denies the stop at turn
+    // end, while "one Input that renders a show/hide toggle for a password" is an always-on
+    // kernel convention the model is expected to apply, not advice it may weigh. It is the
+    // reverse of the two rules that stay warn - the criterion is the backlog, and this rule
+    // has none: measured over 39316 files of the whole local
+    // corpus, 75 candidate lines and 0 findings - every real password field already carries a
+    // toggle, so it fires on a bare one an agent writes and on nothing else.
+    severity: "block",
     skill: "frontend-policy"
   },
   {
@@ -552,6 +560,13 @@ var BUILTIN_RULES = [
     pattern: "<head[\\s>]",
     absent: "viewport|mso-|<!--\\[if\\s|-webkit-text-size-adjust|<mj-",
     message: 'HTML document with a <head> but no responsive viewport meta. Add <meta name="viewport" content="width=device-width, initial-scale=1"> so the page is responsive on mobile instead of rendering at desktop width (frontend-policy).',
+    // STAYS warn, and it was measured rather than assumed when its two siblings were flipped
+    // to block: 571 candidate lines over 39316 files produce 145 findings - generated API
+    // docs, framework error templates, sample apps and one-off report pages that are all genuine
+    // matches and none of them anyone's current work. That is a legacy backlog, so a block
+    // would fire on every unrelated edit to those files, which is exactly the cost the
+    // ellipsis and password rules do NOT carry (0 findings each). Backlog, not precision and
+    // not how bad the defect is, is what decides this severity.
     severity: "warn",
     skill: "frontend-policy"
   },
@@ -594,13 +609,24 @@ var BUILTIN_RULES = [
     // overflow value does nothing at all - the text just spills. The absent set covers the
     // CSS declarations and the Tailwind utilities that provide it; note it cannot simply be
     // "overflow", which would match the text-overflow property on this very line.
-    pattern: "text-overflow\\s*:\\s*ellipsis",
+    pattern: "^(?!.*enigma:).*text-overflow\\s*:\\s*ellipsis",
     // Only things that actually PROVIDE the missing overflow value. Tailwind's `truncate`
     // does (it sets overflow-hidden); `text-ellipsis` does not - it is the ellipsis
     // declaration itself, so listing it would suppress the very case being flagged.
-    absent: "overflow(?:-x|-y)?\\s*:\\s*(?:hidden|clip|auto|scroll)|overflow-hidden|overflow-clip|\\btruncate\\b",
-    message: "text-overflow: ellipsis has no effect without an overflow value other than visible - the text overflows instead of being clipped. Add overflow: hidden (with white-space: nowrap for a single line), and keep the full value reachable via title or a tooltip (frontend-policy).",
-    severity: "warn",
+    absent: "overflow(?:-x|-y)?\\s*:\\s*(?:hidden|clip|auto|scroll)|overflow-hidden|overflow-clip|\\btruncate\\b|enigma:allow-inert-ellipsis",
+    message: "text-overflow: ellipsis has no effect without an overflow value other than visible - the text overflows instead of being clipped. Add overflow: hidden (with white-space: nowrap for a single line), and keep the full value reachable via title or a tooltip (frontend-policy). Mark the line `enigma:` or add `enigma:allow-inert-ellipsis` to the file when the overflow value is set from another file (a shared utility class, an inherited base rule).",
+    // BLOCK, and the reason is the fe-skeleton-loading lesson rather than the severity of the
+    // defect: a warn exits 0, so runGuardrailsHook prints it where the model never reads it,
+    // and the only channel that does carry a warning - the turn-end sweep - lets it ride
+    // along in the message without deciding the exit code. So the one gate for a defect the
+    // model keeps writing could report it but never require the fix. Affordable here, and
+    // this is the half that had to be measured, because there is no legacy backlog: measured
+    // with this rule over 10253 UI files of the whole local corpus (this repo, apps, and every
+    // sibling product repo on the machine), 116 candidate lines in 40 files carry the
+    // declaration and NOT ONE of them is missing its overflow value. So it is a scaffolding
+    // guard like db-sqlite-app-datastore and sec-password-identity-match: it fires when an
+    // agent writes a new ellipsis, never on a project's existing stylesheets.
+    severity: "block",
     skill: "frontend-policy"
   },
   {
@@ -779,6 +805,13 @@ var BUILTIN_RULES = [
     // responses, so logging the real error is never flagged - only sending it out is.
     pattern: "\\.status\\(\\s*5\\d\\d\\s*\\)[^;]*\\b(err|error|e|ex|exception)\\.(message|stack)\\b|(res|reply|response)\\.(json|send|end)\\([^;]*\\b(err|error|e|ex|exception)\\.stack\\b",
     message: "Leaking an internal error to the client. Never send a caught exception's .message/.stack (or a raw ORM/DB error) in a 5xx response - it exposes your schema, ORM, and internals. Log it server-side (console.error / your logger) and return a generic message with a stable code (validation-policy, security-policy).",
+    // STAYS warn on the same measurement, and this is the uncomfortable one: 29 candidate
+    // lines produce 24 findings and every one is a real leak in a real backend, several of
+    // them in one product's route files. Severity here is not a judgement about how bad the
+    // defect is - it is whether the gate can block without firing on work nobody is doing
+    // today, and 24 pre-existing leaks in live route files means it cannot. The rule that
+    // would carry this is a DIFF-stage block (the fe-truncated-value-unreachable shape,
+    // which exists for exactly a defect that is the default in existing code).
     severity: "warn",
     skill: "validation-policy"
   },

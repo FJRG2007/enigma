@@ -39,7 +39,32 @@ test("flags an ellipsis that cannot take effect, and only that", () => {
     const f = checkFile("src/app.css", broken, null);
     expect(f.length).toBe(1);
     expect(f[0]!.ruleId).toBe("fe-ellipsis-without-overflow");
+    // BLOCK, not warn: a warn is reported and never required (the hook exits 0, the turn-end
+    // sweep carries it without denying the stop), which for a mechanical fix is the same as not
+    // gating it - the fe-skeleton-loading lesson. Pinned because the rule shipped as a warn.
+    expect(f[0]!.severity).toBe("block");
     expect(checkFile("src/app.css", fixed, null)).toEqual([]);
+});
+
+test("lets an ellipsis whose overflow lives elsewhere out through either escape hatch", () => {
+    const line = ".name { text-overflow: ellipsis; white-space: nowrap; }";
+    expect(checkFile("src/app.css", `${line} /* enigma: overflow set by .clip */`, null)).toEqual([]);
+    expect(checkFile("src/app.css", `/* enigma:allow-inert-ellipsis */\n${line}`, null)).toEqual([]);
+});
+
+test("blocks a bare password input, and clears on a toggle or either escape hatch", () => {
+    const bare = '<input type="password" value={pw} />';
+    const f = checkFile("src/PasswordField.tsx", bare, null);
+    expect(f.length).toBe(1);
+    expect(f[0]!.ruleId).toBe("fe-password-input");
+    // Same flip and the same reason as the ellipsis rule above: as a warn, the one gate for a
+    // convention the kernel states as non-negotiable could report it but never require it.
+    expect(f[0]!.severity).toBe("block");
+    expect(checkFile("src/PasswordField.tsx", `const [showPassword, setShowPassword] = useState(false);\n${bare}`, null)).toEqual([]);
+    expect(checkFile("src/PasswordField.tsx", `${bare} {/* enigma: bare on purpose */}`, null)).toEqual([]);
+    expect(checkFile("src/PasswordField.tsx", `// enigma:allow-raw-password-input\n${bare}`, null)).toEqual([]);
+    // A capitalized component owns its own toggle: still never matched (flags: "" keeps it case-sensitive).
+    expect(checkFile("src/PasswordField.tsx", '<Input type="password" value={pw} />', null)).toEqual([]);
 });
 
 test("flags every explicit auto-increment identity signal", () => {
