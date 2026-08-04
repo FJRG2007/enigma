@@ -1629,13 +1629,19 @@ const ALLOW_CLIPPED_VALUE = /enigma:allow-clipped-value/;
  * dialects alone, since the lookahead applies to all of them - the number of lines the PRE-exclusion
  * child pattern would have flagged and the current one does not is 0. WHAT THAT ZERO ESTABLISHES IS
  * NARROW: the exclusion suppressed nothing the rule was already reporting anywhere in the corpus,
- * so it is not silently hiding findings elsewhere. It does not show the shape is rare, because only
- * Astro and Svelte can spell it - Vue interpolates with `{{ }}` and branches with `v-if`, and plain
- * HTML has no brace syntax at all, so neither can produce `>{#`, `>{/`, `>{:` or `>{@` however many
- * lines they clip. The corpus holds 55 .astro and 3 .svelte files, too thin in exactly the two
- * dialects that can spell it for the zero to prove more, which is why the false positive had to be
- * found by PROBING and not by counting. BOTH false positives here removed zero corpus findings -
- * the same evidence twice that a corpus measures VOLUME and cannot validate correctness.
+ * so it is not silently hiding findings elsewhere. WHAT IT SAYS ABOUT FREQUENCY SPLITS THE FOUR
+ * SIGILS IN TWO. `#`, `:` and `@` are Astro/Svelte-only - Vue interpolates with `{{ }}` and
+ * branches with `v-if`, plain HTML has no brace syntax at all, so neither can write `>{#`, `>{:`
+ * or `>{@` however many lines they clip - and the corpus holds 55 .astro and 3 .svelte files, too
+ * thin in exactly the dialects that can spell those three for the zero to say how often they
+ * occur. `/` is not in that position: a JSX COMMENT child opens `>{/*`, which the PRE-exclusion
+ * pattern flagged and the lookahead now drops, and there the corpus is not thin at all - 7202 .tsx
+ * files, 2998 of them carrying a clip-declaring line. A corpus-wide zero across that IS a result
+ * for this sigil: not one line in the dialect that dominates the corpus changed verdict. A comment
+ * is no more a value than a control block, so dropping it is the same lookahead doing the same job
+ * one dialect over. The thin half is why the `{#if}` shape had to be found by PROBING and not by
+ * counting, and BOTH false positives here removed zero corpus findings - the same evidence twice
+ * that a corpus measures VOLUME and cannot validate correctness.
  */
 export function truncatedValueUnreachable(content: string): { line: number; detail: string; }[] {
     const lines = content.split("\n");
