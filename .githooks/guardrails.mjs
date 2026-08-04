@@ -614,8 +614,9 @@ var BUILTIN_RULES = [
     // it flagged correct code and was deleted. Clipping is different: the element that clips is
     // the element that hides the value, so the question "can the user still read it?" is answered
     // by that element and its immediate wrapper, and nothing else.
-    // DIFF stage, and not optional: this is what most real code does (four figures of them in
-    // the measured corpus), so an edit-stage rule would report a project's rows forever.
+    // DIFF stage, and not optional: nearly half of every line that clips is one of these (1490
+    // of 3489 in the measured corpus), so an edit-stage rule would report a project's rows
+    // forever.
     stage: "diff",
     fileCheck: "fe-truncated-value-unreachable",
     message: 'This clips a value the user cannot recover: the text is ellipsised and the full string appears nowhere. A name, email, path or title is exactly the value someone needs in full, and the sample used while building is always short enough to hide the problem. Where the design system has a tooltip, wrap the element in it - that is the better answer. Otherwise give the clipping element a `title` attribute carrying the same value, written in this file\'s own binding syntax (`title={value}` in JSX, `:title="value"` in Vue, `title={value}` in Svelte, `title="..."` in plain HTML) - and where the value must be readable at a glance rather than on hover, let it wrap instead of clipping. Mark the line `enigma:allow-clipped-value` when the full value is already shown elsewhere on the screen (frontend-policy).',

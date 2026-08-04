@@ -941,7 +941,8 @@ test("a clipped value must keep its full text reachable, and the fixer supplies 
     expect(found.length).toBe(1);
     expect(found[0]!.ruleId).toBe("fe-truncated-value-unreachable");
     expect(found[0]!.severity).toBe("block");
-    // This is what most real code does, so the edit stage would report a project's rows forever.
+    // Nearly half of every line that clips is one of these, so the edit stage would report a
+    // project's rows forever.
     expect(checkFile("src/Row.tsx", clipped, null)).toEqual([]);
     expect(FIXERS["fe-truncated-value-unreachable"]!(clipped, "src/Row.tsx"))
         .toBe("<span className=\"truncate\" title={user.name}>{user.name}</span>");

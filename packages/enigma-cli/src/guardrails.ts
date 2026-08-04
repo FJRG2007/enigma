@@ -648,8 +648,9 @@ export const BUILTIN_RULES: GuardrailRule[] = [
         // it flagged correct code and was deleted. Clipping is different: the element that clips is
         // the element that hides the value, so the question "can the user still read it?" is answered
         // by that element and its immediate wrapper, and nothing else.
-        // DIFF stage, and not optional: this is what most real code does (four figures of them in
-        // the measured corpus), so an edit-stage rule would report a project's rows forever.
+        // DIFF stage, and not optional: nearly half of every line that clips is one of these (1490
+        // of 3489 in the measured corpus), so an edit-stage rule would report a project's rows
+        // forever.
         stage: "diff",
         fileCheck: "fe-truncated-value-unreachable",
         message: "This clips a value the user cannot recover: the text is ellipsised and the full string appears nowhere. A name, email, path or title is exactly the value someone needs in full, and the sample used while building is always short enough to hide the problem. Where the design system has a tooltip, wrap the element in it - that is the better answer. Otherwise give the clipping element a `title` attribute carrying the same value, written in this file's own binding syntax (`title={value}` in JSX, `:title=\"value\"` in Vue, `title={value}` in Svelte, `title=\"...\"` in plain HTML) - and where the value must be readable at a glance rather than on hover, let it wrap instead of clipping. Mark the line `enigma:allow-clipped-value` when the full value is already shown elsewhere on the screen (frontend-policy).",
@@ -1601,12 +1602,19 @@ const ALLOW_CLIPPED_VALUE = /enigma:allow-clipped-value/;
  * still read it is decided by that element and the wrapper immediately above it.
  *
  * MEASURED with the rule itself over 9370 UI files of 15 real product repositories (the rule's own
- * excludeFiles applied, every extension it scans): 1490 findings, of which the fixer below repairs
- * 1208 - 81%, so most of it never costs the model a token - and 282 reach it. That order of
- * magnitude is what puts the rule at the diff stage: it is a backlog, not an anomaly. Every finding
- * is in .tsx (1444) or .vue (46), which is the check that the sigil exclusion below hid no real
- * one. Remember what the arrow-function false positive taught before trusting a number here: a
- * corpus measures VOLUME, not correctness, and is no substitute for probing what an agent writes.
+ * excludeFiles applied, every extension it scans - 7494 .tsx, 1490 .vue, 325 .html, 55 .astro, 3
+ * .jsx, 3 .svelte): 3489 lines declare a single-line clip and 1490 of them (43%) hide a dynamic
+ * value with the full string reachable nowhere. Nearly half of every line that clips is what puts
+ * the rule at the diff stage - it is a backlog, not an anomaly, and an edit-stage rule would report
+ * those 1490 pre-existing lines on any unrelated edit to their files. The fixer below repairs 1208
+ * of them - 81%, so most of it never costs the model a token - and 282 reach it. The findings land
+ * in .tsx (1444) and .vue (46), but the figure that tells the sigil exclusion below apart from
+ * silencing three dialects is the DIFFERENTIAL one, since a post-exclusion zero is what silencing
+ * them would also produce: the number of template-dialect lines the PRE-exclusion child pattern
+ * would have flagged and the post-exclusion one does not is 0. With 3 .svelte files the corpus can
+ * say nothing about Svelte either way, which is why that false positive had to be probed for. BOTH
+ * false positives here removed zero corpus findings - the same evidence twice that a corpus
+ * measures VOLUME and cannot validate correctness.
  */
 export function truncatedValueUnreachable(content: string): { line: number; detail: string; }[] {
     const lines = content.split("\n");
