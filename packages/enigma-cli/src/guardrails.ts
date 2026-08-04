@@ -1601,20 +1601,23 @@ const ALLOW_CLIPPED_VALUE = /enigma:allow-clipped-value/;
  * different. The element that clips is the element that hides the value, so whether the user can
  * still read it is decided by that element and the wrapper immediately above it.
  *
- * MEASURED with the rule itself, every figure below taken in ONE run, at ONE width, over ONE file
- * set: 9074 UI files of 15 real product repositories, the rule's own excludeFiles applied so test
- * and spec files are out, every extension it scans - 7202 .tsx, 1490 .vue, 321 .html, 55 .astro, 3
- * .jsx, 3 .svelte. 3474 lines match the clip pattern (2998 .tsx, 460 .vue, 10 .html, 6 .astro).
- * 1699 of those clip a DYNAMIC value (1649 .tsx, 49 .vue, 1 .html); the other 1775 render no value
- * at all - the identifier `truncate` itself, its call sites, static copy and CSS. 1490 of the 1699
- * - 88% - carry the full string nowhere (1444 .tsx, 46 .vue).
+ * MEASURED with the rule itself, every figure below taken in ONE run over ONE file set: 9074 UI
+ * files of 15 real product repositories, the rule's own excludeFiles applied so test and spec files
+ * are out, every extension it scans - 7202 .tsx, 1490 .vue, 321 .html, 55 .astro, 3 .jsx, 3
+ * .svelte, 0 .htm. At the CLIP-PATTERN width 3474 lines match (2998 .tsx, 460 .vue, 10 .html, 6
+ * .astro). At the DYNAMIC-VALUE width 1699 of those clip a value (1649 .tsx, 49 .vue, 1 .html); the
+ * other 1775 render no value at all - the identifier `truncate` itself, its call sites, static copy
+ * and CSS. 1490 of the 1699 - 88% - carry the full string nowhere (1444 .tsx, 46 .vue).
  *
- * THE DENOMINATOR IS MEASURED THROUGH DYNAMIC_CHILD, and so are the file count and every
- * per-extension split: CLIP_ONE_LINE alone matches those 1775 valueless lines, which the numerator
- * excludes by design, so counting them in mixes two widths and understates the ratio (43% instead
- * of 88%) - and a breakdown carried over from another run, another width, or the raw walk before
- * excludeFiles will not reconcile with the totals beside it. Two sums that catch exactly that:
- * 1699 + 1775 = 3474, and each per-extension split adds up to its own total.
+ * EVERY FIGURE COMES FROM ONE RUN OVER ONE FILE SET AND STATES THE WIDTH IT WAS TAKEN AT, because
+ * mixing the two widths is the specific slip to guard against. Both halves of the 88% are measured
+ * through DYNAMIC_CHILD; the file count comes from the rule's own files/excludeFiles globs, and a
+ * per-extension split carries the width of the total it belongs to. CLIP_ONE_LINE alone also
+ * matches those 1775 valueless lines, which the numerator excludes by design, so a denominator
+ * counted at that width understates the ratio (43% instead of 88%) - and a breakdown carried over
+ * from another run, another width, or the raw walk before excludeFiles will not reconcile with the
+ * totals beside it. Two sums that catch exactly that: 1699 + 1775 = 3474, and each per-extension
+ * split adds up to its own total.
  *
  * At 88% a clipped value hiding its own text is the DEFAULT in real code rather than an occasional
  * slip, which is what puts the rule at the diff stage - an edit-stage rule would report those 1490
@@ -1624,12 +1627,15 @@ const ALLOW_CLIPPED_VALUE = /enigma:allow-clipped-value/;
  * silencing three dialects is the DIFFERENTIAL one, since a post-exclusion zero is what silencing
  * them would also produce: measured CORPUS-WIDE - every extension the rule scans, not the three
  * dialects alone, since the lookahead applies to all of them - the number of lines the PRE-exclusion
- * child pattern would have flagged and the current one does not is 0. Those dialects are
- * represented and do clip (460 of the clip-declaring lines are .vue, 10 .html, 6 .astro), which is
- * what keeps that zero from being vacuous. With 3 .svelte files the corpus can say nothing about
- * Svelte either way, which is why that false positive had to be probed for. BOTH false positives
- * here removed zero corpus findings - the same evidence twice that a corpus measures VOLUME and
- * cannot validate correctness.
+ * child pattern would have flagged and the current one does not is 0. WHAT THAT ZERO ESTABLISHES IS
+ * NARROW: the exclusion suppressed nothing the rule was already reporting anywhere in the corpus,
+ * so it is not silently hiding findings elsewhere. It does not show the shape is rare, because only
+ * Astro and Svelte can spell it - Vue interpolates with `{{ }}` and branches with `v-if`, and plain
+ * HTML has no brace syntax at all, so neither can produce `>{#`, `>{/`, `>{:` or `>{@` however many
+ * lines they clip. The corpus holds 55 .astro and 3 .svelte files, too thin in exactly the two
+ * dialects that can spell it for the zero to prove more, which is why the false positive had to be
+ * found by PROBING and not by counting. BOTH false positives here removed zero corpus findings -
+ * the same evidence twice that a corpus measures VOLUME and cannot validate correctness.
  */
 export function truncatedValueUnreachable(content: string): { line: number; detail: string; }[] {
     const lines = content.split("\n");
