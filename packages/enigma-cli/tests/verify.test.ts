@@ -697,6 +697,32 @@ test("a broken convention denies the stop even when the turn claims nothing", ()
     expect(runVerifyHook(payload(dir, "Added the delete action.", { session_id: "conv-2" }))).toBe(0);
 });
 
+test("the sweep repairs what code can repair, and only on the lines the change added", () => {
+    // A violation a fixer clears costs the model nothing, which is the whole point of having them -
+    // but the sweep reads WHOLE files, so repairing a pre-existing line would rewrite code the agent
+    // never wrote and put it in the user's diff.
+    const legacy = '<span className="truncate">{user.email}</span>\n';
+    const dir = repoWith({ "src/Legacy.tsx": legacy });
+    write(dir, "src/Row.tsx", '<span className="truncate">{user.name}</span>\n');
+    const scan = scanConventions(dir);
+    expect(scan.gaps).toEqual([]); // repaired, so nothing is reported
+    expect(readFileSync(join(dir, "src/Row.tsx"), "utf8")).toContain("title={user.name}");
+    // The committed file broke the same rule on a line this change did not add: untouched.
+    expect(readFileSync(join(dir, "src/Legacy.tsx"), "utf8")).toBe(legacy);
+    expect(readLedger().some((e) => e.rule === "fe-truncated-value-unreachable" && e.outcome === "fixed")).toBe(true);
+});
+
+test("a clipped value the fixer declines still reaches the model", () => {
+    // 19% of the measured corpus: a fallback expression, a call, a component that may not forward
+    // the attribute. Declining is safe; guessing is not, so those fall back to the block.
+    const dir = repoWith();
+    write(dir, "src/Row.tsx", '<span className="truncate">{user.name ?? "Unknown"}</span>\n');
+    const scan = scanConventions(dir);
+    expect(scan.gaps.length).toBe(1);
+    expect(scan.gaps[0]!.detail).toContain("fe-truncated-value-unreachable");
+    expect(readFileSync(join(dir, "src/Row.tsx"), "utf8")).not.toContain("title=");
+});
+
 test("the convention sweep stands aside when guardrails are off for the project", () => {
     const dir = repoWith();
     write(dir, "src/New.tsx", SERVER_FIRST);

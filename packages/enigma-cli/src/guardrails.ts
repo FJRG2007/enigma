@@ -610,7 +610,14 @@ export const BUILTIN_RULES: GuardrailRule[] = [
     // the rule only ever flagged correct code. The real defect is an ANCESTOR flex/grid item with
     // visible overflow wrapping the truncating element, which spans two elements and so has no
     // single-line signature. It stays in frontend-policy as guidance rather than becoming a rule
-    // that cries wolf.
+    // that cries wolf. Three neighbours of it were measured over 9072 UI files and rejected for the
+    // same reason - whether a value is BOUNDED is not in the line: `whitespace-nowrap` on a dynamic
+    // value with no clipping (91 hits, and the majority are correct - dates, amounts, durations and
+    // short type labels are exactly what nowrap is for), a fixed-width box holding an unclipped
+    // value (207, same), and a translated string inside a hard box (10 candidates, about half of
+    // them `sr-only` spans or an input placeholder where visual width does not apply). What IS
+    // gateable is the CLIPPING half, below: the element that clips is the element that hides the
+    // value, so it alone decides whether the user can still read it.
     {
         id: "fe-ellipsis-without-overflow",
         label: "Ellipsis needs overflow hidden",
@@ -628,6 +635,25 @@ export const BUILTIN_RULES: GuardrailRule[] = [
         absent: "overflow(?:-x|-y)?\\s*:\\s*(?:hidden|clip|auto|scroll)|overflow-hidden|overflow-clip|\\btruncate\\b",
         message: "text-overflow: ellipsis has no effect without an overflow value other than visible - the text overflows instead of being clipped. Add overflow: hidden (with white-space: nowrap for a single line), and keep the full value reachable via title or a tooltip (frontend-policy).",
         severity: "warn",
+        skill: "frontend-policy",
+    },
+    {
+        id: "fe-truncated-value-unreachable",
+        label: "A clipped value keeps its full text reachable",
+        files: ["*.tsx", "*.jsx", "*.vue", "*.svelte", "*.astro", "*.html", "*.htm"],
+        excludeFiles: ["*.test.*", "*.spec.*", "**/tests/**", "**/__tests__/**", "**/dist/**", "dist/**", "**/build/**", "build/**", "**/.next/**", ".next/**", "**/node_modules/**"],
+        scope: "file",
+        // The half of variable-length text that HAS a signature. text-overflow.md records why the
+        // layout half does not - the defect spans an ancestor and its child, and a rule written for
+        // it flagged correct code and was deleted. Clipping is different: the element that clips is
+        // the element that hides the value, so the question "can the user still read it?" is answered
+        // by that element and its immediate wrapper, and nothing else.
+        // DIFF stage, and not optional: 1422 of these live in the measured corpus. It is what most
+        // real code does, so an edit-stage rule would report a project's existing rows forever.
+        stage: "diff",
+        fileCheck: "fe-truncated-value-unreachable",
+        message: "This clips a value the user cannot recover: the text is ellipsised and the full string appears nowhere. A name, email, path or title is exactly the value someone needs in full, and the sample used while building is always short enough to hide the problem. Add `title={<the same value>}` to the clipping element, or wrap it in the design system's tooltip where one exists - and where the value must be readable at a glance rather than on hover, let it wrap instead of clipping. Mark the line `enigma:allow-clipped-value` when the full value is already shown elsewhere on the screen (frontend-policy).",
+        severity: "block",
         skill: "frontend-policy",
     },
     {
@@ -1104,6 +1130,7 @@ export const FILE_CHECKS: Record<string, (content: string, file: string) => { li
     "fe-server-first-mutation": (content) => serverFirstMutation(content),
     "fe-textarea-size-bounds": (content) => textareaSizeBounds(content),
     "fe-view-blanked-while-loading": (content) => viewBlankedWhileLoading(content),
+    "fe-truncated-value-unreachable": (content) => truncatedValueUnreachable(content),
     "fe-page-await-no-boundary": (content, file) => pageAwaitWithoutBoundary(content, file),
     "ts-import-extension": (content, file) => extensionImports(content, file),
     "ts-alias-deep-relative": (content, file) => deepRelativeImports(content, file),
@@ -1136,14 +1163,33 @@ export const FIXERS: Record<string, (line: string, file: string) => string | nul
         // about where the tag ENDS (it may well end several lines further down).
         return line.replace(/<input\b/i, `<input ${attr}`);
     },
+    "fe-truncated-value-unreachable": (line, file) => {
+        if (!/\.[jt]sx$/i.test(file)) return null; // the JSX attribute form only
+        if (/title\s*=/.test(line)) return null;
+        const tags = line.match(/<[a-z][a-z0-9]*\b/g);
+        if (!tags || tags.length !== 1) return null; // two elements on one line: which one is ambiguous
+        const match = CLIPPED_SIMPLE_VALUE.exec(line);
+        if (!match) return null;
+        const [, tag, attrs, expr] = match;
+        // The clip must be on THIS element. A neighbour's `truncate` in the same line would
+        // otherwise put the title on the wrong box.
+        if (!CLIP_ONE_LINE.test(attrs!) || NOT_TEXT_BINDING.test(expr!)) return null;
+        return line.replace(`<${tag}${attrs}>`, `<${tag}${attrs} title={${expr}}>`);
+    },
 };
 
 /**
  * Apply every available fixer to a file's findings and re-check it. Returns what was fixed and
  * the findings that remain (re-derived from the file on disk, so a fixer that did not actually
  * clear its finding is reported rather than trusted).
+ *
+ * `stage` is what the re-check runs at, and it is why a DIFF-stage rule can carry a fixer at all:
+ * re-checking at the edit stage would drop every diff-stage finding from `remaining`, reporting a
+ * failed repair as a success. The caller decides which findings to hand over - the turn-end sweep
+ * passes only the ones sitting on lines the change ADDED, so a repair never rewrites code the
+ * agent did not just write.
  */
-export function applyFixes(file: string, findings: Finding[]): { fixed: Finding[]; remaining: Finding[]; } {
+export function applyFixes(file: string, findings: Finding[], stage: Stage = "edit"): { fixed: Finding[]; remaining: Finding[]; } {
     const fixable = findings.filter((f) => f.line && FIXERS[f.ruleId]);
     if (!fixable.length) return { fixed: [], remaining: findings };
     let content: string;
@@ -1162,7 +1208,7 @@ export function applyFixes(file: string, findings: Finding[]): { fixed: Finding[
     if (!fixed.length) return { fixed: [], remaining: findings };
     try { writeFileSync(file, lines.join("\n")); }
     catch { return { fixed: [], remaining: findings }; } // read-only file: report instead of fixing
-    return { fixed, remaining: checkPath(file) };
+    return { fixed, remaining: checkPath(file, stage) };
 }
 
 /** The child_process functions that start a process (and so can create a console window). */
@@ -1499,6 +1545,60 @@ export function viewBlankedWhileLoading(content: string): { line: number; detail
     }
     return out;
 }
+
+/**
+ * Single-line clipping, in the dialects a project writes it in. `line-clamp` is deliberately NOT
+ * here: a two-line clamp is body copy, and a tooltip on a paragraph is not the convention.
+ */
+const CLIP_ONE_LINE = /\btruncate\b|\btext-ellipsis\b|text-overflow\s*:\s*ellipsis/;
+
+/** A JSX/template child that is an expression: the element renders a value, not fixed copy. */
+const DYNAMIC_CHILD = />\s*\{/;
+
+/** Any way the full value stays reachable: the native tooltip, an accessible name, or a tooltip component. */
+const VALUE_REACHABLE = /\btitle\s*=|aria-label\s*=|<\s*Tooltip|TooltipTrigger|data-tooltip|hoverCard|HoverCard/i;
+
+/** How far above the clipping line a wrapper may carry the tooltip. */
+const WRAPPER_LOOKBACK = 4;
+
+/**
+ * Values clipped to an ellipsis with the full string reachable nowhere.
+ *
+ * This is the one slice of variable-length text with a file-local signature, and text-overflow.md
+ * records why the rest has none: the layout defect ("the name pushes the card open", "the button is
+ * squashed") is a RELATION between an ancestor's overflow and a child's, so a rule written for it
+ * flags correct markup - one was, and it was deleted after a browser measurement. Clipping is
+ * different. The element that clips is the element that hides the value, so whether the user can
+ * still read it is decided by that element and the wrapper immediately above it.
+ *
+ * MEASURED over 9072 UI files of real product repositories: 3790 lines declare a clip, 1422 clip a
+ * dynamic value with nothing carrying the full one. That is a backlog, not an anomaly, which is
+ * what puts the rule at the diff stage - and 84% of it is repaired by the fixer below, so most of
+ * it never costs the model a token.
+ */
+export function truncatedValueUnreachable(content: string): { line: number; detail: string; }[] {
+    const lines = content.split("\n");
+    const out: { line: number; detail: string; }[] = [];
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i]!;
+        if (COMMENT_LINE.test(line) || /enigma:/.test(line)) continue;
+        if (!CLIP_ONE_LINE.test(line) || !DYNAMIC_CHILD.test(line)) continue;
+        if (VALUE_REACHABLE.test(line)) continue;
+        // A Tooltip or a titled wrapper routinely sits a few lines above the element it describes.
+        if (lines.slice(Math.max(0, i - WRAPPER_LOOKBACK), i).some((l) => VALUE_REACHABLE.test(l))) continue;
+        out.push({ line: i + 1, detail: "the value is ellipsised here and its full text is carried by nothing on this element or its wrapper" });
+    }
+    return out;
+}
+
+/**
+ * A lowercase DOM element whose ENTIRE child is one member expression - the shape the fixer can
+ * copy into a `title`. Group 1 is the tag, reused as a backreference so the closing tag must match.
+ */
+const CLIPPED_SIMPLE_VALUE = /<([a-z][a-z0-9]*)\b([^<>]*)>\s*\{\s*([A-Za-z_$][\w$]*(?:\??\.[\w$]+)*)\s*\}\s*<\/\1>/;
+
+/** Bindings whose value is not text: `title={children}` renders [object Object]. */
+const NOT_TEXT_BINDING = /^(children|icon|node|element|content|component)$|\.(children|icon|node|element)$/i;
 
 /** An async server route component: the function whose await the router waits on. */
 const ASYNC_ROUTE = /export\s+default\s+async\s+function\b/;

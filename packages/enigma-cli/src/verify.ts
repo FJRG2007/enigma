@@ -52,7 +52,7 @@ import { lastAssistantMessage } from "./claude-transcripts";
 import { execFileSync, spawnSync } from "node:child_process";
 import { enigmaHome, readJson, isGateAgentRun } from "./util";
 import { gateLedgerReady, lastGateRun, validatingRun } from "./gate-ledger";
-import { checkFile, loadRules, recordFindings, type Finding } from "./guardrails";
+import { applyFixes, checkFile, loadRules, recordFindings, type Finding } from "./guardrails";
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, statSync, writeFileSync } from "node:fs";
 
 /** One piece of evidence that the work is not finished. */
@@ -913,6 +913,21 @@ export function scanConventions(cwd: string, scanned?: ScannedLines): Convention
         // must cost the sweep, never the turn.
         try { findings = checkFile(full, text, null, "diff", rules); }
         catch { continue; }
+        // Repair what code can repair, before anything is reported. A violation a fixer clears
+        // costs the model nothing - no message, no turn, no tokens - which is the whole point of
+        // having them. ONLY findings on lines this change ADDED are handed over: the sweep reads
+        // whole files, and repairing a pre-existing line would rewrite code the agent never wrote
+        // and put it in the user's diff. A fixer that declines or fails simply leaves the finding.
+        const onAdded = findings.filter((f) => f.line && numbers.has(f.line));
+        if (onAdded.length) {
+            try {
+                const { fixed, remaining } = applyFixes(full, onAdded, "diff");
+                if (fixed.length) {
+                    recordFindings(fixed.map((f) => ({ ...f, file })), "fixed", "diff");
+                    findings = remaining;
+                }
+            } catch { /* a read-only file or a racing edit: report instead of repairing */ }
+        }
         for (const f of findings) {
             if (!f.line || !numbers.has(f.line)) continue;
             const gap: VerifyGap = { kind: "convention", file, line: f.line, detail: `${f.ruleId}: ${f.message}` };

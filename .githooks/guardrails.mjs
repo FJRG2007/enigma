@@ -576,7 +576,14 @@ var BUILTIN_RULES = [
   // the rule only ever flagged correct code. The real defect is an ANCESTOR flex/grid item with
   // visible overflow wrapping the truncating element, which spans two elements and so has no
   // single-line signature. It stays in frontend-policy as guidance rather than becoming a rule
-  // that cries wolf.
+  // that cries wolf. Three neighbours of it were measured over 9072 UI files and rejected for the
+  // same reason - whether a value is BOUNDED is not in the line: `whitespace-nowrap` on a dynamic
+  // value with no clipping (91 hits, and the majority are correct - dates, amounts, durations and
+  // short type labels are exactly what nowrap is for), a fixed-width box holding an unclipped
+  // value (207, same), and a translated string inside a hard box (10 candidates, about half of
+  // them `sr-only` spans or an input placeholder where visual width does not apply). What IS
+  // gateable is the CLIPPING half, below: the element that clips is the element that hides the
+  // value, so it alone decides whether the user can still read it.
   {
     id: "fe-ellipsis-without-overflow",
     label: "Ellipsis needs overflow hidden",
@@ -594,6 +601,25 @@ var BUILTIN_RULES = [
     absent: "overflow(?:-x|-y)?\\s*:\\s*(?:hidden|clip|auto|scroll)|overflow-hidden|overflow-clip|\\btruncate\\b",
     message: "text-overflow: ellipsis has no effect without an overflow value other than visible - the text overflows instead of being clipped. Add overflow: hidden (with white-space: nowrap for a single line), and keep the full value reachable via title or a tooltip (frontend-policy).",
     severity: "warn",
+    skill: "frontend-policy"
+  },
+  {
+    id: "fe-truncated-value-unreachable",
+    label: "A clipped value keeps its full text reachable",
+    files: ["*.tsx", "*.jsx", "*.vue", "*.svelte", "*.astro", "*.html", "*.htm"],
+    excludeFiles: ["*.test.*", "*.spec.*", "**/tests/**", "**/__tests__/**", "**/dist/**", "dist/**", "**/build/**", "build/**", "**/.next/**", ".next/**", "**/node_modules/**"],
+    scope: "file",
+    // The half of variable-length text that HAS a signature. text-overflow.md records why the
+    // layout half does not - the defect spans an ancestor and its child, and a rule written for
+    // it flagged correct code and was deleted. Clipping is different: the element that clips is
+    // the element that hides the value, so the question "can the user still read it?" is answered
+    // by that element and its immediate wrapper, and nothing else.
+    // DIFF stage, and not optional: 1422 of these live in the measured corpus. It is what most
+    // real code does, so an edit-stage rule would report a project's existing rows forever.
+    stage: "diff",
+    fileCheck: "fe-truncated-value-unreachable",
+    message: "This clips a value the user cannot recover: the text is ellipsised and the full string appears nowhere. A name, email, path or title is exactly the value someone needs in full, and the sample used while building is always short enough to hide the problem. Add `title={<the same value>}` to the clipping element, or wrap it in the design system's tooltip where one exists - and where the value must be readable at a glance rather than on hover, let it wrap instead of clipping. Mark the line `enigma:allow-clipped-value` when the full value is already shown elsewhere on the screen (frontend-policy).",
+    severity: "block",
     skill: "frontend-policy"
   },
   {
@@ -1283,6 +1309,7 @@ var FILE_CHECKS = {
   "fe-server-first-mutation": (content) => serverFirstMutation(content),
   "fe-textarea-size-bounds": (content) => textareaSizeBounds(content),
   "fe-view-blanked-while-loading": (content) => viewBlankedWhileLoading(content),
+  "fe-truncated-value-unreachable": (content) => truncatedValueUnreachable(content),
   "fe-page-await-no-boundary": (content, file) => pageAwaitWithoutBoundary(content, file),
   "ts-import-extension": (content, file) => extensionImports(content, file),
   "ts-alias-deep-relative": (content, file) => deepRelativeImports(content, file),
@@ -1295,9 +1322,20 @@ var FIXERS = {
     if (!tags || tags.length !== 1) return null;
     const attr = /\.[jt]sx$/i.test(file) ? 'autoCapitalize="words"' : 'autocapitalize="words"';
     return line.replace(/<input\b/i, `<input ${attr}`);
+  },
+  "fe-truncated-value-unreachable": (line, file) => {
+    if (!/\.[jt]sx$/i.test(file)) return null;
+    if (/title\s*=/.test(line)) return null;
+    const tags = line.match(/<[a-z][a-z0-9]*\b/g);
+    if (!tags || tags.length !== 1) return null;
+    const match = CLIPPED_SIMPLE_VALUE.exec(line);
+    if (!match) return null;
+    const [, tag, attrs, expr] = match;
+    if (!CLIP_ONE_LINE.test(attrs) || NOT_TEXT_BINDING.test(expr)) return null;
+    return line.replace(`<${tag}${attrs}>`, `<${tag}${attrs} title={${expr}}>`);
   }
 };
-function applyFixes(file, findings) {
+function applyFixes(file, findings, stage = "edit") {
   const fixable = findings.filter((f) => f.line && FIXERS[f.ruleId]);
   if (!fixable.length) return { fixed: [], remaining: findings };
   let content;
@@ -1323,7 +1361,7 @@ function applyFixes(file, findings) {
   } catch {
     return { fixed: [], remaining: findings };
   }
-  return { fixed, remaining: checkPath(file) };
+  return { fixed, remaining: checkPath(file, stage) };
 }
 var SPAWNERS = /* @__PURE__ */ new Set(["spawn", "spawnSync", "exec", "execSync", "execFile", "execFileSync"]);
 function spawnerBindings(content) {
@@ -1485,6 +1523,25 @@ function viewBlankedWhileLoading(content) {
   }
   return out;
 }
+var CLIP_ONE_LINE = /\btruncate\b|\btext-ellipsis\b|text-overflow\s*:\s*ellipsis/;
+var DYNAMIC_CHILD = />\s*\{/;
+var VALUE_REACHABLE = /\btitle\s*=|aria-label\s*=|<\s*Tooltip|TooltipTrigger|data-tooltip|hoverCard|HoverCard/i;
+var WRAPPER_LOOKBACK = 4;
+function truncatedValueUnreachable(content) {
+  const lines = content.split("\n");
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (COMMENT_LINE.test(line) || /enigma:/.test(line)) continue;
+    if (!CLIP_ONE_LINE.test(line) || !DYNAMIC_CHILD.test(line)) continue;
+    if (VALUE_REACHABLE.test(line)) continue;
+    if (lines.slice(Math.max(0, i - WRAPPER_LOOKBACK), i).some((l) => VALUE_REACHABLE.test(l))) continue;
+    out.push({ line: i + 1, detail: "the value is ellipsised here and its full text is carried by nothing on this element or its wrapper" });
+  }
+  return out;
+}
+var CLIPPED_SIMPLE_VALUE = /<([a-z][a-z0-9]*)\b([^<>]*)>\s*\{\s*([A-Za-z_$][\w$]*(?:\??\.[\w$]+)*)\s*\}\s*<\/\1>/;
+var NOT_TEXT_BINDING = /^(children|icon|node|element|content|component)$|\.(children|icon|node|element)$/i;
 var ASYNC_ROUTE = /export\s+default\s+async\s+function\b/;
 var SERVER_DATA_AWAIT = /await\s+(prisma|db|supabase|drizzle|knex|mongoose)\b|await\s+[\w.]{1,40}\.(findMany|findUnique|findFirst|aggregate|groupBy|count|createQueryBuilder)\s*\(/;
 var STREAM_BOUNDARY = /<\s*Suspense\b/;
@@ -1944,6 +2001,7 @@ export {
   serverFirstMutation,
   summarizeLedger,
   textareaSizeBounds,
+  truncatedValueUnreachable,
   viewBlankedWhileLoading,
   wideNamedImports
 };

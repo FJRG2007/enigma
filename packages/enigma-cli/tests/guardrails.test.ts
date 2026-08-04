@@ -15,7 +15,7 @@ process.env.HOME = HOME;
 const CONFIG = join(HOME, "guardrails.json");
 process.env.ENIGMA_GUARDRAILS_CONFIG = CONFIG;
 
-const { checkFile, checkPath, applyFixes, formatFindings, loadRules, findProjectRoot, recordFindings, readLedger, countLedger, summarizeLedger, BUILTIN_RULES } = await import("../src/guardrails");
+const { checkFile, checkPath, applyFixes, formatFindings, loadRules, findProjectRoot, recordFindings, readLedger, countLedger, summarizeLedger, BUILTIN_RULES, FIXERS } = await import("../src/guardrails");
 const { disableRule, enableRule, addRule, removeRule } = await import("../src/guardrails-config");
 
 afterAll(() => rmSync(HOME, { recursive: true, force: true }));
@@ -932,6 +932,45 @@ test("the loading.tsx walk never leaves the project", () => {
     writeFileSync(join(project, "loading.tsx"), "export default () => <Skeleton />;");
     expect(checkPath(page, "diff")).toEqual([]);
     rmSync(outer, { recursive: true, force: true });
+});
+
+test("a clipped value must keep its full text reachable, and the fixer supplies it", () => {
+    const clipped = "<span className=\"truncate\">{user.name}</span>";
+    const found = checkFile("src/Row.tsx", clipped, null, "diff");
+    expect(found.length).toBe(1);
+    expect(found[0]!.ruleId).toBe("fe-truncated-value-unreachable");
+    expect(found[0]!.severity).toBe("block");
+    // 1422 of these live in the measured corpus, so the edit stage would report a project's rows forever.
+    expect(checkFile("src/Row.tsx", clipped, null)).toEqual([]);
+    expect(FIXERS["fe-truncated-value-unreachable"]!(clipped, "src/Row.tsx"))
+        .toBe("<span className=\"truncate\" title={user.name}>{user.name}</span>");
+    for (const markup of [
+        // The value is already reachable, in each of the ways it is written.
+        "<span className=\"truncate\" title={user.name}>{user.name}</span>",
+        "<span className=\"truncate\" aria-label={user.name}>{user.name}</span>",
+        "<Tooltip content={user.name}>\n    <span className=\"truncate\">{user.name}</span>\n</Tooltip>",
+        // Body copy clamped to two lines is not a tooltip case.
+        "<p className=\"line-clamp-2\">{post.body}</p>",
+        // Fixed copy is not a value that can run long in an unknown way.
+        "<span className=\"truncate\">Recent activity</span>",
+        // Explicitly allowed, because the full value is shown elsewhere on the screen.
+        "<span className=\"truncate\">{user.name}</span> {/* enigma:allow-clipped-value */}",
+    ]) expect(checkFile("src/Row.tsx", markup, null, "diff")).toEqual([]);
+});
+
+test("the clipped-value fixer declines everything it cannot copy safely", () => {
+    // Same contract as every fixer: one line in, one line out, and declining is always safe.
+    for (const line of [
+        "<dd className=\"truncate\">{children}</dd>",                              // not text: renders [object Object]
+        "<span className=\"truncate\">{host ?? \"Not recorded\"}</span>",          // copying `host` alone drops the fallback
+        "<p className=\"truncate\">{deploySubtitle(active, app)}</p>",             // a call may be costly or not a string
+        "<DialogTitle className=\"truncate\">{app.name}</DialogTitle>",            // may not forward the attribute
+        "<span className=\"truncate\">{a.name}</span><span>{b.name}</span>",       // which element is ambiguous
+        "<span className=\"flex-1\">{wrapper}</span> <em className=\"truncate\">x</em>", // the clip is on a neighbour
+    ]) expect(FIXERS["fe-truncated-value-unreachable"]!(line, "src/Row.tsx")).toBe(null);
+    // The JSX attribute form only: a .vue or .html file writes it differently, so the rule reports
+    // it and the model writes the fix.
+    expect(FIXERS["fe-truncated-value-unreachable"]!("<span class=\"truncate\">{name}</span>", "src/Row.vue")).toBe(null);
 });
 
 test("the optimistic signal is code, not a word that happens to appear", () => {
