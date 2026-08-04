@@ -1601,28 +1601,35 @@ const ALLOW_CLIPPED_VALUE = /enigma:allow-clipped-value/;
  * different. The element that clips is the element that hides the value, so whether the user can
  * still read it is decided by that element and the wrapper immediately above it.
  *
- * MEASURED with the rule itself over 9370 UI files of 15 real product repositories (the rule's own
- * excludeFiles applied, every extension it scans - 7494 .tsx, 1490 .vue, 325 .html, 55 .astro, 3
- * .jsx, 3 .svelte): 1699 lines clip a DYNAMIC value and 1490 of them - 88% - carry the full string
- * nowhere. BOTH HALVES ARE MEASURED THROUGH DYNAMIC_CHILD, and the denominator has to be:
- * CLIP_ONE_LINE alone also matches the identifier `truncate`, its call sites, static copy and CSS -
- * 1775 further lines with no dynamic child at all - which the numerator excludes by design, so
- * counting them in mixes two widths and understates the ratio (43% instead of 88%). At 88% a
- * clipped value hiding its own text is the DEFAULT in real code rather than an occasional slip,
- * which is what puts the rule at the diff stage - an edit-stage rule would report those 1490
+ * MEASURED with the rule itself, every figure below taken in ONE run, at ONE width, over ONE file
+ * set: 9074 UI files of 15 real product repositories, the rule's own excludeFiles applied so test
+ * and spec files are out, every extension it scans - 7202 .tsx, 1490 .vue, 321 .html, 55 .astro, 3
+ * .jsx, 3 .svelte. 3474 lines match the clip pattern (2998 .tsx, 460 .vue, 10 .html, 6 .astro).
+ * 1699 of those clip a DYNAMIC value (1649 .tsx, 49 .vue, 1 .html); the other 1775 render no value
+ * at all - the identifier `truncate` itself, its call sites, static copy and CSS. 1490 of the 1699
+ * - 88% - carry the full string nowhere (1444 .tsx, 46 .vue).
+ *
+ * THE DENOMINATOR IS MEASURED THROUGH DYNAMIC_CHILD, and so are the file count and every
+ * per-extension split: CLIP_ONE_LINE alone matches those 1775 valueless lines, which the numerator
+ * excludes by design, so counting them in mixes two widths and understates the ratio (43% instead
+ * of 88%) - and a breakdown carried over from another run, another width, or the raw walk before
+ * excludeFiles will not reconcile with the totals beside it. Two sums that catch exactly that:
+ * 1699 + 1775 = 3474, and each per-extension split adds up to its own total.
+ *
+ * At 88% a clipped value hiding its own text is the DEFAULT in real code rather than an occasional
+ * slip, which is what puts the rule at the diff stage - an edit-stage rule would report those 1490
  * pre-existing lines on any unrelated edit to their files - and what makes the FIXER rather than
  * the message the thing that pays for it: it repairs 1208 of them - 81%, so most of it never costs
- * the model a token - and 282 reach it. The findings land in .tsx (1444) and .vue (46), but the
- * figure that tells the sigil exclusion below apart from silencing three dialects is the
- * DIFFERENTIAL one, since a post-exclusion zero is what silencing them would also produce: measured
- * CORPUS-WIDE - every extension the rule scans, not the three dialects alone, since the lookahead
- * applies to all of them - the number of lines the PRE-exclusion child pattern would have flagged
- * and the current one does not is 0. Those dialects are represented and do clip (at the
- * CLIP_ONE_LINE width, 3013 clip-declaring lines in .tsx, 460 in .vue, 10 in .html, 6 in .astro),
- * which is what keeps that zero from being vacuous. With 3 .svelte files the corpus can say nothing
- * about Svelte either way, which is why that false positive had to be probed for. BOTH false
- * positives here removed zero corpus findings - the same evidence twice that a corpus measures
- * VOLUME and cannot validate correctness.
+ * the model a token - and 282 reach it. The figure that tells the sigil exclusion below apart from
+ * silencing three dialects is the DIFFERENTIAL one, since a post-exclusion zero is what silencing
+ * them would also produce: measured CORPUS-WIDE - every extension the rule scans, not the three
+ * dialects alone, since the lookahead applies to all of them - the number of lines the PRE-exclusion
+ * child pattern would have flagged and the current one does not is 0. Those dialects are
+ * represented and do clip (460 of the clip-declaring lines are .vue, 10 .html, 6 .astro), which is
+ * what keeps that zero from being vacuous. With 3 .svelte files the corpus can say nothing about
+ * Svelte either way, which is why that false positive had to be probed for. BOTH false positives
+ * here removed zero corpus findings - the same evidence twice that a corpus measures VOLUME and
+ * cannot validate correctness.
  */
 export function truncatedValueUnreachable(content: string): { line: number; detail: string; }[] {
     const lines = content.split("\n");
