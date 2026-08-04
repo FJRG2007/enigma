@@ -850,11 +850,48 @@ test("clears an address the repository already knows", () => {
     // The identity that made the base commit is vouched for by definition.
     coAuthored(dir, "test@example.com");
     expect(unsourcedTrailers(dir, transcript("add a co-author"))).toEqual([]);
-    // As is one the project recorded in .mailmap without it ever having committed.
+    // As is one the project recorded in .mailmap without it ever having committed. This case
+    // commits the mailmap in the SAME commit as the trailer, which is precisely the residual the
+    // committed-tree read does not close - it raises the bar to "written and committed", not to
+    // "the turn cannot vouch for itself", and it still passes for that reason.
     write(dir, ".mailmap", "Someone Else <known@example.org>\n");
     git(dir, "add", "-A");
     git(dir, "commit", "-qm", "chore: mailmap\n\nCo-authored-by: Someone Else <known@example.org>");
     expect(unsourcedTrailers(dir, transcript("add a co-author"))).toEqual([]);
+});
+
+test("the mailmap is read from the repository root, not from the session's directory", () => {
+    // `cwd` here is the Stop payload's, which the user freely sets to a monorepo package. Reading
+    // `join(cwd, ".mailmap")` found nothing there and denied the turn over an address the project
+    // had explicitly recorded - the direction this check must never fail in.
+    const dir = repoWith({ ".mailmap": "Someone Else <known@example.org>\n" });
+    mkdirSync(join(dir, "packages", "thing"), { recursive: true });
+    coAuthored(dir, "known@example.org");
+    expect(unsourcedTrailers(join(dir, "packages", "thing"), transcript("add a co-author"))).toEqual([]);
+});
+
+test("an uncommitted mailmap does not vouch for the address the turn invented", () => {
+    // Same self-vouching class as a tool result and as this hook's own feedback: the block message
+    // says to get the address from a source, and writing the invented person into the working
+    // tree's .mailmap reads like doing exactly that.
+    const dir = repoWith();
+    coAuthored(dir, "invented@example.org");
+    write(dir, ".mailmap", "Someone <invented@example.org>\n");
+    expect(unsourcedTrailers(dir, transcript("add the co-author")).length).toBe(1);
+});
+
+test("clears an address that committed on a branch HEAD cannot reach", () => {
+    // Alice pushes to main while this work sits off it: her address is in the repository, just not
+    // among HEAD's ancestors, and a HEAD-only walk read it as coming from nowhere.
+    const dir = repoWith();
+    const base = branchOf(dir);
+    git(dir, "checkout", "-qb", "alice");
+    write(dir, "hers.txt", "work");
+    git(dir, "add", "-A");
+    git(dir, "-c", "user.email=alice@example.org", "-c", "user.name=Alice", "commit", "-qm", "feat: alice's work");
+    git(dir, "checkout", "-q", base);
+    coAuthored(dir, "alice@example.org");
+    expect(unsourcedTrailers(dir, transcript("credit alice"))).toEqual([]);
 });
 
 test("the escape hatch and every unreadable source fail open", () => {

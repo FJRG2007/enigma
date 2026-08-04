@@ -46,7 +46,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { join, extname } from "node:path";
+import { join, extname, isAbsolute } from "node:path";
 import { readConfigAt, readGlobalConfig } from "./config";
 import { execFileSync, spawnSync } from "node:child_process";
 import { enigmaHome, readJson, isGateAgentRun } from "./util";
@@ -965,24 +965,72 @@ const CO_AUTHOR = /^[^\S\n]*co-authored-by[^\S\n]*:[^<\n]*<([^>\n\s]+)>/gim;
 /** Says the address was sourced somewhere this check cannot see. */
 const ALLOW_TRAILER = /enigma:allow-unsourced-trailer/i;
 
+/**
+ * Every mailmap git itself would consult, read FROM A COMMITTED TREE rather than the checkout.
+ * .mailmap is where a project records the addresses it knows about, including ones that have not
+ * committed yet, so it is a source in exactly the sense this check means - but WHERE it is read
+ * from decided two live defects.
+ *
+ * `HEAD:.mailmap` rather than `join(cwd, ".mailmap")`, because git resolves the file from the
+ * repository ROOT while `cwd` here is the Stop payload's - a directory the user freely sets to a
+ * subdirectory. In any session started inside a monorepo package the file was never found, so an
+ * address the project had explicitly recorded read as unsourced and denied the turn over a correct
+ * commit. Naming it as a path into a commit hands the resolution back to git, which is what every
+ * other source in `vouchedEmails` already does.
+ *
+ * A COMMITTED tree rather than the working one, because the block message tells the model to get
+ * the address from a source and writing the invented person into `.mailmap` reads like doing
+ * exactly that - the turn vouching for itself, the same class as a `tool_result` or this hook's
+ * own feedback. THE LIMIT, so this is not read as closed: the bar is now "the turn wrote AND
+ * COMMITTED it", not "the turn cannot vouch for itself" - an entry committed in the same commit as
+ * the trailer still clears the check. That is a real gain (the entry sits in reviewable history
+ * instead of an unreviewed working-tree edit), not a sealed hole.
+ *
+ * `mailmap.file` and `mailmap.blob` are the documented ways a project relocates the file, and
+ * ignoring them left those projects falsely blocked for the same reason. Git parses all of these
+ * additively and a union set does not care about their precedence.
+ */
+function mailmapTexts(cwd: string, config: Map<string, string>): string[] {
+    const out: string[] = [];
+    const root = gitTry(cwd, ["show", "HEAD:.mailmap"]);
+    if (root !== null) out.push(root);
+    const blob = config.get("mailmap.blob");
+    if (blob) { const text = gitTry(cwd, ["show", blob]); if (text !== null) out.push(text); }
+    const file = config.get("mailmap.file");
+    // The one working-tree read left, and it stays: git resolves a relative `mailmap.file` from the
+    // repository root, and a project that pointed the config at another path is otherwise blocked
+    // over an address it recorded on purpose. Repointing it takes a config write, not a file write.
+    if (file) {
+        try { out.push(readFileSync(isAbsolute(file) ? file : join(repoRootOf(cwd), file), "utf8")); }
+        catch { /* configured but missing is a no-op for git too */ }
+    }
+    return out;
+}
+
 /** Every address the repository itself can vouch for: its own history, its .mailmap, this identity. */
 function vouchedEmails(cwd: string): Set<string> | null {
-    // One walk of the branch, author and committer both. A failure is null rather than an empty
-    // set: an empty set would read as "the repository knows nobody", which is the exact wrong
-    // conclusion to block on.
-    const history = gitTry(cwd, ["log", "--format=%ae%n%ce", "-n", "20000"]);
+    // Every ref, author and committer both, in one walk. `--all` rather than HEAD's ancestry: a
+    // co-author who committed on another branch - main, while this work sat off it - has committed
+    // IN THIS REPOSITORY, which is all the rule asks, and reading only HEAD's ancestors denied the
+    // turn over an address the repository plainly holds. Same subprocess and same `-n` cap, so a
+    // large repository still pays a bounded cost. A failure is null rather than an empty set: an
+    // empty set would read as "the repository knows nobody", which is the exact wrong conclusion
+    // to block on.
+    const history = gitTry(cwd, ["log", "--all", "--format=%ae%n%ce", "-n", "20000"]);
     if (history === null) return null;
     const out = new Set(history.split("\n").map((s) => s.trim().toLowerCase()).filter(Boolean));
-    // .mailmap is where a project records the addresses it knows about, including ones that have
-    // not committed yet, so it is a source in exactly the sense this check means.
-    try { for (const m of readFileSync(join(cwd, ".mailmap"), "utf8").matchAll(/<([^>\s]+)>/g)) out.add(m[1]!.toLowerCase()); }
-    catch { /* no .mailmap is normal */ }
-    // `user.email` and nothing else: git has no `author.email`/`committer.email` config keys (the
-    // author and committer are overridden by GIT_AUTHOR_EMAIL/GIT_COMMITTER_EMAIL, which the log
-    // walk above already covers), so asking for them would be two subprocesses for a value that
-    // cannot exist.
-    const own = gitOut(cwd, ["config", "--get", "user.email"]).trim().toLowerCase();
+    // One read for every config key this check consults. `user.email` and nothing else for the
+    // identity: git has no `author.email`/`committer.email` keys (the author and committer are
+    // overridden by GIT_AUTHOR_EMAIL/GIT_COMMITTER_EMAIL, which the log walk above already covers),
+    // so asking for them would be a subprocess for a value that cannot exist.
+    const config = new Map<string, string>();
+    for (const line of gitOut(cwd, ["config", "--get-regexp", "^(user\\.email|mailmap\\.(file|blob))$"]).split("\n")) {
+        const at = line.indexOf(" ");
+        if (at > 0) config.set(line.slice(0, at).trim().toLowerCase(), line.slice(at + 1).trim());
+    }
+    const own = (config.get("user.email") || "").toLowerCase();
     if (own) out.add(own);
+    for (const text of mailmapTexts(cwd, config)) for (const m of text.matchAll(/<([^>\s]+)>/g)) out.add(m[1]!.toLowerCase());
     return out;
 }
 
@@ -1059,6 +1107,13 @@ export function unsourcedTrailers(cwd: string, transcriptPath: string): VerifyGa
  * The message fed back when a commit carries an identity that came from nowhere. It names the
  * ways to SOURCE the value rather than telling the model to remove the trailer, because the
  * co-author is usually real and only the address was invented.
+ *
+ * The routes are separated by what they can actually do here, which the first wording blurred: the
+ * user's own words and the repository's history CLEAR the check, while `gh api` cannot by
+ * construction - its answer arrives as a tool result, which `userTyped` deliberately ignores, and a
+ * freshly looked-up address is by definition not in `%ae`/`%ce` or `.mailmap` yet. So the lookup
+ * and the escape hatch are named in the same breath. An agent that does precisely the right thing
+ * must not spend both of its available blocks discovering that the right thing is not enough.
  */
 function sourceMessage(gaps: VerifyGap[]): string {
     return [
@@ -1066,8 +1121,9 @@ function sourceMessage(gaps: VerifyGap[]): string {
         "",
         formatGaps(gaps),
         "",
-        "A username is not an email, and a plausible address is worse than none: it is wrong in a way that looks right, it enters history permanently, and it credits nobody or the wrong person. Get it from a source - what the user told you, this repository's own history for that person (`git log --author=\"<name>\" --format=\"%an <%ae>\" | sort -u`), or `gh api users/<login> --jq '.id, .login, .email'` - and if none of those has it, ASK. One question costs a turn; a wrong trailer costs a rewrite of history.",
-        "Amend the commit with the sourced address, or drop the trailer and say you need the address. If you did source it somewhere this check cannot see, put `enigma:allow-unsourced-trailer` in the commit message and say in your reply where the value came from.",
+        "A username is not an email, and a plausible address is worse than none: it is wrong in a way that looks right, it enters history permanently, and it credits nobody or the wrong person. Two sources clear this on their own - what the user told you, and this repository's own history for that person (`git log --all --author=\"<name>\" --format=\"%an <%ae>\" | sort -u`). Amend the commit with what either of them gives you.",
+        "If neither has it, LOOK IT UP - `gh api users/<login> --jq '.id, .login, .email'` is the right move - and know that this check cannot see the answer: it reads the session and the repository, never your own tool output, so a looked-up address stays unsourced here however correct it is. Amend with it AND put `enigma:allow-unsourced-trailer` in the commit message, saying in your reply where the value came from. Same marker for any other source outside this session.",
+        "If nothing has it, ASK: one question costs a turn; a wrong trailer costs a rewrite of history. Dropping the trailer and saying you need the address is always available.",
     ].join("\n");
 }
 
