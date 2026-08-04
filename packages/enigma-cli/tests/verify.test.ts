@@ -710,6 +710,51 @@ test("the sweep repairs what code can repair, and only on the lines the change a
     // The committed file broke the same rule on a line this change did not add: untouched.
     expect(readFileSync(join(dir, "src/Legacy.tsx"), "utf8")).toBe(legacy);
     expect(readLedger().some((e) => e.rule === "fe-truncated-value-unreachable" && e.outcome === "fixed")).toBe(true);
+    // A repair is a write to someone's source, so the sweep says what it changed rather than
+    // leaving the working tree quietly different from what the agent wrote.
+    expect(scan.repaired.map((f) => `${f.file}:${f.line} ${f.ruleId}`)).toEqual(["src/Row.tsx:1 fe-truncated-value-unreachable"]);
+});
+
+/** A repository whose branch COMMITTED a clipped value, so the sweep's repair rewrites the commit. */
+function repoWithCommittedClip(): string {
+    const dir = repoWith();
+    git(dir, "checkout", "-qb", "feature");
+    write(dir, "src/Row.tsx", '<span className="truncate">{user.name}</span>\n');
+    git(dir, "add", "-A");
+    git(dir, "commit", "-qm", "row");
+    return dir;
+}
+
+test("a repair in a brand-new directory is not mistaken for a rewrite of committed code", () => {
+    // git collapses a wholly untracked directory to one `?? src/` entry unless asked for every
+    // file, and a file missing from that set reads as "already committed" - so the most ordinary
+    // case there is (a new component in a new folder) would have been told to commit itself twice.
+    const dir = repoWith();
+    write(dir, "ui/rows/Row.tsx", '<span className="truncate">{user.name}</span>\n');
+    const scan = scanConventions(dir);
+    expect(scan.repaired.map((f) => f.file)).toEqual(["ui/rows/Row.tsx"]);
+    expect(scan.gaps).toEqual([]);
+});
+
+test("a repair on already-committed code is reported as work to re-commit", () => {
+    // The violation is in the COMMIT, and enigma's own flow is commit-then-validate: repairing it
+    // silently leaves the working tree disagreeing with the commit every later gate step reads.
+    const dir = repoWithCommittedClip();
+    const scan = scanConventions(dir);
+    expect(readFileSync(join(dir, "src/Row.tsx"), "utf8")).toContain("title={user.name}");
+    expect(scan.repaired.length).toBe(1);
+    expect(scan.gaps.length).toBe(1);
+    expect(scan.gaps[0]!.file).toBe("src/Row.tsx");
+    expect(scan.gaps[0]!.detail).toContain("commit src/Row.tsx again");
+    // The gap survives a fixer that cleared every finding: it is the only thing left to report.
+    expect(scan.findings).toEqual([]);
+    // A second sweep raises nothing: the file is dirty now, so the repair is part of the change in
+    // flight and the agent has already been told once.
+    expect(scanConventions(dir).gaps).toEqual([]);
+});
+
+test("the re-commit gap denies the stop, which is the point of raising it", () => {
+    expect(runVerifyHook(payload(repoWithCommittedClip(), "Added the row.", { session_id: "recommit-1" }))).toBe(2);
 });
 
 test("a clipped value the fixer declines still reaches the model", () => {

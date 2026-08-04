@@ -614,11 +614,11 @@ var BUILTIN_RULES = [
     // it flagged correct code and was deleted. Clipping is different: the element that clips is
     // the element that hides the value, so the question "can the user still read it?" is answered
     // by that element and its immediate wrapper, and nothing else.
-    // DIFF stage, and not optional: 1422 of these live in the measured corpus. It is what most
+    // DIFF stage, and not optional: 1426 of these live in the measured corpus. It is what most
     // real code does, so an edit-stage rule would report a project's existing rows forever.
     stage: "diff",
     fileCheck: "fe-truncated-value-unreachable",
-    message: "This clips a value the user cannot recover: the text is ellipsised and the full string appears nowhere. A name, email, path or title is exactly the value someone needs in full, and the sample used while building is always short enough to hide the problem. Add `title={<the same value>}` to the clipping element, or wrap it in the design system's tooltip where one exists - and where the value must be readable at a glance rather than on hover, let it wrap instead of clipping. Mark the line `enigma:allow-clipped-value` when the full value is already shown elsewhere on the screen (frontend-policy).",
+    message: 'This clips a value the user cannot recover: the text is ellipsised and the full string appears nowhere. A name, email, path or title is exactly the value someone needs in full, and the sample used while building is always short enough to hide the problem. Where the design system has a tooltip, wrap the element in it - that is the better answer. Otherwise give the clipping element a `title` attribute carrying the same value, written in this file\'s own binding syntax (`title={value}` in JSX, `:title="value"` in Vue, `title={value}` in Svelte, `title="..."` in plain HTML) - and where the value must be readable at a glance rather than on hover, let it wrap instead of clipping. Mark the line `enigma:allow-clipped-value` when the full value is already shown elsewhere on the screen (frontend-policy).',
     severity: "block",
     skill: "frontend-policy"
   },
@@ -1332,7 +1332,8 @@ var FIXERS = {
     if (!match) return null;
     const [, tag, attrs, expr] = match;
     if (!CLIP_ONE_LINE.test(attrs) || NOT_TEXT_BINDING.test(expr)) return null;
-    return line.replace(`<${tag}${attrs}>`, `<${tag}${attrs} title={${expr}}>`);
+    const replacement = `<${tag}${attrs} title={${expr}}>`;
+    return line.replace(`<${tag}${attrs}>`, () => replacement);
   }
 };
 function applyFixes(file, findings, stage = "edit") {
@@ -1524,9 +1525,10 @@ function viewBlankedWhileLoading(content) {
   return out;
 }
 var CLIP_ONE_LINE = /\btruncate\b|\btext-ellipsis\b|text-overflow\s*:\s*ellipsis/;
-var DYNAMIC_CHILD = />\s*\{/;
+var DYNAMIC_CHILD = /(?<![=!<>-])>\s*\{/;
 var VALUE_REACHABLE = /\btitle\s*=|aria-label\s*=|<\s*Tooltip|TooltipTrigger|data-tooltip|hoverCard|HoverCard/i;
 var WRAPPER_LOOKBACK = 4;
+var ALLOW_CLIPPED_VALUE = /enigma:allow-clipped-value/;
 function truncatedValueUnreachable(content) {
   const lines = content.split("\n");
   const out = [];
@@ -1536,12 +1538,13 @@ function truncatedValueUnreachable(content) {
     if (!CLIP_ONE_LINE.test(line) || !DYNAMIC_CHILD.test(line)) continue;
     if (VALUE_REACHABLE.test(line)) continue;
     if (lines.slice(Math.max(0, i - WRAPPER_LOOKBACK), i).some((l) => VALUE_REACHABLE.test(l))) continue;
+    if (markedNearby(lines, i, ALLOW_CLIPPED_VALUE)) continue;
     out.push({ line: i + 1, detail: "the value is ellipsised here and its full text is carried by nothing on this element or its wrapper" });
   }
   return out;
 }
 var CLIPPED_SIMPLE_VALUE = /<([a-z][a-z0-9]*)\b([^<>]*)>\s*\{\s*([A-Za-z_$][\w$]*(?:\??\.[\w$]+)*)\s*\}\s*<\/\1>/;
-var NOT_TEXT_BINDING = /^(children|icon|node|element|content|component)$|\.(children|icon|node|element)$/i;
+var NOT_TEXT_BINDING = /^(children|icon|node|element|content|component)$|\.(children|icon|node|element|content|component)$/i;
 var ASYNC_ROUTE = /export\s+default\s+async\s+function\b/;
 var SERVER_DATA_AWAIT = /await\s+(prisma|db|supabase|drizzle|knex|mongoose)\b|await\s+[\w.]{1,40}\.(findMany|findUnique|findFirst|aggregate|groupBy|count|createQueryBuilder)\s*\(/;
 var STREAM_BOUNDARY = /<\s*Suspense\b/;

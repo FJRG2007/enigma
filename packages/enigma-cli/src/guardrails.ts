@@ -648,11 +648,11 @@ export const BUILTIN_RULES: GuardrailRule[] = [
         // it flagged correct code and was deleted. Clipping is different: the element that clips is
         // the element that hides the value, so the question "can the user still read it?" is answered
         // by that element and its immediate wrapper, and nothing else.
-        // DIFF stage, and not optional: 1422 of these live in the measured corpus. It is what most
+        // DIFF stage, and not optional: 1426 of these live in the measured corpus. It is what most
         // real code does, so an edit-stage rule would report a project's existing rows forever.
         stage: "diff",
         fileCheck: "fe-truncated-value-unreachable",
-        message: "This clips a value the user cannot recover: the text is ellipsised and the full string appears nowhere. A name, email, path or title is exactly the value someone needs in full, and the sample used while building is always short enough to hide the problem. Add `title={<the same value>}` to the clipping element, or wrap it in the design system's tooltip where one exists - and where the value must be readable at a glance rather than on hover, let it wrap instead of clipping. Mark the line `enigma:allow-clipped-value` when the full value is already shown elsewhere on the screen (frontend-policy).",
+        message: "This clips a value the user cannot recover: the text is ellipsised and the full string appears nowhere. A name, email, path or title is exactly the value someone needs in full, and the sample used while building is always short enough to hide the problem. Where the design system has a tooltip, wrap the element in it - that is the better answer. Otherwise give the clipping element a `title` attribute carrying the same value, written in this file's own binding syntax (`title={value}` in JSX, `:title=\"value\"` in Vue, `title={value}` in Svelte, `title=\"...\"` in plain HTML) - and where the value must be readable at a glance rather than on hover, let it wrap instead of clipping. Mark the line `enigma:allow-clipped-value` when the full value is already shown elsewhere on the screen (frontend-policy).",
         severity: "block",
         skill: "frontend-policy",
     },
@@ -1174,7 +1174,12 @@ export const FIXERS: Record<string, (line: string, file: string) => string | nul
         // The clip must be on THIS element. A neighbour's `truncate` in the same line would
         // otherwise put the title on the wrong box.
         if (!CLIP_ONE_LINE.test(attrs!) || NOT_TEXT_BINDING.test(expr!)) return null;
-        return line.replace(`<${tag}${attrs}>`, `<${tag}${attrs} title={${expr}}>`);
+        // A replacer FUNCTION, never a string: the replacement is built out of the file's own
+        // source, so a `$&`, `` $` ``, `$'` or `$$` anywhere in the attributes or the expression
+        // would otherwise be re-read by String.prototype.replace as a substitution token and splice
+        // the wrong text in - a silent repair that corrupts the line it was meant to fix.
+        const replacement = `<${tag}${attrs} title={${expr}}>`;
+        return line.replace(`<${tag}${attrs}>`, () => replacement);
     },
 };
 
@@ -1552,14 +1557,26 @@ export function viewBlankedWhileLoading(content: string): { line: number; detail
  */
 const CLIP_ONE_LINE = /\btruncate\b|\btext-ellipsis\b|text-overflow\s*:\s*ellipsis/;
 
-/** A JSX/template child that is an expression: the element renders a value, not fixed copy. */
-const DYNAMIC_CHILD = />\s*\{/;
+/**
+ * A JSX/template child that is an expression: the element renders a value, not fixed copy.
+ *
+ * The `>` must CLOSE A TAG, which is what the lookbehind is for. Without it the pattern also
+ * matched an arrow function's `=> {`, so any line holding the identifier `truncate` next to a
+ * callback body - `const truncate = (s, n) => { ... }`, `useMemo(() => { ... truncate ... })` -
+ * became a block finding on code that clips nothing, and the fixer correctly declined it, leaving
+ * the turn denied with no exit but a marker. The excluded characters are every operator that ends
+ * in `>`: `=>`, `<=`, `>=`, `!=`, `-->`, `>>`.
+ */
+const DYNAMIC_CHILD = /(?<![=!<>-])>\s*\{/;
 
 /** Any way the full value stays reachable: the native tooltip, an accessible name, or a tooltip component. */
 const VALUE_REACHABLE = /\btitle\s*=|aria-label\s*=|<\s*Tooltip|TooltipTrigger|data-tooltip|hoverCard|HoverCard/i;
 
 /** How far above the clipping line a wrapper may carry the tooltip. */
 const WRAPPER_LOOKBACK = 4;
+
+/** The marker, scoped to the clipping element's own block rather than to the file (the fe-server-first precedent). */
+const ALLOW_CLIPPED_VALUE = /enigma:allow-clipped-value/;
 
 /**
  * Values clipped to an ellipsis with the full string reachable nowhere.
@@ -1571,10 +1588,13 @@ const WRAPPER_LOOKBACK = 4;
  * different. The element that clips is the element that hides the value, so whether the user can
  * still read it is decided by that element and the wrapper immediately above it.
  *
- * MEASURED over 9072 UI files of real product repositories: 3790 lines declare a clip, 1422 clip a
- * dynamic value with nothing carrying the full one. That is a backlog, not an anomaly, which is
- * what puts the rule at the diff stage - and 84% of it is repaired by the fixer below, so most of
- * it never costs the model a token.
+ * RE-MEASURED over 9079 UI files of real product repositories, after DYNAMIC_CHILD was anchored to
+ * a tag close: 3344 lines declare a clip, 1426 clip a dynamic value with nothing carrying the full
+ * one, and the fixer below repairs 1159 of them - 81%, so most of it never costs the model a token.
+ * That is a backlog, not an anomaly, which is what puts the rule at the diff stage. The anchoring
+ * removed no corpus finding (the arrow-function false positive it fixes needs the identifier
+ * `truncate` on the same line as a callback body, which product code rarely writes), so the pair it
+ * supersedes was close; it is restated here because it was measured, not carried.
  */
 export function truncatedValueUnreachable(content: string): { line: number; detail: string; }[] {
     const lines = content.split("\n");
@@ -1586,6 +1606,10 @@ export function truncatedValueUnreachable(content: string): { line: number; deta
         if (VALUE_REACHABLE.test(line)) continue;
         // A Tooltip or a titled wrapper routinely sits a few lines above the element it describes.
         if (lines.slice(Math.max(0, i - WRAPPER_LOOKBACK), i).some((l) => VALUE_REACHABLE.test(l))) continue;
+        // Scoped, like the two sibling rules. The flagged line is a JSX/template CHILD, where a
+        // trailing `//` comment renders as visible text - so same-line-only left this rule's single
+        // exit almost unwritable.
+        if (markedNearby(lines, i, ALLOW_CLIPPED_VALUE)) continue;
         out.push({ line: i + 1, detail: "the value is ellipsised here and its full text is carried by nothing on this element or its wrapper" });
     }
     return out;
@@ -1597,8 +1621,12 @@ export function truncatedValueUnreachable(content: string): { line: number; deta
  */
 const CLIPPED_SIMPLE_VALUE = /<([a-z][a-z0-9]*)\b([^<>]*)>\s*\{\s*([A-Za-z_$][\w$]*(?:\??\.[\w$]+)*)\s*\}\s*<\/\1>/;
 
-/** Bindings whose value is not text: `title={children}` renders [object Object]. */
-const NOT_TEXT_BINDING = /^(children|icon|node|element|content|component)$|\.(children|icon|node|element)$/i;
+/**
+ * Bindings whose value is not text: `title={children}` renders [object Object]. The dotted branch
+ * carries the same names as the bare one - `{row.content}` is a ReactNode for exactly the reason
+ * `{content}` is, and a title written from it is worse than the finding it cleared.
+ */
+const NOT_TEXT_BINDING = /^(children|icon|node|element|content|component)$|\.(children|icon|node|element|content|component)$/i;
 
 /** An async server route component: the function whose await the router waits on. */
 const ASYNC_ROUTE = /export\s+default\s+async\s+function\b/;

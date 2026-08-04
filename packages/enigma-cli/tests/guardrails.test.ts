@@ -940,7 +940,7 @@ test("a clipped value must keep its full text reachable, and the fixer supplies 
     expect(found.length).toBe(1);
     expect(found[0]!.ruleId).toBe("fe-truncated-value-unreachable");
     expect(found[0]!.severity).toBe("block");
-    // 1422 of these live in the measured corpus, so the edit stage would report a project's rows forever.
+    // 1426 of these live in the measured corpus, so the edit stage would report a project's rows forever.
     expect(checkFile("src/Row.tsx", clipped, null)).toEqual([]);
     expect(FIXERS["fe-truncated-value-unreachable"]!(clipped, "src/Row.tsx"))
         .toBe("<span className=\"truncate\" title={user.name}>{user.name}</span>");
@@ -958,10 +958,54 @@ test("a clipped value must keep its full text reachable, and the fixer supplies 
     ]) expect(checkFile("src/Row.tsx", markup, null, "diff")).toEqual([]);
 });
 
+test("an arrow function is not a JSX child, however many times it says truncate", () => {
+    // The `>` of `=> {` is not a tag close. Before it was anchored, either of these was a BLOCK
+    // finding the fixer then declined - a denied turn over code that clips nothing, whose only
+    // exit was a marker on an unrelated line.
+    for (const source of [
+        "const truncate = (s, n) => { return s.slice(0, n); };",
+        "const label = useMemo(() => { return truncate(row.name, 24); }, [row.name]);",
+        "export const clamp = (text: string) => { return text.length > 24 ? `${truncate(text)}...` : text; };",
+        // The other operators ending in `>`, so none of them can stand in for a tag close either.
+        "const wide = items.filter((i) => i.width >= { min: 4 }.min && i.id !== truncate);",
+        "<!-- truncate --> {value}",
+    ]) expect(checkFile("src/Row.tsx", source, null, "diff")).toEqual([]);
+    // And the real shape still fires, including when the tag closes on its own line.
+    expect(checkFile("src/Row.tsx", "<span className=\"truncate\">{user.name}</span>", null, "diff").length).toBe(1);
+    expect(checkFile("src/Row.tsx", "<td class=\"truncate\"> {row.email} </td>", null, "diff").length).toBe(1);
+});
+
+test("the clipped-value marker is read from the enclosing block, not only the flagged line", () => {
+    // The flagged line is a JSX CHILD, where a trailing `//` renders as visible text - so a
+    // same-line-only marker left this block rule's single exit almost unwritable.
+    const source = [
+        "export function Row({ user }) {",
+        "    // The full address is printed in the panel below. enigma:allow-clipped-value",
+        "    return <span className=\"truncate\">{user.email}</span>;",
+        "}",
+    ].join("\n");
+    expect(checkFile("src/Row.tsx", source, null, "diff")).toEqual([]);
+    // Without the marker the same block is reported, so the exemption is the marker's doing.
+    expect(checkFile("src/Row.tsx", source.replace(" enigma:allow-clipped-value", ""), null, "diff").length).toBe(1);
+});
+
+test("the clipped-value fixer never lets source read as a replacement token", () => {
+    // `$&`, `` $` ``, `$'` and `$$` are substitution patterns to String.prototype.replace, and the
+    // replacement here is built out of the file's own source - so a fixer that passed a string
+    // would splice the match back into the line it was repairing.
+    const fixer = FIXERS["fe-truncated-value-unreachable"]!;
+    const href = "<a className=\"truncate\" href={`/s?q=$&x`}>{item.label}</a>";
+    expect(fixer(href, "src/Row.tsx")).toBe("<a className=\"truncate\" href={`/s?q=$&x`} title={item.label}>{item.label}</a>");
+    const dollars = "<span className=\"truncate\" data-q=\"$`$'$$\">{row.name}</span>";
+    expect(fixer(dollars, "src/Row.tsx")).toBe("<span className=\"truncate\" data-q=\"$`$'$$\" title={row.name}>{row.name}</span>");
+});
+
 test("the clipped-value fixer declines everything it cannot copy safely", () => {
     // Same contract as every fixer: one line in, one line out, and declining is always safe.
     for (const line of [
         "<dd className=\"truncate\">{children}</dd>",                              // not text: renders [object Object]
+        "<td className=\"truncate\">{row.content}</td>",                           // dotted, and a ReactNode for the same reason
+        "<td className=\"truncate\">{cell.component}</td>",                        // likewise
         "<span className=\"truncate\">{host ?? \"Not recorded\"}</span>",          // copying `host` alone drops the fallback
         "<p className=\"truncate\">{deploySubtitle(active, app)}</p>",             // a call may be costly or not a string
         "<DialogTitle className=\"truncate\">{app.name}</DialogTitle>",            // may not forward the attribute

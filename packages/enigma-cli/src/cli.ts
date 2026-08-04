@@ -1577,11 +1577,14 @@ async function runVerifyCli(positionals: string[], all: boolean): Promise<number
         console.error(`Unknown verify command '${sub}'. Use: (no argument) | --all | parity <source> <target>.`);
         return 1;
     }
-    const { collectGaps, formatGaps, verifyCommandOf } = await import("./verify");
+    const { collectGaps, formatGaps, formatRepairs, verifyCommandOf } = await import("./verify");
     const command = verifyCommandOf();
     // Conventions are part of "is this change finished": the same rules the turn-end hook enforces,
     // so running the command by hand answers the same question the gate would.
-    const { gaps, notes, truncated, capped, noRepo, ranCommand } = collectGaps(process.cwd(), { all, conventions: !all });
+    const { gaps, notes, repaired, truncated, capped, noRepo, ranCommand } = collectGaps(process.cwd(), { all, conventions: !all });
+    // Printed before anything else, and whatever the verdict turns out to be: the sweep repairs
+    // what code can repair, and that is a write to the working tree of whoever ran this by hand.
+    if (repaired?.length) console.log(formatRepairs(repaired));
     // Announced after the fact, because the scan decides whether it runs at all: saying it ran
     // on a turn that produced nothing would be the same kind of unearned reassurance this
     // command exists to remove.

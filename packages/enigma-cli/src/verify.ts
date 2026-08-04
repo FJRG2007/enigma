@@ -710,6 +710,36 @@ function hasNewWork(cwd: string): boolean {
     return head !== "" && head !== stateValue(`head:${repoRootOf(cwd)}`);
 }
 
+/**
+ * Every path git already has something pending for, repo-relative. Read BEFORE any fixer writes,
+ * because a repair is itself a modification and asking afterwards would answer "dirty" for every
+ * file it touched. Returns null when the command failed, which an empty set cannot express.
+ *
+ * The one question it answers: was the line a fixer just rewrote already COMMITTED? If it was, the
+ * working tree now disagrees with the commit, and enigma's own flow (commit, then validate) would
+ * leave the gate reading the unrepaired version.
+ */
+function pendingPaths(cwd: string): Set<string> | null {
+    // `--untracked-files=all`, not the default: git collapses a wholly untracked directory to one
+    // `?? src/` entry, so a brand-new file inside it would be missing from the set and every repair
+    // in it misreported as a rewrite of committed code.
+    const status = gitTry(cwd, ["-c", "core.quotepath=false", "status", "--porcelain", "--untracked-files=all"]);
+    if (status === null) return null;
+    const out = new Set<string>();
+    for (const raw of status.split("\n")) {
+        if (raw.length < 4) continue;
+        // "XY path", and "XY old -> new" for a rename: the destination is the path on disk now.
+        let path = raw.slice(3);
+        const arrow = path.lastIndexOf(" -> ");
+        if (arrow !== -1) path = path.slice(arrow + 4);
+        // git quotes a path holding a character it must escape; the unquoted form is what the
+        // diff and the sweep use.
+        if (path.startsWith("\"") && path.endsWith("\"")) path = path.slice(1, -1);
+        out.add(path);
+    }
+    return out;
+}
+
 /** Every tracked file's lines, for the whole-repository sweep (`enigma verify --all`). */
 function trackedLines(cwd: string): ScannedLines {
     const lines: AddedLine[] = [];
@@ -850,6 +880,12 @@ export interface ConventionScan {
     notes: VerifyGap[];
     /** Everything found, for the ledger. */
     findings: Finding[];
+    /**
+     * What a fixer REPAIRED on disk during the sweep. A repair is a write to the user's source, so
+     * it is announced rather than assumed: the post-edit hook prints its fixes, and a sweep that
+     * silently modified working-tree files would be the one surface where they were not.
+     */
+    repaired: Finding[];
     /** There were more findings than the lists hold: a cap cut the sweep short. */
     capped: boolean;
 }
@@ -875,7 +911,7 @@ export interface ConventionScan {
  * fire on code the current change added.
  */
 export function scanConventions(cwd: string, scanned?: ScannedLines): ConventionScan {
-    const empty: ConventionScan = { gaps: [], notes: [], findings: [], capped: false };
+    const empty: ConventionScan = { gaps: [], notes: [], findings: [], repaired: [], capped: false };
     if (readConfigAt(cwd).guardrails === false) return empty;
     const lines = (scanned ?? addedLines(cwd)).lines;
     if (!lines.length) return empty;
@@ -886,10 +922,13 @@ export function scanConventions(cwd: string, scanned?: ScannedLines): Convention
         if (!set) { set = new Set(); added.set(entry.file, set); }
         set.add(entry.line);
     }
-    const scan: ConventionScan = { gaps: [], notes: [], findings: [], capped: false };
+    const scan: ConventionScan = { gaps: [], notes: [], findings: [], repaired: [], capped: false };
     // Loaded ONCE for the sweep. checkFile otherwise re-reads and re-parses the rules config for
     // every file a change touched, inside a hook that runs at the end of every turn.
     const rules = loadRules();
+    // Read lazily and at most once, and only ever BEFORE a fixer has written anything - see
+    // pendingPaths. A sweep that repairs nothing never pays for it.
+    let pending: Set<string> | null | undefined;
     let files = 0;
     for (const [file, numbers] of added) {
         if (++files > MAX_CONVENTION_FILES) { scan.capped = true; break; }
@@ -920,10 +959,24 @@ export function scanConventions(cwd: string, scanned?: ScannedLines): Convention
         // and put it in the user's diff. A fixer that declines or fails simply leaves the finding.
         const onAdded = findings.filter((f) => f.line && numbers.has(f.line));
         if (onAdded.length) {
+            // Asked BEFORE the write, or the repair itself would be the answer. A failed status
+            // counts as "already committed", the same way hasNewWork treats one as new work:
+            // telling the agent to commit a file it has already staged costs a line, and leaving a
+            // repaired commit unreported costs the gate its subject.
+            if (pending === undefined) pending = pendingPaths(cwd);
+            const wasCommitted = pending === null || !pending.has(file);
             try {
                 const { fixed, remaining } = applyFixes(full, onAdded, "diff");
                 if (fixed.length) {
-                    recordFindings(fixed.map((f) => ({ ...f, file })), "fixed", "diff");
+                    const named = fixed.map((f) => ({ ...f, file }));
+                    recordFindings(named, "fixed", "diff");
+                    scan.repaired.push(...named);
+                    // The file had nothing pending, so the line the fixer rewrote is in the commit:
+                    // the working tree and the commit now disagree, and enigma's own flow (commit,
+                    // then validate) would leave every later step reading the unrepaired version.
+                    // A repair on an already-dirty file needs no gap - it is part of the change in
+                    // flight, and the agent has still to commit it.
+                    if (wasCommitted) scan.gaps.push({ kind: "convention", file, line: named[0]!.line, detail: `a guardrail fixer repaired ${[...new Set(fixed.map((f) => f.ruleId))].join(", ")} here, on code this file had ALREADY COMMITTED - the working tree no longer matches the commit, so commit ${file} again before reporting the work done` });
                     findings = remaining;
                 }
             } catch { /* a read-only file or a racing edit: report instead of repairing */ }
@@ -939,6 +992,20 @@ export function scanConventions(cwd: string, scanned?: ScannedLines): Convention
         }
     }
     return scan;
+}
+
+/**
+ * What the sweep rewrote on disk, as a line per repair.
+ *
+ * Announced on every surface the sweep speaks on, never assumed: the post-edit hook already prints
+ * its fixes, and a repair here modifies a file in the user's working tree - so staying quiet about
+ * it would make this the one channel that edits someone's source without saying so.
+ */
+export function formatRepairs(repaired: Finding[]): string {
+    return [
+        `enigma verify: ${repaired.length} guardrail violation(s) were repaired for you, so these files were MODIFIED on disk:`,
+        ...repaired.map((f) => `- ${f.file}:${f.line} (${f.ruleId})`),
+    ].join("\n");
 }
 
 /**
@@ -996,6 +1063,8 @@ export interface VerifyScan {
      * warn is advice and must not decide an exit code (see scanConventions).
      */
     notes?: VerifyGap[];
+    /** Violations a fixer repaired on disk during the sweep, so the surface can say what it changed. */
+    repaired?: Finding[];
     /** A cap stopped the scan before it had read everything. */
     truncated: boolean;
     /** There were more findings than the report shows. */
@@ -1030,6 +1099,7 @@ export function collectGaps(cwd: string, opts: { all?: boolean; runCommand?: boo
         const conventions = scanConventions(cwd, opts.all === true ? undefined : lines);
         scan.gaps.push(...conventions.gaps);
         scan.notes = conventions.notes;
+        scan.repaired = conventions.repaired;
         if (conventions.capped) scan.capped = true;
     }
     const produced = scan.scanned > 0 && (opts.all === true || hasNewWork(cwd));
@@ -1252,7 +1322,13 @@ export function runVerifyHook(payload?: string): number {
     // every untracked file, and running that twice on a claiming turn is the whole cost paid over.
     const scanned = sweeps || claims ? addedLines(cwd) : undefined;
     const conventions = sweeps && scanned ? scanConventions(cwd, scanned) : null;
-    if (conventions?.findings.length) {
+    // Said first, and whatever else this hook decides: the sweep has just written to files in the
+    // working tree, and the one thing worse than a repair nobody asked for is a repair nobody was
+    // told about. On the same surface every other sweep message uses.
+    if (conventions?.repaired.length) process.stderr.write(`${formatRepairs(conventions.repaired)}\n`);
+    // `gaps` as well as `findings`: a repair on already-committed code is a gap with no finding
+    // behind it (the fixer cleared the finding), and gating on findings alone would drop it.
+    if (conventions && (conventions.findings.length || conventions.gaps.length)) {
         // Recorded either way, and that is the point of the ledger: a finding the loop-safety
         // budget stood down on - or one that was only ever advisory - is a rule the agent got away
         // with skipping, which is exactly what was previously invisible. mayBlock has a side
