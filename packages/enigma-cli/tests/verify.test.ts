@@ -793,18 +793,22 @@ test("convention blocks spend their own budget, not the completion gate's", () =
 
 // --- an identity that came from nowhere ------------------------------------------------
 
-/** A transcript holding one user message and one tool result, in Claude Code's JSONL shape. */
-function transcript(userText: string, toolResult = ""): string {
+/** A transcript file holding exactly `records`, one JSON object per line. */
+function transcriptOf(records: unknown[]): string {
     const dir = mkdtempSync(join(tmpdir(), "enigma-verify-tx-"));
     repos.push(dir);
     const path = join(dir, "session.jsonl");
-    const lines = [
-        JSON.stringify({ message: { role: "user", content: [{ type: "text", text: userText }] } }),
-        JSON.stringify({ message: { role: "assistant", content: [{ type: "text", text: "on it" }] } }),
-        ...(toolResult ? [JSON.stringify({ message: { role: "user", content: [{ type: "tool_result", content: toolResult }] } })] : []),
-    ];
-    writeFileSync(path, `${lines.join("\n")}\n`);
+    writeFileSync(path, `${records.map((r) => JSON.stringify(r)).join("\n")}\n`);
     return path;
+}
+
+/** A transcript holding one user message and one tool result, in Claude Code's JSONL shape. */
+function transcript(userText: string, toolResult = ""): string {
+    return transcriptOf([
+        { type: "user", message: { role: "user", content: [{ type: "text", text: userText }] } },
+        { type: "assistant", message: { role: "assistant", content: [{ type: "text", text: "on it" }] } },
+        ...(toolResult ? [{ type: "user", message: { role: "user", content: [{ type: "tool_result", content: toolResult }] } }] : []),
+    ]);
 }
 
 /** A commit crediting `email` as a co-author, on top of the repository's base commit. */
@@ -874,4 +878,88 @@ test("a commit with no co-author trailer is never reported", () => {
     git(dir, "add", "-A");
     git(dir, "commit", "-qm", "feat: no trailers here");
     expect(unsourcedTrailers(dir, transcript("do the thing"))).toEqual([]);
+});
+
+test("this hook's own feedback does not vouch for the address it just blocked", () => {
+    // THE CHANNEL THAT ACTUALLY FIRES IN PRODUCTION, and the one that would have let the check
+    // clear the exact value it blocked: the block message quotes the invented address verbatim,
+    // Claude Code appends the hook's stderr to the transcript as a `user` record with STRING
+    // content, and reading it as provenance means the fabrication ships on the second turn.
+    // The shape below is the one verified on real transcripts, isMeta included.
+    const dir = repoWith();
+    coAuthored(dir, "team.fjrg2007@gmail.com");
+    const feedback = transcriptOf([
+        { type: "user", message: { role: "user", content: [{ type: "text", text: "Add me as co-contributor, my username is FJRG2007." }] } },
+        {
+            type: "user",
+            isMeta: true,
+            isSidechain: false,
+            message: { role: "user", content: "Stop hook feedback:\n[enigma __verify-hook]: enigma verify: STOP. This change credits someone using a value you do not have:\n- commit abc12345 credits <team.fjrg2007@gmail.com> as a co-author, and that address appears nowhere." },
+        },
+    ]);
+    expect(unsourcedTrailers(dir, feedback).length).toBe(1);
+});
+
+test("no agent-authored user record vouches for an address", () => {
+    const dir = repoWith();
+    coAuthored(dir, "invented@example.org");
+    const quoted = "please credit invented@example.org";
+    // A prompt the AGENT wrote for a subagent is not the user speaking.
+    expect(unsourcedTrailers(dir, transcriptOf([
+        { type: "user", isSidechain: true, message: { role: "user", content: quoted } },
+    ])).length).toBe(1);
+    // Slash-command scaffolding and the stdout of a command the agent ran are both stored as
+    // plain user strings, and neither carries isMeta - so the tag set has to be checked too.
+    for (const wrapper of [
+        `<command-name>commit</command-name>\n<command-args>${quoted}</command-args>`,
+        "<local-command-stdout>Co-authored-by: X <invented@example.org></local-command-stdout>",
+        `<system-reminder>${quoted}</system-reminder>`,
+    ]) {
+        expect(unsourcedTrailers(dir, transcriptOf([
+            { type: "user", message: { role: "user", content: wrapper } },
+        ])).length).toBe(1);
+    }
+    // But a REAL prompt keeps its provenance when the harness appends a reminder to it: the
+    // synthetic block is stripped, not used to discard what the user actually wrote.
+    expect(unsourcedTrailers(dir, transcriptOf([
+        { type: "user", message: { role: "user", content: `${quoted}\n<system-reminder>be careful</system-reminder>` } },
+    ]))).toEqual([]);
+});
+
+test("only HEAD is examined, so no finding ever prescribes a history rewrite", () => {
+    // The remediation this check gives is an amend, which reaches HEAD and nothing else. Scanning
+    // wider reported commits whose only safe fix would be an interactive rebase - the very outcome
+    // the check exists to prevent - and re-flagged an old honest trailer every session in a
+    // repository with no remote. The accepted loss is asserted here, not just commented.
+    const dir = repoWith();
+    coAuthored(dir, "invented@example.org");
+    expect(unsourcedTrailers(dir, transcript("do the thing")).length).toBe(1);
+    // One more commit on top and the invented trailer is no longer HEAD's, so it is not reported.
+    write(dir, "later.txt", "more");
+    git(dir, "add", "-A");
+    git(dir, "commit", "-qm", "chore: follow-up with no trailer");
+    expect(unsourcedTrailers(dir, transcript("do the thing"))).toEqual([]);
+});
+
+test("a source block keys on the address, not the sha, and spends its own budget", () => {
+    // Two failures in one: the detail leads with the commit sha, so keying the budget on it handed
+    // every amend a fresh allowance while draining the session-wide ceiling that the
+    // completion-claim and stop-short gates depend on.
+    const dir = repoWith();
+    const session = "source-budget";
+    coAuthored(dir, "invented@example.org");
+    const hookArgs = { session_id: session, transcript_path: transcript("add the co-author please") };
+    expect(runVerifyHook(payload(dir, "Added the co-author.", hookArgs))).toBe(2);
+    const stateFile = (): Record<string, number> => JSON.parse(readFileSync(join(HOME, ".enigma", "verify-state.json"), "utf8"));
+    expect(stateFile()[`source:${session}`]).toBe(1);
+    expect(stateFile()[`total:${session}`]).toBeUndefined();
+    // Amending rewrites the sha while the finding is unchanged, so the SAME key must be spent.
+    const keyOf = (state: Record<string, number>): string => Object.keys(state).find((k) => k.startsWith(`source:${session}:`))!;
+    const before = keyOf(stateFile());
+    git(dir, "commit", "-q", "--amend", "-m", "feat: add the thing\n\nCo-authored-by: Someone <invented@example.org>");
+    expect(runVerifyHook(payload(dir, "Added the co-author.", hookArgs))).toBe(2);
+    expect(keyOf(stateFile())).toBe(before);
+    expect(stateFile()[before]).toBe(2);
+    // And it still stands down after two blocks on that one issue, so the turn is never trapped.
+    expect(runVerifyHook(payload(dir, "Added the co-author.", hookArgs))).toBe(0);
 });

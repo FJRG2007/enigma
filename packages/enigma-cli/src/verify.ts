@@ -69,6 +69,14 @@ export interface VerifyGap {
     file?: string;
     line?: number;
     detail: string;
+    /**
+     * A stable identity for the loop-safety budget, when the DETAIL carries text that changes
+     * while the finding does not - a commit sha, say, which an amend replaces on every round.
+     * `issueKey` prefers this over the detail so the same unfinished problem keeps spending one
+     * budget instead of being handed a fresh one each turn. Omitted by every gap whose detail is
+     * already stable.
+     */
+    key?: string;
 }
 
 /** Files whose task lists are legitimate content rather than unfinished code. */
@@ -995,37 +1003,48 @@ function vouchedEmails(cwd: string): Set<string> | null {
  */
 export function unsourcedTrailers(cwd: string, transcriptPath: string): VerifyGap[] {
     if (!inGitRepo(cwd)) return [];
-    // UNPUSHED commits, which is the exact set a turn can still fix: an amend or a rebase, with
-    // nobody else's clone to break. Anything already on a remote is history, and telling the model
-    // to amend it would be wrong advice. `--not --remotes` is also the one range that works while
-    // the work sits on the default branch with no feature branch to diff against - the branch
-    // point there resolves to HEAD itself, so a `base..HEAD` range is empty and this check saw
-    // nothing at all, on the workflow that commits straight to main.
-    const log = gitTry(cwd, ["log", "-n", "20", "--format=%H%x1e%B%x1f", "HEAD", "--not", "--remotes"]);
+    // HEAD ALONE, deliberately - not the unpushed range, and not a date filter against the session.
+    // The remediation this check prescribes is an amend, and an amend only reaches HEAD: a finding
+    // on any older commit would be ordering an interactive rebase, a rewrite of history, which is
+    // the exact outcome this check exists to prevent. A finding it cannot offer a safe fix for is
+    // better not raised at all. It also drops the false block a wider range caused outright: the
+    // provenance evidence is per session, so a genuine trailer typed in an earlier session reads
+    // as unsourced here, and `--not --remotes` in a repository with NO remote yields the whole
+    // history, re-reporting an old honest trailer in every session.
+    // THE ACCEPTED LOSS, stated so it is not read as an oversight: an invented trailer on a commit
+    // that is no longer HEAD stops being reported. That is the trade for never prescribing a
+    // history rewrite.
+    const log = gitTry(cwd, ["log", "-n", "1", "--format=%H%x1e%B", "HEAD"]);
     if (!log) return [];
     const out: VerifyGap[] = [];
     const seen = new Set<string>();
     let vouched: Set<string> | null | undefined;
-    for (const entry of log.split("\x1f")) {
-        const [sha = "", body = ""] = entry.split("\x1e");
-        if (!body.trim() || ALLOW_TRAILER.test(body)) continue;
-        for (const match of body.matchAll(CO_AUTHOR)) {
-            const email = match[1]!.toLowerCase();
-            if (seen.has(email)) continue;
-            // Resolved lazily and once: a repository with no co-author trailers - which is nearly
-            // all of them, since this project forbids the AI ones - pays for one git log and stops.
-            if (vouched === undefined) vouched = vouchedEmails(cwd);
-            if (vouched === null) return out;
-            if (vouched.has(email)) continue;
-            const typed = transcriptPath ? userTyped(transcriptPath, email) : null;
-            // null is "could not read the session", not "the user never said it".
-            if (typed !== false) continue;
-            seen.add(email);
-            out.push({
-                kind: "source",
-                detail: `commit ${sha.trim().slice(0, 8)} credits <${email}> as a co-author, and that address appears nowhere: not in this repository's history, not in .mailmap, not in your git identity, and at no point in this session did the user write it.`,
-            });
-        }
+    // Per lowercased address, so an address carried by several trailers is resolved once. userTyped
+    // reads the whole transcript (up to the 8 MB window), which is far too much to repeat.
+    const typedBy = new Map<string, boolean | null>();
+    const [sha = "", body = ""] = log.split("\x1e");
+    if (!body.trim() || ALLOW_TRAILER.test(body)) return out;
+    for (const match of body.matchAll(CO_AUTHOR)) {
+        const email = match[1]!.toLowerCase();
+        if (seen.has(email)) continue;
+        // Resolved lazily and once: a repository with no co-author trailers - which is nearly
+        // all of them, since this project forbids the AI ones - pays for one git log and stops.
+        if (vouched === undefined) vouched = vouchedEmails(cwd);
+        if (vouched === null) return out;
+        if (vouched.has(email)) continue;
+        if (!typedBy.has(email)) typedBy.set(email, transcriptPath ? userTyped(transcriptPath, email) : null);
+        // null is "could not read the session", not "the user never said it".
+        if (typedBy.get(email) !== false) continue;
+        seen.add(email);
+        out.push({
+            kind: "source",
+            // Keyed on the ADDRESS, never on the sha: the sha changes with every amend, and a key
+            // that changes hands the same unfixed finding a fresh budget on each round while
+            // spending the session ceiling - a loop with extra steps, and one that stands the
+            // primary gate down. The sha stays in the message text, where it is useful.
+            key: `source:${email}`,
+            detail: `commit ${sha.trim().slice(0, 8)} credits <${email}> as a co-author, and that address appears nowhere: not in this repository's history, not in .mailmap, not in your git identity, and at no point in this session did the user write it.`,
+        });
     }
     return out;
 }
@@ -1163,8 +1182,9 @@ function issueKey(session: string, gaps: VerifyGap[]): string {
     // put every project in one budget, where two blocks anywhere stand the gate down everywhere.
     // The line number is deliberately excluded: editing anything above an untouched marker
     // moves it, and including the line would hand the same unfixed finding a fresh budget
-    // every time, which is a loop with extra steps.
-    const identity = gaps.map((g) => `${g.file || ""}:${g.detail.slice(0, 80)}`).sort().join("|");
+    // every time, which is a loop with extra steps. A gap that carries its own `key` is using it
+    // for that same reason, over a detail that would otherwise change underneath it.
+    const identity = gaps.map((g) => g.key ?? `${g.file || ""}:${g.detail.slice(0, 80)}`).sort().join("|");
     return `${session}:${createHash("sha1").update(identity).digest("hex").slice(0, 12)}`;
 }
 
@@ -1334,7 +1354,10 @@ export function runVerifyHook(payload?: string): number {
     // own cost guard is inside it - a repository whose new commits carry no co-author trailer
     // pays for a single git log.
     const invented = raw.permission_mode === "plan" ? [] : unsourcedTrailers(cwd, typeof raw.transcript_path === "string" ? raw.transcript_path : "");
-    if (invented.length && mayBlock(`source:${issueKey(session, invented)}`, session)) {
+    // ITS OWN BUDGET CHANNEL, for the reason the conventions channel has one: sharing the `total`
+    // ceiling let these blocks spend it and stand the completion-claim and stop-short gates - the
+    // primary ones - silently down for the rest of the session.
+    if (invented.length && mayBlock(`source:${issueKey(session, invented)}`, session, "source")) {
         process.stderr.write(`${sourceMessage(invented)}\n`);
         return 2;
     }

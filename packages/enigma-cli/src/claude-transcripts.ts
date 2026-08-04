@@ -106,6 +106,40 @@ function tail(path: string, bytes: number): string {
 const SCAN_BYTES = 8 * 1024 * 1024;
 
 /**
+ * Harness text that Claude Code stores as a `user` record without a human having written it:
+ * slash-command scaffolding, the stdout of a command the agent ran, and the reminders injected
+ * around a real prompt. Mirrors the block set recall's `cleanText` drops (recall/extract.ts) -
+ * the same list for the same reason, kept here because this module is the leaf that both the
+ * provenance check and recall can depend on (node builtins only, no enigma imports).
+ *
+ * These are STRIPPED rather than used to reject the whole record: a genuine prompt routinely
+ * carries an appended `<system-reminder>`, so discarding the record would lose what the user
+ * really typed, while leaving the block in would let injected text vouch for a value.
+ */
+const SYNTHETIC_BLOCK = /<(system-reminder|local-command-stdout|local-command-stderr|local-command-caveat|command-message|command-name|command-args|command-contents)>[\s\S]*?<\/\1>/gi;
+
+/**
+ * Text this hook itself fed back, which is the one channel that would otherwise let the check
+ * clear the exact value it just blocked: the block message quotes the invented address verbatim,
+ * Claude Code appends the hook's stderr to the transcript as a `user` record, and the next turn
+ * would read it as the user having supplied it. Verified on disk: those records carry
+ * `isMeta: true`, but the prefix is matched too so the filter does not rest on one flag.
+ */
+const HOOK_FEEDBACK = /^\s*(?:\w[\w -]*)?hook feedback:/i;
+
+/** An unclosed synthetic block (a truncated tail), whose opening tag still marks it as not-user. */
+const SYNTHETIC_OPEN = /^\s*<(?:system-reminder|local-command-(?:stdout|stderr|caveat)|command-(?:message|name|args|contents))>/i;
+
+/**
+ * The part of one user-record text a HUMAN can be said to have written, or "" when none of it
+ * is. Strips the harness blocks and drops text that is wholly hook feedback or harness output.
+ */
+function humanText(text: string): string {
+    if (HOOK_FEEDBACK.test(text) || SYNTHETIC_OPEN.test(text)) return "";
+    return text.replace(SYNTHETIC_BLOCK, " ");
+}
+
+/**
  * Whether the USER typed `needle` anywhere in this transcript.
  *
  * Returns null - never false - when the file could not be read WHOLE, because the one caller
@@ -113,6 +147,11 @@ const SCAN_BYTES = 8 * 1024 * 1024;
  * of that. Only genuine `text` blocks count: a tool_result is content this session produced,
  * not something the user supplied, and reading one as a source would let a value the agent
  * invented three turns ago vouch for itself.
+ *
+ * A `user` record is not by itself a person: `isMeta` marks harness-authored text (this hook's
+ * own feedback among it), `isSidechain` marks a prompt the agent wrote for a subagent, and the
+ * synthetic blocks above are injected around real prompts. All of them are excluded, or any
+ * text the agent produced could vouch for a value the agent invented.
  */
 export function userTyped(transcriptPath: string, needle: string): boolean | null {
     if (!needle) return null;
@@ -124,16 +163,19 @@ export function userTyped(transcriptPath: string, needle: string): boolean | nul
     const wanted = needle.toLowerCase();
     for (const line of raw.split("\n")) {
         if (!line.includes("\"user\"")) continue;
-        let entry: { message?: { role?: string; content?: unknown; }; };
+        let entry: { isMeta?: unknown; isSidechain?: unknown; message?: { role?: string; content?: unknown; }; };
         try { entry = JSON.parse(line); } catch { continue; }
+        // A subagent prompt is text the agent wrote, and isMeta text is the harness's (including
+        // this hook's own block message, quoting the very address under test).
+        if (entry.isMeta === true || entry.isSidechain === true) continue;
         const content = entry.message?.role === "user" ? entry.message.content : undefined;
-        if (typeof content === "string") { if (content.toLowerCase().includes(wanted)) return true; continue; }
+        if (typeof content === "string") { if (humanText(content).toLowerCase().includes(wanted)) return true; continue; }
         if (!Array.isArray(content)) continue;
         for (const block of content) {
             if (!block || typeof block !== "object") continue;
             const b = block as { type?: string; text?: string; };
             if (b.type !== "text" || typeof b.text !== "string") continue;
-            if (b.text.toLowerCase().includes(wanted)) return true;
+            if (humanText(b.text).toLowerCase().includes(wanted)) return true;
         }
     }
     return false;
