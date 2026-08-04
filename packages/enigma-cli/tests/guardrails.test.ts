@@ -767,10 +767,77 @@ test("a loader whose whole output is the awaited data is not a blanked view", ()
     expect(checkFile("src/Report.tsx", allowed, null, "diff")).toEqual([]);
 });
 
+test("the view-skeleton hatch exempts the guard it marks, not the whole file", () => {
+    // The fe-server-first-mutation lesson: a file-wide marker test silently exempted every other
+    // site in the same component, so the marker is scoped to the guard's own block.
+    const two = [
+        "export function Marked() {",
+        "    // enigma:allow-view-skeleton",
+        "    if (loading) return <Skeleton />;",
+        "    return <h1>Marked</h1>;",
+        "}",
+        "export function Unmarked() {",
+        "    if (loading) return <Skeleton />;",
+        "    return <h1>Unmarked</h1>;",
+        "}",
+    ].join("\n");
+    const found = checkFile("src/Two.tsx", two, null, "diff");
+    expect(found.length).toBe(1);
+    expect(found[0]!.ruleId).toBe("fe-view-blanked-while-loading");
+    expect(found[0]!.line).toBe(7);
+});
+
+test("the react-query status comparison and the dotted read are blanked views too", () => {
+    // Both shapes were captured by the guard regex and then rejected by the loading test, which was
+    // anchored on a bare identifier - so the two commonest spellings of the defect never reported.
+    for (const guard of [
+        'if (status === "loading") return <PageSkeleton />;',
+        'if (query.status === "pending") return <PageSkeleton />;',
+        "if (!query.data) return <Skeleton />;",
+    ]) {
+        const source = ["export function View() {", `    ${guard}`, "    return <h1>Reports</h1>;", "}"].join("\n");
+        const found = checkFile("src/View.tsx", source, null, "diff");
+        expect(found.map((f) => f.ruleId)).toEqual(["fe-view-blanked-while-loading"]);
+        expect(found[0]!.line).toBe(2);
+    }
+    // A comparison against anything that is not a loading word is a different branch: a permission
+    // gate or a feature toggle must stay out, which is what the condition test is still for.
+    for (const guard of [
+        'if (role === "admin") return <AdminSkeleton />;',
+        'if (plan !== "pro") return <UpgradePlaceholder />;',
+    ]) {
+        const source = ["export function View() {", `    ${guard}`, "    return <h1>Reports</h1>;", "}"].join("\n");
+        expect(checkFile("src/View.tsx", source, null, "diff")).toEqual([]);
+    }
+});
+
+test("a blanked view is reported once, not by both loading rules", () => {
+    // VIEW_GUARD's element group covers Loading|Loader|Spinner, which fe-skeleton-loading also owns
+    // at the edit stage - and edit-stage rules run in the diff sweep too. Without the suppression
+    // this line came back as two BLOCK findings with two different messages for one fix.
+    const source = [
+        "export function Report() {",
+        "    if (isLoading) return <PageLoader />;",
+        "    return <h1>Report</h1>;",
+        "}",
+    ].join("\n");
+    const found = checkFile("src/Report.tsx", source, null, "diff");
+    expect(found.length).toBe(1);
+    expect(found[0]!.ruleId).toBe("fe-skeleton-loading");
+    // With a placeholder signal in the file the older rule's `absent` clears it, so the newer rule
+    // owns the line - still exactly one finding.
+    const withSkeleton = source.replace("<PageLoader />", "<PageSkeleton />");
+    const second = checkFile("src/Report.tsx", withSkeleton, null, "diff");
+    expect(second.length).toBe(1);
+    expect(second[0]!.ruleId).toBe("fe-view-blanked-while-loading");
+});
+
 test("an async route that awaits a query needs a streaming boundary above it", () => {
     const dir = mkdtempSync(join(tmpdir(), "enigma-guardrails-route-"));
     const segment = join(dir, "app", "dash");
     mkdirSync(segment, { recursive: true });
+    // The ancestor walk is bounded by the project, so the tree needs a root to be bounded by.
+    writeFileSync(join(dir, "package.json"), "{}");
     const page = join(segment, "page.tsx");
     const source = [
         "export default async function Page() {",
@@ -798,6 +865,71 @@ test("an async route that awaits a query needs a streaming boundary above it", (
     writeFileSync(helper, source);
     expect(checkPath(helper, "diff").some((f) => f.ruleId === "fe-page-await-no-boundary")).toBe(false);
     rmSync(dir, { recursive: true, force: true });
+});
+
+test("every awaited query on a boundary-less route is reported, and loading.js counts", () => {
+    const dir = mkdtempSync(join(tmpdir(), "enigma-guardrails-route-multi-"));
+    const segment = join(dir, "app", "dash");
+    mkdirSync(segment, { recursive: true });
+    writeFileSync(join(dir, "package.json"), "{}");
+    const page = join(segment, "page.jsx");
+    const source = [
+        "export default async function Page() {",
+        "    const rows = await db.transaction.findMany({ where: { userId } });",
+        "    const total = await prisma.account.count();",
+        "    return <Table rows={rows} total={total} />;",
+        "}",
+    ].join("\n");
+    writeFileSync(page, source);
+    // Anchoring on the FIRST await alone made the rule silent whenever the turn added a SECOND
+    // blocking query: the turn-end sweep keeps only findings on a line the change added.
+    expect(checkPath(page, "diff").filter((f) => f.ruleId === "fe-page-await-no-boundary").map((f) => f.line)).toEqual([2, 3]);
+    // Next accepts loading.js as the boundary too, and a .jsx route beside one is correct code.
+    writeFileSync(join(segment, "loading.js"), "export default () => <Skeleton />;");
+    expect(checkPath(page, "diff")).toEqual([]);
+    rmSync(join(segment, "loading.js"), { force: true });
+    // A commented-out <Suspense> is not a boundary.
+    writeFileSync(page, `// <Suspense fallback={<Rows />}>\n${source}`);
+    expect(checkPath(page, "diff").some((f) => f.ruleId === "fe-page-await-no-boundary")).toBe(true);
+    // The hatch is scoped to the await it marks, so the second query is still reported.
+    const marked = [
+        "export default async function Page() {",
+        "    // enigma:allow-blocking-page",
+        "    const rows = await db.transaction.findMany({ where: { userId } });",
+        "    return <Table rows={rows} />;",
+        "}",
+        "async function Totals() {",
+        "    const total = await prisma.account.count();",
+        "    return <b>{total}</b>;",
+        "}",
+    ].join("\n");
+    writeFileSync(page, marked);
+    expect(checkPath(page, "diff").filter((f) => f.ruleId === "fe-page-await-no-boundary").map((f) => f.line)).toEqual([7]);
+    rmSync(dir, { recursive: true, force: true });
+});
+
+test("the loading.tsx walk never leaves the project", () => {
+    // Unbounded, the walk stopped only at an app/pages/src segment or the drive root, so a route
+    // with no such ancestor read the worktree's parent and the home directory - and a stray
+    // loading.tsx out there silently cleared a BLOCK rule for a route in a different repository.
+    const outer = mkdtempSync(join(tmpdir(), "enigma-guardrails-outside-"));
+    const project = join(outer, "site");
+    const marketing = join(project, "marketing");
+    mkdirSync(marketing, { recursive: true });
+    writeFileSync(join(project, "package.json"), "{}");
+    writeFileSync(join(outer, "loading.tsx"), "export default () => <Skeleton />;");
+    const page = join(marketing, "page.tsx");
+    writeFileSync(page, [
+        "export default async function Page() {",
+        "    const rows = await db.plan.findMany();",
+        "    return <Table rows={rows} />;",
+        "}",
+    ].join("\n"));
+    expect(checkPath(page, "diff").some((f) => f.ruleId === "fe-page-await-no-boundary")).toBe(true);
+    // Inside the project the same file clears the rule.
+    writeFileSync(join(project, "loading.tsx"), "export default () => <Skeleton />;");
+    expect(checkPath(page, "diff")).toEqual([]);
+    rmSync(outer, { recursive: true, force: true });
 });
 
 test("the optimistic signal is code, not a word that happens to appear", () => {

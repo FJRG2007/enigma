@@ -7,6 +7,8 @@ import { execFileSync } from "child_process";
 import { dirname, join, resolve, sep } from "path";
 import { appendFileSync, mkdirSync, readFileSync, readdirSync, writeFileSync, statSync, existsSync } from "fs";
 var COMMENT_LINE = /^\s*(\/\/|#|\*|--|<!--|\{?\/\*)/;
+var SKELETON_GUARD_SRC = "\\bif\\s*\\(\\s*(isLoading|isPending|isFetching|loading|pending)\\s*\\)\\s*return\\s+(null\\b|<\\s*\\w*(Spinner|Loader|Loading|CircularProgress)\\b)";
+var SKELETON_SIGNAL_SRC = "skeleton|animate-pulse|shimmer|Suspense|ContentLoader|content-loader|<\\s*Placeholder";
 var BUILTIN_RULES = [
   {
     id: "db-uuid-pk",
@@ -420,8 +422,8 @@ var BUILTIN_RULES = [
     // is present (skeleton, animate-pulse, shimmer, Suspense, a content-loader lib, <Placeholder>)
     // - the component already renders a placeholder somewhere. Kept to the terse one-line guard for
     // precision (a multi-line block is not matched: precision > recall).
-    pattern: "\\bif\\s*\\(\\s*(isLoading|isPending|isFetching|loading|pending)\\s*\\)\\s*return\\s+(null\\b|<\\s*\\w*(Spinner|Loader|Loading|CircularProgress)\\b)",
-    absent: "skeleton|animate-pulse|shimmer|Suspense|ContentLoader|content-loader|<\\s*Placeholder",
+    pattern: SKELETON_GUARD_SRC,
+    absent: SKELETON_SIGNAL_SRC,
     message: "Component returns nothing (or only a spinner) while data loads, so the whole page stays blank until the fetch resolves. Render the shell on first paint - nav, headings, card frames, table chrome, filters, and any value you already hold - and skeleton ONLY the region whose data is missing, shaped like the real content with its space reserved so nothing shifts when it lands. A region that does not depend on this request is not loading and must render now (frontend-policy).",
     // BLOCK, changed from warn: this is the rule for the defect users keep reporting (a page
     // that renders nothing until its data arrives), and as a warn it exited 0 - printed to
@@ -1441,19 +1443,30 @@ function textareaSizeBounds(content) {
   return out;
 }
 var VIEW_GUARD = /\bif\s*\(\s*(!?\s*[\w.]{1,30}(?:\s*(?:===|!==|==|!=)\s*[\w."']{1,20})?)\s*\)\s*return\s+<\s*\w*(Skeleton|Placeholder|Shimmer|Loading|Loader|Spinner)\b/;
-var VIEW_GUARD_LOADING = /^!?(is)?(loading|pending|fetching|data|resource|result|state|profile|items|rows|list|summary|overview|response)$/i;
+var LOADING_NAME = "loading|pending|fetching|data|resource|result|state|profile|items|rows|list|summary|overview|response";
+var LOADING_VALUE = "loading|pending|fetching";
+var VIEW_GUARD_LOADING = new RegExp(`^(?:!?(?:\\w{1,30}\\.)*(?:is)?(?:${LOADING_NAME})|(?:\\w{1,30}\\.)*\\w{1,30}(?:===|!==|==|!=)["']?(?:${LOADING_VALUE})["']?)$`, "i");
 var VIEW_CHROME_HEADING = /<\s*(h1|h2|h3|CardTitle|DialogTitle|PageHeader|SheetTitle|SectionTitle)\b/;
 var VIEW_CHROME_TEXT = />\s*[A-Z][A-Za-z0-9 ,.'&:%/()-]{2,60}\s*</;
 var VIEW_BODY_LOOKAHEAD = 400;
+var ALLOW_VIEW_SKELETON = /enigma:allow-view-skeleton/;
+function markedNearby(lines, index, marker) {
+  const { start, end } = enclosingBlock(lines, index);
+  return lines.slice(Math.max(0, Math.min(start, index - 1)), end + 1).some((line) => marker.test(line));
+}
+var SKELETON_GUARD = new RegExp(SKELETON_GUARD_SRC);
+var SKELETON_SIGNAL = new RegExp(SKELETON_SIGNAL_SRC, "i");
 function viewBlankedWhileLoading(content) {
-  if (/enigma:allow-view-skeleton/.test(content)) return [];
   const lines = content.split("\n");
+  const owned = !SKELETON_SIGNAL.test(content);
   const out = [];
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     if (COMMENT_LINE.test(line) || /enigma:/.test(line)) continue;
     const match = VIEW_GUARD.exec(line);
     if (!match || !VIEW_GUARD_LOADING.test(match[1].replace(/\s+/g, ""))) continue;
+    if (owned && SKELETON_GUARD.test(line)) continue;
+    if (markedNearby(lines, i, ALLOW_VIEW_SKELETON)) continue;
     let headings = 0;
     let texts = 0;
     for (let j = i + 1; j < lines.length && j - i < VIEW_BODY_LOOKAHEAD; j++) {
@@ -1472,28 +1485,33 @@ function viewBlankedWhileLoading(content) {
 var ASYNC_ROUTE = /export\s+default\s+async\s+function\b/;
 var SERVER_DATA_AWAIT = /await\s+(prisma|db|supabase|drizzle|knex|mongoose)\b|await\s+[\w.]{1,40}\.(findMany|findUnique|findFirst|aggregate|groupBy|count|createQueryBuilder)\s*\(/;
 var STREAM_BOUNDARY = /<\s*Suspense\b/;
+var ALLOW_BLOCKING_PAGE = /enigma:allow-blocking-page/;
+var LOADING_BOUNDARY_FILE = /^loading\.(jsx?|tsx)$/;
 function pageAwaitWithoutBoundary(content, file) {
-  if (/enigma:allow-blocking-page/.test(content)) return [];
   if (/^\s*["']use client["']/m.test(content)) return [];
-  if (!ASYNC_ROUTE.test(content) || STREAM_BOUNDARY.test(content)) return [];
-  if (nearestLoadingBoundary(file)) return [];
+  if (!ASYNC_ROUTE.test(content)) return [];
   const lines = content.split("\n");
+  if (lines.some((l) => !COMMENT_LINE.test(l) && STREAM_BOUNDARY.test(l))) return [];
+  const out = [];
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     if (COMMENT_LINE.test(line) || /enigma:/.test(line) || !SERVER_DATA_AWAIT.test(line)) continue;
-    return [{ line: i + 1, detail: "the route awaits this query before it returns any markup, and neither a loading.tsx in the segment chain nor a <Suspense> boundary lets the shell paint first" }];
+    if (markedNearby(lines, i, ALLOW_BLOCKING_PAGE)) continue;
+    out.push({ line: i + 1, detail: "the route awaits this query before it returns any markup, and neither a loading.tsx in the segment chain nor a <Suspense> boundary lets the shell paint first" });
   }
-  return [];
+  if (!out.length || nearestLoadingBoundary(file)) return [];
+  return out;
 }
 function nearestLoadingBoundary(file) {
+  const root = findProjectRoot(file);
   let dir = dirname(resolve(file));
   for (let i = 0; i < 20; i++) {
     try {
-      if (readdirSync(dir).some((name) => /^loading\.[jt]sx$/.test(name))) return true;
+      if (readdirSync(dir).some((name) => LOADING_BOUNDARY_FILE.test(name))) return true;
     } catch {
       return false;
     }
-    if (/[\\/](app|pages|src)$/.test(dir)) return false;
+    if (!root || dir === root || /[\\/](app|pages|src)$/.test(dir)) return false;
     const parent = dirname(dir);
     if (parent === dir) return false;
     dir = parent;

@@ -43,6 +43,14 @@ export type Stage = "edit" | "diff";
 /** A line whose trimmed start is a comment - the pattern scan skips these to avoid false positives. */
 const COMMENT_LINE = /^\s*(\/\/|#|\*|--|<!--|\{?\/\*)/;
 
+/**
+ * fe-skeleton-loading's guard and its mitigation set, declared here because a SECOND consumer reads
+ * them: viewBlankedWhileLoading skips any line this pair would already report, so one blanked view
+ * never arrives as two BLOCK findings with two different messages for one fix.
+ */
+const SKELETON_GUARD_SRC = "\\bif\\s*\\(\\s*(isLoading|isPending|isFetching|loading|pending)\\s*\\)\\s*return\\s+(null\\b|<\\s*\\w*(Spinner|Loader|Loading|CircularProgress)\\b)";
+const SKELETON_SIGNAL_SRC = "skeleton|animate-pulse|shimmer|Suspense|ContentLoader|content-loader|<\\s*Placeholder";
+
 /** One convention rule. `file` rules regex-scan the edited file; `project` rules run a named check. */
 export interface GuardrailRule {
     id: string;
@@ -448,8 +456,8 @@ export const BUILTIN_RULES: GuardrailRule[] = [
         // is present (skeleton, animate-pulse, shimmer, Suspense, a content-loader lib, <Placeholder>)
         // - the component already renders a placeholder somewhere. Kept to the terse one-line guard for
         // precision (a multi-line block is not matched: precision > recall).
-        pattern: "\\bif\\s*\\(\\s*(isLoading|isPending|isFetching|loading|pending)\\s*\\)\\s*return\\s+(null\\b|<\\s*\\w*(Spinner|Loader|Loading|CircularProgress)\\b)",
-        absent: "skeleton|animate-pulse|shimmer|Suspense|ContentLoader|content-loader|<\\s*Placeholder",
+        pattern: SKELETON_GUARD_SRC,
+        absent: SKELETON_SIGNAL_SRC,
         message: "Component returns nothing (or only a spinner) while data loads, so the whole page stays blank until the fetch resolves. Render the shell on first paint - nav, headings, card frames, table chrome, filters, and any value you already hold - and skeleton ONLY the region whose data is missing, shaped like the real content with its space reserved so nothing shifts when it lands. A region that does not depend on this request is not loading and must render now (frontend-policy).",
         // BLOCK, changed from warn: this is the rule for the defect users keep reporting (a page
         // that renders nothing until its data arrives), and as a warn it exited 0 - printed to
@@ -1389,12 +1397,24 @@ export function textareaSizeBounds(content: string): { line: number; detail: str
  */
 const VIEW_GUARD = /\bif\s*\(\s*(!?\s*[\w.]{1,30}(?:\s*(?:===|!==|==|!=)\s*[\w."']{1,20})?)\s*\)\s*return\s+<\s*\w*(Skeleton|Placeholder|Shimmer|Loading|Loader|Spinner)\b/;
 
+/** The names a value carries when it holds the response that has not arrived yet. */
+const LOADING_NAME = "loading|pending|fetching|data|resource|result|state|profile|items|rows|list|summary|overview|response";
+
+/** The subset that names the WAIT itself, so it carries meaning as the right-hand side of a comparison. */
+const LOADING_VALUE = "loading|pending|fetching";
+
 /**
  * The guarded value, as the conditions that actually mean "the data is not here yet" are written.
  * A guard on anything else (a permission flag, a feature toggle, a selected id) is a different
  * branch and is deliberately not matched.
+ *
+ * Three forms, and no more: the bare flag (`isLoading`, `!data`), the react-query / SWR status
+ * comparison (`status === "loading"`, `query.status === "pending"`), and a dotted read whose LAST
+ * segment is one of the names above (`!query.data`). The comparison is accepted only when the
+ * compared VALUE is a loading word, which is what keeps `role === "admin"` out. The input is the
+ * condition with its whitespace already stripped.
  */
-const VIEW_GUARD_LOADING = /^!?(is)?(loading|pending|fetching|data|resource|result|state|profile|items|rows|list|summary|overview|response)$/i;
+const VIEW_GUARD_LOADING = new RegExp(`^(?:!?(?:\\w{1,30}\\.)*(?:is)?(?:${LOADING_NAME})|(?:\\w{1,30}\\.)*\\w{1,30}(?:===|!==|==|!=)["']?(?:${LOADING_VALUE})["']?)$`, "i");
 
 /** Chrome that is drawn from the component itself and never needed the response. */
 const VIEW_CHROME_HEADING = /<\s*(h1|h2|h3|CardTitle|DialogTitle|PageHeader|SheetTitle|SectionTitle)\b/;
@@ -1404,6 +1424,25 @@ const VIEW_CHROME_TEXT = />\s*[A-Z][A-Za-z0-9 ,.'&:%/()-]{2,60}\s*</;
 
 /** How far the body scan runs before giving up, so a pathological file cannot stall the hook. */
 const VIEW_BODY_LOOKAHEAD = 400;
+
+/** The marker, scoped to the guard's own block rather than to the file (the fe-server-first precedent). */
+const ALLOW_VIEW_SKELETON = /enigma:allow-view-skeleton/;
+
+/**
+ * Whether an escape-hatch marker covers the flagged line. Scoped, never file-wide: a file-wide test
+ * lets one marked guard silently exempt every other one in the same file, the lesson
+ * fe-server-first-mutation already paid for. The window is the enclosing block extended one line up,
+ * because "mark the line" is written either on the line itself or on the comment above it, and a
+ * guard at top level has no block to carry the marker.
+ */
+function markedNearby(lines: string[], index: number, marker: RegExp): boolean {
+    const { start, end } = enclosingBlock(lines, index);
+    return lines.slice(Math.max(0, Math.min(start, index - 1)), end + 1).some((line) => marker.test(line));
+}
+
+/** fe-skeleton-loading's own pair, compiled once, to recognise the line that rule already owns. */
+const SKELETON_GUARD = new RegExp(SKELETON_GUARD_SRC);
+const SKELETON_SIGNAL = new RegExp(SKELETON_SIGNAL_SRC, "i");
 
 /**
  * Views that replace themselves with placeholders while their data loads.
@@ -1415,20 +1454,29 @@ const VIEW_BODY_LOOKAHEAD = 400;
  * built from the awaited value (`return <Inner {...data} />`, two children fed from `data`) has
  * neither, and is correctly left alone: there the region and the component are the same thing.
  *
- * MEASURED over 7195 UI files of real product repositories: 25 placeholder guards, 13 findings,
- * every one a genuine view (a settings page blanked for two strings, a dashboard blanked for its
- * tiles, three route components blanked below their own <h1>), 0 false positives. Skipping comment
- * lines is load-bearing - three of the corpus hits are commented-out guards.
+ * A line fe-skeleton-loading would report is skipped here: that rule owns the `null` / bare-loader
+ * return in a file with no placeholder signal at all, and reporting it twice would put two BLOCK
+ * findings with two different messages on one line for one fix. When the file DOES carry a
+ * placeholder signal the older rule is cleared by its own `absent`, so this one reports it and the
+ * shape is covered exactly once either way.
+ *
+ * MEASURED over 7195 UI files of real product repositories, BEFORE the condition set was widened to
+ * the status comparison and the dotted read: 25 placeholder guards, 13 findings, every one a genuine
+ * view (a settings page blanked for two strings, a dashboard blanked for its tiles, three route
+ * components blanked below their own <h1>), 0 false positives. Skipping comment lines is
+ * load-bearing - three of the corpus hits are commented-out guards.
  */
 export function viewBlankedWhileLoading(content: string): { line: number; detail: string; }[] {
-    if (/enigma:allow-view-skeleton/.test(content)) return [];
     const lines = content.split("\n");
+    const owned = !SKELETON_SIGNAL.test(content);
     const out: { line: number; detail: string; }[] = [];
     for (let i = 0; i < lines.length; i++) {
         const line = lines[i]!;
         if (COMMENT_LINE.test(line) || /enigma:/.test(line)) continue;
         const match = VIEW_GUARD.exec(line);
         if (!match || !VIEW_GUARD_LOADING.test(match[1]!.replace(/\s+/g, ""))) continue;
+        if (owned && SKELETON_GUARD.test(line)) continue;
+        if (markedNearby(lines, i, ALLOW_VIEW_SKELETON)) continue;
         let headings = 0;
         let texts = 0;
         for (let j = i + 1; j < lines.length && j - i < VIEW_BODY_LOOKAHEAD; j++) {
@@ -1460,36 +1508,61 @@ const SERVER_DATA_AWAIT = /await\s+(prisma|db|supabase|drizzle|knex|mongoose)\b|
 /** A streaming boundary declared in the file itself. */
 const STREAM_BOUNDARY = /<\s*Suspense\b/;
 
+/** The marker, scoped to the awaiting block rather than to the file (the fe-server-first precedent). */
+const ALLOW_BLOCKING_PAGE = /enigma:allow-blocking-page/;
+
+/** A route's own `loading.tsx`, in every extension Next accepts for it. */
+const LOADING_BOUNDARY_FILE = /^loading\.(jsx?|tsx)$/;
+
 /**
  * Async route components that await their data with no streaming boundary anywhere above them.
  *
  * The boundary is a property of the SEGMENT, not of the file: Next applies the nearest `loading.tsx`
  * at or above the route, so the check walks up to the app directory before reporting. That walk is
  * load-bearing - 7 of the 11 measured candidates are covered by an ancestor `loading.tsx` and a
- * sibling-only test would have reported every one of them.
+ * sibling-only test would have reported every one of them. It is also the only DISK read in the
+ * engine, so it runs last, once the content has already produced a finding: a route with no awaited
+ * query pays nothing for it.
+ *
+ * Every awaited query is reported, not just the first. The turn-end sweep keeps only findings
+ * anchored to a line the change ADDED, so a single anchor on a pre-existing await made the rule
+ * silent on exactly the case it is for - a route that gains a second blocking query.
  */
 export function pageAwaitWithoutBoundary(content: string, file: string): { line: number; detail: string; }[] {
-    if (/enigma:allow-blocking-page/.test(content)) return [];
     if (/^\s*["']use client["']/m.test(content)) return [];
-    if (!ASYNC_ROUTE.test(content) || STREAM_BOUNDARY.test(content)) return [];
-    if (nearestLoadingBoundary(file)) return [];
+    if (!ASYNC_ROUTE.test(content)) return [];
     const lines = content.split("\n");
+    // A COMMENTED-OUT <Suspense> is not a boundary, and clearing the rule on one would let the
+    // finding be dismissed by pasting the fix into a comment.
+    if (lines.some((l) => !COMMENT_LINE.test(l) && STREAM_BOUNDARY.test(l))) return [];
+    const out: { line: number; detail: string; }[] = [];
     for (let i = 0; i < lines.length; i++) {
         const line = lines[i]!;
         if (COMMENT_LINE.test(line) || /enigma:/.test(line) || !SERVER_DATA_AWAIT.test(line)) continue;
-        return [{ line: i + 1, detail: "the route awaits this query before it returns any markup, and neither a loading.tsx in the segment chain nor a <Suspense> boundary lets the shell paint first" }];
+        if (markedNearby(lines, i, ALLOW_BLOCKING_PAGE)) continue;
+        out.push({ line: i + 1, detail: "the route awaits this query before it returns any markup, and neither a loading.tsx in the segment chain nor a <Suspense> boundary lets the shell paint first" });
     }
-    return [];
+    if (!out.length || nearestLoadingBoundary(file)) return [];
+    return out;
 }
 
-/** Whether a `loading.tsx` covers this route, at its own segment or any ancestor up to the app root. */
+/**
+ * Whether a `loading.tsx` covers this route, at its own segment or any ancestor up to the app root.
+ *
+ * Bounded by the PROJECT: without that bound the walk stopped only at an `app`/`pages`/`src` segment
+ * or the filesystem root, so a route with no such ancestor read the worktree's parent, the home
+ * directory and the drive root - and a stray `loading.tsx` in any of them silently cleared a BLOCK
+ * rule for a route in a different repository.
+ */
 function nearestLoadingBoundary(file: string): boolean {
+    const root = findProjectRoot(file);
     let dir = dirname(resolve(file));
     for (let i = 0; i < 20; i++) {
         try {
-            if (readdirSync(dir).some((name) => /^loading\.[jt]sx$/.test(name))) return true;
+            if (readdirSync(dir).some((name) => LOADING_BOUNDARY_FILE.test(name))) return true;
         } catch { return false; }
-        if (/[\\/](app|pages|src)$/.test(dir)) return false;
+        // No project root means no bound to walk within, so the route's own segment is all that is read.
+        if (!root || dir === root || /[\\/](app|pages|src)$/.test(dir)) return false;
         const parent = dirname(dir);
         if (parent === dir) return false;
         dir = parent;
