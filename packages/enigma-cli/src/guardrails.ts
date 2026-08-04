@@ -649,8 +649,9 @@ export const BUILTIN_RULES: GuardrailRule[] = [
         // the element that hides the value, so the question "can the user still read it?" is answered
         // by that element and its immediate wrapper, and nothing else.
         // DIFF stage, and not optional: hiding the value is what a clipped dynamic value does by
-        // default (1490 of 1699 in the measured corpus, 88%), so an edit-stage rule would report a
-        // project's rows forever.
+        // default - the great majority of the measured corpus's clipped values carry their text
+        // nowhere - so an edit-stage rule would report a project's rows forever. The figures are in
+        // text-overflow.md and are deliberately not repeated here.
         stage: "diff",
         fileCheck: "fe-truncated-value-unreachable",
         message: "This clips a value the user cannot recover: the text is ellipsised and the full string appears nowhere. A name, email, path or title is exactly the value someone needs in full, and the sample used while building is always short enough to hide the problem. Where the design system has a tooltip, wrap the element in it - that is the better answer. Otherwise give the clipping element a `title` attribute carrying the same value, written in this file's own binding syntax (`title={value}` in JSX, `:title=\"value\"` in Vue, `title={value}` in Svelte, `title=\"...\"` in plain HTML) - and where the value must be readable at a glance rather than on hover, let it wrap instead of clipping. Mark the line `enigma:allow-clipped-value` when the full value is already shown elsewhere on the screen (frontend-policy).",
@@ -1617,7 +1618,7 @@ const ALLOW_CLIPPED_VALUE = /enigma:allow-clipped-value/;
  * with no message, no turn and no tokens.
  *
  * TWO WARNINGS ABOUT MEASURING IT, both paid for here. (1) A corpus scan measures VOLUME and cannot
- * validate correctness: BOTH false positives below removed zero corpus findings, and both had to be
+ * validate correctness: BOTH false positives above removed zero corpus findings, and both had to be
  * found by PROBING - so a corpus count can never be the thing that clears a pattern change. (2)
  * NEVER MIX THE TWO WIDTHS. CLIP_ONE_LINE also matches the identifier `truncate`, its call sites,
  * static copy and CSS, none of which render a value, so both halves of that 88% have to be measured
