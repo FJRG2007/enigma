@@ -39,9 +39,10 @@ test("flags an ellipsis that cannot take effect, and only that", () => {
     const f = checkFile("src/app.css", broken, null);
     expect(f.length).toBe(1);
     expect(f[0]!.ruleId).toBe("fe-ellipsis-without-overflow");
-    // BLOCK, not warn: a warn is reported and never required (the hook exits 0, the turn-end
-    // sweep carries it without denying the stop), which for a mechanical fix is the same as not
-    // gating it - the fe-skeleton-loading lesson. Pinned because the rule shipped as a warn.
+    // BLOCK, not warn: a warn is reported and never required (the hook exits 0, and the turn-end
+    // sweep carries it only when a blocking finding fires in the same sweep, never denying the
+    // stop over it), which for a mechanical fix is the same as not gating it - the
+    // fe-skeleton-loading lesson. Pinned because the rule shipped as a warn.
     expect(f[0]!.severity).toBe("block");
     expect(checkFile("src/app.css", fixed, null)).toEqual([]);
 });
@@ -65,6 +66,24 @@ test("blocks a bare password input, and clears on a toggle or either escape hatc
     expect(checkFile("src/PasswordField.tsx", `// enigma:allow-raw-password-input\n${bare}`, null)).toEqual([]);
     // A capitalized component owns its own toggle: still never matched (flags: "" keeps it case-sensitive).
     expect(checkFile("src/PasswordField.tsx", '<Input type="password" value={pw} />', null)).toEqual([]);
+});
+
+// A block denies a turn and fails the pre-commit hook, so both flipped rules owe the exclusions
+// every other blocking rule carries - and BOTH forms of each directory glob: `**/dist/**` compiles
+// to `^.*/dist/.*$`, which never matches a repository-root `dist/`.
+test("neither flipped rule blocks on a fixture or a generated file", () => {
+    const fires = (id: string, path: string, source: string) => checkFile(path, source, null).some((f) => f.ruleId === id);
+    const bare = '<input type="password" value={pw} />';
+    for (const path of [
+        "src/LoginForm.test.tsx", "src/LoginForm.spec.tsx", "src/PasswordInput.stories.tsx",
+        "tests/login.tsx", "src/__tests__/login.tsx", "__tests__/login.tsx", "stories/login.tsx",
+        "dist/login.jsx", "app/dist/login.jsx", "build/login.jsx", "node_modules/pkg/login.jsx", "vendor/login.jsx",
+    ]) expect(fires("fe-password-input", path, bare)).toBe(false);
+    const inert = ".name { text-overflow: ellipsis; white-space: nowrap; }";
+    for (const path of [
+        "src/app.test.css", "app.min.css", "tests/app.css", "__tests__/app.css",
+        "dist/app.css", "app/dist/app.css", "build/app.css", ".next/static/app.css", "node_modules/pkg/app.css",
+    ]) expect(fires("fe-ellipsis-without-overflow", path, inert)).toBe(false);
 });
 
 test("flags every explicit auto-increment identity signal", () => {

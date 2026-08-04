@@ -145,6 +145,28 @@ var BUILTIN_RULES = [
     id: "fe-password-input",
     label: "Reusable password input (show/hide)",
     files: ["*.tsx", "*.jsx"],
+    excludeFiles: [
+      "*.test.*",
+      "*.spec.*",
+      "*.stories.*",
+      "*.min.js",
+      "**/tests/**",
+      "tests/**",
+      "**/__tests__/**",
+      "__tests__/**",
+      "**/stories/**",
+      "stories/**",
+      "**/dist/**",
+      "dist/**",
+      "**/build/**",
+      "build/**",
+      "**/_build/**",
+      "_build/**",
+      "**/node_modules/**",
+      "node_modules/**",
+      "**/vendor/**",
+      "vendor/**"
+    ],
     scope: "file",
     // A raw lowercase <input type="password"> (not a component) with no show/hide toggle in the
     // file. flags:"" = case-sensitive so a capitalized <Input> component is NOT matched; a
@@ -603,7 +625,23 @@ var BUILTIN_RULES = [
     id: "fe-ellipsis-without-overflow",
     label: "Ellipsis needs overflow hidden",
     files: ["*.css", "*.scss", "*.sass", "*.less", "*.styl", "*.tsx", "*.jsx", "*.vue", "*.svelte", "*.astro", "*.html"],
-    excludeFiles: ["*.test.*", "*.spec.*", "**/tests/**", "**/__tests__/**", "**/dist/**", "**/build/**", "*.min.css"],
+    excludeFiles: [
+      "*.test.*",
+      "*.spec.*",
+      "*.min.css",
+      "**/tests/**",
+      "tests/**",
+      "**/__tests__/**",
+      "__tests__/**",
+      "**/dist/**",
+      "dist/**",
+      "**/build/**",
+      "build/**",
+      "**/.next/**",
+      ".next/**",
+      "**/node_modules/**",
+      "node_modules/**"
+    ],
     scope: "file",
     // text-overflow only applies to a box that actually overflows, so ellipsis without an
     // overflow value does nothing at all - the text just spills. The absent set covers the
@@ -617,9 +655,10 @@ var BUILTIN_RULES = [
     message: "text-overflow: ellipsis has no effect without an overflow value other than visible - the text overflows instead of being clipped. Add overflow: hidden (with white-space: nowrap for a single line), and keep the full value reachable via title or a tooltip (frontend-policy). Mark the line `enigma:` or add `enigma:allow-inert-ellipsis` to the file when the overflow value is set from another file (a shared utility class, an inherited base rule).",
     // BLOCK, and the reason is the fe-skeleton-loading lesson rather than the severity of the
     // defect: a warn exits 0, so runGuardrailsHook prints it where the model never reads it,
-    // and the only channel that does carry a warning - the turn-end sweep - lets it ride
-    // along in the message without deciding the exit code. So the one gate for a defect the
-    // model keeps writing could report it but never require the fix. Affordable here, and
+    // and the only channel that can carry a warning - the turn-end sweep - writes it into the
+    // message only when a blocking finding fires in the same sweep, and never decides the exit
+    // code itself. So the one gate for a defect the model keeps writing could report it but
+    // never require the fix. Affordable here, and
     // this is the half that had to be measured, because there is no legacy backlog: measured
     // with this rule over 10253 UI files of the whole local corpus (this repo, apps, and every
     // sibling product repo on the machine), 116 candidate lines in 40 files carry the
@@ -825,7 +864,8 @@ var BUILTIN_RULES = [
     // Size has no regex form, hence maxBytes. 40 KB is ~10k tokens paid on EVERY session
     // in the project, relevant or not - a memory file that large is already broken, and
     // the fix (an index plus on-demand docs) is mechanical, so this blocks rather than
-    // warns: a warn exits 0 and never reaches the model that keeps growing the file.
+    // warns: a warn exits 0 and reaches the model that keeps growing the file only when a
+    // blocking finding fires in the same turn-end sweep, so it is reported and never required.
     maxBytes: 4e4,
     message: "This memory file loads into every session in the project, so its cost is paid on every task regardless of relevance. Keep it an INDEX: move each subsystem's detail into its own doc (docs/notes/<topic>.md) and leave one line here saying what the note covers and when to read it. Route new conventions by tier - a file-local syntactic signature becomes a guardrail rule, a domain-scoped rule belongs in the owning skill (loaded on demand), and only a truly universal rule stays in memory. Turn this off with `enigma guardrails disable ctx-memory-budget`.",
     severity: "block"
@@ -1054,7 +1094,7 @@ var BUILTIN_RULES = [
     scope: "file",
     // A call spanning several lines has no line-regex form, hence a coded check (see
     // missingWindowsHide for the three shapes it deliberately leaves alone). BLOCK for the
-    // ui-no-em-dash reason: a warn exits 0 and never reaches the model, the symptom is
+    // ui-no-em-dash reason: a warn exits 0 and is reported but never required, the symptom is
     // invisible to whoever writes the code on macOS or Linux, and the fix is one key.
     fileCheck: "proc-windows-hide",
     message: "Process spawned without windowsHide. On Windows a console child started by a process that has no console of its own - a daemon, an editor hook, a detached background task - pops a real console window on screen and closes it again, which reads as something crashing. Add `windowsHide: true` to the options object; it is inert on macOS and Linux, and inert on Windows when the parent already has a console, so it is safe on every call that is not deliberately opening a terminal for the user. For one that IS (a login flow that must show a terminal), mark the call with an `enigma:` note.",
