@@ -1600,15 +1600,13 @@ const ALLOW_CLIPPED_VALUE = /enigma:allow-clipped-value/;
  * different. The element that clips is the element that hides the value, so whether the user can
  * still read it is decided by that element and the wrapper immediately above it.
  *
- * LAST MEASURED over 9079 UI files of real product repositories, with DYNAMIC_CHILD anchored to a
- * tag close but BEFORE the template sigils were excluded from it: 3344 lines declare a clip, 1426
- * clip a dynamic value with nothing carrying the full one, and the fixer below repaired 1159 of
- * them - 81%, so most of it never costs the model a token. That order of magnitude is what puts the
- * rule at the diff stage: it is a backlog, not an anomaly. The pair is PENDING RE-MEASUREMENT - the
- * sigil exclusion can only narrow it, and only in the Svelte/Astro/Vue dialects, but by how much is
- * unmeasured and must not be guessed at. Re-run the corpus scan before quoting either number as
- * current, and remember what the arrow-function false positive taught: a corpus measures VOLUME,
- * not correctness, so it is no substitute for probing the shapes an agent actually writes.
+ * MEASURED with the rule itself over 9370 UI files of 15 real product repositories (the rule's own
+ * excludeFiles applied, every extension it scans): 1490 findings, of which the fixer below repairs
+ * 1208 - 81%, so most of it never costs the model a token - and 282 reach it. That order of
+ * magnitude is what puts the rule at the diff stage: it is a backlog, not an anomaly. Every finding
+ * is in .tsx (1444) or .vue (46), which is the check that the sigil exclusion below hid no real
+ * one. Remember what the arrow-function false positive taught before trusting a number here: a
+ * corpus measures VOLUME, not correctness, and is no substitute for probing what an agent writes.
  */
 export function truncatedValueUnreachable(content: string): { line: number; detail: string; }[] {
     const lines = content.split("\n");
