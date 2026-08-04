@@ -648,8 +648,8 @@ export const BUILTIN_RULES: GuardrailRule[] = [
         // it flagged correct code and was deleted. Clipping is different: the element that clips is
         // the element that hides the value, so the question "can the user still read it?" is answered
         // by that element and its immediate wrapper, and nothing else.
-        // DIFF stage, and not optional: 1426 of these live in the measured corpus. It is what most
-        // real code does, so an edit-stage rule would report a project's existing rows forever.
+        // DIFF stage, and not optional: this is what most real code does (four figures of them in
+        // the measured corpus), so an edit-stage rule would report a project's rows forever.
         stage: "diff",
         fileCheck: "fe-truncated-value-unreachable",
         message: "This clips a value the user cannot recover: the text is ellipsised and the full string appears nowhere. A name, email, path or title is exactly the value someone needs in full, and the sample used while building is always short enough to hide the problem. Where the design system has a tooltip, wrap the element in it - that is the better answer. Otherwise give the clipping element a `title` attribute carrying the same value, written in this file's own binding syntax (`title={value}` in JSX, `:title=\"value\"` in Vue, `title={value}` in Svelte, `title=\"...\"` in plain HTML) - and where the value must be readable at a glance rather than on hover, let it wrap instead of clipping. Mark the line `enigma:allow-clipped-value` when the full value is already shown elsewhere on the screen (frontend-policy).",
@@ -1190,9 +1190,9 @@ export const FIXERS: Record<string, (line: string, file: string) => string | nul
  *
  * `stage` is what the re-check runs at, and it is why a DIFF-stage rule can carry a fixer at all:
  * re-checking at the edit stage would drop every diff-stage finding from `remaining`, reporting a
- * failed repair as a success. The caller decides which findings to hand over - the turn-end sweep
- * passes only the ones sitting on lines the change ADDED, so a repair never rewrites code the
- * agent did not just write.
+ * failed repair as a success. The caller decides which findings to hand over - the post-edit hook
+ * passes a diff-stage finding only when it sits on a line that differs from HEAD, so a repair
+ * never rewrites code the agent did not just write.
  */
 export function applyFixes(file: string, findings: Finding[], stage: Stage = "edit"): { fixed: Finding[]; remaining: Finding[]; } {
     const fixable = findings.filter((f) => f.line && FIXERS[f.ruleId]);
@@ -1213,7 +1213,12 @@ export function applyFixes(file: string, findings: Finding[], stage: Stage = "ed
     if (!fixed.length) return { fixed: [], remaining: findings };
     try { writeFileSync(file, lines.join("\n")); }
     catch { return { fixed: [], remaining: findings }; } // read-only file: report instead of fixing
-    return { fixed, remaining: checkPath(file, stage) };
+    // The write has already happened, so the re-check is not allowed to discard what it recorded.
+    // A hand-authored rule is user input reaching this path - a bad glob throws straight out of
+    // checkFile - and letting that unwind would leave the file rewritten on disk with `fixed` lost:
+    // no announcement, no ledger row, a working tree silently different from what the agent wrote.
+    try { return { fixed, remaining: checkPath(file, stage) }; }
+    catch { return { fixed, remaining: [] }; }
 }
 
 /** The child_process functions that start a process (and so can create a console window). */
@@ -1566,8 +1571,15 @@ const CLIP_ONE_LINE = /\btruncate\b|\btext-ellipsis\b|text-overflow\s*:\s*ellips
  * became a block finding on code that clips nothing, and the fixer correctly declined it, leaving
  * the turn denied with no exit but a marker. The excluded characters are every operator that ends
  * in `>`: `=>`, `<=`, `>=`, `!=`, `-->`, `>>`.
+ *
+ * And the brace must open a VALUE. Svelte and Astro spell control flow in the same braces
+ * (`{#if}`, `{#each}`, `{/if}`, `{:else}`, `{@html}`), and the rule matches those dialects while
+ * the fixer declines every file that is not `.jsx`/`.tsx` - so a block opener read as a rendered
+ * value was the arrow-function false positive again, one dialect over: a denied turn with no
+ * repair available. The sigils are excluded rather than the constructs, because a sigil is never
+ * the first character of an expression.
  */
-const DYNAMIC_CHILD = /(?<![=!<>-])>\s*\{/;
+const DYNAMIC_CHILD = /(?<![=!<>-])>\s*\{(?![#/:@])/;
 
 /** Any way the full value stays reachable: the native tooltip, an accessible name, or a tooltip component. */
 const VALUE_REACHABLE = /\btitle\s*=|aria-label\s*=|<\s*Tooltip|TooltipTrigger|data-tooltip|hoverCard|HoverCard/i;
@@ -1588,13 +1600,15 @@ const ALLOW_CLIPPED_VALUE = /enigma:allow-clipped-value/;
  * different. The element that clips is the element that hides the value, so whether the user can
  * still read it is decided by that element and the wrapper immediately above it.
  *
- * RE-MEASURED over 9079 UI files of real product repositories, after DYNAMIC_CHILD was anchored to
- * a tag close: 3344 lines declare a clip, 1426 clip a dynamic value with nothing carrying the full
- * one, and the fixer below repairs 1159 of them - 81%, so most of it never costs the model a token.
- * That is a backlog, not an anomaly, which is what puts the rule at the diff stage. The anchoring
- * removed no corpus finding (the arrow-function false positive it fixes needs the identifier
- * `truncate` on the same line as a callback body, which product code rarely writes), so the pair it
- * supersedes was close; it is restated here because it was measured, not carried.
+ * LAST MEASURED over 9079 UI files of real product repositories, with DYNAMIC_CHILD anchored to a
+ * tag close but BEFORE the template sigils were excluded from it: 3344 lines declare a clip, 1426
+ * clip a dynamic value with nothing carrying the full one, and the fixer below repaired 1159 of
+ * them - 81%, so most of it never costs the model a token. That order of magnitude is what puts the
+ * rule at the diff stage: it is a backlog, not an anomaly. The pair is PENDING RE-MEASUREMENT - the
+ * sigil exclusion can only narrow it, and only in the Svelte/Astro/Vue dialects, but by how much is
+ * unmeasured and must not be guessed at. Re-run the corpus scan before quoting either number as
+ * current, and remember what the arrow-function false positive taught: a corpus measures VOLUME,
+ * not correctness, so it is no substitute for probing the shapes an agent actually writes.
  */
 export function truncatedValueUnreachable(content: string): { line: number; detail: string; }[] {
     const lines = content.split("\n");
@@ -2031,22 +2045,95 @@ export function checkPath(file: string, stage: Stage = "edit"): Finding[] {
     return checkFile(file, content, findProjectRoot(file), stage);
 }
 
+/** Run git for a probe. Returns null when the command FAILED, which empty output cannot express. */
+function gitProbe(cwd: string, args: string[]): string | null {
+    try { return execFileSync("git", args, { cwd, encoding: "utf8", maxBuffer: 32 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"], windowsHide: true }); }
+    catch { return null; }
+}
+
+/** A `git diff -U0` hunk header. Group 1/2 are the range in the file as it stands on disk. */
+const DIFF_HUNK = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/;
+
+/**
+ * Which of `file`'s lines differ from HEAD, as a predicate, or null when git cannot say.
+ *
+ * FAILING SAFE IS THE WHOLE POINT, because the caller repairs what this admits: a line the change
+ * cannot be PROVEN to have touched is never eligible, since rewriting one would put code the agent
+ * never wrote into someone else's diff. An untracked file is new in its entirety, so every line of
+ * it qualifies; anything else that cannot be resolved - no repository, a git that failed, no HEAD
+ * to diff against - yields null and nothing is repaired.
+ */
+function changedLineFilter(file: string): ((line: number) => boolean) | null {
+    const cwd = dirname(file);
+    // `--untracked-files=all`, not the default: git collapses a wholly untracked directory to a
+    // single `?? src/` entry, and a brand-new file inside one would then read as tracked-and-clean.
+    const status = gitProbe(cwd, ["-c", "core.quotepath=false", "status", "--porcelain", "--untracked-files=all", "--", file]);
+    if (status === null) return null;
+    if (/^\?\?/m.test(status)) return () => true;
+    const diff = gitProbe(cwd, ["diff", "-U0", "HEAD", "--", file]);
+    if (diff === null) return null;
+    const changed = new Set<number>();
+    for (const line of diff.split("\n")) {
+        const hunk = DIFF_HUNK.exec(line);
+        if (!hunk) continue;
+        const start = Number(hunk[1]);
+        // A hunk header omits the count when it is 1.
+        const count = hunk[2] === undefined ? 1 : Number(hunk[2]);
+        for (let i = 0; i < count; i++) changed.add(start + i);
+    }
+    return (line) => changed.has(line);
+}
+
+/**
+ * What the DIFF-stage rules find on the lines this file has actually changed: the findings the
+ * post-edit hook may REPAIR and never reports.
+ *
+ * A diff-stage rule is written for code a change added, and this hook sees a whole file - which is
+ * why its findings stay with the turn-end sweep, the one component that knows which lines the
+ * change added. But a fixer is not a report: it costs no message and no turn, and the file here is
+ * dirty by construction (the agent just wrote it), so repairing it now is a plain edit to work in
+ * flight rather than a write that leaves a commit disagreeing with the working tree.
+ */
+function repairableDiffFindings(file: string): Finding[] {
+    const rules = loadRules().filter((r) => r.stage === "diff");
+    if (!rules.length) return [];
+    const changed = changedLineFilter(file);
+    if (!changed) return [];
+    let content: string;
+    try { content = readFileSync(file, "utf8"); } catch { return []; }
+    if (content.includes("\0")) return [];
+    // A hand-authored rule is user input, and this runs after every edit the agent makes: a bad
+    // one must cost the repair, never the tool call.
+    try { return checkFile(file, content, findProjectRoot(file), "diff", rules).filter((f) => f.line && changed(f.line)); }
+    catch { return []; }
+}
+
 /**
  * Post-edit hook entry. Given a Claude/opencode PostToolUse payload (`tool_input.file_path`)
  * - passed in, or read from stdin when omitted - scans that file and returns the process
  * exit code: 2 when any BLOCK violation is found (stderr fed back to the model), else 0.
  * WARN violations are printed to stdout (advisory) and never block.
+ *
+ * It REPORTS at the edit stage and REPAIRS at both, and that split is deliberate: a diff-stage
+ * finding belongs to the turn-end sweep, which knows whether the change added its line, while a
+ * diff-stage FIX belongs here, where the file is already dirty and the fixes are already announced.
  */
 export function runGuardrailsHook(payload?: string): number {
     let file: string | undefined;
     try { file = JSON.parse(payload ?? readFileSync(0, "utf8"))?.tool_input?.file_path; } catch { /* no/invalid payload */ }
     if (!file || typeof file !== "string") return 0;
     const found = checkPath(file);
-    if (!found.length) return 0;
-    // Repair what code can repair first: the model is only told about what is left.
-    const { fixed, remaining: findings } = applyFixes(file, found);
+    const repairable = [...found, ...repairableDiffFindings(file)];
+    if (!repairable.length) return 0;
+    // Repair what code can repair first: the model is only told about what is left. Re-checked at
+    // the DIFF stage, or every diff-stage finding would drop out of the re-check and a repair that
+    // did not actually clear its finding would be recorded as a success.
+    const { fixed } = applyFixes(file, repairable, "diff");
     if (fixed.length) process.stdout.write(`enigma guardrails (fixed)\n${fixed.map((f) => `${f.file}:${f.line} (${f.ruleId})`).join("\n")}\n`);
     recordFindings(fixed, "fixed");
+    // Re-derived from disk at the edit stage - the stage this hook reports at - and only when a
+    // fixer actually rewrote something; otherwise the first scan still describes the file.
+    const findings = fixed.length ? checkPath(file) : found;
     if (!findings.length) return 0;
     const warns = findings.filter((f) => f.severity === "warn");
     const blocks = findings.filter((f) => f.severity === "block");

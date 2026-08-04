@@ -6,6 +6,7 @@
  */
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { execFileSync } from "node:child_process";
 import { test, expect, afterAll, beforeEach } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync } from "node:fs";
 
@@ -15,7 +16,7 @@ process.env.HOME = HOME;
 const CONFIG = join(HOME, "guardrails.json");
 process.env.ENIGMA_GUARDRAILS_CONFIG = CONFIG;
 
-const { checkFile, checkPath, applyFixes, formatFindings, loadRules, findProjectRoot, recordFindings, readLedger, countLedger, summarizeLedger, BUILTIN_RULES, FIXERS } = await import("../src/guardrails");
+const { checkFile, checkPath, applyFixes, formatFindings, loadRules, findProjectRoot, recordFindings, readLedger, countLedger, summarizeLedger, runGuardrailsHook, BUILTIN_RULES, FIXERS } = await import("../src/guardrails");
 const { disableRule, enableRule, addRule, removeRule } = await import("../src/guardrails-config");
 
 afterAll(() => rmSync(HOME, { recursive: true, force: true }));
@@ -940,7 +941,7 @@ test("a clipped value must keep its full text reachable, and the fixer supplies 
     expect(found.length).toBe(1);
     expect(found[0]!.ruleId).toBe("fe-truncated-value-unreachable");
     expect(found[0]!.severity).toBe("block");
-    // 1426 of these live in the measured corpus, so the edit stage would report a project's rows forever.
+    // This is what most real code does, so the edit stage would report a project's rows forever.
     expect(checkFile("src/Row.tsx", clipped, null)).toEqual([]);
     expect(FIXERS["fe-truncated-value-unreachable"]!(clipped, "src/Row.tsx"))
         .toBe("<span className=\"truncate\" title={user.name}>{user.name}</span>");
@@ -956,6 +957,21 @@ test("a clipped value must keep its full text reachable, and the fixer supplies 
         // Explicitly allowed, because the full value is shown elsewhere on the screen.
         "<span className=\"truncate\">{user.name}</span> {/* enigma:allow-clipped-value */}",
     ]) expect(checkFile("src/Row.tsx", markup, null, "diff")).toEqual([]);
+});
+
+test("a template control block is not a rendered value", () => {
+    // Svelte and Astro spell control flow in the same braces a value uses. The rule matches those
+    // dialects and the fixer declines every file that is not .jsx/.tsx, so reading `{#if}` as a
+    // clipped value denied the turn with no repair available - the arrow-function false positive
+    // again, one dialect over.
+    for (const source of [
+        "<div class=\"truncate\">{#if loading}Loading{/if}</div>",
+        "<li class=\"truncate\">{#each items as item}{item}{/each}</li>",
+        "<span class=\"truncate\">{:else}nothing yet</span>",
+        "<p class=\"truncate\">{@html rendered}</p>",
+    ]) expect(checkFile("src/Row.svelte", source, null, "diff")).toEqual([]);
+    // The value form in the same dialect still fires - the sigils are what is excluded, not the file.
+    expect(checkFile("src/Row.svelte", "<div class=\"truncate\">{user.name}</div>", null, "diff").length).toBe(1);
 });
 
 test("an arrow function is not a JSX child, however many times it says truncate", () => {
@@ -1015,6 +1031,76 @@ test("the clipped-value fixer declines everything it cannot copy safely", () => 
     // The JSX attribute form only: a .vue or .html file writes it differently, so the rule reports
     // it and the model writes the fix.
     expect(FIXERS["fe-truncated-value-unreachable"]!("<span class=\"truncate\">{name}</span>", "src/Row.vue")).toBe(null);
+});
+
+/** A throwaway git repository, so the hook can tell a line the change touched from one it did not. */
+function gitRepo(): string {
+    const dir = mkdtempSync(join(tmpdir(), "gr-hook-"));
+    const git = (...args: string[]): void => { execFileSync("git", args, { cwd: dir, stdio: "ignore" }); };
+    git("init", "-q");
+    git("config", "user.email", "test@example.com");
+    git("config", "user.name", "test");
+    git("config", "commit.gpgsign", "false");
+    return dir;
+}
+
+/** The hook as its harness calls it: a PostToolUse payload naming one file. */
+function postEdit(file: string): number {
+    return runGuardrailsHook(JSON.stringify({ tool_input: { file_path: file } }));
+}
+
+const CLIPPED_NAME = "<span className=\"truncate\">{user.name}</span>\n";
+
+test("the post-edit hook repairs a diff-stage finding, on the lines the change touched and no others", () => {
+    // The repair lives HERE rather than in the turn-end sweep because the file is dirty by
+    // construction - the agent just wrote it - so there is no commit for the working tree to end
+    // up silently disagreeing with, and the hook already prints what it fixed.
+    const log = join(HOME, "hook-log.jsonl");
+    process.env.ENIGMA_GUARDRAILS_LOG = log;
+    const dir = gitRepo();
+    const file = join(dir, "Row.tsx");
+    writeFileSync(file, CLIPPED_NAME);
+    execFileSync("git", ["add", "-A"], { cwd: dir, stdio: "ignore" });
+    execFileSync("git", ["commit", "-qm", "row"], { cwd: dir, stdio: "ignore" });
+    // Line 1 is committed; line 2 is what this change wrote.
+    writeFileSync(file, `${CLIPPED_NAME}<span className="truncate">{user.email}</span>\n`);
+    expect(postEdit(file)).toBe(0); // a diff-stage finding is never REPORTED here
+    const after = readFileSync(file, "utf8").split("\n");
+    expect(after[0]).toBe("<span className=\"truncate\">{user.name}</span>");
+    expect(after[1]).toBe("<span className=\"truncate\" title={user.email}>{user.email}</span>");
+    expect(readLedger().some((e) => e.rule === "fe-truncated-value-unreachable" && e.outcome === "fixed")).toBe(true);
+    delete process.env.ENIGMA_GUARDRAILS_LOG;
+    rmSync(dir, { recursive: true, force: true });
+});
+
+test("a brand-new file is repaired in full, and a line git cannot speak for is not repaired at all", () => {
+    // Failing safe in both directions. An untracked file is new in its entirety, so every line of
+    // it qualifies; outside a repository nothing can be PROVEN to be this change's work, and
+    // rewriting a line on a guess would put code the agent never wrote into someone else's diff.
+    const repo = gitRepo();
+    const tracked = join(repo, "New.tsx");
+    writeFileSync(tracked, CLIPPED_NAME);
+    expect(postEdit(tracked)).toBe(0);
+    expect(readFileSync(tracked, "utf8")).toContain("title={user.name}");
+    const loose = mkdtempSync(join(tmpdir(), "gr-nogit-"));
+    const orphan = join(loose, "Row.tsx");
+    writeFileSync(orphan, CLIPPED_NAME);
+    expect(postEdit(orphan)).toBe(0);
+    expect(readFileSync(orphan, "utf8")).toBe(CLIPPED_NAME);
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(loose, { recursive: true, force: true });
+});
+
+test("a diff-stage finding the fixer declines stays with the turn-end sweep", () => {
+    // The hook REPORTS at the edit stage and REPAIRS at both: only the sweep knows whether the
+    // change added the line, so an unrepaired diff-stage finding is its business, not this one's.
+    const dir = gitRepo();
+    const file = join(dir, "Row.tsx");
+    const source = "<span className=\"truncate\">{user.name ?? \"Unknown\"}</span>\n";
+    writeFileSync(file, source);
+    expect(postEdit(file)).toBe(0);
+    expect(readFileSync(file, "utf8")).toBe(source);
+    rmSync(dir, { recursive: true, force: true });
 });
 
 test("the optimistic signal is code, not a word that happens to appear", () => {

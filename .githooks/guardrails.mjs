@@ -614,8 +614,8 @@ var BUILTIN_RULES = [
     // it flagged correct code and was deleted. Clipping is different: the element that clips is
     // the element that hides the value, so the question "can the user still read it?" is answered
     // by that element and its immediate wrapper, and nothing else.
-    // DIFF stage, and not optional: 1426 of these live in the measured corpus. It is what most
-    // real code does, so an edit-stage rule would report a project's existing rows forever.
+    // DIFF stage, and not optional: this is what most real code does (four figures of them in
+    // the measured corpus), so an edit-stage rule would report a project's rows forever.
     stage: "diff",
     fileCheck: "fe-truncated-value-unreachable",
     message: 'This clips a value the user cannot recover: the text is ellipsised and the full string appears nowhere. A name, email, path or title is exactly the value someone needs in full, and the sample used while building is always short enough to hide the problem. Where the design system has a tooltip, wrap the element in it - that is the better answer. Otherwise give the clipping element a `title` attribute carrying the same value, written in this file\'s own binding syntax (`title={value}` in JSX, `:title="value"` in Vue, `title={value}` in Svelte, `title="..."` in plain HTML) - and where the value must be readable at a glance rather than on hover, let it wrap instead of clipping. Mark the line `enigma:allow-clipped-value` when the full value is already shown elsewhere on the screen (frontend-policy).',
@@ -1362,7 +1362,11 @@ function applyFixes(file, findings, stage = "edit") {
   } catch {
     return { fixed: [], remaining: findings };
   }
-  return { fixed, remaining: checkPath(file, stage) };
+  try {
+    return { fixed, remaining: checkPath(file, stage) };
+  } catch {
+    return { fixed, remaining: [] };
+  }
 }
 var SPAWNERS = /* @__PURE__ */ new Set(["spawn", "spawnSync", "exec", "execSync", "execFile", "execFileSync"]);
 function spawnerBindings(content) {
@@ -1525,7 +1529,7 @@ function viewBlankedWhileLoading(content) {
   return out;
 }
 var CLIP_ONE_LINE = /\btruncate\b|\btext-ellipsis\b|text-overflow\s*:\s*ellipsis/;
-var DYNAMIC_CHILD = /(?<![=!<>-])>\s*\{/;
+var DYNAMIC_CHILD = /(?<![=!<>-])>\s*\{(?![#/:@])/;
 var VALUE_REACHABLE = /\btitle\s*=|aria-label\s*=|<\s*Tooltip|TooltipTrigger|data-tooltip|hoverCard|HoverCard/i;
 var WRAPPER_LOOKBACK = 4;
 var ALLOW_CLIPPED_VALUE = /enigma:allow-clipped-value/;
@@ -1806,6 +1810,49 @@ function checkPath(file, stage = "edit") {
   if (content.includes("\0")) return [];
   return checkFile(file, content, findProjectRoot(file), stage);
 }
+function gitProbe(cwd, args) {
+  try {
+    return execFileSync("git", args, { cwd, encoding: "utf8", maxBuffer: 32 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"], windowsHide: true });
+  } catch {
+    return null;
+  }
+}
+var DIFF_HUNK = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/;
+function changedLineFilter(file) {
+  const cwd = dirname(file);
+  const status = gitProbe(cwd, ["-c", "core.quotepath=false", "status", "--porcelain", "--untracked-files=all", "--", file]);
+  if (status === null) return null;
+  if (/^\?\?/m.test(status)) return () => true;
+  const diff = gitProbe(cwd, ["diff", "-U0", "HEAD", "--", file]);
+  if (diff === null) return null;
+  const changed = /* @__PURE__ */ new Set();
+  for (const line of diff.split("\n")) {
+    const hunk = DIFF_HUNK.exec(line);
+    if (!hunk) continue;
+    const start = Number(hunk[1]);
+    const count = hunk[2] === void 0 ? 1 : Number(hunk[2]);
+    for (let i = 0; i < count; i++) changed.add(start + i);
+  }
+  return (line) => changed.has(line);
+}
+function repairableDiffFindings(file) {
+  const rules = loadRules().filter((r) => r.stage === "diff");
+  if (!rules.length) return [];
+  const changed = changedLineFilter(file);
+  if (!changed) return [];
+  let content;
+  try {
+    content = readFileSync(file, "utf8");
+  } catch {
+    return [];
+  }
+  if (content.includes("\0")) return [];
+  try {
+    return checkFile(file, content, findProjectRoot(file), "diff", rules).filter((f) => f.line && changed(f.line));
+  } catch {
+    return [];
+  }
+}
 function runGuardrailsHook(payload) {
   let file;
   try {
@@ -1814,12 +1861,14 @@ function runGuardrailsHook(payload) {
   }
   if (!file || typeof file !== "string") return 0;
   const found = checkPath(file);
-  if (!found.length) return 0;
-  const { fixed, remaining: findings } = applyFixes(file, found);
+  const repairable = [...found, ...repairableDiffFindings(file)];
+  if (!repairable.length) return 0;
+  const { fixed } = applyFixes(file, repairable, "diff");
   if (fixed.length) process.stdout.write(`enigma guardrails (fixed)
 ${fixed.map((f) => `${f.file}:${f.line} (${f.ruleId})`).join("\n")}
 `);
   recordFindings(fixed, "fixed");
+  const findings = fixed.length ? checkPath(file) : found;
   if (!findings.length) return 0;
   const warns = findings.filter((f) => f.severity === "warn");
   const blocks = findings.filter((f) => f.severity === "block");
