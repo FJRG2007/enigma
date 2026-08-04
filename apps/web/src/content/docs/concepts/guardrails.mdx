@@ -27,6 +27,8 @@ Rules carry a severity: **block** is enforced (the agent hook exits non-zero, fe
 
 Some violations never reach the model at all. Where the correct edit is mechanical, the hook applies it itself before reporting anything: a person-name `<input>` missing `autocapitalize="words"` gets the attribute written in, with the right casing for the file, and only that line is touched. A fixer declines anything ambiguous - a custom `<TextField>` that may not forward the attribute, two inputs on one line - and those fall through to the normal block, so the agent still handles what code cannot decide. Fixing costs no tokens and no turn; the message is only paid for when a human decision is genuinely needed.
 
+A fixer can also belong to a `diff`-stage rule. `fe-truncated-value-unreachable` blocks a value that is clipped (`truncate`, `text-overflow: ellipsis`) with no `title`, `aria-label` or tooltip anywhere to recover the full text - a card that renders a long name or email and shows only its ellipsis. Its fixer runs in the post-edit hook, immediately, on whichever lines of the file the current change actually touched, rather than waiting for the turn-end sweep to find it; only what it cannot copy safely (a fallback expression, a call, a component that may not forward the attribute) still reaches the model, through the sweep.
+
 One rule is about cost rather than correctness: `ctx-memory-budget` blocks an edit to a `CLAUDE.md` or `AGENTS.md` larger than 40 KB. A memory file loads into every session in the project, so a knowledge base living there is paid for on every task, relevant or not. Keep it an index - one line per topic - and move the detail into docs the agent opens on demand. Disable it with `enigma guardrails disable ctx-memory-budget` if you keep a large memory file on purpose.
 
 The seed set is deliberately tiny and precise - it matches only unambiguous violations, so a false positive never trains the agent (or you) to ignore it. Add your own rules by dropping an entry in `~/.enigma-guardrails.json`.
@@ -36,7 +38,7 @@ The seed set is deliberately tiny and precise - it matches only unambiguous viol
 A rule also declares **when** it runs (`stage`):
 
 - **`edit`** (the default) is the post-edit hook and the commit backstop. They see a **whole file**, so a rule here has to be precise enough that your repository's existing code never fires it - otherwise it blocks every unrelated edit and you switch it off.
-- **`diff`** runs only in the **turn-end sweep**, against the lines the current change **added**. There is no legacy backlog by construction, so the rule can only fire on code the agent just wrote.
+- **`diff`** is only ever **reported** by the turn-end sweep, against the lines the current change **added**. There is no legacy backlog by construction, so the rule can only fire on code the agent just wrote. A fixer for it still runs earlier, in the post-edit hook - repairing is not a report, so it is not held back for the sweep, only the finding is.
 
 That second stage is what makes a demanding convention affordable. `fe-server-first-mutation` is the first of them: it blocks a handler that awaits a mutation and only then touches the UI (`await fetch(...)`, then drop the row from the list) - the optimistic-UI defect `frontend-policy` describes. In a measured corpus of real UI files, most components that mutate anything hold no optimistic update at all, so as a whole-file rule it would have fired forever on code nobody wrote today. Mark the line `enigma:allow-server-first` when the server's answer really is required first (a payment, a server-assigned id, an irreversible action).
 
@@ -45,7 +47,7 @@ The sweep runs inside the turn-end completion hook (see <a href={docHref("concep
 ## Where it runs
 
 - **Claude Code** - a `PostToolUse` hook (matcher `Edit|Write|MultiEdit|NotebookEdit`) for the edit stage, and the turn-end `Stop` hook for the diff-stage sweep.
-- **opencode** - an auto-loaded plugin that runs after each write/edit. It has no turn-end hook that can answer the model, so diff-stage rules do not run there.
+- **opencode** - an auto-loaded plugin that runs after each write/edit, through the same hidden hook Claude Code calls - so a diff-stage fixer still repairs what it can there. It has no turn-end hook that can answer the model, so an unrepaired diff-stage finding is never reported.
 - **Codex** has no per-edit hook mechanism, so it is skipped (like auto-lint).
 - **Commit / CI backstop** - `enigma security` also copies the engine into `.githooks/`, so the same rules block a commit even if the agent hook was off or bypassed. Diff-stage rules stand down here: they are written for the lines a change added, not for a whole file.
 
