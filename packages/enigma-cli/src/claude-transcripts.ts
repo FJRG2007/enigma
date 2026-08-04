@@ -81,6 +81,14 @@ export function projectOf(path: string, root: string): string {
 /** How much of a transcript's tail to read when only its final turn is wanted. */
 const TAIL_BYTES = 256 * 1024;
 
+/**
+ * How much of a transcript's head to read when only its opening records are wanted. Generous
+ * because the records that carry a time are not the first ones: a session opens with a few
+ * untimed `last-prompt`/`mode`/`permission-mode` lines and a `file-history-snapshot` that can be
+ * large, and the first timed record sits behind them.
+ */
+const HEAD_BYTES = 256 * 1024;
+
 /** The last `bytes` of a file as text, dropping the first (probably partial) line. */
 function tail(path: string, bytes: number): string {
     let fd: number;
@@ -96,6 +104,50 @@ function tail(path: string, bytes: number): string {
         return length < size ? text.slice(text.indexOf("\n") + 1) : text;
     } catch { return ""; }
     finally { closeSync(fd); }
+}
+
+/** The first `bytes` of a file as text, dropping the last (probably partial) line. */
+function head(path: string, bytes: number): string {
+    let fd: number;
+    try { fd = openSync(path, "r"); } catch { return ""; }
+    try {
+        const size = fstatSync(fd).size;
+        const length = Math.min(size, bytes);
+        const buf = Buffer.alloc(length);
+        const read = readSync(fd, buf, 0, length, 0);
+        const text = buf.subarray(0, read).toString("utf8");
+        return length < size ? text.slice(0, text.lastIndexOf("\n") + 1) : text;
+    } catch { return ""; }
+    finally { closeSync(fd); }
+}
+
+/**
+ * When this session began, as epoch milliseconds, or null when it cannot be told.
+ *
+ * The transcript is the only clock the provenance check shares with the session: it needs to know
+ * whether a commit was made while this session was running, and a commit older than the first
+ * record is one no evidence in this file can speak for.
+ *
+ * The first TOP-LEVEL `timestamp` is preferred over the file's own creation time for two reasons:
+ * a `file-history-snapshot` carries a NESTED `snapshot.timestamp` that is not the record's time,
+ * so the field has to be read off a parsed record rather than matched in the line; and the file is
+ * created when the first prompt is submitted, which on a real transcript is over a minute after
+ * the SessionStart record it already holds. birthtime is the fallback, and only when the
+ * filesystem actually recorded one - a zero would read as "the session began at the epoch", which
+ * puts every commit in the repository inside it.
+ */
+export function sessionStartedAt(transcriptPath: string): number | null {
+    let birth: number;
+    try { birth = statSync(transcriptPath).birthtimeMs; } catch { return null; }
+    for (const line of head(transcriptPath, HEAD_BYTES).split("\n")) {
+        if (!line.includes("\"timestamp\"")) continue;
+        let entry: { timestamp?: unknown; };
+        try { entry = JSON.parse(line); } catch { continue; }
+        if (typeof entry.timestamp !== "string") continue;
+        const at = Date.parse(entry.timestamp);
+        if (Number.isFinite(at)) return at;
+    }
+    return birth > 0 ? birth : null;
 }
 
 /**

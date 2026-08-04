@@ -793,12 +793,19 @@ test("convention blocks spend their own budget, not the completion gate's", () =
 
 // --- an identity that came from nowhere ------------------------------------------------
 
-/** A transcript file holding exactly `records`, one JSON object per line. */
-function transcriptOf(records: unknown[]): string {
+/**
+ * A transcript file holding exactly `records`, one JSON object per line, opened by a timed record
+ * the way a real session is. That timestamp is the session clock the provenance check compares
+ * HEAD's committer date against, so the default sits far enough in the past that every commit
+ * these tests make falls inside the session; the case that needs a session younger than the
+ * commit passes its own.
+ */
+function transcriptOf(records: unknown[], startedAt = "2000-01-01T00:00:00.000Z"): string {
     const dir = mkdtempSync(join(tmpdir(), "enigma-verify-tx-"));
     repos.push(dir);
     const path = join(dir, "session.jsonl");
-    writeFileSync(path, `${records.map((r) => JSON.stringify(r)).join("\n")}\n`);
+    const lines = [{ type: "system", timestamp: startedAt }, ...records].map((r) => JSON.stringify(r));
+    writeFileSync(path, `${lines.join("\n")}\n`);
     return path;
 }
 
@@ -1014,6 +1021,22 @@ test("a pushed HEAD is out of scope, so a pulled trailer never denies the turn",
     expect(unsourcedTrailers(dir, transcript("do the thing")).length).toBe(1);
     git(dir, "push", "-q", "origin", "HEAD");
     expect(unsourcedTrailers(dir, transcript("do the thing"))).toEqual([]);
+});
+
+test("an unpushed HEAD committed before this session began is out of scope", () => {
+    // Unpushed is not the same as "this turn made it". A feature branch nobody has pushed can carry
+    // an honest trailer the user typed in session 1 - and session 2 cannot read session 1's
+    // transcript, while a co-author who has never committed is in neither %ae nor %ce - so the
+    // address read as invented and the turn was denied over work it had not touched, with a
+    // remedy that amends someone else's commit.
+    const dir = repoWith();
+    coAuthored(dir, "alice@corp.example");
+    const prompt = [{ type: "user", message: { role: "user", content: [{ type: "text", text: "carry on with the branch" }] } }];
+    const afterTheCommit = new Date(Date.now() + 60_000).toISOString();
+    expect(unsourcedTrailers(dir, transcriptOf(prompt, afterTheCommit))).toEqual([]);
+    // A session that was already running when the commit was made still sees it, or the scoping
+    // would have turned the check off rather than aimed it.
+    expect(unsourcedTrailers(dir, transcriptOf(prompt)).length).toBe(1);
 });
 
 test("a source block keys on the address, not the sha, and spends its own budget", () => {

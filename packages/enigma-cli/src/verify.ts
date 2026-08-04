@@ -50,9 +50,9 @@ import { join, extname, isAbsolute } from "node:path";
 import { readConfigAt, readGlobalConfig } from "./config";
 import { execFileSync, spawnSync } from "node:child_process";
 import { enigmaHome, readJson, isGateAgentRun } from "./util";
-import { lastAssistantMessage, userTyped } from "./claude-transcripts";
 import { gateLedgerReady, lastGateRun, validatingRun } from "./gate-ledger";
 import { checkFile, loadRules, recordFindings, type Finding } from "./guardrails";
+import { lastAssistantMessage, sessionStartedAt, userTyped } from "./claude-transcripts";
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, statSync, writeFileSync } from "node:fs";
 
 /** One piece of evidence that the work is not finished. */
@@ -1035,6 +1035,22 @@ function vouchedEmails(cwd: string): Set<string> | null {
 }
 
 /**
+ * Whether HEAD was committed while this session was running, given its `%cI` committer date.
+ *
+ * The transcript is the provenance evidence AND the clock: a commit made before the first record
+ * in it is one this session cannot speak for, so reading its absence from the transcript as "the
+ * user never said it" would deny the turn over someone else's honest work.
+ *
+ * False for an unreadable date and for a session whose start cannot be told, which is this
+ * module's standing rule: cannot-tell never blocks.
+ */
+function committedThisSession(committerDate: string, transcriptPath: string): boolean {
+    const started = transcriptPath ? sessionStartedAt(transcriptPath) : null;
+    const committed = Date.parse(committerDate.trim());
+    return started !== null && Number.isFinite(committed) && committed >= started;
+}
+
+/**
  * Co-author trailers on the commits this piece of work created, crediting an address that came
  * from nowhere.
  *
@@ -1046,43 +1062,58 @@ function vouchedEmails(cwd: string): Set<string> | null {
  * typed the address or they did not.
  *
  * FAILS SAFE IN EVERY DIRECTION, because a false block here would deny a turn over a correct
- * commit: no repository, no readable history, no transcript, or a transcript too large to read
- * whole all mean "cannot tell", and none of them blocks.
+ * commit: no repository, no readable history, no transcript, a transcript too large to read
+ * whole, and one whose start cannot be dated all mean "cannot tell", and none of them blocks.
  */
 export function unsourcedTrailers(cwd: string, transcriptPath: string): VerifyGap[] {
-    // HEAD, AND ONLY WHILE IT IS UNPUSHED. Both halves are load-bearing and neither is sufficient:
-    // HEAD-only is what keeps the remediation accurate, since the amend this check prescribes
-    // reaches HEAD and nothing else - a finding on an older commit would be ordering an interactive
-    // rebase, a rewrite of history, the exact outcome the check exists to prevent, and a finding it
-    // cannot offer a safe fix for is better not raised at all. UNPUSHED is what keeps the check off
-    // a tip this session did not create: the provenance evidence is per session while a commit is
-    // not, so any commit that arrived from the remote reads as unsourced here. Concretely, a pulled
-    // GitHub squash-merge carries a `Co-authored-by` whose address is in neither `%ae` nor `%ce` -
+    // HEAD, ONLY WHILE IT IS UNPUSHED, AND ONLY IF THIS SESSION COMMITTED IT. Three conditions,
+    // each with its own reason, and none of them sufficient on its own.
+    // HEAD-ONLY keeps the remediation accurate: the amend this check prescribes reaches HEAD and
+    // nothing else, so a finding on an older commit would be ordering an interactive rebase - a
+    // rewrite of history, the exact outcome the check exists to prevent - and a finding it cannot
+    // offer a safe fix for is better not raised at all.
+    // UNPUSHED keeps a foreign tip out. The provenance evidence is per session while a commit is
+    // not, so any tip that arrived from the remote reads as unsourced here: a pulled GitHub
+    // squash-merge carries a `Co-authored-by` whose address is in neither `%ae` nor `%ce` -
     // squashing discards the co-author's own commits - so an honest trailer denied the turn and
-    // prescribed an amend of already-shared history.
-    // `--not --remotes` expresses that in the SAME `git log` that reads the message, so the whole
-    // check still costs one subprocess: it yields nothing when HEAD is reachable from any remote
-    // ref, and with no remote configured it excludes nothing, which is right - that history is all
-    // local. THE ACCEPTED LOSS, stated so it is not read as an oversight: an invented trailer on a
-    // commit that is no longer HEAD, or on one already pushed, stops being reported. That is the
-    // trade for never prescribing a history rewrite.
+    // prescribed an amend of already-shared history. `--not --remotes` expresses that in the SAME
+    // `git log` that reads the message, so the whole check still costs one subprocess: it yields
+    // nothing when HEAD is reachable from any remote ref, and with no remote configured it excludes
+    // nothing, which is right - that history is all local.
+    // THE COMMITTER DATE is what unpushed cannot do, because an unpushed tip is not necessarily
+    // one this turn created: a feature branch nobody has pushed, carrying an honest trailer the
+    // user typed in an earlier session, is in scope by both conditions above while the current
+    // session's transcript has never heard of the address. `%cI` rides in the same `--format`, so
+    // this too costs nothing extra.
+    // THE ACCEPTED LOSS, stated so it is not read as an oversight. Missed detections: an invented
+    // trailer on a commit that is no longer HEAD, on one already pushed, or on one whose committer
+    // date predates the session. Missed detections again, this time via cannot-tell: no readable
+    // transcript means no session start, and the check stands down rather than guess. And one
+    // FALSE BLOCK still stands - an operation that rewrites a committer date without rewriting the
+    // trailer (`pull --rebase`, `cherry-pick`, an amend of someone else's commit) stamps this
+    // session's clock onto a trailer sourced outside it, and that reads as invented here. It is
+    // narrow, it is what the escape hatch is for, and it is not zero.
     // No `inGitRepo` probe guards this: outside a repository, and before the first commit, this
     // same call fails and the null below is already the answer.
-    const log = gitTry(cwd, ["log", "-n", "1", "--format=%H%x1e%B", "HEAD", "--not", "--remotes"]);
+    const log = gitTry(cwd, ["log", "-n", "1", "--format=%H%x1e%cI%x1e%B", "HEAD", "--not", "--remotes"]);
     if (!log) return [];
     const out: VerifyGap[] = [];
     const seen = new Set<string>();
     let vouched: Set<string> | null | undefined;
+    let mine: boolean | undefined;
     // Per lowercased address, so an address carried by several trailers is resolved once. userTyped
     // reads the whole transcript (up to the 8 MB window), which is far too much to repeat.
     const typedBy = new Map<string, boolean | null>();
-    const [sha = "", body = ""] = log.split("\x1e");
+    const [sha = "", committed = "", body = ""] = log.split("\x1e");
     if (!body.trim() || ALLOW_TRAILER.test(body)) return out;
     for (const match of body.matchAll(CO_AUTHOR)) {
         const email = match[1]!.toLowerCase();
         if (seen.has(email)) continue;
-        // Resolved lazily and once: a repository with no co-author trailers - which is nearly
-        // all of them, since this project forbids the AI ones - pays for one git log and stops.
+        // Both resolved lazily and once, which is what holds the cost model: a commit with no
+        // co-author trailer - nearly all of them, since this project forbids the AI ones - pays
+        // for one git log and stops, reading neither the history nor the transcript.
+        if (mine === undefined) mine = committedThisSession(committed, transcriptPath);
+        if (!mine) return out;
         if (vouched === undefined) vouched = vouchedEmails(cwd);
         if (vouched === null) return out;
         if (vouched.has(email)) continue;
