@@ -52,7 +52,12 @@ function decoy(): { pid: number; alive: () => boolean; kill: () => void; } {
     };
 }
 
-afterAll(() => rmSync(HOME, { recursive: true, force: true }));
+// Close the recall DB the memory-API test opens first; on Windows its WAL files can stay
+// briefly locked, so temp cleanup is best-effort (a leftover temp dir is harmless).
+afterAll(async () => {
+    try { (await import("../src/recall/db")).closeDb(); } catch { /* never opened */ }
+    try { rmSync(HOME, { recursive: true, force: true }); } catch { /* best-effort */ }
+});
 
 test("serves the HTML shell, a stats payload, and 404s the rest", async () => {
     recordStats(1000, 250); // one recorded compression before the snapshot is built
@@ -194,6 +199,39 @@ test("status API reports the configured state of each system", async () => {
         expect(Array.isArray(s.security.guardProtects)).toBe(true);
         // The 17 bundled enigma skills are always known, even with no agents installed.
         expect(s.skills.enigma).toBeGreaterThanOrEqual(1);
+    } finally {
+        server.close();
+    }
+});
+
+test("recall API deletes one memory and a multi-selection of them", async () => {
+    setEnigmaValue("recall", true, "global");
+    const server = await startDashboardServer("test-version");
+    const base = `http://127.0.0.1:${server.port}`;
+    const post = (body: unknown): Promise<Response> => fetch(`${base}/api/recall`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    });
+    const list = async (): Promise<{ id: number; title: string; }[]> => (
+        await (await fetch(`${base}/api/recall?project=del-test`)).json() as { items: { id: number; title: string; }[]; }
+    ).items;
+    try {
+        for (const title of ["one", "two", "three"]) {
+            expect((await post({ op: "create", title, project: "del-test" })).status).toBe(200);
+        }
+        const ids = (await list()).map((i) => i.id);
+        expect(ids.length).toBe(3);
+
+        // Single delete: the row's trash button posts { id }.
+        expect((await (await post({ op: "delete", id: ids[0] })).json() as { ok: boolean; }).ok).toBe(true);
+        expect((await list()).map((i) => i.id)).toEqual(ids.slice(1));
+
+        // Bulk delete: the multi-select posts { ids }. The array has to survive the POST
+        // boundary, or the whole selection reads downstream as no id at all.
+        expect((await (await post({ op: "delete", ids: ids.slice(1) })).json() as { ok: boolean; }).ok).toBe(true);
+        expect(await list()).toEqual([]);
+
+        // No id in either shape is still an error, not a silent no-op.
+        expect((await post({ op: "delete" })).status).toBe(400);
     } finally {
         server.close();
     }

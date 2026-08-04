@@ -578,11 +578,12 @@ function writeRecall(req: import("node:http").IncomingMessage, res: import("node
     req.on("end", () => {
         let parsed: {
             op?: unknown; provider?: unknown; model?: unknown; base?: unknown; key?: unknown; llm?: unknown;
-            id?: unknown; type?: unknown; title?: unknown; project?: unknown; narrative?: unknown; facts?: unknown; concepts?: unknown; prompt?: unknown;
+            id?: unknown; ids?: unknown; type?: unknown; title?: unknown; project?: unknown; narrative?: unknown; facts?: unknown; concepts?: unknown; prompt?: unknown;
         };
         try { parsed = JSON.parse(body || "{}"); } catch { res.writeHead(400, JSON_HDR); res.end('{"error":"bad json"}'); return; }
         if (typeof parsed.op !== "string") { res.writeHead(400, JSON_HDR); res.end('{"error":"missing op"}'); return; }
         const strList = (v: unknown): string[] | undefined => Array.isArray(v) ? v.map(String) : undefined;
+        const idList = (v: unknown): number[] | undefined => Array.isArray(v) ? v.filter((n): n is number => Number.isInteger(n)) : undefined;
         const payload = {
             provider: typeof parsed.provider === "string" ? parsed.provider : undefined,
             model: typeof parsed.model === "string" ? parsed.model : undefined,
@@ -590,6 +591,9 @@ function writeRecall(req: import("node:http").IncomingMessage, res: import("node
             key: typeof parsed.key === "string" ? parsed.key : undefined,
             llm: typeof parsed.llm === "boolean" ? parsed.llm : undefined,
             id: typeof parsed.id === "number" ? parsed.id : undefined,
+            // Bulk delete: the multi-select posts ids[], and dropping it here reads downstream
+            // as no id at all ("missing memory id").
+            ids: idList(parsed.ids),
             type: typeof parsed.type === "string" ? parsed.type : undefined,
             title: typeof parsed.title === "string" ? parsed.title : undefined,
             project: typeof parsed.project === "string" ? parsed.project : undefined,
