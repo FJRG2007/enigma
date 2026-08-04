@@ -347,6 +347,23 @@ export const CONFIG_DEFAULTS: EnigmaConfig = {
 
 export type EnigmaConfigKey = keyof EnigmaConfig;
 
+/**
+ * The value set of every multi-value (enum) setting, keyed by config key. Lets a consumer
+ * answer "is this a value the user could ever select?" without knowing the setting: skills.ts
+ * validates the authored `enigma:case:KEY=VALUE` blocks against it, so a mistyped key or value
+ * fails `enigma check` instead of silently deleting the block from every deployed file.
+ */
+export const CONFIG_CHOICES: Partial<Record<EnigmaConfigKey, readonly string[]>> = {
+    outputStyle: OUTPUT_STYLES,
+    minimalCode: MINIMAL_CODE_LEVELS,
+    dashboard: DASHBOARD_MODES,
+    dashboardBind: DASHBOARD_BINDS,
+    promptSecretMode: PROMPT_SECRET_MODES,
+    skillUpdatePolicy: SKILL_UPDATE_POLICIES,
+    logoColorPolicy: LOGO_COLOR_POLICIES,
+    recallProvider: RECALL_PROVIDERS,
+};
+
 function configPath(scope: "global" | "local"): string {
     // Global lives in the home dir (enigmaHome honors ENIGMA_CONFIG_HOME); local is the
     // nearest repo .enigma.json (current working directory).

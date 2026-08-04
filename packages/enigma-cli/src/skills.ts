@@ -817,14 +817,36 @@ export function budgetedBytes(content: string): number {
     return bytes;
 }
 
+/**
+ * Report every authored case block whose KEY=VALUE can never match .enigma.json. Such a block
+ * fails silently: applyCaseBlocks compares against `String(cfg[key])`, so an unknown key reads
+ * as "undefined" and an unselectable value never equals the config, and the block plus its body
+ * is dropped from every deployed copy with no error. On a skill that quietly weakens an
+ * on-demand file; on the always-on memory kernel it deletes guidance every session was meant
+ * to carry. Boolean settings accept "true"/"false"; enum settings, their declared choices; the
+ * remaining free-form keys (paths, numbers, lists) are only checked for existence.
+ */
+export function checkCaseBlocks(label: string, content: string): string[] {
+    const problems: string[] = [];
+    for (const [, key, val] of content.matchAll(CASE_BLOCK)) {
+        if (!(key! in conf.CONFIG_DEFAULTS)) { problems.push(`${label}: case block key '${key}' is not a .enigma.json setting - the block would never deploy`); continue; }
+        const def = conf.CONFIG_DEFAULTS[key as conf.EnigmaConfigKey];
+        const allowed = conf.CONFIG_CHOICES[key as conf.EnigmaConfigKey] ?? (typeof def === "boolean" ? ["true", "false"] : undefined);
+        if (allowed && !allowed.includes(val!)) problems.push(`${label}: case block '${key}=${val}' is not one of ${allowed.join(", ")} - the block would never deploy`);
+    }
+    return problems;
+}
+
 /** Report every bundled memory file whose deployable size exceeds MEMORY_BUDGET_BYTES. */
 function checkMemoryBudget(): string[] {
     if (!isDir(MEMORY_ROOT)) return [];
     const problems: string[] = [];
     for (const file of readdirSync(MEMORY_ROOT)) {
         if (!file.endsWith(".md")) continue;
-        const bytes = budgetedBytes(readFileSync(join(MEMORY_ROOT, file), "utf8"));
+        const content = readFileSync(join(MEMORY_ROOT, file), "utf8");
+        const bytes = budgetedBytes(content);
         if (bytes > MEMORY_BUDGET_BYTES) problems.push(`memory/${file}: ${bytes} bytes exceeds the ${MEMORY_BUDGET_BYTES}-byte always-on budget - move detail into a policy skill or a guardrail rule`);
+        problems.push(...checkCaseBlocks(`memory/${file}`, content));
     }
     return problems;
 }
@@ -849,6 +871,7 @@ export function checkSources(): void {
             if (!/^name:\s*\S/m.test(fm[1]!)) problems.push(`${name}: frontmatter missing 'name'`);
             if (!/^description:\s*\S/m.test(fm[1]!)) problems.push(`${name}: frontmatter missing 'description'`);
         }
+        problems.push(...checkCaseBlocks(name, md));
         const metaPath = join(dir, "skill.json");
         if (!existsSync(metaPath)) { problems.push(`${name}: missing skill.json`); continue; }
         const meta = readJson<SkillMeta>(metaPath);

@@ -441,9 +441,10 @@ enigma install --output-style lite  # set it during install
 
 `on`/`off` also work (`on` = `full`). Like the toggle above it edits the memory
 file, so **restart your agent** after changing it. Code, comments, commits, and
-PRs stay normal, the agent reverts to full prose for security warnings and other
-safety-critical replies, and the level is switchable mid-session by asking
-("be more terse", "ultra", "normal mode").
+PRs stay normal, and the agent reverts to full prose for security warnings and
+other safety-critical replies. Only the selected level's rules are deployed, so
+asking for "normal mode" lifts the compression for the rest of the session while
+changing level takes `enigma config output-style <level>` and an agent restart.
 
 Claude Code's status bar shows an `[ENIGMA]` badge at all times; while the mode is
 active it appends the level (`[ENIGMA:FULL]`, `[ENIGMA:LITE]`, `[ENIGMA:ULTRA]`).
