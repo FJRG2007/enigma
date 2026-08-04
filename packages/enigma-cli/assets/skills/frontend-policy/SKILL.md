@@ -405,6 +405,24 @@ Render the page shell immediately; never block the first paint on data. A view t
 - For an instant first paint with REAL content, read the client cache first (per Client-Side Caching) and render it immediately, then revalidate in the background (stale-while-revalidate); fall back to skeletons only on a cold cache.
 - Keep empty and error states per region, so a single failed or slow widget shows its own inline state without blanking the whole page.
 
+### A whole-view skeleton is a full-page loader
+
+A skeleton is not compliance by itself. `if (!data) return <PageSkeleton />` at the top of a component returns from the WHOLE component, so every heading, tab, filter and card frame it renders disappears too. Replacing a full-page spinner with a full-page skeleton changes the colour of the defect, not the defect.
+
+- The guard belongs INSIDE the waiting region, not at the top of the view. Render the shell unconditionally and put the placeholder where the data goes: `{rows ? <Rows rows={rows}/> : <RowsSkeleton/>}` inside a table that already drew its header, filters and toolbar.
+- The alternative is to push the request down: give the data-dependent region its own child component that owns the fetch, so the parent never has a reason to return early. A component whose entire output is built from the response may early-return, because there the component and the region are the same thing.
+- Check what survives the guard before writing it: if the body below it draws a title, a tab bar, a button or any literal copy, that markup could have painted on the first tick and the guard is blanking it.
+- The same applies to a detail view: the record's name from the route, breadcrumbs, the action buttons and the section headings render immediately, and only the fields wait.
+
+### The shell ships first, the data follows
+
+Data that arrives inside the first HTML document is data the navigation waited for. In a server-rendered route (Next App Router, Remix, Nuxt), an awaited query in the route component blocks the whole transition: the router has nothing to commit until it resolves, so the previous page stays on screen and the app feels stuck on every link click.
+
+- An async route component that awaits a query declares a streaming boundary: a `loading.tsx` for the segment, or `<Suspense>` around just the data-dependent part with the awaited call inside it. Then the shell commits at once and the data streams in.
+- Where the view is interactive anyway, let the client component own the request and render from the cache first (see Client-Side Caching). The server route stays a thin shell that carries the chrome: title, nav, tabs and layout.
+- Server-render the data only where it must be in the document: SEO-indexable content, the above-the-fold content of a public page, or a value the page is meaningless without. Those are worth the wait; a dashboard table is not.
+- Never make it a waterfall: a server route that awaits, then hands props to a client component that fetches again on mount, pays both costs.
+
 ---
 
 ## Large Lists & Progressive Loading

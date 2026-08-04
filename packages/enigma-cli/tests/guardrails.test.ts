@@ -718,6 +718,88 @@ test("a textarea needs a floor and a ceiling, and the file's own bound clears it
     expect(checkFile("src/Form.tsx", "<Textarea placeholder=\"Bio\" />", null, "diff")).toEqual([]);
 });
 
+test("a view that blanks itself is flagged even when it returns a skeleton", () => {
+    // The hole the older rule left open: it treats `return <Skeleton/>` as the correct pattern and
+    // its `absent` clears on any skeleton in the file, so drawing a full-view skeleton was the one
+    // way to satisfy the gate while committing the defect this rule exists for.
+    const blanked = [
+        "export function SettingsView({ workspaceId }) {",
+        "    const { data } = useResource(`/api/settings?w=${workspaceId}`);",
+        "    if (!data) return <SettingsSkeleton />;",
+        "    return (",
+        "        <Card>",
+        "            <CardTitle>Profile Information</CardTitle>",
+        "            <p>{data.name}</p>",
+        "        </Card>",
+        "    );",
+        "}",
+    ].join("\n");
+    const found = checkFile("src/SettingsView.tsx", blanked, null, "diff");
+    expect(found.length).toBe(1);
+    expect(found[0]!.ruleId).toBe("fe-view-blanked-while-loading");
+    expect(found[0]!.severity).toBe("block");
+    expect(found[0]!.line).toBe(3);
+    // The edit stage sees whole files, where this defect already exists in most projects.
+    expect(checkFile("src/SettingsView.tsx", blanked, null)).toEqual([]);
+});
+
+test("a loader whose whole output is the awaited data is not a blanked view", () => {
+    // The measured false-positive class: here the component and the waiting region are the same
+    // thing, so the early return blanks nothing that could have been drawn.
+    const loader = [
+        "export function BankClient({ workspaceId }) {",
+        "    const { data, refresh } = useResource(`/api/bank?w=${workspaceId}`);",
+        "    if (!data) return <BankSkeleton />;",
+        "    return (",
+        "        <div className=\"space-y-8\">",
+        "            <Accounts accounts={data.accounts} workspaceId={workspaceId} onChanged={refresh} />",
+        "            <Linked connections={data.connections} onChanged={refresh} />",
+        "        </div>",
+        "    );",
+        "}",
+    ].join("\n");
+    expect(checkFile("src/BankClient.tsx", loader, null, "diff")).toEqual([]);
+    // A commented-out guard is not code: three corpus hits were exactly this.
+    const commented = ["// if (!data) return <FallbackSpinner />", "<h1>Plans</h1>", "<CardTitle>Days</CardTitle>"].join("\n");
+    expect(checkFile("src/Tier.tsx", commented, null, "diff")).toEqual([]);
+    // The escape hatch, for a component that really does render nothing but the response.
+    const allowed = ["// enigma:allow-view-skeleton", "if (loading) return <Skeleton />;", "<h1>Report</h1>"].join("\n");
+    expect(checkFile("src/Report.tsx", allowed, null, "diff")).toEqual([]);
+});
+
+test("an async route that awaits a query needs a streaming boundary above it", () => {
+    const dir = mkdtempSync(join(tmpdir(), "enigma-guardrails-route-"));
+    const segment = join(dir, "app", "dash");
+    mkdirSync(segment, { recursive: true });
+    const page = join(segment, "page.tsx");
+    const source = [
+        "export default async function Page() {",
+        "    const rows = await db.transaction.findMany({ where: { userId } });",
+        "    return <Table rows={rows} />;",
+        "}",
+    ].join("\n");
+    writeFileSync(page, source);
+    const found = checkPath(page, "diff");
+    expect(found.length).toBe(1);
+    expect(found[0]!.ruleId).toBe("fe-page-await-no-boundary");
+    expect(found[0]!.line).toBe(2);
+    // A loading.tsx at an ANCESTOR segment covers the route: Next applies the nearest one, and a
+    // sibling-only test reported 7 of the 11 measured candidates that were already covered.
+    writeFileSync(join(dir, "app", "loading.tsx"), "export default () => <Skeleton />;");
+    expect(checkPath(page, "diff")).toEqual([]);
+    rmSync(join(dir, "app", "loading.tsx"), { force: true });
+    // So does a boundary declared in the file itself.
+    writeFileSync(page, source.replace("<Table rows={rows} />", "<Suspense fallback={<Rows />}><Table rows={rows} /></Suspense>"));
+    expect(checkPath(page, "diff")).toEqual([]);
+    // A client component does not block the navigation, and only a route file is in scope at all.
+    writeFileSync(page, `"use client";\n${source}`);
+    expect(checkPath(page, "diff")).toEqual([]);
+    const helper = join(segment, "data.tsx");
+    writeFileSync(helper, source);
+    expect(checkPath(helper, "diff").some((f) => f.ruleId === "fe-page-await-no-boundary")).toBe(false);
+    rmSync(dir, { recursive: true, force: true });
+});
+
 test("the optimistic signal is code, not a word that happens to appear", () => {
     // A file that merely mentions rollback or revert must not switch the mutation rule off.
     const server = [

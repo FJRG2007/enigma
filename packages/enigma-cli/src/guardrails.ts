@@ -33,7 +33,7 @@ import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 import { basename, dirname, join, resolve, sep } from "node:path";
-import { appendFileSync, mkdirSync, readFileSync, writeFileSync, statSync, existsSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync, readdirSync, writeFileSync, statSync, existsSync } from "node:fs";
 
 export type Severity = "block" | "warn";
 
@@ -441,7 +441,10 @@ export const BUILTIN_RULES: GuardrailRule[] = [
         // returns null or a bare spinner (blank screen until the fetch resolves) - the "page doesn't
         // render until it has data" tell. The return group matches ONLY null / a
         // *Spinner|*Loader|*Loading|CircularProgress element, so `return <Skeleton/>` is NOT matched
-        // (that is the correct pattern). `absent` skips the file when ANY placeholder/skeleton signal
+        // here - NOT because it is correct (a whole-component return blanks the view either way) but
+        // because that shape needs the body read to tell a blanked view from a loader whose whole
+        // output is the awaited data, which is fe-view-blanked-while-loading's job at the diff stage.
+        // `absent` skips the file when ANY placeholder/skeleton signal
         // is present (skeleton, animate-pulse, shimmer, Suspense, a content-loader lib, <Placeholder>)
         // - the component already renders a placeholder somewhere. Kept to the terse one-line guard for
         // precision (a multi-line block is not matched: precision > recall).
@@ -486,6 +489,49 @@ export const BUILTIN_RULES: GuardrailRule[] = [
         stage: "diff",
         fileCheck: "fe-textarea-size-bounds",
         message: "A textarea is the only input the user can resize, so it is the only one that can break a layout after it has rendered. Give it both bounds: `rows` (or a min-height) so it never collapses below a usable size, and a max-height so dragging it - or letting it grow with its content - cannot push the page apart. Prefer `resize: vertical` so the column width survives, and put the bounds on the shared Textarea component rather than on each usage. Mark the line `enigma:allow-unbounded-textarea` when the surface owns its viewport (a full-page editor, a code surface) or the design calls for something else (frontend-policy).",
+        severity: "block",
+        skill: "frontend-policy",
+    },
+    {
+        id: "fe-view-blanked-while-loading",
+        label: "Only the waiting region is a placeholder, not the whole view",
+        files: ["*.tsx", "*.jsx"],
+        excludeFiles: ["*.test.*", "*.spec.*", "**/tests/**", "**/__tests__/**", "**/dist/**", "dist/**", "**/build/**", "build/**", "**/.next/**", ".next/**", "**/node_modules/**"],
+        scope: "file",
+        // The hole fe-skeleton-loading left open, and the reason the defect kept shipping after that
+        // rule went to BLOCK: it matches only `return null` / `return <Spinner/>` and deliberately
+        // treats `return <Skeleton/>` as the correct pattern. It is not - a whole-component early
+        // return swaps the ENTIRE view for placeholders, so a page whose headings, tabs, filters and
+        // card frames never depended on the response still renders as a grey page. The old rule's
+        // `absent` makes it worse: any skeleton anywhere in the file clears it, so drawing a
+        // full-view skeleton is the one way to satisfy the gate while committing the defect.
+        // DIFF stage: 13 of these live in the measured corpus, a backlog an edit-stage rule would
+        // report on every unrelated edit to the same file.
+        stage: "diff",
+        fileCheck: "fe-view-blanked-while-loading",
+        message: "This loading guard returns from the whole component, so the entire view becomes placeholders until the request resolves - a full-page loader with rounded corners. The elements listed below do not depend on the response and must paint on the first tick: headings, tab bars, filters, search, buttons, table and card chrome, and any value already in hand (a name from the route, a count from the cache). Move the guard INSIDE the region that is actually waiting - render the shell, and skeleton only the rows, the chart or the tiles - or hand the region to a child component that owns its own request. Mark the line `enigma:allow-view-skeleton` when the component genuinely renders nothing but the awaited data (frontend-policy).",
+        severity: "block",
+        skill: "frontend-policy",
+    },
+    {
+        id: "fe-page-await-no-boundary",
+        label: "Server route streams its shell before its data",
+        files: ["page.tsx", "page.jsx"],
+        excludeFiles: ["*.test.*", "*.spec.*", "**/tests/**", "**/__tests__/**", "**/dist/**", "dist/**", "**/build/**", "build/**", "**/.next/**", ".next/**", "**/node_modules/**"],
+        scope: "file",
+        // The other half of the same report ("the data arrives inside the first HTML, which slows the
+        // navigation down"). An awaited query in an async route component holds the WHOLE navigation:
+        // the router has nothing to commit until it resolves, so the previous page stays on screen and
+        // the app feels stuck. This was rejected as a rule once, when it was framed as "do not fetch on
+        // the server" - a judgement call a regex cannot make, since a static page awaiting build-time
+        // content is correct. Framed as "an async route that awaits a query declares a streaming
+        // boundary" it is mechanical, and the fix is never wrong: a `loading.tsx` in the segment (or any
+        // ancestor) or a <Suspense> around the data region both let the shell paint immediately.
+        // MEASURED over 1127 route files / 159 async route components: 11 candidates, 7 already covered
+        // by a loading.tsx up their segment chain, 4 findings.
+        stage: "diff",
+        fileCheck: "fe-page-await-no-boundary",
+        message: "This route awaits its data before it returns anything, so the navigation blocks for the whole query: the router holds the old page on screen until the query resolves, and the data ships inside the first HTML instead of the shell shipping first. Give the segment a streaming boundary - add a `loading.tsx` beside this page (the shell paints at once and this subtree streams in), or wrap only the data-dependent region in <Suspense> with a skeleton fallback and keep the awaited call inside it. Where the view is interactive anyway, let the client component own the request and render from the cache first. Mark the line `enigma:allow-blocking-page` when the page must not commit until the data is known (frontend-policy).",
         severity: "block",
         skill: "frontend-policy",
     },
@@ -1046,6 +1092,8 @@ export const FILE_CHECKS: Record<string, (content: string, file: string) => { li
     "proc-windows-hide": (content) => missingWindowsHide(content),
     "fe-server-first-mutation": (content) => serverFirstMutation(content),
     "fe-textarea-size-bounds": (content) => textareaSizeBounds(content),
+    "fe-view-blanked-while-loading": (content) => viewBlankedWhileLoading(content),
+    "fe-page-await-no-boundary": (content, file) => pageAwaitWithoutBoundary(content, file),
     "ts-import-extension": (content, file) => extensionImports(content, file),
     "ts-alias-deep-relative": (content, file) => deepRelativeImports(content, file),
     "ts-alias-paths": (content, file) => missingPathAlias(content, file),
@@ -1331,6 +1379,122 @@ export function textareaSizeBounds(content: string): { line: number; detail: str
         if (missing.length) out.push({ line: i + 1, detail: missing.join("; ") });
     }
     return out;
+}
+
+/**
+ * A whole-component early return that swaps the entire render for a placeholder:
+ * `if (!data) return <XSkeleton />`, `if (loading) return <Loading />`. The returned element must
+ * be named for a placeholder - that is what separates a loading branch from an empty state or a
+ * permission gate, neither of which this rule is about.
+ */
+const VIEW_GUARD = /\bif\s*\(\s*(!?\s*[\w.]{1,30}(?:\s*(?:===|!==|==|!=)\s*[\w."']{1,20})?)\s*\)\s*return\s+<\s*\w*(Skeleton|Placeholder|Shimmer|Loading|Loader|Spinner)\b/;
+
+/**
+ * The guarded value, as the conditions that actually mean "the data is not here yet" are written.
+ * A guard on anything else (a permission flag, a feature toggle, a selected id) is a different
+ * branch and is deliberately not matched.
+ */
+const VIEW_GUARD_LOADING = /^!?(is)?(loading|pending|fetching|data|resource|result|state|profile|items|rows|list|summary|overview|response)$/i;
+
+/** Chrome that is drawn from the component itself and never needed the response. */
+const VIEW_CHROME_HEADING = /<\s*(h1|h2|h3|CardTitle|DialogTitle|PageHeader|SheetTitle|SectionTitle)\b/;
+
+/** A literal text node - copy the component ships regardless of what the request returns. */
+const VIEW_CHROME_TEXT = />\s*[A-Z][A-Za-z0-9 ,.'&:%/()-]{2,60}\s*</;
+
+/** How far the body scan runs before giving up, so a pathological file cannot stall the hook. */
+const VIEW_BODY_LOOKAHEAD = 400;
+
+/**
+ * Views that replace themselves with placeholders while their data loads.
+ *
+ * The defect is the SCOPE of the guard, not the placeholder: a component that early-returns is
+ * blanking everything it renders, including the parts that never depended on the request. So the
+ * check reads the body BELOW the guard and reports it only when that body draws chrome of its own -
+ * a heading or title element, or two literal text nodes. A loader component whose entire output is
+ * built from the awaited value (`return <Inner {...data} />`, two children fed from `data`) has
+ * neither, and is correctly left alone: there the region and the component are the same thing.
+ *
+ * MEASURED over 7195 UI files of real product repositories: 25 placeholder guards, 13 findings,
+ * every one a genuine view (a settings page blanked for two strings, a dashboard blanked for its
+ * tiles, three route components blanked below their own <h1>), 0 false positives. Skipping comment
+ * lines is load-bearing - three of the corpus hits are commented-out guards.
+ */
+export function viewBlankedWhileLoading(content: string): { line: number; detail: string; }[] {
+    if (/enigma:allow-view-skeleton/.test(content)) return [];
+    const lines = content.split("\n");
+    const out: { line: number; detail: string; }[] = [];
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i]!;
+        if (COMMENT_LINE.test(line) || /enigma:/.test(line)) continue;
+        const match = VIEW_GUARD.exec(line);
+        if (!match || !VIEW_GUARD_LOADING.test(match[1]!.replace(/\s+/g, ""))) continue;
+        let headings = 0;
+        let texts = 0;
+        for (let j = i + 1; j < lines.length && j - i < VIEW_BODY_LOOKAHEAD; j++) {
+            const body = lines[j]!;
+            if (/^\}/.test(body)) break; // the component's own closing brace, at column 0
+            if (COMMENT_LINE.test(body)) continue;
+            if (VIEW_CHROME_HEADING.test(body)) headings++;
+            if (VIEW_CHROME_TEXT.test(body)) texts++;
+        }
+        // One heading is enough (a title is chrome by definition); a single stray text node is not,
+        // since it can sit inside a branch that genuinely needed the data.
+        if (headings < 1 && texts < 2) continue;
+        const drawn = [headings ? `${headings} heading/title element(s)` : "", texts ? `${texts} literal text node(s)` : ""].filter(Boolean).join(" and ");
+        out.push({ line: i + 1, detail: `the component still draws ${drawn} below this guard, none of which needs the response` });
+    }
+    return out;
+}
+
+/** An async server route component: the function whose await the router waits on. */
+const ASYNC_ROUTE = /export\s+default\s+async\s+function\b/;
+
+/**
+ * A DYNAMIC read awaited in that component. Restricted to database and ORM calls on purpose: an
+ * awaited `fetch` is as often a build-time CMS or docs read, where there is no runtime wait to
+ * hide, and including it was what made the earlier attempt at this rule imprecise.
+ */
+const SERVER_DATA_AWAIT = /await\s+(prisma|db|supabase|drizzle|knex|mongoose)\b|await\s+[\w.]{1,40}\.(findMany|findUnique|findFirst|aggregate|groupBy|count|createQueryBuilder)\s*\(/;
+
+/** A streaming boundary declared in the file itself. */
+const STREAM_BOUNDARY = /<\s*Suspense\b/;
+
+/**
+ * Async route components that await their data with no streaming boundary anywhere above them.
+ *
+ * The boundary is a property of the SEGMENT, not of the file: Next applies the nearest `loading.tsx`
+ * at or above the route, so the check walks up to the app directory before reporting. That walk is
+ * load-bearing - 7 of the 11 measured candidates are covered by an ancestor `loading.tsx` and a
+ * sibling-only test would have reported every one of them.
+ */
+export function pageAwaitWithoutBoundary(content: string, file: string): { line: number; detail: string; }[] {
+    if (/enigma:allow-blocking-page/.test(content)) return [];
+    if (/^\s*["']use client["']/m.test(content)) return [];
+    if (!ASYNC_ROUTE.test(content) || STREAM_BOUNDARY.test(content)) return [];
+    if (nearestLoadingBoundary(file)) return [];
+    const lines = content.split("\n");
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i]!;
+        if (COMMENT_LINE.test(line) || /enigma:/.test(line) || !SERVER_DATA_AWAIT.test(line)) continue;
+        return [{ line: i + 1, detail: "the route awaits this query before it returns any markup, and neither a loading.tsx in the segment chain nor a <Suspense> boundary lets the shell paint first" }];
+    }
+    return [];
+}
+
+/** Whether a `loading.tsx` covers this route, at its own segment or any ancestor up to the app root. */
+function nearestLoadingBoundary(file: string): boolean {
+    let dir = dirname(resolve(file));
+    for (let i = 0; i < 20; i++) {
+        try {
+            if (readdirSync(dir).some((name) => /^loading\.[jt]sx$/.test(name))) return true;
+        } catch { return false; }
+        if (/[\\/](app|pages|src)$/.test(dir)) return false;
+        const parent = dirname(dir);
+        if (parent === dir) return false;
+        dir = parent;
+    }
+    return false;
 }
 
 // --- TypeScript module graph: path aliases and import specifiers ----------------------
