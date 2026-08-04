@@ -1614,12 +1614,15 @@ const ALLOW_CLIPPED_VALUE = /enigma:allow-clipped-value/;
  * the message the thing that pays for it: it repairs 1208 of them - 81%, so most of it never costs
  * the model a token - and 282 reach it. The findings land in .tsx (1444) and .vue (46), but the
  * figure that tells the sigil exclusion below apart from silencing three dialects is the
- * DIFFERENTIAL one, since a post-exclusion zero is what silencing them would also produce: the
- * number of template-dialect lines the PRE-exclusion child pattern
- * would have flagged and the post-exclusion one does not is 0. With 3 .svelte files the corpus can
- * say nothing about Svelte either way, which is why that false positive had to be probed for. BOTH
- * false positives here removed zero corpus findings - the same evidence twice that a corpus
- * measures VOLUME and cannot validate correctness.
+ * DIFFERENTIAL one, since a post-exclusion zero is what silencing them would also produce: measured
+ * CORPUS-WIDE - every extension the rule scans, not the three dialects alone, since the lookahead
+ * applies to all of them - the number of lines the PRE-exclusion child pattern would have flagged
+ * and the current one does not is 0. Those dialects are represented and do clip (at the
+ * CLIP_ONE_LINE width, 3013 clip-declaring lines in .tsx, 460 in .vue, 10 in .html, 6 in .astro),
+ * which is what keeps that zero from being vacuous. With 3 .svelte files the corpus can say nothing
+ * about Svelte either way, which is why that false positive had to be probed for. BOTH false
+ * positives here removed zero corpus findings - the same evidence twice that a corpus measures
+ * VOLUME and cannot validate correctness.
  */
 export function truncatedValueUnreachable(content: string): { line: number; detail: string; }[] {
     const lines = content.split("\n");
