@@ -648,9 +648,9 @@ export const BUILTIN_RULES: GuardrailRule[] = [
         // it flagged correct code and was deleted. Clipping is different: the element that clips is
         // the element that hides the value, so the question "can the user still read it?" is answered
         // by that element and its immediate wrapper, and nothing else.
-        // DIFF stage, and not optional: nearly half of every line that clips is one of these (1490
-        // of 3489 in the measured corpus), so an edit-stage rule would report a project's rows
-        // forever.
+        // DIFF stage, and not optional: hiding the value is what a clipped dynamic value does by
+        // default (1490 of 1699 in the measured corpus, 88%), so an edit-stage rule would report a
+        // project's rows forever.
         stage: "diff",
         fileCheck: "fe-truncated-value-unreachable",
         message: "This clips a value the user cannot recover: the text is ellipsised and the full string appears nowhere. A name, email, path or title is exactly the value someone needs in full, and the sample used while building is always short enough to hide the problem. Where the design system has a tooltip, wrap the element in it - that is the better answer. Otherwise give the clipping element a `title` attribute carrying the same value, written in this file's own binding syntax (`title={value}` in JSX, `:title=\"value\"` in Vue, `title={value}` in Svelte, `title=\"...\"` in plain HTML) - and where the value must be readable at a glance rather than on hover, let it wrap instead of clipping. Mark the line `enigma:allow-clipped-value` when the full value is already shown elsewhere on the screen (frontend-policy).",
@@ -1603,14 +1603,19 @@ const ALLOW_CLIPPED_VALUE = /enigma:allow-clipped-value/;
  *
  * MEASURED with the rule itself over 9370 UI files of 15 real product repositories (the rule's own
  * excludeFiles applied, every extension it scans - 7494 .tsx, 1490 .vue, 325 .html, 55 .astro, 3
- * .jsx, 3 .svelte): 3489 lines declare a single-line clip and 1490 of them (43%) hide a dynamic
- * value with the full string reachable nowhere. Nearly half of every line that clips is what puts
- * the rule at the diff stage - it is a backlog, not an anomaly, and an edit-stage rule would report
- * those 1490 pre-existing lines on any unrelated edit to their files. The fixer below repairs 1208
- * of them - 81%, so most of it never costs the model a token - and 282 reach it. The findings land
- * in .tsx (1444) and .vue (46), but the figure that tells the sigil exclusion below apart from
- * silencing three dialects is the DIFFERENTIAL one, since a post-exclusion zero is what silencing
- * them would also produce: the number of template-dialect lines the PRE-exclusion child pattern
+ * .jsx, 3 .svelte): 1699 lines clip a DYNAMIC value and 1490 of them - 88% - carry the full string
+ * nowhere. BOTH HALVES ARE MEASURED THROUGH DYNAMIC_CHILD, and the denominator has to be:
+ * CLIP_ONE_LINE alone also matches the identifier `truncate`, its call sites, static copy and CSS -
+ * 1775 further lines with no dynamic child at all - which the numerator excludes by design, so
+ * counting them in mixes two widths and understates the ratio (43% instead of 88%). At 88% a
+ * clipped value hiding its own text is the DEFAULT in real code rather than an occasional slip,
+ * which is what puts the rule at the diff stage - an edit-stage rule would report those 1490
+ * pre-existing lines on any unrelated edit to their files - and what makes the FIXER rather than
+ * the message the thing that pays for it: it repairs 1208 of them - 81%, so most of it never costs
+ * the model a token - and 282 reach it. The findings land in .tsx (1444) and .vue (46), but the
+ * figure that tells the sigil exclusion below apart from silencing three dialects is the
+ * DIFFERENTIAL one, since a post-exclusion zero is what silencing them would also produce: the
+ * number of template-dialect lines the PRE-exclusion child pattern
  * would have flagged and the post-exclusion one does not is 0. With 3 .svelte files the corpus can
  * say nothing about Svelte either way, which is why that false positive had to be probed for. BOTH
  * false positives here removed zero corpus findings - the same evidence twice that a corpus
