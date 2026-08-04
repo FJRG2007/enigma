@@ -142,7 +142,9 @@ test("flags a blank/spinner loading guard without a skeleton, but not when a ske
     expect(checkFile("src/Panel.tsx", "if (loading) return <Spinner/>;", null).some((x) => x.ruleId === "fe-skeleton-loading")).toBe(true);
     // A skeleton anywhere in the file clears it (absent mechanism).
     expect(checkFile("src/Panel.tsx", "if (isLoading) return null;\nfunction Row(){ return <Skeleton/>; }", null).some((x) => x.ruleId === "fe-skeleton-loading")).toBe(false);
-    // Returning an actual skeleton is the correct pattern - never flagged.
+    // Not flagged by THIS rule - a whole-view skeleton is still a defect, but reading a blanked
+    // view apart from a loader whose entire output is the awaited data needs the body read, which
+    // is fe-view-blanked-while-loading's job at the diff stage.
     expect(checkFile("src/Panel.tsx", "if (isLoading) return <CardSkeleton/>;", null).some((x) => x.ruleId === "fe-skeleton-loading")).toBe(false);
     // Other placeholder libs also clear it (react-content-loader, a <Placeholder> component).
     expect(checkFile("src/Panel.tsx", "if (isLoading) return null;\nimport ContentLoader from 'react-content-loader';", null).some((x) => x.ruleId === "fe-skeleton-loading")).toBe(false);
