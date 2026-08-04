@@ -796,17 +796,22 @@ export const MEMORY_BUDGET_BYTES = 24_000;
 
 /**
  * What a source memory file can cost a session, which is not its size on disk: the case blocks
- * hold mutually exclusive alternatives and renderMemory deploys exactly one, so charging all of
- * them (plus their markers, which never ship either) would bill context nobody pays. Charge the
- * WORST case a user can select - the largest alternative per key - so the figure stays
- * config-independent and still bounds every deployment.
+ * hold mutually exclusive alternatives and renderMemory deploys exactly one VALUE per key, so
+ * charging all of them (plus their markers, which never ship either) would bill context nobody
+ * pays. What deploys together is every block sharing the selected value, hence the sum per
+ * `key=value`; what a user chooses between is the values, hence the max per key. Charging that
+ * worst selectable case keeps the figure config-independent and still bounds every deployment.
  */
 export function budgetedBytes(content: string): number {
-    const largest = new Map<string, number>();
-    const stripped = content.replace(CASE_BLOCK, (_m, key: string, _v: string, body: string) => {
-        largest.set(key, Math.max(largest.get(key) ?? 0, Buffer.byteLength(body)));
+    const perValue = new Map<string, { key: string; bytes: number; }>();
+    const stripped = content.replace(CASE_BLOCK, (_m, key: string, val: string, body: string) => {
+        const id = `${key}=${val}`;
+        const seen = perValue.get(id) ?? { key, bytes: 0 };
+        perValue.set(id, { key, bytes: seen.bytes + Buffer.byteLength(body) });
         return "";
     });
+    const largest = new Map<string, number>();
+    for (const { key, bytes } of perValue.values()) largest.set(key, Math.max(largest.get(key) ?? 0, bytes));
     let bytes = Buffer.byteLength(stripped);
     for (const size of largest.values()) bytes += size;
     return bytes;

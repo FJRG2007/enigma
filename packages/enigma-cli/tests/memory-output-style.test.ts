@@ -103,6 +103,17 @@ test("the budget charges the largest alternative, not every one", () => {
     expect(budgetedBytes("plain memory\n")).toBe(Buffer.byteLength("plain memory\n"));
 });
 
+test("blocks sharing one value are summed, since they deploy together", () => {
+    const cases = [
+        "<!-- enigma:case:outputStyle=lite -->", "abc", "<!-- enigma:case:end -->",
+        "<!-- enigma:case:outputStyle=ultra -->", "ab", "<!-- enigma:case:end -->",
+        "<!-- enigma:case:outputStyle=ultra -->", "cd", "<!-- enigma:case:end -->",
+    ].join("\n");
+    // Selecting "ultra" deploys BOTH of its blocks (4 bytes + 2 newlines), which outweighs the
+    // single 3-byte "lite" block - charging one "ultra" block alone would underbill the file.
+    expect(budgetedBytes(`kept\n${cases}\n`)).toBe(Buffer.byteLength("kept\nab\ncd\n"));
+});
+
 test("both bundled memory files are identical and within the always-on budget", () => {
     const claude = readFileSync(join(MEMORY_ROOT, "CLAUDE.md"), "utf8");
     expect(readFileSync(join(MEMORY_ROOT, "AGENTS.md"), "utf8")).toBe(claude);

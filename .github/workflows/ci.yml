@@ -112,6 +112,9 @@ jobs:
       - name: Test generalization rule tiering
         run: bun test tests/policy-generalization.test.ts
         working-directory: packages/enigma-cli
+      - name: Test token-efficient output memory block
+        run: bun test tests/memory-output-style.test.ts
+        working-directory: packages/enigma-cli
       - name: Test recall session memory
         run: bun test tests/recall.test.ts
         working-directory: packages/enigma-cli
