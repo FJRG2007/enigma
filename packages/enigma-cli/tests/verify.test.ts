@@ -908,12 +908,15 @@ test("no agent-authored user record vouches for an address", () => {
     expect(unsourcedTrailers(dir, transcriptOf([
         { type: "user", isSidechain: true, message: { role: "user", content: quoted } },
     ])).length).toBe(1);
-    // Slash-command scaffolding and the stdout of a command the agent ran are both stored as
-    // plain user strings, and neither carries isMeta - so the tag set has to be checked too.
+    // Slash-command scaffolding, the stdout of a command the agent ran and the report a background
+    // task hands back are all stored as plain user strings, and none of them carries isMeta - so
+    // the tag set has to be checked too. `<task-notification>` is the largest of the three in the
+    // real corpus and its body is text the AGENT wrote, quoting what it just did.
     for (const wrapper of [
-        `<command-name>commit</command-name>\n<command-args>${quoted}</command-args>`,
+        "<command-name>commit</command-name>",
         "<local-command-stdout>Co-authored-by: X <invented@example.org></local-command-stdout>",
         `<system-reminder>${quoted}</system-reminder>`,
+        `<task-notification>Agent finished.\n<summary>Committed with Co-authored-by: X <invented@example.org></summary></task-notification>`,
     ]) {
         expect(unsourcedTrailers(dir, transcriptOf([
             { type: "user", message: { role: "user", content: wrapper } },
@@ -923,6 +926,24 @@ test("no agent-authored user record vouches for an address", () => {
     // synthetic block is stripped, not used to discard what the user actually wrote.
     expect(unsourcedTrailers(dir, transcriptOf([
         { type: "user", message: { role: "user", content: `${quoted}\n<system-reminder>be careful</system-reminder>` } },
+    ]))).toEqual([]);
+});
+
+test("a slash command's arguments are the user speaking, unlike the command's own name", () => {
+    // `/commit please credit invented@example.org` is stored as all three wrappers in ONE user
+    // string. Dropping `<command-args>` with the other two read an address the user typed verbatim
+    // as unsourced and denied the turn over a correct commit - the direction this check must never
+    // fail in. The leading `<command-message>` must not discard the record either.
+    const dir = repoWith();
+    coAuthored(dir, "invented@example.org");
+    expect(unsourcedTrailers(dir, transcriptOf([
+        {
+            type: "user",
+            message: {
+                role: "user",
+                content: "<command-message>commit is running…</command-message>\n<command-name>/commit</command-name>\n<command-args>please credit invented@example.org</command-args>",
+            },
+        },
     ]))).toEqual([]);
 });
 
@@ -938,6 +959,23 @@ test("only HEAD is examined, so no finding ever prescribes a history rewrite", (
     write(dir, "later.txt", "more");
     git(dir, "add", "-A");
     git(dir, "commit", "-qm", "chore: follow-up with no trailer");
+    expect(unsourcedTrailers(dir, transcript("do the thing"))).toEqual([]);
+});
+
+test("a pushed HEAD is out of scope, so a pulled trailer never denies the turn", () => {
+    // The provenance evidence is per session while a commit is not, so any tip that arrived from
+    // the remote reads as unsourced. The case that made it concrete: a pulled GitHub squash-merge
+    // carries a Co-authored-by whose address is in neither %ae nor %ce, because squashing discards
+    // the co-author's own commits - an honest trailer, blocked, and told to amend shared history.
+    const dir = repoWith();
+    const remote = mkdtempSync(join(tmpdir(), "enigma-verify-remote-"));
+    repos.push(remote);
+    execFileSync("git", ["init", "-q", "--bare"], { cwd: remote, stdio: "ignore" });
+    git(dir, "remote", "add", "origin", remote);
+    coAuthored(dir, "squashed@users.noreply.github.com");
+    // Unpushed it is exactly what an amend can still fix, so it is reported.
+    expect(unsourcedTrailers(dir, transcript("do the thing")).length).toBe(1);
+    git(dir, "push", "-q", "origin", "HEAD");
     expect(unsourcedTrailers(dir, transcript("do the thing"))).toEqual([]);
 });
 

@@ -1002,19 +1002,25 @@ function vouchedEmails(cwd: string): Set<string> | null {
  * whole all mean "cannot tell", and none of them blocks.
  */
 export function unsourcedTrailers(cwd: string, transcriptPath: string): VerifyGap[] {
-    if (!inGitRepo(cwd)) return [];
-    // HEAD ALONE, deliberately - not the unpushed range, and not a date filter against the session.
-    // The remediation this check prescribes is an amend, and an amend only reaches HEAD: a finding
-    // on any older commit would be ordering an interactive rebase, a rewrite of history, which is
-    // the exact outcome this check exists to prevent. A finding it cannot offer a safe fix for is
-    // better not raised at all. It also drops the false block a wider range caused outright: the
-    // provenance evidence is per session, so a genuine trailer typed in an earlier session reads
-    // as unsourced here, and `--not --remotes` in a repository with NO remote yields the whole
-    // history, re-reporting an old honest trailer in every session.
-    // THE ACCEPTED LOSS, stated so it is not read as an oversight: an invented trailer on a commit
-    // that is no longer HEAD stops being reported. That is the trade for never prescribing a
-    // history rewrite.
-    const log = gitTry(cwd, ["log", "-n", "1", "--format=%H%x1e%B", "HEAD"]);
+    // HEAD, AND ONLY WHILE IT IS UNPUSHED. Both halves are load-bearing and neither is sufficient:
+    // HEAD-only is what keeps the remediation accurate, since the amend this check prescribes
+    // reaches HEAD and nothing else - a finding on an older commit would be ordering an interactive
+    // rebase, a rewrite of history, the exact outcome the check exists to prevent, and a finding it
+    // cannot offer a safe fix for is better not raised at all. UNPUSHED is what keeps the check off
+    // a tip this session did not create: the provenance evidence is per session while a commit is
+    // not, so any commit that arrived from the remote reads as unsourced here. Concretely, a pulled
+    // GitHub squash-merge carries a `Co-authored-by` whose address is in neither `%ae` nor `%ce` -
+    // squashing discards the co-author's own commits - so an honest trailer denied the turn and
+    // prescribed an amend of already-shared history.
+    // `--not --remotes` expresses that in the SAME `git log` that reads the message, so the whole
+    // check still costs one subprocess: it yields nothing when HEAD is reachable from any remote
+    // ref, and with no remote configured it excludes nothing, which is right - that history is all
+    // local. THE ACCEPTED LOSS, stated so it is not read as an oversight: an invented trailer on a
+    // commit that is no longer HEAD, or on one already pushed, stops being reported. That is the
+    // trade for never prescribing a history rewrite.
+    // No `inGitRepo` probe guards this: outside a repository, and before the first commit, this
+    // same call fails and the null below is already the answer.
+    const log = gitTry(cwd, ["log", "-n", "1", "--format=%H%x1e%B", "HEAD", "--not", "--remotes"]);
     if (!log) return [];
     const out: VerifyGap[] = [];
     const seen = new Set<string>();

@@ -107,16 +107,35 @@ const SCAN_BYTES = 8 * 1024 * 1024;
 
 /**
  * Harness text that Claude Code stores as a `user` record without a human having written it:
- * slash-command scaffolding, the stdout of a command the agent ran, and the reminders injected
- * around a real prompt. Mirrors the block set recall's `cleanText` drops (recall/extract.ts) -
- * the same list for the same reason, kept here because this module is the leaf that both the
- * provenance check and recall can depend on (node builtins only, no enigma imports).
+ * slash-command scaffolding, the stdout of a command the agent ran, the report a background or
+ * subagent task hands back, and the reminders injected around a real prompt. Close to the block
+ * set recall's `cleanText` drops (recall/extract.ts), kept here because this module is the leaf
+ * that both the provenance check and recall can depend on (node builtins only, no enigma
+ * imports) - but see COMMAND_ARGS below for the one tag the two lists deliberately disagree on.
+ *
+ * `<task-notification>` is the biggest of them and carries NEITHER flag below: measured over the
+ * local transcript corpus it opens 226 user text blocks, more than `<command-name>`'s 208, and
+ * not one of them is `isMeta` or `isSidechain`. That count is why a flag check alone was never
+ * enough - the body is a report the agent wrote, quoting whatever it just did.
  *
  * These are STRIPPED rather than used to reject the whole record: a genuine prompt routinely
  * carries an appended `<system-reminder>`, so discarding the record would lose what the user
  * really typed, while leaving the block in would let injected text vouch for a value.
  */
-const SYNTHETIC_BLOCK = /<(system-reminder|local-command-stdout|local-command-stderr|local-command-caveat|command-message|command-name|command-args|command-contents)>[\s\S]*?<\/\1>/gi;
+const SYNTHETIC_BLOCK = /<(system-reminder|task-notification|local-command-stdout|local-command-stderr|local-command-caveat|command-message|command-name|command-contents)>[\s\S]*?<\/\1>/gi;
+
+/**
+ * The one wrapper in the slash-command trio whose content a PERSON typed: `/commit add co-author
+ * me@example.org` is stored as `<command-message>`, `<command-name>` and `<command-args>` in one
+ * user string, and only the first two are the harness naming the command. Dropping this one with
+ * them read a legitimately sourced address as unsourced and denied the turn over a correct commit,
+ * which is the direction this check must never fail in - so it is unwrapped and its text kept.
+ *
+ * This is where the list above diverges from recall's `cleanText`, deliberately: recall summarizes
+ * INTENT, for which the arguments are noise, while this module adjudicates PROVENANCE, for which
+ * they are the evidence. The two want different answers from the same tag - do not reconcile them.
+ */
+const COMMAND_ARGS = /<command-args>([\s\S]*?)<\/command-args>/gi;
 
 /**
  * Text this hook itself fed back, which is the one channel that would otherwise let the check
@@ -128,15 +147,21 @@ const SYNTHETIC_BLOCK = /<(system-reminder|local-command-stdout|local-command-st
 const HOOK_FEEDBACK = /^\s*(?:\w[\w -]*)?hook feedback:/i;
 
 /** An unclosed synthetic block (a truncated tail), whose opening tag still marks it as not-user. */
-const SYNTHETIC_OPEN = /^\s*<(?:system-reminder|local-command-(?:stdout|stderr|caveat)|command-(?:message|name|args|contents))>/i;
+const SYNTHETIC_OPEN = /^\s*<(?:system-reminder|task-notification|local-command-(?:stdout|stderr|caveat)|command-(?:message|name|contents))>/i;
 
 /**
  * The part of one user-record text a HUMAN can be said to have written, or "" when none of it
  * is. Strips the harness blocks and drops text that is wholly hook feedback or harness output.
+ *
+ * The closed blocks come out BEFORE the unclosed-tag test, or a record that merely OPENS with a
+ * closed one would be discarded whole - which is exactly how the slash-command shape lost the
+ * arguments the user typed, since `<command-message>` leads it and `<command-args>` trails it.
+ * After the strip, a leading synthetic tag is genuinely an unclosed block.
  */
 function humanText(text: string): string {
-    if (HOOK_FEEDBACK.test(text) || SYNTHETIC_OPEN.test(text)) return "";
-    return text.replace(SYNTHETIC_BLOCK, " ");
+    if (HOOK_FEEDBACK.test(text)) return "";
+    const kept = text.replace(COMMAND_ARGS, " $1 ").replace(SYNTHETIC_BLOCK, " ");
+    return SYNTHETIC_OPEN.test(kept) ? "" : kept;
 }
 
 /**
