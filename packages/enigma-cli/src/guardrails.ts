@@ -513,8 +513,10 @@ export const BUILTIN_RULES: GuardrailRule[] = [
         // card frames never depended on the response still renders as a grey page. The old rule's
         // `absent` makes it worse: any skeleton anywhere in the file clears it, so drawing a
         // full-view skeleton is the one way to satisfy the gate while committing the defect.
-        // DIFF stage: 13 of these live in the measured corpus, a backlog an edit-stage rule would
-        // report on every unrelated edit to the same file.
+        // DIFF stage: 13 of these lived in the corpus BEFORE the condition set was widened - a
+        // standing backlog an edit-stage rule would re-report on every unrelated edit to the same
+        // file. Current figure, after the widening and the fe-skeleton-loading suppression: 10
+        // findings over 7199 files, still 0 false positives.
         stage: "diff",
         fileCheck: "fe-view-blanked-while-loading",
         message: "This loading guard returns from the whole component, so the entire view becomes placeholders until the request resolves - a full-page loader with rounded corners. The elements listed below do not depend on the response and must paint on the first tick: headings, tab bars, filters, search, buttons, table and card chrome, and any value already in hand (a name from the route, a count from the cache). Move the guard INSIDE the region that is actually waiting - render the shell, and skeleton only the rows, the chart or the tiles - or hand the region to a child component that owns its own request. Mark the line `enigma:allow-view-skeleton` when the component genuinely renders nothing but the awaited data (frontend-policy).",
@@ -536,7 +538,8 @@ export const BUILTIN_RULES: GuardrailRule[] = [
         // boundary" it is mechanical, and the fix is never wrong: a `loading.tsx` in the segment (or any
         // ancestor) or a <Suspense> around the data region both let the shell paint immediately.
         // MEASURED over 1127 route files / 159 async route components: 11 candidates, 7 already covered
-        // by a loading.tsx up their segment chain, 4 findings.
+        // by a loading.tsx up their segment chain, 4 route files - reported at 5 anchors, since every
+        // awaited query gets its own.
         stage: "diff",
         fileCheck: "fe-page-await-no-boundary",
         message: "This route awaits its data before it returns anything, so the navigation blocks for the whole query: the router holds the old page on screen until the query resolves, and the data ships inside the first HTML instead of the shell shipping first. Give the segment a streaming boundary - add a `loading.tsx` beside this page (the shell paints at once and this subtree streams in), or wrap only the data-dependent region in <Suspense> with a skeleton fallback and keep the awaited call inside it. Where the view is interactive anyway, let the client component own the request and render from the cache first. Mark the line `enigma:allow-blocking-page` when the page must not commit until the data is known (frontend-policy).",
