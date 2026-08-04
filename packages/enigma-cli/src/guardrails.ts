@@ -1463,11 +1463,13 @@ const SKELETON_SIGNAL = new RegExp(SKELETON_SIGNAL_SRC, "i");
  * placeholder signal the older rule is cleared by its own `absent`, so this one reports it and the
  * shape is covered exactly once either way.
  *
- * MEASURED over 7195 UI files of real product repositories, BEFORE the condition set was widened to
- * the status comparison and the dotted read: 25 placeholder guards, 13 findings, every one a genuine
- * view (a settings page blanked for two strings, a dashboard blanked for its tiles, three route
- * components blanked below their own <h1>), 0 false positives. Skipping comment lines is
- * load-bearing - three of the corpus hits are commented-out guards.
+ * PRE-WIDENING MEASUREMENT over 7195 UI files of real product repositories, taken before the
+ * condition set was widened to the status comparison and the dotted read: 25 placeholder guards, 13
+ * findings, every one a genuine view (a settings page blanked for two strings, a dashboard blanked
+ * for its tiles, three route components blanked below their own <h1>), 0 false positives. Skipping
+ * comment lines is load-bearing - three of the corpus hits are commented-out guards. RE-MEASURED
+ * after the widening and the fe-skeleton-loading suppression, over 7199 files: 10 findings, still 0
+ * false positives (see docs/notes/guardrails.md for the full breakdown).
  */
 export function viewBlankedWhileLoading(content: string): { line: number; detail: string; }[] {
     const lines = content.split("\n");
