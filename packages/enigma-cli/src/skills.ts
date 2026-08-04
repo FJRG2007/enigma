@@ -30,7 +30,7 @@ import { applyVerifyWiring, isVerifyOn, mirrorVerifyWiring } from "./verify-depl
 import { applyGuardrailsWiring, mirrorGuardrailsWiring } from "./guardrails-deploy";
 import { resolveBypassSelection, applyBypass, mirrorAccountSettings } from "./permissions";
 import { cachedRemoteSkills, refreshRemoteSkills, shouldCheckRemote } from "./skills-remote";
-import { existsSync, readdirSync, readFileSync, writeFileSync, statSync, cpSync, mkdirSync, rmSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync, cpSync, mkdirSync, rmSync } from "node:fs";
 import { AGENTS, MANAGED_PROVIDER, isManagedProvider, discoverAgents, runningStatus, localTargetsAt } from "./agents";
 import { disableClaudeAttribution, disableClaudeFeedbackSurvey, enableClaudeStatusline, getClaudeTrust, setClaudeTrust } from "./claude";
 
@@ -163,10 +163,26 @@ function stripMarkedBlock(content: string, id: string): string {
 }
 
 /**
+ * `<!-- enigma:case:KEY=VALUE -->...<!-- enigma:case:end -->`: mutually exclusive alternatives,
+ * of which exactly one is deployed. Matches the markers too, so a dropped case leaves nothing.
+ */
+const CASE_BLOCK = /<!-- enigma:case:([A-Za-z0-9]+)=(\S+) -->\n?([\s\S]*?)<!-- enigma:case:end -->\n?/g;
+
+/**
+ * Keep only the case whose VALUE equals the current config value of KEY, dropping the other
+ * alternatives and every case marker. Shared by the two deployed surfaces that carry cases:
+ * a skill's SKILL.md (per-skill config) and a memory file (the output-style level).
+ */
+function applyCaseBlocks(content: string, cfg: Record<string, unknown>): string {
+    return content.replace(CASE_BLOCK, (_m, key: string, val: string, body: string) => (String(cfg[key]) === val ? body : ""));
+}
+
+/**
  * Read a source memory file and apply the user's .enigma.json toggles to it:
  * - parallelSubagents off -> strip the parallel sub-agent block (decomposition stays).
- * - outputStyle off -> strip the token-efficient output block; otherwise keep it and
- *   bind {{output-level}} to the chosen level (lite/full/ultra).
+ * - outputStyle off -> strip the token-efficient output block; otherwise keep it, bind
+ *   {{output-level}} to the chosen level (lite/full/ultra) and let applyCaseBlocks leave only
+ *   that level's rules, so the deployed file never spends context describing the other two.
  * - recall off -> strip the "use session memory" block; kept when on so the agent is told
  *   to query the enigma_recall MCP tools.
  * - gate off -> strip the "AI quality gate (automatic)" block; kept when on so the agent
@@ -181,7 +197,7 @@ function renderMemory(srcFile: string): string {
     else out = out.replace(/\{\{output-level\}\}/g, cfg.outputStyle);
     if (!cfg.recall) out = stripMarkedBlock(out, "recall");
     if (!cfg.gate) out = stripMarkedBlock(out, "gate");
-    return out;
+    return applyCaseBlocks(out, cfg as unknown as Record<string, unknown>);
 }
 
 /** Compare the toggle-rendered source against the deployed file, not the raw bytes. */
@@ -205,10 +221,7 @@ function renderSkill(srcSkillMd: string, keys: string[] | undefined): string {
     let out = readFileSync(srcSkillMd, "utf8");
     if (!keys?.length) return out;
     const cfg = conf.readConfig().config as unknown as Record<string, unknown>;
-    out = out.replace(
-        /<!-- enigma:case:([A-Za-z0-9]+)=(\S+) -->\n?([\s\S]*?)<!-- enigma:case:end -->\n?/g,
-        (_m, key: string, val: string, body: string) => (String(cfg[key]) === val ? body : ""),
-    );
+    out = applyCaseBlocks(out, cfg);
     for (const k of keys) out = out.split(`{{${k}}}`).join(String(cfg[k]));
     return out;
 }
@@ -781,13 +794,31 @@ export function sealSources(): void {
  */
 export const MEMORY_BUDGET_BYTES = 24_000;
 
-/** Report every bundled memory file that exceeds MEMORY_BUDGET_BYTES. */
+/**
+ * What a source memory file can cost a session, which is not its size on disk: the case blocks
+ * hold mutually exclusive alternatives and renderMemory deploys exactly one, so charging all of
+ * them (plus their markers, which never ship either) would bill context nobody pays. Charge the
+ * WORST case a user can select - the largest alternative per key - so the figure stays
+ * config-independent and still bounds every deployment.
+ */
+export function budgetedBytes(content: string): number {
+    const largest = new Map<string, number>();
+    const stripped = content.replace(CASE_BLOCK, (_m, key: string, _v: string, body: string) => {
+        largest.set(key, Math.max(largest.get(key) ?? 0, Buffer.byteLength(body)));
+        return "";
+    });
+    let bytes = Buffer.byteLength(stripped);
+    for (const size of largest.values()) bytes += size;
+    return bytes;
+}
+
+/** Report every bundled memory file whose deployable size exceeds MEMORY_BUDGET_BYTES. */
 function checkMemoryBudget(): string[] {
     if (!isDir(MEMORY_ROOT)) return [];
     const problems: string[] = [];
     for (const file of readdirSync(MEMORY_ROOT)) {
         if (!file.endsWith(".md")) continue;
-        const bytes = statSync(join(MEMORY_ROOT, file)).size;
+        const bytes = budgetedBytes(readFileSync(join(MEMORY_ROOT, file), "utf8"));
         if (bytes > MEMORY_BUDGET_BYTES) problems.push(`memory/${file}: ${bytes} bytes exceeds the ${MEMORY_BUDGET_BYTES}-byte always-on budget - move detail into a policy skill or a guardrail rule`);
     }
     return problems;
@@ -850,11 +881,11 @@ async function resolveOutputStyle(opts: InstallOptions, scope: "global" | "local
     }
     if (!style && interactive && !opts.dryRun) {
         const r = await p.select({
-            message: "Token-efficient output? (compress chat prose; code/commits/PRs stay normal)",
+            message: "Token-efficient output? (shorter replies; code/commits/PRs stay normal)",
             options: [
                 { value: "off", label: "Off", hint: "full prose (default)" },
                 { value: "lite", label: "Lite", hint: "professional terse - drop filler, keep grammar" },
-                { value: "full", label: "Full", hint: "drop articles and use fragments (most compressed)" },
+                { value: "full", label: "Full", hint: "drop articles, fragments, answers sized to the question" },
                 { value: "ultra", label: "Ultra", hint: "telegraphic, maximum compression" },
             ],
             initialValue: conf.readConfig().config.outputStyle,

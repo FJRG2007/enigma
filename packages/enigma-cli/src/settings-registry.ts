@@ -333,7 +333,7 @@ const RAW_CATEGORIES: Category[] = [
                 write: (value, scope) => setStatusline(value, scope),
             },
             enigmaToggle("parallel-subagents", "parallelSubagents", "Parallel sub-agents", "let agents split long tasks across sub-agents running in parallel; edits the memory file - restart your agent to apply", true),
-            enigmaChoice("output-style", "outputStyle", "Token-efficient output", "compress prose replies (off|lite|full|ultra); on = full; edits the memory file - restart your agent to apply", conf.OUTPUT_STYLES, "full", true),
+            enigmaChoice("output-style", "outputStyle", "Token-efficient output", "shorter replies, sized to the question (off|lite|full|ultra); on = full; edits the memory file - restart your agent to apply", conf.OUTPUT_STYLES, "full", true),
             enigmaChoice("minimal-code", "minimalCode", "Minimal code (anti-overengineering)", "prefer the laziest solution that works (off|lite|full|ultra); on = full; edits the anti-overengineering skill - restart your agent to apply", conf.MINIMAL_CODE_LEVELS, "full", false, "off", true),
             {
                 key: "logo-color-policy",

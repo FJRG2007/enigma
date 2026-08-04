@@ -12,13 +12,13 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { test, expect, afterAll } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 
 const HOME = mkdtempSync(join(tmpdir(), "enigma-policy-generalization-"));
 process.env.USERPROFILE = HOME;
 process.env.HOME = HOME;
 
-const { MEMORY_BUDGET_BYTES } = await import("../src/skills");
+const { MEMORY_BUDGET_BYTES, budgetedBytes } = await import("../src/skills");
 
 const ASSETS = join(dirname(fileURLToPath(import.meta.url)), "..", "assets");
 const memory = (file: string): string => join(ASSETS, "memory", file);
@@ -54,7 +54,9 @@ test("the always-on kernel carries the short form, identically for every agent, 
     // Kernel keeps the trigger only; the procedure stays in the skill (one rule, one tier).
     expect(claude).not.toContain("## Generalization Rule (Example -> Class)");
     expect(claude).not.toContain("1. Name the rule");
-    for (const file of ["CLAUDE.md", "AGENTS.md"]) expect(statSync(memory(file)).size).toBeLessThanOrEqual(MEMORY_BUDGET_BYTES);
+    // budgetedBytes, not the size on disk: a case block's unselected alternatives never deploy,
+    // so charging them would bill context no session pays (skills.ts).
+    for (const file of ["CLAUDE.md", "AGENTS.md"]) expect(budgetedBytes(read(memory(file)))).toBeLessThanOrEqual(MEMORY_BUDGET_BYTES);
 });
 
 test("the domain skills point back at the rule instead of restating it", () => {
