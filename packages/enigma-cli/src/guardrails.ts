@@ -1573,12 +1573,16 @@ const CLIP_ONE_LINE = /\btruncate\b|\btext-ellipsis\b|text-overflow\s*:\s*ellips
  * the turn denied with no exit but a marker. The excluded characters are every operator that ends
  * in `>`: `=>`, `<=`, `>=`, `!=`, `-->`, `>>`.
  *
- * And the brace must open a VALUE. Svelte and Astro spell control flow in the same braces
- * (`{#if}`, `{#each}`, `{/if}`, `{:else}`, `{@html}`), and the rule matches those dialects while
- * the fixer declines every file that is not `.jsx`/`.tsx` - so a block opener read as a rendered
- * value was the arrow-function false positive again, one dialect over: a denied turn with no
- * repair available. The sigils are excluded rather than the constructs, because a sigil is never
- * the first character of an expression.
+ * And the brace must open a VALUE. SVELTE - and only Svelte - spells control flow in the same
+ * braces (`{#if}`, `{#each}`, `{/if}`, `{:else}`, `{@html}`); Astro is named alongside it in most
+ * accounts of this, wrongly, since its template is JSX-expression based (`{cond && <p/>}`,
+ * `{list.map(...)}`) and its control features are attribute directives (`set:html`, `client:load`,
+ * `is:raw`). The rule matches `.svelte` while the fixer declines every file that is not
+ * `.jsx`/`.tsx`, so a block opener read as a rendered value was the arrow-function false positive
+ * again, one dialect over: a denied turn with no repair available. `/` is the one sigil that is not
+ * Svelte-only - it also opens a JSX COMMENT child (`>{/*`), which is no more a value than a control
+ * block is. The sigils are excluded rather than the constructs, because a sigil is never the first
+ * character of an expression.
  */
 const DYNAMIC_CHILD = /(?<![=!<>-])>\s*\{(?![#/:@])/;
 
@@ -1601,47 +1605,24 @@ const ALLOW_CLIPPED_VALUE = /enigma:allow-clipped-value/;
  * different. The element that clips is the element that hides the value, so whether the user can
  * still read it is decided by that element and the wrapper immediately above it.
  *
- * MEASURED with the rule itself, every figure below taken in ONE run over ONE file set: 9074 UI
- * files of 15 real product repositories, the rule's own excludeFiles applied so test and spec files
- * are out, every extension it scans - 7202 .tsx, 1490 .vue, 321 .html, 55 .astro, 3 .jsx, 3
- * .svelte, 0 .htm. At the CLIP-PATTERN width 3474 lines match (2998 .tsx, 460 .vue, 10 .html, 6
- * .astro). At the DYNAMIC-VALUE width 1699 of those clip a value (1649 .tsx, 49 .vue, 1 .html); the
- * other 1775 render no value at all - the identifier `truncate` itself, its call sites, static copy
- * and CSS. 1490 of the 1699 - 88% - carry the full string nowhere (1444 .tsx, 46 .vue).
+ * THE CORPUS MEASUREMENT LIVES IN text-overflow.md AND IS DELIBERATELY NOT RESTATED HERE - not the
+ * composition, the two widths and their per-extension splits, the findings, the fixer's share, nor
+ * the sigil differential. Keeping three prose copies of one figure set in agreement is what let two
+ * of them drift, so the note is the one place a number is added or corrected. What a reader of this
+ * code needs from it is the ORDER OF MAGNITUDE: 88% of the corpus lines that clip a dynamic value
+ * hide it with the full string reachable nowhere. That is the DEFAULT in real code rather than an
+ * occasional slip, which is what puts the rule at the diff stage - an edit-stage rule would report
+ * a project's existing rows on any unrelated edit to their files, forever - and what makes the
+ * FIXER rather than the message the thing that pays for it, since it repairs four in five of them
+ * with no message, no turn and no tokens.
  *
- * EVERY FIGURE COMES FROM ONE RUN OVER ONE FILE SET AND STATES THE WIDTH IT WAS TAKEN AT, because
- * mixing the two widths is the specific slip to guard against. Both halves of the 88% are measured
- * through DYNAMIC_CHILD; the file count comes from the rule's own files/excludeFiles globs, and a
- * per-extension split carries the width of the total it belongs to. CLIP_ONE_LINE alone also
- * matches those 1775 valueless lines, which the numerator excludes by design, so a denominator
- * counted at that width understates the ratio (43% instead of 88%) - and a breakdown carried over
- * from another run, another width, or the raw walk before excludeFiles will not reconcile with the
- * totals beside it. Two sums that catch exactly that: 1699 + 1775 = 3474, and each per-extension
- * split adds up to its own total.
- *
- * At 88% a clipped value hiding its own text is the DEFAULT in real code rather than an occasional
- * slip, which is what puts the rule at the diff stage - an edit-stage rule would report those 1490
- * pre-existing lines on any unrelated edit to their files - and what makes the FIXER rather than
- * the message the thing that pays for it: it repairs 1208 of them - 81%, so most of it never costs
- * the model a token - and 282 reach it. The figure that tells the sigil exclusion below apart from
- * silencing three dialects is the DIFFERENTIAL one, since a post-exclusion zero is what silencing
- * them would also produce: measured CORPUS-WIDE - every extension the rule scans, not the three
- * dialects alone, since the lookahead applies to all of them - the number of lines the PRE-exclusion
- * child pattern would have flagged and the current one does not is 0. WHAT THAT ZERO ESTABLISHES IS
- * NARROW: the exclusion suppressed nothing the rule was already reporting anywhere in the corpus,
- * so it is not silently hiding findings elsewhere. WHAT IT SAYS ABOUT FREQUENCY SPLITS THE FOUR
- * SIGILS IN TWO. `#`, `:` and `@` are Astro/Svelte-only - Vue interpolates with `{{ }}` and
- * branches with `v-if`, plain HTML has no brace syntax at all, so neither can write `>{#`, `>{:`
- * or `>{@` however many lines they clip - and the corpus holds 55 .astro and 3 .svelte files, too
- * thin in exactly the dialects that can spell those three for the zero to say how often they
- * occur. `/` is not in that position: a JSX COMMENT child opens `>{/*`, which the PRE-exclusion
- * pattern flagged and the lookahead now drops, and there the corpus is not thin at all - 7202 .tsx
- * files, 2998 of them carrying a clip-declaring line. A corpus-wide zero across that IS a result
- * for this sigil: not one line in the dialect that dominates the corpus changed verdict. A comment
- * is no more a value than a control block, so dropping it is the same lookahead doing the same job
- * one dialect over. The thin half is why the `{#if}` shape had to be found by PROBING and not by
- * counting, and BOTH false positives here removed zero corpus findings - the same evidence twice
- * that a corpus measures VOLUME and cannot validate correctness.
+ * TWO WARNINGS ABOUT MEASURING IT, both paid for here. (1) A corpus scan measures VOLUME and cannot
+ * validate correctness: BOTH false positives below removed zero corpus findings, and both had to be
+ * found by PROBING - so a corpus count can never be the thing that clears a pattern change. (2)
+ * NEVER MIX THE TWO WIDTHS. CLIP_ONE_LINE also matches the identifier `truncate`, its call sites,
+ * static copy and CSS, none of which render a value, so both halves of that 88% have to be measured
+ * through DYNAMIC_CHILD - counting the denominator at the wider width understates it to 43%. Every
+ * figure in the note comes from ONE run over ONE file set and states the width it was taken at.
  */
 export function truncatedValueUnreachable(content: string): { line: number; detail: string; }[] {
     const lines = content.split("\n");
