@@ -1123,23 +1123,44 @@ test("styleFindings catches the padding the style bans, and nothing else", async
     ].join("\n");
     expect(styleFindings(padded).map((h) => h.key)).toEqual(["style:untouched"]);
     expect(styleFindings("| dashboard | 0.1.104 | unchanged |").map((h) => h.key)).toEqual(["style:untouched"]);
+    expect(styleFindings("- helio: sin cambios").map((h) => h.key)).toEqual(["style:untouched"]);
 
     expect(styleFindings("Por supuesto, basicamente ya esta.")[0]!.key).toBe("style:filler");
     expect(styleFindings("Of course, I just fixed it.")[0]!.key).toBe("style:filler");
     expect(styleFindings("Voy a revisar el fichero.")[0]!.key).toBe("style:preamble");
     expect(styleFindings("Let me check the file.")[0]!.key).toBe("style:preamble");
+    expect(styleFindings("Déjame revisar el fichero.")[0]!.key).toBe("style:preamble");
 
     // A report that states outcomes is clean, which is the whole point - a check that fires on
     // ordinary prose would be switched off within a day.
     expect(styleFindings("enigma-cli 1.35.3 y linter 0.5.1 en npm. Binarios en el release.")).toEqual([]);
     expect(styleFindings("Fixed in auth.ts:42. Tests green.")).toEqual([]);
-    // "actually" is filler; "actual" and "actualizar" are not. Word boundaries, not substrings.
+    // The ban list is exactly the spec's list. "actually" is not in it - the completion rule
+    // ("VERIFY it actually works") is another always-on rule, and blocking a reply for following
+    // it is the worst thing a cosmetic check can do.
+    expect(styleFindings("Fixed; verified it actually runs.")).toEqual([]);
     expect(styleFindings("El estado actual es correcto y hay que actualizar el lockfile.")).toEqual([]);
+    // A count is not a status row.
+    expect(styleFindings("- 159 tests green, 2 skipped")).toEqual([]);
+
+    // Naming a blocked item is REQUIRED elsewhere in this file (see blockMessage), so a row that
+    // says WHY is a report and passes; a row that only asserts the non-event is the padding.
+    expect(styleFindings("- packages/dashboard: skipped (no npm credentials)")).toEqual([]);
+    expect(styleFindings("- packages/dashboard: n/a because the API is down")).toEqual([]);
+    expect(styleFindings("- helio: sin cambios - no lo tocamos por falta de credenciales")).toEqual([]);
+    expect(styleFindings("| dashboard | n/a | no npm credentials |")).toEqual([]);
+
+    // "Let me know" is not a preamble: it is frequently the whole reply on a turn that names a
+    // blocker or hands back a PR that is the user's to merge.
+    expect(styleFindings("Let me know which account to use.")).toEqual([]);
+    expect(styleFindings("Déjame saber si quieres el PR fusionado.")).toEqual([]);
 
     // The budget keys on the RULE, so repeated padding cannot earn a fresh allowance per word.
     expect(styleFindings("Por supuesto. Simplemente esto.").map((h) => h.key)).toEqual(["style:filler"]);
 
     expect(styleFindings("| dashboard | sin cambios | enigma:verify-ignore")).toEqual([]);
+    // ...and that marker exempts the LINE it sits on, not the rest of the reply.
+    expect(styleFindings("| dashboard | sin cambios | enigma:verify-ignore\n\nOf course, done.").map((h) => h.key)).toEqual(["style:filler"]);
 });
 
 test("a message that DESCRIBES the banned phrasing is not using it", async () => {
@@ -1164,4 +1185,80 @@ test("the stop-short check reads what the turn asserts, not what it quotes", () 
     // ...while a real one still blocks, and is quoted back from the untouched message.
     expect(asksToContinue("He terminado el paso 1. ¿Sigo con el resto?")).toBe("¿Sigo con el resto?");
     expect(asksToContinue("Done with the first. Shall I continue with the rest?")).toContain("continue with the rest");
+});
+
+/** The hook's exit code plus what it fed back, so a test can tell WHICH gate fired. */
+function hookRun(json: string): [number, string] {
+    const stderr = process.stderr as unknown as { write: (chunk: unknown) => boolean; };
+    const real = stderr.write;
+    const written: string[] = [];
+    stderr.write = (chunk: unknown): boolean => { written.push(String(chunk)); return true; };
+    try { return [runVerifyHook(json), written.join("")]; }
+    finally { stderr.write = real; }
+}
+
+test("the style gate enforces the level the project was actually given", () => {
+    const dir = repoWith();
+    const padded = "| dashboard | 0.1.104 | sin cambios |";
+
+    // outputStyle defaults to off, so for an unconfigured user the whole path is dead.
+    expect(hookRun(payload(dir, padded))[0]).toBe(0);
+
+    // The memory block the agent receives is rendered from the merged config, so the gate reads
+    // that same one: a level the project sets is deployed, and therefore enforced...
+    write(dir, ".enigma.json", JSON.stringify({ outputStyle: "full" }));
+    const [code, fed] = hookRun(payload(dir, padded));
+    expect(code).toBe(2);
+    expect(fed).toContain("breaks the output style you are set to (full)");
+
+    // ...and a project that turned the style off had the block stripped from its memory, so it
+    // must not be blocked by it - whatever the global config says.
+    writeFileSync(join(HOME, ".enigma.json"), JSON.stringify({ outputStyle: "full" }));
+    try {
+        write(dir, ".enigma.json", JSON.stringify({ outputStyle: "off" }));
+        expect(hookRun(payload(dir, padded))[0]).toBe(0);
+    } finally {
+        writeFileSync(join(HOME, ".enigma.json"), "{}");
+    }
+});
+
+test("a cosmetic block never preempts, or spends the budget of, the gaps about the work", () => {
+    const dir = repoWith();
+    write(dir, ".enigma.json", JSON.stringify({ outputStyle: "full" }));
+    write(dir, "src/new.ts", "// TODO: finish this\n"); // enigma:verify-ignore
+    const padded = "| dashboard | 0.1.104 | sin cambios |";
+
+    // A turn that padded its reply AND left work unfinished hears about the work: being told to
+    // trim a table while a TODO ships is the gate at its most annoying and least useful.
+    const claiming = hookRun(payload(dir, `All done, everything is implemented.\n\n${padded}`));
+    expect(claiming[0]).toBe(2);
+    expect(claiming[1]).not.toContain("breaks the output style");
+    // Same for a turn that stops short of work it was already asked for.
+    const asking = hookRun(payload(dir, `Done with the first half. Should I continue with the rest?\n\n${padded}`));
+    expect(asking[0]).toBe(2);
+    expect(asking[1]).not.toContain("breaks the output style");
+
+    // Its own budget channel: the style block stands down after its own cap, and the completion
+    // gate still fires in that same session rather than having been spent by cosmetics.
+    const same = { session_id: "style-budget" };
+    expect(hookRun(payload(dir, padded, same))[0]).toBe(2);
+    expect(hookRun(payload(dir, padded, same))[0]).toBe(2);
+    expect(hookRun(payload(dir, padded, same))[0]).toBe(0);
+    const primary = hookRun(payload(dir, "All done, everything is implemented.", same));
+    expect(primary[0]).toBe(2);
+    expect(primary[1]).toContain("You just reported this work as finished");
+});
+
+test("a period inside the question does not split the trigger from its question mark", () => {
+    // A sentence ends at a terminator followed by WHITESPACE. A decimal, a version or a path
+    // inside the question would otherwise leave the trigger phrase in one span and the "?" in
+    // the next, and since only a span carrying "?" is examined, the gate would silently miss.
+    expect(asksToContinue("Paso 1 hecho. ¿Sigo con el paso 2.5?")).toBe("¿Sigo con el paso 2.5?");
+    expect(asksToContinue("Done with the first. Shall I continue with v1.2?")).toBe("Shall I continue with v1.2?");
+    expect(asksToContinue("Listo. ¿Continúo con src/foo.ts?")).toBe("¿Continúo con src/foo.ts?");
+    expect(asksToContinue("Done. Should I move on to src/two.ts and src/three.ts?")).toContain("move on to");
+    expect(asksToContinue("Listo. ¿Sigo con el resto, e.g. el exportador?")).toContain("¿Sigo con el resto");
+    // ...and an ordinary sentence end still ends the sentence, so a trigger phrase in one and a
+    // question mark in the next are not read as one question.
+    expect(asksToContinue("Sigo con el exportador. ¿Te sirve el azul para el badge?")).toBe("");
 });

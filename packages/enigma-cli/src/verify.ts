@@ -240,13 +240,18 @@ const LEGITIMATE_STOP_RE = new RegExp([
  * sat inside `the one that stops me when I ask "¿sigo?"` - a sentence ABOUT the gate, matched
  * as an instance of it. Replacing with spaces rather than deleting keeps every offset and the
  * sentence split intact, so a quote can still terminate a sentence.
+ *
+ * Newlines survive the blanking as themselves, so line N of the result is line N of the
+ * message: a fenced block collapsed into one long space run would merge the lines around it
+ * and break every line-indexed scan built on this.
  */
 export function withoutQuoted(message: string): string {
+    const blank = (m: string): string => m.replace(/[^\n]/g, " ");
     return message
-        .replace(/```[\s\S]*?(?:```|$)/g, (m) => " ".repeat(m.length))
-        .replace(/`[^`\n]*`/g, (m) => " ".repeat(m.length))
-        .replace(/^\s*>.*$/gm, (m) => " ".repeat(m.length))
-        .replace(/"[^"\n]{0,200}"|«[^»\n]{0,200}»|“[^”\n]{0,200}”/g, (m) => " ".repeat(m.length));
+        .replace(/```[\s\S]*?(?:```|$)/g, blank)
+        .replace(/`[^`\n]*`/g, blank)
+        .replace(/^\s*>.*$/gm, blank)
+        .replace(/"[^"\n]{0,200}"|«[^»\n]{0,200}»|“[^”\n]{0,200}”/g, blank);
 }
 
 /**
@@ -275,12 +280,22 @@ export function asksToContinue(message: string): string {
 /**
  * Sentence spans as [start, end) offsets into `text`. Offsets rather than a split, so a caller
  * can read the same span out of the untouched message - see asksToContinue.
+ *
+ * A terminator ends a sentence only when WHITESPACE or the end of the text follows it, which
+ * is the boundary the split this replaced used, plus one exception it did not have: the second
+ * dot of a two-letter abbreviation ("e.g.", "i.e.", "U.S."). The rule is load-bearing rather
+ * than a detail - asksToContinue only examines a span that carries a "?", so a period that
+ * split mid-sentence would leave the trigger phrase in one span and the question mark in the
+ * next and the gate would silently miss: "¿Sigo con el paso 2.5?", "Shall I continue with
+ * v1.2?", "...with src/foo.ts?", "¿Sigo con el resto, e.g. el exportador?".
  */
 function sentenceSpans(text: string): Array<[number, number]> {
     const spans: Array<[number, number]> = [];
     let start = 0;
     for (let i = 0; i < text.length; i++) {
         if (!".!?\n".includes(text[i]!)) continue;
+        if (i + 1 < text.length && !/\s/.test(text[i + 1]!)) continue;
+        if (text[i] === "." && text[i - 2] === "." && /[A-Za-z]/.test(text[i - 1] ?? "")) continue;
         let end = i + 1;
         while (end < text.length && /\s/.test(text[end]!)) end++;
         spans.push([start, i + 1]);
@@ -306,22 +321,61 @@ function sentenceSpans(text: string): Array<[number, number]> {
 // the turn did not touch. Anything requiring judgment ("this was longer than it deserved")
 // deliberately does not live here; it cannot be matched without guessing.
 
-/** Filler and pleasantries the output-style spec names outright, EN + ES. */
-const STYLE_FILLER_RE = /\b(?:just|really|basically|simply|actually|of\s+course|happy\s+to|sure\s+thing|feel\s+free)\b|\b(?:por\s+supuesto|encantad[oa]\s+de|b(?:á|a)sicamente|simplemente|sin\s+problema|no\s+dudes\s+en)\b/i;
+/**
+ * Filler and pleasantries the output-style spec names outright, EN + ES.
+ *
+ * This list is a MIRROR of the spec (assets/memory/CLAUDE.md: just, really, basically, simply,
+ * sure, happy to, of course) and nothing else, so the rule and its enforcement cannot drift
+ * apart and anyone can audit the detector by reading the memory block. A word belongs in the
+ * spec before it belongs here - a term banned only in code is a rule the agent was never told.
+ */
+const STYLE_FILLER_RE = /\b(?:just|really|basically|simply|of\s+course|happy\s+to|sure\s+thing)\b|\b(?:por\s+supuesto|encantad[oa]\s+de|b(?:á|a)sicamente|simplemente)\b/i;
 
 /**
- * A row or bullet whose value says the item was NOT touched. This is the one the style spec
- * calls out as "no list of what you never touched", and the one that prompted this check: a
- * release summary carried two table rows for packages that had not changed and had not been
- * asked about.
+ * A row or bullet reporting an item as NOT touched. This is the one the style spec calls out
+ * as "no list of what you never touched", and the one that prompted this check: a release
+ * summary carried two table rows for packages that had not changed and had not been asked about.
+ *
+ * A count is not a status - "2 skipped" in a test tally is a number the reply is reporting,
+ * not a row about something nobody asked about.
  */
-const STYLE_UNTOUCHED_RE = /^\s*(?:\||[-*])[^\n]*\b(?:sin\s+cambios|no\s+aplica|n\/a|sin\s+tocar|no\s+modificad[oa]s?|no\s+tocad[oa]s?|saltad[oa]s?|unchanged|not\s+touched|no\s+changes|skipped\s*\(|nothing\s+to\s+do)\b/i;
+const STYLE_UNTOUCHED_RE = /\b(?:sin\s+cambios|no\s+aplica|n\/a|sin\s+tocar|no\s+modificad[oa]s?|no\s+tocad[oa]s?|unchanged|not\s+touched|no\s+changes|nothing\s+to\s+do)\b|(?<!\d\s)\b(?:saltad[oa]s?|skipped)\b/i;
+const STYLE_UNTOUCHED_ALL_RE = new RegExp(STYLE_UNTOUCHED_RE.source, "gi");
 
-/** An opening line that announces the work instead of reporting it. */
-const STYLE_PREAMBLE_RE = /^\s*(?:voy\s+a\b|ahora\s+voy\s+a\b|déjame\b|dejame\b|permíteme\b|let\s+me\b|i'?m\s+going\s+to\b|i\s+will\s+now\b|first,?\s+i'?ll\b)/i;
+/**
+ * A reason, following the untouched marker on the same row: parenthesised, introduced by a
+ * because/porque word, after a dash or colon, or in a further table cell that carries words
+ * rather than only an identifier or a version.
+ *
+ * THE INVARIANT, and it must not drift: naming a blocked item is REQUIRED - blockMessage
+ * orders it with the file and the reason - so a row that says why passes. What blocks is a row
+ * that only asserts the non-event ("| dashboard | 0.1.104 | sin cambios |", "- helio:
+ * unchanged"), which is padding about something nobody asked about. Whether the reason is a
+ * GOOD one is not this check's business.
+ */
+const STYLE_REASON_RE = /\([^)\n]*\p{L}[^)\n]*\)|\b(?:because|since|due\s+to|porque|ya\s+que|debido\s+a)\b|[-–—:]\s+\S|\|[^|\n]*\p{L}/iu;
+
+/**
+ * An opening line that announces the work instead of reporting it. "Let me know" / "déjame
+ * saber" is deliberately NOT one: it is frequently the whole reply on a turn that names a
+ * genuine blocker or hands back a PR that is the user's to merge, which is the ending the
+ * other gates here exist to protect.
+ */
+const STYLE_PREAMBLE_RE = /^\s*(?:voy\s+a\b|ahora\s+voy\s+a\b|(?:déjame|dejame|permíteme|permiteme)\s+(?!saber\b)|let\s+me\s+(?!know\b)|i'?m\s+going\s+to\b|i\s+will\s+now\b|first,?\s+i'?ll\b)/i;
 
 /** One style violation: the rule it broke and the text that broke it. */
 interface StyleHit { rule: string; detail: string; }
+
+/** A row or bullet that reports an item as untouched without saying why, or "" for anything else. */
+function untouchedWithoutReason(line: string): string {
+    if (!/^\s*(?:\||[-*])/.test(line)) return "";
+    const marker = STYLE_UNTOUCHED_RE.exec(line);
+    if (!marker) return "";
+    // A restated non-event is not a reason: "Saltado (sin cambios)" says the same thing twice,
+    // so every marker comes out of the candidate text before it is weighed.
+    const rest = line.slice(marker.index + marker[0].length).replace(STYLE_UNTOUCHED_ALL_RE, " ");
+    return STYLE_REASON_RE.test(rest) ? "" : line.trim().slice(0, 100);
+}
 
 /**
  * Deterministic output-style violations in the final message. Pure text, no model call and no
@@ -330,22 +384,29 @@ interface StyleHit { rule: string; detail: string; }
  * Quoted spans are excluded (see withoutQuoted) because a turn that DESCRIBES a banned phrase
  * is not using it - this whole check is about to be documented, and a check that cannot survive
  * its own documentation is a check that gets deleted.
+ *
+ * The escape hatch is scoped to the LINE that carries it, and read from the untouched message
+ * so a marker written inside code ticks still counts. One load-bearing row must not also buy a
+ * pass on filler and preamble for the rest of the reply: an escape hatch that does more than it
+ * says is how a check gets quietly disabled.
  */
 export function styleFindings(message: string): VerifyGap[] {
     if (!message || typeof message !== "string") return [];
-    if (message.includes("enigma:verify-ignore")) return [];
-    const scannable = withoutQuoted(message);
+    const written = message.split("\n");
+    // Blanking preserves newlines, so line i here is line i of the reply.
+    const lines = withoutQuoted(message).split("\n").map((line, i) => (IGNORE_RE.test(written[i] ?? "") ? "" : line));
     const hits: StyleHit[] = [];
 
-    const filler = STYLE_FILLER_RE.exec(scannable);
+    const filler = STYLE_FILLER_RE.exec(lines.join("\n"));
     if (filler) hits.push({ rule: "filler", detail: `the reply carries filler the style bans: "${filler[0].trim()}"` });
 
-    const preamble = STYLE_PREAMBLE_RE.exec(scannable.split("\n")[0] ?? "");
+    const preamble = STYLE_PREAMBLE_RE.exec(lines[0] ?? "");
     if (preamble) hits.push({ rule: "preamble", detail: `the reply opens by announcing the work ("${preamble[0].trim()}") instead of reporting it` });
 
-    for (const line of scannable.split("\n")) {
-        if (!STYLE_UNTOUCHED_RE.test(line)) continue;
-        hits.push({ rule: "untouched", detail: `a row reports something the turn did not touch: "${line.trim().slice(0, 100)}"` });
+    for (const line of lines) {
+        const row = untouchedWithoutReason(line);
+        if (!row) continue;
+        hits.push({ rule: "untouched", detail: `a row reports something the turn did not touch, with no reason given: "${row}"` });
         break; // one finding per rule: the fix is the same edit for every such row
     }
 
@@ -363,7 +424,7 @@ function styleMessage(hits: VerifyGap[], level: string): string {
         "",
         "Rewrite the reply without those before ending the turn. The work itself is not in question here and must not change - only the prose reporting it.",
         "Answer what was asked, at the size it deserves: report outcomes, not the route to them, and never list what you did not touch or were not asked about.",
-        "If one of these is load-bearing (you are quoting the phrase, or the row genuinely answers the question), say so and mark the line with enigma:verify-ignore.",
+        "If one of these is load-bearing (you are quoting the phrase, or the row genuinely answers the question), say so and mark THAT LINE with enigma:verify-ignore - it exempts the line it sits on, and nothing else in the reply.",
     ].join("\n");
 }
 
@@ -1647,7 +1708,11 @@ export function runVerifyHook(payload?: string): number {
     // hear about the work; being told to trim a table while a TODO ships is the gate at its most
     // annoying and least useful.
     const styleGate = (): number => {
-        const level = String(readGlobalConfig().outputStyle || "off");
+        // The SAME config every other gate here reads, and the same one renderMemory renders the
+        // style block from: this gate must enforce the level that was actually deployed to the
+        // agent, never a different one. A global-only read disagreed with the deployed block
+        // exactly where it matters - a project that turned the style off still got blocked by it.
+        const level = String(config.outputStyle || "off");
         if (level === "off") return 0; // no level set means no rule to enforce
         const hits = styleFindings(message);
         if (!hits.length) return 0;
