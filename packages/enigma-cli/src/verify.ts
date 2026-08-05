@@ -332,28 +332,42 @@ function sentenceSpans(text: string): Array<[number, number]> {
 const STYLE_FILLER_RE = /\b(?:just|really|basically|simply|of\s+course|happy\s+to|sure\s+thing)\b|\b(?:por\s+supuesto|encantad[oa]\s+de|b(?:á|a)sicamente|simplemente)\b/i;
 
 /**
+ * This gate's OWN escape hatch, deliberately NOT `enigma:verify-ignore`.
+ *
+ * That literal is an alternative in both LEGITIMATE_STOP_RE and GATE_EXCUSE_RE, each matched over
+ * the WHOLE message, so a cosmetic block that taught it would hand out a token which - echoed on
+ * any line of the next reply - stands the stop-short and gate-skipped checks down for that entire
+ * reply. A cosmetic check must never be able to disable a substantive one, so the string that
+ * excuses padding excuses nothing else.
+ */
+const STYLE_IGNORE_RE = /enigma:style-ignore/;
+
+/**
  * A row or bullet reporting an item as NOT touched. This is the one the style spec calls out
  * as "no list of what you never touched", and the one that prompted this check: a release
  * summary carried two table rows for packages that had not changed and had not been asked about.
  *
- * A count is not a status - "2 skipped" in a test tally is a number the reply is reporting,
- * not a row about something nobody asked about.
+ * A count is not a status - "2 skipped", "3 suites skipped", "1 test skipped, 158 green" and
+ * "2 saltados en el runner" are all a number the reply is REPORTING, not a row about something
+ * nobody asked about. The carve-out is therefore the tally shape rather than the adjacent digit:
+ * a number earlier on the line with nothing but words and spaces between it and the marker.
  */
-const STYLE_UNTOUCHED_RE = /\b(?:sin\s+cambios|no\s+aplica|n\/a|sin\s+tocar|no\s+modificad[oa]s?|no\s+tocad[oa]s?|unchanged|not\s+touched|no\s+changes|nothing\s+to\s+do)\b|(?<!\d\s)\b(?:saltad[oa]s?|skipped)\b/i;
+const STYLE_UNTOUCHED_RE = /\b(?:sin\s+cambios|no\s+aplica|n\/a|sin\s+tocar|no\s+modificad[oa]s?|no\s+tocad[oa]s?|unchanged|not\s+touched|no\s+changes|nothing\s+to\s+do)\b|(?<!\d[\s\w]{0,24})\b(?:saltad[oa]s?|skipped)\b/i;
 const STYLE_UNTOUCHED_ALL_RE = new RegExp(STYLE_UNTOUCHED_RE.source, "gi");
 
 /**
  * A reason, following the untouched marker on the same row: parenthesised, introduced by a
- * because/porque word, after a dash or colon, or in a further table cell that carries words
- * rather than only an identifier or a version.
+ * because/porque word, after a dash, a colon or a comma, or in a further table cell that carries
+ * words rather than only an identifier or a version.
  *
- * THE INVARIANT, and it must not drift: naming a blocked item is REQUIRED - blockMessage
- * orders it with the file and the reason - so a row that says why passes. What blocks is a row
- * that only asserts the non-event ("| dashboard | 0.1.104 | sin cambios |", "- helio:
- * unchanged"), which is padding about something nobody asked about. Whether the reason is a
- * GOOD one is not this check's business.
+ * THE INVARIANT, and it must not drift - the connectors are the encoding, not the rule: naming a
+ * blocked item is REQUIRED - blockMessage orders it with the file and the reason - so a row that
+ * says WHY passes, in whichever of the two languages and with whichever connector joins it. What
+ * blocks is a row that only asserts the non-event ("| dashboard | 0.1.104 | sin cambios |",
+ * "- helio: unchanged"), which is padding about something nobody asked about. Whether the reason
+ * is a GOOD one is not this check's business.
  */
-const STYLE_REASON_RE = /\([^)\n]*\p{L}[^)\n]*\)|\b(?:because|since|due\s+to|porque|ya\s+que|debido\s+a)\b|[-–—:]\s+\S|\|[^|\n]*\p{L}/iu;
+const STYLE_REASON_RE = /\([^)\n]*\p{L}[^)\n]*\)|\b(?:because|since|due\s+to|porque|ya\s+que|debido\s+a)\b|[-–—:]\s+\S|,\s+\S[^\n]{2,}|\|[^|\n]*\p{L}/iu;
 
 /**
  * An opening line that announces the work instead of reporting it. "Let me know" / "déjame
@@ -385,22 +399,26 @@ function untouchedWithoutReason(line: string): string {
  * is not using it - this whole check is about to be documented, and a check that cannot survive
  * its own documentation is a check that gets deleted.
  *
- * The escape hatch is scoped to the LINE that carries it, and read from the untouched message
- * so a marker written inside code ticks still counts. One load-bearing row must not also buy a
- * pass on filler and preamble for the rest of the reply: an escape hatch that does more than it
- * says is how a check gets quietly disabled.
+ * The escape hatch is this gate's own marker (STYLE_IGNORE_RE), scoped to the LINE that carries
+ * it and read from the untouched message so a marker written inside code ticks still counts. One
+ * load-bearing row must not also buy a pass on filler and preamble for the rest of the reply: an
+ * escape hatch that does more than it says is how a check gets quietly disabled.
  */
 export function styleFindings(message: string): VerifyGap[] {
     if (!message || typeof message !== "string") return [];
     const written = message.split("\n");
     // Blanking preserves newlines, so line i here is line i of the reply.
-    const lines = withoutQuoted(message).split("\n").map((line, i) => (IGNORE_RE.test(written[i] ?? "") ? "" : line));
+    const lines = withoutQuoted(message).split("\n").map((line, i) => (STYLE_IGNORE_RE.test(written[i] ?? "") ? "" : line));
     const hits: StyleHit[] = [];
 
     const filler = STYLE_FILLER_RE.exec(lines.join("\n"));
     if (filler) hits.push({ rule: "filler", detail: `the reply carries filler the style bans: "${filler[0].trim()}"` });
 
-    const preamble = STYLE_PREAMBLE_RE.exec(lines[0] ?? "");
+    // The first line of PROSE, not line 0: a reply opening with a blank line, a heading, or a
+    // fenced block (blanked to spaces above) would otherwise never have its opening examined,
+    // so the same sentence would pass or block depending on what preceded it.
+    const opening = lines.find((line) => line.trim() && !/^\s*#{1,6}\s/.test(line)) ?? "";
+    const preamble = STYLE_PREAMBLE_RE.exec(opening);
     if (preamble) hits.push({ rule: "preamble", detail: `the reply opens by announcing the work ("${preamble[0].trim()}") instead of reporting it` });
 
     for (const line of lines) {
@@ -424,7 +442,7 @@ function styleMessage(hits: VerifyGap[], level: string): string {
         "",
         "Rewrite the reply without those before ending the turn. The work itself is not in question here and must not change - only the prose reporting it.",
         "Answer what was asked, at the size it deserves: report outcomes, not the route to them, and never list what you did not touch or were not asked about.",
-        "If one of these is load-bearing (you are quoting the phrase, or the row genuinely answers the question), say so and mark THAT LINE with enigma:verify-ignore - it exempts the line it sits on, and nothing else in the reply.",
+        "If one of these is load-bearing (you are quoting the phrase, or the row genuinely answers the question), say so and mark THAT LINE with enigma:style-ignore - it exempts that line from this style check only, and nothing else: not the rest of the reply, and not any other check.",
     ].join("\n");
 }
 
@@ -1708,6 +1726,11 @@ export function runVerifyHook(payload?: string): number {
     // hear about the work; being told to trim a table while a TODO ships is the gate at its most
     // annoying and least useful.
     const styleGate = (): number => {
+        // Exempt in plan mode, on the same guard as every other message check above, so "when is
+        // the reply examined" has ONE answer in this function. A plan is presented for approval
+        // before it runs: announcing the work IS the deliverable there, and the preamble pattern
+        // bans exactly what a plan is made of.
+        if (raw.permission_mode === "plan") return 0;
         // The SAME config every other gate here reads, and the same one renderMemory renders the
         // style block from: this gate must enforce the level that was actually deployed to the
         // agent, never a different one. A global-only read disagreed with the deployed block

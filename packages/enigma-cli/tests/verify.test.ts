@@ -1119,7 +1119,7 @@ test("styleFindings catches the padding the style bans, and nothing else", async
     const padded = [
         "| Paquete | Version | Estado |",
         "| enigma-cli | 1.35.3 | En npm |",
-        "| @enigmax/dashboard | 0.1.104 | Saltado (sin cambios), correcto |",
+        "| @enigmax/dashboard | 0.1.104 | Saltado (sin cambios) |",
     ].join("\n");
     expect(styleFindings(padded).map((h) => h.key)).toEqual(["style:untouched"]);
     expect(styleFindings("| dashboard | 0.1.104 | unchanged |").map((h) => h.key)).toEqual(["style:untouched"]);
@@ -1140,8 +1140,13 @@ test("styleFindings catches the padding the style bans, and nothing else", async
     // it is the worst thing a cosmetic check can do.
     expect(styleFindings("Fixed; verified it actually runs.")).toEqual([]);
     expect(styleFindings("El estado actual es correcto y hay que actualizar el lockfile.")).toEqual([]);
-    // A count is not a status row.
+    // A count is not a status row, however the tally is worded - these are ordinary test reports.
     expect(styleFindings("- 159 tests green, 2 skipped")).toEqual([]);
+    expect(styleFindings("- 3 suites skipped")).toEqual([]);
+    expect(styleFindings("- 1 test skipped, 158 green")).toEqual([]);
+    expect(styleFindings("- 2 saltados en el runner")).toEqual([]);
+    // ...while a status CELL that merely sits after a version is still a row about a non-event.
+    expect(styleFindings("| dashboard | 0.1.104 | skipped |").map((h) => h.key)).toEqual(["style:untouched"]);
 
     // Naming a blocked item is REQUIRED elsewhere in this file (see blockMessage), so a row that
     // says WHY is a report and passes; a row that only asserts the non-event is the padding.
@@ -1149,18 +1154,42 @@ test("styleFindings catches the padding the style bans, and nothing else", async
     expect(styleFindings("- packages/dashboard: n/a because the API is down")).toEqual([]);
     expect(styleFindings("- helio: sin cambios - no lo tocamos por falta de credenciales")).toEqual([]);
     expect(styleFindings("| dashboard | n/a | no npm credentials |")).toEqual([]);
+    // A comma is the most natural connector for that in both languages, so it is one too.
+    expect(styleFindings("- packages/dashboard: unchanged, I have no npm credentials")).toEqual([]);
+    expect(styleFindings("- helio: sin cambios, no hacia falta tocarlo")).toEqual([]);
 
     // "Let me know" is not a preamble: it is frequently the whole reply on a turn that names a
     // blocker or hands back a PR that is the user's to merge.
     expect(styleFindings("Let me know which account to use.")).toEqual([]);
     expect(styleFindings("Déjame saber si quieres el PR fusionado.")).toEqual([]);
 
+    // The opening examined is the first line of PROSE, so a blank line, a heading or a fenced
+    // block in front of it is not a way past the check.
+    expect(styleFindings("\nVoy a revisar el fichero.")[0]!.key).toBe("style:preamble");
+    expect(styleFindings("## Plan\n\nI'm going to rewrite the loader.")[0]!.key).toBe("style:preamble");
+    expect(styleFindings("```\ncode\n```\nLet me check the file.")[0]!.key).toBe("style:preamble");
+    // ...and a preamble phrase further down a reply that opens by reporting is still not one.
+    expect(styleFindings("Fixed in auth.ts:42.\nLet me check the file.")).toEqual([]);
+
     // The budget keys on the RULE, so repeated padding cannot earn a fresh allowance per word.
     expect(styleFindings("Por supuesto. Simplemente esto.").map((h) => h.key)).toEqual(["style:filler"]);
 
-    expect(styleFindings("| dashboard | sin cambios | enigma:verify-ignore")).toEqual([]);
+    expect(styleFindings("| dashboard | sin cambios | enigma:style-ignore")).toEqual([]);
     // ...and that marker exempts the LINE it sits on, not the rest of the reply.
-    expect(styleFindings("| dashboard | sin cambios | enigma:verify-ignore\n\nOf course, done.").map((h) => h.key)).toEqual(["style:filler"]);
+    expect(styleFindings("| dashboard | sin cambios | enigma:style-ignore\n\nOf course, done.").map((h) => h.key)).toEqual(["style:filler"]);
+    // The style gate does NOT answer to the marker the other checks use, and vice versa.
+    expect(styleFindings("- helio: sin cambios enigma:verify-ignore").map((h) => h.key)).toEqual(["style:untouched"]);
+});
+
+test("the style gate's escape hatch cannot stand down the checks about the work", async () => {
+    const { styleFindings } = await import("../src/verify");
+    // A cosmetic block must never hand out a master key: the marker it teaches is echoed into the
+    // NEXT reply, and if the substantive checks honoured it, one padded table would buy a pass on
+    // the stop-short and gate-skipped gates for that whole reply.
+    expect(asksToContinue("Paso 1 hecho. enigma:style-ignore\n\n¿Sigo con el resto?")).toBe("¿Sigo con el resto?");
+    expect(gateSkipped("I skipped the enigma gate for this change. enigma:style-ignore")).not.toBe("");
+    // ...while it does what its own message claims.
+    expect(styleFindings("- helio: sin cambios enigma:style-ignore")).toEqual([]);
 });
 
 test("a message that DESCRIBES the banned phrasing is not using it", async () => {
@@ -1220,6 +1249,17 @@ test("the style gate enforces the level the project was actually given", () => {
     } finally {
         writeFileSync(join(HOME, ".enigma.json"), "{}");
     }
+});
+
+test("a plan is exempt from the style gate, like every other message check", () => {
+    const dir = repoWith();
+    write(dir, ".enigma.json", JSON.stringify({ outputStyle: "full" }));
+
+    // A plan is presented for approval BEFORE it runs, so announcing the work is the deliverable
+    // and the preamble rule bans exactly what a plan is made of. Same guard as its neighbours.
+    expect(hookRun(payload(dir, "I'm going to add the detector to the Stop hook, then wire it."))[0]).toBe(2);
+    expect(hookRun(payload(dir, "I'm going to add the detector to the Stop hook, then wire it.", { permission_mode: "plan" }))[0]).toBe(0);
+    expect(hookRun(payload(dir, "| dashboard | 0.1.104 | sin cambios |", { permission_mode: "plan" }))[0]).toBe(0);
 });
 
 test("a cosmetic block never preempts, or spends the budget of, the gaps about the work", () => {
