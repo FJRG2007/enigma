@@ -4,6 +4,6 @@
   "provider": "FJRG2007/enigma",
   "description": "Senior database architecture policy: engine selection (PostgreSQL by default, SQLite only for local-first/embedded stores), ORM selection (Prisma in TypeScript/JavaScript), query optimization, anti-duplication/normalization, scalability, and RGPD/GDPR encryption.",
   "updated": "2026-08-04T18:33:27+02:00",
-  "cliVersion": "1.35.2",
+  "cliVersion": "1.35.3",
   "sha": "26fddc14caf697e830448a2cc453ddc470fe83d098d50bd67b278effba63274e"
 }
