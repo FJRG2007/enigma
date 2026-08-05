@@ -7,8 +7,14 @@
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
-import { test, expect, afterAll, beforeEach } from "bun:test";
+import { test, expect, afterAll, beforeEach, setDefaultTimeout } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync } from "node:fs";
+
+// Every test here drives real git (some of them the real CLI), several process spawns each.
+// Bun defaults to 5s per test, which is fine on an idle machine and not on a loaded one -
+// process spawn is the slow part, on Windows especially. Set once for the file so a test
+// added later inherits it instead of being remembered one at a time.
+setDefaultTimeout(60_000);
 
 const HOME = mkdtempSync(join(tmpdir(), "enigma-guardrails-"));
 process.env.USERPROFILE = HOME;

@@ -63,9 +63,10 @@ export interface VerifyGap {
      * `convention` = a guardrail rule the produced code breaks (see scanConventions);
      * `gate` = the quality gate is on and the committed work never went through it;
      * `source` = the change states a fact about someone that came from nowhere (see
-     * unsourcedTrailers).
+     * unsourcedTrailers); `style` = the REPLY breaks the configured compression level (see
+     * styleFindings) - the only kind that is about the prose rather than the work.
      */
-    kind: "marker" | "command" | "stop-short" | "convention" | "gate" | "source";
+    kind: "marker" | "command" | "stop-short" | "convention" | "gate" | "source" | "style";
     file?: string;
     line?: number;
     detail: string;
@@ -231,20 +232,139 @@ const LEGITIMATE_STOP_RE = new RegExp([
 ].join("|"), "i");
 
 /**
+ * Blank out the spans of a message that QUOTE text rather than assert it: fenced blocks,
+ * inline code, blockquotes, and quoted runs. Every scan over the final message reads what the
+ * turn is saying, and a turn that describes or quotes a phrase is not using it.
+ *
+ * This is not hypothetical. The stop-short check fired on a message whose only question mark
+ * sat inside `the one that stops me when I ask "¿sigo?"` - a sentence ABOUT the gate, matched
+ * as an instance of it. Replacing with spaces rather than deleting keeps every offset and the
+ * sentence split intact, so a quote can still terminate a sentence.
+ */
+export function withoutQuoted(message: string): string {
+    return message
+        .replace(/```[\s\S]*?(?:```|$)/g, (m) => " ".repeat(m.length))
+        .replace(/`[^`\n]*`/g, (m) => " ".repeat(m.length))
+        .replace(/^\s*>.*$/gm, (m) => " ".repeat(m.length))
+        .replace(/"[^"\n]{0,200}"|«[^»\n]{0,200}»|“[^”\n]{0,200}”/g, (m) => " ".repeat(m.length));
+}
+
+/**
  * Whether the final message ends the turn by asking permission to continue work that was
  * already assigned, without naming a reason that makes stopping legitimate.
  *
  * Returns the question itself (trimmed) so the block can quote it back, or "" for a message
- * that is free to end the turn.
+ * that is free to end the turn. The scan runs over the message with quoted spans blanked (see
+ * withoutQuoted), but the question is quoted back from the ORIGINAL text so the block shows
+ * the model what it actually wrote.
  */
 export function asksToContinue(message: string): string {
     if (!message || typeof message !== "string") return "";
     if (LEGITIMATE_STOP_RE.test(message)) return "";
-    for (const sentence of message.split(/(?<=[.!?\n])\s+/)) {
+    const scannable = withoutQuoted(message);
+    for (const [start, end] of sentenceSpans(scannable)) {
+        const sentence = scannable.slice(start, end);
         if (!sentence.includes("?")) continue;
-        if (CONTINUE_ASK_RE.test(sentence)) return sentence.trim().slice(0, 200);
+        // Quoted back from the ORIGINAL span: blanking preserves every offset, so the same
+        // slice of the untouched message is the sentence the model actually wrote.
+        if (CONTINUE_ASK_RE.test(sentence)) return message.slice(start, end).trim().slice(0, 200);
     }
     return "";
+}
+
+/**
+ * Sentence spans as [start, end) offsets into `text`. Offsets rather than a split, so a caller
+ * can read the same span out of the untouched message - see asksToContinue.
+ */
+function sentenceSpans(text: string): Array<[number, number]> {
+    const spans: Array<[number, number]> = [];
+    let start = 0;
+    for (let i = 0; i < text.length; i++) {
+        if (!".!?\n".includes(text[i]!)) continue;
+        let end = i + 1;
+        while (end < text.length && /\s/.test(text[end]!)) end++;
+        spans.push([start, i + 1]);
+        start = end;
+        i = end - 1;
+    }
+    if (start < text.length) spans.push([start, text.length]);
+    return spans;
+}
+
+// --- output style ---------------------------------------------------------------------
+//
+// The compression level is the one always-on rule enigma ships with NOTHING checking it.
+// Every other non-negotiable has a deterministic backstop - guardrails and trim on
+// PostToolUse, this module on Stop, the guard on pre-commit, the ciphera ratchet on changed
+// lines - while the style block is prose in the memory kernel, read once and diluted over a
+// long session. That is the repo's own thesis about prose (see docs/notes/rules-are-persuasion.md)
+// applied to the one rule that was exempt from it.
+//
+// PRECISION IS THE WHOLE DESIGN. These patterns are cosmetic, and a false block over cosmetics
+// is how a gate gets switched off - which would take the completion checks down with it. So the
+// list is CLOSED and mechanical: words the style spec itself enumerates, and rows about things
+// the turn did not touch. Anything requiring judgment ("this was longer than it deserved")
+// deliberately does not live here; it cannot be matched without guessing.
+
+/** Filler and pleasantries the output-style spec names outright, EN + ES. */
+const STYLE_FILLER_RE = /\b(?:just|really|basically|simply|actually|of\s+course|happy\s+to|sure\s+thing|feel\s+free)\b|\b(?:por\s+supuesto|encantad[oa]\s+de|b(?:á|a)sicamente|simplemente|sin\s+problema|no\s+dudes\s+en)\b/i;
+
+/**
+ * A row or bullet whose value says the item was NOT touched. This is the one the style spec
+ * calls out as "no list of what you never touched", and the one that prompted this check: a
+ * release summary carried two table rows for packages that had not changed and had not been
+ * asked about.
+ */
+const STYLE_UNTOUCHED_RE = /^\s*(?:\||[-*])[^\n]*\b(?:sin\s+cambios|no\s+aplica|n\/a|sin\s+tocar|no\s+modificad[oa]s?|no\s+tocad[oa]s?|saltad[oa]s?|unchanged|not\s+touched|no\s+changes|skipped\s*\(|nothing\s+to\s+do)\b/i;
+
+/** An opening line that announces the work instead of reporting it. */
+const STYLE_PREAMBLE_RE = /^\s*(?:voy\s+a\b|ahora\s+voy\s+a\b|déjame\b|dejame\b|permíteme\b|let\s+me\b|i'?m\s+going\s+to\b|i\s+will\s+now\b|first,?\s+i'?ll\b)/i;
+
+/** One style violation: the rule it broke and the text that broke it. */
+interface StyleHit { rule: string; detail: string; }
+
+/**
+ * Deterministic output-style violations in the final message. Pure text, no model call and no
+ * git: a clean turn costs one regex sweep over one string.
+ *
+ * Quoted spans are excluded (see withoutQuoted) because a turn that DESCRIBES a banned phrase
+ * is not using it - this whole check is about to be documented, and a check that cannot survive
+ * its own documentation is a check that gets deleted.
+ */
+export function styleFindings(message: string): VerifyGap[] {
+    if (!message || typeof message !== "string") return [];
+    if (message.includes("enigma:verify-ignore")) return [];
+    const scannable = withoutQuoted(message);
+    const hits: StyleHit[] = [];
+
+    const filler = STYLE_FILLER_RE.exec(scannable);
+    if (filler) hits.push({ rule: "filler", detail: `the reply carries filler the style bans: "${filler[0].trim()}"` });
+
+    const preamble = STYLE_PREAMBLE_RE.exec(scannable.split("\n")[0] ?? "");
+    if (preamble) hits.push({ rule: "preamble", detail: `the reply opens by announcing the work ("${preamble[0].trim()}") instead of reporting it` });
+
+    for (const line of scannable.split("\n")) {
+        if (!STYLE_UNTOUCHED_RE.test(line)) continue;
+        hits.push({ rule: "untouched", detail: `a row reports something the turn did not touch: "${line.trim().slice(0, 100)}"` });
+        break; // one finding per rule: the fix is the same edit for every such row
+    }
+
+    // Keyed by RULE, not by the offending text: the budget must cap "keeps padding replies",
+    // not hand a fresh allowance to every new filler word.
+    return hits.map((h) => ({ kind: "style", detail: h.detail, key: `style:${h.rule}` } as VerifyGap));
+}
+
+/** The message fed back when a reply breaks the compression level the user set. */
+function styleMessage(hits: VerifyGap[], level: string): string {
+    return [
+        `enigma verify: this reply breaks the output style you are set to (${level}).`,
+        "",
+        ...hits.map((h) => `  - ${h.detail}`),
+        "",
+        "Rewrite the reply without those before ending the turn. The work itself is not in question here and must not change - only the prose reporting it.",
+        "Answer what was asked, at the size it deserves: report outcomes, not the route to them, and never list what you did not touch or were not asked about.",
+        "If one of these is load-bearing (you are quoting the phrase, or the row genuinely answers the question), say so and mark the line with enigma:verify-ignore.",
+    ].join("\n");
 }
 
 /**
@@ -1522,7 +1642,23 @@ export function runVerifyHook(payload?: string): number {
             return 2;
         }
     }
-    if (!claims) return 0;
+    // Checked LAST of all, and in BOTH exit paths, for one reason: it is the only gap about the
+    // prose rather than the work. A turn that both padded its reply and left work unfinished must
+    // hear about the work; being told to trim a table while a TODO ships is the gate at its most
+    // annoying and least useful.
+    const styleGate = (): number => {
+        const level = String(readGlobalConfig().outputStyle || "off");
+        if (level === "off") return 0; // no level set means no rule to enforce
+        const hits = styleFindings(message);
+        if (!hits.length) return 0;
+        // Its own budget channel, like conventions and gate: a cosmetic block must never spend
+        // the ceiling the completion-claim gate depends on.
+        if (!mayBlock(`style:${issueKey(session, hits)}`, session, "style")) return 0;
+        process.stderr.write(`${styleMessage(hits, level)}\n`);
+        return 2;
+    };
+
+    if (!claims) return styleGate();
 
     const { gaps, truncated, capped, noRepo } = collectGaps(cwd, { scanned });
     if (gaps.length) {
@@ -1543,5 +1679,5 @@ export function runVerifyHook(payload?: string): number {
         process.stderr.write(`${gateMessage(unvalidated)}\n`);
         return 2;
     }
-    return 0;
+    return styleGate();
 }

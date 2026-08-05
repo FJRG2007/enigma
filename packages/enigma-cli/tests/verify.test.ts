@@ -10,8 +10,14 @@
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { execFileSync } from "node:child_process";
-import { test, expect, afterAll } from "bun:test";
+import { test, expect, afterAll, setDefaultTimeout } from "bun:test";
 import { mkdtempSync, mkdirSync, rmSync, readFileSync, writeFileSync } from "node:fs";
+
+// Every test here drives real git (some of them the real CLI), several process spawns each.
+// Bun defaults to 5s per test, which is fine on an idle machine and not on a loaded one -
+// process spawn is the slow part, on Windows especially. Set once for the file so a test
+// added later inherits it instead of being remembered one at a time.
+setDefaultTimeout(60_000);
 
 const HOME = mkdtempSync(join(tmpdir(), "enigma-verify-"));
 process.env.USERPROFILE = HOME;
@@ -1101,4 +1107,61 @@ test("a failing suite that PRINTS 'command not found' is a finding, not a tool f
     expect(isMissingCommand("npm run verify", 1, "ok\nsh: 1: npm: not found")).toBe(false);
     expect(isMissingCommand("npm run verify", 1, "bash: rustc: command not found")).toBe(false);
     expect(isMissingCommand("npm run verify", 1, "2 tests failed")).toBe(false);
+});
+
+// --- output style: the compression level, enforced instead of merely asked for -------------
+
+test("styleFindings catches the padding the style bans, and nothing else", async () => {
+    const { styleFindings } = await import("../src/verify");
+
+    // The case this check exists for: a release summary carrying rows for packages that had not
+    // changed and had not been asked about.
+    const padded = [
+        "| Paquete | Version | Estado |",
+        "| enigma-cli | 1.35.3 | En npm |",
+        "| @enigmax/dashboard | 0.1.104 | Saltado (sin cambios), correcto |",
+    ].join("\n");
+    expect(styleFindings(padded).map((h) => h.key)).toEqual(["style:untouched"]);
+    expect(styleFindings("| dashboard | 0.1.104 | unchanged |").map((h) => h.key)).toEqual(["style:untouched"]);
+
+    expect(styleFindings("Por supuesto, basicamente ya esta.")[0]!.key).toBe("style:filler");
+    expect(styleFindings("Of course, I just fixed it.")[0]!.key).toBe("style:filler");
+    expect(styleFindings("Voy a revisar el fichero.")[0]!.key).toBe("style:preamble");
+    expect(styleFindings("Let me check the file.")[0]!.key).toBe("style:preamble");
+
+    // A report that states outcomes is clean, which is the whole point - a check that fires on
+    // ordinary prose would be switched off within a day.
+    expect(styleFindings("enigma-cli 1.35.3 y linter 0.5.1 en npm. Binarios en el release.")).toEqual([]);
+    expect(styleFindings("Fixed in auth.ts:42. Tests green.")).toEqual([]);
+    // "actually" is filler; "actual" and "actualizar" are not. Word boundaries, not substrings.
+    expect(styleFindings("El estado actual es correcto y hay que actualizar el lockfile.")).toEqual([]);
+
+    // The budget keys on the RULE, so repeated padding cannot earn a fresh allowance per word.
+    expect(styleFindings("Por supuesto. Simplemente esto.").map((h) => h.key)).toEqual(["style:filler"]);
+
+    expect(styleFindings("| dashboard | sin cambios | enigma:verify-ignore")).toEqual([]);
+});
+
+test("a message that DESCRIBES the banned phrasing is not using it", async () => {
+    const { styleFindings } = await import("../src/verify");
+    // A check that cannot survive its own documentation gets deleted the first time someone
+    // writes that documentation. Quoted and fenced spans are excluded for exactly that reason.
+    const meta = 'La regla prohibe filas que digan `sin cambios` y rellenos como "por supuesto".';
+    expect(styleFindings(meta)).toEqual([]);
+    expect(styleFindings("The rule bans a row saying `unchanged`.")).toEqual([]);
+    expect(styleFindings("```\n| dashboard | sin cambios |\n```")).toEqual([]);
+    expect(styleFindings("> | dashboard | sin cambios |")).toEqual([]);
+});
+
+test("the stop-short check reads what the turn asserts, not what it quotes", () => {
+    // Regression: this exact shape blocked a turn whose only question mark sat inside a phrase
+    // it was DESCRIBING - "the one that stops me when I ask <quoted>" - which is a sentence
+    // about the gate, matched as an instance of it.
+    const describing = 'Anadir un chequeo al hook, el mismo que hoy me para cuando acabo preguntando "¿sigo?".';
+    expect(asksToContinue(describing)).toBe("");
+    expect(asksToContinue("El hook mira si el mensaje dice `¿continuo con el resto?`.")).toBe("");
+
+    // ...while a real one still blocks, and is quoted back from the untouched message.
+    expect(asksToContinue("He terminado el paso 1. ¿Sigo con el resto?")).toBe("¿Sigo con el resto?");
+    expect(asksToContinue("Done with the first. Shall I continue with the rest?")).toContain("continue with the rest");
 });

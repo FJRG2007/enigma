@@ -14,9 +14,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as git from "@/gate/git";
 import { execFileSync } from "node:child_process";
-import { test, expect, afterAll } from "bun:test";
+import { test, expect, afterAll, setDefaultTimeout } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { resolveBaseSHA, resolveCommitSHA, unresolvedDefaultBranchTip } from "@/gate/pipeline/steps/commonGit";
+
+// Every test here drives real git (some of them the real CLI), several process spawns each.
+// Bun defaults to 5s per test, which is fine on an idle machine and not on a loaded one -
+// process spawn is the slow part, on Windows especially. Set once for the file so a test
+// added later inherits it instead of being remembered one at a time.
+setDefaultTimeout(60_000);
 
 const ZERO_SHA = "0000000000000000000000000000000000000000";
 const GARBAGE_SHA = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
