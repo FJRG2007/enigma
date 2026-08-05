@@ -20,13 +20,12 @@
  * package-versioned.
  */
 
-import { homedir } from "node:os";
 import { readConfig } from "./config";
 import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
 import type { SkillMeta } from "./skills";
 import { isManagedProvider } from "./agents";
-import { isDir, isNewer, readJson, isOffline, computeContentSha } from "./util";
+import { isDir, isNewer, readJson, isOffline, enigmaHome, computeContentSha } from "./util";
 import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 
 // Baked-in defaults. These are the ONLY origin compiled into the binary; the
@@ -63,7 +62,11 @@ const isSafeRef = (v: unknown): v is string =>
  */
 const DEFAULT_MANIFEST_URL = `${DEFAULT_RAW_BASE}/${DEFAULT_REPO}/main/packages/enigma-cli/assets/skills-manifest.json`;
 const manifestUrl = (): string => process.env.ENIGMA_SKILLS_MANIFEST_URL || DEFAULT_MANIFEST_URL;
-const cacheRoot = (): string => join(homedir(), ".enigma", "skills-cache");
+// enigmaHome() honors ENIGMA_CONFIG_HOME, like the account registry does and for the same
+// reason: bun on Linux does not reflect a runtime-reassigned $HOME via os.homedir(), so a raw
+// homedir() here ignores a test's temp HOME and reads and writes the developer's real cache.
+// It also means a user who points enigma at another home gets the skill cache there too.
+const cacheRoot = (): string => join(enigmaHome(), ".enigma", "skills-cache");
 /**
  * The pin exactly as the caller gave it, unvalidated and empty when unpinned. The
  * non-throwing half of pinnedRef, for the local reads (cache paths, the stamp, the reported

@@ -4,16 +4,28 @@
  * tolerance when the GitHub API fails. All network I/O is a stubbed global
  * fetch; the cache lives under a per-test temp HOME. Run with: bun test
  */
-import { test, expect, beforeEach } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { computeContentSha } from "../src/util";
+import { test, expect, beforeEach } from "bun:test";
+import { mkdtempSync, writeFileSync } from "node:fs";
+
+/** The temp home the current test's cache lives under. See beforeEach. */
+let HOME = "";
+/** The cache root the source resolves to, derived the same way the source derives it. */
+const cacheRoot = (): string => join(HOME, ".enigma", "skills-cache");
 
 beforeEach(() => {
-    const home = mkdtempSync(join(tmpdir(), "enigma-test-home-"));
-    process.env.USERPROFILE = home; // Windows homedir()
-    process.env.HOME = home;        // POSIX homedir()
+    HOME = mkdtempSync(join(tmpdir(), "enigma-test-home-"));
+    // ENIGMA_CONFIG_HOME is what actually isolates this: bun on Linux does not reflect a
+    // runtime-reassigned $HOME through os.homedir(), so setting HOME alone left every test
+    // reading and writing the real ~/.enigma/skills-cache - self-consistent enough that the
+    // older tests passed, but state leaked between them and anything asserting on a clean
+    // cache failed on CI while passing on Windows. HOME/USERPROFILE stay set for anything
+    // else that reads them.
+    process.env.ENIGMA_CONFIG_HOME = HOME;
+    process.env.USERPROFILE = HOME; // Windows homedir()
+    process.env.HOME = HOME;        // POSIX homedir()
 });
 
 // Imported after the env hooks are declared; the module resolves every path
@@ -260,7 +272,6 @@ test("a pinned install leaves nothing in the cache a later unpinned run would ad
 
 test("the per-ref cache is capped, oldest pin first, and never evicts the default ref", async () => {
     const { readdirSync, utimesSync } = await import("node:fs");
-    const cacheRoot = join(process.env.HOME!, ".enigma", "skills-cache");
     // The default branch first, so it is the least recently stamped of everything on disk.
     stubFetch([{ name: "alpha-policy", version: "1.1.0" }]);
     await refreshRemoteSkills({ force: true, bundledVersions: { "alpha-policy": "1.0.0" } });
@@ -271,7 +282,7 @@ test("the per-ref cache is capped, oldest pin first, and never evicts the defaul
     // The directory name carries a hash of the raw ref (two refs must never share a tree),
     // so the tag is matched by its readable prefix rather than by a literal directory name.
     const treeOf = (tag: string): string =>
-        readdirSync(cacheRoot).find((e) => e.startsWith(`skills@${tag}-`)) ?? "";
+        readdirSync(cacheRoot()).find((e) => e.startsWith(`skills@${tag}-`)) ?? "";
     for (const [i, tag] of tags.entries()) {
         stubRefAwareFetch(tag, [{ name: "alpha-policy", version: "1.0.0" }]);
         await refreshRemoteSkills({ force: true, bundledVersions: {}, ref: tag });
@@ -279,12 +290,12 @@ test("the per-ref cache is capped, oldest pin first, and never evicts the defaul
         // Spread the stamps so "least recently used" is the ordering under test rather than
         // whichever of seven same-millisecond writes the sort happened to put first.
         const at = new Date(Date.now() - (tags.length - i) * 60_000);
-        utimesSync(join(cacheRoot, `remote${treeOf(tag).slice("skills".length)}.json`), at, at);
+        utimesSync(join(cacheRoot(), `remote${treeOf(tag).slice("skills".length)}.json`), at, at);
     }
-    const refTrees = readdirSync(cacheRoot).filter((e) => e.startsWith("skills@")).sort();
+    const refTrees = readdirSync(cacheRoot()).filter((e) => e.startsWith("skills@")).sort();
     expect(refTrees).toEqual(["v3", "v4", "v5", "v6", "v7"].map(treeOf).sort());
     // Each evicted tree takes its stamp with it, so a later run cannot read a commit for it.
-    expect(readdirSync(cacheRoot).filter((e) => e.startsWith("remote@")).sort())
+    expect(readdirSync(cacheRoot()).filter((e) => e.startsWith("remote@")).sort())
         .toEqual(["v3", "v4", "v5", "v6", "v7"].map((t) => `remote${treeOf(t).slice("skills".length)}.json`).sort());
     // Ordinary unpinned use must never pay for a pinned run by re-downloading.
     expect(cachedRemoteSkills()).toHaveLength(1);
@@ -320,7 +331,6 @@ test("a ref that cannot be honoured is rejected, never resolved to the default b
 
 test("two refs that sanitize alike get different cache trees", async () => {
     const { readdirSync } = await import("node:fs");
-    const cacheRoot = join(process.env.HOME!, ".enigma", "skills-cache");
     // `/` is legal in a ref, so a lossy character replacement maps these onto one tree - and
     // under a pin the cache wins outright, so the run would adopt the other ref's skills.
     for (const ref of ["release/1.0", "release-1.0"]) {
@@ -328,7 +338,7 @@ test("two refs that sanitize alike get different cache trees", async () => {
         await refreshRemoteSkills({ force: true, bundledVersions: {}, ref });
         expect(cachedRemoteSkills(ref)).toHaveLength(1);
     }
-    const trees = readdirSync(cacheRoot).filter((e) => e.startsWith("skills@"));
+    const trees = readdirSync(cacheRoot()).filter((e) => e.startsWith("skills@"));
     expect(trees).toHaveLength(2);
     expect(trees.every((t) => !t.includes("/"))).toBe(true); // a ref separator never becomes a path one
 });
