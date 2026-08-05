@@ -85,8 +85,12 @@ Skills and memory only persuade the model; correctness is enforced mechanically.
   (non-zero) on any drift. This is what catches "I edited a skill but forgot to
   re-seal".
 - `npm run guard` - the commit guard over all tracked files (secrets, `.env`,
-  dependency dirs, generated dirs, junk, large files).
+  dependency dirs, generated dirs, junk, large files). The CLI itself also
+  exposes `--range <base>..<head>` (a post-commit scan, for pre-push hooks and
+  CI) and `--json`; see "The guard" below.
 - `npm run verify` - `typecheck && check && guard`. The full pre-publish/CI gate.
+- `npm run check:hooks` - rebuilds `guard.js` from source and diffs it against
+  the committed `.githooks/guard.mjs`; see "The guard" below.
 
 Always run `npm run verify` before committing or publishing.
 
@@ -123,6 +127,15 @@ basename matches `guard.*`. This is deliberate: `cli.ts` imports `runGuardCli`,
 so tsup also inlines `guard.ts` into `dist/enigma.js`; without the basename check
 the inlined copy would auto-run the guard on every `enigma <command>` and exit
 before dispatch. Keep that guard if you touch the footer.
+
+`.githooks/guard.mjs` in this repo is a **copy** of the built `dist/guard.js`
+(`enigma security` writes it the same way it would into any target repo), so it
+goes stale silently the moment `src/guard.ts` changes and nobody re-runs
+`enigma security` here - the pre-commit hook keeps passing while running an
+older engine. `npm run check:hooks` (`scripts/check-hook-drift.mjs`) rebuilds
+`guard.js` from source and fails if it differs from the committed copy; it runs
+in CI right after the `build` job. If it fails: `npm run build && cp
+packages/enigma-cli/dist/guard.js .githooks/guard.mjs`, then commit the result.
 
 ## Adding a new policy skill
 

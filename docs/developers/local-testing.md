@@ -73,6 +73,23 @@ Toggle individual protections in `.githooks/enigma-guard.json`.
 Because the guard runs on `git commit`, it also covers commits made through the
 GitHub CLI (`gh`), which shells out to git.
 
+The guard also has two other scan modes, for when nothing is staged (a
+pre-push hook, or CI on a branch):
+
+```bash
+npm run enigma -- guard --range origin/main..HEAD --json
+```
+
+`--range <base>..<head>` (a lone ref means `<ref>..HEAD`) scans exactly what
+that commit range touched, reading each file's content at the range's head
+rather than the working tree - `--all` would report pre-existing findings the
+range never introduced, and the default (staged-only) scan sees nothing at
+all post-commit. `--json` prints one document
+(`{tool, ok, exit, mode, range, files, error, findings[]}`) instead of text.
+Exit codes: 0 clean, 1 blocking findings, 2 the guard could not run at all (no
+repository, an unresolvable range) - useful for a caller that wants to retry
+the latter and act on the former.
+
 ## Test the runtime config (`enigma config`)
 
 `enigma config` reads and writes `.enigma.json`, the opt-out file the agent
@@ -89,6 +106,37 @@ Precedence when read: built-in defaults -> `~/.enigma.json` -> repo
 `.enigma.json` (nearest wins). Use `--local` against a scratch directory to avoid
 leaving a `.enigma.json` in the repo. Invalid keys/values and a missing value
 exit non-zero with a helpful message.
+
+## Test the automated-install options
+
+These flags exist for installs run by a container or CI harness rather than a
+person, so they are worth exercising in a scratch directory the same way as a
+normal install (see above):
+
+```bash
+node /path/to/repo/packages/enigma-cli/dist/enigma.js install --local --all --yes --no-hooks --no-statusline
+node /path/to/repo/packages/enigma-cli/dist/enigma.js install --local --all --yes --ref v1.35.2
+node /path/to/repo/packages/enigma-cli/dist/enigma.js install --local --all --yes --assets-from /path/to/staged/assets
+```
+
+- `--hooks <classes>` / `--no-hooks` decide which of `post-edit`/`stop` hooks
+  (and `--no-statusline` the statusLine entry) this run wires into the agent's
+  settings, for a harness that already owns those events. This governs the
+  install run only; `enigma config verify|guardrails|trim|lint off` is the
+  durable off switch, since `enigma update` and the pre-launch auto-sync
+  re-assert the wiring on their next run.
+- `--ref <tag|sha>` pins the skills source and prints the resolved commit; two
+  installs with the same `--ref` install the same skills regardless of what
+  `main` has moved to since.
+- `--assets-from <dir>` installs from a staged `skills/`/`memory/`/`commands/`
+  tree instead of the bundled assets, and implies `--offline`.
+- `--offline` (or `ENIGMA_OFFLINE=1` in the environment) makes no network call
+  at all: no remote-skill check, no update notice, no background linter or
+  dashboard-UI install.
+
+`--hooks`/`--no-hooks` and `--assets-from`/`--offline` are covered by
+`tests/install-options.test.ts`; `--ref` pinning is covered by
+`tests/skills-remote.test.ts`.
 
 ## A tip on shell command batching
 

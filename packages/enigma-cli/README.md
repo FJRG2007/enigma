@@ -68,7 +68,10 @@ Everything in **Minimum**, plus:
 enigma                 Interactive menu: choose features to set up
 enigma install         Install/update agent skills
 enigma security        Set up git security hooks in the current repo
-enigma guard [--all]   Run the commit guard (staged files, or all tracked)
+enigma guard [--all]   Run the commit guard: staged files, --all for all tracked, or
+                       --range <base>..<head> for what a commit range touched (pre-push,
+                       CI). --json emits one document; exits 1 on findings, 2 if it
+                       could not run at all
 enigma config [k v]    Show or set runtime toggles (e.g. config commit-emoji off)
 enigma <tool> [acct]   Launch claude | codex | opencode with an account
                        (resolution: explicit > active profile > tool active);
@@ -81,7 +84,8 @@ enigma compress [file] Compress JSON/logs/text to fewer tokens (reversible via C
                        --clear wipes all dashboard data (stats/history/cache)
 enigma verify          Check that work reported as finished actually is: scans the change for
                        unfinished work and runs your verification command. parity <src> <dst>
-                       compares a codebase against a port of it. Also runs at turn end
+                       compares a codebase against a port of it. --json emits one document;
+                       exits 1 on findings, 2 when the check could not run. Also runs at turn end
 enigma mcp             Run the context-compression MCP server over stdio
 enigma dashboard|dash  Open the local dashboard (manage enigma; see savings) in your browser (http://enigma,
                        or http://localhost:24282 if :80/hosts is unavailable)
@@ -93,6 +97,30 @@ enigma seal            Maintenance: (re)compute skill content hashes
 enigma check           Integrity gate: verify skills are well-formed and sealed
 enigma help | version
 ```
+
+Every command answers `enigma <command> --help` with its own usage, flags and exit codes.
+
+### Running enigma inside a container or CI runner
+
+```
+enigma install --hooks <cls>    Which hooks to wire: post-edit, stop | all | none
+enigma install --no-hooks       Wire none of them        --no-statusline  Leave statusLine alone
+enigma install --ref <tag|sha>  Pin the skills ref (the resolved commit is printed)
+enigma install --assets-from <dir>  Install from a staged assets tree (implies --offline)
+enigma install --offline        Make no network call at all
+
+ENIGMA_AGENT_CLAUDE=<abs path>   Point the gate at an agent installed off PATH
+                                 (also _CODEX, _OPENCODE, _ROVODEV, _PI). The daemon runs
+                                 the pipeline, so set it before the daemon starts
+ENIGMA_BIN_PATH=<abs path>       Use this enigma binary instead of downloading the release
+ENIGMA_SKILLS_REF=<tag|sha>      Default skills ref (install --ref overrides it)
+ENIGMA_OFFLINE=1                 No enigma command reaches the network - the skill check,
+                                 the update notice and the background linter/dashboard
+                                 installs all stand down (install --offline sets it)
+```
+
+`gh` is needed only by the gate's push, pr and ci steps: `enigma gate axi run --skip
+push,pr,ci` and `enigma gate init` work in an image without it.
 
 ## Agent skills
 
@@ -264,6 +292,13 @@ On every commit the guard, OS-agnostically:
 
 Each protection is individually toggleable (saved to `.githooks/enigma-guard.json`).
 Bypass once with `git commit --no-verify`.
+
+`enigma guard` also runs standalone, outside the pre-commit hook, for a pre-push hook or CI
+job where nothing is staged: `enigma guard --range <base>..<head>` scans exactly what a
+commit range touched (a lone ref means `<ref>..HEAD`), reading each file at that range's
+head rather than the working tree, so a secret committed and then edited out is still
+caught. `--json` emits one machine-readable document; exit codes split 0 clean, 1 blocking
+findings, 2 the guard could not run at all (no repository, an unresolvable range).
 
 ## Multiple accounts and profiles
 

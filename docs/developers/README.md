@@ -28,6 +28,7 @@ This guide is for contributors. End-user docs live in the package README
 | Integrity gate               | `npm run check`                                      |
 | Commit guard (all files)     | `npm run guard`                                      |
 | Full gate (typecheck+check+guard) | `npm run verify`                               |
+| Guard hook in sync with source (CI) | `npm run check:hooks`                         |
 
 All commands run from the repo root; the root scripts delegate to the
 `enigma-cli` workspace.
