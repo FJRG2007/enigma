@@ -44,7 +44,7 @@ test("--assets-from installs from a staged tree, and refuses one that is not an 
     }
 });
 
-test("a populated remote cache reaches neither a staged tree nor an offline run", async () => {
+test("a populated remote cache is kept out of a staged tree, and kept for an offline run", async () => {
     const { computeContentSha } = await import("../src/util");
     const original = assetsRoot();
     const home = mkdtempSync(join(tmpdir(), "enigma-cache-home-"));
@@ -78,9 +78,14 @@ test("a populated remote cache reaches neither a staged tree nor an offline run"
         expect(inspectSkills().map((s) => s.name)).toEqual(["only-policy"]);
         useAssetsFrom(original);
 
-        // Offline, bundled assets: nothing fetched from GitHub may reach the plan either.
+        // Offline is NOT the same rule. The cache is local state and this same set drives the
+        // auto-sync, so hiding it would downgrade the deployed remote skills to the bundled
+        // ones and prune the remote-only ones - a destructive change from a flag that only
+        // stands outbound calls down. Offline stops requests (shouldCheckRemote), not reads.
+        const { shouldCheckRemote } = await import("../src/skills-remote");
         process.env.ENIGMA_OFFLINE = "1";
-        expect(inspectSkills().map((s) => s.name)).not.toContain("cached-policy");
+        expect(inspectSkills().map((s) => s.name)).toContain("cached-policy");
+        expect(shouldCheckRemote(true)).toBe(false);
     } finally {
         useAssetsFrom(original);
         for (const [key, value] of [["HOME", prev.home], ["USERPROFILE", prev.profile], ["ENIGMA_CONFIG_HOME", prev.config], ["ENIGMA_OFFLINE", prev.offline]] as const) {

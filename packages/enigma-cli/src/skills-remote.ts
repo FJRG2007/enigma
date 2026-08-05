@@ -65,11 +65,34 @@ const DEFAULT_MANIFEST_URL = `${DEFAULT_RAW_BASE}/${DEFAULT_REPO}/main/packages/
 const manifestUrl = (): string => process.env.ENIGMA_SKILLS_MANIFEST_URL || DEFAULT_MANIFEST_URL;
 const cacheRoot = (): string => join(homedir(), ".enigma", "skills-cache");
 /**
+ * The pin exactly as the caller gave it, unvalidated and empty when unpinned. The
+ * non-throwing half of pinnedRef, for the local reads (cache paths, the stamp, the reported
+ * origin) that must keep working - and keep their contract - whatever a shell profile has
+ * exported. Validation belongs where the value reaches a request, not on every command.
+ */
+const rawPin = (ref?: string): string => (ref ?? "").trim() || process.env.ENIGMA_SKILLS_REF || "";
+/** The ref a local read is scoped to, without validating it. See rawPin. */
+const resolvedRef = (ref?: string): string => rawPin(ref) || "main";
+/**
  * The cache is scoped per ref. A pinned run adopts THAT ref's skills even when they are
  * older, so its downloads must not land where a later unpinned run would pick them up as
  * "the newest published skills". The default branch keeps the unsuffixed paths.
+ *
+ * The suffix must be INJECTIVE, not merely filename-safe: `/` is legal in a ref, so a lossy
+ * character replacement maps `release/1.0` and `release-1.0` onto one tree, and under a pin
+ * the cache wins outright - the run would adopt the other ref's skills. The readable form is
+ * kept for humans and disambiguated by a hash of the raw ref. Deliberately built from the raw
+ * pin without validating it: these are local paths, the replacement already removes every
+ * separator, and the stamp/cache helpers must not throw (refreshRemoteSkills is documented as
+ * never throwing). A pin that is not safe to put in a URL is rejected by pinnedRef, where the
+ * request is actually built.
  */
-const refDirSuffix = (ref?: string): string => refIsPinned(ref) ? `@${pinnedRef(ref).replace(/[^A-Za-z0-9._-]/g, "-")}` : "";
+const refDirSuffix = (ref?: string): string => {
+    const raw = rawPin(ref);
+    if (raw === "") return "";
+    const readable = raw.replace(/[^A-Za-z0-9._-]/g, "-").slice(0, 48);
+    return `@${readable}-${createHash("sha256").update(raw).digest("hex").slice(0, 8)}`;
+};
 const cacheSkillsDir = (ref?: string): string => join(cacheRoot(), `skills${refDirSuffix(ref)}`);
 const stampFile = (ref?: string): string => join(cacheRoot(), `remote${refDirSuffix(ref)}.json`);
 const manifestFile = (): string => join(cacheRoot(), "manifest.json");
@@ -139,6 +162,9 @@ export interface SkillsOrigin {
  * baked-in defaults) plus the commit recorded by the last successful refresh. This is what
  * `install` prints, so a run can record which skills it actually worked with - two runs on
  * the same pinned CLI can otherwise pick up different skills from the default branch.
+ *
+ * A pure local read, so it reports the pin rather than validating it: an unusable ref is
+ * caught where a request is built, and a provenance line must not be the thing that fails.
  */
 export function skillsOrigin(ref?: string): SkillsOrigin {
     const base: SkillSource = {
@@ -146,7 +172,7 @@ export function skillsOrigin(ref?: string): SkillsOrigin {
         rawBase: DEFAULT_RAW_BASE,
         repo: DEFAULT_REPO,
         skillsPrefix: DEFAULT_SKILLS_PREFIX,
-        ref: pinnedRef(ref),
+        ref: resolvedRef(ref),
     };
     const manifest = readJson<SkillsManifest>(manifestFile());
     const source = manifest ? applyManifest(base, manifest, ref) : base;
@@ -182,7 +208,7 @@ export function pinnedRef(ref?: string): string {
  * tag is the ordinary reproducibility case and "fetched nothing" is the wrong answer to it.
  */
 export function refIsPinned(ref?: string): boolean {
-    return (ref ?? "").trim() !== "" || Boolean(process.env.ENIGMA_SKILLS_REF);
+    return rawPin(ref) !== "";
 }
 
 export interface CachedSkill { name: string; src: string; meta: SkillMeta; }
@@ -304,12 +330,13 @@ function validCachedSkill(name: string, ref?: string): SkillMeta | null {
  * The verified remote-skill cache for a ref, for overlaying over the bundled assets.
  * Pure local read (no network); empty when the toggle is off or nothing cached.
  *
- * Also empty when the run is offline. Standing the FETCH down is not enough: a container
- * that ran one online install earlier still holds a populated cache, and overlaying it
- * would ship GitHub-fetched skills from a run that announced itself as bundled-only.
+ * Deliberately NOT gated on `isOffline()`. Offline means "make no request", not "pretend
+ * the cache is empty": this same overlay feeds the auto-sync path, so hiding the cache
+ * would downgrade and prune skills a previous run already deployed - a destructive local
+ * change from a flag that only stands outbound calls down. What the plan took is reported
+ * by the caller instead (see adoptedRemoteSkills in skills.ts).
  */
 export function cachedRemoteSkills(ref?: string): CachedSkill[] {
-    if (isOffline()) return [];
     if (!readConfig().config.remoteSkills) return [];
     const root = cacheSkillsDir(ref);
     if (!isDir(root)) return [];
@@ -432,14 +459,17 @@ function pruneRefCaches(keepSuffix: string): void {
  * the bundled/cached skills. Throttled via the stamp unless `force`.
  */
 export async function refreshRemoteSkills(opts: RefreshOptions): Promise<RemoteRefreshResult> {
-    if (!shouldCheckRemote(opts.force, opts.ref)) return { checked: false, updated: [], error: null, ref: pinnedRef(opts.ref) };
+    if (!shouldCheckRemote(opts.force, opts.ref)) return { checked: false, updated: [], error: null, ref: resolvedRef(opts.ref) };
     const pinned = refIsPinned(opts.ref);
     const stamp = readJson<RemoteStamp>(stampFile(opts.ref)) || {};
     const dirs: Record<string, DirRecord> = { ...(stamp.dirs || {}) };
     // Stamp the attempt up front so an unreachable GitHub is also throttled.
     writeStamp({ ...stamp, checkedAt: Date.now() }, opts.ref);
-    const fail = (error: string): RemoteRefreshResult => ({ checked: true, updated: [], error, ref: pinnedRef(opts.ref) });
+    const fail = (error: string): RemoteRefreshResult => ({ checked: true, updated: [], error, ref: resolvedRef(opts.ref) });
     try {
+        // Validated here, inside the try: an unusable pin is reported as a refresh error like
+        // any other, so the documented "never throws" contract holds for a bad ENIGMA_SKILLS_REF.
+        pinnedRef(opts.ref);
         // Resolve the (relocatable) origin from the discovery manifest, then pin
         // the ref to one commit and list/fetch everything at that commit, so a
         // push mid-refresh can never mix file versions.

@@ -164,6 +164,29 @@ test("parseGuardArgv reads the flags the copied hook is handed", () => {
     expect(parseGuardArgv(["--all", "--json"])).toEqual({ all: true, json: true });
     expect(parseGuardArgv(["--range", "a..b"]).range).toBe("a..b");
     expect(parseGuardArgv(["--range=a..b"]).range).toBe("a..b");
+    // A pre-push hook line forwards "$@" - the remote name and its URL - to the copied hook.
+    expect(parseGuardArgv(["origin", "git@github.com:o/r.git"]).usageError).toBeUndefined();
+});
+
+test("an unrecognized flag is a usage error, not a silent fall back to the staged scan", () => {
+    // `enigma guard` dispatches straight to this parser, so nothing else rejects a typo:
+    // treating one as "not passed" selects the staged scan, which passes having checked
+    // nothing wherever the flag was needed (a pre-push hook, CI).
+    for (const bad of [["--rangee", "a..b"], ["--range-from", "a..b"], ["-r", "a..b"], ["--al"]]) {
+        expect(parseGuardArgv(bad).usageError).toMatch(/unknown option/);
+    }
+    // The value of a well-formed --range is a value, not an unknown flag.
+    expect(parseGuardArgv(["--range", "a..b", "--json"]).usageError).toBeUndefined();
+
+    const dir = repoWithLeak();
+    const quiet = { log: console.log, error: console.error };
+    console.log = () => {}; console.error = () => {};
+    try {
+        inRepo(dir, () => expect(runGuardCli(parseGuardArgv(["--rangee", "a..b"]))).toBe(2));
+    } finally {
+        console.log = quiet.log; console.error = quiet.error;
+        rmSync(dir, { recursive: true, force: true });
+    }
 });
 
 test("a --range with no value is a usage error, never a silent staged scan", () => {

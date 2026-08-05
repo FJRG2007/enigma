@@ -25,7 +25,7 @@ import { setGhTelemetry, starRepoInBackground } from "./github";
 import { applyTrimWiring, mirrorTrimWiring } from "./trim-deploy";
 import type { Agent, AgentTarget, DiscoveredAgent } from "./agents";
 import { applyMcpForAgent, applyMcpForAccount } from "./mcp-deploy";
-import { isDir, isNewer, isOffline, readJson, listFilesRel, computeContentSha } from "./util";
+import { isDir, isNewer, readJson, listFilesRel, computeContentSha } from "./util";
 import { applyVerifyWiring, isVerifyOn, mirrorVerifyWiring } from "./verify-deploy";
 import { applyGuardrailsWiring, mirrorGuardrailsWiring } from "./guardrails-deploy";
 import { resolveBypassSelection, applyBypass, mirrorAccountSettings } from "./permissions";
@@ -411,15 +411,16 @@ function bundledSkills(): SkillEntry[] {
  * skills-remote.ts). The overlay also surfaces skills published to the repo
  * that this package version does not bundle yet.
  *
- * Two things suppress the overlay entirely, because in both the cache would make the run
- * report a source it is not installing from: an explicit `--assets-from` tree (that tree is
- * the whole source) and an offline run (nothing fetched from GitHub may reach the plan, and
- * a cache left by an earlier online install is exactly that). Under a pinned ref the cache
- * WINS outright rather than only when newer - the pin decides what is adopted.
+ * One thing suppresses the overlay entirely: an explicit `--assets-from` tree, which names
+ * the source and is therefore the whole of it. An offline run does NOT - the cache is local
+ * state, and this same set drives the auto-sync, so hiding it would downgrade and prune
+ * skills already deployed. Offline stops requests; what the plan took is reported, not
+ * hidden. Under a pinned ref the cache WINS outright rather than only when newer - the pin
+ * decides what is adopted.
  */
 function resolveSkills(): { skills: SkillEntry[]; adopted: string[]; } {
     const skills = bundledSkills();
-    const remote = assetsExplicit || isOffline() ? [] : cachedRemoteSkills();
+    const remote = assetsExplicit ? [] : cachedRemoteSkills();
     if (!remote.length) return { skills, adopted: [] };
     const pinned = skillsRefIsPinned();
     const adopted: string[] = [];
@@ -1108,9 +1109,10 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
     if (available.length === 0) reporter.fatal("No installable agents known.");
 
     // An explicit asset tree is the whole source: overlaying a GitHub cache on top of it
-    // would defeat the point of staging one, so it implies offline. inspectSkills() enforces
-    // that on the plan itself - stopping only the fetch would still install a cache an
-    // earlier online run had left behind.
+    // would defeat the point of staging one, so it also implies offline. resolveSkills()
+    // enforces that on the plan itself - stopping only the fetch would still install a cache
+    // an earlier online run had left behind. Offline alone does not: it stops requests, and
+    // the cache is local state the auto-sync path already depends on.
     if (opts.assetsFrom) {
         try { useAssetsFrom(opts.assetsFrom); }
         catch (err) { reporter.fatal((err as Error).message); }
@@ -1141,19 +1143,19 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
     // Always reported, checked or not: skills can be updated from the repo without an npm
     // release, so "which CLI version" does not identify which skills a run worked with.
     // This line is the one to record alongside the CLI version.
-    // The line states what was ACTUALLY installed, never what was merely resolved: a ref that
-    // resolved but yielded no adopted skill is a bundled install, and claiming its commit as
-    // the provenance would misrecord exactly the run that pinned it for reproducibility.
+    // The line describes the PLAN that ran, never the state of a side file: it is derived from
+    // the skills the plan actually took, so it neither claims a ref whose skills were not
+    // adopted nor reports a bundled install for a run that overlaid a cache whose stamp is
+    // gone. A commit it cannot name is reported as unknown rather than rounded to "bundled".
     if (opts.assetsFrom) {
         reporter.info(`Skills source: ${assetsRoot()} (--assets-from; no remote skills), CLI ${cliVersion()}.`);
-    } else if (offline) {
-        reporter.info(`Skills source: bundled with enigma-cli ${cliVersion()} (offline - no remote skills).`);
     } else {
         const origin = skillsOrigin(opts.ref ?? undefined);
         const adopted = adoptedRemoteSkills().length;
-        reporter.info(origin.commit && adopted
-            ? `Skills source: ${origin.repo}@${origin.ref} (commit ${origin.commit.slice(0, 7)}), ${adopted} skill(s) over the bundle, CLI ${cliVersion()}.`
-            : `Skills source: bundled with enigma-cli ${cliVersion()} (nothing adopted from ${origin.repo}@${origin.ref}).`);
+        const at = `${origin.repo}@${origin.ref}`;
+        if (!adopted) reporter.info(`Skills source: bundled with enigma-cli ${cliVersion()} (nothing adopted from ${at}).`);
+        else if (origin.commit) reporter.info(`Skills source: ${at} (commit ${origin.commit.slice(0, 7)}), ${adopted} skill(s) over the bundle, CLI ${cliVersion()}.`);
+        else reporter.info(`Skills source: ${at} from the local cache (commit unknown), ${adopted} skill(s) over the bundle, CLI ${cliVersion()}.`);
     }
 
     // --- scope ---

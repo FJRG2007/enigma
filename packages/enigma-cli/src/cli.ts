@@ -760,6 +760,10 @@ function seedAccount(tool: string, dir: string): void {
  * failure-tolerant, so an unreachable GitHub or npm never blocks the others.
  */
 async function runUpdateCli(version: string, ref?: string | null): Promise<void> {
+    // A ref this command was given has to be usable before anything is fetched or cached:
+    // falling back to the default branch would quietly ignore the pin the caller just typed.
+    try { pinnedRef(ref ?? undefined); }
+    catch (err) { p.log.error((err as Error).message); process.exit(2); }
     if (skillsMod.shouldCheckRemote(true, ref ?? undefined)) {
         const s = p.spinner();
         s.start(`Checking GitHub for skill updates${ref ? ` at ${ref}` : ""}...`);
@@ -2254,11 +2258,10 @@ export async function run(argv: string[]): Promise<void> {
     // enigma invocation, not just this one.
     if (opts.offline || opts.assetsFrom) process.env.ENIGMA_OFFLINE = "1";
     // Same reason for the ref pin: it has to reach every read of the skill cache, which is
-    // scoped per ref, not only the fetch that filled it. Validated here so a ref a harness
-    // passed through from CI input fails as a usage error, never as a confusing 404 or a
-    // silent fall back to the default branch.
-    try { pinnedRef(opts.ref ?? undefined); }
-    catch (err) { console.error((err as Error).message); process.exit(2); }
+    // scoped per ref, not only the fetch that filled it. NOT validated here - the commands
+    // that take a ref validate their own (install, update), and a bad ENIGMA_SKILLS_REF in a
+    // shell profile must not break `statusline`, `version` or anything else that never reads
+    // a skill.
     if (opts.ref) process.env.ENIGMA_SKILLS_REF = opts.ref;
     const interactive = Boolean(process.stdout.isTTY) && Boolean(process.stdin.isTTY) && !opts.yes;
     const version = process.env.ENIGMA_VERSION || PKG.version || "0.0.0";

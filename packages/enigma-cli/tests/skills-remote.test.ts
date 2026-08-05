@@ -268,6 +268,10 @@ test("the per-ref cache is capped, oldest pin first, and never evicts the defaul
 
     // A harness pinning per commit is the case this bounds: one full tree per build, forever.
     const tags = ["v1", "v2", "v3", "v4", "v5", "v6", "v7"];
+    // The directory name carries a hash of the raw ref (two refs must never share a tree),
+    // so the tag is matched by its readable prefix rather than by a literal directory name.
+    const treeOf = (tag: string): string =>
+        readdirSync(cacheRoot).find((e) => e.startsWith(`skills@${tag}-`)) ?? "";
     for (const [i, tag] of tags.entries()) {
         stubRefAwareFetch(tag, [{ name: "alpha-policy", version: "1.0.0" }]);
         await refreshRemoteSkills({ force: true, bundledVersions: {}, ref: tag });
@@ -275,13 +279,13 @@ test("the per-ref cache is capped, oldest pin first, and never evicts the defaul
         // Spread the stamps so "least recently used" is the ordering under test rather than
         // whichever of seven same-millisecond writes the sort happened to put first.
         const at = new Date(Date.now() - (tags.length - i) * 60_000);
-        utimesSync(join(cacheRoot, `remote@${tag}.json`), at, at);
+        utimesSync(join(cacheRoot, `remote${treeOf(tag).slice("skills".length)}.json`), at, at);
     }
     const refTrees = readdirSync(cacheRoot).filter((e) => e.startsWith("skills@")).sort();
-    expect(refTrees).toEqual(["skills@v3", "skills@v4", "skills@v5", "skills@v6", "skills@v7"]);
+    expect(refTrees).toEqual(["v3", "v4", "v5", "v6", "v7"].map(treeOf).sort());
     // Each evicted tree takes its stamp with it, so a later run cannot read a commit for it.
     expect(readdirSync(cacheRoot).filter((e) => e.startsWith("remote@")).sort())
-        .toEqual(["remote@v3.json", "remote@v4.json", "remote@v5.json", "remote@v6.json", "remote@v7.json"]);
+        .toEqual(["v3", "v4", "v5", "v6", "v7"].map((t) => `remote${treeOf(t).slice("skills".length)}.json`).sort());
     // Ordinary unpinned use must never pay for a pinned run by re-downloading.
     expect(cachedRemoteSkills()).toHaveLength(1);
 });
@@ -297,23 +301,52 @@ test("a ref that cannot be honoured is rejected, never resolved to the default b
     }
     const prev = process.env.ENIGMA_SKILLS_REF;
     try {
+        // A bad ref exported in a shell profile must not break the local reads. They report
+        // and scope; they do not build requests, and a status bar that errors is worse than
+        // a pin that fails where it is used.
         process.env.ENIGMA_SKILLS_REF = "../../evil";
-        expect(() => skillsOrigin()).toThrow(/Invalid skills ref in ENIGMA_SKILLS_REF/);
+        expect(() => skillsOrigin()).not.toThrow();
+        expect(skillsOrigin().commit).toBeNull();
+        expect(() => cachedRemoteSkills()).not.toThrow();
+        // The refresh is where it reaches a URL, and it reports the failure instead of
+        // throwing - `refreshRemoteSkills` is documented as never throwing.
+        const r = await refreshRemoteSkills({ force: true, bundledVersions: {} });
+        expect(r.error).toMatch(/Invalid skills ref in ENIGMA_SKILLS_REF/);
+        expect(() => pinnedRef()).toThrow(/Invalid skills ref in ENIGMA_SKILLS_REF/);
     } finally {
         if (prev === undefined) delete process.env.ENIGMA_SKILLS_REF; else process.env.ENIGMA_SKILLS_REF = prev;
     }
 });
 
-test("an offline run reads no remote cache at all, however full it is", async () => {
+test("two refs that sanitize alike get different cache trees", async () => {
+    const { readdirSync } = await import("node:fs");
+    const cacheRoot = join(process.env.HOME!, ".enigma", "skills-cache");
+    // `/` is legal in a ref, so a lossy character replacement maps these onto one tree - and
+    // under a pin the cache wins outright, so the run would adopt the other ref's skills.
+    for (const ref of ["release/1.0", "release-1.0"]) {
+        stubRefAwareFetch(ref, [{ name: "alpha-policy", version: "1.0.0" }]);
+        await refreshRemoteSkills({ force: true, bundledVersions: {}, ref });
+        expect(cachedRemoteSkills(ref)).toHaveLength(1);
+    }
+    const trees = readdirSync(cacheRoot).filter((e) => e.startsWith("skills@"));
+    expect(trees).toHaveLength(2);
+    expect(trees.every((t) => !t.includes("/"))).toBe(true); // a ref separator never becomes a path one
+});
+
+test("an offline run still reads the cache it already has, and makes no request", async () => {
     stubFetch([{ name: "alpha-policy", version: "1.1.0" }]);
     await refreshRemoteSkills({ force: true, bundledVersions: { "alpha-policy": "1.0.0" } });
     expect(cachedRemoteSkills()).toHaveLength(1);
+    const { shouldCheckRemote } = await import("../src/skills-remote");
     const prev = process.env.ENIGMA_OFFLINE;
     try {
-        // Standing the fetch down is not enough: a container that ran one online install
-        // earlier still holds this cache, and an offline run announces itself as bundled-only.
+        // Offline means "make no request", not "pretend the cache is empty": the same cache
+        // feeds the auto-sync, so hiding it would downgrade and prune already-deployed skills.
         process.env.ENIGMA_OFFLINE = "1";
-        expect(cachedRemoteSkills()).toEqual([]);
+        expect(cachedRemoteSkills()).toHaveLength(1);
+        expect(shouldCheckRemote(true)).toBe(false);
+        const r = await refreshRemoteSkills({ force: true, bundledVersions: {} });
+        expect(r.checked).toBe(false);
     } finally {
         if (prev === undefined) delete process.env.ENIGMA_OFFLINE; else process.env.ENIGMA_OFFLINE = prev;
     }
