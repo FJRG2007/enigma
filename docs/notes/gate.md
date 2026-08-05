@@ -202,10 +202,14 @@ and wins over `agent_path_override` in the YAML. Two things follow from where it
 - **The daemon executes the pipeline**, so the daemon's environment is the one that counts.
   A container that sets it before the first `axi run` is fine (the CLI spawns the daemon and
   it inherits); an already-running daemon needs `enigma gate daemon stop` first.
-- **A broken override throws** instead of falling through to the next agent. An override is
+- **A broken override is named, and fatal only when nothing else resolves.** An override is
   an explicit instruction, and silently skipping a typo'd one is what produced the original
-  "no agent installed" on a machine with an agent. `gate doctor` shows the same thing as an
-  `✗` naming the path and the variable.
+  "no agent installed" on a machine with an agent - so `resolveAgent` collects every override
+  that failed to resolve and, if the probe ends with no agent at all, fails with a message
+  naming those paths and their variables instead of the generic "no supported agent found in
+  PATH". It does NOT abort the probe: a stale `ENIGMA_AGENT_CLAUDE` in a shell profile must
+  not break a run on a machine where codex or opencode would have been selected. `gate doctor`
+  shows the same thing as an `✗` naming the path and the variable.
 
 `gh` is NOT a system requirement. It is reached only by the push, pr and ci steps (see
 `stepCLIAvailable` in `pipeline/steps/commonExec.ts`); `gate init` shells out to git only, so

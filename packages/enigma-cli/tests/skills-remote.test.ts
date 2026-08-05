@@ -237,3 +237,38 @@ test("without a pin the manifest's ref is still honoured", async () => {
     expect(r.ref).toBe("main");
     expect(skillsOrigin().commit).toBe(COMMIT);
 });
+
+test("a pinned ref adopts ITS skills even when the bundle ships a newer version", async () => {
+    // The reproducibility case: pinning to an older tag on a CLI that bundles newer skills.
+    // The strictly-newer gate answered that with "fetched nothing" while install still printed
+    // the ref as the provenance - a run reporting skills it never installed.
+    stubRefAwareFetch("v1.0.0", [{ name: "alpha-policy", version: "1.0.0" }]);
+    const r = await refreshRemoteSkills({ force: true, bundledVersions: { "alpha-policy": "2.0.0" }, ref: "v1.0.0" });
+    expect(r.error).toBeNull();
+    expect(r.updated).toEqual(["alpha-policy"]);
+    const pinnedCache = cachedRemoteSkills("v1.0.0");
+    expect(pinnedCache.map((c) => c.meta.version)).toEqual(["1.0.0"]);
+});
+
+test("a pinned install leaves nothing in the cache a later unpinned run would adopt", async () => {
+    stubRefAwareFetch("v1.0.0", [{ name: "alpha-policy", version: "1.0.0" }]);
+    await refreshRemoteSkills({ force: true, bundledVersions: { "alpha-policy": "2.0.0" }, ref: "v1.0.0" });
+    // The pin's (older) skills live in their own cache, so the shared one stays empty.
+    expect(cachedRemoteSkills("v1.0.0")).toHaveLength(1);
+    expect(cachedRemoteSkills()).toEqual([]);
+});
+
+test("an offline run reads no remote cache at all, however full it is", async () => {
+    stubFetch([{ name: "alpha-policy", version: "1.1.0" }]);
+    await refreshRemoteSkills({ force: true, bundledVersions: { "alpha-policy": "1.0.0" } });
+    expect(cachedRemoteSkills()).toHaveLength(1);
+    const prev = process.env.ENIGMA_OFFLINE;
+    try {
+        // Standing the fetch down is not enough: a container that ran one online install
+        // earlier still holds this cache, and an offline run announces itself as bundled-only.
+        process.env.ENIGMA_OFFLINE = "1";
+        expect(cachedRemoteSkills()).toEqual([]);
+    } finally {
+        if (prev === undefined) delete process.env.ENIGMA_OFFLINE; else process.env.ENIGMA_OFFLINE = prev;
+    }
+});

@@ -1165,6 +1165,33 @@ function sourceMessage(gaps: VerifyGap[]): string {
     ].join("\n");
 }
 
+/** The program a shell command line actually invokes, unquoted (`npm run verify` -> `npm`). */
+function commandProgram(command: string): string {
+    const first = command.trim().split(/\s+/)[0] ?? "";
+    return first.replace(/^["']|["']$/g, "");
+}
+
+/**
+ * True when the verification command could not be RUN, as opposed to having run and failed.
+ * The command runs under a shell, so a missing program arrives as an ordinary non-zero exit
+ * rather than a spawn error: 127 on POSIX, 9009 from cmd.exe.
+ *
+ * The text signal exists for the shells that report the miss without setting either status,
+ * and it is deliberately narrow: only the FIRST line of the output, and only when that line
+ * also names the program that was invoked. A free-text search over the whole output turns a
+ * genuinely failing suite - one whose own assertions, snapshots or sub-shells print
+ * "command not found" - into a tool error, and a tool error exits 2, which tells the caller
+ * nothing was checked and is worth retrying. Misreporting a real failure as retryable is the
+ * exact defect this gate exists to prevent, so anything ambiguous stays a finding.
+ */
+export function isMissingCommand(command: string, status: number | null, output: string): boolean {
+    if (status === 127 || status === 9009) return true;
+    const first = output.split("\n").map((l) => l.trim()).find(Boolean) ?? "";
+    const program = commandProgram(command);
+    if (!program || !first.includes(program)) return false;
+    return /(?:command not found|:\s*not found|is not recognized as an internal or external command)/i.test(first);
+}
+
 /**
  * Run the project's own verification command and report a gap when it fails. Read from
  * the GLOBAL config only: a repo-local .enigma.json travels with a clone, so honouring
@@ -1175,7 +1202,8 @@ export function runVerifyCommand(cwd: string, command: string): VerifyGap | null
     // PASSING one and report it as a failure - a false block, which is how a gate like this
     // gets switched off. result.error separates "could not run it" from "it failed".
     const result = spawnSync(command, { cwd, shell: true, encoding: "utf8", timeout: TIMEOUT_MS, maxBuffer: 64 * 1024 * 1024, windowsHide: true });
-    const output = `${result.stdout || ""}${result.stderr || ""}`.trim().slice(-1500);
+    const combined = `${result.stdout || ""}${result.stderr || ""}`.trim();
+    const output = combined.slice(-1500);
     // A timeout also arrives as result.error, so it has to be told apart from "no such command"
     // first - otherwise someone with a merely slow test suite is sent looking for a typo.
     if (result.error) {
@@ -1189,12 +1217,7 @@ export function runVerifyCommand(cwd: string, command: string): VerifyGap | null
         return { kind: "command", tool: true, detail };
     }
     if (result.status === 0) return null;
-    // The command runs under a shell, so a command that does not exist arrives as an ordinary
-    // non-zero exit rather than a spawn error: 127 on POSIX, 9009 or a "not recognized" line
-    // from cmd.exe. That is still the tool failing to run, not the code failing a check.
-    const missing = result.status === 127 || result.status === 9009 ||
-        /is not recognized as an internal or external command|command not found|: not found/i.test(output);
-    if (missing) {
+    if (isMissingCommand(command, result.status, combined)) {
         return { kind: "command", tool: true, detail: `the verification command \`${command}\` is not available here (exited ${result.status})\n${output}` };
     }
     return { kind: "command", detail: `the project's verification command \`${command}\` exited ${result.status}\n${output}` };

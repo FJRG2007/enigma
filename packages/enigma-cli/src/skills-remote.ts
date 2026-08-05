@@ -55,8 +55,14 @@ const REF_RE = /^[A-Za-z0-9._/-]+$/;
 const DEFAULT_MANIFEST_URL = `${DEFAULT_RAW_BASE}/${DEFAULT_REPO}/main/packages/enigma-cli/assets/skills-manifest.json`;
 const manifestUrl = (): string => process.env.ENIGMA_SKILLS_MANIFEST_URL || DEFAULT_MANIFEST_URL;
 const cacheRoot = (): string => join(homedir(), ".enigma", "skills-cache");
-const cacheSkillsDir = (): string => join(cacheRoot(), "skills");
-const stampFile = (): string => join(cacheRoot(), "remote.json");
+/**
+ * The cache is scoped per ref. A pinned run adopts THAT ref's skills even when they are
+ * older, so its downloads must not land where a later unpinned run would pick them up as
+ * "the newest published skills". The default branch keeps the unsuffixed paths.
+ */
+const refDirSuffix = (ref?: string): string => refIsPinned(ref) ? `@${pinnedRef(ref).replace(/[^A-Za-z0-9._-]/g, "-")}` : "";
+const cacheSkillsDir = (ref?: string): string => join(cacheRoot(), `skills${refDirSuffix(ref)}`);
+const stampFile = (ref?: string): string => join(cacheRoot(), `remote${refDirSuffix(ref)}.json`);
 const manifestFile = (): string => join(cacheRoot(), "manifest.json");
 
 /** Resolved skills origin after applying the discovery manifest over the defaults. */
@@ -137,7 +143,7 @@ export function skillsOrigin(ref?: string): SkillsOrigin {
     const source = manifest ? applyManifest(base, manifest, ref) : base;
     // Only the commit fetched at THIS ref: reporting the last commit from another ref would
     // make the recorded line wrong for exactly the pinned run it exists to make reproducible.
-    const stamp = readJson<RemoteStamp>(stampFile());
+    const stamp = readJson<RemoteStamp>(stampFile(ref));
     const commit = stamp?.commit && (stamp.ref ?? "main") === source.ref ? stamp.commit : null;
     return { repo: source.repo, ref: source.ref, commit };
 }
@@ -153,8 +159,12 @@ function pinnedRef(ref?: string): string {
     return process.env.ENIGMA_SKILLS_REF || "main";
 }
 
-/** True when the caller pinned the ref, by flag or by env. */
-function refIsPinned(ref?: string): boolean {
+/**
+ * True when the caller pinned the ref, by flag or by env. A pin is authoritative: it decides
+ * which skills are ADOPTED, not only which ref is read, because pinning to an equal or older
+ * tag is the ordinary reproducibility case and "fetched nothing" is the wrong answer to it.
+ */
+export function refIsPinned(ref?: string): boolean {
     return (ref ?? "").trim() !== "" || Boolean(process.env.ENIGMA_SKILLS_REF);
 }
 
@@ -169,18 +179,18 @@ export interface RefreshOptions {
 }
 
 /** True when a refresh would actually hit the network (toggle on + throttle elapsed). */
-export function shouldCheckRemote(force: boolean): boolean {
+export function shouldCheckRemote(force: boolean, ref?: string): boolean {
     if (isOffline()) return false;
     if (!readConfig().config.remoteSkills) return false;
     if (force) return true;
-    const stamp = readJson<RemoteStamp>(stampFile());
+    const stamp = readJson<RemoteStamp>(stampFile(ref));
     return !stamp?.checkedAt || Date.now() - stamp.checkedAt >= CHECK_THROTTLE_MS;
 }
 
-function writeStamp(stamp: RemoteStamp): void {
+function writeStamp(stamp: RemoteStamp, ref?: string): void {
     try {
         mkdirSync(cacheRoot(), { recursive: true });
-        writeFileSync(stampFile(), JSON.stringify(stamp, null, 2) + "\n");
+        writeFileSync(stampFile(ref), `${JSON.stringify(stamp, null, 2)}\n`);
     } catch { /* best-effort: a missing stamp only costs an extra check */ }
 }
 
@@ -264,8 +274,8 @@ function dirSignature(files: RemoteFile[]): string {
  * named after its folder. Returns its meta, or null when invalid (a corrupt or
  * tampered cache entry is simply ignored - the bundled skill wins).
  */
-function validCachedSkill(name: string): SkillMeta | null {
-    const dir = join(cacheSkillsDir(), name);
+function validCachedSkill(name: string, ref?: string): SkillMeta | null {
+    const dir = join(cacheSkillsDir(ref), name);
     if (!existsSync(join(dir, "SKILL.md"))) return null;
     const meta = readJson<SkillMeta>(join(dir, "skill.json"));
     if (!meta || meta.name !== name || !meta.version || !isManagedProvider(meta.provider)) return null;
@@ -274,17 +284,22 @@ function validCachedSkill(name: string): SkillMeta | null {
 }
 
 /**
- * The verified remote-skill cache, for overlaying over the bundled assets.
+ * The verified remote-skill cache for a ref, for overlaying over the bundled assets.
  * Pure local read (no network); empty when the toggle is off or nothing cached.
+ *
+ * Also empty when the run is offline. Standing the FETCH down is not enough: a container
+ * that ran one online install earlier still holds a populated cache, and overlaying it
+ * would ship GitHub-fetched skills from a run that announced itself as bundled-only.
  */
-export function cachedRemoteSkills(): CachedSkill[] {
+export function cachedRemoteSkills(ref?: string): CachedSkill[] {
+    if (isOffline()) return [];
     if (!readConfig().config.remoteSkills) return [];
-    const root = cacheSkillsDir();
+    const root = cacheSkillsDir(ref);
     if (!isDir(root)) return [];
     const out: CachedSkill[] = [];
     for (const name of readdirSync(root)) {
         if (!SKILL_NAME_RE.test(name) || !isDir(join(root, name))) continue;
-        const meta = validCachedSkill(name);
+        const meta = validCachedSkill(name, ref);
         if (meta) out.push({ name, src: join(root, name), meta });
     }
     return out;
@@ -316,9 +331,9 @@ function groupTreeBySkill(tree: Array<{ path?: string; type?: string; sha?: stri
  * atomically, so a partial download can never become the active cache entry.
  * Returns true when the cache entry was replaced.
  */
-async function downloadSkill(name: string, commit: string, files: RemoteFile[], source: SkillSource): Promise<boolean> {
-    const dest = join(cacheSkillsDir(), name);
-    const tmp = join(cacheSkillsDir(), `.tmp-${name}-${process.pid}`);
+async function downloadSkill(name: string, commit: string, files: RemoteFile[], source: SkillSource, ref?: string): Promise<boolean> {
+    const dest = join(cacheSkillsDir(ref), name);
+    const tmp = join(cacheSkillsDir(ref), `.tmp-${name}-${process.pid}`);
     rmSync(tmp, { recursive: true, force: true });
     try {
         await Promise.all(files.map(async (f) => {
@@ -342,16 +357,21 @@ async function downloadSkill(name: string, commit: string, files: RemoteFile[], 
     }
 }
 
-/** Drop cache entries the bundle has caught up with, or that vanished upstream. */
-function pruneCache(remoteNames: Set<string>, bundledVersions: Record<string, string>, dirs: Record<string, DirRecord>): void {
+/**
+ * Drop cache entries the bundle has caught up with, or that vanished upstream. Under a pinned
+ * ref the version comparison is skipped: that cache holds exactly what the pin asked for, and
+ * deleting it for being older than the bundle would undo the adoption it just performed.
+ */
+function pruneCache(remoteNames: Set<string>, bundledVersions: Record<string, string>, dirs: Record<string, DirRecord>, ref?: string): void {
     for (const name of Object.keys(dirs)) if (!remoteNames.has(name)) delete dirs[name];
-    const root = cacheSkillsDir();
+    const root = cacheSkillsDir(ref);
     if (!isDir(root)) return;
+    const pinned = refIsPinned(ref);
     for (const name of readdirSync(root)) {
         if (name.startsWith(".tmp-")) { rmSync(join(root, name), { recursive: true, force: true }); continue; }
-        const meta = validCachedSkill(name);
+        const meta = validCachedSkill(name, ref);
         const stale = !meta || !remoteNames.has(name) ||
-            (bundledVersions[name] !== undefined && !isNewer(meta.version!, bundledVersions[name]!));
+            (!pinned && bundledVersions[name] !== undefined && !isNewer(meta.version!, bundledVersions[name]!));
         if (stale) {
             rmSync(join(root, name), { recursive: true, force: true });
             delete dirs[name];
@@ -365,11 +385,12 @@ function pruneCache(remoteNames: Set<string>, bundledVersions: Record<string, st
  * the bundled/cached skills. Throttled via the stamp unless `force`.
  */
 export async function refreshRemoteSkills(opts: RefreshOptions): Promise<RemoteRefreshResult> {
-    if (!shouldCheckRemote(opts.force)) return { checked: false, updated: [], error: null, ref: pinnedRef(opts.ref) };
-    const stamp = readJson<RemoteStamp>(stampFile()) || {};
+    if (!shouldCheckRemote(opts.force, opts.ref)) return { checked: false, updated: [], error: null, ref: pinnedRef(opts.ref) };
+    const pinned = refIsPinned(opts.ref);
+    const stamp = readJson<RemoteStamp>(stampFile(opts.ref)) || {};
     const dirs: Record<string, DirRecord> = { ...(stamp.dirs || {}) };
     // Stamp the attempt up front so an unreachable GitHub is also throttled.
-    writeStamp({ ...stamp, checkedAt: Date.now() });
+    writeStamp({ ...stamp, checkedAt: Date.now() }, opts.ref);
     const fail = (error: string): RemoteRefreshResult => ({ checked: true, updated: [], error, ref: pinnedRef(opts.ref) });
     try {
         // Resolve the (relocatable) origin from the discovery manifest, then pin
@@ -394,7 +415,7 @@ export async function refreshRemoteSkills(opts: RefreshOptions): Promise<RemoteR
                 if (!files || files.length > MAX_FILES_PER_SKILL) return;
                 if (!files.some((f) => f.rel === "skill.json") || !files.some((f) => f.rel === "SKILL.md")) return;
                 const sig = dirSignature(files);
-                const cached = validCachedSkill(name);
+                const cached = validCachedSkill(name, opts.ref);
                 const newestLocal = [opts.bundledVersions[name], cached?.version]
                     .filter((v): v is string => Boolean(v))
                     .reduce<string | null>((a, b) => (a === null || isNewer(b, a) ? b : a), null);
@@ -403,21 +424,22 @@ export async function refreshRemoteSkills(opts: RefreshOptions): Promise<RemoteR
                     // Unchanged upstream: skip when the cache is intact, or when the
                     // recorded remote version is still not newer than what we have.
                     if (cached) return;
-                    if (rec.version && newestLocal && !isNewer(rec.version, newestLocal)) return;
+                    if (!pinned && rec.version && newestLocal && !isNewer(rec.version, newestLocal)) return;
                 }
-                // Version gate before downloading anything heavier than skill.json:
-                // adopt only a strictly newer release than what we already have.
+                // Version gate before downloading anything heavier than skill.json: adopt only
+                // a strictly newer release than what we already have. A pinned ref bypasses it -
+                // reproducibility means installing that ref's skills, older ones included.
                 const metaRes = await fetchWithTimeout(`${source.rawBase}/${source.repo}/${commit}/${source.skillsPrefix}${name}/skill.json`);
                 if (!metaRes.ok) return;
                 const remoteMeta = JSON.parse(await metaRes.text()) as SkillMeta;
                 if (remoteMeta.name !== name || !remoteMeta.version || !remoteMeta.sha || !isManagedProvider(remoteMeta.provider)) return;
-                if (newestLocal && !isNewer(remoteMeta.version, newestLocal)) { dirs[name] = { sig, version: remoteMeta.version }; return; }
-                if (await downloadSkill(name, commit, files, source)) { dirs[name] = { sig, version: remoteMeta.version }; updated.push(name); }
+                if (!pinned && newestLocal && !isNewer(remoteMeta.version, newestLocal)) { dirs[name] = { sig, version: remoteMeta.version }; return; }
+                if (await downloadSkill(name, commit, files, source, opts.ref)) { dirs[name] = { sig, version: remoteMeta.version }; updated.push(name); }
             } catch { /* this skill stays on its current version */ }
         }));
 
-        pruneCache(new Set(skills.keys()), opts.bundledVersions, dirs);
-        writeStamp({ checkedAt: Date.now(), commit, ref: source.ref, dirs });
+        pruneCache(new Set(skills.keys()), opts.bundledVersions, dirs, opts.ref);
+        writeStamp({ checkedAt: Date.now(), commit, ref: source.ref, dirs }, opts.ref);
         return { checked: true, updated: updated.sort(), error: null, ref: source.ref, commit };
     } catch (err) {
         const msg = (err as Error).name === "AbortError" ? "timed out" : (err as Error).message || "network error";

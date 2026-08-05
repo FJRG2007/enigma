@@ -14,6 +14,7 @@
     "dashboard:preview": "node scripts/dashboard-preview.mjs",
     "sync:helio": "node scripts/sync-helio.mjs",
     "build": "npm run -w enigma-cli build",
+    "check:hooks": "node scripts/check-hook-drift.mjs",
     "typecheck": "npm run -w enigma-cli typecheck",
     "seal": "npm run -w enigma-cli seal",
     "check": "npm run -w enigma-cli check",

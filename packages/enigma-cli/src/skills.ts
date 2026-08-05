@@ -25,12 +25,12 @@ import { setGhTelemetry, starRepoInBackground } from "./github";
 import { applyTrimWiring, mirrorTrimWiring } from "./trim-deploy";
 import type { Agent, AgentTarget, DiscoveredAgent } from "./agents";
 import { applyMcpForAgent, applyMcpForAccount } from "./mcp-deploy";
-import { isDir, isNewer, readJson, listFilesRel, computeContentSha } from "./util";
+import { isDir, isNewer, isOffline, readJson, listFilesRel, computeContentSha } from "./util";
 import { applyVerifyWiring, isVerifyOn, mirrorVerifyWiring } from "./verify-deploy";
 import { applyGuardrailsWiring, mirrorGuardrailsWiring } from "./guardrails-deploy";
 import { resolveBypassSelection, applyBypass, mirrorAccountSettings } from "./permissions";
 import { existsSync, readdirSync, readFileSync, writeFileSync, cpSync, mkdirSync, rmSync } from "node:fs";
-import { cachedRemoteSkills, refreshRemoteSkills, shouldCheckRemote, skillsOrigin } from "./skills-remote";
+import { cachedRemoteSkills, refIsPinned as skillsRefIsPinned, refreshRemoteSkills, shouldCheckRemote, skillsOrigin } from "./skills-remote";
 import { AGENTS, MANAGED_PROVIDER, isManagedProvider, discoverAgents, runningStatus, localTargetsAt } from "./agents";
 import { disableClaudeAttribution, disableClaudeFeedbackSurvey, enableClaudeStatusline, getClaudeTrust, setClaudeTrust } from "./claude";
 
@@ -39,6 +39,7 @@ const PKG_ROOT = resolve(__dirname, "..");
 // Assets beside the code when they are on disk (dev/tsx, dist), else the launcher's
 // ENIGMA_ASSETS_DIR for the compiled binary - see assets-dir.ts.
 let assets = ASSETS_DIR;
+let assetsExplicit = false;
 
 /**
  * Point every asset read at another tree (`install --assets-from <dir>`), so a closed
@@ -50,6 +51,7 @@ export function useAssetsFrom(dir: string): void {
     const root = resolve(dir);
     if (!isDir(join(root, "skills"))) throw new Error(`No skills directory in ${root} - --assets-from expects a copy of the package's assets/ (skills/, memory/, commands/).`);
     assets = root;
+    assetsExplicit = root !== resolve(ASSETS_DIR);
 }
 
 /** Where assets are being read from (the bundled tree unless --assets-from moved it). */
@@ -408,15 +410,22 @@ function bundledSkills(): SkillEntry[] {
  * overlaid with any verified GitHub-cached skill that is strictly newer (see
  * skills-remote.ts). The overlay also surfaces skills published to the repo
  * that this package version does not bundle yet.
+ *
+ * Two things suppress the overlay entirely, because in both the cache would make the run
+ * report a source it is not installing from: an explicit `--assets-from` tree (that tree is
+ * the whole source) and an offline run (nothing fetched from GitHub may reach the plan, and
+ * a cache left by an earlier online install is exactly that). Under a pinned ref the cache
+ * WINS outright rather than only when newer - the pin decides what is adopted.
  */
 export function inspectSkills(): SkillEntry[] {
     const skills = bundledSkills();
-    const remote = cachedRemoteSkills();
+    const remote = assetsExplicit || isOffline() ? [] : cachedRemoteSkills();
     if (!remote.length) return skills;
+    const pinned = skillsRefIsPinned();
     const byName = new Map(skills.map((s) => [s.name, s]));
     for (const r of remote) {
         const bundled = byName.get(r.name);
-        if (!bundled || isNewer(r.meta.version || "", bundled.meta.version || "")) byName.set(r.name, r);
+        if (!bundled || pinned || isNewer(r.meta.version || "", bundled.meta.version || "")) byName.set(r.name, r);
     }
     return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -1083,18 +1092,25 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
     if (available.length === 0) reporter.fatal("No installable agents known.");
 
     // An explicit asset tree is the whole source: overlaying a GitHub cache on top of it
-    // would defeat the point of staging one, so it implies offline.
+    // would defeat the point of staging one, so it implies offline. inspectSkills() enforces
+    // that on the plan itself - stopping only the fetch would still install a cache an
+    // earlier online run had left behind.
     if (opts.assetsFrom) {
         try { useAssetsFrom(opts.assetsFrom); }
         catch (err) { reporter.fatal((err as Error).message); }
         reporter.info(`Assets: ${assetsRoot()} (--assets-from; no skill update check).`);
     }
     const offline = opts.offline || Boolean(opts.assetsFrom);
+    // Offline is published in the environment, not threaded as a parameter, because the calls
+    // it must stop are detached children (see util.isOffline). Set here as well as in the CLI
+    // so the plan is offline whichever entry point asked for it.
+    if (offline) process.env.ENIGMA_OFFLINE = "1";
+    if (opts.ref) process.env.ENIGMA_SKILLS_REF = opts.ref;
 
     // Refresh the GitHub skill cache first so the plan below uses the newest
     // published skills, not only the ones bundled with this package version.
     // Strictly best-effort: any failure falls back to bundled/cached skills.
-    if (!offline && shouldCheckRemote(Boolean(opts.ref))) {
+    if (!offline && shouldCheckRemote(Boolean(opts.ref), opts.ref ?? undefined)) {
         const sp = reporter.spinner();
         sp.start("Checking GitHub for skill updates...");
         const r = await refreshSkillsFromGitHub(Boolean(opts.ref), opts.ref ?? undefined);
@@ -1105,11 +1121,19 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
     // Always reported, checked or not: skills can be updated from the repo without an npm
     // release, so "which CLI version" does not identify which skills a run worked with.
     // This line is the one to record alongside the CLI version.
-    if (offline) {
-        reporter.info(`Skills source: bundled with enigma-cli ${cliVersion()} (offline - no remote skill check).`);
+    // The line states what was ACTUALLY installed, never what was merely resolved: a ref that
+    // resolved but yielded no adopted skill is a bundled install, and claiming its commit as
+    // the provenance would misrecord exactly the run that pinned it for reproducibility.
+    if (opts.assetsFrom) {
+        reporter.info(`Skills source: ${assetsRoot()} (--assets-from; no remote skills), CLI ${cliVersion()}.`);
+    } else if (offline) {
+        reporter.info(`Skills source: bundled with enigma-cli ${cliVersion()} (offline - no remote skills).`);
     } else {
         const origin = skillsOrigin(opts.ref ?? undefined);
-        reporter.info(`Skills source: ${origin.repo}@${origin.ref}${origin.commit ? ` (commit ${origin.commit.slice(0, 7)})` : " (nothing fetched yet - bundled skills)"}, CLI ${cliVersion()}.`);
+        const adopted = cachedRemoteSkills(opts.ref ?? undefined).length;
+        reporter.info(origin.commit && adopted
+            ? `Skills source: ${origin.repo}@${origin.ref} (commit ${origin.commit.slice(0, 7)}), ${adopted} skill(s) over the bundle, CLI ${cliVersion()}.`
+            : `Skills source: bundled with enigma-cli ${cliVersion()} (nothing adopted from ${origin.repo}@${origin.ref}).`);
     }
 
     // --- scope ---

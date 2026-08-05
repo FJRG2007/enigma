@@ -112,7 +112,15 @@ function parseArgs(argv: string[]): CliOptions {
     };
     for (let i = 0; i < argv.length; i++) {
         const a = argv[i]!;
-        const next = (): string => argv[++i]!;
+        // A flag whose value is missing is a usage error, not an empty default. `--range`
+        // with nothing after it used to fall back to a staged scan, which in a pre-push hook
+        // checks nothing and exits 0 - the useless pass that flag exists to eliminate. Exit 2
+        // (the "could not run" code) rather than pretending the flag was honoured.
+        const next = (): string => {
+            const value = argv[++i];
+            if (value === undefined) { console.error(`Missing value for ${a}`); process.exit(2); }
+            return value;
+        };
         if (i === 0 && COMMANDS.has(a)) {
             opts.command = a === "accounts" ? "account" : a === "profiles" ? "profile" : a === "skill" ? "skills" : a === "dash" ? "dashboard" : a;
             continue;
@@ -754,7 +762,7 @@ function seedAccount(tool: string, dir: string): void {
  * failure-tolerant, so an unreachable GitHub or npm never blocks the others.
  */
 async function runUpdateCli(version: string, ref?: string | null): Promise<void> {
-    if (skillsMod.shouldCheckRemote(true)) {
+    if (skillsMod.shouldCheckRemote(true, ref ?? undefined)) {
         const s = p.spinner();
         s.start(`Checking GitHub for skill updates${ref ? ` at ${ref}` : ""}...`);
         const r = await skillsMod.refreshSkillsFromGitHub(true, ref ?? undefined);
@@ -2240,6 +2248,9 @@ export async function run(argv: string[]): Promise<void> {
     // inherit it and stand down on their own. A container can set it directly for every
     // enigma invocation, not just this one.
     if (opts.offline || opts.assetsFrom) process.env.ENIGMA_OFFLINE = "1";
+    // Same reason for the ref pin: it has to reach every read of the skill cache, which is
+    // scoped per ref, not only the fetch that filled it.
+    if (opts.ref) process.env.ENIGMA_SKILLS_REF = opts.ref;
     const interactive = Boolean(process.stdout.isTTY) && Boolean(process.stdin.isTTY) && !opts.yes;
     const version = process.env.ENIGMA_VERSION || PKG.version || "0.0.0";
     // Statusline: fast, silent badge for an agent's status bar (e.g. Claude Code). No

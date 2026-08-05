@@ -170,14 +170,34 @@ test("a broken override is reported, not skipped as `no agent installed`", async
             err.code = "ENOENT";
             throw err;
         };
-        // Falling through to the next agent is what made a typo read as "no agent installed"
-        // on a machine that was running one. Asserted on the override-specific wording, not
-        // just the path: the fall-through error lists every probed binary, so matching the
-        // path alone passes even when the override is being silently skipped.
+        // Falling through silently is what made a typo read as "no agent installed" on a
+        // machine that was running one. Asserted on the override-specific wording, not just
+        // the path: the generic error lists every probed binary, so matching the path alone
+        // passes even when the override is being skipped without a word.
         await expect(gateConfig.resolveAgent(cfg, missing)).rejects.toThrow(
             /the claude agent path override points at "\/private\/harness\/bin\/claude", which is not an executable file/
         );
         expect(gateConfig.agentPathEnvVar("claude")).toBe("ENIGMA_AGENT_CLAUDE");
+    } finally {
+        if (prev === undefined) delete process.env.ENIGMA_AGENT_CLAUDE; else process.env.ENIGMA_AGENT_CLAUDE = prev;
+    }
+});
+
+test("a broken override for an agent this run does not need never blocks the run", async () => {
+    const prev = process.env.ENIGMA_AGENT_CLAUDE;
+    try {
+        // A stale export in a shell profile. codex is installed and would have been selected,
+        // so making the whole probe fatal would break every gate run on that machine.
+        process.env.ENIGMA_AGENT_CLAUDE = "/stale/from/shell/profile/claude";
+        const cfg = gateConfig.merge(gateConfig.loadGlobal("/no/such/config.yaml"), repo());
+        const onlyCodex = async (bin: string): Promise<string> => {
+            if (bin === "codex") return "/usr/local/bin/codex";
+            const err = new Error("not found") as NodeJS.ErrnoException;
+            err.code = "ENOENT";
+            throw err;
+        };
+        await gateConfig.resolveAgent(cfg, onlyCodex);
+        expect(cfg.agent).toBe("codex");
     } finally {
         if (prev === undefined) delete process.env.ENIGMA_AGENT_CLAUDE; else process.env.ENIGMA_AGENT_CLAUDE = prev;
     }

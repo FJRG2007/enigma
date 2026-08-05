@@ -44,6 +44,53 @@ test("--assets-from installs from a staged tree, and refuses one that is not an 
     }
 });
 
+test("a populated remote cache reaches neither a staged tree nor an offline run", async () => {
+    const { computeContentSha } = await import("../src/util");
+    const original = assetsRoot();
+    const home = mkdtempSync(join(tmpdir(), "enigma-cache-home-"));
+    const staged = mkdtempSync(join(tmpdir(), "enigma-staged-assets-"));
+    const prev = {
+        home: process.env.HOME, profile: process.env.USERPROFILE,
+        config: process.env.ENIGMA_CONFIG_HOME, offline: process.env.ENIGMA_OFFLINE,
+    };
+    try {
+        process.env.HOME = home; process.env.USERPROFILE = home; process.env.ENIGMA_CONFIG_HOME = home;
+        delete process.env.ENIGMA_OFFLINE;
+
+        // Exactly what one earlier online install leaves behind: a verified GitHub cache entry.
+        const cached = join(home, ".enigma", "skills-cache", "skills", "cached-policy");
+        mkdirSync(cached, { recursive: true });
+        writeFileSync(join(cached, "SKILL.md"), "---\nname: cached-policy\n---\n\nFetched from GitHub.\n");
+        const cachedMeta = { name: "cached-policy", version: "9.9.9", provider: "FJRG2007/enigma", sha: computeContentSha(cached) };
+        writeFileSync(join(cached, "skill.json"), `${JSON.stringify(cachedMeta, null, 2)}\n`);
+        // Baseline: online, bundled assets - the overlay is live, so the entry IS in the plan.
+        // Without it the two assertions below would pass on an empty cache and prove nothing.
+        expect(inspectSkills().map((s) => s.name)).toContain("cached-policy");
+
+        mkdirSync(join(staged, "skills", "only-policy"), { recursive: true });
+        writeFileSync(join(staged, "skills", "only-policy", "SKILL.md"), "---\nname: only-policy\n---\n\nBody.\n");
+        const meta = { name: "only-policy", version: "1.0.0", provider: "FJRG2007/enigma" };
+        writeFileSync(join(staged, "skills", "only-policy", "skill.json"), `${JSON.stringify(meta, null, 2)}\n`);
+
+        // A staged tree is the whole source: stopping the fetch is not enough when a cache
+        // is already on disk, and "Skills source: bundled with enigma-cli X" would be a lie.
+        useAssetsFrom(staged);
+        expect(inspectSkills().map((s) => s.name)).toEqual(["only-policy"]);
+        useAssetsFrom(original);
+
+        // Offline, bundled assets: nothing fetched from GitHub may reach the plan either.
+        process.env.ENIGMA_OFFLINE = "1";
+        expect(inspectSkills().map((s) => s.name)).not.toContain("cached-policy");
+    } finally {
+        useAssetsFrom(original);
+        for (const [key, value] of [["HOME", prev.home], ["USERPROFILE", prev.profile], ["ENIGMA_CONFIG_HOME", prev.config], ["ENIGMA_OFFLINE", prev.offline]] as const) {
+            if (value === undefined) delete process.env[key]; else process.env[key] = value;
+        }
+        rmSync(home, { recursive: true, force: true });
+        rmSync(staged, { recursive: true, force: true });
+    }
+});
+
 test("--offline stands every outbound call down, including the detached ones", async () => {
     const { isOffline } = await import("../src/util");
     const { shouldCheckRemote } = await import("../src/skills-remote");

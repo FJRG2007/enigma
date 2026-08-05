@@ -165,3 +165,36 @@ test("parseGuardArgv reads the flags the copied hook is handed", () => {
     expect(parseGuardArgv(["--range", "a..b"]).range).toBe("a..b");
     expect(parseGuardArgv(["--range=a..b"]).range).toBe("a..b");
 });
+
+test("a --range with no value is a usage error, never a silent staged scan", () => {
+    // Dropping the flag used to leave the staged scan, which in a pre-push hook has nothing
+    // staged: "0 file(s) checked" and exit 0, having looked at none of the commits pushed.
+    expect(parseGuardArgv(["--range"]).usageError).toMatch(/--range needs a value/);
+    expect(parseGuardArgv(["--range"]).range).toBeFalsy();
+    expect(parseGuardArgv(["--range="]).usageError).toMatch(/--range needs a value/);
+
+    const dir = repoWithLeak();
+    const quiet = { log: console.log, error: console.error };
+    console.log = () => {}; console.error = () => {};
+    try {
+        inRepo(dir, () => {
+            expect(runGuardCli(parseGuardArgv(["--range"]))).toBe(2);
+            expect(runGuardCli(parseGuardArgv(["--range", "--json"]))).toBe(2);
+            expect(runGuardCli({ ...parseGuardArgv(["--range="]), json: true })).toBe(2);
+        });
+    } finally {
+        console.log = quiet.log; console.error = quiet.error;
+        rmSync(dir, { recursive: true, force: true });
+    }
+});
+
+test("the CLI rejects a flag whose value is missing instead of defaulting it away", () => {
+    const cli = join(import.meta.dir, "..", "src", "bin", "enigma.ts");
+    const run = (...args: string[]): { status: number | null; err: string; } => {
+        const r = Bun.spawnSync(["bun", cli, ...args], { stderr: "pipe", stdout: "pipe" });
+        return { status: r.exitCode, err: r.stderr.toString() };
+    };
+    const missing = run("guard", "--range");
+    expect(missing.status).toBe(2);
+    expect(missing.err).toMatch(/Missing value for --range/);
+});

@@ -1078,3 +1078,27 @@ test("a command that is missing here is the tool failing, not the change failing
 
     expect(runVerifyCommand(process.cwd(), `"${process.execPath}" -e "process.exit(0)"`)).toBeNull();
 });
+
+test("a failing suite that PRINTS 'command not found' is a finding, not a tool failure", async () => {
+    const { runVerifyCommand, isMissingCommand } = await import("../src/verify");
+    // A suite that spawns binaries, or whose assertion text quotes a shell error, prints these
+    // strings while genuinely failing. Reading them as "the tool could not run" exits 2, which
+    // tells the caller nothing was checked and is worth retrying - a real failure, silenced.
+    const noisy = runVerifyCommand(
+        process.cwd(),
+        `"${process.execPath}" -e "console.log('ok'); console.error('bash: rustc: command not found'); process.exit(1)"`
+    );
+    expect(noisy?.kind).toBe("command");
+    expect(noisy?.tool).toBeUndefined();
+    expect(noisy?.detail).toMatch(/exited 1/);
+
+    // The classifier itself: status wins, and the text signal needs the FIRST line to name the
+    // program that was actually invoked, so a match deeper in a test log never counts.
+    expect(isMissingCommand("npm run verify", 127, "")).toBe(true);
+    expect(isMissingCommand("npm run verify", 9009, "")).toBe(true);
+    expect(isMissingCommand("npm run verify", 1, "sh: 1: npm: not found")).toBe(true);
+    expect(isMissingCommand("npm run verify", 1, "'npm' is not recognized as an internal or external command")).toBe(true);
+    expect(isMissingCommand("npm run verify", 1, "ok\nsh: 1: npm: not found")).toBe(false);
+    expect(isMissingCommand("npm run verify", 1, "bash: rustc: command not found")).toBe(false);
+    expect(isMissingCommand("npm run verify", 1, "2 tests failed")).toBe(false);
+});

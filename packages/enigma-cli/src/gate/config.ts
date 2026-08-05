@@ -381,6 +381,12 @@ export async function resolveAgent(
 ): Promise<void> {
     if (cfg.agent !== AGENT_AUTO) return;
     const probed: string[] = [];
+    // A configured path is an explicit instruction, so a broken one is NAMED rather than
+    // swallowed: silently falling through is how a typo in an override reads as "no agent
+    // installed" on a machine running one. It is only fatal when nothing else resolves,
+    // though - a stale ENIGMA_AGENT_CLAUDE in a shell profile must not break a run that
+    // codex or opencode would have served.
+    const broken: string[] = [];
     for (const name of AGENT_PROBE_ORDER) {
         let bin = DEFAULT_BINARY[name] ?? name;
         const override = cfg.agentPathOverride?.[name];
@@ -391,11 +397,8 @@ export async function resolveAgent(
             resolvedBin = await lookPath(bin);
         } catch (err) {
             if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-                // A configured path is an explicit instruction, so a broken one is reported
-                // instead of being skipped: silently falling through to the next agent is how
-                // a typo in an override reads as "no agent installed" on a machine running one.
                 if (override) {
-                    throw new Error(
+                    broken.push(
                         `the ${name} agent path override points at "${override}", which is not an executable file (set by ${agentPathEnvVar(name)} or agent_path_override.${name} in ~/.enigma/gate/config.yaml)`
                     );
                 }
@@ -406,6 +409,9 @@ export async function resolveAgent(
         if (name === AGENT_ROVODEV && !(await probeRovoDevSupport(resolvedBin))) continue;
         cfg.agent = name;
         return;
+    }
+    if (broken.length) {
+        throw new Error(`no supported agent found (looked for: ${probed.join(", ")}); ${broken.join("; ")}`);
     }
     throw new Error(
         `no supported agent found in PATH (looked for: ${probed.join(", ")}); install one or set 'agent' in ~/.enigma/gate/config.yaml`
