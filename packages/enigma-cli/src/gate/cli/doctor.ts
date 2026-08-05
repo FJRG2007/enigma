@@ -12,15 +12,7 @@ import { run as gitRun } from "../git";
 import { lookPath } from "../agent/factory";
 import { isDaemonRunning } from "./daemonCmd";
 import { out, sRed, sCyan, sDim, sGreen, sYellow, errMessage } from "./common";
-
-/** The native agents probed by doctor, with their default binary names. */
-const AGENTS: ReadonlyArray<{ name: string; binary: string; }> = [
-    { name: "claude", binary: "claude" },
-    { name: "codex", binary: "codex" },
-    { name: "rovodev", binary: "acli" },
-    { name: "opencode", binary: "opencode" },
-    { name: "pi", binary: "pi" }
-];
+import { NATIVE_AGENTS, agentPathEnvVar, defaultAgentBinary, loadGlobal } from "../config";
 
 /** Runs the health checks and prints the report. */
 export async function runDoctorCli(paths: Paths): Promise<void> {
@@ -46,11 +38,15 @@ export async function runDoctorCli(paths: Paths): Promise<void> {
         allOK = false;
     }
 
+    // Optional by design, and never a failed check: gh is reached only by the push, pr and
+    // ci steps. A run that skips those (`axi run --skip push,pr,ci`) needs no forge CLI at
+    // all, and neither does `gate init` - so an image without gh is a supported setup, not
+    // a broken one.
     try {
         await lookPath("gh");
         ok("gh            ", "ok");
     } catch {
-        warn("gh            ", `not found ${sDim("(optional, needed for PR/CI)")}`);
+        warn("gh            ", `not found ${sDim("(optional: only the push, pr and ci steps use it - skip them and nothing here needs it)")}`);
     }
 
     if (!existsSync(paths.root())) {
@@ -81,14 +77,30 @@ export async function runDoctorCli(paths: Paths): Promise<void> {
 
     out("\n");
     out(`  ${sCyan("Agents")}\n`);
-    for (const agent of AGENTS) {
-        const label = agent.name.padEnd(14);
+    // Probed exactly as the pipeline resolves them, overrides included, so a run in a
+    // sandbox that installed its agent off PATH sees the same answer here as there.
+    let overrides: Record<string, string> = {};
+    try {
+        overrides = loadGlobal(paths.configFile()).agentPathOverride ?? {};
+    } catch {
+        // A config this broken is reported by the steps that read it; probing defaults is
+        // still more useful than printing nothing.
+    }
+    for (const name of NATIVE_AGENTS) {
+        const label = name.padEnd(14);
+        const override = overrides[name];
+        const source = override ? sDim(`  (${agentPathEnvVar(name)} / agent_path_override.${name})`) : "";
         try {
-            const path = await lookPath(agent.binary);
-            ok(label, path);
+            const path = await lookPath(override || defaultAgentBinary(name));
+            ok(label, `${path}${source}`);
         } catch {
-            warn(label, "not found");
+            if (override) { fail(label, `override "${override}" is not an executable file${source}`); allOK = false; }
+            else warn(label, `not found ${sDim(`(set ${agentPathEnvVar(name)}=<path> if it is installed off PATH)`)}`);
         }
+    }
+    if (Object.values(overrides).length === 0) {
+        out(`  ${sDim("An agent installed outside PATH is found via ENIGMA_AGENT_<NAME>=<absolute path>.")}\n`);
+        out(`  ${sDim("The daemon runs the pipeline, so set it before the daemon starts (else: enigma gate daemon stop).")}\n`);
     }
 
     if (!allOK) {

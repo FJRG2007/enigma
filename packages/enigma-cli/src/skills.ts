@@ -29,8 +29,8 @@ import { isDir, isNewer, readJson, listFilesRel, computeContentSha } from "./uti
 import { applyVerifyWiring, isVerifyOn, mirrorVerifyWiring } from "./verify-deploy";
 import { applyGuardrailsWiring, mirrorGuardrailsWiring } from "./guardrails-deploy";
 import { resolveBypassSelection, applyBypass, mirrorAccountSettings } from "./permissions";
-import { cachedRemoteSkills, refreshRemoteSkills, shouldCheckRemote } from "./skills-remote";
 import { existsSync, readdirSync, readFileSync, writeFileSync, cpSync, mkdirSync, rmSync } from "node:fs";
+import { cachedRemoteSkills, refreshRemoteSkills, shouldCheckRemote, skillsOrigin } from "./skills-remote";
 import { AGENTS, MANAGED_PROVIDER, isManagedProvider, discoverAgents, runningStatus, localTargetsAt } from "./agents";
 import { disableClaudeAttribution, disableClaudeFeedbackSurvey, enableClaudeStatusline, getClaudeTrust, setClaudeTrust } from "./claude";
 
@@ -38,10 +38,26 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const PKG_ROOT = resolve(__dirname, "..");
 // Assets beside the code when they are on disk (dev/tsx, dist), else the launcher's
 // ENIGMA_ASSETS_DIR for the compiled binary - see assets-dir.ts.
-const ASSETS = ASSETS_DIR;
-export const SKILLS_ROOT = join(ASSETS, "skills");
-export const MEMORY_ROOT = join(ASSETS, "memory");
-export const COMMANDS_ROOT = join(ASSETS, "commands");
+let assets = ASSETS_DIR;
+
+/**
+ * Point every asset read at another tree (`install --assets-from <dir>`), so a closed
+ * runner can install from a pre-staged copy with no network and no dependence on where
+ * the package happens to live. The tree must have the same shape as the bundled one:
+ * `skills/`, `memory/`, `commands/`. Throws when it does not.
+ */
+export function useAssetsFrom(dir: string): void {
+    const root = resolve(dir);
+    if (!isDir(join(root, "skills"))) throw new Error(`No skills directory in ${root} - --assets-from expects a copy of the package's assets/ (skills/, memory/, commands/).`);
+    assets = root;
+}
+
+/** Where assets are being read from (the bundled tree unless --assets-from moved it). */
+export function assetsRoot(): string { return assets; }
+
+const skillsRoot = (): string => join(assets, "skills");
+const memoryRoot = (): string => join(assets, "memory");
+const commandsRoot = (): string => join(assets, "commands");
 
 export interface SkillMeta {
     name?: string;
@@ -80,6 +96,27 @@ interface PlanItem {
     commands: PlannedCommand[];
 }
 
+/**
+ * Hook classes an install may wire into an agent's settings, by the event they run on.
+ * A harness that owns its own hooks needs to install skills WITHOUT them: two Stop hooks
+ * each deciding whether the agent may finish is a loop neither of them can see.
+ */
+export const HOOK_CLASSES = ["post-edit", "stop"] as const;
+export type HookClass = typeof HOOK_CLASSES[number];
+
+/** Parse a `--hooks` value (`all`, `none`, or a comma list). Throws on an unknown name. */
+export function parseHookClasses(value: string): HookClass[] {
+    const names = value.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+    if (!names.length || names.includes("none")) return [];
+    if (names.includes("all")) return [...HOOK_CLASSES];
+    for (const n of names) {
+        if (!(HOOK_CLASSES as readonly string[]).includes(n)) {
+            throw new Error(`Unknown hook class '${n}'. Use: ${HOOK_CLASSES.join(", ")} | all | none.`);
+        }
+    }
+    return names as HookClass[];
+}
+
 export interface InstallOptions extends SecurityOptions {
     scope: "global" | "local" | null;
     agents: string[];
@@ -100,6 +137,20 @@ export interface InstallOptions extends SecurityOptions {
     dashboard: string | null;
     /** Enable the prompt secret guard at install (opt-in, default off); null to leave/ask. */
     promptSecretGuard: boolean | null;
+    /**
+     * Hook classes this install may wire (`--hooks`, `--no-hooks`); null leaves every hook
+     * wiring on, as it has always been. It governs this run only - the durable switch is
+     * `enigma config verify|guardrails|trim|lint off`.
+     */
+    hooks: HookClass[] | null;
+    /** Skip the Claude Code statusLine entry for this install (`--no-statusline`). */
+    noStatusline: boolean;
+    /** Pin the skills ref (`--ref <tag|sha>`), so two runs on one CLI version get one skill set. */
+    ref: string | null;
+    /** Read skills/memory/commands from this tree instead of the bundled assets. Implies offline. */
+    assetsFrom: string | null;
+    /** Make the install reach nothing over the network (`--offline`). */
+    offline: boolean;
 }
 
 /** This CLI package's own version, stamped into skills at seal time. */
@@ -322,15 +373,15 @@ const GATE_COMMAND = "gate.md";
  * improve.md -> /improve.
  */
 function bundledCommands(): CommandEntry[] {
-    if (!isDir(COMMANDS_ROOT)) return [];
+    if (!isDir(commandsRoot())) return [];
     // /gate follows the `gate` toggle, which is ON by default: the command ships to
     // agents unless the user turned the gate off (globally or for this project), in
     // which case it is left out of the set and `applyGateToggle` removes any copy.
     const gateOn = conf.readConfig().config.gate;
-    return readdirSync(COMMANDS_ROOT)
-        .filter((e) => e.endsWith(".md") && !isDir(join(COMMANDS_ROOT, e)))
+    return readdirSync(commandsRoot())
+        .filter((e) => e.endsWith(".md") && !isDir(join(commandsRoot(), e)))
         .filter((e) => e !== GATE_COMMAND || gateOn)
-        .map((e) => ({ name: e, src: join(COMMANDS_ROOT, e) }));
+        .map((e) => ({ name: e, src: join(commandsRoot(), e) }));
 }
 
 /**
@@ -346,10 +397,10 @@ function commandStatus(dest: string, src: string): CommandStatusKind {
 
 /** Skills bundled with this package: every folder with a SKILL.md under assets/skills. */
 function bundledSkills(): SkillEntry[] {
-    if (!isDir(SKILLS_ROOT)) return [];
-    return readdirSync(SKILLS_ROOT)
-        .filter((e) => isDir(join(SKILLS_ROOT, e)) && existsSync(join(SKILLS_ROOT, e, "SKILL.md")))
-        .map((e) => ({ name: e, src: join(SKILLS_ROOT, e), meta: readSkillMeta(join(SKILLS_ROOT, e)) }));
+    if (!isDir(skillsRoot())) return [];
+    return readdirSync(skillsRoot())
+        .filter((e) => isDir(join(skillsRoot(), e)) && existsSync(join(skillsRoot(), e, "SKILL.md")))
+        .map((e) => ({ name: e, src: join(skillsRoot(), e), meta: readSkillMeta(join(skillsRoot(), e)) }));
 }
 
 /**
@@ -567,18 +618,18 @@ export async function checkAndUpdateSkills(): Promise<{ updated: string[]; synce
  * package's bundled versions so only strictly newer releases are adopted. Safe
  * to call from anywhere: never throws, never blocks beyond its fetch timeouts.
  */
-export async function refreshSkillsFromGitHub(force = false): Promise<RemoteRefreshResult> {
+export async function refreshSkillsFromGitHub(force = false, ref?: string): Promise<RemoteRefreshResult> {
     const bundledVersions: Record<string, string> = {};
     for (const s of bundledSkills()) if (s.meta.version) bundledVersions[s.name] = s.meta.version;
-    return refreshRemoteSkills({ force, bundledVersions });
+    return refreshRemoteSkills({ force, bundledVersions, ref });
 }
 
-export { shouldCheckRemote };
+export { shouldCheckRemote, skillsOrigin };
 
 /** The single shared memory file an agent uses (from assets/memory), if present. */
 function inspectMemory(agent: Agent): MemoryEntry[] {
     if (!agent.memoryFile) return [];
-    const src = join(MEMORY_ROOT, agent.memoryFile);
+    const src = join(memoryRoot(), agent.memoryFile);
     return existsSync(src) ? [{ name: agent.memoryFile, src }] : [];
 }
 
@@ -615,12 +666,12 @@ function memoryTargetsRaw(project?: string): MemTargetRaw[] {
         for (const name of Object.keys(locals)) {
             const def = AGENTS[name];
             if (!def?.memoryFile) continue;
-            out.push({ name, label: def.label, file: def.memoryFile, src: join(MEMORY_ROOT, def.memoryFile), dest: join(locals[name]!.memory, def.memoryFile) });
+            out.push({ name, label: def.label, file: def.memoryFile, src: join(memoryRoot(), def.memoryFile), dest: join(locals[name]!.memory, def.memoryFile) });
         }
     } else {
         for (const a of discoverAgents()) {
             if (!a.installed || !a.memoryFile) continue;
-            out.push({ name: a.name, label: a.label, file: a.memoryFile, src: join(MEMORY_ROOT, a.memoryFile), dest: join(a.targets.global.memory, a.memoryFile) });
+            out.push({ name: a.name, label: a.label, file: a.memoryFile, src: join(memoryRoot(), a.memoryFile), dest: join(a.targets.global.memory, a.memoryFile) });
         }
     }
     return out;
@@ -721,14 +772,14 @@ function citationVersion(): string | null {
  * ISO date of the last commit that changed a skill's CONTENT, or null outside a git checkout.
  * Excludes skill.json: every release reseals it (cliVersion bump), so including it would stamp
  * the same release date on every skill and hide when the content (SKILL.md, references) actually
- * changed. `name` is the skill dir relative to SKILLS_ROOT (the git pathspec base).
+ * changed. `name` is the skill dir relative to skillsRoot() (the git pathspec base).
  */
 function gitLastCommitISO(name: string): string | null {
     try {
         const out = execFileSync(
             "git",
             ["log", "-1", "--format=%cI", "--", name, `:(exclude)${name}/skill.json`],
-            { cwd: SKILLS_ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], windowsHide: true },
+            { cwd: skillsRoot(), encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], windowsHide: true },
         ).trim();
         return out || null;
     } catch { return null; }
@@ -753,12 +804,12 @@ function writeCatalog(entries: CatalogEntry[], cli: string): void {
 
 /** (Re)compute each source skill's content hash into its skill.json. */
 export function sealSources(): void {
-    if (!isDir(SKILLS_ROOT)) { console.error(`No skills directory found at ${SKILLS_ROOT}.`); process.exit(1); }
+    if (!isDir(skillsRoot())) { console.error(`No skills directory found at ${skillsRoot()}.`); process.exit(1); }
     const cli = cliVersion();
     let sealed = 0;
     const catalog: CatalogEntry[] = [];
-    for (const name of readdirSync(SKILLS_ROOT)) {
-        const dir = join(SKILLS_ROOT, name);
+    for (const name of readdirSync(skillsRoot())) {
+        const dir = join(skillsRoot(), name);
         if (!isDir(dir) || !existsSync(join(dir, "SKILL.md"))) continue;
         const metaPath = join(dir, "skill.json");
         const meta = readJson<SkillMeta>(metaPath) || { name };
@@ -839,11 +890,11 @@ export function checkCaseBlocks(label: string, content: string): string[] {
 
 /** Report every bundled memory file whose deployable size exceeds MEMORY_BUDGET_BYTES. */
 function checkMemoryBudget(): string[] {
-    if (!isDir(MEMORY_ROOT)) return [];
+    if (!isDir(memoryRoot())) return [];
     const problems: string[] = [];
-    for (const file of readdirSync(MEMORY_ROOT)) {
+    for (const file of readdirSync(memoryRoot())) {
         if (!file.endsWith(".md")) continue;
-        const content = readFileSync(join(MEMORY_ROOT, file), "utf8");
+        const content = readFileSync(join(memoryRoot(), file), "utf8");
         const bytes = budgetedBytes(content);
         if (bytes > MEMORY_BUDGET_BYTES) problems.push(`memory/${file}: ${bytes} bytes exceeds the ${MEMORY_BUDGET_BYTES}-byte always-on budget - move detail into a policy skill or a guardrail rule`);
         problems.push(...checkCaseBlocks(`memory/${file}`, content));
@@ -856,12 +907,12 @@ function checkMemoryBudget(): string[] {
  * sealed. Exits non-zero on any problem.
  */
 export function checkSources(): void {
-    if (!isDir(SKILLS_ROOT)) { console.error(`No skills directory found at ${SKILLS_ROOT}.`); process.exit(1); }
+    if (!isDir(skillsRoot())) { console.error(`No skills directory found at ${skillsRoot()}.`); process.exit(1); }
     const cli = cliVersion();
     const problems: string[] = [];
     let checked = 0;
-    for (const name of readdirSync(SKILLS_ROOT)) {
-        const dir = join(SKILLS_ROOT, name);
+    for (const name of readdirSync(skillsRoot())) {
+        const dir = join(skillsRoot(), name);
         if (!isDir(dir) || !existsSync(join(dir, "SKILL.md"))) continue;
         checked++;
         const md = readFileSync(join(dir, "SKILL.md"), "utf8");
@@ -1031,16 +1082,34 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
     const available = discoverAgents();
     if (available.length === 0) reporter.fatal("No installable agents known.");
 
+    // An explicit asset tree is the whole source: overlaying a GitHub cache on top of it
+    // would defeat the point of staging one, so it implies offline.
+    if (opts.assetsFrom) {
+        try { useAssetsFrom(opts.assetsFrom); }
+        catch (err) { reporter.fatal((err as Error).message); }
+        reporter.info(`Assets: ${assetsRoot()} (--assets-from; no skill update check).`);
+    }
+    const offline = opts.offline || Boolean(opts.assetsFrom);
+
     // Refresh the GitHub skill cache first so the plan below uses the newest
     // published skills, not only the ones bundled with this package version.
     // Strictly best-effort: any failure falls back to bundled/cached skills.
-    if (shouldCheckRemote(false)) {
+    if (!offline && shouldCheckRemote(Boolean(opts.ref))) {
         const sp = reporter.spinner();
         sp.start("Checking GitHub for skill updates...");
-        const r = await refreshSkillsFromGitHub();
+        const r = await refreshSkillsFromGitHub(Boolean(opts.ref), opts.ref ?? undefined);
         if (r.error) sp.stop(`Skill update check failed (${r.error}); using bundled skills.`);
         else if (r.updated.length) sp.stop(`Skill update(s) from GitHub: ${r.updated.join(", ")}.`);
         else sp.stop("Skills are up to date with GitHub.");
+    }
+    // Always reported, checked or not: skills can be updated from the repo without an npm
+    // release, so "which CLI version" does not identify which skills a run worked with.
+    // This line is the one to record alongside the CLI version.
+    if (offline) {
+        reporter.info(`Skills source: bundled with enigma-cli ${cliVersion()} (offline - no remote skill check).`);
+    } else {
+        const origin = skillsOrigin(opts.ref ?? undefined);
+        reporter.info(`Skills source: ${origin.repo}@${origin.ref}${origin.commit ? ` (commit ${origin.commit.slice(0, 7)})` : " (nothing fetched yet - bundled skills)"}, CLI ${cliVersion()}.`);
     }
 
     // --- scope ---
@@ -1100,7 +1169,7 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
         if (disableClaudeFeedbackSurvey(claudeScope)) {
             reporter.info("Claude Code: disabled the session feedback survey (re-enable with 'enigma config claude-survey on').");
         }
-        if (conf.readConfig().config.statusline && enableClaudeStatusline(claudeScope)) {
+        if (!opts.noStatusline && conf.readConfig().config.statusline && enableClaudeStatusline(claudeScope)) {
             reporter.info("Claude Code: statusline shows the [ENIGMA] badge, context and cost, plus live gate progress during a run.");
         }
         // Workspace trust: pre-answer the "do you trust this folder" prompt (default on).
@@ -1120,7 +1189,8 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
         if (setGhTelemetry(false) === true) {
             reporter.info("GitHub CLI: telemetry disabled (privacy; re-enable with 'enigma config gh-telemetry on').");
         }
-        starRepoInBackground();
+        // The only other outbound call an install makes, so --offline has to cover it too.
+        if (!offline) starRepoInBackground();
     };
 
     // Optional, opt-in: disable each chosen agent's per-action approval prompts.
@@ -1128,22 +1198,35 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
     const bypassAgents = await resolveBypassSelection(chosenAgents, opts, interactive);
     const applyBypassConfig = (): void => applyBypass(bypassAgents, scope, opts.dryRun);
 
+    // Hook wiring is opt-out per class: a harness that runs its own hooks installs the
+    // skills with --no-hooks (or --hooks post-edit) so enigma never writes into the event
+    // it already owns. Null means "wire everything", which is the historical behaviour.
+    const wires = (cls: HookClass): boolean => !opts.dryRun && (opts.hooks === null || opts.hooks.includes(cls));
+    if (opts.hooks !== null) {
+        const keys: Record<HookClass, string> = { "post-edit": "guardrails, trim, lint", stop: "verify" };
+        const skipped = HOOK_CLASSES.filter((c) => !opts.hooks!.includes(c));
+        if (skipped.length) {
+            const off = skipped.map((c) => keys[c]).join(", ");
+            reporter.info(`Not writing ${skipped.join(" / ")} hooks into agent settings (--hooks); this run only. To keep them off: enigma config <${off}> off.`);
+        }
+    }
+
     // Auto-lint: re-assert the post-write hook wiring to match the toggle (adds it
     // when on, removes it when off). No-op and cheap when off; on enable the linter
     // install runs in the background. Skipped on a dry run (writes nothing).
-    const applyLintConfig = (): void => { if (!opts.dryRun) applyLintWiring(); };
+    const applyLintConfig = (): void => { if (wires("post-edit")) applyLintWiring(); };
 
     // Convention guardrails: re-assert the post-edit hook wiring to match the toggle
     // (default on). Same side-effect shape as the lint hook; skipped on a dry run.
-    const applyGuardrailsConfig = (): void => { if (!opts.dryRun) applyGuardrailsWiring(); };
+    const applyGuardrailsConfig = (): void => { if (wires("post-edit")) applyGuardrailsWiring(); };
 
     // EOF trimmer: re-assert the post-edit hook wiring to match the toggle (default on),
     // same side-effect shape as the guardrails hook; skipped on a dry run.
-    const applyTrimConfig = (): void => { if (!opts.dryRun) applyTrimWiring(); };
+    const applyTrimConfig = (): void => { if (wires("post-edit")) applyTrimWiring(); };
 
     // Completion gate: re-assert the turn-end hook wiring to match the toggle (default
     // on). Same side-effect shape as the guardrails hook; skipped on a dry run.
-    const applyVerifyConfig = (): void => { if (!opts.dryRun) applyVerifyWiring(); };
+    const applyVerifyConfig = (): void => { if (wires("stop")) applyVerifyWiring(); };
 
     // Context-compression MCP: register enigma's MCP server in each chosen agent's
     // config when `compress` is on, remove it when off (mirror presence/absence).

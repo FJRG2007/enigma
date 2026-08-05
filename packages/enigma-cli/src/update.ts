@@ -12,7 +12,7 @@ import { basename, dirname, join } from "node:path";
 import { mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { spawn, spawnSync } from "node:child_process";
 import * as p from "@clack/prompts";
-import { isNewer, readJson } from "./util";
+import { isNewer, readJson, isOffline } from "./util";
 import { readConfig } from "./config";
 import { refreshSkillsFromGitHub } from "./skills";
 
@@ -54,6 +54,9 @@ const CHILD_SCRIPT = [
  * stamp in place, retried on the stale cadence.
  */
 export async function performUpdateCheck(): Promise<void> {
+    // The detached child inherits ENIGMA_OFFLINE, so an offline run that somehow reached
+    // here still makes no request.
+    if (isOffline()) return;
     try {
         await fetchAndCacheLatest();
     } catch {
@@ -253,7 +256,7 @@ export function getAvailableUpdate(current: string): { current: string; latest: 
  * so it never pollutes machine-readable results, and fully error-isolated.
  */
 export async function notifyUpdate(current: string, interactive: boolean): Promise<void> {
-    if (!process.stdout.isTTY || process.env.CI) return;
+    if (!process.stdout.isTTY || process.env.CI || isOffline()) return;
     try {
         if (!readConfig().config.updateNotifier) return;
         scheduleUpdateCheck(current);

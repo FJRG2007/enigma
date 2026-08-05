@@ -38,6 +38,20 @@ export function enigmaHome(): string {
 }
 
 /**
+ * True when this process must not reach the network. Set by `install --offline` (and
+ * `--assets-from`) for the run, or by the environment for a whole container.
+ *
+ * It is an env var rather than a parameter because the calls it has to stop are
+ * DETACHED CHILDREN - the background linter install, the dashboard UI install, the
+ * update check, the repo star. A child inherits the variable and stands down on its
+ * own; a parameter would have to be threaded to every spawn site and would still miss
+ * the second-order ones.
+ */
+export function isOffline(): boolean {
+    return process.env.ENIGMA_OFFLINE === "1";
+}
+
+/**
  * Walk up from `start` to find the git repository root, or null. Stat-only (no git
  * spawn), so it is cheap enough for launch-path code. Lives here rather than in
  * security.ts so light modules can reuse it without pulling in that module's prompts.

@@ -77,6 +77,13 @@ export interface VerifyGap {
      * already stable.
      */
     key?: string;
+    /**
+     * The finding is this tool failing rather than the change failing - the verification
+     * command could not be spawned, or timed out, so nothing was actually checked. The turn-end
+     * gate still blocks on it (an unverified claim is an unverified claim), but `enigma verify`
+     * exits 2 instead of 1 so a caller can retry a transient failure and fix a real one.
+     */
+    tool?: boolean;
 }
 
 /** Files whose task lists are legitimate content rather than unfinished code. */
@@ -1176,9 +1183,20 @@ export function runVerifyCommand(cwd: string, command: string): VerifyGap | null
         const detail = timedOut
             ? `the project's verification command \`${command}\` did not finish within ${Math.round(TIMEOUT_MS / 1000)}s\n${output}`
             : `could not run the verification command \`${command}\`: ${result.error.message}`;
-        return { kind: "command", detail };
+        // The command never reported on the code: it did not run, or did not finish. That is
+        // this tool failing, not the change failing, and the two must not be answered with the
+        // same exit code - one is worth retrying, the other is worth fixing.
+        return { kind: "command", tool: true, detail };
     }
     if (result.status === 0) return null;
+    // The command runs under a shell, so a command that does not exist arrives as an ordinary
+    // non-zero exit rather than a spawn error: 127 on POSIX, 9009 or a "not recognized" line
+    // from cmd.exe. That is still the tool failing to run, not the code failing a check.
+    const missing = result.status === 127 || result.status === 9009 ||
+        /is not recognized as an internal or external command|command not found|: not found/i.test(output);
+    if (missing) {
+        return { kind: "command", tool: true, detail: `the verification command \`${command}\` is not available here (exited ${result.status})\n${output}` };
+    }
     return { kind: "command", detail: `the project's verification command \`${command}\` exited ${result.status}\n${output}` };
 }
 

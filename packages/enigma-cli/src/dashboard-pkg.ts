@@ -16,6 +16,7 @@
  */
 
 import { homedir } from "node:os";
+import { isOffline } from "./util";
 import { fileURLToPath } from "node:url";
 import { spawn, spawnSync } from "node:child_process";
 import { basename, dirname, join } from "node:path";
@@ -133,7 +134,7 @@ export function refreshDashboardPkg(): boolean {
  * `__dashboard-install`), so enabling the dashboard never blocks. No-op when already current.
  */
 export function spawnDashboardPkgInstall(): void {
-    if (isDashboardPkgCurrent()) return;
+    if (isDashboardPkgCurrent() || isOffline()) return;
     try {
         // Same runtime dispatch as the lint-install/update-check children: a compiled
         // binary takes the hidden command directly; node/bun on source need argv[1] first.

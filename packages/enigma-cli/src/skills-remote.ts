@@ -21,13 +21,13 @@
  */
 
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
-import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { isDir, isNewer, readJson, computeContentSha } from "./util";
 import { readConfig } from "./config";
-import { isManagedProvider } from "./agents";
+import { createHash } from "node:crypto";
+import { dirname, join } from "node:path";
 import type { SkillMeta } from "./skills";
+import { isManagedProvider } from "./agents";
+import { isDir, isNewer, readJson, isOffline, computeContentSha } from "./util";
+import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 
 // Baked-in defaults. These are the ONLY origin compiled into the binary; the
 // discovery manifest (below) can relocate every one of them WITHOUT an npm
@@ -94,6 +94,8 @@ interface DirRecord { sig: string; version?: string; }
 interface RemoteStamp {
     checkedAt?: number;
     commit?: string;
+    /** The ref that commit came from, so a pinned run is never told a commit from another ref. */
+    ref?: string;
     dirs?: Record<string, DirRecord>;
 }
 
@@ -103,6 +105,57 @@ export interface RemoteRefreshResult {
     /** Skills whose cache was created/updated by this refresh. */
     updated: string[];
     error: string | null;
+    /** The ref the skills were read from, once resolved (`main`, a tag, or a sha). */
+    ref?: string;
+    /** The commit that ref pointed at - the value to record so a run is reproducible. */
+    commit?: string;
+}
+
+/** Where the skills actually came from, for the record a caller keeps of a run. */
+export interface SkillsOrigin {
+    repo: string;
+    ref: string;
+    /** The commit last fetched at that ref, or null when nothing has been fetched. */
+    commit: string | null;
+}
+
+/**
+ * The resolved skills origin without touching the network: the cached manifest (or the
+ * baked-in defaults) plus the commit recorded by the last successful refresh. This is what
+ * `install` prints, so a run can record which skills it actually worked with - two runs on
+ * the same pinned CLI can otherwise pick up different skills from the default branch.
+ */
+export function skillsOrigin(ref?: string): SkillsOrigin {
+    const base: SkillSource = {
+        apiBase: DEFAULT_API_BASE,
+        rawBase: DEFAULT_RAW_BASE,
+        repo: DEFAULT_REPO,
+        skillsPrefix: DEFAULT_SKILLS_PREFIX,
+        ref: pinnedRef(ref),
+    };
+    const manifest = readJson<SkillsManifest>(manifestFile());
+    const source = manifest ? applyManifest(base, manifest, ref) : base;
+    // Only the commit fetched at THIS ref: reporting the last commit from another ref would
+    // make the recorded line wrong for exactly the pinned run it exists to make reproducible.
+    const stamp = readJson<RemoteStamp>(stampFile());
+    const commit = stamp?.commit && (stamp.ref ?? "main") === source.ref ? stamp.commit : null;
+    return { repo: source.repo, ref: source.ref, commit };
+}
+
+/**
+ * The ref to read skills from: an explicit `--ref` first, then the ENIGMA_SKILLS_REF dev
+ * override, then the default branch. Both pins also stop the discovery manifest from
+ * relocating the ref, so a pinned run stays pinned.
+ */
+function pinnedRef(ref?: string): string {
+    const explicit = (ref ?? "").trim();
+    if (explicit !== "") return explicit;
+    return process.env.ENIGMA_SKILLS_REF || "main";
+}
+
+/** True when the caller pinned the ref, by flag or by env. */
+function refIsPinned(ref?: string): boolean {
+    return (ref ?? "").trim() !== "" || Boolean(process.env.ENIGMA_SKILLS_REF);
 }
 
 export interface CachedSkill { name: string; src: string; meta: SkillMeta; }
@@ -111,10 +164,13 @@ export interface RefreshOptions {
     force: boolean;
     /** Versions shipped inside this package, keyed by skill name (no overlay). */
     bundledVersions: Record<string, string>;
+    /** Pin the ref to read skills from (a tag or sha), instead of the default branch. */
+    ref?: string;
 }
 
 /** True when a refresh would actually hit the network (toggle on + throttle elapsed). */
 export function shouldCheckRemote(force: boolean): boolean {
+    if (isOffline()) return false;
     if (!readConfig().config.remoteSkills) return false;
     if (force) return true;
     const stamp = readJson<RemoteStamp>(stampFile());
@@ -151,33 +207,33 @@ async function fetchManifest(): Promise<SkillsManifest | null> {
     } catch { return null; }
 }
 
-/** Overlay a validated manifest onto the default source; invalid fields are ignored, env ref always wins. */
-function applyManifest(base: SkillSource, m: SkillsManifest): SkillSource {
+/** Overlay a validated manifest onto the default source; invalid fields are ignored, a pinned ref always wins. */
+function applyManifest(base: SkillSource, m: SkillsManifest, ref?: string): SkillSource {
     const out = { ...base };
     if (isHttpsUrl(m.apiBase)) out.apiBase = stripTrailingSlash(m.apiBase);
     if (isHttpsUrl(m.rawBase)) out.rawBase = stripTrailingSlash(m.rawBase);
     const s = m.source || {};
     if (typeof s.repo === "string" && REPO_SLUG_RE.test(s.repo)) out.repo = s.repo;
     if (isSafePrefix(s.skillsPrefix)) out.skillsPrefix = s.skillsPrefix.endsWith("/") ? s.skillsPrefix : `${s.skillsPrefix}/`;
-    if (!process.env.ENIGMA_SKILLS_REF && typeof s.ref === "string" && REF_RE.test(s.ref)) out.ref = s.ref;
+    if (!refIsPinned(ref) && typeof s.ref === "string" && REF_RE.test(s.ref)) out.ref = s.ref;
     return out;
 }
 
 /**
  * Resolve the skills origin: fetch the discovery manifest, fall back to the
  * last cached manifest when offline, and to the baked-in defaults when neither
- * is available. ENIGMA_SKILLS_REF (dev override) always pins the ref.
+ * is available. An explicit ref (`--ref`) or ENIGMA_SKILLS_REF pins the ref.
  */
-async function resolveSource(): Promise<SkillSource> {
+async function resolveSource(ref?: string): Promise<SkillSource> {
     const base: SkillSource = {
         apiBase: DEFAULT_API_BASE,
         rawBase: DEFAULT_RAW_BASE,
         repo: DEFAULT_REPO,
         skillsPrefix: DEFAULT_SKILLS_PREFIX,
-        ref: process.env.ENIGMA_SKILLS_REF || "main",
+        ref: pinnedRef(ref),
     };
     const manifest = (await fetchManifest()) || readJson<SkillsManifest>(manifestFile());
-    return manifest ? applyManifest(base, manifest) : base;
+    return manifest ? applyManifest(base, manifest, ref) : base;
 }
 
 /** Every path segment must be a plain filename - rejects traversal and absolute forms. */
@@ -309,17 +365,17 @@ function pruneCache(remoteNames: Set<string>, bundledVersions: Record<string, st
  * the bundled/cached skills. Throttled via the stamp unless `force`.
  */
 export async function refreshRemoteSkills(opts: RefreshOptions): Promise<RemoteRefreshResult> {
-    if (!shouldCheckRemote(opts.force)) return { checked: false, updated: [], error: null };
+    if (!shouldCheckRemote(opts.force)) return { checked: false, updated: [], error: null, ref: pinnedRef(opts.ref) };
     const stamp = readJson<RemoteStamp>(stampFile()) || {};
     const dirs: Record<string, DirRecord> = { ...(stamp.dirs || {}) };
     // Stamp the attempt up front so an unreachable GitHub is also throttled.
     writeStamp({ ...stamp, checkedAt: Date.now() });
-    const fail = (error: string): RemoteRefreshResult => ({ checked: true, updated: [], error });
+    const fail = (error: string): RemoteRefreshResult => ({ checked: true, updated: [], error, ref: pinnedRef(opts.ref) });
     try {
         // Resolve the (relocatable) origin from the discovery manifest, then pin
         // the ref to one commit and list/fetch everything at that commit, so a
         // push mid-refresh can never mix file versions.
-        const source = await resolveSource();
+        const source = await resolveSource(opts.ref);
         const head = await fetchWithTimeout(`${source.apiBase}/repos/${source.repo}/commits/${source.ref}`);
         if (!head.ok) return fail(`GitHub API ${head.status}`);
         const commit = String(((await head.json()) as { sha?: string; }).sha || "");
@@ -361,8 +417,8 @@ export async function refreshRemoteSkills(opts: RefreshOptions): Promise<RemoteR
         }));
 
         pruneCache(new Set(skills.keys()), opts.bundledVersions, dirs);
-        writeStamp({ checkedAt: Date.now(), commit, dirs });
-        return { checked: true, updated: updated.sort(), error: null };
+        writeStamp({ checkedAt: Date.now(), commit, ref: source.ref, dirs });
+        return { checked: true, updated: updated.sort(), error: null, ref: source.ref, commit };
     } catch (err) {
         const msg = (err as Error).name === "AbortError" ? "timed out" : (err as Error).message || "network error";
         return fail(msg);

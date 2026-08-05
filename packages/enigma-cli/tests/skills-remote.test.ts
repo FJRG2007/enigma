@@ -171,3 +171,69 @@ test("sha cache: a gated (not newer) skill is not re-fetched on an unchanged tre
     await refreshRemoteSkills({ force: true, bundledVersions: { "alpha-policy": "1.0.0" } });
     expect(stub.rawCalls()).toBe(after);
 });
+
+// --- pinning the ref (`install --ref <tag|sha>`) ---------------------------------------
+
+const TAG_COMMIT = "b".repeat(40);
+
+/**
+ * A fake GitHub that answers for BOTH `main` and one tag, so a test can assert which ref
+ * the refresh actually asked for. The manifest claims `ref: main`, which a pin must beat.
+ */
+function stubRefAwareFetch(tag: string, skills: FakeSkill[]): { refsAsked: () => string[]; } {
+    const files = new Map<string, string>();
+    const tree: Array<{ path: string; type: string; sha: string; size: number; }> = [];
+    const refsAsked: string[] = [];
+    for (const s of skills) {
+        const { md, meta } = sealedSkill(s);
+        for (const [rel, body] of [["SKILL.md", md], ["skill.json", meta]] as const) {
+            tree.push({ path: `${PREFIX}/${s.name}/${rel}`, type: "blob", sha: `blob-${s.name}-${rel}`, size: body.length });
+            for (const commit of [COMMIT, TAG_COMMIT]) {
+                files.set(`https://raw.githubusercontent.com/FJRG2007/enigma/${commit}/${PREFIX}/${s.name}/${rel}`, body);
+            }
+        }
+    }
+    globalThis.fetch = (async (url: string | URL) => {
+        const u = String(url);
+        if (u.endsWith("/skills-manifest.json")) return Response.json({
+            schema: 1,
+            source: { repo: "FJRG2007/enigma", ref: "main", skillsPrefix: `${PREFIX}/` },
+        });
+        const commits = /\/repos\/FJRG2007\/enigma\/commits\/(.+)$/.exec(u);
+        if (commits) {
+            refsAsked.push(commits[1]!);
+            return Response.json({ sha: commits[1] === tag ? TAG_COMMIT : COMMIT });
+        }
+        const trees = /\/git\/trees\/([0-9a-f]{40})\?recursive=1$/.exec(u);
+        if (trees) return Response.json({ tree });
+        const body = files.get(u);
+        return body !== undefined ? new Response(body) : new Response("not found", { status: 404 });
+    }) as typeof fetch;
+    return { refsAsked: () => refsAsked };
+}
+
+test("--ref pins the source ref over the discovery manifest and reports the commit it resolved to", async () => {
+    const { skillsOrigin } = await import("../src/skills-remote");
+    const stub = stubRefAwareFetch("v9.9.9", [{ name: "alpha-policy", version: "1.1.0" }]);
+    const r = await refreshRemoteSkills({ force: true, bundledVersions: { "alpha-policy": "1.0.0" }, ref: "v9.9.9" });
+    expect(r.error).toBeNull();
+    expect(stub.refsAsked()).toEqual(["v9.9.9"]);  // the manifest's `main` must not win over a pin
+    expect(r.ref).toBe("v9.9.9");
+    expect(r.commit).toBe(TAG_COMMIT);             // the value a run records to be reproducible
+    expect(r.updated).toEqual(["alpha-policy"]);
+
+    // The recorded origin is readable afterwards with no network...
+    expect(skillsOrigin("v9.9.9")).toEqual({ repo: "FJRG2007/enigma", ref: "v9.9.9", commit: TAG_COMMIT });
+    // ...and never claims a commit for a ref that was not the one fetched.
+    expect(skillsOrigin("v1.2.3").commit).toBeNull();
+    expect(skillsOrigin().commit).toBeNull();
+});
+
+test("without a pin the manifest's ref is still honoured", async () => {
+    const { skillsOrigin } = await import("../src/skills-remote");
+    const stub = stubRefAwareFetch("v9.9.9", [{ name: "alpha-policy", version: "1.1.0" }]);
+    const r = await refreshRemoteSkills({ force: true, bundledVersions: { "alpha-policy": "1.0.0" } });
+    expect(stub.refsAsked()).toEqual(["main"]);
+    expect(r.ref).toBe("main");
+    expect(skillsOrigin().commit).toBe(COMMIT);
+});

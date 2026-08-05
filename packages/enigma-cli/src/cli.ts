@@ -91,18 +91,24 @@ interface CliOptions extends skillsMod.InstallOptions {
     expose: boolean;
     /** `dashboard token`: mint a fresh token, killing every link handed out earlier. */
     newToken: boolean;
+    /** `guard`: scan the files a commit range touched (`<base>..<head>`) instead of the index. */
+    range: string | null;
+    /** `guard` / `verify`: emit one JSON document instead of human text. */
+    json: boolean;
 }
 
 function parseArgs(argv: string[]): CliOptions {
     const opts: CliOptions = {
         command: null, positionals: [], passthrough: [], tool: acct.DEFAULT_TOOL,
         scope: null, agents: [], allAgents: false, skills: [],
-        skillsOnly: false, memoryOnly: false, prune: true, keepModified: false,
+        skillsOnly: false, memoryOnly: false, prune: true, keepModified: false, hooks: null, noStatusline: false,
+        ref: null, assetsFrom: null, offline: false,
         bypass: null, noBypass: false, outputStyle: null, minimalCode: null, dashboard: null, promptSecretGuard: null,
         force: false, all: false, yes: false, login: false, dryRun: false, help: false, version: false,
         stats: false, retrieve: null, compressType: null, clear: false,
         preset: null, token: null, base: null, providerModel: null,
         port: null, apiKey: null, apiAccount: null, apiProfile: null, apiPack: null, expose: false, newToken: false,
+        range: null, json: false,
     };
     for (let i = 0; i < argv.length; i++) {
         const a = argv[i]!;
@@ -124,6 +130,15 @@ function parseArgs(argv: string[]): CliOptions {
             case "--memory-only": opts.memoryOnly = true; break;
             case "--no-prune": opts.prune = false; break;
             case "--keep-modified": opts.keepModified = true; break;
+            case "--no-hooks": opts.hooks = []; break;
+            case "--no-statusline": opts.noStatusline = true; break;
+            case "--hooks":
+                try { opts.hooks = skillsMod.parseHookClasses(next()); }
+                catch (err) { console.error((err as Error).message); process.exit(2); }
+                break;
+            case "--ref": opts.ref = next(); break;
+            case "--assets-from": opts.assetsFrom = next(); break;
+            case "--offline": opts.offline = true; break;
             case "--bypass": opts.bypass = (opts.bypass || []).concat(next().split(",")); break;
             case "--no-bypass": opts.noBypass = true; break;
             case "--output-style": opts.outputStyle = next(); break;
@@ -147,6 +162,8 @@ function parseArgs(argv: string[]): CliOptions {
             case "--retrieve": opts.retrieve = next(); break;
             case "--type": opts.compressType = next(); break;
             case "--clear": opts.clear = true; break;
+            case "--range": opts.range = next(); break;
+            case "--json": opts.json = true; break;
             case "--force": opts.force = true; break;
             case "--login": opts.login = true; break;
             case "-y": case "--yes": opts.yes = true; break;
@@ -175,7 +192,10 @@ Commands:
   update               Fetch the latest skills from GitHub (no package release
                        needed), sync deployments, and self-update enigma-cli
   security             Set up git security hooks in the current repo
-  guard [--all]        Run the commit guard (staged files, or --all for every tracked file)
+  guard [--all]        Run the commit guard: staged files, --all for every tracked file, or
+                       --range <base>..<head> for what a commit range touched (pre-push/CI).
+                       --json emits one document per run; exits 1 on findings, 2 if it could
+                       not run at all
   config [key val]     Configure settings: no args opens the interactive menu;
                        'config <key> <on|off> [-g|-l]' sets one (e.g. config claude-attribution on)
   <tool> [account]     Launch a tool (claude | codex | opencode) with an account's
@@ -237,8 +257,9 @@ Commands:
                        added for convention violations, and runs the configured
                        verification command; --all sweeps every tracked file;
                        parity <source> <target> compares a codebase against a port or
-                       clone of it and reports what was never carried over. The same check
-                       runs automatically at turn end ('config verify on|off')
+                       clone of it and reports what was never carried over. --json emits
+                       one document; exits 1 on findings, 2 when the check could not run.
+                       The same check runs at turn end ('config verify on|off')
   mcp                  Run the context-compression MCP server over stdio (tools:
                        enigma_compress, enigma_retrieve, enigma_stats). Usually launched
                        by an agent, not by hand; enable deployment with 'config compress on'
@@ -308,11 +329,16 @@ Install options:
       --all            Target every supported agent, ignoring detection
       --skills-only    Only skill folders   --memory-only  Only memory files
       --no-prune       Keep orphaned skills  --keep-modified  Don't overwrite local edits
+      --hooks <cls>    Which hooks to wire: post-edit, stop | all | none
+      --no-hooks       Wire none of them    --no-statusline  Leave statusLine alone
       --bypass <names> Force approval-prompt bypass (claude,codex,opencode | all | none)
       --no-bypass      Skip permission bypass for this run (on by default)
       --output-style <off|lite|full|ultra>  Token-efficient output level (asked if omitted)
       --minimal-code <off|lite|full|ultra>  Anti-overengineering level (asked if omitted)
       --prompt-secret-guard  Block secrets in Claude chat prompts (opt-in; off by default)
+      --ref <tag|sha>  Pin the skills ref (the resolved commit is printed)
+      --assets-from <dir>  Install from a staged assets tree (implies --offline)
+      --offline        Make no network call at all
       --dry-run        Show the plan without writing
 
 Security options:
@@ -323,6 +349,16 @@ Account options:
 
 Global:
   -y, --yes            Non-interactive   -h, --help   -v, --version
+  'enigma <command> --help' prints that command's own usage, flags and exit codes.
+
+Environment:
+  ENIGMA_AGENT_<NAME>  Absolute path to an agent the gate should use when it is installed
+                       off PATH (ENIGMA_AGENT_CLAUDE, _CODEX, _OPENCODE, _ROVODEV, _PI).
+                       The daemon runs the pipeline, so set it before the daemon starts
+  ENIGMA_BIN_PATH      Use this enigma binary instead of downloading one from the release
+  ENIGMA_SKILLS_REF    Default ref for remote skill updates (--ref overrides it)
+  ENIGMA_OFFLINE=1     No enigma command reaches the network (what install --offline sets)
+  ENIGMA_API_KEY       Bearer key for 'enigma api'
 
 Examples:
   enigma                              # interactive
@@ -342,6 +378,245 @@ Examples:
   enigma profile use work             # now 'enigma claude'/'enigma codex' use them
   enigma issue                        # report a bug with your environment prefilled
 `);
+}
+
+/**
+ * Per-command usage, so `enigma <cmd> --help` answers about THAT command instead of
+ * printing the whole manual. Integrating against a CLI blind is the case this serves:
+ * the general help does not say which flags a subcommand takes, or what it exits with.
+ * Commands with their own help path are absent on purpose (gate, ssh, improve, qa).
+ */
+const COMMAND_HELP: Record<string, string> = {
+    install: `usage: enigma install [options]
+Deploy the policy skills, the memory file and the slash commands to your agents.
+
+  -g, --global            Install at user level (default when non-interactive)
+  -l, --local             Install into the current project
+  -a, --agent <names>     Target agent(s), comma-separated (default: auto-detect)
+  -s, --skill <names>     Only these skills (default: all)
+      --all               Every supported agent, ignoring detection
+      --skills-only       Skill folders only     --memory-only  Memory files only
+      --no-prune          Keep orphaned skills   --keep-modified  Don't overwrite local edits
+      --hooks <classes>   Which hooks to wire: post-edit, stop | all | none
+      --no-hooks          Wire none of them (same as --hooks none)
+      --no-statusline     Don't set Claude Code's statusLine
+      --bypass <names>    Force approval-prompt bypass (claude,codex,opencode | all | none)
+      --no-bypass         Don't touch permissions.defaultMode
+      --output-style <off|lite|full|ultra>   Token-efficient output level
+      --minimal-code <off|lite|full|ultra>   Anti-overengineering level
+      --prompt-secret-guard   Block secrets in Claude chat prompts (opt-in)
+      --ref <tag|sha>     Pin the skills ref, and report the commit it resolved to
+      --assets-from <dir> Install from a staged assets tree (skills/, memory/, commands/)
+      --offline           Make no network call at all: no skill check, no update notice,
+                          no background install of the linter or the dashboard UI. Set
+                          ENIGMA_OFFLINE=1 to hold for every enigma command in the image
+      --dry-run           Show the plan without writing
+  -y, --yes               Non-interactive
+
+Hooks and settings: --hooks/--no-hooks apply to this run only. To keep a hook off for
+good use 'enigma config verify|guardrails|trim|lint off'; --assets-from implies --offline.
+
+  enigma install --global --all -y
+  enigma install --skills-only --no-hooks --offline
+  enigma install --ref v1.35.2 -y`,
+
+    update: `usage: enigma update [--ref <tag|sha>]
+Fetch newer skills from GitHub (no npm release needed), sync them into every existing
+deployment, then self-update enigma-cli when a newer release is published. Each phase
+is independent: an unreachable GitHub or npm never blocks the others.
+
+      --ref <tag|sha>   Read skills from that ref instead of the default branch`,
+
+    guard: `usage: enigma guard [--all | --range <base>..<head>] [--json]
+The commit guard: blocks committed secrets, .env files and dependency directories.
+
+  (no flag)               The staged files - the pre-commit hook's view
+      --all               Every tracked file - the CI sweep
+      --range <a>..<b>    The files a commit range touched, read at that range's head.
+                          This is the post-commit view (pre-push hooks, CI on a branch):
+                          nothing is staged any more, and --all would report findings
+                          the change never introduced. A lone ref means <ref>..HEAD.
+      --json              One JSON document: {ok, exit, mode, files, error, findings[]}
+
+Exit: 0 clean, 1 blocking findings, 2 the guard could not run (no repo, bad range).
+Configure the checks in .githooks/enigma-guard.json or ~/.enigma-guard.json.
+
+  enigma guard --range origin/main..HEAD --json`,
+
+    verify: `usage: enigma verify [--all] [--json]
+       enigma verify parity <source-dir> <target-dir> [--json]
+Check that work reported as finished actually is: incompleteness markers in the produced
+code, convention violations on the lines it added, and the configured verification command.
+
+  (no argument)   The current change
+      --all       Every tracked file
+      --json      One JSON document: {ok, exit, findings[], notes[], ranCommand, ...}
+      parity      Compare a codebase against a port/clone and report what was never carried over
+
+Exit: 0 nothing found, 1 findings to fix, 2 the check could not run at all - no repository,
+bad arguments, or the verification command was missing from this machine or timed out. The
+1/2 split is what lets a caller retry the second and act on the first. A failure INSIDE the
+command (a flaky network during your tests) still exits 1: from out here it is indistinguishable
+from a real one, so it is reported as a finding rather than guessed at.`,
+
+    guardrails: `usage: enigma guardrails [list | check <file> | stats [days] | disable <id> | enable <id> | remove <id>]
+Convention rules enforced by a post-edit hook (UUID keys, Prisma as the default ORM, ...).
+
+  list              Every rule with its state (the default)
+  check <file>      Run every rule against one file; exits 1 on a blocking violation
+  stats [days]      Which conventions the agent keeps breaking
+  disable|enable    Toggle a built-in rule      remove <id>  Drop a custom rule
+
+Toggle the whole feature with 'enigma config guardrails on|off'.`,
+
+    trim: `usage: enigma trim [--all]
+Remove the blank line agents leave at the end of a file.
+
+  (no argument)   Fix the staged files and re-stage them (the pre-commit step)
+      --all       Sweep every tracked file
+
+Only a file with content followed by blank lines is touched. It also runs after each
+agent edit; turn that off with 'enigma config trim off'.`,
+
+    security: `usage: enigma security [--force] [-y]
+Install the portable git hooks in the current repo (.githooks + core.hooksPath): the
+commit guard, the convention guardrails and the EOF trimmer.
+
+      --force   Override an existing core.hooksPath
+  -y, --yes     Non-interactive (enables every protection)`,
+
+    config: `usage: enigma config [<key> <value>] [-g | -l]
+No arguments opens the interactive menu; 'config <key> <on|off>' sets one.
+
+  -g, --global   Write to ~/.enigma.json (default)
+  -l, --local    Write to this project's .enigma.json
+
+Keys: commit-emoji, update-notifier, auto-sync, remote-skills, fullscreen, statusline,
+parallel-subagents, output-style, minimal-code, compress, recall, codegraph, gate,
+guardrails, trim, verify, dashboard, dashboard-bind, claude-attribution, claude-survey,
+claude-trust, gh-telemetry, permission-bypass, bypass-claude, bypass-codex, bypass-opencode.`,
+
+    account: `usage: enigma account <subcommand> [--tool <name>]
+Multi-login without logging out. Defaults to Claude Code; --tool targets another.
+
+  list                      List accounts (the active one marked)
+  add <name> [--login]      Create an account, then optionally log in
+  use <name>                Set the active account
+  login|run <name>          Launch the tool with that account
+  rename <old> <new>        Rename an account (its config dir moves)
+  remove <name> [-y]        Delete an account
+  provider <name>           Point Claude Code at another backend:
+                            --preset <id> | --base <url> [--model <id>] --token <key>, or --clear
+  sessions                  List reusable Claude logins (Claude only)
+  transfer <name> [src]     Reuse a live login in a signed-out account (Claude only)`,
+
+    profile: `usage: enigma profile <subcommand>
+Group one account per tool under a profile; the active profile drives launches.
+
+  list                        List profiles and their mappings
+  add <name>                  Create a profile
+  use <name|none>             Activate a profile (none = off)
+  set <name> <tool> <acct>    Pin a tool's account in the profile
+  unset <name> <tool>         Drop a tool from the profile
+  rename <old> <new>          Rename a profile (mappings stay)
+  remove <name>               Delete a profile (accounts stay)`,
+
+    skills: `usage: enigma skills <subcommand>
+List skills and choose where each one deploys.
+
+  list                      Every skill with its state
+  disable <name> [agent]    Remove everywhere (or from one agent) and skip in installs
+  enable <name> [agent]     Re-deploy globally, or to one agent
+  discard|restore <name>    Aliases of disable/enable`,
+
+    compress: `usage: enigma compress [file] [--type <t>] [--retrieve <hash>] [--stats] [--clear]
+Compress JSON/logs/text to fewer tokens, reversibly (CCR). Reads a file or stdin.
+
+      --retrieve <hash>   Restore an original behind a CCR hash
+      --stats             Cumulative savings
+      --clear             Wipe all CCR data (stats, history, cache)
+      --type <t>          Force the content type instead of auto-detecting`,
+
+    api: `usage: enigma api [--port <n>] [--api-key <k>] [--tool <t>] [--account|--profile|--pack <name>]
+Serve a local OpenAI-compatible API backed by your installed coding agents. Loopback only.
+Endpoints under /v1 (chat/completions, messages, models, sessions); pick the backend per
+request with the model field (claude-sonnet-5 | codex | opencode).
+
+      --port <n>       Default: config apiPort, else 8000
+      --api-key <k>    Required bearer key (or ENIGMA_API_KEY)
+      --tool <t>       Default backend
+      --account|--profile|--pack <name>   Context every request runs under`,
+
+    dashboard: `usage: enigma dashboard [stop | token [--new]] [--expose]
+The local savings dashboard (http://enigma, or http://localhost:24282).
+
+  stop             Stop whichever dashboard is serving (including a background daemon)
+  token [--new]    Print or rotate the access token exposing requires
+      --expose     Bind every interface for this run (token required)
+
+'config dashboard always' keeps a background daemon; 'config dashboard-bind lan' makes
+exposure stick. With no browser it prints the SSH tunnel command instead.`,
+
+    recall: `usage: enigma recall <action>
+Local session memory built from your own agent transcripts (opt-in).
+
+  status | sync | search <q> | list | show <id> | timeline <id> | sessions | context | prune | clear`,
+
+    codegraph: `usage: enigma codegraph <action>
+Native code intelligence over MCP - no external tool (opt-in).
+
+  status | on | off | index [path] | projects | arch [project] | search <name>`,
+
+    autoskills: `usage: enigma autoskills [path] [--dry-run] [-y]
+Detect the project's tech stack and install the matching community stack skills.
+Separate from the policy skills, which 'enigma install' owns.`,
+
+    pack: `usage: enigma pack <subcommand>
+Optional, isolated harness bundles. Each runs in its own agent context, so its skills
+and commands never load into your normal agent.
+
+  list | install <id> | remove <id> | update <id> | setup <id> | use <id> <acct|-> | run <id> [account]`,
+
+    resources: `usage: enigma resources [action]
+System cleanup: status (the default), wsl, docker, free-port <PORT>, kill <PID>.`,
+
+    "fix-path": `usage: enigma fix-path [tool] [-g | -l]
+Detect a tool's install path (even off PATH) and repair its launch command so
+'enigma <tool>' works. With no tool, fixes every supported one.`,
+
+    issue: `usage: enigma issue [bug | feature]
+Open a prefilled GitHub issue with your OS, versions, terminal and detected agents
+already filled in. Default: bug.`,
+
+    mcp: `usage: enigma mcp
+Run enigma's MCP server over stdio (tools: enigma_compress, enigma_retrieve, enigma_stats,
+enigma_recall*). Normally launched by an agent, not by hand. Register it with
+'enigma config compress on' (or recall / codegraph) and re-run 'enigma install'.`,
+
+    statusline: `usage: enigma statusline
+Render the agent status bar (badge, model, context, cost, live gate progress). Reads the
+agent's status payload on stdin; wired automatically unless you pass --no-statusline.`,
+
+    seal: "usage: enigma seal\nRecompute the skill content hashes. Run it after editing any SKILL.md or skill.json.",
+    check: "usage: enigma check\nIntegrity gate: verify the skills are well-formed and sealed. Exits non-zero when they are not.",
+};
+
+/** Launch commands share one help text; they take an account and forward args after `--`. */
+function launchHelp(name: string): string {
+    return `usage: enigma ${name} [account] [-- <args for ${name}>]
+Launch ${name} with an account's config (resolution: explicit > active profile > tool active).
+Deployed skills are auto-synced first ('enigma config auto-sync off' to stop that).
+
+Everything after '--' goes to ${name} verbatim, so '${name} --help' is:
+  enigma ${name} -- --help`;
+}
+
+/** Prints one command's usage. Returns false when the command has no dedicated help. */
+function printCommandHelp(command: string): boolean {
+    const text = COMMAND_HELP[command] ?? (acct.isToolName(command) || packs.getPack(command) ? launchHelp(command) : null);
+    if (text === null) return false;
+    console.log(`\n${text}\n`);
+    return true;
 }
 
 /**
@@ -478,14 +753,15 @@ function seedAccount(tool: string, dir: string): void {
  * enigma-cli when a newer release is published. Each phase is independent and
  * failure-tolerant, so an unreachable GitHub or npm never blocks the others.
  */
-async function runUpdateCli(version: string): Promise<void> {
+async function runUpdateCli(version: string, ref?: string | null): Promise<void> {
     if (skillsMod.shouldCheckRemote(true)) {
         const s = p.spinner();
-        s.start("Checking GitHub for skill updates...");
-        const r = await skillsMod.refreshSkillsFromGitHub(true);
+        s.start(`Checking GitHub for skill updates${ref ? ` at ${ref}` : ""}...`);
+        const r = await skillsMod.refreshSkillsFromGitHub(true, ref ?? undefined);
         if (r.error) s.stop(`Skill update check failed (${r.error}); keeping bundled/cached skills.`);
         else if (r.updated.length) s.stop(`Skill update(s) from GitHub: ${r.updated.join(", ")}.`);
         else s.stop("Skills are up to date with GitHub.");
+        if (r.commit) p.log.info(`Skills source: ${skillsMod.skillsOrigin(ref ?? undefined).repo}@${r.ref} (commit ${r.commit.slice(0, 7)}).`);
     } else {
         p.log.info("Remote skill updates are off (enable with 'enigma config remote-skills on').");
     }
@@ -1557,38 +1833,65 @@ function runGuardrailsCli(positionals: string[]): number {
  * for evidence of unfinished work (and runs the configured verification command);
  * `--all` sweeps every tracked file; `parity <source> <target>` compares a codebase against
  * a port or clone of it and reports what was never carried over. Returns an exit code, so
- * it doubles as a CI/pre-merge check.
+ * it doubles as a CI/pre-merge check:
+ *   0 = nothing found, 1 = findings to fix, 2 = the check itself could not run.
+ * The 1/2 split is what lets a caller retry a transient tool failure (the command could not
+ * be spawned, no repository to read) instead of treating it as a real finding and vice versa.
  */
-async function runVerifyCli(positionals: string[], all: boolean): Promise<number> {
+async function runVerifyCli(positionals: string[], all: boolean, json: boolean): Promise<number> {
     const [sub] = positionals;
+    const emit = (payload: Record<string, unknown>, exit: number): number => {
+        console.log(JSON.stringify({ tool: "enigma-verify", ok: exit === 0, exit, ...payload }, null, 2));
+        return exit;
+    };
     if (sub === "parity") {
         const [, source, target] = positionals;
-        if (!source || !target) { console.error("Usage: enigma verify parity <source-dir> <target-dir>"); return 1; }
+        if (!source || !target) {
+            if (json) return emit({ mode: "parity", error: "usage: enigma verify parity <source-dir> <target-dir>" }, 2);
+            console.error("Usage: enigma verify parity <source-dir> <target-dir>"); return 2;
+        }
         for (const dir of [source, target]) {
-            if (!isDir(dir)) { console.error(`Not a directory: ${dir}`); return 1; }
+            if (!isDir(dir)) {
+                if (json) return emit({ mode: "parity", error: `not a directory: ${dir}` }, 2);
+                console.error(`Not a directory: ${dir}`); return 2;
+            }
         }
         const { parityReport, formatParity } = await import("./verify-parity");
         const report = parityReport(source, target);
+        // A comparison that could not be made at all is the tool failing; one that was made and
+        // found gaps is a finding.
+        const exit = report.empty || report.truncated ? 2 : report.absentTotal || report.partialTotal ? 1 : 0;
+        if (json) return emit({ mode: "parity", ...report }, exit);
         console.log(formatParity(report));
-        // A comparison that could not be made in full is a failure, not a pass.
-        return report.empty || report.truncated || report.absentTotal || report.partialTotal ? 1 : 0;
+        return exit;
     }
     if (sub && sub !== "check") {
+        if (json) return emit({ error: `unknown verify command '${sub}'` }, 2);
         console.error(`Unknown verify command '${sub}'. Use: (no argument) | --all | parity <source> <target>.`);
-        return 1;
+        return 2;
     }
     const { collectGaps, formatGaps, verifyCommandOf } = await import("./verify");
     const command = verifyCommandOf();
     // Conventions are part of "is this change finished": the same rules the turn-end hook enforces,
     // so running the command by hand answers the same question the gate would.
-    const { gaps, notes, truncated, capped, noRepo, ranCommand } = collectGaps(process.cwd(), { all, conventions: !all });
+    const { gaps, notes, truncated, capped, noRepo, ranCommand, scanned } = collectGaps(process.cwd(), { all, conventions: !all });
+    const scope = all ? "all" : "change";
+    if (json) {
+        const broke = gaps.filter((g) => g.tool);
+        return emit({
+            mode: "check", scope, ranCommand, command: command || null, scanned, truncated, capped,
+            error: noRepo ? "not a git repository, so there is no change to check"
+                : broke.length ? broke[0]!.detail : null,
+            findings: gaps, notes: notes ?? [],
+        }, noRepo || broke.length ? 2 : gaps.length ? 1 : 0);
+    }
     // Announced after the fact, because the scan decides whether it runs at all: saying it ran
     // on a turn that produced nothing would be the same kind of unearned reassurance this
     // command exists to remove.
     if (ranCommand) console.log(`Ran the verification command: ${command}`);
     if (noRepo) {
         console.error("enigma verify: this directory is not a git repository, so there is no change to check. Nothing was verified.");
-        return 1;
+        return 2;
     }
     // Never present a partial scan, or a partial list, as the whole picture.
     const partial = capped ? " (only the first findings are listed - there are more)"
@@ -1601,7 +1904,9 @@ async function runVerifyCli(positionals: string[], all: boolean): Promise<number
         return 0;
     }
     console.error(`enigma verify: ${gaps.length} item(s) suggest the work is not finished${partial}:\n${formatGaps(gaps)}${suggestions}`);
-    return 1;
+    // A gap the tool raised about itself means nothing was actually checked, so it exits 2 -
+    // the caller can retry that, where a real finding has to be fixed first.
+    return gaps.some((g) => g.tool) ? 2 : 1;
 }
 
 /**
@@ -1930,6 +2235,11 @@ export async function run(argv: string[]): Promise<void> {
     // and installs nothing. Gating on stdout alone made that failure look like a broken
     // selector; requiring stdin too takes the non-interactive path, which installs the
     // defaults instead of giving up.
+    // Published to the environment rather than passed down, because the calls it has to
+    // stop are detached children (the linter/dashboard installs, the update check) that
+    // inherit it and stand down on their own. A container can set it directly for every
+    // enigma invocation, not just this one.
+    if (opts.offline || opts.assetsFrom) process.env.ENIGMA_OFFLINE = "1";
     const interactive = Boolean(process.stdout.isTTY) && Boolean(process.stdin.isTTY) && !opts.yes;
     const version = process.env.ENIGMA_VERSION || PKG.version || "0.0.0";
     // Statusline: fast, silent badge for an agent's status bar (e.g. Claude Code). No
@@ -1940,14 +2250,25 @@ export async function run(argv: string[]): Promise<void> {
     // explains it. Handled before the generic --help so `improve --help` shows this.
     if (opts.command === "improve") { printImproveHelp(); await notifyUpdate(version, interactive); return; }
     if (opts.command === "qa") { printQaHelp(); await notifyUpdate(version, interactive); return; }
-    if (opts.help || opts.command === "help") { printHelp(); await notifyUpdate(version, interactive); return; }
+    // `enigma <cmd> --help` answers about that command; `enigma help` (or --help with no
+    // command) prints the manual. A command with no dedicated page falls back to it.
+    if (opts.help && opts.command && opts.command !== "help" && printCommandHelp(opts.command)) {
+        await notifyUpdate(version, interactive);
+        return;
+    }
+    if (opts.help || opts.command === "help") {
+        const topic = opts.command === "help" ? opts.positionals[0] : undefined;
+        if (!topic || !printCommandHelp(topic)) printHelp();
+        await notifyUpdate(version, interactive);
+        return;
+    }
     if (opts.version || opts.command === "version") { console.log(version); await notifyUpdate(version, interactive); return; }
 
     // Direct (non-menu) maintenance and feature commands. Machine/CI commands
     // (seal, check, guard, config) skip the update notice to keep their output clean.
     if (opts.command === "seal") return skillsMod.sealSources();
     if (opts.command === "check") return skillsMod.checkSources();
-    if (opts.command === "guard") { process.exit(runGuardCli(opts.all)); }
+    if (opts.command === "guard") { process.exit(runGuardCli({ all: opts.all, range: opts.range ?? "", json: opts.json })); }
     if (opts.command === "config") { process.exit(await runConfigCli(opts.positionals, opts.scope, interactive)); }
     if (opts.command && acct.isToolName(opts.command)) {
         // Resolve the account up front (explicit > active profile > tool active) so
@@ -1974,7 +2295,7 @@ export async function run(argv: string[]): Promise<void> {
         const { runTrimScanCli } = await import("./trim");
         process.exit(await runTrimScanCli(opts.all));
     }
-    if (opts.command === "verify") { process.exit(await runVerifyCli(opts.positionals, opts.all)); }
+    if (opts.command === "verify") { process.exit(await runVerifyCli(opts.positionals, opts.all, opts.json)); }
     if (opts.command === "dashboard") { process.exit(await runDashboardCli(version, opts)); }
     if (opts.command === "fix-path") { process.exit(runFixPathCli(opts.positionals[0], opts.scope)); }
     if (opts.command === "resources") { process.exit(await runResourcesCli(opts.positionals)); }
@@ -1985,7 +2306,7 @@ export async function run(argv: string[]): Promise<void> {
 
     if (opts.command === "update") {
         p.intro("enigma - update");
-        await runUpdateCli(version);
+        await runUpdateCli(version, opts.ref);
         p.outro("Done.");
         return;
     }
@@ -1993,7 +2314,7 @@ export async function run(argv: string[]): Promise<void> {
         p.intro("enigma - install agent skills");
         await skillsMod.installSkills(opts, interactive);
         p.outro("Done.");
-        await notifyUpdate(version, interactive);
+        await notifyUpdate(version, interactive); // stands down by itself when ENIGMA_OFFLINE is set
         return;
     }
     if (opts.command === "security") {

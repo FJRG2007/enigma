@@ -61,6 +61,12 @@ jobs:
       - name: Test guard config
         run: bun test tests/guard-config.test.ts
         working-directory: packages/enigma-cli
+      - name: Test commit guard scan modes
+        run: bun test tests/guard.test.ts
+        working-directory: packages/enigma-cli
+      - name: Test install options
+        run: bun test tests/install-options.test.ts
+        working-directory: packages/enigma-cli
       - name: Test tool-path repair
         run: bun test tests/tool-path.test.ts
         working-directory: packages/enigma-cli

@@ -1061,3 +1061,20 @@ test("a source block keys on the address, not the sha, and spends its own budget
     // And it still stands down after two blocks on that one issue, so the turn is never trapped.
     expect(runVerifyHook(payload(dir, "Added the co-author.", hookArgs))).toBe(0);
 });
+
+test("a command that is missing here is the tool failing, not the change failing", async () => {
+    const { runVerifyCommand } = await import("../src/verify");
+    // A real failure: the command ran and reported on the code. That is a finding to fix.
+    const failed = runVerifyCommand(process.cwd(), `"${process.execPath}" -e "process.exit(3)"`);
+    expect(failed?.kind).toBe("command");
+    expect(failed?.tool).toBeUndefined();
+
+    // Nothing ran, so nothing was checked. The commands run under a SHELL, so this arrives as
+    // an ordinary non-zero exit (127 / 9009 / "not recognized"), not a spawn error - which is
+    // why matching on that is what keeps `enigma verify` able to exit 2 instead of 1.
+    const missing = runVerifyCommand(process.cwd(), "enigma-no-such-command-xyz --run");
+    expect(missing?.kind).toBe("command");
+    expect(missing?.tool).toBe(true);
+
+    expect(runVerifyCommand(process.cwd(), `"${process.execPath}" -e "process.exit(0)"`)).toBeNull();
+});

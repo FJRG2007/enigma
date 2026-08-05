@@ -24,7 +24,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { spawn, spawnSync } from "node:child_process";
-import { isDir, readJson, resolveBin } from "./util";
+import { isDir, readJson, isOffline, resolveBin } from "./util";
 
 /** Last-known gh state: enabled/disabled, or null when gh could not tell us. */
 export type GhTelemetry = boolean | null;
@@ -162,7 +162,7 @@ const STAR_REPO = "FJRG2007/enigma";
  * failure, or any spawn error is swallowed. Opt out with ENIGMA_NO_STAR=1.
  */
 export function starRepoInBackground(): void {
-    if (process.env.ENIGMA_NO_STAR) return;
+    if (process.env.ENIGMA_NO_STAR || isOffline()) return;
     const bin = ghBin();
     if (!bin) return;
     try {

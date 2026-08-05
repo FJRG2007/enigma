@@ -229,7 +229,10 @@ enigma install         Install/update agent skills
 enigma update          Fetch the latest skills from GitHub, sync deployments,
                        and self-update enigma-cli when a newer release exists
 enigma security        Set up git security hooks in the current repo
-enigma guard [--all]   Run the commit guard (staged files, or all tracked)
+enigma guard [--all]   Run the commit guard: staged files, --all for all tracked, or
+                       --range <base>..<head> for what a commit range touched (pre-push,
+                       CI). --json emits one document; exits 1 on findings, 2 if it
+                       could not run at all
 enigma config [k v]    Show or set runtime toggles (e.g. config commit-emoji off)
 enigma <tool> [acct]   Launch claude | codex | opencode with an account's config
                        (explicit > active profile > tool active; auto-syncs first)
@@ -243,7 +246,8 @@ enigma compress [file] Compress JSON/logs/text to fewer tokens (reversible);
 enigma verify          Check that work reported as finished actually is: scans the change for
                        unfinished work and broken conventions, and runs your verification
                        command. parity <src> <dst> compares a codebase against a port of it.
-                       Also runs at turn end
+                       --json emits one document; exits 1 on findings, 2 when the check
+                       could not run. Also runs at turn end
 enigma mcp             Run the context-compression MCP server over stdio
 enigma api             Serve a local OpenAI-compatible API for your agents (Claude Code, and
                        Codex/OpenCode where installed); route per request by the model field.
@@ -269,8 +273,31 @@ enigma help | version
     --bypass <names> Force approval-prompt bypass (claude,codex,opencode | all | none)
     --no-bypass      Skip permission bypass for this run (it is on by default)
     --output-style <off|lite|full|ultra>  Token-efficient output level (asked if omitted)
+    --hooks <classes>    Which hooks to wire: post-edit, stop | all | none
+    --no-hooks           Wire none of them      --no-statusline  Leave statusLine alone
+    --ref <tag|sha>      Pin the skills ref (the resolved commit is printed)
+    --assets-from <dir>  Install from a staged assets tree (implies --offline)
+    --offline            Make no network call at all
     --skills-only / --memory-only / --no-prune / --keep-modified / --dry-run
 ```
+
+Every command answers `enigma <command> --help` with its own usage, flags and exit codes.
+
+### Running enigma inside a container or CI runner
+
+```
+ENIGMA_AGENT_CLAUDE=<abs path>   Point the gate at an agent installed off PATH
+                                 (also _CODEX, _OPENCODE, _ROVODEV, _PI). The daemon runs
+                                 the pipeline, so set it before the daemon starts
+ENIGMA_BIN_PATH=<abs path>       Use this enigma binary instead of downloading the release
+ENIGMA_SKILLS_REF=<tag|sha>      Default skills ref (install --ref overrides it)
+ENIGMA_OFFLINE=1                 No enigma command reaches the network - the skill check,
+                                 the update notice and the background linter/dashboard
+                                 installs all stand down (install --offline sets it)
+```
+
+`gh` is needed only by the gate's push, pr and ci steps: `enigma gate axi run --skip
+push,pr,ci` and `enigma gate init` work in an image without it.
 
 ## Contributing
 

@@ -294,6 +294,39 @@ const DEFAULT_BINARY: Record<string, string> = {
 /** Priority order for auto-detecting agents. */
 const AGENT_PROBE_ORDER: string[] = [AGENT_CLAUDE, AGENT_CODEX, AGENT_OPENCODE, AGENT_ROVODEV, AGENT_PI];
 
+/** Every native agent name, in probe order. Exported for the env override and doctor. */
+export const NATIVE_AGENTS: readonly string[] = AGENT_PROBE_ORDER;
+
+/** The default binary name for a native agent, or the name itself when unknown. */
+export function defaultAgentBinary(name: string): string {
+    return DEFAULT_BINARY[name] ?? name;
+}
+
+/** Environment variable carrying a binary path override for one native agent. */
+export function agentPathEnvVar(name: string): string {
+    return `ENIGMA_AGENT_${name.toUpperCase()}`;
+}
+
+/**
+ * Per-agent binary path overrides read from the environment
+ * (`ENIGMA_AGENT_CLAUDE=/opt/harness/bin/claude`). This is how a sandboxed run
+ * points the gate at an agent installed outside PATH - a container that installs
+ * its agent into a private directory and launches it by absolute path would
+ * otherwise be told "no supported agent found in PATH" on a machine that is
+ * running one. Empty values are ignored; unknown agent names are not read.
+ *
+ * The daemon executes the pipeline, so it must inherit these: set them before
+ * the daemon starts, or restart it (`enigma gate daemon restart`) after.
+ */
+export function agentPathOverridesFromEnv(env: NodeJS.ProcessEnv = process.env): Record<string, string> {
+    const out: Record<string, string> = {};
+    for (const name of NATIVE_AGENTS) {
+        const value = (env[agentPathEnvVar(name)] ?? "").trim();
+        if (value !== "") out[name] = value;
+    }
+    return out;
+}
+
 /** Reports whether the agent name is a well-formed `acp:<target>` selector. */
 export function isACPAgent(name: string): boolean {
     if (!name.startsWith("acp:")) return false;
@@ -357,7 +390,17 @@ export async function resolveAgent(
         try {
             resolvedBin = await lookPath(bin);
         } catch (err) {
-            if ((err as NodeJS.ErrnoException).code === "ENOENT") continue;
+            if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+                // A configured path is an explicit instruction, so a broken one is reported
+                // instead of being skipped: silently falling through to the next agent is how
+                // a typo in an override reads as "no agent installed" on a machine running one.
+                if (override) {
+                    throw new Error(
+                        `the ${name} agent path override points at "${override}", which is not an executable file (set by ${agentPathEnvVar(name)} or agent_path_override.${name} in ~/.enigma/gate/config.yaml)`
+                    );
+                }
+                continue;
+            }
             throw new Error(`resolve ${name} agent from "${bin}": ${(err as Error).message}`);
         }
         if (name === AGENT_ROVODEV && !(await probeRovoDevSupport(resolvedBin))) continue;
@@ -563,6 +606,11 @@ export function loadGlobal(path: string): GlobalConfig {
         intent: {},
         test: { evidence: {} }
     };
+    // Applied whether or not a config file exists: an ENIGMA_AGENT_<NAME> path is the
+    // only way a sandboxed run can point the gate at an agent that is not on PATH, and
+    // such a run usually has no config file at all. It wins over the file (below).
+    const envOverrides = agentPathOverridesFromEnv();
+    if (Object.keys(envOverrides).length > 0) cfg.agentPathOverride = envOverrides;
     let data: string;
     try {
         data = readFileSync(path, "utf8");
@@ -581,7 +629,7 @@ export function loadGlobal(path: string): GlobalConfig {
     const acpOverrides = toStringMap(raw.acp_registry_overrides);
     if (acpOverrides) cfg.acpRegistryOverrides = acpOverrides;
     const pathOverride = toStringMap(raw.agent_path_override);
-    if (pathOverride) cfg.agentPathOverride = pathOverride;
+    if (pathOverride) cfg.agentPathOverride = { ...pathOverride, ...envOverrides };
     const argsOverride = toStringArrayMap(raw.agent_args_override);
     if (argsOverride) {
         validateAgentArgsOverride(argsOverride);

@@ -188,6 +188,30 @@ only fails later, at run time. Any new writer must range-check those itself (see
 throws on anything else, because the failure mode of a typo there is the run silently deciding
 not to ask the user - and every writer goes through that loader, so one check covers them all.
 
+## Finding the agent in a sandbox (`ENIGMA_AGENT_<NAME>`)
+
+`resolveAgent` probes claude, codex, opencode, rovodev, pi **by binary name on PATH**. A
+harness that installs its agent into a private directory and launches it by absolute path
+therefore got "no supported agent found in PATH" on a machine that was running one - the
+workaround was to write a `claude` shim and put it on PATH.
+
+`ENIGMA_AGENT_CLAUDE=/abs/path` (also `_CODEX`, `_OPENCODE`, `_ROVODEV`, `_PI`) feeds
+`agentPathOverride`, applied in `loadGlobal` so it lands whether or not a config file exists
+and wins over `agent_path_override` in the YAML. Two things follow from where it is read:
+
+- **The daemon executes the pipeline**, so the daemon's environment is the one that counts.
+  A container that sets it before the first `axi run` is fine (the CLI spawns the daemon and
+  it inherits); an already-running daemon needs `enigma gate daemon stop` first.
+- **A broken override throws** instead of falling through to the next agent. An override is
+  an explicit instruction, and silently skipping a typo'd one is what produced the original
+  "no agent installed" on a machine with an agent. `gate doctor` shows the same thing as an
+  `✗` naming the path and the variable.
+
+`gh` is NOT a system requirement. It is reached only by the push, pr and ci steps (see
+`stepCLIAvailable` in `pipeline/steps/commonExec.ts`); `gate init` shells out to git only, so
+`axi run --skip push,pr,ci` runs to completion in an image that has no forge CLI. `doctor`
+lists it as optional and says which steps use it.
+
 ## `fix_policy`: who answers a gate (an enigma extension)
 
 Upstream's pipeline only knows "park and wait for a response"; WHO produces that response was

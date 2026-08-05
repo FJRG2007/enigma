@@ -24,7 +24,7 @@
 import { homedir } from "node:os";
 import { spawn, spawnSync } from "node:child_process";
 import { join, dirname, basename } from "node:path";
-import { isDir, readJson } from "./util";
+import { isDir, readJson, isOffline } from "./util";
 import { readConfig, setEnigmaToggle } from "./config";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 
@@ -88,7 +88,7 @@ export function refreshLinterPkg(): void {
  * until the package lands. No-op when already installed.
  */
 export function spawnLinterInstall(): void {
-    if (isLinterInstalled()) return;
+    if (isLinterInstalled() || isOffline()) return;
     try {
         // Same runtime dispatch as the update-check child: a compiled binary takes the
         // hidden command directly (every arg goes to the embedded CLI); node/bun on the
