@@ -7,13 +7,27 @@
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { computeContentSha } from "../src/util";
-import { test, expect, beforeEach } from "bun:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
+import { test, expect, afterAll, beforeEach } from "bun:test";
 
 /** The temp home the current test's cache lives under. See beforeEach. */
 let HOME = "";
 /** The cache root the source resolves to, derived the same way the source derives it. */
 const cacheRoot = (): string => join(HOME, ".enigma", "skills-cache");
+
+/**
+ * The home env this file hijacks, captured before the first beforeEach. Restored in
+ * afterAll so a whole-suite `bun test` (one process, many files) does not carry this
+ * file's temp home into every later file that resolves state through enigmaHome().
+ */
+const HOME_KEYS = ["ENIGMA_CONFIG_HOME", "USERPROFILE", "HOME"] as const;
+const priorHome = new Map(HOME_KEYS.map((k) => [k, process.env[k]]));
+
+afterAll(() => {
+    for (const [key, prev] of priorHome) {
+        if (prev === undefined) delete process.env[key]; else process.env[key] = prev;
+    }
+});
 
 beforeEach(() => {
     HOME = mkdtempSync(join(tmpdir(), "enigma-test-home-"));
