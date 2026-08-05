@@ -217,7 +217,7 @@ test("a --range with no value is a usage error, never a silent staged scan", () 
         console.log = quiet.log; console.error = quiet.error;
         rmSync(dir, { recursive: true, force: true });
     }
-});
+}, GIT_TEST_MS);
 
 test("a --range the CLI cannot honour exits 2, empty string included", () => {
     const cli = join(import.meta.dir, "..", "src", "bin", "enigma.ts");
