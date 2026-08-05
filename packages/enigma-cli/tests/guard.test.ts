@@ -5,9 +5,9 @@
  * git-independent part: glob translation, secret matching/redaction, and the
  * block/allow/secret-pattern lists written to ~/.enigma-guard.json.
  */
-import { test, expect } from "bun:test";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { test, expect } from "bun:test";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { readGlobalGuard, setGuardList, setGuardProtection } from "../src/guard-config";
@@ -75,6 +75,14 @@ test("guard-config persists and dedupes user lists without dropping protections"
 
 // --- scan modes: staged (default), --all, --range <base>..<head> ------------------------
 
+/**
+ * The tests below drive real git (and one of them the real CLI), several spawns each. Bun's
+ * default 5s budget is enough on an idle machine and not on a loaded one - process spawn is
+ * the slow part on Windows in particular - so each of them carries an explicit, generous
+ * budget. It bounds a genuine hang without turning machine load into a red CI run.
+ */
+const GIT_TEST_MS = 60_000;
+
 /** A throwaway repo with one clean commit, then one that commits a credential. */
 function repoWithLeak(): string {
     const dir = mkdtempSync(join(tmpdir(), "enigma-guard-range-"));
@@ -135,7 +143,7 @@ test("--range scans what the range committed, even after the working tree moved 
     } finally {
         rmSync(dir, { recursive: true, force: true });
     }
-});
+}, GIT_TEST_MS);
 
 test("exit codes separate findings (1) from a guard that could not run (2)", () => {
     const dir = repoWithLeak();
@@ -157,7 +165,7 @@ test("exit codes separate findings (1) from a guard that could not run (2)", () 
         console.log = quiet.log; console.error = quiet.error;
         rmSync(dir, { recursive: true, force: true });
     }
-});
+}, GIT_TEST_MS);
 
 test("parseGuardArgv reads the flags the copied hook is handed", () => {
     expect(parseGuardArgv([])).toEqual({ all: false, json: false });
@@ -187,7 +195,7 @@ test("an unrecognized flag is a usage error, not a silent fall back to the stage
         console.log = quiet.log; console.error = quiet.error;
         rmSync(dir, { recursive: true, force: true });
     }
-});
+}, GIT_TEST_MS);
 
 test("a --range with no value is a usage error, never a silent staged scan", () => {
     // Dropping the flag used to leave the staged scan, which in a pre-push hook has nothing
@@ -227,7 +235,7 @@ test("a --range the CLI cannot honour exits 2, empty string included", () => {
     // The CLI and the copied hook take the same spellings, so a hook line ported to CI works.
     expect(run("guard", "--range=...").status).toBe(2); // reaches the guard, rejected as a range
     expect(run("guard", "--help").status).toBe(0);      // help still belongs to the CLI
-});
+}, GIT_TEST_MS);
 
 test("a non-blob entry in the range does not shift the content of the files after it", () => {
     // `git diff --name-only` lists a submodule gitlink, and `cat-file --batch` answers it with
@@ -263,4 +271,4 @@ test("a non-blob entry in the range does not shift the content of the files afte
     } finally {
         rmSync(dir, { recursive: true, force: true });
     }
-});
+}, GIT_TEST_MS);
