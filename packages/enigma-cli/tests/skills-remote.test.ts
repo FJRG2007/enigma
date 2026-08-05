@@ -258,6 +258,52 @@ test("a pinned install leaves nothing in the cache a later unpinned run would ad
     expect(cachedRemoteSkills()).toEqual([]);
 });
 
+test("the per-ref cache is capped, oldest pin first, and never evicts the default ref", async () => {
+    const { readdirSync, utimesSync } = await import("node:fs");
+    const cacheRoot = join(process.env.HOME!, ".enigma", "skills-cache");
+    // The default branch first, so it is the least recently stamped of everything on disk.
+    stubFetch([{ name: "alpha-policy", version: "1.1.0" }]);
+    await refreshRemoteSkills({ force: true, bundledVersions: { "alpha-policy": "1.0.0" } });
+    expect(cachedRemoteSkills()).toHaveLength(1);
+
+    // A harness pinning per commit is the case this bounds: one full tree per build, forever.
+    const tags = ["v1", "v2", "v3", "v4", "v5", "v6", "v7"];
+    for (const [i, tag] of tags.entries()) {
+        stubRefAwareFetch(tag, [{ name: "alpha-policy", version: "1.0.0" }]);
+        await refreshRemoteSkills({ force: true, bundledVersions: {}, ref: tag });
+        expect(cachedRemoteSkills(tag)).toHaveLength(1);
+        // Spread the stamps so "least recently used" is the ordering under test rather than
+        // whichever of seven same-millisecond writes the sort happened to put first.
+        const at = new Date(Date.now() - (tags.length - i) * 60_000);
+        utimesSync(join(cacheRoot, `remote@${tag}.json`), at, at);
+    }
+    const refTrees = readdirSync(cacheRoot).filter((e) => e.startsWith("skills@")).sort();
+    expect(refTrees).toEqual(["skills@v3", "skills@v4", "skills@v5", "skills@v6", "skills@v7"]);
+    // Each evicted tree takes its stamp with it, so a later run cannot read a commit for it.
+    expect(readdirSync(cacheRoot).filter((e) => e.startsWith("remote@")).sort())
+        .toEqual(["remote@v3.json", "remote@v4.json", "remote@v5.json", "remote@v6.json", "remote@v7.json"]);
+    // Ordinary unpinned use must never pay for a pinned run by re-downloading.
+    expect(cachedRemoteSkills()).toHaveLength(1);
+});
+
+test("a ref that cannot be honoured is rejected, never resolved to the default branch", async () => {
+    const { pinnedRef, skillsOrigin } = await import("../src/skills-remote");
+    expect(pinnedRef("v1.35.1")).toBe("v1.35.1");
+    expect(pinnedRef()).toBe("main");
+    // A ref reaches a GitHub API URL and a cache directory name; `.` and `/` are both legal
+    // in a ref, so the character class alone lets `../` walk the request off the endpoint.
+    for (const bad of ["../../evil", "main?x=1", "main#frag", "a//b", "."]) {
+        expect(() => pinnedRef(bad)).toThrow(/Invalid skills ref in --ref/);
+    }
+    const prev = process.env.ENIGMA_SKILLS_REF;
+    try {
+        process.env.ENIGMA_SKILLS_REF = "../../evil";
+        expect(() => skillsOrigin()).toThrow(/Invalid skills ref in ENIGMA_SKILLS_REF/);
+    } finally {
+        if (prev === undefined) delete process.env.ENIGMA_SKILLS_REF; else process.env.ENIGMA_SKILLS_REF = prev;
+    }
+});
+
 test("an offline run reads no remote cache at all, however full it is", async () => {
     stubFetch([{ name: "alpha-policy", version: "1.1.0" }]);
     await refreshRemoteSkills({ force: true, bundledVersions: { "alpha-policy": "1.0.0" } });

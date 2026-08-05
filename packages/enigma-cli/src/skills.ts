@@ -30,7 +30,7 @@ import { applyVerifyWiring, isVerifyOn, mirrorVerifyWiring } from "./verify-depl
 import { applyGuardrailsWiring, mirrorGuardrailsWiring } from "./guardrails-deploy";
 import { resolveBypassSelection, applyBypass, mirrorAccountSettings } from "./permissions";
 import { existsSync, readdirSync, readFileSync, writeFileSync, cpSync, mkdirSync, rmSync } from "node:fs";
-import { cachedRemoteSkills, refIsPinned as skillsRefIsPinned, refreshRemoteSkills, shouldCheckRemote, skillsOrigin } from "./skills-remote";
+import { cachedRemoteSkills, pinnedRef, refIsPinned as skillsRefIsPinned, refreshRemoteSkills, shouldCheckRemote, skillsOrigin } from "./skills-remote";
 import { AGENTS, MANAGED_PROVIDER, isManagedProvider, discoverAgents, runningStatus, localTargetsAt } from "./agents";
 import { disableClaudeAttribution, disableClaudeFeedbackSurvey, enableClaudeStatusline, getClaudeTrust, setClaudeTrust } from "./claude";
 
@@ -417,17 +417,33 @@ function bundledSkills(): SkillEntry[] {
  * a cache left by an earlier online install is exactly that). Under a pinned ref the cache
  * WINS outright rather than only when newer - the pin decides what is adopted.
  */
-export function inspectSkills(): SkillEntry[] {
+function resolveSkills(): { skills: SkillEntry[]; adopted: string[]; } {
     const skills = bundledSkills();
     const remote = assetsExplicit || isOffline() ? [] : cachedRemoteSkills();
-    if (!remote.length) return skills;
+    if (!remote.length) return { skills, adopted: [] };
     const pinned = skillsRefIsPinned();
+    const adopted: string[] = [];
     const byName = new Map(skills.map((s) => [s.name, s]));
     for (const r of remote) {
         const bundled = byName.get(r.name);
-        if (!bundled || pinned || isNewer(r.meta.version || "", bundled.meta.version || "")) byName.set(r.name, r);
+        if (!bundled || pinned || isNewer(r.meta.version || "", bundled.meta.version || "")) { byName.set(r.name, r); adopted.push(r.name); }
     }
-    return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
+    return { skills: [...byName.values()].sort((a, b) => a.name.localeCompare(b.name)), adopted: adopted.sort() };
+}
+
+export function inspectSkills(): SkillEntry[] {
+    return resolveSkills().skills;
+}
+
+/**
+ * The cached remote skills the plan ACTUALLY takes over the bundle. A cache entry is not an
+ * adoption: an entry the bundle has caught up with loses the version gate and survives on
+ * disk until a refresh prunes it, which a throttled run never performs. Counting the cache
+ * directory instead would let `install` report skills over the bundle for a run that installs
+ * purely bundled ones, so the reported provenance is derived from this one decision.
+ */
+export function adoptedRemoteSkills(): string[] {
+    return resolveSkills().adopted;
 }
 
 /** The set of skill names the user discarded (skipped by installs/updates, pruned everywhere). */
@@ -1105,6 +1121,10 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
     // it must stop are detached children (see util.isOffline). Set here as well as in the CLI
     // so the plan is offline whichever entry point asked for it.
     if (offline) process.env.ENIGMA_OFFLINE = "1";
+    // Same validation the CLI applies, for the inline (TUI) entry point: a ref that cannot be
+    // honoured stops the install instead of quietly resolving to the default branch.
+    try { pinnedRef(opts.ref ?? undefined); }
+    catch (err) { reporter.fatal((err as Error).message); }
     if (opts.ref) process.env.ENIGMA_SKILLS_REF = opts.ref;
 
     // Refresh the GitHub skill cache first so the plan below uses the newest
@@ -1130,7 +1150,7 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
         reporter.info(`Skills source: bundled with enigma-cli ${cliVersion()} (offline - no remote skills).`);
     } else {
         const origin = skillsOrigin(opts.ref ?? undefined);
-        const adopted = cachedRemoteSkills(opts.ref ?? undefined).length;
+        const adopted = adoptedRemoteSkills().length;
         reporter.info(origin.commit && adopted
             ? `Skills source: ${origin.repo}@${origin.ref} (commit ${origin.commit.slice(0, 7)}), ${adopted} skill(s) over the bundle, CLI ${cliVersion()}.`
             : `Skills source: bundled with enigma-cli ${cliVersion()} (nothing adopted from ${origin.repo}@${origin.ref}).`);

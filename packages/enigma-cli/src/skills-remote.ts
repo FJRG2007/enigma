@@ -27,7 +27,7 @@ import { dirname, join } from "node:path";
 import type { SkillMeta } from "./skills";
 import { isManagedProvider } from "./agents";
 import { isDir, isNewer, readJson, isOffline, computeContentSha } from "./util";
-import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 
 // Baked-in defaults. These are the ONLY origin compiled into the binary; the
 // discovery manifest (below) can relocate every one of them WITHOUT an npm
@@ -40,9 +40,18 @@ const CHECK_THROTTLE_MS = 10 * 60 * 1000; // skip re-checks for repeated runs (s
 const FETCH_TIMEOUT_MS = 8000;
 const MAX_FILE_BYTES = 512 * 1024;
 const MAX_FILES_PER_SKILL = 32;
+const MAX_REF_CACHES = 5; // pinned-ref cache trees kept; the default ref's tree is never evicted
 const SKILL_NAME_RE = /^[a-z0-9][a-z0-9-]*$/;
 const REPO_SLUG_RE = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/;
 const REF_RE = /^[A-Za-z0-9._/-]+$/;
+/**
+ * A ref is interpolated into an API URL and into a cache directory name, so the character
+ * class is not enough on its own: `.` and `/` are both legal in a ref, which lets `../`
+ * through REF_RE and walks the request off the intended endpoint. Every segment must be a
+ * real name.
+ */
+const isSafeRef = (v: unknown): v is string =>
+    typeof v === "string" && REF_RE.test(v) && !v.split("/").some((s) => s === "" || s === "." || s === "..");
 
 /**
  * Discovery manifest: a small JSON file in the repo, fetched over raw (no API
@@ -152,11 +161,19 @@ export function skillsOrigin(ref?: string): SkillsOrigin {
  * The ref to read skills from: an explicit `--ref` first, then the ENIGMA_SKILLS_REF dev
  * override, then the default branch. Both pins also stop the discovery manifest from
  * relocating the ref, so a pinned run stays pinned.
+ *
+ * A pin is validated here, before it is interpolated into an API URL or a cache path: in a
+ * harness the value can come from CI input, and `../` or `?` would silently redirect the
+ * request to another endpoint. Rejecting it loudly beats a confusing 404 - and beats falling
+ * back to the default branch, which is the same "asked for and quietly ignored" bug the
+ * `--range` handling exists to prevent.
  */
-function pinnedRef(ref?: string): string {
+export function pinnedRef(ref?: string): string {
     const explicit = (ref ?? "").trim();
-    if (explicit !== "") return explicit;
-    return process.env.ENIGMA_SKILLS_REF || "main";
+    const [value, origin] = explicit !== "" ? [explicit, "--ref"] : [process.env.ENIGMA_SKILLS_REF || "", "ENIGMA_SKILLS_REF"];
+    if (value === "") return "main";
+    if (!isSafeRef(value)) throw new Error(`Invalid skills ref in ${origin}: "${value}" (letters, digits and . _ / - only, no path traversal).`);
+    return value;
 }
 
 /**
@@ -225,7 +242,7 @@ function applyManifest(base: SkillSource, m: SkillsManifest, ref?: string): Skil
     const s = m.source || {};
     if (typeof s.repo === "string" && REPO_SLUG_RE.test(s.repo)) out.repo = s.repo;
     if (isSafePrefix(s.skillsPrefix)) out.skillsPrefix = s.skillsPrefix.endsWith("/") ? s.skillsPrefix : `${s.skillsPrefix}/`;
-    if (!refIsPinned(ref) && typeof s.ref === "string" && REF_RE.test(s.ref)) out.ref = s.ref;
+    if (!refIsPinned(ref) && isSafeRef(s.ref)) out.ref = s.ref;
     return out;
 }
 
@@ -380,6 +397,36 @@ function pruneCache(remoteNames: Set<string>, bundledVersions: Record<string, st
 }
 
 /**
+ * Bound the per-ref cache. Every distinct pin gets its own `skills@<ref>/` tree and stamp, so
+ * a harness pinning per commit - the reproducibility case the pin exists for - would otherwise
+ * accumulate one full skill tree per build, forever. Keep the most recently stamped few
+ * (the ref in use always among them) and drop the rest; the default branch's unsuffixed tree
+ * is not a candidate, so ordinary unpinned use never re-downloads.
+ *
+ * Ordering is by stamp mtime alone - one stat per ref, never a walk of the trees - and the
+ * whole thing is best-effort like every other cache write: a failed delete must not fail an
+ * install.
+ */
+function pruneRefCaches(keepSuffix: string): void {
+    try {
+        const root = cacheRoot();
+        if (!isDir(root)) return;
+        const stampedAt = (suffix: string): number => {
+            try { return statSync(join(root, `remote${suffix}.json`)).mtimeMs; } catch { return 0; }
+        };
+        const others = readdirSync(root)
+            .filter((e) => e.startsWith("skills@") && isDir(join(root, e)))
+            .map((e) => e.slice("skills".length))
+            .filter((s) => s !== keepSuffix)
+            .sort((a, b) => stampedAt(b) - stampedAt(a));
+        for (const suffix of others.slice(keepSuffix === "" ? MAX_REF_CACHES : MAX_REF_CACHES - 1)) {
+            rmSync(join(root, `skills${suffix}`), { recursive: true, force: true });
+            rmSync(join(root, `remote${suffix}.json`), { force: true });
+        }
+    } catch { /* best-effort: an unreclaimed ref tree only costs disk */ }
+}
+
+/**
  * Check GitHub for newer sealed skills and refresh the local cache. Never
  * throws: any failure is reported in `error` and the caller keeps working with
  * the bundled/cached skills. Throttled via the stamp unless `force`.
@@ -440,6 +487,7 @@ export async function refreshRemoteSkills(opts: RefreshOptions): Promise<RemoteR
 
         pruneCache(new Set(skills.keys()), opts.bundledVersions, dirs, opts.ref);
         writeStamp({ checkedAt: Date.now(), commit, ref: source.ref, dirs }, opts.ref);
+        pruneRefCaches(refDirSuffix(opts.ref));
         return { checked: true, updated: updated.sort(), error: null, ref: source.ref, commit };
     } catch (err) {
         const msg = (err as Error).name === "AbortError" ? "timed out" : (err as Error).message || "network error";

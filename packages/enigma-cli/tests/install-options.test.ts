@@ -91,6 +91,45 @@ test("a populated remote cache reaches neither a staged tree nor an offline run"
     }
 });
 
+test("the adopted count is what the plan took, not what the cache happens to hold", async () => {
+    const { computeContentSha } = await import("../src/util");
+    const { adoptedRemoteSkills } = await import("../src/skills");
+    const home = mkdtempSync(join(tmpdir(), "enigma-adopted-home-"));
+    const prev = {
+        home: process.env.HOME, profile: process.env.USERPROFILE,
+        config: process.env.ENIGMA_CONFIG_HOME, offline: process.env.ENIGMA_OFFLINE,
+    };
+    const seal = (dir: string, name: string, version: string): void => {
+        mkdirSync(dir, { recursive: true });
+        writeFileSync(join(dir, "SKILL.md"), `---\nname: ${name}\n---\n\nFetched from GitHub.\n`);
+        const meta = { name, version, provider: "FJRG2007/enigma", sha: computeContentSha(dir) };
+        writeFileSync(join(dir, "skill.json"), `${JSON.stringify(meta, null, 2)}\n`);
+    };
+    try {
+        process.env.HOME = home; process.env.USERPROFILE = home; process.env.ENIGMA_CONFIG_HOME = home;
+        delete process.env.ENIGMA_OFFLINE;
+        expect(adoptedRemoteSkills()).toEqual([]); // empty cache
+
+        // A cache entry the bundle has caught up with. It stays on disk until a refresh
+        // prunes it, and a run inside the check throttle performs no refresh - so counting
+        // cache entries reported "N skill(s) over the bundle" for a purely bundled install.
+        const cacheDir = join(home, ".enigma", "skills-cache", "skills");
+        const bundled = inspectSkills()[0]!;
+        seal(join(cacheDir, bundled.name), bundled.name, "0.0.1");
+        expect(adoptedRemoteSkills()).toEqual([]);
+        expect(inspectSkills().find((s) => s.name === bundled.name)!.src).toBe(bundled.src);
+
+        // A skill this package does not bundle IS adopted, and is counted.
+        seal(join(cacheDir, "cached-policy"), "cached-policy", "1.0.0");
+        expect(adoptedRemoteSkills()).toEqual(["cached-policy"]);
+    } finally {
+        for (const [key, value] of [["HOME", prev.home], ["USERPROFILE", prev.profile], ["ENIGMA_CONFIG_HOME", prev.config], ["ENIGMA_OFFLINE", prev.offline]] as const) {
+            if (value === undefined) delete process.env[key]; else process.env[key] = value;
+        }
+        rmSync(home, { recursive: true, force: true });
+    }
+});
+
 test("--offline stands every outbound call down, including the detached ones", async () => {
     const { isOffline } = await import("../src/util");
     const { shouldCheckRemote } = await import("../src/skills-remote");

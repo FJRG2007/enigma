@@ -188,13 +188,56 @@ test("a --range with no value is a usage error, never a silent staged scan", () 
     }
 });
 
-test("the CLI rejects a flag whose value is missing instead of defaulting it away", () => {
+test("a --range the CLI cannot honour exits 2, empty string included", () => {
     const cli = join(import.meta.dir, "..", "src", "bin", "enigma.ts");
-    const run = (...args: string[]): { status: number | null; err: string; } => {
+    const run = (...args: string[]): { status: number | null; err: string; out: string; } => {
         const r = Bun.spawnSync(["bun", cli, ...args], { stderr: "pipe", stdout: "pipe" });
-        return { status: r.exitCode, err: r.stderr.toString() };
+        return { status: r.exitCode, err: r.stderr.toString(), out: r.stdout.toString() };
     };
-    const missing = run("guard", "--range");
-    expect(missing.status).toBe(2);
-    expect(missing.err).toMatch(/Missing value for --range/);
+    for (const args of [["guard", "--range"], ["guard", "--range", ""], ["guard", "--range="]]) {
+        // The empty string is the shape a CI script produces from `--range "$RANGE"` with
+        // RANGE unset; it used to read as staged mode and exit 0 having checked nothing.
+        const r = run(...args);
+        expect(r.status).toBe(2);
+        expect(r.err).toMatch(/--range needs a value/);
+    }
+    // The CLI and the copied hook take the same spellings, so a hook line ported to CI works.
+    expect(run("guard", "--range=...").status).toBe(2); // reaches the guard, rejected as a range
+    expect(run("guard", "--help").status).toBe(0);      // help still belongs to the CLI
+});
+
+test("a non-blob entry in the range does not shift the content of the files after it", () => {
+    // `git diff --name-only` lists a submodule gitlink, and `cat-file --batch` answers it with
+    // a commit object whose payload used to be left in the stream - so every later file was
+    // read from the wrong offset and the secret scan silently looked at the wrong bytes.
+    const dir = mkdtempSync(join(tmpdir(), "enigma-guard-gitlink-"));
+    const git = (...args: string[]): string =>
+        execFileSync("git", args, { cwd: dir, windowsHide: true, encoding: "utf8" }).trim();
+    try {
+        git("init", "-q", ".");
+        git("config", "user.email", "t@t.t");
+        git("config", "user.name", "t");
+        writeFileSync(join(dir, "a.txt"), "hello\n");
+        git("add", "-A");
+        git("commit", "-qm", "base");
+        // A gitlink pointing at a commit this repo really has, so cat-file returns the object
+        // (and its payload) rather than the `missing` a superproject usually gets.
+        git("update-index", "--add", "--cacheinfo", `160000,${git("rev-parse", "HEAD")},sub`);
+        // Enough files after the gitlink (they all sort after `sub`) that the skipped payload
+        // pushes a later one onto a real blob header, which is where the misattribution shows:
+        // only t01 holds the credential, so any other file reported for it read foreign bytes.
+        const names = ["t01", "t02", "t03", "t04", "t05", "t06", "t07", "t08"].map((n) => `${n}.js`);
+        names.forEach((name, i) => writeFileSync(join(dir, name), i === 0 ? `const k = "${AWS_KEY}";\n` : `const n = ${i};\n`));
+        git("add", ...names);
+        git("commit", "-qm", "gitlink and leak");
+
+        inRepo(dir, () => {
+            const ranged = runGuard({ range: "HEAD~1..HEAD" });
+            expect(ranged.findings).toEqual([
+                { severity: "block", rule: "secret", file: "t01.js", line: 1, detail: "secret: AWS access key id" },
+            ]);
+        });
+    } finally {
+        rmSync(dir, { recursive: true, force: true });
+    }
 });

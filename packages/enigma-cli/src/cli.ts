@@ -8,7 +8,6 @@ import * as packs from "./packs";
 import * as acct from "./accounts";
 import * as p from "@clack/prompts";
 import * as dash from "./dashboard";
-import { runGuardCli } from "./guard";
 import * as skillsMod from "./skills";
 import { readFileSync } from "node:fs";
 import { isDir, readJson } from "./util";
@@ -16,12 +15,14 @@ import { fileURLToPath } from "node:url";
 import type { IssueKind } from "./issue";
 import { discoverAgents } from "./agents";
 import { runConfigCli } from "./settings";
+import { pinnedRef } from "./skills-remote";
 import { collectReporter } from "./reporter";
 import { hostname, userInfo } from "node:os";
 import type { ContentType } from "./compress";
 import { spawnSync } from "node:child_process";
 import { starRepoInBackground } from "./github";
 import { dirname, join, resolve } from "node:path";
+import { parseGuardArgv, runGuardCli } from "./guard";
 import { buildIssueUrl, isHeadless, openUrl } from "./issue";
 import { setupGitHooks, GUARD_PROTECTIONS } from "./security";
 import { ensureLaunchable, toolPathStatuses } from "./tool-path";
@@ -91,8 +92,6 @@ interface CliOptions extends skillsMod.InstallOptions {
     expose: boolean;
     /** `dashboard token`: mint a fresh token, killing every link handed out earlier. */
     newToken: boolean;
-    /** `guard`: scan the files a commit range touched (`<base>..<head>`) instead of the index. */
-    range: string | null;
     /** `guard` / `verify`: emit one JSON document instead of human text. */
     json: boolean;
 }
@@ -108,14 +107,14 @@ function parseArgs(argv: string[]): CliOptions {
         stats: false, retrieve: null, compressType: null, clear: false,
         preset: null, token: null, base: null, providerModel: null,
         port: null, apiKey: null, apiAccount: null, apiProfile: null, apiPack: null, expose: false, newToken: false,
-        range: null, json: false,
+        json: false,
     };
     for (let i = 0; i < argv.length; i++) {
         const a = argv[i]!;
-        // A flag whose value is missing is a usage error, not an empty default. `--range`
-        // with nothing after it used to fall back to a staged scan, which in a pre-push hook
-        // checks nothing and exits 0 - the useless pass that flag exists to eliminate. Exit 2
-        // (the "could not run" code) rather than pretending the flag was honoured.
+        // A flag whose value is missing is a usage error, not an empty default: a flag the
+        // caller asked for and this run cannot honour must never resolve to different
+        // behaviour that then reports success. Exit 2 (the "could not run" code) rather than
+        // pretending the flag was honoured.
         const next = (): string => {
             const value = argv[++i];
             if (value === undefined) { console.error(`Missing value for ${a}`); process.exit(2); }
@@ -170,7 +169,6 @@ function parseArgs(argv: string[]): CliOptions {
             case "--retrieve": opts.retrieve = next(); break;
             case "--type": opts.compressType = next(); break;
             case "--clear": opts.clear = true; break;
-            case "--range": opts.range = next(); break;
             case "--json": opts.json = true; break;
             case "--force": opts.force = true; break;
             case "--login": opts.login = true; break;
@@ -2236,6 +2234,13 @@ export async function run(argv: string[]): Promise<void> {
     // SSH connection manager. Dispatched early by argv so its rich flags (--host, -i,
     // -L 9090:db:5432, ...) never reach enigma's own argument parser.
     if (argv[0] === "ssh") { process.exit(await runSshCli(argv.slice(1), Boolean(process.stdout.isTTY))); }
+    // The commit guard parses its own flags (parseGuardArgv), so `enigma guard` and the
+    // copied .githooks/guard.mjs honour them through exactly one parser: a `--range` that
+    // was asked for and cannot be honoured exits 2 on both, and never degrades to a staged
+    // scan that checks nothing and passes. `--help` falls through to the command help page.
+    if (argv[0] === "guard" && !argv.includes("-h") && !argv.includes("--help")) {
+        process.exit(runGuardCli(parseGuardArgv(argv.slice(1))));
+    }
     const opts = parseArgs(argv);
     // BOTH ends must be a terminal. A prompt writes to stdout and READS FROM STDIN, so with a
     // non-tty stdin (`curl ... | sh`, a redirect, a CI runner) every prompt gets EOF, which
@@ -2249,7 +2254,11 @@ export async function run(argv: string[]): Promise<void> {
     // enigma invocation, not just this one.
     if (opts.offline || opts.assetsFrom) process.env.ENIGMA_OFFLINE = "1";
     // Same reason for the ref pin: it has to reach every read of the skill cache, which is
-    // scoped per ref, not only the fetch that filled it.
+    // scoped per ref, not only the fetch that filled it. Validated here so a ref a harness
+    // passed through from CI input fails as a usage error, never as a confusing 404 or a
+    // silent fall back to the default branch.
+    try { pinnedRef(opts.ref ?? undefined); }
+    catch (err) { console.error((err as Error).message); process.exit(2); }
     if (opts.ref) process.env.ENIGMA_SKILLS_REF = opts.ref;
     const interactive = Boolean(process.stdout.isTTY) && Boolean(process.stdin.isTTY) && !opts.yes;
     const version = process.env.ENIGMA_VERSION || PKG.version || "0.0.0";
@@ -2276,10 +2285,10 @@ export async function run(argv: string[]): Promise<void> {
     if (opts.version || opts.command === "version") { console.log(version); await notifyUpdate(version, interactive); return; }
 
     // Direct (non-menu) maintenance and feature commands. Machine/CI commands
-    // (seal, check, guard, config) skip the update notice to keep their output clean.
+    // (seal, check, config; guard is dispatched earlier) skip the update notice to keep
+    // their output clean.
     if (opts.command === "seal") return skillsMod.sealSources();
     if (opts.command === "check") return skillsMod.checkSources();
-    if (opts.command === "guard") { process.exit(runGuardCli({ all: opts.all, range: opts.range ?? "", json: opts.json })); }
     if (opts.command === "config") { process.exit(await runConfigCli(opts.positionals, opts.scope, interactive)); }
     if (opts.command && acct.isToolName(opts.command)) {
         // Resolve the account up front (explicit > active profile > tool active) so
