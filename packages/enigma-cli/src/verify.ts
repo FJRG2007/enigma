@@ -251,6 +251,14 @@ const LEGITIMATE_STOP_RE = new RegExp([
  * Newlines survive the blanking as themselves, so line N of the result is line N of the
  * message: a fenced block collapsed into one long space run would merge the lines around it
  * and break every line-indexed scan built on this.
+ *
+ * A quoted run is bounded by its own newline and by NOTHING else. A length cap on it does not
+ * merely miss a long quote, it MIS-PAIRS: the match fails at that run's opening quote, the scan
+ * resumes inside the run, and its closing quote is then paired with the NEXT opening quote - so
+ * ordinary prose BETWEEN two quoted spans is blanked while the long quoted text stays scannable,
+ * which is the false positive this function exists to prevent, reachable by quoting more than the
+ * cap of anything. Every alternative here is a negated character class, so there is no
+ * catastrophic-backtracking risk to cap against in the first place.
  */
 export function withoutQuoted(message: string): string {
     const blank = (m: string): string => m.replace(/[^\n]/g, " ");
@@ -258,7 +266,7 @@ export function withoutQuoted(message: string): string {
         .replace(/```[\s\S]*?(?:```|$)/g, blank)
         .replace(/`[^`\n]*`/g, blank)
         .replace(/^\s*>.*$/gm, blank)
-        .replace(/"[^"\n]{0,200}"|«[^»\n]{0,200}»|“[^”\n]{0,200}”/g, blank);
+        .replace(/"[^"\n]*"|«[^»\n]*»|“[^”\n]*”/g, blank);
 }
 
 /**
@@ -430,7 +438,9 @@ export function styleFindings(message: string): VerifyGap[] {
     if (!message || typeof message !== "string") return [];
     const written = message.split("\n");
     // Blanking preserves newlines, so line i here is line i of the reply.
-    const lines = withoutQuoted(message).split("\n").map((line, i) => (STYLE_IGNORE_RE.test(written[i] ?? "") ? "" : line));
+    const quoted = withoutQuoted(message).split("\n");
+    const marked = (i: number): boolean => STYLE_IGNORE_RE.test(written[i] ?? "");
+    const lines = quoted.map((line, i) => (marked(i) ? "" : line));
     const hits: StyleHit[] = [];
 
     const filler = STYLE_FILLER_RE.exec(lines.join("\n"));
@@ -439,8 +449,14 @@ export function styleFindings(message: string): VerifyGap[] {
     // The first line of PROSE, not line 0: a reply opening with a blank line, a heading, or a
     // fenced block (blanked to spaces above) would otherwise never have its opening examined,
     // so the same sentence would pass or block depending on what preceded it.
-    const opening = lines.find((line) => line.trim() && !/^\s*#{1,6}\s/.test(line)) ?? "";
-    const preamble = STYLE_PREAMBLE_RE.exec(opening);
+    //
+    // Read from `quoted`, BEFORE the marker blanking, and then dropped when that line carries the
+    // marker: exempting a line by emptying it would promote the next one into "the reply opening"
+    // and fire this rule on a line sitting mid-reply, which is neither what the escape hatch
+    // promises (that line, this check) nor what the rule is about (the first line of prose).
+    const openingAt = quoted.findIndex((line) => line.trim() && !/^\s*#{1,6}\s/.test(line));
+    const opening = openingAt === -1 ? "" : quoted[openingAt]!;
+    const preamble = marked(openingAt) ? null : STYLE_PREAMBLE_RE.exec(opening);
     if (preamble && !STYLE_NEED_RE.test(opening.slice(preamble[0].length))) {
         hits.push({ rule: "preamble", detail: `the reply opens by announcing the work ("${preamble[0].trim()}") instead of reporting it` });
     }
@@ -473,25 +489,50 @@ function styleRuleOf(hit: VerifyGap): string {
     return String(hit.key ?? "").replace(/^style:/, "");
 }
 
-/** The blocking subset of a style scan: what may deny a stop, as opposed to what is merely logged. */
-export function blockingStyleFindings(message: string): VerifyGap[] {
-    return styleFindings(message).filter((hit) => STYLE_BLOCKING_RULES.has(styleRuleOf(hit)));
+/**
+ * The blocking subset of a style scan: what may deny a stop, as opposed to what is merely logged.
+ *
+ * Takes the hits rather than the message so the hook can filter the scan it already ran: the
+ * blocking subset is one rule and must have one definition, and a second helper that re-scanned
+ * would have left the caller re-implementing the filter to avoid paying for it twice.
+ */
+export function blockingStyleFindings(hits: VerifyGap[]): VerifyGap[] {
+    return hits.filter((hit) => STYLE_BLOCKING_RULES.has(styleRuleOf(hit)));
 }
 
 /**
  * A style gap as a ledger row. `file` is the reply rather than a path - this is the one finding
  * kind that is about the prose, so there is no file to point at - and a non-blocking rule is
  * always recorded as `warned` whatever the turn's outcome was.
+ *
+ * `line` carries the TURN instead of a line number, and that is what keeps these rows countable.
+ * The ledger dedupes a day's entries on (rule, outcome, file, line), which is right for the
+ * convention sweep - it re-reads the same branch diff every turn, so a repeat there is the same
+ * violation seen again - and wrong here: every reply is a genuinely new encounter, so a constant
+ * key collapsed twenty padded replies into one row per rule per day and made "does the agent keep
+ * padding replies", the whole justification for recording the non-blocking rules, unanswerable.
+ * The dedupe itself is untouched; only the identity is per turn.
  */
-function styleLedgerEntry(hit: VerifyGap): Finding {
+function styleLedgerEntry(hit: VerifyGap, turn: number): Finding {
     const rule = styleRuleOf(hit);
     return {
         ruleId: `style-${rule}`,
         severity: STYLE_BLOCKING_RULES.has(rule) ? "block" : "warn",
         file: "(reply)",
+        line: turn,
         message: hit.detail,
         skill: "output-style",
     };
+}
+
+/**
+ * A turn's identity as a number, for the ledger row above: this session, at this moment. The
+ * counter separates two turns that land in the same millisecond - unreachable across hook
+ * processes, where it is always 0, but not when the hook is driven in-process.
+ */
+let styleTurns = 0;
+function styleTurnId(session: string): number {
+    return parseInt(createHash("sha1").update(`${session}:${Date.now()}:${styleTurns++}`).digest("hex").slice(0, 8), 16);
 }
 
 /** The message fed back when a reply breaks the compression level the user set. */
@@ -1826,7 +1867,7 @@ export function runVerifyHook(payload?: string): number {
         if (level === "off") return 0; // no level set means no rule to enforce
         const hits = styleFindings(message);
         if (!hits.length) return 0;
-        const blocking = hits.filter((hit) => STYLE_BLOCKING_RULES.has(styleRuleOf(hit)));
+        const blocking = blockingStyleFindings(hits);
         // Its own budget channel, like conventions and gate: a cosmetic block must never spend
         // the ceiling the completion-claim gate depends on. Spent only when there is something
         // blocking to spend it on, since mayBlock has a side effect.
@@ -1834,8 +1875,11 @@ export function runVerifyHook(payload?: string): number {
         // EVERY hit is recorded, blocking or not - a non-blocking rule that left no trace would be
         // a rule nobody could ever evaluate, and the ledger is what makes "does it keep padding
         // replies" answerable with data rather than opinion. Per finding, not per turn, so the
-        // one column the ledger exists for stays honest about what actually stopped a turn.
-        recordFindings(hits.map(styleLedgerEntry), denied ? "blocked" : "warned", "diff");
+        // one column the ledger exists for stays honest about what actually stopped a turn. Each
+        // turn carries its own identity (styleLedgerEntry), or the day's dedupe would keep one row
+        // per rule and there would be no count to answer that question with.
+        const turn = styleTurnId(session);
+        recordFindings(hits.map((hit) => styleLedgerEntry(hit, turn)), denied ? "blocked" : "warned", "diff");
         if (!denied) return 0;
         process.stderr.write(`${styleMessage(blocking, level)}\n`);
         return 2;

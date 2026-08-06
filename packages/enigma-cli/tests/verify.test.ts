@@ -1152,7 +1152,7 @@ test("styleFindings catches the padding the style bans, and nothing else", async
     // ...while a bare status CELL is one, whatever sits in front of it, and a marker restated is
     // still bare: "Saltado (sin cambios)" says the same non-event twice.
     expect(styleFindings("| dashboard | 0.1.104 | skipped |").map((h) => h.key)).toEqual(["style:untouched"]);
-    expect(blockingStyleFindings("| dashboard | 0.1.104 | skipped |")).toEqual([]);
+    expect(blockingStyleFindings(styleFindings("| dashboard | 0.1.104 | skipped |"))).toEqual([]);
     expect(styleFindings("| helio | 0.3.2 | Saltado (sin cambios) |").map((h) => h.key)).toEqual(["style:untouched"]);
 
     // Naming a blocked item is REQUIRED elsewhere in this file (see blockMessage), and a row that
@@ -1167,7 +1167,7 @@ test("styleFindings catches the padding the style bans, and nothing else", async
         "| trim | yes | n/a |",                    // an ordinary coverage matrix
     ]) {
         expect(styleFindings(row).map((h) => h.key)).toEqual(["style:untouched"]);
-        expect(blockingStyleFindings(row)).toEqual([]);
+        expect(blockingStyleFindings(styleFindings(row))).toEqual([]);
     }
 
     // "Let me know" is not a preamble: it is frequently the whole reply on a turn that names a
@@ -1197,6 +1197,12 @@ test("styleFindings catches the padding the style bans, and nothing else", async
     expect(styleFindings("| dashboard | sin cambios | enigma:style-ignore")).toEqual([]);
     // ...and that marker exempts the LINE it sits on, not the rest of the reply.
     expect(styleFindings("| dashboard | sin cambios | enigma:style-ignore\n\nOf course, done.").map((h) => h.key)).toEqual(["style:filler"]);
+    // A marker on the FIRST line must not move what counts as the opening: exempting a line by
+    // emptying it promoted line 2 into the opening and fired the preamble rule mid-reply, which is
+    // neither what the hatch promises (that line, this check) nor what the rule is about.
+    expect(styleFindings("Voy a publicar los paquetes. enigma:style-ignore\nLet me check the file.")).toEqual([]);
+    // ...while the line the marker is NOT on is still read as it was.
+    expect(styleFindings("Voy a publicar los paquetes.\nenigma:style-ignore").map((h) => h.key)).toEqual(["style:preamble"]);
     // The style gate does NOT answer to the marker the other checks use, and vice versa.
     expect(styleFindings("| helio | sin cambios | enigma:verify-ignore |").map((h) => h.key)).toEqual(["style:untouched"]);
 });
@@ -1253,6 +1259,26 @@ test("the stop-short check reads what the turn asserts, not what it quotes", () 
     // ...while a real one still blocks, and is quoted back from the untouched message.
     expect(asksToContinue("He terminado el paso 1. ¿Sigo con el resto?")).toBe("¿Sigo con el resto?");
     expect(asksToContinue("Done with the first. Shall I continue with the rest?")).toContain("continue with the rest");
+});
+
+test("a quoted run of ANY length blanks that run and nothing outside it", async () => {
+    const { withoutQuoted } = await import("../src/verify");
+    // A length cap on the quoted-run pattern does not merely miss a long quote, it MIS-PAIRS: the
+    // match fails at the long run's opening quote, the scan resumes inside it, and its closing
+    // quote is then paired with the NEXT opening quote - blanking the prose BETWEEN two quoted
+    // spans while leaving the long quoted text scannable, which resurrects the exact false block
+    // withoutQuoted was written to fix. Quoting 200+ characters of a user message or an error is
+    // routine, so this is reachable, not theoretical.
+    const long = "x".repeat(250);
+    const describing = `Le dije "${long}" y luego "¿sigo?".`;
+    expect(asksToContinue(describing)).toBe("");
+    // Both runs blanked, the prose between them untouched.
+    const blanked = withoutQuoted(describing);
+    expect(blanked).not.toContain(long);
+    expect(blanked).not.toContain("¿sigo?");
+    expect(blanked).toContain(" y luego ");
+    // ...and a real ask sitting after a long quote is still caught.
+    expect(asksToContinue(`El error decia "${long}". ¿Sigo con el resto?`)).toBe("¿Sigo con el resto?");
 });
 
 /** The hook's exit code plus what it fed back, so a test can tell WHICH gate fired. */
@@ -1348,6 +1374,27 @@ test("a gap the loop-safety budget stood down on still keeps the cosmetic one qu
     const third = hookRun(payload(dir, claiming, same));
     expect(third[0]).toBe(0);
     expect(third[1]).not.toContain("breaks the output style");
+});
+
+test("every padded turn is its own row in the ledger", () => {
+    const dir = repoWith();
+    write(dir, ".enigma.json", JSON.stringify({ outputStyle: "full" }));
+    const padded = "| dashboard | 0.1.104 | sin cambios |";
+    const before = readLedger().filter((e) => e.rule === "style-untouched").length;
+
+    // The ledger is the whole justification for recording the untouched rule instead of blocking
+    // on it, and the day's dedupe - right for the convention sweep, which re-reads the same diff
+    // every turn - would collapse every padded reply into one row per rule per day. Each turn is a
+    // genuinely new encounter, so each one is counted.
+    const same = { session_id: "style-ledger" };
+    expect(hookRun(payload(dir, padded, same))[0]).toBe(0);
+    expect(hookRun(payload(dir, padded, same))[0]).toBe(0);
+    expect(hookRun(payload(dir, padded, same))[0]).toBe(0);
+
+    const rows = readLedger().filter((e) => e.rule === "style-untouched");
+    expect(rows.length - before).toBe(3);
+    // ...and it still reads as a finding about the reply.
+    expect(rows.every((e) => e.file === "(reply)")).toBe(true);
 });
 
 test("a period inside the question does not split the trigger from its question mark", () => {
