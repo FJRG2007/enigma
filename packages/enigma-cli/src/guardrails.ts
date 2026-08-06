@@ -2300,11 +2300,12 @@ function recordedToday(day: string): Set<string> {
  * with it" column with code the agent never wrote, which is the one number this ledger exists to
  * report.
  *
- * The reply stage skips the dedupe because its keys are unique BY CONSTRUCTION - the style gate
- * puts the turn's identity in `line` so every reply counts separately - which leaves recordedToday
- * unable to ever match and reading the entire file for nothing. That read sits on the Stop hook,
- * whose cost model is one regex sweep over one string, and it would grow with the file these rows
- * are themselves filling.
+ * The reply stage skips it for the same reason turned the other way: a reply is written fresh every
+ * turn, so the same rule seen twice is two encounters and not one violation counted twice - which
+ * is the whole point of recording the style findings that are not allowed to block. Deduplicating
+ * there would erase the count, and it would pay for it: `recordedToday` reads and parses the entire
+ * ledger, on the Stop hook, whose cost model is one regex sweep over one string, and it would grow
+ * with the file these rows are themselves filling.
  */
 export function recordFindings(findings: Finding[], outcome: Outcome, stage: LedgerStage = "edit"): void {
     if (!findings.length) return;

@@ -340,10 +340,10 @@ function sentenceSpans(text: string): Array<[number, number]> {
  * Filler and pleasantries the output-style spec names outright, EN + ES - the BLOCKING half.
  *
  * The spec's terms (assets/memory/CLAUDE.md: just, really, basically, simply, sure, happy to, of
- * course), PLUS their Spanish equivalents, and nothing beyond that; `just` and `really` are matched
- * by STYLE_SOFT_FILLER_RE instead, which records rather than blocks. The Spanish half is not in the
- * spec because the spec is written in English while this gate reads replies in whatever language
- * the user writes; a pleasantry is not less of one for being translated.
+ * course), PLUS their Spanish equivalents, and nothing beyond that; `just`, `really` and `sure` are
+ * matched by STYLE_SOFT_FILLER_RE instead, which records rather than blocks. The Spanish half is
+ * not in the spec because the spec is written in English while this gate reads replies in whatever
+ * language the user writes; a pleasantry is not less of one for being translated.
  *
  * That is the whole rule for what may live here, and it is stated precisely because the comment
  * used to claim the list was the spec "and nothing else" while carrying a word the spec has in no
@@ -351,37 +351,38 @@ function sentenceSpans(text: string): Array<[number, number]> {
  * cannot be justified as one of the spec's or a direct translation of one, it belongs in the spec
  * first - a word banned only in code is a rule the agent was never told.
  *
- * `sure` is matched only where it is actually filler - at the opening of a sentence - because
- * "make sure it runs" is not a pleasantry. The anchor requires a real BREAK, not merely a
- * terminator character: the start of the message, a terminator followed by whitespace, or a line
- * start. A trailing `\s*` on the terminator matches EMPTY, which turns every dotted identifier
- * into a sentence end. `just` and `really` were anchored here too and no longer live in this rule
- * at all - see STYLE_SOFT_FILLER_RE.
+ * Every term left here is matched WHEREVER it appears, with no positional scoping at all: each is
+ * a multi-word pleasantry or a word with no other sense in a reply, so position carries no
+ * information about it. The anchoring this rule used to need went with the three terms that needed
+ * it - see STYLE_SOFT_FILLER_RE.
  */
-const STYLE_FILLER_RE = /\b(?:basically|simply|of\s+course|happy\s+to)\b|(?:^|[.!?]\s+|\n\s*)(sure)\b|\b(?:por\s+supuesto|encantad[oa]\s+de|b(?:á|a)sicamente|simplemente)\b/i;
+const STYLE_FILLER_RE = /\b(?:basically|simply|of\s+course|happy\s+to|por\s+supuesto|encantad[oa]\s+de|b(?:á|a)sicamente|simplemente)\b/i;
 
 /**
- * The two terms of that same spec list that are RECORDED, NEVER BLOCKING - see
+ * The three terms of that same spec list that are RECORDED, NEVER BLOCKING - see
  * STYLE_BLOCKING_RULES for what earns the right to block.
  *
- * `just` and `really` are the highest-frequency members of the filler list and the only two whose
- * legitimate senses are ordinary technical reporting: temporal ("the fix just landed"), scalar
- * ("just under the cap"), and the leading or trailing token of a package or file name (`just-diff`,
- * `just.config.ts`, `deploy.just`). `\b` matches before both `-` and `.`, so an identifier sitting
- * at a sentence or line opening - the one position the anchor deliberately allows - cannot be told
- * apart from filler by position at all.
+ * `just`, `really` and `sure` are the highest-frequency members of the filler list and the only
+ * ones whose legitimate senses are ordinary technical reporting: temporal ("the fix just landed"),
+ * scalar ("just under the cap"), imperative ("make sure it runs"), and the leading or trailing
+ * token of a package or file name (`just-diff`, `just.config.ts`, `deploy.just`, `sure-thing`).
+ * `\b` matches before both `-` and `.`, so an identifier sitting at a sentence or line opening -
+ * the one position the anchor deliberately allows - cannot be told apart from filler by position
+ * at all.
  *
- * Three consecutive review rounds each closed one of those shapes and produced the next, which is a
+ * Four consecutive review rounds each closed one of those shapes and produced the next, which is a
  * signal about the RULE rather than about the anchor, and the same oscillation that demoted
  * STYLE_UNTOUCHED_RE. The invariant this gate keeps rediscovering: a rule may block only when its
  * false-positive surface is CLOSED, and a common English word in running technical prose is not.
- * Recorded, these two cost nothing but a ledger row. Do not promote them back without new
- * evidence - closing a fourth shape is not evidence.
+ * `sure` came out last and for no new reason: its false positives are rarer than the other two,
+ * and rarer is not closed. Recorded, these three cost nothing but a ledger row. Do not promote
+ * them back without new evidence - closing one more shape is not evidence.
  *
- * The sentence-opening anchor stays because it keeps the recorded count meaningful, not because it
- * is load-bearing: nothing matched here can deny a stop.
+ * The sentence-opening anchor stays here, and only here, because it keeps the recorded COUNT
+ * meaningful - "make sure it runs" and "just under the cap" are not padding and must not be
+ * counted as it. It is not load-bearing: nothing matched here can deny a stop.
  */
-const STYLE_SOFT_FILLER_RE = /(?:^|[.!?]\s+|\n\s*)(just|really)\b/i;
+const STYLE_SOFT_FILLER_RE = /(?:^|[.!?]\s+|\n\s*)(just|really|sure)\b/i;
 
 /**
  * This gate's OWN escape hatch, deliberately NOT `enigma:verify-ignore`.
@@ -472,10 +473,10 @@ export function styleFindings(message: string): VerifyGap[] {
     const hits: StyleHit[] = [];
 
     const body = lines.join("\n");
-    // The anchored alternative captures the word, so the detail quotes the filler rather than the
-    // sentence end that precedes it: a message that reads `". Just"` looks like a broken detector.
     const filler = STYLE_FILLER_RE.exec(body);
-    if (filler) hits.push({ rule: "filler", detail: `the reply carries filler the style bans: "${(filler[1] ?? filler[0]).trim()}"` });
+    if (filler) hits.push({ rule: "filler", detail: `the reply carries filler the style bans: "${filler[0].trim()}"` });
+    // The anchored rule captures the word, so the detail quotes the filler rather than the sentence
+    // end that precedes it: a message that reads `". Just"` looks like a broken detector.
     const soft = STYLE_SOFT_FILLER_RE.exec(body);
     if (soft) hits.push({ rule: "filler-soft", detail: `the reply carries filler the style bans: "${soft[1]!.trim()}"` });
 
@@ -509,18 +510,24 @@ export function styleFindings(message: string): VerifyGap[] {
 /**
  * Which style rules may DENY a stop. The rest are recorded and reported, never blocking.
  *
- * A rule may block only when its false-positive surface is CLOSED. `filler` and `preamble` match
- * terms the style spec enumerates in shapes that cannot mean anything else, so their surface is
- * bounded and auditable by reading the memory block. Blocking is the expensive half - it costs a
- * whole turn - and a false one over cosmetics is how this gate gets switched off, taking the
- * completion checks with it.
+ * A rule may block only when its false-positive surface is CLOSED. What is left blocking is the
+ * UNANCHORED filler terms plus `preamble`: multi-word pleasantries and opening forms that cannot
+ * mean anything else in a reply, so their surface is bounded and auditable by reading the memory
+ * block. Blocking is the expensive half - it costs a whole turn - and a false one over cosmetics
+ * is how this gate gets switched off, taking the completion checks with it.
  *
  * Two rules are deliberately absent, each demoted after the same oscillation: a review round would
  * close one false-positive shape and the next round would find another.
  * - `untouched`: whether a row is padding depends on context a regex does not have. Four shapes -
  *   see STYLE_UNTOUCHED_RE.
- * - `filler-soft` (`just`, `really`): a common English word in running technical prose. Three
- *   shapes - temporal, scalar, and the token of a package or file name - see STYLE_SOFT_FILLER_RE.
+ * - `filler-soft` (`just`, `really`, `sure`): a common English word in running technical prose.
+ *   Four shapes - temporal ("the fix just landed"), scalar ("just under the cap"), imperative
+ *   ("make sure it runs"), and the token of a package or file name (`just-diff` at a sentence
+ *   opening, `just.config.ts` at a line opening, `deploy.just`) - see STYLE_SOFT_FILLER_RE.
+ * That is ONE principle applied across three demotion decisions, not three retreats: the anchoring
+ * each of those terms needed was itself the evidence that position could not tell an identifier
+ * from filler, and `sure` went with the other two because rarer false positives are still not a
+ * closed surface.
  * Do not promote either back without new evidence; closing one more shape is not evidence.
  */
 const STYLE_BLOCKING_RULES = new Set(["filler", "preamble"]);
@@ -546,13 +553,13 @@ export function blockingStyleFindings(hits: VerifyGap[]): VerifyGap[] {
  * kind that is about the prose, so there is no file to point at - and a non-blocking rule is
  * always recorded as `warned` whatever the turn's outcome was.
  *
- * `line` carries the TURN instead of a line number, and that is what keeps these rows countable.
- * The ledger dedupes a day's entries on (rule, outcome, file, line), which is right for the
- * convention sweep - it re-reads the same branch diff every turn, so a repeat there is the same
- * violation seen again - and wrong here: every reply is a genuinely new encounter, so a constant
- * key collapsed twenty padded replies into one row per rule per day and made "does the agent keep
- * padding replies", the whole justification for recording the non-blocking rules, unanswerable.
- * The dedupe itself is untouched; only the identity is per turn.
+ * `line` carries the TURN instead of a line number. Reply rows bypass the ledger's day dedupe
+ * entirely (recordFindings, which states why), so this identity is not what keeps them countable -
+ * the bypass is. What it does is make the bypass FREE: it groups one turn's rows, and it is the
+ * reason re-applying the dedupe to this stage could never collapse two replies into one row the
+ * way a constant key did, when twenty padded replies recorded one row per rule per day and made
+ * "does the agent keep padding replies" - the whole justification for recording the non-blocking
+ * rules - unanswerable.
  */
 function styleLedgerEntry(hit: VerifyGap, turn: number): Finding {
     const rule = styleRuleOf(hit);
@@ -600,7 +607,15 @@ function recordStyleFindings(hits: VerifyGap[], blocking: VerifyGap[], denied: b
     recordFindings(hits.filter((hit) => !blocked.has(hit)).map((hit) => styleLedgerEntry(hit, turn)), "warned", "reply");
 }
 
-/** The message fed back when a reply breaks the compression level the user set. */
+/**
+ * The message fed back when a reply breaks the compression level the user set.
+ *
+ * It is derived from what was SHOWN - `styleBlocking`, which after the demotions holds nothing but
+ * `filler` and `preamble` - never from the historical rule list. A message that explains how to
+ * exempt a finding the model was never shown teaches a marker to spread pre-emptively, and
+ * STYLE_IGNORE_RE blanks the whole line for every detector, so speculative markers over legitimate
+ * result tables would suppress the rules that CAN block on those lines.
+ */
 function styleMessage(hits: VerifyGap[], level: string): string {
     return [
         `enigma verify: this reply breaks the output style you are set to (${level}).`,
@@ -608,8 +623,8 @@ function styleMessage(hits: VerifyGap[], level: string): string {
         ...hits.map((h) => `  - ${h.detail}`),
         "",
         "Rewrite the reply without those before ending the turn. The work itself is not in question here and must not change - only the prose reporting it.",
-        "Answer what was asked, at the size it deserves: report outcomes, not the route to them, and never list what you did not touch or were not asked about.",
-        "If one of these is load-bearing (you are quoting the phrase, or the row genuinely answers the question), say so and mark THAT LINE with enigma:style-ignore - it exempts that line from this style check only, and nothing else: not the rest of the reply, and not any other check.",
+        "Answer what was asked, at the size it deserves: report outcomes, not the route to them.",
+        "If one of these is load-bearing because you are quoting the phrase rather than using it, say so and mark THAT LINE with enigma:style-ignore - it exempts that line from this style check only, and nothing else: not the rest of the reply, and not any other check.",
     ].join("\n");
 }
 
@@ -1854,7 +1869,14 @@ export function runVerifyHook(payload?: string): number {
     // the agent, never a different one. A global-only read disagreed with the deployed block
     // exactly where it matters - a project that turned the style off still got blocked by it.
     const styleLevel = raw.permission_mode === "plan" ? "off" : String(config.outputStyle || "off");
-    const styleHits = styleLevel === "off" ? [] : styleFindings(message);
+    // THE MEASUREMENT NEVER DECIDES THE TURN, at either of the two sites it now has. This one sits
+    // ahead of every check, so a throw here would take the completion gate down with it and end the
+    // turn silently - a fail-open, the one outcome this module refuses. Nothing in a regex sweep
+    // over a string is expected to throw, which is precisely why an unexpected one must not be what
+    // decides. The other site is the `finally` at the end of this function.
+    let styleHits: VerifyGap[] = [];
+    try { styleHits = styleLevel === "off" ? [] : styleFindings(message); }
+    catch { /* measured nothing; the checks below still run */ }
     const styleBlocking = blockingStyleFindings(styleHits);
     let styleDenied = false;
     try {
@@ -1987,6 +2009,16 @@ export function runVerifyHook(payload?: string): number {
         // gate answers to the output-style setting, and keeping no record because a DIFFERENT
         // feature is off would leave the style level unmeasurable. The convention readers exclude
         // these rows (see isConvention), so the guardrails count stays clean either way.
-        recordStyleFindings(styleHits, styleBlocking, styleDenied, session);
+        //
+        // RECORDING MAY FAIL, AND WHEN IT FAILS THE TURN'S VERDICT IS UNCHANGED. This runs in a
+        // `finally`, and a throw there destroys the return already in flight: the caller is
+        // `process.exit(runVerifyHook(payload))`, so an exception means the exit is never reached,
+        // Node leaves with 1, and a Stop hook that had decided to block silently does not - the
+        // failure this module exists to prevent, pointed backwards. recordFindings guards its own
+        // file IO on the principle that the ledger is a measurement and never a gate; the work
+        // before that guard (hashing the turn id, mapping the findings, resolving the path) is not
+        // covered by it, so the whole call site is.
+        try { recordStyleFindings(styleHits, styleBlocking, styleDenied, session); }
+        catch { /* the ledger is a measurement, never a gate */ }
     }
 }

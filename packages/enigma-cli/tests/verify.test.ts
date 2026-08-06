@@ -1126,27 +1126,34 @@ test("styleFindings catches the padding the style bans, and nothing else", async
 
     expect(styleFindings("Por supuesto, basicamente ya esta.")[0]!.key).toBe("style:filler");
     expect(styleFindings("Of course, I just fixed it.")[0]!.key).toBe("style:filler");
-    // `just` and `really` are their OWN rule and it is recorded, never blocking. They fire at a
-    // sentence opening, in both languages...
+    // `just`, `really` and `sure` are their OWN rule and it is recorded, never blocking. They fire
+    // at a sentence opening, in both languages...
     expect(styleFindings("Just fixed the expiry check.")[0]!.key).toBe("style:filler-soft");
     expect(styleFindings("Listo. Really, ya esta.")[0]!.key).toBe("style:filler-soft");
+    expect(styleFindings("Sure, done.")[0]!.key).toBe("style:filler-soft");
     // ...and the detail quotes the word, not the sentence end in front of it.
     expect(styleFindings("Listo. Really, ya esta.")[0]!.detail).toContain('"Really"');
-    // ...while nothing they match can deny a stop, which is what the three shapes below bought:
-    // an identifier carrying one of these words at the one position the anchor deliberately allows
-    // is indistinguishable from filler, since `\b` matches before both `-` and `.`. Three review
-    // rounds each closed one and produced the next, so the rule was demoted instead of tuned again.
+    // ...while nothing they match can deny a stop, which is what the shapes below bought: an
+    // identifier carrying one of these words at the one position the anchor deliberately allows is
+    // indistinguishable from filler, since `\b` matches before both `-` and `.`. Four review rounds
+    // each closed one and produced the next, so the rule was demoted instead of tuned again -
+    // `sure` last of all, on no new evidence beyond its false positives being rarer, which is not
+    // the same as its surface being closed.
     for (const shape of [
         "Just fixed the expiry check.",
         "Bumped deps. just-diff went to 5.3.0.",           // sentence-initial package name
         "just.config.ts is now at the root.",              // line-initial file name
         "Actualizado el lockfile.\nreally-simple-ssr 2.1.0 sigue igual.",
+        "Sure, done.",
+        "Bumped deps. sure-thing went to 4.1.0.",          // the same hole, one word over
+        "sure.config.ts moved to the root.",
     ]) expect(blockingStyleFindings(styleFindings(shape))).toEqual([]);
     // The non-filler senses mid-sentence are reports and are not even recorded.
     expect(styleFindings("The fix just landed in auth.ts:42.")).toEqual([]);
     expect(styleFindings("Only one file changed, and it was really the loader that broke.")).toEqual([]);
     expect(styleFindings("Actualizado just-diff a 5.2.0 en el lockfile.")).toEqual([]);
     expect(styleFindings("El loader era realmente el fallo; just-diff sigue igual.")).toEqual([]);
+    expect(styleFindings("Make sure it runs before merging.")).toEqual([]);
     // The anchor needs a real BREAK, not a bare terminator character: a dot before the word is
     // exactly what a trailing `\s*` mistakes for a sentence end, and `.just` is the `just` task
     // runner's own extension.
@@ -1473,6 +1480,25 @@ test("a turn that had something more important to say is still measured", () => 
     // Once per turn, never once per exit path, and never as `blocked` - nobody was stopped over it.
     const added = readReplyLedger().slice(rowsBefore);
     expect(added.map((e) => [e.rule, e.outcome])).toEqual([["style-untouched", "warned"], ["style-untouched", "warned"]]);
+});
+
+test("a failing ledger write cannot destroy the verdict in flight", () => {
+    const dir = repoWith();
+    write(dir, ".enigma.json", JSON.stringify({ outputStyle: "full" }));
+    // The hook's whole contract is its exit code (`process.exit(runVerifyHook(payload))`), and the
+    // recording now runs in a `finally` on 100% of turns: a throw there discards the return already
+    // computed, the exit is never reached, Node leaves with 1, and a Stop hook that had decided to
+    // block silently does not - this module's own failure mode, pointed backwards. `recordFindings`
+    // guards its file IO; what this covers is the work BEFORE that guard. `toISOString` is on that
+    // path and on no other part of this hook, so throwing from it isolates exactly that window.
+    const real = Date.prototype.toISOString;
+    Date.prototype.toISOString = function (): string { throw new Error("ledger unavailable"); };
+    try {
+        // The assertion has to be on the CODE: it is the only thing the caller ever sees.
+        expect(hookRun(payload(dir, "Por supuesto, ya esta.", { session_id: "style-record-throws" }))[0]).toBe(2);
+    } finally {
+        Date.prototype.toISOString = real;
+    }
 });
 
 test("a period inside the question does not split the trigger from its question mark", () => {
