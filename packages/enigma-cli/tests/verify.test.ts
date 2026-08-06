@@ -1160,6 +1160,28 @@ test("styleFindings catches the padding the style bans, and nothing else", async
     expect(styleFindings("Added deploy.just to the repo root.")).toEqual([]);
     expect(styleFindings("Renombrado tasks.just y Makefile.just en el worktree.")).toEqual([]);
     expect(styleFindings("Recipes live in deploy.just")).toEqual([]);
+    // The BLOCKING terms keep their own half of that lesson: their only false positives are
+    // identifier-shaped, and `\b` is the wrong boundary for those - `-`, `.` and `/` are not word
+    // characters, so it sits inside every identifier built from one of these words. That surface IS
+    // closable, which is why these stayed blocking instead of being demoted as a fourth retreat.
+    for (const shape of [
+        "Bumped deps. simply-deferred went to 1.2.0.",     // sentence-initial package name
+        "simply.config.ts moved to the root.",             // line-initial file name
+        "Renombrado basically-ssr en el worktree.",
+        "Los ejemplos viven en docs/basically.md ahora.",
+        "Actualizado simplemente-cli a 0.4.0 en el lockfile.",
+    ]) expect(styleFindings(shape)).toEqual([]);
+    // ...and every one of them still blocks where it is actually filler, in both languages.
+    for (const shape of [
+        "Basically, the loader was the problem.",
+        "Simply run the build.",
+        "Of course, done.",
+        "Happy to help with that.",
+        "Por supuesto, ya esta.",
+        "Encantado de ayudar.",
+        "Basicamente era el loader.",
+        "Simplemente esto.",
+    ]) expect(blockingStyleFindings(styleFindings(shape)).map((h) => h.key)).toContain("style:filler");
     expect(styleFindings("Voy a revisar el fichero.")[0]!.key).toBe("style:preamble");
     expect(styleFindings("Let me check the file.")[0]!.key).toBe("style:preamble");
     expect(styleFindings("Déjame revisar el fichero.")[0]!.key).toBe("style:preamble");
@@ -1496,6 +1518,24 @@ test("a failing ledger write cannot destroy the verdict in flight", () => {
     try {
         // The assertion has to be on the CODE: it is the only thing the caller ever sees.
         expect(hookRun(payload(dir, "Por supuesto, ya esta.", { session_id: "style-record-throws" }))[0]).toBe(2);
+    } finally {
+        Date.prototype.toISOString = real;
+    }
+});
+
+test("the same holds for the convention recording, which is not in a finally at all", () => {
+    // The guarantee was written next to the style call site and held at one of the two: the
+    // conventions pair sat bare inside the hook's `try`, so a throw there escaped `runVerifyHook`,
+    // the caller's `process.exit` was never reached and the convention message was never written.
+    // An invariant that holds at one call site is a comment. It lives inside the recorder now.
+    const dir = repoWith();
+    write(dir, "src/New.tsx", SERVER_FIRST);
+    const real = Date.prototype.toISOString;
+    Date.prototype.toISOString = function (): string { throw new Error("ledger unavailable"); };
+    try {
+        const [code, stderr] = hookRun(payload(dir, "Added the delete action.", { session_id: "conventions-record-throws" }));
+        expect(code).toBe(2);
+        expect(stderr).toContain("fe-server-first-mutation");
     } finally {
         Date.prototype.toISOString = real;
     }

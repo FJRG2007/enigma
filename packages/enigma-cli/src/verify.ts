@@ -355,8 +355,16 @@ function sentenceSpans(text: string): Array<[number, number]> {
  * a multi-word pleasantry or a word with no other sense in a reply, so position carries no
  * information about it. The anchoring this rule used to need went with the three terms that needed
  * it - see STYLE_SOFT_FILLER_RE.
+ *
+ * What every term here does need is a TOKEN boundary rather than a word boundary. `-`, `.` and `/`
+ * are not word characters, so `\b` sits happily inside `simply-deferred`, `simply.config.ts` and
+ * `docs/basically.md`, and a package or path named after one of these words would deny the stop.
+ * The lookarounds refuse a match that a separator binds to a word on either side, while leaving the
+ * separator that merely ends a sentence alone ("...done simply." still matches). It wraps the whole
+ * alternation on purpose: a boundary written per term is a boundary the next term added will not
+ * have, and four rounds of per-term patching are what this replaces.
  */
-const STYLE_FILLER_RE = /\b(?:basically|simply|of\s+course|happy\s+to|por\s+supuesto|encantad[oa]\s+de|b(?:á|a)sicamente|simplemente)\b/i;
+const STYLE_FILLER_RE = /(?<!\w[-./])\b(?:basically|simply|of\s+course|happy\s+to|por\s+supuesto|encantad[oa]\s+de|b(?:á|a)sicamente|simplemente)\b(?![-./]\w)/i;
 
 /**
  * The three terms of that same spec list that are RECORDED, NEVER BLOCKING - see
@@ -380,9 +388,12 @@ const STYLE_FILLER_RE = /\b(?:basically|simply|of\s+course|happy\s+to|por\s+supu
  *
  * The sentence-opening anchor stays here, and only here, because it keeps the recorded COUNT
  * meaningful - "make sure it runs" and "just under the cap" are not padding and must not be
- * counted as it. It is not load-bearing: nothing matched here can deny a stop.
+ * counted as it. It is not load-bearing: nothing matched here can deny a stop. The same token
+ * boundary as STYLE_FILLER_RE is applied for the same reason, one step weaker: it cannot cause a
+ * false block here, but a `just-diff` opening a line is not padding either and counting it as such
+ * would corrupt the one number these three exist to produce.
  */
-const STYLE_SOFT_FILLER_RE = /(?:^|[.!?]\s+|\n\s*)(just|really|sure)\b/i;
+const STYLE_SOFT_FILLER_RE = /(?:^|[.!?]\s+|\n\s*)(just|really|sure)\b(?![-./]\w)/i;
 
 /**
  * This gate's OWN escape hatch, deliberately NOT `enigma:verify-ignore`.
@@ -511,23 +522,32 @@ export function styleFindings(message: string): VerifyGap[] {
  * Which style rules may DENY a stop. The rest are recorded and reported, never blocking.
  *
  * A rule may block only when its false-positive surface is CLOSED. What is left blocking is the
- * UNANCHORED filler terms plus `preamble`: multi-word pleasantries and opening forms that cannot
- * mean anything else in a reply, so their surface is bounded and auditable by reading the memory
- * block. Blocking is the expensive half - it costs a whole turn - and a false one over cosmetics
- * is how this gate gets switched off, taking the completion checks with it.
+ * UNANCHORED filler terms plus `preamble`: pleasantries and opening forms with no other sense in a
+ * reply, whose only false positives were identifier-shaped and are now closed by the token boundary
+ * on STYLE_FILLER_RE. Blocking is the expensive half - it costs a whole turn - and a false one over
+ * cosmetics is how this gate gets switched off, taking the completion checks with it.
+ *
+ * A term fails the closure test for exactly one of two reasons, and they were treated as one for
+ * four rounds, which is why the same regex was tuned four times:
+ * - IDENTIFIER-SHAPED, and therefore closable. `simply` is filler in every English sentence it
+ *   appears in; `simply.config.ts` is not a sentence. A boundary rule decides that, for every term
+ *   at once, including terms added later - so these stay blocking.
+ * - A NON-FILLER SENSE IN RUNNING PROSE, and therefore not closable. "The fix just landed" is
+ *   ordinary reporting and no boundary rule can rescue it, because nothing about the token is
+ *   wrong. These are demoted.
  *
  * Two rules are deliberately absent, each demoted after the same oscillation: a review round would
  * close one false-positive shape and the next round would find another.
  * - `untouched`: whether a row is padding depends on context a regex does not have. Four shapes -
  *   see STYLE_UNTOUCHED_RE.
  * - `filler-soft` (`just`, `really`, `sure`): a common English word in running technical prose.
- *   Four shapes - temporal ("the fix just landed"), scalar ("just under the cap"), imperative
- *   ("make sure it runs"), and the token of a package or file name (`just-diff` at a sentence
- *   opening, `just.config.ts` at a line opening, `deploy.just`) - see STYLE_SOFT_FILLER_RE.
- * That is ONE principle applied across three demotion decisions, not three retreats: the anchoring
- * each of those terms needed was itself the evidence that position could not tell an identifier
- * from filler, and `sure` went with the other two because rarer false positives are still not a
- * closed surface.
+ *   The identifier shape that started that series is closed for every term now, but three senses
+ *   remain and none of them is closable - temporal ("the fix just landed"), scalar ("just under
+ *   the cap") and imperative ("make sure it runs") - see STYLE_SOFT_FILLER_RE.
+ * That is ONE principle applied across three demotion decisions, not three retreats: each of those
+ * terms carries a sense that is not filler at all, so no amount of boundary or position work could
+ * reach it, and `sure` went with the other two because rarer false positives are still not a closed
+ * surface.
  * Do not promote either back without new evidence; closing one more shape is not evidence.
  */
 const STYLE_BLOCKING_RULES = new Set(["filler", "preamble"]);
@@ -598,13 +618,19 @@ function styleTurnId(session: string): number {
  * deny a stop is always `warned`, whatever some other rule in the same reply did, or the one column
  * the ledger exists for - what the agent was actually stopped over - would count a turn nobody was
  * ever stopped over.
+ *
+ * Cannot throw, like `recordFindings` and for the same reason: this one adds work of its own before
+ * delegating (hashing the turn id) and it runs in a `finally`, where a throw destroys the verdict
+ * already in flight.
  */
 function recordStyleFindings(hits: VerifyGap[], blocking: VerifyGap[], denied: boolean, session: string): void {
     if (!hits.length) return;
-    const turn = styleTurnId(session);
-    const blocked = new Set(blocking);
-    recordFindings(blocking.map((hit) => styleLedgerEntry(hit, turn)), denied ? "blocked" : "warned", "reply");
-    recordFindings(hits.filter((hit) => !blocked.has(hit)).map((hit) => styleLedgerEntry(hit, turn)), "warned", "reply");
+    try {
+        const turn = styleTurnId(session);
+        const blocked = new Set(blocking);
+        recordFindings(blocking.map((hit) => styleLedgerEntry(hit, turn)), denied ? "blocked" : "warned", "reply");
+        recordFindings(hits.filter((hit) => !blocked.has(hit)).map((hit) => styleLedgerEntry(hit, turn)), "warned", "reply");
+    } catch { /* the ledger is a measurement, never a gate */ }
 }
 
 /**
@@ -2010,15 +2036,14 @@ export function runVerifyHook(payload?: string): number {
         // feature is off would leave the style level unmeasurable. The convention readers exclude
         // these rows (see isConvention), so the guardrails count stays clean either way.
         //
-        // RECORDING MAY FAIL, AND WHEN IT FAILS THE TURN'S VERDICT IS UNCHANGED. This runs in a
-        // `finally`, and a throw there destroys the return already in flight: the caller is
-        // `process.exit(runVerifyHook(payload))`, so an exception means the exit is never reached,
-        // Node leaves with 1, and a Stop hook that had decided to block silently does not - the
-        // failure this module exists to prevent, pointed backwards. recordFindings guards its own
-        // file IO on the principle that the ledger is a measurement and never a gate; the work
-        // before that guard (hashing the turn id, mapping the findings, resolving the path) is not
-        // covered by it, so the whole call site is.
-        try { recordStyleFindings(styleHits, styleBlocking, styleDenied, session); }
-        catch { /* the ledger is a measurement, never a gate */ }
+        // RECORDING MAY FAIL, AND WHEN IT FAILS THE TURN'S VERDICT IS UNCHANGED - for every
+        // recording this hook does, not only this one. A throw here destroys the return already in
+        // flight: the caller is `process.exit(runVerifyHook(payload))`, so an exception means the
+        // exit is never reached, Node leaves with 1, and a Stop hook that had decided to block
+        // silently does not - the failure this module exists to prevent, pointed backwards. The
+        // guarantee is inside `recordFindings` and `recordStyleFindings` rather than wrapped around
+        // each use, because wrapping was tried and it held at one of the two call sites: the
+        // conventions pair a few lines up sat bare in this same `try`.
+        recordStyleFindings(styleHits, styleBlocking, styleDenied, session);
     }
 }

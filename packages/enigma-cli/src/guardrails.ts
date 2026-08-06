@@ -2291,6 +2291,14 @@ function recordedToday(day: string): Set<string> {
  * directory or a corrupt file must never turn a convention check into a broken edit, so nothing
  * here throws and nothing here blocks.
  *
+ * THAT GUARANTEE IS TOTAL AND IT LIVES HERE, not at the call sites. The whole body is inside the
+ * catch, not only the file IO: resolving the day, reading the dedupe set and resolving the path all
+ * run before a byte is written and every one of them can fail. It was guarded per use before, which
+ * is not a guarantee but a review item - the turn-end hook wrapped one of its two call sites and
+ * left the other bare, and a throw from that one escaped `runVerifyHook` entirely, so the caller's
+ * `process.exit(runVerifyHook(payload))` was never reached, Node left with 1, and a Stop hook that
+ * had decided to block silently did not. No caller needs a guard; a new one cannot forget it.
+ *
  * Deduplicated per day EXCEPT for an edit-stage block and the reply stage. The edit-stage block is
  * the only case where a repeat is a genuinely new encounter: the hook exited 2, the model was
  * stopped and answered it, so seeing the same rule again means it wrote the violation again.
@@ -2309,21 +2317,21 @@ function recordedToday(day: string): Set<string> {
  */
 export function recordFindings(findings: Finding[], outcome: Outcome, stage: LedgerStage = "edit"): void {
     if (!findings.length) return;
-    const at = new Date().toISOString();
-    const dedupe = stage !== "reply" && !(stage === "edit" && outcome === "blocked");
-    const seen = dedupe ? recordedToday(at.slice(0, 10)) : null;
-    const rows: string[] = [];
-    for (const f of findings) {
-        if (seen) {
-            const key = ledgerKey(f.ruleId, outcome, f.file, f.line);
-            if (seen.has(key)) continue;
-            seen.add(key);
-        }
-        rows.push(JSON.stringify({ at, rule: f.ruleId, severity: f.severity, outcome, stage, file: f.file, line: f.line } satisfies LedgerEntry));
-    }
-    if (!rows.length) return;
-    const path = ledgerPath();
     try {
+        const at = new Date().toISOString();
+        const dedupe = stage !== "reply" && !(stage === "edit" && outcome === "blocked");
+        const seen = dedupe ? recordedToday(at.slice(0, 10)) : null;
+        const rows: string[] = [];
+        for (const f of findings) {
+            if (seen) {
+                const key = ledgerKey(f.ruleId, outcome, f.file, f.line);
+                if (seen.has(key)) continue;
+                seen.add(key);
+            }
+            rows.push(JSON.stringify({ at, rule: f.ruleId, severity: f.severity, outcome, stage, file: f.file, line: f.line } satisfies LedgerEntry));
+        }
+        if (!rows.length) return;
+        const path = ledgerPath();
         mkdirSync(dirname(path), { recursive: true });
         let size = 0;
         try { size = statSync(path).size; } catch { /* first write */ }
