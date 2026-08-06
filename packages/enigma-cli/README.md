@@ -85,7 +85,9 @@ enigma compress [file] Compress JSON/logs/text to fewer tokens (reversible via C
 enigma verify          Check that work reported as finished actually is: scans the change for
                        unfinished work and runs your verification command. parity <src> <dst>
                        compares a codebase against a port of it. --json emits one document;
-                       exits 1 on findings, 2 when the check could not run. Also runs at turn end
+                       exits 1 on findings, 2 when the check could not run. Also runs at turn
+                       end, where it additionally checks the reply itself against your
+                       output-style level
 enigma mcp             Run the context-compression MCP server over stdio
 enigma dashboard|dash  Open the local dashboard (manage enigma; see savings) in your browser (http://enigma,
                        or http://localhost:24282 if :80/hosts is unavailable)
@@ -480,6 +482,11 @@ PRs stay normal, and the agent reverts to full prose for security warnings and
 other safety-critical replies. Only the selected level's rules are deployed, so
 asking for "normal mode" lifts the compression for the rest of the session while
 changing level takes `enigma config output-style <level>` and an agent restart.
+
+Set to anything but `off`, it is also enforced: the `enigma verify` turn-end
+hook scans the reply itself for filler, an announcing-the-work preamble, and
+padded table rows, and denies the stop on the ones it can catch without false
+positives (`enigma guardrails stats` reports how often a reply broke the level).
 
 Claude Code's status bar shows an `[ENIGMA]` badge at all times; while the mode is
 active it appends the level (`[ENIGMA:FULL]`, `[ENIGMA:LITE]`, `[ENIGMA:ULTRA]`).

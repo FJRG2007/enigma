@@ -59,6 +59,14 @@ Severity is not redefined here. A `block` rule denies the stop; a `warn` rides a
 
 It costs one diff on a turn that produced code and nothing on a turn that produced none, it has its own loop-safety budget (so convention findings can never spend the completion gate's), and `guardrails: false` in a repository's `.enigma.json` stands it down there.
 
+## The fifth check: reply style
+
+The `output-style` compression level (see <a href={docHref("reference/configuration")}>Configuration</a>) was the one always-on rule enigma shipped with nothing checking it - a block of prose in the agent's memory, read once and easy to drift away from over a long session. The hook already reads the final message for the checks above, so checking it against the style level as well costs nothing extra: no model call, no git, one more regex sweep over a string already in hand.
+
+It looks for a closed, mechanical list: filler the style rule itself names (in English and Spanish), an opening line that announces the work instead of reporting it, and a table row whose status cell only says something was skipped or unchanged. Only the first two can deny a stop - each is a pleasantry or an opening form with no other reading in a reply. The table-row check is recorded but never blocks: after several rounds of tuning it kept firing on ordinary result and coverage tables, because whether a row is padding depends on context a regex does not have, and a false block over prose is how a gate like this gets switched off. It still counts: `enigma guardrails stats` prints it as its own table, alongside the guardrail rules - that is what makes "does the agent keep padding replies" answerable with a number.
+
+It has its own loop-safety budget, so a cosmetic block can never spend the one the completion checks depend on, and it is checked last of everything in this hook - a turn that both padded its reply and left work unfinished hears about the work, not the prose. A line that is load-bearing quoted text rather than actual padding (documenting the check itself, for instance) can be marked with `enigma:style-ignore`, which exempts only that line and nothing else - deliberately not the same marker `enigma:verify-ignore` uses, so a cosmetic exemption can never also silence the checks above it.
+
 ## Precision
 
 A false block would just train you to switch this off, so the checks only match unambiguous evidence:
@@ -84,7 +92,7 @@ Coverage matches symbol **names**: it proves a counterpart exists, never that it
 ## Use it
 
 <Cmd name="enigma verify [cmd]" ex={["enigma verify", "enigma verify --all", "enigma verify parity ../original .", "enigma config verify-command \"npm test\"", "enigma config verify off"]}>
-No argument checks the current change, sweeps it for convention violations, and runs your verification command when there is new work to check - the same code checks the turn-end hook runs, on demand. The two checks that judge a turn instead of the code (the question that stops short, and a skipped quality gate) only exist in the hook, since there is no final message to read here. Advisory convention findings are printed as suggestions and never affect the exit code. `--all` sweeps every tracked file for unfinished work (the convention sweep is scoped to the change, so it is skipped there). It returns a non-zero exit code when something is unfinished, and also when it could not check at all (outside a git repository), so it works as a pre-merge or CI check.
+No argument checks the current change, sweeps it for convention violations, and runs your verification command when there is new work to check - the same code checks the turn-end hook runs, on demand. The checks that judge a turn instead of the code (the question that stops short, a skipped quality gate, and reply style) only exist in the hook, since there is no final message to read here. Advisory convention findings are printed as suggestions and never affect the exit code. `--all` sweeps every tracked file for unfinished work (the convention sweep is scoped to the change, so it is skipped there). It returns a non-zero exit code when something is unfinished, and also when it could not check at all (outside a git repository), so it works as a pre-merge or CI check.
 </Cmd>
 
 Set `verify-command` to whatever proves your project works (`npm test`, `make check`, `pytest -q`). It is read from your **global** config only, never from a repository's own `.enigma.json`, and it is excluded from config import and export: a cloned repository or an imported bundle must never be able to choose a command to run on your machine.

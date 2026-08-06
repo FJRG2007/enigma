@@ -59,10 +59,12 @@ Every finding the agent is actually confronted with is appended to a local ledge
 
 Only the model-facing channels write to it - the post-edit hook and the turn-end sweep, never the commit backstop, whose whole-file scan would bury the signal under code nobody wrote today. The dashboard's "Enigma Systems" row shows the 7-day count beside the active rule count.
 
+The same file also holds a second population: the <a href={docHref("concepts/verify")}>verify hook's</a> reply-style findings, one row per turn whose final message broke the `output-style` level. They answer a different question - "does the agent keep padding replies", not "which convention keeps getting skipped" - so they are never counted alongside the rows above; `enigma guardrails stats` prints them as their own table.
+
 ## Use it
 
 <Cmd name="enigma guardrails [cmd]" ex={["enigma guardrails", "enigma guardrails check db/schema.sql", "enigma guardrails stats 30", "enigma guardrails disable db-uuid-pk", "enigma guardrails enable db-uuid-pk", "enigma config guardrails off"]}>
-No argument lists the rules (built-in and custom, with their on/off state); `check <file>` runs the rules against a file (every rule, diff-stage ones included, so you can reproduce a finding you were blocked by); `stats [days]` reports which rules the agent keeps breaking, over the last `days` or over everything recorded; `disable`/`enable <id>` toggles a built-in; `remove <id>` drops a custom rule. Toggle the whole feature with `enigma config guardrails on|off` (applies immediately to Claude Code and opencode); `guardrails: false` in a repository's `.enigma.json` stands the turn-end sweep down for that project.
+No argument lists the rules (built-in and custom, with their on/off state); `check <file>` runs the rules against a file (every rule, diff-stage ones included, so you can reproduce a finding you were blocked by); `stats [days]` reports which rules the agent keeps breaking, over the last `days` or over everything recorded, plus a second table for how often a reply broke the output style; `disable`/`enable <id>` toggles a built-in; `remove <id>` drops a custom rule. Toggle the whole feature with `enigma config guardrails on|off` (applies immediately to Claude Code and opencode); `guardrails: false` in a repository's `.enigma.json` stands the turn-end sweep down for that project.
 </Cmd>
 
 ## Add a custom rule

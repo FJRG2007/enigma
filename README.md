@@ -247,7 +247,8 @@ enigma verify          Check that work reported as finished actually is: scans t
                        unfinished work and broken conventions, and runs your verification
                        command. parity <src> <dst> compares a codebase against a port of it.
                        --json emits one document; exits 1 on findings, 2 when the check
-                       could not run. Also runs at turn end
+                       could not run. Also runs at turn end, where it additionally checks
+                       the reply itself against your output-style level
 enigma mcp             Run the context-compression MCP server over stdio
 enigma api             Serve a local OpenAI-compatible API for your agents (Claude Code, and
                        Codex/OpenCode where installed); route per request by the model field.

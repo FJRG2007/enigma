@@ -137,7 +137,7 @@ Run the context-compression MCP server over stdio (used by the agents when `comp
 Enforce project conventions via a post-edit hook that feeds violations back to the agent, plus a turn-end sweep over the lines a change added. On by default. See <a href={docHref("concepts/guardrails")}>Convention guardrails</a> for detail.
 
 <Cmd name="enigma guardrails [cmd]" ex={["enigma guardrails", "enigma guardrails check db/schema.sql", "enigma guardrails stats 30", "enigma guardrails disable db-uuid-pk", "enigma config guardrails off"]}>
-No argument lists the rules; `check <file>` runs them against a file; `stats [days]` reports which rules the agent keeps breaking, and whether it was stopped or the code shipped anyway; `disable`/`enable <id>` toggles a built-in; `remove <id>` drops a custom rule. Toggle the feature with `enigma config guardrails on|off`.
+No argument lists the rules; `check <file>` runs them against a file; `stats [days]` reports which rules the agent keeps breaking, and whether it was stopped or the code shipped anyway, plus a separate table for how often a reply broke the `output-style` level; `disable`/`enable <id>` toggles a built-in; `remove <id>` drops a custom rule. Toggle the feature with `enigma config guardrails on|off`.
 </Cmd>
 
 ## trim
