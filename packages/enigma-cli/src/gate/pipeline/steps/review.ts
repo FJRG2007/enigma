@@ -161,7 +161,7 @@ Rules:
 - For each finding, set the action field to one of:
   - "ask-user": fixing it would go against the stated user intent - it questions whether a deliberate choice should stand, changes agreed product behavior, or calls for a redesign rather than a repair. Examples: "this feature seems unnecessary", "this hardcoded value should be configurable", "this deletion looks wrong".
   - "auto-fix": the finding is a defect whose fix serves the stated intent (correctness, error handling, security, performance, mechanical code quality). Being user-visible does not make it "ask-user": a bug that defeats what the author set out to do is "auto-fix", because the only question it raises is one the intent already answered.
-  - When in doubt, ask whether the fix would contradict the author's intent: if it would, use "ask-user"; if it would carry that intent out, use "auto-fix".
+  - When in doubt, ask whether the fix would contradict the author's intent: if it would, use "ask-user"; if it would carry that intent out, use "auto-fix". When no user intent is stated below, infer it from the change itself (its commits, its diff, what it plainly set out to do); if the change gives no signal either way, the doubt is unresolved and the finding is "ask-user".
   - "no-op": the finding is informational and does not require any action (e.g. noting a pattern, acknowledging a tradeoff).
 
 Risk assessment (after listing all findings):

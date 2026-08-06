@@ -170,9 +170,9 @@ function gateResolution(gate: render.StepView, alreadyFixed: boolean): [Approval
  * mechanically and hands back a gate carrying an `ask-user` finding. That is the
  * coarse half of the policy - handing it back does not make it the user's call.
  * The agent applies the bar the gate's help line states (escalate only what would
- * contradict the request, undo a deliberate decision, or take a very large change)
- * and fixes the rest itself. A gate whose findings cannot be parsed is treated as
- * having none - the same fallback gateResolution already takes.
+ * contradict the request, undo a deliberate decision, change agreed behavior, or take
+ * a very large change) and fixes the rest itself. A gate whose findings cannot be
+ * parsed is treated as having none - the same fallback gateResolution already takes.
  */
 export function canAutoResolve(policy: FixPolicy, gate: render.StepView): boolean {
     if (policy === "auto") return true;

@@ -222,11 +222,17 @@ const LEGITIMATE_STOP_RE = new RegExp([
     // Decisions that are the user's to make, not judgment calls.
     "\\b(?:business\\s+decision|product\\s+decision|breaking\\s+change|pricing|billing|cost|budget|which\\s+account|legal|compliance|your\\s+call|up\\s+to\\s+you)\\b",
     "\\b(?:decisión\\s+de\\s+negocio|cambio\\s+incompatible|factura(?:ción)?|coste|presupuesto|qué\\s+cuenta|tú\\s+decides)\\b",
-    // A gate run must escalate its ask-user findings verbatim, and the PR it leaves ready is
-    // the user's to review and merge. NOT the mere mention of the gate: "the gate has not run,
-    // tell me if you want me to launch it" named `enigma gate` and was thereby exempted from
-    // every check here - which is the single most reported way the gate gets skipped, so the
-    // exemption is now the escalation itself rather than the topic.
+    // A gate run escalates the ask-user findings that clear the bar (fixing one would
+    // contradict the request, undo a deliberate decision, change agreed behavior, or take a
+    // very large change), and the PR it leaves ready is the user's to review and merge. NOT
+    // the mere mention of the gate: "the gate has not run, tell me if you want me to launch
+    // it" named `enigma gate` and was thereby exempted from every check here - which is the
+    // single most reported way the gate gets skipped, so the exemption is the escalation
+    // itself rather than the topic. It stays at the token, deliberately: no regex separates
+    // an escalation that cleared the bar from one that should have been fixed, and the two
+    // read identically, so narrowing this would block the legitimate half of a pair it cannot
+    // tell apart. The bar is carried by the tiers that can weigh it - the gate's own help
+    // line, `/gate`, and the memory kernel - not by this one.
     "\\bask-user\\b",
     "\\b(?:review|merge|revisar|fusionar|mergear)\\b[^?]*\\b(?:pull\\s+request|\\bpr\\b)|\\b(?:pull\\s+request|\\bpr\\b)[^?]*\\b(?:review|merge|revisar|fusionar|mergear)\\b",
     "\\b(?:approve|approval|sign\\s+off|confirm)\\b[^?]*\\bplan\\b|\\bplan\\b[^?]*\\b(?:approve|approval|sounds?\\s+good|looks?\\s+(?:good|right))\\b",
@@ -802,7 +808,8 @@ const GATE_EXCUSE_RE = new RegExp([
     "\\bgate\\s*[:=]\\s*false\\b|\\b/gate\\s+off\\b|\\bgate\\s+(?:is\\s+)?(?:off|disabled)\\b",
     "\\bgate\\s+(?:está|esta)\\s+(?:apagado|desactivado|off)\\b|\\bgate\\s+desactivad",
     "\\bgate-protected-branches\\b|\\bprotected\\s+branch\\b|\\brama\\s+protegida\\b",
-    // Nothing to validate, or a finding that has to go back to the user verbatim.
+    // Nothing to validate, or a finding that cleared the escalation bar and has to go back to
+    // the user verbatim. Left at the bare token for the reason LEGITIMATE_STOP_RE spells out.
     "\\bnothing\\s+(?:committed|to\\s+validate|to\\s+gate)\\b|\\bno\\s+commits?\\s+to\\b",
     "\\bnada\\s+que\\s+(?:validar|commitear|gatear)\\b|\\bsin\\s+nada\\s+committead",
     "\\bask-user\\b",
@@ -997,7 +1004,7 @@ function gateMessage(reason: VerifyGap): string {
         `  ${reason.detail}`,
         "",
         "The gate being enabled IS the decision - it was taken when it was switched on, so there is nothing here to ask about and nothing to hand back. Drive it yourself now, in this same turn: `enigma gate axi run --intent \"<what the user set out to accomplish>\"`, on whatever branch the work is on, the default branch included. If the repository was never initialized, run `enigma gate init` first - an uninitialized repo is a setup step you can perform, not a blocker. The run refuses a dirty working tree, so commit the work before driving it: committing what you just finished is part of finishing it, not a separate decision to ask about.",
-        "Authorize `auto-fix` and `no-op` findings on your own judgment, escalate every `ask-user` finding verbatim, never pass `--yes`, and never merge the PR yourself: on `checks-passed`, leave it ready and ask the user to review and merge.",
+        "Authorize `auto-fix` and `no-op` findings on your own judgment. An `ask-user` finding goes back to the user only when fixing it would contradict what they asked for, undo a deliberate decision, change agreed behavior, or take a very large change; otherwise authorize that fix yourself too, because \"should I fix this?\" is not a question to hand back. Never pass `--yes`, and never merge the PR yourself: on `checks-passed`, leave it ready and ask the user to review and merge.",
         "The only ways this turn may end unvalidated are the ones the policy names, and each has to be stated: the user told you to skip or bypass it, the repository sets `gate: false`, the branch is listed in `gate-protected-branches`, or there is nothing committed to validate. There is one more, and it is a fact rather than a decision: the gate cannot be stood up here at all - the repository has no `origin` remote for `enigma gate init`, or init or the daemon failed to start. Say that, with what `enigma gate doctor` reports, and this stands down. If one of those is the case, say which - do not ask for permission to run something that is already turned on.",
     ].join("\n");
 }

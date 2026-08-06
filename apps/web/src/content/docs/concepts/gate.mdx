@@ -31,7 +31,7 @@ Each step either passes on its own or stops with a **finding** for you to act on
 
 - **`auto-fix`** - mechanical, low-risk. Authorize it and the pipeline applies the fix and re-reviews.
 - **`no-op`** - informational; nothing to do.
-- **`ask-user`** - a judgment call only you can make. The pipeline stops and escalates it.
+- **`ask-user`** - the review could not settle it mechanically. The pipeline stops, and it reaches you only if fixing it would go against what you asked for; otherwise the agent authorizes the fix.
 
 Safe, mechanical fixes are applied automatically; anything that touches your intent is escalated for you to **approve**, **fix**, or **skip**. Nothing reaches the configured push target until every check is green.
 
@@ -39,7 +39,7 @@ Safe, mechanical fixes are applied automatically; anything that touches your int
 
 Who settles a finding is yours to set, in the dashboard's **Quality gate** view or as `fix_policy` in `~/.enigma/gate/config.yaml`:
 
-- **Fix, and ask about the rest** (`assisted`, the default) - the agent settles what the review found and comes back only when the answer is not already yes: the finding contradicts what you asked for, undoes a deliberate decision, or takes a very large change. It is never asked whether to repair a defect.
+- **Fix, and ask about the rest** (`assisted`, the default) - the agent settles what the review found and comes back only when the answer is not already yes: the finding contradicts what you asked for, undoes a deliberate decision, changes agreed behavior, or takes a very large change. It is never asked whether to repair a defect.
 - **Fix without asking** (`auto`) - the agent settles everything and never checks back.
 - **Always ask** (`ask`) - nothing is fixed until you say so; every finding reaches you first.
 
@@ -77,7 +77,7 @@ Branch names are matched exactly. `axi run` then refuses that branch and says ho
 
 ## Automatic driving
 
-You do not have to ask your agent to run the gate or initialize repos by hand. The deployed agent memory carries an always-on instruction: once the agent has committed a code task, it **drives the gate itself** on whatever branch that work is on - running `enigma gate init` once if the repo is not set up yet - then handles findings the way `fix_policy` says (by default: applies the safe `auto-fix`/`no-op` ones, escalates every `ask-user` one to you), and leaves the PR ready for you to review and merge (it never merges on its own).
+You do not have to ask your agent to run the gate or initialize repos by hand. The deployed agent memory carries an always-on instruction: once the agent has committed a code task, it **drives the gate itself** on whatever branch that work is on - running `enigma gate init` once if the repo is not set up yet - then handles findings the way `fix_policy` says (by default: applies every fix it can, and comes back only for an `ask-user` finding whose repair would go against what you asked for), and leaves the PR ready for you to review and merge (it never merges on its own).
 
 This is **per project**. To opt a single repo out while the gate stays on everywhere else, set `gate: false` in that repo's `.enigma.json` (or run `/gate off` there); the agent skips automatic driving there.
 

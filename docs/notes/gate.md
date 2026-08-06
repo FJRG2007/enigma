@@ -239,10 +239,17 @@ it, not the executor:
   bar, not a category. The dashboard sells `assisted` as "Fix, and ask about the rest", and the
   rest a user means is a genuine doubt - not permission to repair a defect the review just
   proved. So the `help` line, the `/gate` command and the memory kernel all state the same bar:
-  escalate only when fixing it would contradict the request, undo a deliberate decision, or take
-  a very large change. "Should I fix this?" is never escalated, because recommending a fix and
-  then asking permission for it is the same question twice. Reported 2026-08-06 by the user
-  after two plain defects were relayed as questions.
+  escalate only when fixing it would contradict the request, undo a deliberate decision, change
+  agreed behavior, or take a very large change. "Should I fix this?" is never escalated, because
+  recommending a fix and then asking permission for it is the same question twice. Reported
+  2026-08-06 by the user after two plain defects were relayed as questions. All four criteria
+  travel together - the always-on kernel must never state a laxer bar than the skippable tiers,
+  or the tier that always loads is the one that under-protects.
+- `enigma verify` does NOT enforce that bar and is not meant to: `LEGITIMATE_STOP_RE` and
+  `GATE_EXCUSE_RE` stand the stop-short block down on the bare `ask-user` token. Deliberate -
+  an escalation that cleared the bar and one that should have been a `fix` read identically to
+  a regex, and a false block lands on the turn that did everything right (verified-completion.md
+  has the asymmetry). The bar lives in the tiers that can weigh a finding, not in the pattern.
 - Same rule, one tier earlier: review's classification prompt (`steps/review.ts`) used to say
   "when in doubt, default to ask-user" and treated any user-visible finding as one, which is how
   a bug that DEFEATS the stated intent got marked `ask-user`. The test is now directional - would
