@@ -1123,7 +1123,6 @@ test("styleFindings catches the padding the style bans, and nothing else", async
     ].join("\n");
     expect(styleFindings(padded).map((h) => h.key)).toEqual(["style:untouched"]);
     expect(styleFindings("| dashboard | 0.1.104 | unchanged |").map((h) => h.key)).toEqual(["style:untouched"]);
-    expect(styleFindings("- helio: sin cambios").map((h) => h.key)).toEqual(["style:untouched"]);
 
     expect(styleFindings("Por supuesto, basicamente ya esta.")[0]!.key).toBe("style:filler");
     expect(styleFindings("Of course, I just fixed it.")[0]!.key).toBe("style:filler");
@@ -1140,28 +1139,40 @@ test("styleFindings catches the padding the style bans, and nothing else", async
     // it is the worst thing a cosmetic check can do.
     expect(styleFindings("Fixed; verified it actually runs.")).toEqual([]);
     expect(styleFindings("El estado actual es correcto y hay que actualizar el lockfile.")).toEqual([]);
-    // A count is not a status row, however the tally is worded - these are ordinary test reports.
+    // THE SCOPE IS A TABLE STATUS CELL, and the limit is deliberate: three rounds of widening this
+    // rule to bullets and prose produced three false blocks on ordinary reporting, and a rule that
+    // fires on a shape nobody can predict is the rule that gets switched off. Padding written as a
+    // bullet is not caught, which is the accepted cost of never blocking a tally or a report.
+    expect(styleFindings("- helio: sin cambios")).toEqual([]);
     expect(styleFindings("- 159 tests green, 2 skipped")).toEqual([]);
     expect(styleFindings("- 3 suites skipped")).toEqual([]);
     expect(styleFindings("- 1 test skipped, 158 green")).toEqual([]);
     expect(styleFindings("- 2 saltados en el runner")).toEqual([]);
-    // ...while a status CELL that merely sits after a version is still a row about a non-event.
+    expect(styleFindings("- @enigmax/dashboard 0.1.104 skipped")).toEqual([]);
+    // ...while a bare status CELL is one, whatever sits in front of it, and a marker restated is
+    // still bare: "Saltado (sin cambios)" says the same non-event twice.
     expect(styleFindings("| dashboard | 0.1.104 | skipped |").map((h) => h.key)).toEqual(["style:untouched"]);
+    expect(styleFindings("| helio | 0.3.2 | Saltado (sin cambios) |").map((h) => h.key)).toEqual(["style:untouched"]);
 
     // Naming a blocked item is REQUIRED elsewhere in this file (see blockMessage), so a row that
-    // says WHY is a report and passes; a row that only asserts the non-event is the padding.
-    expect(styleFindings("- packages/dashboard: skipped (no npm credentials)")).toEqual([]);
-    expect(styleFindings("- packages/dashboard: n/a because the API is down")).toEqual([]);
-    expect(styleFindings("- helio: sin cambios - no lo tocamos por falta de credenciales")).toEqual([]);
+    // says WHY is a report and passes - wherever in the row it says it, since the model has no way
+    // to know which column the detector reads.
     expect(styleFindings("| dashboard | n/a | no npm credentials |")).toEqual([]);
-    // A comma is the most natural connector for that in both languages, so it is one too.
-    expect(styleFindings("- packages/dashboard: unchanged, I have no npm credentials")).toEqual([]);
-    expect(styleFindings("- helio: sin cambios, no hacia falta tocarlo")).toEqual([]);
+    expect(styleFindings("| dashboard | no npm credentials | skipped |")).toEqual([]);
+    expect(styleFindings("| helio | falta el token | sin cambios |")).toEqual([]);
 
     // "Let me know" is not a preamble: it is frequently the whole reply on a turn that names a
     // blocker or hands back a PR that is the user's to merge.
     expect(styleFindings("Let me know which account to use.")).toEqual([]);
     expect(styleFindings("Déjame saber si quieres el PR fusionado.")).toEqual([]);
+    // Neither is announcing a NEED: announcing WORK is a preamble, announcing a LACK is reporting
+    // the blocker every other check in this module protects.
+    expect(styleFindings("Voy a necesitar las credenciales de npm para publicar.")).toEqual([]);
+    expect(styleFindings("I'm going to need the npm token before this can ship.")).toEqual([]);
+    expect(styleFindings("Voy a requerir el acceso al repo de la organizacion.")).toEqual([]);
+    // ...and the work forms still fire, in both languages.
+    expect(styleFindings("Voy a publicar los paquetes en npm.")[0]!.key).toBe("style:preamble");
+    expect(styleFindings("I'm going to publish the packages to npm.")[0]!.key).toBe("style:preamble");
 
     // The opening examined is the first line of PROSE, so a blank line, a heading or a fenced
     // block in front of it is not a way past the check.
@@ -1178,7 +1189,7 @@ test("styleFindings catches the padding the style bans, and nothing else", async
     // ...and that marker exempts the LINE it sits on, not the rest of the reply.
     expect(styleFindings("| dashboard | sin cambios | enigma:style-ignore\n\nOf course, done.").map((h) => h.key)).toEqual(["style:filler"]);
     // The style gate does NOT answer to the marker the other checks use, and vice versa.
-    expect(styleFindings("- helio: sin cambios enigma:verify-ignore").map((h) => h.key)).toEqual(["style:untouched"]);
+    expect(styleFindings("| helio | sin cambios | enigma:verify-ignore |").map((h) => h.key)).toEqual(["style:untouched"]);
 });
 
 test("the style gate's escape hatch cannot stand down the checks about the work", async () => {
@@ -1189,7 +1200,7 @@ test("the style gate's escape hatch cannot stand down the checks about the work"
     expect(asksToContinue("Paso 1 hecho. enigma:style-ignore\n\n¿Sigo con el resto?")).toBe("¿Sigo con el resto?");
     expect(gateSkipped("I skipped the enigma gate for this change. enigma:style-ignore")).not.toBe("");
     // ...while it does what its own message claims.
-    expect(styleFindings("- helio: sin cambios enigma:style-ignore")).toEqual([]);
+    expect(styleFindings("| helio | sin cambios | enigma:style-ignore |")).toEqual([]);
 });
 
 test("a message that DESCRIBES the banned phrasing is not using it", async () => {
@@ -1201,6 +1212,25 @@ test("a message that DESCRIBES the banned phrasing is not using it", async () =>
     expect(styleFindings("The rule bans a row saying `unchanged`.")).toEqual([]);
     expect(styleFindings("```\n| dashboard | sin cambios |\n```")).toEqual([]);
     expect(styleFindings("> | dashboard | sin cambios |")).toEqual([]);
+});
+
+test("the claim and gate checks read what the turn asserts, not what it quotes", () => {
+    // Same doctrine as the stop-short check, wired into the other two whole-message scans: a
+    // turn documenting either of them must not be read as an instance of it.
+    expect(claimsDone("The gate fires on a reply that says `all done`.")).toBe(false);
+    expect(claimsDone('El detector busca frases como "ya está todo" en el mensaje final.')).toBe(false);
+    expect(gateSkipped("The check fires on a reply saying `I skipped the enigma gate`.")).toBe("");
+    expect(gateSkipped('El check mira si el mensaje dice "el gate sigue sin ejecutarse".')).toBe("");
+
+    // ...and blanking must never let a REAL one escape: an assertion in ordinary prose is
+    // untouched, and it is quoted back from the original text.
+    expect(claimsDone("All done - the port is finished.")).toBe(true);
+    expect(claimsDone("Ya está todo.")).toBe(true);
+    expect(gateSkipped("I skipped the enigma gate for this change.")).toBe("I skipped the enigma gate for this change.");
+    // The way OUT is read from the untouched message, like LEGITIMATE_STOP_RE: half the accepted
+    // reasons are written in code ticks, and blanking must not take the exit away.
+    expect(gateSkipped("The gate did not run: this repo sets `gate: false`.")).toBe("");
+    expect(claimsDone('Everything is implemented, though the exporter is "still pending".')).toBe(false);
 });
 
 test("the stop-short check reads what the turn asserts, not what it quotes", () => {
@@ -1287,6 +1317,24 @@ test("a cosmetic block never preempts, or spends the budget of, the gaps about t
     const primary = hookRun(payload(dir, "All done, everything is implemented.", same));
     expect(primary[0]).toBe(2);
     expect(primary[1]).toContain("You just reported this work as finished");
+});
+
+test("a gap the loop-safety budget stood down on still keeps the cosmetic one quiet", () => {
+    const dir = repoWith();
+    write(dir, ".enigma.json", JSON.stringify({ outputStyle: "full" }));
+    write(dir, "src/new.ts", "// TODO: finish this\n"); // enigma:verify-ignore
+    const claiming = `All done, everything is implemented.\n\n| dashboard | 0.1.104 | sin cambios |`;
+    const same = { session_id: "spent-completion-budget" };
+
+    // The same unfinished work three turns running: the completion gate blocks twice and then
+    // stands down. Suppressed-by-budget still means there was something more important to say,
+    // so the style gate must NOT be promoted into that silence - the model would be told to trim
+    // a table while the TODO it was already blocked on twice ships.
+    expect(hookRun(payload(dir, claiming, same))[0]).toBe(2);
+    expect(hookRun(payload(dir, claiming, same))[0]).toBe(2);
+    const third = hookRun(payload(dir, claiming, same));
+    expect(third[0]).toBe(0);
+    expect(third[1]).not.toContain("breaks the output style");
 });
 
 test("a period inside the question does not split the trigger from its question mark", () => {

@@ -155,14 +155,19 @@ const DISCLOSURE_RE = /\b(?:still (?:pending|missing|to do|needs)|remains? (?:pe
  * remaining item. Disclosure wins over assertion, including within one sentence, so
  * "the port is complete except for two modules I could not finish" is read as the honest
  * report it is - the gate exists to catch silence about gaps, never to punish naming them.
+ *
+ * The ASSERTION is read with quoted spans blanked (see withoutQuoted) - a turn that quotes or
+ * describes "all done" is not claiming it - while the DISCLOSURE is read from the untouched
+ * text, on the same asymmetry LEGITIMATE_STOP_RE has in asksToContinue: blanking must never be
+ * able to hide the sentence that names a gap.
  */
 export function claimsDone(message: string): boolean {
     if (!message || typeof message !== "string") return false;
-    const sentences = message.split(/(?<=[.!?\n])\s+/).filter(Boolean);
+    const scannable = withoutQuoted(message);
     let claim = false;
-    for (const sentence of sentences) {
-        if (DISCLOSURE_RE.test(sentence)) return false;
-        if (CLAIM_RE.test(sentence)) claim = true;
+    for (const [start, end] of sentenceSpans(scannable)) {
+        if (DISCLOSURE_RE.test(message.slice(start, end))) return false;
+        if (CLAIM_RE.test(scannable.slice(start, end))) claim = true;
     }
     return claim;
 }
@@ -343,31 +348,20 @@ const STYLE_FILLER_RE = /\b(?:just|really|basically|simply|of\s+course|happy\s+t
 const STYLE_IGNORE_RE = /enigma:style-ignore/;
 
 /**
- * A row or bullet reporting an item as NOT touched. This is the one the style spec calls out
- * as "no list of what you never touched", and the one that prompted this check: a release
- * summary carried two table rows for packages that had not changed and had not been asked about.
+ * The phrases that report an item as NOT touched, in both languages. A table cell saying nothing
+ * but these is the one the style spec calls out as "no list of what you never touched", and the
+ * shape that prompted this check: a release summary carried two table rows for packages that had
+ * not changed and had not been asked about.
  *
- * A count is not a status - "2 skipped", "3 suites skipped", "1 test skipped, 158 green" and
- * "2 saltados en el runner" are all a number the reply is REPORTING, not a row about something
- * nobody asked about. The carve-out is therefore the tally shape rather than the adjacent digit:
- * a number earlier on the line with nothing but words and spaces between it and the marker.
+ * DELIBERATELY NARROW, and the narrowness is the design rather than an oversight. Three rounds of
+ * widening this rule to bullets and prose produced three false blocks on ordinary reporting - a
+ * tally ("3 suites skipped"), a row naming its reason, a release row with a version in it - each
+ * of which had to be carved back out. A rule that fires on a shape nobody can predict is the rule
+ * that gets switched off, and switching this one off takes the completion checks with it. So
+ * padding written as a bullet or in prose is NOT caught, and that is accepted: a bare status cell
+ * in a table is mechanical to recognise, and a cell that carries a reason is not a bare one.
  */
-const STYLE_UNTOUCHED_RE = /\b(?:sin\s+cambios|no\s+aplica|n\/a|sin\s+tocar|no\s+modificad[oa]s?|no\s+tocad[oa]s?|unchanged|not\s+touched|no\s+changes|nothing\s+to\s+do)\b|(?<!\d[\s\w]{0,24})\b(?:saltad[oa]s?|skipped)\b/i;
-const STYLE_UNTOUCHED_ALL_RE = new RegExp(STYLE_UNTOUCHED_RE.source, "gi");
-
-/**
- * A reason, following the untouched marker on the same row: parenthesised, introduced by a
- * because/porque word, after a dash, a colon or a comma, or in a further table cell that carries
- * words rather than only an identifier or a version.
- *
- * THE INVARIANT, and it must not drift - the connectors are the encoding, not the rule: naming a
- * blocked item is REQUIRED - blockMessage orders it with the file and the reason - so a row that
- * says WHY passes, in whichever of the two languages and with whichever connector joins it. What
- * blocks is a row that only asserts the non-event ("| dashboard | 0.1.104 | sin cambios |",
- * "- helio: unchanged"), which is padding about something nobody asked about. Whether the reason
- * is a GOOD one is not this check's business.
- */
-const STYLE_REASON_RE = /\([^)\n]*\p{L}[^)\n]*\)|\b(?:because|since|due\s+to|porque|ya\s+que|debido\s+a)\b|[-–—:]\s+\S|,\s+\S[^\n]{2,}|\|[^|\n]*\p{L}/iu;
+const STYLE_UNTOUCHED_RE = /\b(?:sin\s+cambios|no\s+aplica|n\/a|sin\s+tocar|no\s+modificad[oa]s?|no\s+tocad[oa]s?|saltad[oa]s?|unchanged|not\s+touched|no\s+changes|nothing\s+to\s+do|skipped)\b/gi;
 
 /**
  * An opening line that announces the work instead of reporting it. "Let me know" / "déjame
@@ -377,18 +371,34 @@ const STYLE_REASON_RE = /\([^)\n]*\p{L}[^)\n]*\)|\b(?:because|since|due\s+to|por
  */
 const STYLE_PREAMBLE_RE = /^\s*(?:voy\s+a\b|ahora\s+voy\s+a\b|(?:déjame|dejame|permíteme|permiteme)\s+(?!saber\b)|let\s+me\s+(?!know\b)|i'?m\s+going\s+to\b|i\s+will\s+now\b|first,?\s+i'?ll\b)/i;
 
+/**
+ * What the preamble forms may be followed by without announcing WORK. "Voy a necesitar las
+ * credenciales" and "I'm going to need the npm token" announce a LACK, and naming a blocker is
+ * the one shape every other check in this module protects - LEGITIMATE_STOP_RE exists for it, and
+ * the style spec itself calls it an outcome ("work left unfinished, unverified or blocked IS an
+ * outcome - always name it"). Announcing work is a preamble; announcing a lack is a report.
+ */
+const STYLE_NEED_RE = /^\s*(?:necesit\w*|requier\w*|requer\w*|har[áa]\s+falta|hace\s+falta|need\w*|require\w*)\b/i;
+
 /** One style violation: the rule it broke and the text that broke it. */
 interface StyleHit { rule: string; detail: string; }
 
-/** A row or bullet that reports an item as untouched without saying why, or "" for anything else. */
-function untouchedWithoutReason(line: string): string {
-    if (!/^\s*(?:\||[-*])/.test(line)) return "";
-    const marker = STYLE_UNTOUCHED_RE.exec(line);
-    if (!marker) return "";
-    // A restated non-event is not a reason: "Saltado (sin cambios)" says the same thing twice,
-    // so every marker comes out of the candidate text before it is weighed.
-    const rest = line.slice(marker.index + marker[0].length).replace(STYLE_UNTOUCHED_ALL_RE, " ");
-    return STYLE_REASON_RE.test(rest) ? "" : line.trim().slice(0, 100);
+/** A table row whose status cell only asserts a non-event, or "" for anything else. */
+function untouchedStatusRow(line: string): string {
+    if (!/^\s*\|/.test(line)) return "";
+    const cells = line.trim().replace(/^\||\|$/g, "").split("|").map((cell) => cell.trim());
+    // A cell is a bare status when nothing carrying meaning survives taking the markers out of
+    // it: "Saltado (sin cambios)" states the same non-event twice and is still a bare status.
+    const bare = (cell: string): boolean => {
+        const rest = cell.replace(STYLE_UNTOUCHED_RE, " ");
+        return rest !== cell && !/[\p{L}\d]/u.test(rest);
+    };
+    if (!cells.some(bare)) return "";
+    // Naming a blocked item is REQUIRED elsewhere in this file - blockMessage orders it with the
+    // file and the reason - so a row that says WHY is a report, wherever in the row it says it. An
+    // item and a version are one word each; a reason is not.
+    if (cells.some((cell) => !bare(cell) && /\S\s+\S/.test(cell))) return "";
+    return line.trim().slice(0, 100);
 }
 
 /**
@@ -419,12 +429,14 @@ export function styleFindings(message: string): VerifyGap[] {
     // so the same sentence would pass or block depending on what preceded it.
     const opening = lines.find((line) => line.trim() && !/^\s*#{1,6}\s/.test(line)) ?? "";
     const preamble = STYLE_PREAMBLE_RE.exec(opening);
-    if (preamble) hits.push({ rule: "preamble", detail: `the reply opens by announcing the work ("${preamble[0].trim()}") instead of reporting it` });
+    if (preamble && !STYLE_NEED_RE.test(opening.slice(preamble[0].length))) {
+        hits.push({ rule: "preamble", detail: `the reply opens by announcing the work ("${preamble[0].trim()}") instead of reporting it` });
+    }
 
     for (const line of lines) {
-        const row = untouchedWithoutReason(line);
+        const row = untouchedStatusRow(line);
         if (!row) continue;
-        hits.push({ rule: "untouched", detail: `a row reports something the turn did not touch, with no reason given: "${row}"` });
+        hits.push({ rule: "untouched", detail: `a table row reports something the turn did not touch, with no reason given: "${row}"` });
         break; // one finding per rule: the fix is the same edit for every such row
     }
 
@@ -624,15 +636,27 @@ const GATE_EXCUSE_RE = new RegExp([
  * This reads the message alone, so the caller must still ask the ledger whether the gate
  * actually ran (`gateValidatedHead`): a report of a SUCCESSFUL run can still carry an offer
  * to run it again, and blocking that would deny the stop over a pipeline that already ran.
+ *
+ * The REPORT is read with quoted spans blanked (see withoutQuoted), because this check has the
+ * same self-documentation failure every other one here does - a reply explaining the gate, or
+ * quoting the kernel's own line about it, is a sentence ABOUT a skipped run rather than one.
+ * The EXCUSE is read from the untouched text, on the asymmetry stated above GATE_EXCUSE_RE:
+ * naming the reason is the documented way out, and half of them are written in code ticks
+ * (`gate: false`, `gate-protected-branches`), so blanking must not take the exit away.
  */
 export function gateSkipped(message: string): string {
     if (!message || typeof message !== "string") return "";
-    if (!GATE_TOPIC_RE.test(message) || GATE_EXCUSE_RE.test(message)) return "";
+    if (GATE_EXCUSE_RE.test(message)) return "";
+    const scannable = withoutQuoted(message);
+    if (!GATE_TOPIC_RE.test(scannable)) return "";
     let topical = false;
-    for (const sentence of message.split(/(?<=[.!?\n])\s+/)) {
+    for (const [start, end] of sentenceSpans(scannable)) {
+        const sentence = scannable.slice(start, end);
         const onTopic = GATE_TOPIC_RE.test(sentence);
         const offered = (onTopic || topical) && GATE_OFFER_RE.test(sentence) && GATE_RUN_ACTION_RE.test(sentence);
-        if (offered || (onTopic && GATE_NOT_RUN_RE.test(sentence))) return sentence.trim().slice(0, 200);
+        // Quoted back from the ORIGINAL span, like asksToContinue: blanking preserves every
+        // offset, so the same slice is the sentence the model actually wrote.
+        if (offered || (onTopic && GATE_NOT_RUN_RE.test(sentence))) return message.slice(start, end).trim().slice(0, 200);
         topical = onTopic;
     }
     return "";
@@ -1674,7 +1698,12 @@ export function runVerifyHook(payload?: string): number {
     // know if...") carries an offer that reads exactly like the skipped one. Blocking there would
     // order a pipeline that just ran, with no phrasing left that could clear it.
     const skipped = raw.permission_mode === "plan" ? "" : gateSkipped(message);
+    // Every check below records whether it FOUND something, separately from whether the
+    // loop-safety budget let it block: a gate standing down because its channel is spent must
+    // not promote the cosmetic one into its place. See styleGate.
+    let substantive = false;
     if (skipped && gate().expected && !gateValidatedHead(cwd, gate())) {
+        substantive = true;
         const gap: VerifyGap = { kind: "gate", detail: skipped };
         if (mayBlock(`gate:${issueKey(session, [gap])}`, session, "gate")) {
             process.stderr.write(`${gateMessage(gap)}\n`);
@@ -1690,9 +1719,12 @@ export function runVerifyHook(payload?: string): number {
     // ITS OWN BUDGET CHANNEL, for the reason the conventions channel has one: sharing the `total`
     // ceiling let these blocks spend it and stand the completion-claim and stop-short gates - the
     // primary ones - silently down for the rest of the session.
-    if (invented.length && mayBlock(`source:${issueKey(session, invented)}`, session, "source")) {
-        process.stderr.write(`${sourceMessage(invented)}\n`);
-        return 2;
+    if (invented.length) {
+        substantive = true;
+        if (mayBlock(`source:${issueKey(session, invented)}`, session, "source")) {
+            process.stderr.write(`${sourceMessage(invented)}\n`);
+            return 2;
+        }
     }
     // Conventions are checked whether or not the turn claims anything. A claim is what makes an
     // UNFINISHED item a lie, but a rule broken in the produced code is a defect on its own - and
@@ -1710,6 +1742,7 @@ export function runVerifyHook(payload?: string): number {
         // budget stood down on - or one that was only ever advisory - is a rule the agent got away
         // with skipping, which is exactly what was previously invisible. mayBlock has a side
         // effect, so it is called once, and only when there is something blocking to spend it on.
+        if (conventions.gaps.length) substantive = true;
         const blocking = conventions.gaps.length > 0 && mayBlock(`conventions:${issueKey(session, conventions.gaps)}`, session, "conventions");
         // Per FINDING, not per turn: an advisory finding that merely rode along in a blocking
         // message was never enforced, and recording it as "blocked" would overstate the one column
@@ -1731,6 +1764,11 @@ export function runVerifyHook(payload?: string): number {
         // before it runs: announcing the work IS the deliverable there, and the preamble pattern
         // bans exactly what a plan is made of.
         if (raw.permission_mode === "plan") return 0;
+        // A turn that had a substantive finding hears about THAT, whether or not the budget let
+        // the gate block on it: suppressed-by-budget still means there was something more
+        // important to say, and promoting a cosmetic finding into that silence is how the third
+        // turn carrying the same TODO gets told to trim a table instead.
+        if (substantive) return 0;
         // The SAME config every other gate here reads, and the same one renderMemory renders the
         // style block from: this gate must enforce the level that was actually deployed to the
         // agent, never a different one. A global-only read disagreed with the deployed block
@@ -1750,6 +1788,7 @@ export function runVerifyHook(payload?: string): number {
 
     const { gaps, truncated, capped, noRepo } = collectGaps(cwd, { scanned });
     if (gaps.length) {
+        substantive = true;
         if (mayBlock(issueKey(session, gaps), session)) {
             process.stderr.write(`${blockMessage(gaps, { truncated, capped })}\n`);
             return 2;
@@ -1763,9 +1802,12 @@ export function runVerifyHook(payload?: string): number {
     // produced can be finished, honest and clean, and still be work nothing reviewed. A claim is
     // what makes it a gap - the gate is about to be reported as complete, and it was not.
     const unvalidated = gateGap(cwd, gate());
-    if (unvalidated && mayBlock(`gate:${issueKey(session, [unvalidated])}`, session, "gate")) {
-        process.stderr.write(`${gateMessage(unvalidated)}\n`);
-        return 2;
+    if (unvalidated) {
+        substantive = true;
+        if (mayBlock(`gate:${issueKey(session, [unvalidated])}`, session, "gate")) {
+            process.stderr.write(`${gateMessage(unvalidated)}\n`);
+            return 2;
+        }
     }
     return styleGate();
 }
