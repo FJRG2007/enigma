@@ -337,10 +337,11 @@ function sentenceSpans(text: string): Array<[number, number]> {
 // deliberately does not live here; it cannot be matched without guessing.
 
 /**
- * Filler and pleasantries the output-style spec names outright, EN + ES.
+ * Filler and pleasantries the output-style spec names outright, EN + ES - the BLOCKING half.
  *
  * The spec's terms (assets/memory/CLAUDE.md: just, really, basically, simply, sure, happy to, of
- * course), PLUS their Spanish equivalents, and nothing beyond that. The Spanish half is not in the
+ * course), PLUS their Spanish equivalents, and nothing beyond that; `just` and `really` are matched
+ * by STYLE_SOFT_FILLER_RE instead, which records rather than blocks. The Spanish half is not in the
  * spec because the spec is written in English while this gate reads replies in whatever language
  * the user writes; a pleasantry is not less of one for being translated.
  *
@@ -350,20 +351,37 @@ function sentenceSpans(text: string): Array<[number, number]> {
  * cannot be justified as one of the spec's or a direct translation of one, it belongs in the spec
  * first - a word banned only in code is a rule the agent was never told.
  *
- * The terms whose non-filler senses are common are matched only where they are actually filler -
- * at the opening of a sentence. `sure` ("Sure, done." is caught, "make sure it runs" is not),
- * plus `just` and `really`, which carry a temporal and a scalar sense a reply uses constantly:
- * "the fix just landed", "pinned just-diff to 5.2.0", "it was really the loader that broke". This
- * is a BLOCKING rule and a false block over cosmetics is how the whole gate gets switched off,
- * taking the completion checks with it, so the anchored miss is the cheaper error.
- *
- * The anchor requires a real BREAK, not merely a terminator character: the start of the message, a
- * terminator followed by whitespace, or a line start. A trailing `\s*` on the terminator matches
- * EMPTY, which turns any dotted identifier into a sentence end - `deploy.just`, `tasks.just` and
- * `Makefile.just` (the `just` runner's own extension) denied a stop, which is the same false
- * positive class the anchoring was added to remove.
+ * `sure` is matched only where it is actually filler - at the opening of a sentence - because
+ * "make sure it runs" is not a pleasantry. The anchor requires a real BREAK, not merely a
+ * terminator character: the start of the message, a terminator followed by whitespace, or a line
+ * start. A trailing `\s*` on the terminator matches EMPTY, which turns every dotted identifier
+ * into a sentence end. `just` and `really` were anchored here too and no longer live in this rule
+ * at all - see STYLE_SOFT_FILLER_RE.
  */
-const STYLE_FILLER_RE = /\b(?:basically|simply|of\s+course|happy\s+to)\b|(?:^|[.!?]\s+|\n\s*)(sure|just|really)\b|\b(?:por\s+supuesto|encantad[oa]\s+de|b(?:á|a)sicamente|simplemente)\b/i;
+const STYLE_FILLER_RE = /\b(?:basically|simply|of\s+course|happy\s+to)\b|(?:^|[.!?]\s+|\n\s*)(sure)\b|\b(?:por\s+supuesto|encantad[oa]\s+de|b(?:á|a)sicamente|simplemente)\b/i;
+
+/**
+ * The two terms of that same spec list that are RECORDED, NEVER BLOCKING - see
+ * STYLE_BLOCKING_RULES for what earns the right to block.
+ *
+ * `just` and `really` are the highest-frequency members of the filler list and the only two whose
+ * legitimate senses are ordinary technical reporting: temporal ("the fix just landed"), scalar
+ * ("just under the cap"), and the leading or trailing token of a package or file name (`just-diff`,
+ * `just.config.ts`, `deploy.just`). `\b` matches before both `-` and `.`, so an identifier sitting
+ * at a sentence or line opening - the one position the anchor deliberately allows - cannot be told
+ * apart from filler by position at all.
+ *
+ * Three consecutive review rounds each closed one of those shapes and produced the next, which is a
+ * signal about the RULE rather than about the anchor, and the same oscillation that demoted
+ * STYLE_UNTOUCHED_RE. The invariant this gate keeps rediscovering: a rule may block only when its
+ * false-positive surface is CLOSED, and a common English word in running technical prose is not.
+ * Recorded, these two cost nothing but a ledger row. Do not promote them back without new
+ * evidence - closing a fourth shape is not evidence.
+ *
+ * The sentence-opening anchor stays because it keeps the recorded count meaningful, not because it
+ * is load-bearing: nothing matched here can deny a stop.
+ */
+const STYLE_SOFT_FILLER_RE = /(?:^|[.!?]\s+|\n\s*)(just|really)\b/i;
 
 /**
  * This gate's OWN escape hatch, deliberately NOT `enigma:verify-ignore`.
@@ -453,10 +471,13 @@ export function styleFindings(message: string): VerifyGap[] {
     const lines = quoted.map((line, i) => (marked(i) ? "" : line));
     const hits: StyleHit[] = [];
 
-    const filler = STYLE_FILLER_RE.exec(lines.join("\n"));
+    const body = lines.join("\n");
     // The anchored alternative captures the word, so the detail quotes the filler rather than the
     // sentence end that precedes it: a message that reads `". Just"` looks like a broken detector.
+    const filler = STYLE_FILLER_RE.exec(body);
     if (filler) hits.push({ rule: "filler", detail: `the reply carries filler the style bans: "${(filler[1] ?? filler[0]).trim()}"` });
+    const soft = STYLE_SOFT_FILLER_RE.exec(body);
+    if (soft) hits.push({ rule: "filler-soft", detail: `the reply carries filler the style bans: "${soft[1]!.trim()}"` });
 
     // The first line of PROSE, not line 0: a reply opening with a blank line, a heading, or a
     // fenced block (blanked to spaces above) would otherwise never have its opening examined,
@@ -488,11 +509,19 @@ export function styleFindings(message: string): VerifyGap[] {
 /**
  * Which style rules may DENY a stop. The rest are recorded and reported, never blocking.
  *
- * Only closed word lists earn the right to block: `filler` and `preamble` match terms the style
- * spec enumerates, so their surface is bounded and auditable by reading the memory block. The
- * `untouched` rule is deliberately absent - see STYLE_UNTOUCHED_RE for the four shapes that put
- * it there. Blocking is the expensive half (it costs a whole turn) and a false one over cosmetics
- * is how this gate gets switched off, taking the completion checks with it.
+ * A rule may block only when its false-positive surface is CLOSED. `filler` and `preamble` match
+ * terms the style spec enumerates in shapes that cannot mean anything else, so their surface is
+ * bounded and auditable by reading the memory block. Blocking is the expensive half - it costs a
+ * whole turn - and a false one over cosmetics is how this gate gets switched off, taking the
+ * completion checks with it.
+ *
+ * Two rules are deliberately absent, each demoted after the same oscillation: a review round would
+ * close one false-positive shape and the next round would find another.
+ * - `untouched`: whether a row is padding depends on context a regex does not have. Four shapes -
+ *   see STYLE_UNTOUCHED_RE.
+ * - `filler-soft` (`just`, `really`): a common English word in running technical prose. Three
+ *   shapes - temporal, scalar, and the token of a package or file name - see STYLE_SOFT_FILLER_RE.
+ * Do not promote either back without new evidence; closing one more shape is not evidence.
  */
 const STYLE_BLOCKING_RULES = new Set(["filler", "preamble"]);
 
@@ -545,6 +574,30 @@ function styleLedgerEntry(hit: VerifyGap, turn: number): Finding {
 let styleTurns = 0;
 function styleTurnId(session: string): number {
     return parseInt(createHash("sha1").update(`${session}:${Date.now()}:${styleTurns++}`).digest("hex").slice(0, 8), 16);
+}
+
+/**
+ * Write a turn's style findings to the ledger, ONCE per turn.
+ *
+ * Called from `runVerifyHook`'s `finally`, not from the style gate, because MEASUREMENT and
+ * FEEDBACK are separate concerns and were tangled: the gate reports nothing on a turn that had a
+ * substantive finding (and the paths that exit before it report nothing at all), which is right for
+ * what the model is told and wrong for what is counted - it recorded "no padding" on every turn
+ * that had something more important to say, while the demotion of the non-blocking rules was
+ * argued on those findings staying countable. Recording from the one exit every path passes
+ * through is also what keeps it once per turn rather than once per exit.
+ *
+ * Per FINDING, with its own outcome, exactly as the convention sweep does it: a rule that cannot
+ * deny a stop is always `warned`, whatever some other rule in the same reply did, or the one column
+ * the ledger exists for - what the agent was actually stopped over - would count a turn nobody was
+ * ever stopped over.
+ */
+function recordStyleFindings(hits: VerifyGap[], blocking: VerifyGap[], denied: boolean, session: string): void {
+    if (!hits.length) return;
+    const turn = styleTurnId(session);
+    const blocked = new Set(blocking);
+    recordFindings(blocking.map((hit) => styleLedgerEntry(hit, turn)), denied ? "blocked" : "warned", "reply");
+    recordFindings(hits.filter((hit) => !blocked.has(hit)).map((hit) => styleLedgerEntry(hit, turn)), "warned", "reply");
 }
 
 /** The message fed back when a reply breaks the compression level the user set. */
@@ -1780,159 +1833,160 @@ export function runVerifyHook(payload?: string): number {
         return 0;
     }
     const session = String(raw.session_id || raw.prompt_id || cwd);
-    // Checked BEFORE the completion claim, and without reading git at all: a turn that reports
-    // progress AND asks whether to continue passes the claim check (nothing it produced is
-    // unfinished) and would end there, leaving the actual problem - the work it stopped short
-    // of - unexamined. Planning is exempt, since a plan is meant to be approved before it runs.
-    const question = raw.permission_mode === "plan" ? "" : asksToContinue(message);
-    if (question) {
-        const asked: VerifyGap = { kind: "stop-short", detail: question };
-        if (!mayBlock(issueKey(session, [asked]), session)) return 0;
-        process.stderr.write(`${stopShortMessage(question)}\n`);
-        return 2;
-    }
-    // The same failure aimed at the gate, and the most reported one: the turn ends reporting
-    // that the quality gate did not run, or offering to run it. No diff is needed for this
-    // either - the message says it - and it is checked before the code paths because a turn
-    // that hands the gate back is not going to be fixed by a finding about a TODO.
-    // The ledger overrules the message: a run that already validated this HEAD makes the report
-    // true whatever it says, and the prescribed ending ("checks passed, the PR is ready - let me
-    // know if...") carries an offer that reads exactly like the skipped one. Blocking there would
-    // order a pipeline that just ran, with no phrasing left that could clear it.
-    const skipped = raw.permission_mode === "plan" ? "" : gateSkipped(message);
-    // Every check below records whether it FOUND something, separately from whether the
-    // loop-safety budget let it block: a gate standing down because its channel is spent must
-    // not promote the cosmetic one into its place. See styleGate.
-    let substantive = false;
-    if (skipped && gate().expected && !gateValidatedHead(cwd, gate())) {
-        substantive = true;
-        const gap: VerifyGap = { kind: "gate", detail: skipped };
-        if (mayBlock(`gate:${issueKey(session, [gap])}`, session, "gate")) {
-            process.stderr.write(`${gateMessage(gap)}\n`);
+    // THE REPLY IS MEASURED ON EVERY TURN AND REPORTED ON ALMOST NONE, which are two concerns that
+    // were tangled into one. The FEEDBACK belongs behind every substantive check - a turn that left
+    // work unfinished must hear about the work, not about a table - but the RECORD is the whole
+    // justification for demoting the non-blocking style rules, and a scan that only ran on the
+    // turns with nothing else to say wrote "no padding" for every turn it never looked at, plus
+    // nothing at all for the four paths that exit before reaching the gate. So the scan happens
+    // HERE, once, and the `finally` below records it on whichever exit the turn takes; only the
+    // stderr message and the exit code stay gated, exactly as they were (see styleGate). Cost is
+    // one more regex sweep over one string on a turn that was already going to block.
+    //
+    // Plan mode is exempt on the same `permission_mode` guard as every other message check, so
+    // "when is the reply examined" has ONE answer in this function: a plan is presented for
+    // approval before it runs, announcing the work IS the deliverable there, and the preamble
+    // pattern bans exactly what a plan is made of. An `off` level means there is no rule to
+    // enforce. Neither is scanned, so neither is recorded.
+    //
+    // The level comes from the SAME config every other gate here reads, and the one renderMemory
+    // renders the style block from: this gate must enforce the level that was actually deployed to
+    // the agent, never a different one. A global-only read disagreed with the deployed block
+    // exactly where it matters - a project that turned the style off still got blocked by it.
+    const styleLevel = raw.permission_mode === "plan" ? "off" : String(config.outputStyle || "off");
+    const styleHits = styleLevel === "off" ? [] : styleFindings(message);
+    const styleBlocking = blockingStyleFindings(styleHits);
+    let styleDenied = false;
+    try {
+        // Checked BEFORE the completion claim, and without reading git at all: a turn that reports
+        // progress AND asks whether to continue passes the claim check (nothing it produced is
+        // unfinished) and would end there, leaving the actual problem - the work it stopped short
+        // of - unexamined. Planning is exempt, since a plan is meant to be approved before it runs.
+        const question = raw.permission_mode === "plan" ? "" : asksToContinue(message);
+        if (question) {
+            const asked: VerifyGap = { kind: "stop-short", detail: question };
+            if (!mayBlock(issueKey(session, [asked]), session)) return 0;
+            process.stderr.write(`${stopShortMessage(question)}\n`);
             return 2;
         }
-    }
-    // An invented identity is checked whether or not the turn claims anything, and BEFORE the
-    // code checks, because it is the one finding that gets permanently worse if the turn ends:
-    // a commit is one amend away from correct now and a rewrite of shared history later. Its
-    // own cost guard is inside it - a repository whose new commits carry no co-author trailer
-    // pays for a single git log.
-    const invented = raw.permission_mode === "plan" ? [] : unsourcedTrailers(cwd, typeof raw.transcript_path === "string" ? raw.transcript_path : "");
-    // ITS OWN BUDGET CHANNEL, for the reason the conventions channel has one: sharing the `total`
-    // ceiling let these blocks spend it and stand the completion-claim and stop-short gates - the
-    // primary ones - silently down for the rest of the session.
-    if (invented.length) {
-        substantive = true;
-        if (mayBlock(`source:${issueKey(session, invented)}`, session, "source")) {
-            process.stderr.write(`${sourceMessage(invented)}\n`);
-            return 2;
+        // The same failure aimed at the gate, and the most reported one: the turn ends reporting
+        // that the quality gate did not run, or offering to run it. No diff is needed for this
+        // either - the message says it - and it is checked before the code paths because a turn
+        // that hands the gate back is not going to be fixed by a finding about a TODO.
+        // The ledger overrules the message: a run that already validated this HEAD makes the report
+        // true whatever it says, and the prescribed ending ("checks passed, the PR is ready - let me
+        // know if...") carries an offer that reads exactly like the skipped one. Blocking there would
+        // order a pipeline that just ran, with no phrasing left that could clear it.
+        const skipped = raw.permission_mode === "plan" ? "" : gateSkipped(message);
+        // Every check below records whether it FOUND something, separately from whether the
+        // loop-safety budget let it block: a gate standing down because its channel is spent must
+        // not promote the cosmetic one into its place. See styleGate.
+        let substantive = false;
+        if (skipped && gate().expected && !gateValidatedHead(cwd, gate())) {
+            substantive = true;
+            const gap: VerifyGap = { kind: "gate", detail: skipped };
+            if (mayBlock(`gate:${issueKey(session, [gap])}`, session, "gate")) {
+                process.stderr.write(`${gateMessage(gap)}\n`);
+                return 2;
+            }
         }
-    }
-    // Conventions are checked whether or not the turn claims anything. A claim is what makes an
-    // UNFINISHED item a lie, but a rule broken in the produced code is a defect on its own - and
-    // this is the only channel that reaches the model with one, since the post-edit hook can print
-    // a warning but never feed it back. Checked before the claim path so the concrete, fixable
-    // finding is what the model gets first.
-    const claims = claimsDone(message);
-    const sweeps = config.guardrails !== false;
-    // ONE diff for the turn, shared by both checks. Each of them reads the same branch diff plus
-    // every untracked file, and running that twice on a claiming turn is the whole cost paid over.
-    const scanned = sweeps || claims ? addedLines(cwd) : undefined;
-    const conventions = sweeps && scanned ? scanConventions(cwd, scanned) : null;
-    if (conventions?.findings.length) {
-        // Recorded either way, and that is the point of the ledger: a finding the loop-safety
-        // budget stood down on - or one that was only ever advisory - is a rule the agent got away
-        // with skipping, which is exactly what was previously invisible. mayBlock has a side
-        // effect, so it is called once, and only when there is something blocking to spend it on.
-        if (conventions.gaps.length) substantive = true;
-        const blocking = conventions.gaps.length > 0 && mayBlock(`conventions:${issueKey(session, conventions.gaps)}`, session, "conventions");
-        // Per FINDING, not per turn: an advisory finding that merely rode along in a blocking
-        // message was never enforced, and recording it as "blocked" would overstate the one column
-        // the ledger exists for - what the agent was actually stopped over.
-        recordFindings(conventions.findings.filter((f) => f.severity === "block"), blocking ? "blocked" : "warned", "diff");
-        recordFindings(conventions.findings.filter((f) => f.severity === "warn"), "warned", "diff");
-        if (blocking) {
-            process.stderr.write(`${conventionMessage(conventions.gaps, conventions.notes, conventions.capped)}\n`);
-            return 2;
+        // An invented identity is checked whether or not the turn claims anything, and BEFORE the
+        // code checks, because it is the one finding that gets permanently worse if the turn ends:
+        // a commit is one amend away from correct now and a rewrite of shared history later. Its
+        // own cost guard is inside it - a repository whose new commits carry no co-author trailer
+        // pays for a single git log.
+        const invented = raw.permission_mode === "plan" ? [] : unsourcedTrailers(cwd, typeof raw.transcript_path === "string" ? raw.transcript_path : "");
+        // ITS OWN BUDGET CHANNEL, for the reason the conventions channel has one: sharing the `total`
+        // ceiling let these blocks spend it and stand the completion-claim and stop-short gates - the
+        // primary ones - silently down for the rest of the session.
+        if (invented.length) {
+            substantive = true;
+            if (mayBlock(`source:${issueKey(session, invented)}`, session, "source")) {
+                process.stderr.write(`${sourceMessage(invented)}\n`);
+                return 2;
+            }
         }
-    }
-    // Checked LAST of all, and in BOTH exit paths, for one reason: it is the only gap about the
-    // prose rather than the work. A turn that both padded its reply and left work unfinished must
-    // hear about the work; being told to trim a table while a TODO ships is the gate at its most
-    // annoying and least useful.
-    const styleGate = (): number => {
-        // Exempt in plan mode, on the same guard as every other message check above, so "when is
-        // the reply examined" has ONE answer in this function. A plan is presented for approval
-        // before it runs: announcing the work IS the deliverable there, and the preamble pattern
-        // bans exactly what a plan is made of.
-        if (raw.permission_mode === "plan") return 0;
-        // A turn that had a substantive finding hears about THAT, whether or not the budget let
-        // the gate block on it: suppressed-by-budget still means there was something more
-        // important to say, and promoting a cosmetic finding into that silence is how the third
-        // turn carrying the same TODO gets told to trim a table instead.
-        if (substantive) return 0;
-        // The SAME config every other gate here reads, and the same one renderMemory renders the
-        // style block from: this gate must enforce the level that was actually deployed to the
-        // agent, never a different one. A global-only read disagreed with the deployed block
-        // exactly where it matters - a project that turned the style off still got blocked by it.
-        const level = String(config.outputStyle || "off");
-        if (level === "off") return 0; // no level set means no rule to enforce
-        const hits = styleFindings(message);
-        if (!hits.length) return 0;
-        const blocking = blockingStyleFindings(hits);
-        // Its own budget channel, like conventions and gate: a cosmetic block must never spend
-        // the ceiling the completion-claim gate depends on. Spent only when there is something
-        // blocking to spend it on, since mayBlock has a side effect.
-        const denied = blocking.length > 0 && mayBlock(`style:${issueKey(session, blocking)}`, session, "style");
-        // EVERY hit is recorded, blocking or not - a non-blocking rule that left no trace would be
-        // a rule nobody could ever evaluate, and the ledger is what makes "does it keep padding
-        // replies" answerable with data rather than opinion. Each turn carries its own identity
-        // (styleLedgerEntry), or the day's dedupe would keep one row per rule and there would be
-        // no count to answer that question with.
-        //
-        // Recorded PER FINDING with its own outcome, exactly as the convention sweep above does
-        // it: a rule that cannot deny a stop (STYLE_BLOCKING_RULES) is always `warned`, whatever
-        // some other rule in the same reply did, or the one column the ledger exists for - what
-        // the agent was actually stopped over - would count a turn nobody was ever stopped over.
-        //
-        // Written under the "reply" stage whether or not the guardrails toggle is on, and that is
-        // deliberate: this gate belongs to the output-style setting, which was read above, and
-        // silently keeping no record because a DIFFERENT feature is off would leave the style
-        // level unmeasurable. The convention readers exclude these rows (see isConvention), so the
-        // guardrails count stays clean either way.
-        const turn = styleTurnId(session);
-        const blocked = new Set(blocking);
-        recordFindings(blocking.map((hit) => styleLedgerEntry(hit, turn)), denied ? "blocked" : "warned", "reply");
-        recordFindings(hits.filter((hit) => !blocked.has(hit)).map((hit) => styleLedgerEntry(hit, turn)), "warned", "reply");
-        if (!denied) return 0;
-        process.stderr.write(`${styleMessage(blocking, level)}\n`);
-        return 2;
-    };
+        // Conventions are checked whether or not the turn claims anything. A claim is what makes an
+        // UNFINISHED item a lie, but a rule broken in the produced code is a defect on its own - and
+        // this is the only channel that reaches the model with one, since the post-edit hook can print
+        // a warning but never feed it back. Checked before the claim path so the concrete, fixable
+        // finding is what the model gets first.
+        const claims = claimsDone(message);
+        const sweeps = config.guardrails !== false;
+        // ONE diff for the turn, shared by both checks. Each of them reads the same branch diff plus
+        // every untracked file, and running that twice on a claiming turn is the whole cost paid over.
+        const scanned = sweeps || claims ? addedLines(cwd) : undefined;
+        const conventions = sweeps && scanned ? scanConventions(cwd, scanned) : null;
+        if (conventions?.findings.length) {
+            // Recorded either way, and that is the point of the ledger: a finding the loop-safety
+            // budget stood down on - or one that was only ever advisory - is a rule the agent got away
+            // with skipping, which is exactly what was previously invisible. mayBlock has a side
+            // effect, so it is called once, and only when there is something blocking to spend it on.
+            if (conventions.gaps.length) substantive = true;
+            const blocking = conventions.gaps.length > 0 && mayBlock(`conventions:${issueKey(session, conventions.gaps)}`, session, "conventions");
+            // Per FINDING, not per turn: an advisory finding that merely rode along in a blocking
+            // message was never enforced, and recording it as "blocked" would overstate the one column
+            // the ledger exists for - what the agent was actually stopped over.
+            recordFindings(conventions.findings.filter((f) => f.severity === "block"), blocking ? "blocked" : "warned", "diff");
+            recordFindings(conventions.findings.filter((f) => f.severity === "warn"), "warned", "diff");
+            if (blocking) {
+                process.stderr.write(`${conventionMessage(conventions.gaps, conventions.notes, conventions.capped)}\n`);
+                return 2;
+            }
+        }
+        // Reported LAST of all, and in BOTH exit paths, for one reason: it is the only gap about the
+        // prose rather than the work. A turn that both padded its reply and left work unfinished must
+        // hear about the work; being told to trim a table while a TODO ships is the gate at its most
+        // annoying and least useful.
+        const styleGate = (): number => {
+            // A turn that had a substantive finding hears about THAT, whether or not the budget let
+            // the gate block on it: suppressed-by-budget still means there was something more
+            // important to say, and promoting a cosmetic finding into that silence is how the third
+            // turn carrying the same TODO gets told to trim a table instead. What is suppressed here
+            // is the MESSAGE; the scan above already happened and the `finally` still records it.
+            if (substantive || !styleBlocking.length) return 0;
+            // Its own budget channel, like conventions and gate: a cosmetic block must never spend
+            // the ceiling the completion-claim gate depends on. Spent only when there is something
+            // blocking to spend it on, since mayBlock has a side effect.
+            styleDenied = mayBlock(`style:${issueKey(session, styleBlocking)}`, session, "style");
+            if (!styleDenied) return 0;
+            process.stderr.write(`${styleMessage(styleBlocking, styleLevel)}\n`);
+            return 2;
+        };
 
-    if (!claims) return styleGate();
+        if (!claims) return styleGate();
 
-    const { gaps, truncated, capped, noRepo } = collectGaps(cwd, { scanned });
-    if (gaps.length) {
-        substantive = true;
-        if (mayBlock(issueKey(session, gaps), session)) {
-            process.stderr.write(`${blockMessage(gaps, { truncated, capped })}\n`);
-            return 2;
+        const { gaps, truncated, capped, noRepo } = collectGaps(cwd, { scanned });
+        if (gaps.length) {
+            substantive = true;
+            if (mayBlock(issueKey(session, gaps), session)) {
+                process.stderr.write(`${blockMessage(gaps, { truncated, capped })}\n`);
+                return 2;
+            }
+        } else {
+            if (noRepo) process.stderr.write("enigma verify: this directory is not a git repository, so there was no change to check this claim against.\n");
+            else if (truncated) process.stderr.write("enigma verify: the change was too large to scan in full, so this claim was only partially checked.\n");
         }
-    } else {
-        if (noRepo) process.stderr.write("enigma verify: this directory is not a git repository, so there was no change to check this claim against.\n");
-        else if (truncated) process.stderr.write("enigma verify: the change was too large to scan in full, so this claim was only partially checked.\n");
-    }
 
-    // Checked LAST, because it is the only gap that is not about the code: everything this turn
-    // produced can be finished, honest and clean, and still be work nothing reviewed. A claim is
-    // what makes it a gap - the gate is about to be reported as complete, and it was not.
-    const unvalidated = gateGap(cwd, gate());
-    if (unvalidated) {
-        substantive = true;
-        if (mayBlock(`gate:${issueKey(session, [unvalidated])}`, session, "gate")) {
-            process.stderr.write(`${gateMessage(unvalidated)}\n`);
-            return 2;
+        // Checked LAST, because it is the only gap that is not about the code: everything this turn
+        // produced can be finished, honest and clean, and still be work nothing reviewed. A claim is
+        // what makes it a gap - the gate is about to be reported as complete, and it was not.
+        const unvalidated = gateGap(cwd, gate());
+        if (unvalidated) {
+            substantive = true;
+            if (mayBlock(`gate:${issueKey(session, [unvalidated])}`, session, "gate")) {
+                process.stderr.write(`${gateMessage(unvalidated)}\n`);
+                return 2;
+            }
         }
+        return styleGate();
+    } finally {
+        // ONE exit for the record, so it happens once per turn rather than once per return - and on
+        // every path, including the ones that block before the style gate is ever reached. Written
+        // under the "reply" stage whether or not the guardrails toggle is on, deliberately: this
+        // gate answers to the output-style setting, and keeping no record because a DIFFERENT
+        // feature is off would leave the style level unmeasurable. The convention readers exclude
+        // these rows (see isConvention), so the guardrails count stays clean either way.
+        recordStyleFindings(styleHits, styleBlocking, styleDenied, session);
     }
-    return styleGate();
 }

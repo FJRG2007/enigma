@@ -1126,14 +1126,23 @@ test("styleFindings catches the padding the style bans, and nothing else", async
 
     expect(styleFindings("Por supuesto, basicamente ya esta.")[0]!.key).toBe("style:filler");
     expect(styleFindings("Of course, I just fixed it.")[0]!.key).toBe("style:filler");
-    // `just` and `really` are anchored to a sentence opening the way `sure` is: they are the two
-    // highest-frequency members of a BLOCKING list and their temporal, scalar and package-name
-    // senses are ordinary reporting. Filler at the opening still fires, in both languages...
-    expect(styleFindings("Just fixed the expiry check.")[0]!.key).toBe("style:filler");
-    expect(styleFindings("Listo. Really, ya esta.")[0]!.key).toBe("style:filler");
+    // `just` and `really` are their OWN rule and it is recorded, never blocking. They fire at a
+    // sentence opening, in both languages...
+    expect(styleFindings("Just fixed the expiry check.")[0]!.key).toBe("style:filler-soft");
+    expect(styleFindings("Listo. Really, ya esta.")[0]!.key).toBe("style:filler-soft");
     // ...and the detail quotes the word, not the sentence end in front of it.
     expect(styleFindings("Listo. Really, ya esta.")[0]!.detail).toContain('"Really"');
-    // ...while the non-filler senses are reports and must not cost a turn.
+    // ...while nothing they match can deny a stop, which is what the three shapes below bought:
+    // an identifier carrying one of these words at the one position the anchor deliberately allows
+    // is indistinguishable from filler, since `\b` matches before both `-` and `.`. Three review
+    // rounds each closed one and produced the next, so the rule was demoted instead of tuned again.
+    for (const shape of [
+        "Just fixed the expiry check.",
+        "Bumped deps. just-diff went to 5.3.0.",           // sentence-initial package name
+        "just.config.ts is now at the root.",              // line-initial file name
+        "Actualizado el lockfile.\nreally-simple-ssr 2.1.0 sigue igual.",
+    ]) expect(blockingStyleFindings(styleFindings(shape))).toEqual([]);
+    // The non-filler senses mid-sentence are reports and are not even recorded.
     expect(styleFindings("The fix just landed in auth.ts:42.")).toEqual([]);
     expect(styleFindings("Only one file changed, and it was really the loader that broke.")).toEqual([]);
     expect(styleFindings("Actualizado just-diff a 5.2.0 en el lockfile.")).toEqual([]);
@@ -1440,6 +1449,30 @@ test("a style row is recorded with its own outcome, and outside the convention n
     // would otherwise swamp the count of the conventions the agent keeps breaking.
     expect(readLedger().length).toBe(conventionsBefore);
     expect(countLedger()).toBe(countBefore);
+});
+
+test("a turn that had something more important to say is still measured", () => {
+    const dir = repoWith();
+    write(dir, ".enigma.json", JSON.stringify({ outputStyle: "full" }));
+    write(dir, "src/new.ts", "// TODO: finish this\n"); // enigma:verify-ignore
+    const row = "| dashboard | 0.1.104 | sin cambios |";
+    const rowsBefore = readReplyLedger().length;
+
+    // MEASUREMENT AND FEEDBACK ARE SEPARATE. The message stays behind every substantive check - a
+    // turn that left work unfinished must hear about the work - but the record is the whole
+    // justification for demoting the non-blocking rules, and a scan that only ran on the turns with
+    // nothing else to say recorded "no padding" for every turn it never looked at.
+    const claiming = hookRun(payload(dir, `All done, everything is implemented.\n${row}`, { session_id: "style-measured-claim" }));
+    expect(claiming[0]).toBe(2);
+    expect(claiming[1]).not.toContain("breaks the output style");
+    // Same for the paths that exit before the style gate is ever reached.
+    const asking = hookRun(payload(dir, `Paso 1 hecho.\n${row}\n\n¿Sigo con el resto?`, { session_id: "style-measured-ask" }));
+    expect(asking[0]).toBe(2);
+    expect(asking[1]).toContain("asking whether");
+
+    // Once per turn, never once per exit path, and never as `blocked` - nobody was stopped over it.
+    const added = readReplyLedger().slice(rowsBefore);
+    expect(added.map((e) => [e.rule, e.outcome])).toEqual([["style-untouched", "warned"], ["style-untouched", "warned"]]);
 });
 
 test("a period inside the question does not split the trigger from its question mark", () => {
