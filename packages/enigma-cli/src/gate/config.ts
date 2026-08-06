@@ -39,7 +39,9 @@ export const CI_TIMEOUT_UNLIMITED = -1;
  *
  * - `ask` - every gate comes back to the user, whatever it found.
  * - `assisted` - the agent settles what the review marked mechanical and comes
- *   back only for a finding marked `ask-user`, which is a judgment call.
+ *   back only for an `ask-user` finding whose answer is not already "yes, fix
+ *   it": one that contradicts the request, undoes a deliberate decision, or
+ *   takes a very large change. It authorizes the rest itself.
  * - `auto` - the agent settles every gate, including `ask-user` findings.
  */
 export type FixPolicy = "ask" | "assisted" | "auto";
@@ -222,8 +224,10 @@ log_level: info
 
 # Who settles a review finding when the pipeline parks for approval.
 #   auto     - the agent fixes everything and never checks back
-#   assisted - the agent fixes what the review marked mechanical and asks you
-#              only about a finding marked ask-user (a judgment call)
+#   assisted - the agent fixes what the review marked mechanical, and asks you
+#              only when the answer is not already "yes, fix it": the finding
+#              contradicts what you asked for, undoes a deliberate decision,
+#              or takes a very large change
 #   ask      - every gate comes back to you
 # Passing --yes to "enigma gate axi run" forces auto for that run.
 fix_policy: assisted

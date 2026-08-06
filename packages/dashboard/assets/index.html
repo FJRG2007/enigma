@@ -4668,7 +4668,7 @@ export {
         // make, instead of for every mechanical nit.
         const GATE_FIX_POLICIES = [
             ["auto", "Fix without asking", "the agent fixes everything the review turns up and never checks back"],
-            ["assisted", "Fix, and ask about the rest", "the agent fixes what the review marked mechanical and asks you only about a finding that needs a judgment call"],
+            ["assisted", "Fix, and ask about the rest", "the agent fixes what the review found and asks you only when the answer is not already yes: the finding contradicts what you asked for, undoes a deliberate decision, or takes a very large change"],
             ["ask", "Always ask", "nothing is fixed until you say so - every finding comes back to you first"]
         ];
         /** The hint follows the selection: each policy hands the decision to someone different. */

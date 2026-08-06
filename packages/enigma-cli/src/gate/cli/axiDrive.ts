@@ -167,9 +167,12 @@ function gateResolution(gate: render.StepView, alreadyFixed: boolean): [Approval
  * Reports whether the drive loop may answer this gate itself under `policy`.
  *
  * `assisted` is the interesting one: it settles everything the review could act on
- * mechanically and hands back only a gate carrying an `ask-user` finding, which is
- * by definition a decision the user has to make. A gate whose findings cannot be
- * parsed is treated as having none - the same fallback gateResolution already takes.
+ * mechanically and hands back a gate carrying an `ask-user` finding. That is the
+ * coarse half of the policy - handing it back does not make it the user's call.
+ * The agent applies the bar the gate's help line states (escalate only what would
+ * contradict the request, undo a deliberate decision, or take a very large change)
+ * and fixes the rest itself. A gate whose findings cannot be parsed is treated as
+ * having none - the same fallback gateResolution already takes.
  */
 export function canAutoResolve(policy: FixPolicy, gate: render.StepView): boolean {
     if (policy === "auto") return true;

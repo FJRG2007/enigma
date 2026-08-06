@@ -151,14 +151,15 @@ model while review keeps the strong one.
    - `auto-fix` - mechanical, low-risk; authorize on your own judgment with
      `--action fix`.
    - `no-op` - informational; nothing to do.
-   - `ask-user` - a judgment call only the user can make. STOP and escalate it
-     (see below) before responding.
+   - `ask-user` - the review could not settle it mechanically. Apply the
+     escalation bar below before deciding whether it is really the user's call.
 
    The gate object also carries `fix_policy`, the user's standing answer to "who
    decides?". Follow it - the `help` line spells out what it means for the gate in
    front of you, and it is the user's setting, not a suggestion:
    - `assisted` (default) - anything mechanical was already settled before this
-     gate reached you, so what is left is the judgment call. Escalate it.
+     gate reached you. Escalate what is left only if it clears the bar below;
+     otherwise fix it yourself.
    - `ask` - the user wants every finding put to them, `auto-fix` ones included.
      Relay them and let the user choose instead of authorizing anything yourself.
    - `auto` - the user asked you to settle everything. Respond without checking back.
@@ -194,11 +195,27 @@ acknowledge those and list each fix.
 
 ## Escalate ask-user findings
 
-A finding marked `ask-user` is the user's decision, not yours. Relay it verbatim
-(its `id`, `file`, full `description`) - do not paraphrase or pre-judge - ask how
-to proceed, then translate their answer into the matching `respond` call. The
-exceptions are `fix_policy: auto` and `--yes` (below), both of which are standing
-consent to drive every gate unattended.
+**"Should I fix this?" is not an escalation.** Under `assisted` the user already
+said fix, and ask about the rest - the rest being a genuine doubt, not permission
+to repair a defect the review just proved. A finding clears the bar only when the
+answer is not already yes:
+
+- fixing it would contradict what the user asked for, or undo a decision they
+  made deliberately;
+- fixing it changes agreed product behavior, or breaks something else;
+- the fix is a very large change, not a repair.
+
+Everything else - a bug, a regression, a rollback that reopens what the change
+closed, a missing guard - you authorize yourself with `--action fix` and real
+`--instructions`. Recommending a fix and then asking permission for it is the
+same question twice: if your own answer is "fix it", respond `fix`. Under `ask`
+the bar does not apply: everything goes back to the user. Under `auto`, nothing
+does.
+
+When a finding does clear the bar, relay it verbatim (its `id`, `file`, full
+`description`) - do not paraphrase or pre-judge - ask how to proceed, then
+translate the answer into the matching `respond` call. Batch every such finding
+into ONE question rather than one gate per round trip.
 
 If you have clear consent to drive the whole run automatically, pass `--yes` to
 `axi run` or `axi respond`: it treats every actionable finding (auto-fix and

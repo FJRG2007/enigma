@@ -159,8 +159,9 @@ Rules:
 - Do NOT report styling, formatting, linting, compilation, or type-checking issues.
 - If the change is clean, return an empty findings array.
 - For each finding, set the action field to one of:
-  - "ask-user": the finding is about functional requirements or product behavior, or otherwise challenges the author's deliberate intent. Even if it seems obviously wrong, we should ask the user for review. Examples: "this feature seems unnecessary", "this hardcoded value should be configurable", "this deletion looks wrong". When in doubt, default to "ask-user".
-  - "auto-fix": the finding is a non-functional, non user-visible issue (correctness, error handling, security, performance, mechanical code quality) that can be safely fixed without any discussion about the author's intent.
+  - "ask-user": fixing it would go against the stated user intent - it questions whether a deliberate choice should stand, changes agreed product behavior, or calls for a redesign rather than a repair. Examples: "this feature seems unnecessary", "this hardcoded value should be configurable", "this deletion looks wrong".
+  - "auto-fix": the finding is a defect whose fix serves the stated intent (correctness, error handling, security, performance, mechanical code quality). Being user-visible does not make it "ask-user": a bug that defeats what the author set out to do is "auto-fix", because the only question it raises is one the intent already answered.
+  - When in doubt, ask whether the fix would contradict the author's intent: if it would, use "ask-user"; if it would carry that intent out, use "auto-fix".
   - "no-op": the finding is informational and does not require any action (e.g. noting a pattern, acknowledging a tradeoff).
 
 Risk assessment (after listing all findings):

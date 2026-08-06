@@ -235,6 +235,19 @@ it, not the executor:
 - The gate object emitted to the agent carries `fix_policy` plus a `help` line saying what it
   means, because the agent's default instinct (authorize auto-fix, escalate ask-user) is exactly
   wrong under `ask`, where the user asked to see everything first.
+- `canAutoResolve` is the COARSE half of `assisted`; the fine half is the agent's, and it is a
+  bar, not a category. The dashboard sells `assisted` as "Fix, and ask about the rest", and the
+  rest a user means is a genuine doubt - not permission to repair a defect the review just
+  proved. So the `help` line, the `/gate` command and the memory kernel all state the same bar:
+  escalate only when fixing it would contradict the request, undo a deliberate decision, or take
+  a very large change. "Should I fix this?" is never escalated, because recommending a fix and
+  then asking permission for it is the same question twice. Reported 2026-08-06 by the user
+  after two plain defects were relayed as questions.
+- Same rule, one tier earlier: review's classification prompt (`steps/review.ts`) used to say
+  "when in doubt, default to ask-user" and treated any user-visible finding as one, which is how
+  a bug that DEFEATS the stated intent got marked `ask-user`. The test is now directional - would
+  the fix contradict the author's intent, or carry it out - so a defect whose repair serves
+  `--intent` is `auto-fix` and never parks the run.
 - `readFixPolicy(p)` lives in `axiEnv.ts`, NOT `axiDrive.ts`: `axiQuery` needs it too and
   `axiDrive` already imports from `axiQuery`, so putting it there would close a cycle. It falls
   back to the default on any read failure - a config that will not parse must never be the

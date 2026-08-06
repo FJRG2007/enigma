@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { test, expect } from "bun:test";
 import * as gateConfig from "@/gate/config";
+import { gateFields } from "@/gate/cli/axiRender";
 import { canAutoResolve } from "@/gate/cli/axiDrive";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 
@@ -107,6 +108,26 @@ test("canAutoResolve: only `assisted` looks at what the gate actually found", ()
     // Unparseable findings are treated as none, so a broken payload does not park the run.
     expect(canAutoResolve("assisted", gate([]))).toBe(true);
     expect(canAutoResolve("assisted", { name: "review", status: "awaiting_approval", findingsJSON: "{{" } as Parameters<typeof canAutoResolve>[1])).toBe(true);
+});
+
+test("assisted's help line states the escalation bar instead of blanket escalation", () => {
+    // canAutoResolve is only the coarse half: it parks the gate, it does not decide the
+    // finding. The help line is what stops the agent turning "fix, and ask about the rest"
+    // into "may I fix this defect?", so the bar has to survive any rewording of it.
+    const help = (policy: Parameters<typeof gateFields>[1]) => {
+        const list = gateFields({ name: "review", status: "awaiting_approval", findingsJSON: "" } as Parameters<typeof gateFields>[0], policy)
+            .find(f => f.key === "help");
+        return list && list.value.kind === "list" ? list.value.items.join(" ") : "";
+    };
+
+    const assisted = help("assisted");
+    expect(assisted).toMatch(/contradict/i);
+    expect(assisted).toMatch(/deliberate decision/i);
+    expect(assisted).toMatch(/very large change/i);
+    expect(assisted).toMatch(/authorize the fix yourself/i);
+    // The two absolutes stay absolute: `ask` sends everything back, `auto` sends nothing.
+    expect(help("ask")).toMatch(/let them choose/i);
+    expect(help("auto")).toMatch(/without checking back/i);
 });
 
 test("loadRepoFromBytes parses YAML and merge lets repo agent override global", () => {

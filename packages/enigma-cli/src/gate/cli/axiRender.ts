@@ -297,7 +297,7 @@ export function runObjectFieldWithKey(key: string, rv: RunView): ToonField {
  */
 const FIX_POLICY_HELP: Record<FixPolicy, string> = {
     auto: "fix_policy is `auto`: the user asked you to settle every finding yourself. This gate came back because the run needs a response, not a decision - respond without checking back.",
-    assisted: "fix_policy is `assisted`: findings the review could settle mechanically are already handled, so this gate carries a judgment call. Escalate its ask-user findings to the user verbatim.",
+    assisted: "fix_policy is `assisted`: findings the review could settle mechanically are already handled, so this gate carries a judgment call. Escalate an ask-user finding only when the answer is not already yes - fixing it would contradict what the user asked for, undo a deliberate decision, or take a very large change. Otherwise authorize the fix yourself: `should I fix this?` is not a question to hand back.",
     ask: "fix_policy is `ask`: the user wants every finding put to them before anything is fixed. Relay this gate's findings and let them choose, rather than deciding yourself."
 };
 

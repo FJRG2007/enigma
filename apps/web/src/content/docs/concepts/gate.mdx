@@ -39,7 +39,7 @@ Safe, mechanical fixes are applied automatically; anything that touches your int
 
 Who settles a finding is yours to set, in the dashboard's **Quality gate** view or as `fix_policy` in `~/.enigma/gate/config.yaml`:
 
-- **Fix, and ask about the rest** (`assisted`, the default) - the agent settles what the review marked mechanical and comes back only for an `ask-user` finding.
+- **Fix, and ask about the rest** (`assisted`, the default) - the agent settles what the review found and comes back only when the answer is not already yes: the finding contradicts what you asked for, undoes a deliberate decision, or takes a very large change. It is never asked whether to repair a defect.
 - **Fix without asking** (`auto`) - the agent settles everything and never checks back.
 - **Always ask** (`ask`) - nothing is fixed until you say so; every finding reaches you first.
 
