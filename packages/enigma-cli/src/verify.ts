@@ -350,10 +350,14 @@ function sentenceSpans(text: string): Array<[number, number]> {
  * cannot be justified as one of the spec's or a direct translation of one, it belongs in the spec
  * first - a word banned only in code is a rule the agent was never told.
  *
- * `sure` is matched as a sentence-opening pleasantry rather than anywhere, so "Sure, done." is
- * caught while "sure enough the test passed" and "make sure it runs" are not.
+ * The terms whose non-filler senses are common are matched only where they are actually filler -
+ * at the opening of a sentence. `sure` ("Sure, done." is caught, "make sure it runs" is not),
+ * plus `just` and `really`, which carry a temporal and a scalar sense a reply uses constantly:
+ * "the fix just landed", "pinned just-diff to 5.2.0", "it was really the loader that broke". This
+ * is a BLOCKING rule and a false block over cosmetics is how the whole gate gets switched off,
+ * taking the completion checks with it, so the anchored miss is the cheaper error.
  */
-const STYLE_FILLER_RE = /\b(?:just|really|basically|simply|of\s+course|happy\s+to)\b|(?:^|[.!?\n]\s*)sure\b|\b(?:por\s+supuesto|encantad[oa]\s+de|b(?:á|a)sicamente|simplemente)\b/i;
+const STYLE_FILLER_RE = /\b(?:basically|simply|of\s+course|happy\s+to)\b|(?:^|[.!?\n]\s*)(sure|just|really)\b|\b(?:por\s+supuesto|encantad[oa]\s+de|b(?:á|a)sicamente|simplemente)\b/i;
 
 /**
  * This gate's OWN escape hatch, deliberately NOT `enigma:verify-ignore`.
@@ -444,7 +448,9 @@ export function styleFindings(message: string): VerifyGap[] {
     const hits: StyleHit[] = [];
 
     const filler = STYLE_FILLER_RE.exec(lines.join("\n"));
-    if (filler) hits.push({ rule: "filler", detail: `the reply carries filler the style bans: "${filler[0].trim()}"` });
+    // The anchored alternative captures the word, so the detail quotes the filler rather than the
+    // sentence end that precedes it: a message that reads `". Just"` looks like a broken detector.
+    if (filler) hits.push({ rule: "filler", detail: `the reply carries filler the style bans: "${(filler[1] ?? filler[0]).trim()}"` });
 
     // The first line of PROSE, not line 0: a reply opening with a blank line, a heading, or a
     // fenced block (blanked to spaces above) would otherwise never have its opening examined,
@@ -1874,12 +1880,24 @@ export function runVerifyHook(payload?: string): number {
         const denied = blocking.length > 0 && mayBlock(`style:${issueKey(session, blocking)}`, session, "style");
         // EVERY hit is recorded, blocking or not - a non-blocking rule that left no trace would be
         // a rule nobody could ever evaluate, and the ledger is what makes "does it keep padding
-        // replies" answerable with data rather than opinion. Per finding, not per turn, so the
-        // one column the ledger exists for stays honest about what actually stopped a turn. Each
-        // turn carries its own identity (styleLedgerEntry), or the day's dedupe would keep one row
-        // per rule and there would be no count to answer that question with.
+        // replies" answerable with data rather than opinion. Each turn carries its own identity
+        // (styleLedgerEntry), or the day's dedupe would keep one row per rule and there would be
+        // no count to answer that question with.
+        //
+        // Recorded PER FINDING with its own outcome, exactly as the convention sweep above does
+        // it: a rule that cannot deny a stop (STYLE_BLOCKING_RULES) is always `warned`, whatever
+        // some other rule in the same reply did, or the one column the ledger exists for - what
+        // the agent was actually stopped over - would count a turn nobody was ever stopped over.
+        //
+        // Written under the "reply" stage whether or not the guardrails toggle is on, and that is
+        // deliberate: this gate belongs to the output-style setting, which was read above, and
+        // silently keeping no record because a DIFFERENT feature is off would leave the style
+        // level unmeasurable. The convention readers exclude these rows (see isConvention), so the
+        // guardrails count stays clean either way.
         const turn = styleTurnId(session);
-        recordFindings(hits.map((hit) => styleLedgerEntry(hit, turn)), denied ? "blocked" : "warned", "diff");
+        const blocked = new Set(blocking);
+        recordFindings(blocking.map((hit) => styleLedgerEntry(hit, turn)), denied ? "blocked" : "warned", "reply");
+        recordFindings(hits.filter((hit) => !blocked.has(hit)).map((hit) => styleLedgerEntry(hit, turn)), "warned", "reply");
         if (!denied) return 0;
         process.stderr.write(`${styleMessage(blocking, level)}\n`);
         return 2;

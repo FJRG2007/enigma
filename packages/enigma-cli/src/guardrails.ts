@@ -26,7 +26,8 @@
  *
  * Every finding the model is actually confronted with is appended to the compliance ledger
  * (recordFindings, reported by `enigma guardrails stats`), so a convention the agent keeps
- * skipping is a number rather than a memory.
+ * skipping is a number rather than a memory. The turn-end output-style gate writes to that same
+ * file under the `reply` stage (see LedgerStage); the convention readers exclude those rows.
  */
 
 import { homedir } from "node:os";
@@ -39,6 +40,16 @@ export type Severity = "block" | "warn";
 
 /** When a rule runs: on the edited file, or over the lines a change added (see GuardrailRule.stage). */
 export type Stage = "edit" | "diff";
+
+/**
+ * What a ledger row is ABOUT, which is a superset of the stages a guardrail rule runs at.
+ *
+ * `reply` is the turn-end output-style gate (verify.ts): a finding about the agent's prose, not
+ * about a convention in the code it produced. It shares this file so there is one place to look
+ * for "what does the agent keep getting wrong", and it is marked so the convention readers can
+ * leave it out - counting reply padding as a guardrail violation would misreport both numbers.
+ */
+export type LedgerStage = Stage | "reply";
 
 /** A line whose trimmed start is a comment - the pattern scan skips these to avoid false positives. */
 const COMMENT_LINE = /^\s*(\/\/|#|\*|--|<!--|\{?\/\*)/;
@@ -2230,7 +2241,7 @@ export interface LedgerEntry {
     rule: string;
     severity: Severity;
     outcome: Outcome;
-    stage: Stage;
+    stage: LedgerStage;
     file: string;
     line?: number;
 }
@@ -2277,10 +2288,10 @@ function recordedToday(day: string): Set<string> {
  * edit of that file - inflating precisely the "the agent got away with it" column with code the
  * agent never wrote, which is the one number this ledger exists to report.
  */
-export function recordFindings(findings: Finding[], outcome: Outcome, stage: Stage = "edit"): void {
+export function recordFindings(findings: Finding[], outcome: Outcome, stage: LedgerStage = "edit"): void {
     if (!findings.length) return;
     const at = new Date().toISOString();
-    const seen = stage === "diff" || outcome !== "blocked" ? recordedToday(at.slice(0, 10)) : null;
+    const seen = stage === "edit" && outcome === "blocked" ? null : recordedToday(at.slice(0, 10));
     const rows: string[] = [];
     for (const f of findings) {
         if (seen) {
@@ -2324,17 +2335,37 @@ function eachLedgerEntry(sinceDays: number, visit: (entry: LedgerEntry) => void)
     }
 }
 
-/** Read the ledger, newest last. A malformed line is skipped rather than failing the read. */
+/**
+ * Is this row a CONVENTION encounter - a rule broken in the code the agent produced?
+ *
+ * The reply-prose rows of the output-style gate share this file but answer a different question,
+ * and both readers below are the convention ones: `enigma guardrails stats` reports which
+ * conventions the agent keeps breaking, and the dashboard's guardrails number counts rule
+ * violations. A padded reply is neither, and it arrives once per turn, so counting it there would
+ * swamp the number it was mixed into. Reply rows are read through readReplyLedger instead.
+ */
+function isConvention(entry: LedgerEntry): boolean {
+    return entry.stage !== "reply";
+}
+
+/** Read the convention ledger, newest last. A malformed line is skipped rather than failing the read. */
 export function readLedger(sinceDays = 0): LedgerEntry[] {
     const out: LedgerEntry[] = [];
-    eachLedgerEntry(sinceDays, (entry) => out.push(entry));
+    eachLedgerEntry(sinceDays, (entry) => { if (isConvention(entry)) out.push(entry); });
     return out;
 }
 
-/** How many findings were recorded in the window, without building the entry list for them. */
+/** The other half of the same file: what the turn-end style gate found in the agent's replies. */
+export function readReplyLedger(sinceDays = 0): LedgerEntry[] {
+    const out: LedgerEntry[] = [];
+    eachLedgerEntry(sinceDays, (entry) => { if (!isConvention(entry)) out.push(entry); });
+    return out;
+}
+
+/** How many convention findings were recorded in the window, without building the entry list for them. */
 export function countLedger(sinceDays = 0): number {
     let count = 0;
-    eachLedgerEntry(sinceDays, () => { count++; });
+    eachLedgerEntry(sinceDays, (entry) => { if (isConvention(entry)) count++; });
     return count;
 }
 

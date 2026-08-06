@@ -32,9 +32,9 @@ import type { HubAccount, HubExitAction, HubProfile, HubSkill } from "./tui/type
 import { ensureLinterInstalled, isLinterInstalled, refreshLinterPkg } from "./lint";
 import { DASHBOARD_BINDS, readConfig, setEnigmaValue, type DashboardBind } from "./config";
 import { readGuardrailsConfig, disableRule, enableRule, removeRule } from "./guardrails-config";
-import { BUILTIN_RULES, checkPath, formatFindings, readLedger, summarizeLedger } from "./guardrails";
 import { checkLatestNow, getAvailableUpdate, notifyUpdate, performUpdateCheck, runUpdate } from "./update";
 import { isUsableSession, sessionEmail, sessionState, transferSession, type SessionState } from "./claude-oauth";
+import { BUILTIN_RULES, checkPath, formatFindings, readLedger, readReplyLedger, summarizeLedger } from "./guardrails";
 import { ensureDashboardCurrent, isDashboardPkgCurrent, isDashboardPkgInstalled, refreshDashboardPkg } from "./dashboard-pkg";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -1811,13 +1811,20 @@ function runGuardrailsCli(positionals: string[]): number {
         const days = Number(arg) > 0 ? Number(arg) : 0;
         const rows = summarizeLedger(readLedger(days));
         const scope = days ? `the last ${days} day(s)` : "all recorded runs";
-        if (!rows.length) {
+        // The output-style gate's rows share the ledger file but answer a different question, so
+        // they are reported as their own table rather than counted as conventions.
+        const style = summarizeLedger(readReplyLedger(days));
+        if (!rows.length && !style.length) {
             console.log(`No guardrail findings recorded for ${scope}. Either the conventions are being followed, or the hooks are not wired (check 'enigma guardrails' and 'enigma config verify').`);
             return 0;
         }
-        console.log(`Guardrail findings, ${scope} - which conventions the agent keeps breaking:\n`);
-        console.log("  blocked  warned   fixed  rule");
-        for (const r of rows) console.log(`  ${String(r.blocked).padStart(7)}  ${String(r.warned).padStart(6)}  ${String(r.fixed).padStart(6)}  ${r.rule} (last ${r.last.slice(0, 10)})`);
+        const table = (heading: string, entries: typeof rows): void => {
+            console.log(`${heading}\n`);
+            console.log("  blocked  warned   fixed  rule");
+            for (const r of entries) console.log(`  ${String(r.blocked).padStart(7)}  ${String(r.warned).padStart(6)}  ${String(r.fixed).padStart(6)}  ${r.rule} (last ${r.last.slice(0, 10)})`);
+        };
+        if (rows.length) table(`Guardrail findings, ${scope} - which conventions the agent keeps breaking:`, rows);
+        if (style.length) table(`${rows.length ? "\n" : ""}Output-style findings, ${scope} - how often a reply broke the compression level:`, style);
         console.log("\nblocked = the agent was stopped and had to fix it; warned = it was told, or the gate stood down, and the code shipped anyway; fixed = repaired by code with no turn spent.");
         return 0;
     }

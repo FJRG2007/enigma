@@ -36,7 +36,7 @@ delete process.env.ENIGMA_GATE;
 const { claimsDone, asksToContinue, gateSkipped, scanGaps, scanConventions, collectGaps, runVerifyHook, unsourcedTrailers, blockingStyleFindings } = await import("../src/verify");
 const { recordGateRun, lastGateRun, validatingRun } = await import("../src/gate-ledger");
 const { parityReport, formatParity } = await import("../src/verify-parity");
-const { readLedger } = await import("../src/guardrails");
+const { readLedger, readReplyLedger, countLedger } = await import("../src/guardrails");
 
 const repos: string[] = [];
 afterAll(() => {
@@ -1126,6 +1126,18 @@ test("styleFindings catches the padding the style bans, and nothing else", async
 
     expect(styleFindings("Por supuesto, basicamente ya esta.")[0]!.key).toBe("style:filler");
     expect(styleFindings("Of course, I just fixed it.")[0]!.key).toBe("style:filler");
+    // `just` and `really` are anchored to a sentence opening the way `sure` is: they are the two
+    // highest-frequency members of a BLOCKING list and their temporal, scalar and package-name
+    // senses are ordinary reporting. Filler at the opening still fires, in both languages...
+    expect(styleFindings("Just fixed the expiry check.")[0]!.key).toBe("style:filler");
+    expect(styleFindings("Listo. Really, ya esta.")[0]!.key).toBe("style:filler");
+    // ...and the detail quotes the word, not the sentence end in front of it.
+    expect(styleFindings("Listo. Really, ya esta.")[0]!.detail).toContain('"Really"');
+    // ...while the non-filler senses are reports and must not cost a turn.
+    expect(styleFindings("The fix just landed in auth.ts:42.")).toEqual([]);
+    expect(styleFindings("Only one file changed, and it was really the loader that broke.")).toEqual([]);
+    expect(styleFindings("Actualizado just-diff a 5.2.0 en el lockfile.")).toEqual([]);
+    expect(styleFindings("El loader era realmente el fallo; just-diff sigue igual.")).toEqual([]);
     expect(styleFindings("Voy a revisar el fichero.")[0]!.key).toBe("style:preamble");
     expect(styleFindings("Let me check the file.")[0]!.key).toBe("style:preamble");
     expect(styleFindings("Déjame revisar el fichero.")[0]!.key).toBe("style:preamble");
@@ -1380,7 +1392,7 @@ test("every padded turn is its own row in the ledger", () => {
     const dir = repoWith();
     write(dir, ".enigma.json", JSON.stringify({ outputStyle: "full" }));
     const padded = "| dashboard | 0.1.104 | sin cambios |";
-    const before = readLedger().filter((e) => e.rule === "style-untouched").length;
+    const before = readReplyLedger().filter((e) => e.rule === "style-untouched").length;
 
     // The ledger is the whole justification for recording the untouched rule instead of blocking
     // on it, and the day's dedupe - right for the convention sweep, which re-reads the same diff
@@ -1391,10 +1403,37 @@ test("every padded turn is its own row in the ledger", () => {
     expect(hookRun(payload(dir, padded, same))[0]).toBe(0);
     expect(hookRun(payload(dir, padded, same))[0]).toBe(0);
 
-    const rows = readLedger().filter((e) => e.rule === "style-untouched");
+    const rows = readReplyLedger().filter((e) => e.rule === "style-untouched");
     expect(rows.length - before).toBe(3);
     // ...and it still reads as a finding about the reply.
     expect(rows.every((e) => e.file === "(reply)")).toBe(true);
+});
+
+test("a style row is recorded with its own outcome, and outside the convention numbers", () => {
+    const dir = repoWith();
+    write(dir, ".enigma.json", JSON.stringify({ outputStyle: "full" }));
+    // One reply, two rules: `filler` blocks, `untouched` cannot (see STYLE_BLOCKING_RULES).
+    const padded = "Por supuesto, ya esta.\n| dashboard | 0.1.104 | sin cambios |";
+    const conventionsBefore = readLedger().length;
+    const countBefore = countLedger();
+    // Other tests in this file record style rows too, so the assertions read the DELTA this turn
+    // appended rather than the file's totals.
+    const rowsBefore = readReplyLedger().length;
+
+    expect(hookRun(payload(dir, padded, { session_id: "style-outcome" }))[0]).toBe(2);
+    const added = readReplyLedger().slice(rowsBefore);
+
+    // The turn was denied over the filler, and only over the filler. Recording the other rule as
+    // "blocked" because it rode along would overstate the one column the ledger exists for - what
+    // the agent was actually stopped over - for a rule that can never stop anything.
+    expect(added.map((e) => [e.rule, e.outcome])).toEqual([["style-filler", "blocked"], ["style-untouched", "warned"]]);
+    expect(added.every((e) => e.file === "(reply)")).toBe(true);
+
+    // ...and neither row is a guardrail violation, so the convention readers - `enigma guardrails
+    // stats` and the dashboard's findings number - must not see them. One row per padded turn
+    // would otherwise swamp the count of the conventions the agent keeps breaking.
+    expect(readLedger().length).toBe(conventionsBefore);
+    expect(countLedger()).toBe(countBefore);
 });
 
 test("a period inside the question does not split the trigger from its question mark", () => {
