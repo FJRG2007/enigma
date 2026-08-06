@@ -33,7 +33,7 @@ process.env.ENIGMA_GATE_HOME = join(HOME, "gate");
 // The one test that exercises that path sets the variable itself.
 delete process.env.ENIGMA_GATE;
 
-const { claimsDone, asksToContinue, gateSkipped, scanGaps, scanConventions, collectGaps, runVerifyHook, unsourcedTrailers } = await import("../src/verify");
+const { claimsDone, asksToContinue, gateSkipped, scanGaps, scanConventions, collectGaps, runVerifyHook, unsourcedTrailers, blockingStyleFindings } = await import("../src/verify");
 const { recordGateRun, lastGateRun, validatingRun } = await import("../src/gate-ledger");
 const { parityReport, formatParity } = await import("../src/verify-parity");
 const { readLedger } = await import("../src/guardrails");
@@ -1152,14 +1152,23 @@ test("styleFindings catches the padding the style bans, and nothing else", async
     // ...while a bare status CELL is one, whatever sits in front of it, and a marker restated is
     // still bare: "Saltado (sin cambios)" says the same non-event twice.
     expect(styleFindings("| dashboard | 0.1.104 | skipped |").map((h) => h.key)).toEqual(["style:untouched"]);
+    expect(blockingStyleFindings("| dashboard | 0.1.104 | skipped |")).toEqual([]);
     expect(styleFindings("| helio | 0.3.2 | Saltado (sin cambios) |").map((h) => h.key)).toEqual(["style:untouched"]);
 
-    // Naming a blocked item is REQUIRED elsewhere in this file (see blockMessage), so a row that
-    // says WHY is a report and passes - wherever in the row it says it, since the model has no way
-    // to know which column the detector reads.
-    expect(styleFindings("| dashboard | n/a | no npm credentials |")).toEqual([]);
-    expect(styleFindings("| dashboard | no npm credentials | skipped |")).toEqual([]);
-    expect(styleFindings("| helio | falta el token | sin cambios |")).toEqual([]);
+    // Naming a blocked item is REQUIRED elsewhere in this file (see blockMessage), and a row that
+    // says WHY is that report. The rule no longer tries to tell the two apart - four attempts each
+    // produced a false block on reporting a user had asked for - so such a row is RECORDED like any
+    // other and the guarantee moved to where it is mechanical: it can never deny a stop.
+    for (const row of [
+        "| dashboard | n/a | no npm credentials |",
+        "| dashboard | no npm credentials | skipped |",
+        "| helio | falta el token | sin cambios |",
+        "| gate/common-git.test.ts | skipped |",   // an ordinary test-result table
+        "| trim | yes | n/a |",                    // an ordinary coverage matrix
+    ]) {
+        expect(styleFindings(row).map((h) => h.key)).toEqual(["style:untouched"]);
+        expect(blockingStyleFindings(row)).toEqual([]);
+    }
 
     // "Let me know" is not a preamble: it is frequently the whole reply on a turn that names a
     // blocker or hands back a PR that is the user's to merge.
@@ -1214,21 +1223,21 @@ test("a message that DESCRIBES the banned phrasing is not using it", async () =>
     expect(styleFindings("> | dashboard | sin cambios |")).toEqual([]);
 });
 
-test("the claim and gate checks read what the turn asserts, not what it quotes", () => {
-    // Same doctrine as the stop-short check, wired into the other two whole-message scans: a
-    // turn documenting either of them must not be read as an instance of it.
-    expect(claimsDone("The gate fires on a reply that says `all done`.")).toBe(false);
-    expect(claimsDone('El detector busca frases como "ya está todo" en el mensaje final.')).toBe(false);
-    expect(gateSkipped("The check fires on a reply saying `I skipped the enigma gate`.")).toBe("");
-    expect(gateSkipped('El check mira si el mensaje dice "el gate sigue sin ejecutarse".')).toBe("");
+test("the claim and gate checks read the raw message, deliberately", () => {
+    // withoutQuoted is NOT wired into these two, and that is the decision rather than an omission.
+    // gateSkipped works by FINDING the name of the gate, and that name is a command, which everyone
+    // writes in backticks - blanking code spans erased the one token the check exists to find, so a
+    // genuine unexcused skip passed silently. Regression for exactly that shape:
+    expect(gateSkipped("Committed, but I have not run `enigma gate axi run`.")).toContain("enigma gate axi run");
+    expect(gateSkipped("Los cambios estan commiteados pero no he ejecutado `/gate`.")).toContain("/gate");
+    expect(gateSkipped("I skipped the enigma gate for this change.")).toBe("I skipped the enigma gate for this change.");
 
-    // ...and blanking must never let a REAL one escape: an assertion in ordinary prose is
-    // untouched, and it is quoted back from the original text.
+    // claimsDone decides whether the completion checks run AT ALL, so nothing may hide a claim from
+    // it: a cosmetic improvement is not worth the chance of a false done shipping unchecked.
     expect(claimsDone("All done - the port is finished.")).toBe(true);
     expect(claimsDone("Ya está todo.")).toBe(true);
-    expect(gateSkipped("I skipped the enigma gate for this change.")).toBe("I skipped the enigma gate for this change.");
-    // The way OUT is read from the untouched message, like LEGITIMATE_STOP_RE: half the accepted
-    // reasons are written in code ticks, and blanking must not take the exit away.
+
+    // The documented ways out still work, read from the untouched message.
     expect(gateSkipped("The gate did not run: this repo sets `gate: false`.")).toBe("");
     expect(claimsDone('Everything is implemented, though the exporter is "still pending".')).toBe(false);
 });
@@ -1258,7 +1267,9 @@ function hookRun(json: string): [number, string] {
 
 test("the style gate enforces the level the project was actually given", () => {
     const dir = repoWith();
-    const padded = "| dashboard | 0.1.104 | sin cambios |";
+    // A BLOCKING rule: an untouched row is recorded now, never blocked (see STYLE_BLOCKING_RULES),
+    // so the wiring has to be driven through one that still denies a stop.
+    const padded = "Por supuesto, ya esta.";
 
     // outputStyle defaults to off, so for an unconfigured user the whole path is dead.
     expect(hookRun(payload(dir, padded))[0]).toBe(0);
@@ -1296,7 +1307,9 @@ test("a cosmetic block never preempts, or spends the budget of, the gaps about t
     const dir = repoWith();
     write(dir, ".enigma.json", JSON.stringify({ outputStyle: "full" }));
     write(dir, "src/new.ts", "// TODO: finish this\n"); // enigma:verify-ignore
-    const padded = "| dashboard | 0.1.104 | sin cambios |";
+    // A BLOCKING rule: an untouched row is recorded now, never blocked (see STYLE_BLOCKING_RULES),
+    // so the wiring has to be driven through one that still denies a stop.
+    const padded = "Por supuesto, ya esta.";
 
     // A turn that padded its reply AND left work unfinished hears about the work: being told to
     // trim a table while a TODO ships is the gate at its most annoying and least useful.

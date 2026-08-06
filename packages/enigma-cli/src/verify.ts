@@ -156,18 +156,20 @@ const DISCLOSURE_RE = /\b(?:still (?:pending|missing|to do|needs)|remains? (?:pe
  * "the port is complete except for two modules I could not finish" is read as the honest
  * report it is - the gate exists to catch silence about gaps, never to punish naming them.
  *
- * The ASSERTION is read with quoted spans blanked (see withoutQuoted) - a turn that quotes or
- * describes "all done" is not claiming it - while the DISCLOSURE is read from the untouched
- * text, on the same asymmetry LEGITIMATE_STOP_RE has in asksToContinue: blanking must never be
- * able to hide the sentence that names a gap.
+ * withoutQuoted is deliberately NOT applied, for the reason spelled out above gateSkipped: this
+ * decides whether the completion checks run AT ALL, so anything that can hide a claim from it
+ * takes the primary gate down with it. Blanking is worth its risk only where it fixed a
+ * demonstrated live failure (asksToContinue, styleFindings); here it would buy a cosmetic
+ * improvement against the chance of a false "done" shipping unchecked, which is the one outcome
+ * this module exists to prevent.
  */
 export function claimsDone(message: string): boolean {
     if (!message || typeof message !== "string") return false;
-    const scannable = withoutQuoted(message);
     let claim = false;
-    for (const [start, end] of sentenceSpans(scannable)) {
-        if (DISCLOSURE_RE.test(message.slice(start, end))) return false;
-        if (CLAIM_RE.test(scannable.slice(start, end))) claim = true;
+    for (const [start, end] of sentenceSpans(message)) {
+        const sentence = message.slice(start, end);
+        if (DISCLOSURE_RE.test(sentence)) return false;
+        if (CLAIM_RE.test(sentence)) claim = true;
     }
     return claim;
 }
@@ -329,12 +331,21 @@ function sentenceSpans(text: string): Array<[number, number]> {
 /**
  * Filler and pleasantries the output-style spec names outright, EN + ES.
  *
- * This list is a MIRROR of the spec (assets/memory/CLAUDE.md: just, really, basically, simply,
- * sure, happy to, of course) and nothing else, so the rule and its enforcement cannot drift
- * apart and anyone can audit the detector by reading the memory block. A word belongs in the
- * spec before it belongs here - a term banned only in code is a rule the agent was never told.
+ * The spec's terms (assets/memory/CLAUDE.md: just, really, basically, simply, sure, happy to, of
+ * course), PLUS their Spanish equivalents, and nothing beyond that. The Spanish half is not in the
+ * spec because the spec is written in English while this gate reads replies in whatever language
+ * the user writes; a pleasantry is not less of one for being translated.
+ *
+ * That is the whole rule for what may live here, and it is stated precisely because the comment
+ * used to claim the list was the spec "and nothing else" while carrying a word the spec has in no
+ * language. An auditor reading the memory block must be able to predict this regex. If a term
+ * cannot be justified as one of the spec's or a direct translation of one, it belongs in the spec
+ * first - a word banned only in code is a rule the agent was never told.
+ *
+ * `sure` is matched as a sentence-opening pleasantry rather than anywhere, so "Sure, done." is
+ * caught while "sure enough the test passed" and "make sure it runs" are not.
  */
-const STYLE_FILLER_RE = /\b(?:just|really|basically|simply|of\s+course|happy\s+to|sure\s+thing)\b|\b(?:por\s+supuesto|encantad[oa]\s+de|b(?:á|a)sicamente|simplemente)\b/i;
+const STYLE_FILLER_RE = /\b(?:just|really|basically|simply|of\s+course|happy\s+to)\b|(?:^|[.!?\n]\s*)sure\b|\b(?:por\s+supuesto|encantad[oa]\s+de|b(?:á|a)sicamente|simplemente)\b/i;
 
 /**
  * This gate's OWN escape hatch, deliberately NOT `enigma:verify-ignore`.
@@ -353,13 +364,13 @@ const STYLE_IGNORE_RE = /enigma:style-ignore/;
  * shape that prompted this check: a release summary carried two table rows for packages that had
  * not changed and had not been asked about.
  *
- * DELIBERATELY NARROW, and the narrowness is the design rather than an oversight. Three rounds of
- * widening this rule to bullets and prose produced three false blocks on ordinary reporting - a
- * tally ("3 suites skipped"), a row naming its reason, a release row with a version in it - each
- * of which had to be carved back out. A rule that fires on a shape nobody can predict is the rule
- * that gets switched off, and switching this one off takes the completion checks with it. So
- * padding written as a bullet or in prose is NOT caught, and that is accepted: a bare status cell
- * in a table is mechanical to recognise, and a cell that carries a reason is not a bare one.
+ * RECORDED, NEVER BLOCKING - see STYLE_BLOCKING_RULES. Four shapes of this rule were tried and
+ * each produced a false block on reporting a user had asked for: bullets, then tallies ("3 suites
+ * skipped"), then rows naming their reason, and finally ordinary result and coverage tables
+ * (`| gate/common-git.test.ts | skipped |`, `| trim | yes | n/a |`). The pattern was not mistuned;
+ * whether a row is padding depends on context a regex does not have. So the finding is still
+ * produced and still written to the ledger - which is what makes "does the agent keep padding
+ * replies" answerable with data instead of opinion - and it no longer denies a stop.
  */
 const STYLE_UNTOUCHED_RE = /\b(?:sin\s+cambios|no\s+aplica|n\/a|sin\s+tocar|no\s+modificad[oa]s?|no\s+tocad[oa]s?|saltad[oa]s?|unchanged|not\s+touched|no\s+changes|nothing\s+to\s+do|skipped)\b/gi;
 
@@ -383,7 +394,13 @@ const STYLE_NEED_RE = /^\s*(?:necesit\w*|requier\w*|requer\w*|har[áa]\s+falta|h
 /** One style violation: the rule it broke and the text that broke it. */
 interface StyleHit { rule: string; detail: string; }
 
-/** A table row whose status cell only asserts a non-event, or "" for anything else. */
+/**
+ * A table row whose status cell only asserts a non-event, or "" for anything else.
+ *
+ * No reason-position, tally or neighbouring-cell carve-outs: every one of those was scar tissue
+ * from trying to make this safe to BLOCK on, and it no longer blocks. A recorded finding does not
+ * have to be perfect, which is most of the reason it was demoted.
+ */
 function untouchedStatusRow(line: string): string {
     if (!/^\s*\|/.test(line)) return "";
     const cells = line.trim().replace(/^\||\|$/g, "").split("|").map((cell) => cell.trim());
@@ -393,12 +410,7 @@ function untouchedStatusRow(line: string): string {
         const rest = cell.replace(STYLE_UNTOUCHED_RE, " ");
         return rest !== cell && !/[\p{L}\d]/u.test(rest);
     };
-    if (!cells.some(bare)) return "";
-    // Naming a blocked item is REQUIRED elsewhere in this file - blockMessage orders it with the
-    // file and the reason - so a row that says WHY is a report, wherever in the row it says it. An
-    // item and a version are one word each; a reason is not.
-    if (cells.some((cell) => !bare(cell) && /\S\s+\S/.test(cell))) return "";
-    return line.trim().slice(0, 100);
+    return cells.some(bare) ? line.trim().slice(0, 100) : "";
 }
 
 /**
@@ -436,13 +448,50 @@ export function styleFindings(message: string): VerifyGap[] {
     for (const line of lines) {
         const row = untouchedStatusRow(line);
         if (!row) continue;
-        hits.push({ rule: "untouched", detail: `a table row reports something the turn did not touch, with no reason given: "${row}"` });
+        hits.push({ rule: "untouched", detail: `a table row reports something the turn did not touch: "${row}"` });
         break; // one finding per rule: the fix is the same edit for every such row
     }
 
     // Keyed by RULE, not by the offending text: the budget must cap "keeps padding replies",
     // not hand a fresh allowance to every new filler word.
     return hits.map((h) => ({ kind: "style", detail: h.detail, key: `style:${h.rule}` } as VerifyGap));
+}
+
+/**
+ * Which style rules may DENY a stop. The rest are recorded and reported, never blocking.
+ *
+ * Only closed word lists earn the right to block: `filler` and `preamble` match terms the style
+ * spec enumerates, so their surface is bounded and auditable by reading the memory block. The
+ * `untouched` rule is deliberately absent - see STYLE_UNTOUCHED_RE for the four shapes that put
+ * it there. Blocking is the expensive half (it costs a whole turn) and a false one over cosmetics
+ * is how this gate gets switched off, taking the completion checks with it.
+ */
+const STYLE_BLOCKING_RULES = new Set(["filler", "preamble"]);
+
+/** The rule name behind a style gap (`style:filler` -> `filler`). */
+function styleRuleOf(hit: VerifyGap): string {
+    return String(hit.key ?? "").replace(/^style:/, "");
+}
+
+/** The blocking subset of a style scan: what may deny a stop, as opposed to what is merely logged. */
+export function blockingStyleFindings(message: string): VerifyGap[] {
+    return styleFindings(message).filter((hit) => STYLE_BLOCKING_RULES.has(styleRuleOf(hit)));
+}
+
+/**
+ * A style gap as a ledger row. `file` is the reply rather than a path - this is the one finding
+ * kind that is about the prose, so there is no file to point at - and a non-blocking rule is
+ * always recorded as `warned` whatever the turn's outcome was.
+ */
+function styleLedgerEntry(hit: VerifyGap): Finding {
+    const rule = styleRuleOf(hit);
+    return {
+        ruleId: `style-${rule}`,
+        severity: STYLE_BLOCKING_RULES.has(rule) ? "block" : "warn",
+        file: "(reply)",
+        message: hit.detail,
+        skill: "output-style",
+    };
 }
 
 /** The message fed back when a reply breaks the compression level the user set. */
@@ -637,21 +686,21 @@ const GATE_EXCUSE_RE = new RegExp([
  * actually ran (`gateValidatedHead`): a report of a SUCCESSFUL run can still carry an offer
  * to run it again, and blocking that would deny the stop over a pipeline that already ran.
  *
- * The REPORT is read with quoted spans blanked (see withoutQuoted), because this check has the
- * same self-documentation failure every other one here does - a reply explaining the gate, or
- * quoting the kernel's own line about it, is a sentence ABOUT a skipped run rather than one.
- * The EXCUSE is read from the untouched text, on the asymmetry stated above GATE_EXCUSE_RE:
- * naming the reason is the documented way out, and half of them are written in code ticks
- * (`gate: false`, `gate-protected-branches`), so blanking must not take the exit away.
+ * withoutQuoted is deliberately NOT applied here, and that is the opposite of what it looks
+ * like. This check works by FINDING the gate's name, and the gate's name is a command - `enigma
+ * gate axi run`, `/gate` - which anyone writes in backticks. Blanking code spans erased the one
+ * token the check exists to find, so "Committed, but I have not run `enigma gate axi run`" - a
+ * genuine unexcused skip that blocked before - passed silently. The quoting doctrine holds for a
+ * scan that reads what a turn ASSERTS; it inverts for one that hunts for a name the user writes
+ * as code. Do not "finish" the generalization here.
  */
 export function gateSkipped(message: string): string {
     if (!message || typeof message !== "string") return "";
     if (GATE_EXCUSE_RE.test(message)) return "";
-    const scannable = withoutQuoted(message);
-    if (!GATE_TOPIC_RE.test(scannable)) return "";
+    if (!GATE_TOPIC_RE.test(message)) return "";
     let topical = false;
-    for (const [start, end] of sentenceSpans(scannable)) {
-        const sentence = scannable.slice(start, end);
+    for (const [start, end] of sentenceSpans(message)) {
+        const sentence = message.slice(start, end);
         const onTopic = GATE_TOPIC_RE.test(sentence);
         const offered = (onTopic || topical) && GATE_OFFER_RE.test(sentence) && GATE_RUN_ACTION_RE.test(sentence);
         // Quoted back from the ORIGINAL span, like asksToContinue: blanking preserves every
@@ -1777,10 +1826,18 @@ export function runVerifyHook(payload?: string): number {
         if (level === "off") return 0; // no level set means no rule to enforce
         const hits = styleFindings(message);
         if (!hits.length) return 0;
+        const blocking = hits.filter((hit) => STYLE_BLOCKING_RULES.has(styleRuleOf(hit)));
         // Its own budget channel, like conventions and gate: a cosmetic block must never spend
-        // the ceiling the completion-claim gate depends on.
-        if (!mayBlock(`style:${issueKey(session, hits)}`, session, "style")) return 0;
-        process.stderr.write(`${styleMessage(hits, level)}\n`);
+        // the ceiling the completion-claim gate depends on. Spent only when there is something
+        // blocking to spend it on, since mayBlock has a side effect.
+        const denied = blocking.length > 0 && mayBlock(`style:${issueKey(session, blocking)}`, session, "style");
+        // EVERY hit is recorded, blocking or not - a non-blocking rule that left no trace would be
+        // a rule nobody could ever evaluate, and the ledger is what makes "does it keep padding
+        // replies" answerable with data rather than opinion. Per finding, not per turn, so the
+        // one column the ledger exists for stays honest about what actually stopped a turn.
+        recordFindings(hits.map(styleLedgerEntry), denied ? "blocked" : "warned", "diff");
+        if (!denied) return 0;
+        process.stderr.write(`${styleMessage(blocking, level)}\n`);
         return 2;
     };
 
