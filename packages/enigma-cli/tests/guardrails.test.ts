@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
 import { test, expect, afterAll, beforeEach, setDefaultTimeout } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync, statSync } from "node:fs";
 
 // Every test here drives real git (some of them the real CLI), several process spawns each.
 // Bun defaults to 5s per test, which is fine on an idle machine and not on a loaded one -
@@ -22,7 +22,7 @@ process.env.HOME = HOME;
 const CONFIG = join(HOME, "guardrails.json");
 process.env.ENIGMA_GUARDRAILS_CONFIG = CONFIG;
 
-const { checkFile, checkPath, applyFixes, formatFindings, loadRules, findProjectRoot, recordFindings, readLedger, countLedger, summarizeLedger, runGuardrailsHook, BUILTIN_RULES, FIXERS } = await import("../src/guardrails");
+const { checkFile, checkPath, applyFixes, formatFindings, loadRules, findProjectRoot, recordFindings, readLedger, readReplyLedger, countLedger, summarizeLedger, runGuardrailsHook, BUILTIN_RULES, FIXERS } = await import("../src/guardrails");
 const { disableRule, enableRule, addRule, removeRule } = await import("../src/guardrails-config");
 
 afterAll(() => rmSync(HOME, { recursive: true, force: true }));
@@ -687,6 +687,37 @@ test("the sweep does not re-count a violation it already recorded today", () => 
     recordFindings([{ ...finding, line: 21 }], "blocked");
     expect(readLedger().length).toBe(5);
     expect(countLedger(1)).toBe(5);
+    delete process.env.ENIGMA_GUARDRAILS_LOG;
+});
+
+test("reply rows are counted per turn and cannot evict the convention history", () => {
+    const log = join(HOME, "reply-ledger.jsonl");
+    process.env.ENIGMA_GUARDRAILS_LOG = log;
+    rmSync(log, { force: true });
+    // The style gate puts the TURN in `line`, so its keys are unique by construction: the dedupe
+    // could never match and would only read the whole ledger to prove it, twice per padded turn,
+    // on the Stop path.
+    const style = { ruleId: "style-untouched", severity: "warn" as const, file: "(reply)", line: 11, message: "m" };
+    recordFindings([style], "warned", "reply");
+    recordFindings([style], "warned", "reply");
+    expect(readReplyLedger().length).toBe(2);
+    // ...and they stay out of the convention numbers a padded reply is not part of.
+    expect(readLedger()).toEqual([]);
+    expect(countLedger()).toBe(0);
+
+    // ROTATION KEEPS A QUOTA PER POPULATION. Reply rows arrive once per turn while a convention row
+    // is deduplicated per day, so one shared trim let a chatty session push the compliance history
+    // out of the file the moment it rotated.
+    const row = (stage: string, i: number) => JSON.stringify({ at: new Date().toISOString(), rule: `r${i}`, severity: "warn", outcome: "warned", stage, file: "src/some/reasonably/long/path/Component.tsx", line: i });
+    const seeded = [
+        ...Array.from({ length: 120 }, (_, i) => row("diff", i)),
+        ...Array.from({ length: 4000 }, (_, i) => row("reply", i)),
+    ];
+    writeFileSync(log, `${seeded.join("\n")}\n`);
+    expect(statSync(log).size).toBeGreaterThan(512 * 1024);
+    recordFindings([{ ruleId: "fe-server-first-mutation", severity: "block" as const, file: "src/Rows.tsx", line: 3, message: "m" }], "warned", "diff");
+    expect(readLedger().length).toBe(121);
+    expect(readReplyLedger().length).toBe(200);
     delete process.env.ENIGMA_GUARDRAILS_LOG;
 });
 

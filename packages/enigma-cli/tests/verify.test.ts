@@ -1138,6 +1138,12 @@ test("styleFindings catches the padding the style bans, and nothing else", async
     expect(styleFindings("Only one file changed, and it was really the loader that broke.")).toEqual([]);
     expect(styleFindings("Actualizado just-diff a 5.2.0 en el lockfile.")).toEqual([]);
     expect(styleFindings("El loader era realmente el fallo; just-diff sigue igual.")).toEqual([]);
+    // The anchor needs a real BREAK, not a bare terminator character: a dot before the word is
+    // exactly what a trailing `\s*` mistakes for a sentence end, and `.just` is the `just` task
+    // runner's own extension.
+    expect(styleFindings("Added deploy.just to the repo root.")).toEqual([]);
+    expect(styleFindings("Renombrado tasks.just y Makefile.just en el worktree.")).toEqual([]);
+    expect(styleFindings("Recipes live in deploy.just")).toEqual([]);
     expect(styleFindings("Voy a revisar el fichero.")[0]!.key).toBe("style:preamble");
     expect(styleFindings("Let me check the file.")[0]!.key).toBe("style:preamble");
     expect(styleFindings("Déjame revisar el fichero.")[0]!.key).toBe("style:preamble");

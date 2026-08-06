@@ -356,8 +356,14 @@ function sentenceSpans(text: string): Array<[number, number]> {
  * "the fix just landed", "pinned just-diff to 5.2.0", "it was really the loader that broke". This
  * is a BLOCKING rule and a false block over cosmetics is how the whole gate gets switched off,
  * taking the completion checks with it, so the anchored miss is the cheaper error.
+ *
+ * The anchor requires a real BREAK, not merely a terminator character: the start of the message, a
+ * terminator followed by whitespace, or a line start. A trailing `\s*` on the terminator matches
+ * EMPTY, which turns any dotted identifier into a sentence end - `deploy.just`, `tasks.just` and
+ * `Makefile.just` (the `just` runner's own extension) denied a stop, which is the same false
+ * positive class the anchoring was added to remove.
  */
-const STYLE_FILLER_RE = /\b(?:basically|simply|of\s+course|happy\s+to)\b|(?:^|[.!?\n]\s*)(sure|just|really)\b|\b(?:por\s+supuesto|encantad[oa]\s+de|b(?:á|a)sicamente|simplemente)\b/i;
+const STYLE_FILLER_RE = /\b(?:basically|simply|of\s+course|happy\s+to)\b|(?:^|[.!?]\s+|\n\s*)(sure|just|really)\b|\b(?:por\s+supuesto|encantad[oa]\s+de|b(?:á|a)sicamente|simplemente)\b/i;
 
 /**
  * This gate's OWN escape hatch, deliberately NOT `enigma:verify-ignore`.

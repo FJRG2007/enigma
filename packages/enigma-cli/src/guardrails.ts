@@ -2246,9 +2246,20 @@ export interface LedgerEntry {
     line?: number;
 }
 
-/** Keep the ledger bounded: past this size the oldest half of the entries is dropped. */
+/**
+ * Keep the ledger bounded: past this size the oldest entries are dropped.
+ *
+ * The two populations get SEPARATE quotas because they arrive at wildly different rates, and one
+ * budget let the fast one evict the slow one. Convention rows are deduplicated per day (roughly one
+ * per rule per day), so 2000 of them is months of the compliance history `enigma guardrails stats`
+ * was built to report. Reply rows are deliberately per turn and never deduplicated, so a chatty
+ * session produces them by the hundred - under a shared budget they would push the conventions out
+ * of the file within days. Their own question ("is the agent still padding replies") is a
+ * short-window one, so a small reserve answers it without spending the long-window one.
+ */
 const LEDGER_MAX_BYTES = 512 * 1024;
 const LEDGER_KEEP = 2000;
+const LEDGER_KEEP_REPLY = 200;
 
 /** Where the ledger lives. ENIGMA_GUARDRAILS_LOG relocates it (required by the tests, which must never write to the real one). */
 function ledgerPath(): string {
@@ -2280,18 +2291,26 @@ function recordedToday(day: string): Set<string> {
  * directory or a corrupt file must never turn a convention check into a broken edit, so nothing
  * here throws and nothing here blocks.
  *
- * Deduplicated per day EXCEPT for an edit-stage block. That one exception is the only case where a
- * repeat is a genuinely new encounter: the hook exited 2, the model was stopped and answered it, so
- * seeing the same rule again means it wrote the violation again. Everything else is the same
- * violation seen twice. The edit hook re-scans the WHOLE file on every write, so without this an
- * agent touching one line of a legacy route file appends a row per pre-existing violation, on every
- * edit of that file - inflating precisely the "the agent got away with it" column with code the
- * agent never wrote, which is the one number this ledger exists to report.
+ * Deduplicated per day EXCEPT for an edit-stage block and the reply stage. The edit-stage block is
+ * the only case where a repeat is a genuinely new encounter: the hook exited 2, the model was
+ * stopped and answered it, so seeing the same rule again means it wrote the violation again.
+ * Everything else is the same violation seen twice. The edit hook re-scans the WHOLE file on every
+ * write, so without this an agent touching one line of a legacy route file appends a row per
+ * pre-existing violation, on every edit of that file - inflating precisely the "the agent got away
+ * with it" column with code the agent never wrote, which is the one number this ledger exists to
+ * report.
+ *
+ * The reply stage skips the dedupe because its keys are unique BY CONSTRUCTION - the style gate
+ * puts the turn's identity in `line` so every reply counts separately - which leaves recordedToday
+ * unable to ever match and reading the entire file for nothing. That read sits on the Stop hook,
+ * whose cost model is one regex sweep over one string, and it would grow with the file these rows
+ * are themselves filling.
  */
 export function recordFindings(findings: Finding[], outcome: Outcome, stage: LedgerStage = "edit"): void {
     if (!findings.length) return;
     const at = new Date().toISOString();
-    const seen = stage === "edit" && outcome === "blocked" ? null : recordedToday(at.slice(0, 10));
+    const dedupe = stage !== "reply" && !(stage === "edit" && outcome === "blocked");
+    const seen = dedupe ? recordedToday(at.slice(0, 10)) : null;
     const rows: string[] = [];
     for (const f of findings) {
         if (seen) {
@@ -2308,11 +2327,38 @@ export function recordFindings(findings: Finding[], outcome: Outcome, stage: Led
         let size = 0;
         try { size = statSync(path).size; } catch { /* first write */ }
         if (size > LEDGER_MAX_BYTES) {
-            const kept = readFileSync(path, "utf8").split("\n").filter(Boolean).slice(-LEDGER_KEEP);
-            writeFileSync(path, `${kept.join("\n")}\n`);
+            const kept = rotateLedger(readFileSync(path, "utf8"));
+            writeFileSync(path, kept.length ? `${kept.join("\n")}\n` : "");
         }
         appendFileSync(path, `${rows.join("\n")}\n`);
     } catch { /* the ledger is a measurement, never a gate */ }
+}
+
+/**
+ * The lines that survive rotation, oldest first: the newest LEDGER_KEEP convention rows and the
+ * newest LEDGER_KEEP_REPLY reply rows, each counted against its own quota so the fast population
+ * cannot evict the slow one. A line too corrupt to classify ages out with the conventions - it came
+ * from the same appends and there is nothing else to charge it to.
+ */
+function rotateLedger(text: string): string[] {
+    const lines = text.split("\n").filter(Boolean);
+    const kept: string[] = [];
+    let conventions = 0;
+    let replies = 0;
+    for (let i = lines.length - 1; i >= 0; i--) {
+        const line = lines[i]!;
+        let reply = false;
+        try { reply = (JSON.parse(line) as LedgerEntry)?.stage === "reply"; } catch { /* unclassifiable: a convention row */ }
+        if (reply) {
+            if (replies >= LEDGER_KEEP_REPLY) continue;
+            replies++;
+        } else {
+            if (conventions >= LEDGER_KEEP) continue;
+            conventions++;
+        }
+        kept.push(line);
+    }
+    return kept.reverse();
 }
 
 /**
