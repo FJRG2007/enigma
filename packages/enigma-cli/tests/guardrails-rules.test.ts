@@ -16,13 +16,21 @@ process.env.USERPROFILE = HOME;
 process.env.HOME = HOME;
 process.env.ENIGMA_GUARDRAILS_CONFIG = join(HOME, "guardrails.json");
 
-const { checkFile } = await import("../src/guardrails");
+const { BUILTIN_RULES, checkFile } = await import("../src/guardrails");
 
 afterAll(() => rmSync(HOME, { recursive: true, force: true }));
 
-/** Whether `ruleId` fired on the given file/content. */
+/**
+ * Whether `ruleId` fired on the given file/content.
+ *
+ * The stage comes from the rule itself. A diff-stage rule is invisible to an edit-stage
+ * check by design, so hardcoding the default silently turns every one of its true-positive
+ * rows into a failure the moment a rule is promoted to that stage - which is exactly what
+ * happened to `fe-search-fuzzy`.
+ */
 function flagged(ruleId: string, file: string, code: string): boolean {
-    return checkFile(file, code, null).some((f) => f.ruleId === ruleId);
+    const stage = BUILTIN_RULES.find((r) => r.id === ruleId)?.stage ?? "edit";
+    return checkFile(file, code, null, stage).some((f) => f.ruleId === ruleId);
 }
 
 /** Run a table of {name, file, code} against `ruleId`, asserting the expected flag outcome. */
@@ -149,12 +157,22 @@ matrix("fe-date-moment", false, [
 matrix("fe-search-fuzzy", true, [
     { name: "classic case-insensitive substring finder", file: "src/List.tsx", code: "const results = items.filter(i => i.name.toLowerCase().includes(query.toLowerCase()));" },
     { name: "different field/query names", file: "src/Search.jsx", code: "const shown = rows.filter(r => r.title.toLowerCase().includes(q.toLowerCase()));" },
+    // One-sided: the needle is lowercased once into a binding, and its NAME carries the
+    // evidence the second toLowerCase would have. Half the real corpus is written this way.
+    { name: "one-sided, needle named for a search box", file: "src/List.tsx", code: "const r = items.filter(i => i.name.toLowerCase().includes(query));" },
+    { name: "one-sided, needle named search", file: "src/Picker.tsx", code: "const r = options.filter(o => o.label.toLowerCase().includes(searchLower));" },
+    // The clearing signal is word-bounded, so an unrelated "refuse" in the copy no longer
+    // switches a blocking rule off - which it did, in a real file, for two search boxes.
+    { name: "the word refuse does not clear it", file: "src/List.tsx", code: "// we refuse an empty query\nconst r = items.filter(i => i.name.toLowerCase().includes(q.toLowerCase()));" },
 ]);
 
 matrix("fe-search-fuzzy", false, [
     { name: "file already uses fuse.js", file: "src/Search.tsx", code: `import Fuse from "fuse.js";\nconst r = items.filter(i => i.name.toLowerCase().includes(q.toLowerCase()));` },
     { name: "exact structured filter (no search)", file: "src/List.tsx", code: "const open = items.filter(i => i.status === \"open\");" },
-    { name: "one-sided includes (not the symmetric finder)", file: "src/List.tsx", code: "const r = items.filter(i => i.name.toLowerCase().includes(query));" },
+    { name: "one-sided, needle not named for a search box", file: "src/List.tsx", code: "const r = items.filter(i => i.name.toLowerCase().includes(prefix));" },
+    // A needle named *Filter is the picked-value case the rule's own escape hatch sanctions,
+    // so `filter` is deliberately not one of the names that carry the one-sided form.
+    { name: "picked-value filter, not a typed search", file: "src/Table.tsx", code: "const r = rows.filter(x => x.status.toLowerCase().includes(statusFilter));" },
     { name: "symmetric includes but not inside a filter", file: "src/util.tsx", code: "if (a.toLowerCase().includes(b.toLowerCase())) merge();" },
     { name: "test file is excluded", file: "src/List.test.tsx", code: "const r = items.filter(i => i.name.toLowerCase().includes(q.toLowerCase()));" },
 ]);
