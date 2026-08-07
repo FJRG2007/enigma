@@ -797,6 +797,10 @@ test("a hand-rolled search box is blocked at the diff stage, a membership test i
         // A membership test over a set of ids is not a search box, in either direction.
         "const mine = rows.filter((r) => selectedIds.includes(r.id));",
         "const shown = rows.filter((r) => r.tags.includes(activeTag));",
+        // A needle named *Filter is the PICKED-VALUE case this rule's own escape hatch
+        // sanctions, so `filter` is not one of the needle names that carry the one-sided form.
+        "const rows = data.filter((r) => r.status.toLowerCase().includes(statusFilter));",
+        "const rows = data.filter((r) => r.tag.toLowerCase().includes(activeTagFilter));",
         // Lowercasing without a filter is not one either.
         "const slug = title.toLowerCase().includes(prefix);",
         // Already fuzzy.
@@ -804,6 +808,12 @@ test("a hand-rolled search box is blocked at the diff stage, a membership test i
         // Explicitly allowed: an exact substring IS the requirement.
         "// enigma:allow-substring-search\nconst rows = data.filter((r) => r.ip.toLowerCase().includes(ipFilter.toLowerCase()));",
     ]) expect(checkFile("src/Table.tsx", line, null, "diff")).toEqual([]);
+
+    // The clearing signal is word-bounded: this rule BLOCKS, and a gate switched off by the
+    // word "refuse" appearing anywhere in the file is not a deliberate escape hatch.
+    for (const noise of ["// we refuse an empty query", "// do not confuse this with the tag filter"]) {
+        expect(checkFile("src/Table.tsx", `${noise}\n${symmetric}`, null, "diff").length).toBe(1);
+    }
 
     // Generated trees are out of scope in both glob forms (the note's GLOB LESSON).
     expect(checkFile("dist/Table.tsx", symmetric, null, "diff")).toEqual([]);

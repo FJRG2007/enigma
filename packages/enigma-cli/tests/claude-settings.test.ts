@@ -155,36 +155,56 @@ test("statuslineRefresh drives the timer, and 0 removes it entirely", () => {
     }
 });
 
+test("a repo-local statuslineRefresh never reaches the global bar", () => {
+    // readConfig() merges the repo-local .enigma.json over the global one, so reading it for
+    // a GLOBAL write would take one project's value and stamp it on the bar every other
+    // project sees - while the CLI printed "(global)".
+    const project = join(HOME, "project");
+    mkdirSync(project, { recursive: true });
+    writeJson(join(project, ".enigma.json"), { statuslineRefresh: 5 });
+    writeJson(ENIGMA_CONFIG, { statuslineRefresh: 45 });
+
+    const cwd = process.cwd();
+    try {
+        process.chdir(project);
+        writeJson(GLOBAL, { statusLine: { ...ENIGMA_LINE, refreshInterval: 10 } });
+        expect(syncClaudeStatuslineRefresh("global")).toBe("updated");
+        expect((readJson(GLOBAL).statusLine as Record<string, unknown>).refreshInterval).toBe(45);
+    } finally {
+        process.chdir(cwd);
+    }
+});
+
 test("syncClaudeStatuslineRefresh reconciles an installed bar but never a custom one", () => {
     const line = (): Record<string, unknown> | undefined =>
         readJson(GLOBAL).statusLine as Record<string, unknown> | undefined;
 
     // Nothing installed yet -> nothing to reconcile.
     writeJson(ENIGMA_CONFIG, { statuslineRefresh: 45 });
-    expect(syncClaudeStatuslineRefresh("global")).toBe(false);
+    expect(syncClaudeStatuslineRefresh("global")).toBe("not-installed");
 
     // An installed enigma bar picks the new value up - this is the path that makes a
     // changed setting reach an EXISTING install, which enableClaudeStatusline refuses to do.
     writeJson(GLOBAL, { env: { FOO: "bar" }, statusLine: { ...ENIGMA_LINE, refreshInterval: 10 } });
-    expect(syncClaudeStatuslineRefresh("global")).toBe(true);
+    expect(syncClaudeStatuslineRefresh("global")).toBe("updated");
     expect(line()?.refreshInterval).toBe(45);
     // Unrelated settings and the block's own unrelated keys survive.
     expect((readJson(GLOBAL).env as Record<string, unknown>).FOO).toBe("bar");
     expect(line()?.padding).toBe(0);
 
-    // Idempotent: re-running with the same value does not rewrite the file.
-    expect(syncClaudeStatuslineRefresh("global")).toBe(false);
+    // Idempotent, and it says so: "already this value" must not report as "no bar installed".
+    expect(syncClaudeStatuslineRefresh("global")).toBe("unchanged");
 
     // 0 strips the timer off an already-installed bar.
     writeJson(ENIGMA_CONFIG, { statuslineRefresh: 0 });
-    expect(syncClaudeStatuslineRefresh("global")).toBe(true);
+    expect(syncClaudeStatuslineRefresh("global")).toBe("updated");
     expect(line()).not.toHaveProperty("refreshInterval");
-    expect(syncClaudeStatuslineRefresh("global")).toBe(false);
+    expect(syncClaudeStatuslineRefresh("global")).toBe("unchanged");
 
     // A user's own bar is left alone whatever the setting says.
     writeJson(ENIGMA_CONFIG, { statuslineRefresh: 20 });
     writeJson(GLOBAL, { statusLine: { type: "command", command: "my-own-bar" } });
-    expect(syncClaudeStatuslineRefresh("global")).toBe(false);
+    expect(syncClaudeStatuslineRefresh("global")).toBe("not-installed");
     expect(line()).not.toHaveProperty("refreshInterval");
     expect(line()?.command).toBe("my-own-bar");
 });

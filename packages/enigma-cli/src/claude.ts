@@ -9,10 +9,10 @@
  * so the behavior is enforced regardless of what the model does.
  */
 
-import { CONFIG_DEFAULTS, readConfig } from "./config";
 import { join, normalize, parse, resolve } from "node:path";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { enigmaHome, findGitRoot, isDir, readJson } from "./util";
+import { CONFIG_DEFAULTS, readConfig, readGlobalConfig } from "./config";
 
 /**
  * The command enigma points Claude Code's statusLine at. Also the marker that tells
@@ -37,8 +37,13 @@ const STATUSLINE_REFRESH_MAX = 60;
  * treated as untrusted input: anything that is not a finite number in range collapses to
  * the default rather than reaching Claude's settings.json.
  */
-function statuslineRefreshSeconds(): number {
-    const raw = readConfig().config.statuslineRefresh;
+function statuslineRefreshSeconds(scope: "global" | "local"): number {
+    // The read is scoped to the file being WRITTEN. `readConfig()` merges the repo-local
+    // .enigma.json over the global one, so using it for a global write would take a value
+    // that belongs to one project and stamp it on the bar every other project sees - while
+    // the CLI printed "(global)". A local write is the merged, nearest-wins value by
+    // definition, which is exactly what that project's bar should carry.
+    const raw = scope === "global" ? readGlobalConfig().statuslineRefresh : readConfig().config.statuslineRefresh;
     if (typeof raw !== "number" || !Number.isFinite(raw)) return CONFIG_DEFAULTS.statuslineRefresh;
     const seconds = Math.round(raw);
     if (seconds < 0 || seconds > STATUSLINE_REFRESH_MAX) return CONFIG_DEFAULTS.statuslineRefresh;
@@ -50,8 +55,8 @@ function statuslineRefreshSeconds(): number {
  * is what creates the timer, so leaving it out is the difference between "refresh every N
  * seconds" and "refresh only when the conversation moves".
  */
-function statuslineBlock(): Record<string, unknown> {
-    const seconds = statuslineRefreshSeconds();
+function statuslineBlock(scope: "global" | "local"): Record<string, unknown> {
+    const seconds = statuslineRefreshSeconds(scope);
     const block: Record<string, unknown> = { type: "command", command: STATUSLINE_COMMAND, padding: 0 };
     if (seconds > 0) block.refreshInterval = seconds;
     return block;
@@ -288,13 +293,22 @@ export function enableClaudeStatusline(scope: "global" | "local"): boolean {
     const path = claudeSettingsPath(scope);
     const current = readJson<Record<string, unknown>>(path) || {};
     if (current.statusLine !== undefined) return false;
-    writeClaudeSettings(path, { ...current, statusLine: statuslineBlock() });
+    writeClaudeSettings(path, { ...current, statusLine: statuslineBlock(scope) });
     return true;
 }
 
 /**
+ * What a refresh reconcile did, which the caller reports to the user.
+ *
+ * Three outcomes and not a boolean: "there is no enigma bar here" and "the bar already had
+ * this value" are both no-writes, and collapsing them makes the CLI tell someone who just
+ * re-set the value that no status bar is installed.
+ */
+export type StatuslineRefreshSync = "not-installed" | "unchanged" | "updated";
+
+/**
  * Re-write the refresh interval on an enigma-managed statusline, leaving a user's own bar
- * alone. Returns true when the file changed.
+ * alone.
  *
  * Separate from `enableClaudeStatusline` on purpose. That one is install-only - it refuses
  * to touch an existing block - which is what keeps `syncDeployed` from clobbering a bar the
@@ -303,20 +317,20 @@ export function enableClaudeStatusline(scope: "global" | "local"): boolean {
  * explicit `enigma config statusline-refresh N` is the one moment where overwriting the
  * value in settings.json is exactly what was asked for.
  */
-export function syncClaudeStatuslineRefresh(scope: "global" | "local"): boolean {
+export function syncClaudeStatuslineRefresh(scope: "global" | "local"): StatuslineRefreshSync {
     const path = claudeSettingsPath(scope);
     const current = readJson<Record<string, unknown>>(path);
     const line = current?.statusLine as Record<string, unknown> | undefined;
-    if (!current || line?.command !== STATUSLINE_COMMAND) return false;
+    if (!current || line?.command !== STATUSLINE_COMMAND) return "not-installed";
 
-    const seconds = statuslineRefreshSeconds();
+    const seconds = statuslineRefreshSeconds(scope);
     const next = { ...line };
     if (seconds > 0) next.refreshInterval = seconds;
     else delete next.refreshInterval;
-    if (next.refreshInterval === line.refreshInterval) return false;
+    if (next.refreshInterval === line.refreshInterval) return "unchanged";
 
     writeClaudeSettings(path, { ...current, statusLine: next });
-    return true;
+    return "updated";
 }
 
 /** Reads the statusLine block Claude Code has configured for a scope, if any. */

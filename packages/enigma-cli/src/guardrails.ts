@@ -461,27 +461,35 @@ export const BUILTIN_RULES: GuardrailRule[] = [
         // spellings that are near-certainly a search box. (a) SYMMETRIC: both sides lowercased,
         // which nothing but a case-insensitive text match is written for. (b) ONE-SIDED, where the
         // haystack is lowercased and the needle is a binding NAMED for a search box
-        // (search/query/filter/term/keyword/needle) - the name is what replaces the second
+        // (search/query/term/keyword/needle) - the name is what replaces the second
         // toLowerCase as evidence, and it is what keeps a plain membership test
-        // (`.filter(x => ids.includes(x))`) out. Widening to ANY `.filter(....includes(` was
-        // measured and rejected: 171 further lines in 124 files, overwhelmingly membership tests.
-        // Cleared by `fuse` anywhere in the file, or by the escape hatch below.
-        pattern: "\\.filter\\((?:[^;]*\\.toLowerCase\\(\\)\\.includes\\([^;]*\\.toLowerCase\\(\\)|[^;]*\\.toLowerCase\\(\\)\\.includes\\(\\s*[\\w.]*(?:search|query|filter|term|keyword|needle)[\\w.]*\\s*\\))",
-        absent: "fuse|enigma:allow-substring-search",
+        // (`.filter(x => ids.includes(x))`) out. `filter` is deliberately NOT one of those
+        // names: `statusFilter`/`activeTagFilter` is the PICKED-VALUE case this rule's own
+        // escape hatch exists for, so accepting it would make the rule fire on exactly what
+        // it sanctions. It costs no measured hit - every one-sided finding in the corpus is
+        // named search/query/needle. Widening to ANY `.filter(....includes(` was measured and
+        // rejected: 171 further lines in 124 files, overwhelmingly membership tests.
+        pattern: "\\.filter\\((?:[^;]*\\.toLowerCase\\(\\)\\.includes\\([^;]*\\.toLowerCase\\(\\)|[^;]*\\.toLowerCase\\(\\)\\.includes\\(\\s*[\\w.]*(?:search|query|term|keyword|needle)[\\w.]*\\s*\\))",
+        // Word-bounded: a bare `fuse` is a substring of "refuse" and "confuse", and this rule
+        // BLOCKS - a stray word in a comment silently switching a gate off is the failure mode
+        // an escape hatch is supposed to make deliberate.
+        absent: "\\bfuse\\b|enigma:allow-substring-search",
         // DIFF stage, and the severity is what this rule is FOR: it shipped as a `warn`, a warn
         // exits 0 and never reaches the model, so the convention it carries has never once been
         // enforced - which is exactly how an agent ships a dashboard full of hand-rolled finders
         // while frontend-policy says to use fuse.js. Blocking at the EDIT stage was not available:
         // MEASURED with the engine's own rule over 4313 UI files of real product repositories,
-        // 17 candidate lines in 16 files, 15 findings - a command menu, a combobox, a tag input,
-        // a plugin search, a source picker, a project selector, an icon picker, two gateway
+        // 17 candidate lines in 16 files, 17 findings - a command menu, a combobox, a tag input,
+        // a plugin search, a source picker, a project selector, an icon picker, three gateway
         // tables - every one a genuine hand-rolled search box and 0 false positives, but also a
         // backlog an edit-stage block would deny a turn over on every unrelated edit to those
         // files. Against the ADDED lines there is no backlog by construction, so the rule can
         // only fire on a finder the agent just wrote. The one borderline finding (filtering a
-        // session list by IP) is exactly what the escape hatch is for.
+        // session list by IP) is exactly what the escape hatch is for. Two of the seventeen are
+        // what the word boundary on `fuse` recovered: a tooltip in that file says a call is
+        // "refused", which silently cleared the rule for both of its search boxes.
         stage: "diff",
-        message: "Hand-rolled substring search. A `.includes()` filter only finds a match the user typed exactly: it misses a typo, a transposition, a missing accent and any word typed out of order, and it cannot rank - so the best match sits wherever the source array happened to put it. Use fuse.js over the already-loaded data (keys per searchable field, `threshold` around 0.3, and re-run it per keystroke - debouncing belongs to the server-backed part, not to an in-memory search). Mark the line `enigma:allow-substring-search` when an exact substring IS the requirement: filtering by an id, a tag, a status or any value the user picks rather than types (frontend-policy).",
+        message: "Hand-rolled substring search. A `.includes()` filter only finds a match the user typed exactly: it misses a typo, a transposition, a missing accent and any word typed out of order, and it cannot rank - so the best match sits wherever the source array happened to put it. Use fuse.js over the already-loaded data (keys per searchable field, `threshold` around 0.3, and re-run it per keystroke - debouncing belongs to the server-backed part, not to an in-memory search). Mark the line `enigma:allow-substring-search` when this is not a free-text search box: filtering by an id, a tag, a status or any value the user picks rather than types, or a project that takes no runtime dependency (dependency-policy) and matches by hand on purpose (frontend-policy).",
         severity: "block",
         skill: "frontend-policy",
     },

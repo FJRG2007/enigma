@@ -148,6 +148,11 @@ its absence is the difference between "every N seconds" and "only when the conve
 moves". At 0 the bar is correct at rest and frozen while a gate run blocks, which is exactly
 the trade this feature exists to make: the only thing the timer buys is a moving gate line.
 
+The value is read at the SCOPE being written, not from the merged config: `readConfig()`
+layers the repo-local `.enigma.json` over the global one, so using it for a global write
+would take one project's value and stamp it on the bar every other project sees, while
+the CLI printed "(global)". A local write is the merged, nearest-wins value by definition.
+
 The ceiling is 60 because Claude Code documents 1-60 and silently ignores anything above it;
 a value out of range (or a non-number - `.enigma.json` is hand-edited and a repo-local one
 travels with a clone) collapses to the default rather than reaching `settings.json`.
@@ -158,7 +163,10 @@ Two writers, deliberately:
   is what stops `syncDeployed` - which runs on every launch - from clobbering a bar the user
   hand-tuned in `settings.json`.
 - `syncClaudeStatuslineRefresh` reconciles the interval on an enigma-managed bar (never a
-  custom one) and is called only from the setter. Without it a changed setting would never
+  custom one) and is called only from the setter. It returns three outcomes rather than a
+  boolean (`not-installed` / `unchanged` / `updated`), because "no enigma bar here" and
+  "the bar already had this value" are both no-writes and collapsing them made the CLI
+  tell someone who had just re-set the value that no status bar was installed. Without it a changed setting would never
   reach an existing install; with it on the sync path, hand edits would not survive. An
   explicit `enigma config statusline-refresh N` is the one moment where overwriting the
   value is what was asked for.

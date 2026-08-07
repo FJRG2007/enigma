@@ -100,9 +100,11 @@ export async function runConfigCli(positionals: string[], scope: Scope | null, i
         const path = setEnigmaValue("statuslineRefresh", n, target);
         const applied = syncClaudeStatuslineRefresh(target);
         console.log(`Set statusline-refresh = ${n === 0 ? "no timer" : `${n}s`} (${target})${path ? ` in ${path}` : ""}.`);
-        console.log(applied
-            ? "Updated the installed status bar. Restart the agent to apply."
-            : "No enigma status bar installed for this scope yet; it will use this value when one is.");
+        console.log({
+            updated: "Updated the installed status bar. Restart the agent to apply.",
+            unchanged: "The installed status bar already carried this value.",
+            "not-installed": "No enigma status bar installed for this scope yet; it will use this value when one is.",
+        }[applied]);
         return 0;
     }
 
@@ -207,7 +209,7 @@ export async function runConfigCli(positionals: string[], scope: Scope | null, i
 
     const setting = ALL_SETTINGS.find((s) => s.key === rawKey);
     if (!setting) {
-        console.error(`Unknown config key: ${rawKey}. Known keys: ${ALL_SETTINGS.map((s) => s.key).join(", ")}, token-price, token-speed, dashboard-port, dashboard-bind, dashboard-bind-address, api-port, api-account, api-profile, api-pack, plan-session-limit, plan-weekly-limit, plan-weekly-sonnet-limit, plan-weekly-opus-limit, plan-weekly-reset.`);
+        console.error(`Unknown config key: ${rawKey}. Known keys: ${ALL_SETTINGS.map((s) => s.key).join(", ")}, statusline-refresh, token-price, token-speed, dashboard-port, dashboard-bind, dashboard-bind-address, api-port, api-account, api-profile, api-pack, plan-session-limit, plan-weekly-limit, plan-weekly-sonnet-limit, plan-weekly-opus-limit, plan-weekly-reset.`);
         return 1;
     }
 
