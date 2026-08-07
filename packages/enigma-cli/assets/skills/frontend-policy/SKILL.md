@@ -416,6 +416,16 @@ A skeleton is not compliance by itself. `if (!data) return <PageSkeleton />` at 
 - Check what survives the guard before writing it: if the body below it draws a title, a tab bar, a button or any literal copy, that markup could have painted on the first tick and the guard is blanking it.
 - The same applies to a detail view: the record's name from the route, breadcrumbs, the action buttons and the section headings render immediately, and only the fields wait.
 
+### A tracked value paints its last sample, not a skeleton
+
+A cold client cache is not an empty screen when the application already stores the value's history. If a view charts, logs or samples a metric over time - container CPU and memory, queue depth, disk usage, request rate, a device's last reading - then the most recent stored sample is a real, dated value the app can paint on the first tick, and the live reading replaces it when it lands. Skeletoning that tile throws away data already sitting in the same store the chart reads.
+
+- Reach for it whenever the live read is slower than the stored one, which is the normal case: polling a container runtime, an agent on a host, a device or a third-party status API takes seconds, while the last row of the history table is one indexed query on data the view was already loading for its chart.
+- The stored sample and the live one are the same shape, so this is a swap and not a second code path: render from `latest ?? lastTracked`, and let the live value overwrite it.
+- Date it, and never let the two look identical - "12% - 40s ago" going to "18% - now". An undated stale number is worse than a skeleton, because the user acts on it believing it is current (Client-Side Caching says the same about a cached snapshot).
+- Mark the tile as reconnecting rather than blanking it when the live read FAILS. The last known value plus "no reading since 14:02" is the useful screen; a skeleton that never resolves says nothing at all.
+- The exception is a value that is meaningless when stale: a lock or availability state a user is about to act on, a balance before a payment, anything under the "never serve stale for money, security or correctness" rule. Wait for the live read there and say what it is waiting for.
+
 ### The shell ships first, the data follows
 
 Data that arrives inside the first HTML document is data the navigation waited for. In a server-rendered route (Next App Router, Remix, Nuxt), an awaited query in the route component blocks the whole transition: the router has nothing to commit until it resolves, so the previous page stays on screen and the app feels stuck on every link click.
