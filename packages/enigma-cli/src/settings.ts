@@ -6,9 +6,10 @@
  */
 
 import { isIP } from "node:net";
-import { DASHBOARD_BINDS, readConfig, setEnigmaValue, type DashboardBind } from "./config";
-import { ALL_SETTINGS, CATEGORIES, parseBool, valueLabel } from "./settings-registry";
+import { syncClaudeStatuslineRefresh } from "./claude";
 import type { ApplyResult, Scope } from "./settings-registry";
+import { ALL_SETTINGS, CATEGORIES, parseBool, valueLabel } from "./settings-registry";
+import { DASHBOARD_BINDS, readConfig, setEnigmaValue, type DashboardBind } from "./config";
 
 /** A DNS name: dot-separated labels of alphanumerics/hyphens, each 1-63 chars, no leading/trailing hyphen. */
 const HOSTNAME_RE = /^(?=.{1,253}$)[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
@@ -81,6 +82,27 @@ export async function runConfigCli(positionals: string[], scope: Scope | null, i
         const target: Scope = scope || "global";
         const path = setEnigmaValue("tokenSpeed", n, target);
         console.log(`Set token-speed = ${n} tok/s (${target})${path ? ` in ${path}` : ""}.`);
+        return 0;
+    }
+
+    // statusline-refresh is the status bar's timer in seconds, outside the boolean/choice
+    // registry. Every tick is a whole process start, so this is the dial for a machine where
+    // that is expensive; 0 drops the timer and leaves the bar to the harness's own
+    // event-driven refreshes. Writing it also reconciles an already-installed bar, since
+    // enableClaudeStatusline deliberately refuses to touch an existing block.
+    if (rawKey === "statusline-refresh") {
+        const n = Number(rawValue);
+        if (rawValue === undefined || !Number.isInteger(n) || n < 0 || n > 60) {
+            console.error("Missing/invalid value for 'statusline-refresh'. Usage: enigma config statusline-refresh <0-60> (seconds; 0 = no timer, refresh only on conversation events) [-g|-l]");
+            return 1;
+        }
+        const target: Scope = scope || "global";
+        const path = setEnigmaValue("statuslineRefresh", n, target);
+        const applied = syncClaudeStatuslineRefresh(target);
+        console.log(`Set statusline-refresh = ${n === 0 ? "no timer" : `${n}s`} (${target})${path ? ` in ${path}` : ""}.`);
+        console.log(applied
+            ? "Updated the installed status bar. Restart the agent to apply."
+            : "No enigma status bar installed for this scope yet; it will use this value when one is.");
         return 0;
     }
 

@@ -104,7 +104,7 @@ deletes the `statusLine` key from `~/.claude/settings.json`.
 
 ## Refresh interval (a spawn budget, not a taste call)
 
-`refreshInterval` is 10 seconds. Every refresh spawns a process, and on Windows each
+`refreshInterval` defaults to 10 seconds. Every refresh spawns a process, and on Windows each
 spawn creates console hosts. Measured on a Windows 11 box with Windows Terminal as the
 default terminal, sampling process creation for 14s with the bar off and then on:
 
@@ -131,6 +131,37 @@ meaningfully staler at 10s; only the spinner stops reading as a smooth animation
 
 The value is written by `enableClaudeStatusline` and can be edited directly in
 `settings.json` for anyone who wants a faster spinner and does not care about the spawns.
+
+### The dial (`statuslineRefresh`)
+
+Ten is a budget for a healthy box, not a floor that holds everywhere. The harness owns the
+status bar's lifecycle - it re-runs the command as a **fresh process** on every tick, so the
+cost per refresh is a whole process start, and nothing enigma does inside the renderer can
+change that. Measured on the author's Windows box under load (real-time AV scanning the
+runtime, six agent sessions open): `node -e "0"` alone took 650-1800 ms with 4 s outliers,
+and the renderer added ~200 ms on top of it. At that point the bar is the thing the user
+feels as input lag while typing, and the fix is fewer ticks, not a faster script.
+
+`enigma config statusline-refresh <0-60>` writes `statuslineRefresh` (config.ts, default 10).
+**0 omits `refreshInterval` from the block entirely** - the key is what creates the timer, so
+its absence is the difference between "every N seconds" and "only when the conversation
+moves". At 0 the bar is correct at rest and frozen while a gate run blocks, which is exactly
+the trade this feature exists to make: the only thing the timer buys is a moving gate line.
+
+The ceiling is 60 because Claude Code documents 1-60 and silently ignores anything above it;
+a value out of range (or a non-number - `.enigma.json` is hand-edited and a repo-local one
+travels with a clone) collapses to the default rather than reaching `settings.json`.
+
+Two writers, deliberately:
+
+- `enableClaudeStatusline` is **install-only** and refuses to touch an existing block. That
+  is what stops `syncDeployed` - which runs on every launch - from clobbering a bar the user
+  hand-tuned in `settings.json`.
+- `syncClaudeStatuslineRefresh` reconciles the interval on an enigma-managed bar (never a
+  custom one) and is called only from the setter. Without it a changed setting would never
+  reach an existing install; with it on the sync path, hand edits would not survive. An
+  explicit `enigma config statusline-refresh N` is the one moment where overwriting the
+  value is what was asked for.
 
 ## Tests
 

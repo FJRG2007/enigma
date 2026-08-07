@@ -110,6 +110,18 @@ export interface EnigmaConfig {
      */
     statusline: boolean;
     /**
+     * Seconds between status-bar refreshes (default 10, 0 = no timer). This is a
+     * process-spawn budget, not a taste call: the harness owns the status bar's lifecycle
+     * and re-runs the command as a FRESH process on every tick, so the cost per refresh is
+     * a whole process start - on a machine where that is slow (real-time AV scanning the
+     * runtime, several sessions open at once) the timer is felt as input lag in the agent.
+     *
+     * The only thing a shorter interval buys is a smoothly animating gate line, so 0 turns
+     * the timer off entirely and leaves the bar to the harness's own event-driven refreshes
+     * (turn boundaries): correct at rest, frozen while a gate run blocks. See claude.ts.
+     */
+    statuslineRefresh: number;
+    /**
      * Pre-answer Claude Code's "Is this a project you trust?" prompt (default on, Claude
      * Code only). Same intent/effect split as `statusline`: this records the choice and the
      * effect is written into Claude's own `.claude.json`, so a deliberate off is never
@@ -339,7 +351,7 @@ export interface EnigmaConfig {
  */
 export const CONFIG_DEFAULTS: EnigmaConfig = {
     commitEmoji: true, updateNotifier: true, fullscreen: true, parallelSubagents: false, outputStyle: "off", minimalCode: "full", logoColorPolicy: "ask",
-    autoSync: true, statusline: true, claudeTrust: true, remoteSkills: true, skillUpdatePolicy: "overwrite", permissionBypass: true, autoLint: false, guardrails: true, trim: true, verify: true, verifyCommand: "", compress: false, codeGraph: false, gate: true, dashboard: "off", tokenPrice: 0, tokenSpeed: 0, usageStats: false, recall: false, recallLlm: true, recallProvider: "claude-local", recallModel: "", recallApiBase: "", recallApiKey: "", proxy: false, usageApi: false, promptSecretGuard: false, promptSecretMode: "redact",
+    autoSync: true, statusline: true, statuslineRefresh: 10, claudeTrust: true, remoteSkills: true, skillUpdatePolicy: "overwrite", permissionBypass: true, autoLint: false, guardrails: true, trim: true, verify: true, verifyCommand: "", compress: false, codeGraph: false, gate: true, dashboard: "off", tokenPrice: 0, tokenSpeed: 0, usageStats: false, recall: false, recallLlm: true, recallProvider: "claude-local", recallModel: "", recallApiBase: "", recallApiKey: "", proxy: false, usageApi: false, promptSecretGuard: false, promptSecretMode: "redact",
     resourceCap: 60, lowMemoryCap: 80,
     planSessionLimit: 0, planWeeklyLimit: 0, planWeeklySonnetLimit: 0, planWeeklyOpusLimit: 0, planWeeklyReset: "mon 00:00",
     dashboardLive: true, dashboardPort: 0, dashboardBind: "loopback", dashboardBindAddress: "", apiPort: 8000, apiAccount: "", apiProfile: "", apiPack: "", toolPaths: {}, bypassDisabled: [], discardedSkills: [], skillAgentsOff: {}, packs: [], packAccounts: {}, gateProtectedBranches: [],

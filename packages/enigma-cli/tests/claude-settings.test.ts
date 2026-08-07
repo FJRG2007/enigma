@@ -7,10 +7,10 @@
  * AND absence). Runs against a temp HOME (set BEFORE import - claude.ts resolves the
  * global path via homedir()).
  */
-import { test, expect, beforeEach, afterEach, afterAll } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, normalize, parse } from "node:path";
+import { test, expect, beforeEach, afterEach, afterAll } from "bun:test";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 
 const HOME = mkdtempSync(join(tmpdir(), "enigma-claude-settings-"));
 process.env.USERPROFILE = HOME;
@@ -19,6 +19,7 @@ process.env.HOME = HOME;
 const {
     disableClaudeFeedbackSurvey, getClaudeFeedbackSurvey, setClaudeFeedbackSurvey, mirrorClaudeSettings,
     enableClaudeStatusline, disableClaudeStatusline, getClaudeStatusline, setClaudeStatusline, hasCustomClaudeStatusline,
+    syncClaudeStatuslineRefresh,
     claudeWorkspaceKey, getClaudeTrust, trustClaudeWorkspaces, untrustClaudeWorkspaces, mirrorClaudeTrust,
 } = await import("../src/claude");
 
@@ -34,6 +35,8 @@ const readJson = (path: string): Record<string, unknown> =>
 const writeJson = (path: string, obj: unknown): void =>
     writeFileSync(path, `${JSON.stringify(obj, null, 2)}\n`);
 const ENIGMA_LINE = { type: "command", command: "enigma statusline", padding: 0 };
+/** Global .enigma.json, read through ENIGMA_CONFIG_HOME - where statuslineRefresh lives. */
+const ENIGMA_CONFIG = join(HOME, ".enigma.json");
 
 let priorConfigHome: string | undefined;
 
@@ -53,6 +56,9 @@ beforeEach(() => {
     writeFileSync(GLOBAL, JSON.stringify({ env: { FOO: "bar" } }, null, 2) + "\n");
     // Trust state is per-test: every trust case starts from "never answered".
     rmSync(STATE, { force: true });
+    // Config is per-test too, so a statuslineRefresh set by one case cannot leak into
+    // the next one's assertions about the default.
+    rmSync(ENIGMA_CONFIG, { force: true });
 });
 
 afterEach(() => {
@@ -113,12 +119,74 @@ test("statusline is installed on every platform, with the timer that drives the 
     // seconds rather than the minimum of one: every refresh spawns a process, and on
     // Windows each spawn creates console hosts.
     expect(line?.refreshInterval).toBe(10);
+    expect(line?.padding).toBe(0);
     // Unrelated settings survive.
     expect((readJson(GLOBAL).env as Record<string, unknown>).FOO).toBe("bar");
     // A user's own statusline is never replaced.
     writeJson(GLOBAL, { statusLine: { type: "command", command: "my-own-bar" } });
     expect(enableClaudeStatusline("global")).toBe(false);
     expect((readJson(GLOBAL).statusLine as Record<string, unknown>).command).toBe("my-own-bar");
+});
+
+test("statuslineRefresh drives the timer, and 0 removes it entirely", () => {
+    const line = (): Record<string, unknown> | undefined =>
+        readJson(GLOBAL).statusLine as Record<string, unknown> | undefined;
+
+    // A configured interval reaches a fresh install.
+    writeJson(ENIGMA_CONFIG, { statuslineRefresh: 30 });
+    expect(enableClaudeStatusline("global")).toBe(true);
+    expect(line()?.refreshInterval).toBe(30);
+
+    // 0 omits the key rather than writing a zero: the key is what creates the timer, so
+    // its absence is the difference between "every N seconds" and "only on turn events".
+    writeJson(ENIGMA_CONFIG, { statuslineRefresh: 0 });
+    writeJson(GLOBAL, {});
+    expect(enableClaudeStatusline("global")).toBe(true);
+    expect(line()?.command).toBe("enigma statusline");
+    expect(line()).not.toHaveProperty("refreshInterval");
+
+    // .enigma.json is hand-edited and a repo-local one travels with a clone, so a value
+    // that is not a number in range collapses to the default instead of reaching Claude.
+    for (const bad of [-1, 61, 1e9, "10", null, Number.NaN]) {
+        writeJson(ENIGMA_CONFIG, { statuslineRefresh: bad });
+        writeJson(GLOBAL, {});
+        expect(enableClaudeStatusline("global")).toBe(true);
+        expect(line()?.refreshInterval).toBe(10);
+    }
+});
+
+test("syncClaudeStatuslineRefresh reconciles an installed bar but never a custom one", () => {
+    const line = (): Record<string, unknown> | undefined =>
+        readJson(GLOBAL).statusLine as Record<string, unknown> | undefined;
+
+    // Nothing installed yet -> nothing to reconcile.
+    writeJson(ENIGMA_CONFIG, { statuslineRefresh: 45 });
+    expect(syncClaudeStatuslineRefresh("global")).toBe(false);
+
+    // An installed enigma bar picks the new value up - this is the path that makes a
+    // changed setting reach an EXISTING install, which enableClaudeStatusline refuses to do.
+    writeJson(GLOBAL, { env: { FOO: "bar" }, statusLine: { ...ENIGMA_LINE, refreshInterval: 10 } });
+    expect(syncClaudeStatuslineRefresh("global")).toBe(true);
+    expect(line()?.refreshInterval).toBe(45);
+    // Unrelated settings and the block's own unrelated keys survive.
+    expect((readJson(GLOBAL).env as Record<string, unknown>).FOO).toBe("bar");
+    expect(line()?.padding).toBe(0);
+
+    // Idempotent: re-running with the same value does not rewrite the file.
+    expect(syncClaudeStatuslineRefresh("global")).toBe(false);
+
+    // 0 strips the timer off an already-installed bar.
+    writeJson(ENIGMA_CONFIG, { statuslineRefresh: 0 });
+    expect(syncClaudeStatuslineRefresh("global")).toBe(true);
+    expect(line()).not.toHaveProperty("refreshInterval");
+    expect(syncClaudeStatuslineRefresh("global")).toBe(false);
+
+    // A user's own bar is left alone whatever the setting says.
+    writeJson(ENIGMA_CONFIG, { statuslineRefresh: 20 });
+    writeJson(GLOBAL, { statusLine: { type: "command", command: "my-own-bar" } });
+    expect(syncClaudeStatuslineRefresh("global")).toBe(false);
+    expect(line()).not.toHaveProperty("refreshInterval");
+    expect(line()?.command).toBe("my-own-bar");
 });
 
 test("disableClaudeStatusline removes only enigma's line, never a user's custom one", () => {

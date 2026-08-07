@@ -8,14 +8,14 @@
  * logs each account in per machine.
  */
 
-import { homedir } from "node:os";
 import { join } from "node:path";
+import { homedir } from "node:os";
 import * as acct from "./accounts";
-import { readFileSync, writeFileSync } from "node:fs";
 import { CONFIG_FILE } from "./config";
 import type { EnigmaConfig } from "./config";
-import { GUARD_PROTECTIONS, GUARD_LISTS, globalGuardPath, readGlobalGuard, setGuardProtection, setGuardList } from "./guard-config";
 import { ALL_SETTINGS } from "./settings-registry";
+import { readFileSync, writeFileSync } from "node:fs";
+import { GUARD_PROTECTIONS, GUARD_LISTS, globalGuardPath, readGlobalGuard, setGuardProtection, setGuardList } from "./guard-config";
 
 export const BUNDLE_KIND = "enigma-config";
 export const BUNDLE_VERSION = 1;
@@ -96,7 +96,7 @@ export interface ImportResult { ok: boolean; error?: string; applied: string[]; 
  * command the completion gate executes, so importing one would let a bundle run arbitrary code
  * on the importing machine. It must be set deliberately, on the machine that will run it.
  */
-const NUMERIC_KEYS = new Set(["tokenPrice", "tokenSpeed", "dashboardPort", "apiPort"]);
+const NUMERIC_KEYS = new Set(["tokenPrice", "tokenSpeed", "dashboardPort", "apiPort", "statuslineRefresh"]);
 const STRING_KEYS = new Set(["recallProvider", "recallModel", "recallApiBase", "apiAccount", "apiProfile", "apiPack"]);
 const NEVER_IMPORT = new Set(["verifyCommand"]);
 function isImportableConfigKey(key: string): boolean {

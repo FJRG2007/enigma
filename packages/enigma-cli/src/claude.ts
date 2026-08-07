@@ -9,9 +9,10 @@
  * so the behavior is enforced regardless of what the model does.
  */
 
+import { CONFIG_DEFAULTS, readConfig } from "./config";
 import { join, normalize, parse, resolve } from "node:path";
-import { enigmaHome, findGitRoot, isDir, readJson } from "./util";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { enigmaHome, findGitRoot, isDir, readJson } from "./util";
 
 /**
  * The command enigma points Claude Code's statusLine at. Also the marker that tells
@@ -21,10 +22,40 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 const STATUSLINE_COMMAND = "enigma statusline";
 
 /**
- * Seconds between status-bar refreshes. See `enableClaudeStatusline` for why this is 10
- * rather than the documented minimum of 1 - it is a process-spawn budget, not a taste call.
+ * Ceiling for the refresh interval. Claude Code documents 1-60 seconds; a value above the
+ * ceiling would be silently ignored by the client, which reads as "enigma wrote it wrong"
+ * rather than "the harness capped it". Use 0 to drop the timer instead of a huge interval.
  */
-const STATUSLINE_REFRESH_SECONDS = 10;
+const STATUSLINE_REFRESH_MAX = 60;
+
+/**
+ * Seconds between status-bar refreshes, from `statuslineRefresh`. See
+ * `enableClaudeStatusline` for why the default is 10 rather than the documented minimum of
+ * 1 - it is a process-spawn budget, not a taste call. 0 means no timer at all.
+ *
+ * `.enigma.json` is hand-edited and repo-local files travel with a clone, so the value is
+ * treated as untrusted input: anything that is not a finite number in range collapses to
+ * the default rather than reaching Claude's settings.json.
+ */
+function statuslineRefreshSeconds(): number {
+    const raw = readConfig().config.statuslineRefresh;
+    if (typeof raw !== "number" || !Number.isFinite(raw)) return CONFIG_DEFAULTS.statuslineRefresh;
+    const seconds = Math.round(raw);
+    if (seconds < 0 || seconds > STATUSLINE_REFRESH_MAX) return CONFIG_DEFAULTS.statuslineRefresh;
+    return seconds;
+}
+
+/**
+ * The statusLine block enigma writes. `refreshInterval` is omitted entirely at 0: the key
+ * is what creates the timer, so leaving it out is the difference between "refresh every N
+ * seconds" and "refresh only when the conversation moves".
+ */
+function statuslineBlock(): Record<string, unknown> {
+    const seconds = statuslineRefreshSeconds();
+    const block: Record<string, unknown> = { type: "command", command: STATUSLINE_COMMAND, padding: 0 };
+    if (seconds > 0) block.refreshInterval = seconds;
+    return block;
+}
 
 /** Settings file Claude Code reads for a given scope. */
 function claudeSettingsPath(scope: "global" | "local"): string {
@@ -234,14 +265,19 @@ export function enableClaudeBypass(scope: "global" | "local", dryRun: boolean): 
  * at turn boundaries, so without a timer the bar would freeze for exactly as long as a
  * pipeline blocks, which is the case it exists to report on.
  *
- * Ten seconds, not the documented minimum of one. Every refresh spawns a process, and on
- * Windows each spawn creates console hosts: measured here, a one-second interval added
- * ~4 conhost.exe per refresh over the machine's baseline, making the status bar the single
- * busiest spawner on the box. That churn is what surfaced as the console-window flash in
- * anthropics/claude-code#54590 (closed as a duplicate of #51867, neither ever fixed). Ten
- * is also what the established statusline projects settle on - ccstatusline defaults fresh
- * installs to 10, claude-powerline documents 10 as "within ~10s of reality" - and pipeline
- * steps run for minutes, so it costs nothing that matters here.
+ * Ten seconds by default, not the documented minimum of one. Every refresh spawns a
+ * process, and on Windows each spawn creates console hosts: measured here, a one-second
+ * interval added ~4 conhost.exe per refresh over the machine's baseline, making the status
+ * bar the single busiest spawner on the box. That churn is what surfaced as the
+ * console-window flash in anthropics/claude-code#54590 (closed as a duplicate of #51867,
+ * neither ever fixed). Ten is also what the established statusline projects settle on -
+ * ccstatusline defaults fresh installs to 10, claude-powerline documents 10 as "within
+ * ~10s of reality" - and pipeline steps run for minutes, so it costs nothing that matters.
+ *
+ * Ten is a budget for a healthy box, though, not a floor that holds everywhere: a process
+ * start is not free, and where it is expensive (real-time AV scanning the runtime, several
+ * agent sessions refreshing their own bars at once) the timer is felt as input lag in the
+ * agent itself. `statuslineRefresh` is the dial for that, and 0 removes the timer.
  *
  * Windows used to be excluded outright. The shipped client now routes the statusline
  * through the same spawn helper as hooks, which does pass `windowsHide`, so the console it
@@ -252,8 +288,34 @@ export function enableClaudeStatusline(scope: "global" | "local"): boolean {
     const path = claudeSettingsPath(scope);
     const current = readJson<Record<string, unknown>>(path) || {};
     if (current.statusLine !== undefined) return false;
-    const statusLine = { type: "command", command: STATUSLINE_COMMAND, padding: 0, refreshInterval: STATUSLINE_REFRESH_SECONDS };
-    writeClaudeSettings(path, { ...current, statusLine });
+    writeClaudeSettings(path, { ...current, statusLine: statuslineBlock() });
+    return true;
+}
+
+/**
+ * Re-write the refresh interval on an enigma-managed statusline, leaving a user's own bar
+ * alone. Returns true when the file changed.
+ *
+ * Separate from `enableClaudeStatusline` on purpose. That one is install-only - it refuses
+ * to touch an existing block - which is what keeps `syncDeployed` from clobbering a bar the
+ * user hand-tuned in settings.json on every launch. But it also means a changed
+ * `statuslineRefresh` would never reach an existing install, so the setter calls this: an
+ * explicit `enigma config statusline-refresh N` is the one moment where overwriting the
+ * value in settings.json is exactly what was asked for.
+ */
+export function syncClaudeStatuslineRefresh(scope: "global" | "local"): boolean {
+    const path = claudeSettingsPath(scope);
+    const current = readJson<Record<string, unknown>>(path);
+    const line = current?.statusLine as Record<string, unknown> | undefined;
+    if (!current || line?.command !== STATUSLINE_COMMAND) return false;
+
+    const seconds = statuslineRefreshSeconds();
+    const next = { ...line };
+    if (seconds > 0) next.refreshInterval = seconds;
+    else delete next.refreshInterval;
+    if (next.refreshInterval === line.refreshInterval) return false;
+
+    writeClaudeSettings(path, { ...current, statusLine: next });
     return true;
 }
 
