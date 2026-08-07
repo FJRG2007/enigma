@@ -776,6 +776,40 @@ test("an explicit check of one file runs every listed rule, diff-stage ones incl
     rmSync(dir, { recursive: true, force: true });
 });
 
+test("a hand-rolled search box is blocked at the diff stage, a membership test is not", () => {
+    const symmetric = "const rows = data.filter((r) => r.name.toLowerCase().includes(search.toLowerCase()));";
+    const flagged = checkFile("src/Table.tsx", symmetric, null, "diff");
+    expect(flagged.length).toBe(1);
+    expect(flagged[0]!.ruleId).toBe("fe-search-fuzzy");
+    // It shipped as a warn, which exits 0 and never reaches the model - the whole point of the flip.
+    expect(flagged[0]!.severity).toBe("block");
+    // Diff stage: the corpus carries this defect already, so the edit stage must stay silent.
+    expect(checkFile("src/Table.tsx", symmetric, null)).toEqual([]);
+
+    // The one-sided form, where the needle's NAME is the evidence the second toLowerCase would be.
+    for (const line of [
+        "return options.filter((o) => o.label.toLowerCase().includes(searchLower));",
+        "const hits = items.filter((i) => i.title.toLowerCase().includes(query));",
+        "const found = list.filter((x) => x.name.toLowerCase().includes(needle));",
+    ]) expect(checkFile("src/Picker.tsx", line, null, "diff").length).toBe(1);
+
+    for (const line of [
+        // A membership test over a set of ids is not a search box, in either direction.
+        "const mine = rows.filter((r) => selectedIds.includes(r.id));",
+        "const shown = rows.filter((r) => r.tags.includes(activeTag));",
+        // Lowercasing without a filter is not one either.
+        "const slug = title.toLowerCase().includes(prefix);",
+        // Already fuzzy.
+        "const fuse = new Fuse(rows, { keys: [\"name\"] });\nconst hits = rows.filter((r) => r.name.toLowerCase().includes(search.toLowerCase()));",
+        // Explicitly allowed: an exact substring IS the requirement.
+        "// enigma:allow-substring-search\nconst rows = data.filter((r) => r.ip.toLowerCase().includes(ipFilter.toLowerCase()));",
+    ]) expect(checkFile("src/Table.tsx", line, null, "diff")).toEqual([]);
+
+    // Generated trees are out of scope in both glob forms (the note's GLOB LESSON).
+    expect(checkFile("dist/Table.tsx", symmetric, null, "diff")).toEqual([]);
+    expect(checkFile("apps/web/.next/Table.tsx", symmetric, null, "diff")).toEqual([]);
+});
+
 test("a textarea needs a floor and a ceiling, and the file's own bound clears it", () => {
     const bare = '<textarea id="bio" class="w-full" />';
     const flagged = checkFile("src/Form.tsx", bare, null, "diff");

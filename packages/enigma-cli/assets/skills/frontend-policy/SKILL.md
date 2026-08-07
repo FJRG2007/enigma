@@ -510,6 +510,11 @@ Render dates and timestamps as localized, auto-updating values. Do not hand-roll
 
 For a user-facing search box or finder over a list, use fuse.js (fuzzy search) rather than a hand-rolled `.toLowerCase().includes()` filter. Fuzzy matching tolerates typos and partial or transposed input and ranks results by relevance - which is what users expect from a search field; a raw substring filter misses "usnig" for "using" and cannot rank. Apply it by default without being asked whenever the input is a free-text search.
 
+- Configure it where the data is: `keys` naming every field the user would expect to search (a row's name AND its id, owner, tag), `threshold` around 0.3 as the starting point, and `ignoreLocation` on so a match late in a long string still counts.
+- Run it over the data already in memory, re-matching per keystroke. Debouncing belongs to the request that fetches the data, not to the match itself - an in-memory search of a loaded page is instant, and delaying it only makes the field feel broken.
+- The exception is a filter over values the user PICKS rather than types - an id, a status, a tag, a date range, a facet from a dropdown. There the exact value is the requirement and fuzzy matching would be wrong; a plain comparison is correct, and it is not the case this rule is about.
+- Server-backed search is the other half: once the list outgrows what the client holds, the query goes to the server (which does its own matching) and fuse.js narrows only what came back. Say which one is running, so an empty result reads as "no matches" and not as a broken field.
+
 - Reach for fuse.js whenever the input is a search/filter box the user types free text into. Keep a plain equality/predicate filter only for exact, structured filtering (a status dropdown, a tag toggle) where fuzziness would be wrong.
 - Configure the searched `keys` and a sensible `threshold`, and run the search over the already-loaded client list where possible (reuse the data, per Client-Side Caching) before falling back to a server query.
 

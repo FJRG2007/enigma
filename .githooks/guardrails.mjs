@@ -422,16 +422,51 @@ var BUILTIN_RULES = [
     id: "fe-search-fuzzy",
     label: "Fuzzy search for finders (fuse.js)",
     files: ["*.tsx", "*.jsx", "*.vue", "*.svelte", "*.astro"],
-    excludeFiles: ["*.test.*", "*.spec.*", "**/tests/**", "**/__tests__/**"],
+    excludeFiles: [
+      "*.test.*",
+      "*.spec.*",
+      "*.stories.*",
+      "**/tests/**",
+      "**/__tests__/**",
+      "**/dist/**",
+      "dist/**",
+      "**/build/**",
+      "build/**",
+      "**/_build/**",
+      "_build/**",
+      "**/.next/**",
+      ".next/**",
+      "**/out/**",
+      "out/**",
+      "**/node_modules/**"
+    ],
     scope: "file",
-    // A hand-rolled case-insensitive substring finder: a .filter(...) whose body does
-    // `.toLowerCase().includes(....toLowerCase())`. The SYMMETRIC double-toLowerCase inside a
-    // filter is a near-certain search box (precision over recall - a one-sided or non-filter
-    // .includes is intentionally not matched). Skipped when fuse is already present in the file.
-    pattern: "\\.filter\\([^;]*\\.toLowerCase\\(\\)\\.includes\\([^;]*\\.toLowerCase\\(\\)",
-    absent: "fuse",
-    message: "Hand-rolled substring search. For a free-text search box use fuse.js (fuzzy search): it tolerates typos and ranks matches, which is more robust and professional than a case-insensitive .includes() filter (frontend-policy).",
-    severity: "warn",
+    // A hand-rolled case-insensitive substring finder inside a `.filter(...)`, in the two
+    // spellings that are near-certainly a search box. (a) SYMMETRIC: both sides lowercased,
+    // which nothing but a case-insensitive text match is written for. (b) ONE-SIDED, where the
+    // haystack is lowercased and the needle is a binding NAMED for a search box
+    // (search/query/filter/term/keyword/needle) - the name is what replaces the second
+    // toLowerCase as evidence, and it is what keeps a plain membership test
+    // (`.filter(x => ids.includes(x))`) out. Widening to ANY `.filter(....includes(` was
+    // measured and rejected: 171 further lines in 124 files, overwhelmingly membership tests.
+    // Cleared by `fuse` anywhere in the file, or by the escape hatch below.
+    pattern: "\\.filter\\((?:[^;]*\\.toLowerCase\\(\\)\\.includes\\([^;]*\\.toLowerCase\\(\\)|[^;]*\\.toLowerCase\\(\\)\\.includes\\(\\s*[\\w.]*(?:search|query|filter|term|keyword|needle)[\\w.]*\\s*\\))",
+    absent: "fuse|enigma:allow-substring-search",
+    // DIFF stage, and the severity is what this rule is FOR: it shipped as a `warn`, a warn
+    // exits 0 and never reaches the model, so the convention it carries has never once been
+    // enforced - which is exactly how an agent ships a dashboard full of hand-rolled finders
+    // while frontend-policy says to use fuse.js. Blocking at the EDIT stage was not available:
+    // MEASURED with the engine's own rule over 4313 UI files of real product repositories,
+    // 17 candidate lines in 16 files, 15 findings - a command menu, a combobox, a tag input,
+    // a plugin search, a source picker, a project selector, an icon picker, two gateway
+    // tables - every one a genuine hand-rolled search box and 0 false positives, but also a
+    // backlog an edit-stage block would deny a turn over on every unrelated edit to those
+    // files. Against the ADDED lines there is no backlog by construction, so the rule can
+    // only fire on a finder the agent just wrote. The one borderline finding (filtering a
+    // session list by IP) is exactly what the escape hatch is for.
+    stage: "diff",
+    message: "Hand-rolled substring search. A `.includes()` filter only finds a match the user typed exactly: it misses a typo, a transposition, a missing accent and any word typed out of order, and it cannot rank - so the best match sits wherever the source array happened to put it. Use fuse.js over the already-loaded data (keys per searchable field, `threshold` around 0.3, and re-run it per keystroke - debouncing belongs to the server-backed part, not to an in-memory search). Mark the line `enigma:allow-substring-search` when an exact substring IS the requirement: filtering by an id, a tag, a status or any value the user picks rather than types (frontend-policy).",
+    severity: "block",
     skill: "frontend-policy"
   },
   {
@@ -1963,6 +1998,7 @@ Fix the above before continuing.
 }
 var LEDGER_MAX_BYTES = 512 * 1024;
 var LEDGER_KEEP = 2e3;
+var LEDGER_KEEP_REPLY = 200;
 function ledgerPath() {
   return process.env.ENIGMA_GUARDRAILS_LOG || join(homedir(), ".enigma", "guardrail-log.jsonl");
 }
@@ -1978,20 +2014,21 @@ function recordedToday(day) {
 }
 function recordFindings(findings, outcome, stage = "edit") {
   if (!findings.length) return;
-  const at = (/* @__PURE__ */ new Date()).toISOString();
-  const seen = stage === "diff" || outcome !== "blocked" ? recordedToday(at.slice(0, 10)) : null;
-  const rows = [];
-  for (const f of findings) {
-    if (seen) {
-      const key = ledgerKey(f.ruleId, outcome, f.file, f.line);
-      if (seen.has(key)) continue;
-      seen.add(key);
-    }
-    rows.push(JSON.stringify({ at, rule: f.ruleId, severity: f.severity, outcome, stage, file: f.file, line: f.line }));
-  }
-  if (!rows.length) return;
-  const path = ledgerPath();
   try {
+    const at = (/* @__PURE__ */ new Date()).toISOString();
+    const dedupe = stage !== "reply" && !(stage === "edit" && outcome === "blocked");
+    const seen = dedupe ? recordedToday(at.slice(0, 10)) : null;
+    const rows = [];
+    for (const f of findings) {
+      if (seen) {
+        const key = ledgerKey(f.ruleId, outcome, f.file, f.line);
+        if (seen.has(key)) continue;
+        seen.add(key);
+      }
+      rows.push(JSON.stringify({ at, rule: f.ruleId, severity: f.severity, outcome, stage, file: f.file, line: f.line }));
+    }
+    if (!rows.length) return;
+    const path = ledgerPath();
     mkdirSync(dirname(path), { recursive: true });
     let size = 0;
     try {
@@ -1999,14 +2036,37 @@ function recordFindings(findings, outcome, stage = "edit") {
     } catch {
     }
     if (size > LEDGER_MAX_BYTES) {
-      const kept = readFileSync(path, "utf8").split("\n").filter(Boolean).slice(-LEDGER_KEEP);
-      writeFileSync(path, `${kept.join("\n")}
-`);
+      const kept = rotateLedger(readFileSync(path, "utf8"));
+      writeFileSync(path, kept.length ? `${kept.join("\n")}
+` : "");
     }
     appendFileSync(path, `${rows.join("\n")}
 `);
   } catch {
   }
+}
+function rotateLedger(text) {
+  const lines = text.split("\n").filter(Boolean);
+  const kept = [];
+  let conventions = 0;
+  let replies = 0;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i];
+    let reply = false;
+    try {
+      reply = JSON.parse(line)?.stage === "reply";
+    } catch {
+    }
+    if (reply) {
+      if (replies >= LEDGER_KEEP_REPLY) continue;
+      replies++;
+    } else {
+      if (conventions >= LEDGER_KEEP) continue;
+      conventions++;
+    }
+    kept.push(line);
+  }
+  return kept.reverse();
 }
 function eachLedgerEntry(sinceDays, visit) {
   let text;
@@ -2027,15 +2087,27 @@ function eachLedgerEntry(sinceDays, visit) {
     }
   }
 }
+function isConvention(entry) {
+  return entry.stage !== "reply";
+}
 function readLedger(sinceDays = 0) {
   const out = [];
-  eachLedgerEntry(sinceDays, (entry) => out.push(entry));
+  eachLedgerEntry(sinceDays, (entry) => {
+    if (isConvention(entry)) out.push(entry);
+  });
+  return out;
+}
+function readReplyLedger(sinceDays = 0) {
+  const out = [];
+  eachLedgerEntry(sinceDays, (entry) => {
+    if (!isConvention(entry)) out.push(entry);
+  });
   return out;
 }
 function countLedger(sinceDays = 0) {
   let count = 0;
-  eachLedgerEntry(sinceDays, () => {
-    count++;
+  eachLedgerEntry(sinceDays, (entry) => {
+    if (isConvention(entry)) count++;
   });
   return count;
 }
@@ -2121,6 +2193,7 @@ export {
   missingWindowsHide,
   pageAwaitWithoutBoundary,
   readLedger,
+  readReplyLedger,
   recordFindings,
   runGuardrailsHook,
   runGuardrailsScan,

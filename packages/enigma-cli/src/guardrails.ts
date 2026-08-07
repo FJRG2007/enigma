@@ -451,16 +451,38 @@ export const BUILTIN_RULES: GuardrailRule[] = [
         id: "fe-search-fuzzy",
         label: "Fuzzy search for finders (fuse.js)",
         files: ["*.tsx", "*.jsx", "*.vue", "*.svelte", "*.astro"],
-        excludeFiles: ["*.test.*", "*.spec.*", "**/tests/**", "**/__tests__/**"],
+        excludeFiles: [
+            "*.test.*", "*.spec.*", "*.stories.*", "**/tests/**", "**/__tests__/**",
+            "**/dist/**", "dist/**", "**/build/**", "build/**", "**/_build/**", "_build/**",
+            "**/.next/**", ".next/**", "**/out/**", "out/**", "**/node_modules/**",
+        ],
         scope: "file",
-        // A hand-rolled case-insensitive substring finder: a .filter(...) whose body does
-        // `.toLowerCase().includes(....toLowerCase())`. The SYMMETRIC double-toLowerCase inside a
-        // filter is a near-certain search box (precision over recall - a one-sided or non-filter
-        // .includes is intentionally not matched). Skipped when fuse is already present in the file.
-        pattern: "\\.filter\\([^;]*\\.toLowerCase\\(\\)\\.includes\\([^;]*\\.toLowerCase\\(\\)",
-        absent: "fuse",
-        message: "Hand-rolled substring search. For a free-text search box use fuse.js (fuzzy search): it tolerates typos and ranks matches, which is more robust and professional than a case-insensitive .includes() filter (frontend-policy).",
-        severity: "warn",
+        // A hand-rolled case-insensitive substring finder inside a `.filter(...)`, in the two
+        // spellings that are near-certainly a search box. (a) SYMMETRIC: both sides lowercased,
+        // which nothing but a case-insensitive text match is written for. (b) ONE-SIDED, where the
+        // haystack is lowercased and the needle is a binding NAMED for a search box
+        // (search/query/filter/term/keyword/needle) - the name is what replaces the second
+        // toLowerCase as evidence, and it is what keeps a plain membership test
+        // (`.filter(x => ids.includes(x))`) out. Widening to ANY `.filter(....includes(` was
+        // measured and rejected: 171 further lines in 124 files, overwhelmingly membership tests.
+        // Cleared by `fuse` anywhere in the file, or by the escape hatch below.
+        pattern: "\\.filter\\((?:[^;]*\\.toLowerCase\\(\\)\\.includes\\([^;]*\\.toLowerCase\\(\\)|[^;]*\\.toLowerCase\\(\\)\\.includes\\(\\s*[\\w.]*(?:search|query|filter|term|keyword|needle)[\\w.]*\\s*\\))",
+        absent: "fuse|enigma:allow-substring-search",
+        // DIFF stage, and the severity is what this rule is FOR: it shipped as a `warn`, a warn
+        // exits 0 and never reaches the model, so the convention it carries has never once been
+        // enforced - which is exactly how an agent ships a dashboard full of hand-rolled finders
+        // while frontend-policy says to use fuse.js. Blocking at the EDIT stage was not available:
+        // MEASURED with the engine's own rule over 4313 UI files of real product repositories,
+        // 17 candidate lines in 16 files, 15 findings - a command menu, a combobox, a tag input,
+        // a plugin search, a source picker, a project selector, an icon picker, two gateway
+        // tables - every one a genuine hand-rolled search box and 0 false positives, but also a
+        // backlog an edit-stage block would deny a turn over on every unrelated edit to those
+        // files. Against the ADDED lines there is no backlog by construction, so the rule can
+        // only fire on a finder the agent just wrote. The one borderline finding (filtering a
+        // session list by IP) is exactly what the escape hatch is for.
+        stage: "diff",
+        message: "Hand-rolled substring search. A `.includes()` filter only finds a match the user typed exactly: it misses a typo, a transposition, a missing accent and any word typed out of order, and it cannot rank - so the best match sits wherever the source array happened to put it. Use fuse.js over the already-loaded data (keys per searchable field, `threshold` around 0.3, and re-run it per keystroke - debouncing belongs to the server-backed part, not to an in-memory search). Mark the line `enigma:allow-substring-search` when an exact substring IS the requirement: filtering by an id, a tag, a status or any value the user picks rather than types (frontend-policy).",
+        severity: "block",
         skill: "frontend-policy",
     },
     {
