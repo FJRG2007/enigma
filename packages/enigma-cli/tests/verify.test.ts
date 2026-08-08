@@ -33,7 +33,7 @@ process.env.ENIGMA_GATE_HOME = join(HOME, "gate");
 // The one test that exercises that path sets the variable itself.
 delete process.env.ENIGMA_GATE;
 
-const { claimsDone, asksToContinue, gateSkipped, scanGaps, scanConventions, collectGaps, runVerifyHook, unsourcedTrailers, blockingStyleFindings } = await import("../src/verify");
+const { claimsDone, asksToContinue, gateSkipped, gateExcused, scanGaps, scanConventions, collectGaps, runVerifyHook, unsourcedTrailers, blockingStyleFindings } = await import("../src/verify");
 const { recordGateRun, lastGateRun, validatingRun } = await import("../src/gate-ledger");
 const { parityReport, formatParity } = await import("../src/verify-parity");
 const { readLedger, readReplyLedger, countLedger } = await import("../src/guardrails");
@@ -421,13 +421,76 @@ test("the bypass the user asked for clears the unvalidated-commits block too", (
     commit("src/two.ts");
     expect(runVerifyHook(payload(dir, "All done, everything is implemented."))).toBe(2);
 
+    // The ambiguous half does not clear it on its own, and naming a compound noun is not naming
+    // the pipeline: the gate docs, the gate view and the gate daemon are this repository's daily
+    // vocabulary, so an anchor that accepted them would stand the check down in exactly the
+    // repositories that work on the gate. Asserted BEFORE the bypass below, which is remembered.
+    expect(runVerifyHook(payload(dir, "All done, implemented exactly as you asked."))).toBe(2);
+
     // Naming it clears the turn on the first try, in either language.
     expect(runVerifyHook(payload(dir, "Listo, todo implementado. No he lanzado el gate porque me pediste bypass."))).toBe(0);
     expect(runVerifyHook(payload(dir, "All done. I did not run the gate because you told me to skip it."))).toBe(0);
+});
 
-    // And the ambiguous half does not clear it on its own: "as you asked" is how an ordinary turn
-    // that did exactly what was asked ends, and it says nothing about the gate.
-    expect(runVerifyHook(payload(dir, "All done, implemented exactly as you asked."))).toBe(2);
+test("reads an excuse only where it cannot have been written by accident", () => {
+    // The ledger check has no topical sentence to lean on - it knows the gate never ran and
+    // nothing else - so an excuse admitted there decides the turn on its own. Everything whose
+    // words are also ordinary vocabulary is therefore read only where the message names the gate
+    // as the PIPELINE; only what nobody writes by accident stands alone.
+    for (const message of [
+        "Updated the gate docs exactly as you asked.",
+        "Refactored the gate view as you asked. Committed.",
+        "Rewrote the gate daemon as you requested.",
+        "Done. The user asked me to add the axi flag.",
+        "There is no remote logging in this module yet.",
+        "Code review done. Opened a pr for the change.",
+        "Escalating the ask-user finding from the linter config.",
+        "Added a protected branch note to the README.",
+    ]) expect(gateExcused(message)).toBe(false);
+
+    for (const message of [
+        // The gate as the object of skipping it - no run verb, so GATE_TOPIC_RE alone misses it.
+        "You told me to skip the gate and push straight to main, so I did.",
+        "Skipped the gate: you told me to bypass it.",
+        "Me pediste que me lo saltara, así que no lancé el gate.",
+        // The reasons that name a setting, a command or a machine failure stand alone.
+        "The repo sets gate: false, so nothing to validate here.",
+        "The branch is listed in gate-protected-branches.",
+        "There is nothing committed to validate.",
+        "The gate daemon failed to start, so nothing validated this.",
+        "enigma gate doctor reports why the daemon is down.",
+        // The ambiguous ones, in a message that does name the pipeline.
+        "The gate parked on an ask-user finding, quoted verbatim below.",
+        "The gate run finished checks-passed. The PR is ready for you to review and merge.",
+        "`enigma gate init` needs an origin remote, and this repository has no remote.",
+        "This is a protected branch, so the gate did not run.",
+    ]) expect(gateExcused(message)).toBe(true);
+});
+
+test("remembers the bypass for the work it was given for", () => {
+    // The excuse is read from ONE reply and the decision outlives it: the kernel calls the user's
+    // skip final for that work, so the next turn - about something else, with no gate prose in it -
+    // must not meet the same block again. That re-offering is what the kernel forbids.
+    recordGateRun({ repoPath: join(tmpdir(), "a-seventh-repo"), branch: "main", headSha: "0".repeat(7), status: "completed", at: 1 });
+    const dir = repoWith({ "src/app.ts": "export const a = 1;\n" });
+    git(dir, "checkout", "-q", "-b", "feature");
+    const commit = (file: string): void => {
+        write(dir, file, "export const total = 1;\n");
+        git(dir, "add", "-A");
+        git(dir, "commit", "-qm", "work");
+    };
+
+    commit("src/one.ts");
+    expect(runVerifyHook(payload(dir, "All done, everything is implemented."))).toBe(0);
+    commit("src/two.ts");
+    expect(runVerifyHook(payload(dir, "All done. I did not run the gate because you told me to skip it."))).toBe(0);
+
+    // Same commits, a reply that says nothing about the gate: the decision still stands.
+    expect(runVerifyHook(payload(dir, "All done, everything is implemented."))).toBe(0);
+
+    // A commit on top is work the bypass was never given for, so the gate is expected again.
+    commit("src/three.ts");
+    expect(runVerifyHook(payload(dir, "All done, everything is implemented."))).toBe(2);
 });
 
 test("lets the ending a successful run prescribes close the turn", () => {

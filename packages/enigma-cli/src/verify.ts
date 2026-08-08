@@ -109,11 +109,12 @@ const MAX_BLOCKS_PER_SESSION = 10;
 
 /**
  * State keys that are ANCHORS rather than block counters: a per-repository point in time
- * (`gatewatch:`) or commit (`head:`) whose whole value is that it survives. They are written
- * once and never touched again, so the state file's insertion-order prune would drop them
- * first - and a dropped anchor does not just lose a count, it changes what the gate sees.
+ * (`gatewatch:`) or commit (`head:`, `gatebypass:`) whose whole value is that it survives.
+ * They are written once per event and never counted up, so the state file's insertion-order
+ * prune would drop them first - and a dropped anchor does not just lose a count, it changes
+ * what the gate sees.
  */
-const ANCHOR_KEY_RE = /^(?:gatewatch|head):/;
+const ANCHOR_KEY_RE = /^(?:gatewatch|gatebypass|head):/;
 
 /**
  * Evidence patterns. Each matches only an unambiguous "this is not finished" signal.
@@ -799,13 +800,14 @@ const GATE_RUN_ACTION_RE = new RegExp([
  * naming the reason is the documented way out, and a false block here would land on a turn
  * that did everything right.
  *
- * Split in two because the two halves are not equally safe to read on their own. The USER
- * DECISION half is ordinary prose - "as you asked" ends a turn that did exactly as asked and
- * has nothing to do with the gate - so the ledger check below only reads it in a message that
- * names the gate at all (GATE_MENTION_RE). Every alternative in the SPECIFIC half names a
- * setting, a command or a machine failure that nobody writes by accident, so it stands alone.
+ * Split by AMBIGUITY, not by kind, because these are read where nothing else establishes the
+ * subject. An alternative stands alone only when nobody writes it by accident: a setting's
+ * value, a command, this module's escape hatch. Everything whose words are also ordinary
+ * vocabulary - "as you asked", "no remote", "protected branch", "ask-user", a review and a PR -
+ * is TOPICAL and counts only where the message names the gate itself (GATE_NAMED_RE).
  */
-const GATE_USER_DECISION_RE = new RegExp([
+const GATE_EXCUSE_TOPICAL_RE = new RegExp([
+    // The user took the decision.
     "\\b(?:you|the\\s+user)\\s+(?:told|asked|instructed)\\s+me\\b",
     "\\bas\\s+(?:you\\s+)?(?:asked|requested|instructed)\\b",
     "\\b(?:you|the\\s+user)\\s+(?:said|want(?:ed)?)\\s+(?:me\\s+)?(?:to\\s+)?(?:skip|bypass|not\\s+run)\\b",
@@ -816,66 +818,80 @@ const GATE_USER_DECISION_RE = new RegExp([
     // adjacent: "pediste bypass", "bypass pedido por ti", "dijiste que me lo saltara".
     "\\b(?:pediste|dijiste|indicaste|solicitaste|autorizaste)\\b[^.?!]{0,40}?\\b(?:bypass|salt(?:ar|e|ara|arlo|armelo)|omit(?:ir|e|iera|irlo)|sin\\s+gate)\\b",
     "\\bbypass\\b[^.?!]{0,40}?\\b(?:pediste|pedido|dijiste|indicaste|solicitado|autorizado)\\b",
+    // The branch is out of scope, said in prose rather than by the setting's name.
+    "\\bprotected\\s+branch\\b|\\brama\\s+protegida\\b",
+    // A finding that cleared the escalation bar and has to go back to the user verbatim. Left
+    // at the bare token for the reason LEGITIMATE_STOP_RE spells out - `ask-user` is also this
+    // repository's own vocabulary for a linter action, hence the topic requirement.
+    "\\bask-user\\b",
+    // The gate cannot be stood up here: `enigma gate init` throws without an `origin` remote.
+    // "remote" is ordinary vocabulary of its own (a remote cache, a remote host), so this one
+    // only counts where the gate is what the message is about.
+    "\\b(?:no|without\\s+an?)\\s+(?:git\\s+)?(?:remote|origin)\\b|\\b(?:remote|origin)\\s+(?:is\\s+)?(?:not\\s+configured|missing|unset)\\b",
+    "\\bno\\s+(?:hay|existe|tiene)\\s+(?:un\\s+)?(?:remoto|origin)\\b|\\bsin\\s+remoto\\b",
+    // The run left a PR, and handing THAT back is the prescribed ending, not a skip - same
+    // alternative LEGITIMATE_STOP_RE carries, for the same reason. Bounded to one sentence
+    // here, unlike there: `[^?]*` spans newlines, so an unrelated "code review" opening and a
+    // "pushed the pr" closing matched each other across a whole message.
+    "\\b(?:review|merge|revisar|fusionar|mergear)\\b[^.?!\\n]{0,80}\\b(?:pull\\s+request|\\bpr\\b)|\\b(?:pull\\s+request|\\bpr\\b)[^.?!\\n]{0,80}\\b(?:review|merge|revisar|fusionar|mergear)\\b",
 ].join("|"), "i");
 
 /**
  * The alternatives specific enough to stand on their own anywhere in a message, because none of
- * them can be written by accident: the repository or the branch is opted out, there is nothing
- * committed to validate, the run parked on a finding, the gate cannot be stood up here, or the
- * turn carries this module's escape hatch.
+ * them can be written by accident: the repository is opted out by a setting, the branch by the
+ * setting's own name, there is nothing committed to validate, the gate could not be stood up,
+ * or the turn carries this module's escape hatch.
  */
 const GATE_EXCUSE_SPECIFIC_RE = new RegExp([
     // The gate is off here, or the branch is out of scope.
     "\\bgate\\s*[:=]\\s*false\\b|\\b/gate\\s+off\\b|\\bgate\\s+(?:is\\s+)?(?:off|disabled)\\b",
     "\\bgate\\s+(?:está|esta)\\s+(?:apagado|desactivado|off)\\b|\\bgate\\s+desactivad",
-    "\\bgate-protected-branches\\b|\\bprotected\\s+branch\\b|\\brama\\s+protegida\\b",
-    // Nothing to validate, or a finding that cleared the escalation bar and has to go back to
-    // the user verbatim. Left at the bare token for the reason LEGITIMATE_STOP_RE spells out.
+    "\\bgate-protected-branches\\b",
+    // Nothing to validate.
     "\\bnothing\\s+(?:committed|to\\s+validate|to\\s+gate)\\b|\\bno\\s+commits?\\s+to\\b",
     "\\bnada\\s+que\\s+(?:validar|commitear|gatear)\\b|\\bsin\\s+nada\\s+committead",
-    "\\bask-user\\b",
-    // The gate cannot be stood up here: no remote for `gate init`, or init/the daemon failing.
+    // The gate cannot be stood up here: init or the daemon failing, and what reports why.
     "\\bgate\\s+doctor\\b",
-    "\\b(?:no|without\\s+an?)\\s+(?:git\\s+)?(?:remote|origin)\\b|\\b(?:remote|origin)\\s+(?:is\\s+)?(?:not\\s+configured|missing|unset)\\b",
     "\\b(?:daemon|demonio)\\b[^.?!]{0,40}?\\b(?:failed|could\\s+not|cannot|can'?t|would\\s+not|did\\s*n[o']?t)\\s+(?:to\\s+)?(?:start|launch|come\\s+up|run)\\b",
     "\\b(?:could\\s+not|cannot|can'?t|unable\\s+to|failed\\s+to)\\s+(?:\\w+\\s+){0,3}?(?:start|launch|initiali[sz]e|init|run)\\s+(?:the\\s+)?(?:gate|daemon|pipeline|axi)\\b",
-    "\\bno\\s+(?:hay|existe|tiene)\\s+(?:un\\s+)?(?:remoto|origin)\\b|\\bsin\\s+remoto\\b",
     "\\bno\\s+(?:se\\s+)?(?:pudo|puede|he\\s+podido)\\s+(?:\\w+\\s+){0,3}?(?:iniciar|arrancar|lanzar|inicializar)\\b",
-    // The run left a PR, and handing THAT back is the prescribed ending, not a skip - same
-    // alternative LEGITIMATE_STOP_RE carries, for the same reason.
-    "\\b(?:review|merge|revisar|fusionar|mergear)\\b[^?]*\\b(?:pull\\s+request|\\bpr\\b)|\\b(?:pull\\s+request|\\bpr\\b)[^?]*\\b(?:review|merge|revisar|fusionar|mergear)\\b",
     // Same escape hatch as every other check here.
     "enigma:verify-ignore",
 ].join("|"), "i");
 
 /**
- * Both halves, for `gateSkipped`: that check only ever runs on a message that names the gate
- * (GATE_TOPIC_RE), so the user-decision half is already read in context there.
+ * The gate named as the PIPELINE, for the topical excuses to lean on: `GATE_TOPIC_RE`, plus the
+ * gate as the object of skipping it, which that one does not carry because `skip` is no run verb.
+ *
+ * A bare `\bgate\b` was tried here and is the wrong anchor: the gate daemon, the gate view, the
+ * gate docs are this repository's daily vocabulary, so "updated the gate docs as you asked" -
+ * a turn that has nothing to do with the pipeline - stood the enforcement down, in exactly the
+ * repositories that work on the gate. The same compound-noun guard both alternatives already
+ * carry (`GATE_TAIL`) is what keeps "skipped the gate view refactor" out.
  */
-const GATE_EXCUSE_RE = new RegExp(`${GATE_USER_DECISION_RE.source}|${GATE_EXCUSE_SPECIFIC_RE.source}`, "i");
-
-/**
- * The gate named at all, loosely. Only ever read together with GATE_USER_DECISION_RE, so it
- * does not carry the weight GATE_TOPIC_RE does: it is here to keep "refactored it as you
- * asked" - a turn that never mentions the gate - from clearing the ledger check below.
- */
-const GATE_MENTION_RE = /\b(?:gate|axi)\b/i;
+const GATE_NAMED_RE = new RegExp([
+    GATE_TOPIC_RE.source,
+    `\\b(?:skip(?:s|ped|ping)?|bypass(?:es|ed|ing)?|omit(?:s|ted|ting)?|salt\\w*|omit\\w*|sin)\\s+(?:the\\s+|el\\s+|la\\s+)?(?:quality\\s+)?(?:gate|axi)\\b${GATE_TAIL}`,
+].join("|"), "i");
 
 /**
  * Whether the message names a reason the kernel accepts for work not going through an enabled
- * gate. Read by the LEDGER check, which knows the gate never ran and nothing else: unlike
- * `gateSkipped` it has no topical sentence to lean on, so the ambiguous half is admitted only
- * alongside a mention of the gate.
+ * gate.
  *
- * Without this the block became the trap its own message denies. `gateMessage` promises that
+ * The LEDGER check reads this too, and there it is the whole defense: that check knows the gate
+ * never ran and nothing else, so an excuse admitted here decides the turn. Hence the tiering -
+ * the ambiguous alternatives are read only where the message names the gate as the pipeline,
+ * and the ones that cannot be written by accident stand alone.
+ *
+ * Without it the block became the trap its own message denies. `gateMessage` promises that
  * saying the user told you to skip it stands the check down; for committed, clean work it did
- * not, because this path read the ledger and never the reply - so the one exit the kernel
+ * not, because that path read the ledger and never the reply - so the one exit the kernel
  * documents could not be taken, and the turn was blocked until the loop-safety budget ran out.
  */
 export function gateExcused(message: string): boolean {
     if (!message || typeof message !== "string") return false;
     if (GATE_EXCUSE_SPECIFIC_RE.test(message)) return true;
-    return GATE_MENTION_RE.test(message) && GATE_USER_DECISION_RE.test(message);
+    return GATE_NAMED_RE.test(message) && GATE_EXCUSE_TOPICAL_RE.test(message);
 }
 
 /**
@@ -901,7 +917,10 @@ export function gateExcused(message: string): boolean {
  */
 export function gateSkipped(message: string): string {
     if (!message || typeof message !== "string") return "";
-    if (GATE_EXCUSE_RE.test(message)) return "";
+    // Same predicate the ledger check reads, so one phrasing cannot clear one half and not the
+    // other. Its topic requirement costs nothing here: the line below drops any message that
+    // does not name the gate anyway, so the excuses were only ever weighed in context.
+    if (gateExcused(message)) return "";
     if (!GATE_TOPIC_RE.test(message)) return "";
     let topical = false;
     for (const [start, end] of sentenceSpans(message)) {
@@ -1045,6 +1064,31 @@ function gateGap(cwd: string, gate: GateContext): VerifyGap | null {
     const head = gitOut(cwd, ["rev-parse", "--short", "HEAD"]).trim() || "HEAD";
     const plural = pending.count === 1 ? "commit" : "commits";
     return { kind: "gate", detail: `${pending.count} ${plural} on this branch (through ${head}) were committed and never validated: no gate run is recorded for this repository since they were made.` };
+}
+
+/**
+ * Whether the gate may be left unrun for the work sitting at HEAD, recording the decision the
+ * first time a turn states it.
+ *
+ * The excuse is read from ONE message, and the decision it reports outlives that message: the
+ * kernel calls a skip the user asked for final for that work, so a turn about something else
+ * must not have to restate it. Without a record it did: the next claiming turn met the same
+ * commits, the same ledger and a reply with no gate prose in it, and blocked - which is the
+ * re-offering the kernel forbids, wearing the loop-safety budget down until it stopped.
+ *
+ * Pinned to the COMMIT, not to the repository or the branch: the bypass was given for the work
+ * the user had in front of them, so the moment a commit lands on top the record no longer
+ * describes it and the gate is expected again. An amend or a rebase moves the sha too, which
+ * errs towards asking - the safe direction for a check whose failure mode is a silent pass.
+ */
+function gateBypassed(cwd: string, message: string): boolean {
+    const key = `gatebypass:${repoRootOf(cwd)}`;
+    const head = gitOut(cwd, ["rev-parse", "HEAD"]).trim();
+    if (gateExcused(message)) {
+        if (head) setStateValue(key, head);
+        return true;
+    }
+    return head !== "" && stateValue(key) === head;
 }
 
 /** The message fed back when a turn ends with the gate on and the work never sent through it. */
@@ -2085,9 +2129,11 @@ export function runVerifyHook(payload?: string): number {
         // but "the user told me to skip it" is an exit the kernel documents and this very block
         // promises. It is unreachable from the ledger, so a turn that named it was blocked anyway,
         // over and over, until the loop-safety budget gave out: the trap this module's own
-        // comments warn against, in the one check that most often decides a turn.
+        // comments warn against, in the one check that most often decides a turn. `gateBypassed`
+        // also REMEMBERS the excuse against the commit it was given for, so the decision holds
+        // for the work it covers instead of having to be restated in every turn that follows.
         const unvalidated = gateGap(cwd, gate());
-        if (unvalidated && !gateExcused(message)) {
+        if (unvalidated && !gateBypassed(cwd, message)) {
             substantive = true;
             if (mayBlock(`gate:${issueKey(session, [unvalidated])}`, session, "gate")) {
                 process.stderr.write(`${gateMessage(unvalidated)}\n`);
