@@ -4,6 +4,6 @@
   "provider": "FJRG2007/enigma",
   "description": "Backend/API architecture: controller-service-repository layering, modern TypeScript project configuration (module resolution, strict flags, @/* path alias), API and request optimization (batching, avoiding redundant calls, skipping no-op writes), server-side caching (Redis), and Zod boundary validation.",
   "updated": "2026-08-02T19:59:01+02:00",
-  "cliVersion": "1.35.6",
+  "cliVersion": "1.35.7",
   "sha": "652637f818b4ce4f4d5d83fa68fa57fe7842e32fb179523958c5496af54bb938"
 }
