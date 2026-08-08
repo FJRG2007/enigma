@@ -10,7 +10,7 @@
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { execFileSync } from "node:child_process";
-import { test, expect, afterAll, setDefaultTimeout } from "bun:test";
+import { test, expect, beforeAll, afterAll, setDefaultTimeout } from "bun:test";
 import { mkdtempSync, mkdirSync, rmSync, readFileSync, writeFileSync } from "node:fs";
 
 // Every test here drives real git (some of them the real CLI), several process spawns each.
@@ -45,8 +45,15 @@ const { readLedger, readReplyLedger, countLedger } = await import("../src/guardr
 // volume is real: an agent that runs this suite as a tool call pays for all of it, and the gate's
 // own test step died twice on a context that refilled the moment it did. Silenced here rather
 // than in the hook, which must keep writing - that stream IS how it reaches the model.
+//
+// Installed in beforeAll and not at import time, paired with the afterAll below: this file is one
+// of several the runner loads into a single process, and swapping the stream while the others are
+// still being imported swallowed whatever THEY had to say - including the failure of a suite that
+// never reaches its own teardown.
 const realStderrWrite = process.stderr.write.bind(process.stderr);
-(process.stderr as { write: unknown; }).write = (): boolean => true;
+beforeAll(() => {
+    (process.stderr as { write: unknown; }).write = (): boolean => true;
+});
 
 const repos: string[] = [];
 afterAll(() => {
@@ -568,6 +575,63 @@ test("does not remember a bypass nobody stated", () => {
     // A plan that PROPOSES skipping it is a proposal, not a decision - same reply, plan mode.
     expect(runVerifyHook(payload(dir, "I will skip the gate here since you told me to.", { permission_mode: "plan" }))).toBe(0);
     expect(runVerifyHook(payload(dir, "All done, everything is implemented."))).toBe(2);
+});
+
+test("does not remember a bypass assembled out of unrelated clauses", () => {
+    // The three halves of a stated decision have to land in ONE sentence. Weighed over the whole
+    // message they pair across clauses that authorize nothing: a run that failed, a skip of
+    // something else entirely, a thank-you for a third thing. Each reply below is honest prose
+    // about the gate, and none of them is the user standing the pipeline down.
+    recordGateRun({ repoPath: join(tmpdir(), "a-twelfth-repo"), branch: "main", headSha: "0".repeat(7), status: "completed", at: 1 });
+    const dir = repoWith({ "src/app.ts": "export const a = 1;\n" });
+    git(dir, "checkout", "-q", "-b", "feature");
+    const commit = (file: string): void => {
+        write(dir, file, "export const total = 1;\n");
+        git(dir, "add", "-A");
+        git(dir, "commit", "-qm", "work");
+    };
+
+    commit("src/one.ts");
+    expect(runVerifyHook(payload(dir, "All done, everything is implemented."))).toBe(0);
+    commit("src/two.ts");
+    for (const message of [
+        // The gate named in one sentence, something else left unrun in the next, and the user
+        // credited for that other thing.
+        "Ran the gate, it failed on lint. Skipped the docs step as you requested.",
+        "The gate is still pending on CI. I skipped the flaky snapshot test as you asked.",
+        // The alternatives specific enough to clear a turn from anywhere are not a shortcut past
+        // the same bar - the second is the offer the kernel itself tells the agent to make.
+        "Renamed the gate-protected-branches setting in the registry.",
+        "The gate has not run yet. You can turn it off for good with /gate off if you prefer.",
+    ]) {
+        runVerifyHook(payload(dir, message));
+        // Same commits, a reply with no gate prose in it: nothing was ever decided about them.
+        expect(runVerifyHook(payload(dir, "All done, everything is implemented."))).toBe(2);
+    }
+});
+
+test("the remembered decision clears the announced skip as well as the ledger", () => {
+    // The record is read by BOTH gate checks or the exit only works on one of them. Reporting the
+    // gate as unrun is what an honest turn does after the user stood it down, and blocking that -
+    // ordering a pipeline they declined - is the re-offering the record exists to stop, moved from
+    // one half of the check to the other.
+    recordGateRun({ repoPath: join(tmpdir(), "a-thirteenth-repo"), branch: "main", headSha: "0".repeat(7), status: "completed", at: 1 });
+    const dir = repoWith({ "src/app.ts": "export const a = 1;\n" });
+    git(dir, "checkout", "-q", "-b", "feature");
+    const commit = (file: string): void => {
+        write(dir, file, "export const total = 1;\n");
+        git(dir, "add", "-A");
+        git(dir, "commit", "-qm", "work");
+    };
+
+    commit("src/one.ts");
+    expect(runVerifyHook(payload(dir, "All done, everything is implemented."))).toBe(0);
+    commit("src/two.ts");
+    // Without a decision on record, announcing the skip is exactly what this half blocks.
+    expect(runVerifyHook(payload(dir, "The gate still has not run."))).toBe(2);
+    expect(runVerifyHook(payload(dir, "All done. I did not run the gate because you told me to skip it."))).toBe(0);
+    // Same commits, the same honest report, the reason now on record instead of restated.
+    expect(runVerifyHook(payload(dir, "The gate still has not run."))).toBe(0);
 });
 
 test("records the decision even on a turn some other check blocks", () => {

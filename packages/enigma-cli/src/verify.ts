@@ -955,12 +955,31 @@ export function gateExcused(message: string): boolean {
  * being left unrun. Naming the gate and crediting the user is ordinary prose in any repository
  * that works on the gate - "Fixed the gate, as you asked." - and clearing one turn on it is a
  * bounded mistake, while recording it stands the enforcement down for that commit silently and
- * for good. The permanent thing gets the higher bar.
+ * for good. The permanent thing gets the higher bar. That bar is why the specific alternatives -
+ * which clear a turn from anywhere in a message, since nobody writes them by accident - buy no
+ * shortcut here: `gate: false` and a listed branch already make `gateContextAt` expect no run at
+ * all, so all a bare mention of one could ever do is exempt a repository where the setting is not
+ * actually in force.
+ *
+ * And read PER SENTENCE, all three of them together, which is what tells this apart from
+ * `gateExcused`. Over the whole message the halves pair up across unrelated clauses: "Ran the
+ * gate, it failed on lint. Skipped the docs step as you requested." names the gate in one
+ * sentence, leaves something else unrun in another and credits the user for a third thing, and
+ * ORing the three recorded a bypass nobody gave. `GATE_NOT_RUN_RE` says as much about itself -
+ * it is specific enough to stand alone only where the sentence around it names the gate - and
+ * `gateSkipped` already honors that. The cost of the tighter read is one turn: an excuse split
+ * across two sentences still clears the turn that states it, and the block that follows says what
+ * to write. The cost of the looser one was a commit exempted for good, in silence.
  */
 function gateBypassDecided(message: string): boolean {
     if (!message || typeof message !== "string") return false;
-    if (GATE_DECISION_SPECIFIC_RE.test(message)) return true;
-    return GATE_NAMED_RE.test(message) && GATE_LEFT_UNRUN_RE.test(message) && GATE_DECISION_TOPICAL_RE.test(message);
+    for (const [start, end] of sentenceSpans(message)) {
+        const sentence = message.slice(start, end);
+        if (!GATE_LEFT_UNRUN_RE.test(sentence)) continue;
+        if (GATE_DECISION_SPECIFIC_RE.test(sentence)) return true;
+        if (GATE_NAMED_RE.test(sentence) && GATE_DECISION_TOPICAL_RE.test(sentence)) return true;
+    }
+    return false;
 }
 
 /**
@@ -1164,6 +1183,10 @@ function recordGateBypass(cwd: string, message: string): void {
 /**
  * Whether the gate may be left unrun for the work sitting at HEAD: this turn names a reason, or
  * an earlier one recorded a decision that still covers this exact commit.
+ *
+ * Read by BOTH gate checks - the ledger's and the announced skip's - so one phrasing cannot clear
+ * one half and be blocked by the other. The message is weighed first, which keeps the git call to
+ * the turns that state nothing.
  */
 function gateBypassed(cwd: string, message: string): boolean {
     if (gateExcused(message)) return true;
@@ -2117,12 +2140,19 @@ export function runVerifyHook(payload?: string): number {
         // true whatever it says, and the prescribed ending ("checks passed, the PR is ready - let me
         // know if...") carries an offer that reads exactly like the skipped one. Blocking there would
         // order a pipeline that just ran, with no phrasing left that could clear it.
+        //
+        // The recorded decision overrules it for the same reason the message's own excuse does,
+        // and it is read on THIS half too or the exit only works on one of them: after the user's
+        // skip is on record, a later turn that honestly reports the gate as still unrun - without
+        // restating why, which is exactly the turn the record exists for - would be ordered to
+        // drive a pipeline the user declined. `gateBypassed` reads the message first, so a turn
+        // that does name its reason costs no git call here.
         const skipped = raw.permission_mode === "plan" ? "" : gateSkipped(message);
         // Every check below records whether it FOUND something, separately from whether the
         // loop-safety budget let it block: a gate standing down because its channel is spent must
         // not promote the cosmetic one into its place. See styleGate.
         let substantive = false;
-        if (skipped && gate().expected && !gateValidatedHead(cwd, gate())) {
+        if (skipped && gate().expected && !gateValidatedHead(cwd, gate()) && !gateBypassed(cwd, message)) {
             substantive = true;
             const gap: VerifyGap = { kind: "gate", detail: skipped };
             if (mayBlock(`gate:${issueKey(session, [gap])}`, session, "gate")) {
