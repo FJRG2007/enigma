@@ -363,3 +363,15 @@ half needs `bun:sqlite` and is imported dynamically.
   the compiled binary. Testing `startDaemon` by importing it from a scratch script therefore
   re-runs that script, not the daemon - verify daemon start/stop through the real binary
   (`enigma gate daemon start` with an isolated `ENIGMA_GATE_HOME`).
+- THE TEST STEP HAS A SECOND PHASE and it can fail a run whose tests all passed. `commands.test`
+  runs first and its exit code is not the end: whenever user intent was extracted (any `--intent`
+  run), `useEvidenceAgent` is also true, and an agent is asked to explore the repository and
+  produce end-user evidence. Four consecutive runs on `verify.ts` died there with
+  `Autocompact is thrashing ... claude exited: exit status 1` while `npm run verify` passed inside
+  the same step every time - so `outcome: failed, error: step test failed` can mean the evidence
+  agent ran out of context, not that anything is broken. Read the step log before believing the
+  outcome. A contributing term was measured and fixed (`tests/verify.test.ts` wrote 57 KB of the
+  hook's own stderr, three quarters of the package's test output, and an agent running the suite
+  pays for all of it), and it was not sufficient on its own. The step ends up unreachable for a
+  change this size: review and its fix rounds land, `document` onward never run, and nothing is
+  pushed.
