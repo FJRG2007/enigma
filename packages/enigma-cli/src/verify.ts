@@ -923,10 +923,12 @@ const GATE_DECISION_SPECIFIC = [
     // it reports a skip, so the literal appears in the very messages this must judge, and a
     // sentence recommending it says nothing about the gate being off. A gate that really is off
     // makes `gateContextAt` expect no run at all, so nothing is lost by leaving it out.
-    // The negative lookbehind is what actually keeps `/gate off` out: dropping the literal from
-    // this list was not enough, because `\b` sits happily after a slash and `gate off` is exactly
-    // what the command spells. `turn it off` and the rest of the offer stay unmatched on their own.
-    "\\bgate\\s*[:=]\\s*false\\b|(?<!/)\\bgate\\s+(?:is\\s+)?(?:off|disabled)\\b",
+    // `is` is REQUIRED rather than optional, and that is what keeps the commands out. Excluding
+    // `/gate off` by the slash in front of it was the first attempt and it missed the sibling the
+    // kernel offers in the same breath - `enigma config gate off -g` - which spells the same two
+    // words with nothing in front of them. A sentence that RECOMMENDS turning the gate off says
+    // nothing about it being off; only a claim about its state does, and that claim has a verb.
+    "\\bgate\\s*[:=]\\s*false\\b|\\bgate\\s+is\\s+(?:off|disabled)\\b",
     "\\bgate\\s+(?:está|esta)\\s+(?:apagado|desactivado|off)\\b|\\bgate\\s+desactivad",
     "\\bgate-protected-branches\\b",
 ];
@@ -972,7 +974,13 @@ const GATE_NAMED_RE = new RegExp([GATE_TOPIC_RE.source, GATE_SKIP_OBJECT].join("
  * different things, ORed into a permanent exemption for a gate that actually ran and failed. `,`
  * and `;` end the span for that reason, so what is being left unrun has to be the gate.
  */
-const GATE_UNRUN_CLAUSE = "[^.?!,;]{0,24}?";
+// 12, not the clause: a clause bound is a DISTANCE and distance is not the relation being tested.
+// "As you asked I skipped the flaky test but ran the gate." is one clause, and the gate sharing it
+// with the skip is the one that RAN - a wide window let the two words sit side by side and be read
+// as one statement. What is left is adjacency: the not-run phrase has to attach to the gate ("the
+// gate has not run", "did not run the gate", "sin lanzar el gate"), which is the only shape that
+// says the GATE is the thing that did not happen.
+const GATE_UNRUN_CLAUSE = "[^.?!,;]{0,12}?";
 const GATE_LEFT_UNRUN_RE = new RegExp([
     GATE_SKIP_OBJECT,
     `\\b(?:the|el|la)\\s+(?:quality\\s+)?(?:gate|axi)\\b${GATE_UNRUN_CLAUSE}(?:${GATE_NOT_RUN_RE.source})`,
@@ -1290,7 +1298,6 @@ function recordGateBypass(anchor: () => GateBypassAnchor, message: string): void
     const { head, key } = anchor();
     if (head) setStateValue(key, head);
 }
-
 
 /**
  * Whether the gate may be left unrun for the work sitting at HEAD: this turn names a reason, or

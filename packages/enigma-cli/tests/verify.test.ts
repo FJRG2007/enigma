@@ -475,6 +475,11 @@ test("reads an excuse only where it cannot have been written by accident", () =>
         "Code review done. Opened a pr for the change.",
         "Escalating the ask-user finding from the linter config.",
         "Added a protected branch note to the README.",
+        // Recommending the command that turns the gate off is not a claim that it IS off, and the
+        // kernel tells the agent to make exactly this offer whenever it reports a skip - so both
+        // spellings of it appear in the messages this judges. `is` is required for that reason.
+        "You can turn it off for good with `enigma config gate off -g` if you prefer.",
+        "Stop it for good with /gate off in this project.",
         // The topic and the excuse have to share a SENTENCE. Read over the whole message they
         // paired across sentences that excuse nothing - the gate reported unrun in one, an
         // unrelated clause supplying the "reason" in the next - and that reading was the whole
@@ -645,6 +650,13 @@ test("does not remember a bypass assembled out of unrelated clauses", () => {
         "As you asked, here is the summary; the gate has not run.",
         "This branch is listed in gate-protected-branches, so I skipped the gate.",
         "The gate is off for this kind of change, so it has not run.",
+        // The sibling command the kernel tells the agent to offer in the same breath as `/gate
+        // off`. Excluding that one by the slash in front of it left this one on the same
+        // alternative, and it is the more likely of the two to be written.
+        "I skipped the gate because you can turn it off for good with enigma config gate off -g anyway.",
+        // A clause window bounds DISTANCE, and distance is not the relation being tested: what was
+        // skipped here is a test, and the gate sharing the clause with it is the one that RAN.
+        "As you asked I skipped the flaky test but ran the gate.",
     ]) {
         runVerifyHook(payload(dir, message));
         // Same commits, a reply with no gate prose in it: nothing was ever decided about them.
