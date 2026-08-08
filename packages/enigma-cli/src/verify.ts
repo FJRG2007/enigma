@@ -825,9 +825,9 @@ const GATE_RUN_ACTION_RE = new RegExp([
  *
  * Split a second time, across both halves, by what the excuse REPORTS: a DECISION that outlives
  * the message stating it (the user's word, or a setting), or a CONDITION that holds only while
- * it lasts. Only the decisions are remembered - see `gateBypassDecided`.
+ * it lasts. Only the user's own word is remembered - see `gateBypassDecided`.
  */
-const GATE_DECISION_TOPICAL = [
+const GATE_USER_DECISION = [
     // The user took the decision.
     "\\b(?:you|the\\s+user)\\s+(?:told|asked|instructed)\\s+me\\b",
     "\\bas\\s+(?:you\\s+)?(?:asked|requested|instructed)\\b",
@@ -839,8 +839,23 @@ const GATE_DECISION_TOPICAL = [
     // adjacent: "pediste bypass", "bypass pedido por ti", "dijiste que me lo saltara".
     "\\b(?:pediste|dijiste|indicaste|solicitaste|autorizaste)\\b[^.?!]{0,40}?\\b(?:bypass|salt(?:ar|e|ara|arlo|armelo)|omit(?:ir|e|iera|irlo)|sin\\s+gate)\\b",
     "\\bbypass\\b[^.?!]{0,40}?\\b(?:pediste|pedido|dijiste|indicaste|solicitado|autorizado)\\b",
-    // The branch is out of scope, said in prose rather than by the setting's name. A setting is
-    // as standing a decision as the user's own word, so it is remembered with them.
+];
+
+/**
+ * The user's own word, plus the excuses that report a SETTING in prose rather than by its name.
+ *
+ * Only the first half is remembered (`gateBypassDecided`), and the split is what keeps the record
+ * honest. A setting that is really in force needs no record at all: `gate: false` and a listed
+ * branch both make `gateContextAt` expect no run, so neither gate check ever reaches the ledger.
+ * The ONLY state in which prose naming one could write a record is the state where the setting is
+ * not in force - a repository where the gate genuinely was expected - and "protected branch" is
+ * the phrase most likely to be reached for there, since GitHub's branch protection has the same
+ * name as `gate-protected-branches` and is routinely mistaken for it. Reading a claim about a
+ * setting as a standing decision hands that exact mistake a permanent, silent exemption, so the
+ * claim clears the turn that makes it and nothing more; the config, not the prose, decides.
+ */
+const GATE_DECISION_TOPICAL = [
+    ...GATE_USER_DECISION,
     "\\bprotected\\s+branch\\b|\\brama\\s+protegida\\b",
 ];
 
@@ -861,17 +876,34 @@ const GATE_CONDITION_TOPICAL = [
     // only counts where the gate is what the message is about.
     "\\b(?:no|without\\s+an?)\\s+(?:git\\s+)?(?:remote|origin)\\b|\\b(?:remote|origin)\\s+(?:is\\s+)?(?:not\\s+configured|missing|unset)\\b",
     "\\bno\\s+(?:hay|existe|tiene)\\s+(?:un\\s+)?(?:remoto|origin)\\b|\\bsin\\s+remoto\\b",
-    // The run left a PR, and handing THAT back is the prescribed ending, not a skip - same
-    // alternative LEGITIMATE_STOP_RE carries, bounded the same way and for the same reason.
-    // 160, not the 80 the plan alternatives use: the shape this exists for carries a URL between
-    // its two halves, and `PR: https://github.com/<org>/<repo>/pull/1234 - ready for you to review
-    // and merge` already spans 96 characters at ordinary org and repo names. A bound the real
-    // sentence overruns is the false block the bound was added to avoid, pointed the other way.
-    "\\b(?:review|merge|revisar|fusionar|mergear)\\b[^?]{0,160}\\b(?:pull\\s+request|\\bpr\\b)|\\b(?:pull\\s+request|\\bpr\\b)[^?]{0,160}\\b(?:review|merge|revisar|fusionar|mergear)\\b",
+];
+
+/**
+ * The run left a PR, and handing THAT back is the prescribed ending rather than a skip - same
+ * alternative LEGITIMATE_STOP_RE carries, bounded the same way and for the same reason. 160, not
+ * the 80 the plan alternatives use: the shape this exists for carries a URL between its two
+ * halves, and `PR: https://github.com/<org>/<repo>/pull/1234 - ready for you to review and merge`
+ * already spans 96 characters at ordinary org and repo names. A bound the real sentence overruns
+ * is the false block the bound was added to avoid, pointed the other way.
+ *
+ * Kept apart from the other topical excuses because it is the ONE that spans sentences by nature -
+ * the pipeline writes the url on its own line and the offer on the next - so it is the one that
+ * cannot be read inside a single sentence. That exemption is also what made it the loosest thing
+ * here, and the lookbehind is the cost of keeping it: without it `review` matched the noun for a
+ * review the AGENT did, so "the gate has not run yet - I did a quick self review first and will
+ * open the PR after" paired that noun with the PR it promises and excused an admitted skip. The
+ * hand-back always addresses the review to the USER ("ready for you to review and merge"), which
+ * no determiner precedes; a review the agent performed always has one.
+ */
+const GATE_HANDBACK_NOUN = "(?<!\\b(?:a|an|the|my|our|own|self|code|quick|careful|peer|manual|second|first|initial)\\s)";
+const GATE_HANDBACK_TOPICAL = [
+    `${GATE_HANDBACK_NOUN}\\b(?:review|merge|revisar|fusionar|mergear)\\b[^?]{0,160}\\b(?:pull\\s+request|\\bpr\\b)`,
+    `\\b(?:pull\\s+request|\\bpr\\b)[^?]{0,160}${GATE_HANDBACK_NOUN}\\b(?:review|merge|revisar|fusionar|mergear)\\b`,
 ];
 
 const GATE_EXCUSE_TOPICAL_RE = new RegExp([...GATE_DECISION_TOPICAL, ...GATE_CONDITION_TOPICAL].join("|"), "i");
-const GATE_DECISION_TOPICAL_RE = new RegExp(GATE_DECISION_TOPICAL.join("|"), "i");
+const GATE_HANDBACK_RE = new RegExp(GATE_HANDBACK_TOPICAL.join("|"), "i");
+const GATE_USER_DECISION_RE = new RegExp(GATE_USER_DECISION.join("|"), "i");
 
 /**
  * The alternatives specific enough to stand on their own anywhere in a message, because none of
@@ -881,7 +913,9 @@ const GATE_DECISION_TOPICAL_RE = new RegExp(GATE_DECISION_TOPICAL.join("|"), "i"
  *
  * Split into a decision and a condition half like the topical ones, on the same rule: an opt-out
  * setting is a standing answer, while a failed daemon, an empty commit range and a one-off escape
- * hatch are facts about right now.
+ * hatch are facts about right now. Neither half is remembered, for the reason the setting-derived
+ * topical excuse is not: a setting that is really in force is already read from the config, so
+ * prose naming one can only ever write a record where it is not.
  */
 const GATE_DECISION_SPECIFIC = [
     // The gate is off here, or the branch is out of scope. `/gate off` is NOT one of these, though
@@ -911,7 +945,6 @@ const GATE_CONDITION_SPECIFIC = [
 ];
 
 const GATE_EXCUSE_SPECIFIC_RE = new RegExp([...GATE_DECISION_SPECIFIC, ...GATE_CONDITION_SPECIFIC].join("|"), "i");
-const GATE_DECISION_SPECIFIC_RE = new RegExp(GATE_DECISION_SPECIFIC.join("|"), "i");
 
 /**
  * The gate named as the PIPELINE, for the topical excuses to lean on: `GATE_TOPIC_RE`, plus the
@@ -959,11 +992,25 @@ const GATE_LEFT_UNRUN_RE = new RegExp([
  * saying the user told you to skip it stands the check down; for committed, clean work it did
  * not, because that path read the ledger and never the reply - so the one exit the kernel
  * documents could not be taken, and the turn was blocked until the loop-safety budget ran out.
+ *
+ * The topic and the excuse have to land in the SAME SENTENCE, which is what the whole-message read
+ * this replaces could not tell apart. Weighed over the message they pair across sentences that
+ * excuse nothing: "The gate has not run. I updated the docs as you asked." names the gate in one,
+ * credits the user for a different thing in the next, and stood the ledger check down over work
+ * nothing validated - and so did every other ambiguous alternative, an unrelated "no remote"
+ * included. The hand-back is the one exemption, because it is the one shape that spans sentences
+ * by nature; it still needs the gate named somewhere in the message.
  */
 export function gateExcused(message: string): boolean {
     if (!message || typeof message !== "string") return false;
     if (GATE_EXCUSE_SPECIFIC_RE.test(message)) return true;
-    return GATE_NAMED_RE.test(message) && GATE_EXCUSE_TOPICAL_RE.test(message);
+    if (!GATE_NAMED_RE.test(message)) return false;
+    if (GATE_HANDBACK_RE.test(message)) return true;
+    for (const [start, end] of sentenceSpans(message)) {
+        const sentence = message.slice(start, end);
+        if (GATE_NAMED_RE.test(sentence) && GATE_EXCUSE_TOPICAL_RE.test(sentence)) return true;
+    }
+    return false;
 }
 
 /**
@@ -980,31 +1027,53 @@ export function gateExcused(message: string): boolean {
  * being left unrun. Naming the gate and crediting the user is ordinary prose in any repository
  * that works on the gate - "Fixed the gate, as you asked." - and clearing one turn on it is a
  * bounded mistake, while recording it stands the enforcement down for that commit silently and
- * for good. The permanent thing gets the higher bar. That bar is why the specific alternatives -
- * which clear a turn from anywhere in a message, since nobody writes them by accident - buy no
- * shortcut here: `gate: false` and a listed branch already make `gateContextAt` expect no run at
- * all, so all a bare mention of one could ever do is exempt a repository where the setting is not
- * actually in force.
+ * for good. The permanent thing gets the higher bar. That bar is why nothing derived from a
+ * SETTING is read here at all - neither the specific alternatives, which clear a turn from
+ * anywhere in a message since nobody writes them by accident, nor "protected branch" in prose:
+ * `gate: false` and a listed branch already make `gateContextAt` expect no run, so the only state
+ * in which a claim about one could write a record is the state where it is not in force. The
+ * user's own word is the whole of what is remembered.
  *
- * And read PER SENTENCE, all three of them together, which is what tells this apart from
- * `gateExcused`. Over the whole message the halves pair up across unrelated clauses: "Ran the
- * gate, it failed on lint. Skipped the docs step as you requested." names the gate in one
- * sentence, leaves something else unrun in another and credits the user for a third thing, and
- * ORing the three recorded a bypass nobody gave. `GATE_NOT_RUN_RE` says as much about itself -
- * it is specific enough to stand alone only where the sentence around it names the gate - and
- * `gateSkipped` already honors that. The cost of the tighter read is one turn: an excuse split
- * across two sentences still clears the turn that states it, and the block that follows says what
- * to write. The cost of the looser one was a commit exempted for good, in silence.
+ * And read PER CLAUSE, all three halves together, which is what tells this apart from
+ * `gateExcused`. Over a whole sentence they pair across clauses that authorize nothing: "I skipped
+ * the gate, and updated the docs as you asked." leaves the gate unrun in one clause and credits
+ * the user for a different thing in the next, and ORing the two recorded a bypass nobody gave -
+ * the mirror image of the sentence-crossing case `GATE_LEFT_UNRUN_RE` closes for its own halves.
+ * The one clause that may sit apart is a bare lead-in ("As you asked, I skipped the gate."), which
+ * is the decision and nothing else and so can only modify what follows it; a clause carrying its
+ * own object cannot. The cost of the tighter read is one turn: an excuse spread across clauses
+ * still clears the turn that states it, and the block that follows says what to write. The cost of
+ * the looser one was a commit exempted for good, in silence.
  */
 function gateBypassDecided(message: string): boolean {
     if (!message || typeof message !== "string") return false;
     for (const [start, end] of sentenceSpans(message)) {
-        const sentence = message.slice(start, end);
-        if (!GATE_LEFT_UNRUN_RE.test(sentence)) continue;
-        if (GATE_DECISION_SPECIFIC_RE.test(sentence)) return true;
-        if (GATE_NAMED_RE.test(sentence) && GATE_DECISION_TOPICAL_RE.test(sentence)) return true;
+        const clauses = message.slice(start, end).split(/[,;]/);
+        for (let i = 0; i < clauses.length; i++) {
+            const clause = clauses[i]!;
+            if (!GATE_LEFT_UNRUN_RE.test(clause) || !GATE_NAMED_RE.test(clause)) continue;
+            if (GATE_USER_DECISION_RE.test(clause)) return true;
+            if (i > 0 && isDecisionLeadIn(clauses[i - 1]!)) return true;
+        }
     }
     return false;
+}
+
+/**
+ * Whether a clause is nothing BUT the user's decision - "as you asked", "por petición tuya" - and
+ * so modifies the clause that FOLLOWS it rather than making a claim of its own.
+ *
+ * The test is that the decision phrase covers the clause end to end. That is what separates the
+ * lead-in from "and updated the docs as you asked", where the same phrase credits the user for the
+ * object its own clause names. Read only against the immediately preceding clause, which is what
+ * a lead-in can reach: "As you asked, here is the summary; the gate has not run." credits the
+ * summary, and a sentence-wide read of it would record a bypass over the same false pairing this
+ * exists to stop.
+ */
+function isDecisionLeadIn(clause: string): boolean {
+    const trimmed = clause.trim().replace(/^(?:and|but|so|y|pero|as[ií])\s+/i, "");
+    const match = GATE_USER_DECISION_RE.exec(trimmed);
+    return match !== null && match[0].length === trimmed.length;
 }
 
 /**
@@ -1179,6 +1248,23 @@ function gateGap(cwd: string, gate: GateContext): VerifyGap | null {
     return { kind: "gate", detail: `${pending.count} ${plural} on this branch (through ${head}) were committed and never validated: no gate run is recorded for this repository since they were made.` };
 }
 
+/** Where a bypass record lives for one repository, and the commit it would be pinned to. */
+interface GateBypassAnchor { head: string; key: string; }
+
+/**
+ * The anchor for one hook invocation, resolved at most once.
+ *
+ * Both the record and the two reads of it need the same HEAD and the same repository root, and
+ * nothing can move between them inside a single turn end - so resolving them per call spent up to
+ * four git subprocesses answering one question. Handed around as a thunk rather than a value to
+ * keep what it replaced: a turn that states its reason, or states nothing at all, never pays for
+ * git here, because both callers weigh the message first.
+ */
+function gateBypassAnchorAt(cwd: string): () => GateBypassAnchor {
+    let anchor: GateBypassAnchor | null = null;
+    return () => (anchor ??= { head: gitOut(cwd, ["rev-parse", "HEAD"]).trim(), key: `gatebypass:${repoRootOf(cwd)}` });
+}
+
 /**
  * Remember a bypass the user decided on, against the commit it was given for.
  *
@@ -1199,11 +1285,12 @@ function gateGap(cwd: string, gate: GateContext): VerifyGap | null {
  * describes it and the gate is expected again. An amend or a rebase moves the sha too, which
  * errs towards asking - the safe direction for a check whose failure mode is a silent pass.
  */
-function recordGateBypass(cwd: string, message: string): void {
+function recordGateBypass(anchor: () => GateBypassAnchor, message: string): void {
     if (!gateBypassDecided(message)) return;
-    const head = gitOut(cwd, ["rev-parse", "HEAD"]).trim();
-    if (head) setStateValue(`gatebypass:${repoRootOf(cwd)}`, head);
+    const { head, key } = anchor();
+    if (head) setStateValue(key, head);
 }
+
 
 /**
  * Whether the gate may be left unrun for the work sitting at HEAD: this turn names a reason, or
@@ -1213,10 +1300,10 @@ function recordGateBypass(cwd: string, message: string): void {
  * one half and be blocked by the other. The message is weighed first, which keeps the git call to
  * the turns that state nothing.
  */
-function gateBypassed(cwd: string, message: string): boolean {
+function gateBypassed(anchor: () => GateBypassAnchor, message: string): boolean {
     if (gateExcused(message)) return true;
-    const head = gitOut(cwd, ["rev-parse", "HEAD"]).trim();
-    return head !== "" && stateValue(`gatebypass:${repoRootOf(cwd)}`) === head;
+    const { head, key } = anchor();
+    return head !== "" && stateValue(key) === head;
 }
 
 /** The message fed back when a turn ends with the gate on and the work never sent through it. */
@@ -2094,6 +2181,7 @@ export function runVerifyHook(payload?: string): number {
     // gate must keep costing nothing at all.
     let context: GateContext | null = null;
     const gate = (): GateContext => (context ??= gateContextAt(cwd));
+    const bypassAnchor = gateBypassAnchorAt(cwd);
 
     // The whole gate hangs off the final message, so losing it must be loud rather than a
     // permanent silent no-op that reads exactly like "nothing to report".
@@ -2145,7 +2233,7 @@ export function runVerifyHook(payload?: string): number {
         // Plan mode is exempt like every other message-derived check here: a plan that PROPOSES
         // skipping the gate is a proposal, and writing a real, persistent record from it would let
         // an unapproved plan stand the enforcement down.
-        if (raw.permission_mode !== "plan") recordGateBypass(cwd, message);
+        if (raw.permission_mode !== "plan") recordGateBypass(bypassAnchor, message);
         // Checked BEFORE the completion claim, and without reading git at all: a turn that reports
         // progress AND asks whether to continue passes the claim check (nothing it produced is
         // unfinished) and would end there, leaving the actual problem - the work it stopped short
@@ -2177,7 +2265,7 @@ export function runVerifyHook(payload?: string): number {
         // loop-safety budget let it block: a gate standing down because its channel is spent must
         // not promote the cosmetic one into its place. See styleGate.
         let substantive = false;
-        if (skipped && gate().expected && !gateValidatedHead(cwd, gate()) && !gateBypassed(cwd, message)) {
+        if (skipped && gate().expected && !gateValidatedHead(cwd, gate()) && !gateBypassed(bypassAnchor, message)) {
             substantive = true;
             const gap: VerifyGap = { kind: "gate", detail: skipped };
             if (mayBlock(`gate:${issueKey(session, [gap])}`, session, "gate")) {
@@ -2278,7 +2366,7 @@ export function runVerifyHook(payload?: string): number {
         // also reads the record `recordGateBypass` writes above, so a decision already taken holds
         // for the work it covers instead of having to be restated in every turn that follows.
         const unvalidated = gateGap(cwd, gate());
-        if (unvalidated && !gateBypassed(cwd, message)) {
+        if (unvalidated && !gateBypassed(bypassAnchor, message)) {
             substantive = true;
             if (mayBlock(`gate:${issueKey(session, [unvalidated])}`, session, "gate")) {
                 process.stderr.write(`${gateMessage(unvalidated)}\n`);

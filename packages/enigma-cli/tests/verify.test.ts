@@ -475,6 +475,18 @@ test("reads an excuse only where it cannot have been written by accident", () =>
         "Code review done. Opened a pr for the change.",
         "Escalating the ask-user finding from the linter config.",
         "Added a protected branch note to the README.",
+        // The topic and the excuse have to share a SENTENCE. Read over the whole message they
+        // paired across sentences that excuse nothing - the gate reported unrun in one, an
+        // unrelated clause supplying the "reason" in the next - and that reading was the whole
+        // defense on the ledger path, so each of these stood a real gap down.
+        "The gate has not run. I updated the docs as you asked.",
+        "The gate has not run yet. There is no remote cache configured.",
+        "The gate never ran here. This is a protected branch of the upstream fork.",
+        // The hand-back is the one alternative that may span sentences, so it is the one that had
+        // to tell a review handed to the USER from a review the agent did: a determiner is what
+        // marks the second, and pairing that noun with the PR it promises excused an open skip.
+        "Committed the fix. The gate has not run yet - I did a quick self review first and will open the PR after.",
+        "The gate has not run. My review found nothing, so I will open the pr next.",
     ]) expect(gateExcused(message)).toBe(false);
 
     for (const message of [
@@ -526,6 +538,11 @@ test("remembers the bypass for the work it was given for", () => {
     // A commit on top is work the bypass was never given for, so the gate is expected again.
     commit("src/three.ts");
     expect(runVerifyHook(payload(dir, "All done, everything is implemented."))).toBe(2);
+
+    // The decision and the skip must share a CLAUSE, with one exception: a clause that is the
+    // decision and nothing else can only modify the one it precedes, so it still counts.
+    expect(runVerifyHook(payload(dir, "As you asked, I skipped the gate."))).toBe(0);
+    expect(runVerifyHook(payload(dir, "All done, everything is implemented."))).toBe(0);
 });
 
 test("remembers a decision stated on a turn that claims nothing", () => {
@@ -613,6 +630,21 @@ test("does not remember a bypass assembled out of unrelated clauses", () => {
         "Ran the gate, it failed on lint, and I skipped the docs step as you requested.",
         "The gate is green, but I skipped the release notes per your request.",
         "The gate has not run yet; you can turn it off for good with /gate off if you prefer.",
+        // The mirror image: the gate itself IS what was left unrun, but the user is credited in a
+        // clause about something else. One sentence, one comma, and the halves authorize nothing
+        // together - so the decision has to sit in the same clause as the skip it excuses.
+        "I skipped the gate, and updated the docs as you asked.",
+        "Skipped the gate, then rewrote the exporter as you requested.",
+        // A SETTING claimed in prose is not a decision anyone took here. When the setting is real
+        // the config already says so and no gate check runs at all, so the only state in which
+        // these could write a record is the one where the gate genuinely was expected - and
+        // GitHub's branch protection, which is not `gate-protected-branches`, is what gets named.
+        "All done. main is a protected branch, so I did not run the gate.",
+        // A lead-in reaches the clause it precedes and no further, or the same false pairing
+        // walks back in through the exception made for it.
+        "As you asked, here is the summary; the gate has not run.",
+        "This branch is listed in gate-protected-branches, so I skipped the gate.",
+        "The gate is off for this kind of change, so it has not run.",
     ]) {
         runVerifyHook(payload(dir, message));
         // Same commits, a reply with no gate prose in it: nothing was ever decided about them.
