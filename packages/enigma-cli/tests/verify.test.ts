@@ -142,6 +142,13 @@ test("denies the stop when the turn asks permission to continue", () => {
     expect(runVerifyHook(payload(dir, "¿Sigo con las tareas 5-8?", { permission_mode: "plan" }))).toBe(0);
     // Naming a real blocker is the way out, and it must work on the first try.
     expect(runVerifyHook(payload(dir, "I cannot continue without the deploy credentials. Shall I proceed once you add them?"))).toBe(0);
+    // The blocker alternatives that pair two clauses are bounded to a span: unbounded, they paired
+    // the FIRST mention of one with the LAST of the other, so any reply that said "review" early
+    // and "pr" late - with the question mark, as always, in the closing sentence - exempted the
+    // whole message from this gate. Neither clause here is a hand-back and the turn still asks.
+    expect(runVerifyHook(payload(dir, "I ran a careful review over this module and rewrote the parser, the formatter and each caller and every helper, and no pr exists yet. Shall I continue with tasks 5-8?"))).toBe(2);
+    // The hand-back it exists for still clears, adjacent clauses being the shape it always had.
+    expect(runVerifyHook(payload(dir, "Checks passed and the pr is ready for you to review and merge. Shall I continue with anything else?"))).toBe(0);
 });
 
 test("stands down after repeated asks so a turn is never trapped", () => {
@@ -464,6 +471,9 @@ test("reads an excuse only where it cannot have been written by accident", () =>
         "The gate run finished checks-passed. The PR is ready for you to review and merge.",
         "`enigma gate init` needs an origin remote, and this repository has no remote.",
         "This is a protected branch, so the gate did not run.",
+        // The hand-back as it is actually written: the url ends one sentence and the offer to
+        // review opens the next, which a span that excluded `.` and a newline could not cross.
+        "The gate run finished checks-passed.\nPR: https://github.com/org/repo/pull/12\nReview and merge when you like.",
     ]) expect(gateExcused(message)).toBe(true);
 });
 
@@ -491,6 +501,57 @@ test("remembers the bypass for the work it was given for", () => {
     // A commit on top is work the bypass was never given for, so the gate is expected again.
     commit("src/three.ts");
     expect(runVerifyHook(payload(dir, "All done, everything is implemented."))).toBe(2);
+});
+
+test("remembers a decision stated on a turn that claims nothing", () => {
+    // The decision and the claim are two different turns as often as one: the user says to skip it
+    // while the work is still being explained, and something is reported done only afterwards. A
+    // record written only on claiming turns met the same block on that second turn - the same
+    // re-offering, moved one turn along.
+    recordGateRun({ repoPath: join(tmpdir(), "an-eighth-repo"), branch: "main", headSha: "0".repeat(7), status: "completed", at: 1 });
+    const dir = repoWith({ "src/app.ts": "export const a = 1;\n" });
+    git(dir, "checkout", "-q", "-b", "feature");
+    const commit = (file: string): void => {
+        write(dir, file, "export const total = 1;\n");
+        git(dir, "add", "-A");
+        git(dir, "commit", "-qm", "work");
+    };
+
+    commit("src/one.ts");
+    expect(runVerifyHook(payload(dir, "All done, everything is implemented."))).toBe(0);
+    commit("src/two.ts");
+    // States the decision, claims nothing: the turn passes on its own and the record is written.
+    expect(runVerifyHook(payload(dir, "You told me to skip the gate here. Below is the analysis you asked for."))).toBe(0);
+    // The claim lands on the next turn, with no gate prose left in it. These same commits and this
+    // same reply block when no decision preceded them - see the test above.
+    expect(runVerifyHook(payload(dir, "All done, everything is implemented."))).toBe(0);
+});
+
+test("keeps a transient excuse to the turn that states it", () => {
+    // A daemon that failed to start, a missing origin, an escalated finding: each clears the turn
+    // that reports it and nothing more. Pinning one to the commit would stand the enforcement down
+    // for good the moment the condition it named stopped holding, with no message saying so.
+    recordGateRun({ repoPath: join(tmpdir(), "a-ninth-repo"), branch: "main", headSha: "0".repeat(7), status: "completed", at: 1 });
+    const dir = repoWith({ "src/app.ts": "export const a = 1;\n" });
+    git(dir, "checkout", "-q", "-b", "feature");
+    const commit = (file: string): void => {
+        write(dir, file, "export const total = 1;\n");
+        git(dir, "add", "-A");
+        git(dir, "commit", "-qm", "work");
+    };
+
+    commit("src/one.ts");
+    expect(runVerifyHook(payload(dir, "All done, everything is implemented."))).toBe(0);
+    commit("src/two.ts");
+    for (const transient of [
+        "All done. The gate daemon failed to start, so nothing validated this.",
+        "All done. `enigma gate init` needs an origin remote, and this repository has no remote.",
+        "All done. The gate parked on an ask-user finding, quoted verbatim below.",
+    ]) {
+        expect(runVerifyHook(payload(dir, transient))).toBe(0);
+        // Same commits, a reply that names no reason: the condition was never a standing decision.
+        expect(runVerifyHook(payload(dir, "All done, everything is implemented."))).toBe(2);
+    }
 });
 
 test("lets the ending a successful run prescribes close the turn", () => {
