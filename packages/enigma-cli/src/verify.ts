@@ -241,6 +241,11 @@ const LEGITIMATE_STOP_RE = new RegExp([
     // sentence between them from this gate. The bound is on distance alone - excluding `.` or a
     // newline would drop the shape they exist for, where a url ends one sentence and the
     // hand-back starts the next.
+    // 80 HERE and 160 at the gate excuse, which is not an inconsistency: this alternative exempts
+    // a message that ASKS something, so every character of slack also exempts a real stop-short
+    // question that happens to say "review" early and "pr" late (the case just below asserts one).
+    // The gate excuse weighs no question and has to fit a pull-request url, so it can afford the
+    // wider span; here the narrower one is what keeps the check honest.
     "\\b(?:review|merge|revisar|fusionar|mergear)\\b[^?]{0,80}\\b(?:pull\\s+request|\\bpr\\b)|\\b(?:pull\\s+request|\\bpr\\b)[^?]{0,80}\\b(?:review|merge|revisar|fusionar|mergear)\\b",
     "\\b(?:approve|approval|sign\\s+off|confirm)\\b[^?]{0,80}\\bplan\\b|\\bplan\\b[^?]{0,80}\\b(?:approve|approval|sounds?\\s+good|looks?\\s+(?:good|right))\\b",
     "\\b(?:apruebas|apruebo|aprobar)\\b[^?]{0,80}\\bplan\\b|\\bplan\\b[^?]{0,80}\\b(?:apruebas|te\\s+parece)\\b",
@@ -852,7 +857,11 @@ const GATE_CONDITION_TOPICAL = [
     "\\bno\\s+(?:hay|existe|tiene)\\s+(?:un\\s+)?(?:remoto|origin)\\b|\\bsin\\s+remoto\\b",
     // The run left a PR, and handing THAT back is the prescribed ending, not a skip - same
     // alternative LEGITIMATE_STOP_RE carries, bounded the same way and for the same reason.
-    "\\b(?:review|merge|revisar|fusionar|mergear)\\b[^?]{0,80}\\b(?:pull\\s+request|\\bpr\\b)|\\b(?:pull\\s+request|\\bpr\\b)[^?]{0,80}\\b(?:review|merge|revisar|fusionar|mergear)\\b",
+    // 160, not the 80 the plan alternatives use: the shape this exists for carries a URL between
+    // its two halves, and `PR: https://github.com/<org>/<repo>/pull/1234 - ready for you to review
+    // and merge` already spans 96 characters at ordinary org and repo names. A bound the real
+    // sentence overruns is the false block the bound was added to avoid, pointed the other way.
+    "\\b(?:review|merge|revisar|fusionar|mergear)\\b[^?]{0,160}\\b(?:pull\\s+request|\\bpr\\b)|\\b(?:pull\\s+request|\\bpr\\b)[^?]{0,160}\\b(?:review|merge|revisar|fusionar|mergear)\\b",
 ];
 
 const GATE_EXCUSE_TOPICAL_RE = new RegExp([...GATE_DECISION_TOPICAL, ...GATE_CONDITION_TOPICAL].join("|"), "i");
@@ -901,10 +910,16 @@ const GATE_DECISION_SPECIFIC_RE = new RegExp(GATE_DECISION_SPECIFIC.join("|"), "
  * repositories that work on the gate. The same compound-noun guard both alternatives already
  * carry (`GATE_TAIL`) is what keeps "skipped the gate view refactor" out.
  */
-const GATE_NAMED_RE = new RegExp([
-    GATE_TOPIC_RE.source,
-    `\\b(?:skip(?:s|ped|ping)?|bypass(?:es|ed|ing)?|salt\\w*|omit\\w*|sin)\\s+(?:the\\s+|el\\s+|la\\s+)?(?:quality\\s+)?(?:gate|axi)\\b${GATE_TAIL}`,
-].join("|"), "i");
+const GATE_SKIP_OBJECT = `\\b(?:skip(?:s|ped|ping)?|bypass(?:es|ed|ing)?|salt\\w*|omit\\w*|sin)\\s+(?:the\\s+|el\\s+|la\\s+)?(?:quality\\s+)?(?:gate|axi)\\b${GATE_TAIL}`;
+
+const GATE_NAMED_RE = new RegExp([GATE_TOPIC_RE.source, GATE_SKIP_OBJECT].join("|"), "i");
+
+/**
+ * The message saying the gate is NOT being run, in either word order, for the record below to
+ * lean on. `GATE_NOT_RUN_RE` carries the passive half already but not a bare `skip`, which is
+ * the imperative the user's own instruction is repeated in ("you told me to skip the gate").
+ */
+const GATE_LEFT_UNRUN_RE = new RegExp([GATE_SKIP_OBJECT, GATE_NOT_RUN_RE.source].join("|"), "i");
 
 /**
  * Whether the message names a reason the kernel accepts for work not going through an enabled
@@ -935,11 +950,17 @@ export function gateExcused(message: string): boolean {
  * machine or about one run, and pinning it would outlive what it named: a daemon that failed to
  * start comes up, a missing `origin` gets added, an escalated finding is answered - and the same
  * commits, which nothing ever validated, would go on clearing the ledger check in silence.
+ *
+ * A THIRD requirement that `gateExcused` does not carry: the message must also say the gate is
+ * being left unrun. Naming the gate and crediting the user is ordinary prose in any repository
+ * that works on the gate - "Fixed the gate, as you asked." - and clearing one turn on it is a
+ * bounded mistake, while recording it stands the enforcement down for that commit silently and
+ * for good. The permanent thing gets the higher bar.
  */
 function gateBypassDecided(message: string): boolean {
     if (!message || typeof message !== "string") return false;
     if (GATE_DECISION_SPECIFIC_RE.test(message)) return true;
-    return GATE_NAMED_RE.test(message) && GATE_DECISION_TOPICAL_RE.test(message);
+    return GATE_NAMED_RE.test(message) && GATE_LEFT_UNRUN_RE.test(message) && GATE_DECISION_TOPICAL_RE.test(message);
 }
 
 /**
@@ -2067,6 +2088,16 @@ export function runVerifyHook(payload?: string): number {
     const styleBlocking = blockingStyleFindings(styleHits);
     let styleDenied = false;
     try {
+        // FIRST, ahead of every check that can end this function: a decision the user took is the
+        // one thing here that must be recorded whatever else the turn did. Any of the blocks below
+        // returning first would drop it, and the next turn - the same commits, the same ledger, a
+        // reply with no gate prose left in it - would block on a bypass already given, which is the
+        // re-offering the kernel forbids, moved one turn along.
+        //
+        // Plan mode is exempt like every other message-derived check here: a plan that PROPOSES
+        // skipping the gate is a proposal, and writing a real, persistent record from it would let
+        // an unapproved plan stand the enforcement down.
+        if (raw.permission_mode !== "plan") recordGateBypass(cwd, message);
         // Checked BEFORE the completion claim, and without reading git at all: a turn that reports
         // progress AND asks whether to continue passes the claim check (nothing it produced is
         // unfinished) and would end there, leaving the actual problem - the work it stopped short
@@ -2162,11 +2193,6 @@ export function runVerifyHook(payload?: string): number {
             process.stderr.write(`${styleMessage(styleBlocking, styleLevel)}\n`);
             return 2;
         };
-
-        // Recorded BEFORE the claim gate below sends every non-claiming turn home, because the
-        // turn that states the decision and the turn that reports work done are two different
-        // turns as often as one - see recordGateBypass.
-        recordGateBypass(cwd, message);
 
         if (!claims) return styleGate();
 

@@ -38,8 +38,19 @@ const { recordGateRun, lastGateRun, validatingRun } = await import("../src/gate-
 const { parityReport, formatParity } = await import("../src/verify-parity");
 const { readLedger, readReplyLedger, countLedger } = await import("../src/guardrails");
 
+// EVERY blocking case here writes the hook's full feedback to stderr, and that feedback is
+// deliberately long - this file alone produced 57 KB of it, three quarters of the whole
+// package's test output. Nothing asserts on the stream directly (the two cases that read the
+// text swap in their own capture around the call and restore this sink afterwards), while the
+// volume is real: an agent that runs this suite as a tool call pays for all of it, and the gate's
+// own test step died twice on a context that refilled the moment it did. Silenced here rather
+// than in the hook, which must keep writing - that stream IS how it reaches the model.
+const realStderrWrite = process.stderr.write.bind(process.stderr);
+(process.stderr as { write: unknown; }).write = (): boolean => true;
+
 const repos: string[] = [];
 afterAll(() => {
+    (process.stderr as { write: unknown; }).write = realStderrWrite;
     for (const dir of repos) rmSync(dir, { recursive: true, force: true });
     rmSync(HOME, { recursive: true, force: true });
 });
@@ -474,6 +485,9 @@ test("reads an excuse only where it cannot have been written by accident", () =>
         // The hand-back as it is actually written: the url ends one sentence and the offer to
         // review opens the next, which a span that excluded `.` and a newline could not cross.
         "The gate run finished checks-passed.\nPR: https://github.com/org/repo/pull/12\nReview and merge when you like.",
+        // The same hand-back at real org and repo names: the url alone puts 96 characters between
+        // `PR` and `review`, so a span bounded at 80 turned the prescribed ending into a block.
+        "The gate run finished checks-passed. PR: https://github.com/some-organization-name/enigma-platform-tools/pull/12345 - ready for you to review and merge.",
     ]) expect(gateExcused(message)).toBe(true);
 });
 
@@ -524,6 +538,57 @@ test("remembers a decision stated on a turn that claims nothing", () => {
     expect(runVerifyHook(payload(dir, "You told me to skip the gate here. Below is the analysis you asked for."))).toBe(0);
     // The claim lands on the next turn, with no gate prose left in it. These same commits and this
     // same reply block when no decision preceded them - see the test above.
+    expect(runVerifyHook(payload(dir, "All done, everything is implemented."))).toBe(0);
+});
+
+test("does not remember a bypass nobody stated", () => {
+    // The RECORD gets a higher bar than the one-turn excuse, because only it stands the check down
+    // silently and for good. Naming the gate and crediting the user is ordinary prose here - the
+    // repository this ships from works on the gate daily - so the message must also say the gate is
+    // being left unrun before a decision is written against the commit.
+    recordGateRun({ repoPath: join(tmpdir(), "a-tenth-repo"), branch: "main", headSha: "0".repeat(7), status: "completed", at: 1 });
+    const dir = repoWith({ "src/app.ts": "export const a = 1;\n" });
+    git(dir, "checkout", "-q", "-b", "feature");
+    const commit = (file: string): void => {
+        write(dir, file, "export const total = 1;\n");
+        git(dir, "add", "-A");
+        git(dir, "commit", "-qm", "work");
+    };
+
+    commit("src/one.ts");
+    expect(runVerifyHook(payload(dir, "All done, everything is implemented."))).toBe(0);
+    commit("src/two.ts");
+    // Names the gate and credits the user, but says nothing about leaving it unrun. The one-turn
+    // excuse is deliberately broad and still clears THIS turn - a false block is the worse failure
+    // there, and the mistake is bounded to one reply. What must not happen is the record: the next
+    // turn, with no gate prose in it at all, meets the block exactly as if this reply never came.
+    expect(runVerifyHook(payload(dir, "Fixed the gate, as you asked."))).toBe(0);
+    expect(runVerifyHook(payload(dir, "All done, everything is implemented."))).toBe(2);
+
+    // A plan that PROPOSES skipping it is a proposal, not a decision - same reply, plan mode.
+    expect(runVerifyHook(payload(dir, "I will skip the gate here since you told me to.", { permission_mode: "plan" }))).toBe(0);
+    expect(runVerifyHook(payload(dir, "All done, everything is implemented."))).toBe(2);
+});
+
+test("records the decision even on a turn some other check blocks", () => {
+    // The record used to sit after four `return 2` paths, so a turn that stated the decision AND
+    // tripped one of them wrote nothing - and the next turn met the block over a bypass already
+    // given. Same re-offering the record exists to stop, moved one turn along.
+    recordGateRun({ repoPath: join(tmpdir(), "an-eleventh-repo"), branch: "main", headSha: "0".repeat(7), status: "completed", at: 1 });
+    const dir = repoWith({ "src/app.ts": "export const a = 1;\n" });
+    git(dir, "checkout", "-q", "-b", "feature");
+    const commit = (file: string): void => {
+        write(dir, file, "export const total = 1;\n");
+        git(dir, "add", "-A");
+        git(dir, "commit", "-qm", "work");
+    };
+
+    commit("src/one.ts");
+    expect(runVerifyHook(payload(dir, "All done, everything is implemented."))).toBe(0);
+    commit("src/two.ts");
+    // States the decision and stops short in the same breath: the stop-short gate denies this turn.
+    expect(runVerifyHook(payload(dir, "You told me to skip the gate, so I did. Shall I continue with the rest?"))).toBe(2);
+    // The decision was still taken, so the next turn does not meet the gate block over it.
     expect(runVerifyHook(payload(dir, "All done, everything is implemented."))).toBe(0);
 });
 
