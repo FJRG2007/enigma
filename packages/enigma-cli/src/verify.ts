@@ -241,12 +241,18 @@ const LEGITIMATE_STOP_RE = new RegExp([
     // sentence between them from this gate. The bound is on distance alone - excluding `.` or a
     // newline would drop the shape they exist for, where a url ends one sentence and the
     // hand-back starts the next.
-    // 80 HERE and 160 at the gate excuse, which is not an inconsistency: this alternative exempts
-    // a message that ASKS something, so every character of slack also exempts a real stop-short
-    // question that happens to say "review" early and "pr" late (the case just below asserts one).
-    // The gate excuse weighs no question and has to fit a pull-request url, so it can afford the
-    // wider span; here the narrower one is what keeps the check honest.
+    // 80 HERE, where the gate excuse takes 160, and the difference is not an oversight: this
+    // alternative exempts a message that ASKS something, so every character of slack also exempts
+    // a real stop-short question that says "review" early and "pr" late (the case just below pins
+    // one). The gate excuse weighs no question, so it can afford the wider span.
+    //
+    // What the narrow span cannot fit is the ending the pipeline prescribes, which carries a url
+    // between its halves and runs to 96 characters at ordinary org and repo names - the same
+    // hand-back would be exempt with a short url and not with a long one. So the url gets its own,
+    // wider alternative instead of widening the plain one: a stop-short question does not carry a
+    // pull-request link, and the two the check must tell apart are separated by exactly that.
     "\\b(?:review|merge|revisar|fusionar|mergear)\\b[^?]{0,80}\\b(?:pull\\s+request|\\bpr\\b)|\\b(?:pull\\s+request|\\bpr\\b)[^?]{0,80}\\b(?:review|merge|revisar|fusionar|mergear)\\b",
+    "\\b(?:pull\\s+request|\\bpr\\b)[^?]{0,40}https?://[^\\s?]+[^?]{0,80}\\b(?:review|merge|revisar|fusionar|mergear)\\b",
     "\\b(?:approve|approval|sign\\s+off|confirm)\\b[^?]{0,80}\\bplan\\b|\\bplan\\b[^?]{0,80}\\b(?:approve|approval|sounds?\\s+good|looks?\\s+(?:good|right))\\b",
     "\\b(?:apruebas|apruebo|aprobar)\\b[^?]{0,80}\\bplan\\b|\\bplan\\b[^?]{0,80}\\b(?:apruebas|te\\s+parece)\\b",
     // The user explicitly asked to be checked in with - saying so is the documented way out.
@@ -878,8 +884,15 @@ const GATE_DECISION_TOPICAL_RE = new RegExp(GATE_DECISION_TOPICAL.join("|"), "i"
  * hatch are facts about right now.
  */
 const GATE_DECISION_SPECIFIC = [
-    // The gate is off here, or the branch is out of scope.
-    "\\bgate\\s*[:=]\\s*false\\b|\\b/gate\\s+off\\b|\\bgate\\s+(?:is\\s+)?(?:off|disabled)\\b",
+    // The gate is off here, or the branch is out of scope. `/gate off` is NOT one of these, though
+    // it names the same setting: the memory kernel tells the agent to OFFER that command whenever
+    // it reports a skip, so the literal appears in the very messages this must judge, and a
+    // sentence recommending it says nothing about the gate being off. A gate that really is off
+    // makes `gateContextAt` expect no run at all, so nothing is lost by leaving it out.
+    // The negative lookbehind is what actually keeps `/gate off` out: dropping the literal from
+    // this list was not enough, because `\b` sits happily after a slash and `gate off` is exactly
+    // what the command spells. `turn it off` and the rest of the offer stay unmatched on their own.
+    "\\bgate\\s*[:=]\\s*false\\b|(?<!/)\\bgate\\s+(?:is\\s+)?(?:off|disabled)\\b",
     "\\bgate\\s+(?:está|esta)\\s+(?:apagado|desactivado|off)\\b|\\bgate\\s+desactivad",
     "\\bgate-protected-branches\\b",
 ];
@@ -915,11 +928,23 @@ const GATE_SKIP_OBJECT = `\\b(?:skip(?:s|ped|ping)?|bypass(?:es|ed|ing)?|salt\\w
 const GATE_NAMED_RE = new RegExp([GATE_TOPIC_RE.source, GATE_SKIP_OBJECT].join("|"), "i");
 
 /**
- * The message saying the gate is NOT being run, in either word order, for the record below to
- * lean on. `GATE_NOT_RUN_RE` carries the passive half already but not a bare `skip`, which is
- * the imperative the user's own instruction is repeated in ("you told me to skip the gate").
+ * THE GATE ITSELF said to be left unrun, in either word order, for the record below to lean on.
+ * `GATE_NOT_RUN_RE` carries the passive half already but not a bare `skip`, which is the
+ * imperative the user's own instruction is repeated in ("you told me to skip the gate").
+ *
+ * The two halves must sit in the same CLAUSE, not merely the same sentence, and that is the whole
+ * point of this one. Reading them a sentence apart let a report about the gate lend its name to an
+ * unrelated skip: "Ran the gate, it failed on lint, and I skipped the docs step as you requested."
+ * names the gate, says something was skipped and credits the user - three true clauses about three
+ * different things, ORed into a permanent exemption for a gate that actually ran and failed. `,`
+ * and `;` end the span for that reason, so what is being left unrun has to be the gate.
  */
-const GATE_LEFT_UNRUN_RE = new RegExp([GATE_SKIP_OBJECT, GATE_NOT_RUN_RE.source].join("|"), "i");
+const GATE_UNRUN_CLAUSE = "[^.?!,;]{0,24}?";
+const GATE_LEFT_UNRUN_RE = new RegExp([
+    GATE_SKIP_OBJECT,
+    `\\b(?:the|el|la)\\s+(?:quality\\s+)?(?:gate|axi)\\b${GATE_UNRUN_CLAUSE}(?:${GATE_NOT_RUN_RE.source})`,
+    `(?:${GATE_NOT_RUN_RE.source})${GATE_UNRUN_CLAUSE}\\s*\\b(?:the\\s+|el\\s+|la\\s+)?(?:quality\\s+)?(?:gate|axi)\\b`,
+].join("|"), "i");
 
 /**
  * Whether the message names a reason the kernel accepts for work not going through an enabled

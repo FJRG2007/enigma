@@ -167,6 +167,10 @@ test("denies the stop when the turn asks permission to continue", () => {
     expect(runVerifyHook(payload(dir, "I ran a careful review over this module and rewrote the parser, the formatter and each caller and every helper, and no pr exists yet. Shall I continue with tasks 5-8?"))).toBe(2);
     // The hand-back it exists for still clears, adjacent clauses being the shape it always had.
     expect(runVerifyHook(payload(dir, "Checks passed and the pr is ready for you to review and merge. Shall I continue with anything else?"))).toBe(0);
+    // The same hand-back with the link in it, which is how the pipeline actually writes it. The
+    // span that keeps the case above honest cannot fit a url, so the url has an alternative of its
+    // own: a stop-short question does not carry a pull-request link, and that is the difference.
+    expect(runVerifyHook(payload(dir, "PR: https://github.com/some-organization-name/enigma-platform-tools/pull/12345 - ready for you to review and merge. Shall I continue with anything else?"))).toBe(0);
 });
 
 test("stands down after repeated asks so a turn is never trapped", () => {
@@ -603,6 +607,12 @@ test("does not remember a bypass assembled out of unrelated clauses", () => {
         // the same bar - the second is the offer the kernel itself tells the agent to make.
         "Renamed the gate-protected-branches setting in the registry.",
         "The gate has not run yet. You can turn it off for good with /gate off if you prefer.",
+        // The same pairings with the sentence never ending: a period is not what separates two
+        // clauses that mean different things, and punctuation was all that stood between these
+        // and a permanent exemption.
+        "Ran the gate, it failed on lint, and I skipped the docs step as you requested.",
+        "The gate is green, but I skipped the release notes per your request.",
+        "The gate has not run yet; you can turn it off for good with /gate off if you prefer.",
     ]) {
         runVerifyHook(payload(dir, message));
         // Same commits, a reply with no gate prose in it: nothing was ever decided about them.
