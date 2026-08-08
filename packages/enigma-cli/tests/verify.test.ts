@@ -402,6 +402,34 @@ test("denies the stop when committed work never reached an enabled gate", () => 
     expect(runVerifyHook(payload(dir, "Pushed the first half; continuing next turn."))).toBe(0);
 });
 
+test("the bypass the user asked for clears the unvalidated-commits block too", () => {
+    // The ledger check knows one thing - no run saw these commits - and that stays true whatever
+    // the reply says. But the block's own message names "the user told you to skip it" as an exit,
+    // and for committed, clean work that exit was unreachable: the turn was blocked until the
+    // loop-safety budget gave out, which is what "insisting" until it stopped actually was.
+    recordGateRun({ repoPath: join(tmpdir(), "a-sixth-repo"), branch: "main", headSha: "0".repeat(7), status: "completed", at: 1 });
+    const dir = repoWith({ "src/app.ts": "export const a = 1;\n" });
+    git(dir, "checkout", "-q", "-b", "feature");
+    const commit = (file: string): void => {
+        write(dir, file, "export const total = 1;\n");
+        git(dir, "add", "-A");
+        git(dir, "commit", "-qm", "work");
+    };
+
+    commit("src/one.ts");
+    expect(runVerifyHook(payload(dir, "All done, everything is implemented."))).toBe(0);
+    commit("src/two.ts");
+    expect(runVerifyHook(payload(dir, "All done, everything is implemented."))).toBe(2);
+
+    // Naming it clears the turn on the first try, in either language.
+    expect(runVerifyHook(payload(dir, "Listo, todo implementado. No he lanzado el gate porque me pediste bypass."))).toBe(0);
+    expect(runVerifyHook(payload(dir, "All done. I did not run the gate because you told me to skip it."))).toBe(0);
+
+    // And the ambiguous half does not clear it on its own: "as you asked" is how an ordinary turn
+    // that did exactly what was asked ends, and it says nothing about the gate.
+    expect(runVerifyHook(payload(dir, "All done, implemented exactly as you asked."))).toBe(2);
+});
+
 test("lets the ending a successful run prescribes close the turn", () => {
     // The prescribed report after a passing run hands the PR back, and what it offers is a
     // review, not a run - so no ledger is needed to tell it apart from a skip.

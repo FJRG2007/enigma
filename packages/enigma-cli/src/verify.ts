@@ -798,12 +798,33 @@ const GATE_RUN_ACTION_RE = new RegExp([
  * Matched over the WHOLE message and deliberately broad, exactly like LEGITIMATE_STOP_RE:
  * naming the reason is the documented way out, and a false block here would land on a turn
  * that did everything right.
+ *
+ * Split in two because the two halves are not equally safe to read on their own. The USER
+ * DECISION half is ordinary prose - "as you asked" ends a turn that did exactly as asked and
+ * has nothing to do with the gate - so the ledger check below only reads it in a message that
+ * names the gate at all (GATE_MENTION_RE). Every alternative in the SPECIFIC half names a
+ * setting, a command or a machine failure that nobody writes by accident, so it stands alone.
  */
-const GATE_EXCUSE_RE = new RegExp([
-    // The user took the decision.
+const GATE_USER_DECISION_RE = new RegExp([
     "\\b(?:you|the\\s+user)\\s+(?:told|asked|instructed)\\s+me\\b",
     "\\bas\\s+(?:you\\s+)?(?:asked|requested|instructed)\\b",
+    "\\b(?:you|the\\s+user)\\s+(?:said|want(?:ed)?)\\s+(?:me\\s+)?(?:to\\s+)?(?:skip|bypass|not\\s+run)\\b",
+    "\\b(?:per|at)\\s+your\\s+(?:request|instruction)\\b",
     "\\b(?:me\\s+(?:lo\\s+)?(?:pediste|dijiste|indicaste|pediste\\s+que)|como\\s+(?:me\\s+)?pediste|tú\\s+(?:me\\s+)?(?:dijiste|pediste))\\b",
+    "\\b(?:por|a)\\s+(?:petici[oó]n|indicaci[oó]n|orden)\\s+(?:tuya|del\\s+usuario)\\b",
+    // The bypass named in either order, since the decision and the word for it rarely land
+    // adjacent: "pediste bypass", "bypass pedido por ti", "dijiste que me lo saltara".
+    "\\b(?:pediste|dijiste|indicaste|solicitaste|autorizaste)\\b[^.?!]{0,40}?\\b(?:bypass|salt(?:ar|e|ara|arlo|armelo)|omit(?:ir|e|iera|irlo)|sin\\s+gate)\\b",
+    "\\bbypass\\b[^.?!]{0,40}?\\b(?:pediste|pedido|dijiste|indicaste|solicitado|autorizado)\\b",
+].join("|"), "i");
+
+/**
+ * The alternatives specific enough to stand on their own anywhere in a message, because none of
+ * them can be written by accident: the repository or the branch is opted out, there is nothing
+ * committed to validate, the run parked on a finding, the gate cannot be stood up here, or the
+ * turn carries this module's escape hatch.
+ */
+const GATE_EXCUSE_SPECIFIC_RE = new RegExp([
     // The gate is off here, or the branch is out of scope.
     "\\bgate\\s*[:=]\\s*false\\b|\\b/gate\\s+off\\b|\\bgate\\s+(?:is\\s+)?(?:off|disabled)\\b",
     "\\bgate\\s+(?:está|esta)\\s+(?:apagado|desactivado|off)\\b|\\bgate\\s+desactivad",
@@ -826,6 +847,36 @@ const GATE_EXCUSE_RE = new RegExp([
     // Same escape hatch as every other check here.
     "enigma:verify-ignore",
 ].join("|"), "i");
+
+/**
+ * Both halves, for `gateSkipped`: that check only ever runs on a message that names the gate
+ * (GATE_TOPIC_RE), so the user-decision half is already read in context there.
+ */
+const GATE_EXCUSE_RE = new RegExp(`${GATE_USER_DECISION_RE.source}|${GATE_EXCUSE_SPECIFIC_RE.source}`, "i");
+
+/**
+ * The gate named at all, loosely. Only ever read together with GATE_USER_DECISION_RE, so it
+ * does not carry the weight GATE_TOPIC_RE does: it is here to keep "refactored it as you
+ * asked" - a turn that never mentions the gate - from clearing the ledger check below.
+ */
+const GATE_MENTION_RE = /\b(?:gate|axi)\b/i;
+
+/**
+ * Whether the message names a reason the kernel accepts for work not going through an enabled
+ * gate. Read by the LEDGER check, which knows the gate never ran and nothing else: unlike
+ * `gateSkipped` it has no topical sentence to lean on, so the ambiguous half is admitted only
+ * alongside a mention of the gate.
+ *
+ * Without this the block became the trap its own message denies. `gateMessage` promises that
+ * saying the user told you to skip it stands the check down; for committed, clean work it did
+ * not, because this path read the ledger and never the reply - so the one exit the kernel
+ * documents could not be taken, and the turn was blocked until the loop-safety budget ran out.
+ */
+export function gateExcused(message: string): boolean {
+    if (!message || typeof message !== "string") return false;
+    if (GATE_EXCUSE_SPECIFIC_RE.test(message)) return true;
+    return GATE_MENTION_RE.test(message) && GATE_USER_DECISION_RE.test(message);
+}
 
 /**
  * Whether the final message says the quality gate was skipped, or asks whether to run it,
@@ -2026,8 +2077,17 @@ export function runVerifyHook(payload?: string): number {
         // Checked LAST, because it is the only gap that is not about the code: everything this turn
         // produced can be finished, honest and clean, and still be work nothing reviewed. A claim is
         // what makes it a gap - the gate is about to be reported as complete, and it was not.
+        // The reply is read here too, and the excuse is applied to the RESULT rather than to the
+        // call, because `gateGap` arms this repository's watch on its first sighting and skipping
+        // that would hand every commit made so far a free exemption on the next turn.
+        //
+        // The ledger's answer is true whatever the message says - the gate never saw this work -
+        // but "the user told me to skip it" is an exit the kernel documents and this very block
+        // promises. It is unreachable from the ledger, so a turn that named it was blocked anyway,
+        // over and over, until the loop-safety budget gave out: the trap this module's own
+        // comments warn against, in the one check that most often decides a turn.
         const unvalidated = gateGap(cwd, gate());
-        if (unvalidated) {
+        if (unvalidated && !gateExcused(message)) {
             substantive = true;
             if (mayBlock(`gate:${issueKey(session, [unvalidated])}`, session, "gate")) {
                 process.stderr.write(`${gateMessage(unvalidated)}\n`);
