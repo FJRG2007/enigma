@@ -5,5 +5,5 @@
   "description": "Strict frontend + backend schema validation, normalization before validation (shared normalizers: trim, lowercase email, capitalize names, canonicalize links and handles), schema consistency, and safe client-facing error handling.",
   "updated": "2026-08-01T17:44:16+02:00",
   "cliVersion": "1.35.7",
-  "sha": "225e1e26f4a49fac70714b1bebc104ea42143203cc8fcc9e3330b29f05b6e025"
+  "sha": "4bbc861fe7fc37c7bf7fdd99e60d889785b8af2e6aaca6a66e324ea6238b49aa"
 }
