@@ -325,12 +325,6 @@ export function readSession(stream = process.stdin, timeoutMs = STDIN_TIMEOUT_MS
         let buffer = "";
         let settled = false;
         const timer = setTimeout(() => finish(null), timeoutMs);
-        const finish = (value) => {
-            if (settled) return;
-            settled = true;
-            clearTimeout(timer);
-            resolve(value);
-        };
         const parsed = () => {
             try {
                 return parseJson(buffer);
@@ -340,19 +334,39 @@ export function readSession(stream = process.stdin, timeoutMs = STDIN_TIMEOUT_MS
                 return undefined;
             }
         };
+        const onData = (chunk) => {
+            buffer += chunk;
+            if (buffer.length > MAX_SESSION_BYTES) return finish(null);
+            // Only a complete object can parse, so the scan is worth one closing
+            // brace to skip re-parsing a buffer that is still mid-write.
+            if (!buffer.trimEnd().endsWith("}")) return;
+            const value = parsed();
+            if (value !== undefined) finish(value);
+        };
+        const onEnd = () => finish(parsed() ?? null);
+        const onError = () => finish(null);
+        const finish = (value) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            buffer = "";
+            // Every exit has to stop the flow as well as answer the caller: a stream
+            // left attached goes on appending to a buffer nobody will read, which is
+            // the cap failing to cap, and on a stream this process does not own the
+            // listeners would outlive the read entirely.
+            try {
+                stream.removeListener("data", onData);
+                stream.removeListener("end", onEnd);
+                stream.removeListener("error", onError);
+                stream.pause();
+            } catch { /* a stream that cannot be detached is one already gone */ }
+            resolve(value);
+        };
         try {
             stream.setEncoding("utf8");
-            stream.on("data", (chunk) => {
-                buffer += chunk;
-                if (buffer.length > MAX_SESSION_BYTES) return finish(null);
-                // Only a complete object can parse, so the scan is worth one closing
-                // brace to skip re-parsing a buffer that is still mid-write.
-                if (!buffer.trimEnd().endsWith("}")) return;
-                const value = parsed();
-                if (value !== undefined) finish(value);
-            });
-            stream.on("end", () => finish(parsed() ?? null));
-            stream.on("error", () => finish(null));
+            stream.on("data", onData);
+            stream.on("end", onEnd);
+            stream.on("error", onError);
         } catch {
             finish(null);
         }

@@ -190,19 +190,34 @@ test("the session read never waits on a pipe the harness leaves open", async () 
     const capped = readSession(flood, 30000);
     for (let i = 0; i < 20; i++) flood.write("x".repeat(64 * 1024));
     expect(await capped).toBeNull();
+
+    // Settling detaches: a read that only resolves keeps buffering everything the
+    // writer sends after the cap, and on a stream the renderer does not own the
+    // listeners would never come off at all.
+    expect(flood.listenerCount("data")).toBe(0);
+    expect(flood.isPaused()).toBe(true);
+    for (let i = 0; i < 20; i++) flood.write("x".repeat(64 * 1024));
+    await new Promise((r) => setTimeout(r, 10));
+    expect(flood.listenerCount("data")).toBe(0);
 });
 
-test("the bar exits quietly when its reader is already gone", async () => {
+const NODE = Bun.which("node");
+
+// Without a `node` on PATH the child cannot be spawned at all. Skipping says so;
+// returning early would report the one test that locks this regression as green.
+test.skipIf(!NODE)("the bar exits quietly when its reader is already gone", async () => {
     // The regression this locks: a dead reader answers the write with EPIPE an
     // event-loop turn later, and an unhandled `error` event is an uncaught exception -
     // a stack trace on stderr and a nonzero exit, from a status bar.
-    const node = Bun.which("node");
-    if (!node) return;
     const { code, stderr } = await new Promise<{ code: number | null; stderr: string; }>((resolve) => {
-        const child = spawn(node, [join(import.meta.dir, "../../bin/enigma.mjs"), "statusline"], { stdio: ["pipe", "pipe", "pipe"] });
+        const child = spawn(NODE as string, [join(import.meta.dir, "../../bin/enigma.mjs"), "statusline"], { stdio: ["pipe", "pipe", "pipe"] });
         let err = "";
         child.stderr.on("data", (chunk) => { err += chunk; });
         child.stdout.destroy();
+        // The child destroys its own stdin to release itself, so the parent's write can
+        // land on a pipe with no read end: EPIPE here would be an uncaught exception
+        // that kills the whole run, testing the harness rather than the bar.
+        child.stdin.on("error", () => {});
         child.stdin.write(JSON.stringify({ cwd: DIR, model: { display_name: "Opus 5" } }));
         child.on("exit", (status) => {
             child.stdin.destroy();

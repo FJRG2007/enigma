@@ -185,7 +185,7 @@ together holding 344 MB and 171 handles. They accumulate at roughly one per sess
 survive until reboot, which is why the symptom is "the machine gets laggy after a few long
 sessions" and why `/clear` does nothing for it - the orphans outlive the conversation.
 
-`readSession` is therefore a streaming read with three exits, in the order they fire in
+`readSession` is therefore a streaming read with four exits, in the order they fire in
 practice:
 
 1. **the buffer parses as JSON** - the harness has finished writing, whether or not it
@@ -201,6 +201,12 @@ Parsing on every chunk is safe because a partial write of a JSON object is never
 valid JSON, so step 1 cannot settle early on a half-written payload. The parse is attempted
 only once the buffer ends in `}`, which skips the work entirely while a write is still in
 flight.
+
+Whichever exit fires detaches the listeners and pauses the stream. Resolving alone is not
+enough: the promise settles once but `data` keeps arriving, so the buffer would go on
+growing past the cap that was supposed to abandon it, and on a stream the renderer does not
+own (a test's `PassThrough`, anything not `process.stdin`) the listeners would outlive the
+read - `drain()` destroying stdin is what hid that, and it only covers the real one.
 
 The exit needs the same care. `drain()` destroys stdin - an open stdin keeps the event loop,
 and therefore the process, alive for as long as the harness holds the pipe - and bounds the
