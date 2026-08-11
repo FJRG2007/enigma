@@ -11,6 +11,7 @@
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
+import { spawn } from "node:child_process";
 import { test, expect, afterAll } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 
@@ -175,4 +176,39 @@ test("the session read never waits on a pipe the harness leaves open", async () 
     const junk = new PassThrough();
     junk.end("not json");
     expect(await readSession(junk, 5000)).toBeNull();
+
+    // A session split across writes settles the moment it completes, not at EOF.
+    const split = new PassThrough();
+    const pending = readSession(split, 5000);
+    split.write("{\"cwd\":\"/tmp\",");
+    split.write("\"model\":{\"display_name\":\"Opus 5\"}}\n");
+    expect(await pending).toEqual({ cwd: "/tmp", model: { display_name: "Opus 5" } });
+
+    // A writer streaming something that is not a session is abandoned at the cap
+    // rather than reparsed for the whole timeout.
+    const flood = new PassThrough();
+    const capped = readSession(flood, 30000);
+    for (let i = 0; i < 20; i++) flood.write("x".repeat(64 * 1024));
+    expect(await capped).toBeNull();
+});
+
+test("the bar exits quietly when its reader is already gone", async () => {
+    // The regression this locks: a dead reader answers the write with EPIPE an
+    // event-loop turn later, and an unhandled `error` event is an uncaught exception -
+    // a stack trace on stderr and a nonzero exit, from a status bar.
+    const node = Bun.which("node");
+    if (!node) return;
+    const { code, stderr } = await new Promise<{ code: number | null; stderr: string; }>((resolve) => {
+        const child = spawn(node, [join(import.meta.dir, "../../bin/enigma.mjs"), "statusline"], { stdio: ["pipe", "pipe", "pipe"] });
+        let err = "";
+        child.stderr.on("data", (chunk) => { err += chunk; });
+        child.stdout.destroy();
+        child.stdin.write(JSON.stringify({ cwd: DIR, model: { display_name: "Opus 5" } }));
+        child.on("exit", (status) => {
+            child.stdin.destroy();
+            resolve({ code: status, stderr: err.trim() });
+        });
+    });
+    expect(stderr).toBe("");
+    expect(code).toBe(0);
 });

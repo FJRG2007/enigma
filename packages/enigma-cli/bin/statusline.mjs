@@ -302,6 +302,9 @@ const STDIN_TIMEOUT_MS = 2000;
 /** Hard bound on the drain that follows the write, so the caller always gets to exit. */
 const DRAIN_TIMEOUT_MS = 1000;
 
+/** Ceiling on the piped session, past which the stream is garbage rather than a slow writer. */
+const MAX_SESSION_BYTES = 1_000_000;
+
 /**
  * Reads the piped session JSON, or null when nothing usable is piped in.
  *
@@ -311,9 +314,10 @@ const DRAIN_TIMEOUT_MS = 1000;
  * session on Windows - each holding ~38 MB and a pipe handle until reboot - which
  * is exactly the machine-wide pressure a status bar must never create.
  *
- * Three ways out, in the order they fire in practice: the buffer parses as JSON
- * (the harness has written everything, close or no close), the pipe reaches EOF,
- * or the timeout expires and the bar renders in its degraded form.
+ * Ways out, in the order they fire in practice: the buffer parses as JSON (the
+ * harness has written everything, close or no close), the pipe reaches EOF, or the
+ * bar renders in its degraded form because the timeout expired or the writer ran
+ * past the point where it is still plausibly a session.
  */
 export function readSession(stream = process.stdin, timeoutMs = STDIN_TIMEOUT_MS) {
     return new Promise((resolve) => {
@@ -340,6 +344,10 @@ export function readSession(stream = process.stdin, timeoutMs = STDIN_TIMEOUT_MS
             stream.setEncoding("utf8");
             stream.on("data", (chunk) => {
                 buffer += chunk;
+                if (buffer.length > MAX_SESSION_BYTES) return finish(null);
+                // Only a complete object can parse, so the scan is worth one closing
+                // brace to skip re-parsing a buffer that is still mid-write.
+                if (!buffer.trimEnd().endsWith("}")) return;
                 const value = parsed();
                 if (value !== undefined) finish(value);
             });
@@ -349,6 +357,24 @@ export function readSession(stream = process.stdin, timeoutMs = STDIN_TIMEOUT_MS
             finish(null);
         }
     });
+}
+
+/** Streams whose asynchronous write failures are already swallowed. */
+const silenced = new WeakSet();
+
+/**
+ * Swallows a stream's asynchronous write failures, once per stream.
+ *
+ * A reader that is already gone answers the write with EPIPE an event-loop turn
+ * later, and Node escalates an unhandled `error` event to an uncaught exception:
+ * a stack trace on stderr and a nonzero exit, from a bar whose whole contract is
+ * to stay quiet. The listener has to outlive the drain it protects, because the
+ * event arrives after the failed write has already reported back.
+ */
+function silenceWriteErrors(stream) {
+    if (silenced.has(stream)) return;
+    silenced.add(stream);
+    stream.on("error", () => {});
 }
 
 /**
@@ -367,6 +393,7 @@ function drain(text) {
         const timer = setTimeout(resolve, DRAIN_TIMEOUT_MS);
         const done = () => { clearTimeout(timer); resolve(); };
         try {
+            silenceWriteErrors(process.stdout);
             process.stdout.write(text, done);
         } catch {
             done();

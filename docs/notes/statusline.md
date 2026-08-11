@@ -194,16 +194,24 @@ practice:
 2. **EOF** - the ordinary path.
 3. **the timeout** (`STDIN_TIMEOUT_MS`, 2 s) - nothing parseable ever arrived, so the bar
    renders without the session rather than waiting on a writer that is not coming.
+4. **the cap** (`MAX_SESSION_BYTES`, 1 MB) - whatever is being streamed is not a session,
+   so it is abandoned immediately instead of buffered and reparsed for the whole timeout.
 
 Parsing on every chunk is safe because a partial write of a JSON object is never itself
-valid JSON, so step 1 cannot settle early on a half-written payload.
+valid JSON, so step 1 cannot settle early on a half-written payload. The parse is attempted
+only once the buffer ends in `}`, which skips the work entirely while a write is still in
+flight.
 
 The exit needs the same care. `drain()` destroys stdin - an open stdin keeps the event loop,
 and therefore the process, alive for as long as the harness holds the pipe - and bounds the
 write with `DRAIN_TIMEOUT_MS` for the mirror case, a stdout whose reader is already gone and
-whose drain callback never fires. `printStatusline` is async and the launcher **awaits** it:
-exiting before the write drains truncates the bar, since stdout to a pipe is asynchronous on
-Windows.
+whose drain callback never fires. That case also needs `silenceWriteErrors`: the dead reader
+answers with EPIPE an event-loop turn *after* the failed write reports back, and an unhandled
+`error` event is an uncaught exception - a stack trace on stderr and exit 1, from the one
+module that must never make noise. The listener is a permanent no-op for that reason; a
+handler removed when the drain resolves is removed a turn too early. `printStatusline` is
+async and the launcher **awaits** it: exiting before the write drains truncates the bar,
+since stdout to a pipe is asynchronous on Windows.
 
 `readSession` takes its stream and timeout as parameters purely so this is testable without
 spawning a process; nothing but the tests passes them.
@@ -213,5 +221,7 @@ spawning a process; nothing but the tests passes them.
 `tests/gate/statusline.test.ts` covers the round trip that no single runtime can
 verify alone: `writeSnapshot` against a real gate DB, then `readSnapshot` and
 `render` from the `.mjs` side, plus the rejection rules, the animation, and the
-width invariant. The last case drives `readSession` over a `PassThrough` for the
-unclosed-pipe regression above.
+width invariant. The last two cases cover the exits above: `readSession` over a
+`PassThrough` for the unclosed pipe, the split payload and the cap, and a spawned
+renderer whose stdout is destroyed before it writes, which must still exit 0 with an
+empty stderr.
