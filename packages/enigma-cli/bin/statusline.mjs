@@ -292,32 +292,106 @@ export function render({ session, snapshot, columns = 80, frame = 0, nowSec = 0,
     return lines.join("\n");
 }
 
-/** Reads the piped session JSON, or null when nothing is piped in. */
-function readSession() {
-    if (process.stdin.isTTY) return null;
-    try {
-        return parseJson(readFileSync(0, "utf8"));
-    } catch {
-        return null;
-    }
+/**
+ * How long to wait for the harness to pipe in the session JSON before rendering
+ * without it. Only reached when nothing parseable ever arrives; a complete write
+ * resolves the read immediately, whether or not the pipe is then closed.
+ */
+const STDIN_TIMEOUT_MS = 2000;
+
+/** Hard bound on the drain that follows the write, so the caller always gets to exit. */
+const DRAIN_TIMEOUT_MS = 1000;
+
+/**
+ * Reads the piped session JSON, or null when nothing usable is piped in.
+ *
+ * Deliberately a streaming read rather than `readFileSync(0)`: that call blocks
+ * until EOF, so a harness that writes the session and leaves the pipe open leaves
+ * this process hung forever. It was observed leaking one orphaned renderer per
+ * session on Windows - each holding ~38 MB and a pipe handle until reboot - which
+ * is exactly the machine-wide pressure a status bar must never create.
+ *
+ * Three ways out, in the order they fire in practice: the buffer parses as JSON
+ * (the harness has written everything, close or no close), the pipe reaches EOF,
+ * or the timeout expires and the bar renders in its degraded form.
+ */
+export function readSession(stream = process.stdin, timeoutMs = STDIN_TIMEOUT_MS) {
+    return new Promise((resolve) => {
+        if (stream.isTTY) return resolve(null);
+        let buffer = "";
+        let settled = false;
+        const timer = setTimeout(() => finish(null), timeoutMs);
+        const finish = (value) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            resolve(value);
+        };
+        const parsed = () => {
+            try {
+                return parseJson(buffer);
+            } catch {
+                // A partial write is not valid JSON, so this only settles once the
+                // harness has finished writing the object.
+                return undefined;
+            }
+        };
+        try {
+            stream.setEncoding("utf8");
+            stream.on("data", (chunk) => {
+                buffer += chunk;
+                const value = parsed();
+                if (value !== undefined) finish(value);
+            });
+            stream.on("end", () => finish(parsed() ?? null));
+            stream.on("error", () => finish(null));
+        } catch {
+            finish(null);
+        }
+    });
 }
 
-/** Entry point for `enigma statusline`. Prints the bar and never throws. */
-export function printStatusline() {
+/**
+ * Writes the bar and resolves once it has drained, so the caller can exit.
+ *
+ * Destroying stdin is what releases the process: the harness may leave its end of
+ * the pipe open, and an open stdin keeps the event loop - and this process - alive
+ * for as long as it lasts. The timer covers the other half of the same problem, a
+ * stdout whose reader is already gone and whose drain callback never fires.
+ */
+function drain(text) {
+    return new Promise((resolve) => {
+        try {
+            process.stdin.destroy();
+        } catch { /* nothing was piped in */ }
+        const timer = setTimeout(resolve, DRAIN_TIMEOUT_MS);
+        const done = () => { clearTimeout(timer); resolve(); };
+        try {
+            process.stdout.write(text, done);
+        } catch {
+            done();
+        }
+    });
+}
+
+/** Entry point for `enigma statusline`. Prints the bar and never throws. Await it: it resolves when the write has drained and the process is free to exit. */
+export async function printStatusline() {
+    let text = "";
     try {
-        const session = readSession();
+        const session = await readSession();
         const cwd = session?.workspace?.current_dir || session?.cwd || process.cwd();
         const columns = Number(process.env.COLUMNS) || 80;
         const nowSec = Math.floor(Date.now() / 1000);
-        process.stdout.write(render({
+        text = render({
             session,
             snapshot: readSnapshot(cwd),
             columns,
             frame: nowSec,
             nowSec,
             color256: !process.env.NO_COLOR
-        }));
+        });
     } catch {
         // A status bar must never error or emit noise.
     }
+    await drain(text);
 }

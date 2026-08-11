@@ -171,9 +171,47 @@ Two writers, deliberately:
   explicit `enigma config statusline-refresh N` is the one moment where overwriting the
   value is what was asked for.
 
+## Reading the piped session (the orphan-process bug)
+
+The harness pipes the session JSON to the renderer's stdin. Reading it with
+`readFileSync(0, "utf8")` looks right and is not: that call blocks until **EOF**, so a
+harness that writes the session and then leaves its end of the pipe open hangs the
+renderer forever. Nothing recovers it - the process is stuck inside a synchronous read,
+so no timer, no `unref`, and no signal handler written in JS can fire.
+
+Measured on the author's Windows box: nine orphaned `enigma.mjs statusline` processes
+alive across a single day, each the child of a Claude session that had already exited,
+together holding 344 MB and 171 handles. They accumulate at roughly one per session and
+survive until reboot, which is why the symptom is "the machine gets laggy after a few long
+sessions" and why `/clear` does nothing for it - the orphans outlive the conversation.
+
+`readSession` is therefore a streaming read with three exits, in the order they fire in
+practice:
+
+1. **the buffer parses as JSON** - the harness has finished writing, whether or not it
+   closes the pipe. This is the one that matters: it keeps the full bar in the case that
+   used to hang, instead of degrading it.
+2. **EOF** - the ordinary path.
+3. **the timeout** (`STDIN_TIMEOUT_MS`, 2 s) - nothing parseable ever arrived, so the bar
+   renders without the session rather than waiting on a writer that is not coming.
+
+Parsing on every chunk is safe because a partial write of a JSON object is never itself
+valid JSON, so step 1 cannot settle early on a half-written payload.
+
+The exit needs the same care. `drain()` destroys stdin - an open stdin keeps the event loop,
+and therefore the process, alive for as long as the harness holds the pipe - and bounds the
+write with `DRAIN_TIMEOUT_MS` for the mirror case, a stdout whose reader is already gone and
+whose drain callback never fires. `printStatusline` is async and the launcher **awaits** it:
+exiting before the write drains truncates the bar, since stdout to a pipe is asynchronous on
+Windows.
+
+`readSession` takes its stream and timeout as parameters purely so this is testable without
+spawning a process; nothing but the tests passes them.
+
 ## Tests
 
 `tests/gate/statusline.test.ts` covers the round trip that no single runtime can
 verify alone: `writeSnapshot` against a real gate DB, then `readSnapshot` and
 `render` from the `.mjs` side, plus the rejection rules, the animation, and the
-width invariant.
+width invariant. The last case drives `readSession` over a `PassThrough` for the
+unclosed-pipe regression above.

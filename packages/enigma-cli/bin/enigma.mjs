@@ -31,7 +31,9 @@ import { ARCH, PLATFORM, packageVersion, pkgRoot } from "./platform.mjs";
 if (process.argv[2] === "statusline") {
     try {
         const { printStatusline } = await import("./statusline.mjs");
-        printStatusline();
+        // Awaited: the renderer reads the piped session asynchronously and resolves
+        // once its own write has drained. Exiting before that truncates the bar.
+        await printStatusline();
     } catch { /* a status bar must never error */ }
     process.exit(0);
 }

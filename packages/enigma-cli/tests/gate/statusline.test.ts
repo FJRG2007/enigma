@@ -10,6 +10,7 @@
  */
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { PassThrough } from "node:stream";
 import { test, expect, afterAll } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 
@@ -24,7 +25,7 @@ const { Paths } = await import("@/gate/paths");
 const { writeSnapshot } = await import("@/gate/daemon/snapshot");
 const { recordRun } = await import("@/gate/daemon/ledger");
 const { lastGateRun } = await import("@/gate-ledger");
-const { render, readSnapshot } = await import("../../bin/statusline.mjs");
+const { render, readSnapshot, readSession } = await import("../../bin/statusline.mjs");
 
 // Windows keeps a handle on SQLite's WAL files a moment after close, so a failed
 // assertion can leave the temp dir locked. Cleanup is best-effort, never a failure.
@@ -147,4 +148,31 @@ test("a run is recorded in the ledger the completion gate reads", () => {
     // Coverage belongs to one repository: another checkout gets none from this run.
     expect(lastGateRun(join(DIR, "other-repo"), paths.runLedgerFile())).toBeNull();
     db.close();
+});
+
+test("the session read never waits on a pipe the harness leaves open", async () => {
+    // The regression this locks: the renderer used to read stdin with readFileSync(0),
+    // which blocks until EOF. A harness that writes the session and keeps its end of the
+    // pipe open left the process hung forever - one orphaned renderer per session, each
+    // holding memory and a pipe handle until reboot.
+    const open = new PassThrough();
+    open.write(JSON.stringify({ model: { display_name: "Opus 5" } }));
+    expect(await readSession(open, 5000)).toEqual({ model: { display_name: "Opus 5" } });
+
+    // Nothing ever written and never closed: the bar renders without the session
+    // rather than waiting on a writer that is not coming.
+    const started = Date.now();
+    expect(await readSession(new PassThrough(), 50)).toBeNull();
+    expect(Date.now() - started).toBeLessThan(2000);
+
+    // EOF still settles it, with or without a payload, and junk is not guessed at.
+    const ended = new PassThrough();
+    ended.end(JSON.stringify({ cwd: "/tmp" }));
+    expect(await readSession(ended, 5000)).toEqual({ cwd: "/tmp" });
+    const empty = new PassThrough();
+    empty.end();
+    expect(await readSession(empty, 5000)).toBeNull();
+    const junk = new PassThrough();
+    junk.end("not json");
+    expect(await readSession(junk, 5000)).toBeNull();
 });
