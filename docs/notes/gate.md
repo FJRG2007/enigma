@@ -378,16 +378,20 @@ half needs `bun:sqlite` and is imported dynamically.
 - THE DOCUMENT STEP DIES THE SAME WAY, and the trigger is not the test suite's output. A
   policy-skill change (markdown only, no executable code) took it down with the identical
   `Autocompact is thrashing` after the agent had already reported its conclusion ("no
-  documentation gap"), because `assets/skills/frontend-policy/SKILL.md` alone is ~84 KB and any
-  agent that reads the changed files whole pays for it. Treat the thrash as a property of the
-  files in the diff rather than of one step: `--skip test,document` is the way past it, and the
-  skip belongs in the reported outcome because neither test evidence nor a docs check was
-  gathered.
+  documentation gap"), because `packages/enigma-cli/assets/skills/frontend-policy/SKILL.md` alone
+  is ~84 KB and any agent that reads the changed files whole pays for it. Treat the thrash as a
+  property of the files in the diff rather than of one step: `--skip test,document` is the way
+  past it, and the skip belongs in the reported outcome because neither test evidence nor a docs
+  check was gathered.
 - A FAILED RUN STRANDS ITS FIX COMMITS RATHER THAN LOSING THEM. Each `--action fix` round commits
-  into the run's isolated clone at `<gate home>/repos/<repo id>.git`, on that clone's `main`, and
-  only the `push` step brings them back - so a run that dies at `test` or `document` leaves the
-  working repo untouched with no reflog trace, and `axi status` reports a `head` git cannot
-  resolve. Recover them instead of redoing the work by hand: find the clone holding the SHA
-  (`for r in <gate home>/repos/*.git; do git --git-dir="$r" cat-file -t <sha> && echo "$r"; done`),
-  `git fetch <that path> main:refs/gate/roundN`, read the diff, then fast-forward. Four rounds of
-  review fixes were recovered this way across three failed runs of one change.
+  into the run's isolated clone at `<gate home>/repos/<repo id>.git`, on the run's own branch
+  (`commitAgentFixes` ends the round with `git update-ref refs/heads/<run branch>`), and only the
+  `push` step brings them back - so a run that dies at `test` or `document` leaves the working
+  repo untouched with no reflog trace, and `axi status` reports a `head` git cannot resolve.
+  Recover them instead of redoing the work by hand: `enigma gate init` already wired that clone
+  into the working repo as the `gate` remote, so `git fetch gate <run branch>:refs/gate/roundN`
+  from the working repo is the whole retrieval - read the diff, then fast-forward. Only when that
+  remote was removed or the working directory moved do you have to locate the clone yourself
+  (`for r in <gate home>/repos/*.git; do git --git-dir="$r" cat-file -t <sha> && echo "$r"; done`)
+  and fetch `<run branch>` from the path it prints. Four rounds of review fixes were recovered
+  this way across three failed runs of one change.
