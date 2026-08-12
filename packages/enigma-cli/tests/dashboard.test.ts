@@ -28,7 +28,7 @@ process.env.ENIGMA_PACKS_DIR = join(HOME, "packs");
 process.env.ENIGMA_HELIO_ASSETS = join(__dirname, "..", "..", "helio", "assets");
 
 const { startDashboardServer, dashboardUrl, runningDaemon, removeHostsEntry, restartDashboardDaemon } = await import("../src/dashboard");
-const { liveDashboard, stopDashboard, publishDashboard } = await import("../src/dashboard");
+const { liveDashboard, liveDashboardHealth, stopDashboard, publishDashboard } = await import("../src/dashboard");
 const { setEnigmaValue, readConfig } = await import("../src/config");
 const { recordStats } = await import("../src/compress/ccr");
 
@@ -488,6 +488,11 @@ test("liveDashboard confirms a server that really is serving", async () => {
         const health = await (await fetch(`http://127.0.0.1:${server.port}/health`)).json() as { service: string; pid: number; };
         expect(health.service).toBe("enigma-dashboard");
         expect(health.pid).toBe(process.pid);
+        // The version the server reports is what it is SERVING, not what the CLI is - that gap is
+        // how an updated CLI opens an old dashboard, so the caller gets it back to say so.
+        const withHealth = await liveDashboardHealth();
+        expect(withHealth?.rec.port).toBe(server.port);
+        expect(withHealth?.version).toBe("probe-version");
     } finally {
         stop();
         server.close();
@@ -502,7 +507,9 @@ test("a dashboard older than the service marker stays recognizable", async () =>
     // still listening on the port, which `stop` then reported as absent and `restart` could not
     // replace. Seen in the field as a 1.26.0 daemon whose newer routes all answered 404.
     const file = join(homedir(), ".enigma", "dashboard.json");
-    const serve = async (body: unknown): Promise<{ port: number; close: () => void; }> => {
+    // The probe leaves a keep-alive socket behind, and `close()` alone waits on it - so drop the
+    // idle connections and await the callback, or the handle outlives the test and stalls teardown.
+    const serve = async (body: unknown): Promise<{ port: number; close: () => Promise<void>; }> => {
         const port = await freePort();
         const server = createServer((req, res) => {
             if (req.url !== "/health") { res.writeHead(404).end(); return; }
@@ -510,7 +517,10 @@ test("a dashboard older than the service marker stays recognizable", async () =>
             res.end(JSON.stringify(body));
         });
         await new Promise<void>((ready) => server.listen(port, "127.0.0.1", ready));
-        return { port, close: () => server.close() };
+        return {
+            port,
+            close: () => new Promise<void>((done) => { server.closeAllConnections?.(); server.close(() => done()); }),
+        };
     };
     const record = (port: number): void => {
         mkdirSync(join(homedir(), ".enigma"), { recursive: true });
@@ -523,18 +533,35 @@ test("a dashboard older than the service marker stays recognizable", async () =>
         expect((await liveDashboard())?.port).toBe(old.port);
         expect(existsSync(file)).toBe(true);
     } finally {
-        old.close();
+        await old.close();
     }
 
     // The weaker evidence is still evidence: something else holding the port does not pass,
-    // so the record is cleared and no unrelated process can be signalled in its name.
-    const foreign = await serve({ status: "ok" });
+    // so the record is cleared and no unrelated process can be signalled in its name. A version
+    // that is present but empty is no evidence either.
+    for (const body of [{ status: "ok" }, { status: "ok", version: "" }]) {
+        const foreign = await serve(body);
+        try {
+            record(foreign.port);
+            expect(await liveDashboard()).toBeNull();
+            expect(existsSync(file)).toBe(false);
+        } finally {
+            await foreign.close();
+        }
+    }
+
+    // And the accommodation is scoped to the records that need it. A record WITH a beat was
+    // written by a server that names the service, so a body missing it is a foreign listener on a
+    // port the record no longer owns - one carrying no `pid` for the cross-check to contradict.
+    // Accepting it is how `stop` came to signal whatever process inherited the number.
+    const modern = await serve({ status: "ok", version: "1.26.0" });
+    const stop = publishDashboard({ pid: process.pid, port: modern.port, url: `http://localhost:${modern.port}`, startedAt: 1, kind: "daemon" });
     try {
-        record(foreign.port);
         expect(await liveDashboard()).toBeNull();
         expect(existsSync(file)).toBe(false);
     } finally {
-        foreign.close();
+        stop();
+        await modern.close();
     }
 });
 

@@ -1305,37 +1305,67 @@ function probeUrls(rec: DaemonRecord): string[] {
  * can pass for the dashboard. Same-machine callers also get the pid back, which catches the last
  * case: a recycled record pid while a DIFFERENT dashboard answers on that port.
  */
-async function probeDashboard(rec: DaemonRecord): Promise<boolean> {
+async function probeDashboard(rec: DaemonRecord): Promise<HealthBody | null> {
     for (const url of probeUrls(rec)) {
         try {
             const res = await fetch(url, { signal: AbortSignal.timeout(PROBE_MS) });
             if (!res.ok) continue;
             const body = await res.json() as HealthBody;
-            if (!identifiesDashboard(body)) continue;
-            return body.pid === undefined || body.pid === rec.pid;
+            if (!identifiesDashboard(body, rec)) continue;
+            // A dashboard answered, but on a pid the record does not name: a different one holds
+            // this port and the record is stale. Settled, so do not ask the next address.
+            if (body.pid !== undefined && body.pid !== rec.pid) return null;
+            return body;
         } catch { /* not answering on this address - try the next one */ }
     }
-    return false;
+    return null;
 }
 
-/** What `/health` answers, across every version that can still be running. */
+/** What `/health` answers, across every version that can still be running. Untrusted. */
 interface HealthBody { service?: string; status?: string; version?: string; pid?: number; }
 
 /**
- * Whether a health body identifies a dashboard.
+ * Whether a health body identifies the dashboard THIS record named.
  *
- * `service` is the modern proof and settles it whenever the field is present. A body
- * WITHOUT it is accepted on the weaker evidence it does carry, because the field is newer
- * than the oldest daemon that can still be up, and that daemon is precisely the one that
- * must stay reachable: it predates the heartbeat too, so its record has no `beat` and
- * `runningDaemon` passes it through for this probe to settle. Rejecting it here settled
- * nothing - it cleared the record of a server that was still listening, which left the port
- * held by a process `stop` then reported as absent and `restart` could not replace. Observed
- * in the field: a 1.26.0 daemon serving a dashboard whose newer routes all answered 404.
+ * `service` is the modern proof and settles it whenever the field is present. A body without it
+ * is weighed on the weaker evidence it does carry, but only for a record that predates the
+ * field - and the record itself says so, because `service` shipped alongside `beat`. A beatless
+ * record is therefore exactly the one whose server answers `{"status":"ok","version":"1.26.0"}`
+ * and nothing else, and the one that has to stay reachable: rejecting it settled nothing, it
+ * cleared the record of a server that was still listening, which left the port held by a process
+ * `stop` then reported as absent and `restart` could not replace. Observed in the field as a
+ * 1.26.0 daemon serving a dashboard whose newer routes all answered 404.
+ *
+ * A record WITH a beat gets no such benefit: the server that wrote it names the service, so a
+ * body missing it is a foreign listener on a port this record no longer owns. Accepting one
+ * would put the pid check back in the position of proving a negative - such a body carries no
+ * `pid` to contradict, so `stop` would signal whatever process inherited the number.
  */
-function identifiesDashboard(body: HealthBody): boolean {
+function identifiesDashboard(body: HealthBody, rec: DaemonRecord): boolean {
     if (body.service !== undefined) return body.service === HEALTH_SERVICE;
-    return body.status === "ok" && typeof body.version === "string";
+    if (rec.beat !== undefined) return false;
+    return body.status === "ok" && healthVersion(body) !== undefined;
+}
+
+/** The version `/health` named, or undefined if it named none. The body is untrusted JSON. */
+function healthVersion(body: HealthBody): string | undefined {
+    return typeof body.version === "string" && body.version.trim() !== "" ? body.version : undefined;
+}
+
+/** A confirmed dashboard: its record, plus the version the server itself reports serving. */
+export interface LiveDashboard { rec: DaemonRecord; version?: string; }
+
+/**
+ * The record ONLY if it still answers as this dashboard, with the version it answered - which is
+ * not necessarily this CLI's: an older server keeps the port until something restarts it, and its
+ * missing routes are what the caller has to explain. Undefined only if `/health` named no version.
+ */
+export async function liveDashboardHealth(): Promise<LiveDashboard | null> {
+    const rec = runningDaemon();
+    if (!rec) return null;
+    const health = await probeDashboard(rec);
+    if (!health) { clearDaemon(); return null; }
+    return { rec, version: healthVersion(health) };
 }
 
 /**
@@ -1345,11 +1375,7 @@ function identifiesDashboard(body: HealthBody): boolean {
  * a dashboard is there. Costs one loopback request.
  */
 export async function liveDashboard(): Promise<DaemonRecord | null> {
-    const rec = runningDaemon();
-    if (!rec) return null;
-    if (await probeDashboard(rec)) return rec;
-    clearDaemon();
-    return null;
+    return (await liveDashboardHealth())?.rec ?? null;
 }
 
 /**

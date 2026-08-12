@@ -2006,8 +2006,9 @@ async function runDashboardCli(version: string, opts: CliOptions): Promise<numbe
     // server on a different port. This asks the recorded port to answer rather than trusting
     // the record: a pid outlives its process only as a number, and announcing a dashboard on a
     // URL that answers nothing is worse than starting one. A phantom record is cleaned up here.
-    const running = await dash.liveDashboard();
-    if (running) {
+    const live = await dash.liveDashboardHealth();
+    if (live) {
+        const running = live.rec;
         // A live server cannot move to another interface, so --expose cannot be honoured here.
         // Say so instead of printing a loopback URL and exiting 0: with `dashboard: always`
         // (the documented server setup) that silently did nothing at all, which is the exact
@@ -2028,6 +2029,16 @@ async function runDashboardCli(version: string, opts: CliOptions): Promise<numbe
         try { token = dash.resolveBind().token; } catch { /* misconfigured bind: it is not serving anyway */ }
         console.log(`enigma dashboard already running ${tag}-> ${dash.tokenizedUrl(running.url, token)}`);
         console.log(background ? "Stop it with 'enigma dashboard stop'." : `Serving from another terminal (pid ${running.pid}); Ctrl+C there, or 'enigma dashboard stop'.`);
+        // A server keeps serving its own build until something restarts it, so an updated CLI
+        // opens the OLD dashboard: pages the new UI bundle asks for answer 404 and panels come
+        // up empty, with nothing on screen to say why. Name the mismatch rather than leaving the
+        // user to infer it from a broken panel; replacing it uninvited is not this command's call.
+        if (live.version && live.version !== version) {
+            console.error(`Note: it is serving ${live.version}, not this CLI's ${version}, so newer pages and API routes are missing until it restarts.`);
+            console.error(background && mode === "always"
+                ? "Restart it with 'enigma dashboard stop' (the 'always' daemon comes straight back on this version)."
+                : "Restart it with 'enigma dashboard stop', then 'enigma dashboard'.");
+        }
         // The tokenized URL, or a browser here lands on the "needs a token" banner. The
         // fragment never reaches the server, so this is the same link that was printed.
         openUrl(dash.tokenizedUrl(running.url, token));
