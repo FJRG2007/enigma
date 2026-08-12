@@ -1310,12 +1310,32 @@ async function probeDashboard(rec: DaemonRecord): Promise<boolean> {
         try {
             const res = await fetch(url, { signal: AbortSignal.timeout(PROBE_MS) });
             if (!res.ok) continue;
-            const body = await res.json() as { service?: string; pid?: number; };
-            if (body.service !== HEALTH_SERVICE) continue;
+            const body = await res.json() as HealthBody;
+            if (!identifiesDashboard(body)) continue;
             return body.pid === undefined || body.pid === rec.pid;
         } catch { /* not answering on this address - try the next one */ }
     }
     return false;
+}
+
+/** What `/health` answers, across every version that can still be running. */
+interface HealthBody { service?: string; status?: string; version?: string; pid?: number; }
+
+/**
+ * Whether a health body identifies a dashboard.
+ *
+ * `service` is the modern proof and settles it whenever the field is present. A body
+ * WITHOUT it is accepted on the weaker evidence it does carry, because the field is newer
+ * than the oldest daemon that can still be up, and that daemon is precisely the one that
+ * must stay reachable: it predates the heartbeat too, so its record has no `beat` and
+ * `runningDaemon` passes it through for this probe to settle. Rejecting it here settled
+ * nothing - it cleared the record of a server that was still listening, which left the port
+ * held by a process `stop` then reported as absent and `restart` could not replace. Observed
+ * in the field: a 1.26.0 daemon serving a dashboard whose newer routes all answered 404.
+ */
+function identifiesDashboard(body: HealthBody): boolean {
+    if (body.service !== undefined) return body.service === HEALTH_SERVICE;
+    return body.status === "ok" && typeof body.version === "string";
 }
 
 /**

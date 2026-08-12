@@ -5,6 +5,7 @@
  * Temp HOME (set BEFORE import) isolates ~/.enigma, resolved lazily per call.
  */
 import { join } from "node:path";
+import { createServer } from "node:http";
 import { tmpdir, homedir } from "node:os";
 import { spawn } from "node:child_process";
 import { test, expect, afterAll } from "bun:test";
@@ -490,6 +491,50 @@ test("liveDashboard confirms a server that really is serving", async () => {
     } finally {
         stop();
         server.close();
+    }
+});
+
+test("a dashboard older than the service marker stays recognizable", async () => {
+    // The bug this guards: /health gained `service` in the same era the record gained `beat`,
+    // so a daemon predating both writes a beatless record that runningDaemon deliberately
+    // passes through for this probe to settle - and the probe then rejected it for missing the
+    // very field its version never sent. Clearing the record settled nothing: it left a server
+    // still listening on the port, which `stop` then reported as absent and `restart` could not
+    // replace. Seen in the field as a 1.26.0 daemon whose newer routes all answered 404.
+    const file = join(homedir(), ".enigma", "dashboard.json");
+    const serve = async (body: unknown): Promise<{ port: number; close: () => void; }> => {
+        const port = await freePort();
+        const server = createServer((req, res) => {
+            if (req.url !== "/health") { res.writeHead(404).end(); return; }
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify(body));
+        });
+        await new Promise<void>((ready) => server.listen(port, "127.0.0.1", ready));
+        return { port, close: () => server.close() };
+    };
+    const record = (port: number): void => {
+        mkdirSync(join(homedir(), ".enigma"), { recursive: true });
+        writeFileSync(file, JSON.stringify({ pid: process.pid, port, url: `http://localhost:${port}`, startedAt: 1 }));
+    };
+
+    const old = await serve({ status: "ok", version: "1.26.0" });
+    try {
+        record(old.port);
+        expect((await liveDashboard())?.port).toBe(old.port);
+        expect(existsSync(file)).toBe(true);
+    } finally {
+        old.close();
+    }
+
+    // The weaker evidence is still evidence: something else holding the port does not pass,
+    // so the record is cleared and no unrelated process can be signalled in its name.
+    const foreign = await serve({ status: "ok" });
+    try {
+        record(foreign.port);
+        expect(await liveDashboard()).toBeNull();
+        expect(existsSync(file)).toBe(false);
+    } finally {
+        foreign.close();
     }
 });
 
