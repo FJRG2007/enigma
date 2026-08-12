@@ -5,14 +5,17 @@
  * removed and unrelated keys survive. Temp HOME (set BEFORE import) isolates the
  * global config files the deploy writes to.
  */
-import { test, expect, afterAll } from "bun:test";
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { test, expect, afterAll } from "bun:test";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, rmSync } from "node:fs";
 
 const HOME = mkdtempSync(join(tmpdir(), "enigma-mcp-deploy-"));
 process.env.USERPROFILE = HOME;
 process.env.HOME = HOME;
+// Kimi's paths resolve through ENIGMA_CONFIG_HOME (see kimi.ts), so pin it here too: without
+// it this file would inherit whatever temp dir a test file that ran earlier left behind.
+process.env.ENIGMA_CONFIG_HOME = HOME;
 
 const { applyMcpForAgent, applyMcpForAccount, applyMcpToggle } = await import("../src/mcp-deploy");
 const { setEnigmaValue } = await import("../src/config");
@@ -113,10 +116,11 @@ test("compress toggle applies immediately, only to tools with an existing config
     const prev = process.env.USERPROFILE;
     process.env.USERPROFILE = home2;
     process.env.HOME = home2;
+    process.env.ENIGMA_CONFIG_HOME = home2;
     try {
         const claudeCfg = join(home2, ".claude.json");
         writeFileSync(claudeCfg, JSON.stringify({ numStartups: 1 }));   // claude is used
-        // codex/opencode have NO config here -> an enable must not create them.
+        // codex/opencode/kimi have NO config here -> an enable must not create them.
         setEnigmaValue("compress", true, "global");
         const on = applyMcpToggle("global");
         expect(on).toEqual(["claude"]);
@@ -130,6 +134,7 @@ test("compress toggle applies immediately, only to tools with an existing config
     } finally {
         process.env.USERPROFILE = prev;
         process.env.HOME = prev;
+        process.env.ENIGMA_CONFIG_HOME = prev;
         rmSync(home2, { recursive: true, force: true });
     }
 });

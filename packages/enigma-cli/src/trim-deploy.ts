@@ -20,6 +20,7 @@
  */
 
 import { homedir } from "node:os";
+import { kimiHome } from "./kimi";
 import { join, dirname } from "node:path";
 import { applyKimiHook } from "./kimi-hooks";
 import { applyClaudeHook } from "./claude-hooks";
@@ -116,9 +117,9 @@ function opencodeGlobalConfig(): string {
     return join(homedir(), ".config", "opencode");
 }
 
-/** Global Kimi config.toml for the default account. */
+/** Global Kimi config.toml for the default account (kimiHome honors ENIGMA_CONFIG_HOME). */
 function kimiGlobalConfig(): string {
-    return join(homedir(), ".kimi-code", "config.toml");
+    return join(kimiHome(), "config.toml");
 }
 
 /**

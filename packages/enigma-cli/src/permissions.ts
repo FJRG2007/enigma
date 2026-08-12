@@ -20,7 +20,7 @@ import { AGENTS } from "./agents";
 import * as p from "@clack/prompts";
 import type { Agent } from "./agents";
 import { isDir, readJson } from "./util";
-import { mirrorKimiTrust } from "./kimi";
+import { kimiHome, mirrorKimiTrust } from "./kimi";
 import { readConfig, setBypassDisabled } from "./config";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { enableClaudeBypass, getClaudeBypass, mirrorClaudeSettings, mirrorClaudeTrust, setClaudeBypass } from "./claude";
@@ -218,7 +218,10 @@ function disableCodexBypass(dryRun: boolean): BypassWrite {
 
 /** Kimi Code's user-level config file (the project-local local.toml has no permission mode). */
 function kimiConfigPath(): string {
-    return join(homedir(), ".kimi-code", "config.toml");
+    // Resolved through kimiHome() rather than homedir() directly: it is the single source of
+    // truth for Kimi's data root, and it honors ENIGMA_CONFIG_HOME the way agents.ts does - so
+    // a test can isolate it. bun on Linux does not reflect a reassigned $HOME via os.homedir().
+    return join(kimiHome(), "config.toml");
 }
 
 /** True when Kimi's config starts sessions in the auto-approving `yolo` mode. */

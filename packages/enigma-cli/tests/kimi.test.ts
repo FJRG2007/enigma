@@ -12,6 +12,11 @@ import { test, expect, afterAll } from "bun:test";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 
 const HOME = mkdtempSync(join(tmpdir(), "enigma-kimi-"));
+// ENIGMA_CONFIG_HOME is what kimi.ts resolves the data root against, and it is the only one
+// that holds on every runtime: bun on Linux does not reflect a reassigned $HOME through
+// os.homedir(), so a test that set HOME alone passed on Windows and failed in CI.
+const priorConfigHome = process.env.ENIGMA_CONFIG_HOME;
+process.env.ENIGMA_CONFIG_HOME = HOME;
 process.env.USERPROFILE = HOME;
 process.env.HOME = HOME;
 
@@ -19,7 +24,13 @@ const { encodeWorkDirKey, kimiTrustPath, trustKimiWorkspace, isKimiWorkspaceTrus
 const { applyKimiHook } = await import("../src/kimi-hooks");
 const { applyKimiTrimHook } = await import("../src/trim-deploy");
 
-afterAll(() => rmSync(HOME, { recursive: true, force: true }));
+afterAll(() => {
+    // Every test file in this repo points the env at its own temp dir on import, so whichever
+    // ran last would otherwise decide where a LATER file resolves its paths.
+    if (priorConfigHome === undefined) delete process.env.ENIGMA_CONFIG_HOME;
+    else process.env.ENIGMA_CONFIG_HOME = priorConfigHome;
+    rmSync(HOME, { recursive: true, force: true });
+});
 
 test("encodeWorkDirKey matches the key Kimi Code writes itself", () => {
     // Observed: ~/.kimi-code/workspace-trust/wd_portfolio_935eec9160da for this directory.
@@ -109,6 +120,7 @@ test("permission bypass writes Kimi's yolo mode and removes it again", async () 
     expect(BYPASS_GLOBAL_ONLY.kimi).toBe("~/.kimi-code/config.toml");
 
     const config = join(HOME, ".kimi-code", "config.toml");
+    mkdirSync(join(HOME, ".kimi-code"), { recursive: true });
     writeFileSync(config, "default_model = \"kimi-code/k3\"\n");
     expect(getBypass("kimi", "global")).toBe(false);
     expect(setBypass("kimi", "global", true, false)?.changed).toBe(true);

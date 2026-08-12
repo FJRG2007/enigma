@@ -22,6 +22,7 @@
 
 import { join } from "node:path";
 import { homedir } from "node:os";
+import { kimiHome } from "./kimi";
 import { readConfig } from "./config";
 import { readJson, resolveBin } from "./util";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -52,8 +53,10 @@ function mcpPath(tool: string, scope: Scope): string | null {
                 ? join(homedir(), ".config", "opencode", "opencode.json")
                 : join(process.cwd(), "opencode.json");
         case "kimi":
+            // Through kimiHome(), the single source of truth for Kimi's data root, so every
+            // kimi path in the CLI resolves the same way (and honors ENIGMA_CONFIG_HOME).
             return scope === "global"
-                ? join(homedir(), ".kimi-code", "mcp.json")
+                ? join(kimiHome(), "mcp.json")
                 : join(process.cwd(), ".kimi-code", "mcp.json");
         default:
             return null;
