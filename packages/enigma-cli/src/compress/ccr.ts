@@ -9,8 +9,8 @@
  * test can point HOME/USERPROFILE elsewhere.
  */
 
-import { homedir } from "node:os";
 import { join } from "node:path";
+import { homedir } from "node:os";
 import { createHash } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 
@@ -145,7 +145,7 @@ function foldSource(prev: SourceStats | undefined, tokensBefore: number, tokensA
 
 /**
  * Fold one compress call's token counts into the cumulative stats file, attributing
- * it to `source` (the MCP client name, e.g. "claude-code"/"opencode"/"codex", or "cli"
+ * it to `source` (the MCP client name, e.g. "claude-code"/"opencode"/"codex"/"kimi-code", or "cli"
  * for the direct CLI). The grand totals and the per-source breakdown advance together.
  */
 export function recordStats(tokensBefore: number, tokensAfter: number, source: string = UNKNOWN_SOURCE, type: string = UNKNOWN_SOURCE): void {

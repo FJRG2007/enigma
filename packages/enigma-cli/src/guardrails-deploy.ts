@@ -11,6 +11,12 @@
  *    feeds to the model.
  *  - opencode: an auto-loaded plugin whose tool.execute.after pipes the edited file to
  *    the same command and appends the findings to the tool output the model sees.
+ *  - Kimi Code: skipped by capability. It has a PostToolUse hook, but that event is
+ *    observation-only there - "they fire and forget; the main flow is unaffected regardless
+ *    of what the script returns" - so the findings would reach nothing, and the only
+ *    blockable per-tool event (PreToolUse) fires before the write, when the file on disk is
+ *    still the old one. Wiring it would spend a process per edit to produce silence. Kimi
+ *    still gets the trim hook, which needs no feedback channel (see trim-deploy.ts).
  *
  * Node-builtins + config/util only (no engine import) so it stays cheap to load and free
  * of cycles - it is the deploy counterpart of the self-contained guardrails.ts engine.

@@ -1,7 +1,7 @@
 /**
  * MCP deployment: with `compress` on, the enigma MCP server is registered in each
  * tool's own config format (claude JSON mcpServers, codex [mcp_servers.enigma]
- * TOML, opencode mcp JSON) while preserving other keys; with it off the entry is
+ * TOML, opencode mcp JSON, kimi JSON mcpServers) while preserving other keys; with it off the entry is
  * removed and unrelated keys survive. Temp HOME (set BEFORE import) isolates the
  * global config files the deploy writes to.
  */
@@ -62,6 +62,28 @@ test("opencode account: writes mcp.enigma into the account opencode.json", () =>
     const cfg = readJson(join(dir, "xdg-config", "opencode", "opencode.json"));
     expect(cfg.mcp.enigma.type).toBe("local");
     expect(cfg.mcp.enigma.command).toEqual(expect.arrayContaining(["mcp"]));
+});
+
+test("kimi global: registers mcpServers.enigma in mcp.json, stdio-shaped", () => {
+    const file = join(HOME, ".kimi-code", "mcp.json");
+    mkdirSync(join(HOME, ".kimi-code"), { recursive: true });
+    writeFileSync(file, JSON.stringify({ mcpServers: { other: { url: "https://mcp.example.com/mcp" } } }));
+    setEnigmaValue("compress", true, "global");
+
+    expect(applyMcpForAgent("kimi", "global")).toBe(true);
+    const cfg = readJson(file);
+    expect(cfg.mcpServers.other.url).toBe("https://mcp.example.com/mcp"); // other server preserved
+    expect(cfg.mcpServers.enigma.args).toEqual(expect.arrayContaining(["mcp"]));
+    // Kimi infers stdio from `command`; a `type` field is outside its schema.
+    expect(cfg.mcpServers.enigma.type).toBeUndefined();
+    expect(applyMcpForAgent("kimi", "global")).toBe(false); // idempotent
+});
+
+test("kimi account: writes mcp.json inside the account data root", () => {
+    const dir = join(HOME, ".enigma", "kimi", "work");
+    setEnigmaValue("compress", true, "global");
+    expect(applyMcpForAccount("kimi", dir)).toBe(true);
+    expect(readJson(join(dir, "mcp.json")).mcpServers.enigma.command).toBeTruthy();
 });
 
 test("turning compress off removes the entry but keeps other config", () => {

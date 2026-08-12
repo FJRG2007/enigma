@@ -10,7 +10,7 @@ How to exercise the CLI safely without disturbing your real agent setup.
 npm run enigma -- install --local --all --yes --dry-run
 ```
 
-- `--all` targets every supported agent (claude, codex, opencode) regardless of
+- `--all` targets every supported agent (claude, codex, opencode, kimi) regardless of
   what is detected, so the preview always lists all three.
 - `--local` scopes to the current directory instead of your home config.
 - `--yes` runs non-interactively.

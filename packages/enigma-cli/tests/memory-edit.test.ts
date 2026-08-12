@@ -20,14 +20,14 @@ const PROJECT = mkdtempSync(join(tmpdir(), "enigma-memory-proj-"));
 
 afterAll(() => { rmSync(HOME, { recursive: true, force: true }); rmSync(PROJECT, { recursive: true, force: true }); });
 
-test("project memory groups dedupe by file (claude=CLAUDE.md, codex+opencode share AGENTS.md)", () => {
+test("project memory groups dedupe by file (claude=CLAUDE.md, the AGENTS.md agents share one)", () => {
     const groups = listMemoryGroups(PROJECT);
     const claude = groups.find((g) => g.file === "CLAUDE.md");
     const agents = groups.find((g) => g.file === "AGENTS.md");
     expect(claude).toBeTruthy();
     expect(agents).toBeTruthy();
-    // codex and opencode both read <project>/AGENTS.md, so the file appears once with both.
-    expect(agents!.agents.map((a) => a.name).sort()).toEqual(["codex", "opencode"]);
+    // codex, kimi and opencode all read <project>/AGENTS.md, so the file appears once with all of them.
+    expect(agents!.agents.map((a) => a.name).sort()).toEqual(["codex", "kimi", "opencode"]);
     expect(claude!.deployed).toBe(false); // nothing written yet
 });
 
@@ -55,9 +55,9 @@ test("save marks the file edited; read returns it; reset restores the managed ve
     expect(restored.managed).toBe(true);
 });
 
-test("a shared AGENTS.md edit reports both agent labels", () => {
+test("a shared AGENTS.md edit reports every agent that reads it", () => {
     const res = saveMemoryGroup("codex", "# shared agents memory\n", PROJECT);
     expect(res.ok).toBe(true);
-    expect(res.labels.sort()).toEqual(["OpenAI Codex", "OpenCode"]);
+    expect(res.labels.sort()).toEqual(["Kimi Code", "OpenAI Codex", "OpenCode"]);
     expect(existsSync(join(PROJECT, "AGENTS.md"))).toBe(true);
 });

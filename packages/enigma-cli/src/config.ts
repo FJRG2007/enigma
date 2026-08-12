@@ -129,6 +129,14 @@ export interface EnigmaConfig {
      * exists to make you review unfamiliar code before an agent runs in it. See claude.ts.
      */
     claudeTrust: boolean;
+    /**
+     * Pre-answer Kimi Code's "Trust this folder?" prompt (default on, Kimi Code only). Same
+     * intent/effect split as `claudeTrust`, with one difference forced by the client: Kimi
+     * keys trust by exact directory and inherits nothing from parents, so the effect is a
+     * trust document written for the directory being opened, on every launch and sync,
+     * rather than one blanket entry. See kimi.ts.
+     */
+    kimiTrust: boolean;
     /** Fetch newer skills from the GitHub repo (install/update) without a package update. */
     remoteSkills: boolean;
     /** On update, overwrite (default) or keep a skill the user edited locally. */
@@ -351,7 +359,7 @@ export interface EnigmaConfig {
  */
 export const CONFIG_DEFAULTS: EnigmaConfig = {
     commitEmoji: true, updateNotifier: true, fullscreen: true, parallelSubagents: false, outputStyle: "off", minimalCode: "full", logoColorPolicy: "ask",
-    autoSync: true, statusline: true, statuslineRefresh: 10, claudeTrust: true, remoteSkills: true, skillUpdatePolicy: "overwrite", permissionBypass: true, autoLint: false, guardrails: true, trim: true, verify: true, verifyCommand: "", compress: false, codeGraph: false, gate: true, dashboard: "off", tokenPrice: 0, tokenSpeed: 0, usageStats: false, recall: false, recallLlm: true, recallProvider: "claude-local", recallModel: "", recallApiBase: "", recallApiKey: "", proxy: false, usageApi: false, promptSecretGuard: false, promptSecretMode: "redact",
+    autoSync: true, statusline: true, statuslineRefresh: 10, claudeTrust: true, kimiTrust: true, remoteSkills: true, skillUpdatePolicy: "overwrite", permissionBypass: true, autoLint: false, guardrails: true, trim: true, verify: true, verifyCommand: "", compress: false, codeGraph: false, gate: true, dashboard: "off", tokenPrice: 0, tokenSpeed: 0, usageStats: false, recall: false, recallLlm: true, recallProvider: "claude-local", recallModel: "", recallApiBase: "", recallApiKey: "", proxy: false, usageApi: false, promptSecretGuard: false, promptSecretMode: "redact",
     resourceCap: 60, lowMemoryCap: 80,
     planSessionLimit: 0, planWeeklyLimit: 0, planWeeklySonnetLimit: 0, planWeeklyOpusLimit: 0, planWeeklyReset: "mon 00:00",
     dashboardLive: true, dashboardPort: 0, dashboardBind: "loopback", dashboardBindAddress: "", apiPort: 8000, apiAccount: "", apiProfile: "", apiPack: "", toolPaths: {}, bypassDisabled: [], discardedSkills: [], skillAgentsOff: {}, packs: [], packAccounts: {}, gateProtectedBranches: [],

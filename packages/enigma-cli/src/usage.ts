@@ -225,9 +225,9 @@ const RECENT_SESSIONS = 20;
 
 /**
  * Which tools enigma can read local token usage for. Only Claude Code writes a local
- * per-message usage transcript; Codex and OpenCode do not expose one we can read, so they
- * are reported as unavailable rather than silently omitted (never faked). A reader is added
- * here if/when their local format is verified.
+ * per-message usage transcript; Codex, OpenCode and Kimi Code do not expose one we can read,
+ * so they are reported as unavailable rather than silently omitted (never faked). A reader is
+ * added here if/when their local format is verified.
  */
 function providerCoverage(accountCount: number): ProviderCoverage[] {
     const opencodeStore = existsSync(join(homedir(), ".local", "share", "opencode")) || existsSync(join(homedir(), ".config", "opencode", "storage"));
@@ -235,6 +235,9 @@ function providerCoverage(accountCount: number): ProviderCoverage[] {
         { tool: "claude", label: "Claude Code", available: true, note: `${accountCount} account${accountCount === 1 ? "" : "s"} - local transcripts` },
         { tool: "codex", label: "Codex", available: false, note: "no local token-usage store" },
         { tool: "opencode", label: "OpenCode", available: false, note: opencodeStore ? "store present; usage reader not yet wired" : "no local token-usage store" },
+        // Kimi keeps a per-session wire log under ~/.kimi-code/sessions, but its record shape
+        // is undocumented, so no token figures are read from it rather than guessed.
+        { tool: "kimi", label: "Kimi Code", available: false, note: existsSync(join(homedir(), ".kimi-code", "sessions")) ? "sessions present; usage reader not yet wired" : "no local token-usage store" },
     ];
 }
 

@@ -12,8 +12,11 @@
  *    exits 2 with a compact stderr, which Claude feeds to the model.
  *  - opencode: an auto-loaded plugin in the plugins dir whose tool.execute.after
  *    runs the same runner and appends the findings to the tool output the model sees.
+ *  - Kimi Code: a PostToolUse hook in config.toml (matcher Write|Edit). That event is
+ *    observation-only there, so the auto-FIX lands (which is the point) but the leftover
+ *    findings do not reach the model - unlike the other two, where they do.
  *
- * One runner (~/.enigma/hooks/lint-hook.mjs) serves both: it fixes the file in place
+ * One runner (~/.enigma/hooks/lint-hook.mjs) serves all three: it fixes the file in place
  * and prints remaining findings to stderr. It resolves the linter from the managed
  * install and no-ops cleanly until that install lands (self-healing).
  *
@@ -22,9 +25,10 @@
  */
 
 import { homedir } from "node:os";
-import { spawn, spawnSync } from "node:child_process";
+import { applyKimiHook } from "./kimi-hooks";
 import { join, dirname, basename } from "node:path";
 import { isDir, readJson, isOffline } from "./util";
+import { spawn, spawnSync } from "node:child_process";
 import { readConfig, setEnigmaToggle } from "./config";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 
@@ -211,6 +215,20 @@ function opencodeGlobalConfig(): string {
     return join(homedir(), ".config", "opencode");
 }
 
+/** Global Kimi config.toml for the default account. */
+function kimiGlobalConfig(): string {
+    return join(homedir(), ".kimi-code", "config.toml");
+}
+
+/**
+ * Add (on) or remove (off) the enigma PostToolUse lint hook in a Kimi config.toml,
+ * preserving every other hook and setting. Returns true when the file changed.
+ */
+export function applyKimiLintHook(configPath: string, on: boolean): boolean {
+    const hook = { event: "PostToolUse", matcher: "Write|Edit", command: `node "${LINT_RUNNER_PATH}"`, timeout: 30 };
+    return applyKimiHook(configPath, "lint-hook.mjs", hook, on) === "changed";
+}
+
 /**
  * Re-assert the global wiring to match the current toggle: write the runner and add
  * or remove the Claude hook and opencode plugin. Called on install and on toggle.
@@ -221,6 +239,7 @@ export function applyLintWiring(): void {
     if (on) { writeRunner(); spawnLinterInstall(); }
     applyClaudeLintHook(claudeGlobalSettings(), on);
     applyOpencodePlugin(opencodeGlobalConfig(), on);
+    applyKimiLintHook(kimiGlobalConfig(), on);
 }
 
 /**
@@ -233,6 +252,7 @@ export function mirrorLintWiring(toolName: string, accountDir: string): void {
     if (on) writeRunner();
     if (toolName === "claude") applyClaudeLintHook(join(accountDir, "settings.json"), on);
     else if (toolName === "opencode") applyOpencodePlugin(join(accountDir, "xdg-config", "opencode"), on);
+    else if (toolName === "kimi") applyKimiLintHook(join(accountDir, "config.toml"), on);
 }
 
 /**

@@ -1,6 +1,6 @@
 /**
  * Per-agent adapters for the local API server. Each coding agent (Claude Code, Codex,
- * OpenCode) has a different headless invocation and output format, so an adapter isolates
+ * OpenCode, Kimi Code) has a different headless invocation and output format, so an adapter isolates
  * "how to run it" and "how to read its output" behind one interface. The API server routes
  * every request to an adapter by the request's `model` field, so a single server can back
  * several agents at once (e.g. `model: "claude-sonnet-5"` -> Claude Code, `model: "codex"`
@@ -9,9 +9,10 @@
  * VERIFICATION STATUS: the Claude Code adapter is verified end-to-end against the real CLI.
  * The Codex adapter follows the documented `codex exec --json` ThreadEvent schema; the
  * OpenCode adapter uses `opencode run` plain-text output (its JSON event schema is not
- * publicly documented, and plain stdout is the reliable, honest surface). Both non-Claude
- * adapters are wired from documentation and may need a flag tweak once verified on a machine
- * that has them installed - keep that caveat until confirmed live.
+ * publicly documented, and plain stdout is the reliable, honest surface). The Kimi adapter's
+ * flags and line schema were read off the shipped client (kimi 0.35.0 print writer) rather
+ * than guessed, but it has not been run end-to-end here. All three non-Claude adapters may
+ * need a flag tweak once verified live - keep that caveat until confirmed.
  */
 import { resolveBin } from "./util";
 import { readConfig } from "./config";
@@ -223,7 +224,49 @@ const opencodeAdapter: AgentAdapter = {
     },
 };
 
-const ADAPTERS: AgentAdapter[] = [claudeAdapter, codexAdapter, opencodeAdapter];
+// --- Kimi Code (`kimi -p --output-format stream-json`) ----------------------
+
+/**
+ * Parse one Kimi Code `--output-format stream-json` line into a normalized event.
+ *
+ * Kimi's print writer emits OpenAI-shaped chat messages: an `assistant` message per flushed
+ * block (`content`, plus `tool_calls` when the model called a tool), a `tool` message per
+ * result, and `meta` messages for out-of-band notices. The session id arrives in the
+ * `session.resume_hint` meta line written at the end of every run, which is the only place
+ * the stream carries it. No message carries token usage, so the server's estimate stands.
+ */
+export function parseKimiLine(line: string): AgentEvent | null {
+    const trimmed = line.trim();
+    if (!trimmed) return null;
+    let msg: Record<string, unknown>;
+    try { msg = JSON.parse(trimmed); } catch { return null; }
+    const role = msg.role as string | undefined;
+    if (role === "assistant" && typeof msg.content === "string" && msg.content) {
+        return { kind: "text", text: msg.content };
+    }
+    if (role === "meta" && msg.type === "session.resume_hint") {
+        return { kind: "init", sessionId: typeof msg.session_id === "string" ? msg.session_id : null, model: null };
+    }
+    return null;
+}
+
+const kimiAdapter: AgentAdapter = {
+    tool: "kimi",
+    models: ["kimi"],
+    mode: "stream-json",
+    build(prompt, opts) {
+        // Print mode already runs under the `auto` permission policy, and Kimi rejects
+        // `--prompt` combined with `--yolo`/`--auto`, so there is no bypass flag to pass here.
+        const args = ["-p", opts.system ? `${opts.system}\n\n${prompt}` : prompt, "--output-format", "stream-json"];
+        const model = stripToolPrefix(opts.model, "kimi");
+        if (model && model !== "kimi") args.push("-m", model);
+        if (opts.sessionId) args.push("--session", opts.sessionId);
+        return { args, stdin: null };
+    },
+    parseLine: parseKimiLine,
+};
+
+const ADAPTERS: AgentAdapter[] = [claudeAdapter, codexAdapter, opencodeAdapter, kimiAdapter];
 
 /** All adapters, keyed by tool name. */
 export function allAdapters(): AgentAdapter[] {

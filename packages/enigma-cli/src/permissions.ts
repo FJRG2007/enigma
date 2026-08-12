@@ -2,7 +2,8 @@
  * Permission-bypass configuration across agents. Optionally disables each
  * coding agent's per-action approval prompts by writing its native config:
  * Claude Code (settings.json `permissions.defaultMode`), Codex (config.toml
- * `approval_policy`), opencode (opencode.json `permission`).
+ * `approval_policy`), opencode (opencode.json `permission`), Kimi Code
+ * (config.toml `default_permission_mode`).
  *
  * Bypassing approvals is a deliberate least-privilege downgrade. It is ON by
  * default for every supported agent on install (the `permissionBypass` config
@@ -13,18 +14,30 @@
  * `--no-bypass`. Every enable is logged loudly since approval prompts go off.
  */
 
-import { homedir } from "node:os";
 import { join } from "node:path";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import * as p from "@clack/prompts";
+import { homedir } from "node:os";
 import { AGENTS } from "./agents";
-import { isDir, readJson } from "./util";
-import { readConfig, setBypassDisabled } from "./config";
-import { enableClaudeBypass, getClaudeBypass, mirrorClaudeSettings, mirrorClaudeTrust, setClaudeBypass } from "./claude";
+import * as p from "@clack/prompts";
 import type { Agent } from "./agents";
+import { isDir, readJson } from "./util";
+import { mirrorKimiTrust } from "./kimi";
+import { readConfig, setBypassDisabled } from "./config";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { enableClaudeBypass, getClaudeBypass, mirrorClaudeSettings, mirrorClaudeTrust, setClaudeBypass } from "./claude";
 
 /** Agents that expose a permission-bypass switch. */
-export const BYPASS_SUPPORTED = ["claude", "codex", "opencode"];
+export const BYPASS_SUPPORTED = ["claude", "codex", "opencode", "kimi"];
+
+/**
+ * Agents whose bypass has no project-local form, mapped to the single file it is
+ * written to: Codex reads only ~/.codex/config.toml, and Kimi's project-local
+ * .kimi-code/local.toml holds workspace dirs only - the permission mode lives in the
+ * user-level config.toml. A local write would report success and change nothing.
+ */
+export const BYPASS_GLOBAL_ONLY: Record<string, string> = {
+    codex: "~/.codex/config.toml",
+    kimi: "~/.kimi-code/config.toml",
+};
 
 interface BypassWrite { path: string; changed: boolean; }
 
@@ -93,6 +106,7 @@ function enableFor(name: string, scope: "global" | "local", dryRun: boolean): By
         case "claude": return enableClaudeBypass(scope, dryRun);
         case "codex": return enableCodexBypass(dryRun);
         case "opencode": return enableOpencodeBypass(scope, dryRun);
+        case "kimi": return enableKimiBypass(dryRun);
         default: return null;
     }
 }
@@ -103,6 +117,7 @@ export function getBypass(name: string, scope: "global" | "local"): boolean {
         case "claude": return getClaudeBypass(scope);
         case "codex": return getCodexBypass();
         case "opencode": return getOpencodeBypass(scope);
+        case "kimi": return getKimiBypass();
         default: return false;
     }
 }
@@ -122,6 +137,7 @@ export function setBypass(name: string, scope: "global" | "local", on: boolean, 
         case "claude": return setClaudeBypass(scope, on, dryRun);
         case "codex": return on ? enableCodexBypass(dryRun) : disableCodexBypass(dryRun);
         case "opencode": return on ? enableOpencodeBypass(scope, dryRun) : disableOpencodeBypass(scope, dryRun);
+        case "kimi": return on ? enableKimiBypass(dryRun) : disableKimiBypass(dryRun);
         default: return null;
     }
 }
@@ -131,9 +147,10 @@ export function setBypass(name: string, scope: "global" | "local", on: boolean, 
  * config into a managed account's config dir, so `enigma <tool> <account>`
  * behaves like the default account: Claude's settings.json knobs (attribution,
  * bypass, statusline) plus its workspace trust (a second file, `.claude.json`),
- * Codex's approval_policy/sandbox_mode in config.toml, and opencode's "*" permission
- * catch-all in opencode.json. Mirrors presence AND absence (turning a knob off
- * propagates); every other account setting is kept.
+ * Codex's approval_policy/sandbox_mode in config.toml, opencode's "*" permission
+ * catch-all in opencode.json, and Kimi's default_permission_mode in config.toml.
+ * Mirrors presence AND absence (turning a knob off propagates); every other account
+ * setting is kept.
  */
 export function mirrorAccountSettings(toolName: string, accountDir: string): void {
     switch (toolName) {
@@ -142,7 +159,7 @@ export function mirrorAccountSettings(toolName: string, accountDir: string): voi
             mirrorClaudeTrust(accountDir);
             return;
         case "codex":
-            mirrorCodexConfig(accountDir);
+            mirrorTomlKeys(codexConfigPath(), join(accountDir, "config.toml"), ["approval_policy", "sandbox_mode"]);
             return;
         case "opencode": {
             const path = join(accountDir, "xdg-config", "opencode", "opencode.json");
@@ -150,20 +167,26 @@ export function mirrorAccountSettings(toolName: string, accountDir: string): voi
             else disableOpencodeBypassAt(path, false);
             return;
         }
+        case "kimi":
+            mirrorTomlKeys(kimiConfigPath(), join(accountDir, "config.toml"), ["default_permission_mode"]);
+            mirrorKimiTrust(accountDir);
+            return;
         default:
             return;
     }
 }
 
-/** Mirror the bypass keys of ~/.codex/config.toml into an account's config.toml. */
-function mirrorCodexConfig(accountDir: string): void {
-    const global = existsSync(join(homedir(), ".codex", "config.toml"))
-        ? readFileSync(join(homedir(), ".codex", "config.toml"), "utf8")
-        : "";
-    const path = join(accountDir, "config.toml");
+/**
+ * Mirror top-level TOML keys from a tool's global config into an account's config,
+ * presence AND absence: a key missing globally is removed from the account file.
+ * Every other key in the account config is preserved, and an account config that
+ * would end up empty is never created.
+ */
+function mirrorTomlKeys(globalPath: string, path: string, keys: string[]): void {
+    const global = existsSync(globalPath) ? readFileSync(globalPath, "utf8") : "";
     const before = existsSync(path) ? readFileSync(path, "utf8") : "";
     let after = before;
-    for (const key of ["approval_policy", "sandbox_mode"]) {
+    for (const key of keys) {
         const value = getTomlTopLevelKey(global, key);
         after = value === null ? removeTomlTopLevelKey(after, key) : setTomlTopLevelKey(after, key, value);
     }
@@ -172,9 +195,14 @@ function mirrorCodexConfig(accountDir: string): void {
     writeFileSync(path, after);
 }
 
+/** Codex's only config file (there is no project-local equivalent). */
+function codexConfigPath(): string {
+    return join(homedir(), ".codex", "config.toml");
+}
+
 /** True when Codex's global config has the full-bypass knobs set. */
 function getCodexBypass(): boolean {
-    const path = join(homedir(), ".codex", "config.toml");
+    const path = codexConfigPath();
     const content = existsSync(path) ? readFileSync(path, "utf8") : "";
     return getTomlTopLevelKey(content, "approval_policy") === "\"never\"";
 }
@@ -185,12 +213,52 @@ function getCodexBypass(): boolean {
  * is preserved.
  */
 function disableCodexBypass(dryRun: boolean): BypassWrite {
-    const path = join(homedir(), ".codex", "config.toml");
+    return writeTomlKeys(codexConfigPath(), { approval_policy: null, sandbox_mode: null }, dryRun);
+}
+
+/** Kimi Code's user-level config file (the project-local local.toml has no permission mode). */
+function kimiConfigPath(): string {
+    return join(homedir(), ".kimi-code", "config.toml");
+}
+
+/** True when Kimi's config starts sessions in the auto-approving `yolo` mode. */
+function getKimiBypass(): boolean {
+    const content = existsSync(kimiConfigPath()) ? readFileSync(kimiConfigPath(), "utf8") : "";
+    return getTomlTopLevelKey(content, "default_permission_mode") === "\"yolo\"";
+}
+
+/**
+ * Enable Kimi bypass by setting `default_permission_mode = "yolo"`, so new sessions
+ * auto-approve regular tool calls instead of prompting per action. `yolo` rather than
+ * `auto` deliberately: `auto` also stops the agent asking the user questions, which is
+ * a behavior change beyond skipping approvals. Static deny rules still apply.
+ */
+function enableKimiBypass(dryRun: boolean): BypassWrite {
+    return writeTomlKeys(kimiConfigPath(), { default_permission_mode: "\"yolo\"" }, dryRun);
+}
+
+/** Disable Kimi bypass by dropping the key, returning it to the default `manual` mode. */
+function disableKimiBypass(dryRun: boolean): BypassWrite {
+    return writeTomlKeys(kimiConfigPath(), { default_permission_mode: null }, dryRun);
+}
+
+/**
+ * Set (string value) or remove (null) top-level TOML keys in a config file, preserving
+ * everything else, and report whether the file changed. Creates the parent directory
+ * only when there is something to write.
+ */
+function writeTomlKeys(path: string, keys: Record<string, string | null>, dryRun: boolean): BypassWrite {
     const before = existsSync(path) ? readFileSync(path, "utf8") : "";
-    let after = removeTomlTopLevelKey(before, "approval_policy");
-    after = removeTomlTopLevelKey(after, "sandbox_mode");
+    let after = before;
+    for (const [key, value] of Object.entries(keys)) {
+        after = value === null ? removeTomlTopLevelKey(after, key) : setTomlTopLevelKey(after, key, value);
+    }
     const changed = after !== before;
-    if (changed && !dryRun) writeFileSync(path, after);
+    if (changed && !dryRun) {
+        const dir = join(path, "..");
+        if (!isDir(dir)) mkdirSync(dir, { recursive: true });
+        writeFileSync(path, after);
+    }
     return { path, changed };
 }
 
@@ -255,17 +323,7 @@ function opencodeConfigPath(scope: "global" | "local"): string {
  * restrictions) - together the equivalent of Codex's full bypass mode.
  */
 function enableCodexBypass(dryRun: boolean): BypassWrite {
-    const path = join(homedir(), ".codex", "config.toml");
-    const before = existsSync(path) ? readFileSync(path, "utf8") : "";
-    let after = setTomlTopLevelKey(before, "approval_policy", "\"never\"");
-    after = setTomlTopLevelKey(after, "sandbox_mode", "\"danger-full-access\"");
-    const changed = after !== before;
-    if (changed && !dryRun) {
-        const dir = join(path, "..");
-        if (!isDir(dir)) mkdirSync(dir, { recursive: true });
-        writeFileSync(path, after);
-    }
-    return { path, changed };
+    return writeTomlKeys(codexConfigPath(), { approval_policy: "\"never\"", sandbox_mode: "\"danger-full-access\"" }, dryRun);
 }
 
 /**

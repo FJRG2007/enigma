@@ -11,7 +11,7 @@ The CLI is TypeScript, compiled by tsup. Source lives in `src/`:
 | `src/bin/enigma.ts` | Entry point. Thin wrapper: parses `argv` and calls `run()`.          |
 | `src/cli.ts`        | Argument parsing, the interactive menu, and command dispatch.        |
 | `src/skills.ts`     | Skill discovery, integrity (seal/check), and install planning.       |
-| `src/agents.ts`     | Supported agents (Claude Code, Codex, opencode) and OS detection.    |
+| `src/agents.ts`     | Supported agents (Claude Code, Codex, opencode, Kimi Code) and OS detection. |
 | `src/security.ts`   | `enigma security`: installs the commit guard into a target repo.     |
 | `src/guard.ts`      | The self-contained commit guard (see "The guard" below).            |
 | `src/config.ts`     | Runtime config (`.enigma.json`) read by the agent and `enigma config`. |

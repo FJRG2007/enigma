@@ -5,18 +5,8 @@
  * the test stays offline and deterministic (the spawn/HTTP path is exercised manually, not in CI).
  */
 import { test, expect } from "bun:test";
+import * as agents from "../src/api-agents";
 import { contentToText, messagesToPrompt, streamChunk, extractImages, type ChatMessage } from "../src/api-server";
-import {
-    resolveClaudeModel,
-    stripToolPrefix,
-    parseClaudeLine,
-    parseCodexLine,
-    resolveAdapter,
-    adapterFor,
-    estimateTokens,
-    CLAUDE_MODELS,
-    DEFAULT_MODEL
-} from "../src/api-agents";
 
 test("contentToText flattens string and text-part content", () => {
     expect(contentToText("hi")).toBe("hi");
@@ -51,39 +41,39 @@ test("messagesToPrompt appends a continue prompt when the last turn is not the u
     expect(messagesToPrompt(msgs).prompt.endsWith("Human: Please continue.")).toBe(true);
 });
 
-test("resolveClaudeModel forwards Claude ids/aliases and drops foreign names", () => {
-    expect(resolveClaudeModel("claude-opus-4-8")).toBe("claude-opus-4-8");
-    expect(resolveClaudeModel("sonnet")).toBe("sonnet");
-    expect(resolveClaudeModel("gpt-4o")).toBeNull();
-    expect(resolveClaudeModel("")).toBeNull();
-    expect(resolveClaudeModel(null)).toBeNull();
-    for (const m of CLAUDE_MODELS) expect(resolveClaudeModel(m)).toBe(m);
+test("agents.resolveClaudeModel forwards Claude ids/aliases and drops foreign names", () => {
+    expect(agents.resolveClaudeModel("claude-opus-4-8")).toBe("claude-opus-4-8");
+    expect(agents.resolveClaudeModel("sonnet")).toBe("sonnet");
+    expect(agents.resolveClaudeModel("gpt-4o")).toBeNull();
+    expect(agents.resolveClaudeModel("")).toBeNull();
+    expect(agents.resolveClaudeModel(null)).toBeNull();
+    for (const m of agents.CLAUDE_MODELS) expect(agents.resolveClaudeModel(m)).toBe(m);
 });
 
-test("stripToolPrefix removes a tool:/tool/ routing prefix", () => {
-    expect(stripToolPrefix("codex/gpt-5", "codex")).toBe("gpt-5");
-    expect(stripToolPrefix("codex:gpt-5", "codex")).toBe("gpt-5");
-    expect(stripToolPrefix("codex", "codex")).toBeNull();
-    expect(stripToolPrefix("opencode/anthropic/claude", "opencode")).toBe("anthropic/claude");
-    expect(stripToolPrefix("claude-sonnet-5", "codex")).toBe("claude-sonnet-5");
+test("agents.stripToolPrefix removes a tool:/tool/ routing prefix", () => {
+    expect(agents.stripToolPrefix("codex/gpt-5", "codex")).toBe("gpt-5");
+    expect(agents.stripToolPrefix("codex:gpt-5", "codex")).toBe("gpt-5");
+    expect(agents.stripToolPrefix("codex", "codex")).toBeNull();
+    expect(agents.stripToolPrefix("opencode/anthropic/claude", "opencode")).toBe("anthropic/claude");
+    expect(agents.stripToolPrefix("claude-sonnet-5", "codex")).toBe("claude-sonnet-5");
 });
 
-test("resolveAdapter routes by model, defaulting to the given tool", () => {
-    expect(resolveAdapter("claude-sonnet-5", "claude").tool).toBe("claude");
-    expect(resolveAdapter("opus", "codex").tool).toBe("claude");
-    expect(resolveAdapter("codex", "claude").tool).toBe("codex");
-    expect(resolveAdapter("codex/gpt-5", "claude").tool).toBe("codex");
-    expect(resolveAdapter("opencode", "claude").tool).toBe("opencode");
-    expect(resolveAdapter("opencode/anthropic/claude", "claude").tool).toBe("opencode");
+test("agents.resolveAdapter routes by model, defaulting to the given tool", () => {
+    expect(agents.resolveAdapter("claude-sonnet-5", "claude").tool).toBe("claude");
+    expect(agents.resolveAdapter("opus", "codex").tool).toBe("claude");
+    expect(agents.resolveAdapter("codex", "claude").tool).toBe("codex");
+    expect(agents.resolveAdapter("codex/gpt-5", "claude").tool).toBe("codex");
+    expect(agents.resolveAdapter("opencode", "claude").tool).toBe("opencode");
+    expect(agents.resolveAdapter("opencode/anthropic/claude", "claude").tool).toBe("opencode");
     // Unknown / empty model falls back to the default tool.
-    expect(resolveAdapter("gpt-4o", "opencode").tool).toBe("opencode");
-    expect(resolveAdapter("", "codex").tool).toBe("codex");
-    expect(resolveAdapter(null, "claude").tool).toBe("claude");
+    expect(agents.resolveAdapter("gpt-4o", "opencode").tool).toBe("opencode");
+    expect(agents.resolveAdapter("", "codex").tool).toBe("codex");
+    expect(agents.resolveAdapter(null, "claude").tool).toBe("claude");
 });
 
-test("DEFAULT_MODEL is Opus and the claude adapter falls back to it", () => {
-    expect(DEFAULT_MODEL).toBe("claude-opus-4-8");
-    const claude = adapterFor("claude")!;
+test("agents.DEFAULT_MODEL is Opus and the claude adapter falls back to it", () => {
+    expect(agents.DEFAULT_MODEL).toBe("claude-opus-4-8");
+    const claude = agents.adapterFor("claude")!;
     // A bare "claude" or a foreign model routes to Claude but uses the default model.
     const bare = claude.build("hi", { model: "claude" });
     expect(bare.args[bare.args.indexOf("--model") + 1]).toBe("claude-opus-4-8");
@@ -92,7 +82,7 @@ test("DEFAULT_MODEL is Opus and the claude adapter falls back to it", () => {
 });
 
 test("the claude adapter switches to stream-json input when images are attached", () => {
-    const claude = adapterFor("claude")!;
+    const claude = agents.adapterFor("claude")!;
     const img = { type: "image" as const, source: { type: "base64" as const, media_type: "image/png", data: "AAAA" } };
     const cmd = claude.build("describe", { model: "claude-haiku-4-5", images: [img] });
     expect(cmd.args).toContain("--input-format");
@@ -120,7 +110,7 @@ test("extractImages reads OpenAI image_url (data + http) and Anthropic image blo
 });
 
 test("adapters expose the expected read mode and headless args", () => {
-    const claude = adapterFor("claude")!;
+    const claude = agents.adapterFor("claude")!;
     expect(claude.mode).toBe("stream-json");
     const cmd = claude.build("hi", { model: "claude-sonnet-5", system: "sys", sessionId: "s1" });
     expect(cmd.args.slice(0, 4)).toEqual(["-p", "--output-format", "stream-json", "--verbose"]);
@@ -129,7 +119,7 @@ test("adapters expose the expected read mode and headless args", () => {
     expect(cmd.args[cmd.args.indexOf("--resume") + 1]).toBe("s1");
     expect(cmd.stdin).toBe("hi");
 
-    const codex = adapterFor("codex")!;
+    const codex = agents.adapterFor("codex")!;
     expect(codex.mode).toBe("stream-json");
     const ccmd = codex.build("hi", { model: "codex/gpt-5", system: "sys" });
     expect(ccmd.args.slice(0, 2)).toEqual(["exec", "--json"]);
@@ -138,45 +128,69 @@ test("adapters expose the expected read mode and headless args", () => {
     expect(ccmd.args[ccmd.args.length - 1]).toBe("sys\n\nhi");
     expect(ccmd.stdin).toBeNull();
 
-    const opencode = adapterFor("opencode")!;
+    const opencode = agents.adapterFor("opencode")!;
     expect(opencode.mode).toBe("plain");
     expect(opencode.parseLine).toBeUndefined();
     const ocmd = opencode.build("hi", { model: "opencode/anthropic/claude" });
     expect(ocmd.args[0]).toBe("run");
     expect(ocmd.args[ocmd.args.indexOf("-m") + 1]).toBe("anthropic/claude");
+
+    const kimi = agents.adapterFor("kimi")!;
+    expect(kimi.mode).toBe("stream-json");
+    const kcmd = kimi.build("hi", { model: "kimi/kimi-code/k3", system: "sys", sessionId: "s9" });
+    // Kimi rejects --prompt combined with --yolo/--auto, and has no system-prompt flag.
+    expect(kcmd.args.slice(0, 2)).toEqual(["-p", "sys\n\nhi"]);
+    expect(kcmd.args[kcmd.args.indexOf("--output-format") + 1]).toBe("stream-json");
+    expect(kcmd.args[kcmd.args.indexOf("-m") + 1]).toBe("kimi-code/k3");
+    expect(kcmd.args[kcmd.args.indexOf("--session") + 1]).toBe("s9");
+    expect(kcmd.args).not.toContain("--yolo");
+    expect(kcmd.stdin).toBeNull();
 });
 
-test("parseClaudeLine maps init, assistant text, result and errors", () => {
-    expect(parseClaudeLine('{"type":"system","subtype":"init","session_id":"s1","model":"claude-opus-4-8"}'))
-        .toEqual({ kind: "init", sessionId: "s1", model: "claude-opus-4-8" });
-    expect(parseClaudeLine('{"type":"assistant","message":{"content":[{"type":"text","text":"Hello "},{"type":"text","text":"world"}]}}'))
+test("agents.parseKimiLine maps assistant text and the resume hint that carries the session id", () => {
+    expect(agents.parseKimiLine('{"role":"assistant","content":"Hello world"}'))
         .toEqual({ kind: "text", text: "Hello world" });
-    expect(parseClaudeLine('{"type":"result","subtype":"success","result":"final","session_id":"s1","usage":{"input_tokens":12,"output_tokens":3}}'))
-        .toMatchObject({ kind: "result", text: "final", sessionId: "s1", inputTokens: 12, outputTokens: 3, isError: false });
-    expect(parseClaudeLine('{"type":"result","subtype":"error_during_execution","is_error":true,"error_message":"boom"}'))
-        .toMatchObject({ kind: "result", isError: true, errorMessage: "boom" });
-    expect(parseClaudeLine("")).toBeNull();
-    expect(parseClaudeLine("not json")).toBeNull();
-    expect(parseClaudeLine('{"type":"assistant","message":{"content":[]}}')).toBeNull();
+    expect(agents.parseKimiLine('{"role":"meta","type":"session.resume_hint","session_id":"01HZ","command":"kimi -r 01HZ"}'))
+        .toEqual({ kind: "init", sessionId: "01HZ", model: null });
+    // A tool-call flush, a tool result and the version banner carry no answer text.
+    expect(agents.parseKimiLine('{"role":"assistant","tool_calls":[{"type":"function","id":"t1","function":{"name":"Read","arguments":"{}"}}]}')).toBeNull();
+    expect(agents.parseKimiLine('{"role":"tool","tool_call_id":"t1","content":"file contents"}')).toBeNull();
+    expect(agents.parseKimiLine('{"role":"meta","type":"system.version","version":"0.35.0"}')).toBeNull();
+    expect(agents.parseKimiLine("not json")).toBeNull();
+    expect(agents.parseKimiLine("   ")).toBeNull();
 });
 
-test("parseCodexLine maps thread start, agent_message, turn completed and failure", () => {
-    expect(parseCodexLine('{"type":"thread.started","thread_id":"t1"}'))
+test("agents.parseClaudeLine maps init, assistant text, result and errors", () => {
+    expect(agents.parseClaudeLine('{"type":"system","subtype":"init","session_id":"s1","model":"claude-opus-4-8"}'))
+        .toEqual({ kind: "init", sessionId: "s1", model: "claude-opus-4-8" });
+    expect(agents.parseClaudeLine('{"type":"assistant","message":{"content":[{"type":"text","text":"Hello "},{"type":"text","text":"world"}]}}'))
+        .toEqual({ kind: "text", text: "Hello world" });
+    expect(agents.parseClaudeLine('{"type":"result","subtype":"success","result":"final","session_id":"s1","usage":{"input_tokens":12,"output_tokens":3}}'))
+        .toMatchObject({ kind: "result", text: "final", sessionId: "s1", inputTokens: 12, outputTokens: 3, isError: false });
+    expect(agents.parseClaudeLine('{"type":"result","subtype":"error_during_execution","is_error":true,"error_message":"boom"}'))
+        .toMatchObject({ kind: "result", isError: true, errorMessage: "boom" });
+    expect(agents.parseClaudeLine("")).toBeNull();
+    expect(agents.parseClaudeLine("not json")).toBeNull();
+    expect(agents.parseClaudeLine('{"type":"assistant","message":{"content":[]}}')).toBeNull();
+});
+
+test("agents.parseCodexLine maps thread start, agent_message, turn completed and failure", () => {
+    expect(agents.parseCodexLine('{"type":"thread.started","thread_id":"t1"}'))
         .toEqual({ kind: "init", sessionId: "t1", model: null });
-    expect(parseCodexLine('{"type":"item.completed","item":{"id":"i3","type":"agent_message","text":"Done."}}'))
+    expect(agents.parseCodexLine('{"type":"item.completed","item":{"id":"i3","type":"agent_message","text":"Done."}}'))
         .toEqual({ kind: "text", text: "Done." });
-    expect(parseCodexLine('{"type":"turn.completed","usage":{"input_tokens":24763,"output_tokens":122}}'))
+    expect(agents.parseCodexLine('{"type":"turn.completed","usage":{"input_tokens":24763,"output_tokens":122}}'))
         .toMatchObject({ kind: "result", inputTokens: 24763, outputTokens: 122, isError: false });
-    expect(parseCodexLine('{"type":"turn.failed","error":{"message":"nope"}}'))
+    expect(agents.parseCodexLine('{"type":"turn.failed","error":{"message":"nope"}}'))
         .toMatchObject({ kind: "result", isError: true, errorMessage: "nope" });
     // Non-final items (reasoning, command output) are ignored.
-    expect(parseCodexLine('{"type":"item.completed","item":{"type":"reasoning","text":"thinking"}}')).toBeNull();
-    expect(parseCodexLine('{"type":"turn.started"}')).toBeNull();
+    expect(agents.parseCodexLine('{"type":"item.completed","item":{"type":"reasoning","text":"thinking"}}')).toBeNull();
+    expect(agents.parseCodexLine('{"type":"turn.started"}')).toBeNull();
 });
 
-test("estimateTokens approximates ~4 chars/token with a floor of 1", () => {
-    expect(estimateTokens("")).toBe(1);
-    expect(estimateTokens("12345678")).toBe(2);
+test("agents.estimateTokens approximates ~4 chars/token with a floor of 1", () => {
+    expect(agents.estimateTokens("")).toBe(1);
+    expect(agents.estimateTokens("12345678")).toBe(2);
 });
 
 test("streamChunk emits a valid OpenAI chunk SSE line", () => {

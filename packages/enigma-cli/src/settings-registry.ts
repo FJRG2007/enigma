@@ -11,6 +11,7 @@
 
 import * as conf from "./config";
 import { AGENTS } from "./agents";
+import { setKimiTrust } from "./kimi";
 import { setTrim } from "./trim-deploy";
 import { setVerify } from "./verify-deploy";
 import { clampCapPercent } from "./governor";
@@ -20,7 +21,7 @@ import { isAutoLintOn, setAutoLint } from "./lint";
 import { applyGateToggle } from "./command-deploy";
 import { setGuardrails } from "./guardrails-deploy";
 import type { GuardListMeta } from "./guard-config";
-import { BYPASS_SUPPORTED, getBypass, setBypass } from "./permissions";
+import { BYPASS_GLOBAL_ONLY, BYPASS_SUPPORTED, getBypass, setBypass } from "./permissions";
 import { getGhTelemetryCached, ghTelemetryBlocker, hasGhCli, setGhTelemetry } from "./github";
 import { GUARD_PROTECTIONS, GUARD_LISTS, readGlobalGuard, setGuardProtection, setGuardList } from "./guard-config";
 import { getClaudeAttribution, setClaudeAttribution, getClaudeFeedbackSurvey, setClaudeFeedbackSurvey, getClaudeStatusline, setClaudeStatusline, hasCustomClaudeStatusline, setClaudeTrust } from "./claude";
@@ -217,6 +218,18 @@ function setStatusline(on: boolean, scope: Scope): ApplyResult {
 function setTrust(on: boolean, scope: Scope): ApplyResult {
     const path = conf.setEnigmaToggle("claudeTrust", on, scope);
     setClaudeTrust(on);
+    return { path, changed: true };
+}
+
+/**
+ * The same for Kimi Code. Turning it ON trusts the current directory immediately, so the
+ * setting takes effect where the user is standing rather than only at the next launch;
+ * turning it OFF only stops the pre-answer, since a Kimi trust document is per-directory
+ * and indistinguishable from one the user wrote by accepting the prompt (see kimi.ts).
+ */
+function setKimiTrustSetting(on: boolean, scope: Scope): ApplyResult {
+    const path = conf.setEnigmaToggle("kimiTrust", on, scope);
+    setKimiTrust(on);
     return { path, changed: true };
 }
 
@@ -644,11 +657,23 @@ const RAW_CATEGORIES: Category[] = [
                 read: () => conf.readConfig().config.claudeTrust,
                 write: (value, scope) => setTrust(value, scope),
             },
+            {
+                key: "kimi-trust",
+                label: "Skip workspace trust prompt (Kimi)",
+                hint: "answer Kimi Code's 'Trust this folder?' for the folder you launch in, so it stops asking and its project MCP servers load; the same security trade-off as the Claude one; Kimi Code only; enigma default: on. Turning it off stops pre-answering - folders already trusted stay trusted",
+                // Kimi's trust store is its user-global data root; there is no project-local
+                // form, so a local write would report success and change nothing.
+                globalOnly: true,
+                read: () => conf.readConfig().config.kimiTrust,
+                write: (value, scope) => setKimiTrustSetting(value, scope),
+            },
             ...BYPASS_SUPPORTED.map((name): Setting => ({
                 key: `bypass-${name}`,
                 label: `${AGENTS[name]?.label || name} approval bypass`,
-                hint: name === "codex" ? "skip approval prompts (global ~/.codex only)" : "skip per-action approval prompts",
-                globalOnly: name === "codex",
+                hint: BYPASS_GLOBAL_ONLY[name]
+                    ? `skip approval prompts (${BYPASS_GLOBAL_ONLY[name]} only - this agent has no project-local form)`
+                    : "skip per-action approval prompts",
+                globalOnly: Boolean(BYPASS_GLOBAL_ONLY[name]),
                 read: (scope: Scope) => getBypass(name, scope),
                 write: (value: boolean, scope: Scope) => setBypass(name, scope, value, false) || { changed: false },
             })),

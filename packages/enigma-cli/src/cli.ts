@@ -204,7 +204,7 @@ Commands:
                        not run at all
   config [key val]     Configure settings: no args opens the interactive menu;
                        'config <key> <on|off> [-g|-l]' sets one (e.g. config claude-attribution on)
-  <tool> [account]     Launch a tool (claude | codex | opencode) with an account's
+  <tool> [account]     Launch a tool (claude | codex | opencode | kimi) with an account's
                        config (resolution: explicit > active profile > tool active);
                        auto-syncs deployed skills first (see auto-sync config key) and
                        keeps managed accounts stocked with skills, memory and the
@@ -270,9 +270,9 @@ Commands:
                        enigma_compress, enigma_retrieve, enigma_stats). Usually launched
                        by an agent, not by hand; enable deployment with 'config compress on'
   api                  Serve a local OpenAI-compatible API backed by your local coding agents
-                       (Claude Code, and Codex/OpenCode where installed) - all of their
+                       (Claude Code, and Codex/OpenCode/Kimi Code where installed) - all of their
                        tools/skills/MCP/sessions via the local CLI. One server, many backends:
-                       pick per request via the model field (claude-sonnet-5 | codex | opencode).
+                       pick per request via the model field (claude-sonnet-5 | codex | opencode | kimi).
                        Run requests under an account, profile or pack (e.g. Helio): --account,
                        --profile, --pack set the default; a request body can override with
                        account/profile/pack. Endpoints under /v1 (chat/completions, messages,
@@ -324,8 +324,8 @@ Commands:
 Config keys: commit-emoji, update-notifier, auto-sync, remote-skills, fullscreen,
              statusline, parallel-subagents, output-style (off|lite|full|ultra),
              minimal-code (off|lite|full|ultra), compress, claude-attribution,
-             claude-survey, claude-trust, gh-telemetry, permission-bypass,
-             bypass-claude, bypass-codex, bypass-opencode
+             claude-survey, claude-trust, kimi-trust, gh-telemetry, permission-bypass,
+             bypass-claude, bypass-codex, bypass-opencode, bypass-kimi
 
 Install options:
   -g, --global         Install at user level
@@ -337,7 +337,7 @@ Install options:
       --no-prune       Keep orphaned skills  --keep-modified  Don't overwrite local edits
       --hooks <cls>    Which hooks to wire: post-edit, stop | all | none
       --no-hooks       Wire none of them    --no-statusline  Leave statusLine alone
-      --bypass <names> Force approval-prompt bypass (claude,codex,opencode | all | none)
+      --bypass <names> Force approval-prompt bypass (claude,codex,opencode,kimi | all | none)
       --no-bypass      Skip permission bypass for this run (on by default)
       --output-style <off|lite|full|ultra>  Token-efficient output level (asked if omitted)
       --minimal-code <off|lite|full|ultra>  Anti-overengineering level (asked if omitted)

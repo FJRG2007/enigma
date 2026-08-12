@@ -12,17 +12,19 @@
  *             (no project-local config - matches enigma's command deployment)
  *   opencode  mcp.enigma in ~/.config/opencode/opencode.json (global) /
  *             ./opencode.json (project) / <accountDir>/xdg-config/opencode/opencode.json
+ *   kimi      mcpServers.enigma in ~/.kimi-code/mcp.json (global) /
+ *             ./.kimi-code/mcp.json (project) / <accountDir>/mcp.json
  *
  * The MCP server itself is `enigma mcp` (see mcp.ts), so the registered command is
  * the resolved enigma binary; on Windows the agents that spawn without a shell
- * (claude, opencode) get a `cmd /c` wrapper so a `.cmd` launcher resolves.
+ * (claude, opencode, kimi) get a `cmd /c` wrapper so a `.cmd` launcher resolves.
  */
 
-import { homedir } from "node:os";
 import { join } from "node:path";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { readJson, resolveBin } from "./util";
+import { homedir } from "node:os";
 import { readConfig } from "./config";
+import { readJson, resolveBin } from "./util";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 
 const SERVER_NAME = "enigma";
 
@@ -49,6 +51,10 @@ function mcpPath(tool: string, scope: Scope): string | null {
             return scope === "global"
                 ? join(homedir(), ".config", "opencode", "opencode.json")
                 : join(process.cwd(), "opencode.json");
+        case "kimi":
+            return scope === "global"
+                ? join(homedir(), ".kimi-code", "mcp.json")
+                : join(process.cwd(), ".kimi-code", "mcp.json");
         default:
             return null;
     }
@@ -60,6 +66,7 @@ function mcpAccountPath(tool: string, dir: string): string | null {
         case "claude": return join(dir, ".claude.json");
         case "codex": return join(dir, "config.toml");
         case "opencode": return join(dir, "xdg-config", "opencode", "opencode.json");
+        case "kimi": return join(dir, "mcp.json");
         default: return null;
     }
 }
@@ -135,6 +142,10 @@ function writeEntry(tool: string, file: string, enabled: boolean): boolean {
             return applyJsonEntry(file, "mcpServers", enabled ? { type: "stdio", command: inv.command, args: inv.args } : null);
         case "opencode":
             return applyJsonEntry(file, "mcp", enabled ? { type: "local", command: [inv.command, ...inv.args], enabled: true } : null);
+        // Kimi infers the stdio transport from the presence of `command`, and rejects
+        // fields outside its documented schema - so the entry stays command + args only.
+        case "kimi":
+            return applyJsonEntry(file, "mcpServers", enabled ? { command: inv.command, args: inv.args } : null);
         case "codex":
             return applyCodexEntry(file, enabled ? inv.command : null, inv.args);
         default:
@@ -170,15 +181,28 @@ export function applyMcpForAccount(tool: string, dir: string): boolean {
 }
 
 /** The agents whose own config can host the enigma MCP server. */
-const MANAGED_TOOLS = ["claude", "codex", "opencode"] as const;
+const MANAGED_TOOLS = ["claude", "codex", "opencode", "kimi"] as const;
+
+/**
+ * Whether `tool` is in use at `scope`, which is what gates creating config for it.
+ *
+ * For claude, codex and opencode the MCP entry lives in the tool's MAIN config file, so the
+ * file existing is the same question. Kimi keeps MCP declarations in a dedicated `mcp.json`
+ * that only exists once someone has added a server - absent for every Kimi user who never
+ * did - so its data root (`~/.kimi-code`, or the project's `.kimi-code`) is the signal
+ * instead. Reading the file itself there would mean the toggle never reached Kimi at all.
+ */
+function usesTool(tool: string, file: string): boolean {
+    return existsSync(tool === "kimi" ? join(file, "..") : file);
+}
 
 /**
  * Apply the MCP toggle's side effect immediately across managed agents at `scope` (driven by
  * the compress OR recall setting) - the on/off twin of dashboard's applyDashboardMode - so
  * toggling either setting takes effect without re-running `enigma install`. Mirrors presence
  * and absence, but to avoid creating config for a tool the user does not use, an ENABLE only
- * touches an agent whose config file already exists; a DISABLE is already a no-op on an absent
- * file. Returns the tools whose config changed.
+ * touches an agent that is actually installed (see `usesTool`); a DISABLE is already a no-op
+ * on an absent file. Returns the tools whose config changed.
  */
 export function applyMcpToggle(scope: Scope): string[] {
     const enabled = mcpEnabled();
@@ -186,7 +210,7 @@ export function applyMcpToggle(scope: Scope): string[] {
     for (const tool of MANAGED_TOOLS) {
         const file = mcpPath(tool, scope);
         if (!file) continue;
-        if (enabled && !existsSync(file)) continue; // never create config for an unused tool
+        if (enabled && !usesTool(tool, file)) continue; // never create config for an unused tool
         if (writeEntry(tool, file, enabled)) changed.push(tool);
     }
     return changed;

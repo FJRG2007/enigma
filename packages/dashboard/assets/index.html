@@ -2458,7 +2458,7 @@ export {
         // Friendly names for known MCP clients / content types; unknown -> title-cased raw.
         const SOURCE_LABELS = {
             "claude-code": "Claude Code", "claude": "Claude Code", "claude-desktop": "Claude Desktop",
-            "opencode": "OpenCode", "codex": "Codex", "codex-cli": "Codex",
+            "opencode": "OpenCode", "codex": "Codex", "codex-cli": "Codex", "kimi-code": "Kimi Code", "kimi": "Kimi Code",
             "cli": "CLI (enigma compress)", "unknown": "Unattributed",
         };
         function prettySource(k) { return SOURCE_LABELS[k] || String(k).replace(/[-_]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()); }
@@ -2553,6 +2553,7 @@ export {
             claude:   { label: "Claude Code", status: "https://status.claude.com/api/v2/status.json", viewHref: "https://claude.ai/settings/usage", viewLabel: "View in Claude" },
             codex:    { label: "Codex",       status: "https://status.openai.com/api/v2/status.json", viewHref: "https://platform.openai.com/usage", viewLabel: "View in OpenAI" },
             opencode: { label: "OpenCode",    status: null,                                           viewHref: "https://opencode.ai", viewLabel: "View OpenCode" },
+            kimi:     { label: "Kimi Code",   status: null,                                           viewHref: "https://www.kimi.com/code", viewLabel: "View Kimi Code" },
         };
         let usageData = null;            // the latest /api/stats usage report (null when opt-in is off)
         let usageProvider = "claude";
@@ -3523,15 +3524,16 @@ export {
         // App-specific settings (per-agent approval bypass) get the app's logo prefixed to
         // the label, so the Permissions list reads at a glance. AGENT_ICONS is defined below
         // but only referenced at render time, so it is initialised by then.
-        const AGENT_LABEL_BY_NAME = { claude: "Claude Code", codex: "OpenAI Codex", opencode: "OpenCode" };
+        const AGENT_LABEL_BY_NAME = { claude: "Claude Code", codex: "OpenAI Codex", opencode: "OpenCode", kimi: "Kimi Code" };
         const GH_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.52 11.52 0 0 1 12 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222 0 1.606-.014 2.898-.014 3.293 0 .322.216.694.825.576C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>';
         // Map a setting key to the app/service logo prefixed to its label (per-agent bypass,
         // the Claude-specific toggles, and the GitHub telemetry toggle).
         function settingIcon(key) {
             key = key || "";
             let svg = "", title = "";
-            const bp = /^bypass-(claude|codex|opencode)$/.exec(key);
+            const bp = /^bypass-(claude|codex|opencode|kimi)$/.exec(key);
             if (bp) { svg = (typeof AGENT_ICONS !== "undefined" && AGENT_ICONS[bp[1]]) || ""; title = AGENT_LABEL_BY_NAME[bp[1]]; }
+            else if (key === "kimi-trust") { svg = (typeof AGENT_ICONS !== "undefined" && AGENT_ICONS.kimi) || ""; title = "Kimi Code"; }
             else if (key === "claude-attribution" || key === "claude-survey" || key === "claude-trust" || key === "proxy") { svg = (typeof AGENT_ICONS !== "undefined" && AGENT_ICONS.claude) || ""; title = "Claude Code"; }
             else if (key === "gh-telemetry") { svg = GH_ICON; title = "GitHub"; }
             return svg ? '<span class="aicon set-ic" title="' + esc(title) + '" aria-hidden="true">' + svg + "</span>" : "";
@@ -3941,6 +3943,8 @@ export {
             claude: '<svg viewBox="0 0 100 100" fill="currentColor" aria-hidden="true"><path d="m19.6 66.5 19.7-11 .3-1-.3-.5h-1l-3.3-.2-11.2-.3L14 53l-9.5-.5-2.4-.5L0 49l.2-1.5 2-1.3 2.9.2 6.3.5 9.5.6 6.9.4L38 49.1h1.6l.2-.7-.5-.4-.4-.4L29 41l-10.6-7-5.6-4.1-3-2-1.5-2-.6-4.2 2.7-3 3.7.3.9.2 3.7 2.9 8 6.1L37 36l1.5 1.2.6-.4.1-.3-.7-1.1L33 25l-6-10.4-2.7-4.3-.7-2.6c-.3-1-.4-2-.4-3l3-4.2L28 0l4.2.6L33.8 2l2.6 6 4.1 9.3L47 29.9l2 3.8 1 3.4.3 1h.7v-.5l.5-7.2 1-8.7 1-11.2.3-3.2 1.6-3.8 3-2L61 2.6l2 2.9-.3 1.8-1.1 7.7L59 27.1l-1.5 8.2h.9l1-1.1 4.1-5.4 6.9-8.6 3-3.5L77 13l2.3-1.8h4.3l3.1 4.7-1.4 4.9-4.4 5.6-3.7 4.7-5.3 7.1-3.2 5.7.3.4h.7l12-2.6 6.4-1.1 7.6-1.3 3.5 1.6.4 1.6-1.4 3.4-8.2 2-9.6 2-14.3 3.3-.2.1.2.3 6.4.6 2.8.2h6.8l12.6 1 3.3 2 1.9 2.7-.3 2-5.1 2.6-6.8-1.6-16-3.8-5.4-1.3h-.8v.4l4.6 4.5 8.3 7.5L89 80.1l.5 2.4-1.3 2-1.4-.2-9.2-7-3.6-3-8-6.8h-.5v.7l1.8 2.7 9.8 14.7.5 4.5-.7 1.4-2.6 1-2.7-.6-5.8-8-6-9-4.7-8.2-.5.4-2.9 30.2-1.3 1.5-3 1.2-2.5-2-1.4-3 1.4-6.2 1.6-8 1.3-6.4 1.2-7.9.7-2.6v-.2H49L43 72l-9 12.3-7.2 7.6-1.7.7-3-1.5.3-2.8L24 86l10-12.8 6-7.9 4-4.6-.1-.5h-.3L17.2 77.4l-4.7.6-2-2 .2-3 1-1 8-5.5Z"/></svg>',
             codex: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.872zm16.5963 3.8558L13.1038 8.364 15.1192 7.2a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.407-.667zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.459a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654l2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997Z"/></svg>',
             opencode: '<svg viewBox="0 0 240 300" fill="currentColor" aria-hidden="true"><path d="M180 240H60V120H180V240Z" opacity=".55"/><path fill-rule="evenodd" d="M180 60H60V240H180V60ZM240 300H0V0H240V300Z"/></svg>',
+            // Kimi Code is Moonshot AI's agent; the mark is Kimi's own, monochrome upstream.
+            kimi: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M21.765.351C22.998.351 24 1.353 24 2.586S22.998 4.82 21.765 4.82h-1.974c-.15 0-.26-.12-.26-.26V2.586A2.237 2.237 0 0 1 21.765.35M9.41 13.388l8.447-8.377c.16-.16.07-.471-.14-.471h-4.55s-.1.02-.14.06l-9.099 9.029c-.14.14-.35.02-.35-.21V4.81c0-.15-.1-.27-.221-.27H.22c-.12 0-.22.12-.22.27v18.57c0 .15.1.27.22.27h3.137c.12 0 .22-.12.22-.27v-3.79c0-.08.03-.16.08-.21l2.826-2.796c.07-.07.16-.08.241-.03l7.546 5.551a8.9 8.9 0 0 0 4.018 1.493c.12.01.23-.11.23-.27V19.76c0-.14-.08-.25-.19-.26a5.8 5.8 0 0 1-2.355-.942l-6.533-4.73c-.14-.09-.15-.32-.03-.441"/></svg>',
             // Rovo Dev is Atlassian's agent (it is driven through `acli rovodev`), so it carries
             // the Atlassian mark - there is no separate Rovo Dev glyph to use.
             rovodev: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7.12 11.084a.683.683 0 00-1.16.126L.075 22.974a.703.703 0 00.63 1.018h8.19a.678.678 0 00.63-.39c1.767-3.65.696-9.203-2.406-12.52zM11.434.386a15.515 15.515 0 00-.906 15.317l3.95 7.9a.703.703 0 00.628.388h8.19a.703.703 0 00.63-1.017L12.63.38a.664.664 0 00-1.196.006z"/></svg>',
@@ -3961,6 +3965,7 @@ export {
         const agentName = (label) => {
             const s = String(label || "").trim().toLowerCase();
             if (s === "pi") return "pi";
+            if (s.includes("kimi")) return "kimi";
             return s.includes("claude") ? "claude"
                 : s.includes("opencode") ? "opencode"
                     : s.includes("codex") ? "codex"

@@ -9,15 +9,19 @@
  * repo's .githooks/ as the backstop for edits enigma's hook never saw (a teammate's editor, a
  * generator, a merge).
  *
- * Wiring per agent, exactly like guardrails (Codex has no per-edit hook, so it is skipped):
+ * Wiring per agent (Codex has no per-edit hook, so it is skipped):
  *  - Claude Code: a PostToolUse hook in settings.json (matcher Edit|Write|MultiEdit|NotebookEdit).
  *  - opencode: an auto-loaded plugin whose tool.execute.after pipes the edited file to the hook.
+ *  - Kimi Code: a PostToolUse hook in config.toml (matcher Write|Edit). Kimi's PostToolUse is
+ *    observation-only, which is no obstacle here - the trim is a silent side effect that needs
+ *    nothing fed back to the model (it is exactly why trim reaches Kimi and guardrails does not).
  *
  * Node-builtins + config/util only (no engine import), the deploy counterpart of trim.ts.
  */
 
 import { homedir } from "node:os";
 import { join, dirname } from "node:path";
+import { applyKimiHook } from "./kimi-hooks";
 import { applyClaudeHook } from "./claude-hooks";
 import { readConfig, setEnigmaToggle } from "./config";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
@@ -86,6 +90,20 @@ export const EnigmaTrim = async () => ({
 `;
 }
 
+// --- Kimi Code: PostToolUse hook in config.toml -------------------------------------
+
+/** Kimi's file-editing tools, as its permission and hook matchers name them. */
+const KIMI_HOOK_MATCHER = "Write|Edit";
+
+/**
+ * Add (on) or remove (off) the enigma PostToolUse trim hook in a Kimi config.toml,
+ * preserving every other hook and setting. Returns true when the file changed.
+ */
+export function applyKimiTrimHook(configPath: string, on: boolean): boolean {
+    const hook = { event: "PostToolUse", matcher: KIMI_HOOK_MATCHER, command: "enigma __trim-hook", timeout: 10 };
+    return applyKimiHook(configPath, "__trim-hook", hook, on) === "changed";
+}
+
 // --- global apply / per-account mirror / toggle ------------------------------------
 
 /** Global Claude settings.json for the default account. */
@@ -98,6 +116,11 @@ function opencodeGlobalConfig(): string {
     return join(homedir(), ".config", "opencode");
 }
 
+/** Global Kimi config.toml for the default account. */
+function kimiGlobalConfig(): string {
+    return join(homedir(), ".kimi-code", "config.toml");
+}
+
 /**
  * Re-assert the global wiring to match the current toggle: add or remove the Claude hook and
  * the opencode plugin. Called on install and on toggle (presence AND absence).
@@ -106,6 +129,7 @@ export function applyTrimWiring(): void {
     const on = isTrimOn();
     applyClaudeTrimHook(claudeGlobalSettings(), on);
     applyOpencodeTrimPlugin(opencodeGlobalConfig(), on);
+    applyKimiTrimHook(kimiGlobalConfig(), on);
 }
 
 /**
@@ -116,6 +140,7 @@ export function mirrorTrimWiring(toolName: string, accountDir: string): void {
     const on = isTrimOn();
     if (toolName === "claude") applyClaudeTrimHook(join(accountDir, "settings.json"), on);
     else if (toolName === "opencode") applyOpencodeTrimPlugin(join(accountDir, "xdg-config", "opencode"), on);
+    else if (toolName === "kimi") applyKimiTrimHook(join(accountDir, "config.toml"), on);
 }
 
 /**

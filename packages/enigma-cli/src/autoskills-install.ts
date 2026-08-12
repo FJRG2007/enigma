@@ -57,6 +57,7 @@ interface Registry { version: number; skills: Record<string, RegistryEntry>; }
 const AGENT_DIRS: Record<string, string> = {
     "claude": ".claude/skills", "claude-code": ".claude/skills",
     "codex": ".codex/skills", "opencode": ".opencode/skills",
+    "kimi": ".kimi-code/skills", "kimi-code": ".kimi-code/skills",
     "cline": ".cline/skills", "junie": ".junie/skills", "codebuddy": ".codebuddy/skills",
     "continue": ".continue/skills", "kiro-cli": ".kiro/skills", "universal": ".agents/skills",
 };

@@ -533,7 +533,8 @@ function writeResources(req: import("node:http").IncomingMessage, res: import("n
 // Provider statuspages (Atlassian Statuspage shape). Proxied SERVER-SIDE because the browser's
 // cross-origin fetch is unreliable in the field (privacy/tracker blockers, corporate MITM proxies
 // and captive portals can return a stub 200, which surfaced as a bogus "Status unknown" pill);
-// the loopback server reaches the endpoint cleanly. opencode has no public statuspage.
+// the loopback server reaches the endpoint cleanly. opencode and Kimi Code have no public
+// statuspage, so their rows show no status pill rather than a fabricated endpoint.
 const PROVIDER_STATUS_URLS: Record<string, string> = {
     claude: "https://status.claude.com/api/v2/status.json",
     codex: "https://status.openai.com/api/v2/status.json",

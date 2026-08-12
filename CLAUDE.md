@@ -43,6 +43,7 @@ Subsystems (read the one you are touching):
 - `dashboard.md` - the loopback dashboard: server, daemon, hosts entry, on-demand `@enigmax/dashboard` UI package, charts, settings bridge, UI conventions (brand logos for agents, one dropdown component, toasts). Read before touching any dashboard panel.
 - `dashboard-exposure.md` - bind modes, token auth, the fragment bootstrap, the single auth gate.
 - `usage-accounts-config-io.md` - Claude usage engine (transcripts, cost, 5h/weekly windows, live rate-limit headers), dashboard account/profile management, config import/export, skill catalog, agent-memory editor. (Largest note - skim by heading.)
+- `kimi.md` - Kimi Code support: its data root, trust documents and `[[hooks]]` config, what enigma wires into it and what it deliberately does not (guardrails feedback, the completion gate, a gate backend).
 - `multi-account.md` - accounts, profiles, config-dir injection, session reuse/transfer between accounts and packs.
 - `packs.md` - isolated harness bundles (`enigma helio`), credential seeding, the three layers of seeding a Claude login.
 - `recall.md` - local session memory (SQLite + FTS, hybrid search, MCP tools).

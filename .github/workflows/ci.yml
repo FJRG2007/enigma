@@ -52,6 +52,9 @@ jobs:
       - name: Test local API server
         run: bun test tests/api-server.test.ts
         working-directory: packages/enigma-cli
+      - name: Test Kimi Code wiring
+        run: bun test tests/kimi.test.ts
+        working-directory: packages/enigma-cli
       - name: Test API playground
         run: bun test tests/api-playground.test.ts
         working-directory: packages/enigma-cli

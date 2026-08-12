@@ -17,8 +17,9 @@ A single server can back **several agents at once** - the request's `model` fiel
 - `claude-sonnet-5`, `opus`, `haiku`, any `claude-*` id -> **Claude Code**
 - `codex` (or `codex/<model>`) -> **Codex**
 - `opencode` (or `opencode/<provider/model>`) -> **OpenCode**
+- `kimi` (or `kimi/<model alias>`) -> **Kimi Code**
 
-`--tool` sets the default backend for requests whose model does not name one. `/v1/models` lists only the agents actually installed on your machine. Claude Code is verified end-to-end; the Codex and OpenCode adapters are wired from their documented headless modes (`codex exec --json` and `opencode run`).
+`--tool` sets the default backend for requests whose model does not name one. `/v1/models` lists only the agents actually installed on your machine. Claude Code is verified end-to-end; the Codex, OpenCode and Kimi Code adapters are wired from their headless modes (`codex exec --json`, `opencode run` and `kimi -p --output-format stream-json`) rather than run end-to-end.
 
 ## Native and loopback-bound
 

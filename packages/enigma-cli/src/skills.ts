@@ -8,6 +8,7 @@ import * as conf from "./config";
 import { homedir } from "node:os";
 import * as p from "@clack/prompts";
 import { getTool } from "./accounts";
+import { setKimiTrust } from "./kimi";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 import { ASSETS_DIR } from "./assets-dir";
@@ -30,9 +31,9 @@ import { applyVerifyWiring, isVerifyOn, mirrorVerifyWiring } from "./verify-depl
 import { applyGuardrailsWiring, mirrorGuardrailsWiring } from "./guardrails-deploy";
 import { resolveBypassSelection, applyBypass, mirrorAccountSettings } from "./permissions";
 import { existsSync, readdirSync, readFileSync, writeFileSync, cpSync, mkdirSync, rmSync } from "node:fs";
-import { cachedRemoteSkills, pinnedRef, refIsPinned as skillsRefIsPinned, refreshRemoteSkills, shouldCheckRemote, skillsOrigin } from "./skills-remote";
 import { AGENTS, MANAGED_PROVIDER, isManagedProvider, discoverAgents, runningStatus, localTargetsAt } from "./agents";
 import { disableClaudeAttribution, disableClaudeFeedbackSurvey, enableClaudeStatusline, getClaudeTrust, setClaudeTrust } from "./claude";
+import { cachedRemoteSkills, pinnedRef, refIsPinned as skillsRefIsPinned, refreshRemoteSkills, shouldCheckRemote, skillsOrigin } from "./skills-remote";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PKG_ROOT = resolve(__dirname, "..");
@@ -1226,6 +1227,15 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
         }
     };
 
+    // The same for Kimi Code, which asks its own "Trust this folder?" - per directory, so
+    // this trusts the one being installed into and the sync path covers the rest.
+    const applyKimiConfig = (): void => {
+        if (opts.dryRun || !chosenAgents.some((a) => a.name === "kimi")) return;
+        if (conf.readConfig().config.kimiTrust && setKimiTrust(true)) {
+            reporter.info("Kimi Code: this folder is pre-trusted, so it starts without the trust prompt (undo with 'enigma config kimi-trust off').");
+        }
+    };
+
     // GitHub CLI (used by agents for PRs): disable usage telemetry by default.
     // Privacy win with zero functional cost (no gh feature depends on it), and it
     // sidesteps the Windows window-flash bug where the detached `gh send-telemetry`
@@ -1407,6 +1417,7 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
     if (nInstall + nUpdate + nRemove === 0) {
         reporter.note(lines.join("\n"), "Nothing to do");
         applyClaudeConfig();
+        applyKimiConfig();
         applyGhConfig();
         applyBypassConfig();
         applyLintConfig();
@@ -1477,6 +1488,7 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
     }
     s.stop(`Wrote ${copied} item(s)${nRemove ? `, removed ${nRemove}` : ""}.`);
     applyClaudeConfig();
+    applyKimiConfig();
     applyGhConfig();
     applyBypassConfig();
     applyLintConfig();
@@ -1629,6 +1641,15 @@ export function syncDeployed(agentNames?: string[]): string[] {
             if (setClaudeTrust(true) && firstTime) {
                 notices.push("Workspace trust is pre-answered: Claude Code no longer asks whether you trust a folder. Turn off with 'enigma config claude-trust off'.");
             }
+        }
+        // Kimi's trust prompt, same path and same reasoning. It keys trust by exact directory
+        // with no inheritance, so there is nothing to say "already covered" about: the write
+        // is per workspace and quietly no-ops once this one is trusted. The notice therefore
+        // fires the first time a folder is trusted, which is also the only time it changes
+        // anything the user would otherwise have seen.
+        if (agent.name === "kimi" && hasDeployment(agent, "global") && conf.readConfig().config.kimiTrust
+            && setKimiTrust(true)) {
+            notices.push("Workspace trust is pre-answered: Kimi Code starts in this folder without asking. Turn off with 'enigma config kimi-trust off'.");
         }
     }
     return notices;

@@ -33,13 +33,13 @@
 import { homedir } from "node:os";
 import { readConfig } from "./config";
 import { randomUUID } from "node:crypto";
-import { spawn, type SpawnOptions } from "node:child_process";
 import { startMeasuringProxy } from "./proxy";
-import { join, resolve, sep } from "node:path";
 import { readGlobalGuard } from "./guard-config";
-import { isDir, readJson, resolveBin, enigmaHome } from "./util";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { basename, join, resolve, sep } from "node:path";
 import { decryptSecret, encryptSecret } from "./secret-box";
+import { spawn, type SpawnOptions } from "node:child_process";
+import { isDir, readJson, resolveBin, enigmaHome } from "./util";
+import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 
 /**
  * A coding agent enigma can manage accounts for. `envFor` maps an account's
@@ -185,6 +185,30 @@ const TOOLS: Record<string, ToolSpec> = {
                 : readJson<Record<string, unknown>>(join(dir, "xdg-data", "opencode", "auth.json"));
             const providers = auth ? Object.keys(auth) : [];
             return providers.length ? { displayName: providers.join(", ") } : {};
+        },
+    },
+    kimi: {
+        name: "kimi",
+        label: "Kimi Code",
+        bin: "kimi",
+        binEnv: "ENIGMA_KIMI_BIN",
+        defaultDir: join(homedir(), ".kimi-code"),
+        envFor: (dir) => ({ KIMI_CODE_HOME: dir }),
+        // KIMI_CODE_HOME relocates the whole data root: config.toml, OAuth credentials,
+        // sessions, the global AGENTS.md and the kimi-specific skills dir all move with
+        // it, so an account gets a fully isolated login (like Claude's CLAUDE_CONFIG_DIR).
+        // Kimi has no user-level custom-command dir, so `commands` is omitted.
+        accountTarget: (dir) => ({ skills: join(dir, "skills"), memory: dir }),
+        loginArgs: ["login"],
+        loginHint: "Launching `kimi login` (device-code flow) to authenticate this account.",
+        // Kimi stores OAuth credentials as credentials/<provider>.json; the file's shape is
+        // not documented, so the connected provider names are the identity we can show
+        // honestly - no field is guessed out of the token file.
+        accountInfo: (dir) => {
+            const names = isDir(join(dir, "credentials"))
+                ? readdirSync(join(dir, "credentials")).filter((f) => f.endsWith(".json")).map((f) => basename(f, ".json"))
+                : [];
+            return names.length ? { displayName: names.join(", ") } : {};
         },
     },
 };

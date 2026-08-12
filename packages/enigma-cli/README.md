@@ -2,7 +2,7 @@
 
 Everything you need to work with a coding agent, in one command. `enigma`
 installs a shared set of engineering **policy skills** into the agents you
-actually use (Claude Code, OpenAI Codex, opencode) and sets up portable **git
+actually use (Claude Code, OpenAI Codex, opencode, Kimi Code) and sets up portable **git
 security hooks** that block secrets, `.env` files, and dependency dirs from being
 committed.
 
@@ -47,7 +47,7 @@ the [GitHub CLI](https://cli.github.com), [Bun](https://bun.sh) and [Warp](https
 |--|--|
 | <a href="https://nodejs.org"><img src="https://img.shields.io/badge/Node.js-339933?style=for-the-badge&logo=nodedotjs&logoColor=white" alt="Node.js"/></a> | `>= 18`, ships with `npm` - installs and runs the `enigma` CLI |
 | <a href="https://git-scm.com"><img src="https://img.shields.io/badge/Git-F05032?style=for-the-badge&logo=git&logoColor=white" alt="Git"/></a> | powers the security hooks and the commit guard |
-| <img src="https://img.shields.io/badge/Coding%20agent-555555?style=for-the-badge&logo=claude&logoColor=white" alt="Coding agent"/> | at least one of [Claude Code](https://claude.com/claude-code), [OpenAI Codex](https://github.com/openai/codex) or [opencode](https://opencode.ai) - the skills need a home |
+| <img src="https://img.shields.io/badge/Coding%20agent-555555?style=for-the-badge&logo=claude&logoColor=white" alt="Coding agent"/> | at least one of [Claude Code](https://claude.com/claude-code), [OpenAI Codex](https://github.com/openai/codex), [opencode](https://opencode.ai) or [Kimi Code](https://www.kimi.com/code) - the skills need a home |
 
 ### Recommended
 
@@ -73,7 +73,7 @@ enigma guard [--all]   Run the commit guard: staged files, --all for all tracked
                        CI). --json emits one document; exits 1 on findings, 2 if it
                        could not run at all
 enigma config [k v]    Show or set runtime toggles (e.g. config commit-emoji off)
-enigma <tool> [acct]   Launch claude | codex | opencode with an account
+enigma <tool> [acct]   Launch claude | codex | opencode | kimi with an account
                        (resolution: explicit > active profile > tool active);
                        auto-syncs deployed skills first
 enigma account ...     Manage per-tool accounts (list/add/use/login/remove)
@@ -128,7 +128,7 @@ push,pr,ci` and `enigma gate init` work in an image without it.
 
 Skills are authored once and deployed to every selected agent (no per-agent
 duplication). `enigma install` auto-detects which agents are installed (CLI on
-`PATH` or a config dir like `~/.claude`, `~/.codex`, `~/.config/opencode`) and
+`PATH` or a config dir like `~/.claude`, `~/.codex`, `~/.config/opencode`, `~/.kimi-code`) and
 preselects them; `--all` targets every supported agent.
 
 | Agent       | Scope  | Skills                        | Memory file                    |
@@ -309,9 +309,10 @@ your **company** Claude Code account and your **personal** one - keeping each
 fully isolated and switching between them without ever logging out. Each account
 has its own credentials, session, and history, so client work never mixes with
 personal projects. Supported tools: **Claude Code** (`CLAUDE_CONFIG_DIR`),
-**OpenAI Codex** (`CODEX_HOME`) and **OpenCode** (a private `XDG_DATA_HOME` /
+**OpenAI Codex** (`CODEX_HOME`), **OpenCode** (a private `XDG_DATA_HOME` /
 `XDG_CONFIG_HOME` pair per managed account; its default account keeps your real
-environment untouched).
+environment untouched) and **Kimi Code** (`KIMI_CODE_HOME`, which relocates its
+whole data root - credentials, sessions, skills and `AGENTS.md`).
 
 > This is for legitimate, professional account separation (one account per
 > employer/context, as many organizations require). It is **not** a way to evade
@@ -338,9 +339,9 @@ enigma account rename work corp   # rename an account (its config dir moves)
 enigma account remove work        # delete an account and its config dir
 ```
 
-Your existing `~/.claude` / `~/.codex` / opencode setup is always available as
+Your existing `~/.claude` / `~/.codex` / `~/.kimi-code` / opencode setup is always available as
 each tool's built-in `default` account (never deleted). New accounts live under
-`~/.enigma/<tool>/<name>/`. Bare `claude` / `codex` / `opencode` commands keep
+`~/.enigma/<tool>/<name>/`. Bare `claude` / `codex` / `opencode` / `kimi` commands keep
 using your real environment as before.
 
 Managed accounts inherit your enigma setup automatically: because the tool reads
@@ -372,7 +373,7 @@ enigma profile use none                 # deactivate
 
 From the hub TUI (`enigma`), the **Accounts** panel lists every tool's accounts -
 with the signed-in identity (email for Claude/Codex, connected providers for
-OpenCode) - and lets you **add** (`a`), set active (`enter`), **connect**/log in
+OpenCode and Kimi Code) - and lets you **add** (`a`), set active (`enter`), **connect**/log in
 (`c`), rename (`r`), or remove (`d`). Adding first asks **which tool** with a
 searchable selector (type to filter, like opencode's model picker), then the
 account name, then offers to connect right away. The **Profiles** panel manages
@@ -647,7 +648,7 @@ session transcripts (`~/.claude/projects/.../*.jsonl`) and reports:
 - **Breakdowns** by model, by project, **by account** (every Claude login - default and
   managed accounts, not just `~/.claude`), and a **recent sessions** table.
 - A **provider coverage** line: only Claude Code keeps a readable local usage store, so
-  Codex and OpenCode are shown as unavailable (no local token store) rather than faked. The
+  Codex, OpenCode and Kimi Code are shown as unavailable (no local token store) rather than faked. The
   session/weekly windows are Claude-specific (they come from Anthropic's rate-limit headers).
 - A **current 5-hour block** computed locally from transcript timestamps: tokens + cost
   used in the open window, the **burn rate** (tokens/min) and a projected end-of-window
@@ -672,7 +673,7 @@ Honesty note: cost is an **estimate** (Anthropic does not record per-message cos
 transcript; real spend is billed by Anthropic). Token counts and prompt-cache reads are
 measured facts. enigma deliberately does **not** attribute savings to skills or to
 token-efficient output - a transcript has no counterfactual baseline, so any such figure
-would be invented. Only Claude Code is read today; Codex/OpenCode use absent or
+would be invented. Only Claude Code is read today; Codex/OpenCode/Kimi Code use absent or
 undocumented local session stores and are not guessed.
 
 #### Manage accounts & profiles from the dashboard

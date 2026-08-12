@@ -22,6 +22,9 @@ export interface AgentTarget {
      * them. Claude: <root>/.claude/commands; opencode: <root>/.opencode/command
      * (and ~/.config/opencode/command); codex: <CODEX_HOME>/prompts (user scope
      * only - codex has no project-local prompt dir, so its local target omits this).
+     * Kimi Code has no user-level command dir at all (custom commands only ship
+     * inside an installed plugin), so both of its targets omit this - its copies of
+     * the same prompts are reachable as `/skill:<name>` from the deployed skills.
      */
     commands?: string;
 }
@@ -70,6 +73,10 @@ export function localTargetsAt(root: string): Record<string, AgentTarget> {
         codex: { skills: join(root, ".agents", "skills"), memory: root },
         // opencode's command dir is the singular `command` (accepted by current + older opencode).
         opencode: { skills: join(root, ".opencode", "skills"), memory: root, commands: join(root, ".opencode", "command") },
+        // Kimi Code scans .kimi-code/skills AND the generic .agents/skills at project
+        // level; the kimi-specific one is used so a per-agent skill opt-out does not
+        // fight codex over the shared directory. Project memory is the root AGENTS.md.
+        kimi: { skills: join(root, ".kimi-code", "skills"), memory: root },
     };
 }
 
@@ -106,6 +113,20 @@ export const AGENTS: Record<string, AgentDef> = {
         targets: {
             global: { skills: join(HOME, ".config", "opencode", "skills"), memory: join(HOME, ".config", "opencode"), commands: join(HOME, ".config", "opencode", "command") },
             local: CWD_LOCAL.opencode,
+        },
+    },
+    kimi: {
+        label: "Kimi Code",
+        memoryFile: "AGENTS.md",
+        // Kimi Code keeps everything under ~/.kimi-code (relocatable with KIMI_CODE_HOME,
+        // which is how enigma isolates its accounts): the global instruction file is
+        // <home>/AGENTS.md and user skills are <home>/skills. It also scans the shared
+        // ~/.agents/skills, but deploying there would share one directory with codex and
+        // make the per-agent skill opt-out flip-flop between the two on every sync.
+        detect: { bins: ["kimi"], dirs: [join(HOME, ".kimi-code")] },
+        targets: {
+            global: { skills: join(HOME, ".kimi-code", "skills"), memory: join(HOME, ".kimi-code") },
+            local: CWD_LOCAL.kimi,
         },
     },
 };

@@ -325,10 +325,16 @@ export function deployPack(id: string, tool: string): string | null {
     return dir;
 }
 
+/**
+ * Credential material to seed into a pack context, per tool, relative to the account's config
+ * dir. An entry may name a file or a whole directory - Kimi stores one file per provider under
+ * `credentials/` (plus `credentials/mcp/`), so the directory is the unit that carries a login.
+ */
 const CRED_FILES: Record<string, string[]> = {
     claude: [".credentials.json"],
     codex: ["auth.json"],
     opencode: [join("xdg-data", "opencode", "auth.json")],
+    kimi: ["credentials"],
 };
 
 /** Whether a Claude credentials file already holds a usable OAuth token (non-empty access+refresh). */
@@ -404,7 +410,9 @@ export function seedCredentials(id: string, tool: string, account: string): void
             // a different/switched account must replace it (token/identity mismatch -> login prompt).
             if (!accountChanged && existsSync(to) && hasUsableToken(to)) continue;
             mkdirSync(dirname(to), { recursive: true });
-            cpSync(from, to);
+            // A directory entry (Kimi's per-provider credentials/) copies as a tree; the
+            // recursive flag is inert for a file, so both kinds take the same path.
+            cpSync(from, to, { recursive: true });
             copied = true;
         }
         // Claude: keep the context's ACCOUNT STATE (onboarding flags + identity) in sync with the

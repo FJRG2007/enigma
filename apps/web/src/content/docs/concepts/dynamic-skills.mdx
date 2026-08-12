@@ -11,7 +11,7 @@ A normal agent skill is **static**: one Markdown file, dropped into one tool, id
 
 | | Static skill | Dynamic skill (enigma) |
 |---|---|---|
-| Targets | One tool, by hand | Claude Code, Codex and opencode from one source |
+| Targets | One tool, by hand | Claude Code, Codex, opencode and Kimi Code from one source |
 | Per-app control | None | On/off per app |
 | Reacts to your settings | No | Re-rendered from your enigma config |
 | Loaded | Always, in full | By context (progressive disclosure) |
@@ -19,7 +19,7 @@ A normal agent skill is **static**: one Markdown file, dropped into one tool, id
 
 ## Adapts to the app
 
-A skill is authored once and deployed into each agent in **that agent's own format and location** - Claude Code, Codex and opencode each read skills and memory differently, and enigma handles the translation. You can keep a skill on for one app and off for another (`enigma skills disable testing-policy opencode`), and managed accounts inherit the right deployment automatically.
+A skill is authored once and deployed into each agent in **that agent's own format and location** - Claude Code, Codex, opencode and Kimi Code each read skills and memory differently, and enigma handles the translation. You can keep a skill on for one app and off for another (`enigma skills disable testing-policy opencode`), and managed accounts inherit the right deployment automatically.
 
 ## Adapts to your configuration
 

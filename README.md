@@ -20,7 +20,7 @@
 
 `enigma` gives your coding agent a senior engineer's standards, in one command. It
 installs shared **Dynamic Skills** - security, testing, git, style, debugging - into
-Claude Code, OpenAI Codex and opencode; each one adapts to the agent, re-renders from
+Claude Code, OpenAI Codex, opencode and Kimi Code; each one adapts to the agent, re-renders from
 your config, and loads only when a task needs it. Portable **git hooks** keep secrets
 and `.env` files out of every commit, a local **dashboard** manages and measures the
 whole setup, and optional **packs** add focused harnesses - like the Helio bug-bounty
@@ -56,7 +56,7 @@ npx enigma-cli@latest install --all --yes
 
 ### <img src="assets/logos/enigma-logo.svg" width="20" height="20" alt="Enigma"/> Dynamic Skills, everywhere
 
-Senior-engineering policies (security, testing, git, style, debugging...) on **Claude Code, OpenAI Codex and opencode**. Unlike a static skill, each one adapts to the agent, re-renders from your config, loads only when the task needs it, and updates itself. Discard any you don't want - it's gone everywhere until you restore it.
+Senior-engineering policies (security, testing, git, style, debugging...) on **Claude Code, OpenAI Codex, opencode and Kimi Code**. Unlike a static skill, each one adapts to the agent, re-renders from your config, loads only when the task needs it, and updates itself. Discard any you don't want - it's gone everywhere until you restore it.
 
 ```bash
 npx enigma-cli@latest install --all --yes
@@ -147,7 +147,7 @@ Opt-in. Shrinks large tool outputs, logs and text to far fewer tokens before the
 
 ### <img src="assets/logos/enigma-logo.svg" width="20" height="20" alt="Enigma"/> Local agent API
 
-`enigma api` serves your local coding agents over one **OpenAI-compatible HTTP API** - Claude Code (and Codex/OpenCode where installed), with all of their tools, skills, MCP and sessions. One server, many backends: pick per request via the `model` field. Loopback-only. Point your OpenAI SDK at `http://127.0.0.1:8000/v1`.
+`enigma api` serves your local coding agents over one **OpenAI-compatible HTTP API** - Claude Code (and Codex/OpenCode/Kimi Code where installed), with all of their tools, skills, MCP and sessions. One server, many backends: pick per request via the `model` field. Loopback-only. Point your OpenAI SDK at `http://127.0.0.1:8000/v1`.
 
 </td>
 <td>
@@ -206,7 +206,7 @@ the [GitHub CLI](https://cli.github.com), [Bun](https://bun.sh) and [Warp](https
 |--|--|
 | <a href="https://nodejs.org"><img src="https://img.shields.io/badge/Node.js-339933?style=for-the-badge&logo=nodedotjs&logoColor=white" alt="Node.js"/></a> | `>= 18`, ships with `npm` - installs and runs the `enigma` CLI |
 | <a href="https://git-scm.com"><img src="https://img.shields.io/badge/Git-F05032?style=for-the-badge&logo=git&logoColor=white" alt="Git"/></a> | powers the security hooks and the commit guard |
-| <img src="https://img.shields.io/badge/Coding%20agent-555555?style=for-the-badge&logo=claude&logoColor=white" alt="Coding agent"/> | at least one of [Claude Code](https://claude.com/claude-code), [OpenAI Codex](https://github.com/openai/codex) or [opencode](https://opencode.ai) - the skills need a home |
+| <img src="https://img.shields.io/badge/Coding%20agent-555555?style=for-the-badge&logo=claude&logoColor=white" alt="Coding agent"/> | at least one of [Claude Code](https://claude.com/claude-code), [OpenAI Codex](https://github.com/openai/codex), [opencode](https://opencode.ai) or [Kimi Code](https://www.kimi.com/code) - the skills need a home |
 
 ### Recommended
 
@@ -234,7 +234,7 @@ enigma guard [--all]   Run the commit guard: staged files, --all for all tracked
                        CI). --json emits one document; exits 1 on findings, 2 if it
                        could not run at all
 enigma config [k v]    Show or set runtime toggles (e.g. config commit-emoji off)
-enigma <tool> [acct]   Launch claude | codex | opencode with an account's config
+enigma <tool> [acct]   Launch claude | codex | opencode | kimi with an account's config
                        (explicit > active profile > tool active; auto-syncs first)
 enigma account ...     Manage per-tool accounts   enigma profile ...  Group them
 enigma skills ...      List skills, discard one (removed everywhere and skipped
@@ -251,7 +251,7 @@ enigma verify          Check that work reported as finished actually is: scans t
                        the reply itself against your output-style level
 enigma mcp             Run the context-compression MCP server over stdio
 enigma api             Serve a local OpenAI-compatible API for your agents (Claude Code, and
-                       Codex/OpenCode where installed); route per request by the model field.
+                       Codex/OpenCode/Kimi Code where installed); route per request by the model field.
                        --port, --api-key, --tool (default backend). Loopback-only
 enigma dashboard|dash  Open the local dashboard (manage enigma; see savings) in your browser (http://enigma,
                        or http://localhost:24282 if :80/hosts is unavailable)
@@ -271,7 +271,7 @@ enigma help | version
 -a, --agent <name>   Target agent(s) (default: auto-detect)
 -s, --skill <name>   Skill(s) (default: all)
     --all            Every supported agent, ignoring detection
-    --bypass <names> Force approval-prompt bypass (claude,codex,opencode | all | none)
+    --bypass <names> Force approval-prompt bypass (claude,codex,opencode,kimi | all | none)
     --no-bypass      Skip permission bypass for this run (it is on by default)
     --output-style <off|lite|full|ultra>  Token-efficient output level (asked if omitted)
     --hooks <classes>    Which hooks to wire: post-edit, stop | all | none

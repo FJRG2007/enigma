@@ -80,6 +80,8 @@ function candidateBinDirs(): string[] {
         const { APPDATA, LOCALAPPDATA, ProgramFiles, ProgramW6432 } = process.env;
         dirs.push(join(home, ".local", "bin"));
         dirs.push(join(home, ".claude", "local"));
+        // Kimi Code's installer drops kimi.exe into its own data root rather than on PATH.
+        dirs.push(join(home, ".kimi-code", "bin"));
         dirs.push(join(home, ".bun", "bin"));
         if (LOCALAPPDATA) {
             dirs.push(join(LOCALAPPDATA, "Programs", "claude"));
@@ -93,6 +95,7 @@ function candidateBinDirs(): string[] {
     } else {
         dirs.push(join(home, ".local", "bin"));
         dirs.push(join(home, ".claude", "local"));
+        dirs.push(join(home, ".kimi-code", "bin"));
         dirs.push(join(home, ".bun", "bin"));
         dirs.push(join(home, ".volta", "bin"));
         dirs.push(join(home, ".npm-global", "bin"));

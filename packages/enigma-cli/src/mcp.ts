@@ -1,6 +1,6 @@
 /**
  * enigma's MCP server: a hand-rolled stdio JSON-RPC 2.0 endpoint exposing the
- * native compression engine to any MCP host (Claude Code, Codex, opencode). No
+ * native compression engine to any MCP host (Claude Code, Codex, opencode, Kimi Code). No
  * SDK dependency - enigma ships zero runtime deps, and the tools-only surface of
  * MCP over stdio (initialize / tools/list / tools/call) is small enough to
  * implement directly with Node builtins.
