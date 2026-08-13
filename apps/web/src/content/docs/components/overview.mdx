@@ -8,6 +8,7 @@ space: components
 import AddTabs from "../../../components/AddTabs.astro";
 import Preview from "../../../components/Preview.astro";
 import MarqueeDemo from "../../../components/demos/MarqueeDemo.astro";
+import StyleTabs from "../../../components/StyleTabs.astro";
 import { docHref } from "../../../lib/url";
 
 Interaction logic is behaviour, and behaviour that has already been measured and tested belongs in a package, not in a snippet an agent rewrites on every screen. Two packages hold it:
@@ -46,6 +47,52 @@ The core of every primitive is framework-agnostic TypeScript with no dependencie
 |---|---|---|
 | Vanilla, Astro | `@enigmax/primitives` | `createMarquee` |
 | React | `@enigmax/primitives/react` | `useMarquee` |
+
+## Styling: Tailwind by default, CSS on request
+
+The primitives themselves ship **no styles and never will**. Utility classes inside the
+engine would break every project without Tailwind and tie a behaviour package to a CSS
+framework's major version; being styleless is what makes them work in any design.
+
+The styling lives one layer up, in **recipes** - complete styled components, not
+fragments - that reach your project through `enigma add --copy`:
+
+<StyleTabs title="what --copy writes">
+    <div slot="tailwind">
+```sh
+enigma add marquee --copy --style tailwind
+# lib/enigma/marquee.ts      the headless engine
+# lib/enigma/use-marquee.ts  the React hook
+# lib/enigma/Marquee.tsx     a styled component, utility classes, yours to edit
+```
+    </div>
+    <div slot="css">
+```sh
+enigma add marquee --copy --style css
+# lib/enigma/marquee.ts      the headless engine
+# lib/enigma/use-marquee.ts  the React hook
+# lib/enigma/Marquee.tsx     a styled component, class names, yours to edit
+# lib/enigma/marquee.css     the stylesheet it imports
+```
+    </div>
+</StyleTabs>
+
+**You do not have to pass `--style`.** The default is read from your project: `tailwindcss`,
+`@tailwindcss/vite` or `@tailwindcss/postcss` in the manifest means Tailwind, anything else
+means plain CSS. Writing utility classes into a project without Tailwind would produce a
+component styled by nothing, which is worse than the CSS variant - so "Tailwind by default"
+means "where Tailwind is".
+
+`--style none` copies the headless files only. And `cache` has no recipe on purpose: it
+renders nothing, so there is nothing to style.
+
+### A Tailwind v4 trap worth knowing
+
+Tailwind v4 writes `translate-*` to the CSS `translate` property, which **composes with**
+`transform` rather than replacing it. The marquee drives the track's `transform` every
+frame, so a `translate-x-*` utility on that element does not override it - the two add up
+and the row drifts. Offset the lane or an inner element instead, never the moved one. Both
+marquee recipes carry that warning at the top of the file.
 
 ## They ship no styles
 

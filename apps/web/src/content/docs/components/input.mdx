@@ -8,6 +8,12 @@ space: components
 import AddTabs from "../../../components/AddTabs.astro";
 import Preview from "../../../components/Preview.astro";
 import InputDemo from "../../../components/demos/InputDemo.astro";
+import StyleTabs from "../../../components/StyleTabs.astro";
+import { recipe } from "../../../lib/recipe";
+
+export const tailwindRecipe = recipe("@enigmax/primitives", "input.tailwind.tsx");
+export const cssRecipe = recipe("@enigmax/primitives", "input.css.tsx");
+export const cssSheet = recipe("@enigmax/primitives", "input.css");
 
 Give it a field and it wires the buttons that live inside it. A `type="password"` field gets its reveal toggle for free, because a password the visitor cannot read back is the most common reason a sign-in fails on the first try.
 
@@ -50,6 +56,31 @@ createInput(document.getElementById("password"));
 ## Install
 
 <AddTabs item="input" pkg="@enigmax/primitives" />
+
+## The whole component
+
+Exactly what `enigma add input --copy` writes into your project, read from the installed
+package at build time so it cannot drift from what you get.
+
+<StyleTabs title="Field.tsx">
+    <div slot="tailwind">
+        <pre><code class="language-tsx">{tailwindRecipe}</code></pre>
+    </div>
+    <div slot="css">
+        <pre><code class="language-tsx">{cssRecipe}</code></pre>
+        <pre><code class="language-css">{cssSheet}</code></pre>
+    </div>
+</StyleTabs>
+
+Used like this:
+
+```jsx
+<Field label="Password" type="password" autoComplete="current-password" />
+```
+
+The action buttons are created by the engine, so both variants style them through the
+`data-*` hooks rather than a `className` prop - utility classes reach them through
+arbitrary variants, plain CSS through ordinary selectors.
 
 ## React
 
