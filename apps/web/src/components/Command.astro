@@ -1,0 +1,59 @@
+---
+/**
+ * A single shell command with a copy button.
+ *
+ * One line, scrolled rather than wrapped: a command broken across three lines stops
+ * reading as something you paste. The scrollbar is hidden because the themed ones here
+ * are non-overlay and reserved a track under the text; the edge fade carries the
+ * affordance, and the copy button means nobody has to scroll to use it.
+ */
+interface Props {
+    command: string;
+    /** Drop the frame when the command already sits inside one. */
+    bare?: boolean;
+}
+const { command, bare = false } = Astro.props;
+---
+<div class:list={["cmd", bare && "is-bare"]}>
+    <code class="cmd-text">{command}</code>
+    <button type="button" class="cmd-copy" data-command={command} aria-label="Copy command" title="Copy">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+    </button>
+</div>
+
+<style>
+    .cmd { display: flex; align-items: center; gap: 10px; padding: 12px 14px; background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; }
+    .cmd.is-bare { border: 0; border-radius: 0; background: transparent; }
+    .cmd .cmd-text {
+        flex: 1; min-width: 0; white-space: pre; overflow-x: auto; scrollbar-width: none;
+        font-family: var(--mono); font-size: 13px; color: var(--text); background: transparent; padding: 0;
+        -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 30px), transparent);
+        mask-image: linear-gradient(90deg, #000 calc(100% - 30px), transparent);
+    }
+    .cmd .cmd-text::-webkit-scrollbar { display: none; }
+    .cmd-copy { flex: 0 0 auto; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; color: var(--muted); background: transparent; border: 1px solid var(--border); cursor: pointer; }
+    .cmd-copy:hover { color: var(--text); border-color: var(--accent); }
+    .cmd-copy.ok { color: var(--good); border-color: var(--good); }
+    .cmd-copy svg { width: 13px; height: 13px; }
+</style>
+
+<script>
+    for (const button of document.querySelectorAll<HTMLButtonElement>("[data-command]")) {
+        button.addEventListener("click", async () => {
+            const value = button.dataset.command ?? "";
+            try {
+                await navigator.clipboard.writeText(value);
+            } catch {
+                // A clipboard-guard extension can break writeText; execCommand still works.
+                const scratch = document.createElement("textarea");
+                scratch.value = value;
+                document.body.append(scratch);
+                scratch.select();
+                document.execCommand("copy");
+                scratch.remove();
+            }
+            button.classList.add("ok");
+            setTimeout(() => button.classList.remove("ok"), 1200);
+        });
+    }
+</script>

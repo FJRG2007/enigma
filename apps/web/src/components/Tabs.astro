@@ -1,0 +1,120 @@
+---
+/**
+ * The one tab strip. Preview/Code, CLI/Manual, Tailwind/CSS and package managers were
+ * four near-identical components before this; they are all the same widget with different
+ * labels.
+ *
+ * Each tab's content goes in a slot named after its id:
+ *
+ * ```mdx
+ * <Tabs tabs={[{ id: "cli", label: "CLI" }, { id: "manual", label: "Manual" }]}>
+ *     <div slot="cli">...</div>
+ *     <div slot="manual">...</div>
+ * </Tabs>
+ * ```
+ */
+export interface Tab {
+    id: string;
+    label: string;
+}
+
+interface Props {
+    tabs: Tab[];
+    /**
+     * Remember the choice under this key, across every Tabs on the site that shares it.
+     * Use it for a property of the READER (their styling layer, their package manager),
+     * never for a per-component choice - those should start from the recommended tab.
+     */
+    persist?: string;
+    /** Small label on the right of the bar. */
+    note?: string;
+    /** Drop the panel's own padding when the content brings its own. */
+    flush?: boolean;
+}
+const { tabs, persist, note, flush = false } = Astro.props;
+
+// `<slot name={expression} />` is not supported - Astro needs a literal there - but
+// Astro.slots.render() takes the name at runtime, which is what makes one generic strip
+// possible instead of a component per label set.
+const panels = await Promise.all(
+    tabs.map(async (tab) => ({ tab, html: Astro.slots.has(tab.id) ? await Astro.slots.render(tab.id) : "" }))
+);
+---
+<div class="tabs" data-tabs data-persist={persist}>
+    <div class="tabs-bar">
+        <div class="tabs-list" role="tablist">
+            {tabs.map((tab, index) => (
+                <button
+                    type="button"
+                    role="tab"
+                    class={index === 0 ? "active" : ""}
+                    aria-selected={index === 0 ? "true" : "false"}
+                    data-tab={tab.id}
+                >{tab.label}</button>
+            ))}
+        </div>
+        {note && <span class="tabs-note">{note}</span>}
+    </div>
+    {panels.map(({ tab, html }, index) => (
+        <div class:list={["tabs-panel", flush && "is-flush"]} data-panel={tab.id} hidden={index > 0}>
+            <Fragment set:html={html} />
+        </div>
+    ))}
+</div>
+
+<style>
+    .tabs { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); overflow: hidden; margin: 20px 0; }
+    .tabs-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 7px; background: rgba(0, 0, 0, 0.25); border-bottom: 1px solid var(--border-soft); }
+    .tabs-list { display: flex; flex-wrap: wrap; gap: 2px; }
+    .tabs-list button { font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--muted); background: transparent; border: 1px solid transparent; border-radius: 8px; padding: 6px 13px; cursor: pointer; }
+    .tabs-list button:hover { color: var(--text); }
+    .tabs-list button.active { color: var(--accent); background: var(--surface2); border-color: var(--border); }
+    .tabs-note { font-family: var(--mono); font-size: 11px; color: var(--muted); padding-right: 4px; }
+    .tabs-panel { padding: 16px 18px; }
+    .tabs-panel.is-flush { padding: 0; }
+    /* A fenced block brings its own frame; inside a panel it is the panel. */
+    .tabs-panel :global(pre) { margin: 0; border: 0; border-radius: 0; }
+    .tabs-panel.is-flush :global(pre + pre) { border-top: 1px solid var(--border-soft); }
+    .tabs-panel :global(> :first-child) { margin-top: 0; }
+    .tabs-panel :global(> :last-child) { margin-bottom: 0; }
+</style>
+
+<script>
+    function show(block: HTMLElement, wanted: string): void {
+        let matched = false;
+        for (const tab of block.querySelectorAll<HTMLButtonElement>("[data-tab]")) {
+            const on = tab.dataset.tab === wanted;
+            if (on) matched = true;
+            tab.classList.toggle("active", on);
+            tab.setAttribute("aria-selected", String(on));
+        }
+        // A remembered id that this strip does not have would blank every panel.
+        if (!matched) return;
+        for (const panel of block.querySelectorAll<HTMLElement>("[data-panel]")) {
+            panel.hidden = panel.dataset.panel !== wanted;
+        }
+    }
+
+    const blocks = [...document.querySelectorAll<HTMLElement>("[data-tabs]")];
+
+    for (const block of blocks) {
+        const key = block.dataset.persist;
+        const stored = key ? localStorage.getItem(`enigma:tabs:${key}`) : null;
+        if (stored) show(block, stored);
+
+        for (const tab of block.querySelectorAll<HTMLButtonElement>("[data-tab]")) {
+            tab.addEventListener("click", () => {
+                const wanted = tab.dataset.tab ?? "";
+                if (key) {
+                    localStorage.setItem(`enigma:tabs:${key}`, wanted);
+                    // Every strip sharing the key follows, so the reader picks once.
+                    for (const other of blocks) {
+                        if (other.dataset.persist === key) show(other, wanted);
+                    }
+                    return;
+                }
+                show(block, wanted);
+            });
+        }
+    }
+</script>

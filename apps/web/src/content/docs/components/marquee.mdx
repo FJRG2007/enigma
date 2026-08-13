@@ -5,7 +5,7 @@ group: Motion
 order: 10
 space: components
 ---
-import AddTabs from "../../../components/AddTabs.astro";
+import Installation from "../../../components/Installation.astro";
 import Preview from "../../../components/Preview.astro";
 import MarqueeDemo from "../../../components/demos/MarqueeDemo.astro";
 import LogoWallDemo from "../../../components/demos/LogoWallDemo.astro";
@@ -143,9 +143,38 @@ The element is now a shape, not an image, so it needs `role="img"` and an `aria-
 
 This lives in **your** CSS, not in `@enigmax/primitives` - the primitive ships no styles, and a colour is a look. It is documented here because every logo wall needs it. It is also beta and deliberately opt-in: a brand's own colours are the correct rendering, and flattening them is a design decision, not a default. Check contrast when you do it - a mark tinted to your background disappears.
 
-## Install
+## Installation
 
-<AddTabs item="marquee" pkg="@enigmax/primitives" />
+<Installation item="marquee" pkg="@enigmax/primitives" entry="@enigmax/primitives/react">
+    <div slot="manual">
+
+This is exactly what `enigma add marquee --copy` writes into your project - read from the
+installed package at build time, so it cannot drift from what you actually get.
+
+<StyleTabs title="Marquee.tsx">
+    <div slot="tailwind">
+        <Html html={tailwindRecipe} />
+    </div>
+    <div slot="css">
+        <Html html={cssRecipe} />
+        <Html html={cssSheet} />
+    </div>
+</StyleTabs>
+
+Used like this:
+
+```jsx
+<Marquee items={logos} speed={70} hover={0.15}>
+    {(logo) => (
+        <a href={logo.href}>
+            <img src={logo.src} alt={logo.name} width={22} height={22} draggable={false} />
+        </a>
+    )}
+</Marquee>
+```
+
+    </div>
+</Installation>
 
 ## Variants
 
@@ -185,33 +214,6 @@ This is the pair that a duration-based API cannot get right. Split an odd-length
 across two rows and one gets 4 items and the other 5, so one runs measurably faster.
     </div>
 </Preview>
-
-## The whole component
-
-This is exactly what `enigma add marquee --copy` writes into your project - read from the
-installed package at build time, so it cannot drift from what you actually get.
-
-<StyleTabs title="Marquee.tsx">
-    <div slot="tailwind">
-        <Html html={tailwindRecipe} />
-    </div>
-    <div slot="css">
-        <Html html={cssRecipe} />
-        <Html html={cssSheet} />
-    </div>
-</StyleTabs>
-
-Used like this:
-
-```jsx
-<Marquee items={logos} speed={70} hover={0.15}>
-    {(logo) => (
-        <a href={logo.href}>
-            <img src={logo.src} alt={logo.name} width={22} height={22} draggable={false} />
-        </a>
-    )}
-</Marquee>
-```
 
 ## The speed contract
 
