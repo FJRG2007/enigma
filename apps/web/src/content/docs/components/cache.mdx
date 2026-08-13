@@ -1,0 +1,52 @@
+---
+title: Cache
+description: A short-TTL read cache whose point is the in-flight deduplication - two components asking for one key make one request, not five.
+group: Components
+order: 27
+---
+import Cmd from "../../../components/Cmd.astro";
+
+<Cmd cmd="enigma add cache" desc="Add it to the current project." />
+
+The TTL is the obvious half. The **in-flight deduplication** is the half that matters: two components mounting in the same tick ask for one key once, so a rate limit sees one request instead of five. The TTL then keeps the answer around long enough that a remount paints from cache instead of flashing a skeleton over data the app already has.
+
+## Vanilla
+
+```js
+import { createCache } from "@enigmax/utils";
+
+const cache = createCache({ namespace: "app", ttl: 30_000, storage: "session" });
+
+const user = await cache.read(`user:${id}`, () => api.getUser(id));
+cache.invalidate("user:*");   // after a write
+```
+
+`storage` is `"memory"`, `"local"` or `"session"`. A trailing `*` invalidates a whole prefix.
+
+## React
+
+```jsx
+import { useCached } from "@enigmax/utils/react";
+
+const { data, loading, validating, refresh } = useCached(`user:${id}`, () => api.getUser(id));
+```
+
+`loading` is true only when there is nothing to render yet. `validating` is true while a value already on screen is being revalidated - that is the flag a spinner in the corner should use, not the one that blanks the view. Rendering a cached value immediately is the whole point: the shell never waits on data it already has.
+
+## API
+
+| Method | Meaning |
+|---|---|
+| `get(key)` / `set(key, value, ttl?)` | Direct access. `get` returns `undefined` once expired. |
+| `has(key)` | Fresh entry present. |
+| `read(key, loader, ttl?)` | Read through the cache; concurrent calls share one loader call. |
+| `invalidate(pattern)` | One key, or a whole prefix with a trailing `*`. |
+| `clear()` | Everything. |
+| `subscribe(listener)` | Told which key changed. Returns an unsubscribe. |
+
+## Details that are easy to get wrong
+
+- **A rejection is never cached.** A failed load must not poison the key for the rest of the TTL.
+- **A full storage quota never takes the read path down.** Private-mode Safari exposes `localStorage` and throws on write, so the backing store is probed once and dropped if it is not usable.
+- **A corrupt persisted entry is discarded, not thrown.** Stale JSON from an older shape is removed and reloaded.
+- **Memory is bounded.** Past `maxEntries` (200) the oldest entry is evicted.

@@ -1,0 +1,66 @@
+---
+title: Components
+description: Headless primitives and utilities you can add to a project as a dependency or copy in as source - behaviour, timing and accessibility, with no styles of their own.
+group: Components
+order: 25
+---
+import Cmd from "../../../components/Cmd.astro";
+import { docHref } from "../../../lib/url";
+
+Interaction logic is behaviour, and behaviour that has already been measured and tested belongs in a package, not in a snippet an agent rewrites on every screen. Two packages hold it:
+
+- **`@enigmax/primitives`** - interaction behaviour: timing, pointer handling, accessibility. No visual styles.
+- **`@enigmax/utils`** - everything that is not UI: a short-TTL read cache, a notification queue.
+
+Both are plain npm packages. Nothing about them requires enigma - `enigma add` is a convenience that also lets an agent discover what exists.
+
+## Add one
+
+<Cmd cmd="enigma add" desc="List the catalogue for this project's framework." />
+<Cmd cmd="enigma add marquee" desc="Add it as a dependency." />
+<Cmd cmd="enigma add marquee --copy" desc="Copy the source into the project, yours to edit." />
+<Cmd cmd="enigma add --all" desc="Everything in the catalogue." />
+
+`--dest <dir>` chooses where copies land (default `src/lib/enigma`, or `lib/enigma` when the project has no `src`). `--target` overrides the detected framework. `--dry-run` reports without writing.
+
+Copy mode rewrites the internal import specifiers to relative ones, so the copied files stand alone. It refuses to run when the package source is not on disk rather than inventing it.
+
+## Or just install them
+
+```sh
+npm install @enigmax/primitives @enigmax/utils
+```
+
+## Which framework
+
+The core of every primitive is framework-agnostic TypeScript with no dependencies, so **vanilla JS and Astro work today** through the main entry. React has a thin adapter at `@enigmax/primitives/react`. Vue, Svelte and TanStack adapters are not written yet; they will reuse the same core rather than reimplement it.
+
+| Target | Entry | Marquee export |
+|---|---|---|
+| Vanilla, Astro | `@enigmax/primitives` | `createMarquee` |
+| React | `@enigmax/primitives/react` | `useMarquee` |
+
+## They ship no styles
+
+A primitive applies only what its behaviour requires - `overflow`, `touch-action`, `user-select`, `will-change`, `transform` - and never anything that is a look. State is published as data attributes, so the styling stays entirely yours:
+
+```css
+[data-enigma-marquee]                 { cursor: grab; }
+[data-enigma-marquee][data-dragging]  { cursor: grabbing; }
+[data-enigma-marquee][data-hovering]  { --logo-opacity: 1; }
+[data-enigma-marquee-track]           { display: flex; }
+```
+
+Pass `manageStyles: false` to take even the functional styles back.
+
+A themes package that styles these hooks for you is planned; the attributes are already stable, so anything you write against them now keeps working.
+
+## The catalogue an agent reads is the one you installed
+
+`enigma add` looks for the registry inside the package installed in your project first, and only falls back to the copy bundled with the CLI. So an agent is shown the API your project actually compiles against, instead of a catalogue frozen into a skill that drifts the first time you upgrade.
+
+## In this section
+
+- [Marquee]({docHref("components/marquee")}) - draggable infinite row: logo walls, testimonial strips, pill rails.
+- [Cache]({docHref("components/cache")}) - short-TTL read cache with in-flight deduplication.
+- [Notifications]({docHref("components/notifications")}) - queue, dedupe and dismiss timers that hold when the tab is hidden.

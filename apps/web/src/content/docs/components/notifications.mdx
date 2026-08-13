@@ -1,0 +1,47 @@
+---
+title: Notifications
+description: Ordering, dedupe by key, sticky errors and dismiss timers that hold rather than run while the tab is hidden. No rendering, no styles.
+group: Components
+order: 28
+---
+import Cmd from "../../../components/Cmd.astro";
+
+<Cmd cmd="enigma add notifications" desc="Add it to the current project." />
+
+The queue owns ordering, deduplication, eviction and timers. **Rendering is yours** - it returns a list and never an opinion about what a toast looks like.
+
+## Vanilla
+
+```js
+import { createNotifications } from "@enigmax/utils";
+
+const queue = createNotifications({ max: 4, duration: 5000 });
+queue.notify({ key: "sync", title: "Retrying", tone: "warning" });
+```
+
+## React
+
+```jsx
+import { useNotifications } from "@enigmax/utils/react";
+
+const { items, notify, dismiss, pause, resume } = useNotifications();
+```
+
+Bind `pause` / `resume` to the stack's pointer enter and leave, and nothing dismisses itself while a visitor is reading it.
+
+## The behaviour worth not rewriting
+
+- **A repeated `key` replaces in place**, so a retry loop does not build a wall of identical messages.
+- **Errors stay until dismissed** by default; everything else self-dismisses. Configurable through `stickyTones`.
+- **Over `max`, the oldest *dismissable* notification makes room.** A sticky error is never silently evicted - the one message the visitor most needs is the one a naive queue drops.
+- **`pause()` holds the remaining time rather than running it**, and a hidden tab pauses automatically. A timer that keeps counting in the background fires the moment the visitor comes back, and they never see the message.
+
+## Notification shape
+
+| Field | Meaning |
+|---|---|
+| `key` | Optional. Reuses the slot of a live notification with the same key. |
+| `title` / `body` | The text. `body` is optional. |
+| `tone` | `info`, `success`, `warning`, `error`. |
+| `duration` | ms before self-dismissal. `Infinity` keeps it until dismissed. |
+| `data` | Anything the renderer needs: an action label, an href, an icon name. |

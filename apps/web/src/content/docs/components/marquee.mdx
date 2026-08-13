@@ -1,0 +1,116 @@
+---
+title: Marquee
+description: A looping row that can be grabbed and thrown - logo walls, testimonial strips, pill rails. Takes a speed in pixels per second, never a duration.
+group: Components
+order: 26
+---
+import Cmd from "../../../components/Cmd.astro";
+
+A row that loops forever and that a visitor can grab and throw. Logo walls, testimonial strips, pill rails, "trusted by" bands.
+
+<Cmd cmd="enigma add marquee" desc="Add it to the current project." />
+
+## The speed contract
+
+**It takes a speed in pixels per second. Never a duration.**
+
+A lap of a looping row is as long as its content. If the API takes a duration, the speed becomes `content / duration`, so the row runs faster every time an item is added to it. That is not theoretical:
+
+- Two testimonial rows on one page, same `--duration: 20s`, split from an odd-length array into 4 cards and 5. Measured **53.2 px/s** and **66.5 px/s**. They were meant to look like a pair.
+- A provider rail fed from a list that grows with the product: at 10, 15 and 20 items a fixed 50s duration gives **45, 67 and 87 px/s**. Nobody edits the duration when they add a provider, so the row silently accelerates over releases.
+
+Take a speed and derive the duration. After the fix the same rail measured 67.0 px/s at all three counts.
+
+## React
+
+```jsx
+import { useMarquee } from "@enigmax/primitives/react";
+
+function LogoWall({ logos }) {
+    const { laneRef, trackRef, copies, dragging } = useMarquee({ speed: 80, hoverScale: 0.15 });
+
+    return (
+        <div ref={laneRef} style={{ cursor: dragging ? "grabbing" : "grab" }}>
+            <div ref={trackRef} style={{ display: "flex" }}>
+                {Array.from({ length: copies }, (_, copy) => (
+                    <div key={copy} aria-hidden={copy > 0} style={{ display: "flex", gap: 32 }}>
+                        {logos.map(logo => <a key={logo.id} href={logo.href}>{logo.name}</a>)}
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+}
+```
+
+The hook reports how many `copies` to render rather than cloning DOM itself, because cloning behind React's back is undone on the next render. It starts at 2 so the server-rendered HTML stays small, then grows to cover the lane.
+
+## Vanilla and Astro
+
+```js
+import { createMarquee } from "@enigmax/primitives";
+
+const marquee = createMarquee(
+    document.querySelector("[data-lane]"),
+    document.querySelector("[data-track]"),
+    { speed: 80, hoverScale: 0.15 }
+);
+```
+
+Here the engine clones the track's first child to fill the lane. Call `marquee.destroy()` when the page tears down.
+
+## Options
+
+| Option | Default | Meaning |
+|---|---|---|
+| `speed` | `60` | Pixels per second. Not a duration. |
+| `reverse` | `false` | Scroll towards the start. |
+| `vertical` | `false` | Scroll on the Y axis. |
+| `draggable` | `true` | Grab and throw the row. |
+| `hoverScale` | `1` | Speed multiplier while a **mouse** rests on the row. `0` pauses. |
+| `decay` | `0.12` | Fraction of the remaining velocity gap left after one second. `0.35` is noticeably draggy. |
+| `manageStyles` | `true` | Apply the styles the behaviour needs. Never theme styles. |
+
+The instance exposes `offset`, `period`, `copyCount`, `dragging`, `reducedMotion`, and the methods `update()`, `measure()`, `pause()`, `resume()`, `destroy()`.
+
+## Why the obvious implementation is wrong
+
+Each of these was shipped the naive way first and found broken in production.
+
+### setPointerCapture silently breaks every link in the row
+
+A pointer capture retargets the *compatibility mouse events* too, so the `click` of a plain press arrives on the lane instead of on the card that was pressed, and the card's link never opens. A nine-logo carousel quietly stops being nine links and nothing in the source looks wrong.
+
+The fix is to bind `pointermove` / `pointerup` / `pointercancel` to `window`, which is all the capture was ever for. A mousedown already captures the mouse at the OS level, so a release outside the browser window still arrives.
+
+### touch-action decides whether a phone can scroll your page
+
+Without it the browser owns the horizontal swipe and the drag handlers never see it. With `none`, a visitor can no longer scroll the page by starting the gesture on the row - which on a phone is most of the width of the screen. The lane gets `pan-y`, or `pan-x` when vertical.
+
+### A hover effect that ignores pointerType sticks forever on touch
+
+A tap fires `pointerenter` too, and on touch nothing ever fires the `pointerleave` that undoes it, so "slow down on hover" leaves the row at 15% speed for good after the first tap.
+
+Gating on `pointerType === "mouse"` is necessary and **not sufficient**: Chromium follows a touch with compatibility pointer events that claim `pointerType: "mouse"`. It emits them on Linux and not on Windows, so the naive gate passes on one machine and fails on the other - which is exactly how it reached CI here. A touch therefore also suppresses hover for a second, and `pointerleave` clears the state whatever the pointer type.
+
+### The rest, in short
+
+The lap is measured from the step between two copies rather than computed from item widths, because `itemCount * (itemWidth + gap)` is right only until a class changes or a font loads. The transform is driven by one `requestAnimationFrame` loop rather than CSS keyframes, which restart on every re-author. One integrator carries cruise, hover and momentum, so none of the three can arrive as a cut. A drag past ~6px cancels the click in the capture phase. A right click never starts a drag. A pointer held still for ~90ms before release throws nothing. Reduced motion drops the autoplay and keeps the drag, because a drag is an answer to the pointer and not motion of the page's own accord.
+
+## How it is verified
+
+The suite drives real Chromium and samples `new DOMMatrixReadOnly(getComputedStyle(track).transform).m41` on every animation frame - never the engine's own state, so a test cannot pass on a number the engine merely believes.
+
+| Check | Pass condition |
+|---|---|
+| Same speed at 2, 9, 11, 20 items | measured px/s equal within 1% |
+| Drag follows the pointer | a 200px swipe moves the row 200.0px |
+| Release | decays monotonically onto cruise, no sign flip |
+| Four viewport resizes | no frame moves more than one frame of cruising |
+| Drag ending on a link | 0 navigations |
+| Plain click and tap on a link | 1 navigation each |
+| Tap on touch | the row does not stick at the hover speed |
+| Compatibility mouse enter after a touch | hover does not engage |
+| Vertical swipe on a phone | the page still scrolls |
+| `prefers-reduced-motion` | 0.00px idle drift, drag still works |
+| Held still, then release | no fling |
