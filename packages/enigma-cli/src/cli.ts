@@ -22,6 +22,7 @@ import type { ContentType } from "./compress";
 import { spawnSync } from "node:child_process";
 import { starRepoInBackground } from "./github";
 import { dirname, join, resolve } from "node:path";
+import type { ComponentTarget } from "./components";
 import { parseGuardArgv, runGuardCli } from "./guard";
 import { buildIssueUrl, isHeadless, openUrl } from "./issue";
 import { setupGitHooks, GUARD_PROTECTIONS } from "./security";
@@ -47,6 +48,7 @@ const PKG = readJson<{ version?: string; }>(join(__dirname, "..", "package.json"
 const COMMANDS = new Set<string>([
     "install", "update", "security", "guard", "seal", "check", "config", "account", "accounts",
     "profile", "profiles", "skill", "skills", "issue", "improve", "qa", "compress", "guardrails", "trim", "verify", "mcp", "api", "gate", "dashboard", "dash", "fix-path", "resources", "recall", "codegraph", "autoskills", "statusline", "help", "version",
+    "add", "components",
     "pack", "packs", "ssh",
     ...acct.TOOL_NAMES,
     ...packs.PACKS.map((p) => p.id),
@@ -80,6 +82,14 @@ interface CliOptions extends skillsMod.InstallOptions {
     base: string | null;
     /** `account provider`: model id for a provider override. */
     providerModel: string | null;
+    /** `add`: copy the component's source into the project instead of depending on it. */
+    copy: boolean;
+    /** `add`: print the catalogue and exit. */
+    list: boolean;
+    /** `add`: directory copied source is written to. */
+    dest: string | null;
+    /** `add`: framework target override (vanilla | react | astro | vue | svelte). */
+    target: string | null;
     /** `api`: port override for the local Claude Code API server. */
     port: number | null;
     /** `api`: optional bearer key required by the local API server. */
@@ -105,6 +115,7 @@ function parseArgs(argv: string[]): CliOptions {
         bypass: null, noBypass: false, outputStyle: null, minimalCode: null, dashboard: null, promptSecretGuard: null,
         force: false, all: false, yes: false, login: false, dryRun: false, help: false, version: false,
         stats: false, retrieve: null, compressType: null, clear: false,
+        copy: false, list: false, dest: null, target: null,
         preset: null, token: null, base: null, providerModel: null,
         port: null, apiKey: null, apiAccount: null, apiProfile: null, apiPack: null, expose: false, newToken: false,
         json: false,
@@ -174,6 +185,10 @@ function parseArgs(argv: string[]): CliOptions {
             case "--login": opts.login = true; break;
             case "-y": case "--yes": opts.yes = true; break;
             case "--dry-run": opts.dryRun = true; break;
+            case "--copy": opts.copy = true; break;
+            case "--list": opts.list = true; break;
+            case "--dest": opts.dest = next(); break;
+            case "--target": opts.target = next(); break;
             case "-h": case "--help": opts.help = true; break;
             case "-v": case "--version": opts.version = true; break;
             default:
@@ -303,6 +318,10 @@ Commands:
                        (opt-in; structural code intelligence over MCP, no external tool)
   autoskills [path]    Detect the project's tech stack and install matching agent skills
                        (separate from the policy skills; --dry-run to preview)
+  add [name...]        Headless primitives and utilities: behaviour, timing and a11y with
+                       no styles of their own. No name lists the catalogue.
+                         --all      every item          --copy   vendor the source in
+                         --dest     where copies land   --target vanilla|react|astro
   pack <subcommand>    Marketplace of optional, isolated harness packs (e.g. Helio for bug
                        bounty). Each runs in its own agent context, so its skills/commands
                        never load into your normal agent:
@@ -1342,6 +1361,94 @@ async function runCodeGraphCli(args: string[]): Promise<number> {
 }
 
 /**
+ * `enigma add [name...]`: pull headless primitives and utilities into the project,
+ * either as a dependency or copied in as editable source.
+ *
+ * The catalogue is read from the package installed in the project, so an agent is
+ * shown the API the project actually compiles against rather than a frozen copy.
+ */
+async function runAddCli(opts: CliOptions): Promise<number> {
+    const components = await import("./components");
+    const projectDir = process.cwd();
+
+    const useColor = !("NO_COLOR" in process.env) && (process.stdout.isTTY || "FORCE_COLOR" in process.env);
+    const sgr = (code: string, s: string): string => (useColor ? `\x1b[${code}m${s}\x1b[0m` : s);
+    const bold = (s: string): string => sgr("1", s), dim = (s: string): string => sgr("2", s);
+    const cyan = (s: string): string => sgr("36", s), green = (s: string): string => sgr("32", s);
+    const red = (s: string): string => sgr("31", s), amber = (s: string): string => sgr("38;5;172", s);
+    const pad = (s: string, w: number): string => s + " ".repeat(Math.max(0, w - s.length));
+
+    const catalogue = components.listComponents(projectDir);
+    if (!catalogue.length) {
+        console.error(`\n  ${red("No component registry found.")}`);
+        console.error(`  ${dim(`Install one: npm install ${components.REGISTRY_PACKAGES.join(" ")}`)}\n`);
+        return 1;
+    }
+
+    const target = (opts.target ?? components.detectTarget(projectDir)) as ComponentTarget;
+    const names = opts.all ? catalogue.map((item) => item.name) : opts.positionals;
+
+    if (opts.list || !names.length) {
+        console.log(`\n  ${amber(bold("components"))}${dim(`  target ${target}`)}`);
+        const width = Math.max(...catalogue.map((item) => item.name.length)) + 3;
+        for (const pkg of components.REGISTRY_PACKAGES) {
+            const items = catalogue.filter((item) => item.pkg === pkg);
+            if (!items.length) continue;
+            console.log(`\n  ${bold(pkg)}${items[0].root ? "" : dim("  (not installed)")}`);
+            for (const item of items) {
+                const supported = item.targets.includes(target);
+                const label = supported ? cyan(pad(item.name, width)) : dim(pad(item.name, width));
+                console.log(`    ${label}${item.title}`);
+                console.log(`    ${pad("", width)}${dim(item.description)}`);
+            }
+        }
+        console.log(`\n  ${dim("enigma add <name>          add as a dependency")}`);
+        console.log(`  ${dim("enigma add <name> --copy   copy the source in, yours to edit")}`);
+        console.log(`  ${dim("enigma add --all           everything in the catalogue")}\n`);
+        return 0;
+    }
+
+    const destination = opts.dest ? resolve(projectDir, opts.dest) : components.defaultDestination(projectDir);
+    let failures = 0;
+    console.log(`\n  ${amber(bold("add"))}${dim(`  target ${target}`)}`);
+
+    for (const name of names) {
+        const item = components.findComponent(name, projectDir);
+        if (!item) {
+            console.error(`    ${red("x")} ${name} ${dim("- not in the catalogue")}`);
+            failures++;
+            continue;
+        }
+        if (!item.targets.includes(target)) {
+            console.error(`    ${red("x")} ${item.name} ${dim(`- no ${target} adapter yet (has: ${item.targets.join(", ")})`)}`);
+            failures++;
+            continue;
+        }
+        if (opts.dryRun) {
+            const files = item.files.filter((file) => file.targets.includes(target)).map((file) => file.dest);
+            console.log(`    ${dim("would add")} ${cyan(item.name)} ${dim(opts.copy ? `-> ${destination} (${files.join(", ")})` : `-> ${item.pkg}`)}`);
+            continue;
+        }
+
+        const result = opts.copy
+            ? components.addAsCopy(item, projectDir, target, destination)
+            : components.addAsDependency(item, projectDir, opts.yes);
+
+        if (!result.ok) {
+            console.error(`    ${red("x")} ${item.name} ${dim(`- ${result.message}`)}`);
+            failures++;
+            continue;
+        }
+        console.log(`    ${green("+")} ${cyan(item.name)} ${dim(result.message)}`);
+        console.log(`      ${dim(components.usageSnippet(item, target, opts.copy ? destination : null))}`);
+        if (!item.styles) console.log(`      ${dim("unstyled: style it through its data-* hooks")}`);
+    }
+
+    console.log("");
+    return failures ? 1 : 0;
+}
+
+/**
  * `enigma autoskills [path]`: detect the project's tech stack and install the matching
  * agent skills (separate from enigma's own policy skills). `--dry-run` only reports.
  */
@@ -2343,6 +2450,7 @@ export async function run(argv: string[]): Promise<void> {
     if (opts.command === "recall") { process.exit(await runRecallCli(opts.positionals)); }
     if (opts.command === "codegraph") { process.exit(await runCodeGraphCli(opts.positionals)); }
     if (opts.command === "autoskills") { process.exit(await runAutoskillsCli(opts, interactive)); }
+    if (opts.command === "add" || opts.command === "components") { process.exit(await runAddCli(opts)); }
     if (opts.command === "api") { process.exit(await runApiCli(opts)); }
 
     if (opts.command === "update") {

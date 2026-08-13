@@ -257,6 +257,47 @@ export const BUILTIN_RULES: GuardrailRule[] = [
     // enforces shape - a rule for either would false-positive. The generic "validate every input"
     // principle for those languages lives in the always-on memory kernel instead.
     {
+        id: "fe-marquee-duration",
+        label: "Looping row driven by a speed, not a duration",
+        files: ["*.ts", "*.tsx", "*.js", "*.jsx", "*.css", "*.scss", "*.astro", "*.vue", "*.svelte"],
+        excludeFiles: [
+            "*.test.*", "*.spec.*", "*.stories.*", "*.min.js", "*.min.css",
+            "**/tests/**", "tests/**", "**/__tests__/**", "__tests__/**",
+            "**/dist/**", "dist/**", "**/build/**", "build/**",
+            "**/node_modules/**", "node_modules/**", "**/vendor/**", "vendor/**",
+        ],
+        ignoreFileCase: true,
+        scope: "file",
+        // Only newly written code: a duration-driven marquee is common in existing
+        // pages, and the rule has to name the one being added, not the backlog.
+        stage: "diff",
+        // A duration named on the same line as the looping row it drives. Requiring
+        // both words keeps every unrelated animation-duration out of the match.
+        pattern: "(marquee|ticker|logo-?wall|infinite-?scroll)[^\\n]*(animation-duration|animationDuration|--duration)|(animation-duration|animationDuration|--duration)[^\\n]*(marquee|ticker|logo-?wall|infinite-?scroll)",
+        absent: "px/s|pixels per second|pixelsPerSecond|\\bspeed\\b|@enigmax/primitives|useMarquee|createMarquee|enigma:allow-marquee-duration",
+        message: "Looping row driven by a duration. A lap is as long as its content, so the speed becomes content/duration and the row runs faster every time an item is added - measured at 45, 67 and 87 px/s for one rail at 10, 15 and 20 items. Take a speed in px/s and derive the duration, or use the primitive that already does: `enigma add marquee` (@enigmax/primitives), which also measures the lap from the DOM instead of computing it. Mark the line `enigma:allow-marquee-duration` when the duration is genuinely the contract.",
+        severity: "warn",
+        skill: "frontend-policy",
+    },
+    {
+        id: "fe-pointer-capture-drag",
+        label: "Drag bound to window, not setPointerCapture",
+        files: ["*.ts", "*.tsx", "*.js", "*.jsx", "*.astro", "*.vue", "*.svelte"],
+        excludeFiles: [
+            "*.test.*", "*.spec.*", "*.stories.*", "*.min.js",
+            "**/tests/**", "tests/**", "**/__tests__/**", "__tests__/**",
+            "**/dist/**", "dist/**", "**/build/**", "build/**",
+            "**/node_modules/**", "node_modules/**", "**/vendor/**", "vendor/**",
+        ],
+        scope: "file",
+        stage: "diff",
+        pattern: "\\.setPointerCapture\\s*\\(",
+        absent: "enigma:allow-pointer-capture",
+        message: "setPointerCapture retargets the compatibility mouse events too, so a plain click on a descendant arrives on the capturing element and the descendant's link never opens - a row of nine logo links quietly stops being nine links and nothing in the source looks wrong. Bind pointermove/pointerup/pointercancel to `window` instead, which is all the capture was for: a mousedown already captures the mouse at the OS level, so a release outside the window still arrives. Fine when the element has no interactive descendants (a slider thumb, a resize handle) - mark it `enigma:allow-pointer-capture` there (frontend-policy).",
+        severity: "warn",
+        skill: "frontend-policy",
+    },
+    {
         id: "fe-password-input",
         label: "Reusable password input (show/hide)",
         files: ["*.tsx", "*.jsx"],

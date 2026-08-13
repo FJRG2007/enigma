@@ -49,6 +49,7 @@ Subsystems (read the one you are touching):
 - `recall.md` - local session memory (SQLite + FTS, hybrid search, MCP tools).
 - `code-graph.md` - native code-intelligence engine (`enigma codegraph`).
 - `local-api-server.md` - OpenAI-compatible local API over the installed agents (`enigma api`), adapters, playground.
+- `primitives.md` - the headless component registry (`@enigmax/primitives`, `@enigmax/utils`) and `enigma add`: core+adapter architecture, theming by data attribute, the marquee's twelve measured rules. Read before adding a primitive or a utility.
 - `autoskills.md` - stack detection and community stack-skill installation.
 - `guardrails.md` - the convention rule engine, its rules and the three-tier routing doctrine. Read before adding a rule.
 - `verified-completion.md` - the turn-end gate against false "done" claims (`enigma verify`), parity check, loop safety.

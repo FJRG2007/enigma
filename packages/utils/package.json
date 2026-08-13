@@ -1,0 +1,68 @@
+{
+  "name": "@enigmax/utils",
+  "version": "0.1.0",
+  "description": "Headless application utilities: short-TTL read cache with in-flight deduplication, notification queue with held timers, and the framework adapters over them.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./react": {
+      "types": "./dist/react/index.d.ts",
+      "import": "./dist/react/index.js"
+    },
+    "./registry.json": "./registry.json"
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test test/*.test.mjs",
+    "prepublishOnly": "npm run typecheck && npm run build"
+  },
+  "files": [
+    "dist",
+    "src",
+    "registry.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "peerDependencies": {
+    "react": ">=18"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.0",
+    "react": "^19.2.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "cache",
+    "ttl",
+    "notifications",
+    "toast",
+    "headless",
+    "react",
+    "enigma"
+  ],
+  "license": "Apache-2.0",
+  "author": "FJRG2007 <fjrg2007@tpeoficial.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/FJRG2007/enigma.git",
+    "directory": "packages/utils"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

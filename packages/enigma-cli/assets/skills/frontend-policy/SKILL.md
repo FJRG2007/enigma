@@ -21,6 +21,13 @@ description: Frontend architecture - reusable components, abstraction thresholds
 
 ---
 
+## Headless Primitives Before Hand-Rolled Interaction
+
+- Interaction logic - looping/draggable rows, momentum, focus traps, virtualized lists, dismiss timers, read caches - is BEHAVIOR, and behavior that has already been measured and tested is a dependency, not a snippet to rewrite. Check the catalogue before writing it: `enigma add` lists it, `enigma add <name>` adds it as a dependency, `enigma add <name> --copy` vendors the source in when it must be edited.
+- These primitives ship NO visual styles. They apply only what the behavior requires (overflow, touch-action, user-select, will-change, transform) and publish their state as `data-*` attributes, so the look stays entirely yours.
+- Do not hand-roll one of them "just for this page". The hand-rolled version is where the measured bugs come back: a duration-driven marquee that accelerates as items are added, a `setPointerCapture` drag that silently stops every link in the row from opening, a hover slowdown that sticks forever after the first tap because touch never fires `pointerleave`.
+- If the catalogue has no primitive for what you need, write it as one (core + adapter + registry entry + test) rather than inline in a page, so the next screen reuses it instead of rewriting it.
+
 ## Component Reuse (Mandatory)
 
 - ALWAYS reuse a single base component and drive its behavior with props; NEVER create separate components for variants of the same element.

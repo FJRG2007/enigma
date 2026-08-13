@@ -1,0 +1,71 @@
+{
+  "name": "@enigmax/primitives",
+  "version": "0.1.0",
+  "description": "Headless interaction primitives: the behaviour, the timing and the accessibility of components like a draggable infinite marquee, with no styles of their own. Framework-agnostic core plus thin adapters.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./react": {
+      "types": "./dist/react/index.d.ts",
+      "import": "./dist/react/index.js"
+    },
+    "./registry.json": "./registry.json"
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "playwright test",
+    "test:install": "playwright install chromium",
+    "prepublishOnly": "npm run typecheck && npm run build"
+  },
+  "files": [
+    "dist",
+    "src",
+    "registry.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "peerDependencies": {
+    "react": ">=18"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.0",
+    "@types/react": "^19.2.0",
+    "react": "^19.2.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "headless",
+    "primitives",
+    "marquee",
+    "carousel",
+    "unstyled",
+    "react",
+    "vanilla",
+    "enigma"
+  ],
+  "license": "Apache-2.0",
+  "author": "FJRG2007 <fjrg2007@tpeoficial.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/FJRG2007/enigma.git",
+    "directory": "packages/primitives"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

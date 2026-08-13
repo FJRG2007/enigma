@@ -1,0 +1,46 @@
+{
+  "registry": "@enigmax/primitives",
+  "version": 1,
+  "kind": "primitive",
+  "items": [
+    {
+      "name": "marquee",
+      "title": "Draggable infinite marquee",
+      "description": "Looping row that takes a speed in px/s, measures its own lap, and can be grabbed and thrown without swallowing the clicks on its items.",
+      "targets": ["vanilla", "astro", "react"],
+      "entry": {
+        "vanilla": "@enigmax/primitives",
+        "astro": "@enigmax/primitives",
+        "react": "@enigmax/primitives/react"
+      },
+      "exports": {
+        "vanilla": ["createMarquee"],
+        "astro": ["createMarquee"],
+        "react": ["useMarquee"]
+      },
+      "files": [
+        {
+          "path": "src/core/marquee.ts",
+          "dest": "marquee.ts",
+          "targets": ["vanilla", "astro", "react"]
+        },
+        {
+          "path": "src/react/use-marquee.ts",
+          "dest": "use-marquee.ts",
+          "targets": ["react"],
+          "rewrite": { "@/core/marquee": "./marquee" }
+        }
+      ],
+      "styles": false,
+      "themeHooks": [
+        "[data-enigma-marquee]",
+        "[data-enigma-marquee][data-dragging]",
+        "[data-enigma-marquee][data-hovering]",
+        "[data-enigma-marquee][data-reduced-motion=true]",
+        "[data-enigma-marquee-track]",
+        "[data-enigma-marquee-copy]"
+      ],
+      "docs": "docs/notes/primitives.md#marquee"
+    }
+  ]
+}

@@ -31,3 +31,6 @@ packages/enigma-cli/bin/enigma-bin*
 # Internal task ledger + one-off dev scratch (kept local; may reference upstream sources)
 /.task/
 /packages/linter/_fiximp2.mjs
+# Playwright run artifacts from the component packages.
+packages/*/test-results/
+packages/*/playwright-report/

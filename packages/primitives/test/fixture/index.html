@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>marquee fixture</title>
+<style>
+    /* Layout only. The primitive ships no styles; these belong to the fixture. */
+    body { margin: 0; font: 14px system-ui, sans-serif; height: 300vh; }
+    #lane { width: 600px; }
+    #track { display: flex; }
+    .copy { display: flex; gap: 32px; padding-right: 32px; }
+    .item { width: 200px; height: 80px; display: flex; align-items: center; justify-content: center; background: #eee; }
+    #vertical-mode #lane { width: 300px; height: 400px; }
+    #vertical-mode #track { display: block; }
+    #vertical-mode .copy { display: block; padding: 0 0 32px; }
+    #vertical-mode .item { width: auto; margin-bottom: 32px; }
+</style>
+</head>
+<body>
+<div id="lane" data-testid="lane"><div id="track" data-testid="track"><div class="copy"></div></div></div>
+<script type="module">
+import { createMarquee } from "../../dist/index.js";
+
+const params = new URLSearchParams(location.search);
+const itemCount = Number(params.get("items") ?? 9);
+const speed = Number(params.get("speed") ?? 80);
+const vertical = params.get("vertical") === "1";
+const reverse = params.get("reverse") === "1";
+const hoverScale = Number(params.get("hoverScale") ?? 1);
+
+if (vertical) document.body.id = "vertical-mode";
+
+const source = document.querySelector(".copy");
+for (let index = 0; index < itemCount; index++) {
+    const anchor = document.createElement("a");
+    anchor.className = "item";
+    // A link assertion proves nothing without links in the DOM.
+    anchor.href = `#nav-${index}`;
+    anchor.dataset.testid = `item-${index}`;
+    anchor.draggable = false;
+    anchor.textContent = `item ${index}`;
+    source.appendChild(anchor);
+}
+
+// A hashchange is a real navigation the click actually completed.
+window.__navigations = 0;
+window.addEventListener("hashchange", () => { window.__navigations++; });
+
+window.__clicks = 0;
+
+window.__marquee = createMarquee(
+    document.getElementById("lane"),
+    document.getElementById("track"),
+    { speed, vertical, reverse, hoverScale, onItemClick: () => { window.__clicks++; } }
+);
+window.__ready = true;
+</script>
+</body>
+</html>
