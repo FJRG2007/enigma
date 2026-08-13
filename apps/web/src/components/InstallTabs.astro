@@ -41,9 +41,19 @@ const methods = Object.keys(INSTALL_METHODS); // curl, powershell, npm, pnpm, ya
     .it-rec { color: var(--good); font-size: 9px; margin-left: 6px; vertical-align: middle; text-transform: uppercase; letter-spacing: 0.5px; }
     .it-row { display: flex; align-items: flex-start; gap: 12px; padding: 16px 18px; }
     /* Scoped under .install-tabs so these win over the docs' global ".doc code" pill styling.
-       Wrap (pre-wrap) instead of overflow-x:auto: the global themed scrollbars are non-overlay,
-       so a long command reserved a 10px horizontal scrollbar track below the text. */
-    .install-tabs .it-text { flex: 1; min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--mono); font-size: 13px; line-height: 1.7; color: var(--text); background: transparent; padding: 0; }
+       One line, scrolled: a shell command broken across three lines stops reading as
+       something you paste. The scrollbar is hidden because the global themed ones are
+       non-overlay and reserved a 10px track under the text - the edge fade below carries
+       the affordance instead, and the copy button means nobody has to scroll to use it. */
+    .install-tabs .it-text {
+        flex: 1; min-width: 0; white-space: pre; overflow-x: auto; scrollbar-width: none;
+        font-family: var(--mono); font-size: 13px; line-height: 1.7; color: var(--text); background: transparent; padding: 0;
+        /* Fades the right edge so a command running past the box reads as scrollable
+           rather than cut. The mask is on the element, so it follows the scroll. */
+        -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 34px), transparent);
+        mask-image: linear-gradient(90deg, #000 calc(100% - 34px), transparent);
+    }
+    .install-tabs .it-text::-webkit-scrollbar { display: none; }
     .install-tabs .it-text :global(.t-cmd) { color: var(--accent); }
     .install-tabs .it-text :global(.t-flag) { color: var(--accent2); }
     .install-tabs .it-text :global(.t-url) { color: var(--good); }

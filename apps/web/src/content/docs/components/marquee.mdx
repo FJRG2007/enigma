@@ -4,11 +4,46 @@ description: A looping row that can be grabbed and thrown - logo walls, testimon
 group: Components
 order: 26
 ---
-import Cmd from "../../../components/Cmd.astro";
+import AddTabs from "../../../components/AddTabs.astro";
+import Preview from "../../../components/Preview.astro";
+import MarqueeDemo from "../../../components/demos/MarqueeDemo.astro";
 
 A row that loops forever and that a visitor can grab and throw. Logo walls, testimonial strips, pill rails, "trusted by" bands.
 
-<Cmd cmd="enigma add marquee" desc="Add it to the current project." />
+<Preview title="default" hint="Grab it and throw it. Release without moving and it eases back to cruise - same integrator, so nothing arrives as a cut.">
+    <MarqueeDemo speed={70} />
+    <div slot="code">
+```js
+import { createMarquee } from "@enigmax/primitives";
+
+createMarquee(lane, track, { speed: 70 });
+```
+    </div>
+</Preview>
+
+## Install
+
+<AddTabs item="marquee" pkg="@enigmax/primitives" />
+
+## Variants
+
+<Preview title="hoverScale: 0" hint="Rest a MOUSE on it and it stops; a tap on touch does not, which is the whole point of the pointerType gate below.">
+    <MarqueeDemo speed={70} hoverScale={0} />
+    <div slot="code">
+```js
+createMarquee(lane, track, { speed: 70, hoverScale: 0 });
+```
+    </div>
+</Preview>
+
+<Preview title="reverse, faster" hint="Two rows running opposite ways at the same measured speed, whatever their item counts.">
+    <MarqueeDemo speed={110} reverse={true} items={["Prisma", "PostgreSQL", "Zod", "Astro", "React", "Vite", "Playwright", "Bun"]} />
+    <div slot="code">
+```js
+createMarquee(lane, track, { speed: 110, reverse: true });
+```
+    </div>
+</Preview>
 
 ## The speed contract
 

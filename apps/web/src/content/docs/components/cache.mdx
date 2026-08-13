@@ -4,11 +4,29 @@ description: A short-TTL read cache whose point is the in-flight deduplication -
 group: Components
 order: 27
 ---
-import Cmd from "../../../components/Cmd.astro";
-
-<Cmd cmd="enigma add cache" desc="Add it to the current project." />
+import AddTabs from "../../../components/AddTabs.astro";
+import Preview from "../../../components/Preview.astro";
+import CacheDemo from "../../../components/demos/CacheDemo.astro";
 
 The TTL is the obvious half. The **in-flight deduplication** is the half that matters: two components mounting in the same tick ask for one key once, so a rate limit sees one request instead of five. The TTL then keeps the answer around long enough that a remount paints from cache instead of flashing a skeleton over data the app already has.
+
+<Preview title="in-flight deduplication" hint="Ask five times at once: five reads are served and ONE request is made. Ask again inside the 8s TTL and none is.">
+    <CacheDemo />
+    <div slot="code">
+```js
+import { createCache } from "@enigmax/utils";
+
+const cache = createCache({ namespace: "app", ttl: 8000 });
+
+// Five callers, one loader call.
+await Promise.all(Array.from({ length: 5 }, () => cache.read("user:1", loadUser)));
+```
+    </div>
+</Preview>
+
+## Install
+
+<AddTabs item="cache" pkg="@enigmax/utils" />
 
 ## Vanilla
 

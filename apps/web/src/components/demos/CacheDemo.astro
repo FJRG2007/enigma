@@ -1,0 +1,76 @@
+---
+/**
+ * Live cache demo. The point it has to make visible is the in-flight dedupe: five
+ * callers asking for one key in the same tick produce ONE request, which is invisible
+ * in a code sample and obvious in a counter.
+ */
+---
+<div class="dm" data-cache-demo>
+    <div class="dm-row">
+        <button type="button" class="dm-btn" data-act="burst">Ask 5 times at once</button>
+        <button type="button" class="dm-btn" data-act="again">Ask again</button>
+        <button type="button" class="dm-btn ghost" data-act="invalidate">Invalidate</button>
+    </div>
+    <div class="dm-stats">
+        <div><span class="dm-k">Loader calls</span><b data-out="calls">0</b></div>
+        <div><span class="dm-k">Reads served</span><b data-out="reads">0</b></div>
+        <div><span class="dm-k">Cache</span><b data-out="state">empty</b></div>
+    </div>
+    <p class="dm-log" data-out="log">Nothing yet.</p>
+</div>
+
+<style>
+    .dm { display: grid; gap: 12px; }
+    .dm-row { display: flex; flex-wrap: wrap; gap: 8px; }
+    .dm-btn { font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--text); background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 8px 13px; cursor: pointer; }
+    .dm-btn:hover { border-color: var(--accent); }
+    .dm-btn.ghost { color: var(--muted); }
+    .dm-stats { display: flex; flex-wrap: wrap; gap: 22px; }
+    .dm-stats div { display: grid; gap: 2px; }
+    .dm-k { font-size: 11px; color: var(--muted); }
+    .dm-stats b { font-family: var(--mono); font-size: 18px; color: var(--accent); font-weight: 600; }
+    .dm-log { margin: 0; font-family: var(--mono); font-size: 12px; color: var(--muted); }
+</style>
+
+<script>
+    import { createCache } from "@enigmax/utils";
+
+    const root = document.querySelector<HTMLElement>("[data-cache-demo]");
+    if (root) {
+        const out = (name: string) => root.querySelector<HTMLElement>(`[data-out="${name}"]`)!;
+        const cache = createCache({ namespace: "docs-demo", ttl: 8000 });
+        let calls = 0;
+        let reads = 0;
+
+        const loader = async () => {
+            calls++;
+            out("calls").textContent = String(calls);
+            await new Promise((resolve) => setTimeout(resolve, 450));
+            return `user-${calls}`;
+        };
+
+        const refresh = () => {
+            out("reads").textContent = String(reads);
+            out("state").textContent = cache.has("user:1") ? "fresh (8s TTL)" : "empty";
+        };
+
+        const read = async (label: string, times: number) => {
+            out("log").textContent = `${label}: ${times} read(s) in flight...`;
+            const started = calls;
+            const values = await Promise.all(Array.from({ length: times }, () => cache.read("user:1", loader)));
+            reads += values.length;
+            refresh();
+            const made = calls - started;
+            out("log").textContent = `${label}: ${values.length} read(s) served, ${made} request(s) made -> ${values[0]}`;
+        };
+
+        root.querySelector('[data-act="burst"]')!.addEventListener("click", () => void read("Burst", 5));
+        root.querySelector('[data-act="again"]')!.addEventListener("click", () => void read("Again", 1));
+        root.querySelector('[data-act="invalidate"]')!.addEventListener("click", () => {
+            cache.invalidate("user:*");
+            refresh();
+            out("log").textContent = "Invalidated. The next read hits the loader again.";
+        });
+        refresh();
+    }
+</script>

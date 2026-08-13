@@ -4,11 +4,29 @@ description: Ordering, dedupe by key, sticky errors and dismiss timers that hold
 group: Components
 order: 28
 ---
-import Cmd from "../../../components/Cmd.astro";
-
-<Cmd cmd="enigma add notifications" desc="Add it to the current project." />
+import AddTabs from "../../../components/AddTabs.astro";
+import Preview from "../../../components/Preview.astro";
+import NotificationsDemo from "../../../components/demos/NotificationsDemo.astro";
 
 The queue owns ordering, deduplication, eviction and timers. **Rendering is yours** - it returns a list and never an opinion about what a toast looks like.
+
+<Preview title="queue behaviour" hint='Press "Retry" repeatedly: it replaces in place instead of stacking. Press "Error": it stays while the others fade.'>
+    <NotificationsDemo />
+    <div slot="code">
+```js
+import { createNotifications } from "@enigmax/utils";
+
+const queue = createNotifications({ max: 4, duration: 5000 });
+
+queue.subscribe(items => render(items));
+queue.notify({ key: "retry", title: "Retrying", tone: "warning" });
+```
+    </div>
+</Preview>
+
+## Install
+
+<AddTabs item="notifications" pkg="@enigmax/utils" />
 
 ## Vanilla
 

@@ -4,7 +4,9 @@ description: Headless primitives and utilities you can add to a project as a dep
 group: Components
 order: 25
 ---
-import Cmd from "../../../components/Cmd.astro";
+import AddTabs from "../../../components/AddTabs.astro";
+import Preview from "../../../components/Preview.astro";
+import MarqueeDemo from "../../../components/demos/MarqueeDemo.astro";
 import { docHref } from "../../../lib/url";
 
 Interaction logic is behaviour, and behaviour that has already been measured and tested belongs in a package, not in a snippet an agent rewrites on every screen. Two packages hold it:
@@ -14,26 +16,30 @@ Interaction logic is behaviour, and behaviour that has already been measured and
 
 Both are plain npm packages. Nothing about them requires enigma - `enigma add` is a convenience that also lets an agent discover what exists.
 
-## Add one
+<Preview title="marquee" hint="Every preview on these pages is a real instance of the published package. Grab this one and throw it.">
+    <MarqueeDemo speed={70} />
+    <div slot="code">
+```js
+import { createMarquee } from "@enigmax/primitives";
 
-<Cmd cmd="enigma add" desc="List the catalogue for this project's framework." />
-<Cmd cmd="enigma add marquee" desc="Add it as a dependency." />
-<Cmd cmd="enigma add marquee --copy" desc="Copy the source into the project, yours to edit." />
-<Cmd cmd="enigma add --all" desc="Everything in the catalogue." />
+createMarquee(lane, track, { speed: 70 });
+```
+    </div>
+</Preview>
+
+## Install
+
+<AddTabs pkg="@enigmax/primitives" />
+
+The `enigma` tab adds the package and prints the import to use. The `copy` tab writes the source into your project instead, so it is yours to edit - the same choice shadcn made, applied to behaviour rather than markup.
 
 `--dest <dir>` chooses where copies land (default `src/lib/enigma`, or `lib/enigma` when the project has no `src`). `--target` overrides the detected framework. `--dry-run` reports without writing.
 
 Copy mode rewrites the internal import specifiers to relative ones, so the copied files stand alone. It refuses to run when the package source is not on disk rather than inventing it.
 
-## Or just install them
-
-```sh
-npm install @enigmax/primitives @enigmax/utils
-```
-
 ## Which framework
 
-The core of every primitive is framework-agnostic TypeScript with no dependencies, so **vanilla JS and Astro work today** through the main entry. React has a thin adapter at `@enigmax/primitives/react`. Vue, Svelte and TanStack adapters are not written yet; they will reuse the same core rather than reimplement it.
+The core of every primitive is framework-agnostic TypeScript with no dependencies, so **vanilla JS and Astro work today** through the main entry - this page is Astro, and the demo above is the vanilla entry. React has a thin adapter. Vue, Svelte and TanStack adapters are not written yet; they will reuse the same core rather than reimplement it.
 
 | Target | Entry | Marquee export |
 |---|---|---|

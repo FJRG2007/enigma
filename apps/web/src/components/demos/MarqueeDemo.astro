@@ -1,0 +1,57 @@
+---
+/**
+ * Live marquee, driven by the published @enigmax/primitives - not a recording.
+ *
+ * The row's whole contract is timing and pointer behaviour, so the only honest
+ * documentation is one the reader can grab and throw.
+ */
+interface Props {
+    speed?: number;
+    hoverScale?: number;
+    reverse?: boolean;
+    /** Rendered as pills; kept short so the lap stays a few hundred pixels. */
+    items?: string[];
+}
+const {
+    speed = 70,
+    hoverScale = 1,
+    reverse = false,
+    items = ["Claude Code", "Codex", "opencode", "Kimi Code", "MCP", "Guardrails", "Recall", "Dashboard"]
+} = Astro.props;
+---
+<div class="mq" data-marquee data-speed={String(speed)} data-hover={String(hoverScale)} data-reverse={String(reverse)}>
+    <div class="mq-track" data-marquee-track>
+        <div class="mq-copy">
+            {items.map((item) => <span class="mq-item">{item}</span>)}
+        </div>
+    </div>
+</div>
+
+<style>
+    /* Layout only. The primitive ships no styles; everything here is the theme's. */
+    .mq { position: relative; overflow: hidden; -webkit-mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent); mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent); }
+    .mq[data-dragging] { cursor: grabbing; }
+    .mq:not([data-dragging]) { cursor: grab; }
+    .mq-track { display: flex; }
+    .mq-copy { display: flex; gap: 12px; padding-right: 12px; }
+    .mq-item {
+        font-family: var(--mono); font-size: 12.5px; white-space: nowrap; color: var(--text);
+        background: var(--surface2); border: 1px solid var(--border); border-radius: 999px; padding: 8px 15px;
+        user-select: none;
+    }
+    .mq[data-hovering] .mq-item { border-color: var(--accent); }
+</style>
+
+<script>
+    import { createMarquee } from "@enigmax/primitives";
+
+    for (const lane of document.querySelectorAll<HTMLElement>("[data-marquee]")) {
+        const track = lane.querySelector<HTMLElement>("[data-marquee-track]");
+        if (!track) continue;
+        createMarquee(lane, track, {
+            speed: Number(lane.dataset.speed ?? 70),
+            hoverScale: Number(lane.dataset.hover ?? 1),
+            reverse: lane.dataset.reverse === "true"
+        });
+    }
+</script>

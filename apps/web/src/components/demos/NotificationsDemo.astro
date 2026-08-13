@@ -1,0 +1,100 @@
+---
+/**
+ * Live notification queue. The rendering below is the demo's own - the package
+ * supplies the list, the ordering, the dedupe and the timers, and nothing else.
+ */
+---
+<div class="nt" data-notifications-demo>
+    <div class="nt-row">
+        <button type="button" class="nt-btn" data-tone="success">Success</button>
+        <button type="button" class="nt-btn" data-tone="info">Info</button>
+        <button type="button" class="nt-btn" data-tone="warning">Retry (same key)</button>
+        <button type="button" class="nt-btn" data-tone="error">Error (sticky)</button>
+    </div>
+    <ul class="nt-list" data-list><li class="nt-empty">Nothing queued. Errors stay until dismissed; the rest fade after 5s.</li></ul>
+</div>
+
+<style>
+    .nt { display: grid; gap: 12px; }
+    .nt-row { display: flex; flex-wrap: wrap; gap: 8px; }
+    .nt-btn { font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--text); background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 8px 13px; cursor: pointer; }
+    .nt-btn:hover { border-color: var(--accent); }
+    .nt-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; min-height: 62px; }
+    .nt-empty { font-size: 12px; color: var(--muted); }
+    .nt-item { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border: 1px solid var(--border); border-left-width: 3px; border-radius: 10px; background: var(--surface2); }
+    .nt-item[data-tone="success"] { border-left-color: var(--good); }
+    .nt-item[data-tone="error"] { border-left-color: #e5666b; }
+    .nt-item[data-tone="warning"] { border-left-color: var(--accent); }
+    .nt-item[data-tone="info"] { border-left-color: var(--muted); }
+    .nt-body { flex: 1; min-width: 0; }
+    .nt-title { font-size: 13px; color: var(--text); }
+    .nt-sub { font-size: 11.5px; color: var(--muted); }
+    .nt-x { background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 15px; line-height: 1; padding: 2px 4px; }
+    .nt-x:hover { color: var(--text); }
+</style>
+
+<script>
+    import { createNotifications } from "@enigmax/utils";
+
+    const root = document.querySelector<HTMLElement>("[data-notifications-demo]");
+    if (root) {
+        const list = root.querySelector<HTMLElement>("[data-list]")!;
+        const queue = createNotifications({ max: 4, duration: 5000 });
+        let attempt = 0;
+
+        const copy = {
+            success: { title: "Saved", body: "Fades on its own after 5s." },
+            info: { title: "Synced", body: "Ordinary notification." },
+            warning: { title: "Retrying", body: "Same key: replaces in place instead of stacking." },
+            error: { title: "Upload failed", body: "Errors stay until dismissed." }
+        } as const;
+
+        queue.subscribe((items) => {
+            if (!items.length) {
+                list.innerHTML = '<li class="nt-empty">Nothing queued. Errors stay until dismissed; the rest fade after 5s.</li>';
+                return;
+            }
+            list.innerHTML = "";
+            for (const item of items) {
+                const row = document.createElement("li");
+                row.className = "nt-item";
+                row.dataset.tone = item.tone;
+                const body = document.createElement("div");
+                body.className = "nt-body";
+                const title = document.createElement("div");
+                title.className = "nt-title";
+                title.textContent = item.title;
+                const sub = document.createElement("div");
+                sub.className = "nt-sub";
+                sub.textContent = item.body ?? "";
+                body.append(title, sub);
+                const close = document.createElement("button");
+                close.type = "button";
+                close.className = "nt-x";
+                close.setAttribute("aria-label", `Dismiss ${item.title}`);
+                close.title = "Dismiss";
+                close.textContent = "×";
+                close.addEventListener("click", () => queue.dismiss(item.id));
+                row.append(body, close);
+                list.append(row);
+            }
+        });
+
+        for (const button of root.querySelectorAll<HTMLButtonElement>("[data-tone]")) {
+            button.addEventListener("click", () => {
+                const tone = button.dataset.tone as keyof typeof copy;
+                const text = copy[tone];
+                if (tone === "warning") attempt++;
+                queue.notify({
+                    tone,
+                    key: tone === "warning" ? "retry" : undefined,
+                    title: tone === "warning" ? `${text.title} (attempt ${attempt})` : text.title,
+                    body: text.body
+                });
+            });
+        }
+
+        // A queue left running after a client-side navigation would keep its timers.
+        window.addEventListener("beforeunload", () => queue.destroy());
+    }
+</script>
