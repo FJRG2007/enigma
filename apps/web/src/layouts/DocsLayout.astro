@@ -30,10 +30,11 @@ for (const d of docs) {
     }
 }
 
-// The docs shown in the sidebar for the current section (a pack's pages, or all core docs).
+// The docs shown in the sidebar for the current section. Each space owns its own list,
+// so the component reference is not buried at the bottom of the core sidebar.
 const sidebarDocs = space === "packs"
     ? (pack ? docs.filter((d) => d.data.pack === pack) : [])
-    : docs.filter((d) => (d.data.space ?? "core") === "core");
+    : docs.filter((d) => (d.data.space ?? "core") === space);
 
 // Group the sidebar entries by their `group` frontmatter, preserving order.
 const groups: { name: string; items: typeof docs }[] = [];
@@ -50,6 +51,7 @@ const onPacksHub = space === "packs" && !pack;
             <a href={url("")} class="brand">Enigma<span class="c"></span></a>
             <div class="tabs">
                 <a href={docHref("getting-started/introduction")} class={space === "core" ? "active" : ""}>Core</a>
+                <a href={docHref("components/overview")} class={space === "components" ? "active" : ""}>Components</a>
                 <a href={docHref("packs")} class={space === "packs" ? "active" : ""}>Packs</a>
             </div>
             <a class="home" href={url("")}>&larr; Home</a>

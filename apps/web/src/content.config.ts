@@ -11,7 +11,7 @@ const docs = defineCollection({
         group: z.string().default("Docs"),
         order: z.number().default(99),
         // Top-level docs section the page belongs to (a navbar tab + its own sidebar).
-        space: z.enum(["core", "packs"]).default("core"),
+        space: z.enum(["core", "packs", "components"]).default("core"),
         // Pack id for pages inside a specific pack's sub-section (e.g. "helio").
         pack: z.string().optional(),
     }),

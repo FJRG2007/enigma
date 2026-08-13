@@ -1,4 +1,3 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 122 32" fill="#fff" role="img" aria-label="Vellum (placeholder brand)">
-    <path d="M6 8h4l5 11 5-11h4l-9 18z"/>
-    <text x="30" y="22" font-family="Inter, system-ui, sans-serif" font-size="15" font-weight="600" letter-spacing="-.3">Vellum</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#8a93a3" role="img" aria-label="Vellum (placeholder brand)">
+    <path d="M2 3h4.4l5.6 13L17.6 3H22l-8.2 18h-3.6z"/>
 </svg>

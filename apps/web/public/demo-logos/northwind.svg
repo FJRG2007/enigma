@@ -1,4 +1,3 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 148 32" fill="#fff" role="img" aria-label="Northwind (placeholder brand)">
-    <path d="M8 24V8l12 10V8h4v16l-12-10v10z"/>
-    <text x="34" y="22" font-family="Inter, system-ui, sans-serif" font-size="15" font-weight="600" letter-spacing="-.3">Northwind</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#8a93a3" role="img" aria-label="Northwind (placeholder brand)">
+    <path d="M3 21V3h3.2l8.4 11.1V3H21v18h-3.2L9.4 9.9V21z"/>
 </svg>

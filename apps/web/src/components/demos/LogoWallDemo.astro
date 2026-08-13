@@ -4,33 +4,39 @@ import { asset } from "../../lib/url";
 /**
  * A "trusted by" logo wall on the marquee: what the primitive is most often used for.
  *
- * The tint is a CSS technique, NOT a feature of @enigmax/primitives - the primitive
- * ships no styles and this belongs to the theme. It is documented here because every
- * logo wall needs it and every logo wall gets it wrong: a `filter` chain cannot hit an
- * exact colour, so the logo is used as a MASK and the colour is painted behind it. That
- * works for any transparent asset - SVG, PNG or WebP alike.
+ * Every entry is a MARK plus its name. Real brand assets are icon-only and come in wildly
+ * different aspect ratios - 100x100, 24x24, 240x300 - so dropping them next to wordmarks
+ * makes the icons read as broken specks. A fixed box with `object-fit: contain` plus the
+ * name as text is what makes a mixed set look like one row.
  *
- * Untinted is the default on purpose: a brand's own colours are the correct rendering,
- * and a monochrome wall is a deliberate design choice rather than the baseline.
+ * The tint is a CSS technique, NOT a feature of @enigmax/primitives - the primitive ships
+ * no styles and this belongs to the theme. It is documented here because every logo wall
+ * needs it and every logo wall gets it wrong: a `filter` chain cannot hit an exact colour,
+ * so the mark is used as a MASK and the colour is painted behind it. That works for any
+ * transparent asset - SVG, PNG or WebP alike.
+ *
+ * Untinted is the default on purpose: a brand's own colours are the correct rendering, and
+ * a monochrome wall is a deliberate design choice rather than the baseline.
  */
 interface Props {
-    /** Paint every logo this colour. Omit to keep the brands' own colours. */
+    /** Paint every mark this colour. Omit to keep the brands' own colours. */
     tint?: string;
     speed?: number;
     hoverScale?: number;
 }
 const { tint, speed = 55, hoverScale = 1 } = Astro.props;
 
-// Three real, already-vendored brand marks plus four obvious placeholders, so the row
-// is long enough to loop without inventing logos for companies that did not agree to it.
+// Four real, already-vendored brand marks plus four obvious placeholders, so the row is
+// long enough to loop without inventing logos for companies that never agreed to appear.
 const logos = [
     { name: "Claude Code", src: asset("logos/claude.svg") },
-    { name: "OpenAI Codex", src: asset("logos/openai.svg") },
+    { name: "Codex", src: asset("logos/openai.svg") },
     { name: "opencode", src: asset("logos/opencode.svg") },
-    { name: "Northwind", src: asset("demo-logos/northwind.svg"), placeholder: true },
-    { name: "Vellum", src: asset("demo-logos/vellum.svg"), placeholder: true },
-    { name: "Acme Grid", src: asset("demo-logos/acme-grid.svg"), placeholder: true },
-    { name: "Plinth", src: asset("demo-logos/plinth.svg"), placeholder: true }
+    { name: "Kimi Code", src: asset("logos/kimi.svg") },
+    { name: "Northwind", src: asset("demo-logos/northwind.svg") },
+    { name: "Vellum", src: asset("demo-logos/vellum.svg") },
+    { name: "Acme Grid", src: asset("demo-logos/acme-grid.svg") },
+    { name: "Plinth", src: asset("demo-logos/plinth.svg") }
 ];
 ---
 <div
@@ -43,34 +49,40 @@ const logos = [
     <div class="lw-track" data-marquee-track>
         <div class="lw-copy">
             {logos.map((logo) => (
-                tint
-                    ? <span class="lw-logo" style={`--logo-src: url("${logo.src}")`} role="img" aria-label={logo.name}></span>
-                    : <img class="lw-img" src={logo.src} alt={logo.name} draggable={false} height="26" />
+                <span class="lw-item">
+                    {tint
+                        ? <span class="lw-mark is-masked" style={`--logo-src: url("${logo.src}")`} aria-hidden="true"></span>
+                        : <img class="lw-mark" src={logo.src} alt="" draggable={false} />}
+                    <span class="lw-name">{logo.name}</span>
+                </span>
             ))}
         </div>
     </div>
 </div>
 
 <style>
-    .lw { position: relative; overflow: hidden; -webkit-mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent); mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent); }
+    .lw { position: relative; overflow: hidden; -webkit-mask-image: linear-gradient(90deg, transparent, #000 5%, #000 95%, transparent); mask-image: linear-gradient(90deg, transparent, #000 5%, #000 95%, transparent); }
     .lw-track { display: flex; }
-    .lw-copy { display: flex; align-items: center; gap: 44px; padding-right: 44px; }
-    .lw-img { height: 26px; width: auto; opacity: .78; transition: opacity .2s; }
-    .lw:hover .lw-img { opacity: 1; }
+    .lw-copy { display: flex; align-items: center; gap: 38px; padding-right: 38px; }
+    .lw-item { display: inline-flex; align-items: center; gap: 9px; white-space: nowrap; opacity: .72; transition: opacity .2s; }
+    .lw:hover .lw-item { opacity: 1; }
+
+    /* One box for every mark, whatever aspect the brand's own file happens to be. */
+    .lw-mark { flex: 0 0 auto; width: 22px; height: 22px; object-fit: contain; }
+    .lw-name { font-size: 13px; color: var(--text); }
 
     /* The tint. The asset becomes the mask and the colour is the paint, so a flat
        PNG/WebP/SVG with transparency lands on an exact colour instead of whatever a
-       filter chain approximates. */
-    .lw-logo {
-        display: block; width: 108px; height: 26px;
+       filter chain approximates. The name follows it, or the row reads half-tinted. */
+    .lw-mark.is-masked {
+        display: block;
         background-color: var(--logo-color, currentColor);
         -webkit-mask-image: var(--logo-src); mask-image: var(--logo-src);
         -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
         -webkit-mask-position: center; mask-position: center;
         -webkit-mask-size: contain; mask-size: contain;
-        opacity: .8; transition: opacity .2s;
     }
-    .lw:hover .lw-logo { opacity: 1; }
+    .lw.is-tinted .lw-name { color: var(--logo-color); }
 </style>
 
 <script>

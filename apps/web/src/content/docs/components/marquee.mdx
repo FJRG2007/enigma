@@ -1,8 +1,9 @@
 ---
 title: Marquee
 description: A looping row that can be grabbed and thrown - logo walls, testimonial strips, pill rails. Takes a speed in pixels per second, never a duration.
-group: Components
-order: 26
+group: Motion
+order: 10
+space: components
 ---
 import AddTabs from "../../../components/AddTabs.astro";
 import Preview from "../../../components/Preview.astro";
@@ -64,7 +65,7 @@ const marquee = createMarquee(
 
 What the row is most often used for. The primitive is the same; only the content changes.
 
-<Preview title="brand colours" hint="Three real marks and four obvious placeholders. Drag it - the logos stay links if you make them links.">
+<Preview title="brand colours" hint="Four real marks and four obvious placeholders, every one in the same box. Drag it - the logos stay links if you make them links.">
     <LogoWallDemo speed={55} />
     <div slot="code">
 ```html
@@ -74,6 +75,7 @@ What the row is most often used for. The primitive is the same; only the content
             <a href="https://claude.com/product/claude-code"><img src="/logos/claude.svg" alt="Claude Code" draggable="false"></a>
             <a href="https://openai.com/codex"><img src="/logos/openai.svg" alt="OpenAI Codex" draggable="false"></a>
             <a href="https://opencode.ai"><img src="/logos/opencode.svg" alt="opencode" draggable="false"></a>
+            <a href="https://kimi.com"><img src="/logos/kimi.svg" alt="Kimi Code" draggable="false"></a>
         </div>
     </div>
 </div>
@@ -83,7 +85,9 @@ What the row is most often used for. The primitive is the same; only the content
 .wall       { position: relative; mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent); }
 .wall-track { display: flex; }
 .wall-copy  { display: flex; align-items: center; gap: 44px; padding-right: 44px; }
-.wall-copy img { height: 26px; width: auto; opacity: .78; transition: opacity .2s; }
+/* One box for every mark: brand assets come in wildly different aspect ratios
+   (100x100, 24x24, 240x300), and left to themselves the icons read as specks. */
+.wall-copy img { width: 22px; height: 22px; object-fit: contain; opacity: .72; transition: opacity .2s; }
 .wall:hover .wall-copy img { opacity: 1; }
 ```
 
