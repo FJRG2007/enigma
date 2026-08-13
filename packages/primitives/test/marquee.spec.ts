@@ -23,6 +23,29 @@ async function laneCentre(page: Page): Promise<{ x: number; y: number; }> {
     return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
 }
 
+/**
+ * A real touch drag, dispatched through the browser's input pipeline.
+ *
+ * Playwright's touchscreen only taps, and a wheel does not consult `touch-action`,
+ * so neither can tell whether the lane still lets the page scroll.
+ */
+async function touchSwipe(page: Page, from: { x: number; y: number; }, to: { x: number; y: number; }, steps = 12): Promise<void> {
+    const client = await page.context().newCDPSession(page);
+    await client.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: from.x, y: from.y }] });
+    for (let step = 1; step <= steps; step++) {
+        await client.send("Input.dispatchTouchEvent", {
+            type: "touchMove",
+            touchPoints: [{
+                x: from.x + ((to.x - from.x) * step) / steps,
+                y: from.y + ((to.y - from.y) * step) / steps
+            }]
+        });
+        await page.waitForTimeout(16);
+    }
+    await client.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    await client.detach();
+}
+
 /** A hard flick: several real frames of movement, then a release. */
 async function flick(page: Page, distancePerFrame: number, frames: number): Promise<void> {
     const start = await laneCentre(page);
@@ -196,13 +219,14 @@ test.describe("marquee on a phone", () => {
 
     test("a vertical swipe on the row still scrolls the page", async ({ page }) => {
         await open(page, { speed: CRUISE });
-        const start = await laneCentre(page);
-        await page.touchscreen.tap(start.x, start.y);
         await page.evaluate(() => window.scrollTo(0, 0));
+        const start = await laneCentre(page);
 
-        await page.mouse.move(start.x, start.y);
-        await page.mouse.wheel(0, 300);
-        await page.waitForTimeout(200);
+        // A real touch sequence, not a wheel: a wheel bypasses touch-action
+        // entirely, so it would pass even with `touch-action: none` on the lane.
+        await touchSwipe(page, start, { x: start.x, y: start.y - 220 });
+        await page.waitForTimeout(300);
+
         expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
     });
 });

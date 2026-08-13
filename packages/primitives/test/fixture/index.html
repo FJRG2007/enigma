@@ -2,11 +2,13 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>marquee fixture</title>
 <style>
     /* Layout only. The primitive ships no styles; these belong to the fixture. */
     body { margin: 0; font: 14px system-ui, sans-serif; height: 300vh; }
-    #lane { width: 600px; }
+    /* Narrower than the viewport on a phone, so a touch lands inside the lane. */
+    #lane { width: min(600px, 100%); }
     #track { display: flex; }
     .copy { display: flex; gap: 32px; padding-right: 32px; }
     .item { width: 200px; height: 80px; display: flex; align-items: center; justify-content: center; background: #eee; }
