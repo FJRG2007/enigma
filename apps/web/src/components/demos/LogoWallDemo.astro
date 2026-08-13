@@ -1,0 +1,92 @@
+---
+import { asset } from "../../lib/url";
+
+/**
+ * A "trusted by" logo wall on the marquee: what the primitive is most often used for.
+ *
+ * The tint is a CSS technique, NOT a feature of @enigmax/primitives - the primitive
+ * ships no styles and this belongs to the theme. It is documented here because every
+ * logo wall needs it and every logo wall gets it wrong: a `filter` chain cannot hit an
+ * exact colour, so the logo is used as a MASK and the colour is painted behind it. That
+ * works for any transparent asset - SVG, PNG or WebP alike.
+ *
+ * Untinted is the default on purpose: a brand's own colours are the correct rendering,
+ * and a monochrome wall is a deliberate design choice rather than the baseline.
+ */
+interface Props {
+    /** Paint every logo this colour. Omit to keep the brands' own colours. */
+    tint?: string;
+    speed?: number;
+    hoverScale?: number;
+}
+const { tint, speed = 55, hoverScale = 1 } = Astro.props;
+
+// Three real, already-vendored brand marks plus four obvious placeholders, so the row
+// is long enough to loop without inventing logos for companies that did not agree to it.
+const logos = [
+    { name: "Claude Code", src: asset("logos/claude.svg") },
+    { name: "OpenAI Codex", src: asset("logos/openai.svg") },
+    { name: "opencode", src: asset("logos/opencode.svg") },
+    { name: "Northwind", src: asset("demo-logos/northwind.svg"), placeholder: true },
+    { name: "Vellum", src: asset("demo-logos/vellum.svg"), placeholder: true },
+    { name: "Acme Grid", src: asset("demo-logos/acme-grid.svg"), placeholder: true },
+    { name: "Plinth", src: asset("demo-logos/plinth.svg"), placeholder: true }
+];
+---
+<div
+    class:list={["lw", tint && "is-tinted"]}
+    style={tint ? `--logo-color: ${tint}` : undefined}
+    data-marquee
+    data-speed={String(speed)}
+    data-hover={String(hoverScale)}
+>
+    <div class="lw-track" data-marquee-track>
+        <div class="lw-copy">
+            {logos.map((logo) => (
+                tint
+                    ? <span class="lw-logo" style={`--logo-src: url("${logo.src}")`} role="img" aria-label={logo.name}></span>
+                    : <img class="lw-img" src={logo.src} alt={logo.name} draggable={false} height="26" />
+            ))}
+        </div>
+    </div>
+</div>
+
+<style>
+    .lw { position: relative; overflow: hidden; -webkit-mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent); mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent); }
+    .lw-track { display: flex; }
+    .lw-copy { display: flex; align-items: center; gap: 44px; padding-right: 44px; }
+    .lw-img { height: 26px; width: auto; opacity: .78; transition: opacity .2s; }
+    .lw:hover .lw-img { opacity: 1; }
+
+    /* The tint. The asset becomes the mask and the colour is the paint, so a flat
+       PNG/WebP/SVG with transparency lands on an exact colour instead of whatever a
+       filter chain approximates. */
+    .lw-logo {
+        display: block; width: 108px; height: 26px;
+        background-color: var(--logo-color, currentColor);
+        -webkit-mask-image: var(--logo-src); mask-image: var(--logo-src);
+        -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+        -webkit-mask-position: center; mask-position: center;
+        -webkit-mask-size: contain; mask-size: contain;
+        opacity: .8; transition: opacity .2s;
+    }
+    .lw:hover .lw-logo { opacity: 1; }
+</style>
+
+<script>
+    import { createMarquee } from "@enigmax/primitives";
+
+    for (const lane of document.querySelectorAll<HTMLElement>("[data-marquee]")) {
+        // Two demo components can be on one page and each ships this loop; the flag
+        // keeps a lane from being driven by two engines fighting over one transform.
+        if (lane.dataset.marqueeReady) continue;
+        lane.dataset.marqueeReady = "1";
+        const track = lane.querySelector<HTMLElement>("[data-marquee-track]");
+        if (!track) continue;
+        createMarquee(lane, track, {
+            speed: Number(lane.dataset.speed ?? 70),
+            hoverScale: Number(lane.dataset.hover ?? 1),
+            reverse: lane.dataset.reverse === "true"
+        });
+    }
+</script>

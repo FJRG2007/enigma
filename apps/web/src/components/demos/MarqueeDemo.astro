@@ -46,6 +46,10 @@ const {
     import { createMarquee } from "@enigmax/primitives";
 
     for (const lane of document.querySelectorAll<HTMLElement>("[data-marquee]")) {
+        // Two demo components can be on one page and each ships this loop; the flag
+        // keeps a lane from being driven by two engines fighting over one transform.
+        if (lane.dataset.marqueeReady) continue;
+        lane.dataset.marqueeReady = "1";
         const track = lane.querySelector<HTMLElement>("[data-marquee-track]");
         if (!track) continue;
         createMarquee(lane, track, {

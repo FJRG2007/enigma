@@ -7,19 +7,130 @@ order: 26
 import AddTabs from "../../../components/AddTabs.astro";
 import Preview from "../../../components/Preview.astro";
 import MarqueeDemo from "../../../components/demos/MarqueeDemo.astro";
+import LogoWallDemo from "../../../components/demos/LogoWallDemo.astro";
 
 A row that loops forever and that a visitor can grab and throw. Logo walls, testimonial strips, pill rails, "trusted by" bands.
 
 <Preview title="default" hint="Grab it and throw it. Release without moving and it eases back to cruise - same integrator, so nothing arrives as a cut.">
     <MarqueeDemo speed={70} />
     <div slot="code">
+```html
+<!-- The lane clips, the track moves, and the first child is the content.
+     The engine repeats that child as many times as the lane needs. -->
+<div class="lane" data-lane>
+    <div class="track" data-track>
+        <div class="copy">
+            <span class="pill">Claude Code</span>
+            <span class="pill">Codex</span>
+            <span class="pill">opencode</span>
+            <span class="pill">Kimi Code</span>
+        </div>
+    </div>
+</div>
+```
+
+```css
+/* The primitive sets overflow, touch-action, user-select, will-change and the
+   transform. Everything below is yours - it ships no look of its own. */
+.lane  { position: relative; }
+.track { display: flex; }
+.copy  { display: flex; gap: 12px; padding-right: 12px; }   /* the gap is measured, not assumed */
+.pill  { padding: 8px 15px; border: 1px solid #2a2f3a; border-radius: 999px; white-space: nowrap; }
+
+/* Optional: fade both ends so items enter and leave instead of being cut. */
+.lane { mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent); }
+
+/* State the engine publishes, for you to style. */
+.lane:not([data-dragging]) { cursor: grab; }
+.lane[data-dragging]       { cursor: grabbing; }
+```
+
 ```js
 import { createMarquee } from "@enigmax/primitives";
 
-createMarquee(lane, track, { speed: 70 });
+const marquee = createMarquee(
+    document.querySelector("[data-lane]"),
+    document.querySelector("[data-track]"),
+    { speed: 70 }   // pixels per second - never a duration
+);
+
+// When the view goes away.
+// marquee.destroy();
 ```
     </div>
 </Preview>
+
+## A logo wall
+
+What the row is most often used for. The primitive is the same; only the content changes.
+
+<Preview title="brand colours" hint="Three real marks and four obvious placeholders. Drag it - the logos stay links if you make them links.">
+    <LogoWallDemo speed={55} />
+    <div slot="code">
+```html
+<div class="wall" data-lane>
+    <div class="wall-track" data-track>
+        <div class="wall-copy">
+            <a href="https://claude.com/product/claude-code"><img src="/logos/claude.svg" alt="Claude Code" draggable="false"></a>
+            <a href="https://openai.com/codex"><img src="/logos/openai.svg" alt="OpenAI Codex" draggable="false"></a>
+            <a href="https://opencode.ai"><img src="/logos/opencode.svg" alt="opencode" draggable="false"></a>
+        </div>
+    </div>
+</div>
+```
+
+```css
+.wall       { position: relative; mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent); }
+.wall-track { display: flex; }
+.wall-copy  { display: flex; align-items: center; gap: 44px; padding-right: 44px; }
+.wall-copy img { height: 26px; width: auto; opacity: .78; transition: opacity .2s; }
+.wall:hover .wall-copy img { opacity: 1; }
+```
+
+```js
+createMarquee(document.querySelector("[data-lane]"), document.querySelector("[data-track]"), { speed: 55 });
+```
+
+`draggable="false"` on the images matters: without it the browser starts its own image drag and the row never sees the gesture. The engine already sets `user-select: none` on the lane for the same reason.
+    </div>
+</Preview>
+
+### One colour for every logo
+
+<span class="beta-tag">beta</span> Brand assets arrive in seven different colours and a wall of them is noisy, so a monochrome treatment is common. The technique is not a `filter` chain - that cannot land on an exact colour - it is to use the asset as a **mask** and paint the colour behind it. That works for any transparent asset: SVG, PNG or WebP alike.
+
+<Preview title="tinted" hint="One colour, set once. Change --logo-color and every mark follows.">
+    <LogoWallDemo speed={55} tint="#e0a458" />
+    <div slot="code">
+```html
+<span class="logo" style="--logo-src: url('/logos/claude.svg')" role="img" aria-label="Claude Code"></span>
+<span class="logo" style="--logo-src: url('/logos/openai.svg')" role="img" aria-label="OpenAI Codex"></span>
+```
+
+```css
+.wall { --logo-color: #e0a458; }
+
+.logo {
+    display: block;
+    width: 108px;
+    height: 26px;
+    background-color: var(--logo-color, currentColor);
+    mask-image: var(--logo-src);
+    mask-repeat: no-repeat;
+    mask-position: center;
+    mask-size: contain;
+    -webkit-mask-image: var(--logo-src);
+    -webkit-mask-repeat: no-repeat;
+    -webkit-mask-position: center;
+    -webkit-mask-size: contain;
+}
+```
+
+The element is now a shape, not an image, so it needs `role="img"` and an `aria-label` to keep the name it had as `alt`.
+    </div>
+</Preview>
+
+This lives in **your** CSS, not in `@enigmax/primitives` - the primitive ships no styles, and a colour is a look. It is documented here because every logo wall needs it. It is also beta and deliberately opt-in: a brand's own colours are the correct rendering, and flattening them is a design decision, not a default. Check contrast when you do it - a mark tinted to your background disappears.
 
 ## Install
 
@@ -31,8 +142,18 @@ createMarquee(lane, track, { speed: 70 });
     <MarqueeDemo speed={70} hoverScale={0} />
     <div slot="code">
 ```js
+// hoverScale multiplies the cruise speed while a MOUSE rests on the row.
+// 0 stops it, 0.15 slows it to a crawl, 1 ignores hover entirely.
 createMarquee(lane, track, { speed: 70, hoverScale: 0 });
 ```
+
+```css
+/* The engine sets data-hovering for you - it does not decide what that looks like. */
+.lane[data-hovering] .pill { border-color: #e0a458; }
+```
+
+A tap on a phone must NOT trigger this, which is why the engine gates hover on
+`pointerType === "mouse"` and suppresses it for a second after any touch.
     </div>
 </Preview>
 
@@ -40,8 +161,14 @@ createMarquee(lane, track, { speed: 70, hoverScale: 0 });
     <MarqueeDemo speed={110} reverse={true} items={["Prisma", "PostgreSQL", "Zod", "Astro", "React", "Vite", "Playwright", "Bun"]} />
     <div slot="code">
 ```js
-createMarquee(lane, track, { speed: 110, reverse: true });
+// Two rows, opposite directions, one speed. Their item counts do not have to match:
+// the lap is measured per row, so both still cruise at exactly 110 px/s.
+createMarquee(topLane, topTrack, { speed: 110 });
+createMarquee(bottomLane, bottomTrack, { speed: 110, reverse: true });
 ```
+
+This is the pair that a duration-based API cannot get right. Split an odd-length list
+across two rows and one gets 4 items and the other 5, so one runs measurably faster.
     </div>
 </Preview>
 
@@ -60,22 +187,55 @@ Take a speed and derive the duration. After the fix the same rail measured 67.0 
 
 ```jsx
 import { useMarquee } from "@enigmax/primitives/react";
+import styles from "./LogoWall.module.css";
 
-function LogoWall({ logos }) {
-    const { laneRef, trackRef, copies, dragging } = useMarquee({ speed: 80, hoverScale: 0.15 });
+export function LogoWall({ logos }) {
+    const { laneRef, trackRef, copies, dragging, period } = useMarquee({
+        speed: 80,
+        hoverScale: 0.15
+    });
 
     return (
-        <div ref={laneRef} style={{ cursor: dragging ? "grabbing" : "grab" }}>
-            <div ref={trackRef} style={{ display: "flex" }}>
+        <div
+            ref={laneRef}
+            className={styles.lane}
+            style={{ cursor: dragging ? "grabbing" : "grab" }}
+        >
+            <div ref={trackRef} className={styles.track}>
+                {/* `copies` is how many times to repeat the content. It starts at 2 on
+                    the server and grows once the lane and the lap have been measured. */}
                 {Array.from({ length: copies }, (_, copy) => (
-                    <div key={copy} aria-hidden={copy > 0} style={{ display: "flex", gap: 32 }}>
-                        {logos.map(logo => <a key={logo.id} href={logo.href}>{logo.name}</a>)}
+                    <div key={copy} className={styles.copy} aria-hidden={copy > 0}>
+                        {logos.map((logo) => (
+                            <a key={logo.id} href={logo.href} draggable={false}>
+                                <img src={logo.src} alt={logo.name} draggable={false} />
+                            </a>
+                        ))}
                     </div>
                 ))}
             </div>
         </div>
     );
 }
+```
+
+```css
+/* LogoWall.module.css */
+.lane  { position: relative; }
+.track { display: flex; }
+.copy  { display: flex; align-items: center; gap: 44px; padding-right: 44px; }
+.copy img { height: 26px; width: auto; }
+```
+
+Only copy 0 is read by a screen reader; the repeats carry `aria-hidden` so the same
+names are not announced four times.
+
+If the content changes after mount - a fetch resolves, a filter narrows the list - call
+`measure()` so the lap is read again:
+
+```jsx
+const { measure } = useMarquee({ speed: 80 });
+useEffect(() => { measure(); }, [logos, measure]);
 ```
 
 The hook reports how many `copies` to render rather than cloning DOM itself, because cloning behind React's back is undone on the next render. It starts at 2 so the server-rendered HTML stays small, then grows to cover the lane.

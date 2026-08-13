@@ -92,6 +92,15 @@ drags; a pointer still for ~90ms throws nothing; reduced motion drops autoplay
 and keeps the drag; `dt` clamped to 0.05 so a backgrounded tab does not teleport
 the row.
 
+In clone mode the copy count must be reconciled against **the DOM**, not against the
+previous count. `copyCount` starts optimistically at 2 while the markup ships one copy,
+so keying the clone on "the count changed" left every row whose content already fills
+the lane - the common case for a logo wall - with a single copy and a visible gap. It
+survived the first release because the suite's own link tests only passed WHILE the
+clone was missing: with one copy their `getByTestId` locators were unambiguous. Scope a
+locator to the source copy (`getByTestId("copy").first()`), or a test will quietly
+depend on the bug.
+
 The spin-up is a consequence of the shared integrator: `0.12^t` leaves under 1%
 of the gap after ~2.2s, so a test that samples the cruise speed must wait that
 long or it measures the ramp. Two tests were written wrong this way first.

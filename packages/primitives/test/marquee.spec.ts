@@ -17,6 +17,17 @@ async function open(page: Page, params: Record<string, string | number> = {}): P
     await expect.poll(() => period(page)).toBeGreaterThan(0);
 }
 
+/**
+ * An item inside the SOURCE copy.
+ *
+ * The repeats are real elements carrying the same test ids, so an unscoped locator is
+ * ambiguous the moment the engine clones - which it always should. Three link tests
+ * here passed only while a clone was missing.
+ */
+function item(page: Page, index: number) {
+    return page.getByTestId("copy").first().getByTestId(`item-${index}`);
+}
+
 async function laneCentre(page: Page): Promise<{ x: number; y: number; }> {
     const box = await page.getByTestId("lane").boundingBox();
     if (!box) throw new Error("lane has no box");
@@ -70,6 +81,35 @@ test.describe("marquee", () => {
             measured.push(median(toSpeeds(await sampleTransform(page, 700), lap)));
         }
         for (const speed of measured) expect(Math.abs(speed - CRUISE) / CRUISE).toBeLessThan(0.01);
+    });
+
+    test("clones a second copy even when one already fills the lane", async ({ page }) => {
+        // Four wide items overflow the lane on their own, so exactly 2 copies are
+        // needed - the count the engine optimistically starts at, which is how the
+        // missing clone hid: the row looped with a gap where copy 1 should have been.
+        await open(page, { items: 4, speed: CRUISE });
+
+        const state = await page.evaluate(() => {
+            const track = document.querySelector("[data-testid=track]") as HTMLElement;
+            const lane = document.querySelector("[data-testid=lane]") as HTMLElement;
+            const marquee = (window as unknown as { __marquee: { period: number; copyCount: number; }; }).__marquee;
+            const first = track.children[0] as HTMLElement;
+            const second = track.children[1] as HTMLElement | undefined;
+            return {
+                children: track.children.length,
+                copyCount: marquee.copyCount,
+                period: marquee.period,
+                step: second ? second.offsetLeft - first.offsetLeft : null,
+                copyWidth: first.offsetWidth,
+                laneWidth: lane.clientWidth
+            };
+        });
+
+        expect(state.copyWidth).toBeGreaterThan(state.laneWidth);
+        expect(state.children).toBeGreaterThanOrEqual(2);
+        expect(state.children).toBe(state.copyCount);
+        // The lap must be the STEP between two copies, never one copy's own width.
+        expect(state.period).toBe(state.step);
     });
 
     test("a 200px swipe moves the row 200px", async ({ page }) => {
@@ -127,7 +167,7 @@ test.describe("marquee", () => {
 
     test("a drag that ends on a link opens nothing", async ({ page }) => {
         await open(page, { speed: 0 });
-        const target = page.getByTestId("item-2");
+        const target = item(page, 2);
         const box = await target.boundingBox();
         if (!box) throw new Error("item has no box");
 
@@ -143,7 +183,7 @@ test.describe("marquee", () => {
 
     test("a plain click on a link opens it once", async ({ page }) => {
         await open(page, { speed: 0 });
-        await page.getByTestId("item-2").click();
+        await item(page, 2).click();
         await page.waitForTimeout(100);
 
         expect(await page.evaluate(() => (window as unknown as FixtureWindow).__navigations)).toBe(1);
@@ -198,7 +238,7 @@ test.describe("marquee on a phone", () => {
 
     test("a tap on a link opens it once", async ({ page }) => {
         await open(page, { speed: 0 });
-        await page.getByTestId("item-1").tap();
+        await item(page, 1).tap();
         await page.waitForTimeout(100);
         expect(await page.evaluate(() => (window as unknown as FixtureWindow).__navigations)).toBe(1);
     });

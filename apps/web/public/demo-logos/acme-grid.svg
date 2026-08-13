@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 140 32" fill="#fff" role="img" aria-label="Acme Grid (placeholder brand)">
+    <path d="M6 8h7v7H6zM16 8h7v7h-7zM6 17h7v7H6zM16 17h7v7h-7z"/>
+    <text x="31" y="22" font-family="Inter, system-ui, sans-serif" font-size="15" font-weight="600" letter-spacing="-.3">Acme Grid</text>
+</svg>

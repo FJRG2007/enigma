@@ -158,6 +158,14 @@ const onPacksHub = space === "packs" && !pack;
     .doc h2 + p { color: var(--muted); margin-top: 6px; }
     .doc p { line-height: 1.65; }
     .doc code { font-family: var(--mono); font-size: 0.86em; color: var(--accent2); background: var(--surface2); padding: 1px 6px; border-radius: 5px; }
+    /* Marks a documented technique that is not settled yet, so a reader knows before
+       they build on it rather than after. */
+    .doc .beta-tag {
+        display: inline-block; font-family: var(--mono); font-size: 10px; font-weight: 700;
+        text-transform: uppercase; letter-spacing: .5px; color: var(--accent);
+        border: 1px solid var(--border); border-radius: 999px; padding: 2px 8px;
+        margin-right: 8px; vertical-align: 2px;
+    }
     .doc a { color: var(--accent2); }
     .doc a:hover { color: var(--accent); }
 

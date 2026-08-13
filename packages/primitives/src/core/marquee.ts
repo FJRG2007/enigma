@@ -205,13 +205,30 @@ export function createMarquee(lane: HTMLElement, track: HTMLElement, options: Ma
 
     function measure(): void {
         if (destroyed) return;
-        const measured = readPeriod();
-        const needed = requiredCopies(measured);
+        const cloning = opts.copies === "clone";
+
+        // The lap can only be READ from the step between two copies, so the second one
+        // has to exist before the number is worth anything. Without this, markup that
+        // ships a single copy is measured by that copy's own width instead.
+        if (cloning && track.children.length < 2) syncClones(2);
+
+        let measured = readPeriod();
+        let needed = requiredCopies(measured);
+
+        // Reconcile against the DOM, not against the previous count. `copyCount` starts
+        // optimistically at 2 while the markup carries one copy, so keying the clone on
+        // "the count changed" left a row that needs exactly 2 copies with only its
+        // original - and a visible gap once the lap scrolled past the lane.
+        if (cloning && track.children.length !== needed) {
+            syncClones(needed);
+            measured = readPeriod();
+            needed = requiredCopies(measured);
+        }
+
         const changed = measured !== period || needed !== copyCount;
         period = measured;
         if (needed !== copyCount) {
             copyCount = needed;
-            if (opts.copies === "clone") syncClones(needed);
             opts.onCopyCountChange?.(needed);
         }
         if (period > 0) offset = wrap(offset);
