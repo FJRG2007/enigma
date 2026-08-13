@@ -20,6 +20,12 @@ const STILL_MS = 90;
 const MAX_DT = 0.05;
 /** One jittery frame must not decide the throw. */
 const VELOCITY_SMOOTHING = 0.6;
+/**
+ * How long a touch suppresses hover. Chromium's compatibility pointer events
+ * arrive within a frame or two of the touch and claim `pointerType: "mouse"`;
+ * a real mouse arriving later than this is a genuine hover.
+ */
+const TOUCH_HOVER_SUPPRESS_MS = 1000;
 /** Below this the row is idle and the frame loop can stop. */
 const IDLE_EPSILON = 0.01;
 
@@ -121,6 +127,7 @@ export function createMarquee(lane: HTMLElement, track: HTMLElement, options: Ma
     let lastMoveTime = 0;
     let maxTravel = 0;
     let hovering = false;
+    let lastTouchAt = 0;
 
     const motionQuery = typeof window.matchMedia === "function"
         ? window.matchMedia("(prefers-reduced-motion: reduce)")
@@ -255,6 +262,7 @@ export function createMarquee(lane: HTMLElement, track: HTMLElement, options: Ma
 
     function onPointerDown(event: PointerEvent): void {
         // Non-negotiable 9: a right click must leave the context menu alone.
+        if (event.pointerType !== "mouse") noteTouch();
         if (!opts.draggable || event.button > 0 || pointerId !== null) return;
         pointerId = event.pointerId;
         dragging = true;
@@ -316,16 +324,38 @@ export function createMarquee(lane: HTMLElement, track: HTMLElement, options: Ma
         opts.onItemClick?.(event);
     }
 
-    /** Non-negotiable 8: a tap fires pointerenter and never the pointerleave that undoes it. */
+    /**
+     * Non-negotiable 8: a tap fires pointerenter and never the pointerleave that
+     * undoes it, so the row would keep the hover speed for good after one touch.
+     *
+     * Checking `pointerType` is NOT enough on its own. After a touch, Chromium
+     * also emits the COMPATIBILITY pointer events, and those carry
+     * `pointerType: "mouse"` - observed on Linux while the same tap on Windows
+     * emitted nothing, which is how this passed locally and failed in CI. So a
+     * recent touch suppresses the hover as well.
+     */
     function onPointerEnter(event: PointerEvent): void {
-        if (event.pointerType !== "mouse") return;
+        if (event.pointerType !== "mouse") {
+            noteTouch();
+            return;
+        }
+        if (Date.now() - lastTouchAt < TOUCH_HOVER_SUPPRESS_MS) return;
         hovering = true;
         lane.dataset.hovering = "true";
         start();
     }
 
-    function onPointerLeave(event: PointerEvent): void {
-        if (event.pointerType !== "mouse") return;
+    function onPointerLeave(): void {
+        // Clears on ANY pointer type: a hover that cannot be undone is the bug.
+        hovering = false;
+        delete lane.dataset.hovering;
+        start();
+    }
+
+    /** Stamp the last touch and drop any hover it may already have set. */
+    function noteTouch(): void {
+        lastTouchAt = Date.now();
+        if (!hovering) return;
         hovering = false;
         delete lane.dataset.hovering;
         start();
@@ -351,6 +381,9 @@ export function createMarquee(lane: HTMLElement, track: HTMLElement, options: Ma
         lane.addEventListener("pointerdown", onPointerDown);
         lane.addEventListener("pointerenter", onPointerEnter);
         lane.addEventListener("pointerleave", onPointerLeave);
+        // Fires BEFORE the compatibility pointer events a touch generates, so the
+        // suppression window is already open when the fake "mouse" enter arrives.
+        lane.addEventListener("touchstart", noteTouch, { passive: true });
         lane.addEventListener("click", onClickCapture, true);
         lane.addEventListener("click", onClick);
         motionQuery?.addEventListener("change", onMotionChange);
@@ -390,6 +423,7 @@ export function createMarquee(lane: HTMLElement, track: HTMLElement, options: Ma
             lane.removeEventListener("pointerdown", onPointerDown);
             lane.removeEventListener("pointerenter", onPointerEnter);
             lane.removeEventListener("pointerleave", onPointerLeave);
+            lane.removeEventListener("touchstart", noteTouch);
             lane.removeEventListener("click", onClickCapture, true);
             lane.removeEventListener("click", onClick);
             window.removeEventListener("pointermove", onPointerMove);

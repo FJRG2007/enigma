@@ -217,6 +217,25 @@ test.describe("marquee on a phone", () => {
         expect(Math.abs(speed - CRUISE) / CRUISE).toBeLessThan(0.05);
     });
 
+    test("a compatibility mouse enter after a touch does not engage hover", async ({ page }) => {
+        await open(page, { speed: CRUISE, hoverScale: 0 });
+        const centre = await laneCentre(page);
+        await page.touchscreen.tap(centre.x, centre.y);
+
+        // Chromium follows a touch with compatibility pointer events that claim
+        // `pointerType: "mouse"`. It emits them on Linux and not on Windows, so
+        // dispatching one here is what makes the regression reproducible anywhere.
+        await page.evaluate(() => {
+            document.querySelector("[data-testid=lane]")!
+                .dispatchEvent(new PointerEvent("pointerenter", { pointerType: "mouse" }));
+        });
+
+        await page.waitForTimeout(2600);
+        const lap = await period(page);
+        const speed = median(toSpeeds(await sampleTransform(page, 700), lap));
+        expect(Math.abs(speed - CRUISE) / CRUISE).toBeLessThan(0.05);
+    });
+
     test("a vertical swipe on the row still scrolls the page", async ({ page }) => {
         await open(page, { speed: CRUISE });
         await page.evaluate(() => window.scrollTo(0, 0));

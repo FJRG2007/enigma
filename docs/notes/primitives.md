@@ -71,6 +71,15 @@ prevents. The three that cost production incidents:
    (`pan-x` when vertical).
 3. A hover handler that ignores `pointerType === "mouse"` sticks at the hover
    speed forever after the first tap, because touch never fires `pointerleave`.
+   That gate alone is NOT sufficient and the shortfall is platform-dependent:
+   Chromium follows a touch with compatibility pointer events carrying
+   `pointerType: "mouse"`, and it emits them on Linux but not on Windows. The
+   naive gate therefore passed every local run and failed in CI. A touch now
+   also opens a 1s hover-suppression window (stamped from `touchstart`, which
+   arrives before the compatibility events), and `pointerleave` clears the state
+   whatever the pointer type. The regression test dispatches the fake mouse
+   enter itself, so it reproduces on any platform rather than only on the one
+   that happens to emit it.
 
 The rest: measure the lap from `copies[1].offsetLeft - copies[0].offsetLeft`
 (never compute it from item widths); `max(2, ceil(lane / period) + 1)` copies,
