@@ -119,6 +119,51 @@ project's device descriptor here; the emulation is done with
 cannot become a false pass. Same class of trap as the brief's warning that a
 link assertion proves nothing when the DOM has no links.
 
+## input
+
+`createInput(field, options)`. A `type="password"` field gets a reveal toggle; the icon,
+the labels, the side and the container are all replaceable, and the built-in is expressed
+as an ordinary `InputAction` so passing one named `"reveal"` replaces it outright.
+
+Four things the hand-rolled version gets wrong, each with a test:
+
+1. The toggle must be `type="button"`. A bare `<button>` inside a form defaults to
+   submit, so looking at your password posts the half-filled sign-in form.
+2. Pressing it must not pull focus out of the field. `preventDefault()` on `mousedown`
+   keeps focus where it is; keyboard users still tab to the button and keep focus there.
+3. **The caret.** Assigning `input.type` INSIDE a click handler resets the selection to 0
+   in Chromium - and does not when the same assignment runs outside an event. Worse, the
+   reset lands one MACROTASK later: the value is still correct in the handler and in a
+   microtask. So the selection is captured before the switch, restored after the render,
+   and restored once more from a `setTimeout(0)`. Reproduced in twenty lines with no
+   library before any of it was written.
+4. An invisible action is REMOVED from the DOM, never `hidden`. The hidden attribute
+   works through a UA `display: none`, and any author rule setting `display` on the
+   button beats it - which a theme styling these buttons always does. A headless
+   primitive cannot rely on a UA default its consumers are expected to override.
+
+`destroy()` puts a revealed field back to `password`; leaving it as text would show the
+value to whoever sees the screen next.
+
+## search
+
+`createSearch(options)`. Debounce, ranking, cancellation and the field wiring; the
+matching is pluggable in three layers:
+
+- nothing -> built-in accent-insensitive substring matcher, zero dependencies. `"cafe"`
+  finds `"Café"`, and a title hit outranks a body hit.
+- `fuse` -> pass Fuse.js's CONSTRUCTOR and get fuzzy matching. `fuseOptions` is forwarded
+  verbatim, so every Fuse option behaves exactly as its own docs say.
+- `matcher` -> replaces the engine entirely and wins over `fuse`.
+
+Fuse is an OPTIONAL peer dependency, never a real one: the package's zero-dependency core
+is what lets the marquee and the input be installed without dragging a search engine in.
+The constructor is passed rather than imported so nothing is bundled unless it is used.
+
+Fuse indexes on construction, so the engine is rebuilt in `setItems`/`update` and never
+per keystroke. `limit` applies to the empty-query branch too - a caller asking for 10 rows
+means 10 rows, and "show everything" is the longest list of them all.
+
 ## cache and notifications
 
 `cache`: the in-flight dedupe matters more than the TTL. Rejections are never

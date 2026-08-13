@@ -7,28 +7,46 @@
       "name": "marquee",
       "title": "Draggable infinite marquee",
       "description": "Looping row that takes a speed in px/s, measures its own lap, and can be grabbed and thrown without swallowing the clicks on its items.",
-      "targets": ["vanilla", "astro", "react"],
+      "targets": [
+        "vanilla",
+        "astro",
+        "react"
+      ],
       "entry": {
         "vanilla": "@enigmax/primitives",
         "astro": "@enigmax/primitives",
         "react": "@enigmax/primitives/react"
       },
       "exports": {
-        "vanilla": ["createMarquee"],
-        "astro": ["createMarquee"],
-        "react": ["useMarquee"]
+        "vanilla": [
+          "createMarquee"
+        ],
+        "astro": [
+          "createMarquee"
+        ],
+        "react": [
+          "useMarquee"
+        ]
       },
       "files": [
         {
           "path": "src/core/marquee.ts",
           "dest": "marquee.ts",
-          "targets": ["vanilla", "astro", "react"]
+          "targets": [
+            "vanilla",
+            "astro",
+            "react"
+          ]
         },
         {
           "path": "src/react/use-marquee.ts",
           "dest": "use-marquee.ts",
-          "targets": ["react"],
-          "rewrite": { "@/core/marquee": "./marquee" }
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/core/marquee": "./marquee"
+          }
         }
       ],
       "styles": false,
@@ -41,6 +59,118 @@
         "[data-enigma-marquee-copy]"
       ],
       "docs": "docs/notes/primitives.md#marquee"
+    },
+    {
+      "name": "input",
+      "title": "Input affordances",
+      "description": "In-field buttons with no styles of their own. A password field gets its reveal toggle automatically; the icon, label, side and container are all replaceable, and any other action plugs into the same mechanism.",
+      "targets": [
+        "vanilla",
+        "astro",
+        "react"
+      ],
+      "entry": {
+        "vanilla": "@enigmax/primitives",
+        "astro": "@enigmax/primitives",
+        "react": "@enigmax/primitives/react"
+      },
+      "exports": {
+        "vanilla": [
+          "createInput"
+        ],
+        "astro": [
+          "createInput"
+        ],
+        "react": [
+          "useInput"
+        ]
+      },
+      "files": [
+        {
+          "path": "src/core/input.ts",
+          "dest": "input.ts",
+          "targets": [
+            "vanilla",
+            "astro",
+            "react"
+          ]
+        },
+        {
+          "path": "src/react/use-input.ts",
+          "dest": "use-input.ts",
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/core/input": "./input"
+          }
+        }
+      ],
+      "styles": false,
+      "themeHooks": [
+        "[data-enigma-input]",
+        "[data-enigma-input][data-enigma-input-reveal=on]",
+        "[data-enigma-input-actions]",
+        "[data-enigma-input-actions][data-position=start]",
+        "[data-enigma-input-action]",
+        "[data-enigma-input-action=reveal]"
+      ],
+      "docs": "docs/notes/primitives.md#input"
+    },
+    {
+      "name": "search",
+      "title": "Search as you type",
+      "description": "Debouncing, ranking, cancellation and the field wiring, with the matching pluggable. Pass Fuse.js for fuzzy search, your own function to replace the engine, or neither for the built-in accent-insensitive substring matcher.",
+      "targets": [
+        "vanilla",
+        "astro",
+        "react"
+      ],
+      "entry": {
+        "vanilla": "@enigmax/primitives",
+        "astro": "@enigmax/primitives",
+        "react": "@enigmax/primitives/react"
+      },
+      "exports": {
+        "vanilla": [
+          "createSearch"
+        ],
+        "astro": [
+          "createSearch"
+        ],
+        "react": [
+          "useSearch"
+        ]
+      },
+      "files": [
+        {
+          "path": "src/core/search.ts",
+          "dest": "search.ts",
+          "targets": [
+            "vanilla",
+            "astro",
+            "react"
+          ]
+        },
+        {
+          "path": "src/react/use-search.ts",
+          "dest": "use-search.ts",
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/core/search": "./search"
+          }
+        }
+      ],
+      "styles": false,
+      "themeHooks": [
+        "[data-enigma-search]"
+      ],
+      "optionalDependencies": {
+        "fuse.js": "Fuzzy matching. Omit it and a built-in substring matcher is used."
+      },
+      "docs": "docs/notes/primitives.md#search"
     }
   ]
 }

@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>input fixture</title>
+<style>
+    body { margin: 0; font: 14px system-ui, sans-serif; padding: 20px; }
+    .field { position: relative; display: inline-flex; align-items: center; }
+    [data-enigma-input-actions] { display: inline-flex; }
+    [data-enigma-input-action] { display: inline-grid; place-items: center; background: none; border: 0; cursor: pointer; font-size: 16px; }
+</style>
+</head>
+<body>
+<form id="form" action="#submitted">
+    <div class="field">
+        <input id="password" data-testid="password" type="password" autocomplete="current-password" value="hunter2">
+    </div>
+    <button type="submit" data-testid="submit">Sign in</button>
+</form>
+
+<div class="field">
+    <input id="text" data-testid="text" type="text" value="plain">
+</div>
+
+<script type="module">
+import { createInput } from "../../dist/index.js";
+
+const params = new URLSearchParams(location.search);
+
+// The form's submit is counted rather than allowed, so a reveal button that is not
+// type="button" is caught instead of navigating the fixture away.
+window.__submits = 0;
+document.getElementById("form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    window.__submits++;
+});
+
+const options = {};
+if (params.get("reveal") === "off") options.reveal = false;
+if (params.get("position")) options.position = params.get("position");
+if (params.get("icons") === "custom") {
+    options.reveal = { showIcon: "<i data-custom>show</i>", hideIcon: "<i data-custom>hide</i>", showLabel: "Reveal it", hideLabel: "Conceal it" };
+}
+if (params.get("extra") === "clear") {
+    options.actions = [{
+        name: "clear",
+        label: "Clear",
+        icon: "<i data-clear>x</i>",
+        visible: (state) => state.input.value.length > 0,
+        onSelect: (state) => { state.input.value = ""; window.__instance.refresh(); }
+    }];
+}
+
+window.__instance = createInput(document.getElementById("password"), options);
+window.__plain = createInput(document.getElementById("text"));
+window.__ready = true;
+</script>
+</body>
+</html>

@@ -1,6 +1,6 @@
 {
   "name": "@enigmax/primitives",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "Headless interaction primitives: the behaviour, the timing and the accessibility of components like a draggable infinite marquee, with no styles of their own. Framework-agnostic core plus thin adapters.",
   "type": "module",
   "main": "./dist/index.js",
@@ -31,10 +31,14 @@
     "LICENSE"
   ],
   "peerDependencies": {
-    "react": ">=18"
+    "react": ">=18",
+    "fuse.js": ">=6"
   },
   "peerDependenciesMeta": {
     "react": {
+      "optional": true
+    },
+    "fuse.js": {
       "optional": true
     }
   },
@@ -43,7 +47,8 @@
     "@types/react": "^19.2.0",
     "react": "^19.2.0",
     "tsup": "^8.0.0",
-    "typescript": "^5.0.0"
+    "typescript": "^5.0.0",
+    "fuse.js": "^7.0.0"
   },
   "engines": {
     "node": ">=18"
@@ -56,7 +61,11 @@
     "unstyled",
     "react",
     "vanilla",
-    "enigma"
+    "enigma",
+    "input",
+    "password",
+    "search",
+    "fuse"
   ],
   "license": "Apache-2.0",
   "author": "FJRG2007 <fjrg2007@tpeoficial.com>",
