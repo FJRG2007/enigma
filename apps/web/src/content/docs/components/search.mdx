@@ -1,6 +1,6 @@
 ---
 title: Search
-description: Search as you type - debouncing, ranking and cancellation, with the matching pluggable. Fuse.js optional, never required.
+description: Search as you type, fuzzy by default with Fuse.js. Debouncing, ranking and cancellation are the primitive's; the matching stays replaceable.
 group: Forms
 order: 21
 space: components
@@ -9,13 +9,14 @@ import AddTabs from "../../../components/AddTabs.astro";
 import Preview from "../../../components/Preview.astro";
 import SearchDemo from "../../../components/demos/SearchDemo.astro";
 
-It owns the parts that are always rewritten and always come out slightly wrong: the debounce, the ordering, the cancellation of a stale pass, and the field wiring. It owns none of the matching, which is yours to choose.
+It owns the parts that are always rewritten and always come out slightly wrong: the debounce, the ordering, the cancellation of a stale pass, and the field wiring. Matching is **fuzzy by default**, through Fuse.js, and stays replaceable.
 
-<Preview title="no engine, zero dependencies" hint='Type "cafe" - it finds "Café config". Now type "guardrials" and nothing matches: a substring matcher cannot forgive a typo.'>
+<Preview title="fuzzy by default" hint='Type the typo "guardrials" - it still finds Convention guardrails. Watch the score column.'>
     <SearchDemo />
     <div slot="code">
 ```js
-import { createSearch } from "@enigmax/primitives";
+// The /search entry has Fuse already wired. Nothing to configure.
+import { createSearch } from "@enigmax/primitives/search";
 
 const search = createSearch({
     items: docs,
@@ -27,40 +28,55 @@ search.attach(document.querySelector("input[type=search]"));
 search.subscribe((results, query) => render(results, query));
 ```
 
-With no engine you get an accent-insensitive substring matcher and no dependencies at all. `"cafe"` finds `"Café"`, because a search that fails on an accent reads as broken, and a hit in the first key outranks one in the second.
+`fuseOptions` is forwarded to Fuse untouched, so every option behaves exactly as Fuse's own documentation says - this is not a wrapper with its own opinions on top.
+
+```js
+createSearch({ items: docs, keys: ["title"], fuseOptions: { threshold: 0.4, ignoreLocation: true } });
+```
     </div>
 </Preview>
 
 ## Install
 
+`enigma add search` installs **fuse.js alongside the package**, because a search primitive
+without its engine is not much of one.
+
 <AddTabs item="search" pkg="@enigmax/primitives" />
 
-## With Fuse.js
-
-<Preview title="fuzzy" hint='The same typo, "guardrials", now finds Convention guardrails. Watch the score column.'>
-    <SearchDemo fuzzy={true} />
-    <div slot="code">
-```js
-import Fuse from "fuse.js";
-import { createSearch } from "@enigmax/primitives";
-
-const search = createSearch({
-    items: docs,
-    keys: ["title", "body"],
-    fuse: Fuse,                                 // the CONSTRUCTOR, not an instance
-    fuseOptions: { threshold: 0.4, ignoreLocation: true }
-});
-```
-
-`fuseOptions` is forwarded to Fuse untouched, so every option behaves exactly as Fuse's own documentation says - this is not a wrapper with its own opinions on top.
-    </div>
-</Preview>
-
-Fuse is an **optional peer dependency**, never a real one. You pass the constructor rather than the primitive importing it, so nothing is bundled unless you use it, and the package stays installable for anyone who only wanted the marquee.
+Installing by hand is the same two packages:
 
 ```sh
-npm install fuse.js    # only if you want fuzzy matching
+npm install @enigmax/primitives fuse.js
 ```
+
+Fuse is an **optional peer dependency**, not a real one, and it lives behind the `/search`
+subpath. That is what keeps `@enigmax/primitives` dependency-free for someone who only
+wanted the marquee: importing the main entry never pulls a search engine into the bundle.
+
+## Without the dependency
+
+<Preview title="no engine, zero dependencies" hint='The same typo finds nothing here: a substring matcher cannot forgive one. But "cafe" still finds "Café config".'>
+    <SearchDemo plain={true} />
+    <div slot="code">
+```js
+// The main entry takes no engine, so nothing is bundled and no dependency is needed.
+import { createSearch } from "@enigmax/primitives";
+
+const search = createSearch({ items: docs, keys: ["title", "body"] });
+```
+
+You get an accent-insensitive substring matcher: `"cafe"` finds `"Café"`, because a search
+that fails on an accent reads as broken, and a hit in the first key outranks one in the
+second. What it cannot do is forgive a typo - that is the whole reason Fuse is the default.
+
+You can also hand the constructor over yourself, which is what the `/search` entry does:
+
+```js
+import Fuse from "fuse.js";
+createSearch({ items: docs, keys: ["title"], fuse: Fuse });   // the CONSTRUCTOR, not an instance
+```
+    </div>
+</Preview>
 
 ## Or replace the engine entirely
 
@@ -109,7 +125,7 @@ export function DocSearch({ docs }) {
 |---|---|---|
 | `items` | `[]` | The collection to search. |
 | `keys` | `[]` | Fields to search. Dotted paths supported. |
-| `fuse` | - | Fuse's constructor. Omit for the built-in matcher. |
+| `fuse` | Fuse, via `/search` | The constructor. From the main entry, omit it for the built-in matcher. |
 | `fuseOptions` | - | Forwarded to Fuse verbatim. |
 | `matcher` | - | Replaces the engine. Wins over `fuse`. |
 | `debounce` | `120` | ms after the last keystroke. `0` searches on every one. |

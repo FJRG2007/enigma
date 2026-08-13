@@ -4,13 +4,13 @@
  * substring matcher and Fuse is visible by typing a typo rather than described.
  */
 interface Props {
-    /** Load Fuse.js and hand the primitive its constructor. */
-    fuzzy?: boolean;
+    /** Drop Fuse and fall back to the built-in substring matcher. */
+    plain?: boolean;
 }
-const { fuzzy = false } = Astro.props;
+const { plain = false } = Astro.props;
 ---
-<div class="sr" data-search-demo data-fuzzy={fuzzy ? "1" : undefined}>
-    <input class="sr-input" type="search" placeholder={fuzzy ? 'Try a typo: "guardrials"' : 'Try "cafe", then "guardrials"'} aria-label="Search the docs" data-search-input />
+<div class="sr" data-search-demo data-plain={plain ? "1" : undefined}>
+    <input class="sr-input" type="search" placeholder={plain ? 'Try "cafe", then the typo "guardrials"' : 'Try a typo: "guardrials"'} aria-label="Search the docs" data-search-input />
     <p class="sr-meta" data-search-meta>Type to search. Escape clears.</p>
     <ul class="sr-list" data-search-list></ul>
 </div>
@@ -47,9 +47,9 @@ const { fuzzy = false } = Astro.props;
         const list = root.querySelector<HTMLElement>("[data-search-list]")!;
         const meta = root.querySelector<HTMLElement>("[data-search-meta]")!;
 
-        // Fuse is loaded only for the demo that asks for it, which is the whole point of
-        // passing the constructor instead of importing it inside the primitive.
-        const fuse = root.dataset.fuzzy ? (await import("fuse.js")).default : undefined;
+        // Fuzzy is the default; the opt-out demo skips the import entirely, which is what
+        // a project that does not want the dependency gets.
+        const fuse = root.dataset.plain ? undefined : (await import("fuse.js")).default;
 
         const search = createSearch<{ title: string; body: string; }>({
             items: DOCS,
@@ -58,7 +58,7 @@ const { fuzzy = false } = Astro.props;
             debounce: 120,
             onResults: (results, query) => {
                 meta.textContent = query
-                    ? `${results.length} result${results.length === 1 ? "" : "s"} for "${query}" - ${root.dataset.fuzzy ? "Fuse.js" : "built-in substring matcher"}`
+                    ? `${results.length} result${results.length === 1 ? "" : "s"} for "${query}" - ${root.dataset.plain ? "built-in substring matcher" : "Fuse.js"}`
                     : "Type to search. Escape clears.";
                 list.replaceChildren(...results.map((result) => {
                     const row = document.createElement("li");
