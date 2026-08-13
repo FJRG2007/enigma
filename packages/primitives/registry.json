@@ -180,15 +180,15 @@
     {
       "name": "search",
       "title": "Search as you type",
-      "description": "Debouncing, ranking, cancellation and the field wiring, with the matching pluggable. Pass Fuse.js for fuzzy search, your own function to replace the engine, or neither for the built-in accent-insensitive substring matcher.",
+      "description": "Search as you type, fuzzy by default with Fuse.js. Debouncing, ranking and cancellation are the primitive's; the matching is replaceable, and dropping Fuse falls back to a built-in accent-insensitive substring matcher.",
       "targets": [
         "vanilla",
         "astro",
         "react"
       ],
       "entry": {
-        "vanilla": "@enigmax/primitives",
-        "astro": "@enigmax/primitives",
+        "vanilla": "@enigmax/primitives/search",
+        "astro": "@enigmax/primitives/search",
         "react": "@enigmax/primitives/react"
       },
       "exports": {
@@ -241,7 +241,10 @@
       "docs": "docs/notes/primitives.md#search",
       "recipes": [
         "tailwind"
-      ]
+      ],
+      "dependencies": {
+        "fuse.js": "^7.0.0"
+      }
     }
   ]
 }

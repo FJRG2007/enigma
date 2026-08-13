@@ -47,6 +47,8 @@ export interface RegistryItem {
     entry: Partial<Record<ComponentTarget, string>>;
     exports: Partial<Record<ComponentTarget, string[]>>;
     files: RegistryFile[];
+    /** Packages this item needs beyond its own, installed with it. */
+    dependencies?: Record<string, string>;
     styles: boolean;
     themeHooks?: string[];
     docs?: string;
@@ -154,16 +156,21 @@ export function addAsDependency(item: ResolvedItem, projectDir: string, install:
     const manifest = readJson<{ dependencies?: Record<string, string>; }>(manifestPath);
     if (!manifest) return { ok: false, written: [], installed: [], message: `No package.json in ${projectDir}.` };
 
-    if (manifest.dependencies?.[item.pkg]) {
-        return { ok: true, written: [], installed: [], message: `${item.pkg} is already a dependency.` };
+    // An item's own package plus whatever it declares it needs - the search primitive is
+    // useless without its engine, so asking for it and then hitting a missing module is
+    // a worse experience than installing the pair.
+    const wanted = [item.pkg, ...Object.keys(item.dependencies ?? {})];
+    const missing = wanted.filter((name) => !manifest.dependencies?.[name]);
+    if (!missing.length) {
+        return { ok: true, written: [], installed: [], message: `${wanted.join(" and ")} already installed.` };
     }
     if (!install) {
-        return { ok: true, written: [], installed: [], message: `Run: npm install ${item.pkg}` };
+        return { ok: true, written: [], installed: [], message: `Run: npm install ${missing.join(" ")}` };
     }
 
-    const result = spawnSync("npm", ["install", item.pkg], { cwd: projectDir, stdio: "inherit", shell: process.platform === "win32" });
-    if (result.status !== 0) return { ok: false, written: [], installed: [], message: `npm install ${item.pkg} failed.` };
-    return { ok: true, written: [], installed: [item.pkg], message: `Installed ${item.pkg}.` };
+    const result = spawnSync("npm", ["install", ...missing], { cwd: projectDir, stdio: "inherit", shell: process.platform === "win32" });
+    if (result.status !== 0) return { ok: false, written: [], installed: [], message: `npm install ${missing.join(" ")} failed.` };
+    return { ok: true, written: [], installed: missing, message: `Installed ${missing.join(", ")}.` };
 }
 
 /**
@@ -204,7 +211,20 @@ export function addAsCopy(item: ResolvedItem, projectDir: string, target: Compon
         written.push(outPath);
     }
 
-    return { ok: true, written, installed: [], message: `Copied ${written.length} file(s) into ${destination}.` };
+    // The copied recipe imports its engine, so the dependency travels with the source.
+    const extra = Object.keys(item.dependencies ?? {});
+    const installed: string[] = [];
+    if (extra.length) {
+        const manifest = readJson<{ dependencies?: Record<string, string>; }>(join(projectDir, "package.json"));
+        const missing = extra.filter((name) => !manifest?.dependencies?.[name]);
+        if (missing.length) {
+            const result = spawnSync("npm", ["install", ...missing], { cwd: projectDir, stdio: "inherit", shell: process.platform === "win32" });
+            if (result.status === 0) installed.push(...missing);
+        }
+    }
+
+    const note = installed.length ? ` Installed ${installed.join(", ")}.` : "";
+    return { ok: true, written, installed, message: `Copied ${written.length} file(s) into ${destination}.${note}` };
 }
 
 /** The import line a consumer should write for this item on this target. */

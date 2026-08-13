@@ -1435,7 +1435,9 @@ async function runAddCli(opts: CliOptions): Promise<number> {
             const files = item.files
                 .filter((file) => file.targets.includes(target) && (!file.style || file.style === style))
                 .map((file) => file.dest);
-            console.log(`    ${dim("would add")} ${cyan(item.name)} ${dim(opts.copy ? `-> ${destination} (${files.join(", ")})` : `-> ${item.pkg}`)}`);
+            const packages = [item.pkg, ...Object.keys(item.dependencies ?? {})].join(" + ");
+            console.log(`    ${dim("would add")} ${cyan(item.name)} ${dim(opts.copy ? `-> ${destination} (${files.join(", ")})` : `-> ${packages}`)}`);
+            if (opts.copy && item.dependencies) console.log(`      ${dim(`and install ${Object.keys(item.dependencies).join(", ")}`)}`);
             continue;
         }
 

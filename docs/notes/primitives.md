@@ -156,6 +156,18 @@ matching is pluggable in three layers:
   verbatim, so every Fuse option behaves exactly as its own docs say.
 - `matcher` -> replaces the engine entirely and wins over `fuse`.
 
+**Fuzzy is the default, through a second entry point.** `@enigmax/primitives/search`
+statically imports Fuse and pre-fills the `fuse` option; the main entry stays
+dependency-free so the marquee and the input never drag a search engine into a bundle.
+That split is deliberate: a dynamic import inside the core would either fail to resolve
+at build when Fuse is absent, or fail to bundle when it is present, and there is no
+version of it that behaves in both a Node consumer and a browser one. A separate,
+statically analysable subpath has neither problem.
+
+`enigma add search` installs `fuse.js` alongside the package. Registry items may declare
+`dependencies`, and both the dependency and the copy paths install what is missing - a
+copied recipe imports its engine, so the dependency has to travel with the source.
+
 Fuse is an OPTIONAL peer dependency, never a real one: the package's zero-dependency core
 is what lets the marquee and the input be installed without dragging a search engine in.
 The constructor is passed rather than imported so nothing is bundled unless it is used.

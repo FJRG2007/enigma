@@ -1,10 +1,10 @@
 import { defineConfig } from "tsup";
 
 export default defineConfig({
-    entry: ["src/index.ts", "src/react/index.ts"],
+    entry: ["src/index.ts", "src/react/index.ts", "src/search/index.ts"],
     format: ["esm"],
     dts: true,
     clean: true,
     treeshake: true,
-    external: ["react"]
+    external: ["react", "fuse.js"]
 });
