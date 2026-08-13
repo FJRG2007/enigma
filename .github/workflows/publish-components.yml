@@ -1,0 +1,54 @@
+name: Publish components
+
+# Source-only publish of the headless component packages (@enigmax/primitives,
+# @enigmax/utils). Like publish-dashboard.yml, this skips the per-OS Bun binary matrix
+# in publish.yml, which exists for the CLI and is pointless here. Without this workflow
+# `enigma add <name>` would npm-install a package that was never published: the feature
+# would work inside the monorepo and nowhere else.
+#
+# Each package's prepublishOnly runs its typecheck and tsup build, so dist is produced
+# at publish time rather than committed.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/primitives/package.json"
+      - "packages/utils/package.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: publish-components
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    strategy:
+      # Never cancel a sibling: one package failing must not leave the other half-published.
+      fail-fast: false
+      matrix:
+        package: ["@enigmax/primitives", "@enigmax/utils"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+      - name: Install dependencies
+        run: npm ci || npm install
+      - name: Publish ${{ matrix.package }} if the version is new
+        run: |
+          DIR="packages/$(echo "${{ matrix.package }}" | sed 's|@enigmax/||')"
+          PV="$(node -p "require('./$DIR/package.json').version")"
+          if npm view "${{ matrix.package }}@$PV" version >/dev/null 2>&1; then
+            echo "${{ matrix.package }}@$PV already published; nothing to do."
+            exit 0
+          fi
+          npm publish --workspace "${{ matrix.package }}" --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

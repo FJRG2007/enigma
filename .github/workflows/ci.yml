@@ -173,6 +173,37 @@ jobs:
       - name: Committed guard hook is in sync with its source
         run: npm run check:hooks
 
+  components:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci || npm install
+
+      - name: Typecheck and build the component packages
+        run: |
+          npm run --workspace @enigmax/primitives typecheck
+          npm run --workspace @enigmax/utils typecheck
+          npm run build:components
+
+      # Pure logic: cache dedupe/TTL and the notification queue's held timers.
+      - name: Test @enigmax/utils
+        run: npm run --workspace @enigmax/utils test
+
+      # The marquee's guarantees are timing and pointer behaviour, so they are only
+      # real when measured in a browser: the suite samples the track's computed
+      # transform per animation frame rather than asking the engine what it believes.
+      - name: Install Chromium for the browser suite
+        run: npx playwright install --with-deps chromium
+        working-directory: packages/primitives
+      - name: Test @enigmax/primitives
+        run: npm run --workspace @enigmax/primitives test
+
   linter:
     runs-on: ubuntu-latest
     steps:
