@@ -10,11 +10,12 @@ import Preview from "../../../components/Preview.astro";
 import MarqueeDemo from "../../../components/demos/MarqueeDemo.astro";
 import LogoWallDemo from "../../../components/demos/LogoWallDemo.astro";
 import StyleTabs from "../../../components/StyleTabs.astro";
-import { recipe } from "../../../lib/recipe";
+import Html from "../../../components/Html.astro";
+import { highlightedRecipe } from "../../../lib/recipe";
 
-export const tailwindRecipe = recipe("@enigmax/primitives", "marquee.tailwind.tsx");
-export const cssRecipe = recipe("@enigmax/primitives", "marquee.css.tsx");
-export const cssSheet = recipe("@enigmax/primitives", "marquee.css");
+export const tailwindRecipe = highlightedRecipe("@enigmax/primitives", "marquee.tailwind.tsx");
+export const cssRecipe = highlightedRecipe("@enigmax/primitives", "marquee.css.tsx");
+export const cssSheet = highlightedRecipe("@enigmax/primitives", "marquee.css");
 
 A row that loops forever and that a visitor can grab and throw. Logo walls, testimonial strips, pill rails, "trusted by" bands.
 
@@ -148,13 +149,16 @@ This lives in **your** CSS, not in `@enigmax/primitives` - the primitive ships n
 
 ## Variants
 
-<Preview title="hoverScale: 0" hint="Rest a MOUSE on it and it stops; a tap on touch does not, which is the whole point of the pointerType gate below.">
-    <MarqueeDemo speed={70} hoverScale={0} />
+<Preview title="hover: pause" hint="Rest a MOUSE on it and it stops; a tap on touch does not, which is the whole point of the pointerType gate below.">
+    <MarqueeDemo speed={70} hover="pause" />
     <div slot="code">
 ```js
-// hoverScale multiplies the cruise speed while a MOUSE rests on the row.
-// 0 stops it, 0.15 slows it to a crawl, 1 ignores hover entirely.
-createMarquee(lane, track, { speed: 70, hoverScale: 0 });
+// One option covers every case a mouse resting on the row could ask for.
+createMarquee(lane, track, { speed: 70, hover: "pause" });   // stop
+createMarquee(lane, track, { speed: 70, hover: 0.15 });      // crawl
+createMarquee(lane, track, { speed: 70, hover: 2 });         // go faster
+createMarquee(lane, track, { speed: 70, hover: { speed: 20 } });  // an absolute px/s
+createMarquee(lane, track, { speed: 70, hover: "off" });     // ignore hover (default)
 ```
 
 ```css
@@ -189,18 +193,18 @@ installed package at build time, so it cannot drift from what you actually get.
 
 <StyleTabs title="Marquee.tsx">
     <div slot="tailwind">
-        <pre><code class="language-tsx">{tailwindRecipe}</code></pre>
+        <Html html={tailwindRecipe} />
     </div>
     <div slot="css">
-        <pre><code class="language-tsx">{cssRecipe}</code></pre>
-        <pre><code class="language-css">{cssSheet}</code></pre>
+        <Html html={cssRecipe} />
+        <Html html={cssSheet} />
     </div>
 </StyleTabs>
 
 Used like this:
 
 ```jsx
-<Marquee items={logos} speed={70} hoverScale={0.15}>
+<Marquee items={logos} speed={70} hover={0.15}>
     {(logo) => (
         <a href={logo.href}>
             <img src={logo.src} alt={logo.name} width={22} height={22} draggable={false} />
@@ -229,7 +233,7 @@ import styles from "./LogoWall.module.css";
 export function LogoWall({ logos }) {
     const { laneRef, trackRef, copies, dragging, period } = useMarquee({
         speed: 80,
-        hoverScale: 0.15
+        hover: 0.15
     });
 
     return (
@@ -285,7 +289,7 @@ import { createMarquee } from "@enigmax/primitives";
 const marquee = createMarquee(
     document.querySelector("[data-lane]"),
     document.querySelector("[data-track]"),
-    { speed: 80, hoverScale: 0.15 }
+    { speed: 80, hover: 0.15 }
 );
 ```
 
@@ -299,7 +303,7 @@ Here the engine clones the track's first child to fill the lane. Call `marquee.d
 | `reverse` | `false` | Scroll towards the start. |
 | `vertical` | `false` | Scroll on the Y axis. |
 | `draggable` | `true` | Grab and throw the row. |
-| `hoverScale` | `1` | Speed multiplier while a **mouse** rests on the row. `0` pauses. |
+| `hover` | `"off"` | What a **mouse** resting on the row does. `"off"` ignores it, `"pause"` stops, a number multiplies the cruise speed, `{ speed }` sets an absolute px/s. |
 | `decay` | `0.12` | Fraction of the remaining velocity gap left after one second. `0.35` is noticeably draggy. |
 | `manageStyles` | `true` | Apply the styles the behaviour needs. Never theme styles. |
 

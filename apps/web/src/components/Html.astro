@@ -1,0 +1,17 @@
+---
+/**
+ * Inject pre-rendered HTML from MDX.
+ *
+ * MDX is JSX, so `set:html` cannot be written there (the colon is not a valid attribute
+ * name) and `dangerouslySetInnerHTML` is a React prop Astro does not honour - it lands as
+ * a literal attribute reading "[object Object]". Passing the string to an Astro component
+ * that owns the directive is the way across.
+ *
+ * Only ever called with build-time output of our own (Shiki), never with user input.
+ */
+interface Props {
+    html: string;
+}
+const { html } = Astro.props;
+---
+<Fragment set:html={html} />

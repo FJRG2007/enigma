@@ -7,19 +7,19 @@
  */
 interface Props {
     speed?: number;
-    hoverScale?: number;
+    hover?: string;
     reverse?: boolean;
     /** Rendered as pills; kept short so the lap stays a few hundred pixels. */
     items?: string[];
 }
 const {
     speed = 70,
-    hoverScale = 1,
+    hover = "off",
     reverse = false,
     items = ["Claude Code", "Codex", "opencode", "Kimi Code", "MCP", "Guardrails", "Recall", "Dashboard"]
 } = Astro.props;
 ---
-<div class="mq" data-marquee data-speed={String(speed)} data-hover={String(hoverScale)} data-reverse={String(reverse)}>
+<div class="mq" data-marquee data-speed={String(speed)} data-hover={hover} data-reverse={String(reverse)}>
     <div class="mq-track" data-marquee-track>
         <div class="mq-copy">
             {items.map((item) => <span class="mq-item">{item}</span>)}
@@ -52,9 +52,13 @@ const {
         lane.dataset.marqueeReady = "1";
         const track = lane.querySelector<HTMLElement>("[data-marquee-track]");
         if (!track) continue;
+        // A data attribute is always a string; "off"/"pause" stay as they are and
+        // anything else is a multiplier, or the engine would read NaN.
+        const raw = lane.dataset.hover ?? "off";
+        const hover = raw === "off" || raw === "pause" ? raw : Number(raw);
         createMarquee(lane, track, {
             speed: Number(lane.dataset.speed ?? 70),
-            hoverScale: Number(lane.dataset.hover ?? 1),
+            hover,
             reverse: lane.dataset.reverse === "true"
         });
     }

@@ -22,9 +22,9 @@ interface Props {
     /** Paint every mark this colour. Omit to keep the brands' own colours. */
     tint?: string;
     speed?: number;
-    hoverScale?: number;
+    hover?: string;
 }
-const { tint, speed = 55, hoverScale = 1 } = Astro.props;
+const { tint, speed = 55, hover = "off" } = Astro.props;
 
 // Four real, already-vendored brand marks plus four obvious placeholders, so the row is
 // long enough to loop without inventing logos for companies that never agreed to appear.
@@ -44,7 +44,7 @@ const logos = [
     style={tint ? `--logo-color: ${tint}` : undefined}
     data-marquee
     data-speed={String(speed)}
-    data-hover={String(hoverScale)}
+    data-hover={hover}
 >
     <div class="lw-track" data-marquee-track>
         <div class="lw-copy">
@@ -95,9 +95,13 @@ const logos = [
         lane.dataset.marqueeReady = "1";
         const track = lane.querySelector<HTMLElement>("[data-marquee-track]");
         if (!track) continue;
+        // A data attribute is always a string; "off"/"pause" stay as they are and
+        // anything else is a multiplier, or the engine would read NaN.
+        const raw = lane.dataset.hover ?? "off";
+        const hover = raw === "off" || raw === "pause" ? raw : Number(raw);
         createMarquee(lane, track, {
             speed: Number(lane.dataset.speed ?? 70),
-            hoverScale: Number(lane.dataset.hover ?? 1),
+            hover,
             reverse: lane.dataset.reverse === "true"
         });
     }
