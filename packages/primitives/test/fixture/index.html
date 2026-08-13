@@ -28,7 +28,7 @@ const itemCount = Number(params.get("items") ?? 9);
 const speed = Number(params.get("speed") ?? 80);
 const vertical = params.get("vertical") === "1";
 const reverse = params.get("reverse") === "1";
-const hoverScale = Number(params.get("hoverScale") ?? 1);
+const hoverParam = params.get("hover");
 
 if (vertical) document.body.id = "vertical-mode";
 
@@ -53,7 +53,7 @@ window.__clicks = 0;
 window.__marquee = createMarquee(
     document.getElementById("lane"),
     document.getElementById("track"),
-    { speed, vertical, reverse, hoverScale, onItemClick: () => { window.__clicks++; } }
+    { speed, vertical, reverse, hover: hoverParam === null ? "off" : (hoverParam === "pause" || hoverParam === "off" ? hoverParam : Number(hoverParam)), onItemClick: () => { window.__clicks++; } }
 );
 window.__ready = true;
 </script>

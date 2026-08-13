@@ -29,7 +29,7 @@ export interface UseMarqueeResult {
  * to the item count, so the row accelerates every time content is added.
  *
  * ```tsx
- * const { laneRef, trackRef, copies } = useMarquee({ speed: 80, hoverScale: 0.15 });
+ * const { laneRef, trackRef, copies } = useMarquee({ speed: 80, hover: 0.15 });
  * return (
  *     <div ref={laneRef}>
  *         <div ref={trackRef} style={{ display: "flex" }}>
@@ -87,7 +87,7 @@ export function useMarquee(options: MarqueeOptions = {}): UseMarqueeResult {
 
     useIsomorphicLayoutEffect(() => {
         instanceRef.current?.update(options);
-    }, [options.speed, options.reverse, options.vertical, options.draggable, options.hoverScale, options.decay]);
+    }, [options.speed, options.reverse, options.vertical, options.draggable, options.hover, options.decay]);
 
     // A copy count change means new children; the lap has to be read again.
     useIsomorphicLayoutEffect(() => {

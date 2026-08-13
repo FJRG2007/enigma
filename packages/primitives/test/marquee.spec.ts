@@ -206,6 +206,33 @@ test.describe("marquee", () => {
     });
 });
 
+test.describe("marquee hover", () => {
+    /** Park a real mouse on the row and read the speed it settles at. */
+    async function hoverSpeed(page: Page, hover: string): Promise<number> {
+        await open(page, { speed: CRUISE, hover });
+        const centre = await laneCentre(page);
+        await page.mouse.move(centre.x, centre.y);
+        await page.waitForTimeout(2600);
+        const lap = await period(page);
+        return median(toSpeeds(await sampleTransform(page, 700), lap));
+    }
+
+    test('"off" ignores hover', async ({ page }) => {
+        expect(Math.abs(await hoverSpeed(page, "off") - CRUISE) / CRUISE).toBeLessThan(0.05);
+    });
+
+    test('"pause" stops the row', async ({ page }) => {
+        expect(Math.abs(await hoverSpeed(page, "pause"))).toBeLessThan(1);
+    });
+
+    test("a number multiplies the cruise speed", async ({ page }) => {
+        // Slower and faster from the same option, no second flag.
+        expect(await hoverSpeed(page, "0.25")).toBeGreaterThan(CRUISE * 0.2);
+        expect(await hoverSpeed(page, "0.25")).toBeLessThan(CRUISE * 0.3);
+        expect(await hoverSpeed(page, "2")).toBeGreaterThan(CRUISE * 1.9);
+    });
+});
+
 test.describe("marquee under reduced motion", () => {
     test("does not drift when idle but still drags", async ({ page }) => {
         // Emulated on the page rather than through test.use, which the project's
@@ -244,7 +271,7 @@ test.describe("marquee on a phone", () => {
     });
 
     test("a tap does not leave the row stuck at the hover speed", async ({ page }) => {
-        await open(page, { speed: CRUISE, hoverScale: 0 });
+        await open(page, { speed: CRUISE, hover: "pause" });
         // Tapped by coordinate: a locator tap waits for the element to stop moving,
         // and a marquee never does.
         const centre = await laneCentre(page);
@@ -258,7 +285,7 @@ test.describe("marquee on a phone", () => {
     });
 
     test("a compatibility mouse enter after a touch does not engage hover", async ({ page }) => {
-        await open(page, { speed: CRUISE, hoverScale: 0 });
+        await open(page, { speed: CRUISE, hover: "pause" });
         const centre = await laneCentre(page);
         await page.touchscreen.tap(centre.x, centre.y);
 

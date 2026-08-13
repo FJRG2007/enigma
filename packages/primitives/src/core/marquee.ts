@@ -29,6 +29,20 @@ const TOUCH_HOVER_SUPPRESS_MS = 1000;
 /** Below this the row is idle and the frame loop can stop. */
 const IDLE_EPSILON = 0.01;
 
+/**
+ * What a MOUSE resting on the row does to its speed. One option covers every case, so
+ * there is no pile of booleans to reconcile:
+ *
+ * - `"off"`   ignore hover entirely (the default)
+ * - `"pause"` stop while the pointer is on it
+ * - a number  multiply the cruise speed: `0.15` crawls, `1` changes nothing, `2` doubles
+ * - `{ speed }` an ABSOLUTE speed in px/s, whatever the cruise is; direction still
+ *   follows `reverse`, so you give a magnitude and not a sign
+ *
+ * Touch never triggers any of it - see the pointerType note on the hover handler.
+ */
+export type MarqueeHover = number | "off" | "pause" | { speed: number; };
+
 export interface MarqueeOptions {
     /**
      * Pixels per second. NOT a duration: a duration ties the speed to the item
@@ -41,8 +55,8 @@ export interface MarqueeOptions {
     vertical?: boolean;
     /** Allow grabbing and throwing the row. */
     draggable?: boolean;
-    /** Speed multiplier while a MOUSE rests on the row. 0 pauses it. */
-    hoverScale?: number;
+    /** What a mouse resting on the row does to its speed. See {@link MarqueeHover}. */
+    hover?: MarqueeHover;
     /** Fraction of the remaining velocity gap left after one second. */
     decay?: number;
     /**
@@ -94,7 +108,7 @@ const DEFAULTS: ResolvedOptions = {
     reverse: false,
     vertical: false,
     draggable: true,
-    hoverScale: 1,
+    hover: "off",
     decay: DEFAULT_DECAY,
     manageStyles: true,
     copies: "clone"
@@ -134,11 +148,21 @@ export function createMarquee(lane: HTMLElement, track: HTMLElement, options: Ma
         : null;
     let reducedMotion = motionQuery?.matches ?? false;
 
+    /** The speed a mouse on the row asks for. One option, four shapes, no flags to reconcile. */
+    function hoverTarget(cruise: number): number {
+        const hover = opts.hover ?? "off";
+        if (hover === "off") return cruise;
+        if (hover === "pause") return 0;
+        if (typeof hover === "number") return cruise * hover;
+        // An absolute speed is a magnitude: the row keeps travelling the way it was.
+        return (cruise < 0 ? -1 : 1) * Math.abs(hover.speed);
+    }
+
     /** Read live every frame, never captured: cruise, hover and reduced motion all ease. */
     function target(): number {
         if (reducedMotion || paused) return 0;
         const cruise = opts.reverse ? -opts.speed : opts.speed;
-        return hovering ? cruise * opts.hoverScale : cruise;
+        return hovering ? hoverTarget(cruise) : cruise;
     }
 
     function axisSize(element: HTMLElement): number {

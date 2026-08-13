@@ -81,6 +81,13 @@ prevents. The three that cost production incidents:
    enter itself, so it reproduces on any platform rather than only on the one
    that happens to emit it.
 
+**Hover is ONE option, not a family of flags.** `hover` takes `"off"` (the default),
+`"pause"`, a number that multiplies the cruise speed, or `{ speed }` for an absolute px/s
+whose direction still follows `reverse`. It replaced `hoverScale`, which could only ever
+express a multiplier - "stop", "go faster" and "an exact speed" all had to be encoded as
+one, and `0` meaning pause was a convention rather than a type. A discriminated union says
+what it means and the compiler checks it.
+
 The rest: measure the lap from `copies[1].offsetLeft - copies[0].offsetLeft`
 (never compute it from item widths); `max(2, ceil(lane / period) + 1)` copies,
 recomputed from a `ResizeObserver` and after `document.fonts.ready`; one rAF loop
