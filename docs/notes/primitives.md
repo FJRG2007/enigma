@@ -261,6 +261,27 @@ report ONLINE, because assuming offline flashes a warning on every page.
 Deliberately no toast. The monitor reports state and the notification queue renders it -
 binding them inside the primitive would make it useless to anyone with their own toaster.
 
+## button
+
+Disabled, loading and a cooldown are three reasons for ONE state, so they collapse into
+`available` rather than three flags every call site has to combine correctly. The element
+is REPORTED (`"a"` when there is an href, else `"button"`), never chosen: a
+framework-agnostic package cannot import `next/link`, so the recipe picks `Link` or `<a>`
+from what the primitive says.
+
+Decisions worth keeping:
+
+- **The cooldown starts when async work FINISHES**, not when it was requested. Starting it
+  at request time lets a slow call eat its own cooldown and the button is free the instant
+  it returns.
+- **A keyed cooldown persists**, because without it a refresh is a free retry - which is
+  the entire thing a cooldown exists to prevent. A stored time in the past is finished,
+  not pending.
+- **A shortcut is refused while typing** (input/textarea/select/contenteditable) and
+  whenever any modifier is held, so it never steals a real shortcut or types into a field.
+- **An anchor cannot be `disabled`**, only `aria-disabled`, which is advisory - so the
+  click handler refuses the press itself rather than trusting the attribute.
+
 ## enigma add
 
 `packages/enigma-cli/src/components.ts`, wired in `cli.ts` as `add` (alias

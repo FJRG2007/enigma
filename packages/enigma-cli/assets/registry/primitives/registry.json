@@ -245,6 +245,61 @@
       "dependencies": {
         "fuse.js": "^7.0.0"
       }
+    },
+    {
+      "name": "button",
+      "title": "Button behaviour",
+      "description": "Disabled, loading, a keyboard shortcut and a cooldown that can outlive a reload, collapsed into one `available` the renderer reads. An href reports an anchor rather than a button, so the framework's own Link stays your choice.",
+      "targets": [
+        "vanilla",
+        "astro",
+        "react"
+      ],
+      "entry": {
+        "vanilla": "@enigmax/primitives",
+        "astro": "@enigmax/primitives",
+        "react": "@enigmax/primitives/react"
+      },
+      "exports": {
+        "vanilla": [
+          "createButton"
+        ],
+        "astro": [
+          "createButton"
+        ],
+        "react": [
+          "useButton"
+        ]
+      },
+      "files": [
+        {
+          "path": "src/core/button.ts",
+          "dest": "button.ts",
+          "targets": [
+            "vanilla",
+            "astro",
+            "react"
+          ]
+        },
+        {
+          "path": "src/react/use-button.ts",
+          "dest": "use-button.ts",
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/core/button": "./button"
+          }
+        }
+      ],
+      "styles": false,
+      "themeHooks": [
+        "[data-loading]",
+        "[data-cooldown]",
+        "[aria-disabled=true]",
+        "[aria-busy=true]"
+      ],
+      "docs": "docs/notes/primitives.md#button"
     }
   ]
 }
