@@ -240,6 +240,27 @@ add up and the row drifts. Anything that needs offsetting goes on the lane or on
 element, never on the moved one. Both marquee recipes carry that warning at the top of the
 file, where someone editing the classes will actually read it.
 
+## network
+
+`createNetworkMonitor()` / `useNetworkState()` in utils, not primitives: connection state
+is the environment, not an interaction.
+
+The part worth having in a package is the **transition**, not the raw readings. "You are
+back online" has to know the connection had dropped, and every implementation of that ends
+up as a stray `wasOffline` boolean beside the effect - re-derived per screen, and wrong on
+a page that loads offline. `recovered` is tracked in the monitor and is false on a first
+load, so a page that opens online never announces a comeback that never happened. `slow`
+is the other derived signal: 2g or slower, or data saver on.
+
+Three details the naive version misses: the Network Information API is still prefixed in
+some browsers and absent in Safari, so the connection object is looked up three ways and
+may be null throughout; the `change` event fires for readings that did not change, so the
+snapshot is shallow-compared before any subscriber is told; and a server render must
+report ONLINE, because assuming offline flashes a warning on every page.
+
+Deliberately no toast. The monitor reports state and the notification queue renders it -
+binding them inside the primitive would make it useless to anyone with their own toaster.
+
 ## enigma add
 
 `packages/enigma-cli/src/components.ts`, wired in `cli.ts` as `add` (alias

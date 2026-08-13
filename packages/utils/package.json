@@ -1,6 +1,6 @@
 {
   "name": "@enigmax/utils",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Headless application utilities: short-TTL read cache with in-flight deduplication, notification queue with held timers, and the framework adapters over them.",
   "type": "module",
   "main": "./dist/index.js",

@@ -111,6 +111,55 @@
       "recipes": [
         "tailwind"
       ]
+    },
+    {
+      "name": "network",
+      "title": "Connection state",
+      "description": "Online/offline plus what the Network Information API reports, and the recovery transition every hand-rolled version re-derives: `recovered` is false on a first load, so a page that opens online never announces a comeback that did not happen.",
+      "targets": [
+        "vanilla",
+        "astro",
+        "react"
+      ],
+      "entry": {
+        "vanilla": "@enigmax/utils",
+        "astro": "@enigmax/utils",
+        "react": "@enigmax/utils/react"
+      },
+      "exports": {
+        "vanilla": [
+          "createNetworkMonitor"
+        ],
+        "astro": [
+          "createNetworkMonitor"
+        ],
+        "react": [
+          "useNetworkState"
+        ]
+      },
+      "files": [
+        {
+          "path": "src/core/network.ts",
+          "dest": "network.ts",
+          "targets": [
+            "vanilla",
+            "astro",
+            "react"
+          ]
+        },
+        {
+          "path": "src/react/use-network-state.ts",
+          "dest": "use-network-state.ts",
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/core/network": "./network"
+          }
+        }
+      ],
+      "styles": false,
+      "docs": "docs/notes/primitives.md#network"
     }
   ]
 }
