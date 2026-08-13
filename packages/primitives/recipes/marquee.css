@@ -1,0 +1,22 @@
+/* A starting point for the marquee, yours to edit. The primitive ships no styles;
+   it sets only what the behaviour needs (overflow, touch-action, user-select,
+   will-change, transform) and publishes its state as data-* attributes. */
+
+.enigma-marquee { position: relative; width: 100%; cursor: grab; }
+.enigma-marquee[data-grabbing] { cursor: grabbing; }
+
+/* Fade both ends so items enter and leave instead of being cut. */
+.enigma-marquee.is-faded {
+    -webkit-mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent);
+    mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent);
+}
+
+/* Never set `transform` or `translate` on the track: the engine owns it, and in
+   Tailwind v4 a translate-* utility composes with it rather than replacing it. */
+.enigma-marquee__track { display: flex; }
+.enigma-marquee__copy { display: flex; flex-shrink: 0; align-items: center; gap: 2.5rem; padding-right: 2.5rem; }
+.enigma-marquee__item { flex-shrink: 0; }
+
+/* State the engine publishes, for you to style. */
+.enigma-marquee[data-hovering] .enigma-marquee__item { opacity: 1; }
+.enigma-marquee[data-reduced-motion="true"] { /* autoplay is off; the drag still works */ }

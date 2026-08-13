@@ -177,6 +177,40 @@ comes back and none of them is read. Eviction never removes a sticky error.
 Both guard `typeof document === "undefined"`: `document?.x` still throws a
 ReferenceError under SSR, which is how the first version broke in Node.
 
+## Styling: the primitive has none, the recipe does
+
+The core primitives ship **no styles and never will**. Putting Tailwind classes inside the
+engine would break every project without Tailwind and tie a behaviour package to a CSS
+framework's major version; being styleless is what makes them usable in any design.
+
+The styling lives one layer up, in `recipes/`, and only ever reaches a project through
+`enigma add --copy`:
+
+```
+recipes/<name>.tailwind.tsx   a complete styled component, utility classes
+recipes/<name>.css.tsx        the same component against class names
+recipes/<name>.css            the stylesheet it imports
+```
+
+A registry file entry with no `style` is the headless part and is always written; one that
+names a style is written only for that style. `--style tailwind|css|none` forces it, and
+the default comes from `detectStyle()`, which reads the project: `tailwindcss`,
+`@tailwindcss/vite` or `@tailwindcss/postcss` in the manifest means Tailwind, anything
+else means plain CSS. **Tailwind is the default only where the project has it** - writing
+utility classes into a project without Tailwind produces a component styled by nothing,
+which is worse than the CSS variant.
+
+`cache` has no recipe on purpose: it renders nothing, so there is nothing to style.
+
+### The Tailwind v4 trap the marquee recipe warns about
+
+Tailwind v4 writes `translate-*` to the CSS `translate` property, which **composes with**
+`transform` rather than replacing it. The marquee engine drives the track's `transform`
+every frame, so a `translate-x-*` utility on that element does not override it - the two
+add up and the row drifts. Anything that needs offsetting goes on the lane or on an inner
+element, never on the moved one. Both marquee recipes carry that warning at the top of the
+file, where someone editing the classes will actually read it.
+
 ## enigma add
 
 `packages/enigma-cli/src/components.ts`, wired in `cli.ts` as `add` (alias

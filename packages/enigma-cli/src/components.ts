@@ -18,12 +18,23 @@ export const REGISTRY_PACKAGES = ["@enigmax/primitives", "@enigmax/utils"] as co
 
 export type ComponentTarget = "vanilla" | "react" | "astro" | "vue" | "svelte";
 
+/**
+ * Which styling layer a copied component arrives with. The PRIMITIVE never has one -
+ * this only picks the recipe written alongside it.
+ */
+export type ComponentStyle = "tailwind" | "css" | "none";
+
 export interface RegistryFile {
     /** Path inside the published package. */
     path: string;
     /** File name written into the project in copy mode. */
     dest: string;
     targets: ComponentTarget[];
+    /**
+     * Only written for this styling layer. Absent means the file is the headless part
+     * and is always written, whatever the style.
+     */
+    style?: ComponentStyle;
     /** Import specifiers to rewrite when the file is copied out of the package. */
     rewrite?: Record<string, string>;
 }
@@ -107,6 +118,22 @@ export function detectTarget(projectDir: string): ComponentTarget {
     return "vanilla";
 }
 
+/**
+ * The styling layer to write, from the project itself.
+ *
+ * Tailwind is the default WHERE THE PROJECT HAS IT - writing utility classes into a
+ * project without Tailwind produces a component styled by nothing at all, which is worse
+ * than plain CSS. Pass --style to override.
+ */
+export function detectStyle(projectDir: string): ComponentStyle {
+    const pkg = readJson<{ dependencies?: Record<string, string>; devDependencies?: Record<string, string>; }>(join(projectDir, "package.json"));
+    const deps = { ...pkg?.dependencies, ...pkg?.devDependencies };
+    if (deps["tailwindcss"]) return "tailwind";
+    // Tailwind 4 can be wired through the Vite/PostCSS plugin without the meta package.
+    if (deps["@tailwindcss/vite"] || deps["@tailwindcss/postcss"]) return "tailwind";
+    return "css";
+}
+
 /** Where copied source lands, unless the caller names a directory. */
 export function defaultDestination(projectDir: string): string {
     return existsSync(join(projectDir, "src")) ? join(projectDir, "src", "lib", "enigma") : join(projectDir, "lib", "enigma");
@@ -144,7 +171,7 @@ export function addAsDependency(item: ResolvedItem, projectDir: string, install:
  *
  * Requires the package on disk: the CLI never invents source it cannot read.
  */
-export function addAsCopy(item: ResolvedItem, projectDir: string, target: ComponentTarget, destination: string): AddResult {
+export function addAsCopy(item: ResolvedItem, projectDir: string, target: ComponentTarget, destination: string, style: ComponentStyle = "none"): AddResult {
     if (!item.root) {
         return {
             ok: false,
@@ -154,7 +181,9 @@ export function addAsCopy(item: ResolvedItem, projectDir: string, target: Compon
         };
     }
 
-    const files = item.files.filter((file) => file.targets.includes(target));
+    // A file with no `style` is the headless part and always travels; one that names a
+    // style travels only when it is the style asked for.
+    const files = item.files.filter((file) => file.targets.includes(target) && (!file.style || file.style === style));
     if (!files.length) {
         return { ok: false, written: [], installed: [], message: `'${item.name}' has no files for target '${target}'.` };
     }

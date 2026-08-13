@@ -47,6 +47,32 @@
           "rewrite": {
             "@/core/marquee": "./marquee"
           }
+        },
+        {
+          "path": "recipes/marquee.tailwind.tsx",
+          "dest": "Marquee.tsx",
+          "targets": [
+            "react"
+          ],
+          "style": "tailwind"
+        },
+        {
+          "path": "recipes/marquee.css.tsx",
+          "dest": "Marquee.tsx",
+          "targets": [
+            "react"
+          ],
+          "style": "css"
+        },
+        {
+          "path": "recipes/marquee.css",
+          "dest": "marquee.css",
+          "targets": [
+            "react",
+            "vanilla",
+            "astro"
+          ],
+          "style": "css"
         }
       ],
       "styles": false,
@@ -58,7 +84,11 @@
         "[data-enigma-marquee-track]",
         "[data-enigma-marquee-copy]"
       ],
-      "docs": "docs/notes/primitives.md#marquee"
+      "docs": "docs/notes/primitives.md#marquee",
+      "recipes": [
+        "tailwind",
+        "css"
+      ]
     },
     {
       "name": "input",
@@ -104,6 +134,32 @@
           "rewrite": {
             "@/core/input": "./input"
           }
+        },
+        {
+          "path": "recipes/input.tailwind.tsx",
+          "dest": "Field.tsx",
+          "targets": [
+            "react"
+          ],
+          "style": "tailwind"
+        },
+        {
+          "path": "recipes/input.css.tsx",
+          "dest": "Field.tsx",
+          "targets": [
+            "react"
+          ],
+          "style": "css"
+        },
+        {
+          "path": "recipes/input.css",
+          "dest": "input.css",
+          "targets": [
+            "react",
+            "vanilla",
+            "astro"
+          ],
+          "style": "css"
         }
       ],
       "styles": false,
@@ -115,7 +171,11 @@
         "[data-enigma-input-action]",
         "[data-enigma-input-action=reveal]"
       ],
-      "docs": "docs/notes/primitives.md#input"
+      "docs": "docs/notes/primitives.md#input",
+      "recipes": [
+        "tailwind",
+        "css"
+      ]
     },
     {
       "name": "search",
@@ -161,6 +221,14 @@
           "rewrite": {
             "@/core/search": "./search"
           }
+        },
+        {
+          "path": "recipes/search.tailwind.tsx",
+          "dest": "Search.tsx",
+          "targets": [
+            "react"
+          ],
+          "style": "tailwind"
         }
       ],
       "styles": false,
@@ -170,7 +238,10 @@
       "optionalDependencies": {
         "fuse.js": "Fuzzy matching. Omit it and a built-in substring matcher is used."
       },
-      "docs": "docs/notes/primitives.md#search"
+      "docs": "docs/notes/primitives.md#search",
+      "recipes": [
+        "tailwind"
+      ]
     }
   ]
 }

@@ -7,28 +7,46 @@
       "name": "cache",
       "title": "Short-TTL read cache",
       "description": "Read-through cache with in-flight deduplication, prefix invalidation and optional local/session persistence.",
-      "targets": ["vanilla", "astro", "react"],
+      "targets": [
+        "vanilla",
+        "astro",
+        "react"
+      ],
       "entry": {
         "vanilla": "@enigmax/utils",
         "astro": "@enigmax/utils",
         "react": "@enigmax/utils/react"
       },
       "exports": {
-        "vanilla": ["createCache"],
-        "astro": ["createCache"],
-        "react": ["useCached"]
+        "vanilla": [
+          "createCache"
+        ],
+        "astro": [
+          "createCache"
+        ],
+        "react": [
+          "useCached"
+        ]
       },
       "files": [
         {
           "path": "src/core/cache.ts",
           "dest": "cache.ts",
-          "targets": ["vanilla", "astro", "react"]
+          "targets": [
+            "vanilla",
+            "astro",
+            "react"
+          ]
         },
         {
           "path": "src/react/use-cached.ts",
           "dest": "use-cached.ts",
-          "targets": ["react"],
-          "rewrite": { "@/core/cache": "./cache" }
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/core/cache": "./cache"
+          }
         }
       ],
       "styles": false,
@@ -38,32 +56,61 @@
       "name": "notifications",
       "title": "Notification queue",
       "description": "Ordering, dedupe by key, sticky errors and dismiss timers that hold instead of running while the tab is hidden. No rendering.",
-      "targets": ["vanilla", "astro", "react"],
+      "targets": [
+        "vanilla",
+        "astro",
+        "react"
+      ],
       "entry": {
         "vanilla": "@enigmax/utils",
         "astro": "@enigmax/utils",
         "react": "@enigmax/utils/react"
       },
       "exports": {
-        "vanilla": ["createNotifications"],
-        "astro": ["createNotifications"],
-        "react": ["useNotifications"]
+        "vanilla": [
+          "createNotifications"
+        ],
+        "astro": [
+          "createNotifications"
+        ],
+        "react": [
+          "useNotifications"
+        ]
       },
       "files": [
         {
           "path": "src/core/notifications.ts",
           "dest": "notifications.ts",
-          "targets": ["vanilla", "astro", "react"]
+          "targets": [
+            "vanilla",
+            "astro",
+            "react"
+          ]
         },
         {
           "path": "src/react/use-notifications.ts",
           "dest": "use-notifications.ts",
-          "targets": ["react"],
-          "rewrite": { "@/core/notifications": "./notifications" }
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/core/notifications": "./notifications"
+          }
+        },
+        {
+          "path": "recipes/notifications.tailwind.tsx",
+          "dest": "Notifications.tsx",
+          "targets": [
+            "react"
+          ],
+          "style": "tailwind"
         }
       ],
       "styles": false,
-      "docs": "docs/notes/primitives.md#notifications"
+      "docs": "docs/notes/primitives.md#notifications",
+      "recipes": [
+        "tailwind"
+      ]
     }
   ]
 }
