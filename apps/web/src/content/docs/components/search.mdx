@@ -1,0 +1,127 @@
+---
+title: Search
+description: Search as you type - debouncing, ranking and cancellation, with the matching pluggable. Fuse.js optional, never required.
+group: Components
+order: 30
+---
+import AddTabs from "../../../components/AddTabs.astro";
+import Preview from "../../../components/Preview.astro";
+import SearchDemo from "../../../components/demos/SearchDemo.astro";
+
+It owns the parts that are always rewritten and always come out slightly wrong: the debounce, the ordering, the cancellation of a stale pass, and the field wiring. It owns none of the matching, which is yours to choose.
+
+<Preview title="no engine, zero dependencies" hint='Type "cafe" - it finds "Café config". Now type "guardrials" and nothing matches: a substring matcher cannot forgive a typo.'>
+    <SearchDemo />
+    <div slot="code">
+```js
+import { createSearch } from "@enigmax/primitives";
+
+const search = createSearch({
+    items: docs,
+    keys: ["title", "body"],   // dotted paths work: "author.name"
+    debounce: 120
+});
+
+search.attach(document.querySelector("input[type=search]"));
+search.subscribe((results, query) => render(results, query));
+```
+
+With no engine you get an accent-insensitive substring matcher and no dependencies at all. `"cafe"` finds `"Café"`, because a search that fails on an accent reads as broken, and a hit in the first key outranks one in the second.
+    </div>
+</Preview>
+
+## Install
+
+<AddTabs item="search" pkg="@enigmax/primitives" />
+
+## With Fuse.js
+
+<Preview title="fuzzy" hint='The same typo, "guardrials", now finds Convention guardrails. Watch the score column.'>
+    <SearchDemo fuzzy={true} />
+    <div slot="code">
+```js
+import Fuse from "fuse.js";
+import { createSearch } from "@enigmax/primitives";
+
+const search = createSearch({
+    items: docs,
+    keys: ["title", "body"],
+    fuse: Fuse,                                 // the CONSTRUCTOR, not an instance
+    fuseOptions: { threshold: 0.4, ignoreLocation: true }
+});
+```
+
+`fuseOptions` is forwarded to Fuse untouched, so every option behaves exactly as Fuse's own documentation says - this is not a wrapper with its own opinions on top.
+    </div>
+</Preview>
+
+Fuse is an **optional peer dependency**, never a real one. You pass the constructor rather than the primitive importing it, so nothing is bundled unless you use it, and the package stays installable for anyone who only wanted the marquee.
+
+```sh
+npm install fuse.js    # only if you want fuzzy matching
+```
+
+## Or replace the engine entirely
+
+```js
+createSearch({
+    items,
+    // Wins over `fuse`. Return them in the order you want them shown.
+    matcher: (query, items) => items
+        .filter(item => item.tags.includes(query))
+        .map(item => ({ item, score: 0 }))
+});
+```
+
+That is the escape hatch for a server-side search, a trigram index, a language-aware collator, or anything else: the primitive keeps doing the debouncing and the wiring and stops having an opinion about matching.
+
+## React
+
+```jsx
+import Fuse from "fuse.js";
+import { useSearch } from "@enigmax/primitives/react";
+
+export function DocSearch({ docs }) {
+    const { inputRef, results, query } = useSearch({
+        items: docs,
+        keys: ["title", "body"],
+        fuse: Fuse
+    });
+
+    return (
+        <>
+            <input ref={inputRef} type="search" aria-label="Search docs" />
+            <p>{query ? `${results.length} results` : "Type to search"}</p>
+            <ul>
+                {results.map(({ item, score }) => (
+                    <li key={item.id}>{item.title} <small>{score.toFixed(2)}</small></li>
+                ))}
+            </ul>
+        </>
+    );
+}
+```
+
+## Options
+
+| Option | Default | Meaning |
+|---|---|---|
+| `items` | `[]` | The collection to search. |
+| `keys` | `[]` | Fields to search. Dotted paths supported. |
+| `fuse` | - | Fuse's constructor. Omit for the built-in matcher. |
+| `fuseOptions` | - | Forwarded to Fuse verbatim. |
+| `matcher` | - | Replaces the engine. Wins over `fuse`. |
+| `debounce` | `120` | ms after the last keystroke. `0` searches on every one. |
+| `minLength` | `1` | Shorter queries return nothing rather than everything. |
+| `limit` | - | Cap the list. Applies to the empty-query state too. |
+| `empty` | `"none"` | What an empty query returns: `"none"` or `"all"`. |
+
+The instance exposes `query`, `results`, `search()`, `searchNow()`, `setItems()`, `update()`, `attach()`, `subscribe()` and `destroy()`.
+
+## Details worth not rewriting
+
+- **A burst of keystrokes runs one search.** A pending pass is dropped rather than queued, so a fast typist gets one pass over the data instead of one per character.
+- **New data re-runs the visible query.** Results matching items that are gone are worse than no results.
+- **Fuse indexes on construction**, so the engine is rebuilt when the items or keys change and never per keystroke.
+- **Escape clears the field first** and stops there, instead of closing the dialog around it on the same press.
+- **`limit` applies to the "show everything" state too**, which is the longest list of them all and the one most likely to hurt.

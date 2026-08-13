@@ -1,0 +1,85 @@
+---
+/**
+ * A live search field over a small fixed list, so the difference between the built-in
+ * substring matcher and Fuse is visible by typing a typo rather than described.
+ */
+interface Props {
+    /** Load Fuse.js and hand the primitive its constructor. */
+    fuzzy?: boolean;
+}
+const { fuzzy = false } = Astro.props;
+---
+<div class="sr" data-search-demo data-fuzzy={fuzzy ? "1" : undefined}>
+    <input class="sr-input" type="search" placeholder={fuzzy ? 'Try a typo: "guardrials"' : 'Try "cafe", then "guardrials"'} aria-label="Search the docs" data-search-input />
+    <p class="sr-meta" data-search-meta>Type to search. Escape clears.</p>
+    <ul class="sr-list" data-search-list></ul>
+</div>
+
+<style>
+    .sr { display: grid; gap: 10px; }
+    .sr-input { padding: 10px 12px; font-size: 13px; color: var(--text); background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; outline: none; }
+    .sr-input:focus { border-color: var(--accent); }
+    .sr-meta { margin: 0; font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
+    .sr-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; min-height: 40px; }
+    .sr-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 8px 11px; background: var(--surface2); border: 1px solid var(--border); border-radius: 9px; }
+    .sr-title { font-size: 13px; color: var(--text); }
+    .sr-body { font-size: 11.5px; color: var(--muted); }
+    .sr-score { font-family: var(--mono); font-size: 10.5px; color: var(--accent); }
+</style>
+
+<script>
+    import { createSearch } from "@enigmax/primitives";
+
+    const DOCS = [
+        { title: "Convention guardrails", body: "Deterministic rules fed back to the agent" },
+        { title: "Recall", body: "Local session memory built from your transcripts" },
+        { title: "Café config", body: "Accents must not break a search" },
+        { title: "Dashboard", body: "Loopback control panel for everything" },
+        { title: "Quality gate", body: "Review, tests, lint, push, PR, CI" },
+        { title: "Autoskills", body: "Detect the stack and install matching skills" }
+    ];
+
+    for (const root of document.querySelectorAll<HTMLElement>("[data-search-demo]")) {
+        if (root.dataset.searchReady) continue;
+        root.dataset.searchReady = "1";
+
+        const field = root.querySelector<HTMLInputElement>("[data-search-input]")!;
+        const list = root.querySelector<HTMLElement>("[data-search-list]")!;
+        const meta = root.querySelector<HTMLElement>("[data-search-meta]")!;
+
+        // Fuse is loaded only for the demo that asks for it, which is the whole point of
+        // passing the constructor instead of importing it inside the primitive.
+        const fuse = root.dataset.fuzzy ? (await import("fuse.js")).default : undefined;
+
+        const search = createSearch<{ title: string; body: string; }>({
+            items: DOCS,
+            keys: ["title", "body"],
+            fuse: fuse as never,
+            debounce: 120,
+            onResults: (results, query) => {
+                meta.textContent = query
+                    ? `${results.length} result${results.length === 1 ? "" : "s"} for "${query}" - ${root.dataset.fuzzy ? "Fuse.js" : "built-in substring matcher"}`
+                    : "Type to search. Escape clears.";
+                list.replaceChildren(...results.map((result) => {
+                    const row = document.createElement("li");
+                    row.className = "sr-row";
+                    const left = document.createElement("div");
+                    const title = document.createElement("div");
+                    title.className = "sr-title";
+                    title.textContent = result.item.title;
+                    const body = document.createElement("div");
+                    body.className = "sr-body";
+                    body.textContent = result.item.body;
+                    left.append(title, body);
+                    const score = document.createElement("span");
+                    score.className = "sr-score";
+                    score.textContent = result.score.toFixed(2);
+                    row.append(left, score);
+                    return row;
+                }));
+            }
+        });
+
+        search.attach(field);
+    }
+</script>

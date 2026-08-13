@@ -1,0 +1,91 @@
+---
+/**
+ * A live password field. The reveal button, its label and its state come from the
+ * primitive; every pixel below is this page's own CSS.
+ */
+interface Props {
+    /** Use replacement glyphs and labels instead of the built-in eye. */
+    custom?: boolean;
+    /** Mount the actions before the field instead of after it. */
+    start?: boolean;
+    /** Add a clear button beside the reveal. */
+    clear?: boolean;
+}
+const { custom = false, start = false, clear = false } = Astro.props;
+const id = `pw-${custom ? "custom" : start ? "start" : clear ? "clear" : "default"}`;
+---
+<form class="in-form" onsubmit="event.preventDefault()">
+    <label class="in-label" for={id}>Password</label>
+    <div class="in-field">
+        <input
+            id={id}
+            class="in-input"
+            type="password"
+            value="correct horse battery"
+            autocomplete="current-password"
+            data-input-demo
+            data-custom={custom ? "1" : undefined}
+            data-start={start ? "1" : undefined}
+            data-clear={clear ? "1" : undefined}
+        />
+    </div>
+    <button class="in-submit" type="submit">Sign in</button>
+    <p class="in-note" data-submit-note hidden>The form submitted. The toggle did not do that.</p>
+</form>
+
+<style>
+    .in-form { display: grid; gap: 8px; max-width: 380px; }
+    .in-label { font-size: 12px; color: var(--muted); }
+    .in-field { display: flex; align-items: center; gap: 6px; padding: 0 10px; background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; }
+    .in-field:focus-within { border-color: var(--accent); }
+    .in-input { flex: 1; min-width: 0; padding: 10px 0; font-family: var(--mono); font-size: 13px; color: var(--text); background: transparent; border: 0; outline: none; }
+    /* The primitive publishes the state; the theme decides what it looks like. */
+    .in-field :global([data-enigma-input-actions]) { display: inline-flex; gap: 2px; order: 2; }
+    .in-field :global([data-enigma-input-actions][data-position="start"]) { order: 0; }
+    .in-field :global([data-enigma-input-action]) {
+        display: inline-grid; place-items: center; width: 28px; height: 28px;
+        color: var(--muted); background: none; border: 0; border-radius: 7px; cursor: pointer; font-size: 15px; font-style: normal;
+    }
+    .in-field :global([data-enigma-input-action]:hover) { color: var(--text); background: var(--surface); }
+    .in-field :global([data-enigma-input-action][aria-pressed="true"]) { color: var(--accent); }
+    .in-submit { justify-self: start; font-size: 12.5px; color: var(--text); background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 7px 14px; cursor: pointer; }
+    .in-note { margin: 0; font-size: 12px; color: var(--good); }
+</style>
+
+<script>
+    import { createInput, type InputOptions } from "@enigmax/primitives";
+
+    for (const field of document.querySelectorAll<HTMLInputElement>("[data-input-demo]")) {
+        if (field.dataset.inputReady) continue;
+        field.dataset.inputReady = "1";
+
+        const options: InputOptions = {};
+        if (field.dataset.custom) {
+            options.reveal = {
+                showIcon: "<i>look</i>",
+                hideIcon: "<i>mask</i>",
+                showLabel: "Let me read it",
+                hideLabel: "Cover it up"
+            };
+        }
+        if (field.dataset.start) options.position = "start";
+        if (field.dataset.clear) {
+            options.actions = [{
+                name: "clear",
+                label: "Clear the field",
+                icon: "<i>&times;</i>",
+                // Removed from the DOM when it does not apply, not merely hidden.
+                visible: (state) => state.input.value.length > 0,
+                onSelect: (state) => { state.input.value = ""; instance.refresh(); state.input.focus(); }
+            }];
+        }
+
+        const instance = createInput(field, options);
+
+        // Proof that the toggle is a real type="button": only the submit button submits.
+        const form = field.closest("form");
+        const note = form?.querySelector<HTMLElement>("[data-submit-note]");
+        form?.addEventListener("submit", () => { if (note) note.hidden = false; });
+        field.addEventListener("input", () => instance.refresh());
+    }
+</script>
