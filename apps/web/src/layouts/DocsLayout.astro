@@ -123,11 +123,11 @@ const componentSource = componentName
                 {outline.length > 0 && (
                     <>
                         <div class="toc-h">On this page</div>
-                        <nav class="toc-links">
+                        <div class="toc-links">
                             {outline.map((heading) => (
                                 <a href={`#${heading.slug}`} class:list={["toc-a", heading.depth === 3 && "is-sub"]} data-toc={heading.slug}>{heading.text}</a>
                             ))}
-                        </nav>
+                        </div>
                     </>
                 )}
                 <div class="toc-src">
@@ -182,7 +182,14 @@ const componentSource = componentName
        element is what stops the rule applying; a semantic table of contents is a nav
        anyway. `align-self: stretch` is the other half: a sticky child cannot outlive a
        parent only as tall as its own content. */
-    .toc { position: relative; align-self: stretch; }
+    .toc {
+        position: relative; align-self: stretch;
+        /* The page's `nav` rule is written for the top bar and hands every nav a
+           border-bottom, a translucent background, a backdrop filter and a z-index. This
+           column is a nav to escape the `aside` overflow rule, so it has to hand all of
+           that back - the border was showing as a stray line under the outline. */
+        border: 0; background: none; backdrop-filter: none; z-index: auto;
+    }
     .toc-inner { position: sticky; top: 84px; display: grid; gap: 18px; padding: 4px 0 40px; }
     .toc-h { font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); }
     .toc-links { display: grid; gap: 7px; border-left: 1px solid var(--border-soft); }
@@ -190,7 +197,7 @@ const componentSource = componentName
     .toc-a:hover { color: var(--text); }
     .toc-a.is-sub { padding-left: 24px; font-size: 12px; }
     .toc-a.is-active { color: var(--accent); border-left-color: var(--accent); }
-    .toc-src { display: grid; gap: 8px; padding-top: 16px; border-top: 1px solid var(--border-soft); }
+    .toc-src { display: grid; gap: 8px; padding-top: 18px; }
     .toc-src a { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); text-decoration: none; }
     .toc-src a:hover { color: var(--text); }
     .toc-src svg { width: 13px; height: 13px; flex: 0 0 auto; }
