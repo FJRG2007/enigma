@@ -167,6 +167,16 @@ statically analysable subpath has neither problem.
 `enigma add search` installs `fuse.js` alongside the package. Registry items may declare
 `dependencies`, and both the dependency and the copy paths install what is missing - a
 copied recipe imports its engine, so the dependency has to travel with the source.
+`--no-deps` adds the primitive alone, for a project that wants the substring matcher and
+no engine.
+
+**Installs run through the PROJECT's package manager, never a hardcoded npm.**
+`detectPackageManager()` reads the corepack `packageManager` field first (a declaration
+beats a trace), then searches upwards for a lockfile so a workspace package finds the one
+at the monorepo root. The verb differs too: npm uses `install`, pnpm/yarn/bun use `add`.
+Running npm inside a pnpm or bun project writes a second lockfile and leaves the tree in
+a state the project's own tooling disagrees with, which is the bug the first version
+shipped with.
 
 Fuse is an OPTIONAL peer dependency, never a real one: the package's zero-dependency core
 is what lets the marquee and the input be installed without dragging a search engine in.

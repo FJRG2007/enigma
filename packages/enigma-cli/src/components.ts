@@ -136,6 +136,62 @@ export function detectStyle(projectDir: string): ComponentStyle {
     return "css";
 }
 
+/** Package managers `enigma add` knows how to drive. */
+export type PackageManager = "npm" | "pnpm" | "yarn" | "bun";
+
+/** How each one is told to add a dependency. `install` is not universal - pnpm/yarn/bun use `add`. */
+const ADD_COMMAND: Record<PackageManager, string[]> = {
+    npm: ["install"],
+    pnpm: ["add"],
+    yarn: ["add"],
+    bun: ["add"]
+};
+
+/**
+ * The package manager the PROJECT uses, not the one that happens to be on PATH.
+ *
+ * Running `npm install` inside a pnpm or bun project writes a second lockfile and leaves
+ * the tree in a state the project's own tooling disagrees with, so this is worth reading
+ * properly: the corepack `packageManager` field first, because it is a declaration rather
+ * than a trace, then the lockfile, searching upwards so a workspace package finds the one
+ * at the monorepo root.
+ */
+export function detectPackageManager(projectDir: string): PackageManager {
+    const manifest = readJson<{ packageManager?: string; }>(join(projectDir, "package.json"));
+    const declared = manifest?.packageManager?.split("@")[0];
+    if (declared === "pnpm" || declared === "yarn" || declared === "bun" || declared === "npm") return declared;
+
+    const lockfiles: [string, PackageManager][] = [
+        ["pnpm-lock.yaml", "pnpm"],
+        ["bun.lockb", "bun"],
+        ["bun.lock", "bun"],
+        ["yarn.lock", "yarn"],
+        ["package-lock.json", "npm"]
+    ];
+
+    let dir = projectDir;
+    for (let depth = 0; depth < 6; depth++) {
+        for (const [file, manager] of lockfiles) {
+            if (existsSync(join(dir, file))) return manager;
+        }
+        const parent = dirname(dir);
+        if (parent === dir) break;
+        dir = parent;
+    }
+    return "npm";
+}
+
+/** Run the project's own package manager to add packages. */
+function runInstall(projectDir: string, packages: string[]): { ok: boolean; manager: PackageManager; } {
+    const manager = detectPackageManager(projectDir);
+    const result = spawnSync(manager, [...ADD_COMMAND[manager], ...packages], {
+        cwd: projectDir,
+        stdio: "inherit",
+        shell: process.platform === "win32"
+    });
+    return { ok: result.status === 0, manager };
+}
+
 /** Where copied source lands, unless the caller names a directory. */
 export function defaultDestination(projectDir: string): string {
     return existsSync(join(projectDir, "src")) ? join(projectDir, "src", "lib", "enigma") : join(projectDir, "lib", "enigma");
@@ -151,7 +207,7 @@ export interface AddResult {
 }
 
 /** Add the item as a dependency and report the import to use. */
-export function addAsDependency(item: ResolvedItem, projectDir: string, install: boolean): AddResult {
+export function addAsDependency(item: ResolvedItem, projectDir: string, install: boolean, withDependencies = true): AddResult {
     const manifestPath = join(projectDir, "package.json");
     const manifest = readJson<{ dependencies?: Record<string, string>; }>(manifestPath);
     if (!manifest) return { ok: false, written: [], installed: [], message: `No package.json in ${projectDir}.` };
@@ -159,18 +215,19 @@ export function addAsDependency(item: ResolvedItem, projectDir: string, install:
     // An item's own package plus whatever it declares it needs - the search primitive is
     // useless without its engine, so asking for it and then hitting a missing module is
     // a worse experience than installing the pair.
-    const wanted = [item.pkg, ...Object.keys(item.dependencies ?? {})];
+    const wanted = [item.pkg, ...(withDependencies ? Object.keys(item.dependencies ?? {}) : [])];
     const missing = wanted.filter((name) => !manifest.dependencies?.[name]);
     if (!missing.length) {
         return { ok: true, written: [], installed: [], message: `${wanted.join(" and ")} already installed.` };
     }
+    const manager = detectPackageManager(projectDir);
     if (!install) {
-        return { ok: true, written: [], installed: [], message: `Run: npm install ${missing.join(" ")}` };
+        return { ok: true, written: [], installed: [], message: `Run: ${installCommand(manager, missing)}` };
     }
 
-    const result = spawnSync("npm", ["install", ...missing], { cwd: projectDir, stdio: "inherit", shell: process.platform === "win32" });
-    if (result.status !== 0) return { ok: false, written: [], installed: [], message: `npm install ${missing.join(" ")} failed.` };
-    return { ok: true, written: [], installed: missing, message: `Installed ${missing.join(", ")}.` };
+    const result = runInstall(projectDir, missing);
+    if (!result.ok) return { ok: false, written: [], installed: [], message: `${installCommand(manager, missing)} failed.` };
+    return { ok: true, written: [], installed: missing, message: `Installed ${missing.join(", ")} with ${manager}.` };
 }
 
 /**
@@ -178,7 +235,7 @@ export function addAsDependency(item: ResolvedItem, projectDir: string, install:
  *
  * Requires the package on disk: the CLI never invents source it cannot read.
  */
-export function addAsCopy(item: ResolvedItem, projectDir: string, target: ComponentTarget, destination: string, style: ComponentStyle = "none"): AddResult {
+export function addAsCopy(item: ResolvedItem, projectDir: string, target: ComponentTarget, destination: string, style: ComponentStyle = "none", withDependencies = true): AddResult {
     if (!item.root) {
         return {
             ok: false,
@@ -212,19 +269,26 @@ export function addAsCopy(item: ResolvedItem, projectDir: string, target: Compon
     }
 
     // The copied recipe imports its engine, so the dependency travels with the source.
-    const extra = Object.keys(item.dependencies ?? {});
+    const extra = withDependencies ? Object.keys(item.dependencies ?? {}) : [];
     const installed: string[] = [];
+    let manager: PackageManager = "npm";
     if (extra.length) {
         const manifest = readJson<{ dependencies?: Record<string, string>; }>(join(projectDir, "package.json"));
         const missing = extra.filter((name) => !manifest?.dependencies?.[name]);
         if (missing.length) {
-            const result = spawnSync("npm", ["install", ...missing], { cwd: projectDir, stdio: "inherit", shell: process.platform === "win32" });
-            if (result.status === 0) installed.push(...missing);
+            const result = runInstall(projectDir, missing);
+            manager = result.manager;
+            if (result.ok) installed.push(...missing);
         }
     }
 
-    const note = installed.length ? ` Installed ${installed.join(", ")}.` : "";
+    const note = installed.length ? ` Installed ${installed.join(", ")} with ${manager}.` : "";
     return { ok: true, written, installed, message: `Copied ${written.length} file(s) into ${destination}.${note}` };
+}
+
+/** The exact line a reader can paste, in the project's own package manager. */
+export function installCommand(manager: PackageManager, packages: string[]): string {
+    return [manager, ...ADD_COMMAND[manager], ...packages].join(" ");
 }
 
 /** The import line a consumer should write for this item on this target. */

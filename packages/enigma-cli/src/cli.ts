@@ -92,6 +92,8 @@ interface CliOptions extends skillsMod.InstallOptions {
     target: string | null;
     /** `add`: styling layer for a copied recipe (tailwind | css | none). */
     style: string | null;
+    /** `add`: skip the packages an item declares (e.g. search without fuse.js). */
+    noDeps: boolean;
     /** `api`: port override for the local Claude Code API server. */
     port: number | null;
     /** `api`: optional bearer key required by the local API server. */
@@ -117,7 +119,7 @@ function parseArgs(argv: string[]): CliOptions {
         bypass: null, noBypass: false, outputStyle: null, minimalCode: null, dashboard: null, promptSecretGuard: null,
         force: false, all: false, yes: false, login: false, dryRun: false, help: false, version: false,
         stats: false, retrieve: null, compressType: null, clear: false,
-        copy: false, list: false, dest: null, target: null, style: null,
+        copy: false, list: false, dest: null, target: null, style: null, noDeps: false,
         preset: null, token: null, base: null, providerModel: null,
         port: null, apiKey: null, apiAccount: null, apiProfile: null, apiPack: null, expose: false, newToken: false,
         json: false,
@@ -192,6 +194,7 @@ function parseArgs(argv: string[]): CliOptions {
             case "--dest": opts.dest = next(); break;
             case "--target": opts.target = next(); break;
             case "--style": opts.style = next(); break;
+            case "--no-deps": opts.noDeps = true; break;
             case "-h": case "--help": opts.help = true; break;
             case "-v": case "--version": opts.version = true; break;
             default:
@@ -326,6 +329,8 @@ Commands:
                          --all      every item          --copy   vendor the source in
                          --dest     where copies land   --target vanilla|react|astro
                          --style    tailwind|css|none for a copied recipe (auto-detected)
+                         --no-deps  skip the extra packages an item declares
+                       Installs with the project's own package manager (npm, pnpm, yarn, bun).
   pack <subcommand>    Marketplace of optional, isolated harness packs (e.g. Helio for bug
                        bounty). Each runs in its own agent context, so its skills/commands
                        never load into your normal agent:
@@ -1393,6 +1398,7 @@ async function runAddCli(opts: CliOptions): Promise<number> {
     // Tailwind is the default styling layer where the project has it; a utility class in
     // a project without Tailwind styles nothing, which is worse than plain CSS.
     const style = (opts.style ?? components.detectStyle(projectDir)) as ComponentStyle;
+    const manager = components.detectPackageManager(projectDir);
     const names = opts.all ? catalogue.map((item) => item.name) : opts.positionals;
 
     if (opts.list || !names.length) {
@@ -1435,15 +1441,15 @@ async function runAddCli(opts: CliOptions): Promise<number> {
             const files = item.files
                 .filter((file) => file.targets.includes(target) && (!file.style || file.style === style))
                 .map((file) => file.dest);
-            const packages = [item.pkg, ...Object.keys(item.dependencies ?? {})].join(" + ");
+            const packages = [item.pkg, ...(opts.noDeps ? [] : Object.keys(item.dependencies ?? {}))].join(" + ");
             console.log(`    ${dim("would add")} ${cyan(item.name)} ${dim(opts.copy ? `-> ${destination} (${files.join(", ")})` : `-> ${packages}`)}`);
-            if (opts.copy && item.dependencies) console.log(`      ${dim(`and install ${Object.keys(item.dependencies).join(", ")}`)}`);
+            if (opts.copy && item.dependencies && !opts.noDeps) console.log(`      ${dim(`and install ${Object.keys(item.dependencies).join(", ")}`)}`);
             continue;
         }
 
         const result = opts.copy
-            ? components.addAsCopy(item, projectDir, target, destination, style)
-            : components.addAsDependency(item, projectDir, opts.yes);
+            ? components.addAsCopy(item, projectDir, target, destination, style, !opts.noDeps)
+            : components.addAsDependency(item, projectDir, opts.yes, !opts.noDeps);
 
         if (!result.ok) {
             console.error(`    ${red("x")} ${item.name} ${dim(`- ${result.message}`)}`);

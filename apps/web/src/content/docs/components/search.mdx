@@ -8,6 +8,7 @@ space: components
 import AddTabs from "../../../components/AddTabs.astro";
 import Preview from "../../../components/Preview.astro";
 import SearchDemo from "../../../components/demos/SearchDemo.astro";
+import Choice from "../../../components/Choice.astro";
 
 It owns the parts that are always rewritten and always come out slightly wrong: the debounce, the ordering, the cancellation of a stale pass, and the field wiring. Matching is **fuzzy by default**, through Fuse.js, and stays replaceable.
 
@@ -38,16 +39,50 @@ createSearch({ items: docs, keys: ["title"], fuseOptions: { threshold: 0.4, igno
 
 ## Install
 
+<Choice labelA="With Fuse (default)" labelB="Without Fuse" title="pick one">
+    <div slot="a">
+
 `enigma add search` installs **fuse.js alongside the package**, because a search primitive
 without its engine is not much of one.
 
-<AddTabs item="search" pkg="@enigmax/primitives" />
+```sh
+enigma add search
+```
 
-Installing by hand is the same two packages:
+Then import from the `/search` entry, where Fuse is already wired:
+
+```js
+import { createSearch } from "@enigmax/primitives/search";
+```
+
+    </div>
+    <div slot="b">
+
+`--no-deps` adds the primitive and nothing else. The main entry has no engine, so you get
+the built-in accent-insensitive substring matcher and no dependency at all.
 
 ```sh
-npm install @enigmax/primitives fuse.js
+enigma add search --no-deps
 ```
+
+```js
+import { createSearch } from "@enigmax/primitives";
+```
+
+It cannot forgive a typo - that is the trade. Everything else is identical.
+
+    </div>
+</Choice>
+
+**`enigma add` installs with your project's own package manager**, not with npm: it reads
+the `packageManager` field first, then looks for a lockfile, searching upwards so a
+workspace package finds the one at the monorepo root. A pnpm project gets `pnpm add`, a bun
+project `bun add`. Running npm inside one of those would write a second lockfile and leave
+the tree in a state the project's own tooling disagrees with.
+
+Or do it by hand, in whichever you use:
+
+<AddTabs item="search" pkg="@enigmax/primitives" />
 
 Fuse is an **optional peer dependency**, not a real one, and it lives behind the `/search`
 subpath. That is what keeps `@enigmax/primitives` dependency-free for someone who only
