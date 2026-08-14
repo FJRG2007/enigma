@@ -1,0 +1,74 @@
+/*
+ * The logo wall's look. Yours to edit - the behaviour above ships none of this.
+ *
+ * The two custom properties are set from the props, so the component never writes a class
+ * per gap or per height.
+ */
+
+.logo-marquee {
+    --logo-marquee-gap: 56px;
+    --logo-marquee-height: 28px;
+    position: relative;
+    overflow: hidden;
+    /* The lane's width must come from its container, never from its content. `width: 100%`
+       and `min-width: 0` say so explicitly, because a lane that sizes to max-content - a
+       grid cell with `justify-items: center`, a flex item without `min-width: 0` - grows to
+       fit the track, and a wider lane needs more copies, which makes it wider again. */
+    width: 100%;
+    min-width: 0;
+    /* Set by the primitive too, but declared here so the row still behaves before the
+       script runs: the page scrolls vertically, the drag takes the horizontal. */
+    touch-action: pan-y;
+    cursor: grab;
+}
+
+.logo-marquee[data-grabbing] { cursor: grabbing; }
+
+/* Both ends fade out, so a logo leaves rather than being sliced by the container edge. */
+.logo-marquee.is-faded {
+    -webkit-mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+    mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+}
+
+.logo-marquee__track { display: flex; width: max-content; }
+.logo-marquee__copy { display: flex; align-items: center; gap: var(--logo-marquee-gap); padding-right: var(--logo-marquee-gap); }
+
+.logo-marquee__item {
+    display: inline-flex;
+    align-items: center;
+    flex: 0 0 auto;
+    /* The whole trick of a logo wall: one optical height for everything, whatever the
+       source images measure, so a row of twelve brands reads as one row. */
+    height: var(--logo-marquee-height);
+    font-size: calc(var(--logo-marquee-height) * 0.72);
+    font-weight: 600;
+    line-height: 1;
+    white-space: nowrap;
+    user-select: none;
+}
+
+.logo-marquee__item img {
+    height: 100%;
+    /* Never stretched: a logo is the one image where the aspect ratio is the brand. */
+    width: auto;
+    object-fit: contain;
+    display: block;
+}
+
+/* Twelve brand palettes side by side fight each other and pull the eye off the copy, so
+   the default drains them - and gives the colour back to whichever one you point at. */
+.logo-marquee[data-tone="mono"] .logo-marquee__item {
+    filter: grayscale(1);
+    opacity: 0.65;
+    transition: filter 160ms ease-out, opacity 160ms ease-out;
+}
+
+.logo-marquee[data-tone="mono"] .logo-marquee__item:hover {
+    filter: grayscale(0);
+    opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    /* The primitive already stops the autoplay; this stops the colour from animating too. */
+    .logo-marquee__item { transition: none; }
+}

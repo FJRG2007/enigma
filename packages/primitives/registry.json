@@ -92,6 +92,68 @@
       ]
     },
     {
+      "name": "logo-marquee",
+      "title": "Logo wall",
+      "description": "The \"trusted by\" row: a marquee that also does the job a logo wall needs doing - one optical height for logos that arrive at a dozen different sizes, colour drained so twelve brand palettes stop fighting, and text logos like NASA or Bloomberg alongside the images.",
+      "targets": [
+        "react"
+      ],
+      "entry": {
+        "react": "@enigmax/primitives/react"
+      },
+      "exports": {
+        "react": [
+          "LogoMarquee"
+        ]
+      },
+      "files": [
+        {
+          "path": "src/core/marquee.ts",
+          "dest": "logo-marquee/marquee.ts",
+          "targets": [
+            "react"
+          ]
+        },
+        {
+          "path": "src/react/use-marquee.ts",
+          "dest": "logo-marquee/use-marquee.ts",
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/core/marquee": "./marquee"
+          }
+        },
+        {
+          "path": "recipes/logo-marquee/styles.css",
+          "dest": "logo-marquee/styles.css",
+          "targets": [
+            "react"
+          ]
+        },
+        {
+          "path": "recipes/logo-marquee/index.tsx",
+          "dest": "logo-marquee/index.tsx",
+          "main": true,
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@enigmax/primitives/react": "./use-marquee"
+          }
+        }
+      ],
+      "styles": true,
+      "themeHooks": [
+        "[data-tone=mono]",
+        ".logo-marquee",
+        ".logo-marquee.is-faded",
+        ".logo-marquee[data-grabbing]",
+        ".logo-marquee__item"
+      ],
+      "docs": "docs/notes/primitives.md#logo-marquee"
+    },
+    {
       "name": "input",
       "title": "Input, with what a password field needs",
       "description": "A field you pass props to, with no styles of its own. A password gets its reveal toggle automatically; a generator, a strength meter and a breach check are one prop each and off until you ask. React renders every part of it, so nothing fights your tree.",

@@ -121,6 +121,9 @@ const DEFAULTS: ResolvedOptions = {
  * @param track The moved element. Its children are the repeated copies; child 0
  *              is the source content and must already be rendered.
  */
+/** Ceiling on the copy count. See requiredCopies for why a ceiling is needed at all. */
+const MAX_COPIES = 24;
+
 export function createMarquee(lane: HTMLElement, track: HTMLElement, options: MarqueeOptions = {}): MarqueeInstance {
     let opts: ResolvedOptions = { ...DEFAULTS, ...options };
 
@@ -211,7 +214,14 @@ export function createMarquee(lane: HTMLElement, track: HTMLElement, options: Ma
     /** Non-negotiable 2: the lane plus one whole period, so there is always one to wrap into. */
     function requiredCopies(measured: number): number {
         if (measured <= 0) return 2;
-        return Math.max(2, Math.ceil(axisSize(lane) / measured) + 1);
+        // Capped, because the measurement can be transiently TINY rather than zero: a row
+        // of images measured before they load is a few pixels wide, and lane/period then
+        // asks for hundreds of copies. In React that renders hundreds of subtrees before
+        // the images arrive to correct it, which trips the update-depth limit and takes the
+        // page down - the zero guard above does not catch it because the width is not zero.
+        // The cap is far past any real wall; a copy narrow enough to need more than this is
+        // a measurement that has not settled yet, and the ResizeObserver will come back.
+        return Math.min(MAX_COPIES, Math.max(2, Math.ceil(axisSize(lane) / measured) + 1));
     }
 
     function syncClones(count: number): void {
@@ -437,6 +447,27 @@ export function createMarquee(lane: HTMLElement, track: HTMLElement, options: Ma
         measure();
         // A late font changes every width the lap was measured from.
         void document.fonts?.ready.then(() => measure());
+        // So does a late IMAGE, and that one is the common case: a logo wall measured
+        // before its logos have loaded reads as a few pixels wide, which asks for far more
+        // copies than the row needs. The ResizeObserver above sees the first copy resize,
+        // but only while that exact node survives - a framework re-rendering the copies
+        // replaces it - so the images are waited on directly.
+        remeasureOnImageLoad();
+    }
+
+    /** Re-measure once each image that had not loaded at mount finishes. */
+    function remeasureOnImageLoad(): void {
+        for (const image of track.querySelectorAll("img")) {
+            if (image.complete) continue;
+            const done = (): void => {
+                image.removeEventListener("load", done);
+                image.removeEventListener("error", done);
+                if (!destroyed) measure();
+            };
+            // `error` too: a logo that 404s still settles the layout it was holding open.
+            image.addEventListener("load", done);
+            image.addEventListener("error", done);
+        }
     }
 
     init();

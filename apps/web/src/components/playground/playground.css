@@ -92,3 +92,9 @@
 
 /* The timestamp is the whole preview, so it gets read at a size worth reading. */
 .pg-time { font-family: var(--mono); font-size: 19px; color: var(--text); }
+
+/* The wall wants the full width of the pane - and MUST have a width that does not come
+   from its own content. The preview pane centres its items, which sizes them to max-content,
+   and a marquee lane sized that way grows to fit its own track: more copies make it wider,
+   which asks for more copies. `justify-self` opts this one item out of the centring. */
+.pg-wall { width: 100%; min-width: 0; justify-self: stretch; }

@@ -1,0 +1,78 @@
+---
+title: Logo wall
+description: The "trusted by" row - one optical height for logos that arrive at a dozen sizes, colour drained so the palettes stop competing, and text logos beside the images.
+group: Motion
+order: 11
+space: components
+---
+import Installation from "../../../components/Installation.astro";
+import { LogoMarqueePlayground } from "../../../components/playground/LogoMarqueePlayground";
+
+Some of the logos in any real wall are not images. Bloomberg, NASA and Harvard are set in
+type, so an item is either an image or a node:
+
+```tsx
+<LogoMarquee
+    logos={[
+        { kind: "img",  src: openaiSvgUrl, alt: "OpenAI" },
+        { kind: "img",  src: stripeSvgUrl, alt: "Stripe" },
+        { kind: "node", node: <span>NASA</span> }
+    ]}
+    speed={40}
+/>
+```
+
+## Customize
+
+<LogoMarqueePlayground client:only="react" />
+
+## Installation
+
+<Installation item="logo-marquee" pkg="@enigmax/primitives" entry="@enigmax/primitives/react">
+    <div slot="manual">
+
+This one is a recipe rather than a primitive: it has a look, and the look is the point. The
+copy is yours - `enigma add logo-marquee --copy` writes the component and its stylesheet
+side by side.
+
+    </div>
+</Installation>
+
+## The two things that make a wall look designed
+
+**One optical height.** Logos arrive at a dozen different sizes and aspect ratios, and a row
+that drops them in as they come reads as random. Every image is scaled to `logoHeight` and
+never stretched - the aspect ratio of a logo is the brand. One that still reads small takes
+its own `height`.
+
+**Drained colour.** Twelve brand palettes side by side compete with each other and pull the
+eye off the copy beside them, so `tone="mono"` greys them out and gives the colour back to
+whichever one you point at. `tone="brand"` leaves them alone.
+
+## Speed is pixels per second
+
+Not seconds per loop. A lap is as long as its content, so a duration makes the speed
+`content / duration` and the row runs **faster every time you add a logo** - measured on one
+rail at 45, 67 and 87 px/s with 10, 15 and 20 items. Take a speed and the duration follows.
+
+That is also why the number of copies is measured from the DOM rather than fixed at two: two
+copies leave a gap the moment the content is narrower than the lane, which is the common case
+for a short wall on a wide screen.
+
+## Props
+
+| | Default | |
+| --- | --- | --- |
+| `logos` | | `{ kind: "img", src, alt?, height? }` or `{ kind: "node", node, key? }` |
+| `speed` | `40` | Pixels per second |
+| `logoHeight` | `28` | The shared height every image is scaled to |
+| `gap` | `56` | Space between logos, in px |
+| `tone` | `"mono"` | `"brand"` keeps the colours |
+| `fade` | `true` | Fades both ends so a logo leaves instead of being sliced |
+| `hover` | `"off"` | `"pause"`, a multiplier, or `{ speed }` |
+| `reverse` | `false` | |
+| `label` | | Names the row for a screen reader, e.g. "Trusted by" |
+
+Only the first copy is read aloud; the rest carry `aria-hidden`, because a screen reader
+announcing the same twelve brands three times is the bug that hides in every hand-rolled
+version. An image's `alt` is empty unless you give it one, for the same reason.

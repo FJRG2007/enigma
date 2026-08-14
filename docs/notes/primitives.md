@@ -139,6 +139,43 @@ project's device descriptor here; the emulation is done with
 cannot become a false pass. Same class of trap as the brief's warning that a
 link assertion proves nothing when the DOM has no links.
 
+## logo-marquee
+
+A RECIPE, not a primitive: it has a look and the look is the point. `<LogoMarquee logos={...}>`
+takes a tagged union per item - `{ kind: "img", src, alt? }` or `{ kind: "node", node }` -
+because some of the logos in any real wall are set in type (Bloomberg, NASA, Harvard) rather
+than drawn. The API shape comes from performativeUI's LogoMarquee; the timing does not.
+
+**Their `speed` is seconds per loop.** That is the exact defect the marquee exists to
+prevent: a lap is as long as its content, so a duration makes the speed content/duration and
+the row runs faster every time a logo is added. Ours stays px/s.
+
+Two things a logo wall needs that a marquee does not: one optical height for images that
+arrive at a dozen aspect ratios (never stretched - the ratio of a logo IS the brand), and
+`tone="mono"` to drain the colour so twelve palettes stop competing, restored on hover.
+
+### The runaway this exposed
+
+A marquee lane whose width comes from its own CONTENT feeds back: more copies make the lane
+wider, a wider lane needs more copies. The playground pane centres its items, which sizes
+them to max-content, and the lane measured 18,326px and asked for 25 copies of seven logos.
+
+Three changes, in the order they matter:
+
+1. `requiredCopies` is CAPPED. The zero guard did not catch this because the width was not
+   zero - a row of images measured before they load is a few pixels wide, and lane/period
+   then asks for hundreds of copies. In React that renders hundreds of subtrees before the
+   images arrive to correct it, which trips React's update-depth limit and takes the page
+   down with error #185. The cap turns a dead page into a wasteful render, which is the
+   difference between a bug and an outage.
+2. The core now **re-measures when an image finishes loading**. The ResizeObserver watches
+   the first copy, but only while that exact node survives - a framework re-rendering the
+   copies replaces it - so the images are waited on directly, `error` included, since a logo
+   that 404s still settles the layout it was holding open.
+3. The recipe's lane declares `width: 100%; min-width: 0`, and says why in a comment. Never
+   `loading="lazy"` on a marquee image either: the row measures its lap from the rendered
+   width, and a lazy image has none.
+
 ## input
 
 **React gets a component, not a hook over a DOM mutator.** `<Input>` renders the field, its
