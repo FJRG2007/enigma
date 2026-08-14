@@ -1,7 +1,7 @@
 {
   "name": "@enigmax/primitives",
-  "version": "0.11.1",
-  "description": "Headless interaction primitives: the behaviour, the timing and the accessibility of components like a draggable infinite marquee, with no styles of their own. Framework-agnostic core plus thin adapters.",
+  "version": "0.12.0",
+  "description": "Headless components: the behaviour, the timing and the accessibility, with no styles of their own. Framework-agnostic core plus thin adapters.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -26,12 +26,14 @@
     "./react-router": {
       "types": "./dist/react-router/index.d.ts",
       "import": "./dist/react-router/index.js"
-    }
+    },
+    "./relative-time.css": "./recipes/relative-time/styles.css",
+    "./toast.css": "./recipes/toast/styles.css"
   },
   "scripts": {
     "build": "tsup",
     "typecheck": "tsc --noEmit",
-    "test": "npm run test:fixtures && playwright test",
+    "test": "npm run test:fixtures && node --test test/*.test.mjs && playwright test",
     "test:fixtures": "esbuild test/fixture/react.tsx --bundle --format=esm --jsx=automatic --outfile=test/fixture/build/react.js --tsconfig=tsconfig.json --alias:next/link=./test/fixture/next-link-stub.tsx --alias:react-router=./test/fixture/react-router-stub.tsx",
     "test:install": "playwright install chromium",
     "prepublishOnly": "npm run typecheck && npm run build"
@@ -45,6 +47,7 @@
     "LICENSE"
   ],
   "peerDependencies": {
+    "@github/relative-time-element": ">=4",
     "fuse.js": ">=6",
     "next": ">=13",
     "react": ">=18",
@@ -62,9 +65,13 @@
     },
     "react-router": {
       "optional": true
+    },
+    "@github/relative-time-element": {
+      "optional": true
     }
   },
   "devDependencies": {
+    "@github/relative-time-element": "^4.5.1",
     "@playwright/test": "^1.48.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.4",
@@ -80,18 +87,22 @@
     "node": ">=18"
   },
   "keywords": [
-    "headless",
-    "primitives",
-    "marquee",
     "carousel",
-    "unstyled",
-    "react",
-    "vanilla",
     "enigma",
+    "fuse",
+    "headless",
     "input",
+    "marquee",
+    "network",
+    "notifications",
     "password",
+    "primitives",
+    "react",
+    "relative-time",
     "search",
-    "fuse"
+    "toast",
+    "unstyled",
+    "vanilla"
   ],
   "license": "Apache-2.0",
   "author": "FJRG2007 <fjrg2007@tpeoficial.com>",

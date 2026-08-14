@@ -4,10 +4,23 @@ Two published packages plus the `enigma add` command that puts them into a proje
 They exist so the rules the frontend policy can only *persuade* an agent to follow
 become a dependency it can *import*.
 
-- `packages/primitives` -> `@enigmax/primitives`: interaction behaviour (timing,
-  pointer handling, accessibility). Ships **no visual styles**.
-- `packages/utils` -> `@enigmax/utils`: everything that is not UI - cache,
-  notifications, and whatever comes next.
+- `packages/primitives` -> `@enigmax/primitives`: everything that RENDERS - components
+  with no visual styles of their own, plus the behaviour, timing and accessibility
+  underneath them.
+- `packages/utils` -> `@enigmax/utils`: everything that renders NOTHING - functions and
+  state. A cache, a breached-password check.
+
+**The line between them is "does it produce DOM".** toast, relative-time and network moved
+out of utils for it: the first two ship components, and network moved with them because a
+package split on "UI vs not-UI" put a hook returning data on the wrong side of its own rule
+once the other two left. "Primitive" here means what it means in Radix and shadcn - an
+unstyled component - so a component belongs in primitives whatever it renders.
+
+Neither package depends on the other, and the move was done in a way that keeps it that
+way: the whole item travels, queue and renderer together, because leaving the notification
+queue in utils would have made primitives depend on it. There are no re-export shims in
+utils for the same reason - a deprecation shim would have created exactly the dependency
+this split exists to avoid, so it is a clean break at 0.x.
 
 ## Why a package and not a skill
 

@@ -21,7 +21,7 @@ export default defineConfig({
     dts: true,
     clean: true,
     treeshake: true,
-    external: ["react", "fuse.js", "next/link", "react-router"],
+    external: ["react", "fuse.js", "next/link", "react-router", "@github/relative-time-element"],
     onSuccess: async () => {
         for (const file of CLIENT_ENTRIES) {
             const code = readFileSync(file, "utf8");

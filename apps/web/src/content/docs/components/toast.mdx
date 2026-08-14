@@ -10,14 +10,14 @@ import StyleTabs from "../../../components/StyleTabs.astro";
 import Html from "../../../components/Html.astro";
 import { highlightedRecipe } from "../../../lib/recipe";
 
-export const tailwindRecipe = highlightedRecipe("@enigmax/utils", "toast/tailwind.tsx");
-export const cssSheet = highlightedRecipe("@enigmax/utils", "toast/styles.css");
+export const tailwindRecipe = highlightedRecipe("@enigmax/primitives", "toast/tailwind.tsx");
+export const cssSheet = highlightedRecipe("@enigmax/primitives", "toast/styles.css");
 
 Mount it once, notify from anywhere.
 
 ```tsx
-import { Toaster, useNotifications } from "@enigmax/utils/react";
-import "@enigmax/utils/toast.css";
+import { Toaster, useNotifications } from "@enigmax/primitives/react";
+import "@enigmax/primitives/toast.css";
 
 // once, near the root
 <Toaster position="bottom-right" />
@@ -29,7 +29,7 @@ notify({ title: "Saved", body: "Two files changed", tone: "success" });
 
 ## Installation
 
-<Installation item="toast" pkg="@enigmax/utils" entry="@enigmax/utils/react">
+<Installation item="toast" pkg="@enigmax/primitives" entry="@enigmax/primitives/react">
     <div slot="manual">
 
 **Ember** is the default theme, and it is entirely this stylesheet. The custom properties at

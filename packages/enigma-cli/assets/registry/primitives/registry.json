@@ -354,6 +354,273 @@
         "[aria-busy=true]"
       ],
       "docs": "docs/notes/primitives.md#button"
+    },
+    {
+      "name": "notifications",
+      "title": "Notification queue",
+      "description": "Ordering, dedupe by key, sticky errors and dismiss timers that hold instead of running while the tab is hidden. No rendering.",
+      "targets": [
+        "vanilla",
+        "astro",
+        "react"
+      ],
+      "entry": {
+        "vanilla": "@enigmax/primitives",
+        "astro": "@enigmax/primitives",
+        "react": "@enigmax/primitives/react"
+      },
+      "exports": {
+        "vanilla": [
+          "createNotifications"
+        ],
+        "astro": [
+          "createNotifications"
+        ],
+        "react": [
+          "useNotifications"
+        ]
+      },
+      "files": [
+        {
+          "path": "src/core/notifications.ts",
+          "dest": "notifications/notifications.ts",
+          "targets": [
+            "vanilla",
+            "astro",
+            "react"
+          ]
+        },
+        {
+          "path": "src/react/use-notifications.ts",
+          "dest": "notifications/use-notifications.ts",
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/core/notifications": "./notifications"
+          },
+          "main": true
+        },
+        {
+          "path": "recipes/notifications/tailwind.tsx",
+          "dest": "notifications/Notifications.tsx",
+          "targets": [
+            "react"
+          ],
+          "style": "tailwind"
+        }
+      ],
+      "styles": false,
+      "docs": "docs/notes/primitives.md#notifications",
+      "recipes": [
+        "tailwind"
+      ]
+    },
+    {
+      "name": "toast",
+      "title": "Toast",
+      "description": "The notification queue with a renderer on top: stacking, swipe to dismiss, a pointer that stops the clock, and a toast that is still on screen while it animates out. Ships the Ember theme, which is a stylesheet you own.",
+      "targets": [
+        "react"
+      ],
+      "entry": {
+        "react": "@enigmax/primitives/react"
+      },
+      "exports": {
+        "react": [
+          "Toaster",
+          "useNotifications"
+        ]
+      },
+      "files": [
+        {
+          "path": "src/core/notifications.ts",
+          "dest": "toast/notifications.ts",
+          "targets": [
+            "react"
+          ]
+        },
+        {
+          "path": "src/react/use-notifications.ts",
+          "dest": "toast/use-notifications.ts",
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/core/notifications": "./notifications"
+          }
+        },
+        {
+          "path": "src/react/toaster.tsx",
+          "dest": "toast/index.tsx",
+          "main": true,
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/core/notifications": "./notifications",
+            "@/react/use-notifications": "./use-notifications"
+          }
+        },
+        {
+          "path": "recipes/toast/styles.css",
+          "dest": "toast/styles.css",
+          "targets": [
+            "react"
+          ],
+          "style": "css"
+        },
+        {
+          "path": "recipes/toast/tailwind.tsx",
+          "dest": "toast/AppToaster.tsx",
+          "targets": [
+            "react"
+          ],
+          "style": "tailwind",
+          "rewrite": {
+            "@enigmax/utils/react": "./index"
+          }
+        }
+      ],
+      "styles": false,
+      "themeHooks": [
+        "[data-enigma-toaster]",
+        "[data-enigma-toaster][data-position]",
+        "[data-enigma-toast]",
+        "[data-enigma-toast][data-tone=error]",
+        "[data-enigma-toast][data-state=leaving]",
+        "[data-enigma-toast][data-swiping]",
+        "[data-enigma-toast][data-front]",
+        "[data-enigma-toast-title]",
+        "[data-enigma-toast-body]",
+        "[data-enigma-toast-action]",
+        "[data-enigma-toast-close]"
+      ],
+      "docs": "docs/notes/primitives.md#toast",
+      "recipes": [
+        "tailwind",
+        "css"
+      ]
+    },
+    {
+      "name": "network",
+      "title": "Connection state",
+      "description": "Online/offline plus what the Network Information API reports, and the recovery transition every hand-rolled version re-derives: `recovered` is false on a first load, so a page that opens online never announces a comeback that did not happen.",
+      "targets": [
+        "vanilla",
+        "astro",
+        "react"
+      ],
+      "entry": {
+        "vanilla": "@enigmax/primitives",
+        "astro": "@enigmax/primitives",
+        "react": "@enigmax/primitives/react"
+      },
+      "exports": {
+        "vanilla": [
+          "createNetworkMonitor"
+        ],
+        "astro": [
+          "createNetworkMonitor"
+        ],
+        "react": [
+          "useNetworkState"
+        ]
+      },
+      "files": [
+        {
+          "path": "src/core/network.ts",
+          "dest": "network/network.ts",
+          "targets": [
+            "vanilla",
+            "astro",
+            "react"
+          ]
+        },
+        {
+          "path": "src/react/use-network-state.ts",
+          "dest": "network/use-network-state.ts",
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/core/network": "./network"
+          },
+          "main": true
+        }
+      ],
+      "styles": false,
+      "docs": "docs/notes/primitives.md#network"
+    },
+    {
+      "name": "relative-time",
+      "title": "Relative timestamps",
+      "description": "\"3 hours ago\", kept current, localised by the page's own language. A timestamp with no zone is read as UTC instead of as the server's local time, and the absolute date is rendered as the element's child so a server render and a reader without JavaScript still see a real date.",
+      "targets": [
+        "vanilla",
+        "astro",
+        "react"
+      ],
+      "entry": {
+        "vanilla": "@enigmax/primitives",
+        "astro": "@enigmax/primitives",
+        "react": "@enigmax/primitives/react"
+      },
+      "exports": {
+        "vanilla": [
+          "relativeTimeView",
+          "relativeTimeAttributes",
+          "normalizeDate"
+        ],
+        "astro": [
+          "relativeTimeView",
+          "relativeTimeAttributes",
+          "normalizeDate"
+        ],
+        "react": [
+          "RelativeTime"
+        ]
+      },
+      "files": [
+        {
+          "path": "src/core/relative-time.ts",
+          "dest": "relative-time/relative-time.ts",
+          "targets": [
+            "vanilla",
+            "astro",
+            "react"
+          ]
+        },
+        {
+          "path": "src/react/relative-time.ts",
+          "dest": "relative-time/index.ts",
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/core/relative-time": "./relative-time"
+          }
+        },
+        {
+          "path": "recipes/relative-time/styles.css",
+          "dest": "relative-time/styles.css",
+          "targets": [
+            "vanilla",
+            "astro",
+            "react"
+          ]
+        }
+      ],
+      "styles": false,
+      "themeHooks": [
+        "relative-time",
+        "[data-relative-time-capitalize=true]",
+        "[data-relative-time-capitalize-first-letter=true]"
+      ],
+      "docs": "docs/notes/primitives.md#relative-time",
+      "dependencies": {
+        "@github/relative-time-element": "^4.4.0"
+      }
     }
   ]
 }

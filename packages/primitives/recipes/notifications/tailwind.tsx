@@ -1,4 +1,4 @@
-import { useNotifications } from "@enigmax/utils/react";
+import { useNotifications } from "@enigmax/primitives/react";
 
 /**
  * A styled notification stack, yours to edit.
@@ -8,7 +8,7 @@ import { useNotifications } from "@enigmax/utils/react";
  * wired to the pointer here.
  *
  * Fire one from anywhere:
- *   import { defaultQueue } from "@enigmax/utils/react";
+ *   import { defaultQueue } from "@enigmax/primitives/react";
  *   defaultQueue.notify({ title: "Saved", tone: "success" });
  */
 const TONE = {

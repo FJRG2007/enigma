@@ -1,6 +1,6 @@
 "use client";
 
-import { Toaster, type ToastPosition } from "@enigmax/utils/react";
+import { Toaster, type ToastPosition } from "@enigmax/primitives/react";
 
 /**
  * Ember, in Tailwind. Yours to edit.

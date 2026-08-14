@@ -21,7 +21,7 @@ export default defineConfig({
     dts: true,
     clean: true,
     treeshake: true,
-    external: ["react", "@github/relative-time-element"],
+    external: ["react"],
     onSuccess: async () => {
         for (const file of CLIENT_ENTRIES) {
             const code = readFileSync(file, "utf8");

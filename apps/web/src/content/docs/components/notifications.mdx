@@ -15,7 +15,7 @@ The queue owns ordering, deduplication, eviction and timers. **Rendering is your
     <NotificationsDemo />
     <div slot="code">
 ```js
-import { createNotifications } from "@enigmax/utils";
+import { createNotifications } from "@enigmax/primitives";
 
 const queue = createNotifications({ max: 4, duration: 5000 });
 
@@ -27,7 +27,7 @@ queue.notify({ key: "retry", title: "Retrying", tone: "warning" });
 
 ## Installation
 
-<Installation item="notifications" pkg="@enigmax/utils" entry="@enigmax/utils/react">
+<Installation item="notifications" pkg="@enigmax/primitives" entry="@enigmax/primitives/react">
     <div slot="manual">
 
 The queue renders nothing. Point it at whatever toaster you already have, or copy the
@@ -39,7 +39,7 @@ Tailwind recipe `enigma add notifications --copy` writes.
 ## Vanilla
 
 ```js
-import { createNotifications } from "@enigmax/utils";
+import { createNotifications } from "@enigmax/primitives";
 
 const queue = createNotifications({ max: 4, duration: 5000 });
 queue.notify({ key: "sync", title: "Retrying", tone: "warning" });
@@ -48,7 +48,7 @@ queue.notify({ key: "sync", title: "Retrying", tone: "warning" });
 ## React
 
 ```jsx
-import { useNotifications } from "@enigmax/utils/react";
+import { useNotifications } from "@enigmax/primitives/react";
 
 const { items, notify, dismiss, pause, resume } = useNotifications();
 ```

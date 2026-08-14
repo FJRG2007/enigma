@@ -4,6 +4,9 @@ const port = 4173;
 
 export default defineConfig({
     testDir: "./test",
+    // Only the browser specs. The node tests share this directory and the default pattern
+    // matches *.test.mjs too, which would have Playwright running them in a page.
+    testMatch: "**/*.spec.ts",
     fullyParallel: false,
     workers: 1,
     reporter: process.env.CI ? "dot" : "list",

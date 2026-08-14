@@ -20,8 +20,8 @@ What the package adds is the part every hand-rolled wrapper gets wrong.
 <Frameworks>
     <div slot="react">
 ```tsx
-import { RelativeTime } from "@enigmax/utils/react";
-import "@enigmax/utils/relative-time.css";
+import { RelativeTime } from "@enigmax/primitives/react";
+import "@enigmax/primitives/relative-time.css";
 
 <RelativeTime date={comment.createdAt} />
 // -> 3 hours ago
@@ -32,7 +32,7 @@ import "@enigmax/utils/relative-time.css";
     </div>
     <div slot="next">
 ```tsx
-import { RelativeTime } from "@enigmax/utils/react";
+import { RelativeTime } from "@enigmax/primitives/react";
 
 /**
  * No "use client" needed here: the package marks its React entry as a client module, so a
@@ -48,7 +48,7 @@ export default async function Page() {
     <div slot="vanilla">
 ```js
 import "@github/relative-time-element";
-import { relativeTimeView, relativeTimeAttributes } from "@enigmax/utils";
+import { relativeTimeView, relativeTimeAttributes } from "@enigmax/primitives";
 
 const view = relativeTimeView("2026-08-13 22:41:00", { threshold: "P30D" });
 const element = document.createElement("relative-time");
@@ -63,14 +63,14 @@ element.textContent = view.label;
 
 ## Installation
 
-<Installation item="relative-time" pkg="@enigmax/utils" deps={["@github/relative-time-element"]} entry="@enigmax/utils/react">
+<Installation item="relative-time" pkg="@enigmax/primitives" deps={["@github/relative-time-element"]} entry="@enigmax/primitives/react">
     <div slot="manual">
 
 The stylesheet is only needed for `capitalize` and `capitalizeFirst`: the element writes its
 own text content, so nothing JavaScript-side can transform it.
 
 ```css
-@import "@enigmax/utils/relative-time.css";
+@import "@enigmax/primitives/relative-time.css";
 ```
 
     </div>

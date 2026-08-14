@@ -14,7 +14,7 @@ import { docHref } from "../../../lib/url";
 Interaction logic is behaviour, and behaviour that has already been measured and tested belongs in a package, not in a snippet an agent rewrites on every screen. Two packages hold it:
 
 - **`@enigmax/primitives`** - interaction behaviour: timing, pointer handling, accessibility. No visual styles.
-- **`@enigmax/utils`** - everything that is not UI: a short-TTL read cache, a notification queue.
+- **`@enigmax/utils`** - what renders nothing: a short-TTL read cache, and a breached-password check.
 
 Both are plain npm packages. Nothing about them requires enigma - `enigma add` is a convenience that also lets an agent discover what exists.
 

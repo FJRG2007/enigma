@@ -8,15 +8,15 @@ space: components
 import Installation from "../../../components/Installation.astro";
 import Frameworks from "../../../components/Frameworks.astro";
 
-Connection state, plus whatever the Network Information API will say about it. It lives in
-utils rather than primitives because a connection is the environment, not an interaction.
+Connection state, plus whatever the Network Information API will say about it. It renders
+nothing: the state is yours to render however this app already reports things.
 
 ## Usage
 
 <Frameworks>
     <div slot="react">
 ```tsx
-import { useNetworkState } from "@enigmax/utils/react";
+import { useNetworkState } from "@enigmax/primitives/react";
 
 export function ConnectionBanner() {
     const { online, recovered, slow } = useNetworkState();
@@ -30,7 +30,7 @@ export function ConnectionBanner() {
     </div>
     <div slot="vanilla">
 ```js
-import { createNetworkMonitor } from "@enigmax/utils";
+import { createNetworkMonitor } from "@enigmax/primitives";
 
 const monitor = createNetworkMonitor();
 monitor.subscribe((state) => {
@@ -42,7 +42,7 @@ monitor.subscribe((state) => {
 
 ## Installation
 
-<Installation item="network" pkg="@enigmax/utils" entry="@enigmax/utils/react">
+<Installation item="network" pkg="@enigmax/primitives" entry="@enigmax/primitives/react">
     <div slot="manual">
 
 State only - it renders nothing and shows no toast. Binding a toaster inside would make it

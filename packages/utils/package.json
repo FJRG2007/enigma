@@ -1,7 +1,7 @@
 {
   "name": "@enigmax/utils",
-  "version": "0.5.0",
-  "description": "Headless application utilities: short-TTL read cache with in-flight deduplication, notification queue with held timers, connection state, relative timestamps, and the framework adapters over them.",
+  "version": "0.6.0",
+  "description": "Headless application utilities that render nothing: a short-TTL read cache with in-flight deduplication, and a breached-password check that never sends the password anywhere.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -14,9 +14,7 @@
       "types": "./dist/react/index.d.ts",
       "import": "./dist/react/index.js"
     },
-    "./registry.json": "./registry.json",
-    "./relative-time.css": "./recipes/relative-time/styles.css",
-    "./toast.css": "./recipes/toast/styles.css"
+    "./registry.json": "./registry.json"
   },
   "scripts": {
     "build": "tsup",
@@ -33,19 +31,14 @@
     "LICENSE"
   ],
   "peerDependencies": {
-    "@github/relative-time-element": ">=4",
     "react": ">=18"
   },
   "peerDependenciesMeta": {
     "react": {
       "optional": true
-    },
-    "@github/relative-time-element": {
-      "optional": true
     }
   },
   "devDependencies": {
-    "@github/relative-time-element": "^4.5.1",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.4",
     "react": "^19.2.0",
@@ -59,10 +52,8 @@
   "keywords": [
     "cache",
     "ttl",
-    "notifications",
-    "toast",
-    "relative-time",
-    "timeago",
+    "password",
+    "pwned",
     "headless",
     "react",
     "enigma"
