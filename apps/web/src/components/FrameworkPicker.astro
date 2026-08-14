@@ -3,66 +3,148 @@
  * The stack a reader works in, picked ONCE and remembered.
  *
  * It sits in the on-this-page column beside the source links rather than on each code
- * block, for the reason a reader would give: their stack does not change between the Usage
- * section and the Installation section, so being asked again at every block is a question
- * with a known answer. Every `<Frameworks>` on the page follows this, and the choice
- * survives a reload and every navigation.
+ * block: a reader's stack does not change between Usage and Installation, so being asked
+ * again at every block is a question with a known answer. Every `<Frameworks>` on the page
+ * follows it, and the choice survives a reload and every navigation.
+ *
+ * A listbox rather than a `<select>`, for one reason: a native option cannot carry an
+ * image, and the marks are what make the four recognisable at a glance.
+ *
+ * Marks are the official ones from simple-icons (CC0), drawn in `currentColor` the way that
+ * set ships them - one of the four is a black wordmark that would be invisible here, so a
+ * mixed palette would have to invent an inverse for it.
  */
 const FRAMEWORKS = [
-    { id: "react", label: "React" },
-    { id: "next", label: "Next.js" },
-    { id: "vanilla", label: "Vanilla" },
-    { id: "astro", label: "Astro" }
+    {
+        id: "react",
+        label: "React",
+        path: "M14.23 12.004a2.236 2.236 0 0 1-2.235 2.236 2.236 2.236 0 0 1-2.236-2.236 2.236 2.236 0 0 1 2.235-2.236 2.236 2.236 0 0 1 2.236 2.236zm2.648-10.69c-1.346 0-3.107.96-4.888 2.622-1.78-1.653-3.542-2.602-4.887-2.602-.41 0-.783.093-1.106.278-1.375.793-1.683 3.264-.973 6.365C1.98 8.917 0 10.42 0 12.004c0 1.59 1.99 3.097 5.043 4.03-.704 3.113-.39 5.588.988 6.38.32.187.69.275 1.102.275 1.345 0 3.107-.96 4.888-2.624 1.78 1.654 3.542 2.603 4.887 2.603.41 0 .783-.09 1.106-.275 1.374-.792 1.683-3.263.973-6.365C22.02 15.096 24 13.59 24 12.004c0-1.59-1.99-3.097-5.043-4.032.704-3.11.39-5.587-.988-6.38-.318-.184-.688-.277-1.092-.278zm-.005 1.09v.006c.225 0 .406.044.558.127.666.382.955 1.835.73 3.704-.054.46-.142.945-.25 1.44-.96-.236-2.006-.417-3.107-.534-.66-.905-1.345-1.727-2.035-2.447 1.592-1.48 3.087-2.292 4.105-2.295zm-9.77.02c1.012 0 2.514.808 4.11 2.28-.686.72-1.37 1.537-2.02 2.442-1.107.117-2.154.298-3.113.538-.112-.49-.195-.964-.254-1.42-.23-1.868.054-3.32.714-3.707.19-.09.4-.127.563-.132zm4.882 3.05c.455.468.91.992 1.36 1.564-.44-.02-.89-.034-1.345-.034-.46 0-.915.01-1.36.034.44-.572.895-1.096 1.345-1.565zM12 8.1c.74 0 1.477.034 2.202.093.406.582.802 1.203 1.183 1.86.372.64.71 1.29 1.018 1.946-.308.655-.646 1.31-1.013 1.95-.38.66-.773 1.288-1.18 1.87-.728.063-1.466.098-2.21.098-.74 0-1.477-.035-2.202-.093-.406-.582-.802-1.204-1.183-1.86-.372-.64-.71-1.29-1.018-1.946.303-.657.646-1.313 1.013-1.954.38-.66.773-1.286 1.18-1.868.728-.064 1.466-.098 2.21-.098zm-3.635.254c-.24.377-.48.763-.704 1.16-.225.39-.435.782-.635 1.174-.265-.656-.49-1.31-.676-1.947.64-.15 1.315-.283 2.015-.386zm7.26 0c.695.103 1.365.23 2.006.387-.18.632-.405 1.282-.66 1.933-.2-.39-.41-.783-.64-1.174-.225-.392-.465-.774-.705-1.146zm3.063.675c.484.15.944.317 1.375.498 1.732.74 2.852 1.708 2.852 2.476-.005.768-1.125 1.74-2.857 2.475-.42.18-.88.342-1.355.493-.28-.958-.646-1.956-1.1-2.98.45-1.017.81-2.01 1.085-2.964zm-13.395.004c.278.96.645 1.957 1.1 2.98-.45 1.017-.812 2.01-1.086 2.964-.484-.15-.944-.318-1.37-.5-1.732-.737-2.852-1.706-2.852-2.474 0-.768 1.12-1.742 2.852-2.476.42-.18.88-.342 1.356-.494zm11.678 4.28c.265.657.49 1.312.676 1.948-.64.157-1.316.29-2.016.39.24-.375.48-.762.705-1.158.225-.39.435-.788.636-1.18zm-9.945.02c.2.392.41.783.64 1.175.23.39.465.772.705 1.143-.695-.102-1.365-.23-2.006-.386.18-.63.406-1.282.66-1.933zM17.92 16.32c.112.493.2.968.254 1.423.23 1.868-.054 3.32-.714 3.708-.147.09-.338.128-.563.128-1.012 0-2.514-.807-4.11-2.28.686-.72 1.37-1.536 2.02-2.44 1.107-.118 2.154-.3 3.113-.54zm-11.83.01c.96.234 2.006.415 3.107.532.66.905 1.345 1.727 2.035 2.446-1.595 1.483-3.092 2.295-4.11 2.295-.22-.005-.406-.05-.553-.132-.666-.38-.955-1.834-.73-3.703.054-.46.142-.944.25-1.438zm4.56.64c.44.02.89.034 1.345.034.46 0 .915-.01 1.36-.034-.44.572-.895 1.095-1.345 1.565-.455-.47-.91-.993-1.36-1.565z"
+    },
+    {
+        id: "next",
+        label: "Next.js",
+        path: "M18.665 21.978C16.758 23.255 14.465 24 12 24 5.377 24 0 18.623 0 12S5.377 0 12 0s12 5.377 12 12c0 3.583-1.574 6.801-4.067 9.001L9.219 7.2H7.2v9.596h1.615V9.251l9.85 12.727Zm-3.332-8.533 1.6 2.061V7.2h-1.6v6.245Z"
+    },
+    {
+        id: "vanilla",
+        label: "Vanilla",
+        path: "M0 0h24v24H0V0zm22.034 18.276c-.175-1.095-.888-2.015-3.003-2.873-.736-.345-1.554-.585-1.797-1.14-.091-.33-.105-.51-.046-.705.15-.646.915-.84 1.515-.66.39.12.75.42.976.9 1.034-.676 1.034-.676 1.755-1.125-.27-.42-.404-.601-.586-.78-.63-.705-1.469-1.065-2.834-1.034l-.705.089c-.676.165-1.32.525-1.71 1.005-1.14 1.291-.811 3.541.569 4.471 1.365 1.02 3.361 1.244 3.616 2.205.24 1.17-.87 1.545-1.966 1.41-.811-.18-1.26-.586-1.755-1.336l-1.83 1.051c.21.48.45.689.81 1.109 1.74 1.756 6.09 1.666 6.871-1.004.029-.09.24-.705.074-1.65l.046.067zm-8.983-7.245h-2.248c0 1.938-.009 3.864-.009 5.805 0 1.232.063 2.363-.138 2.711-.33.689-1.18.601-1.566.48-.396-.196-.597-.466-.83-.855-.063-.105-.11-.196-.127-.196l-1.825 1.125c.305.63.75 1.172 1.324 1.517.855.51 2.004.675 3.207.405.783-.226 1.458-.691 1.811-1.411.51-.93.402-2.07.397-3.346.012-2.054 0-4.109 0-6.179l.004-.056z"
+    },
+    {
+        id: "astro",
+        label: "Astro",
+        path: "M8.358 20.162c-1.186-1.07-1.532-3.316-1.038-4.944.856 1.026 2.043 1.352 3.272 1.535 1.897.283 3.76.177 5.522-.678.202-.098.388-.229.608-.36.166.473.209.95.151 1.437-.14 1.185-.738 2.1-1.688 2.794-.38.277-.782.525-1.175.787-1.205.804-1.531 1.747-1.078 3.119l.044.148a3.158 3.158 0 0 1-1.407-1.188 3.31 3.31 0 0 1-.544-1.815c-.004-.32-.004-.642-.048-.958-.106-.769-.472-1.113-1.161-1.133-.707-.02-1.267.411-1.415 1.09-.012.053-.028.104-.045.165h.002zm-5.961-4.445s3.24-1.575 6.49-1.575l2.451-7.565c.092-.366.36-.614.662-.614.302 0 .57.248.662.614l2.45 7.565c3.85 0 6.491 1.575 6.491 1.575L16.088.727C15.93.285 15.663 0 15.303 0H8.697c-.36 0-.615.285-.784.727l-5.516 14.99z"
+    }
 ];
 ---
 <div class="fw" data-framework-picker>
-    <label class="fw-l" for="fw-select">Code examples in</label>
-    <div class="fw-w">
-        <select id="fw-select" class="fw-s" data-framework-select>
-            {FRAMEWORKS.map((framework) => <option value={framework.id}>{framework.label}</option>)}
-        </select>
+    <span class="fw-l" id="fw-label">Code examples in</span>
+    <button type="button" class="fw-b" data-framework-toggle aria-haspopup="listbox" aria-expanded="false" aria-labelledby="fw-label fw-current">
+        <svg class="fw-i" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" data-framework-mark><path d={FRAMEWORKS[0].path}></path></svg>
+        <span class="fw-t" id="fw-current">{FRAMEWORKS[0].label}</span>
         <svg class="fw-c" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg>
-    </div>
+    </button>
+    <ul class="fw-list" role="listbox" aria-labelledby="fw-label" data-framework-list hidden>
+        {FRAMEWORKS.map((framework, index) => (
+            <li>
+                <button type="button" role="option" aria-selected={index === 0 ? "true" : "false"} data-framework={framework.id} data-path={framework.path}>
+                    <svg class="fw-i" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d={framework.path}></path></svg>
+                    <span>{framework.label}</span>
+                </button>
+            </li>
+        ))}
+    </ul>
 </div>
 
 <style>
-    .fw { display: grid; gap: 7px; padding-bottom: 18px; border-bottom: 1px solid var(--border-soft); }
+    .fw { position: relative; display: grid; gap: 7px; padding-bottom: 18px; border-bottom: 1px solid var(--border-soft); }
     .fw-l { font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); }
-    .fw-w { position: relative; display: block; }
-    .fw-s {
-        width: 100%;
-        font-family: var(--mono); font-size: 12.5px; color: var(--text);
+    .fw-i { width: 14px; height: 14px; flex: 0 0 auto; }
+    .fw-b {
+        display: flex; align-items: center; gap: 8px; width: 100%;
+        font-family: var(--mono); font-size: 12.5px; color: var(--text); text-align: left;
         background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
-        padding: 7px 30px 7px 10px; cursor: pointer;
-        /* The native arrow sits at a different offset per platform and does not take a
-           colour, so it goes and the chevron below takes its place. */
-        appearance: none;
+        padding: 7px 10px; cursor: pointer;
     }
-    .fw-s:hover { border-color: var(--muted); }
-    /* An option list is drawn by the OS: on a dark page the default is white-on-white in
-       some browsers unless both are stated. */
-    .fw-s option { background: var(--surface); color: var(--text); }
-    .fw-c { position: absolute; top: 50%; right: 10px; width: 13px; height: 13px; margin-top: -6.5px; color: var(--muted); pointer-events: none; }
+    .fw-b:hover { border-color: var(--muted); }
+    .fw-t { flex: 1; min-width: 0; }
+    .fw-c { width: 13px; height: 13px; flex: 0 0 auto; color: var(--muted); }
+
+    .fw-list {
+        position: absolute; z-index: 40; top: calc(100% - 8px); left: 0; right: 0;
+        margin: 0; padding: 4px; list-style: none;
+        background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+        box-shadow: 0 18px 40px -22px rgba(0, 0, 0, 0.9);
+    }
+    .fw-list[hidden] { display: none; }
+    .fw-list button {
+        display: flex; align-items: center; gap: 8px; width: 100%;
+        font-family: var(--mono); font-size: 12.5px; color: var(--muted); text-align: left;
+        background: transparent; border: 0; border-radius: 7px; padding: 7px 8px; cursor: pointer;
+    }
+    .fw-list button:hover, .fw-list button.is-active { color: var(--text); background: var(--surface2); }
+    .fw-list button[aria-selected="true"] { color: var(--accent); }
 </style>
 
 <script>
     const KEY = "enigma:tabs:framework";
-    const selects = [...document.querySelectorAll<HTMLSelectElement>("[data-framework-select]")];
+    const picker = document.querySelector<HTMLElement>("[data-framework-picker]");
 
-    const stored = localStorage.getItem(KEY);
-    // A stored value the list no longer has would leave the control blank while the page
-    // shows something else.
-    if (stored && selects[0]?.querySelector(`option[value="${stored}"]`)) {
-        for (const select of selects) select.value = stored;
-    }
+    if (picker) {
+        const toggle = picker.querySelector<HTMLButtonElement>("[data-framework-toggle]")!;
+        const list = picker.querySelector<HTMLElement>("[data-framework-list]")!;
+        const options = [...list.querySelectorAll<HTMLButtonElement>("[data-framework]")];
+        const currentMark = picker.querySelector<SVGPathElement>("[data-framework-mark] path")!;
+        const currentText = picker.querySelector<HTMLElement>("#fw-current")!;
 
-    for (const select of selects) {
-        select.addEventListener("change", () => {
-            localStorage.setItem(KEY, select.value);
-            for (const other of selects) other.value = select.value;
-            // Tabs owns the panels; it listens for this rather than exporting its internals,
-            // so neither file has to know how the other is built.
-            document.dispatchEvent(new CustomEvent("enigma:tabs", { detail: { key: "framework", value: select.value } }));
+        function select(wanted: string, announce: boolean): void {
+            const option = options.find((candidate) => candidate.dataset.framework === wanted);
+            // A stored value the list no longer has would leave the control blank over a
+            // page showing something else.
+            if (!option) return;
+
+            for (const candidate of options) candidate.setAttribute("aria-selected", String(candidate === option));
+            currentMark.setAttribute("d", option.dataset.path ?? "");
+            currentText.textContent = option.textContent?.trim() ?? wanted;
+
+            if (!announce) return;
+            localStorage.setItem(KEY, wanted);
+            // Tabs owns the panels; it listens for this rather than exporting its internals.
+            document.dispatchEvent(new CustomEvent("enigma:tabs", { detail: { key: "framework", value: wanted } }));
+        }
+
+        function open(next: boolean): void {
+            list.hidden = !next;
+            toggle.setAttribute("aria-expanded", String(next));
+            if (next) options.find((option) => option.getAttribute("aria-selected") === "true")?.focus();
+        }
+
+        const stored = localStorage.getItem(KEY);
+        if (stored) select(stored, false);
+
+        toggle.addEventListener("click", () => open(list.hidden));
+        for (const option of options) {
+            option.addEventListener("click", () => {
+                select(option.dataset.framework ?? "react", true);
+                open(false);
+                toggle.focus();
+            });
+        }
+
+        picker.addEventListener("keydown", (event) => {
+            if (event.key === "Escape" && !list.hidden) { open(false); toggle.focus(); return; }
+            if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+            if (list.hidden) { open(true); event.preventDefault(); return; }
+            const at = options.indexOf(document.activeElement as HTMLButtonElement);
+            const step = event.key === "ArrowDown" ? 1 : -1;
+            // Wraps, so holding one arrow never dead-ends at an edge.
+            options[(at + step + options.length) % options.length]?.focus();
+            event.preventDefault();
+        });
+
+        // A menu that stays open after a click elsewhere is a menu covering the page.
+        document.addEventListener("click", (event) => {
+            if (!list.hidden && !picker.contains(event.target as Node)) open(false);
         });
     }
 </script>

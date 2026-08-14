@@ -248,6 +248,20 @@ function resolveAlias(projectDir: string, alias: string): string | null {
     return join(...base, ...rest);
 }
 
+/**
+ * Where a project already keeps its components, in the order the answers are trustworthy.
+ *
+ * Every one of these is a directory the project MADE, so landing beside them is landing
+ * where a reader would look. `lib/enigma` is the fallback for a project that has none.
+ */
+const COMPONENT_DIRS = [
+    ["src", "components"],
+    ["app", "components"],
+    ["components"],
+    ["src", "app", "components"],
+    ["resources", "js", "components"]
+];
+
 /** Where copied source lands, unless the caller names a directory. */
 export function defaultDestination(projectDir: string): string {
     const preference = readPreferences(projectDir).dest;
@@ -258,6 +272,14 @@ export function defaultDestination(projectDir: string): string {
     const alias = aliases?.ui ?? aliases?.components;
     const resolved = alias ? resolveAlias(projectDir, alias) : null;
     if (resolved) return resolved;
+
+    // A components directory the project already has, with an `enigma` folder inside it:
+    // grouped, so a component that came from here is obvious at a glance and updating one
+    // never has to guess which files were yours.
+    for (const parts of COMPONENT_DIRS) {
+        const dir = join(projectDir, ...parts);
+        if (existsSync(dir)) return join(dir, "enigma");
+    }
 
     return existsSync(join(projectDir, "src")) ? join(projectDir, "src", "lib", "enigma") : join(projectDir, "lib", "enigma");
 }
