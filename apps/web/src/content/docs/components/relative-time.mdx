@@ -7,6 +7,7 @@ space: components
 ---
 import Installation from "../../../components/Installation.astro";
 import Frameworks from "../../../components/Frameworks.astro";
+import { RelativeTimePlayground } from "../../../components/playground/RelativeTimePlayground";
 
 A timestamp that reads as "3 hours ago" and keeps itself current. The rendering is
 [`@github/relative-time-element`](https://github.com/github/relative-time-element), which
@@ -14,6 +15,13 @@ already owns `Intl.RelativeTimeFormat` per locale and a re-render schedule that 
 as the date ages - `enigma add relative-time` installs it for you.
 
 What the package adds is the part every hand-rolled wrapper gets wrong.
+
+## Customize
+
+The first control moves the date rather than a prop, because how old it is decides whether
+it reads as a phrase or a date. Set a locale and it speaks that language.
+
+<RelativeTimePlayground client:only="react" />
 
 ## Usage
 
@@ -94,8 +102,9 @@ parser - a portability coin flip on a value that was already correct.
 ## It works before JavaScript does
 
 The absolute date is rendered as the element's child, so a server render, a page whose
-JavaScript has not arrived, and a reader with scripting off all see a real date. The element
-replaces it the moment it upgrades.
+JavaScript has not arrived, and a reader with scripting off all see a real date. Once the
+element upgrades it renders the relative phrase into a shadow root and the child stops being
+shown - so the fallback costs nothing and is never seen twice.
 
 ```html
 <!-- what the server sends -->

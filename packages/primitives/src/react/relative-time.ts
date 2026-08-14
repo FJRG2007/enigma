@@ -1,6 +1,6 @@
 "use client";
 
-import { createElement, useEffect, type HTMLAttributes, type ReactNode } from "react";
+import { createElement, useCallback, useEffect, type HTMLAttributes, type ReactNode } from "react";
 import { relativeTimeView, relativeTimeAttributes, type RelativeTimeOptions } from "@/core/relative-time";
 
 /**
@@ -75,6 +75,22 @@ export function RelativeTime({
 }: RelativeTimeProps): ReactNode {
     useEffect(loadElement, []);
 
+    /**
+     * `prefix` is set through the DOM, never as a React prop.
+     *
+     * `Element.prototype.prefix` is a read-only accessor (the XML namespace prefix), and
+     * React sets a KNOWN property rather than an attribute - so passing it through throws
+     * "Cannot set property prefix of #<Element> which has only a getter" and takes the
+     * whole tree down with it. It is the only attribute here that collides; the rest are
+     * either kebab-cased or writable. Applied on the ref, which runs before the custom
+     * element upgrades, so the element still reads it.
+     */
+    const applyPrefix = useCallback((node: HTMLElement | null) => {
+        if (!node) return;
+        if (prefix === undefined || prefix === "") node.removeAttribute("prefix");
+        else node.setAttribute("prefix", prefix);
+    }, [prefix]);
+
     const options: RelativeTimeOptions = {
         format, tense, precision, threshold, prefix, formatStyle, locale, timeZone,
         second, minute, hour, weekday, day, month, year, timeZoneName, noTitle, numericBeyondThreshold
@@ -99,5 +115,6 @@ export function RelativeTime({
     // createElement rather than JSX: `<relative-time>` is not a known intrinsic element, and
     // declaring it means augmenting React's JSX namespace from inside a published package -
     // which collides with any consumer that declared it too, differently.
-    return createElement("relative-time", { ...relativeTimeAttributes(view, options), ...marks, ...rest }, view.label);
+    const { prefix: prefixAttribute, ...attributes } = relativeTimeAttributes(view, options);
+    return createElement("relative-time", { ...attributes, ...marks, ...rest, ref: applyPrefix }, view.label);
 }

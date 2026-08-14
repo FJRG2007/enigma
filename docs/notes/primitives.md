@@ -439,8 +439,18 @@ What the package adds is the part every wrapper writes badly:
   parser. (V8 accepts it. That is not a guarantee.)
 - **The absolute date is the element's child.** A custom element cannot upgrade during a
   server render and never upgrades with scripting off, so a bare `<relative-time>` is an
-  empty box until hydration. The formatted date is rendered inside it and the element
-  replaces it on upgrade.
+  empty box until hydration. The formatted date is rendered inside it; once the element
+  upgrades it renders into a SHADOW ROOT and the child stops being shown.
+- **The shadow root is why the capitalize hooks look odd.** `text-transform` is inherited,
+  so it crosses the boundary from the host and reaches text no outer selector can match -
+  but `::first-letter` only applies to a block container, and the element is inline. The
+  `capitalizeFirst` hook was doing NOTHING until the host was made inline-block for it, and
+  nothing caught that because it is a paint-only effect: it is absent from textContent, from
+  the server markup and from every assertion that reads either.
+- **`prefix` is set through the DOM, never as a React prop.** `Element.prototype.prefix` is
+  a read-only accessor, and React sets a known property rather than an attribute - so
+  passing it through throws and takes the whole tree down. Server-render tests could not see
+  it: they never touch a DOM.
 - **The element is imported on the client only**, and a failed import is swallowed. Its
   class extends `HTMLElement` at module scope, so importing it where there is no DOM throws
   before any component runs; and if it never arrives, the label above is already correct.

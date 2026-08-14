@@ -89,3 +89,6 @@
     background: var(--surface2); border: 1px solid var(--border); border-radius: 999px;
     padding: 6px 13px; white-space: nowrap; user-select: none;
 }
+
+/* The timestamp is the whole preview, so it gets read at a size worth reading. */
+.pg-time { font-family: var(--mono); font-size: 19px; color: var(--text); }

@@ -3,22 +3,29 @@
  *
  *     import "@enigmax/utils/relative-time.css";
  *
+ * The element renders its output into a SHADOW ROOT, which is why these work the way they
+ * do: `text-transform` is an inherited property, so it crosses the boundary from the host
+ * and reaches text no outer selector could ever match. A descendant selector cannot - the
+ * light-DOM children are the fallback, not what you are looking at.
+ *
  * Both are opt-in per timestamp - the attributes only appear when you ask for them - and
- * both are marked !important on purpose: the element writes its own text content, so a
- * `text-transform` from a reset or a typography plugin lands on the same node and would
- * otherwise win on cascade order alone.
+ * both are !important on purpose: the transform lands on the host, where a reset or a
+ * typography plugin would otherwise win on cascade order alone.
  */
 
 /* Title Case Every Word. Reads oddly on "2 Days Ago"; usually you want the rule below. */
-[data-relative-time-capitalize="true"],
-[data-relative-time-capitalize="true"] * {
+[data-relative-time-capitalize="true"] {
     text-transform: capitalize !important;
 }
 
-/* Just the first letter, so a standalone "yesterday" starts a line properly. The nested
-   selectors cover the element wrapping its text in a child, which it does for some formats. */
-[data-relative-time-capitalize-first-letter="true"]::first-letter,
-[data-relative-time-capitalize-first-letter="true"] *::first-letter,
-[data-relative-time-capitalize-first-letter="true"] * *::first-letter {
+/* Just the first letter, so a standalone "yesterday" starts a line properly.
+   `::first-letter` only applies to a BLOCK container and the element is inline, so the
+   host is made inline-block for it - scoped to the hook, so a timestamp that did not ask
+   for this keeps its inline layout. */
+[data-relative-time-capitalize-first-letter="true"] {
+    display: inline-block;
+}
+
+[data-relative-time-capitalize-first-letter="true"]::first-letter {
     text-transform: uppercase !important;
 }
