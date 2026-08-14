@@ -17,10 +17,12 @@ import Tabs from "./Tabs.astro";
  * </Frameworks>
  * ```
  *
- * A page only writes the slots where the code genuinely differs; a tab with nothing behind
- * it is not rendered, because an empty panel reads as a broken page rather than as "same as
- * React". Persistence survives that: a strip without the remembered id keeps its own first
- * tab instead of blanking.
+ * The strip carries no buttons of its own: the choice is made once in the navbar, and a
+ * second control on every code block asks a question the reader has already answered.
+ *
+ * A page only writes the slots where the code genuinely differs. A block with no panel for
+ * the selected stack keeps what it has and says so, rather than silently serving another
+ * framework's code.
  */
 interface Props {
     /** Drop the panel padding when the content is a code block. */
@@ -40,7 +42,7 @@ const FRAMEWORKS = [
 
 const tabs = FRAMEWORKS.filter((framework) => Astro.slots.has(framework.id));
 ---
-<Tabs tabs={tabs} persist="framework" flush={flush} note={note}>
+<Tabs tabs={tabs} persist="framework" flush={flush} note={note} bare={true}>
     {tabs.some((tab) => tab.id === "react") && <div slot="react"><slot name="react" /></div>}
     {tabs.some((tab) => tab.id === "next") && <div slot="next"><slot name="next" /></div>}
     {tabs.some((tab) => tab.id === "vanilla") && <div slot="vanilla"><slot name="vanilla" /></div>}

@@ -1,0 +1,80 @@
+---
+/**
+ * The stack a reader works in, picked ONCE and remembered.
+ *
+ * It lives in the navbar rather than on each code block for the reason a reader would give:
+ * their stack does not change between the Usage section and the Installation section, so
+ * being asked again at every block is a question with a known answer. Every
+ * `<Frameworks>` on the page follows this, and the choice survives a reload and every
+ * navigation.
+ *
+ * Only rendered in the components space, where it means something.
+ */
+const FRAMEWORKS = [
+    { id: "react", label: "React" },
+    { id: "next", label: "Next.js" },
+    { id: "vanilla", label: "Vanilla" },
+    { id: "astro", label: "Astro" }
+];
+---
+<div class="fw" data-framework-picker>
+    <span class="fw-l">Stack</span>
+    <div class="fw-o" role="group" aria-label="Code examples for">
+        {FRAMEWORKS.map((framework, index) => (
+            <button
+                type="button"
+                data-framework={framework.id}
+                class={index === 0 ? "active" : ""}
+                aria-pressed={index === 0 ? "true" : "false"}
+            >{framework.label}</button>
+        ))}
+    </div>
+</div>
+
+<style>
+    .fw { display: flex; align-items: center; gap: 9px; }
+    .fw-l { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--muted); }
+    .fw-o { display: flex; gap: 2px; padding: 3px; background: var(--surface); border: 1px solid var(--border); border-radius: 9px; }
+    .fw-o button {
+        font-family: var(--mono); font-size: 11.5px; font-weight: 600; color: var(--muted);
+        background: transparent; border: 1px solid transparent; border-radius: 6px;
+        padding: 4px 10px; cursor: pointer; white-space: nowrap;
+    }
+    .fw-o button:hover { color: var(--text); }
+    .fw-o button.active { color: var(--accent); background: var(--surface2); border-color: var(--border); }
+
+    /* Below the point where the navbar gets crowded it keeps the control and drops the
+       caption, rather than dropping the control - it is the only place to change stack. */
+    @media (max-width: 900px) { .fw-l { display: none; } }
+    @media (max-width: 560px) { .fw-o button { padding: 4px 7px; font-size: 11px; } }
+</style>
+
+<script>
+    const KEY = "enigma:tabs:framework";
+
+    function paint(wanted: string): void {
+        for (const picker of document.querySelectorAll<HTMLElement>("[data-framework-picker]")) {
+            for (const button of picker.querySelectorAll<HTMLButtonElement>("[data-framework]")) {
+                const on = button.dataset.framework === wanted;
+                button.classList.toggle("active", on);
+                button.setAttribute("aria-pressed", String(on));
+            }
+        }
+    }
+
+    const stored = localStorage.getItem(KEY);
+    if (stored) paint(stored);
+
+    for (const picker of document.querySelectorAll<HTMLElement>("[data-framework-picker]")) {
+        for (const button of picker.querySelectorAll<HTMLButtonElement>("[data-framework]")) {
+            button.addEventListener("click", () => {
+                const wanted = button.dataset.framework ?? "react";
+                localStorage.setItem(KEY, wanted);
+                paint(wanted);
+                // Tabs owns the panels; it listens for this rather than exporting its
+                // internals, so neither file has to know how the other is built.
+                document.dispatchEvent(new CustomEvent("enigma:tabs", { detail: { key: "framework", value: wanted } }));
+            });
+        }
+    }
+</script>

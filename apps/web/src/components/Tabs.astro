@@ -30,8 +30,14 @@ interface Props {
     note?: string;
     /** Drop the panel's own padding when the content brings its own. */
     flush?: boolean;
+    /**
+     * Hide the strip's own buttons. For a choice made somewhere fixed - the framework
+     * picker in the navbar - where a second control per block is a question the reader has
+     * already answered.
+     */
+    bare?: boolean;
 }
-const { tabs, persist, note, flush = false } = Astro.props;
+const { tabs, persist, note, flush = false, bare = false } = Astro.props;
 
 // `<slot name={expression} />` is not supported - Astro needs a literal there - but
 // Astro.slots.render() takes the name at runtime, which is what makes one generic strip
@@ -40,7 +46,7 @@ const panels = await Promise.all(
     tabs.map(async (tab) => ({ tab, html: Astro.slots.has(tab.id) ? await Astro.slots.render(tab.id) : "" }))
 );
 ---
-<div class="tabs" data-tabs data-persist={persist}>
+<div class:list={["tabs", bare && "is-bare"]} data-tabs data-persist={persist}>
     <div class="tabs-bar">
         <div class="tabs-list" role="tablist">
             {tabs.map((tab, index) => (
@@ -70,6 +76,15 @@ const panels = await Promise.all(
     .tabs-list button:hover { color: var(--text); }
     .tabs-list button.active { color: var(--accent); background: var(--surface2); border-color: var(--border); }
     .tabs-note { font-family: var(--mono); font-size: 11px; color: var(--muted); padding-right: 4px; }
+    .tabs.is-bare > .tabs-bar { display: none; }
+    /* Says which stack is on screen when the block has no panel for the one selected -
+       without it the reader silently gets someone else's code. */
+    .tabs.is-bare[data-fallback]::before {
+        content: "No " attr(data-wanted) " example - showing " attr(data-fallback);
+        display: block; padding: 7px 14px;
+        font-family: var(--mono); font-size: 11px; color: var(--muted);
+        background: rgba(0, 0, 0, 0.25); border-bottom: 1px solid var(--border-soft);
+    }
     .tabs-panel { padding: 16px 18px; }
     .tabs-panel.is-flush { padding: 0; }
     /* A fenced block brings its own frame; inside a panel it is the panel. */
@@ -123,8 +138,26 @@ const panels = await Promise.all(
             tab.classList.toggle("active", on);
             tab.setAttribute("aria-selected", String(on));
         }
-        // A remembered id that this strip does not have would blank every panel.
-        if (!matched) return;
+        // A remembered id that this strip does not have would blank every panel. It keeps
+        // whatever it is showing, and says so where its own buttons are hidden - otherwise
+        // a page missing one framework serves another one's code with nothing to say so.
+        if (!matched) {
+            // Whatever is on screen RIGHT NOW, not the first tab: the block keeps the panel
+            // it already had, which after an earlier pick is rarely the first one. Naming
+            // the wrong framework is worse than naming none.
+            const open = own<HTMLElement>(block, "[data-panel]").find((panel) => !panel.hidden);
+            const label = open
+                ? own<HTMLButtonElement>(block, "[data-tab]").find((tab) => tab.dataset.tab === open.dataset.panel)
+                : undefined;
+            const chosen = document.querySelector<HTMLElement>(`[data-framework="${wanted}"]`);
+            if (label && chosen) {
+                block.dataset.wanted = chosen.textContent?.trim() ?? wanted;
+                block.dataset.fallback = label.textContent?.trim() ?? "";
+            }
+            return;
+        }
+        delete block.dataset.fallback;
+        delete block.dataset.wanted;
         for (const panel of own(block, "[data-panel]")) {
             panel.hidden = panel.dataset.panel !== wanted;
         }
@@ -152,4 +185,13 @@ const panels = await Promise.all(
             });
         }
     }
+
+    // A control that lives outside any strip - the framework picker in the navbar - drives
+    // every strip that shares its key.
+    document.addEventListener("enigma:tabs", (event) => {
+        const { key, value } = (event as CustomEvent<{ key: string; value: string; }>).detail;
+        for (const block of blocks) {
+            if (block.dataset.persist === key) show(block, value);
+        }
+    });
 </script>

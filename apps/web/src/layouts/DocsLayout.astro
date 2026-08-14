@@ -4,6 +4,7 @@ import { url, docHref } from "../lib/url";
 import { getCollection } from "astro:content";
 import { buildSearchIndex } from "../lib/search";
 import CommandPalette from "../components/CommandPalette.astro";
+import FrameworkPicker from "../components/FrameworkPicker.astro";
 
 interface Heading {
     depth: number;
@@ -74,6 +75,7 @@ const componentSource = componentName
                 <a href={docHref("components/overview")} class={space === "components" ? "active" : ""}>Components</a>
                 <a href={docHref("packs")} class={space === "packs" ? "active" : ""}>Packs</a>
             </div>
+            {space === "components" && <FrameworkPicker />}
             <a class="home" href={url("")}>&larr; Home</a>
         </div>
     </nav>
