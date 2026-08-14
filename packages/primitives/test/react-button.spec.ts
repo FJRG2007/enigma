@@ -56,6 +56,25 @@ test.describe("Button (React)", () => {
         await expect(link).not.toHaveAttribute("data-router-link", "");
     });
 
+    test("the Next entry renders next/link from an href alone", async ({ page }) => {
+        await open(page);
+        const link = page.locator("[data-testid=next-link]");
+        // Imported from @enigmax/primitives/next. No `as`, no registration call, nothing at
+        // the call site - the import path is the whole configuration.
+        await expect(link).toHaveAttribute("data-next-link", "");
+        await expect(link).toHaveAttribute("href", "/settings");
+    });
+
+    test("the Next entry leaves a button alone", async ({ page }) => {
+        await open(page);
+        const button = page.locator("[data-testid=next-button]");
+        // No href, so it must not be handed a router component.
+        expect(await button.evaluate((node) => node.tagName)).toBe("BUTTON");
+        await expect(button).not.toHaveAttribute("data-next-link", "");
+        await button.click();
+        expect(await read(page, "__presses")).toBe(1);
+    });
+
     test("async work swaps the label, marks it busy, and refuses a second press", async ({ page }) => {
         await open(page);
         await page.click(send);

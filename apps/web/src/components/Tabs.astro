@@ -36,8 +36,14 @@ interface Props {
      * already answered.
      */
     bare?: boolean;
+    /**
+     * Drop the card around the strip. For a chooser that belongs to the PAGE - Auto vs
+     * Manual installation - rather than to a block of content: boxing it makes the tabs
+     * look like part of the thing below them instead of a control over it.
+     */
+    frame?: boolean;
 }
-const { tabs, persist, note, flush = false, bare = false } = Astro.props;
+const { tabs, persist, note, flush = false, bare = false, frame = true } = Astro.props;
 
 // `<slot name={expression} />` is not supported - Astro needs a literal there - but
 // Astro.slots.render() takes the name at runtime, which is what makes one generic strip
@@ -46,7 +52,7 @@ const panels = await Promise.all(
     tabs.map(async (tab) => ({ tab, html: Astro.slots.has(tab.id) ? await Astro.slots.render(tab.id) : "" }))
 );
 ---
-<div class:list={["tabs", bare && "is-bare"]} data-tabs data-persist={persist}>
+<div class:list={["tabs", bare && "is-bare", !frame && "is-plain"]} data-tabs data-persist={persist}>
     <div class="tabs-bar">
         <div class="tabs-list" role="tablist">
             {tabs.map((tab, index) => (
@@ -77,6 +83,24 @@ const panels = await Promise.all(
     .tabs-list button.active { color: var(--accent); background: var(--surface2); border-color: var(--border); }
     .tabs-note { font-family: var(--mono); font-size: 11px; color: var(--muted); padding-right: 4px; }
     .tabs.is-bare > .tabs-bar { display: none; }
+
+    /* Unframed: the strip is a control on the page, not a card. The content inside brings
+       its own frame back, so a code block still reads as a code block. */
+    .tabs.is-plain { border: 0; border-radius: 0; background: transparent; overflow: visible; }
+    .tabs.is-plain > .tabs-bar { padding: 0 0 12px; background: transparent; border-bottom: 0; }
+    .tabs.is-plain > .tabs-panel { padding: 0; }
+    .tabs.is-plain :global(pre) {
+        border: 1px solid var(--border-soft);
+        border-radius: var(--radius-sm, 10px);
+        padding: 14px 16px;
+    }
+    /* A bare command sits flush inside a framed panel; unframed it needs its own edge, or
+       the "install this" line is indistinguishable from the prose above it. */
+    .tabs.is-plain :global(.cmd.is-bare) {
+        background: var(--surface);
+        border: 1px solid var(--border-soft);
+        border-radius: var(--radius-sm, 10px);
+    }
     /* Says which stack is on screen when the block has no panel for the one selected -
        without it the reader silently gets someone else's code. */
     .tabs.is-bare[data-fallback]::before {

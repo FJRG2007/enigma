@@ -19,8 +19,8 @@ Three reasons a button cannot be pressed - it is disabled, it is busy, it is coo
 are one thing to whoever renders it. They collapse into `available`, so nothing has to
 combine three flags correctly at every call site.
 
-An `href` makes it a link. Register your router's once and every href after that is a
-client navigation, with nothing to remember at the call site.
+An `href` makes it a link - `next/link` in a Next app, a plain `<a>` anywhere else. Nothing
+to pass, nothing to configure.
 
 ## Usage
 
@@ -40,18 +40,13 @@ import { Button } from "@enigmax/primitives/react";
     </div>
     <div slot="next">
 ```tsx
-// app/providers.tsx - once, anywhere your app starts
-"use client";
+import { Button } from "@enigmax/primitives/next";
 
-import Link from "next/link";
-import { setLinkComponent } from "@enigmax/primitives/react";
-
-setLinkComponent(Link);
-```
-
-```tsx
-// and from then on, every call site
+// An href is next/link. Nothing else to write.
 <Button href="/settings">Settings</Button>
+
+// No href, so it is a button.
+<Button onPress={save}>Save</Button>
 
 // A cooldown that survives a reload, so refreshing is not a free retry.
 <Button onPress={resend} cooldown={{ ms: 60_000, key: "resend", storage: "local" }}>
@@ -92,23 +87,29 @@ Style it through the attributes `props` puts on your element.
 
 ## Links
 
-`<Button href="/settings">` renders a plain `<a>` until you tell it otherwise, which is
-correct everywhere and merely means a full page load under a router. Register the router's
-link once and every href in the app becomes a client navigation:
+In Next, import from `@enigmax/primitives/next` and an `href` is `next/link`:
 
 ```tsx
-import Link from "next/link";
+import { Button } from "@enigmax/primitives/next";
+
+<Button href="/settings">Settings</Button>
+```
+
+The import path is the whole configuration - the same components, the same props, and the
+entry is only ever resolved by a project that has Next. That is why the main entry cannot
+just import `next/link` itself: that import fails to resolve for every consumer on Vite,
+Astro, Remix or plain React, which is most of them.
+
+Everywhere else an `href` is a plain `<a>`. For another router, hand over its link once:
+
+```tsx
+import { Link } from "react-router";
 import { setLinkComponent } from "@enigmax/primitives/react";
 
 setLinkComponent(Link);
 ```
 
-Any router works the same way - react-router's `Link`, TanStack Router's. It is registered
-rather than imported because this package is framework-agnostic: an
-`import Link from "next/link"` inside it is a build error for everyone who is not on Next,
-which is most of the people installing it.
-
-`as` is still there for the one link in the app that needs something else.
+`as` overrides both, for the one link in the app that needs something else.
 
 ## The four decisions
 

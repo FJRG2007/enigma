@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { createRoot } from "react-dom/client";
+// The Next entry, with next/link aliased to a stub at bundle time.
+import { Button as NextButton } from "@/next/index";
 import { Button, Input, setLinkComponent, type BreachState, type PasswordStrengthReport } from "@/react/index";
 
 /**
@@ -103,6 +105,10 @@ function Form(): React.ReactNode {
 
             {/* No `as`: the href alone picks up the link registered above. */}
             <Button data-testid="link" href="/settings">Settings</Button>
+
+            {/* The Next entry: an href is next/link, with nothing at the call site. */}
+            <NextButton data-testid="next-link" href="/settings">Settings</NextButton>
+            <NextButton data-testid="next-button" onPress={() => { fixture.__presses++; }}>Save</NextButton>
         </form>
     );
 }

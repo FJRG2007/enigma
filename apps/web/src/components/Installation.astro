@@ -32,7 +32,7 @@ const MANAGERS = [
     { id: "bun", label: "bun" }
 ];
 ---
-<Tabs tabs={[{ id: "cli", label: "CLI" }, { id: "manual", label: "Manual" }]} note="installation">
+<Tabs tabs={[{ id: "cli", label: "Auto" }, { id: "manual", label: "Manual" }]} frame={false}>
     <div slot="cli">
         <p class="in-lead">Adds the package and prints the import to use. Append <code>--copy</code> to write the source into your project instead.</p>
         <Command command={item ? `enigma add ${item}` : "enigma add --all"} />

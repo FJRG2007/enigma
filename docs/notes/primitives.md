@@ -300,11 +300,18 @@ call site. The hook shipped first and it was the wrong thing to lead with: rende
 ordinary button through it means six lines of hook, spread and state juggling at every call
 site, which is exactly how they drift apart. `useButton` stays for markup that is not a
 button - a card, a table row - and the component is what the docs open with. The element is
-still reported rather than chosen, and an href renders whatever `setLinkComponent`
-registered - next/link, react-router's, anything - so a router link costs one line at app
-startup and nothing at the call sites. It is registered rather than imported because
-`import Link from "next/link"` inside a framework-agnostic package is a build error for
-every consumer who is not on Next. `as` remains for the odd one out. `type="button"` is the default, so an action button never posts the form it
+still reported rather than chosen.
+
+**Links: the import path is the configuration.** `@enigmax/primitives/next` re-exports
+everything with `Button` bound to `next/link`, so an href is a client navigation with
+nothing at the call site and nothing to register. A subpath is only ever resolved by a
+project that has Next, which is what makes it safe: a static `import Link from "next/link"`
+in the main entry is a build error for every consumer on Vite, Astro, Remix or plain React.
+`setLinkComponent` covers the other routers and `as` the odd link out, but neither is what
+a Next app should be writing.
+
+The Next entry is exercised end to end in the browser suite by aliasing `next/link` to a
+stub at bundle time, so the wiring is tested without a Next runtime in a Playwright page. `type="button"` is the default, so an action button never posts the form it
 sits in.
 
 The lesson generalises and had to be applied twice before it stuck: a headless package
