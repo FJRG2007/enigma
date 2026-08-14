@@ -5,10 +5,10 @@ group: Forms
 order: 21
 space: components
 ---
-import AddTabs from "../../../components/AddTabs.astro";
+import Installation from "../../../components/Installation.astro";
 import Preview from "../../../components/Preview.astro";
 import SearchDemo from "../../../components/demos/SearchDemo.astro";
-import Choice from "../../../components/Choice.astro";
+import Tabs from "../../../components/Tabs.astro";
 
 It owns the parts that are always rewritten and always come out slightly wrong: the debounce, the ordering, the cancellation of a stale pass, and the field wiring. Matching is **fuzzy by default**, through Fuse.js, and stays replaceable.
 
@@ -37,10 +37,10 @@ createSearch({ items: docs, keys: ["title"], fuseOptions: { threshold: 0.4, igno
     </div>
 </Preview>
 
-## Install
+## Installation
 
-<Choice labelA="With Fuse (default)" labelB="Without Fuse" title="pick one">
-    <div slot="a">
+<Tabs tabs={[{ id: "fuse", label: "With Fuse (default)" }, { id: "plain", label: "Without Fuse" }]} note="pick one">
+    <div slot="fuse">
 
 `enigma add search` installs **fuse.js alongside the package**, because a search primitive
 without its engine is not much of one.
@@ -56,7 +56,7 @@ import { createSearch } from "@enigmax/primitives/search";
 ```
 
     </div>
-    <div slot="b">
+    <div slot="plain">
 
 `--no-deps` adds the primitive and nothing else. The main entry has no engine, so you get
 the built-in accent-insensitive substring matcher and no dependency at all.
@@ -72,7 +72,7 @@ import { createSearch } from "@enigmax/primitives";
 It cannot forgive a typo - that is the trade. Everything else is identical.
 
     </div>
-</Choice>
+</Tabs>
 
 **`enigma add` installs with your project's own package manager**, not with npm: it reads
 the `packageManager` field first, then looks for a lockfile, searching upwards so a
@@ -82,7 +82,14 @@ the tree in a state the project's own tooling disagrees with.
 
 Or do it by hand, in whichever you use:
 
-<AddTabs item="search" pkg="@enigmax/primitives" />
+<Installation item="search" pkg="@enigmax/primitives" deps={["fuse.js"]} entry="@enigmax/primitives/react">
+    <div slot="manual">
+
+Fuse is what makes a typo still find the document. `--no-deps` leaves it out and the
+built-in accent-insensitive substring matcher takes over.
+
+    </div>
+</Installation>
 
 Fuse is an **optional peer dependency**, not a real one, and it lives behind the `/search`
 subpath. That is what keeps `@enigmax/primitives` dependency-free for someone who only

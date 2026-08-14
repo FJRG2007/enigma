@@ -1,10 +1,14 @@
 ---
+import Tabs from "./Tabs.astro";
+
 /**
  * The same component in both styling layers.
  *
- * Tailwind is first because it is what `enigma add --copy` writes when the project has
- * Tailwind, but the CSS answer is never hidden behind a toggle nobody finds - both tabs
- * are visible from the start, and the choice is remembered across pages.
+ * A thin wrapper over Tabs, the way Frameworks is: what it adds is the fixed pair of ids
+ * and one persistence key, so a reader who picked CSS once has picked it on every block and
+ * every page. Tailwind is first because it is what `enigma add --copy` writes when the
+ * project has Tailwind, but the CSS answer is never hidden behind a toggle nobody finds -
+ * both tabs are visible from the start.
  *
  * Slots: "tailwind" and "css".
  */
@@ -12,57 +16,15 @@ interface Props {
     title?: string;
 }
 const { title } = Astro.props;
+
+const LAYERS = [
+    { id: "tailwind", label: "Tailwind" },
+    { id: "css", label: "CSS" }
+];
+
+const tabs = LAYERS.filter((layer) => Astro.slots.has(layer.id));
 ---
-<div class="st" data-style-tabs>
-    <div class="st-bar">
-        <div class="st-tabs" role="tablist">
-            <button type="button" class="active" data-st-tab="tailwind" role="tab" aria-selected="true">Tailwind</button>
-            <button type="button" data-st-tab="css" role="tab" aria-selected="false">CSS</button>
-        </div>
-        {title && <span class="st-title">{title}</span>}
-    </div>
-    <div class="st-panel" data-st-panel="tailwind"><slot name="tailwind" /></div>
-    <div class="st-panel" data-st-panel="css" hidden><slot name="css" /></div>
-</div>
-
-<style>
-    .st { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); overflow: hidden; margin: 20px 0; }
-    .st-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 7px; background: rgba(0, 0, 0, 0.25); border-bottom: 1px solid var(--border-soft); }
-    .st-tabs { display: flex; gap: 2px; }
-    .st-tabs button { font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--muted); background: transparent; border: 1px solid transparent; border-radius: 8px; padding: 6px 13px; cursor: pointer; }
-    .st-tabs button:hover { color: var(--text); }
-    .st-tabs button.active { color: var(--accent); background: var(--surface2); border-color: var(--border); }
-    .st-title { font-family: var(--mono); font-size: 11px; color: var(--muted); padding-right: 4px; }
-    .st-panel :global(pre) { margin: 0; border: 0; border-radius: 0; }
-    .st-panel :global(pre + pre) { border-top: 1px solid var(--border-soft); }
-</style>
-
-<script>
-    const KEY = "enigma:style-layer";
-    const stored = localStorage.getItem(KEY);
-
-    function show(block: HTMLElement, wanted: string): void {
-        for (const tab of block.querySelectorAll<HTMLButtonElement>("[data-st-tab]")) {
-            const on = tab.dataset.stTab === wanted;
-            tab.classList.toggle("active", on);
-            tab.setAttribute("aria-selected", String(on));
-        }
-        for (const panel of block.querySelectorAll<HTMLElement>("[data-st-panel]")) {
-            panel.hidden = panel.dataset.stPanel !== wanted;
-        }
-    }
-
-    const blocks = [...document.querySelectorAll<HTMLElement>("[data-style-tabs]")];
-    // A reader who picked CSS once should not have to pick it again on every block.
-    if (stored) for (const block of blocks) show(block, stored);
-
-    for (const block of blocks) {
-        for (const tab of block.querySelectorAll<HTMLButtonElement>("[data-st-tab]")) {
-            tab.addEventListener("click", () => {
-                const wanted = tab.dataset.stTab ?? "tailwind";
-                localStorage.setItem(KEY, wanted);
-                for (const other of blocks) show(other, wanted);
-            });
-        }
-    }
-</script>
+<Tabs tabs={tabs} persist="style-layer" note={title} flush={true}>
+    {tabs.some((tab) => tab.id === "tailwind") && <div slot="tailwind"><slot name="tailwind" /></div>}
+    {tabs.some((tab) => tab.id === "css") && <div slot="css"><slot name="css" /></div>}
+</Tabs>

@@ -5,7 +5,7 @@ group: Overview
 order: 1
 space: components
 ---
-import AddTabs from "../../../components/AddTabs.astro";
+import Installation from "../../../components/Installation.astro";
 import Preview from "../../../components/Preview.astro";
 import MarqueeDemo from "../../../components/demos/MarqueeDemo.astro";
 import StyleTabs from "../../../components/StyleTabs.astro";
@@ -29,9 +29,16 @@ createMarquee(lane, track, { speed: 70 });
     </div>
 </Preview>
 
-## Install
+## Installation
 
-<AddTabs pkg="@enigmax/primitives" />
+<Installation pkg="@enigmax/primitives @enigmax/utils">
+    <div slot="manual">
+
+Nothing to scaffold: the primitives bring no CSS variables and no `cn` helper, so there is
+no `init` step. Import what you need and style it through its `data-*` hooks.
+
+    </div>
+</Installation>
 
 The `enigma` tab adds the package and prints the import to use. The `copy` tab writes the source into your project instead, so it is yours to edit - the same choice shadcn made, applied to behaviour rather than markup.
 

@@ -5,7 +5,7 @@ group: Data
 order: 30
 space: components
 ---
-import AddTabs from "../../../components/AddTabs.astro";
+import Installation from "../../../components/Installation.astro";
 import Preview from "../../../components/Preview.astro";
 import CacheDemo from "../../../components/demos/CacheDemo.astro";
 
@@ -25,9 +25,16 @@ await Promise.all(Array.from({ length: 5 }, () => cache.read("user:1", loadUser)
     </div>
 </Preview>
 
-## Install
+## Installation
 
-<AddTabs item="cache" pkg="@enigmax/utils" />
+<Installation item="cache" pkg="@enigmax/utils" entry="@enigmax/utils/react">
+    <div slot="manual">
+
+State only - no rendering, so there is no recipe to copy. `defaultCache` is a
+shared instance; `createCache` gives you your own.
+
+    </div>
+</Installation>
 
 ## Vanilla
 

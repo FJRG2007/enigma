@@ -11,8 +11,8 @@ import Command from "./Command.astro";
  * "Manual" has already said they want to see it.
  */
 interface Props {
-    /** Registry item id, e.g. "marquee". */
-    item: string;
+    /** Registry item id, e.g. "marquee". Omitted for a whole-package block. */
+    item?: string;
     pkg: string;
     /** Extra packages the item declares, installed with it. */
     deps?: string[];
@@ -35,7 +35,7 @@ const MANAGERS = [
 <Tabs tabs={[{ id: "cli", label: "CLI" }, { id: "manual", label: "Manual" }]} note="installation">
     <div slot="cli">
         <p class="in-lead">Adds the package and prints the import to use. Append <code>--copy</code> to write the source into your project instead.</p>
-        <Command command={`enigma add ${item}`} />
+        <Command command={item ? `enigma add ${item}` : "enigma add --all"} />
         {deps.length > 0 && (
             <p class="in-note">Brings <strong>{deps.join(", ")}</strong> with it. <code>--no-deps</code> leaves them out.</p>
         )}

@@ -5,7 +5,7 @@ group: Data
 order: 31
 space: components
 ---
-import AddTabs from "../../../components/AddTabs.astro";
+import Installation from "../../../components/Installation.astro";
 import Preview from "../../../components/Preview.astro";
 import NotificationsDemo from "../../../components/demos/NotificationsDemo.astro";
 
@@ -25,9 +25,16 @@ queue.notify({ key: "retry", title: "Retrying", tone: "warning" });
     </div>
 </Preview>
 
-## Install
+## Installation
 
-<AddTabs item="notifications" pkg="@enigmax/utils" />
+<Installation item="notifications" pkg="@enigmax/utils" entry="@enigmax/utils/react">
+    <div slot="manual">
+
+The queue renders nothing. Point it at whatever toaster you already have, or copy the
+Tailwind recipe `enigma add notifications --copy` writes.
+
+    </div>
+</Installation>
 
 ## Vanilla
 
