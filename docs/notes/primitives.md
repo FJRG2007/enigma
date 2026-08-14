@@ -382,13 +382,37 @@ habit the GitHub skills encourage.
 
 ```
 enigma add                     list the catalogue
+enigma add --list <query>      search it
 enigma add marquee             add as a dependency
 enigma add marquee --copy      vendor the source in, shadcn style
 enigma add --all               everything
-  --dest <dir>   where copies land (default src/lib/enigma)
-  --target       vanilla | react | astro | vue | svelte (auto-detected)
-  --dry-run      report without writing
+  -p --path <dir>   where copies land
+  -o --overwrite    replace files that are already there
+  -c --cwd <dir>    run against another project
+  -s --silent       failures only
+  --target          vanilla | react | astro | vue | svelte (auto-detected)
+  --style           tailwind | css | none (auto-detected)
+  --no-deps         skip the packages an item declares
+  --dry-run         report without writing
 ```
+
+**Deliberately close to shadcn's CLI**, because that is the muscle memory people have: the
+same short flags (`-a -o -c -p -s -y`), the same `--dry-run`, and `--list <query>` where it
+has `search`. Two differences are on purpose:
+
+- **A copy never overwrites without `-o`.** The point of copy mode is that the source
+  becomes yours to edit, so a second `enigma add` that silently discarded those edits would
+  be indistinguishable from one that worked. Existing files are kept and NAMED, because
+  "left 3 files alone" is only actionable if you know which three.
+- **A shadcn `components.json` is read, never written.** A project that has one has already
+  said where components live and whether it uses Tailwind, so copies land beside the
+  components shadcn writes instead of in a second folder of enigma's own. Writing to it
+  would mean editing a file another tool owns. enigma's own preferences (`target`, `style`,
+  `dest`) go under `components` in `.enigma.json`.
+
+No `init`: there is nothing to scaffold, since the primitives bring no CSS variables and no
+`cn`. No `build`: the registry is written by hand and copied into the CLI assets by
+`npm run seal`.
 
 **The registry is read from the package installed in the project first**, then a
 monorepo checkout, then the copy bundled in the CLI assets. That order is the

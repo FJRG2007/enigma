@@ -21,12 +21,12 @@ import { hostname, userInfo } from "node:os";
 import type { ContentType } from "./compress";
 import { spawnSync } from "node:child_process";
 import { starRepoInBackground } from "./github";
-import { dirname, join, resolve } from "node:path";
-import type { ComponentTarget, ComponentStyle } from "./components";
 import { parseGuardArgv, runGuardCli } from "./guard";
+import { dirname, join, relative, resolve } from "node:path";
 import { buildIssueUrl, isHeadless, openUrl } from "./issue";
 import { setupGitHooks, GUARD_PROTECTIONS } from "./security";
 import { ensureLaunchable, toolPathStatuses } from "./tool-path";
+import type { ComponentTarget, ComponentStyle } from "./components";
 import { compress, retrieve, readStats, clearCcr } from "./compress";
 import { ensureDashboardToken, readDashboardToken } from "./dashboard-token";
 import type { HubAccount, HubExitAction, HubProfile, HubSkill } from "./tui/types";
@@ -94,6 +94,12 @@ interface CliOptions extends skillsMod.InstallOptions {
     style: string | null;
     /** `add`: skip the packages an item declares (e.g. search without fuse.js). */
     noDeps: boolean;
+    /** `add --copy`: replace files that are already there instead of leaving them alone. */
+    overwrite: boolean;
+    /** `add`: run against this directory instead of the current one. */
+    cwd: string | null;
+    /** `add`: print nothing but failures. */
+    silent: boolean;
     /** `api`: port override for the local Claude Code API server. */
     port: number | null;
     /** `api`: optional bearer key required by the local API server. */
@@ -120,6 +126,7 @@ function parseArgs(argv: string[]): CliOptions {
         force: false, all: false, yes: false, login: false, dryRun: false, help: false, version: false,
         stats: false, retrieve: null, compressType: null, clear: false,
         copy: false, list: false, dest: null, target: null, style: null, noDeps: false,
+        overwrite: false, cwd: null, silent: false,
         preset: null, token: null, base: null, providerModel: null,
         port: null, apiKey: null, apiAccount: null, apiProfile: null, apiPack: null, expose: false, newToken: false,
         json: false,
@@ -147,7 +154,7 @@ function parseArgs(argv: string[]): CliOptions {
             case "-l": case "--local": opts.scope = "local"; break;
             case "-a": case "--agent": opts.agents.push(...next().split(",")); break;
             case "-s": case "--skill": opts.skills.push(...next().split(",")); break;
-            case "--all": opts.allAgents = true; opts.all = true; break;
+            case "-a": case "--all": opts.allAgents = true; opts.all = true; break;
             case "--skills-only": opts.skillsOnly = true; break;
             case "--memory-only": opts.memoryOnly = true; break;
             case "--no-prune": opts.prune = false; break;
@@ -191,7 +198,11 @@ function parseArgs(argv: string[]): CliOptions {
             case "--dry-run": opts.dryRun = true; break;
             case "--copy": opts.copy = true; break;
             case "--list": opts.list = true; break;
-            case "--dest": opts.dest = next(); break;
+            // The short forms are shadcn's, so a habit built there carries over.
+            case "-o": case "--overwrite": opts.overwrite = true; break;
+            case "-c": case "--cwd": opts.cwd = next(); break;
+            case "-s": case "--silent": opts.silent = true; break;
+            case "-p": case "--path": case "--dest": opts.dest = next(); break;
             case "--target": opts.target = next(); break;
             case "--style": opts.style = next(); break;
             case "--no-deps": opts.noDeps = true; break;
@@ -326,11 +337,15 @@ Commands:
                        (separate from the policy skills; --dry-run to preview)
   add [name...]        Headless primitives and utilities: behaviour, timing and a11y with
                        no styles of their own. No name lists the catalogue.
-                         --all      every item          --copy   vendor the source in
-                         --dest     where copies land   --target vanilla|react|astro
-                         --style    tailwind|css|none for a copied recipe (auto-detected)
+                         -a --all       every item      --copy  vendor the source in
+                         -p --path      where copies land       --target vanilla|react|astro
+                         -o --overwrite replace files that are already there
+                         -c --cwd <dir> run against another project  -s --silent
+                         --list <query> search      --dry-run  report without writing
+                         --style tailwind|css|none for a copied recipe (auto-detected)
                          --no-deps  skip the extra packages an item declares
-                       Installs with the project's own package manager (npm, pnpm, yarn, bun).
+                       Installs with the project's own package manager (npm, pnpm, yarn, bun),
+                       and follows a shadcn components.json where the project has one.
   pack <subcommand>    Marketplace of optional, isolated harness packs (e.g. Helio for bug
                        bounty). Each runs in its own agent context, so its skills/commands
                        never load into your normal agent:
@@ -1378,7 +1393,7 @@ async function runCodeGraphCli(args: string[]): Promise<number> {
  */
 async function runAddCli(opts: CliOptions): Promise<number> {
     const components = await import("./components");
-    const projectDir = process.cwd();
+    const projectDir = opts.cwd ? resolve(opts.cwd) : process.cwd();
 
     const useColor = !("NO_COLOR" in process.env) && (process.stdout.isTTY || "FORCE_COLOR" in process.env);
     const sgr = (code: string, s: string): string => (useColor ? `\x1b[${code}m${s}\x1b[0m` : s);
@@ -1386,6 +1401,8 @@ async function runAddCli(opts: CliOptions): Promise<number> {
     const cyan = (s: string): string => sgr("36", s), green = (s: string): string => sgr("32", s);
     const red = (s: string): string => sgr("31", s), amber = (s: string): string => sgr("38;5;172", s);
     const pad = (s: string, w: number): string => s + " ".repeat(Math.max(0, w - s.length));
+    // --silent keeps failures, which is the half worth reading in a script.
+    const say = (line: string): void => { if (!opts.silent) console.log(line); };
 
     const catalogue = components.listComponents(projectDir);
     if (!catalogue.length) {
@@ -1402,11 +1419,19 @@ async function runAddCli(opts: CliOptions): Promise<number> {
     const names = opts.all ? catalogue.map((item) => item.name) : opts.positionals;
 
     if (opts.list || !names.length) {
-        console.log(`\n  ${amber(bold("components"))}${dim(`  target ${target}`)}`);
+        // With --list the positionals are a filter, not a shopping list - the job shadcn
+        // gives its own `search` command.
+        const query = opts.list ? opts.positionals.join(" ").trim().toLowerCase() : "";
+        const matches = (item: { name: string; title: string; description: string; }): boolean =>
+            !query || `${item.name} ${item.title} ${item.description}`.toLowerCase().includes(query);
+
+        console.log(`\n  ${amber(bold("components"))}${dim(`  target ${target}${query ? `  matching "${query}"` : ""}`)}`);
         const width = Math.max(...catalogue.map((item) => item.name.length)) + 3;
+        let shown = 0;
         for (const pkg of components.REGISTRY_PACKAGES) {
-            const items = catalogue.filter((item) => item.pkg === pkg);
+            const items = catalogue.filter((item) => item.pkg === pkg && matches(item));
             if (!items.length) continue;
+            shown += items.length;
             console.log(`\n  ${bold(pkg)}${items[0].root ? "" : dim("  (not installed)")}`);
             for (const item of items) {
                 const supported = item.targets.includes(target);
@@ -1415,9 +1440,12 @@ async function runAddCli(opts: CliOptions): Promise<number> {
                 console.log(`    ${pad("", width)}${dim(item.description)}`);
             }
         }
-        console.log(`\n  ${dim("enigma add <name>          add as a dependency")}`);
-        console.log(`  ${dim("enigma add <name> --copy   copy the source in, yours to edit")}`);
-        console.log(`  ${dim("enigma add --all           everything in the catalogue")}\n`);
+        if (query && !shown) console.log(`\n  ${dim("Nothing matches that. `enigma add` on its own lists everything.")}`);
+        console.log(`\n  ${dim("enigma add <name>            add as a dependency")}`);
+        console.log(`  ${dim("enigma add <name> --copy     copy the source in, yours to edit")}`);
+        console.log(`  ${dim("enigma add <name> --copy -o  and replace what is already there")}`);
+        console.log(`  ${dim("enigma add --all             everything in the catalogue")}`);
+        console.log(`  ${dim("enigma add --list <query>    search the catalogue")}\n`);
         return 0;
     }
 
@@ -1442,13 +1470,13 @@ async function runAddCli(opts: CliOptions): Promise<number> {
                 .filter((file) => file.targets.includes(target) && (!file.style || file.style === style))
                 .map((file) => file.dest);
             const packages = [item.pkg, ...(opts.noDeps ? [] : Object.keys(item.dependencies ?? {}))].join(" + ");
-            console.log(`    ${dim("would add")} ${cyan(item.name)} ${dim(opts.copy ? `-> ${destination} (${files.join(", ")})` : `-> ${packages}`)}`);
-            if (opts.copy && item.dependencies && !opts.noDeps) console.log(`      ${dim(`and install ${Object.keys(item.dependencies).join(", ")}`)}`);
+            say(`    ${dim("would add")} ${cyan(item.name)} ${dim(opts.copy ? `-> ${destination} (${files.join(", ")})` : `-> ${packages}`)}`);
+            if (opts.copy && item.dependencies && !opts.noDeps) say(`      ${dim(`and install ${Object.keys(item.dependencies).join(", ")}`)}`);
             continue;
         }
 
         const result = opts.copy
-            ? components.addAsCopy(item, projectDir, target, destination, style, !opts.noDeps)
+            ? components.addAsCopy(item, projectDir, target, destination, { style, withDependencies: !opts.noDeps, overwrite: opts.overwrite })
             : components.addAsDependency(item, projectDir, opts.yes, !opts.noDeps);
 
         if (!result.ok) {
@@ -1456,12 +1484,14 @@ async function runAddCli(opts: CliOptions): Promise<number> {
             failures++;
             continue;
         }
-        console.log(`    ${green("+")} ${cyan(item.name)} ${dim(result.message)}`);
-        console.log(`      ${dim(components.usageSnippet(item, target, opts.copy ? destination : null))}`);
-        if (!item.styles) console.log(`      ${dim("unstyled: style it through its data-* hooks")}`);
+        say(`    ${green("+")} ${cyan(item.name)} ${dim(result.message)}`);
+        // Naming them: "left 3 files alone" is only actionable if you know which three.
+        for (const file of result.skipped) say(`      ${dim(`kept ${relative(projectDir, file)}`)}`);
+        say(`      ${dim(components.usageSnippet(item, target, opts.copy ? destination : null))}`);
+        if (!item.styles) say(`      ${dim("unstyled: style it through its data-* hooks")}`);
     }
 
-    console.log("");
+    say("");
     return failures ? 1 : 0;
 }
 

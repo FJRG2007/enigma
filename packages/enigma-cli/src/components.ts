@@ -117,6 +117,8 @@ export function findComponent(name: string, projectDir: string = process.cwd()):
 
 /** The project's framework, from its manifest. Falls back to vanilla, which every item supports. */
 export function detectTarget(projectDir: string): ComponentTarget {
+    const preference = readPreferences(projectDir).target;
+    if (preference) return preference;
     const pkg = readJson<{ dependencies?: Record<string, string>; devDependencies?: Record<string, string>; }>(join(projectDir, "package.json"));
     const deps = { ...pkg?.dependencies, ...pkg?.devDependencies };
     if (deps["astro"]) return "astro";
@@ -134,6 +136,12 @@ export function detectTarget(projectDir: string): ComponentTarget {
  * than plain CSS. Pass --style to override.
  */
 export function detectStyle(projectDir: string): ComponentStyle {
+    const preference = readPreferences(projectDir).style;
+    if (preference) return preference;
+    // A shadcn project has already answered this question in its own config.
+    const shadcn = readShadcnConfig(projectDir)?.tailwind;
+    if (shadcn?.css || shadcn?.config !== undefined) return "tailwind";
+
     const pkg = readJson<{ dependencies?: Record<string, string>; devDependencies?: Record<string, string>; }>(join(projectDir, "package.json"));
     const deps = { ...pkg?.dependencies, ...pkg?.devDependencies };
     if (deps["tailwindcss"]) return "tailwind";
@@ -198,8 +206,59 @@ function runInstall(projectDir: string, packages: string[]): { ok: boolean; mana
     return { ok: result.status === 0, manager };
 }
 
+/**
+ * shadcn/ui's own `components.json`, when the project has one.
+ *
+ * Read, never written. A project that uses shadcn has already decided where components go
+ * and whether it styles with Tailwind, and a second tool inventing its own answers to both
+ * is how a codebase ends up with two component folders. Writing to the file instead would
+ * mean editing a document another tool owns.
+ */
+interface ShadcnConfig {
+    tailwind?: { config?: string; css?: string; };
+    aliases?: { ui?: string; components?: string; lib?: string; };
+}
+
+function readShadcnConfig(projectDir: string): ShadcnConfig | null {
+    return readJson<ShadcnConfig>(join(projectDir, "components.json"));
+}
+
+/** Preferences enigma stores for itself, under `components` in `.enigma.json`. */
+interface ComponentPreferences {
+    target?: ComponentTarget;
+    style?: ComponentStyle;
+    /** Project-relative directory copied source lands in. */
+    dest?: string;
+}
+
+function readPreferences(projectDir: string): ComponentPreferences {
+    const config = readJson<{ components?: ComponentPreferences; }>(join(projectDir, ".enigma.json"));
+    return config?.components ?? {};
+}
+
+/**
+ * Resolve a path alias the way shadcn's own conventions do: `@/x` is `src/x` in a project
+ * with a `src` directory and `./x` otherwise. Reading tsconfig `paths` properly would be
+ * more correct, and is worth doing the day someone reports an alias this misses.
+ */
+function resolveAlias(projectDir: string, alias: string): string | null {
+    if (!alias.startsWith("@/")) return null;
+    const rest = alias.slice(2).split("/");
+    const base = existsSync(join(projectDir, "src")) ? [projectDir, "src"] : [projectDir];
+    return join(...base, ...rest);
+}
+
 /** Where copied source lands, unless the caller names a directory. */
 export function defaultDestination(projectDir: string): string {
+    const preference = readPreferences(projectDir).dest;
+    if (preference) return join(projectDir, preference);
+
+    // In a shadcn project, next to the components shadcn writes - one folder, not two.
+    const aliases = readShadcnConfig(projectDir)?.aliases;
+    const alias = aliases?.ui ?? aliases?.components;
+    const resolved = alias ? resolveAlias(projectDir, alias) : null;
+    if (resolved) return resolved;
+
     return existsSync(join(projectDir, "src")) ? join(projectDir, "src", "lib", "enigma") : join(projectDir, "lib", "enigma");
 }
 
@@ -207,6 +266,8 @@ export interface AddResult {
     ok: boolean;
     /** Files written in copy mode. */
     written: string[];
+    /** Files left alone because they already existed and `overwrite` was not set. */
+    skipped: string[];
     /** Packages added in dependency mode. */
     installed: string[];
     message: string;
@@ -216,7 +277,7 @@ export interface AddResult {
 export function addAsDependency(item: ResolvedItem, projectDir: string, install: boolean, withDependencies = true): AddResult {
     const manifestPath = join(projectDir, "package.json");
     const manifest = readJson<{ dependencies?: Record<string, string>; }>(manifestPath);
-    if (!manifest) return { ok: false, written: [], installed: [], message: `No package.json in ${projectDir}.` };
+    if (!manifest) return { ok: false, written: [], skipped: [], installed: [], message: `No package.json in ${projectDir}.` };
 
     // An item's own package plus whatever it declares it needs - the search primitive is
     // useless without its engine, so asking for it and then hitting a missing module is
@@ -224,16 +285,27 @@ export function addAsDependency(item: ResolvedItem, projectDir: string, install:
     const wanted = [item.pkg, ...(withDependencies ? Object.keys(item.dependencies ?? {}) : [])];
     const missing = wanted.filter((name) => !manifest.dependencies?.[name]);
     if (!missing.length) {
-        return { ok: true, written: [], installed: [], message: `${wanted.join(" and ")} already installed.` };
+        return { ok: true, written: [], skipped: [], installed: [], message: `${wanted.join(" and ")} already installed.` };
     }
     const manager = detectPackageManager(projectDir);
     if (!install) {
-        return { ok: true, written: [], installed: [], message: `Run: ${installCommand(manager, missing)}` };
+        return { ok: true, written: [], skipped: [], installed: [], message: `Run: ${installCommand(manager, missing)}` };
     }
 
     const result = runInstall(projectDir, missing);
-    if (!result.ok) return { ok: false, written: [], installed: [], message: `${installCommand(manager, missing)} failed.` };
-    return { ok: true, written: [], installed: missing, message: `Installed ${missing.join(", ")} with ${manager}.` };
+    if (!result.ok) return { ok: false, written: [], skipped: [], installed: [], message: `${installCommand(manager, missing)} failed.` };
+    return { ok: true, written: [], skipped: [], installed: missing, message: `Installed ${missing.join(", ")} with ${manager}.` };
+}
+
+export interface CopyOptions {
+    style?: ComponentStyle;
+    withDependencies?: boolean;
+    /**
+     * Replace files that are already there. Off by default, because the entire point of
+     * copy mode is that the source becomes yours to edit - and a second `enigma add` that
+     * silently threw those edits away would be indistinguishable from one that worked.
+     */
+    overwrite?: boolean;
 }
 
 /**
@@ -241,11 +313,13 @@ export function addAsDependency(item: ResolvedItem, projectDir: string, install:
  *
  * Requires the package on disk: the CLI never invents source it cannot read.
  */
-export function addAsCopy(item: ResolvedItem, projectDir: string, target: ComponentTarget, destination: string, style: ComponentStyle = "none", withDependencies = true): AddResult {
+export function addAsCopy(item: ResolvedItem, projectDir: string, target: ComponentTarget, destination: string, options: CopyOptions = {}): AddResult {
+    const { style = "none", withDependencies = true, overwrite = false } = options;
     if (!item.root) {
         return {
             ok: false,
             written: [],
+            skipped: [],
             installed: [],
             message: `Copy mode needs the package source on disk. Run: npm install ${item.pkg}`
         };
@@ -255,20 +329,25 @@ export function addAsCopy(item: ResolvedItem, projectDir: string, target: Compon
     // style travels only when it is the style asked for.
     const files = item.files.filter((file) => file.targets.includes(target) && (!file.style || file.style === style));
     if (!files.length) {
-        return { ok: false, written: [], installed: [], message: `'${item.name}' has no files for target '${target}'.` };
+        return { ok: false, written: [], skipped: [], installed: [], message: `'${item.name}' has no files for target '${target}'.` };
     }
 
     const written: string[] = [];
+    const skipped: string[] = [];
     for (const file of files) {
         const source = join(item.root, file.path);
         if (!existsSync(source)) {
-            return { ok: false, written, installed: [], message: `Missing ${file.path} in ${item.pkg}. Reinstall the package.` };
+            return { ok: false, written, skipped, installed: [], message: `Missing ${file.path} in ${item.pkg}. Reinstall the package.` };
+        }
+        const outPath = join(destination, file.dest);
+        if (!overwrite && existsSync(outPath)) {
+            skipped.push(outPath);
+            continue;
         }
         let contents = readFileSync(source, "utf8");
         for (const [from, to] of Object.entries(file.rewrite ?? {})) {
             contents = contents.split(`"${from}"`).join(`"${to}"`);
         }
-        const outPath = join(destination, file.dest);
         mkdirSync(dirname(outPath), { recursive: true });
         writeFileSync(outPath, contents);
         written.push(outPath);
@@ -289,7 +368,8 @@ export function addAsCopy(item: ResolvedItem, projectDir: string, target: Compon
     }
 
     const note = installed.length ? ` Installed ${installed.join(", ")} with ${manager}.` : "";
-    return { ok: true, written, installed, message: `Copied ${written.length} file(s) into ${destination}.${note}` };
+    const kept = skipped.length ? ` Left ${skipped.length} existing file(s) alone; --overwrite replaces them.` : "";
+    return { ok: true, written, skipped, installed, message: `Copied ${written.length} file(s) into ${destination}.${kept}${note}` };
 }
 
 /** The exact line a reader can paste, in the project's own package manager. */
