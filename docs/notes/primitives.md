@@ -470,6 +470,32 @@ JavaScript-side can transform it.
 Agents should reach for this instead of formatting a date difference by hand, which is the
 habit the GitHub skills encourage.
 
+## The docs playground
+
+`apps/web/src/components/playground/`. Every component page opens with a Customize panel
+beside a live preview, and the code below is generated from the SAME state object that drove
+the preview - one source, two outputs, so the sample and the thing you just used cannot
+disagree. Modelled on appica.dev, which does the same.
+
+Three decisions hold it up:
+
+- **The preview is the real component**, imported from the package. That is why the site
+  now depends on `packages/*` BY PATH rather than by version: it was pinned to a published
+  0.5.0, four versions behind, so a live preview would have rendered something that no
+  longer existed. The link immediately exposed two stale imports the pin had been hiding.
+- **`client:only`, not `client:load`.** An interactive panel holding a `new Date()` cannot
+  render identically on a server and in a browser, and the hydration mismatch was real.
+- **The generated code carries only non-default props**, so it reads like something a person
+  would have written rather than a dump of every option.
+
+An engine that indexes on construction (search) is remounted by a `key` when an option
+shapes it, with the query held outside and replayed - mutating the options would leave the
+preview disagreeing with the panel.
+
+Building it is also what put these components in a browser for the first time, which is how
+the relative-time shadow-root bugs surfaced. A server-render test cannot see a crash that
+needs a DOM, or a `::first-letter` rule that needs paint.
+
 ## enigma add
 
 `packages/enigma-cli/src/components.ts`, wired in `cli.ts` as `add` (alias

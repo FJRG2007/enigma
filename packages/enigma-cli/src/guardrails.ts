@@ -415,6 +415,26 @@ export const BUILTIN_RULES: GuardrailRule[] = [
         skill: "security-policy",
     },
     {
+        id: "fe-clipboard-fallback-unchecked",
+        label: "Copy fallback whose result is thrown away",
+        files: ["*.ts", "*.tsx", "*.js", "*.jsx", "*.mjs", "*.astro", "*.vue", "*.svelte"],
+        excludeFiles: [
+            "*.test.*", "*.spec.*", "*.stories.*", "*.min.js",
+            "**/tests/**", "tests/**", "**/__tests__/**", "__tests__/**",
+            "**/dist/**", "dist/**", "**/build/**", "build/**",
+            "**/node_modules/**", "node_modules/**", "**/vendor/**", "vendor/**",
+        ],
+        scope: "file",
+        stage: "diff",
+        // A bare statement: the call is not assigned, returned, or tested. execCommand
+        // returns a boolean saying whether the copy happened, and this shape discards it.
+        pattern: "^[\\t ]*document\\.execCommand\\([\"']copy[\"']\\)\\s*;",
+        absent: "enigma:allow-unchecked-copy",
+        message: "The clipboard fallback's result is discarded. `document.execCommand(\"copy\")` RETURNS whether the copy happened - it fails silently under a clipboard-guard extension, in a cross-origin frame, and without a user gesture - so a button that flashes a tick after calling it is telling the reader something it never checked, and they find out on paste. Test the return value and show the confirmation only when it is true. While you are there: give the scratch textarea `position: fixed` and `opacity: 0`, because appending a visible one scrolls the page to the bottom on every copy. Mark the line `enigma:allow-unchecked-copy` where the outcome genuinely does not matter (frontend-policy).",
+        severity: "warn",
+        skill: "frontend-policy",
+    },
+    {
         id: "fe-relative-time-hand-rolled",
         label: "Relative time computed by hand",
         files: ["*.ts", "*.tsx", "*.js", "*.jsx", "*.astro", "*.vue", "*.svelte"],
