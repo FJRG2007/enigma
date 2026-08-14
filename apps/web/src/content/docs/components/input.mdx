@@ -7,8 +7,7 @@ space: components
 ---
 import Installation from "../../../components/Installation.astro";
 import Frameworks from "../../../components/Frameworks.astro";
-import Preview from "../../../components/Preview.astro";
-import InputDemo from "../../../components/demos/InputDemo.astro";
+import { InputPlayground } from "../../../components/playground/InputPlayground";
 import StyleTabs from "../../../components/StyleTabs.astro";
 import Html from "../../../components/Html.astro";
 import { highlightedRecipe } from "../../../lib/recipe";
@@ -18,18 +17,17 @@ export const cssSheet = highlightedRecipe("@enigmax/primitives", "input/styles.c
 
 In React it is a component you pass props to. A `type="password"` field gets its reveal toggle for free, because a password the visitor cannot read back is the most common reason a sign-in fails on the first try. Everything else - the generator, the strength meter, the breach check - is one prop, and off until you ask for it.
 
-<Preview title="a password field" hint="Type into it, put the caret mid-word, then reveal: the cursor stays where you left it. Press Sign in and the note appears - the toggle never does that.">
-    <InputDemo />
-    <div slot="code">
-```tsx
-<Input type="password" autoComplete="current-password" />
-```
-    </div>
-</Preview>
+## Customize
+
+Nothing here is on until you ask for it, so this panel starts where the component does.
+Type into it, generate one, reveal it - the preview is the real field and the code below is
+generated from the same values.
+
+<InputPlayground client:load />
 
 ## Usage
 
-<Frameworks note="the live demo above runs the vanilla one">
+<Frameworks>
     <div slot="react">
 ```tsx
 import { Input } from "@enigmax/primitives/react";

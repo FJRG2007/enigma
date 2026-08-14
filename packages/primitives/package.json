@@ -1,6 +1,6 @@
 {
   "name": "@enigmax/primitives",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "description": "Headless components: the behaviour, the timing and the accessibility, with no styles of their own. Framework-agnostic core plus thin adapters.",
   "type": "module",
   "main": "./dist/index.js",
@@ -28,7 +28,8 @@
       "import": "./dist/react-router/index.js"
     },
     "./relative-time.css": "./recipes/relative-time/styles.css",
-    "./toast.css": "./recipes/toast/styles.css"
+    "./toast.css": "./recipes/toast/styles.css",
+    "./input.css": "./recipes/input/styles.css"
   },
   "scripts": {
     "build": "tsup",
