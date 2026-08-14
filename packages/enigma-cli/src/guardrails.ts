@@ -376,6 +376,65 @@ export const BUILTIN_RULES: GuardrailRule[] = [
         skill: "validation-policy",
     },
     {
+        id: "fe-password-reveal-hand-rolled",
+        label: "Password reveal toggled by hand",
+        files: ["*.ts", "*.tsx", "*.js", "*.jsx", "*.astro", "*.vue", "*.svelte"],
+        excludeFiles: [
+            "*.test.*", "*.spec.*", "*.stories.*", "*.min.js",
+            "**/tests/**", "tests/**", "**/__tests__/**", "__tests__/**",
+            "**/dist/**", "dist/**", "**/build/**", "build/**",
+            "**/node_modules/**", "node_modules/**", "**/vendor/**", "vendor/**",
+        ],
+        scope: "file",
+        stage: "diff",
+        // The ternary that switches a field's type, in either order. Precise enough that
+        // it does not fire on anything else that mentions both words.
+        pattern: "[\"']password[\"']\\s*:\\s*[\"']text[\"']|[\"']text[\"']\\s*:\\s*[\"']password[\"']",
+        absent: "@enigmax/primitives|useInput|createInput|<Input|enigma:allow-password-toggle",
+        message: "A password reveal written by hand. Three things go wrong here and each has been measured: a `<button>` with no `type=\"button\"` defaults to submit, so looking at your password posts the half-filled form; pressing the button pulls focus out of the field unless `mousedown` is prevented; and assigning `input.type` inside a click handler resets the caret to 0 in Chromium ONE MACROTASK later, so a restore that runs inline silently loses. `enigma add input` (@enigmax/primitives) is that behaviour with a test for each, and brings the generator, the strength meter and the breach check as props you can leave off. Mark the line `enigma:allow-password-toggle` to keep your own.",
+        severity: "warn",
+        skill: "frontend-policy",
+    },
+    {
+        id: "sec-generated-secret-math-random",
+        label: "A secret generated from Math.random",
+        files: ["*.ts", "*.tsx", "*.js", "*.jsx", "*.mjs", "*.cjs", "*.astro", "*.vue", "*.svelte"],
+        excludeFiles: [
+            "*.test.*", "*.spec.*", "*.stories.*", "*.min.js",
+            "**/tests/**", "tests/**", "**/__tests__/**", "__tests__/**",
+            "**/dist/**", "dist/**", "**/build/**", "build/**",
+            "**/node_modules/**", "node_modules/**", "**/vendor/**", "vendor/**",
+        ],
+        scope: "file",
+        // Both orders on one line: the word that says what is being made, and the call
+        // that makes it predictable.
+        pattern: "(?:password|passphrase|secret|token|otp|api[_-]?key|recovery[_-]?code|session[_-]?id)[^\\n]{0,80}Math\\.random|Math\\.random[^\\n]{0,80}(?:password|passphrase|secret|token|otp|api[_-]?key|recovery[_-]?code|session[_-]?id)",
+        absent: "getRandomValues|randomBytes|randomUUID|enigma:allow-insecure-random",
+        message: "A secret built from Math.random. It is a fast PRNG, not a CSPRNG: its state is recoverable from a handful of outputs, so anyone who sees one generated value can predict the next. Use `crypto.getRandomValues` in a browser or `crypto.randomBytes` in Node, and draw each index by REJECTION rather than `% alphabet.length`, which is biased because 2^32 is not a multiple of most alphabet sizes. `enigma add input` (@enigmax/primitives) exports `generatePassword` doing both, and throwing rather than falling back when no CSPRNG is available - a generator that quietly produces predictable secrets is worse than one that refuses, because nothing downstream can tell the difference. Mark the line `enigma:allow-insecure-random` where the value is genuinely not a secret.",
+        severity: "block",
+        skill: "security-policy",
+    },
+    {
+        id: "fe-relative-time-hand-rolled",
+        label: "Relative time computed by hand",
+        files: ["*.ts", "*.tsx", "*.js", "*.jsx", "*.astro", "*.vue", "*.svelte"],
+        excludeFiles: [
+            "*.test.*", "*.spec.*", "*.stories.*", "*.min.js",
+            "**/tests/**", "tests/**", "**/__tests__/**", "__tests__/**",
+            "**/dist/**", "dist/**", "**/build/**", "build/**",
+            "**/node_modules/**", "node_modules/**", "**/vendor/**", "vendor/**",
+        ],
+        scope: "file",
+        stage: "diff",
+        // A millisecond difference divided into units - the shape every hand-rolled
+        // "3 hours ago" has, and one a real formatter never needs.
+        pattern: "(?:Date\\.now\\(\\)|getTime\\(\\))[^\\n]{0,60}-[^\\n]{0,60}\\/\\s*(?:1000|60000|3600000|86400000|1000\\s*\\*)",
+        absent: "@enigmax/utils|RelativeTime|relativeTimeView|relative-time-element|Intl\\.RelativeTimeFormat|date-fns|dayjs|luxon|moment|enigma:allow-manual-relative-time",
+        message: "\"3 hours ago\" computed from a millisecond difference. Three things this misses: it is English-only, where `Intl.RelativeTimeFormat` speaks the reader's language; it renders once and then goes stale, so a page left open says \"3 hours ago\" tomorrow; and a timestamp with no zone (`2026-08-13 22:41:00` out of a date column) is read as LOCAL time by `new Date()`, which puts every reader away from the server hours out - silently, because a wrong time is still a valid one. `enigma add relative-time` (@enigmax/utils) handles all three and renders the absolute date as a fallback, so a server render and a reader without JavaScript still see a real date. Mark the line `enigma:allow-manual-relative-time` when the arithmetic is the point.",
+        severity: "warn",
+        skill: "frontend-policy",
+    },
+    {
         id: "sec-password-breach-check",
         label: "A new password is checked against the breach corpus",
         files: ["*.tsx", "*.jsx", "*.vue", "*.svelte", "*.astro", "*.html", "*.htm", "*.ts", "*.js"],
@@ -392,7 +451,7 @@ export const BUILTIN_RULES: GuardrailRule[] = [
         // it, including a call into a shared hook whose name carries `pwned`/`breach`.
         pattern: "autocomplete=\\{?[\"']new-password[\"']",
         absent: "pwnedpasswords|haveibeenpwned|hibp|pwned|breach|enigma:allow-no-breach-check",
-        message: "A password is created here with no breach check. Length and symbol rules do not stop a password that is already in a credential-stuffing list. Check it against Have I Been Pwned's Pwned Passwords range API - free, no key, and the password never leaves the client: SHA-1 it, uppercase the hex, GET https://api.pwnedpasswords.com/range/<first 5 chars> with `Add-Padding: true`, and look for the remaining 35 characters in the `SUFFIX:COUNT` lines. Debounce it as the user types, abort the in-flight request when the value changes, repeat the check server-side on submit, and fail OPEN if the lookup errors so an outage never blocks a signup. For a flow that genuinely cannot reach it, add an `enigma:allow-no-breach-check` note (security-policy).",
+        message: "A password is created here with no breach check. Length and symbol rules do not stop a password that is already in a credential-stuffing list. Check it against Have I Been Pwned's Pwned Passwords range API - free, no key, and the password never leaves the client: SHA-1 it, uppercase the hex, GET https://api.pwnedpasswords.com/range/<first 5 chars> with `Add-Padding: true`, and look for the remaining 35 characters in the `SUFFIX:COUNT` lines. `enigma add password-breach` (@enigmax/utils) is exactly that call, with the padding header, the decoy entries rejected and the range responses cached. Debounce it as the user types, abort the in-flight request when the value changes, repeat the check server-side on submit, and fail OPEN if the lookup errors so an outage never blocks a signup. For a flow that genuinely cannot reach it, add an `enigma:allow-no-breach-check` note (security-policy).",
         severity: "block",
         skill: "security-policy",
     },
@@ -418,7 +477,7 @@ export const BUILTIN_RULES: GuardrailRule[] = [
         // of an equality/containment operator.
         pattern: "autocomplete=\\{?[\"']new-password[\"']",
         absent: "userInputs|user_inputs|UserAttributeSimilarity|sameAs(?:Email|Username|Identity)|matchesIdentity|containsIdentity|identityMatch|notIdentity|personalInfo|(?:password|passwd|pwd)[^\\n]{0,60}(?:===|==|!==|\\.includes\\(|\\.indexOf\\(|\\.startsWith\\(|localeCompare)[^\\n]{0,60}(?:email|username|user_?name|handle)|(?:email|username|user_?name|handle)[^\\n]{0,60}(?:===|==|!==|\\.includes\\(|\\.indexOf\\(|\\.startsWith\\(|localeCompare)[^\\n]{0,60}(?:password|passwd|pwd)|enigma:allow-identity-password",
-        message: "A password is created here with nothing stopping it from being the account's own identity. `Fjrg2007` for the user `fjrg2007` is one guess for anyone who knows the email address. Refuse a candidate that equals, contains (4 characters or more), or closely resembles the email, its local part, the username, the display name or the site name - comparing NORMALIZED values on both sides (lowercase, trim, NFKD then strip accents, drop everything that is not a letter or a digit), so `F.J.R.G_2007` and `fjrg2007` are the same string and casing is never a difference. Declare it on the OBJECT schema, since a password field cannot see the email beside it, and run it again on the server where the real identity lives. A strength meter fed `userInputs` scores this badly but is advisory - keep the refusal as its own rule. For a flow with no identity to compare against, add an `enigma:allow-identity-password` note (security-policy, validation-policy).",
+        message: "A password is created here with nothing stopping it from being the account's own identity. `Fjrg2007` for the user `fjrg2007` is one guess for anyone who knows the email address. Refuse a candidate that equals, contains (4 characters or more), or closely resembles the email, its local part, the username, the display name or the site name - comparing NORMALIZED values on both sides (lowercase, trim, NFKD then strip accents, drop everything that is not a letter or a digit), so `F.J.R.G_2007` and `fjrg2007` are the same string and casing is never a difference. Declare it on the OBJECT schema, since a password field cannot see the email beside it, and run it again on the server where the real identity lives. A strength meter fed `userInputs` scores this badly but is advisory - keep the refusal as its own rule; `enigma add input` (@enigmax/primitives) takes `strength={{ userInputs }}` and reports it. For a flow with no identity to compare against, add an `enigma:allow-identity-password` note (security-policy, validation-policy).",
         severity: "block",
         skill: "security-policy",
     },
