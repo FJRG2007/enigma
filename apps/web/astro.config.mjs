@@ -1,6 +1,7 @@
 // @ts-check
 import { defineConfig } from "astro/config";
 import mdx from "@astrojs/mdx";
+import react from "@astrojs/react";
 import { buildId } from "./scripts/build-id.mjs";
 
 // Per-deploy cache-busting token stamped onto public/ sub-resources via asset() (see
@@ -15,7 +16,7 @@ export default defineConfig({
     site: "https://fjrg2007.github.io",
     base: "/enigma",
     trailingSlash: "ignore",
-    integrations: [mdx()],
+    integrations: [mdx(), react()],
     markdown: {
         // Warm, low-contrast dark theme that sits well on the surface palette; the code
         // block background is overridden in CSS to match the design exactly.

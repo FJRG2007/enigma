@@ -1,0 +1,70 @@
+/* The playground shell. Scoped by class because a React island gets no Astro scoping. */
+
+.pg { margin: 20px 0; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; background: var(--surface); }
+
+.pg-top { display: grid; grid-template-columns: 1fr 260px; }
+@media (max-width: 720px) { .pg-top { grid-template-columns: 1fr; } }
+
+.pg-preview {
+    display: grid; place-items: center; gap: 12px;
+    min-height: 190px; padding: 28px 22px;
+    /* A faint grid, so a transparent component still reads as sitting on a surface. */
+    background-image: radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+    background-size: 15px 15px;
+}
+
+.pg-controls {
+    display: grid; align-content: start; gap: 10px;
+    padding: 16px; border-left: 1px solid var(--border-soft); background: rgba(0, 0, 0, 0.2);
+}
+@media (max-width: 720px) { .pg-controls { border-left: 0; border-top: 1px solid var(--border-soft); } }
+
+.pg-h { font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 1.1px; color: var(--muted); }
+
+.pg-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; cursor: pointer; }
+.pg-label { display: grid; font-size: 12.5px; color: var(--text); }
+.pg-hint { font-size: 11px; color: var(--muted); }
+
+.pg-check { width: 15px; height: 15px; flex: 0 0 auto; accent-color: var(--accent); cursor: pointer; }
+.pg-text {
+    width: 118px; flex: 0 0 auto;
+    font-family: var(--mono); font-size: 12px; color: var(--text);
+    background: var(--surface); border: 1px solid var(--border); border-radius: 7px; padding: 5px 8px;
+}
+.pg-text:focus { outline: none; border-color: var(--muted); }
+
+.pg-reset {
+    justify-self: start; margin-top: 4px;
+    font-family: var(--mono); font-size: 11px; color: var(--muted);
+    background: transparent; border: 1px solid var(--border); border-radius: 7px; padding: 4px 9px; cursor: pointer;
+}
+.pg-reset:hover { color: var(--text); border-color: var(--muted); }
+
+.pg-code { position: relative; border-top: 1px solid var(--border-soft); }
+.pg-code pre {
+    margin: 0; padding: 14px 16px; overflow-x: auto;
+    background: #101010; border: 0; border-radius: 0;
+    font-size: 12.5px; line-height: 1.6; color: #fff;
+}
+.pg-copy {
+    position: absolute; top: 9px; right: 10px;
+    font-family: var(--mono); font-size: 11px; color: var(--muted);
+    background: var(--surface); border: 1px solid var(--border); border-radius: 7px; padding: 4px 9px; cursor: pointer;
+}
+.pg-copy:hover { color: var(--text); border-color: var(--accent); }
+
+/* The preview's own button styling. The primitive ships none, so this is the demo's - and
+   it is the CSS recipe's look, so the preview matches what `--copy` writes. */
+.pg-btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-family: var(--mono); font-size: 13px; font-weight: 600;
+    color: #101010; background: var(--accent);
+    border: 1px solid transparent; border-radius: 9px; padding: 9px 16px;
+    cursor: pointer; text-decoration: none;
+    transition: opacity 120ms ease-out;
+}
+.pg-btn:hover { opacity: 0.9; }
+.pg-btn[aria-disabled="true"] { opacity: 0.45; cursor: not-allowed; }
+.pg-btn[data-loading] { cursor: progress; }
+/* The cooldown is the one state worth showing as more than dimmed text. */
+.pg-btn[data-cooldown] { color: var(--text); background: var(--surface2); border-color: var(--border); }

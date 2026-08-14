@@ -10,6 +10,10 @@ on:
     branches: [main]
     paths:
       - "apps/web/**"
+      # The site imports the component packages from the checkout, so a change to one of
+      # them changes the docs it renders and has to redeploy.
+      - "packages/primitives/**"
+      - "packages/utils/**"
       - "assets/logos/**"
       - "assets/images/dashboard.png"
       - ".github/workflows/pages.yml"
@@ -51,6 +55,16 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      # The site depends on the packages by path, not by version, so it documents what this
+      # checkout contains. They have to be BUILT before Astro can import them, and the
+      # site's own `npm ci` will not do it: a linked package's devDependencies (tsup,
+      # typescript) are not installed by a consumer's install.
+      - name: Build the component packages
+        working-directory: .
+        run: |
+          npm ci
+          npm run build --workspace packages/primitives
+          npm run build --workspace packages/utils
       - name: Install dependencies
         run: npm ci
       - name: Build site

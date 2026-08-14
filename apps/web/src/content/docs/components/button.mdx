@@ -7,6 +7,7 @@ space: components
 ---
 import Installation from "../../../components/Installation.astro";
 import Frameworks from "../../../components/Frameworks.astro";
+import { ButtonPlayground } from "../../../components/playground/ButtonPlayground";
 
 ```tsx
 <Button onClick={save}>Save</Button>
@@ -22,6 +23,13 @@ combine three flags correctly at every call site.
 
 An `href` makes it a link - `next/link` in a Next app, a plain `<a>` anywhere else. Nothing
 to pass, nothing to configure.
+
+## Customize
+
+Turn a prop on and press the thing. The preview is the real component, and the code is
+generated from the same values that drove it - so what you copy is what you just used.
+
+<ButtonPlayground client:load />
 
 ## Usage
 
