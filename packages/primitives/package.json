@@ -1,6 +1,6 @@
 {
   "name": "@enigmax/primitives",
-  "version": "0.15.0",
+  "version": "0.16.0",
   "description": "Headless components: the behaviour, the timing and the accessibility, with no styles of their own. Framework-agnostic core plus thin adapters.",
   "type": "module",
   "main": "./dist/index.js",

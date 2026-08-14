@@ -10,12 +10,14 @@ import { LogoMarquee, type LogoItem } from "../../../../../packages/primitives/r
  * sizes, and the colour drained so the palettes stop competing.
  */
 
+// Mixed on purpose: a bare URL, the object form with a real alt, and a node. All three are
+// the same list.
 const LOGOS: LogoItem[] = [
     { kind: "img", src: "/enigma/logos/claude.svg", alt: "Claude" },
     { kind: "node", node: <span>NASA</span>, key: "nasa" },
-    { kind: "img", src: "/enigma/logos/openai.svg", alt: "OpenAI" },
+    "/enigma/logos/openai.svg",
     { kind: "node", node: <span>BLOOMBERG</span>, key: "bloomberg" },
-    { kind: "img", src: "/enigma/logos/kimi.svg", alt: "Kimi" },
+    "/enigma/logos/kimi.svg",
     { kind: "img", src: "/enigma/logos/opencode.svg", alt: "OpenCode" },
     { kind: "node", node: <span>HARVARD</span>, key: "harvard" }
 ];
@@ -65,8 +67,9 @@ function code(values: Values): string {
         'import { LogoMarquee } from "./logo-marquee";',
         "",
         "const logos = [",
-        '    { kind: "img",  src: openaiSvgUrl, alt: "OpenAI" },',
-        '    { kind: "node", node: <span>NASA</span> }',
+        '    "/logos/openai.svg",                                  // a URL is enough',
+        '    { kind: "img",  src: stripeSvgUrl, alt: "Stripe" },   // unless it needs an alt',
+        '    { kind: "node", node: <span>NASA</span> }             // or is set in type',
         "];",
         "",
         `<LogoMarquee ${props.join(" ")} />`

@@ -142,9 +142,11 @@ link assertion proves nothing when the DOM has no links.
 ## logo-marquee
 
 A RECIPE, not a primitive: it has a look and the look is the point. `<LogoMarquee logos={...}>`
-takes a tagged union per item - `{ kind: "img", src, alt? }` or `{ kind: "node", node }` -
-because some of the logos in any real wall are set in type (Bloomberg, NASA, Harvard) rather
-than drawn. The API shape comes from performativeUI's LogoMarquee; the timing does not.
+takes a URL, or a tagged union per item - `{ kind: "img", src, alt? }` or
+`{ kind: "node", node }` - because some of the logos in any real wall are set in type
+(Bloomberg, NASA, Harvard) rather than drawn, and the rest are usually just a path. The
+three forms mix in one list; a bare URL carries no `alt`, because one guessed from a file
+name is a fabricated one and a wrong alt is worse than an empty one. The API shape comes from performativeUI's LogoMarquee; the timing does not.
 
 **Their `speed` is seconds per loop.** That is the exact defect the marquee exists to
 prevent: a lap is as long as its content, so a duration makes the speed content/duration and

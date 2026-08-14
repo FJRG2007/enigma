@@ -8,19 +8,29 @@ space: components
 import Installation from "../../../components/Installation.astro";
 import { LogoMarqueePlayground } from "../../../components/playground/LogoMarqueePlayground";
 
-Some of the logos in any real wall are not images. Bloomberg, NASA and Harvard are set in
-type, so an item is either an image or a node:
+A URL is enough for most logos:
+
+```tsx
+<LogoMarquee logos={["/logos/openai.svg", "/logos/stripe.svg"]} speed={40} />
+```
+
+Some of them are not images, though - Bloomberg, NASA and Harvard are set in type - and some
+need a name. The three forms mix in one list:
 
 ```tsx
 <LogoMarquee
     logos={[
-        { kind: "img",  src: openaiSvgUrl, alt: "OpenAI" },
-        { kind: "img",  src: stripeSvgUrl, alt: "Stripe" },
-        { kind: "node", node: <span>NASA</span> }
+        "/logos/openai.svg",                                  // a URL is enough
+        { kind: "img",  src: stripeSvgUrl, alt: "Stripe" },   // unless it needs an alt
+        { kind: "node", node: <span>NASA</span> }             // or is set in type
     ]}
     speed={40}
 />
 ```
+
+A bare URL carries no `alt`. One guessed from the file name would be a fabricated one, and a
+wrong alt is worse than an empty one - so pass the object form for a mark that needs a name,
+and `label` names the row itself.
 
 ## Customize
 
@@ -63,7 +73,7 @@ for a short wall on a wide screen.
 
 | | Default | |
 | --- | --- | --- |
-| `logos` | | `{ kind: "img", src, alt?, height? }` or `{ kind: "node", node, key? }` |
+| `logos` | | A URL string, `{ kind: "img", src, alt?, height? }`, or `{ kind: "node", node, key? }` |
 | `speed` | `40` | Pixels per second |
 | `logoHeight` | `28` | The shared height every image is scaled to |
 | `gap` | `56` | Space between logos, in px |

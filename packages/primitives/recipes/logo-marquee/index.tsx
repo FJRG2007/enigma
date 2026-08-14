@@ -14,8 +14,21 @@ import { useMarquee, type MarqueeHover } from "@enigmax/primitives/react";
  */
 
 export type LogoItem =
+    /**
+     * A URL, which is the whole entry for most logos:
+     * `logos={["/logos/claude.svg", "/logos/openai.svg"]}`.
+     *
+     * It carries no `alt` - an alt guessed from a file name is a fabricated one, and a
+     * wrong alt is worse than an empty one. Use the object form where a mark needs a name.
+     */
+    | string
     | { kind: "img"; src: string; alt?: string; /** Override the shared height for one that reads small. */ height?: number; }
     | { kind: "node"; node: ReactNode; key?: string; };
+
+/** The object form of whatever was passed. A bare URL is an image with no alt. */
+function normalize(item: LogoItem): Exclude<LogoItem, string> {
+    return typeof item === "string" ? { kind: "img", src: item } : item;
+}
 
 export interface LogoMarqueeProps {
     logos: LogoItem[];
@@ -61,7 +74,9 @@ export function LogoMarquee({
 }: LogoMarqueeProps) {
     const { laneRef, trackRef, copies, dragging } = useMarquee({ speed, hover, reverse });
 
-    const render = (item: LogoItem, index: number): ReactNode => (
+    const render = (raw: LogoItem, index: number): ReactNode => {
+        const item = normalize(raw);
+        return (
         <span className="logo-marquee__item" key={item.kind === "node" ? item.key ?? index : index}>
             {item.kind === "img"
                 ? <img
@@ -77,7 +92,8 @@ export function LogoMarquee({
                 />
                 : item.node}
         </span>
-    );
+        );
+    };
 
     return (
         <div
