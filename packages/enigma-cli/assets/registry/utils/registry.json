@@ -160,6 +160,76 @@
       ],
       "styles": false,
       "docs": "docs/notes/primitives.md#network"
+    },
+    {
+      "name": "relative-time",
+      "title": "Relative timestamps",
+      "description": "\"3 hours ago\", kept current, localised by the page's own language. A timestamp with no zone is read as UTC instead of as the server's local time, and the absolute date is rendered as the element's child so a server render and a reader without JavaScript still see a real date.",
+      "targets": [
+        "vanilla",
+        "astro",
+        "react"
+      ],
+      "entry": {
+        "vanilla": "@enigmax/utils",
+        "astro": "@enigmax/utils",
+        "react": "@enigmax/utils/react"
+      },
+      "exports": {
+        "vanilla": [
+          "relativeTimeView",
+          "relativeTimeAttributes",
+          "normalizeDate"
+        ],
+        "astro": [
+          "relativeTimeView",
+          "relativeTimeAttributes",
+          "normalizeDate"
+        ],
+        "react": [
+          "RelativeTime"
+        ]
+      },
+      "files": [
+        {
+          "path": "src/core/relative-time.ts",
+          "dest": "relative-time/relative-time.ts",
+          "targets": [
+            "vanilla",
+            "astro",
+            "react"
+          ]
+        },
+        {
+          "path": "src/react/relative-time.ts",
+          "dest": "relative-time/index.ts",
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/core/relative-time": "./relative-time"
+          }
+        },
+        {
+          "path": "recipes/relative-time/styles.css",
+          "dest": "relative-time/styles.css",
+          "targets": [
+            "vanilla",
+            "astro",
+            "react"
+          ]
+        }
+      ],
+      "styles": false,
+      "themeHooks": [
+        "relative-time",
+        "[data-relative-time-capitalize=true]",
+        "[data-relative-time-capitalize-first-letter=true]"
+      ],
+      "docs": "docs/notes/primitives.md#relative-time",
+      "dependencies": {
+        "@github/relative-time-element": "^4.4.0"
+      }
     }
   ]
 }

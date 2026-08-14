@@ -282,6 +282,45 @@ Decisions worth keeping:
 - **An anchor cannot be `disabled`**, only `aria-disabled`, which is advisory - so the
   click handler refuses the press itself rather than trusting the attribute.
 
+## relative-time
+
+`<RelativeTime date={...} />` from utils. The rendering is
+`@github/relative-time-element`, a registry `dependency` so `enigma add relative-time`
+installs it the way `search` installs Fuse - it already owns `Intl.RelativeTimeFormat` per
+locale and the re-render schedule that slows down as a date ages, and none of that is worth
+re-implementing.
+
+What the package adds is the part every wrapper writes badly:
+
+- **A timestamp with no zone is UTC.** `2026-08-13 22:41:00` out of a date column has no
+  offset, `new Date()` reads it as LOCAL, and every reader east or west of the server sees
+  a time hours out - silently, because a wrong time is still a valid one. A date with NO
+  clock is left alone: `YYYY-MM-DD` is already UTC per spec, and `YYYY-MM-DDZ` is outside
+  the spec's grammar, so appending a zone drops a correct value into each engine's legacy
+  parser. (V8 accepts it. That is not a guarantee.)
+- **The absolute date is the element's child.** A custom element cannot upgrade during a
+  server render and never upgrades with scripting off, so a bare `<relative-time>` is an
+  empty box until hydration. The formatted date is rendered inside it and the element
+  replaces it on upgrade.
+- **The element is imported on the client only**, and a failed import is swallowed. Its
+  class extends `HTMLElement` at module scope, so importing it where there is no DOM throws
+  before any component runs; and if it never arrives, the label above is already correct.
+- **`numericBeyondThreshold` reads the threshold.** The version this came from approximated
+  it with a hardcoded 3-to-90-day window, which disagrees with the `threshold` prop the
+  moment anyone sets one. The ISO 8601 duration is parsed and compared instead.
+- **The locale is not hardcoded.** Undefined lets the element read the closest `lang`,
+  which is what a translated page wants; `locale` overrides it.
+- `now` is a parameter throughout, so a test can pin the instant and a server render can
+  hand its hydration the same one. Where it cannot, `suppressHydrationWarning` covers the
+  one difference React has an escape hatch for rather than a bug.
+
+`capitalize` / `capitalizeFirst` are data attributes, which means they need
+`@enigmax/utils/relative-time.css` - the element writes its own text content, so nothing
+JavaScript-side can transform it.
+
+Agents should reach for this instead of formatting a date difference by hand, which is the
+habit the GitHub skills encourage.
+
 ## enigma add
 
 `packages/enigma-cli/src/components.ts`, wired in `cli.ts` as `add` (alias

@@ -296,8 +296,12 @@ export function usageSnippet(item: ResolvedItem, target: ComponentTarget, copied
     const names = item.exports[target] ?? item.exports.vanilla ?? [];
     if (!copiedInto) return `import { ${names.join(", ")} } from "${item.entry[target] ?? item.pkg}";`;
 
-    // The adapter is the last file that matches the target; the core comes first.
-    const files = item.files.filter((file) => file.targets.includes(target));
-    const entry = files[files.length - 1]?.dest.replace(/\.[cm]?tsx?$/, "") ?? item.name;
+    // The adapter is the last CODE file that matches the target; the core comes first, and
+    // a stylesheet at the end of the list is not something anyone imports symbols from.
+    const files = item.files.filter((file) => file.targets.includes(target) && /\.[cm]?[jt]sx?$/.test(file.dest));
+    const entry = (files[files.length - 1]?.dest ?? item.name)
+        .replace(/\.[cm]?[jt]sx?$/, "")
+        // A folder's index is addressed by the folder.
+        .replace(/\/index$/, "");
     return `import { ${names.join(", ")} } from "./${entry}";`;
 }

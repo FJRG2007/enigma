@@ -1,3 +1,5 @@
+"use client";
+
 export { useMarquee, type UseMarqueeResult } from "@/react/use-marquee";
 export { type MarqueeOptions, type MarqueeInstance, type MarqueeHover } from "@/core/marquee";
 export { useInput, type UseInputResult } from "@/react/use-input";
