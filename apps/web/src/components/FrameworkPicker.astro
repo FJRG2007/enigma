@@ -2,13 +2,11 @@
 /**
  * The stack a reader works in, picked ONCE and remembered.
  *
- * It lives in the navbar rather than on each code block for the reason a reader would give:
- * their stack does not change between the Usage section and the Installation section, so
- * being asked again at every block is a question with a known answer. Every
- * `<Frameworks>` on the page follows this, and the choice survives a reload and every
- * navigation.
- *
- * Only rendered in the components space, where it means something.
+ * It sits in the on-this-page column beside the source links rather than on each code
+ * block, for the reason a reader would give: their stack does not change between the Usage
+ * section and the Installation section, so being asked again at every block is a question
+ * with a known answer. Every `<Frameworks>` on the page follows this, and the choice
+ * survives a reload and every navigation.
  */
 const FRAMEWORKS = [
     { id: "react", label: "React" },
@@ -18,63 +16,53 @@ const FRAMEWORKS = [
 ];
 ---
 <div class="fw" data-framework-picker>
-    <span class="fw-l">Stack</span>
-    <div class="fw-o" role="group" aria-label="Code examples for">
-        {FRAMEWORKS.map((framework, index) => (
-            <button
-                type="button"
-                data-framework={framework.id}
-                class={index === 0 ? "active" : ""}
-                aria-pressed={index === 0 ? "true" : "false"}
-            >{framework.label}</button>
-        ))}
+    <label class="fw-l" for="fw-select">Code examples in</label>
+    <div class="fw-w">
+        <select id="fw-select" class="fw-s" data-framework-select>
+            {FRAMEWORKS.map((framework) => <option value={framework.id}>{framework.label}</option>)}
+        </select>
+        <svg class="fw-c" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg>
     </div>
 </div>
 
 <style>
-    .fw { display: flex; align-items: center; gap: 9px; }
-    .fw-l { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--muted); }
-    .fw-o { display: flex; gap: 2px; padding: 3px; background: var(--surface); border: 1px solid var(--border); border-radius: 9px; }
-    .fw-o button {
-        font-family: var(--mono); font-size: 11.5px; font-weight: 600; color: var(--muted);
-        background: transparent; border: 1px solid transparent; border-radius: 6px;
-        padding: 4px 10px; cursor: pointer; white-space: nowrap;
+    .fw { display: grid; gap: 7px; padding-bottom: 18px; border-bottom: 1px solid var(--border-soft); }
+    .fw-l { font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); }
+    .fw-w { position: relative; display: block; }
+    .fw-s {
+        width: 100%;
+        font-family: var(--mono); font-size: 12.5px; color: var(--text);
+        background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+        padding: 7px 30px 7px 10px; cursor: pointer;
+        /* The native arrow sits at a different offset per platform and does not take a
+           colour, so it goes and the chevron below takes its place. */
+        appearance: none;
     }
-    .fw-o button:hover { color: var(--text); }
-    .fw-o button.active { color: var(--accent); background: var(--surface2); border-color: var(--border); }
-
-    /* Below the point where the navbar gets crowded it keeps the control and drops the
-       caption, rather than dropping the control - it is the only place to change stack. */
-    @media (max-width: 900px) { .fw-l { display: none; } }
-    @media (max-width: 560px) { .fw-o button { padding: 4px 7px; font-size: 11px; } }
+    .fw-s:hover { border-color: var(--muted); }
+    /* An option list is drawn by the OS: on a dark page the default is white-on-white in
+       some browsers unless both are stated. */
+    .fw-s option { background: var(--surface); color: var(--text); }
+    .fw-c { position: absolute; top: 50%; right: 10px; width: 13px; height: 13px; margin-top: -6.5px; color: var(--muted); pointer-events: none; }
 </style>
 
 <script>
     const KEY = "enigma:tabs:framework";
-
-    function paint(wanted: string): void {
-        for (const picker of document.querySelectorAll<HTMLElement>("[data-framework-picker]")) {
-            for (const button of picker.querySelectorAll<HTMLButtonElement>("[data-framework]")) {
-                const on = button.dataset.framework === wanted;
-                button.classList.toggle("active", on);
-                button.setAttribute("aria-pressed", String(on));
-            }
-        }
-    }
+    const selects = [...document.querySelectorAll<HTMLSelectElement>("[data-framework-select]")];
 
     const stored = localStorage.getItem(KEY);
-    if (stored) paint(stored);
+    // A stored value the list no longer has would leave the control blank while the page
+    // shows something else.
+    if (stored && selects[0]?.querySelector(`option[value="${stored}"]`)) {
+        for (const select of selects) select.value = stored;
+    }
 
-    for (const picker of document.querySelectorAll<HTMLElement>("[data-framework-picker]")) {
-        for (const button of picker.querySelectorAll<HTMLButtonElement>("[data-framework]")) {
-            button.addEventListener("click", () => {
-                const wanted = button.dataset.framework ?? "react";
-                localStorage.setItem(KEY, wanted);
-                paint(wanted);
-                // Tabs owns the panels; it listens for this rather than exporting its
-                // internals, so neither file has to know how the other is built.
-                document.dispatchEvent(new CustomEvent("enigma:tabs", { detail: { key: "framework", value: wanted } }));
-            });
-        }
+    for (const select of selects) {
+        select.addEventListener("change", () => {
+            localStorage.setItem(KEY, select.value);
+            for (const other of selects) other.value = select.value;
+            // Tabs owns the panels; it listens for this rather than exporting its internals,
+            // so neither file has to know how the other is built.
+            document.dispatchEvent(new CustomEvent("enigma:tabs", { detail: { key: "framework", value: select.value } }));
+        });
     }
 </script>

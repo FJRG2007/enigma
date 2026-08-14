@@ -75,7 +75,6 @@ const componentSource = componentName
                 <a href={docHref("components/overview")} class={space === "components" ? "active" : ""}>Components</a>
                 <a href={docHref("packs")} class={space === "packs" ? "active" : ""}>Packs</a>
             </div>
-            {space === "components" && <FrameworkPicker />}
             <a class="home" href={url("")}>&larr; Home</a>
         </div>
     </nav>
@@ -132,6 +131,7 @@ const componentSource = componentName
                         </div>
                     </>
                 )}
+                {space === "components" && <FrameworkPicker />}
                 <div class="toc-src">
                     {componentSource && (
                         <a href={componentSource} target="_blank" rel="noopener noreferrer">
@@ -200,6 +200,8 @@ const componentSource = componentName
     .toc-a.is-sub { padding-left: 24px; font-size: 12px; }
     .toc-a.is-active { color: var(--accent); border-left-color: var(--accent); }
     .toc-src { display: grid; gap: 8px; padding-top: 18px; }
+    /* The picker already draws the rule above these, so a second one would double it. */
+    .fw + .toc-src { padding-top: 0; }
     .toc-src a { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); text-decoration: none; }
     .toc-src a:hover { color: var(--text); }
     .toc-src svg { width: 13px; height: 13px; flex: 0 0 auto; }
