@@ -295,6 +295,19 @@ binding them inside the primitive would make it useless to anyone with their own
 
 ## button
 
+**React gets `<Button>`, same as input.** `<Button onPress={save}>Save</Button>` is the whole
+call site. The hook shipped first and it was the wrong thing to lead with: rendering an
+ordinary button through it means six lines of hook, spread and state juggling at every call
+site, which is exactly how they drift apart. `useButton` stays for markup that is not a
+button - a card, a table row - and the component is what the docs open with. The element is
+still reported rather than chosen; `as` is how a router's Link gets in without the package
+importing one. `type="button"` is the default, so an action button never posts the form it
+sits in.
+
+The lesson generalises and had to be applied twice before it stuck: a headless package
+shipping only hooks pushes the same boilerplate into every consumer. Ship the component, and
+keep the hook for the cases the component cannot cover.
+
 Disabled, loading and a cooldown are three reasons for ONE state, so they collapse into
 `available` rather than three flags every call site has to combine correctly. The element
 is REPORTED (`"a"` when there is an href, else `"button"`), never chosen: a

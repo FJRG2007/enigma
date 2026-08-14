@@ -7,6 +7,7 @@ export { useSearch, type UseSearchResult } from "@/react/use-search";
 export { type InputOptions, type InputAction, type InputIcon } from "@/core/input";
 export { type SearchOptions, type SearchMatch, type FuseConstructor } from "@/core/search";
 export { useButton, type UseButtonResult } from "@/react/use-button";
+export { Button, type ButtonProps } from "@/react/button";
 export { type ButtonOptions, type ButtonState } from "@/core/button";
 export {
     Input,

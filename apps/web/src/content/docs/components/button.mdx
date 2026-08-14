@@ -8,31 +8,35 @@ space: components
 import Installation from "../../../components/Installation.astro";
 import Frameworks from "../../../components/Frameworks.astro";
 
-Three reasons a button cannot be pressed - it is disabled, it is busy, it is cooling down -
-are one thing to whoever renders it. They collapse into `available`, so a call site reads
-one property instead of combining three flags correctly every time.
+```tsx
+<Button onPress={save}>Save</Button>
+```
 
-The element is **reported**, never chosen. An `href` makes it `"a"`, and a
-framework-agnostic package cannot import `next/link` - so the primitive says which tag it
-should be and your code picks `Link`, `<a>` or `<button>` from that.
+That is the whole call site. Disabled while the work runs, `aria-busy` and `data-loading`
+while it does, and a cooldown afterwards if you ask for one.
+
+Three reasons a button cannot be pressed - it is disabled, it is busy, it is cooling down -
+are one thing to whoever renders it. They collapse into `available`, so nothing has to
+combine three flags correctly at every call site.
+
+The element is **reported**, never chosen. An `href` makes it an anchor, and a
+framework-agnostic package cannot import `next/link` - so pass your router's Link as `as`
+and keep everything else.
 
 ## Usage
 
 <Frameworks>
     <div slot="react">
 ```tsx
-import { useButton } from "@enigmax/primitives/react";
+import { Button } from "@enigmax/primitives/react";
 
-export function Save({ onSave }: { onSave: () => Promise<void>; }) {
-    const { state, props } = useButton({ onPress: onSave, cooldown: 3000, shortcut: "s" });
+// The short form.
+<Button onPress={save}>Save</Button>
 
-    return (
-        <button {...props}>
-            {state.loading ? "Saving..." : "Save"}
-            {state.cooldown > 0 && <span> ({Math.ceil(state.cooldown / 1000)}s)</span>}
-        </button>
-    );
-}
+// A label that follows the state, for the cases that need one.
+<Button onPress={resend} cooldown={30_000} shortcut="r" pending="Sending...">
+    {({ cooldown }) => (cooldown > 0 ? `Wait ${Math.ceil(cooldown / 1000)}s` : "Resend code")}
+</Button>
 ```
     </div>
     <div slot="next">
@@ -40,18 +44,15 @@ export function Save({ onSave }: { onSave: () => Promise<void>; }) {
 "use client";
 
 import Link from "next/link";
-import { useButton } from "@enigmax/primitives/react";
+import { Button } from "@enigmax/primitives/react";
 
-/**
- * `state.element` is why this file can decide between Link and button while the package
- * stays free of a Next.js import.
- */
-export function Action({ href, onPress }: { href?: string; onPress?: () => Promise<void>; }) {
-    const { state, props } = useButton({ href, onPress, cooldown: { ms: 60_000, key: "resend", storage: "local" } });
+// `as` is how the router's Link gets in without the package importing next/link.
+<Button as={Link} href="/settings">Settings</Button>
 
-    if (state.element === "a") return <Link href={href!} {...props}>Open</Link>;
-    return <button {...props}>{state.loading ? "Working..." : "Go"}</button>;
-}
+// A cooldown that survives a reload, so refreshing is not a free retry.
+<Button onPress={resend} cooldown={{ ms: 60_000, key: "resend", storage: "local" }}>
+    Resend
+</Button>
 ```
     </div>
     <div slot="vanilla">
@@ -117,5 +118,30 @@ attribute.
 | `cooldown` | Milliseconds left, `0` when there is none |
 | `shortcut` | The key, for rendering a `<kbd>` |
 
-`useButton` also returns `props`, ready to spread: it carries `aria-disabled`, `aria-busy`,
-`data-loading` and `data-cooldown`, so a tooltip and a spinner have something to attach to.
+## When the markup is not a button
+
+`useButton` is the same behaviour without the element - for a card, a table row, anything
+whose markup is nothing like a button. It returns `props` ready to spread, carrying
+`aria-disabled`, `aria-busy`, `data-loading` and `data-cooldown`.
+
+```tsx
+const { element: Tag, props, loading, cooldown } = useButton({ onPress: save, cooldown: 3000 });
+
+return <Tag {...props}>{loading ? "Saving..." : "Save"}</Tag>;
+```
+
+Reaching for it to render an ordinary button means writing those six lines at every call
+site, which is how they drift apart. That is what `<Button>` is for.
+
+## Props
+
+| | |
+| --- | --- |
+| `onPress` | Sync or async. An async one drives `loading` for its duration |
+| `href` | Renders an anchor. A link cannot be `disabled`, so the press is refused in the handler |
+| `as` | Your router's Link, or any element |
+| `cooldown` | Milliseconds, or `{ ms, key, storage }` to survive a reload |
+| `shortcut` | One key. Refused while typing and with any modifier held |
+| `pending` | Replaces the label while async work runs |
+| `children` | A node, or a function of the state |
+| `type` | `"button"` by default, so it never submits the form it lives in |

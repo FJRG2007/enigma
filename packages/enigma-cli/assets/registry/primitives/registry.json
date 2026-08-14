@@ -280,8 +280,8 @@
     },
     {
       "name": "button",
-      "title": "Button behaviour",
-      "description": "Disabled, loading, a keyboard shortcut and a cooldown that can outlive a reload, collapsed into one `available` the renderer reads. An href reports an anchor rather than a button, so the framework's own Link stays your choice.",
+      "title": "Button",
+      "description": "A button you pass props to. Disabled, loading, a keyboard shortcut and a cooldown that can outlive a reload collapse into one `available`; an href reports an anchor, so the framework's own Link stays your choice.",
       "targets": [
         "vanilla",
         "astro",
@@ -300,13 +300,14 @@
           "createButton"
         ],
         "react": [
+          "Button",
           "useButton"
         ]
       },
       "files": [
         {
           "path": "src/core/button.ts",
-          "dest": "button.ts",
+          "dest": "button/button.ts",
           "targets": [
             "vanilla",
             "astro",
@@ -315,12 +316,24 @@
         },
         {
           "path": "src/react/use-button.ts",
-          "dest": "use-button.ts",
+          "dest": "button/use-button.ts",
           "targets": [
             "react"
           ],
           "rewrite": {
             "@/core/button": "./button"
+          }
+        },
+        {
+          "path": "src/react/button.tsx",
+          "dest": "button/index.tsx",
+          "main": true,
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/core/button": "./button",
+            "@/react/use-button": "./use-button"
           }
         }
       ],

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { createRoot } from "react-dom/client";
-import { Input, type BreachState, type PasswordStrengthReport } from "@/react/index";
+import { Button, Input, type BreachState, type PasswordStrengthReport } from "@/react/index";
 
 /**
  * The React fixture: a registration form of the kind `<Input>` is for, wired the way a real
@@ -10,6 +10,8 @@ import { Input, type BreachState, type PasswordStrengthReport } from "@/react/in
 
 interface FixtureWindow extends Window {
     __ready: boolean;
+    __presses: number;
+    __release: () => void;
     __submits: number;
     __value: string;
     __strength: PasswordStrengthReport | null;
@@ -23,6 +25,7 @@ fixture.__value = "";
 fixture.__strength = null;
 fixture.__breach = null;
 fixture.__breachCalls = [];
+fixture.__presses = 0;
 
 /** Answers instantly and locally, so the test measures the component and not a network. */
 const BREACHED = new Set(["password", "hunter2"]);
@@ -66,6 +69,21 @@ function Form(): React.ReactNode {
                 onBreachChange={(state) => { fixture.__breach = state; }}
             />
             <button data-testid="submit" type="submit">Create account</button>
+
+            {/* The short form: no hook, no spreading, no six lines per call site. */}
+            <Button data-testid="save" onPress={() => { fixture.__presses++; }}>Save</Button>
+
+            {/* Async work, a cooldown after it, and a label that follows the state. */}
+            <Button
+                data-testid="send"
+                cooldown={3000}
+                pending="Sending..."
+                onPress={() => new Promise<void>((resolve) => { fixture.__release = resolve; })}
+            >
+                {({ cooldown }) => (cooldown > 0 ? `Wait ${Math.ceil(cooldown / 1000)}s` : "Send")}
+            </Button>
+
+            <Button data-testid="link" href="/settings">Settings</Button>
         </form>
     );
 }
