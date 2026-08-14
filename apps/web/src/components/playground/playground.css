@@ -71,3 +71,21 @@
 
 /* Gives the field a width to live in; the recipe's stylesheet does the rest. */
 .pg-field { width: min(340px, 100%); }
+
+/* Search preview: a field and its results, sized so the list does not resize the panel. */
+.pg-search { display: grid; gap: 10px; width: min(420px, 100%); }
+.pg-search-in { width: 100%; }
+.pg-results { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; min-height: 116px; align-content: start; }
+.pg-results li { display: flex; align-items: center; gap: 10px; font-size: 12.5px; color: var(--text); padding: 3px 2px; }
+.pg-kind { font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
+.pg-score { margin-left: auto; font-family: var(--mono); font-size: 10.5px; color: var(--accent); }
+.pg-none { color: var(--muted); }
+
+/* Marquee preview: full width of the pane, with pills that read at a glance. */
+.pg-marquee { width: 100%; }
+.pg-pill {
+    display: inline-flex; align-items: center;
+    font-family: var(--mono); font-size: 12px; color: var(--muted);
+    background: var(--surface2); border: 1px solid var(--border); border-radius: 999px;
+    padding: 6px 13px; white-space: nowrap; user-select: none;
+}

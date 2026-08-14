@@ -6,6 +6,7 @@ order: 31.5
 space: components
 ---
 import Installation from "../../../components/Installation.astro";
+import { ToastPlayground } from "../../../components/playground/ToastPlayground";
 import StyleTabs from "../../../components/StyleTabs.astro";
 import Html from "../../../components/Html.astro";
 import { highlightedRecipe } from "../../../lib/recipe";
@@ -26,6 +27,13 @@ import "@enigmax/primitives/toast.css";
 const { notify } = useNotifications();
 notify({ title: "Saved", body: "Two files changed", tone: "success" });
 ```
+
+## Customize
+
+Raise one. Hover it and the timer stops; drag it towards the edge it is pinned to and it
+goes. The `<Toaster>` below is the real one, mounted on this page.
+
+<ToastPlayground client:load />
 
 ## Installation
 

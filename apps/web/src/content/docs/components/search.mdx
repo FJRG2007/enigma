@@ -6,6 +6,7 @@ order: 21
 space: components
 ---
 import Installation from "../../../components/Installation.astro";
+import { SearchPlayground } from "../../../components/playground/SearchPlayground";
 import Preview from "../../../components/Preview.astro";
 import SearchDemo from "../../../components/demos/SearchDemo.astro";
 import Tabs from "../../../components/Tabs.astro";
@@ -36,6 +37,13 @@ createSearch({ items: docs, keys: ["title"], fuseOptions: { threshold: 0.4, igno
 ```
     </div>
 </Preview>
+
+## Customize
+
+The typo is already in the box: with Fuse on it still finds Convention guardrails, and the
+score column shows how well. Turn Fuse off and watch it stop.
+
+<SearchPlayground client:load />
 
 ## Installation
 

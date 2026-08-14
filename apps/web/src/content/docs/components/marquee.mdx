@@ -6,6 +6,7 @@ order: 10
 space: components
 ---
 import Installation from "../../../components/Installation.astro";
+import { MarqueePlayground } from "../../../components/playground/MarqueePlayground";
 import Preview from "../../../components/Preview.astro";
 import MarqueeDemo from "../../../components/demos/MarqueeDemo.astro";
 import LogoWallDemo from "../../../components/demos/LogoWallDemo.astro";
@@ -142,6 +143,13 @@ The element is now a shape, not an image, so it needs `role="img"` and an `aria-
 </Preview>
 
 This lives in **your** CSS, not in `@enigmax/primitives` - the primitive ships no styles, and a colour is a look. It is documented here because every logo wall needs it. It is also beta and deliberately opt-in: a brand's own colours are the correct rendering, and flattening them is a design decision, not a default. Check contrast when you do it - a mark tinted to your background disappears.
+
+## Customize
+
+Grab it and throw it. Speed is in pixels per second, so adding items lengthens the lap
+instead of speeding the row up - which is the whole contract.
+
+<MarqueePlayground client:load />
 
 ## Installation
 
