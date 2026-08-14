@@ -88,6 +88,11 @@
         }
         @keyframes caret { 0%, 50% { opacity: 1; } 50.01%, 100% { opacity: 0; } }
         .sub { font-family: var(--mono); color: var(--muted); font-size: 10.5px; text-transform: uppercase; letter-spacing: 1.6px; }
+        /* Explanatory prose. `.sub` is a label style - uppercase, mono, wide tracking - and
+           a paragraph set in it is unreadable and looks generated. Sentences get a sentence
+           face, a real line-height, and a measure that stops before the eye loses the line. */
+        .lede { color: var(--muted); font-size: 13px; line-height: 1.55; max-width: 78ch; }
+        .lede b { color: var(--text); font-weight: 600; }
         /* Sections as a vertical rail: the sidebar is already the surface, so the active
            entry is a filled pill and the rest are plain rows. */
         .tabs { display: flex; flex-direction: column; gap: 2px; }
@@ -115,7 +120,12 @@
         .live { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; font-family: var(--mono); padding: 5px 12px; background: rgba(0,0,0,0.25); border: 1px solid var(--border-soft); border-radius: 999px; }
         .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--good); box-shadow: 0 0 8px var(--good); }
         .dot.stale { background: var(--muted); box-shadow: none; }
-        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(166px, 1fr)); gap: 14px; margin-bottom: 22px; }
+        /* Four columns, not auto-fill. auto-fill packed as many 166px cards per row as fit,
+           which left whatever did not divide evenly as dead space on the right - and letting
+           them grow into it instead produced 580px cards containing the digit 0. A fixed
+           four with the hero spanning two divides exactly, and the cards get a readable size
+           rather than the smallest one that fits. */
+        .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 22px; }
         .card {
             position: relative; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
             padding: 18px; box-shadow: var(--shadow-1); overflow: hidden;
@@ -183,7 +193,10 @@
         .bar-fill { height: 100%; border-radius: 999px; transition: width .4s cubic-bezier(.4,0,.2,1); }
         .bar-row .num { width: 90px; text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
         .bar-row .money { width: 78px; text-align: right; color: var(--good); font-family: var(--mono); font-variant-numeric: tabular-nums; }
-        .empty { color: var(--muted); font-size: 14px; text-align: center; padding: 40px 0; }
+        /* Spans every column: an empty state dropped into a grid container was sitting in
+           the first cell, so "Status unavailable." read as left-aligned in a full-width
+           panel. Ignored outside a grid, so one rule covers both. */
+        .empty { grid-column: 1 / -1; color: var(--muted); font-size: 14px; text-align: center; padding: 32px 0; }
         .tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
         .tbl th { position: sticky; top: 0; z-index: 1; text-align: left; background: var(--surface); color: var(--muted); font-family: var(--mono); font-weight: 600; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.6px; padding: 8px 10px; border-bottom: 1px solid var(--border); }
         .tbl td { padding: 8px 10px; border-bottom: 1px solid var(--border-soft); font-variant-numeric: tabular-nums; }
@@ -570,7 +583,7 @@
         }
         @media (max-width: 720px) {
             .content { padding: 16px; }
-            .grid { grid-template-columns: repeat(2, 1fr); }
+            .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
             header { gap: 12px; }
             .nav { margin-left: auto; flex-wrap: wrap; gap: 10px; }
             /* A settings row is label + controls side by side, and the control cluster is
@@ -895,7 +908,7 @@
                     <button id="updateBtn" type="button" class="toggle on">Check &amp; update</button>
                 </div>
             </div>
-            <div class="sub" style="margin-bottom:14px">Only Context Compression and (opt-in) real tool-usage are measured for savings below. The rest is shown as state: enigma can't measure their effect because they run inside the agent, not through enigma - so it reports their configuration honestly instead of inventing a number.</div>
+            <div class="lede" style="margin-bottom:14px">Only Context Compression and (opt-in) real tool-usage are measured for savings below. The rest is shown as state: enigma can't measure their effect because they run inside the agent, not through enigma - so it reports their configuration honestly instead of inventing a number.</div>
             <div id="systems" class="sys-grid"><div class="empty" style="padding:16px 0">Loading...</div></div>
             <div id="updateNote" class="set-note"></div>
             <div id="fixPathResult" class="fixres"></div>
@@ -989,7 +1002,7 @@
         </div>
         <div class="panel" id="usagePanel" style="display:none">
             <h2 style="margin:0 0 4px">Usage limits <small>same windows Claude Code shows</small></h2>
-            <div class="sub" style="margin-bottom:12px">Cards marked <span class="tag meas">live</span> show the <b>real % and reset</b> Anthropic reports (the same as Claude's own UI). Turn on <code>enigma config usage-api on</code> to fetch them with your local Claude Code login - no proxy or plan limit needed. (The proxy also captures them from <code>enigma claude</code> traffic.) Until live data lands, the card falls back to tokens used, or a % against a plan limit you set (on the card, or <code>enigma config plan-weekly-limit &lt;tokens&gt;</code>). Per-model live data appears only when Anthropic sends it.</div>
+            <div class="lede" style="margin-bottom:12px">Cards marked <span class="tag meas">live</span> show the <b>real % and reset</b> Anthropic reports (the same as Claude's own UI). Turn on <code>enigma config usage-api on</code> to fetch them with your local Claude Code login - no proxy or plan limit needed. (The proxy also captures them from <code>enigma claude</code> traffic.) Until live data lands, the card falls back to tokens used, or a % against a plan limit you set (on the card, or <code>enigma config plan-weekly-limit &lt;tokens&gt;</code>). Per-model live data appears only when Anthropic sends it.</div>
             <div id="uWindows"></div>
             <div class="grid" style="margin-bottom:16px">
                 <div class="card"><div class="label">Est. Cost</div><div id="uCost" class="value accent">-</div><div class="foot">All sessions, per-model pricing</div></div>
@@ -1009,7 +1022,7 @@
                     <div>Projected <b id="uBlockProj">-</b></div>
                 </div>
             </div>
-            <div id="uProviders" class="sub" style="margin:4px 0 0"></div>
+            <div id="uProviders" class="lede" style="margin:4px 0 0"></div>
             <div id="uByAccountWrap">
                 <h2 style="margin:18px 0 10px">By Account <small>per Claude login</small></h2>
                 <div id="uByAccount"></div>
@@ -1023,11 +1036,11 @@
         </div>
         <div class="panel" id="usageHint" style="display:none">
             <h2 style="margin-bottom:8px">Real tool usage <small>opt-in</small></h2>
-            <div class="sub">Turn on <b>Real tool-usage stats</b> in <a href="#/settings">Settings</a> to read your Claude Code sessions for token consumption and cost. enigma reads only your local session transcripts; nothing is sent anywhere.</div>
+            <div class="lede">Turn on <b>Real tool-usage stats</b> in <a href="#/settings">Settings</a> to read your Claude Code sessions for token consumption and cost. enigma reads only your local session transcripts; nothing is sent anywhere.</div>
         </div>
         <div class="panel" id="usageUnavail" style="display:none">
             <h2 id="unavailTitle" style="margin-bottom:8px">No local usage data</h2>
-            <div class="sub" id="unavailBody"></div>
+            <div class="lede" id="unavailBody"></div>
         </div>
     </section>
 
@@ -1140,7 +1153,7 @@
 
         <div class="panel" id="gateSetPanel">
             <div class="set-cat-h">Pipeline settings</div>
-            <div class="sub" style="margin-bottom:10px">What the daemon runs and how hard it tries. Model and auto-fix limits are what a run's duration and token cost actually hang on.</div>
+            <div class="lede" style="margin-bottom:10px">What the daemon runs and how hard it tries. Model and auto-fix limits are what a run's duration and token cost actually hang on.</div>
             <div class="set-grid">
                 <div class="set-row">
                     <div class="set-meta"><div class="set-name">Agent</div><div class="set-hint" id="gateAgentHint">which coding agent the pipeline drives</div></div>
@@ -1164,7 +1177,7 @@
                 </div>
             </div>
             <div class="set-cat-h" style="margin-top:18px">Findings</div>
-            <div class="sub" style="margin-bottom:10px">Who decides what happens to something the review turns up.</div>
+            <div class="lede" style="margin-bottom:10px">Who decides what happens to something the review turns up.</div>
             <div class="set-grid">
                 <div class="set-row span">
                     <div class="set-meta"><div class="set-name">When the gate finds something</div><div class="set-hint" id="gateFixHint"></div></div>
@@ -1172,13 +1185,13 @@
                 </div>
             </div>
             <div class="set-cat-h" style="margin-top:18px">Auto-fix attempts</div>
-            <div class="sub" style="margin-bottom:10px">Follow-up rounds a step gets before it pauses for you. Every round is another full agent pass over the diff, so this is the setting that multiplies a run's cost. 0 pauses immediately.</div>
+            <div class="lede" style="margin-bottom:10px">Follow-up rounds a step gets before it pauses for you. Every round is another full agent pass over the diff, so this is the setting that multiplies a run's cost. 0 pauses immediately.</div>
             <div class="set-grid" id="gateAutoFix"></div>
         </div>
 
         <div class="panel" id="gateRepoPanel" style="display:none">
             <div class="set-cat-h">Repository configuration</div>
-            <div class="sub" style="margin-bottom:10px">Committed with the repository and merged over the global config. Only the fields the gate trusts from a branch take effect.</div>
+            <div class="lede" style="margin-bottom:10px">Committed with the repository and merged over the global config. Only the fields the gate trusts from a branch take effect.</div>
             <textarea id="gateRepoCfg" class="linput gate-yaml" spellcheck="false" autocapitalize="none" autocorrect="off" aria-label="Repository gate configuration"></textarea>
             <div class="ladd" style="gap:8px;align-items:center">
                 <button id="gateRepoCfgSave" type="button" class="toggle on" disabled title="No changes to save">Save</button>
