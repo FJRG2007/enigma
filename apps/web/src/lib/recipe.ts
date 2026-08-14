@@ -1,6 +1,7 @@
-import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { createHighlighter } from "shiki";
 import { createRequire } from "node:module";
+import { existsSync, readFileSync } from "node:fs";
 
 const require = createRequire(import.meta.url);
 
@@ -15,6 +16,15 @@ const THEME = "vesper";
  * goes stale the first time the recipe is edited and nothing reports it.
  */
 export function recipe(pkg: string, file: string): string {
+    // The checkout comes first. This site lives INSIDE the monorepo, so building it from a
+    // clone should document what that clone contains - otherwise every component page is
+    // pinned to whatever version happened to be published when the site was last installed,
+    // and a page for something added since cannot be written at all.
+    // Off the working directory, not import.meta.url: this module is bundled into
+    // dist/.prerender at build time, so a URL relative to itself points at the output.
+    const local = resolve(process.cwd(), "..", "..", "packages", pkg.replace("@enigmax/", ""), "recipes", file);
+    if (existsSync(local)) return readFileSync(local, "utf8").trimEnd();
+
     // Resolved through registry.json rather than package.json: the packages declare an
     // `exports` map, and package.json is deliberately not a public subpath of it.
     const root = require.resolve(`${pkg}/registry.json`).replace(/registry\.json$/, "");

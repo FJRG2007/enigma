@@ -1,0 +1,124 @@
+---
+title: Relative time
+description: "\"3 hours ago\", kept current, in the reader's own language - and a timestamp with no zone read as UTC instead of as the server's local time."
+group: Data
+order: 32
+space: components
+---
+import Installation from "../../../components/Installation.astro";
+import Frameworks from "../../../components/Frameworks.astro";
+
+A timestamp that reads as "3 hours ago" and keeps itself current. The rendering is
+[`@github/relative-time-element`](https://github.com/github/relative-time-element), which
+already owns `Intl.RelativeTimeFormat` per locale and a re-render schedule that slows down
+as the date ages - `enigma add relative-time` installs it for you.
+
+What the package adds is the part every hand-rolled wrapper gets wrong.
+
+## Usage
+
+<Frameworks>
+    <div slot="react">
+```tsx
+import { RelativeTime } from "@enigmax/utils/react";
+import "@enigmax/utils/relative-time.css";
+
+<RelativeTime date={comment.createdAt} />
+// -> 3 hours ago
+
+<RelativeTime date="2026-08-13 22:41:00" numericBeyondThreshold />
+// -> 13/8/2026 once it is older than the threshold
+```
+    </div>
+    <div slot="next">
+```tsx
+import { RelativeTime } from "@enigmax/utils/react";
+
+/**
+ * No "use client" needed here: the package marks its React entry as a client module, so a
+ * server component can render this directly. The custom element is imported on the client
+ * only - its class extends HTMLElement, which does not exist during a server render.
+ */
+export default async function Page() {
+    const comment = await getComment();
+    return <p>Posted <RelativeTime date={comment.createdAt} /></p>;
+}
+```
+    </div>
+    <div slot="vanilla">
+```js
+import "@github/relative-time-element";
+import { relativeTimeView, relativeTimeAttributes } from "@enigmax/utils";
+
+const view = relativeTimeView("2026-08-13 22:41:00", { threshold: "P30D" });
+const element = document.createElement("relative-time");
+for (const [name, value] of Object.entries(relativeTimeAttributes(view))) {
+    element.setAttribute(name, value);
+}
+// The absolute date goes inside, so it is readable before the element upgrades.
+element.textContent = view.label;
+```
+    </div>
+</Frameworks>
+
+## Installation
+
+<Installation item="relative-time" pkg="@enigmax/utils" deps={["@github/relative-time-element"]} entry="@enigmax/utils/react">
+    <div slot="manual">
+
+The stylesheet is only needed for `capitalize` and `capitalizeFirst`: the element writes its
+own text content, so nothing JavaScript-side can transform it.
+
+```css
+@import "@enigmax/utils/relative-time.css";
+```
+
+    </div>
+</Installation>
+
+## A timestamp with no zone is UTC
+
+The single most common defect in a date column. `2026-08-13 22:41:00` comes back with no
+offset, `new Date()` reads it as **local** time, and every reader east or west of the server
+sees a time that is hours out - silently, because a wrong time is still a valid one.
+
+```tsx
+<RelativeTime date="2026-08-13 22:41:00" />   // read as UTC, as the database meant it
+<RelativeTime date="2026-08-13" />            // left alone: a date with no clock is already UTC
+```
+
+A date with no clock is deliberately untouched. Appending a zone to it produces
+`2026-08-13Z`, which is outside the spec's grammar and falls to each engine's own legacy
+parser - a portability coin flip on a value that was already correct.
+
+## It works before JavaScript does
+
+The absolute date is rendered as the element's child, so a server render, a page whose
+JavaScript has not arrived, and a reader with scripting off all see a real date. The element
+replaces it the moment it upgrades.
+
+```html
+<!-- what the server sends -->
+<relative-time datetime="2026-08-13T22:41:00.000Z">on Aug 13, 2026</relative-time>
+```
+
+Pass `now` to pin the instant the age is measured from, and a server render and its
+hydration agree exactly. Where you cannot, the component sets `suppressHydrationWarning` -
+a timestamp is the one hydration difference React has an escape hatch for rather than a bug.
+
+## Props
+
+| | Default | |
+| --- | --- | --- |
+| `date` | | ISO string, epoch ms, or a Date |
+| `format` | `"auto"` | Relative until the threshold, then a date |
+| `threshold` | `"P30D"` | ISO 8601 duration. Past this, `auto` stops counting |
+| `prefix` | `"on"` | The word before an absolute date. `""` removes it |
+| `locale` | | Undefined lets the element read the page's own `lang` |
+| `numericBeyondThreshold` | `false` | Past the threshold, render digits instead of a month name |
+| `capitalizeFirst` | `true` | So a standalone "yesterday" starts a line properly |
+| `fallback` | `null` | Rendered when the date cannot be parsed |
+
+`numericBeyondThreshold` reads the threshold rather than approximating it. The version this
+came from used a fixed three-to-ninety-day window, which disagrees with `threshold` the
+moment anyone sets one.

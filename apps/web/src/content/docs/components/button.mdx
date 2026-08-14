@@ -1,0 +1,121 @@
+---
+title: Button
+description: Disabled, loading, a shortcut and a cooldown that survives a reload, collapsed into one `available` the renderer reads.
+group: Forms
+order: 22
+space: components
+---
+import Installation from "../../../components/Installation.astro";
+import Frameworks from "../../../components/Frameworks.astro";
+
+Three reasons a button cannot be pressed - it is disabled, it is busy, it is cooling down -
+are one thing to whoever renders it. They collapse into `available`, so a call site reads
+one property instead of combining three flags correctly every time.
+
+The element is **reported**, never chosen. An `href` makes it `"a"`, and a
+framework-agnostic package cannot import `next/link` - so the primitive says which tag it
+should be and your code picks `Link`, `<a>` or `<button>` from that.
+
+## Usage
+
+<Frameworks>
+    <div slot="react">
+```tsx
+import { useButton } from "@enigmax/primitives/react";
+
+export function Save({ onSave }: { onSave: () => Promise<void>; }) {
+    const { state, props } = useButton({ onPress: onSave, cooldown: 3000, shortcut: "s" });
+
+    return (
+        <button {...props}>
+            {state.loading ? "Saving..." : "Save"}
+            {state.cooldown > 0 && <span> ({Math.ceil(state.cooldown / 1000)}s)</span>}
+        </button>
+    );
+}
+```
+    </div>
+    <div slot="next">
+```tsx
+"use client";
+
+import Link from "next/link";
+import { useButton } from "@enigmax/primitives/react";
+
+/**
+ * `state.element` is why this file can decide between Link and button while the package
+ * stays free of a Next.js import.
+ */
+export function Action({ href, onPress }: { href?: string; onPress?: () => Promise<void>; }) {
+    const { state, props } = useButton({ href, onPress, cooldown: { ms: 60_000, key: "resend", storage: "local" } });
+
+    if (state.element === "a") return <Link href={href!} {...props}>Open</Link>;
+    return <button {...props}>{state.loading ? "Working..." : "Go"}</button>;
+}
+```
+    </div>
+    <div slot="vanilla">
+```js
+import { createButton } from "@enigmax/primitives";
+
+const node = document.getElementById("save");
+const button = createButton({
+    onPress: async () => { await save(); },
+    cooldown: 3000,
+    onChange: (state) => {
+        node.disabled = !state.available;
+        node.dataset.loading = state.loading ? "" : undefined;
+        node.textContent = state.loading ? "Saving..." : "Save";
+    }
+});
+
+node.addEventListener("click", (event) => button.press(event));
+```
+    </div>
+</Frameworks>
+
+## Installation
+
+<Installation item="button" pkg="@enigmax/primitives" entry="@enigmax/primitives/react">
+    <div slot="manual">
+
+The primitive is the behaviour only - it renders nothing, so there is no recipe to copy.
+Style it through the attributes `props` puts on your element.
+
+    </div>
+</Installation>
+
+## The four decisions
+
+**The cooldown starts when the work finishes**, not when it was asked for. Starting it at
+request time lets a slow call eat its own cooldown, and the button is free again the instant
+the request returns - which is the moment it most needs not to be.
+
+**A cooldown with a `key` survives a reload.** Without one, refreshing the page is a free
+retry, and preventing exactly that is the whole reason a cooldown exists. A stored time in
+the past is finished rather than pending.
+
+```tsx
+useButton({ cooldown: { ms: 60_000, key: "resend-verification", storage: "local" } });
+```
+
+**A shortcut is refused while the visitor is typing** - in an input, a textarea, a select or
+anything `contenteditable` - and whenever any modifier is held, so it never types into a
+field or steals a real shortcut.
+
+**An anchor cannot be `disabled`.** Only `aria-disabled`, which is advisory: the browser
+still follows the link. So the press is refused in the handler rather than trusted to the
+attribute.
+
+## State
+
+| | |
+| --- | --- |
+| `available` | Not disabled, not loading, not cooling down |
+| `element` | `"a"` when there is an href, else `"button"` |
+| `loading` | Set it yourself, or let an async `onPress` manage it |
+| `cooldown` | Milliseconds left, `0` when there is none |
+| `shortcut` | The key, for rendering a `<kbd>` |
+
+`useButton` also returns `props`, ready to spread: it carries `aria-disabled`, `aria-busy`,
+`data-loading` and `data-cooldown`, so a tooltip and a spinner have something to attach to.

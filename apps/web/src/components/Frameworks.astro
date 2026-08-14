@@ -1,0 +1,48 @@
+---
+import Tabs from "./Tabs.astro";
+
+/**
+ * The framework selector every component page shows its code through.
+ *
+ * A thin wrapper over Tabs rather than a component of its own: what it adds is the fixed
+ * set of ids, so a reader who picks Next.js on one page has picked it on all of them, and
+ * the choice survives a reload. That only works if every page uses the same ids, which is
+ * what this file is for.
+ *
+ * ```mdx
+ * <Frameworks>
+ *     <div slot="react">...</div>
+ *     <div slot="next">...</div>
+ *     <div slot="vanilla">...</div>
+ * </Frameworks>
+ * ```
+ *
+ * A page only writes the slots where the code genuinely differs; a tab with nothing behind
+ * it is not rendered, because an empty panel reads as a broken page rather than as "same as
+ * React". Persistence survives that: a strip without the remembered id keeps its own first
+ * tab instead of blanking.
+ */
+interface Props {
+    /** Drop the panel padding when the content is a code block. */
+    flush?: boolean;
+    note?: string;
+}
+const { flush = true, note } = Astro.props;
+
+// Vue and Svelte are deliberately absent. There is no adapter for them yet, and a tab that
+// shows code for something the package does not export is worse than no tab.
+const FRAMEWORKS = [
+    { id: "react", label: "React" },
+    { id: "next", label: "Next.js" },
+    { id: "vanilla", label: "Vanilla" },
+    { id: "astro", label: "Astro" }
+];
+
+const tabs = FRAMEWORKS.filter((framework) => Astro.slots.has(framework.id));
+---
+<Tabs tabs={tabs} persist="framework" flush={flush} note={note}>
+    {tabs.some((tab) => tab.id === "react") && <div slot="react"><slot name="react" /></div>}
+    {tabs.some((tab) => tab.id === "next") && <div slot="next"><slot name="next" /></div>}
+    {tabs.some((tab) => tab.id === "vanilla") && <div slot="vanilla"><slot name="vanilla" /></div>}
+    {tabs.some((tab) => tab.id === "astro") && <div slot="astro"><slot name="astro" /></div>}
+</Tabs>

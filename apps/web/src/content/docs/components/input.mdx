@@ -1,195 +1,318 @@
 ---
 title: Input
-description: In-field buttons with no styles of their own. A password field gets its reveal toggle automatically, and every part of it is replaceable.
+description: A field you pass props to. The password reveal is free, and a generator, a strength meter and a breach check are one prop each.
 group: Forms
 order: 20
 space: components
 ---
-import AddTabs from "../../../components/AddTabs.astro";
+import Installation from "../../../components/Installation.astro";
+import Frameworks from "../../../components/Frameworks.astro";
 import Preview from "../../../components/Preview.astro";
 import InputDemo from "../../../components/demos/InputDemo.astro";
 import StyleTabs from "../../../components/StyleTabs.astro";
 import Html from "../../../components/Html.astro";
 import { highlightedRecipe } from "../../../lib/recipe";
 
-export const tailwindRecipe = highlightedRecipe("@enigmax/primitives", "input.tailwind.tsx");
-export const cssRecipe = highlightedRecipe("@enigmax/primitives", "input.css.tsx");
-export const cssSheet = highlightedRecipe("@enigmax/primitives", "input.css");
+export const tailwindRecipe = highlightedRecipe("@enigmax/primitives", "input/tailwind.tsx");
+export const cssSheet = highlightedRecipe("@enigmax/primitives", "input/styles.css");
 
-Give it a field and it wires the buttons that live inside it. A `type="password"` field gets its reveal toggle for free, because a password the visitor cannot read back is the most common reason a sign-in fails on the first try.
+In React it is a component you pass props to. A `type="password"` field gets its reveal toggle for free, because a password the visitor cannot read back is the most common reason a sign-in fails on the first try. Everything else - the generator, the strength meter, the breach check - is one prop, and off until you ask for it.
 
 <Preview title="a password field" hint="Type into it, put the caret mid-word, then reveal: the cursor stays where you left it. Press Sign in and the note appears - the toggle never does that.">
     <InputDemo />
     <div slot="code">
-```html
-<div class="field">
-    <input id="password" type="password" autocomplete="current-password">
-</div>
-```
-
-```js
-import { createInput } from "@enigmax/primitives";
-
-createInput(document.getElementById("password"));
-```
-
-```css
-/* The primitive ships no look. It publishes state; you decide what it means. */
-.field { display: flex; align-items: center; gap: 6px; }
-
-[data-enigma-input-actions] { display: inline-flex; gap: 2px; }
-[data-enigma-input-action] {
-    display: inline-grid;
-    place-items: center;
-    width: 28px;
-    height: 28px;
-    color: #8a93a3;
-    background: none;
-    border: 0;
-    cursor: pointer;
-}
-[data-enigma-input-action]:hover { color: #eceef2; }
-[data-enigma-input-action][aria-pressed="true"] { color: #e0a458; }
+```tsx
+<Input type="password" autoComplete="current-password" />
 ```
     </div>
 </Preview>
 
-## Install
+## Usage
 
-<AddTabs item="input" pkg="@enigmax/primitives" />
+<Frameworks note="the live demo above runs the vanilla one">
+    <div slot="react">
+```tsx
+import { Input } from "@enigmax/primitives/react";
 
-## The whole component
+export function SignIn() {
+    const [password, setPassword] = useState("");
 
-Exactly what `enigma add input --copy` writes into your project, read from the installed
-package at build time so it cannot drift from what you get.
+    return (
+        <Input
+            type="password"
+            autoComplete="current-password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+        />
+    );
+}
+```
+    </div>
+    <div slot="next">
+```tsx
+"use client";
 
-<StyleTabs title="Field.tsx">
+import { useState } from "react";
+import { Input } from "@enigmax/primitives/react";
+
+/**
+ * The package marks its React entry "use client", so a server component can render
+ * <Input> directly. This file needs the directive because it holds the state.
+ */
+export function SignIn() {
+    const [password, setPassword] = useState("");
+
+    return (
+        <Input
+            type="password"
+            autoComplete="current-password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+        />
+    );
+}
+```
+    </div>
+    <div slot="vanilla">
+```js
+import { createInput } from "@enigmax/primitives";
+
+// The imperative adapter, for a page that is not React. It creates the buttons and
+// publishes the same data-* state the component does.
+createInput(document.getElementById("password"));
+```
+    </div>
+    <div slot="astro">
+```astro
+---
+// The field is server-rendered; the behaviour is wired on the client.
+---
+<input id="password" type="password" autocomplete="current-password" />
+
+<script>
+    import { createInput } from "@enigmax/primitives";
+    createInput(document.getElementById("password") as HTMLInputElement);
+</script>
+```
+    </div>
+</Frameworks>
+
+## Installation
+
+<Installation item="input" pkg="@enigmax/primitives" entry="@enigmax/primitives/react">
+    <div slot="manual">
+
+This is exactly what `enigma add input --copy` writes into your project - read from the
+installed package at build time, so it cannot drift from what you actually get.
+
+<StyleTabs title="PasswordField.tsx">
     <div slot="tailwind">
         <Html html={tailwindRecipe} />
     </div>
     <div slot="css">
-        <Html html={cssRecipe} />
         <Html html={cssSheet} />
     </div>
 </StyleTabs>
 
-Used like this:
+    </div>
+</Installation>
 
-```jsx
-<Field label="Password" type="password" autoComplete="current-password" />
+## Generating a password
+
+Off by default. Switch it on for a registration or change-password form, where the visitor
+has no password yet, and leave it off on a sign-in, where offering to invent one is noise.
+
+```tsx
+<Input type="password" autoComplete="new-password" generate={{ length: 24 }} />
 ```
 
-The action buttons are created by the engine, so both variants style them through the
-`data-*` hooks rather than a `className` prop - utility classes reach them through
-arbitrary variants, plain CSS through ordinary selectors.
+The value is written the way a keystroke writes it, so it reaches a controlled field, an
+uncontrolled one and a form library alike - `onChange` fires exactly as if it had been
+typed. Characters come from `crypto.getRandomValues`, drawn by rejection rather than
+`% alphabet.length`, which is biased. Where there is no CSPRNG it throws instead of falling
+back, because a generator that quietly produces predictable passwords is worse than one
+that refuses.
 
-## React
+| Prop | Default | |
+| --- | --- | --- |
+| `generate` | `false` | `true`, or `GeneratePasswordOptions` |
+| `length` | `20` | Long beats clever: length is the only term that scales |
+| `excludeAmbiguous` | `false` | Drops `I l 1 O 0`, for a password that gets typed by hand |
+| `revealOnGenerate` | `true` | A password nobody can read is one nobody can write down |
+| `copyOnGenerate` | `false` | The clipboard is shared with every app on the machine |
 
-```jsx
-import { useInput } from "@enigmax/primitives/react";
+## Strength
 
-export function PasswordField() {
-    const { inputRef, revealed } = useInput();
+`strength` renders the meter under the field: five bars, a label, and the top warning.
+
+```tsx
+<Input
+    type="password"
+    autoComplete="new-password"
+    strength={{ userInputs: [email, name] }}
+    onStrengthChange={(report) => setScore(report.score)}
+/>
+```
+
+`userInputs` is the check no character-class rule makes. `Ada@example.com1!` has four
+character classes and sixteen characters, passes every policy ever written, and is the first
+thing anyone looking at the sign-up form would try.
+
+The component picks no colours: it puts `data-score` on the root and `data-filled` on each
+segment, and the recipe above turns that into red through green. The score itself is an
+estimate and the bands are a convention rather than a measurement - swap the estimator for
+zxcvbn where the number has to mean something.
+
+## Has it leaked?
+
+`breach` takes a checker; it is a prop rather than a built-in because it makes a network
+request, and that is not a decision a field should take on its own. `enigma add
+password-breach` gives you one that never sends the password anywhere.
+
+```tsx
+import { checkPasswordBreach } from "@enigmax/utils";
+
+<Input
+    type="password"
+    autoComplete="new-password"
+    breach={checkPasswordBreach}
+    onBreachChange={(state) => setBreached(state.status === "breached")}
+/>
+```
+
+It is debounced and aborted on the next keystroke, so an answer about a password three
+characters old can never land on the current one. The field reports `data-breached` and a
+count, and renders no message: a breach is a warning on one form, a hard block on another,
+and each already renders that its own way.
+
+## With Zod, validated as you type
+
+The whole thing, the way it actually gets used: one schema, checked on every keystroke, with
+the field's own state folded in.
+
+```tsx
+"use client";
+
+import { z } from "zod";
+import { useState } from "react";
+import { Input } from "@enigmax/primitives/react";
+import { checkPasswordBreach } from "@enigmax/utils";
+
+/**
+ * The schema is the whole rule, and it lives at the OBJECT level - a password field on its
+ * own cannot see the email three rows up, which is what makes `ada@example.com1!` pass a
+ * field-level check and fail a real one.
+ */
+const schema = z.object({
+    email: z.string().trim().toLowerCase().email("That does not look like an email address."),
+    password: z.string().min(12, "At least 12 characters.")
+}).refine(
+    ({ email, password }) => !password.toLowerCase().includes(email.split("@")[0].toLowerCase()),
+    { path: ["password"], message: "Your password cannot contain your email address." }
+);
+
+export function Register() {
+    const [values, setValues] = useState({ email: "", password: "" });
+    const [touched, setTouched] = useState<Record<string, boolean>>({});
+    const [breached, setBreached] = useState(false);
+
+    // Parsed on every render, so the message appears as the rule starts passing rather
+    // than on submit. Only shown for fields the visitor has actually left.
+    const result = schema.safeParse(values);
+    const errors = result.success ? {} : z.flattenError(result.error).fieldErrors;
+    const errorFor = (field: keyof typeof values) => (touched[field] ? errors[field]?.[0] : undefined);
 
     return (
-        <div className="field">
-            <input ref={inputRef} type="password" autoComplete="current-password" />
-            <span className="hint">{revealed ? "Visible" : "Hidden"}</span>
-        </div>
+        <form
+            noValidate
+            onSubmit={(event) => {
+                event.preventDefault();
+                setTouched({ email: true, password: true });
+                if (!result.success || breached) return;
+                // ...
+            }}
+        >
+            <Input
+                type="email"
+                autoComplete="email"
+                value={values.email}
+                onChange={(event) => setValues({ ...values, email: event.target.value })}
+                onBlur={() => setTouched({ ...touched, email: true })}
+                aria-invalid={Boolean(errorFor("email"))}
+            >
+                {errorFor("email") && <p className="error">{errorFor("email")}</p>}
+            </Input>
+
+            <Input
+                type="password"
+                autoComplete="new-password"
+                value={values.password}
+                onChange={(event) => setValues({ ...values, password: event.target.value })}
+                onBlur={() => setTouched({ ...touched, password: true })}
+                aria-invalid={Boolean(errorFor("password"))}
+                generate={{ length: 20 }}
+                strength={{ userInputs: [values.email] }}
+                breach={checkPasswordBreach}
+                onBreachChange={(state) => setBreached(state.status === "breached")}
+            >
+                {errorFor("password") && <p className="error">{errorFor("password")}</p>}
+                {breached && <p className="error">This password has appeared in a breach. Please pick another.</p>}
+            </Input>
+
+            <button type="submit" disabled={!result.success || breached}>Create account</button>
+        </form>
     );
 }
 ```
 
-## Your own icon
+Two things worth copying from it. The same schema runs again on the server, because a
+client-side check is a convenience and never a guarantee. And the breach result is kept
+beside the schema rather than inside it: it arrives asynchronously, so folding it into a
+synchronous parse would either block the form on a network request or lie about the state
+while one is in flight.
 
-The built-in is expressed as an ordinary action, so replacing it is the same as adding one. An icon is an HTML string or a DOM node - an inline SVG, a sprite reference, a font glyph, whatever you already use.
+## Replacing a button, or adding your own
 
-<Preview title="replaced icons and labels" hint="Same behaviour, nothing of the default left.">
-    <InputDemo custom={true} />
-    <div slot="code">
-```js
-createInput(field, {
-    reveal: {
-        showIcon: '<svg viewBox="0 0 24 24">...</svg>',
-        hideIcon: myIconElement,          // a Node works too
-        showLabel: "Let me read it",      // becomes aria-label AND title
-        hideLabel: "Cover it up"
-    }
-});
+The reveal and the generator are ordinary actions. Passing one with the same `name` replaces
+it; any other name is added.
+
+```tsx
+<Input
+    type="password"
+    actions={[
+        { name: "reveal", label: "Show", icon: <MyEye />, pressed: shown, onSelect: toggle },
+        { name: "caps", label: "Caps lock is on", icon: <MyCaps />, visible: capsOn, onSelect: () => {} }
+    ]}
+/>
 ```
 
-To replace it wholesale rather than restyle it, pass an action named `reveal` and it wins over the built-in:
+`position="start"` moves them to the other end of the field. An action whose `visible` is
+false is removed from the DOM rather than hidden - the `hidden` attribute works through a UA
+`display: none` rule, and any styling you write for these buttons beats it.
 
-```js
-createInput(field, {
-    actions: [{
-        name: "reveal",                    // same name -> replaces the built-in
-        label: (state) => (state.revealed ? "Hide" : "Show"),
-        icon: (state) => (state.revealed ? hideIcon : showIcon),
-        pressed: (state) => state.revealed,
-        onSelect: () => instance.reveal()
-    }]
-});
+## Styling hooks
+
+Nothing here ships a colour.
+
+| Attribute | On |
+| --- | --- |
+| `[data-enigma-input-root]` | The wrapper - carries `data-revealed`, `data-breached`, `data-score` |
+| `[data-enigma-input-field]` | The row holding the field and its buttons |
+| `[data-enigma-input]` | The `<input>` itself |
+| `[data-enigma-input-actions]` | The button container - carries `data-position` |
+| `[data-enigma-input-action="reveal"]` | One button, by name. `aria-pressed` tracks the state |
+| `[data-enigma-password-strength]` | The meter - `data-empty` while there is nothing to score |
+| `[data-enigma-password-strength-segment]` | One bar. `data-filled` when it is lit |
+
+In Tailwind, the parts you cannot reach with a `className` take one through `classNames`,
+and a segment colours itself from the score on the root:
+
+```tsx
+<Input
+    wrapperProps={{ className: "group/field grid gap-1.5" }}
+    classNames={{
+        action: "grid h-7 w-7 place-items-center rounded-md text-neutral-400 hover:text-neutral-100",
+        strength: { segment: "h-1 rounded-full bg-neutral-800 group-data-[score=4]/field:data-[filled]:bg-green-600" }
+    }}
+/>
 ```
-    </div>
-</Preview>
-
-## Turn it off, move it, add to it
-
-<Preview title="actions before the field" hint="position: start. Where they sit visually is still your CSS.">
-    <InputDemo start={true} />
-    <div slot="code">
-```js
-createInput(field, { position: "start" });   // default is "end"
-
-createInput(field, { reveal: false });       // no toggle at all
-
-createInput(field, { container: mySlot });   // mount them in markup you already have
-```
-    </div>
-</Preview>
-
-<Preview title="another action beside it" hint="The clear button appears only while there is something to clear.">
-    <InputDemo clear={true} />
-    <div slot="code">
-```js
-createInput(field, {
-    actions: [{
-        name: "clear",
-        label: "Clear the field",
-        icon: "<span>&times;</span>",
-        // Not rendered when this is false - removed from the DOM, not just hidden.
-        visible: (state) => state.input.value.length > 0,
-        onSelect: (state) => {
-            state.input.value = "";
-            instance.refresh();
-        }
-    }]
-});
-```
-    </div>
-</Preview>
-
-## Options
-
-| Option | Default | Meaning |
-|---|---|---|
-| `reveal` | `true` | `false` removes the toggle. An object overrides its icons and labels. |
-| `actions` | `[]` | Extra actions. One named `reveal` replaces the built-in. |
-| `position` | `"end"` | Which side the container mounts on. |
-| `container` | created | Mount the actions into your own element instead. |
-| `onRevealChange` | - | Called whenever the password's visibility changes. |
-
-The instance exposes `revealed`, `reveal(next?)`, `refresh()`, `update()` and `destroy()`.
-
-## Why the obvious implementation is wrong
-
-**A bare `<button>` inside a form submits it.** `<button>` defaults to `type="submit"`, so a hand-rolled toggle posts the half-filled sign-in form the moment someone looks at their password. Every action here is `type="button"`, and a test asserts the form never submits from it.
-
-**Pressing it must not take focus off the field.** The visitor is mid-word. `preventDefault()` on `mousedown` keeps focus where it is, while keyboard users still tab to the button and keep focus there, which is what they expect.
-
-**The caret is the hard one.** Assigning `input.type` inside a click handler resets the selection to 0 in Chromium - and does *not* when the same assignment runs outside an event. Worse, the reset lands one **macrotask** later: read it in the handler, or even in a microtask, and it still looks correct. So the selection is captured before the switch, restored after the render, and restored once more on the next task. This was reproduced in twenty lines with no library before a line of the fix was written.
-
-**An action that should not show is removed, never `hidden`.** The `hidden` attribute works through a UA `display: none`, and any author rule setting `display` on the button beats it - which a theme styling these buttons always does. A headless primitive cannot lean on a UA default its consumers are expected to override.
-
-And `destroy()` puts a revealed field back to `password`: leaving it as text would show the value to whoever sees the screen next.

@@ -1,0 +1,82 @@
+---
+title: Network
+description: Online, offline, and the recovery transition every hand-rolled version re-derives and gets wrong on the first load.
+group: Data
+order: 33
+space: components
+---
+import Installation from "../../../components/Installation.astro";
+import Frameworks from "../../../components/Frameworks.astro";
+
+Connection state, plus whatever the Network Information API will say about it. It lives in
+utils rather than primitives because a connection is the environment, not an interaction.
+
+## Usage
+
+<Frameworks>
+    <div slot="react">
+```tsx
+import { useNetworkState } from "@enigmax/utils/react";
+
+export function ConnectionBanner() {
+    const { online, recovered, slow } = useNetworkState();
+
+    if (!online) return <Banner tone="error">You are offline. Changes are saved locally.</Banner>;
+    if (recovered) return <Banner tone="success">Back online.</Banner>;
+    if (slow) return <Banner tone="warning">Slow connection - images are held back.</Banner>;
+    return null;
+}
+```
+    </div>
+    <div slot="vanilla">
+```js
+import { createNetworkMonitor } from "@enigmax/utils";
+
+const monitor = createNetworkMonitor();
+monitor.subscribe((state) => {
+    document.body.dataset.offline = state.online ? undefined : "";
+});
+```
+    </div>
+</Frameworks>
+
+## Installation
+
+<Installation item="network" pkg="@enigmax/utils" entry="@enigmax/utils/react">
+    <div slot="manual">
+
+State only - it renders nothing and shows no toast. Binding a toaster inside would make it
+useless to anyone who already has one.
+
+    </div>
+</Installation>
+
+## `recovered` is the part worth having
+
+"You are back online" has to know the connection had dropped. Every implementation of that
+ends up as a stray `wasOffline` boolean beside the effect, re-derived on every screen - and
+wrong on a page that loads while already offline, which announces a comeback that never
+happened. It is tracked in the monitor instead, and is `false` on a first load.
+
+## Three details the naive version misses
+
+The Network Information API is still prefixed in some browsers and **absent in Safari**, so
+the connection object is looked up three ways and may be null throughout. Every field it
+would provide is nullable, and `null` means "not reported" rather than zero.
+
+The `change` event fires for readings that did not change, so the snapshot is
+shallow-compared before any subscriber is told. Without that, every subscriber re-renders
+for nothing on a connection that merely re-measured itself.
+
+**A server render must report online.** Assuming offline flashes a warning on every page
+before hydration corrects it.
+
+| | |
+| --- | --- |
+| `online` | `navigator.onLine` |
+| `recovered` | It dropped earlier and is back. `false` on a first load |
+| `slow` | 2g or slower, or data saver on |
+| `effectiveType` | `"slow-2g"`, `"2g"`, `"3g"`, `"4g"`, or null |
+| `downlink` / `rtt` | Estimated Mbps and round trip, or null |
+| `saveData` | The visitor asked for reduced data use |
+| `type` | `"wifi"`, `"cellular"`, `"ethernet"`, or null |
