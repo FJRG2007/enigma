@@ -3,6 +3,7 @@ import { test, expect, type Page } from "@playwright/test";
 interface FixtureWindow extends Window {
     __ready: boolean;
     __presses: number;
+    __clickTarget: string;
     __submits: number;
     __release: () => void;
 }
@@ -25,6 +26,22 @@ test.describe("Button (React)", () => {
         // The whole call site is <Button onPress={...}>Save</Button> - no hook, no spread.
         await expect(page.locator(save)).toHaveText("Save");
         await page.click(save);
+        expect(await read(page, "__presses")).toBe(1);
+    });
+
+    test("onClick is the same thing as onPress, and still refuses a press it should", async ({ page }) => {
+        await open(page);
+        const button = page.locator("[data-testid=save-click]");
+        await button.click();
+        expect(await read(page, "__presses")).toBe(1);
+        // The handler gets the event: press() used to be called bare, so anyone wanting to
+        // stop propagation or read the target had nothing.
+        expect(await read(page, "__clickTarget")).toBe("BUTTON");
+
+        // And the component still owns the real onClick - a second press during the
+        // cooldown must not reach the handler.
+        await expect(button).toBeDisabled();
+        await button.click({ force: true });
         expect(await read(page, "__presses")).toBe(1);
     });
 

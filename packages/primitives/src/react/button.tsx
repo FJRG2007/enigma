@@ -20,7 +20,18 @@ import { createElement, forwardRef, type ComponentPropsWithoutRef, type ElementT
 
 // `onChange` is omitted from the DOM side because the primitive's own onChange - which
 // reports the button's state - would otherwise clash with the form event of the same name.
+// `onClick` is omitted and re-declared below, as an alias rather than a second handler.
 export interface ButtonProps extends ButtonOptions, Omit<ComponentPropsWithoutRef<"button">, "onClick" | "onChange" | "children" | "type"> {
+    /**
+     * What to run when it is pressed. The same thing as `onPress`, under the name React
+     * already uses - write whichever reads better.
+     *
+     * It is an ALIAS, not a second handler: the component owns the element's real onClick,
+     * because that is where a press is refused while the button is loading, disabled or
+     * cooling down. Passing one through would replace that and silently take the behaviour
+     * with it. Returning a promise drives `loading` for its duration, same as `onPress`.
+     */
+    onClick?: ButtonOptions["onPress"];
     /**
      * Override what to render. You rarely need it: an href already renders whatever
      * `setLinkComponent` registered - your router's Link - and a button otherwise.
@@ -52,11 +63,12 @@ export const Button = forwardRef<HTMLElement, ButtonProps>(function Button({
     cooldown,
     shortcut,
     onPress,
+    onClick,
     onChange,
     type = "button",
     ...rest
 }, ref) {
-    const button = useButton({ href, disabled, loading, cooldown, shortcut, onPress, onChange });
+    const button = useButton({ href, disabled, loading, cooldown, shortcut, onPress: onPress ?? onClick, onChange });
     const state: ButtonState = button;
 
     // An href renders the registered link - next/link, react-router's, whatever was passed

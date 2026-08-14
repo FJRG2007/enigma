@@ -4,7 +4,7 @@ import { createButton, type ButtonOptions, type ButtonState } from "@/core/butto
 export interface UseButtonResult extends ButtonState {
     /** Spread onto the element named by `element`. */
     props: {
-        onClick: (event: { preventDefault(): void; }) => void;
+        onClick: (event: Event | { preventDefault(): void; }) => void;
         "aria-disabled": boolean;
         "aria-busy": boolean;
         "data-loading"?: "";
@@ -76,7 +76,9 @@ export function useButton(options: ButtonOptions = {}): UseButtonResult {
                 // An unavailable link still receives clicks - aria-disabled is advisory -
                 // so the press is refused here rather than relying on the attribute.
                 if (!state.available) { event.preventDefault(); return; }
-                void instance.press();
+                // Passed through: a handler that wants to stop propagation or read the
+                // target had no way to get at it while press() was called bare.
+                void instance.press(event as Event);
             },
             "aria-disabled": !state.available,
             "aria-busy": state.loading,

@@ -341,6 +341,11 @@ Decisions worth keeping:
   not pending.
 - **A shortcut is refused while typing** (input/textarea/select/contenteditable) and
   whenever any modifier is held, so it never steals a real shortcut or types into a field.
+- **`onClick` is an alias of `onPress`, not a second handler.** React's name had been
+  omitted from the props, so in TypeScript it was an error and in plain JS it landed in the
+  rest spread AFTER the component's own handler - replacing the one place a press is refused
+  while loading, disabled or cooling down, and taking the behaviour with it silently. The
+  click event is now passed through to the handler too; `press()` used to be called bare.
 - **An anchor cannot be `disabled`**, only `aria-disabled`, which is advisory - so the
   click handler refuses the press itself rather than trusting the attribute.
 

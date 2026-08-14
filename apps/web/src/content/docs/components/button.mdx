@@ -9,10 +9,11 @@ import Installation from "../../../components/Installation.astro";
 import Frameworks from "../../../components/Frameworks.astro";
 
 ```tsx
-<Button onPress={save}>Save</Button>
+<Button onClick={save}>Save</Button>
 ```
 
-That is the whole call site. Disabled while the work runs, `aria-busy` and `data-loading`
+That is the whole call site. `onPress` is the same thing under the name the vanilla core
+uses, so either reads fine. Disabled while the work runs, `aria-busy` and `data-loading`
 while it does, and a cooldown afterwards if you ask for one.
 
 Three reasons a button cannot be pressed - it is disabled, it is busy, it is cooling down -
@@ -172,11 +173,22 @@ return <Tag {...props}>{loading ? "Saving..." : "Save"}</Tag>;
 Reaching for it to render an ordinary button means writing those six lines at every call
 site, which is how they drift apart. That is what `<Button>` is for.
 
+## `onClick` or `onPress`
+
+Both, and they are one handler rather than two. `onClick` is the name React already uses;
+`onPress` is the one the framework-agnostic core uses, so a vanilla call site and a React
+one read alike.
+
+It has to be an alias because the component owns the element's real `onClick` - that is
+where a press is refused while the button is loading, disabled or cooling down. A handler
+passed straight through to the element would replace that and take the behaviour with it,
+silently.
+
 ## Props
 
 | | |
 | --- | --- |
-| `onPress` | Sync or async. An async one drives `loading` for its duration |
+| `onClick` / `onPress` | The same handler under two names. Sync or async; an async one drives `loading` for its duration |
 | `href` | Renders an anchor. A link cannot be `disabled`, so the press is refused in the handler |
 | `as` | Your router's Link, or any element |
 | `cooldown` | Milliseconds, or `{ ms, key, storage }` to survive a reload |

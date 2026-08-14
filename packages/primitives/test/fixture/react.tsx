@@ -17,6 +17,7 @@ interface FixtureWindow extends Window {
     __presses: number;
     __release: () => void;
     __unsetLink: () => void;
+    __clickTarget: string;
     __submits: number;
     __value: string;
     __strength: PasswordStrengthReport | null;
@@ -31,6 +32,7 @@ fixture.__strength = null;
 fixture.__breach = null;
 fixture.__breachCalls = [];
 fixture.__presses = 0;
+fixture.__clickTarget = "";
 
 /**
  * Stands in for next/link: a component that renders an anchor and marks itself, so a test
@@ -94,6 +96,13 @@ function Form(): React.ReactNode {
 
             {/* The short form: no hook, no spreading, no six lines per call site. */}
             <Button data-testid="save" onPress={() => { fixture.__presses++; }}>Save</Button>
+
+            {/* onClick is the same thing under the name React already uses. */}
+            <Button
+                data-testid="save-click"
+                cooldown={2000}
+                onClick={(event) => { fixture.__presses++; fixture.__clickTarget = (event?.target as HTMLElement)?.tagName ?? ""; }}
+            >Save</Button>
 
             {/* Async work, a cooldown after it, and a label that follows the state. */}
             <Button
