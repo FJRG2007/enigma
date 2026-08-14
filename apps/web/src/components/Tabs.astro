@@ -77,12 +77,47 @@ const panels = await Promise.all(
     .tabs-panel.is-flush :global(pre + pre) { border-top: 1px solid var(--border-soft); }
     .tabs-panel :global(> :first-child) { margin-top: 0; }
     .tabs-panel :global(> :last-child) { margin-bottom: 0; }
+
+    /* A strip inside a panel is not a second card. The frame belongs to the outer one, so
+       the nested strip keeps only its buttons - otherwise Installation's Manual panel draws
+       a bordered box inside a bordered box for every package manager. */
+    .tabs-panel :global(.tabs) {
+        margin: 0;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        overflow: visible;
+    }
+    .tabs-panel :global(.tabs > .tabs-bar) {
+        padding: 0 0 8px;
+        background: transparent;
+        border-bottom: 0;
+    }
+    .tabs-panel :global(.tabs > .tabs-panel) { padding: 0; }
+    /* The frame the outer rule stripped, given back to the block that is now on its own. */
+    .tabs-panel :global(.tabs pre) {
+        border: 1px solid var(--border-soft);
+        border-radius: var(--radius-sm, 10px);
+    }
 </style>
 
 <script>
+    /**
+     * The strip's OWN tabs and panels, never a nested strip's.
+     *
+     * `querySelectorAll` is not scoped to a level, so an outer strip matched the buttons of
+     * a Tabs inside one of its panels - which is the normal shape here, a package-manager
+     * strip inside Installation's Manual panel. Clicking `pnpm` then told the OUTER strip to
+     * show a panel called "pnpm"; it had none, but the inner button made the match check
+     * pass, so it hid every panel it owned and the whole section vanished.
+     */
+    function own<T extends HTMLElement>(block: HTMLElement, selector: string): T[] {
+        return [...block.querySelectorAll<T>(selector)].filter((node) => node.closest("[data-tabs]") === block);
+    }
+
     function show(block: HTMLElement, wanted: string): void {
         let matched = false;
-        for (const tab of block.querySelectorAll<HTMLButtonElement>("[data-tab]")) {
+        for (const tab of own<HTMLButtonElement>(block, "[data-tab]")) {
             const on = tab.dataset.tab === wanted;
             if (on) matched = true;
             tab.classList.toggle("active", on);
@@ -90,7 +125,7 @@ const panels = await Promise.all(
         }
         // A remembered id that this strip does not have would blank every panel.
         if (!matched) return;
-        for (const panel of block.querySelectorAll<HTMLElement>("[data-panel]")) {
+        for (const panel of own(block, "[data-panel]")) {
             panel.hidden = panel.dataset.panel !== wanted;
         }
     }
@@ -102,7 +137,7 @@ const panels = await Promise.all(
         const stored = key ? localStorage.getItem(`enigma:tabs:${key}`) : null;
         if (stored) show(block, stored);
 
-        for (const tab of block.querySelectorAll<HTMLButtonElement>("[data-tab]")) {
+        for (const tab of own<HTMLButtonElement>(block, "[data-tab]")) {
             tab.addEventListener("click", () => {
                 const wanted = tab.dataset.tab ?? "";
                 if (key) {
