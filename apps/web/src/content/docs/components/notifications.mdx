@@ -7,6 +7,7 @@ space: components
 ---
 import Installation from "../../../components/Installation.astro";
 import Preview from "../../../components/Preview.astro";
+import Frameworks from "../../../components/Frameworks.astro";
 import NotificationsDemo from "../../../components/demos/NotificationsDemo.astro";
 
 The queue owns ordering, deduplication, eviction and timers. **Rendering is yours** - it returns a list and never an opinion about what a toast looks like.
@@ -14,6 +15,26 @@ The queue owns ordering, deduplication, eviction and timers. **Rendering is your
 <Preview title="queue behaviour" hint='Press "Retry" repeatedly: it replaces in place instead of stacking. Press "Error": it stays while the others fade.'>
     <NotificationsDemo />
     <div slot="code">
+<Frameworks>
+    <div slot="react">
+```tsx
+import { useNotifications } from "@enigmax/primitives/react";
+
+const { items, notify, dismiss } = useNotifications();
+
+notify({ title: "Saved", body: "Two files changed", tone: "success" });
+```
+    </div>
+    <div slot="next">
+```tsx
+import { useNotifications } from "@enigmax/primitives/react";
+
+const { items, notify, dismiss } = useNotifications();
+
+notify({ title: "Saved", body: "Two files changed", tone: "success" });
+```
+    </div>
+    <div slot="vanilla">
 ```js
 import { createNotifications } from "@enigmax/primitives";
 
@@ -22,6 +43,8 @@ const queue = createNotifications({ max: 4, duration: 5000 });
 queue.subscribe(items => render(items));
 queue.notify({ key: "retry", title: "Retrying", tone: "warning" });
 ```
+    </div>
+</Frameworks>
     </div>
 </Preview>
 

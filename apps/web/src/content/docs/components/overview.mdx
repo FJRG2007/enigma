@@ -7,6 +7,7 @@ space: components
 ---
 import Installation from "../../../components/Installation.astro";
 import Preview from "../../../components/Preview.astro";
+import Frameworks from "../../../components/Frameworks.astro";
 import MarqueeDemo from "../../../components/demos/MarqueeDemo.astro";
 import StyleTabs from "../../../components/StyleTabs.astro";
 import { docHref } from "../../../lib/url";
@@ -21,11 +22,29 @@ Both are plain npm packages. Nothing about them requires enigma - `enigma add` i
 <Preview title="marquee" hint="Every preview on these pages is a real instance of the published package. Grab this one and throw it.">
     <MarqueeDemo speed={70} />
     <div slot="code">
+<Frameworks>
+    <div slot="react">
+```tsx
+import { Marquee } from "./marquee/Marquee";
+
+<Marquee items={logos} speed={70}>{(logo) => <img src={logo.src} alt={logo.name} />}</Marquee>
+```
+    </div>
+    <div slot="next">
+```tsx
+import { Marquee } from "./marquee/Marquee";
+
+<Marquee items={logos} speed={70}>{(logo) => <img src={logo.src} alt={logo.name} />}</Marquee>
+```
+    </div>
+    <div slot="vanilla">
 ```js
 import { createMarquee } from "@enigmax/primitives";
 
 createMarquee(lane, track, { speed: 70 });
 ```
+    </div>
+</Frameworks>
     </div>
 </Preview>
 

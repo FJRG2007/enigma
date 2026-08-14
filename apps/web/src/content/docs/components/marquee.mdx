@@ -8,6 +8,7 @@ space: components
 import Installation from "../../../components/Installation.astro";
 import { MarqueePlayground } from "../../../components/playground/MarqueePlayground";
 import Preview from "../../../components/Preview.astro";
+import Frameworks from "../../../components/Frameworks.astro";
 import MarqueeDemo from "../../../components/demos/MarqueeDemo.astro";
 import LogoWallDemo from "../../../components/demos/LogoWallDemo.astro";
 import StyleTabs from "../../../components/StyleTabs.astro";
@@ -23,6 +24,26 @@ A row that loops forever and that a visitor can grab and throw. Logo walls, test
 <Preview title="default" hint="Grab it and throw it. Release without moving and it eases back to cruise - same integrator, so nothing arrives as a cut.">
     <MarqueeDemo speed={70} />
     <div slot="code">
+<Frameworks>
+    <div slot="react">
+```tsx
+import { Marquee } from "./marquee/Marquee";
+
+<Marquee items={tools} speed={70}>
+    {(tool) => <span className="pill">{tool.name}</span>}
+</Marquee>
+```
+    </div>
+    <div slot="next">
+```tsx
+import { Marquee } from "./marquee/Marquee";
+
+<Marquee items={tools} speed={70}>
+    {(tool) => <span className="pill">{tool.name}</span>}
+</Marquee>
+```
+    </div>
+    <div slot="vanilla">
 ```html
 <!-- The lane clips, the track moves, and the first child is the content.
      The engine repeats that child as many times as the lane needs. -->
@@ -67,6 +88,8 @@ const marquee = createMarquee(
 // marquee.destroy();
 ```
     </div>
+</Frameworks>
+    </div>
 </Preview>
 
 ## A logo wall
@@ -76,6 +99,38 @@ What the row is most often used for. The primitive is the same; only the content
 <Preview title="brand colours" hint="Four real marks and four obvious placeholders, every one in the same box. Drag it - the logos stay links if you make them links.">
     <LogoWallDemo speed={55} />
     <div slot="code">
+<Frameworks>
+    <div slot="react">
+```tsx
+import { LogoMarquee } from "./logo-marquee";
+
+<LogoMarquee
+    logos={[
+        { kind: "img", src: "/logos/claude.svg", alt: "Claude Code" },
+        { kind: "img", src: "/logos/openai.svg", alt: "OpenAI Codex" },
+        { kind: "node", node: <span>BLOOMBERG</span> }
+    ]}
+    speed={55}
+    tone="brand"
+/>
+```
+    </div>
+    <div slot="next">
+```tsx
+import { LogoMarquee } from "./logo-marquee";
+
+<LogoMarquee
+    logos={[
+        { kind: "img", src: "/logos/claude.svg", alt: "Claude Code" },
+        { kind: "img", src: "/logos/openai.svg", alt: "OpenAI Codex" },
+        { kind: "node", node: <span>BLOOMBERG</span> }
+    ]}
+    speed={55}
+    tone="brand"
+/>
+```
+    </div>
+    <div slot="vanilla">
 ```html
 <div class="wall" data-lane>
     <div class="wall-track" data-track>
@@ -105,6 +160,8 @@ createMarquee(document.querySelector("[data-lane]"), document.querySelector("[da
 
 `draggable="false"` on the images matters: without it the browser starts its own image drag and the row never sees the gesture. The engine already sets `user-select: none` on the lane for the same reason.
     </div>
+</Frameworks>
+    </div>
 </Preview>
 
 ### One colour for every logo
@@ -114,6 +171,20 @@ createMarquee(document.querySelector("[data-lane]"), document.querySelector("[da
 <Preview title="tinted" hint="One colour, set once. Change --logo-color and every mark follows.">
     <LogoWallDemo speed={55} tint="#e0a458" />
     <div slot="code">
+<Frameworks>
+    <div slot="react">
+```tsx
+// The mask lives in your CSS - a colour is a look, and the primitive ships none.
+<LogoMarquee logos={logos} speed={55} className="tinted" />
+```
+    </div>
+    <div slot="next">
+```tsx
+// The mask lives in your CSS - a colour is a look, and the primitive ships none.
+<LogoMarquee logos={logos} speed={55} className="tinted" />
+```
+    </div>
+    <div slot="vanilla">
 ```html
 <span class="logo" style="--logo-src: url('/logos/claude.svg')" role="img" aria-label="Claude Code"></span>
 <span class="logo" style="--logo-src: url('/logos/openai.svg')" role="img" aria-label="OpenAI Codex"></span>
@@ -139,6 +210,8 @@ createMarquee(document.querySelector("[data-lane]"), document.querySelector("[da
 ```
 
 The element is now a shape, not an image, so it needs `role="img"` and an `aria-label` to keep the name it had as `alt`.
+    </div>
+</Frameworks>
     </div>
 </Preview>
 
@@ -189,6 +262,22 @@ Used like this:
 <Preview title="hover: pause" hint="Rest a MOUSE on it and it stops; a tap on touch does not, which is the whole point of the pointerType gate below.">
     <MarqueeDemo speed={70} hover="pause" />
     <div slot="code">
+<Frameworks>
+    <div slot="react">
+```tsx
+<Marquee items={tools} speed={70} hover="pause">
+    {(tool) => <span className="pill">{tool.name}</span>}
+</Marquee>
+```
+    </div>
+    <div slot="next">
+```tsx
+<Marquee items={tools} speed={70} hover="pause">
+    {(tool) => <span className="pill">{tool.name}</span>}
+</Marquee>
+```
+    </div>
+    <div slot="vanilla">
 ```js
 // One option covers every case a mouse resting on the row could ask for.
 createMarquee(lane, track, { speed: 70, hover: "pause" });   // stop
@@ -206,11 +295,27 @@ createMarquee(lane, track, { speed: 70, hover: "off" });     // ignore hover (de
 A tap on a phone must NOT trigger this, which is why the engine gates hover on
 `pointerType === "mouse"` and suppresses it for a second after any touch.
     </div>
+</Frameworks>
+    </div>
 </Preview>
 
 <Preview title="reverse, faster" hint="Two rows running opposite ways at the same measured speed, whatever their item counts.">
     <MarqueeDemo speed={110} reverse={true} items={["Prisma", "PostgreSQL", "Zod", "Astro", "React", "Vite", "Playwright", "Bun"]} />
     <div slot="code">
+<Frameworks>
+    <div slot="react">
+```tsx
+<Marquee items={top} speed={110}>{(item) => <span className="pill">{item}</span>}</Marquee>
+<Marquee items={bottom} speed={110} reverse>{(item) => <span className="pill">{item}</span>}</Marquee>
+```
+    </div>
+    <div slot="next">
+```tsx
+<Marquee items={top} speed={110}>{(item) => <span className="pill">{item}</span>}</Marquee>
+<Marquee items={bottom} speed={110} reverse>{(item) => <span className="pill">{item}</span>}</Marquee>
+```
+    </div>
+    <div slot="vanilla">
 ```js
 // Two rows, opposite directions, one speed. Their item counts do not have to match:
 // the lap is measured per row, so both still cruise at exactly 110 px/s.
@@ -220,6 +325,8 @@ createMarquee(bottomLane, bottomTrack, { speed: 110, reverse: true });
 
 This is the pair that a duration-based API cannot get right. Split an odd-length list
 across two rows and one gets 4 items and the other 5, so one runs measurably faster.
+    </div>
+</Frameworks>
     </div>
 </Preview>
 

@@ -7,6 +7,7 @@ space: components
 ---
 import Installation from "../../../components/Installation.astro";
 import Preview from "../../../components/Preview.astro";
+import Frameworks from "../../../components/Frameworks.astro";
 import CacheDemo from "../../../components/demos/CacheDemo.astro";
 
 The TTL is the obvious half. The **in-flight deduplication** is the half that matters: two components mounting in the same tick ask for one key once, so a rate limit sees one request instead of five. The TTL then keeps the answer around long enough that a remount paints from cache instead of flashing a skeleton over data the app already has.
@@ -14,6 +15,24 @@ The TTL is the obvious half. The **in-flight deduplication** is the half that ma
 <Preview title="in-flight deduplication" hint="Ask five times at once: five reads are served and ONE request is made. Ask again inside the 8s TTL and none is.">
     <CacheDemo />
     <div slot="code">
+<Frameworks>
+    <div slot="react">
+```tsx
+import { useCached } from "@enigmax/utils/react";
+
+// Five components, one loader call: the cache dedupes the in-flight request.
+const { data, loading, refresh } = useCached("projects", loadProjects, { ttl: 8000 });
+```
+    </div>
+    <div slot="next">
+```tsx
+import { useCached } from "@enigmax/utils/react";
+
+// Five components, one loader call: the cache dedupes the in-flight request.
+const { data, loading, refresh } = useCached("projects", loadProjects, { ttl: 8000 });
+```
+    </div>
+    <div slot="vanilla">
 ```js
 import { createCache } from "@enigmax/utils";
 
@@ -22,6 +41,8 @@ const cache = createCache({ namespace: "app", ttl: 8000 });
 // Five callers, one loader call.
 await Promise.all(Array.from({ length: 5 }, () => cache.read("user:1", loadUser)));
 ```
+    </div>
+</Frameworks>
     </div>
 </Preview>
 

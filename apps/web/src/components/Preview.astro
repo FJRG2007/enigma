@@ -1,10 +1,17 @@
 ---
+import Tabs from "./Tabs.astro";
+
 /**
  * A component-documentation block: the thing running, and the code that runs it.
  *
- * The preview is a REAL instance driven by the published package, not a picture or a
- * recording - a marquee whose whole contract is timing and pointer behaviour cannot be
- * documented by a screenshot, and a demo that drifts from the package is worse than none.
+ * The preview is a REAL instance driven by the package, not a picture or a recording - a
+ * marquee whose whole contract is timing and pointer behaviour cannot be documented by a
+ * screenshot, and a demo that drifts from the package is worse than none.
+ *
+ * A thin wrapper over Tabs, like StyleTabs and Frameworks. It had its own tab strip and its
+ * own script once, which made four implementations of one widget on this site, each with
+ * its own attribute names and its own keyboard behaviour. This one keeps its frame, because
+ * unlike a chooser a demo IS a block of content.
  *
  * Slots: default = the live preview, "code" = the source (a fenced block from the MDX).
  */
@@ -16,50 +23,17 @@ interface Props {
 }
 const { title, hint } = Astro.props;
 ---
-<div class="pv" data-preview>
-    <div class="pv-bar">
-        <div class="pv-tabs" role="tablist">
-            <button type="button" class="active" data-pv-tab="preview" role="tab" aria-selected="true">Preview</button>
-            <button type="button" data-pv-tab="code" role="tab" aria-selected="false">Code</button>
+<div class="pv">
+    <Tabs tabs={[{ id: "preview", label: "Preview" }, { id: "code", label: "Code" }]} note={title} frame={true} flush={true}>
+        <div slot="preview">
+            <div class="pv-stage"><slot /></div>
+            {hint && <p class="pv-hint">{hint}</p>}
         </div>
-        {title && <span class="pv-title">{title}</span>}
-    </div>
-    <div class="pv-body" data-pv-panel="preview">
-        <div class="pv-stage"><slot /></div>
-        {hint && <p class="pv-hint">{hint}</p>}
-    </div>
-    <div class="pv-body" data-pv-panel="code" hidden><slot name="code" /></div>
+        <div slot="code"><slot name="code" /></div>
+    </Tabs>
 </div>
 
 <style>
-    .pv { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); overflow: hidden; margin: 20px 0; }
-    .pv-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px; background: rgba(0, 0, 0, 0.25); border-bottom: 1px solid var(--border-soft); }
-    .pv-tabs { display: flex; gap: 2px; }
-    .pv-tabs button { font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--muted); background: transparent; border: 1px solid transparent; border-radius: 8px; padding: 6px 13px; cursor: pointer; }
-    .pv-tabs button:hover { color: var(--text); }
-    .pv-tabs button.active { color: var(--accent); background: var(--surface2); border-color: var(--border); }
-    .pv-title { font-family: var(--mono); font-size: 11px; color: var(--muted); padding-right: 4px; }
     .pv-stage { padding: 28px 20px; display: grid; gap: 14px; }
     .pv-hint { margin: 0; padding: 0 20px 16px; font-size: 12px; color: var(--muted); }
-    /* The code slot holds a fenced block, which already carries its own padding. */
-    .pv-body[data-pv-panel="code"] :global(pre) { margin: 0; border: 0; border-radius: 0; }
 </style>
-
-<script>
-    for (const block of document.querySelectorAll<HTMLElement>("[data-preview]")) {
-        const tabs = block.querySelectorAll<HTMLButtonElement>("[data-pv-tab]");
-        for (const tab of tabs) {
-            tab.addEventListener("click", () => {
-                const wanted = tab.dataset.pvTab;
-                for (const other of tabs) {
-                    const on = other === tab;
-                    other.classList.toggle("active", on);
-                    other.setAttribute("aria-selected", String(on));
-                }
-                for (const panel of block.querySelectorAll<HTMLElement>("[data-pv-panel]")) {
-                    panel.hidden = panel.dataset.pvPanel !== wanted;
-                }
-            });
-        }
-    }
-</script>

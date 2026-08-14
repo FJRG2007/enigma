@@ -337,7 +337,10 @@ const componentSource = componentName
     // commands use - one implementation, one behaviour, one confirmation.
     document.querySelectorAll<HTMLElement>(".doc pre").forEach((pre) => {
         const code = pre.querySelector("code");
-        if (!code) return;
+        // `data-copied` marks a block that brought its own button - the playground renders
+        // one, because this script runs before that island exists. Without the check the
+        // reader gets two copy buttons stacked on top of each other.
+        if (!code || pre.hasAttribute("data-copied")) return;
         const button = document.createElement("button");
         button.type = "button";
         button.className = "code-copy";

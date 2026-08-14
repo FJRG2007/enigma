@@ -1,7 +1,7 @@
 import "./playground.css";
 import { highlight } from "./highlight";
-import { writeClipboard } from "../../lib/copy";
-import { useMemo, useState, type ReactNode } from "react";
+import { COPY_ICON, bindCopy } from "../../lib/copy";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 /**
  * Turn the props on and off, watch the real component react, take the code away.
@@ -27,9 +27,27 @@ export interface PlaygroundProps<V extends Record<string, string | boolean>> {
 
 export function Playground<V extends Record<string, string | boolean>>({ controls, initial, render, code }: PlaygroundProps<V>) {
     const [values, setValues] = useState<V>(initial);
-    const [copied, setCopied] = useState(false);
 
     const source = useMemo(() => code(values), [code, values]);
+
+    /**
+     * The same copy button as every other code block, from the same helper - an icon that
+     * turns into a tick, and only after a confirmed write.
+     *
+     * It is wired here rather than left to the layout's script: that runs once, before this
+     * island exists, so the block would have no button at all - and the `data-copied` mark
+     * below is what stops the script adding a SECOND one if it ever runs again.
+     */
+    const copyRef = useRef<HTMLButtonElement | null>(null);
+    const sourceRef = useRef(source);
+    sourceRef.current = source;
+
+    useEffect(() => {
+        const button = copyRef.current;
+        if (!button) return;
+        button.innerHTML = COPY_ICON;
+        bindCopy(button, () => sourceRef.current);
+    }, []);
     const set = (name: string, value: string | boolean): void => setValues((current) => ({ ...current, [name]: value }));
 
     return (
@@ -79,19 +97,10 @@ export function Playground<V extends Record<string, string | boolean>>({ control
             </div>
 
             <div className="pg-code">
-                <pre><code>{highlight(source)}</code></pre>
-                <button
-                    type="button"
-                    className="pg-copy"
-                    aria-label="Copy code"
-                    onClick={async () => {
-                        // Only after a confirmed write, same rule as every other copy button
-                        // here: a tick over an unchanged clipboard is found out on paste.
-                        if (!(await writeClipboard(source))) return;
-                        setCopied(true);
-                        setTimeout(() => setCopied(false), 1600);
-                    }}
-                >{copied ? "Copied" : "Copy"}</button>
+                <pre data-copied="">
+                    <code>{highlight(source)}</code>
+                    <button ref={copyRef} type="button" className="code-copy" aria-label="Copy code" title="Copy" />
+                </pre>
             </div>
         </div>
     );

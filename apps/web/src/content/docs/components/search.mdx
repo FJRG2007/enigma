@@ -8,6 +8,7 @@ space: components
 import Installation from "../../../components/Installation.astro";
 import { SearchPlayground } from "../../../components/playground/SearchPlayground";
 import Preview from "../../../components/Preview.astro";
+import Frameworks from "../../../components/Frameworks.astro";
 import SearchDemo from "../../../components/demos/SearchDemo.astro";
 import Tabs from "../../../components/Tabs.astro";
 
@@ -16,6 +17,28 @@ It owns the parts that are always rewritten and always come out slightly wrong: 
 <Preview title="fuzzy by default" hint='Type the typo "guardrials" - it still finds Convention guardrails. Watch the score column.'>
     <SearchDemo />
     <div slot="code">
+<Frameworks>
+    <div slot="react">
+```tsx
+import Fuse from "fuse.js";
+import { useSearch } from "@enigmax/primitives/react";
+
+const { inputRef, results } = useSearch({ items: docs, keys: ["title", "body"], fuse: Fuse });
+
+<input ref={inputRef} type="search" placeholder="Search" />
+```
+    </div>
+    <div slot="next">
+```tsx
+import Fuse from "fuse.js";
+import { useSearch } from "@enigmax/primitives/react";
+
+const { inputRef, results } = useSearch({ items: docs, keys: ["title", "body"], fuse: Fuse });
+
+<input ref={inputRef} type="search" placeholder="Search" />
+```
+    </div>
+    <div slot="vanilla">
 ```js
 // The /search entry has Fuse already wired. Nothing to configure.
 import { createSearch } from "@enigmax/primitives/search";
@@ -35,6 +58,8 @@ search.subscribe((results, query) => render(results, query));
 ```js
 createSearch({ items: docs, keys: ["title"], fuseOptions: { threshold: 0.4, ignoreLocation: true } });
 ```
+    </div>
+</Frameworks>
     </div>
 </Preview>
 
@@ -108,6 +133,28 @@ wanted the marquee: importing the main entry never pulls a search engine into th
 <Preview title="no engine, zero dependencies" hint='The same typo finds nothing here: a substring matcher cannot forgive one. But "cafe" still finds "Café config".'>
     <SearchDemo plain={true} />
     <div slot="code">
+<Frameworks>
+    <div slot="react">
+```tsx
+import Fuse from "fuse.js";
+import { useSearch } from "@enigmax/primitives/react";
+
+const { inputRef, results } = useSearch({ items: docs, keys: ["title", "body"], fuse: Fuse });
+
+<input ref={inputRef} type="search" placeholder="Search" />
+```
+    </div>
+    <div slot="next">
+```tsx
+import Fuse from "fuse.js";
+import { useSearch } from "@enigmax/primitives/react";
+
+const { inputRef, results } = useSearch({ items: docs, keys: ["title", "body"], fuse: Fuse });
+
+<input ref={inputRef} type="search" placeholder="Search" />
+```
+    </div>
+    <div slot="vanilla">
 ```js
 // The main entry takes no engine, so nothing is bundled and no dependency is needed.
 import { createSearch } from "@enigmax/primitives";
@@ -125,6 +172,8 @@ You can also hand the constructor over yourself, which is what the `/search` ent
 import Fuse from "fuse.js";
 createSearch({ items: docs, keys: ["title"], fuse: Fuse });   // the CONSTRUCTOR, not an instance
 ```
+    </div>
+</Frameworks>
     </div>
 </Preview>
 
