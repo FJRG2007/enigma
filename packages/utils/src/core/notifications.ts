@@ -6,7 +6,15 @@
  * back and they never see the message, so the remaining time is held, not run.
  */
 
-export type NotificationTone = "info" | "success" | "warning" | "error";
+export type NotificationTone = "info" | "success" | "warning" | "error" | "loading";
+
+/** One button on a notification. Anything more belongs on the page, not in a toast. */
+export interface NotificationAction {
+    label: string;
+    onSelect: () => void;
+    /** Dismiss once it has been pressed. On by default. */
+    dismiss?: boolean;
+}
 
 export interface NotificationInput {
     /** Reuses the slot of a live notification with the same key instead of stacking. */
@@ -16,16 +24,25 @@ export interface NotificationInput {
     tone?: NotificationTone;
     /** ms before it dismisses itself. 0 or Infinity keeps it until dismissed. */
     duration?: number;
-    /** Arbitrary payload for the renderer: an action label, an href, an icon name. */
+    action?: NotificationAction;
+    /** Arbitrary payload for the renderer: an href, an icon name. */
     data?: unknown;
 }
 
-export interface Notification extends Required<Omit<NotificationInput, "body" | "data" | "key">> {
+export interface Notification extends Required<Omit<NotificationInput, "body" | "data" | "key" | "action">> {
     id: string;
     key?: string;
     body?: string;
+    action?: NotificationAction;
     data?: unknown;
     createdAt: number;
+}
+
+/** What `promise()` shows at each stage. A function receives the resolved value or the error. */
+export interface PromiseMessages<T> {
+    loading: string | NotificationInput;
+    success: string | ((value: T) => string | NotificationInput);
+    error: string | ((error: unknown) => string | NotificationInput);
 }
 
 export interface NotificationsOptions {
@@ -40,6 +57,13 @@ export interface NotificationsOptions {
 export interface Notifications {
     readonly items: readonly Notification[];
     notify(input: NotificationInput): string;
+    /** Change a live notification in place, keeping its slot and restarting its timer. */
+    update(id: string, patch: Partial<NotificationInput>): void;
+    /**
+     * One notification that follows an async operation from loading to its outcome, in the
+     * same slot. The alternative is three toasts stacking up for one action.
+     */
+    promise<T>(work: Promise<T>, messages: PromiseMessages<T>): Promise<T>;
     dismiss(id: string): void;
     dismissAll(): void;
     /** Hold every timer, e.g. while a pointer rests on the stack. */
@@ -57,7 +81,8 @@ export function createNotifications(options: NotificationsOptions = {}): Notific
     const view = typeof document === "undefined" ? null : document;
     const max = options.max ?? DEFAULT_MAX;
     const defaultDuration = options.duration ?? DEFAULT_DURATION;
-    const sticky = new Set<NotificationTone>(options.stickyTones ?? ["error"]);
+    // `loading` is sticky by definition - it ends when the work does, not on a timer.
+    const sticky = new Set<NotificationTone>([...(options.stickyTones ?? ["error"]), "loading"]);
 
     let items: Notification[] = [];
     let paused = false;
@@ -104,6 +129,7 @@ export function createNotifications(options: NotificationsOptions = {}): Notific
             body: input.body,
             tone,
             duration,
+            action: input.action,
             data: input.data,
             createdAt: Date.now()
         };
@@ -136,9 +162,50 @@ export function createNotifications(options: NotificationsOptions = {}): Notific
         else instance.resume();
     };
 
+    function update(id: string, patch: Partial<NotificationInput>): void {
+        const current = items.find(item => item.id === id);
+        if (!current) return;
+
+        // In place rather than through notify(): notify dedupes by KEY, and a notification
+        // raised without one would be appended as a second toast instead of replaced.
+        const tone = patch.tone ?? current.tone;
+        // A patch that changes the tone takes that tone's default duration unless it names
+        // one, so a loading toast turning into a success stops being sticky.
+        const duration = patch.duration ?? (patch.tone ? (sticky.has(tone) ? Infinity : defaultDuration) : current.duration);
+
+        items = items.map(item => (item.id === id ? { ...current, ...patch, tone, duration } : item));
+        clearTimer(id);
+        startTimer(id, duration);
+        emit();
+    }
+
+    function resolveMessage<T>(message: string | NotificationInput | ((value: T) => string | NotificationInput), value: T): NotificationInput {
+        const resolved = typeof message === "function" ? message(value) : message;
+        return typeof resolved === "string" ? { title: resolved } : resolved;
+    }
+
+    async function promise<T>(work: Promise<T>, messages: PromiseMessages<T>): Promise<T> {
+        const start = typeof messages.loading === "string" ? { title: messages.loading } : messages.loading;
+        // A key ties every stage to the same slot, so one action is one toast.
+        const key = start.key ?? `p${++sequence}`;
+        notify({ ...start, key, tone: "loading" });
+        try {
+            const value = await work;
+            notify({ ...resolveMessage(messages.success, value), key, tone: "success" });
+            return value;
+        } catch (error) {
+            notify({ ...resolveMessage(messages.error, error), key, tone: "error" });
+            // Rethrown: swallowing it here would turn a failed call into a silent success
+            // for everything downstream of the await.
+            throw error;
+        }
+    }
+
     const instance: Notifications = {
         get items() { return Object.freeze([...items]); },
         notify,
+        update,
+        promise,
         dismiss,
         dismissAll(): void {
             for (const item of items) clearTimer(item.id);

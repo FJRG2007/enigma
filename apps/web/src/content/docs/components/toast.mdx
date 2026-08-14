@@ -1,0 +1,143 @@
+---
+title: Toast
+description: The notification queue with a renderer on top - stacking, swipe to dismiss, a pointer that stops the clock, and the Ember theme, which is a stylesheet you own.
+group: Data
+order: 31.5
+space: components
+---
+import Installation from "../../../components/Installation.astro";
+import StyleTabs from "../../../components/StyleTabs.astro";
+import Html from "../../../components/Html.astro";
+import { highlightedRecipe } from "../../../lib/recipe";
+
+export const tailwindRecipe = highlightedRecipe("@enigmax/utils", "toast/tailwind.tsx");
+export const cssSheet = highlightedRecipe("@enigmax/utils", "toast/styles.css");
+
+Mount it once, notify from anywhere.
+
+```tsx
+import { Toaster, useNotifications } from "@enigmax/utils/react";
+import "@enigmax/utils/toast.css";
+
+// once, near the root
+<Toaster position="bottom-right" />
+
+// anywhere
+const { notify } = useNotifications();
+notify({ title: "Saved", body: "Two files changed", tone: "success" });
+```
+
+## Installation
+
+<Installation item="toast" pkg="@enigmax/utils" entry="@enigmax/utils/react">
+    <div slot="manual">
+
+**Ember** is the default theme, and it is entirely this stylesheet. The custom properties at
+the top are the whole API: override them on `:root` and you have a different theme without
+touching a selector.
+
+<StyleTabs title="Ember">
+    <div slot="tailwind">
+        <Html html={tailwindRecipe} />
+    </div>
+    <div slot="css">
+        <Html html={cssSheet} />
+    </div>
+</StyleTabs>
+
+    </div>
+</Installation>
+
+## One action, one toast
+
+`promise` follows an async operation from loading to its outcome **in the same slot**. The
+alternative is three toasts stacking up for one thing the visitor did once.
+
+```tsx
+const { promise } = useNotifications();
+
+await promise(saveDocument(draft), {
+    loading: "Saving...",
+    success: (saved) => `Saved as ${saved.name}`,
+    error: (error) => `Could not save: ${error.message}`
+});
+```
+
+It **rethrows**. Swallowing the rejection here would turn a failed call into a silent
+success for everything after the `await`, which is a worse bug than a missing toast.
+
+`loading` is sticky by definition - it ends when the work ends, not on a timer - and stops
+being sticky the moment it becomes a success.
+
+## An action on the toast
+
+```tsx
+notify({
+    title: "Message deleted",
+    action: { label: "Undo", onSelect: () => restore(message) }
+});
+```
+
+Pressing it dismisses the toast unless you pass `dismiss: false`. A press on the button is
+never read as the start of a swipe.
+
+## What the renderer adds
+
+The queue underneath already owns ordering, dedupe by key, sticky errors and timers that
+**hold** while the tab is hidden rather than running down. Four things it cannot express
+live in the component:
+
+**A toast that is leaving is still on screen.** The queue drops an item the moment it is
+dismissed, so the component keeps its own list and holds the node for `exitDuration` before
+removing it. Without that there is nothing left to animate.
+
+**A pointer resting on the stack stops every clock**, and so does focus, so a message cannot
+expire while it is being read.
+
+**A swipe follows the finger before it decides anything** - only towards the edge the stack
+is pinned to, springing back under the threshold. The offset is published as
+`--enigma-toast-swipe`, so the transform stays your stylesheet's decision, and the
+transition is dropped mid-drag because a toast lagging behind the pointer reads as a broken
+gesture rather than a smooth one.
+
+**An error interrupts.** `role="alert"` and `aria-live="assertive"` for errors,
+`role="status"` and `polite` for everything else, so a success never talks over whatever a
+screen reader is already reading.
+
+## Rendering it yourself
+
+Pass a function and the component keeps the stack, the gestures and the exit hold while you
+own every element inside.
+
+```tsx
+<Toaster position="top-center">
+    {(notification, { dismiss }) => (
+        <div className="my-toast">
+            <MyIcon tone={notification.tone} />
+            <p>{notification.title}</p>
+            <button onClick={dismiss}>Close</button>
+        </div>
+    )}
+</Toaster>
+```
+
+## Props and hooks
+
+| Prop | Default | |
+| --- | --- | --- |
+| `position` | `"bottom-right"` | Six positions; the enter, exit and swipe all follow it |
+| `queue` | the shared one | Pass your own from `createNotifications` |
+| `exitDuration` | `200` | Must match the exit animation, or it is cut off |
+| `swipeThreshold` | `60` | Px before a release dismisses |
+
+| Attribute | On |
+| --- | --- |
+| `[data-enigma-toaster]` | The region - carries `data-position` |
+| `[data-enigma-toast]` | One toast - `data-tone`, `data-state`, `data-index`, `data-swiping` |
+| `[data-state="leaving"]` | On its way out. This is your exit animation's cue |
+| `[data-front]` | The newest one, for a stack that scales the ones behind |
+| `[data-enigma-toast-action]` | The action button |
+
+Deliberately **not** built on sonner or a fork of it. The queue already decides when a
+message disappears; adding a second library's store would mean two things deciding that, and
+the one you did not configure wins.

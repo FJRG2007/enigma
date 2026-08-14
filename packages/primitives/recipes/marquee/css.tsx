@@ -1,4 +1,4 @@
-import "./marquee.css";
+import "./styles.css";
 import type { ReactNode, Ref } from "react";
 import { useMarquee, type MarqueeHover } from "@enigmax/primitives/react";
 

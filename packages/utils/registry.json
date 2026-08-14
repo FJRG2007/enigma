@@ -31,7 +31,7 @@
       "files": [
         {
           "path": "src/core/cache.ts",
-          "dest": "cache.ts",
+          "dest": "cache/cache.ts",
           "targets": [
             "vanilla",
             "astro",
@@ -40,13 +40,14 @@
         },
         {
           "path": "src/react/use-cached.ts",
-          "dest": "use-cached.ts",
+          "dest": "cache/use-cached.ts",
           "targets": [
             "react"
           ],
           "rewrite": {
             "@/core/cache": "./cache"
-          }
+          },
+          "main": true
         }
       ],
       "styles": false,
@@ -80,7 +81,7 @@
       "files": [
         {
           "path": "src/core/notifications.ts",
-          "dest": "notifications.ts",
+          "dest": "notifications/notifications.ts",
           "targets": [
             "vanilla",
             "astro",
@@ -89,17 +90,18 @@
         },
         {
           "path": "src/react/use-notifications.ts",
-          "dest": "use-notifications.ts",
+          "dest": "notifications/use-notifications.ts",
           "targets": [
             "react"
           ],
           "rewrite": {
             "@/core/notifications": "./notifications"
-          }
+          },
+          "main": true
         },
         {
-          "path": "recipes/notifications.tailwind.tsx",
-          "dest": "Notifications.tsx",
+          "path": "recipes/notifications/tailwind.tsx",
+          "dest": "notifications/Notifications.tsx",
           "targets": [
             "react"
           ],
@@ -110,6 +112,92 @@
       "docs": "docs/notes/primitives.md#notifications",
       "recipes": [
         "tailwind"
+      ]
+    },
+    {
+      "name": "toast",
+      "title": "Toast",
+      "description": "The notification queue with a renderer on top: stacking, swipe to dismiss, a pointer that stops the clock, and a toast that is still on screen while it animates out. Ships the Ember theme, which is a stylesheet you own.",
+      "targets": [
+        "react"
+      ],
+      "entry": {
+        "react": "@enigmax/utils/react"
+      },
+      "exports": {
+        "react": [
+          "Toaster",
+          "useNotifications"
+        ]
+      },
+      "files": [
+        {
+          "path": "src/core/notifications.ts",
+          "dest": "toast/notifications.ts",
+          "targets": [
+            "react"
+          ]
+        },
+        {
+          "path": "src/react/use-notifications.ts",
+          "dest": "toast/use-notifications.ts",
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/core/notifications": "./notifications"
+          }
+        },
+        {
+          "path": "src/react/toaster.tsx",
+          "dest": "toast/index.tsx",
+          "main": true,
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/core/notifications": "./notifications",
+            "@/react/use-notifications": "./use-notifications"
+          }
+        },
+        {
+          "path": "recipes/toast/styles.css",
+          "dest": "toast/styles.css",
+          "targets": [
+            "react"
+          ],
+          "style": "css"
+        },
+        {
+          "path": "recipes/toast/tailwind.tsx",
+          "dest": "toast/AppToaster.tsx",
+          "targets": [
+            "react"
+          ],
+          "style": "tailwind",
+          "rewrite": {
+            "@enigmax/utils/react": "./index"
+          }
+        }
+      ],
+      "styles": false,
+      "themeHooks": [
+        "[data-enigma-toaster]",
+        "[data-enigma-toaster][data-position]",
+        "[data-enigma-toast]",
+        "[data-enigma-toast][data-tone=error]",
+        "[data-enigma-toast][data-state=leaving]",
+        "[data-enigma-toast][data-swiping]",
+        "[data-enigma-toast][data-front]",
+        "[data-enigma-toast-title]",
+        "[data-enigma-toast-body]",
+        "[data-enigma-toast-action]",
+        "[data-enigma-toast-close]"
+      ],
+      "docs": "docs/notes/primitives.md#toast",
+      "recipes": [
+        "tailwind",
+        "css"
       ]
     },
     {
@@ -140,7 +228,7 @@
       "files": [
         {
           "path": "src/core/network.ts",
-          "dest": "network.ts",
+          "dest": "network/network.ts",
           "targets": [
             "vanilla",
             "astro",
@@ -149,13 +237,14 @@
         },
         {
           "path": "src/react/use-network-state.ts",
-          "dest": "use-network-state.ts",
+          "dest": "network/use-network-state.ts",
           "targets": [
             "react"
           ],
           "rewrite": {
             "@/core/network": "./network"
-          }
+          },
+          "main": true
         }
       ],
       "styles": false,

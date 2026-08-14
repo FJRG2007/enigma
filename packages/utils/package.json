@@ -1,6 +1,6 @@
 {
   "name": "@enigmax/utils",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Headless application utilities: short-TTL read cache with in-flight deduplication, notification queue with held timers, connection state, relative timestamps, and the framework adapters over them.",
   "type": "module",
   "main": "./dist/index.js",
@@ -15,7 +15,8 @@
       "import": "./dist/react/index.js"
     },
     "./registry.json": "./registry.json",
-    "./relative-time.css": "./recipes/relative-time/styles.css"
+    "./relative-time.css": "./recipes/relative-time/styles.css",
+    "./toast.css": "./recipes/toast/styles.css"
   },
   "scripts": {
     "build": "tsup",

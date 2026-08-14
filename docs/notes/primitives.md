@@ -314,6 +314,43 @@ Decisions worth keeping:
 - **An anchor cannot be `disabled`**, only `aria-disabled`, which is advisory - so the
   click handler refuses the press itself rather than trusting the attribute.
 
+## toast
+
+`<Toaster />` in utils, over the notification queue that was already there. Deliberately NOT
+a dependency on sonner or a vendored fork of one: the queue owns ordering, dedupe by key,
+sticky errors and timers that hold while the tab is hidden, and pairing it with a second
+library's store would mean two things deciding when a message disappears.
+
+The renderer adds the four things a queue cannot express:
+
+- **A toast that is leaving is still on screen.** The queue drops an item the moment it is
+  dismissed, so the component keeps its own list and holds the node for `exitDuration`
+  before removing it. Without that the stack jumps and nothing can animate out.
+- **A pointer resting on the stack stops every clock** (and focus does too), so a message
+  cannot expire while it is being read.
+- **A swipe follows the finger before it decides anything**, only towards the edge the stack
+  is pinned to, and springs back under the threshold. `--enigma-toast-swipe` is published as
+  a custom property so the transform stays the stylesheet's decision - and the transition is
+  dropped mid-drag, because a lagging toast reads as a broken gesture.
+- **An error interrupts; everything else waits its turn.** `role="alert"`/`assertive` for
+  errors, `role="status"`/`polite` otherwise.
+
+The stack is seeded from the queue rather than from an empty list, so a `notify()` that
+happened before the Toaster mounted - during a redirect, or from a module that runs early -
+is not invisible for a frame.
+
+`promise()` and `update()` went into the core for this. One async action is ONE toast that
+travels from loading to its outcome in the same slot; the alternative is three stacking up.
+`promise()` rethrows, because swallowing the rejection would turn a failed call into a
+silent success for everything after the await. `update()` patches in place rather than going
+through `notify()`, which dedupes by KEY - a notification raised without one would be
+appended as a second toast instead of replaced.
+
+The default theme is called **Ember** and is entirely in `recipes/toast/styles.css`: custom
+properties at the top are the whole API, and overriding them on `:root` is a new theme
+without touching a selector. `loading` is sticky by definition, since it ends when the work
+does.
+
 ## password-breach
 
 `checkPasswordBreach(password)` in utils. Have I Been Pwned's range API is k-anonymous: the

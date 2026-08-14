@@ -31,7 +31,7 @@
       "files": [
         {
           "path": "src/core/marquee.ts",
-          "dest": "marquee.ts",
+          "dest": "marquee/marquee.ts",
           "targets": [
             "vanilla",
             "astro",
@@ -40,33 +40,34 @@
         },
         {
           "path": "src/react/use-marquee.ts",
-          "dest": "use-marquee.ts",
+          "dest": "marquee/use-marquee.ts",
           "targets": [
             "react"
           ],
           "rewrite": {
             "@/core/marquee": "./marquee"
-          }
+          },
+          "main": true
         },
         {
-          "path": "recipes/marquee.tailwind.tsx",
-          "dest": "Marquee.tsx",
+          "path": "recipes/marquee/tailwind.tsx",
+          "dest": "marquee/Marquee.tsx",
           "targets": [
             "react"
           ],
           "style": "tailwind"
         },
         {
-          "path": "recipes/marquee.css.tsx",
-          "dest": "Marquee.tsx",
+          "path": "recipes/marquee/css.tsx",
+          "dest": "marquee/Marquee.tsx",
           "targets": [
             "react"
           ],
           "style": "css"
         },
         {
-          "path": "recipes/marquee.css",
-          "dest": "marquee.css",
+          "path": "recipes/marquee/styles.css",
+          "dest": "marquee/styles.css",
           "targets": [
             "react",
             "vanilla",
@@ -235,7 +236,7 @@
       "files": [
         {
           "path": "src/core/search.ts",
-          "dest": "search.ts",
+          "dest": "search/search.ts",
           "targets": [
             "vanilla",
             "astro",
@@ -244,17 +245,18 @@
         },
         {
           "path": "src/react/use-search.ts",
-          "dest": "use-search.ts",
+          "dest": "search/use-search.ts",
           "targets": [
             "react"
           ],
           "rewrite": {
             "@/core/search": "./search"
-          }
+          },
+          "main": true
         },
         {
-          "path": "recipes/search.tailwind.tsx",
-          "dest": "Search.tsx",
+          "path": "recipes/search/tailwind.tsx",
+          "dest": "search/Search.tsx",
           "targets": [
             "react"
           ],
