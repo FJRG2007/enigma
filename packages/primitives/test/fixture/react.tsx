@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { createRoot } from "react-dom/client";
-import { Button, Input, type BreachState, type PasswordStrengthReport } from "@/react/index";
+import { Button, Input, setLinkComponent, type BreachState, type PasswordStrengthReport } from "@/react/index";
 
 /**
  * The React fixture: a registration form of the kind `<Input>` is for, wired the way a real
@@ -12,6 +12,7 @@ interface FixtureWindow extends Window {
     __ready: boolean;
     __presses: number;
     __release: () => void;
+    __unsetLink: () => void;
     __submits: number;
     __value: string;
     __strength: PasswordStrengthReport | null;
@@ -26,6 +27,15 @@ fixture.__strength = null;
 fixture.__breach = null;
 fixture.__breachCalls = [];
 fixture.__presses = 0;
+
+/**
+ * Stands in for next/link: a component that renders an anchor and marks itself, so a test
+ * can tell a registered router link from the plain fallback.
+ */
+function FakeLink({ href, children, ...rest }: { href?: string; children?: React.ReactNode; }) {
+    return <a href={href} data-router-link="" {...rest}>{children}</a>;
+}
+setLinkComponent(FakeLink);
 
 /** Answers instantly and locally, so the test measures the component and not a network. */
 const BREACHED = new Set(["password", "hunter2"]);
@@ -45,7 +55,15 @@ function checkBreach(password: string, { signal }: { signal: AbortSignal; }): Pr
 
 function Form(): React.ReactNode {
     const [password, setPassword] = useState("");
+    const [, redraw] = useState(0);
     fixture.__value = password;
+
+    // Dropping the registration has to be followed by a render: the component reads the
+    // registered link while rendering, so nothing on screen changes on its own.
+    fixture.__unsetLink = () => {
+        setLinkComponent(null);
+        redraw((count) => count + 1);
+    };
 
     return (
         <form
@@ -83,6 +101,7 @@ function Form(): React.ReactNode {
                 {({ cooldown }) => (cooldown > 0 ? `Wait ${Math.ceil(cooldown / 1000)}s` : "Send")}
             </Button>
 
+            {/* No `as`: the href alone picks up the link registered above. */}
             <Button data-testid="link" href="/settings">Settings</Button>
         </form>
     );

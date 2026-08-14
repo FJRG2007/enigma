@@ -301,6 +301,7 @@
         ],
         "react": [
           "Button",
+          "setLinkComponent",
           "useButton"
         ]
       },
@@ -325,6 +326,13 @@
           }
         },
         {
+          "path": "src/react/link.ts",
+          "dest": "button/link.ts",
+          "targets": [
+            "react"
+          ]
+        },
+        {
           "path": "src/react/button.tsx",
           "dest": "button/index.tsx",
           "main": true,
@@ -333,7 +341,8 @@
           ],
           "rewrite": {
             "@/core/button": "./button",
-            "@/react/use-button": "./use-button"
+            "@/react/use-button": "./use-button",
+            "@/react/link": "./link"
           }
         }
       ],

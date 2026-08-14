@@ -1,6 +1,7 @@
 "use client";
 
 import { useButton } from "@/react/use-button";
+import { getLinkComponent } from "@/react/link";
 import type { ButtonOptions, ButtonState } from "@/core/button";
 import { createElement, forwardRef, type ComponentPropsWithoutRef, type ElementType, type ReactNode } from "react";
 
@@ -21,12 +22,8 @@ import { createElement, forwardRef, type ComponentPropsWithoutRef, type ElementT
 // reports the button's state - would otherwise clash with the form event of the same name.
 export interface ButtonProps extends ButtonOptions, Omit<ComponentPropsWithoutRef<"button">, "onClick" | "onChange" | "children" | "type"> {
     /**
-     * What to render. Defaults to `a` when there is an href and `button` otherwise, which
-     * is what you want until a router is involved - then pass its Link and keep the rest.
-     *
-     * ```tsx
-     * <Button as={Link} href="/settings">Settings</Button>
-     * ```
+     * Override what to render. You rarely need it: an href already renders whatever
+     * `setLinkComponent` registered - your router's Link - and a button otherwise.
      */
     as?: ElementType;
     /**
@@ -62,9 +59,11 @@ export const Button = forwardRef<HTMLElement, ButtonProps>(function Button({
     const button = useButton({ href, disabled, loading, cooldown, shortcut, onPress, onChange });
     const state: ButtonState = button;
 
-    // Reported, not chosen: an href makes it an anchor, and a package that cannot import
-    // next/link must not be the thing deciding. `as` overrides both.
-    const Tag: ElementType = as ?? state.element;
+    // An href renders the registered link - next/link, react-router's, whatever was passed
+    // to setLinkComponent - and a plain <a> when nothing was. The package cannot import a
+    // router itself, so registering one is what turns every href into a client navigation
+    // without a word at the call site.
+    const Tag: ElementType = as ?? (state.element === "a" ? getLinkComponent() : "button");
 
     // `type="button"` is the default on purpose. A bare <button> inside a form submits it,
     // so an action button that forgot it posts the form instead of doing its job.

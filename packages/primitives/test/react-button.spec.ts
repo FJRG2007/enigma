@@ -37,11 +37,23 @@ test.describe("Button (React)", () => {
         expect(await read(page, "__submits")).toBe(0);
     });
 
-    test("an href renders an anchor rather than a button", async ({ page }) => {
+    test("an href renders the registered router link, with nothing at the call site", async ({ page }) => {
         await open(page);
         const link = page.locator("[data-testid=link]");
         expect(await link.evaluate((node) => node.tagName)).toBe("A");
         await expect(link).toHaveAttribute("href", "/settings");
+        // The fixture called setLinkComponent once. `<Button href>` carries no `as`, so
+        // this attribute only exists if the registered link is what rendered.
+        await expect(link).toHaveAttribute("data-router-link", "");
+    });
+
+    test("without a registered link an href is still a plain anchor", async ({ page }) => {
+        await open(page);
+        await page.evaluate(() => (window as unknown as { __unsetLink: () => void; }).__unsetLink());
+        const link = page.locator("[data-testid=link]");
+        expect(await link.evaluate((node) => node.tagName)).toBe("A");
+        // Correct everywhere; it just means a full page load under a router.
+        await expect(link).not.toHaveAttribute("data-router-link", "");
     });
 
     test("async work swaps the label, marks it busy, and refuses a second press", async ({ page }) => {
