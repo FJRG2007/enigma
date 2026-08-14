@@ -33,27 +33,14 @@ const { command, bare = false } = Astro.props;
     .cmd .cmd-text::-webkit-scrollbar { display: none; }
     .cmd-copy { flex: 0 0 auto; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; color: var(--muted); background: transparent; border: 1px solid var(--border); cursor: pointer; }
     .cmd-copy:hover { color: var(--text); border-color: var(--accent); }
-    .cmd-copy.ok { color: var(--good); border-color: var(--good); }
+    .cmd-copy.done { color: var(--good); border-color: var(--good); }
     .cmd-copy svg { width: 13px; height: 13px; }
 </style>
 
 <script>
+    import { bindCopy } from "../lib/copy";
+
     for (const button of document.querySelectorAll<HTMLButtonElement>("[data-command]")) {
-        button.addEventListener("click", async () => {
-            const value = button.dataset.command ?? "";
-            try {
-                await navigator.clipboard.writeText(value);
-            } catch {
-                // A clipboard-guard extension can break writeText; execCommand still works.
-                const scratch = document.createElement("textarea");
-                scratch.value = value;
-                document.body.append(scratch);
-                scratch.select();
-                document.execCommand("copy");
-                scratch.remove();
-            }
-            button.classList.add("ok");
-            setTimeout(() => button.classList.remove("ok"), 1200);
-        });
+        bindCopy(button, () => button.dataset.command ?? "");
     }
 </script>

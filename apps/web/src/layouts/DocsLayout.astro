@@ -331,39 +331,19 @@ const componentSource = componentName
 </script>
 
 <script>
-    // Add a hover copy button to every docs code block. Uses the async Clipboard API with a
-    // synchronous execCommand fallback for when it is unavailable or blocked (e.g. a browser
-    // clipboard-guard extension that breaks navigator.clipboard.writeText).
-    const COPY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
-    const CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+    import { COPY_ICON, bindCopy } from "../lib/copy";
 
-    function fallbackCopy(text: string): boolean {
-        try {
-            const ta = document.createElement("textarea");
-            ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
-            document.body.appendChild(ta); ta.focus(); ta.select();
-            const ok = document.execCommand("copy");
-            ta.remove();
-            return ok;
-        } catch { return false; }
-    }
-
-    document.querySelectorAll<HTMLPreElement>(".doc pre").forEach((pre) => {
-        const code = pre.querySelector("code") ?? pre;
-        const btn = document.createElement("button");
-        btn.type = "button";
-        btn.className = "code-copy";
-        btn.setAttribute("aria-label", "Copy code");
-        btn.innerHTML = COPY;
-        btn.addEventListener("click", async () => {
-            const text = (code as HTMLElement).innerText;
-            let ok = false;
-            try { await navigator.clipboard.writeText(text); ok = true; }
-            catch { ok = fallbackCopy(text); }
-            if (!ok) return;
-            btn.innerHTML = CHECK; btn.classList.add("done");
-            setTimeout(() => { btn.innerHTML = COPY; btn.classList.remove("done"); }, 1600);
-        });
-        pre.appendChild(btn);
+    // A hover copy button on every docs code block, from the same helper the inline
+    // commands use - one implementation, one behaviour, one confirmation.
+    document.querySelectorAll<HTMLElement>(".doc pre").forEach((pre) => {
+        const code = pre.querySelector("code");
+        if (!code) return;
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "code-copy";
+        button.setAttribute("aria-label", "Copy code");
+        button.innerHTML = COPY_ICON;
+        bindCopy(button, () => (code as HTMLElement).innerText);
+        pre.appendChild(button);
     });
 </script>
