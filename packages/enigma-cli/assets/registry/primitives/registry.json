@@ -92,8 +92,8 @@
     },
     {
       "name": "input",
-      "title": "Input affordances",
-      "description": "In-field buttons with no styles of their own. A password field gets its reveal toggle automatically; the icon, label, side and container are all replaceable, and any other action plugs into the same mechanism.",
+      "title": "Input, with what a password field needs",
+      "description": "A field you pass props to, with no styles of its own. A password gets its reveal toggle automatically; a generator, a strength meter and a breach check are one prop each and off until you ask. React renders every part of it, so nothing fights your tree.",
       "targets": [
         "vanilla",
         "astro",
@@ -112,13 +112,23 @@
           "createInput"
         ],
         "react": [
-          "useInput"
+          "Input",
+          "PasswordStrength"
         ]
       },
       "files": [
         {
           "path": "src/core/input.ts",
-          "dest": "input.ts",
+          "dest": "input/input.ts",
+          "targets": [
+            "vanilla",
+            "astro",
+            "react"
+          ]
+        },
+        {
+          "path": "src/core/password.ts",
+          "dest": "input/password.ts",
           "targets": [
             "vanilla",
             "astro",
@@ -127,7 +137,7 @@
         },
         {
           "path": "src/react/use-input.ts",
-          "dest": "use-input.ts",
+          "dest": "input/use-input.ts",
           "targets": [
             "react"
           ],
@@ -136,40 +146,60 @@
           }
         },
         {
-          "path": "recipes/input.tailwind.tsx",
-          "dest": "Field.tsx",
-          "targets": [
-            "react"
-          ],
-          "style": "tailwind"
-        },
-        {
-          "path": "recipes/input.css.tsx",
-          "dest": "Field.tsx",
-          "targets": [
-            "react"
-          ],
-          "style": "css"
-        },
-        {
-          "path": "recipes/input.css",
-          "dest": "input.css",
+          "path": "recipes/input/styles.css",
+          "dest": "input/styles.css",
           "targets": [
             "react",
             "vanilla",
             "astro"
           ],
           "style": "css"
+        },
+        {
+          "path": "src/react/input.tsx",
+          "dest": "input/index.tsx",
+          "main": true,
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/core/input": "./input",
+            "@/core/password": "./password"
+          }
+        },
+        {
+          "path": "recipes/input/tailwind.tsx",
+          "dest": "input/PasswordField.tsx",
+          "targets": [
+            "react"
+          ],
+          "style": "tailwind",
+          "rewrite": {
+            "@enigmax/primitives/react": "./index"
+          }
         }
       ],
       "styles": false,
       "themeHooks": [
+        "[data-enigma-input-root]",
+        "[data-enigma-input-root][data-revealed]",
+        "[data-enigma-input-root][data-breached]",
+        "[data-enigma-input-root][data-score]",
+        "[data-enigma-input-field]",
         "[data-enigma-input]",
         "[data-enigma-input][data-enigma-input-reveal=on]",
         "[data-enigma-input-actions]",
         "[data-enigma-input-actions][data-position=start]",
         "[data-enigma-input-action]",
-        "[data-enigma-input-action=reveal]"
+        "[data-enigma-input-action=reveal]",
+        "[data-enigma-input-action=generate]",
+        "[data-enigma-password-strength]",
+        "[data-enigma-password-strength][data-empty]",
+        "[data-enigma-password-strength-track]",
+        "[data-enigma-password-strength-segment]",
+        "[data-enigma-password-strength-segment][data-filled]",
+        "[data-enigma-password-strength-label]",
+        "[data-enigma-password-strength-warning]"
       ],
       "docs": "docs/notes/primitives.md#input",
       "recipes": [

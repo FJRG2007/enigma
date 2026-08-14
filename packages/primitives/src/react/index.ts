@@ -8,3 +8,21 @@ export { type InputOptions, type InputAction, type InputIcon } from "@/core/inpu
 export { type SearchOptions, type SearchMatch, type FuseConstructor } from "@/core/search";
 export { useButton, type UseButtonResult } from "@/react/use-button";
 export { type ButtonOptions, type ButtonState } from "@/core/button";
+export {
+    Input,
+    PasswordStrength,
+    type InputProps,
+    type PasswordStrengthProps,
+    type FieldAction,
+    type BreachChecker,
+    type BreachState,
+    type BreachStatus
+} from "@/react/input";
+export {
+    generatePassword,
+    estimatePasswordStrength,
+    type GeneratePasswordOptions,
+    type EstimateOptions,
+    type PasswordStrengthReport,
+    type PasswordScore
+} from "@/core/password";

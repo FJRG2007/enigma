@@ -162,6 +162,58 @@
       "docs": "docs/notes/primitives.md#network"
     },
     {
+      "name": "password-breach",
+      "title": "Breached-password check",
+      "description": "Ask Have I Been Pwned whether a password has leaked, without sending it anywhere: it is hashed in the browser and only the first five characters of that hash are sent, so the service never learns which password was looked up. Reports a count and throws what it cannot do - what a breach means is the form's decision.",
+      "targets": [
+        "vanilla",
+        "astro",
+        "react"
+      ],
+      "entry": {
+        "vanilla": "@enigmax/utils",
+        "astro": "@enigmax/utils",
+        "react": "@enigmax/utils"
+      },
+      "exports": {
+        "vanilla": [
+          "checkPasswordBreach"
+        ],
+        "astro": [
+          "checkPasswordBreach"
+        ],
+        "react": [
+          "checkPasswordBreach"
+        ]
+      },
+      "files": [
+        {
+          "path": "src/core/cache.ts",
+          "dest": "password-breach/cache.ts",
+          "targets": [
+            "vanilla",
+            "astro",
+            "react"
+          ]
+        },
+        {
+          "path": "src/core/password-breach.ts",
+          "dest": "password-breach/index.ts",
+          "main": true,
+          "targets": [
+            "vanilla",
+            "astro",
+            "react"
+          ],
+          "rewrite": {
+            "@/core/cache": "./cache"
+          }
+        }
+      ],
+      "styles": false,
+      "docs": "docs/notes/primitives.md#password-breach"
+    },
+    {
       "name": "relative-time",
       "title": "Relative timestamps",
       "description": "\"3 hours ago\", kept current, localised by the page's own language. A timestamp with no zone is read as UTC instead of as the server's local time, and the absolute date is rendered as the element's child so a server render and a reader without JavaScript still see a real date.",

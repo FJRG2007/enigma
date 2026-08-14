@@ -2,6 +2,13 @@ export { createCache, type Cache, type CacheOptions, type CacheEntry, type Cache
 export { createNotifications, type Notifications, type Notification, type NotificationInput, type NotificationTone, type NotificationsOptions } from "@/core/notifications";
 export { createNetworkMonitor, SERVER_NETWORK_STATE, type NetworkState, type NetworkMonitor } from "@/core/network";
 export {
+    checkPasswordBreach,
+    PasswordBreachError,
+    type PasswordBreachOptions,
+    type PasswordBreachResult,
+    type BreachFailure
+} from "@/core/password-breach";
+export {
     relativeTimeView,
     relativeTimeAttributes,
     normalizeDate,

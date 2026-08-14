@@ -37,6 +37,12 @@ export interface RegistryFile {
     style?: ComponentStyle;
     /** Import specifiers to rewrite when the file is copied out of the package. */
     rewrite?: Record<string, string>;
+    /**
+     * The file a consumer imports from after a copy. Without it the last code file wins,
+     * which is only right while an item ships one adapter - a styled recipe alongside it
+     * would be reported as the entry purely for arriving last.
+     */
+    main?: boolean;
 }
 
 export interface RegistryItem {
@@ -296,10 +302,10 @@ export function usageSnippet(item: ResolvedItem, target: ComponentTarget, copied
     const names = item.exports[target] ?? item.exports.vanilla ?? [];
     if (!copiedInto) return `import { ${names.join(", ")} } from "${item.entry[target] ?? item.pkg}";`;
 
-    // The adapter is the last CODE file that matches the target; the core comes first, and
-    // a stylesheet at the end of the list is not something anyone imports symbols from.
+    // The entry is whichever file says it is; failing that, the last CODE file, because
+    // the core comes first and a stylesheet is not something anyone imports symbols from.
     const files = item.files.filter((file) => file.targets.includes(target) && /\.[cm]?[jt]sx?$/.test(file.dest));
-    const entry = (files[files.length - 1]?.dest ?? item.name)
+    const entry = (files.find((file) => file.main)?.dest ?? files[files.length - 1]?.dest ?? item.name)
         .replace(/\.[cm]?[jt]sx?$/, "")
         // A folder's index is addressed by the folder.
         .replace(/\/index$/, "");

@@ -34,3 +34,5 @@ packages/enigma-cli/bin/enigma-bin*
 # Playwright run artifacts from the component packages.
 packages/*/test-results/
 packages/*/playwright-report/
+# Test fixtures bundled at test time (React and the component, built by esbuild).
+packages/*/test/fixture/build/

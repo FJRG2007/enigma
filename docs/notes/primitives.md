@@ -128,6 +128,38 @@ link assertion proves nothing when the DOM has no links.
 
 ## input
 
+**React gets a component, not a hook over a DOM mutator.** `<Input>` renders the field, its
+buttons and the meter itself; `createInput` is the adapter for pages that are not React.
+The imperative version injecting buttons next to a field React owns meant two writers on
+one subtree - which is exactly what made the wrapper feel wrong to work with, and the
+reason the API now leads with `<Input {...props} />`. The shared parts (the icon paths, the
+generator, the estimator) live in core and both renderers use them.
+
+Nothing switches on by itself except the reveal. `generate`, `strength` and `breach` are one
+prop each and off until asked for, because they belong on registration and change-password
+forms and are noise on a sign-in.
+
+- **A generated password is written the way a keystroke would be.** Assigning `input.value`
+  is invisible to React - it compares against the last value it rendered and skips the
+  change event - so the value goes through the prototype's setter followed by a bubbling
+  `input` event. That is what makes the generator work with a controlled field, an
+  uncontrolled one and a form library without knowing which it is in. Tested by breaking it.
+- **`crypto.getRandomValues`, never `Math.random`**, and the index is drawn by rejection
+  rather than `% length`, which is biased. No CSPRNG means an exception: a generator that
+  quietly produces predictable passwords is worse than one that refuses, because nothing
+  downstream can tell.
+- **The meter reports, it does not decorate.** Score, bits and warnings come out of a pure
+  estimator; the component renders five segments and a `data-score`, and the recipe owns
+  red-through-green. The bands are a convention, not a measurement, and say so - swap the
+  estimator for zxcvbn where the number has to mean something.
+- **`userInputs` is the check no character-class rule makes.** `Ada@example.com1!` has four
+  classes and sixteen characters and is guessable by anyone looking at the form.
+- **The breach check is a prop**, not a built-in, because it makes a network request. It is
+  debounced and aborted on the next keystroke, so an answer about a password three
+  characters old can never overwrite the current one. The component reports `data-breached`
+  and a count and stops there: a breach is a warning in one form, a hard block in another,
+  and each form already renders that its own way.
+
 `createInput(field, options)`. A `type="password"` field gets a reveal toggle; the icon,
 the labels, the side and the container are all replaceable, and the built-in is expressed
 as an ordinary `InputAction` so passing one named `"reveal"` replaces it outright.
@@ -281,6 +313,28 @@ Decisions worth keeping:
   whenever any modifier is held, so it never steals a real shortcut or types into a field.
 - **An anchor cannot be `disabled`**, only `aria-disabled`, which is advisory - so the
   click handler refuses the press itself rather than trusting the attribute.
+
+## password-breach
+
+`checkPasswordBreach(password)` in utils. Have I Been Pwned's range API is k-anonymous: the
+password is hashed with SHA-1 in the browser, the FIRST FIVE hex characters of that hash are
+sent, and the service returns every suffix it knows under that prefix. The match happens
+locally. The password and its full hash never leave the machine, so the service cannot know
+which one was asked about. SHA-1 is protecting nothing here - it is the index the corpus is
+published under.
+
+- `Add-Padding: true` by default: without it the response SIZE narrows down which prefix was
+  requested, which is the one thing the k-anonymity model still leaks.
+- **A padded response carries decoy entries with a count of 0**, indistinguishable from a
+  real line except by that zero. Matching on the suffix alone reports every padded response
+  as a breach.
+- Range responses are cached for five minutes, so typing costs one request per distinct
+  prefix rather than one per keystroke.
+- **A failure throws.** Rounding a failed check down to "safe" is the one outcome that must
+  not happen quietly. An abort stays an `AbortError`, so a component cancelling on the next
+  keystroke does not surface a network error.
+- No WebCrypto (an http:// page) throws `insecure-context` rather than hashing in
+  JavaScript, which would be slower and no more private.
 
 ## relative-time
 
