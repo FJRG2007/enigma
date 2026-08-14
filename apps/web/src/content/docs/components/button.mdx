@@ -100,16 +100,30 @@ entry is only ever resolved by a project that has Next. That is why the main ent
 just import `next/link` itself: that import fails to resolve for every consumer on Vite,
 Astro, Remix or plain React, which is most of them.
 
-Everywhere else an `href` is a plain `<a>`. For another router, hand over its link once:
+React Router has an entry too, and it translates its `to` for you - so the call site is the
+same `href` whatever is underneath:
 
 ```tsx
-import { Link } from "react-router";
-import { setLinkComponent } from "@enigmax/primitives/react";
+import { Button } from "@enigmax/primitives/react-router";
 
-setLinkComponent(Link);
+<Button href="/settings">Settings</Button>
 ```
 
-`as` overrides both, for the one link in the app that needs something else.
+Everywhere else an `href` is a plain `<a>`, which is correct and only means a full page load
+under a router. For one that has no entry here yet, hand over its link once:
+
+```tsx
+import { setLinkComponent } from "@enigmax/primitives/react";
+
+setLinkComponent(MyRouterLink);
+```
+
+That is the same shape as [React Aria's
+`RouterProvider`](https://react-spectrum.adobe.com/react-aria/routing.html), which takes the
+router's `navigate` instead of its link: one mechanism for every router, at the cost of a
+line of setup. The entries above exist so the two routers most people are on do not need it.
+
+`as` overrides everything, for the one link in the app that needs something else.
 
 ## The four decisions
 

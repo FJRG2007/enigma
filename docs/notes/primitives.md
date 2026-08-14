@@ -307,8 +307,15 @@ everything with `Button` bound to `next/link`, so an href is a client navigation
 nothing at the call site and nothing to register. A subpath is only ever resolved by a
 project that has Next, which is what makes it safe: a static `import Link from "next/link"`
 in the main entry is a build error for every consumer on Vite, Astro, Remix or plain React.
-`setLinkComponent` covers the other routers and `as` the odd link out, but neither is what
-a Next app should be writing.
+`@enigmax/primitives/react-router` is the same thing for React Router, and it also
+translates `href` to that router's `to`, so a call site writes `href` whatever is underneath.
+A new router is a new entry, which is the only shape that costs the consumer nothing.
+
+React Aria solves it the other way - a `RouterProvider` taking the router's `navigate`,
+which covers every router with one mechanism and always renders a real anchor, at the cost
+of a line of setup. `setLinkComponent` is this package's version of that, for a router with
+no entry yet; `as` is the per-link escape. Neither is what a Next or React Router app should
+be writing.
 
 The Next entry is exercised end to end in the browser suite by aliasing `next/link` to a
 stub at bundle time, so the wiring is tested without a Next runtime in a Playwright page. `type="button"` is the default, so an action button never posts the form it

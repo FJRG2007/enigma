@@ -1,6 +1,6 @@
 {
   "name": "@enigmax/primitives",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "description": "Headless interaction primitives: the behaviour, the timing and the accessibility of components like a draggable infinite marquee, with no styles of their own. Framework-agnostic core plus thin adapters.",
   "type": "module",
   "main": "./dist/index.js",
@@ -22,13 +22,17 @@
     "./next": {
       "types": "./dist/next/index.d.ts",
       "import": "./dist/next/index.js"
+    },
+    "./react-router": {
+      "types": "./dist/react-router/index.d.ts",
+      "import": "./dist/react-router/index.js"
     }
   },
   "scripts": {
     "build": "tsup",
     "typecheck": "tsc --noEmit",
     "test": "npm run test:fixtures && playwright test",
-    "test:fixtures": "esbuild test/fixture/react.tsx --bundle --format=esm --jsx=automatic --outfile=test/fixture/build/react.js --tsconfig=tsconfig.json --alias:next/link=./test/fixture/next-link-stub.tsx",
+    "test:fixtures": "esbuild test/fixture/react.tsx --bundle --format=esm --jsx=automatic --outfile=test/fixture/build/react.js --tsconfig=tsconfig.json --alias:next/link=./test/fixture/next-link-stub.tsx --alias:react-router=./test/fixture/react-router-stub.tsx",
     "test:install": "playwright install chromium",
     "prepublishOnly": "npm run typecheck && npm run build"
   },
@@ -42,8 +46,9 @@
   ],
   "peerDependencies": {
     "fuse.js": ">=6",
+    "next": ">=13",
     "react": ">=18",
-    "next": ">=13"
+    "react-router": ">=7"
   },
   "peerDependenciesMeta": {
     "react": {
@@ -53,6 +58,9 @@
       "optional": true
     },
     "next": {
+      "optional": true
+    },
+    "react-router": {
       "optional": true
     }
   },
@@ -64,6 +72,7 @@
     "next": "^15.5.23",
     "react": "^19.2.0",
     "react-dom": "^19.2.8",
+    "react-router": "^7.18.2",
     "tsup": "^8.0.0",
     "typescript": "^5.0.0"
   },

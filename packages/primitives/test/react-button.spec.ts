@@ -75,6 +75,14 @@ test.describe("Button (React)", () => {
         expect(await read(page, "__presses")).toBe(1);
     });
 
+    test("the React Router entry translates href to its own `to`", async ({ page }) => {
+        await open(page);
+        const link = page.locator("[data-testid=rr-link]");
+        // Written as `href` at the call site whatever the router underneath calls it.
+        await expect(link).toHaveAttribute("data-router-to", "/settings");
+        await expect(link).toHaveAttribute("href", "/settings");
+    });
+
     test("async work swaps the label, marks it busy, and refuses a second press", async ({ page }) => {
         await open(page);
         await page.click(send);

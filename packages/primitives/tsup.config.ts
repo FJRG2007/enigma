@@ -13,15 +13,15 @@ import { readFileSync, writeFileSync } from "node:fs";
  * one copy of the core - and so one instance of every module-level singleton - across the
  * entries.
  */
-const CLIENT_ENTRIES = ["dist/react/index.js", "dist/next/index.js"];
+const CLIENT_ENTRIES = ["dist/react/index.js", "dist/next/index.js", "dist/react-router/index.js"];
 
 export default defineConfig({
-    entry: ["src/index.ts", "src/react/index.ts", "src/search/index.ts", "src/next/index.tsx"],
+    entry: ["src/index.ts", "src/react/index.ts", "src/search/index.ts", "src/next/index.tsx", "src/react-router/index.tsx"],
     format: ["esm"],
     dts: true,
     clean: true,
     treeshake: true,
-    external: ["react", "fuse.js", "next/link"],
+    external: ["react", "fuse.js", "next/link", "react-router"],
     onSuccess: async () => {
         for (const file of CLIENT_ENTRIES) {
             const code = readFileSync(file, "utf8");

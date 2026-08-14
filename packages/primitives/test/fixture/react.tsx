@@ -2,6 +2,8 @@ import { useState } from "react";
 import { createRoot } from "react-dom/client";
 // The Next entry, with next/link aliased to a stub at bundle time.
 import { Button as NextButton } from "@/next/index";
+// The React Router entry, with react-router aliased to a stub at bundle time.
+import { Button as RouterButton } from "@/react-router/index";
 import { Button, Input, setLinkComponent, type BreachState, type PasswordStrengthReport } from "@/react/index";
 
 /**
@@ -109,6 +111,9 @@ function Form(): React.ReactNode {
             {/* The Next entry: an href is next/link, with nothing at the call site. */}
             <NextButton data-testid="next-link" href="/settings">Settings</NextButton>
             <NextButton data-testid="next-button" onPress={() => { fixture.__presses++; }}>Save</NextButton>
+
+            {/* The React Router entry: same href, translated to its `to`. */}
+            <RouterButton data-testid="rr-link" href="/settings">Settings</RouterButton>
         </form>
     );
 }
