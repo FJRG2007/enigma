@@ -47,7 +47,7 @@ Subsystems (read the one you are touching):
 - `multi-account.md` - accounts, profiles, config-dir injection, session reuse/transfer between accounts and packs.
 - `packs.md` - isolated harness bundles (`enigma helio`), credential seeding, the three layers of seeding a Claude login.
 - `recall.md` - local session memory (SQLite + FTS, hybrid search, MCP tools).
-- `code-graph.md` - native code-intelligence engine (`enigma codegraph`): the four modules, the retrieval surfaces (ask/callers/skeleton/map/grep/check), and three precision fixes that must not regress.
+- `code-graph.md` - native code-intelligence engine (`enigma codegraph`): the four modules, the retrieval surfaces (ask/callers/skeleton/map/grep/check), and four precision fixes that must not regress.
 - `local-api-server.md` - OpenAI-compatible local API over the installed agents (`enigma api`), adapters, playground.
 - `primitives.md` - the headless component registry (`@enigmax/primitives`, `@enigmax/utils`) and `enigma add`: core+adapter architecture, theming by data attribute, the marquee's twelve measured rules. Read before adding a primitive or a utility.
 - `autoskills.md` - stack detection and community stack-skill installation.
