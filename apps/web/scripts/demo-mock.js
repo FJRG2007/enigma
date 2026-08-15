@@ -240,8 +240,14 @@
             packages: { src: 176, tests: 30, scripts: 8 },
             externalModules: [{ name: "node:fs", count: 84 }, { name: "node:path", count: 71 }, { name: "node:os", count: 40 }]
         },
-        schema: { nodes: { File: 214, Function: 2841, Class: 214, Interface: 187, Type: 70 }, edges: { IMPORTS: 1204, REFERENCES: 5220 } }
+        schema: { nodes: { File: 214, Function: 2841, Class: 214, Interface: 187, Type: 70 }, edges: { IMPORTS: 1204, REFERENCES: 5220 } },
+        freshness: { project: "enigma", root: "/home/you/dev/enigma", indexedAt: now - 3600000, drift: { changed: [], added: [], removed: [] }, stale: 0, truncated: false },
+        ask: null
     };
+
+    function codeGraphAsk(query) {
+        return `code graph - "${query}" (hybrid)\n\n- readConfig - function - src/config.ts:42-58\n    function readConfig(): { config: EnigmaConfig; path: string }\n- resolveBin - function - src/tool-launch.ts:71-96\n    function resolveBin(tool: string): string | null\n\nSaved you from opening 2 files (~410 lines).\n`;
+    }
 
     function json(obj, status) {
         return new Response(JSON.stringify(obj), { status: status || 200, headers: { "Content-Type": "application/json" } });
@@ -489,6 +495,12 @@
             if (method === "POST") {
                 if (body && body.op === "toggle" && typeof body.on === "boolean") CODEGRAPH.enabled = body.on;
                 if (body && body.op === "index") return { ok: true, note: "Demo - indexing is disabled in the preview.", view: CODEGRAPH };
+                if (body && body.op === "ask") {
+                    var q = (body.query || "").trim();
+                    if (!q) return { ok: false, error: "missing query" };
+                    CODEGRAPH.ask = { query: q, report: codeGraphAsk(q) };
+                    return { ok: true, view: CODEGRAPH };
+                }
                 return { ok: true, view: CODEGRAPH };
             }
             return CODEGRAPH;
