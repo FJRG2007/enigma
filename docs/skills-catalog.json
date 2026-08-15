@@ -1,6 +1,6 @@
 {
   "generator": "enigma seal",
-  "cliVersion": "1.35.14",
+  "cliVersion": "1.35.15",
   "count": 20,
   "skills": [
     {
@@ -48,7 +48,7 @@
       "version": "1.13.0",
       "description": "Core engineering execution policy and harness orchestration (highest-authority rules), including the generalization rule that treats a named example as a class to sweep and fix.",
       "provider": "FJRG2007/enigma",
-      "updated": "2026-08-02T04:28:51+02:00",
+      "updated": "2026-08-15T20:49:24+02:00",
       "sha": "95b7202e5659f8d9d6f11ce29e7dc5b01575ba86c78ef948bec4753ccf430155"
     },
     {

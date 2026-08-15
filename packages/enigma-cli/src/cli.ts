@@ -624,7 +624,8 @@ Local session memory built from your own agent transcripts (opt-in).
     codegraph: `usage: enigma codegraph <action>
 Native code intelligence over MCP - no external tool (opt-in).
 
-  status | on | off | index [path] | projects | arch [project] | search <name>
+  status | index [path] | projects | arch [project] | search <name>
+  (turn it on/off with: enigma config code-graph on|off  [-l for this project only])
 
 Retrieval (refreshes the graph first, so answers include uncommitted edits):
   ask "<question>"      ranked nodes with file:line   --source inlines the code
@@ -1346,35 +1347,33 @@ async function runRecallCli(args: string[]): Promise<number> {
 }
 
 /**
- * `enigma codegraph <status|on|off|index [path]|projects|arch [project]|search <name>>`: the native
+ * `enigma codegraph <status|index [path]|projects|arch [project]|search <name>>`: the native
  * code graph. `on`/`off` toggle the setting (and (de)register the enigma MCP server that exposes the
  * tools); `index` builds the graph for a project; `projects`/`arch`/`search` read it. No external tool.
  */
 async function runCodeGraphCli(args: string[]): Promise<number> {
     const cg = await import("./codegraph");
-    const { setEnigmaToggle } = await import("./config");
-    const { applyMcpToggle } = await import("./mcp-deploy");
     const [sub, ...rest] = args;
     if (!sub || sub === "status") {
         const st = cg.codeGraphStatus();
         console.log("\n  codebase memory (code graph)  -  native, no external dependency");
         console.log(`  tools ${st.enabled ? "on" : "off"}   indexed projects ${st.projects}`);
-        if (!st.enabled) console.log("  Enable: enigma codegraph on");
+        if (!st.enabled) console.log("  Enable: enigma config code-graph on        (-l for this project only)");
         else console.log("  Index this project: enigma codegraph index");
         console.log("");
         return 0;
     }
-    if (sub === "on" || sub === "enable") {
-        setEnigmaToggle("codeGraph", true, "global");
-        applyMcpToggle("global");
-        console.log("  Code graph enabled - tools exposed to your agents over MCP (restart them to load it).");
-        return 0;
-    }
-    if (sub === "off" || sub === "disable") {
-        setEnigmaToggle("codeGraph", false, "global");
-        applyMcpToggle("global");
-        console.log("  Code graph disabled.");
-        return 0;
+    // Every other setting in this CLI is changed through `enigma config <key> <value>`, and the
+    // code graph used to be the one exception. Two spellings for one action is confusing on its
+    // own, and this one also hardcoded the global scope, so `codegraph on -l` silently wrote the
+    // global config while looking like it had honoured the flag. Removed rather than repaired:
+    // one way to change a setting is the point.
+    if (sub === "on" || sub === "off" || sub === "enable" || sub === "disable") {
+        const value = sub === "on" || sub === "enable" ? "on" : "off";
+        console.error(`  'enigma codegraph ${sub}' is gone - settings all go through one command:\n`);
+        console.error(`    enigma config code-graph ${value}        everywhere`);
+        console.error(`    enigma config code-graph ${value} -l     this project only\n`);
+        return 2;
     }
     if (sub === "index") {
         const entry = cg.indexProject(rest[0]);
@@ -1405,7 +1404,7 @@ async function runCodeGraphCli(args: string[]): Promise<number> {
         return 0;
     }
     if (RETRIEVAL_SUBCOMMANDS.has(sub)) return runCodeGraphQuery(sub, rest);
-    console.error(`Unknown subcommand '${sub}'. Use: enigma codegraph <status | on | off | index [path] | projects | arch [project] | search <name> | ask <query> | callers <symbol> | skeleton <file> | map | grep <regex> | check>`);
+    console.error(`Unknown subcommand '${sub}'. Use: enigma codegraph <status | index [path] | projects | arch [project] | search <name> | ask <query> | callers <symbol> | callees <symbol> | skeleton <file> | map | grep <regex> | check>`);
     return 1;
 }
 

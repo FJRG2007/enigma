@@ -88,8 +88,8 @@ Local, searchable memory of your coding sessions, built from your own transcript
 
 enigma's **native** codebase memory / code graph (structural code intelligence), exposed to your agents over MCP - no external tool. Off by default. See <a href={docHref("concepts/code-graph")}>Codebase memory</a> for detail.
 
-<Cmd name="enigma codegraph <status|on|off|index|projects|arch|search>" ex={["enigma config code-graph on", "enigma codegraph index", "enigma codegraph projects", "enigma codegraph arch", "enigma codegraph search Handler"]}>
-`on`/`off` toggle the tools; `index [path]` builds the graph for a project; `projects` lists indexed projects; `arch [project]` prints the architecture; `search <name>` finds symbols by name.
+<Cmd name="enigma codegraph <status|index|projects|arch|search>" ex={["enigma config code-graph on", "enigma config code-graph on -l", "enigma codegraph index", "enigma codegraph projects", "enigma codegraph arch", "enigma codegraph search Handler"]}>
+`index [path]` builds the graph for a project; `projects` lists indexed projects; `arch [project]` prints the architecture; `search <name>` finds symbols by name. Turning the tools on and off is `enigma config code-graph on|off`, like every other setting - add `-l` to scope it to this project.
 </Cmd>
 
 <Cmd name="enigma codegraph <ask|callers|callees|skeleton|map|grep|check>" ex={["enigma codegraph ask \"where is the session token refreshed\" --source", "enigma codegraph callers readConfig --depth 2", "enigma codegraph skeleton src/api.ts", "enigma codegraph map", "enigma codegraph grep \"TODO\\(perf\\)\" -i", "enigma codegraph check"]}>

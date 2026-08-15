@@ -8,6 +8,7 @@
  */
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { spawnSync } from "node:child_process";
 import { test, expect, afterAll } from "bun:test";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 
@@ -225,4 +226,23 @@ test("a query refreshes the graph first, so it describes the code as it is now",
     expect(q.codeGraphAsk("brandNewHelper", { project: PROJECT, refresh: false })!.hits.some((h) => h.name === "brandNewHelper")).toBe(false);
     expect(q.codeGraphAsk("brandNewHelper", { project: PROJECT })!.hits.some((h) => h.name === "brandNewHelper")).toBe(true);
     expect(q.codeGraphCheck(PROJECT)!.stale).toBe(0);
+});
+
+/**
+ * One way to change a setting. `enigma codegraph on` was the only bespoke on/off alias in the CLI
+ * (recall and compress have none) and it hardcoded the global scope, so `-l` was silently ignored -
+ * it wrote the global config while looking like it had honoured the flag. It now refuses and names
+ * the canonical command rather than doing something subtly different from what was typed.
+ */
+test("the removed on/off alias refuses and names the canonical config command", () => {
+    const root = join(import.meta.dir, "..");
+    for (const sub of ["on", "off", "enable", "disable"]) {
+        const run = spawnSync(process.execPath, [join(root, "src", "bin", "enigma.ts"), "codegraph", sub], {
+            encoding: "utf8",
+            windowsHide: true,
+            env: { ...process.env, HOME, USERPROFILE: HOME, ENIGMA_CONFIG_HOME: HOME },
+        });
+        expect(run.status).toBe(2);
+        expect(run.stderr).toContain("enigma config code-graph");
+    }
 });

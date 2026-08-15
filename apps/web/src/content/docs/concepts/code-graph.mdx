@@ -41,7 +41,7 @@ You can also toggle it, index a project, run a query and see how far the graph h
 ## Use it
 
 <Cmd name="enigma codegraph [action]" ex={["enigma codegraph index", "enigma codegraph ask \"where is the session token refreshed\" --source", "enigma codegraph callers readConfig --depth 2", "enigma codegraph skeleton src/api.ts", "enigma codegraph map", "enigma codegraph grep \"TODO\\(perf\\)\"", "enigma codegraph check"]}>
-Manage: `index [path]` builds the graph (defaults to the current directory), `projects` lists indexed projects, `arch [project]` prints the architecture overview, `search <name>` finds symbols by name, `on`/`off` toggle the tools.
+Manage: `index [path]` builds the graph (defaults to the current directory), `projects` lists indexed projects, `arch [project]` prints the architecture overview, `search <name>` finds symbols by name. Turning the tools on and off is `enigma config code-graph on|off`, like every other setting.
 
 Query: `ask` returns ranked hits with `--source` to inline the code; `callers`/`callees` walk dependencies with `--depth N`; `skeleton` prints one file's signatures; `map` orients you in an unfamiliar repo; `grep` finds every occurrence grouped by symbol; `check` reports drift. All of them take `--in <path>`, `--limit N`, `--json` and `--no-refresh`.
 </Cmd>
