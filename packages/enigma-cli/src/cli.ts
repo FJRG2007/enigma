@@ -148,6 +148,13 @@ function parseArgs(argv: string[]): CliOptions {
         }
         // Everything after a literal `--` is forwarded verbatim (e.g. to Claude Code).
         if (a === "--") { opts.passthrough.push(...argv.slice(i + 1)); break; }
+        // The code graph's retrieval subcommands carry their own flags (--limit, --depth, --in,
+        // --source, ...), so everything after the subcommand is forwarded verbatim rather than
+        // matched here - otherwise the shared parser rejects a flag it was never meant to own.
+        if (opts.command === "codegraph" && opts.positionals.length >= 1 && a !== "-h" && a !== "--help") {
+            opts.positionals.push(a);
+            continue;
+        }
         switch (a) {
             case "-t": case "--tool": opts.tool = next(); break;
             case "-g": case "--global": opts.scope = "global"; break;
@@ -331,7 +338,8 @@ Commands:
                        list, show <id>, timeline <id>, sessions, context, prune, clear
                        (hybrid keyword+vector search; opt-in; reads your own logs)
   codegraph [action]   Native codebase memory / code graph: status, on, off,
-                       index [path], projects, arch [project], search <name>
+                       index [path], projects, arch [project], search <name>,
+                       ask <q>, callers <sym>, skeleton <file>, map, grep <re>, check
                        (opt-in; structural code intelligence over MCP, no external tool)
   autoskills [path]    Detect the project's tech stack and install matching agent skills
                        (separate from the policy skills; --dry-run to preview)
@@ -614,7 +622,18 @@ Local session memory built from your own agent transcripts (opt-in).
     codegraph: `usage: enigma codegraph <action>
 Native code intelligence over MCP - no external tool (opt-in).
 
-  status | on | off | index [path] | projects | arch [project] | search <name>`,
+  status | on | off | index [path] | projects | arch [project] | search <name>
+
+Retrieval (refreshes the graph first, so answers include uncommitted edits):
+  ask "<question>"      ranked nodes with file:line   --source inlines the code
+  callers <symbol>      who depends on it             --depth N walks the blast radius
+  callees <symbol>      what it depends on
+  skeleton <file>       every signature, no bodies
+  map                   directory clusters, hubs and hotspots
+  grep "<regex>"        every hit, grouped by enclosing symbol   -i  --fixed
+  check                 report drift between the graph and the tree (exit 1 if stale)
+
+Shared flags: --in <path>  --limit N  --project <name>  --json  --no-refresh`,
 
     autoskills: `usage: enigma autoskills [path] [--dry-run] [-y]
 Detect the project's tech stack and install the matching community stack skills.
@@ -1380,8 +1399,120 @@ async function runCodeGraphCli(args: string[]): Promise<number> {
         for (const h of hits) console.log(`  ${h.kind.padEnd(10)} ${h.name}  ${h.file}:${h.line}`);
         return 0;
     }
-    console.error(`Unknown subcommand '${sub}'. Use: enigma codegraph <status | on | off | index [path] | projects | arch [project] | search <name>>`);
+    if (RETRIEVAL_SUBCOMMANDS.has(sub)) return runCodeGraphQuery(sub, rest);
+    console.error(`Unknown subcommand '${sub}'. Use: enigma codegraph <status | on | off | index [path] | projects | arch [project] | search <name> | ask <query> | callers <symbol> | skeleton <file> | map | grep <regex> | check>`);
     return 1;
+}
+
+/** The subcommands that read the graph to answer a question, rather than manage it. */
+const RETRIEVAL_SUBCOMMANDS = new Set(["ask", "callers", "callees", "skeleton", "map", "grep", "check"]);
+
+/** Flags shared by the retrieval subcommands, pulled out of the positional arguments. */
+interface QueryFlags {
+    positionals: string[];
+    project?: string;
+    in?: string;
+    limit?: number;
+    depth?: number;
+    maxHits?: number;
+    maxDirs?: number;
+    direction?: "in" | "out";
+    source: boolean;
+    refresh: boolean;
+    ignoreCase: boolean;
+    fixed: boolean;
+    json: boolean;
+}
+
+function parseQueryFlags(args: string[]): QueryFlags {
+    const flags: QueryFlags = { positionals: [], source: false, refresh: true, ignoreCase: false, fixed: false, json: false };
+    const num = (raw: string | undefined): number | undefined => {
+        const n = Number(raw);
+        return Number.isFinite(n) && n > 0 ? Math.floor(n) : undefined;
+    };
+    for (let i = 0; i < args.length; i++) {
+        const a = args[i];
+        switch (a) {
+            case "--project": flags.project = args[++i]; break;
+            case "--in": flags.in = args[++i]; break;
+            case "--limit": flags.limit = num(args[++i]); break;
+            case "--depth": case "-d": flags.depth = num(args[++i]); break;
+            case "--max-hits": flags.maxHits = num(args[++i]); break;
+            case "--max-dirs": flags.maxDirs = num(args[++i]); break;
+            case "--direction": flags.direction = args[++i] === "out" ? "out" : "in"; break;
+            case "--source": flags.source = true; break;
+            case "--no-refresh": flags.refresh = false; break;
+            case "--ignore-case": case "-i": flags.ignoreCase = true; break;
+            case "--fixed": flags.fixed = true; break;
+            case "--json": flags.json = true; break;
+            default: flags.positionals.push(a);
+        }
+    }
+    return flags;
+}
+
+/**
+ * `enigma codegraph <ask|callers|callees|skeleton|map|grep|check>`: the retrieval half of the code
+ * graph. Every one of them refreshes the graph first when the tree moved, so the answer describes
+ * the code as it is now, and indexes the current directory when nothing covers it yet.
+ */
+async function runCodeGraphQuery(sub: string, args: string[]): Promise<number> {
+    const q = await import("./codegraph-query");
+    const fmt = await import("./codegraph-format");
+    const { ensureProjectForCwd } = await import("./codegraph");
+    const f = parseQueryFlags(args);
+    const project = f.project ?? ensureProjectForCwd();
+    const base = { project, refresh: f.refresh, in: f.in };
+    const emit = (data: unknown, text: string): number => {
+        console.log(f.json ? JSON.stringify(data, null, 2) : text);
+        return 0;
+    };
+    const missing = (usage: string): number => { console.error(`Usage: enigma codegraph ${usage}`); return 1; };
+
+    switch (sub) {
+        case "ask": {
+            const query = f.positionals.join(" ").trim();
+            if (!query) return missing("ask \"<question>\" [--source] [--limit N] [--in <path>]");
+            const r = q.codeGraphAsk(query, { ...base, limit: f.limit, source: f.source });
+            if (!r) { console.error(`  ${q.NOT_INDEXED}`); return 1; }
+            return emit(r, fmt.formatAsk(r));
+        }
+        case "callers": case "callees": {
+            const symbol = f.positionals[0];
+            if (!symbol) return missing(`${sub} <symbol> [--depth N] [--in <path>]`);
+            const direction = f.direction ?? (sub === "callees" ? "out" : "in");
+            const r = q.codeGraphTrace(symbol, { ...base, direction, depth: f.depth });
+            if (!r) { console.error(`  ${q.NOT_INDEXED}`); return 1; }
+            return emit(r, fmt.formatTrace(r));
+        }
+        case "skeleton": {
+            const file = f.positionals[0];
+            if (!file) return missing("skeleton <file>");
+            const r = q.codeGraphSkeleton(file, base);
+            if (!r) { console.error(`  ${q.NOT_INDEXED}`); return 1; }
+            return emit(r, fmt.formatSkeleton(r));
+        }
+        case "map": {
+            const r = q.codeGraphMap({ ...base, maxDirs: f.maxDirs });
+            if (!r) { console.error(`  ${q.NOT_INDEXED}`); return 1; }
+            return emit(r, fmt.formatMap(r));
+        }
+        case "grep": {
+            const pattern = f.positionals.join(" ").trim();
+            if (!pattern) return missing("grep \"<regex>\" [-i] [--fixed] [--in <path>]");
+            const r = q.codeGraphGrep(pattern, { ...base, ignoreCase: f.ignoreCase, fixed: f.fixed, maxHits: f.maxHits });
+            if (!r) { console.error(`  ${q.NOT_INDEXED}`); return 1; }
+            return emit(r, fmt.formatGrep(r));
+        }
+        default: {
+            const r = q.codeGraphCheck(project);
+            if (!r) { console.error(`  ${q.NOT_INDEXED}`); return 1; }
+            emit(r, fmt.formatFreshness(r));
+            // `check` is the drift report, so it never repairs what it finds - a non-zero exit is
+            // what lets it gate a pipeline.
+            return r.stale === 0 ? 0 : 1;
+        }
+    }
 }
 
 /**

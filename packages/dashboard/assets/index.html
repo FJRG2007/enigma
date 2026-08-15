@@ -1339,7 +1339,7 @@
         <div class="page-head" style="display:flex;align-items:flex-start;gap:16px">
             <div style="flex:1">
                 <h1>Code graph</h1>
-                <p>Structural memory of your codebase - a native knowledge graph of the symbols each file defines, the modules it imports and cross-file references. Enabling it exposes enigma's code-graph tools to your agents over MCP. Complements <a href="#/recall">Recall</a> (session memory).</p>
+                <p>Structural memory of your codebase - a native knowledge graph of the symbols each file defines, what imports what, and which symbol calls which. Your agents query it over MCP to find code, trace a change's blast radius and read a file's API surface without opening it. Complements <a href="#/recall">Recall</a> (session memory).</p>
             </div>
             <button id="cgToggle" type="button" class="toggle" data-kind="bool" role="switch" aria-checked="false" aria-label="Code graph">Off</button>
             <button id="cgRefresh" type="button" class="iconbtn" title="Refresh" aria-label="Refresh"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg></button>
@@ -1349,6 +1349,12 @@
             <div class="set-cat-h">Index a project</div>
             <div class="set-hint" style="padding:4px 0">Build the graph for a codebase. Leave the path empty to index enigma's own working directory.</div>
             <div class="ladd" style="gap:8px;flex-wrap:wrap"><input id="cgRoot" class="linput" placeholder="absolute project path (optional)" style="flex:1;min-width:240px"><button id="cgIndex" type="button" class="toggle on">Index</button></div>
+        </div>
+        <div class="panel">
+            <div class="set-cat-h">Ask the graph</div>
+            <div class="set-hint" style="padding:4px 0">Describe a task and get the symbols and files it concerns, ranked, with exact line numbers. The same answer your agents get from the MCP tools.</div>
+            <div class="ladd" style="gap:8px;flex-wrap:wrap"><input id="cgQuery" class="linput" placeholder="where is the session token refreshed?" style="flex:1;min-width:240px"><button id="cgAsk" type="button" class="toggle on">Ask</button></div>
+            <div id="cgAskOut"></div>
         </div>
         <div id="cgBody"><div class="empty" style="padding:12px 0">Loading...</div></div>
     </section>
@@ -5580,9 +5586,24 @@ export {
                 }).join("")
                 : '<div class="empty" style="padding:12px 0">No projects indexed yet. Use "Index a project" above.</div>';
             let html = '<div class="panel"><div class="set-cat-h">Indexed projects <small>' + projects.length + "</small></div>" + projHtml + "</div>";
+            // Drift is stated, not hidden: a graph that has fallen behind the code answers
+            // confidently and wrongly, and the only cue would otherwise be a stale line number.
+            const fresh = view.freshness;
+            if (fresh) {
+                const stale = fresh.stale || 0;
+                html += '<div class="panel"><div class="set-cat-h">Freshness</div><div class="set-row"><div class="set-meta"><div class="set-name">'
+                    + (stale === 0 ? "Up to date" : stale + " file" + (stale === 1 ? "" : "s") + " changed since indexing")
+                    + '</div><div class="set-hint">' + esc("indexed " + new Date(fresh.indexedAt).toLocaleString()) + "</div></div>"
+                    + (stale === 0 ? "" : '<div class="set-ctl"><button type="button" class="toggle on" data-cg-reindex="' + esc(fresh.root) + '">Re-index</button></div>')
+                    + "</div></div>";
+            }
             if (view.architecture) html += cgSection("Architecture" + (view.selected ? " - " + view.selected : ""), view.architecture);
             if (view.schema) html += cgSection("Graph schema", view.schema);
             $("cgBody").innerHTML = html;
+            const ask = view.ask;
+            $("cgAskOut").innerHTML = ask
+                ? '<pre style="white-space:pre-wrap;overflow-x:auto;margin:10px 0 0;font-size:12px">' + esc(ask.report) + "</pre>"
+                : "";
         }
         async function loadCodeGraph() {
             $("cgNote").textContent = "";
@@ -5609,11 +5630,25 @@ export {
             const out = await cgPost({ op: "index", root: root || undefined }, "Indexing...");
             if (out) { if (out.view && out.view.selected) cgProject = out.view.selected; setNote("cgNote", out.ok ? "Indexed." : (out.error || "Indexing failed."), out.ok ? "ok" : "err"); }
         }
+        async function cgAskAction() {
+            const query = $("cgQuery").value.trim();
+            if (!query) { setNote("cgNote", "Type a question first.", "err"); return; }
+            const out = await cgPost({ op: "ask", query, project: cgProject || undefined }, "Searching...");
+            if (out) setNote("cgNote", out.ok ? "" : (out.error || "Query failed."), out.ok ? "ok" : "err");
+        }
         function wireCodeGraph() {
             $("cgRefresh").addEventListener("click", loadCodeGraph);
             $("cgToggle").addEventListener("click", cgToggleAction);
             $("cgIndex").addEventListener("click", cgIndexAction);
+            $("cgAsk").addEventListener("click", cgAskAction);
+            $("cgQuery").addEventListener("keydown", (e) => { if (e.key === "Enter") cgAskAction(); });
             $("view-codegraph").addEventListener("click", (e) => {
+                const reindex = e.target.closest("button[data-cg-reindex]");
+                if (reindex) {
+                    cgPost({ op: "index", root: reindex.dataset.cgReindex }, "Re-indexing...")
+                        .then((out) => { if (out) setNote("cgNote", out.ok ? "Re-indexed." : (out.error || "Indexing failed."), out.ok ? "ok" : "err"); });
+                    return;
+                }
                 const b = e.target.closest("button[data-cg-project]");
                 if (!b) return;
                 cgProject = b.dataset.cgProject;

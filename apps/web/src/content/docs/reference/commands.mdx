@@ -92,6 +92,12 @@ enigma's **native** codebase memory / code graph (structural code intelligence),
 `on`/`off` toggle the tools; `index [path]` builds the graph for a project; `projects` lists indexed projects; `arch [project]` prints the architecture; `search <name>` finds symbols by name.
 </Cmd>
 
+<Cmd name="enigma codegraph <ask|callers|callees|skeleton|map|grep|check>" ex={["enigma codegraph ask \"where is the session token refreshed\" --source", "enigma codegraph callers readConfig --depth 2", "enigma codegraph skeleton src/api.ts", "enigma codegraph map", "enigma codegraph grep \"TODO\\(perf\\)\" -i", "enigma codegraph check"]}>
+Read the graph to answer a question. `ask` ranks the symbols and files a task concerns (`--source` inlines the code); `callers`/`callees` walk dependencies (`--depth N` for the full blast radius); `skeleton` prints one file's signatures without its bodies; `map` orients you in an unfamiliar repo; `grep` returns every hit grouped by enclosing symbol; `check` reports drift and exits non-zero when the graph is stale.
+
+Shared flags: `--in <path>` narrows to a subtree, `--limit N` caps results, `--project <name>` picks a graph, `--json` prints the raw result, `--no-refresh` skips the pre-query re-index.
+</Cmd>
+
 ## pack
 
 Marketplace of optional, isolated harness packs (e.g. Helio for bug bounty). Each runs in its own agent context, so its skills and commands never load into your normal agent. See <a href={docHref("packs")}>Packs</a> for detail.

@@ -1,12 +1,12 @@
 ---
 title: Codebase memory (code graph)
-description: Structural memory of your codebase - a native knowledge graph of symbols, imports and cross-file references, built by enigma itself.
+description: Structural memory of your codebase - a native knowledge graph of symbols, imports and call edges your agents query instead of re-exploring the repo.
 group: Concepts
 order: 34
 ---
 import Cmd from "../../../components/Cmd.astro";
 
-Codebase memory gives your agents a **structural map of your code**: a knowledge graph of the symbols each file defines (functions, classes, interfaces, types, ...), the modules it imports, and cross-file symbol references. Your agent can search it or read a project's architecture instead of grepping and reading dozens of files.
+Every task, an agent starts blind: it greps a term, opens a file, follows an import, backs out, tries again - rebuilding a picture of a codebase it mapped an hour ago and threw away. Codebase memory builds that picture once and lets the agent query it: a knowledge graph of the symbols each file defines (functions, classes, interfaces, types, ...), the modules it imports, and which symbol calls or references which.
 
 This is **structural** memory of your code - complementary to [Recall](/docs/concepts/recall), which is **session** memory of what you did. It is **off by default**; everything runs locally and your code never leaves your machine.
 
@@ -14,7 +14,21 @@ This is **structural** memory of your code - complementary to [Recall](/docs/con
 
 The engine is built into enigma - a zero-dependency TypeScript indexer. There is **no external binary, no `npx`, no third-party package**: extraction is deterministic (regex-per-language over the common languages - TS/JS, Python, Go, Rust, Java, Ruby, PHP, C#, Kotlin, C/C++). It is honest "structural-lite", not a compiler-grade AST, but enough to map a codebase with nothing to install and nothing to fetch.
 
-Turning the setting on exposes enigma's code-graph tools (`enigma_codegraph_index`, `enigma_codegraph_search`, `enigma_codegraph_architecture`, `enigma_codegraph_projects`) to your agents through enigma's own MCP server. The graph is stored per project as JSON under `~/.enigma/codegraph`, so the CLI, the MCP tools and the dashboard all read the same store.
+Turning the setting on exposes enigma's code-graph tools to your agents through enigma's own MCP server. The graph is stored per project as JSON under `~/.enigma/codegraph`, so the CLI, the MCP tools and the dashboard all read the same store.
+
+## What your agent can ask
+
+| Question | Tool | CLI |
+| --- | --- | --- |
+| Where is the code for this task? | `enigma_codegraph_ask` | `codegraph ask "<question>"` |
+| What breaks if I change this? | `enigma_codegraph_trace` | `codegraph callers <symbol> --depth 2` |
+| What is this file's API? | `enigma_codegraph_skeleton` | `codegraph skeleton <file>` |
+| What does this repo look like? | `enigma_codegraph_map` | `codegraph map` |
+| Every occurrence, ranked | `enigma_codegraph_grep` | `codegraph grep "<regex>"` |
+
+`ask` blends word matching with a walk over the graph, so the result is the code wired into what you asked about rather than whatever happened to share a word with it, and each hit carries an exact path and line range with the source inlined. `grep` attributes every hit to the symbol enclosing it and ranks groups by how much other code depends on that symbol - the part plain `grep -rn` cannot tell you.
+
+Every query stats the tree first and re-indexes only what moved, so an answer describes the code as it is **right now**, uncommitted edits included. `enigma codegraph check` reports drift without repairing it, and exits non-zero when the graph has fallen behind - usable as a CI gate.
 
 ## Enable it
 
@@ -22,15 +36,17 @@ Turning the setting on exposes enigma's code-graph tools (`enigma_codegraph_inde
 Expose the code-graph tools to your agents (restart them to load), then index a project. Your agent can also index on its own via `enigma_codegraph_index`.
 </Cmd>
 
-You can also toggle it and index a project from the dashboard's **Code graph** tab, which lists your indexed projects and each project's architecture and graph schema.
+You can also toggle it, index a project, run a query and see how far the graph has drifted from the code in the dashboard's **Code graph** tab.
 
 ## Use it
 
-<Cmd name="enigma codegraph [action]" ex={["enigma codegraph index", "enigma codegraph projects", "enigma codegraph arch", "enigma codegraph search Handler", "enigma codegraph off"]}>
-`index [path]` builds the graph for a project (defaults to the current directory); `projects` lists indexed projects; `arch [project]` prints the architecture overview (languages, entry points, hotspots, packages, external deps); `search <name>` finds symbols by name; `on`/`off` toggle the tools.
+<Cmd name="enigma codegraph [action]" ex={["enigma codegraph index", "enigma codegraph ask \"where is the session token refreshed\" --source", "enigma codegraph callers readConfig --depth 2", "enigma codegraph skeleton src/api.ts", "enigma codegraph map", "enigma codegraph grep \"TODO\\(perf\\)\"", "enigma codegraph check"]}>
+Manage: `index [path]` builds the graph (defaults to the current directory), `projects` lists indexed projects, `arch [project]` prints the architecture overview, `search <name>` finds symbols by name, `on`/`off` toggle the tools.
+
+Query: `ask` returns ranked hits with `--source` to inline the code; `callers`/`callees` walk dependencies with `--depth N`; `skeleton` prints one file's signatures; `map` orients you in an unfamiliar repo; `grep` finds every occurrence grouped by symbol; `check` reports drift. All of them take `--in <path>`, `--limit N`, `--json` and `--no-refresh`.
 </Cmd>
 
-Once it's on, your agent queries the graph directly over MCP - locating where a symbol is defined, reading a project's shape, or listing hotspots - which typically replaces many grep/read cycles with a single structural query.
+Once it's on, your agent queries the graph directly over MCP, which typically replaces many grep/read cycles with a single structural query.
 
 ## Privacy
 

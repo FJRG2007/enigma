@@ -15,14 +15,17 @@
  *   enigma_stats       - cumulative token savings.
  *   enigma_recall      - search the local session-memory index (when recall is on).
  *   enigma_recall_get  - fetch full memory observations by id.
- *   enigma_codegraph_* - index/search/architecture over the native code graph (when codeGraph is on).
+ *   enigma_codegraph_* - index and query the native code graph (when codeGraph is on): architecture
+ *                        and symbol search, plus the retrieval tools - ask, trace, skeleton, map, grep.
  */
 
 import { readConfig } from "./config";
+import * as cgQuery from "./codegraph-query";
+import type { ContentType } from "./compress";
+import * as cgFormat from "./codegraph-format";
 import { compress, retrieve, readStats } from "./compress";
 import { searchRecall, getObservations, recallTimeline, recallAvailable } from "./recall";
-import { indexProject, listProjects, searchGraph, codeGraphArchitecture } from "./codegraph";
-import type { ContentType } from "./compress";
+import { indexProject, listProjects, searchGraph, codeGraphArchitecture, ensureProjectForCwd } from "./codegraph";
 
 const PROTOCOL_VERSION = "2025-06-18";
 const CONTENT_TYPES: ContentType[] = ["json", "code", "log", "diff", "markdown", "text"];
@@ -152,6 +155,76 @@ const CODEGRAPH_TOOLS = [
             properties: { project: { type: "string", description: "Optional: project name/root/id (defaults to the most recently indexed)." } },
         },
     },
+    {
+        name: "enigma_codegraph_ask",
+        description: "Answer a task-shaped question from the code graph: the ranked symbols and files it concerns, each with an exact path and line range, and the source inlined. Usually the whole answer - reach for this before grepping or opening files.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                query: { type: "string", description: "The task or question, in plain words." },
+                source: { type: "boolean", description: "Inline the code at each hit (default true)." },
+                limit: { type: "number", description: "Max results (default 8)." },
+                in: { type: "string", description: "Optional: narrow to files at or under this repo-relative path." },
+                project: { type: "string", description: "Optional: project name/root/id (defaults to the one containing the working directory)." },
+            },
+            required: ["query"],
+        },
+    },
+    {
+        name: "enigma_codegraph_trace",
+        description: "Trace a symbol's dependencies: who calls or references it, or with direction 'out' what it depends on. Walk several levels for the full blast radius of a change before making it.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                symbol: { type: "string", description: "Symbol name, qualified name, or file path." },
+                direction: { type: "string", description: "'in' (who depends on it, the default) or 'out' (what it depends on)." },
+                depth: { type: "number", description: "Levels to walk (default 1)." },
+                in: { type: "string", description: "Optional: narrow to files at or under this repo-relative path." },
+                project: { type: "string", description: "Optional: project name/root/id." },
+            },
+            required: ["symbol"],
+        },
+    },
+    {
+        name: "enigma_codegraph_skeleton",
+        description: "Every signature in one file with no bodies - the file's API surface for a fraction of the tokens reading it costs.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                file: { type: "string", description: "Repo-relative path, or a bare filename when it is unambiguous." },
+                project: { type: "string", description: "Optional: project name/root/id." },
+            },
+            required: ["file"],
+        },
+    },
+    {
+        name: "enigma_codegraph_map",
+        description: "A first look at an unfamiliar repo: directory clusters with file and symbol counts, each directory's local hubs, and the global hotspots, all ranked by what depends on what.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                maxDirs: { type: "number", description: "Max directories listed (default 16)." },
+                in: { type: "string", description: "Optional: narrow to one subtree." },
+                project: { type: "string", description: "Optional: project name/root/id." },
+            },
+        },
+    },
+    {
+        name: "enigma_codegraph_grep",
+        description: "Exhaustive regex search over the indexed files, with every hit attributed to the symbol enclosing it and groups ranked by how depended-upon that symbol is. Use when you need every occurrence, not the top matches.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                pattern: { type: "string", description: "Regular expression, or a literal string with fixed: true." },
+                ignoreCase: { type: "boolean", description: "Case-insensitive match." },
+                fixed: { type: "boolean", description: "Treat the pattern as a literal string." },
+                in: { type: "string", description: "Optional: narrow to files at or under this repo-relative path." },
+                maxHits: { type: "number", description: "Stop collecting after this many hits (default 300)." },
+                project: { type: "string", description: "Optional: project name/root/id." },
+            },
+            required: ["pattern"],
+        },
+    },
 ];
 
 /** The tools advertised this connection: recall/codegraph tools appear only when enabled. */
@@ -174,6 +247,59 @@ function err(id: JsonRpcRequest["id"], code: number, message: string): JsonRpcRe
 /** Wrap text as an MCP tool-call result payload. */
 function textResult(text: string, isError = false): unknown {
     return { content: [{ type: "text", text }], isError };
+}
+
+/**
+ * The retrieval half of the code graph, exposed as tools.
+ *
+ * Each one hands back the same rendered report the CLI prints rather than raw JSON: the report is
+ * what an agent reads best, and it costs fewer tokens than the structure it summarizes. With no
+ * project covering the working directory, the first call indexes it - an agent should not have to
+ * run a setup command before it can ask a question.
+ */
+function codeGraphRetrieval(name: string, args: Record<string, unknown>): unknown {
+    if (!readConfig().config.codeGraph) return textResult(`${name}: the code graph is off (enable it with \`enigma config code-graph on\`).`, true);
+    const str = (key: string): string | undefined => (typeof args[key] === "string" && args[key] ? args[key] as string : undefined);
+    const num = (key: string): number | undefined => (typeof args[key] === "number" ? args[key] as number : undefined);
+    const base = { project: str("project") ?? ensureProjectForCwd(), in: str("in") };
+    const missing = (field: string): unknown => textResult(`${name}: '${field}' is required.`, true);
+    const unindexed = (): unknown => textResult(`${name}: ${cgQuery.NOT_INDEXED}`, true);
+
+    switch (name) {
+        case "enigma_codegraph_ask": {
+            const query = str("query");
+            if (!query) return missing("query");
+            const r = cgQuery.codeGraphAsk(query, { ...base, limit: num("limit"), source: args.source !== false });
+            return r ? textResult(cgFormat.formatAsk(r)) : unindexed();
+        }
+        case "enigma_codegraph_trace": {
+            const symbol = str("symbol");
+            if (!symbol) return missing("symbol");
+            const r = cgQuery.codeGraphTrace(symbol, { ...base, direction: str("direction") === "out" ? "out" : "in", depth: num("depth") });
+            return r ? textResult(cgFormat.formatTrace(r)) : unindexed();
+        }
+        case "enigma_codegraph_skeleton": {
+            const file = str("file");
+            if (!file) return missing("file");
+            const r = cgQuery.codeGraphSkeleton(file, base);
+            return r ? textResult(cgFormat.formatSkeleton(r)) : unindexed();
+        }
+        case "enigma_codegraph_map": {
+            const r = cgQuery.codeGraphMap({ ...base, maxDirs: num("maxDirs") });
+            return r ? textResult(cgFormat.formatMap(r)) : unindexed();
+        }
+        default: {
+            const pattern = str("pattern");
+            if (!pattern) return missing("pattern");
+            const r = cgQuery.codeGraphGrep(pattern, {
+                ...base,
+                ignoreCase: args.ignoreCase === true,
+                fixed: args.fixed === true,
+                maxHits: num("maxHits"),
+            });
+            return r ? textResult(cgFormat.formatGrep(r)) : unindexed();
+        }
+    }
 }
 
 /** Execute a single tool call and return its MCP result payload. */
@@ -241,6 +367,12 @@ function callTool(name: string, args: Record<string, unknown>, source?: string):
             const arch = codeGraphArchitecture(typeof args.project === "string" ? args.project : undefined);
             return arch ? textResult(JSON.stringify(arch, null, 2)) : textResult("enigma_codegraph_architecture: no project indexed yet - run enigma_codegraph_index first.", true);
         }
+        case "enigma_codegraph_ask":
+        case "enigma_codegraph_trace":
+        case "enigma_codegraph_skeleton":
+        case "enigma_codegraph_map":
+        case "enigma_codegraph_grep":
+            return codeGraphRetrieval(name, args);
         default:
             return textResult(`Unknown tool: ${name}`, true);
     }

@@ -1,24 +1,35 @@
 /**
  * Native code graph (codebase memory): a zero-dependency TypeScript engine that indexes a
  * project's source into a knowledge graph - files, the symbols they define (functions, classes,
- * ...), the modules they import, and cross-file symbol references - then answers structural
- * queries (architecture overview, symbol search, graph schema). STRUCTURAL code memory,
- * complementary to `recall` (session memory).
+ * ...), the modules they import, and the symbol-to-symbol wiring between them - then answers
+ * structural queries. STRUCTURAL code memory, complementary to `recall` (session memory).
  *
  * It is fully native to enigma (no external binary, no npx, no third-party package): extraction is
- * deterministic regex-per-language, like recall's deterministic transcript extraction. It does not
- * aim for a compiler-grade AST across every language - it is honest "structural-lite" over the
- * common languages, good enough to map a codebase without any dependency or network.
+ * deterministic regex-per-language (codegraph-extract.ts), like recall's deterministic transcript
+ * extraction. It does not aim for a compiler-grade AST across every language - it is honest
+ * "structural-lite" over the common languages, good enough to map a codebase without any
+ * dependency or network.
  *
- * The graph is persisted per project as JSON under ~/.enigma/codegraph (ENIGMA_CODEGRAPH_DIR
- * overrides it), so the CLI, the MCP tools and the dashboard all read the same store.
+ * This module owns resolution and storage: turning extracted facts into typed edges (contains,
+ * imports, calls, references, extends, implements) and persisting the graph per project as JSON
+ * under ~/.enigma/codegraph (ENIGMA_CODEGRAPH_DIR overrides it), so the CLI, the MCP tools and the
+ * dashboard all read the same store. The retrieval layer built on those edges - ask, callers,
+ * skeleton, map, grep - lives in codegraph-query.ts.
  */
 
 import { homedir } from "node:os";
 import { readConfig } from "./config";
 import { createHash } from "node:crypto";
-import { basename, extname, join, relative, resolve } from "node:path";
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tokenize } from "./codegraph-rank";
+import { basename, join, resolve } from "node:path";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { WALK_RELATIONS, type BodyIndex, type CodeEdge, type EdgeRelation, type GraphNode } from "./codegraph-types";
+import { relPath, scanFiles, statSourceFiles, type CodeFile, type CodeSymbol, type SymbolKind } from "./codegraph-extract";
+
+export { scanFiles } from "./codegraph-extract";
+export { WALK_RELATIONS } from "./codegraph-types";
+export type { CodeFile, CodeSymbol, SymbolKind } from "./codegraph-extract";
+export type { BodyIndex, CodeEdge, EdgeRelation, GraphNode } from "./codegraph-types";
 
 // --- storage -------------------------------------------------------------------------
 
@@ -29,6 +40,7 @@ function storeDir(): string {
 
 function projectsFile(): string { return join(storeDir(), "projects.json"); }
 function graphFile(id: string): string { return join(storeDir(), `${id}.json`); }
+function bodyIndexFile(id: string): string { return join(storeDir(), `${id}.bodies.json`); }
 
 function readJsonSafe<T>(file: string, fallback: T): T {
     try { return existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) as T : fallback; } catch { return fallback; }
@@ -41,12 +53,11 @@ function writeJson(file: string, value: unknown): void {
 
 // --- types ---------------------------------------------------------------------------
 
-export type SymbolKind = "function" | "class" | "interface" | "type" | "struct" | "enum" | "trait" | "module" | "method";
-
-export interface CodeSymbol { name: string; kind: SymbolKind; line: number; }
-export interface CodeFile { path: string; lang: string; loc: number; symbols: CodeSymbol[]; imports: string[]; }
+/** Bumped when the stored shape changes; an older graph is re-indexed instead of misread. */
+export const GRAPH_VERSION = 2;
 
 export interface CodeGraph {
+    version: number;
     id: string;
     name: string;
     root: string;
@@ -54,7 +65,9 @@ export interface CodeGraph {
     files: CodeFile[];
     /** Resolved intra-project import edges [fromFile, toFile]. */
     importEdges: [string, string][];
-    /** symbolName -> inbound cross-file reference count. */
+    /** Typed wiring, symbol ids on both ends except imports (file ids) and unresolved targets. */
+    edges: CodeEdge[];
+    /** symbolName -> inbound reference count. Kept as the architecture view's hotspot ranking. */
     refs: Record<string, number>;
     /** external module specifier -> usage count. */
     externalModules: Record<string, number>;
@@ -65,198 +78,262 @@ export interface ProjectEntry { id: string; name: string; root: string; indexedA
 /** One indexed project as the dashboard/CLI list it. */
 export type CodeGraphProject = ProjectEntry;
 
-// --- language extraction -------------------------------------------------------------
-
-const IGNORE_DIRS = new Set([
-    "node_modules", ".git", "dist", "build", "out", ".next", ".nuxt", "target", "vendor",
-    "__pycache__", ".venv", "venv", "coverage", ".cache", ".idea", ".vscode",
-    ".turbo", ".parcel-cache", ".svelte-kit", "Pods", ".gradle", ".dart_tool",
-]);
-
-/** Source extension -> language key. */
-const LANG_BY_EXT: Record<string, string> = {
-    ".ts": "ts", ".tsx": "ts", ".mts": "ts", ".cts": "ts",
-    ".js": "js", ".jsx": "js", ".mjs": "js", ".cjs": "js",
-    ".py": "python", ".go": "go", ".rs": "rust", ".java": "java",
-    ".rb": "ruby", ".php": "php", ".cs": "csharp", ".kt": "kotlin", ".kts": "kotlin",
-    ".c": "c", ".h": "c", ".cpp": "cpp", ".cc": "cpp", ".cxx": "cpp", ".hpp": "cpp", ".hh": "cpp",
-};
-
-const MAX_FILES = 8000;
-const MAX_FILE_BYTES = 512 * 1024;
-
-/** A regex that captures a symbol name in group 1, tagged with the kind it declares. */
-interface SymRule { kind: SymbolKind; re: RegExp; }
-
-function symRules(lang: string): SymRule[] {
-    switch (lang) {
-        case "ts": case "js": return [
-            { kind: "function", re: /^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?function\*?\s+([A-Za-z_$][\w$]*)/gm },
-            { kind: "class", re: /^\s*(?:export\s+)?(?:default\s+)?(?:abstract\s+)?class\s+([A-Za-z_$][\w$]*)/gm },
-            { kind: "interface", re: /^\s*(?:export\s+)?interface\s+([A-Za-z_$][\w$]*)/gm },
-            { kind: "type", re: /^\s*(?:export\s+)?type\s+([A-Za-z_$][\w$]*)\s*[=<]/gm },
-            { kind: "enum", re: /^\s*(?:export\s+)?(?:const\s+)?enum\s+([A-Za-z_$][\w$]*)/gm },
-            { kind: "function", re: /^\s*(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s+)?(?:function\b|\([^)]*\)\s*(?::[^=]+)?=>|[A-Za-z_$][\w$]*\s*=>)/gm },
-        ];
-        case "python": return [
-            { kind: "function", re: /^\s*(?:async\s+)?def\s+([A-Za-z_]\w*)/gm },
-            { kind: "class", re: /^\s*class\s+([A-Za-z_]\w*)/gm },
-        ];
-        case "go": return [
-            { kind: "function", re: /^\s*func\s+(?:\([^)]*\)\s*)?([A-Za-z_]\w*)/gm },
-            { kind: "struct", re: /^\s*type\s+([A-Za-z_]\w*)\s+struct\b/gm },
-            { kind: "interface", re: /^\s*type\s+([A-Za-z_]\w*)\s+interface\b/gm },
-        ];
-        case "rust": return [
-            { kind: "function", re: /^\s*(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?fn\s+([A-Za-z_]\w*)/gm },
-            { kind: "struct", re: /^\s*(?:pub(?:\([^)]*\))?\s+)?struct\s+([A-Za-z_]\w*)/gm },
-            { kind: "enum", re: /^\s*(?:pub(?:\([^)]*\))?\s+)?enum\s+([A-Za-z_]\w*)/gm },
-            { kind: "trait", re: /^\s*(?:pub(?:\([^)]*\))?\s+)?trait\s+([A-Za-z_]\w*)/gm },
-        ];
-        case "java": case "csharp": case "kotlin": return [
-            { kind: "class", re: /^\s*(?:[\w@]+\s+)*(?:class|record)\s+([A-Za-z_]\w*)/gm },
-            { kind: "interface", re: /^\s*(?:[\w@]+\s+)*interface\s+([A-Za-z_]\w*)/gm },
-            { kind: "enum", re: /^\s*(?:[\w@]+\s+)*enum\s+([A-Za-z_]\w*)/gm },
-            { kind: "struct", re: /^\s*(?:[\w@]+\s+)*struct\s+([A-Za-z_]\w*)/gm },
-            { kind: "function", re: /^\s*(?:(?:public|private|protected|internal|static|final|abstract|virtual|override|suspend|open|fun)\s+)+[A-Za-z_][\w<>\[\],. ]*?\s+([A-Za-z_]\w*)\s*\(/gm },
-        ];
-        case "ruby": return [
-            { kind: "function", re: /^\s*def\s+(?:self\.)?([A-Za-z_]\w*[!?=]?)/gm },
-            { kind: "class", re: /^\s*class\s+([A-Za-z_]\w*)/gm },
-            { kind: "module", re: /^\s*module\s+([A-Za-z_]\w*)/gm },
-        ];
-        case "php": return [
-            { kind: "function", re: /^\s*(?:(?:public|private|protected|static|abstract|final)\s+)*function\s+([A-Za-z_]\w*)/gm },
-            { kind: "class", re: /^\s*(?:(?:abstract|final)\s+)*class\s+([A-Za-z_]\w*)/gm },
-            { kind: "interface", re: /^\s*interface\s+([A-Za-z_]\w*)/gm },
-            { kind: "trait", re: /^\s*trait\s+([A-Za-z_]\w*)/gm },
-        ];
-        case "c": case "cpp": return [
-            { kind: "struct", re: /^\s*(?:typedef\s+)?struct\s+([A-Za-z_]\w*)/gm },
-            { kind: "class", re: /^\s*class\s+([A-Za-z_]\w*)/gm },
-            { kind: "enum", re: /^\s*enum\s+(?:class\s+)?([A-Za-z_]\w*)/gm },
-            { kind: "function", re: /^[A-Za-z_][\w\s*&:<>]*?\b([A-Za-z_]\w*)\s*\([^;{)]*\)\s*\{/gm },
-        ];
-        default: return [];
-    }
-}
-
-function importSpecs(lang: string, content: string): string[] {
-    const out = new Set<string>();
-    const push = (re: RegExp): void => { let m: RegExpExecArray | null; while ((m = re.exec(content))) if (m[1]) out.add(m[1]); };
-    switch (lang) {
-        case "ts": case "js":
-            push(/^\s*import\s+[\s\S]*?\s+from\s+["']([^"']+)["']/gm);
-            push(/^\s*import\s+["']([^"']+)["']/gm);
-            push(/^\s*export\s+[\s\S]*?\s+from\s+["']([^"']+)["']/gm);
-            push(/\brequire\(\s*["']([^"']+)["']\s*\)/g);
-            break;
-        case "python":
-            push(/^\s*import\s+([A-Za-z_][\w.]*)/gm);
-            push(/^\s*from\s+([A-Za-z_.][\w.]*)\s+import\b/gm);
-            break;
-        case "go": {
-            push(/^\s*import\s+"([^"]+)"/gm);
-            const block = /import\s*\(([\s\S]*?)\)/g; let b: RegExpExecArray | null;
-            while ((b = block.exec(content))) { const q = /"([^"]+)"/g; let m: RegExpExecArray | null; while ((m = q.exec(b[1]))) out.add(m[1]); }
-            break;
-        }
-        case "rust": push(/^\s*use\s+([A-Za-z_][\w:]*)/gm); break;
-        case "java": case "kotlin": push(/^\s*import\s+(?:static\s+)?([A-Za-z_][\w.]*)/gm); break;
-        case "csharp": push(/^\s*using\s+(?:static\s+)?([A-Za-z_][\w.]*)/gm); break;
-        case "ruby": push(/^\s*require(?:_relative)?\s+["']([^"']+)["']/gm); break;
-        case "php": push(/^\s*use\s+([A-Za-z_\\][\w\\]*)/gm); break;
-        case "c": case "cpp": push(/^\s*#\s*include\s*[<"]([^>"]+)[>"]/gm); break;
-    }
-    return [...out];
-}
-
-/** Build a fast (byte index -> 1-based line) resolver over `content`. */
-function lineResolver(content: string): (idx: number) => number {
-    const nl: number[] = [];
-    for (let i = 0; i < content.length; i++) if (content.charCodeAt(i) === 10) nl.push(i);
-    return (idx) => { let lo = 0, hi = nl.length; while (lo < hi) { const mid = (lo + hi) >> 1; if (nl[mid] < idx) lo = mid + 1; else hi = mid; } return lo + 1; };
-}
-
-/** Extract the symbols and import specifiers declared in one file's content. */
-function extractFile(lang: string, content: string): { symbols: CodeSymbol[]; imports: string[]; } {
-    const lineAt = lineResolver(content);
-    const symbols: CodeSymbol[] = [];
-    const seen = new Set<string>();
-    for (const { kind, re } of symRules(lang)) {
-        let m: RegExpExecArray | null;
-        re.lastIndex = 0;
-        while ((m = re.exec(content))) {
-            const name = m[1];
-            const key = `${name}@${m.index}`;
-            if (!name || seen.has(key)) continue;
-            seen.add(key);
-            symbols.push({ name, kind, line: lineAt(m.index) });
-        }
-    }
-    return { symbols, imports: importSpecs(lang, content) };
-}
-
-// --- scan ----------------------------------------------------------------------------
-
-function walk(root: string): string[] {
-    const files: string[] = [];
-    const stack = [root];
-    while (stack.length && files.length < MAX_FILES) {
-        const dir = stack.pop()!;
-        let entries: import("node:fs").Dirent[];
-        try { entries = readdirSync(dir, { withFileTypes: true }); } catch { continue; }
-        for (const e of entries) {
-            if (files.length >= MAX_FILES) break;
-            if (e.isDirectory()) { if (!e.name.startsWith(".") && !IGNORE_DIRS.has(e.name)) stack.push(join(dir, e.name)); continue; }
-            if (!e.isFile()) continue;
-            if (LANG_BY_EXT[extname(e.name).toLowerCase()]) files.push(join(dir, e.name));
-        }
-    }
-    return files;
-}
-
 // --- resolution + build --------------------------------------------------------------
 
 const RESOLVE_EXTS = ["", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".py", ".go", ".rs", ".java", ".rb", ".php", ".cs", ".kt"];
+
+/** Names shorter than this collide across unrelated files far more often than they resolve. */
+const MIN_REF_NAME = 3;
+
+/** Hard ceiling on wiring edges: a pathological tree degrades to a smaller graph, never a hang. */
+const MAX_EDGES = 400_000;
 
 /** Resolve a relative import specifier to a project-relative file path, or null. */
 function resolveRelative(fromFileAbs: string, spec: string, root: string, known: Set<string>): string | null {
     if (!spec.startsWith(".")) return null;
     const base = resolve(fromFileAbs, "..", spec);
-    const toRel = (p: string): string => relative(root, p).split("\\").join("/");
-    for (const ext of RESOLVE_EXTS) { const rel = toRel(base + ext); if (known.has(rel)) return rel; }
-    for (const ext of RESOLVE_EXTS.filter(Boolean)) { const rel = toRel(join(base, `index${ext}`)); if (known.has(rel)) return rel; }
+    for (const ext of RESOLVE_EXTS) { const rel = relPath(root, base + ext); if (known.has(rel)) return rel; }
+    for (const ext of RESOLVE_EXTS.filter(Boolean)) { const rel = relPath(root, join(base, `index${ext}`)); if (known.has(rel)) return rel; }
     return null;
 }
 
-/**
- * Walk a directory and extract every source file's symbols and imports, without
- * persisting anything. The read-only half of indexing, shared with the parity checker
- * (verify-parity.ts) so comparing two codebases never writes to the code-graph store.
- */
-export function scanFiles(rootDir?: string): { root: string; files: CodeFile[]; truncated: boolean; } {
-    const root = resolve(rootDir || process.cwd());
-    const files: CodeFile[] = [];
-    // Both caps are reported, not just applied: a caller that compares two trees (the parity
-    // check) would otherwise score an unread module as absent-free and call a port complete.
-    let truncated = false;
-    const walked = walk(root);
-    for (const abs of walked) {
-        let size = 0;
-        try { size = statSync(abs).size; } catch { continue; }
-        if (size > MAX_FILE_BYTES) { truncated = true; continue; }
-        let content: string;
-        try { content = readFileSync(abs, "utf8"); } catch { continue; }
-        const lang = LANG_BY_EXT[extname(abs).toLowerCase()];
-        const { symbols, imports } = extractFile(lang, content);
-        const path = relative(root, abs).split("\\").join("/");
-        files.push({ path, lang, loc: content ? content.split("\n").length : 0, symbols, imports });
+/** Stable id for a symbol: `path#name`, with a `~n` ordinal when a file declares the name twice. */
+function symbolId(path: string, name: string, taken: Set<string>): string {
+    const base = `${path}#${name}`;
+    if (!taken.has(base)) { taken.add(base); return base; }
+    for (let n = 2; ; n++) {
+        const candidate = `${base}~${n}`;
+        if (!taken.has(candidate)) { taken.add(candidate); return candidate; }
     }
-    // Measured on what walk() RETURNED, not on what survived per-file drops: a tree that hit
-    // the cap and also had one unreadable file would otherwise report full coverage.
-    if (walked.length >= MAX_FILES) truncated = true;
-    return { root, files, truncated };
+}
+
+/**
+ * Mint every node of a file set, files first then their symbols in declaration order.
+ *
+ * The single source of node ids: the build and every later load call this, so an id minted at
+ * index time is the same id a query resolves months later without the ids being persisted.
+ */
+function mintNodes(files: CodeFile[]): GraphNode[] {
+    const taken = new Set<string>();
+    const nodes: GraphNode[] = [];
+    for (const f of files) {
+        nodes.push({ id: f.path, name: basename(f.path), kind: "file", path: f.path, line: 1, endLine: f.loc, signature: "", chars: f.chars });
+        for (const s of f.symbols) {
+            nodes.push({ id: symbolId(f.path, s.name, taken), name: s.name, kind: s.kind, path: f.path, line: s.line, endLine: s.endLine, signature: s.signature });
+        }
+    }
+    return nodes;
+}
+
+/** Innermost symbol whose span contains `line`, given that file's symbols sorted by start line. */
+function enclosingSymbol(spans: { id: string; line: number; endLine: number; }[], line: number): string | null {
+    let found: string | null = null;
+    for (const s of spans) {
+        if (s.line > line) break;
+        if (line <= s.endLine) found = s.id;
+    }
+    return found;
+}
+
+/** The base types named by a class/interface declaration, as `[relation, name]` pairs. */
+function inheritanceTargets(signature: string): [EdgeRelation, string][] {
+    const out: [EdgeRelation, string][] = [];
+    const ext = /\bextends\s+([\w$.<>,\s]+?)(?:\s+implements\b|$)/.exec(signature);
+    const impl = /\bimplements\s+([\w$.<>,\s]+)$/.exec(signature);
+    const names = (clause: string): string[] => clause
+        .split(",")
+        .map((s) => s.trim().replace(/<.*$/, "").split(".").pop() || "")
+        .filter((s) => s.length >= MIN_REF_NAME);
+    if (ext) for (const n of names(ext[1])) out.push(["extends", n]);
+    if (impl) for (const n of names(impl[1])) out.push(["implements", n]);
+    return out;
+}
+
+/**
+ * Wire the extracted files into typed edges.
+ *
+ * Reference resolution is name-based and import-aware, in that order of preference: a name that
+ * resolves to exactly one definition binds to it; an ambiguous name binds only when exactly one
+ * candidate sits in a file this one imports (or in this file itself). Anything still ambiguous is
+ * dropped rather than guessed - a wrong edge is worse than a missing one, because it silently
+ * misdirects a blast-radius query.
+ */
+function buildEdges(root: string, files: CodeFile[], importEdges: [string, string][]): { edges: CodeEdge[]; refs: Record<string, number>; bodies: BodyIndex; } {
+    const nodes = mintNodes(files);
+    const spansByFile = new Map<string, { id: string; line: number; endLine: number; }[]>();
+    const defsByName = new Map<string, { id: string; path: string; }[]>();
+
+    for (const n of nodes) {
+        if (n.kind === "file") { spansByFile.set(n.path, []); continue; }
+        spansByFile.get(n.path)!.push({ id: n.id, line: n.line, endLine: n.endLine });
+        if (n.name.length >= MIN_REF_NAME) {
+            let list = defsByName.get(n.name);
+            if (!list) { list = []; defsByName.set(n.name, list); }
+            list.push({ id: n.id, path: n.path });
+        }
+    }
+    for (const spans of spansByFile.values()) spans.sort((a, b) => a.line - b.line);
+
+    const importsOf = new Map<string, Set<string>>();
+    for (const [from, to] of importEdges) {
+        let set = importsOf.get(from);
+        if (!set) { set = new Set(); importsOf.set(from, set); }
+        set.add(to);
+    }
+
+    const edges: CodeEdge[] = [];
+    const seen = new Set<string>();
+    const push = (from: string, to: string, rel: EdgeRelation): void => {
+        if (edges.length >= MAX_EDGES || from === to) return;
+        const key = `${from}|${to}|${rel}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        edges.push([from, to, rel]);
+    };
+
+    for (const f of files) {
+        for (const span of spansByFile.get(f.path) ?? []) push(f.path, span.id, "contains");
+        for (const to of importsOf.get(f.path) ?? []) push(f.path, to, "imports");
+    }
+
+    const known = new Set(files.map((f) => f.path));
+    const idByPathName = new Map<string, string>();
+    // Per-file name -> id, with null marking a name the file declares more than once (ambiguous).
+    const localDefs = new Map<string, Map<string, string | null>>();
+    for (const n of nodes) {
+        if (n.kind === "file") { localDefs.set(n.path, new Map()); continue; }
+        const key = `${n.path}#${n.name}`;
+        if (!idByPathName.has(key)) idByPathName.set(key, n.id);
+        const local = localDefs.get(n.path)!;
+        local.set(n.name, local.has(n.name) ? null : n.id);
+    }
+
+    /**
+     * The resolver for one file: which definition, if any, an identifier in it refers to.
+     *
+     * A name resolves inside its own file first, and crosses a file boundary only through an
+     * import that actually binds that name. The weaker "globally unique name" rule is a disaster
+     * of a heuristic - every local `out`, `dir` or `err` in the repo binds to whichever single
+     * file happens to declare that name, inventing hundreds of dependencies and crowning a local
+     * helper as the codebase's biggest hub. It survives only as the fallback for languages whose
+     * imports do not name their bindings, where the alternative is no cross-file edges at all.
+     */
+    function binderFor(f: CodeFile): (name: string, memberOf?: string) => string | null {
+        const local = localDefs.get(f.path) ?? new Map<string, string | null>();
+        const imported = importsOf.get(f.path);
+        const unique = (name: string): string | null => {
+            const candidates = defsByName.get(name)?.filter((c) => imported?.has(c.path));
+            return candidates?.length === 1 ? candidates[0].id : null;
+        };
+        if (!f.bindings) {
+            return (name) => {
+                if (local.has(name)) return local.get(name) ?? null;
+                if (imported?.size) return unique(name);
+                const all = defsByName.get(name);
+                return all?.length === 1 ? all[0].id : null;
+            };
+        }
+        const bound = new Set(f.bindings.names);
+        const namespaces = new Map<string, string>();
+        for (const [alias, spec] of f.bindings.namespaces) {
+            const target = resolveRelative(join(root, f.path), spec, root, known);
+            if (target) namespaces.set(alias, target);
+        }
+        return (name, memberOf) => {
+            // `ns.thing` resolves only through a namespace import; any other `x.thing` is a
+            // property of some value, not a reference to a top-level definition.
+            if (memberOf !== undefined) {
+                const path = namespaces.get(memberOf);
+                return path ? idByPathName.get(`${path}#${name}`) ?? null : null;
+            }
+            if (local.has(name)) return local.get(name) ?? null;
+            return bound.has(name) ? unique(name) : null;
+        };
+    }
+
+    const refs: Record<string, number> = {};
+    const bodies: BodyIndex = [];
+    const nameById = new Map(nodes.map((n) => [n.id, n.name]));
+    const pathById = new Map(nodes.map((n) => [n.id, n.path]));
+
+    for (const f of files) {
+        let content = "";
+        try { content = readFileSync(join(root, f.path), "utf8"); } catch { continue; }
+        const spans = spansByFile.get(f.path) ?? [];
+        const declLines = new Set(f.symbols.map((s) => s.line));
+        const lines = content.split("\n");
+        indexBodies(bodies, f.path, spans, lines);
+        const bind = binderFor(f);
+        // Only the languages with named import bindings can tell `ns.thing` from `value.thing`;
+        // for the rest the prefix scan is pure cost, so it is skipped entirely.
+        const strict = !!f.bindings;
+
+        for (const s of f.symbols) {
+            if (s.kind !== "class" && s.kind !== "interface" && s.kind !== "struct") continue;
+            const self = spans.find((sp) => sp.line === s.line);
+            if (!self) continue;
+            for (const [rel, name] of inheritanceTargets(s.signature)) {
+                const target = bind(name);
+                if (target) push(self.id, target, rel);
+            }
+        }
+
+        for (let i = 0; i < lines.length; i++) {
+            const lineNo = i + 1;
+            if (declLines.has(lineNo)) continue; // the declaration itself is not a reference to itself
+            const line = lines[i];
+            const from = enclosingSymbol(spans, lineNo) ?? f.path;
+            const ident = /[A-Za-z_$][\w$]*/g;
+            let m: RegExpExecArray | null;
+            while ((m = ident.exec(line))) {
+                const name = m[0];
+                if (name.length < MIN_REF_NAME || !defsByName.has(name)) continue;
+                const memberOf = strict ? /([A-Za-z_$][\w$]*)\s*\.\s*$/.exec(line.slice(0, m.index))?.[1] : undefined;
+                const target = bind(name, memberOf);
+                if (!target || target === from) continue;
+                const after = line.slice(m.index + name.length);
+                push(from, target, /^\s*\(/.test(after) ? "calls" : "references");
+                if (pathById.get(target) !== f.path) {
+                    const targetName = nameById.get(target) ?? name;
+                    refs[targetName] = (refs[targetName] || 0) + 1;
+                }
+            }
+        }
+    }
+
+    return { edges, refs, bodies };
+}
+
+/** Distinct tokens kept per node - enough to make a definition findable by its own vocabulary,
+ * few enough that the sidecar stays a fraction of the source it describes. */
+const MAX_BODY_TOKENS = 80;
+
+/**
+ * Record the searchable vocabulary of each node in a file: a symbol's own definition text, and
+ * for the file node the residual lines no symbol covers (imports, constants, top-level code).
+ *
+ * This is what makes a term that appears only in the CODE - never in a name, path or signature -
+ * still find its node, without a query ever having to re-read the tree.
+ */
+function indexBodies(out: BodyIndex, path: string, spans: { id: string; line: number; endLine: number; }[], lines: string[]): void {
+    const covered = new Uint8Array(lines.length + 1);
+    for (const s of spans) {
+        const text = lines.slice(s.line - 1, s.endLine).join("\n");
+        for (let l = s.line; l <= Math.min(s.endLine, lines.length); l++) covered[l] = 1;
+        const bag = topTokens(text);
+        if (bag.length) out.push([s.id, bag]);
+    }
+    const residual: string[] = [];
+    for (let l = 1; l <= lines.length; l++) if (!covered[l]) residual.push(lines[l - 1]);
+    const fileBag = topTokens(residual.join("\n"));
+    if (fileBag.length) out.push([path, fileBag]);
+}
+
+/** The `MAX_BODY_TOKENS` most frequent tokens of `text`, ties broken by token for determinism. */
+function topTokens(text: string): [string, number][] {
+    const m = new Map<string, number>();
+    for (const t of tokenize(text)) m.set(t, (m.get(t) ?? 0) + 1);
+    return [...m.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, MAX_BODY_TOKENS);
 }
 
 /** Index a project directory into a graph and persist it. Returns the summary entry. */
@@ -266,44 +343,20 @@ export function indexProject(rootDir?: string): ProjectEntry {
     const name = basename(root) || root;
 
     const known = new Set(files.map((f) => f.path));
-    const absByPath = new Map(files.map((f) => [f.path, join(root, f.path)]));
     const importEdges: [string, string][] = [];
     const externalModules: Record<string, number> = {};
     for (const f of files) {
         for (const spec of f.imports) {
-            const target = resolveRelative(absByPath.get(f.path)!, spec, root, known);
+            const target = resolveRelative(join(root, f.path), spec, root, known);
             if (target) importEdges.push([f.path, target]);
             else externalModules[spec] = (externalModules[spec] || 0) + 1;
         }
     }
 
-    // Cross-file symbol references: an identifier that names a symbol defined in ANOTHER file is
-    // an inbound reference to that name (a best-effort call graph without full name resolution).
-    const nameToDefiners = new Map<string, Set<string>>();
-    for (const f of files) for (const s of f.symbols) {
-        if (s.name.length < 3) continue; // skip 1-2 char names: too collision-prone
-        let set = nameToDefiners.get(s.name); if (!set) { set = new Set(); nameToDefiners.set(s.name, set); }
-        set.add(f.path);
-    }
-    const refs: Record<string, number> = {};
-    for (const f of files) {
-        let content = ""; try { content = readFileSync(absByPath.get(f.path)!, "utf8"); } catch { continue; }
-        const ids = content.match(/[A-Za-z_$][\w$]*/g);
-        if (!ids) continue;
-        const usedHere = new Set<string>();
-        for (const id2 of ids) {
-            if (usedHere.has(id2)) continue;
-            const definers = nameToDefiners.get(id2);
-            if (!definers) continue;
-            let crossFile = false; for (const d of definers) if (d !== f.path) { crossFile = true; break; }
-            if (!crossFile) continue;
-            usedHere.add(id2);
-            refs[id2] = (refs[id2] || 0) + 1;
-        }
-    }
-
-    const graph: CodeGraph = { id, name, root, indexedAt: Date.now(), files, importEdges, refs, externalModules };
+    const { edges, refs, bodies } = buildEdges(root, files, importEdges);
+    const graph: CodeGraph = { version: GRAPH_VERSION, id, name, root, indexedAt: Date.now(), files, importEdges, edges, refs, externalModules };
     writeJson(graphFile(id), graph);
+    writeJson(bodyIndexFile(id), bodies);
 
     const symbols = files.reduce((n, f) => n + f.symbols.length, 0);
     const entry: ProjectEntry = { id, name, root, indexedAt: graph.indexedAt, files: files.length, symbols };
@@ -323,18 +376,121 @@ export function codeGraphProjects(): CodeGraphProject[] {
     return listProjects();
 }
 
-/** Resolve a project by id, exact name, or root path; else the most recent. */
+/**
+ * Resolve a project by id, exact name, or root path.
+ *
+ * With nothing named, the project containing the current directory wins over the most recently
+ * indexed one - answering a question asked inside repo B with repo A's graph is worse than saying
+ * nothing, and "most recent" is exactly how that happens.
+ */
 function resolveProject(project?: string): ProjectEntry | null {
     const all = listProjects();
     if (!all.length) return null;
-    if (!project) return all[0];
-    return all.find((p) => p.id === project || p.name === project || p.root === project) || null;
+    if (project) return all.find((p) => p.id === project || p.name === project || p.root === project) || null;
+    const cwd = resolve(process.cwd());
+    const covering = all
+        .filter((p) => cwd === p.root || cwd.startsWith(`${p.root}${cwd.includes("\\") ? "\\" : "/"}`))
+        .sort((a, b) => b.root.length - a.root.length);
+    return covering[0] ?? all[0];
 }
 
-function loadGraph(project?: string): CodeGraph | null {
+/** Files that mark the top of a project - checked walking up from the working directory. */
+const ROOT_MARKERS = [".git", "package.json", "go.mod", "pyproject.toml", "Cargo.toml", "pom.xml", "composer.json"];
+
+/**
+ * The root a query asked from `dir` is really about: the nearest ancestor that looks like a
+ * project. An agent's working directory is often several levels down, and indexing that directory
+ * alone would build a graph that cannot see the code calling into it - which is exactly the
+ * question the graph exists to answer.
+ */
+function projectRootOf(dir: string): string {
+    let current = resolve(dir);
+    for (;;) {
+        if (ROOT_MARKERS.some((marker) => existsSync(join(current, marker)))) return current;
+        const parent = resolve(current, "..");
+        if (parent === current) return resolve(dir);
+        current = parent;
+    }
+}
+
+/**
+ * The graph a query in this directory should read, indexing it first when nothing covers it.
+ * Returns the project id, so a caller never has to guess which graph it just got.
+ */
+export function ensureProjectForCwd(): string {
+    const cwd = resolve(process.cwd());
+    const existing = resolveProject();
+    if (existing && (cwd === existing.root || cwd.startsWith(`${existing.root}${cwd.includes("\\") ? "\\" : "/"}`))) return existing.id;
+    return indexProject(projectRootOf(cwd)).id;
+}
+
+export function loadGraph(project?: string): CodeGraph | null {
     const entry = resolveProject(project);
     if (!entry) return null;
     return readJsonSafe<CodeGraph | null>(graphFile(entry.id), null);
+}
+
+/**
+ * The searchable vocabulary written beside a graph. Missing or unreadable degrades to an empty
+ * index, which costs recall on body-only terms - never correctness, and never an error.
+ */
+export function loadBodyIndex(graphId: string): Map<string, Map<string, number>> {
+    const raw = readJsonSafe<BodyIndex>(bodyIndexFile(graphId), []);
+    const out = new Map<string, Map<string, number>>();
+    for (const [id, bag] of raw) out.set(id, new Map(bag));
+    return out;
+}
+
+/** What moved in the working tree since the last index. Empty everywhere = the graph is current. */
+export interface CodeGraphDrift { changed: string[]; added: string[]; removed: string[]; }
+
+export function isCleanDrift(d: CodeGraphDrift): boolean {
+    return d.changed.length === 0 && d.added.length === 0 && d.removed.length === 0;
+}
+
+export function driftCount(d: CodeGraphDrift): number {
+    return d.changed.length + d.added.length + d.removed.length;
+}
+
+/**
+ * Diff the working tree against the stored index using one stat per file - no reads, no parsing.
+ * That cheapness is the point: it is what lets every query refresh before it answers, so an
+ * answer describes the code as it is now (uncommitted edits included) rather than as it was.
+ */
+export function probeDrift(graph: CodeGraph): CodeGraphDrift {
+    const drift: CodeGraphDrift = { changed: [], added: [], removed: [] };
+    const onDisk = statSourceFiles(graph.root);
+    const indexed = new Map(graph.files.map((f) => [f.path, f]));
+    for (const [path, st] of onDisk) {
+        const rec = indexed.get(path);
+        if (!rec) { drift.added.push(path); continue; }
+        if (rec.size !== st.size || rec.mtimeMs !== st.mtimeMs) drift.changed.push(path);
+    }
+    for (const path of indexed.keys()) if (!onDisk.has(path)) drift.removed.push(path);
+    drift.changed.sort();
+    drift.added.sort();
+    drift.removed.sort();
+    return drift;
+}
+
+/**
+ * The graph as a query should see it: re-indexed first when the tree moved, or when the stored
+ * graph predates the current shape. `refresh: false` answers from disk exactly as indexed.
+ */
+export function loadFreshGraph(project?: string, refresh = true): CodeGraph | null {
+    const graph = loadGraph(project);
+    if (!graph) return null;
+    if (!refresh) return graph;
+    if (graph.version !== GRAPH_VERSION || !isCleanDrift(probeDrift(graph))) {
+        indexProject(graph.root);
+        return loadGraph(graph.id);
+    }
+    return graph;
+}
+
+/** Every node (files and symbols) of a graph, ids assigned exactly as the build assigned them. */
+export function graphNodes(graph: CodeGraph): GraphNode[] {
+    return mintNodes(graph.files);
 }
 
 export interface Architecture {
@@ -383,8 +539,10 @@ export function codeGraphSchema(project?: string): GraphSchema | null {
         const label = s.kind.charAt(0).toUpperCase() + s.kind.slice(1);
         nodes[label] = (nodes[label] || 0) + 1;
     }
-    const totalRefs = Object.values(g.refs).reduce((a, b) => a + b, 0);
-    return { nodes, edges: { IMPORTS: g.importEdges.length, REFERENCES: totalRefs } };
+    const edges: Record<string, number> = {};
+    for (const [, , rel] of g.edges ?? []) edges[rel.toUpperCase()] = (edges[rel.toUpperCase()] || 0) + 1;
+    if (!Object.keys(edges).length) edges.IMPORTS = g.importEdges.length;
+    return { nodes, edges };
 }
 
 export interface SymbolHit { name: string; kind: SymbolKind; file: string; line: number; }

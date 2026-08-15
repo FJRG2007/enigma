@@ -371,7 +371,7 @@ const RAW_CATEGORIES: Category[] = [
             {
                 key: "code-graph",
                 label: "Codebase memory (code graph)",
-                hint: "expose enigma's native code-graph tools (index a codebase into a knowledge graph of symbols, imports and references) to your agents over MCP; toggling applies immediately; off removes them; enigma default: off",
+                hint: "let your agents query your codebase structurally over MCP - find the code a task concerns, trace what a change breaks, read a file's API surface - instead of re-exploring the repo every task; toggling applies immediately; off removes the tools; enigma default: off",
                 read: () => conf.readConfig().config.codeGraph,
                 write: (value, scope) => setCodeGraph(value, scope),
             },
