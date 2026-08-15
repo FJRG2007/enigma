@@ -20,6 +20,7 @@ import { applyDashboardMode } from "./dashboard";
 import { isAutoLintOn, setAutoLint } from "./lint";
 import { applyGateToggle } from "./command-deploy";
 import { setGuardrails } from "./guardrails-deploy";
+import { applyCodeGraphWiring } from "./codegraph-deploy";
 import type { GuardListMeta } from "./guard-config";
 import { BYPASS_GLOBAL_ONLY, BYPASS_SUPPORTED, getBypass, setBypass } from "./permissions";
 import { getGhTelemetryCached, ghTelemetryBlocker, hasGhCli, setGhTelemetry } from "./github";
@@ -151,6 +152,9 @@ function setCompress(on: boolean, scope: Scope): ApplyResult {
 function setCodeGraph(on: boolean, scope: Scope): ApplyResult {
     const path = conf.setEnigmaToggle("codeGraph", on, scope);
     applyMcpToggle(scope);
+    // The MCP tools are the pull half; the hooks are the push half. Both follow the one toggle, so
+    // enabling never leaves the graph half-wired - available but never arriving.
+    applyCodeGraphWiring();
     return { path, changed: true };
 }
 
@@ -375,7 +379,7 @@ const RAW_CATEGORIES: Category[] = [
                 // keeps exploring by hand. Turning this on renders the "look it up in the graph"
                 // block into core-engineering-policy, which loads on every engineering task.
                 affectsSkills: true,
-                hint: "let your agents query your codebase structurally over MCP - find the code a task concerns, trace what a change breaks, read a file's API surface - instead of re-exploring the repo every task; toggling applies immediately; off removes the tools; enigma default: off",
+                hint: "index your codebase as a graph your agents query instead of re-exploring it - find the code a task concerns, trace what a change breaks, read a file's API surface; also rides along in a Claude Code session (orientation at start, locators per prompt, blast radius after an edit); toggling applies immediately; off removes the tools and the hooks; enigma default: on",
                 read: () => conf.readConfig().config.codeGraph,
                 write: (value, scope) => setCodeGraph(value, scope),
             },

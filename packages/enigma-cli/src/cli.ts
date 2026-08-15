@@ -2527,6 +2527,15 @@ export async function run(argv: string[]): Promise<void> {
         const { runGuardrailsHook } = await import("./guardrails");
         process.exit(runGuardrailsHook(payload));
     }
+    // Hidden: the code-graph session hooks (session-start | prompt | post-edit | stop). Same early
+    // dispatch and synchronous stdin read as the guardrails hook, for the same reason - an await
+    // before reading fd 0 lets Node drain the pipe and the hook silently sees an empty payload.
+    if (argv[0] === "__codegraph-hook") {
+        let payload = "";
+        try { payload = readFileSync(0, "utf8"); } catch { /* no stdin */ }
+        const { runCodeGraphHook } = await import("./codegraph-hook");
+        process.exit(await runCodeGraphHook(argv[1] || "", payload));
+    }
     // Hidden: the turn-end completion gate. Reads the Stop payload from stdin and exits 2
     // when the agent's own "this is finished" claim is contradicted by what the turn
     // produced, which denies the stop and feeds the evidence back. Same early dispatch and

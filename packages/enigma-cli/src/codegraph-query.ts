@@ -144,6 +144,17 @@ export interface AskResult {
     note?: string;
     /** IDF-weighted share of the query the top hit matched: how much of the ask was understood. */
     coverage?: number;
+    /**
+     * The same share measured on the top hit's NAME alone.
+     *
+     * Broad coverage answers "how much of the question did we match anywhere"; a wordy question
+     * ("where is drift between the graph and the working tree detected") scores low on it even
+     * when the answer is exactly right, because most of those words are not in any identifier.
+     * This answers the sharper question - did we match the words that NAME the thing - so a caller
+     * deciding whether to trust the top hit can accept either a strong name match or broad
+     * coverage, instead of failing a good answer on one number.
+     */
+    coverageStrong?: number;
     saved?: Savings;
 }
 
@@ -268,6 +279,7 @@ function lexicalAsk(query: string, loaded: Loaded, limit: number, inPrefix?: str
     const docById = new Map(docs.map((d) => [d.n.id, d]));
     const hits: AskHit[] = [];
     const coverageOf = new Map<AskHit, number>();
+    const strengthOf = new Map<AskHit, number>();
     for (const id of candidates) {
         const n = loaded.byId.get(id);
         if (!n) continue;
@@ -279,6 +291,9 @@ function lexicalAsk(query: string, loaded: Loaded, limit: number, inPrefix?: str
         const hit = toHit(n, blended);
         const d = docById.get(id);
         coverageOf.set(hit, d ? rank.matchedShare(q, [d.name, d.path, d.body], idf, defaultIdf) : 0);
+        // A file node's "name" is a basename, a path component rather than a symbol name, so a
+        // file whose filename happens to share a query word is not a strong match.
+        strengthOf.set(hit, d && n.kind !== "file" ? rank.matchedShare(q, [d.name], idf, defaultIdf) : 0);
         hits.push(hit);
     }
 
@@ -289,6 +304,7 @@ function lexicalAsk(query: string, loaded: Loaded, limit: number, inPrefix?: str
         mode: hits.length ? "lexical" : "empty",
         hits: top,
         coverage: hits.length && q.size ? coverageOf.get(hits[0]) : undefined,
+        coverageStrong: hits.length && q.size ? strengthOf.get(hits[0]) : undefined,
         note: hits.length ? undefined : "No matching nodes. Try different words, or re-index: enigma codegraph index",
     };
 }

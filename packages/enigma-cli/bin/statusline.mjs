@@ -154,6 +154,26 @@ function badge(color256) {
     return paint(`[${label}]`, "amber", color256);
 }
 
+/**
+ * The code graph's own snapshot, written by its session hooks.
+ *
+ * Same reason the gate has one: this is a Node script and the engine is compiled into the Bun
+ * binary, so the statusline can never call it. A hook that already ran the engine leaves the two
+ * numbers worth showing behind in a small file, and this only reads them.
+ */
+export function readCodeGraphStatus(cwd) {
+    if (typeof cwd !== "string" || !cwd) return null;
+    try {
+        const root = process.env.ENIGMA_CODEGRAPH_DIR || join(os.homedir(), ".enigma", "codegraph");
+        const snap = parseJson(readFileSync(join(root, "statusline.json"), "utf8"));
+        if (!snap || typeof snap.root !== "string") return null;
+        // Only speak for the repo this session is actually in - a snapshot from another project
+        // would put someone else's file count on this status line.
+        if (!isInside(cwd, snap.root)) return null;
+        return { symbols: Number(snap.symbols) || 0, stale: Number(snap.stale) || 0 };
+    } catch { return null; }
+}
+
 /** Path to the snapshot the gate daemon writes, mirroring gate/paths.ts. */
 export function snapshotPath() {
     const root = process.env.ENIGMA_GATE_HOME || join(os.homedir(), ".enigma", "gate");
@@ -223,6 +243,15 @@ function renderBase(session, columns, color256) {
     }
     if (typeof cost === "number" && cost > 0) {
         parts.push({ text: dim(`$${cost.toFixed(2)}`, color256), optional: true });
+    }
+    const graph = readCodeGraphStatus(dir);
+    if (graph && graph.symbols > 0) {
+        // Stale is the only part worth a colour: a graph that has fallen behind the code answers
+        // confidently and wrongly, and nothing else on the line would show it.
+        const label = graph.stale > 0
+            ? `${dim(`graph ${graph.symbols}`, color256)} ${paint(`${graph.stale} stale`, "yellow", color256)}`
+            : dim(`graph ${graph.symbols}`, color256);
+        parts.push({ text: label, optional: true });
     }
     return fit(parts, "  ", columns);
 }

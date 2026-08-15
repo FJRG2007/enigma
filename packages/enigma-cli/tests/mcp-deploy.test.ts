@@ -89,14 +89,30 @@ test("kimi account: writes mcp.json inside the account data root", () => {
     expect(readJson(join(dir, "mcp.json")).mcpServers.enigma.command).toBeTruthy();
 });
 
-test("turning compress off removes the entry but keeps other config", () => {
+test("turning off the last enabled family removes the entry but keeps other config", () => {
     const file = join(HOME, ".claude.json");
     setEnigmaValue("compress", false, "global");
+    // The server is shared: it is registered while ANY family wants it, so a test about the
+    // entry disappearing has to turn off the code graph too (on by default) rather than assume it.
+    setEnigmaValue("codeGraph", false, "global");
     expect(applyMcpForAgent("claude", "global")).toBe(true);
     const cfg = readJson(file);
     expect(cfg.mcpServers.enigma).toBeUndefined();
     expect(cfg.mcpServers.other.command).toBe("x");        // unrelated server survives
     expect(cfg.numStartups).toBe(7);
+});
+
+/**
+ * One enigma MCP server hosts every tool family, so its registration follows whether ANY of them
+ * is enabled - not whether a particular one is. Turning off compress while the code graph is on
+ * must leave the server in place, or disabling one feature would silently take the others down.
+ */
+test("the server survives one family being turned off while another is on", () => {
+    const file = join(HOME, ".claude.json");
+    setEnigmaValue("codeGraph", true, "global");
+    setEnigmaValue("compress", false, "global");
+    applyMcpForAgent("claude", "global");
+    expect(readJson(file).mcpServers.enigma).toBeDefined();
 });
 
 test("codex has no project-local config: local scope is a no-op", () => {
@@ -107,6 +123,7 @@ test("codex has no project-local config: local scope is a no-op", () => {
 test("disabling when no config file exists does not create one", () => {
     const dir = join(HOME, ".enigma", "claude", "ghost");
     setEnigmaValue("compress", false, "global");
+    setEnigmaValue("codeGraph", false, "global");
     expect(applyMcpForAccount("claude", dir)).toBe(false);
     expect(existsSync(join(dir, ".claude.json"))).toBe(false);
 });
@@ -121,6 +138,7 @@ test("compress toggle applies immediately, only to tools with an existing config
         const claudeCfg = join(home2, ".claude.json");
         writeFileSync(claudeCfg, JSON.stringify({ numStartups: 1 }));   // claude is used
         // codex/opencode/kimi have NO config here -> an enable must not create them.
+        setEnigmaValue("codeGraph", false, "global");
         setEnigmaValue("compress", true, "global");
         const on = applyMcpToggle("global");
         expect(on).toEqual(["claude"]);

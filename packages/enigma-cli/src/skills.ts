@@ -26,6 +26,7 @@ import { setGhTelemetry, starRepoInBackground } from "./github";
 import { applyTrimWiring, mirrorTrimWiring } from "./trim-deploy";
 import type { Agent, AgentTarget, DiscoveredAgent } from "./agents";
 import { applyMcpForAgent, applyMcpForAccount } from "./mcp-deploy";
+import { applyCodeGraphWiring, mirrorCodeGraphWiring } from "./codegraph-deploy";
 import { isDir, isNewer, readJson, listFilesRel, computeContentSha } from "./util";
 import { applyVerifyWiring, isVerifyOn, mirrorVerifyWiring } from "./verify-deploy";
 import { applyGuardrailsWiring, mirrorGuardrailsWiring } from "./guardrails-deploy";
@@ -1276,6 +1277,10 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
     // (default on). Same side-effect shape as the lint hook; skipped on a dry run.
     const applyGuardrailsConfig = (): void => { if (wires("post-edit")) applyGuardrailsWiring(); };
 
+    // Code graph: re-assert the session hooks (orientation, per-prompt locators, blast radius,
+    // end-of-turn re-index) to match the toggle. Same side-effect shape as the guardrails hook.
+    const applyCodeGraphConfig = (): void => { if (wires("post-edit")) applyCodeGraphWiring(); };
+
     // EOF trimmer: re-assert the post-edit hook wiring to match the toggle (default on),
     // same side-effect shape as the guardrails hook; skipped on a dry run.
     const applyTrimConfig = (): void => { if (wires("post-edit")) applyTrimWiring(); };
@@ -1422,6 +1427,7 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
         applyBypassConfig();
         applyLintConfig();
         applyGuardrailsConfig();
+        applyCodeGraphConfig();
         applyTrimConfig();
         applyVerifyConfig();
         applyMcpConfig();
@@ -1493,6 +1499,7 @@ export async function installSkills(opts: InstallOptions, interactive: boolean, 
     applyBypassConfig();
     applyLintConfig();
     applyGuardrailsConfig();
+    applyCodeGraphConfig();
     applyTrimConfig();
     applyVerifyConfig();
     applyMcpConfig();
@@ -1764,6 +1771,7 @@ export function syncAccount(toolName: string, dir: string): string[] {
     mirrorAccountSettings(toolName, dir);
     mirrorLintWiring(toolName, dir);
     mirrorGuardrailsWiring(toolName, dir);
+    mirrorCodeGraphWiring(toolName, dir);
     mirrorTrimWiring(toolName, dir);
     mirrorVerifyWiring(toolName, dir);
     const mcpChanged = applyMcpForAccount(toolName, dir);

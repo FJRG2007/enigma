@@ -8,7 +8,7 @@ import Cmd from "../../../components/Cmd.astro";
 
 Every task, an agent starts blind: it greps a term, opens a file, follows an import, backs out, tries again - rebuilding a picture of a codebase it mapped an hour ago and threw away. Codebase memory builds that picture once and lets the agent query it: a knowledge graph of the symbols each file defines (functions, classes, interfaces, types, ...), the modules it imports, and which symbol calls or references which.
 
-This is **structural** memory of your code - complementary to [Recall](/docs/concepts/recall), which is **session** memory of what you did. It is **off by default**; everything runs locally and your code never leaves your machine.
+This is **structural** memory of your code - complementary to [Recall](/docs/concepts/recall), which is **session** memory of what you did. It is **on by default**; everything runs locally and your code never leaves your machine.
 
 ## Native, no dependencies
 
@@ -30,10 +30,29 @@ Turning the setting on exposes enigma's code-graph tools to your agents through 
 
 Every query stats the tree first and re-indexes only what moved, so an answer describes the code as it is **right now**, uncommitted edits included. `enigma codegraph check` reports drift without repairing it, and exits non-zero when the graph has fallen behind - usable as a CI gate.
 
-## Enable it
+## It rides along in the session
 
-<Cmd name="enigma config code-graph on" ex={["enigma config code-graph on", "enigma codegraph index"]}>
-Expose the code-graph tools to your agents (restart them to load), then index a project. Your agent can also index on its own via `enigma_codegraph_index`.
+The tools above are the *pull* half: the agent calls them when it decides to. In Claude Code the graph is also *pushed*, through four hooks, so it arrives without being asked:
+
+| When | What arrives |
+| --- | --- |
+| Session start | The repo map, once, plus a short note naming the tools. Cached, so it is paid once per session. |
+| Every prompt | Up to three locators for the nodes that task touches - `path:line` only, never inlined code. |
+| After an edit | What depends on the file just written, while you can still widen the change. |
+| End of a turn that changed code | A background re-index, so the next answer is current. |
+
+The per-prompt hook is deliberately quiet: a prompt too short to retrieve on, a match too weak to trust, or a pointer already given this session all produce nothing. A hook that fires on every prompt has to earn each interruption, or the agent learns to ignore the channel.
+
+Locators rather than code, on purpose. The session-start block is written once and rides the prompt cache; a per-prompt block is fresh input on *every* turn, so inlining source there would spend thousands of tokens a turn to save a read that may never happen. The agent pulls the span itself when a pointer looks right.
+
+Claude Code only. The other agents have no equivalent per-prompt event, so wiring them would spend a process per turn to produce nothing - they still get the MCP tools, which work everywhere.
+
+## Turn it off
+
+<Cmd name="enigma config code-graph off" ex={["enigma config code-graph off", "enigma config code-graph off -l", "enigma config code-graph on"]}>
+On by default. Turning it off removes the tools and the hooks; `-l` scopes the change to this project. Turning it back on takes effect in your agent's **next** session - the tools and hooks are read at startup.
+
+Nothing needs indexing by hand: the first query indexes the project it is asked from.
 </Cmd>
 
 You can also toggle it, index a project, run a query and see how far the graph has drifted from the code in the dashboard's **Code graph** tab.

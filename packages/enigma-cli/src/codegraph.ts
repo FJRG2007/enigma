@@ -405,6 +405,9 @@ function resolveProject(project?: string): ProjectEntry | null {
 /** Files that mark the top of a project - checked walking up from the working directory. */
 const ROOT_MARKERS = [".git", "package.json", "go.mod", "pyproject.toml", "Cargo.toml", "pom.xml", "composer.json"];
 
+/** How far up the walk may look for one. Past this the answer is "there is no project above me". */
+const MAX_ROOT_WALK = 6;
+
 /**
  * The root a query asked from `dir` is really about: the nearest ancestor that looks like a
  * project. An agent's working directory is often several levels down, and indexing that directory
@@ -412,24 +415,40 @@ const ROOT_MARKERS = [".git", "package.json", "go.mod", "pyproject.toml", "Cargo
  * question the graph exists to answer.
  */
 function projectRootOf(dir: string): string {
-    let current = resolve(dir);
-    for (;;) {
-        if (ROOT_MARKERS.some((marker) => existsSync(join(current, marker)))) return current;
+    const start = resolve(dir);
+    if (ROOT_MARKERS.some((marker) => existsSync(join(start, marker)))) return start;
+
+    // Only a repository boundary justifies climbing. A manifest in some ANCESTOR is not evidence
+    // that this directory belongs to it: a scratch folder under a temp dir that happens to hold
+    // another tool's package.json would be indexed as part of it - measured here as forty thousand
+    // symbols of unrelated code answering a question about four files. `.git` cannot be borrowed
+    // that way, and the walk is bounded and never leaves the home directory besides.
+    const home = resolve(homedir());
+    let current = start;
+    for (let up = 0; up < MAX_ROOT_WALK; up++) {
         const parent = resolve(current, "..");
-        if (parent === current) return resolve(dir);
+        if (parent === current || parent === home) break;
         current = parent;
+        if (existsSync(join(current, ".git"))) return current;
     }
+    return start;
 }
 
 /**
- * The graph a query in this directory should read, indexing it first when nothing covers it.
+ * The graph a query asked from `dir` should read, indexing it first when nothing covers it.
  * Returns the project id, so a caller never has to guess which graph it just got.
+ *
+ * `dir` defaults to the working directory but must be passed by any caller that knows better -
+ * a session hook is told which project it is speaking about, and taking the process cwd there
+ * would answer a question about one repo with another repo's graph.
  */
-export function ensureProjectForCwd(): string {
-    const cwd = resolve(process.cwd());
-    const existing = resolveProject();
-    if (existing && (cwd === existing.root || cwd.startsWith(`${existing.root}${cwd.includes("\\") ? "\\" : "/"}`))) return existing.id;
-    return indexProject(projectRootOf(cwd)).id;
+export function ensureProjectForCwd(dir?: string): string {
+    const from = resolve(dir || process.cwd());
+    const covering = listProjects()
+        .filter((p) => from === p.root || from.startsWith(`${p.root}${from.includes("\\") ? "\\" : "/"}`))
+        .sort((a, b) => b.root.length - a.root.length)[0];
+    if (covering) return covering.id;
+    return indexProject(projectRootOf(from)).id;
 }
 
 export function loadGraph(project?: string): CodeGraph | null {

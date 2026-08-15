@@ -4,6 +4,6 @@
   "provider": "FJRG2007/enigma",
   "description": "On-demand over-engineering review - diff review, whole-repo audit, and enigma: debt-marker ledger (tags delete/stdlib/native/yagni/shrink, line/dep scoring); lists cuts, applies nothing.",
   "updated": "2026-06-16T11:24:30+02:00",
-  "cliVersion": "1.35.15",
+  "cliVersion": "1.36.0",
   "sha": "f742a2be3f328b9ea1ff9a35a449177c2cbec35ad16e46f7054b7a873a2ab017"
 }

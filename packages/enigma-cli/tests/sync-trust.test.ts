@@ -84,6 +84,10 @@ test("with the setting off a sync leaves Claude's trust state alone", () => {
     writeFileSync(join(HOME, ".enigma.json"), `${JSON.stringify({ claudeTrust: false })}\n`);
 
     syncDeployed();
-    // Not even created: an off setting must never pre-answer a prompt the user wants to see.
-    expect(existsSync(STATE)).toBe(false);
+    // The claim is about TRUST, not about the file: a sync also registers the shared MCP server
+    // here, so the file may well exist. What must never appear is a pre-answered prompt - an off
+    // setting answering a dialog the user wants to see for themselves.
+    const projects = existsSync(STATE) ? (JSON.parse(readFileSync(STATE, "utf8")).projects ?? {}) : {};
+    expect(Object.values(projects as Record<string, Record<string, unknown>>)
+        .some((p) => p.hasTrustDialogAccepted !== undefined)).toBe(false);
 });
