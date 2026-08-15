@@ -187,6 +187,19 @@ This core policy owns orchestration, architecture, and the global rules. Each co
 - If the same logic appears more than once, extract it into a single reusable function instead of copy-pasting.
 - Parameterize behavior through arguments/props rather than creating near-duplicate variants.
 
+<!-- enigma:config:start -->
+<!-- enigma:case:codeGraph=true -->
+- Do that lookup through the code graph rather than by grepping: this project is indexed, and the
+  `enigma_codegraph_*` MCP tools answer from the index with exact paths, line ranges and the source
+  already inlined. `_ask` finds where a task's code lives; `_trace` names who breaks if you change a
+  symbol (run it BEFORE editing anything shared); `_skeleton` gives a file's API surface without its
+  bodies; `_map` orients you in a repo you do not know; `_grep` returns every occurrence, grouped by
+  the symbol enclosing it. Each call refreshes the index first, so answers include uncommitted edits.
+  Extraction is regex-based, not a compiler: treat an answer as a strong lead, and open the file when
+  the change depends on being exactly right.
+<!-- enigma:case:end -->
+<!-- enigma:config:end -->
+
 ---
 
 ### Consistency with Existing Project

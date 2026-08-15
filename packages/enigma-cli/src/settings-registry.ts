@@ -371,6 +371,10 @@ const RAW_CATEGORIES: Category[] = [
             {
                 key: "code-graph",
                 label: "Codebase memory (code graph)",
+                // Registering the tools is not enough on its own: an agent never told they exist
+                // keeps exploring by hand. Turning this on renders the "look it up in the graph"
+                // block into core-engineering-policy, which loads on every engineering task.
+                affectsSkills: true,
                 hint: "let your agents query your codebase structurally over MCP - find the code a task concerns, trace what a change breaks, read a file's API surface - instead of re-exploring the repo every task; toggling applies immediately; off removes the tools; enigma default: off",
                 read: () => conf.readConfig().config.codeGraph,
                 write: (value, scope) => setCodeGraph(value, scope),

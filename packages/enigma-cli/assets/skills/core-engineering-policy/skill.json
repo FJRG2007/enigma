@@ -3,7 +3,10 @@
   "version": "1.13.0",
   "provider": "FJRG2007/enigma",
   "description": "Core engineering execution policy and harness orchestration (highest-authority rules), including the generalization rule that treats a named example as a class to sweep and fix.",
+  "config": [
+    "codeGraph"
+  ],
   "updated": "2026-08-02T04:28:51+02:00",
-  "cliVersion": "1.35.13",
-  "sha": "95091678d4e72e3a9b1ef3ad0514e503a2a631f0d134bf772b4a1b3c66881995"
+  "cliVersion": "1.35.14",
+  "sha": "95b7202e5659f8d9d6f11ce29e7dc5b01575ba86c78ef948bec4753ccf430155"
 }

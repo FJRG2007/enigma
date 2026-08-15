@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { test, expect } from "bun:test";
 import { computeContentSha } from "../src/util";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 
 const BODY = [
     "---",
@@ -94,4 +94,28 @@ test("a full-cases template and a single-rendered-case deployment hash identical
     } finally {
         for (const d of [template, renderedAsk, renderedAdapt]) rmSync(d, { recursive: true, force: true });
     }
+});
+
+/**
+ * The code graph's discoverability contract: registering the MCP tools is not enough on its own,
+ * because an agent that is never told they exist keeps exploring the repo by hand. The instruction
+ * lives in core-engineering-policy (loaded on every engineering task) rather than in the always-on
+ * memory kernel, which has no budget left - and it must appear ONLY when the feature is on, or
+ * every user pays context for tools their agents cannot call.
+ */
+test("core-engineering-policy names the code-graph tools only when the toggle is on", () => {
+    const skill = readFileSync(join(import.meta.dir, "..", "assets", "skills", "core-engineering-policy", "SKILL.md"), "utf8");
+    const render = (codeGraph: boolean): string =>
+        skill.replace(/<!-- enigma:case:([A-Za-z0-9]+)=(\S+) -->\n?([\s\S]*?)<!-- enigma:case:end -->\n?/g,
+            (_m, key: string, value: string, body: string) => (String(({ codeGraph } as Record<string, unknown>)[key]) === value ? body : ""));
+
+    expect(skill).toContain("<!-- enigma:config:start -->");
+    expect(render(true)).toContain("enigma_codegraph_");
+    expect(render(false)).not.toContain("enigma_codegraph_");
+    // The block has to sit inside the hash-excluded region, or a rendered deployment reads as tampered.
+    const cfgStart = skill.indexOf("<!-- enigma:config:start -->");
+    const cfgEnd = skill.indexOf("<!-- enigma:config:end -->");
+    const caseStart = skill.indexOf("<!-- enigma:case:codeGraph=true -->");
+    expect(caseStart).toBeGreaterThan(cfgStart);
+    expect(caseStart).toBeLessThan(cfgEnd);
 });
