@@ -5593,7 +5593,8 @@ export {
                 const stale = fresh.stale || 0;
                 html += '<div class="panel"><div class="set-cat-h">Freshness</div><div class="set-row"><div class="set-meta"><div class="set-name">'
                     + (stale === 0 ? "Up to date" : stale + " file" + (stale === 1 ? "" : "s") + " changed since indexing")
-                    + '</div><div class="set-hint">' + esc("indexed " + new Date(fresh.indexedAt).toLocaleString()) + "</div></div>"
+                    + '</div><div class="set-hint">' + esc("indexed " + new Date(fresh.indexedAt).toLocaleString()
+                        + (fresh.truncated ? " · incomplete: the scan hit a limit, so some files were never indexed" : "")) + "</div></div>"
                     + (stale === 0 ? "" : '<div class="set-ctl"><button type="button" class="toggle on" data-cg-reindex="' + esc(fresh.root) + '">Re-index</button></div>')
                     + "</div></div>";
             }

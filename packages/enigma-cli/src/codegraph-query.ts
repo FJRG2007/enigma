@@ -148,7 +148,10 @@ export interface AskResult {
 }
 
 /** A question about wiring ("who calls X") is answered from edges, never from word overlap. */
-const INCOMING = /\b(caller|callers|calls?\s+into|who\s+calls|what\s+calls|called\s+by|used\s+by|uses)\b/i;
+// "who imports X" is an INCOMING question about X, even though it says "imports". It is listed
+// here rather than removed from OUTGOING because `outgoing = wantsOut && !wantsIn` already lets
+// the incoming reading win, and a bare "what it imports" must still walk outward.
+const INCOMING = /\b(caller|callers|calls?\s+into|who\s+calls|what\s+calls|called\s+by|used\s+by|uses|who\s+imports?|what\s+imports?|imported\s+by|importers?)\b/i;
 const OUTGOING = /\b(callee|callees|calls\s+what|imports?|depends\s+on)\b/i;
 const INCOMING_RELS: cg.EdgeRelation[] = ["calls", "references", "implements", "extends"];
 const OUTGOING_RELS: cg.EdgeRelation[] = ["calls", "references", "imports", "implements", "extends"];
@@ -232,7 +235,16 @@ function lexicalAsk(query: string, loaded: Loaded, limit: number, inPrefix?: str
         path: rank.counts(rank.tokenize(n.path)),
         body: mergeBags(rank.counts(rank.tokenize(n.signature)), bodies.get(n.id)),
     }));
-    if (!docs.length) return { query, mode: "empty", hits: [], note: NOT_INDEXED };
+    // An empty candidate set means one of two very different things. Telling someone to re-index a
+    // graph that is already current hides the real cause - a `--in` prefix that covers no file.
+    if (!docs.length) {
+        return {
+            query, mode: "empty", hits: [],
+            note: loaded.nodes.length
+                ? `No indexed files under '${inPrefix}'. Check the path, or widen it by dropping --in.`
+                : NOT_INDEXED,
+        };
+    }
 
     const idf = rank.computeIdf(docs.map((d) => new Set([...d.name.keys(), ...d.path.keys(), ...d.body.keys()])));
     const defaultIdf = Math.log(1 + docs.length);
@@ -473,6 +485,8 @@ export interface RepoMap {
     hotspots: Hub[];
     /** Directory groups beyond the cap - counted, never silently dropped. */
     dropped: number;
+    /** The graph itself does not cover the whole tree, so these totals are a floor, not a count. */
+    truncated: boolean;
     saved?: Savings;
 }
 
@@ -553,6 +567,11 @@ export function codeGraphMap(opts: MapOptions = {}): RepoMap | null {
         .sort((a, b) => b.symbols - a.symbols || a.path.localeCompare(b.path));
 
     const symbols = nodes.filter((n) => n.kind !== "file");
+    const shown = dirs.slice(0, maxDirs);
+    const hotspots = topHubs(symbols, deg, DEFAULT_HOTSPOTS);
+    // The baseline is the files the map actually points at, not every file in the repo: nobody
+    // reads a codebase whole to orient in it, so claiming that as the alternative is not a saving.
+    const surfaced = [...shown.flatMap((d) => d.hubs.map((h) => h.path)), ...hotspots.map((h) => h.path)];
     return {
         totals: {
             files: fileNodes.length,
@@ -560,10 +579,11 @@ export function codeGraphMap(opts: MapOptions = {}): RepoMap | null {
             edges: loaded.graph.edges.length,
             languages: [...new Set(fileNodes.map((f) => langByPath.get(f.path)).filter((l): l is string => !!l))].sort(),
         },
-        dirs: dirs.slice(0, maxDirs),
-        hotspots: topHubs(symbols, deg, DEFAULT_HOTSPOTS),
+        dirs: shown,
+        hotspots,
         dropped: Math.max(0, dirs.length - maxDirs),
-        saved: savingsFor(loaded.nodes, fileNodes.map((f) => f.path)),
+        truncated: loaded.graph.truncated === true,
+        saved: savingsFor(loaded.nodes, surfaced),
     };
 }
 
@@ -584,8 +604,11 @@ export interface GrepResult {
     filesSearched: number;
     totalHits: number;
     groups: GrepGroup[];
-    /** Never silent: files that could not be read, and matches found past the cap. */
-    truncated: { files: number; hits: number; };
+    /**
+     * Never silent: files that could not be read, matches found past the cap, and whether the
+     * index itself already excluded files - the one gap a search of indexed files cannot see.
+     */
+    truncated: { files: number; hits: number; unindexedFiles: boolean; };
     saved?: Savings;
 }
 
@@ -600,6 +623,20 @@ export interface GrepOptions extends QueryOptions {
 }
 
 /**
+ * Compile the pattern, or fail loudly.
+ *
+ * An invalid regex is never quietly re-read as a literal: that answers a different search than the
+ * one that was typed and reports success for it. It is a usage error, and it says how to ask for
+ * the literal on purpose.
+ */
+function compileGrep(pattern: string, opts: GrepOptions): RegExp {
+    const flags = opts.ignoreCase ? "i" : "";
+    if (opts.fixed) return new RegExp(pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), flags);
+    try { return new RegExp(pattern, flags); }
+    catch (e) { throw new Error(`invalid regex '${pattern}': ${(e as Error).message} - pass --fixed to search for it literally.`); }
+}
+
+/**
  * Exhaustive regex over the indexed files, with every hit attributed to the symbol that encloses
  * it and groups ranked by how depended-upon that symbol is - which is the part plain grep cannot
  * do: it gives no way to tell a hit inside a heavily-used function from one inside dead code.
@@ -608,8 +645,7 @@ export function codeGraphGrep(pattern: string, opts: GrepOptions = {}): GrepResu
     const loaded = load(opts);
     if (!loaded) return null;
     const maxHits = opts.maxHits ?? DEFAULT_MAX_HITS;
-    const source = opts.fixed ? pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") : pattern;
-    const regex = new RegExp(source, opts.ignoreCase ? "i" : "");
+    const regex = compileGrep(pattern, opts);
     const inPrefix = opts.in === undefined ? undefined : normalizePrefix(opts.in);
     const deg = rank.inDegree(loaded.graph.edges, true);
 
@@ -665,21 +701,32 @@ export function codeGraphGrep(pattern: string, opts: GrepOptions = {}): GrepResu
         filesSearched: files.length,
         totalHits: collected,
         groups: sorted,
-        truncated: { files: truncatedFiles, hits: truncatedHits },
+        truncated: { files: truncatedFiles, hits: truncatedHits, unindexedFiles: loaded.graph.truncated === true },
         saved: savingsFor(loaded.nodes, sorted.map((g) => g.path)),
     };
 }
 
 // --- freshness -----------------------------------------------------------------------
 
-export interface FreshnessResult { project: string; root: string; indexedAt: number; drift: cg.CodeGraphDrift; stale: number; }
+export interface FreshnessResult {
+    project: string;
+    root: string;
+    indexedAt: number;
+    drift: cg.CodeGraphDrift;
+    stale: number;
+    /** The last index did not cover the whole tree - a graph can be current and still partial. */
+    truncated: boolean;
+}
 
 /** Whether the graph still describes the code. Reports drift; never repairs it - that is `index`. */
 export function codeGraphCheck(project?: string): FreshnessResult | null {
     const graph = cg.loadFreshGraph(project, false);
     if (!graph) return null;
     const drift = cg.probeDrift(graph);
-    return { project: graph.name, root: graph.root, indexedAt: graph.indexedAt, drift, stale: cg.driftCount(drift) };
+    return {
+        project: graph.name, root: graph.root, indexedAt: graph.indexedAt,
+        drift, stale: cg.driftCount(drift), truncated: graph.truncated === true,
+    };
 }
 
 export { isCleanDrift } from "./codegraph";

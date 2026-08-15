@@ -106,6 +106,31 @@ test("a definition is not swallowed by a brace inside a regex literal", () => {
     rmSync(dir, { recursive: true, force: true });
 });
 
+test("a private class member does not end a definition early", () => {
+    const dir = mkdtempSync(join(tmpdir(), "enigma-cg-hash-"));
+    writeFileSync(join(dir, "a.ts"), [
+        "export class Store {",
+        "    #items = new Map();",
+        "    has(key: string) {",
+        "        if (this.#items.has(key)) {",
+        "            return true;",
+        "        }",
+        "        return false;",
+        "    }",
+        "}",
+        "export function after() {",
+        "    return 2;",
+        "}",
+        "",
+    ].join("\n"));
+    cg.indexProject(dir);
+    const syms = cg.loadGraph()!.files.find((f) => f.path === "a.ts")!.symbols;
+    // `#` is a private member here, not a comment: stopping the scan at it drops the `{` that
+    // opens the if-block, and the class then closes a whole block early.
+    expect(syms.find((s) => s.name === "Store")!.endLine).toBe(9);
+    rmSync(dir, { recursive: true, force: true });
+});
+
 test("a cross-file reference needs a real import binding, not just a shared name", () => {
     const dir = mkdtempSync(join(tmpdir(), "enigma-cg-bind-"));
     writeFileSync(join(dir, "lib.ts"), "export function collect() { return 1; }\nexport function unused() { return 2; }\n");

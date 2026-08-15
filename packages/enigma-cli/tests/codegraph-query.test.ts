@@ -113,6 +113,22 @@ test("ask narrows to a subtree with `in`, segment-aware", () => {
     expect(r.hits.every((h) => h.path.startsWith("tests/"))).toBe(true);
 });
 
+test("an `in` prefix that covers nothing says so, instead of blaming the index", () => {
+    const r = q.codeGraphAsk("session token", { ...base, in: "src/nowhere" })!;
+    expect(r.hits).toEqual([]);
+    expect(r.note).toContain("src/nowhere");
+    // The graph is current; telling the user to re-index would send them to repair nothing.
+    expect(r.note).not.toContain(q.NOT_INDEXED);
+});
+
+test("\"who imports X\" walks inward, the same way \"who calls X\" does", () => {
+    const r = q.codeGraphAsk("who imports refreshSessionToken", base)!;
+    expect(r.mode).toBe("structural");
+    expect(r.subject).toBe("refreshSessionToken");
+    expect(r.note).toContain("callers and references");
+    expect(r.hits.every((h) => h.kind === "caller")).toBe(true);
+});
+
 test("trace walks callers one level, and the blast radius further out", () => {
     const one = q.codeGraphTrace("refreshSessionToken", { ...base, depth: 1 })!;
     expect(one.matched[0].path).toBe("src/session.ts");
@@ -175,6 +191,22 @@ test("grep groups hits by the enclosing symbol and names what it dropped", () =>
 test("grep treats a pattern as a literal string when asked", () => {
     expect(q.codeGraphGrep("retryLimit: number", { ...base, fixed: true })!.totalHits).toBe(1);
     expect(q.codeGraphGrep("RETRYLIMIT", { ...base, ignoreCase: true })!.totalHits).toBeGreaterThan(0);
+});
+
+test("grep rejects a pattern that does not compile, rather than crashing or reinterpreting it", () => {
+    expect(() => q.codeGraphGrep("(", base)).toThrow("invalid regex");
+    // The same pattern as a literal is a legitimate search, and still works.
+    expect(q.codeGraphGrep("(", { ...base, fixed: true })!.totalHits).toBeGreaterThan(0);
+});
+
+test("an empty trace reads as a sentence in both directions", () => {
+    const empty = (direction: "in" | "out"): string => fmt.formatTrace({
+        symbol: "formatBanner", direction, depth: 1,
+        matched: [{ name: "formatBanner", path: "src/unrelated.ts", line: 1 }], hits: [],
+    });
+    expect(empty("in")).toContain("Nothing depends on it.");
+    expect(empty("out")).not.toContain("Nothing depended on by it");
+    expect(empty("out")).toContain("It depends on nothing indexed.");
 });
 
 test("check reports drift without repairing it", () => {

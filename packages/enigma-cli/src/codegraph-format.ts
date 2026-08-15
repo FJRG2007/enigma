@@ -27,6 +27,12 @@ function withSavings(body: string, saved: q.Savings | undefined): string {
     return body + savingsLine(saved, body.length);
 }
 
+/**
+ * What every surface says when the scan behind the graph hit a cap. An answer drawn from a partial
+ * index still reads as complete, so the gap is stated wherever it can mislead.
+ */
+const INCOMPLETE_INDEX = "INCOMPLETE: the last scan hit a limit (too many files, or files too large), so some files were never indexed.";
+
 export function formatAsk(r: q.AskResult): string {
     const head = `code graph - "${r.query}" (${r.mode})`;
     if (!r.hits.length) return `${head}\n\n${r.note ?? "No matches."}\n`;
@@ -46,9 +52,11 @@ export function formatAsk(r: q.AskResult): string {
 }
 
 export function formatTrace(r: q.TraceResult): string {
-    const label = r.direction === "in" ? "depends on" : "depended on by";
+    // Written from the reader's side in both directions: "Nothing depended on by it" is the empty
+    // state read backwards, and `callees` on a leaf is exactly when it shows.
+    const empty = r.direction === "in" ? "Nothing depends on it." : "It depends on nothing indexed.";
     const head = `${r.symbol} - ${r.direction === "in" ? "callers and references" : "outgoing dependencies"} (depth ${r.depth})`;
-    if (!r.matched.length || !r.hits.length) return `${head}\n\n${r.note ?? `Nothing ${label} it.`}\n`;
+    if (!r.matched.length || !r.hits.length) return `${head}\n\n${r.note ?? empty}\n`;
     const lines = [head, ""];
     lines.push(`defined at: ${r.matched.map((m) => `${m.path}:${m.line}`).join(", ")}`, "");
     for (const h of r.hits) {
@@ -80,12 +88,20 @@ export function formatMap(r: q.RepoMap): string {
         lines.push("", "hotspots:");
         for (const h of r.hotspots) lines.push(`  ${h.name} - ${h.kind} - ${h.path}:${h.line} - ${h.inDegree} in`);
     }
+    if (r.truncated) lines.push("", INCOMPLETE_INDEX);
     return `${withSavings(lines.join("\n"), r.saved)}\n`;
 }
 
 export function formatGrep(r: q.GrepResult): string {
     const head = `"${r.pattern}" - ${r.totalHits} hit${r.totalHits === 1 ? "" : "s"} in ${r.groups.length} symbol${r.groups.length === 1 ? "" : "s"} (searched ${r.filesSearched} indexed files)`;
-    if (!r.groups.length) return `${head}\n`;
+    // Dropped work is always named: a capped search that read as exhaustive would send an agent
+    // away believing it had seen every occurrence. Files the index never covered are the same
+    // failure one layer down, and no-hits is exactly when it misleads most, so it is said there too.
+    const notes: string[] = [];
+    if (r.truncated.hits > 0) notes.push(`+${r.truncated.hits} more hits past the cap (raise --max-hits).`);
+    if (r.truncated.files > 0) notes.push(`${r.truncated.files} indexed file${r.truncated.files === 1 ? "" : "s"} could not be read.`);
+    if (r.truncated.unindexedFiles) notes.push(INCOMPLETE_INDEX);
+    if (!r.groups.length) return `${head}${notes.length ? `\n\n${notes.join("\n")}` : ""}\n`;
     const lines = [head, ""];
     for (const g of r.groups) {
         const where = g.symbol ? `${g.symbol.name} - ${g.symbol.kind} - ${g.path}:${g.symbol.line}-${g.symbol.endLine} - ${g.inDegree} in` : `${g.path} - module level`;
@@ -93,16 +109,14 @@ export function formatGrep(r: q.GrepResult): string {
         for (const h of g.hits) lines.push(`  ${h.line}: ${h.text}`);
         lines.push("");
     }
-    // Dropped work is always named: a capped search that read as exhaustive would send an agent
-    // away believing it had seen every occurrence.
-    if (r.truncated.hits > 0) lines.push(`+${r.truncated.hits} more hits past the cap (raise --max-hits).`);
-    if (r.truncated.files > 0) lines.push(`${r.truncated.files} indexed file${r.truncated.files === 1 ? "" : "s"} could not be read.`);
+    lines.push(...notes);
     return `${withSavings(lines.join("\n").trimEnd(), r.saved)}\n`;
 }
 
 export function formatFreshness(r: q.FreshnessResult): string {
     const head = `${r.project} - indexed ${new Date(r.indexedAt).toISOString().replace("T", " ").slice(0, 16)}`;
-    if (r.stale === 0) return `${head}\n\nThe graph matches the working tree.\n`;
+    const incomplete = r.truncated ? `\n\n${INCOMPLETE_INDEX}` : "";
+    if (r.stale === 0) return `${head}\n\nThe graph matches the working tree.${incomplete}\n`;
     const lines = [head, "", `${r.stale} file${r.stale === 1 ? "" : "s"} drifted since the last index:`];
     const show = (label: string, paths: string[]): void => {
         if (!paths.length) return;
@@ -112,5 +126,5 @@ export function formatFreshness(r: q.FreshnessResult): string {
     show("added", r.drift.added);
     show("removed", r.drift.removed);
     lines.push("", "Re-index with: enigma codegraph index");
-    return `${lines.join("\n")}\n`;
+    return `${lines.join("\n")}${incomplete}\n`;
 }

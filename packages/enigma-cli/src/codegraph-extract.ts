@@ -77,6 +77,16 @@ const MAX_FILE_BYTES = 512 * 1024;
 /** Languages whose blocks are delimited by braces - everything else is scoped by indentation. */
 const BRACE_LANGS = new Set(["ts", "js", "go", "rust", "java", "csharp", "kotlin", "php", "c", "cpp"]);
 
+/**
+ * Languages where `#` opens a line comment. Nowhere else may the brace scan stop at one: in TS/JS
+ * `#` opens a private class member and in Rust an attribute, so treating it as a comment drops the
+ * rest of the line - including the `{` that opens the body, which closes the span a block early.
+ */
+const HASH_COMMENT_LANGS = new Set(["php"]);
+
+/** Languages where a line whose first non-space character is `#` is a preprocessor directive. */
+const PREPROCESSOR_LANGS = new Set(["c", "cpp"]);
+
 /** A regex that captures a symbol name in group 1, tagged with the kind it declares. */
 interface SymRule { kind: SymbolKind; re: RegExp; }
 
@@ -240,7 +250,7 @@ function withoutTrailingComment(line: string): string {
  * A declaration with no such line within `LOOKAHEAD_LINES` is a prototype, an abstract member, or
  * a single-expression arrow, and spans its own line only.
  */
-function braceEnd(lines: string[], startIdx: number): number {
+function braceEnd(lines: string[], startIdx: number, lang: string): number {
     const LOOKAHEAD_LINES = 3;
     let openLine = -1;
     for (let i = startIdx; i <= Math.min(startIdx + LOOKAHEAD_LINES, lines.length - 1); i++) {
@@ -248,10 +258,13 @@ function braceEnd(lines: string[], startIdx: number): number {
     }
     if (openLine === -1) return startIdx + 1;
 
+    const hashComment = HASH_COMMENT_LANGS.has(lang);
+    const preprocessor = PREPROCESSOR_LANGS.has(lang);
     let depth = 0;
     let inBlockComment = false;
     for (let i = openLine; i < lines.length; i++) {
         const line = lines[i];
+        const hashEndsLine = hashComment || (preprocessor && line.trimStart().startsWith("#"));
         const from = i === openLine ? line.lastIndexOf("{") : 0;
         let inString: string | null = null;
         for (let c = from; c < line.length; c++) {
@@ -263,7 +276,7 @@ function braceEnd(lines: string[], startIdx: number): number {
                 continue;
             }
             if (ch === "/" && line[c + 1] === "/") break;
-            if (ch === "#" && line[c + 1] !== "{") break; // PHP/shell-style line comment
+            if (ch === "#" && hashEndsLine && line[c + 1] !== "{") break;
             if (ch === "/" && line[c + 1] === "*") { inBlockComment = true; c++; continue; }
             if (ch === "\"" || ch === "'" || ch === "`") { inString = ch; continue; }
             if (ch === "{") { depth++; continue; }
@@ -347,7 +360,7 @@ export function extractFile(lang: string, content: string): { symbols: CodeSymbo
             seen.add(key);
             const line = lineAt(nameIdx);
             const startIdx = line - 1;
-            const endLine = braced ? braceEnd(lines, startIdx) : indentEnd(lines, startIdx);
+            const endLine = braced ? braceEnd(lines, startIdx, lang) : indentEnd(lines, startIdx);
             symbols.push({ name, kind, line, endLine: Math.max(line, endLine), signature: signatureOf(lines[startIdx] ?? "") });
         }
     }

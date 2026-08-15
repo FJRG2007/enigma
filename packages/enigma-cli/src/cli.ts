@@ -146,15 +146,17 @@ function parseArgs(argv: string[]): CliOptions {
             opts.command = a === "accounts" ? "account" : a === "profiles" ? "profile" : a === "skill" ? "skills" : a === "dash" ? "dashboard" : a;
             continue;
         }
-        // Everything after a literal `--` is forwarded verbatim (e.g. to Claude Code).
-        if (a === "--") { opts.passthrough.push(...argv.slice(i + 1)); break; }
         // The code graph's retrieval subcommands carry their own flags (--limit, --depth, --in,
         // --source, ...), so everything after the subcommand is forwarded verbatim rather than
         // matched here - otherwise the shared parser rejects a flag it was never meant to own.
+        // `--` included: those subcommands own it as their own end-of-flags marker, and nothing
+        // under codegraph is forwarded to another tool.
         if (opts.command === "codegraph" && opts.positionals.length >= 1 && a !== "-h" && a !== "--help") {
             opts.positionals.push(a);
             continue;
         }
+        // Everything after a literal `--` is forwarded verbatim (e.g. to Claude Code).
+        if (a === "--") { opts.passthrough.push(...argv.slice(i + 1)); break; }
         switch (a) {
             case "-t": case "--tool": opts.tool = next(); break;
             case "-g": case "--global": opts.scope = "global"; break;
@@ -1377,12 +1379,15 @@ async function runCodeGraphCli(args: string[]): Promise<number> {
     if (sub === "index") {
         const entry = cg.indexProject(rest[0]);
         console.log(`  Indexed ${entry.name}: ${entry.files} files, ${entry.symbols} symbols.`);
+        // A capped scan is stated at the moment it happens, so nothing built on the graph later
+        // has to read as exhaustive over a tree it never fully saw.
+        if (entry.truncated) console.log("  INCOMPLETE: the scan hit a limit (too many files, or files too large), so some files are not in the graph.");
         return 0;
     }
     if (sub === "projects") {
         const ps = cg.listProjects();
         if (!ps.length) { console.log("  No projects indexed yet. Run: enigma codegraph index"); return 0; }
-        for (const p of ps) console.log(`  ${p.name}  ${p.files} files, ${p.symbols} symbols  ${p.root}`);
+        for (const p of ps) console.log(`  ${p.name}  ${p.files} files, ${p.symbols} symbols${p.truncated ? " (incomplete scan)" : ""}  ${p.root}`);
         return 0;
     }
     if (sub === "arch" || sub === "architecture") {
@@ -1424,28 +1429,53 @@ interface QueryFlags {
     json: boolean;
 }
 
+/**
+ * A malformed flag is a usage error here, exactly as it is in the shared parser above, and for the
+ * same reason: a `--in` that resolved to nothing would widen the search to the whole repo, a
+ * `--limit abc` would silently revert to the default, and a mistyped `--sources` appended to the
+ * text of an ask would become part of the question - each of them answering something other than
+ * what was asked and then reporting success. Everything after a literal `--` is positional, so a
+ * pattern that starts with a dash still has a way through.
+ */
 function parseQueryFlags(args: string[]): QueryFlags {
     const flags: QueryFlags = { positionals: [], source: false, refresh: true, ignoreCase: false, fixed: false, json: false };
-    const num = (raw: string | undefined): number | undefined => {
-        const n = Number(raw);
-        return Number.isFinite(n) && n > 0 ? Math.floor(n) : undefined;
+    const fail: (message: string) => never = (message) => { console.error(message); process.exit(2); };
+    let i = 0;
+    const value = (flag: string): string => {
+        const raw = args[++i];
+        if (raw === undefined) fail(`Missing value for ${flag}`);
+        return raw;
     };
-    for (let i = 0; i < args.length; i++) {
+    const num = (flag: string): number => {
+        const raw = value(flag);
+        const n = Number(raw);
+        if (!Number.isFinite(n) || n <= 0) fail(`Invalid value for ${flag}: '${raw}' (expected a positive number)`);
+        return Math.floor(n);
+    };
+    for (; i < args.length; i++) {
         const a = args[i];
         switch (a) {
-            case "--project": flags.project = args[++i]; break;
-            case "--in": flags.in = args[++i]; break;
-            case "--limit": flags.limit = num(args[++i]); break;
-            case "--depth": case "-d": flags.depth = num(args[++i]); break;
-            case "--max-hits": flags.maxHits = num(args[++i]); break;
-            case "--max-dirs": flags.maxDirs = num(args[++i]); break;
-            case "--direction": flags.direction = args[++i] === "out" ? "out" : "in"; break;
+            case "--": flags.positionals.push(...args.slice(i + 1)); return flags;
+            case "--project": flags.project = value(a); break;
+            case "--in": flags.in = value(a); break;
+            case "--limit": flags.limit = num(a); break;
+            case "--depth": case "-d": flags.depth = num(a); break;
+            case "--max-hits": flags.maxHits = num(a); break;
+            case "--max-dirs": flags.maxDirs = num(a); break;
+            case "--direction": {
+                const raw = value(a);
+                if (raw !== "in" && raw !== "out") fail(`Invalid value for --direction: '${raw}' (expected 'in' or 'out')`);
+                flags.direction = raw;
+                break;
+            }
             case "--source": flags.source = true; break;
             case "--no-refresh": flags.refresh = false; break;
             case "--ignore-case": case "-i": flags.ignoreCase = true; break;
             case "--fixed": flags.fixed = true; break;
             case "--json": flags.json = true; break;
-            default: flags.positionals.push(a);
+            default:
+                if (a.length > 1 && a.startsWith("-")) fail(`Unknown flag '${a}' for enigma codegraph (pass it after -- to search for it literally).`);
+                flags.positionals.push(a);
         }
     }
     return flags;
@@ -1500,7 +1530,11 @@ async function runCodeGraphQuery(sub: string, args: string[]): Promise<number> {
         case "grep": {
             const pattern = f.positionals.join(" ").trim();
             if (!pattern) return missing("grep \"<regex>\" [-i] [--fixed] [--in <path>]");
-            const r = q.codeGraphGrep(pattern, { ...base, ignoreCase: f.ignoreCase, fixed: f.fixed, maxHits: f.maxHits });
+            let r: ReturnType<typeof q.codeGraphGrep>;
+            // A pattern that does not compile is a usage error, not a crash: without this the
+            // SyntaxError escapes run() and prints a stack trace instead of what to fix.
+            try { r = q.codeGraphGrep(pattern, { ...base, ignoreCase: f.ignoreCase, fixed: f.fixed, maxHits: f.maxHits }); }
+            catch (e) { console.error(`  ${(e as Error).message}`); return 1; }
             if (!r) { console.error(`  ${q.NOT_INDEXED}`); return 1; }
             return emit(r, fmt.formatGrep(r));
         }

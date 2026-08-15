@@ -84,7 +84,10 @@ export function applyCodeGraphAction(op: string, payload: CodeGraphActionPayload
         const query = (payload.query ?? "").trim();
         if (!query) return { ok: false, error: "missing query" };
         try {
-            const answer = q.codeGraphAsk(query, { project: payload.project, limit: 10 });
+            // Same refusal as the freshness field above, for the same reason: a refresh here is a
+            // full re-parse of the tree inside the request, and this server handles one at a time.
+            // Drift is already reported next to the answer, with Re-index as the repair.
+            const answer = q.codeGraphAsk(query, { project: payload.project, limit: 10, refresh: false });
             if (!answer) return { ok: false, error: q.NOT_INDEXED };
             return { ok: true, view: codeGraphDashboard({ project: payload.project, ask: { query, report: fmt.formatAsk(answer) } }) };
         } catch (e) {

@@ -54,7 +54,7 @@ function writeJson(file: string, value: unknown): void {
 // --- types ---------------------------------------------------------------------------
 
 /** Bumped when the stored shape changes; an older graph is re-indexed instead of misread. */
-export const GRAPH_VERSION = 2;
+export const GRAPH_VERSION = 3;
 
 export interface CodeGraph {
     version: number;
@@ -71,9 +71,15 @@ export interface CodeGraph {
     refs: Record<string, number>;
     /** external module specifier -> usage count. */
     externalModules: Record<string, number>;
+    /**
+     * The scan hit a cap (too many files, or a file over the size limit), so the graph does not
+     * cover the whole tree. Carried, never inferred: a surface that reads as exhaustive - grep
+     * above all - has to be able to say when it is not.
+     */
+    truncated: boolean;
 }
 
-export interface ProjectEntry { id: string; name: string; root: string; indexedAt: number; files: number; symbols: number; }
+export interface ProjectEntry { id: string; name: string; root: string; indexedAt: number; files: number; symbols: number; truncated: boolean; }
 
 /** One indexed project as the dashboard/CLI list it. */
 export type CodeGraphProject = ProjectEntry;
@@ -338,7 +344,7 @@ function topTokens(text: string): [string, number][] {
 
 /** Index a project directory into a graph and persist it. Returns the summary entry. */
 export function indexProject(rootDir?: string): ProjectEntry {
-    const { root, files } = scanFiles(rootDir);
+    const { root, files, truncated } = scanFiles(rootDir);
     const id = createHash("sha1").update(root).digest("hex").slice(0, 12);
     const name = basename(root) || root;
 
@@ -354,12 +360,12 @@ export function indexProject(rootDir?: string): ProjectEntry {
     }
 
     const { edges, refs, bodies } = buildEdges(root, files, importEdges);
-    const graph: CodeGraph = { version: GRAPH_VERSION, id, name, root, indexedAt: Date.now(), files, importEdges, edges, refs, externalModules };
+    const graph: CodeGraph = { version: GRAPH_VERSION, id, name, root, indexedAt: Date.now(), files, importEdges, edges, refs, externalModules, truncated };
     writeJson(graphFile(id), graph);
     writeJson(bodyIndexFile(id), bodies);
 
     const symbols = files.reduce((n, f) => n + f.symbols.length, 0);
-    const entry: ProjectEntry = { id, name, root, indexedAt: graph.indexedAt, files: files.length, symbols };
+    const entry: ProjectEntry = { id, name, root, indexedAt: graph.indexedAt, files: files.length, symbols, truncated };
     writeJson(projectsFile(), [...listProjects().filter((p) => p.id !== id), entry]);
     return entry;
 }
@@ -368,7 +374,9 @@ export function indexProject(rootDir?: string): ProjectEntry {
 
 /** All indexed projects (most-recently-indexed first). */
 export function listProjects(): ProjectEntry[] {
-    return readJsonSafe<ProjectEntry[]>(projectsFile(), []).sort((a, b) => b.indexedAt - a.indexedAt);
+    return readJsonSafe<ProjectEntry[]>(projectsFile(), [])
+        .map((p) => ({ ...p, truncated: p.truncated === true }))
+        .sort((a, b) => b.indexedAt - a.indexedAt);
 }
 
 /** dashboard/CLI-facing project list (alias of listProjects with the compat shape). */
