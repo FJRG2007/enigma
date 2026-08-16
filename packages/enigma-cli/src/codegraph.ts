@@ -95,6 +95,15 @@ const MIN_REF_NAME = 3;
 /** Hard ceiling on wiring edges: a pathological tree degrades to a smaller graph, never a hang. */
 const MAX_EDGES = 400_000;
 
+/**
+ * Languages that can reference each other's definitions. Only ts/js form a family (a .mjs script
+ * importing a .ts module is real); every other language stands alone, because a name shared across
+ * two languages is a coincidence, not a reference.
+ */
+function langFamily(lang: string): string {
+    return lang === "js" || lang === "ts" ? "js" : lang;
+}
+
 /** Directory entry points, in the order a module path falls back through them. */
 const INDEX_NAMES = ["index", "__init__", "mod"];
 
@@ -310,6 +319,7 @@ function buildEdges(
     }
 
     const known = new Set(files.map((f) => f.path));
+    const langByPath = new Map(files.map((f) => [f.path, f.lang]));
     const idByPathName = new Map<string, string>();
     // Per-file name -> id, with null marking a name the file declares more than once (ambiguous).
     const localDefs = new Map<string, Map<string, string | null>>();
@@ -334,15 +344,21 @@ function buildEdges(
     function binderFor(f: CodeFile): (name: string, memberOf?: string) => string | null {
         const local = localDefs.get(f.path) ?? new Map<string, string | null>();
         const imported = importsOf.get(f.path);
+        // Ruby code cannot call a TypeScript function. Nothing in the name-based resolution said
+        // so, and the fallback rule below made it routine: on this repo 9761 of 21232 cross-file
+        // edges - 46% - pointed from one language at another, which is how a vendored Ruby SDK
+        // came to make `value`, `type` and `File` the biggest hubs in a TypeScript monorepo.
+        const family = langFamily(f.lang);
+        const reachable = (path: string): boolean => langFamily(langByPath.get(path) ?? "") === family;
         const unique = (name: string): string | null => {
-            const candidates = defsByName.get(name)?.filter((c) => imported?.has(c.path));
+            const candidates = defsByName.get(name)?.filter((c) => imported?.has(c.path) && reachable(c.path));
             return candidates?.length === 1 ? candidates[0].id : null;
         };
         if (!f.bindings) {
             return (name) => {
                 if (local.has(name)) return local.get(name) ?? null;
                 if (imported?.size) return unique(name);
-                const all = defsByName.get(name);
+                const all = defsByName.get(name)?.filter((c) => reachable(c.path));
                 return all?.length === 1 ? all[0].id : null;
             };
         }

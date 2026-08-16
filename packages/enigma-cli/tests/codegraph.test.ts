@@ -344,3 +344,21 @@ test("hotspots and entry points are ranked by what the rest of the project depen
     expect(arch.entryPoints[0]).toBe("main.ts");
     rmSync(root, { recursive: true, force: true });
 });
+
+test("a name shared across two languages is a coincidence, not a reference", () => {
+    const root = mkdtempSync(join(tmpdir(), "enigma-cg-lang-"));
+    mkdirSync(join(root, "lib"), { recursive: true });
+    writeFileSync(join(root, "lib", "core.ts"), "export function sharedName() { return 1; }\n");
+    // Ruby cannot call a TypeScript function, but nothing in name-based resolution said so: on this
+    // repo 9761 of 21232 cross-file edges pointed from one language at another, which is how a
+    // vendored Ruby SDK came to own the hub list of a TypeScript monorepo.
+    writeFileSync(join(root, "lib", "other.rb"), "def uses_it\n  sharedName\nend\n");
+    // Same family though: a .mjs script importing a .ts module is a real dependency.
+    writeFileSync(join(root, "script.mjs"), 'import { sharedName } from "./lib/core";\nexport function go() { return sharedName(); }\n');
+
+    const entry = cg.indexProject(root);
+    const edges = cg.loadGraph(entry.id)!.edges.filter(([, to, rel]) => to.startsWith("lib/core.ts#") && rel !== "contains");
+    expect(edges.some(([from]) => from.startsWith("script.mjs"))).toBe(true);
+    expect(edges.some(([from]) => from.startsWith("lib/other.rb"))).toBe(false);
+    rmSync(root, { recursive: true, force: true });
+});
