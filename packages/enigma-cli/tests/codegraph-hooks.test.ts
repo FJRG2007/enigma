@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 import { join, dirname } from "node:path";
 import { spawnSync } from "node:child_process";
 import { test, expect, afterAll } from "bun:test";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const HOME = mkdtempSync(join(tmpdir(), "enigma-cg-hooks-"));
@@ -118,4 +118,26 @@ test("the wiring leaves another tool's hooks untouched", () => {
     deploy.applyClaudeCodeGraphHooks(settings, true);
     deploy.applyClaudeCodeGraphHooks(settings, false);
     expect(JSON.parse(readFileSync(settings, "utf8"))).toEqual(theirs);
+});
+
+test("the dashboard switch wires the same three effects the CLI does, not just the config value", async () => {
+    const { applyCodeGraphAction } = await import("../src/dashboard-codegraph");
+    const settings = join(HOME, ".claude", "settings.json");
+
+    const readHooks = (): string => (existsSync(settings) ? JSON.stringify(JSON.parse(readFileSync(settings, "utf8")).hooks ?? {}) : "{}");
+
+    const off = await applyCodeGraphAction("toggle", { on: false });
+    expect(off.ok).toBe(true);
+    expect(off.enabled).toBe(false);
+    expect(readHooks()).not.toContain("__codegraph-hook");
+
+    const on = await applyCodeGraphAction("toggle", { on: true });
+    expect(on.ok).toBe(true);
+    expect(on.enabled).toBe(true);
+    // The switch owns the push half too. Writing only the config value left the graph enabled in
+    // the settings and wired into nothing - available, and never arriving.
+    expect(readHooks()).toContain("__codegraph-hook");
+    // A toggle changes nothing the panel renders, so it must not pay for a full view: freshness
+    // alone stats every file of the project.
+    expect(on.view).toBeUndefined();
 });

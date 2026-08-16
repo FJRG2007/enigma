@@ -14,6 +14,7 @@
  * balancing for the C-family, indentation for the whitespace-scoped languages.
  */
 
+import { execFileSync } from "node:child_process";
 import { extname, join, relative, resolve } from "node:path";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 
@@ -369,21 +370,58 @@ export function extractFile(lang: string, content: string): { symbols: CodeSymbo
     return { symbols, imports: importSpecs(lang, content) };
 }
 
-function walk(root: string): string[] {
+/**
+ * The source files a git repository actually owns - tracked files plus untracked ones that are not
+ * ignored - or null when this is not a repository (or git is unavailable, as in a sandbox).
+ *
+ * Preferred over walking the tree because .gitignore already answers the question the walk gets
+ * wrong: a data cache, a download folder or a dataset sitting next to the source is not part of the
+ * codebase. One project here carried 228k cached files beside 250 of its own, which cost 18 s per
+ * walk - and the walk runs on every drift probe, so that was per query, not per index.
+ */
+function gitSourceFiles(root: string): string[] | null {
+    let out: string;
+    try {
+        out = execFileSync("git", ["-C", root, "ls-files", "--cached", "--others", "--exclude-standard", "-z"], {
+            encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"], windowsHide: true,
+        });
+    } catch { return null; }
     const files: string[] = [];
-    const stack = [root];
-    while (stack.length && files.length < MAX_FILES) {
-        const dir = stack.pop()!;
-        let entries: import("node:fs").Dirent[];
-        try { entries = readdirSync(dir, { withFileTypes: true }); } catch { continue; }
-        for (const e of entries) {
-            if (files.length >= MAX_FILES) break;
-            if (e.isDirectory()) { if (!e.name.startsWith(".") && !IGNORE_DIRS.has(e.name)) stack.push(join(dir, e.name)); continue; }
-            if (!e.isFile()) continue;
-            if (LANG_BY_EXT[extname(e.name).toLowerCase()]) files.push(join(dir, e.name));
-        }
+    for (const rel of out.split("\0")) {
+        if (!rel || files.length >= MAX_FILES) break;
+        if (!LANG_BY_EXT[extname(rel).toLowerCase()]) continue;
+        if (rel.split("/").some((seg) => seg.startsWith(".") || IGNORE_DIRS.has(seg))) continue;
+        files.push(join(root, rel));
     }
     return files;
+}
+
+/**
+ * Directory entries visited before the fallback walk gives up. Without it the only cap is on
+ * source files ACCEPTED, which a tree of non-source data never reaches - so the walk runs to
+ * completion however large that tree is, and the cap protects nothing.
+ */
+const MAX_ENTRIES = 60_000;
+
+function walk(root: string): { files: string[]; truncated: boolean; } {
+    const tracked = gitSourceFiles(root);
+    if (tracked) return { files: tracked, truncated: tracked.length >= MAX_FILES };
+    const files: string[] = [];
+    // Breadth-first, so when the budget does run out it has been spent on the shallow directories
+    // a project keeps its source in, not on one deep tree it happened to descend into first.
+    const queue = [root];
+    let visited = 0;
+    for (let head = 0; head < queue.length && files.length < MAX_FILES && visited < MAX_ENTRIES; head++) {
+        let entries: import("node:fs").Dirent[];
+        try { entries = readdirSync(queue[head], { withFileTypes: true }); } catch { continue; }
+        for (const e of entries) {
+            if (files.length >= MAX_FILES || ++visited >= MAX_ENTRIES) break;
+            if (e.isDirectory()) { if (!e.name.startsWith(".") && !IGNORE_DIRS.has(e.name)) queue.push(join(queue[head], e.name)); continue; }
+            if (!e.isFile()) continue;
+            if (LANG_BY_EXT[extname(e.name).toLowerCase()]) files.push(join(queue[head], e.name));
+        }
+    }
+    return { files, truncated: files.length >= MAX_FILES || visited >= MAX_ENTRIES };
 }
 
 /** Repo-relative, forward-slashed path - the one path form every stored id and query uses. */
@@ -401,9 +439,9 @@ export function scanFiles(rootDir?: string): { root: string; files: CodeFile[]; 
     const files: CodeFile[] = [];
     // Both caps are reported, not just applied: a caller that compares two trees (the parity
     // check) would otherwise score an unread module as absent-free and call a port complete.
-    let truncated = false;
     const walked = walk(root);
-    for (const abs of walked) {
+    let truncated = walked.truncated;
+    for (const abs of walked.files) {
         let size = 0;
         let mtimeMs = 0;
         try { const st = statSync(abs); size = st.size; mtimeMs = st.mtimeMs; } catch { continue; }
@@ -418,16 +456,13 @@ export function scanFiles(rootDir?: string): { root: string; files: CodeFile[]; 
             chars: content.length, size, mtimeMs,
         });
     }
-    // Measured on what walk() RETURNED, not on what survived per-file drops: a tree that hit
-    // the cap and also had one unreadable file would otherwise report full coverage.
-    if (walked.length >= MAX_FILES) truncated = true;
     return { root, files, truncated };
 }
 
 /** Every source file currently on disk with its stat, for the drift probe (no reads, no parsing). */
 export function statSourceFiles(root: string): Map<string, { size: number; mtimeMs: number; }> {
     const out = new Map<string, { size: number; mtimeMs: number; }>();
-    for (const abs of walk(root)) {
+    for (const abs of walk(root).files) {
         try {
             const st = statSync(abs);
             if (st.size > MAX_FILE_BYTES) continue;

@@ -30,6 +30,8 @@ Turning the setting on exposes enigma's code-graph tools to your agents through 
 
 Every query stats the tree first and re-indexes only what moved, so an answer describes the code as it is **right now**, uncommitted edits included. `enigma codegraph check` reports drift without repairing it, and exits non-zero when the graph has fallen behind - usable as a CI gate.
 
+In a git repository the graph covers what git covers: tracked files plus untracked ones your `.gitignore` does not exclude. A build output, a dependency cache or a downloaded dataset sitting beside your source is not part of your codebase, and walking it would cost more than indexing the code does.
+
 ## It rides along in the session
 
 The tools above are the *pull* half: the agent calls them when it decides to. In Claude Code the graph is also *pushed*, through four hooks, so it arrives without being asked:

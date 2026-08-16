@@ -7,10 +7,9 @@
  * own engine - no external tool.
  */
 
+import { readConfig } from "./config";
 import * as q from "./codegraph-query";
 import * as fmt from "./codegraph-format";
-import { applyMcpToggle } from "./mcp-deploy";
-import { readConfig, setEnigmaValue } from "./config";
 import {
     codeGraphArchitecture,
     codeGraphSchema,
@@ -64,13 +63,22 @@ export function codeGraphDashboard(opts: { project?: string; ask?: { query: stri
 
 export interface CodeGraphActionPayload { on?: boolean; project?: string; root?: string; query?: string; }
 
+export interface CodeGraphActionResult { ok: boolean; error?: string; view?: CodeGraphView; enabled?: boolean; note?: string; }
+
 /** Apply a code-graph action and return the refreshed view. */
-export function applyCodeGraphAction(op: string, payload: CodeGraphActionPayload = {}): { ok: boolean; error?: string; view?: CodeGraphView; } {
+export async function applyCodeGraphAction(op: string, payload: CodeGraphActionPayload = {}): Promise<CodeGraphActionResult> {
     if (op === "toggle") {
         if (typeof payload.on !== "boolean") return { ok: false, error: "missing on flag" };
-        setEnigmaValue("codeGraph", payload.on, "global");
-        applyMcpToggle("global");
-        return { ok: true, view: codeGraphDashboard({ project: payload.project }) };
+        // Through the settings registry, not straight to the config file: the toggle owns the MCP
+        // tools, the four session hooks AND the skill block that tells an agent they exist. Writing
+        // the value here on its own left the dashboard's switch doing a third of what the same
+        // switch does from the CLI - enabled in the config, never wired into a session.
+        const { applySetting } = await import("./dashboard-settings");
+        const out = await applySetting("code-graph", payload.on, "global");
+        if (!out.ok) return { ok: false, error: out.error };
+        // Deliberately no view: nothing the panel shows depends on the toggle, and rebuilding it
+        // would stat the whole tree to re-answer a freshness question the toggle did not change.
+        return { ok: true, enabled: readConfig().config.codeGraph, note: out.restartNote };
     }
     if (op === "index") {
         try {

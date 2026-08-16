@@ -1538,7 +1538,9 @@ async function runCodeGraphQuery(sub: string, args: string[]): Promise<number> {
             return emit(r, fmt.formatGrep(r));
         }
         default: {
-            const r = q.codeGraphCheck(project);
+            // `check <project>` reads as naming one, so it names one: taking the working directory
+            // anyway answered about a different repository than the one asked about, silently.
+            const r = q.codeGraphCheck(f.positionals[0] ?? project);
             if (!r) { console.error(`  ${q.NOT_INDEXED}`); return 1; }
             emit(r, fmt.formatFreshness(r));
             // `check` is the drift report, so it never repairs what it finds - a non-zero exit is

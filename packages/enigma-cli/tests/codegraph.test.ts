@@ -7,8 +7,9 @@
  */
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { spawnSync } from "node:child_process";
 import { test, expect, afterAll } from "bun:test";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 
 const HOME = mkdtempSync(join(tmpdir(), "enigma-codegraph-"));
 process.env.USERPROFILE = HOME;
@@ -190,4 +191,87 @@ test("re-indexing the same root does not duplicate the project; reset clears the
     expect(cg.listProjects().length).toBe(roots.size);
     cg.resetCodeGraph();
     expect(cg.listProjects().length).toBe(0);
+});
+
+test("module-path imports resolve to the project file they name, in every spelling of them", () => {
+    const root = mkdtempSync(join(tmpdir(), "enigma-cg-mods-"));
+    mkdirSync(join(root, "src", "utils"), { recursive: true });
+    mkdirSync(join(root, "src", "pkg"), { recursive: true });
+    writeFileSync(join(root, "src", "utils", "basics.py"), "def helper():\n    return 1\n");
+    writeFileSync(join(root, "src", "pkg", "__init__.py"), "def pkg_entry():\n    return 2\n");
+    // Python writes its own modules as dotted paths and its siblings with leading dots - neither
+    // of which starts with "./", the one form resolution used to understand.
+    writeFileSync(join(root, "main.py"), "import os\nfrom src.utils.basics import helper\nfrom src.pkg import pkg_entry\n\ndef run():\n    return helper()\n");
+    writeFileSync(join(root, "src", "sibling.py"), "from .utils.basics import helper\n\ndef near():\n    return helper()\n");
+    // A bundler alias is the same problem wearing a different prefix.
+    writeFileSync(join(root, "src", "aliased.ts"), 'import { thing } from "@/src/utils/lib";\nexport function useIt() { return thing(); }\n');
+    writeFileSync(join(root, "src", "utils", "lib.ts"), "export function thing() { return 3; }\n");
+
+    const entry = cg.indexProject(root);
+    const graph = cg.loadGraph(entry.id)!;
+    const edges = graph.importEdges.map(([from, to]) => `${from} -> ${to}`);
+    expect(edges).toContain("main.py -> src/utils/basics.py");
+    expect(edges).toContain("main.py -> src/pkg/__init__.py");
+    expect(edges).toContain("src/sibling.py -> src/utils/basics.py");
+    expect(edges).toContain("src/aliased.ts -> src/utils/lib.ts");
+    // A module of the project's own is not a dependency of it: whatever resolves must leave the
+    // external list, which is what the architecture view reports as the third-party surface.
+    expect(Object.keys(graph.externalModules)).toContain("os");
+    expect(Object.keys(graph.externalModules)).not.toContain("src.utils.basics");
+    rmSync(root, { recursive: true, force: true });
+});
+
+test("a go import resolves through go.mod to every file of the package it names", () => {
+    const root = mkdtempSync(join(tmpdir(), "enigma-cg-go-"));
+    mkdirSync(join(root, "internal", "store"), { recursive: true });
+    writeFileSync(join(root, "go.mod"), "module github.com/acme/thing\n\ngo 1.22\n");
+    writeFileSync(join(root, "main.go"), 'package main\n\nimport (\n\t"fmt"\n\t"github.com/acme/thing/internal/store"\n)\n\nfunc main() { fmt.Println(store.Load()) }\n');
+    writeFileSync(join(root, "internal", "store", "load.go"), "package store\n\nfunc Load() string { return \"x\" }\n");
+    writeFileSync(join(root, "internal", "store", "save.go"), "package store\n\nfunc Save(v string) {}\n");
+
+    const entry = cg.indexProject(root);
+    const graph = cg.loadGraph(entry.id)!;
+    const targets = graph.importEdges.filter(([from]) => from === "main.go").map(([, to]) => to).sort();
+    // An import binds the directory, so both files of the package are reachable from it.
+    expect(targets).toEqual(["internal/store/load.go", "internal/store/save.go"]);
+    expect(Object.keys(graph.externalModules)).toContain("fmt");
+    rmSync(root, { recursive: true, force: true });
+});
+
+test("a stored graph from an older shape is re-indexed, never rendered as if current", () => {
+    const root = mkdtempSync(join(tmpdir(), "enigma-cg-vers-"));
+    writeFileSync(join(root, "a.ts"), 'import { b } from "./b";\nexport function a() { return b(); }\n');
+    writeFileSync(join(root, "b.ts"), "export function b() { return 1; }\n");
+    const entry = cg.indexProject(root);
+    const file = join(HOME, "store", `${entry.id}.json`);
+    // Exactly what an install upgraded across a shape change finds on disk: the old fields, and
+    // none of the ones this build reads. Rendering it reported an edgeless graph for a codebase
+    // that has edges - a wrong answer indistinguishable from a real one.
+    const stored = JSON.parse(readFileSync(file, "utf8"));
+    writeFileSync(file, JSON.stringify({ ...stored, version: 1, edges: [], importEdges: [] }));
+
+    const schema = cg.codeGraphSchema(entry.id)!;
+    expect(schema.edges.CONTAINS).toBeGreaterThan(0);
+    expect(cg.codeGraphArchitecture(entry.id)!.importEdges).toBe(1);
+    expect(cg.loadGraph(entry.id)!.version).toBe(cg.GRAPH_VERSION);
+    rmSync(root, { recursive: true, force: true });
+});
+
+const HAS_GIT = spawnSync("git", ["--version"], { stdio: "ignore", windowsHide: true }).status === 0;
+
+test.skipIf(!HAS_GIT)("in a repository the scan indexes what git owns, not whatever sits in the tree", () => {
+    const root = mkdtempSync(join(tmpdir(), "enigma-cg-git-"));
+    const git = (...args: string[]): void => { spawnSync("git", ["-C", root, ...args], { stdio: "ignore", windowsHide: true }); };
+    git("init");
+    mkdirSync(join(root, "data", "dump"), { recursive: true });
+    writeFileSync(join(root, ".gitignore"), "data/\n");
+    writeFileSync(join(root, "app.ts"), "export function app() { return 1; }\n");
+    // A data or download directory beside the source is the case that made a 250-file project cost
+    // 18 s per scan - and the scan runs on every drift probe, so that was per query.
+    for (let i = 0; i < 40; i++) writeFileSync(join(root, "data", "dump", `gen${i}.ts`), `export function gen${i}() {}\n`);
+
+    const scanned = cg.scanFiles(root);
+    expect(scanned.files.map((f) => f.path)).toEqual(["app.ts"]);
+    expect(scanned.truncated).toBe(false);
+    rmSync(root, { recursive: true, force: true });
 });

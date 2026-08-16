@@ -94,13 +94,114 @@ const MIN_REF_NAME = 3;
 /** Hard ceiling on wiring edges: a pathological tree degrades to a smaller graph, never a hang. */
 const MAX_EDGES = 400_000;
 
-/** Resolve a relative import specifier to a project-relative file path, or null. */
-function resolveRelative(fromFileAbs: string, spec: string, root: string, known: Set<string>): string | null {
-    if (!spec.startsWith(".")) return null;
-    const base = resolve(fromFileAbs, "..", spec);
-    for (const ext of RESOLVE_EXTS) { const rel = relPath(root, base + ext); if (known.has(rel)) return rel; }
-    for (const ext of RESOLVE_EXTS.filter(Boolean)) { const rel = relPath(root, join(base, `index${ext}`)); if (known.has(rel)) return rel; }
+/** Directory entry points, in the order a module path falls back through them. */
+const INDEX_NAMES = ["index", "__init__", "mod"];
+
+/**
+ * Where a language's absolute module path may be rooted. `""` is the project root; the rest are
+ * the conventional source roots a package name is written relative to, so `src.utils.basics`
+ * finds `src/utils/basics.py` and `com.acme.Thing` finds `src/main/java/com/acme/Thing.java`.
+ */
+const MODULE_ROOTS = ["", "src", "lib", "app", "source", "src/main/java", "src/main/kotlin", "src/test/java"];
+
+/** Languages whose module path is dotted (`a.b.c`), and the separator each one writes it with. */
+const MODULE_SEPARATOR: Record<string, string> = { python: ".", java: ".", kotlin: ".", csharp: ".", php: "\\", rust: "::" };
+
+/**
+ * Does a project-relative module path (no extension) name a file in this project? Every candidate
+ * is checked against the real file set, which is what makes non-relative resolution safe: a
+ * spelling that matches nothing resolves to nothing, so a guess can never become an edge.
+ */
+function verifyModule(base: string, known: Set<string>): string | null {
+    if (!base || base.startsWith("..")) return null;
+    for (const ext of RESOLVE_EXTS) if (known.has(base + ext)) return base + ext;
+    for (const name of INDEX_NAMES) {
+        for (const ext of RESOLVE_EXTS) if (ext && known.has(`${base}/${name}${ext}`)) return `${base}/${name}${ext}`;
+    }
     return null;
+}
+
+/** The module path of a Go project, read from go.mod - the only non-guessy way to tell its own packages from the ecosystem's. */
+function goModulePath(root: string): string | null {
+    try { return /^\s*module\s+(\S+)/m.exec(readFileSync(join(root, "go.mod"), "utf8"))?.[1] ?? null; } catch { return null; }
+}
+
+/**
+ * Resolve import specifiers to the project files they name.
+ *
+ * A relative specifier is only how JS spells it. Python writes `src.utils.basics`, Go writes the
+ * module path from go.mod, Java and C# write a dotted namespace, PHP a backslashed one, Rust
+ * `crate::a::b`, and a bundler-aliased TS import writes `@/lib/x` - none of which start with a dot.
+ * Resolving only the dotted-path form left every one of those projects with an import graph of
+ * zero edges: no ranking signal, no blast radius across files, and its own modules listed as
+ * third-party dependencies.
+ *
+ * Returns a list because one import can name a whole package: a Go import binds the directory,
+ * which is every `.go` file in it.
+ */
+function createImportResolver(root: string, known: Set<string>): (fromRel: string, lang: string, spec: string) => string[] {
+    const goModule = goModulePath(root);
+    let goByDir: Map<string, string[]> | null = null;
+
+    const dirOf = (rel: string): string => (rel.includes("/") ? rel.slice(0, rel.lastIndexOf("/")) : "");
+    const joinRel = (dir: string, rest: string[]): string => [...(dir ? [dir] : []), ...rest].join("/");
+    const underRoots = (segments: string[]): string | null => {
+        for (const base of MODULE_ROOTS) {
+            const hit = verifyModule(joinRel(base, segments), known);
+            if (hit) return hit;
+        }
+        return null;
+    };
+    const relative = (fromRel: string, spec: string): string | null => {
+        const abs = resolve(join(root, fromRel), "..", spec);
+        return verifyModule(relPath(root, abs), known);
+    };
+
+    return (fromRel, lang, spec) => {
+        if (lang === "go") {
+            if (!goModule || (spec !== goModule && !spec.startsWith(`${goModule}/`))) return [];
+            const dir = spec === goModule ? "" : spec.slice(goModule.length + 1);
+            if (!goByDir) {
+                goByDir = new Map();
+                for (const p of known) {
+                    if (!p.endsWith(".go")) continue;
+                    const d = dirOf(p);
+                    const list = goByDir.get(d);
+                    if (list) list.push(p); else goByDir.set(d, [p]);
+                }
+            }
+            return goByDir.get(dir) ?? [];
+        }
+
+        // Python spells "relative" with leading dots, not with a path: `.` is this package,
+        // `..` the one above. Handled here so the JS-shaped path below never sees it.
+        if (lang === "python") {
+            const dots = /^\.+/.exec(spec)?.[0].length ?? 0;
+            const segments = spec.slice(dots).split(".").filter(Boolean);
+            if (dots > 0) {
+                let dir = dirOf(fromRel);
+                for (let up = 1; up < dots; up++) dir = dirOf(dir);
+                return [verifyModule(joinRel(dir, segments), known)].filter((p): p is string => !!p);
+            }
+            return [underRoots(segments)].filter((p): p is string => !!p);
+        }
+
+        if (spec.startsWith(".")) return [relative(fromRel, spec)].filter((p): p is string => !!p);
+
+        const separator = MODULE_SEPARATOR[lang];
+        if (separator) {
+            const segments = spec.split(separator).filter((s) => s && s !== "crate" && s !== "self");
+            // The last segment of a namespace is usually the type, not the file; `a.b.Thing` is
+            // tried as a file first, then as a member of `a/b`.
+            return [underRoots(segments) ?? (segments.length > 1 ? underRoots(segments.slice(0, -1)) : null)]
+                .filter((p): p is string => !!p);
+        }
+
+        // Everything left is written as a path: a bundler alias (`@/lib/x`), a source-root import
+        // (`src/lib/x`), a `require_relative`, or a quoted C include.
+        const path = spec.replace(/^[@~#]\//, "").replace(/^\/+/, "");
+        return [relative(fromRel, `./${path}`) ?? underRoots(path.split("/"))].filter((p): p is string => !!p);
+    };
 }
 
 /** Stable id for a symbol: `path#name`, with a `~n` ordinal when a file declares the name twice. */
@@ -164,7 +265,12 @@ function inheritanceTargets(signature: string): [EdgeRelation, string][] {
  * dropped rather than guessed - a wrong edge is worse than a missing one, because it silently
  * misdirects a blast-radius query.
  */
-function buildEdges(root: string, files: CodeFile[], importEdges: [string, string][]): { edges: CodeEdge[]; refs: Record<string, number>; bodies: BodyIndex; } {
+function buildEdges(
+    root: string,
+    files: CodeFile[],
+    importEdges: [string, string][],
+    resolveImport: (fromRel: string, lang: string, spec: string) => string[],
+): { edges: CodeEdge[]; refs: Record<string, number>; bodies: BodyIndex; } {
     const nodes = mintNodes(files);
     const spansByFile = new Map<string, { id: string; line: number; endLine: number; }[]>();
     const defsByName = new Map<string, { id: string; path: string; }[]>();
@@ -242,7 +348,7 @@ function buildEdges(root: string, files: CodeFile[], importEdges: [string, strin
         const bound = new Set(f.bindings.names);
         const namespaces = new Map<string, string>();
         for (const [alias, spec] of f.bindings.namespaces) {
-            const target = resolveRelative(join(root, f.path), spec, root, known);
+            const [target] = resolveImport(f.path, f.lang, spec);
             if (target) namespaces.set(alias, target);
         }
         return (name, memberOf) => {
@@ -349,17 +455,21 @@ export function indexProject(rootDir?: string): ProjectEntry {
     const name = basename(root) || root;
 
     const known = new Set(files.map((f) => f.path));
+    const resolveImport = createImportResolver(root, known);
     const importEdges: [string, string][] = [];
     const externalModules: Record<string, number> = {};
     for (const f of files) {
         for (const spec of f.imports) {
-            const target = resolveRelative(join(root, f.path), spec, root, known);
-            if (target) importEdges.push([f.path, target]);
-            else externalModules[spec] = (externalModules[spec] || 0) + 1;
+            const targets = resolveImport(f.path, f.lang, spec);
+            // A specifier resolving to nothing inside the project is a dependency, by definition:
+            // the count is what the architecture view reports as this project's external surface,
+            // so a module of its own listed here means resolution missed it.
+            if (!targets.length) { externalModules[spec] = (externalModules[spec] || 0) + 1; continue; }
+            for (const target of targets) if (target !== f.path) importEdges.push([f.path, target]);
         }
     }
 
-    const { edges, refs, bodies } = buildEdges(root, files, importEdges);
+    const { edges, refs, bodies } = buildEdges(root, files, importEdges, resolveImport);
     const graph: CodeGraph = { version: GRAPH_VERSION, id, name, root, indexedAt: Date.now(), files, importEdges, edges, refs, externalModules, truncated };
     writeJson(graphFile(id), graph);
     writeJson(bodyIndexFile(id), bodies);
@@ -458,6 +568,23 @@ export function loadGraph(project?: string): CodeGraph | null {
 }
 
 /**
+ * The graph in a shape this build understands, re-indexing it when the stored one predates the
+ * current shape. Every read-only surface goes through this: a graph written by an older build has
+ * fields that mean something else or are missing entirely, and rendering it reports an empty edge
+ * set for a codebase full of them - a wrong answer wearing the clothes of a real one.
+ *
+ * Drift is deliberately NOT repaired here. A stale FORMAT is unusable; stale CONTENT still answers,
+ * and re-parsing the tree on every panel render would turn a page refresh into a full index.
+ */
+export function loadCompatibleGraph(project?: string): CodeGraph | null {
+    const graph = loadGraph(project);
+    if (!graph || graph.version === GRAPH_VERSION) return graph;
+    if (!graph.root || !existsSync(graph.root)) return null;
+    indexProject(graph.root);
+    return loadGraph(graph.id);
+}
+
+/**
  * The searchable vocabulary written beside a graph. Missing or unreadable degrades to an empty
  * index, which costs recall on body-only terms - never correctness, and never an error.
  */
@@ -534,7 +661,7 @@ export interface Architecture {
 
 /** Architecture overview for a project (languages, entry points, hotspots, packages, deps). */
 export function codeGraphArchitecture(project?: string): Architecture | null {
-    const g = loadGraph(project);
+    const g = loadCompatibleGraph(project);
     if (!g) return null;
     const languages: Record<string, number> = {};
     const packages: Record<string, number> = {};
@@ -559,7 +686,7 @@ export interface GraphSchema { nodes: Record<string, number>; edges: Record<stri
 
 /** Node/edge label counts for a project's graph. */
 export function codeGraphSchema(project?: string): GraphSchema | null {
-    const g = loadGraph(project);
+    const g = loadCompatibleGraph(project);
     if (!g) return null;
     const nodes: Record<string, number> = { File: g.files.length };
     for (const f of g.files) for (const s of f.symbols) {
@@ -576,7 +703,7 @@ export interface SymbolHit { name: string; kind: SymbolKind; file: string; line:
 
 /** Search a project's symbols by name (regex or substring) and optional kind. */
 export function searchGraph(project: string | undefined, opts: { name?: string; kind?: string; limit?: number; } = {}): SymbolHit[] {
-    const g = loadGraph(project);
+    const g = loadCompatibleGraph(project);
     if (!g) return [];
     let re: RegExp | null = null;
     if (opts.name) { try { re = new RegExp(opts.name, "i"); } catch { re = new RegExp(opts.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"); } }

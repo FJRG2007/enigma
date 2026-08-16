@@ -5570,11 +5570,19 @@ export {
                 + entries.map(([k, v]) => '<div class="set-row"><div class="set-meta"><div class="set-name">' + esc(k) + '</div><div class="set-hint">' + cgVal(v) + "</div></div></div>").join("")
                 + "</div>";
         }
+        // Paint a switch without waiting for the server. Every switch on this page writes through
+        // something slow - re-rendering skills, rewriting each agent's settings and hook wiring -
+        // so a switch that only moves once the write lands reads as a control that did nothing.
+        function paintSwitch(btn, on, onLabel, offLabel) {
+            if (!btn) return;
+            btn.classList.toggle("on", !!on);
+            btn.setAttribute("aria-checked", on ? "true" : "false");
+            if (onLabel != null) btn.textContent = on ? onLabel : offLabel;
+        }
         function renderCodeGraph(view) {
             view = view || {};
             const on = !!view.enabled;
-            const t = $("cgToggle");
-            t.classList.toggle("on", on); t.setAttribute("aria-checked", on ? "true" : "false"); t.textContent = on ? "On" : "Off";
+            paintSwitch($("cgToggle"), on, "On", "Off");
             const projects = view.projects || [];
             const projHtml = projects.length
                 ? projects.map((p) => {
@@ -5622,9 +5630,18 @@ export {
             } catch { setNote("cgNote", "Could not reach the server.", "err"); return null; }
         }
         async function cgToggleAction() {
-            const turnOn = $("cgToggle").getAttribute("aria-checked") !== "true";
-            const out = await cgPost({ op: "toggle", on: turnOn, project: cgProject || undefined }, "Saving...");
-            if (out) setNote("cgNote", out.ok ? (turnOn ? "Code graph enabled - tools exposed to your agents (restart them to load it)." : "Code graph disabled.") : (out.error || "Action failed."), out.ok ? "ok" : "err");
+            const btn = $("cgToggle");
+            const was = btn.getAttribute("aria-checked") === "true";
+            paintSwitch(btn, !was, "On", "Off");
+            setNote("cgNote", was ? "Disabling..." : "Enabling...");
+            try {
+                const out = await (await fetch("/api/codegraph", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ op: "toggle", on: !was }) })).json();
+                if (!out || !out.ok) { paintSwitch(btn, was, "On", "Off"); setNote("cgNote", (out && out.error) || "Action failed.", "err"); return; }
+                paintSwitch(btn, !!out.enabled, "On", "Off"); // the server's answer wins over the optimistic paint
+                setNote("cgNote", out.enabled
+                    ? "Code graph enabled - tools and session hooks wired; agents pick it up on their next session."
+                    : "Code graph disabled - tools and session hooks removed.", "ok");
+            } catch { paintSwitch(btn, was, "On", "Off"); setNote("cgNote", "Could not reach the server.", "err"); }
         }
         async function cgIndexAction() {
             const root = $("cgRoot").value.trim();
@@ -5958,14 +5975,15 @@ export {
                 setNote("recallNote", out.ok ? (op === "sync" ? "Synced." : "Cleared.") : (out.error || "Action failed."), out.ok ? "ok" : "err");
             } catch { setNote("recallNote", "Could not reach the server.", "err"); }
         }
-        async function setRecallEnabled(on) {
+        async function setRecallEnabled(on, btn) {
+            paintSwitch(btn, on);
             setNote("recallNote", on ? "Enabling recall..." : "Disabling recall...");
             try {
                 const out = await (await fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: "recall", value: on }) })).json();
-                if (!out.ok) { setNote("recallNote", "Could not change recall: " + (out.error || "error"), "err"); return; }
+                if (!out.ok) { paintSwitch(btn, !on); setNote("recallNote", "Could not change recall: " + (out.error || "error"), "err"); return; }
                 setNote("recallNote", out.restartNote || (on ? "Recall enabled." : "Recall disabled."), out.restartNote ? "warn" : "ok");
                 loadRecall();
-            } catch { setNote("recallNote", "Could not reach the server.", "err"); }
+            } catch { paintSwitch(btn, !on); setNote("recallNote", "Could not reach the server.", "err"); }
         }
         async function recallProviderPost(extra, msg) {
             setNote("recallNote", msg || "Saving provider...");
@@ -5990,7 +6008,7 @@ export {
             $("recallClear").addEventListener("click", () => recallAction("clear", "Delete all stored session memory? This cannot be undone."));
             $("recallBody").addEventListener("click", (e) => {
                 const t = e.target.closest("[data-recall-on]");
-                if (t) setRecallEnabled(t.dataset.recallOn === "1");
+                if (t) setRecallEnabled(t.dataset.recallOn === "1", t);
             });
             // Provider panel: save provider; flip LLM curation. The provider picker is the
             // custom icon dropdown (recallProvVal), wired in renderRecallProvider.
