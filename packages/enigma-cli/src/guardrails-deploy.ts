@@ -22,7 +22,7 @@
  * of cycles - it is the deploy counterpart of the self-contained guardrails.ts engine.
  */
 
-import { homedir } from "node:os";
+import { enigmaHome } from "./util";
 import { join, dirname } from "node:path";
 import { applyClaudeHook } from "./claude-hooks";
 import { readConfig, setEnigmaToggle } from "./config";
@@ -101,13 +101,15 @@ export const EnigmaGuardrails = async () => ({
 // --- global apply / per-account mirror / toggle ------------------------------------
 
 /** Global Claude settings.json for the default account. */
+// enigmaHome(), never a raw homedir(): bun on Linux does not reflect a runtime-reassigned
+// $HOME through os.homedir(), so a test would wire its hooks into the real home dir.
 function claudeGlobalSettings(): string {
-    return join(homedir(), ".claude", "settings.json");
+    return join(enigmaHome(), ".claude", "settings.json");
 }
 
 /** Global opencode config dir for the default account. */
 function opencodeGlobalConfig(): string {
-    return join(homedir(), ".config", "opencode");
+    return join(enigmaHome(), ".config", "opencode");
 }
 
 /**

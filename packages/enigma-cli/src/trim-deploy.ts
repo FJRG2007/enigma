@@ -19,7 +19,7 @@
  * Node-builtins + config/util only (no engine import), the deploy counterpart of trim.ts.
  */
 
-import { homedir } from "node:os";
+import { enigmaHome } from "./util";
 import { kimiHome } from "./kimi";
 import { join, dirname } from "node:path";
 import { applyKimiHook } from "./kimi-hooks";
@@ -108,13 +108,15 @@ export function applyKimiTrimHook(configPath: string, on: boolean): boolean {
 // --- global apply / per-account mirror / toggle ------------------------------------
 
 /** Global Claude settings.json for the default account. */
+// enigmaHome(), never a raw homedir(): bun on Linux does not reflect a runtime-reassigned
+// $HOME through os.homedir(), so a test would wire its hooks into the real home dir.
 function claudeGlobalSettings(): string {
-    return join(homedir(), ".claude", "settings.json");
+    return join(enigmaHome(), ".claude", "settings.json");
 }
 
 /** Global opencode config dir for the default account. */
 function opencodeGlobalConfig(): string {
-    return join(homedir(), ".config", "opencode");
+    return join(enigmaHome(), ".config", "opencode");
 }
 
 /** Global Kimi config.toml for the default account (kimiHome honors ENIGMA_CONFIG_HOME). */

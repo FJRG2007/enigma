@@ -117,7 +117,9 @@ test("an unindexed tree is handed to one background index, and a managed checkou
     // lands, so every prompt and every edit used to start another full scan of the same tree - each
     // ending in a read-modify-write of projects.json that can drop what the others wrote.
     const claimed = markers().map((f) => statSync(join(STORE, "sessions", f)).mtimeMs);
-    expect(hook("prompt", { cwd: cold, session_id: "g", prompt: "where does the cold start happen" })).toBe("");
+    hook("prompt", { cwd: cold, session_id: "g", prompt: "where does the cold start happen" });
+    // The claim, not the silence: whether the detached index has landed by the second prompt is a
+    // race (it had on Linux, had not on Windows), and the answer arriving is the feature working.
     expect(markers().map((f) => statSync(join(STORE, "sessions", f)).mtimeMs)).toEqual(claimed);
 
     // A gate worktree is inside enigma's own managed directory, where indexing refuses by design -

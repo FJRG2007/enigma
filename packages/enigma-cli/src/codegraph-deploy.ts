@@ -18,7 +18,7 @@
  */
 
 import { join } from "node:path";
-import { homedir } from "node:os";
+import { enigmaHome } from "./util";
 import { applyClaudeHook } from "./claude-hooks";
 import { readConfig, setEnigmaToggle } from "./config";
 
@@ -60,8 +60,10 @@ export function applyClaudeCodeGraphHooks(settingsPath: string, on: boolean): bo
     return changed;
 }
 
+// enigmaHome(), never a raw homedir(): bun on Linux does not reflect a runtime-reassigned
+// $HOME through os.homedir(), so a test would wire its hooks into the real home dir.
 function claudeGlobalSettings(): string {
-    return join(homedir(), ".claude", "settings.json");
+    return join(enigmaHome(), ".claude", "settings.json");
 }
 
 /**
