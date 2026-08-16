@@ -18,10 +18,11 @@
  */
 
 import { homedir } from "node:os";
+import { enigmaHome } from "./util";
 import { readConfig } from "./config";
 import { createHash } from "node:crypto";
-import { tokenize } from "./codegraph-rank";
 import { basename, join, resolve } from "node:path";
+import { inDegree, tokenize } from "./codegraph-rank";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { WALK_RELATIONS, type BodyIndex, type CodeEdge, type EdgeRelation, type GraphNode } from "./codegraph-types";
 import { relPath, scanFiles, statSourceFiles, type CodeFile, type CodeSymbol, type SymbolKind } from "./codegraph-extract";
@@ -448,8 +449,22 @@ function topTokens(text: string): [string, number][] {
     return [...m.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, MAX_BODY_TOKENS);
 }
 
+/**
+ * enigma's own managed state. A gate run works in a throwaway worktree under it, so with the graph
+ * on by default every run indexed that checkout as a project of its own - listed under the run's
+ * ULID, duplicating a repo the user already has indexed, and left behind when the worktree went.
+ */
+function isManagedPath(dir: string): boolean {
+    const managed = resolve(join(enigmaHome(), ".enigma"));
+    return dir === managed || dir.startsWith(managed + (dir.includes("\\") ? "\\" : "/"));
+}
+
 /** Index a project directory into a graph and persist it. Returns the summary entry. */
 export function indexProject(rootDir?: string): ProjectEntry {
+    const requested = resolve(rootDir || process.cwd());
+    if (isManagedPath(requested)) {
+        throw new Error(`${requested} is inside enigma's own managed directory - a temporary checkout, not a project to index.`);
+    }
     const { root, files, truncated } = scanFiles(rootDir);
     const id = createHash("sha1").update(root).digest("hex").slice(0, 12);
     const name = basename(root) || root;
@@ -486,11 +501,11 @@ export function indexProject(rootDir?: string): ProjectEntry {
 export function listProjects(): ProjectEntry[] {
     const stored = readJsonSafe<ProjectEntry[]>(projectsFile(), [])
         .map((p) => ({ ...p, truncated: p.truncated === true }));
-    const live = stored.filter((p) => !p.root || existsSync(p.root));
-    // A project whose root is gone is not a project. Anything that indexes a temporary checkout
-    // leaves one behind - the quality gate runs in a throwaway worktree, so every run added an
-    // entry named after its run id and ~25 MB of graph that nothing would ever read again.
-    // Deleting is safe by construction: a graph is derived from the tree, never a source of truth.
+    const live = stored.filter((p) => p.root && existsSync(p.root) && !isManagedPath(p.root));
+    // A project whose root is gone - or that was never one, like a gate worktree indexed before
+    // enigma's own directory was excluded - is dropped and its graph deleted. Every gate run used
+    // to add an entry named after its run id and ~25 MB nothing would read again. Deleting is safe
+    // by construction: a graph is derived from the tree, never a source of truth.
     if (live.length !== stored.length) {
         for (const dead of stored.filter((p) => !live.includes(p))) {
             rmSync(graphFile(dead.id), { force: true });
@@ -565,12 +580,26 @@ function projectRootOf(dir: string): string {
  * would answer a question about one repo with another repo's graph.
  */
 export function ensureProjectForCwd(dir?: string): string {
+    const covering = findProjectForCwd(dir);
+    if (covering) return covering;
+    return indexProject(projectRootOf(resolve(dir || process.cwd()))).id;
+}
+
+/**
+ * The indexed project covering `dir`, or null - the same resolution as `ensureProjectForCwd`
+ * WITHOUT the indexing.
+ *
+ * For every caller on a clock. A cold index is seconds of work (16 s for this monorepo before the
+ * scan was scoped, 3 s after), and a hook that runs it inline spends that between the user
+ * pressing enter and the model seeing the turn - which is exactly how the per-prompt hook came to
+ * blow past its 10 s budget and have its output discarded, on every prompt, in an unindexed repo.
+ */
+export function findProjectForCwd(dir?: string): string | null {
     const from = resolve(dir || process.cwd());
     const covering = listProjects()
         .filter((p) => from === p.root || from.startsWith(`${p.root}${from.includes("\\") ? "\\" : "/"}`))
         .sort((a, b) => b.root.length - a.root.length)[0];
-    if (covering) return covering.id;
-    return indexProject(projectRootOf(from)).id;
+    return covering?.id ?? null;
 }
 
 export function loadGraph(project?: string): CodeGraph | null {
@@ -671,6 +700,18 @@ export interface Architecture {
     externalModules: { name: string; count: number; }[];
 }
 
+/** The symbols the most OTHER files depend on, highest first. Empty for a graph with no wiring. */
+function topByCrossFileDegree(g: CodeGraph, limit: number): { name: string; refs: number; }[] {
+    const degree = inDegree(g.edges ?? [], true);
+    if (!degree.size) return [];
+    const named = new Map(mintNodes(g.files).map((n) => [n.id, n.name]));
+    return [...degree.entries()]
+        .filter(([id]) => id.includes("#"))
+        .map(([id, refs]) => ({ name: named.get(id) ?? id, refs }))
+        .sort((a, b) => b.refs - a.refs || a.name.localeCompare(b.name))
+        .slice(0, limit);
+}
+
 /** Architecture overview for a project (languages, entry points, hotspots, packages, deps). */
 export function codeGraphArchitecture(project?: string): Architecture | null {
     const g = loadCompatibleGraph(project);
@@ -683,12 +724,26 @@ export function codeGraphArchitecture(project?: string): Architecture | null {
         packages[top] = (packages[top] || 0) + 1;
     }
     const imported = new Set(g.importEdges.map(([, to]) => to));
+    // Ranked by how much of the project each one pulls in, not by where it happens to sit in the
+    // scan. "Nothing imports it" is true of every standalone script in the tree, so taking the
+    // first 15 of those returned whatever sorted first - a repo whose real entry point is
+    // `src/bin/enigma.ts` listed fifteen shipped asset scripts instead.
+    const reach = new Map<string, number>();
+    for (const [from] of g.importEdges) reach.set(from, (reach.get(from) ?? 0) + 1);
+    const named = /(^|\/)(main|index|cli|app|server|bin)\.\w+$/;
     const entryPoints = g.files
-        .filter((f) => !imported.has(f.path) || /(^|\/)(main|index|cli|app|server|bin)\.\w+$/.test(f.path))
+        .filter((f) => !imported.has(f.path) || named.test(f.path))
+        .sort((a, b) => (reach.get(b.path) ?? 0) - (reach.get(a.path) ?? 0)
+            || Number(named.test(b.path)) - Number(named.test(a.path))
+            || a.path.localeCompare(b.path))
         .map((f) => f.path)
         .filter((p, i, a) => a.indexOf(p) === i)
         .slice(0, 15);
-    const hotspots = Object.entries(g.refs).map(([name, refs]) => ({ name, refs })).sort((a, b) => b.refs - a.refs).slice(0, 15);
+    // Ranked by CROSS-FILE in-degree, the same rule `map` uses for hubs: a hotspot is what other
+    // files depend on. Counting every reference instead let a file's own locals win - a `const
+    // path` or a `use` used forty times in the file that declares it outranked the function half
+    // the codebase imports, and the panel read as a list of generic words.
+    const hotspots = topByCrossFileDegree(g, 15);
     const externalModules = Object.entries(g.externalModules).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count).slice(0, 20);
     const symbols = g.files.reduce((n, f) => n + f.symbols.length, 0);
     return { project: g.name, languages, files: g.files.length, symbols, importEdges: g.importEdges.length, entryPoints, hotspots, packages, externalModules };

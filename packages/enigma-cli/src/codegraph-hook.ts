@@ -166,13 +166,39 @@ async function sessionStart(dir: string): Promise<void> {
  * trust, or a set of pointers this session has already been given all emit nothing. What survives
  * is small and new.
  */
+/**
+ * The project covering `dir`, or null after starting a background index for it.
+ *
+ * The three hooks on a 10 s budget must never index inline. A cold index is seconds of work - 16 s
+ * for this monorepo before the scan was scoped to what git owns, 3 s after - and the per-prompt
+ * hook spends it between the user pressing enter and the model seeing the turn. It does not
+ * degrade gracefully either: the host kills the hook at its timeout and discards the output, so
+ * the cost is paid on EVERY prompt and buys nothing. Session start is the one hook that may index
+ * inline (once per session, on a 20 s budget); the rest hand the work to a detached process and
+ * stay silent until it lands.
+ */
+function coveringProject(cg: typeof import("./codegraph"), dir: string): string | null {
+    const project = cg.findProjectForCwd(dir);
+    if (project) return project;
+    backgroundIndex(dir);
+    return null;
+}
+
+/** Index `dir` without waiting for it. Best-effort: the next query refreshes anyway. */
+function backgroundIndex(dir: string): void {
+    try {
+        const child = spawn(process.execPath, [process.argv[1], "codegraph", "index", dir], { detached: true, stdio: "ignore", windowsHide: true });
+        child.unref();
+    } catch { /* nothing to do about it here, and a hook must never fail the turn */ }
+}
+
 async function prompt(input: HookInput, dir: string): Promise<void> {
     const text = String(input.prompt ?? "").trim();
     if (text.length < MIN_PROMPT_CHARS) return;
     const q = await import("./codegraph-query");
     const cg = await import("./codegraph");
-    let project: string;
-    try { project = cg.ensureProjectForCwd(dir); } catch { return; }
+    const project = coveringProject(cg, dir);
+    if (!project) return;
 
     const answer = q.codeGraphAsk(text, { project, limit: PROMPT_HITS * 2 });
     if (!answer || !answer.hits.length) return;
@@ -204,8 +230,8 @@ async function postEdit(input: HookInput, dir: string): Promise<void> {
     if (!file) return;
     const q = await import("./codegraph-query");
     const cg = await import("./codegraph");
-    let project: string;
-    try { project = cg.ensureProjectForCwd(dir); } catch { return; }
+    const project = coveringProject(cg, dir);
+    if (!project) return;
 
     const state = readState(dir, input.session_id ?? "default");
     state.dirty = true;
@@ -237,15 +263,13 @@ async function stop(input: HookInput, dir: string): Promise<void> {
     try {
         const q = await import("./codegraph-query");
         const cg = await import("./codegraph");
-        const project = cg.ensureProjectForCwd(dir);
+        const project = cg.findProjectForCwd(dir);
+        if (!project) throw new Error("not indexed yet");
         const fresh = q.codeGraphCheck(project);
         const map = q.codeGraphMap({ project, refresh: false });
         writeStatuslineSnapshot(dir, map?.totals.symbols ?? 0, fresh?.stale ?? 0);
     } catch { /* the snapshot is cosmetic; the re-index below is the real work */ }
-    try {
-        const child = spawn(process.execPath, [process.argv[1], "codegraph", "index", dir], { detached: true, stdio: "ignore", windowsHide: true });
-        child.unref();
-    } catch { /* best-effort: the next query refreshes anyway */ }
+    backgroundIndex(dir);
 }
 
 /**

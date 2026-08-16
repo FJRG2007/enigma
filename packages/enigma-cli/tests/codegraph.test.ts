@@ -290,3 +290,57 @@ test("a project whose root is gone is dropped from the list and its graph delete
     expect(existsSync(join(HOME, "store", `${entry.id}.json`))).toBe(false);
     expect(existsSync(join(HOME, "store", `${entry.id}.bodies.json`))).toBe(false);
 });
+
+test("resolving a project for a hook never indexes on the caller's clock", () => {
+    const root = mkdtempSync(join(tmpdir(), "enigma-cg-cold-"));
+    mkdirSync(join(root, ".git"), { recursive: true });
+    writeFileSync(join(root, "a.ts"), "export function a() { return 1; }\n");
+    const before = cg.listProjects().length;
+    // The per-prompt hook has 10 s between the user pressing enter and the model seeing the turn.
+    // A cold index is seconds, and the host discards the output when the hook overruns - so the
+    // lookup must answer "not indexed" instead of paying for one inline.
+    expect(cg.findProjectForCwd(root)).toBeNull();
+    expect(cg.listProjects().length).toBe(before);
+    // The indexing variant is for callers that can afford it (the CLI, the MCP tools).
+    expect(cg.ensureProjectForCwd(root)).toBeTruthy();
+    expect(cg.findProjectForCwd(root)).toBeTruthy();
+    rmSync(root, { recursive: true, force: true });
+});
+
+test("enigma's own managed directory is never a project", () => {
+    const worktree = join(HOME, ".enigma", "gate", "worktrees", "abc123", "01M04CKE0P0GTY1T5WM6BFGJ8D");
+    mkdirSync(worktree, { recursive: true });
+    writeFileSync(join(worktree, "a.ts"), "export function a() { return 1; }\n");
+    // A gate run works in a throwaway checkout. Indexing it duplicated a repo the user already had
+    // indexed, under a name that is a run id, and left ~25 MB behind when the worktree went.
+    expect(() => cg.indexProject(worktree)).toThrow(/managed directory/);
+    expect(cg.listProjects().some((p) => p.root === worktree)).toBe(false);
+});
+
+test("hotspots and entry points are ranked by what the rest of the project depends on", () => {
+    const root = mkdtempSync(join(tmpdir(), "enigma-cg-rank-"));
+    mkdirSync(join(root, "src"), { recursive: true });
+    writeFileSync(join(root, "src", "shared.ts"), "export function sharedHelper() { return 1; }\n");
+    // A local name used over and over inside its own file. Counting every reference put this kind
+    // of name at the top of the panel, above the function half the codebase imports.
+    writeFileSync(join(root, "src", "noisy.ts"), [
+        "export function noisy() {",
+        "    const localValue = 1;",
+        ...Array.from({ length: 12 }, () => "    console.log(localValue);"),
+        "    return localValue;",
+        "}",
+        "",
+    ].join("\n"));
+    writeFileSync(join(root, "src", "one.ts"), 'import { sharedHelper } from "./shared";\nexport function one() { return sharedHelper(); }\n');
+    writeFileSync(join(root, "src", "two.ts"), 'import { sharedHelper } from "./shared";\nexport function two() { return sharedHelper(); }\n');
+    writeFileSync(join(root, "main.ts"), 'import { one } from "./src/one";\nimport { two } from "./src/two";\nimport { noisy } from "./src/noisy";\nexport function run() { return one() + two() + noisy(); }\n');
+
+    const entry = cg.indexProject(root);
+    const arch = cg.codeGraphArchitecture(entry.id)!;
+    const names = arch.hotspots.map((h) => h.name);
+    expect(names).toContain("sharedHelper");
+    expect(names).not.toContain("localValue");
+    // main.ts pulls in the most, so it leads - not whichever path happens to sort first.
+    expect(arch.entryPoints[0]).toBe("main.ts");
+    rmSync(root, { recursive: true, force: true });
+});
