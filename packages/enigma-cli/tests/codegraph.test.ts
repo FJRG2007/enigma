@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 import { test, expect, afterAll } from "bun:test";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 
 const HOME = mkdtempSync(join(tmpdir(), "enigma-codegraph-"));
 process.env.USERPROFILE = HOME;
@@ -274,4 +274,19 @@ test.skipIf(!HAS_GIT)("in a repository the scan indexes what git owns, not whate
     expect(scanned.files.map((f) => f.path)).toEqual(["app.ts"]);
     expect(scanned.truncated).toBe(false);
     rmSync(root, { recursive: true, force: true });
+});
+
+test("a project whose root is gone is dropped from the list and its graph deleted", () => {
+    const root = mkdtempSync(join(tmpdir(), "enigma-cg-gone-"));
+    writeFileSync(join(root, "a.ts"), "export function a() { return 1; }\n");
+    const entry = cg.indexProject(root);
+    expect(existsSync(join(HOME, "store", `${entry.id}.json`))).toBe(true);
+
+    // Anything that indexes a temporary checkout leaves an entry behind - the quality gate runs in
+    // a throwaway worktree, so every run left a project named after its run id and a graph nothing
+    // would read again. A graph is derived, so dropping it costs a re-index and nothing else.
+    rmSync(root, { recursive: true, force: true });
+    expect(cg.listProjects().some((p) => p.id === entry.id)).toBe(false);
+    expect(existsSync(join(HOME, "store", `${entry.id}.json`))).toBe(false);
+    expect(existsSync(join(HOME, "store", `${entry.id}.bodies.json`))).toBe(false);
 });

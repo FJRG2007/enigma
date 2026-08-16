@@ -484,9 +484,21 @@ export function indexProject(rootDir?: string): ProjectEntry {
 
 /** All indexed projects (most-recently-indexed first). */
 export function listProjects(): ProjectEntry[] {
-    return readJsonSafe<ProjectEntry[]>(projectsFile(), [])
-        .map((p) => ({ ...p, truncated: p.truncated === true }))
-        .sort((a, b) => b.indexedAt - a.indexedAt);
+    const stored = readJsonSafe<ProjectEntry[]>(projectsFile(), [])
+        .map((p) => ({ ...p, truncated: p.truncated === true }));
+    const live = stored.filter((p) => !p.root || existsSync(p.root));
+    // A project whose root is gone is not a project. Anything that indexes a temporary checkout
+    // leaves one behind - the quality gate runs in a throwaway worktree, so every run added an
+    // entry named after its run id and ~25 MB of graph that nothing would ever read again.
+    // Deleting is safe by construction: a graph is derived from the tree, never a source of truth.
+    if (live.length !== stored.length) {
+        for (const dead of stored.filter((p) => !live.includes(p))) {
+            rmSync(graphFile(dead.id), { force: true });
+            rmSync(bodyIndexFile(dead.id), { force: true });
+        }
+        writeJson(projectsFile(), live);
+    }
+    return live.sort((a, b) => b.indexedAt - a.indexedAt);
 }
 
 /** dashboard/CLI-facing project list (alias of listProjects with the compat shape). */
