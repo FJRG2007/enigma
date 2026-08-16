@@ -276,19 +276,43 @@ test.skipIf(!HAS_GIT)("in a repository the scan indexes what git owns, not whate
     rmSync(root, { recursive: true, force: true });
 });
 
-test("a project whose root is gone is dropped from the list and its graph deleted", () => {
+test("a project whose root is not there is hidden from the list, and its graph kept", () => {
     const root = mkdtempSync(join(tmpdir(), "enigma-cg-gone-"));
     writeFileSync(join(root, "a.ts"), "export function a() { return 1; }\n");
     const entry = cg.indexProject(root);
     expect(existsSync(join(HOME, "store", `${entry.id}.json`))).toBe(true);
 
-    // Anything that indexes a temporary checkout leaves an entry behind - the quality gate runs in
-    // a throwaway worktree, so every run left a project named after its run id and a graph nothing
-    // would read again. A graph is derived, so dropping it costs a re-index and nothing else.
+    // A missing root is not a deleted one: an unmounted drive, a disconnected share and a
+    // permission change all read the same way. listProjects is a read path every query runs, so
+    // deleting there would make opening the dashboard with a volume detached cost a full cold
+    // re-index. The entry stays on disk and comes back with its root.
     rmSync(root, { recursive: true, force: true });
     expect(cg.listProjects().some((p) => p.id === entry.id)).toBe(false);
-    expect(existsSync(join(HOME, "store", `${entry.id}.json`))).toBe(false);
-    expect(existsSync(join(HOME, "store", `${entry.id}.bodies.json`))).toBe(false);
+    expect(existsSync(join(HOME, "store", `${entry.id}.json`))).toBe(true);
+    expect(existsSync(join(HOME, "store", `${entry.id}.bodies.json`))).toBe(true);
+
+    mkdirSync(root, { recursive: true });
+    writeFileSync(join(root, "a.ts"), "export function a() { return 1; }\n");
+    expect(cg.listProjects().some((p) => p.id === entry.id)).toBe(true);
+    rmSync(root, { recursive: true, force: true });
+});
+
+test("an entry for a managed checkout is deleted outright, graph and all", () => {
+    const worktree = join(HOME, ".enigma", "gate", "worktrees", "def456", "01M04CKE0P0GTY1T5WM6BFGJ8E");
+    mkdirSync(worktree, { recursive: true });
+    // Written the way a build that predates the managed-dir exclusion left it behind: a project
+    // named after a run id, and ~25 MB of graph nothing will ever read again. That one IS garbage
+    // by construction - the checkout is gone for good - so it is dropped and its files removed.
+    const store = join(HOME, "store");
+    const stale = { id: "stale00000wt", name: "01M04CKE0P0GTY1T5WM6BFGJ8E", root: worktree, indexedAt: Date.now(), files: 0, symbols: 0, truncated: false };
+    const projects = JSON.parse(readFileSync(join(store, "projects.json"), "utf8")) as unknown[];
+    writeFileSync(join(store, "projects.json"), JSON.stringify([...projects, stale]));
+    writeFileSync(join(store, `${stale.id}.json`), "{}");
+    writeFileSync(join(store, `${stale.id}.bodies.json`), "[]");
+
+    expect(cg.listProjects().some((p) => p.id === stale.id)).toBe(false);
+    expect(existsSync(join(store, `${stale.id}.json`))).toBe(false);
+    expect(existsSync(join(store, `${stale.id}.bodies.json`))).toBe(false);
 });
 
 test("resolving a project for a hook never indexes on the caller's clock", () => {
@@ -363,6 +387,20 @@ test("a name shared across two languages is a coincidence, not a reference", () 
     rmSync(root, { recursive: true, force: true });
 });
 
+test("a C++ source reaches the header it includes - one family, two extension keys", () => {
+    const root = mkdtempSync(join(tmpdir(), "enigma-cg-cpp-"));
+    // `.h` keys as "c" and `.cpp` as "cpp", so a family rule reading the language key alone put a
+    // header and the source that includes it in different languages - dropping every edge to a
+    // declaration in nearly every C++ project there is.
+    writeFileSync(join(root, "widget.h"), "struct Widget {\n    int size;\n};\n");
+    writeFileSync(join(root, "main.cpp"), '#include "widget.h"\n\nint main() {\n    Widget w;\n    return w.size;\n}\n');
+
+    const graph = cg.loadGraph(cg.indexProject(root).id)!;
+    expect(graph.importEdges).toContainEqual(["main.cpp", "widget.h"]);
+    expect(graph.edges.some(([from, to]) => from.startsWith("main.cpp#") && to === "widget.h#Widget")).toBe(true);
+    rmSync(root, { recursive: true, force: true });
+});
+
 test.skipIf(!HAS_GIT)("a root an enclosing repository ignores is walked, not indexed as an empty graph", () => {
     const outer = mkdtempSync(join(tmpdir(), "enigma-cg-ignored-"));
     spawnSync("git", ["-C", outer, "init"], { stdio: "ignore", windowsHide: true });
@@ -378,6 +416,30 @@ test.skipIf(!HAS_GIT)("a root an enclosing repository ignores is walked, not ind
     expect(scanned.files.map((f) => f.path).sort()).toEqual(["src/a.ts", "src/b.ts"]);
     expect(scanned.truncated).toBe(false);
     rmSync(outer, { recursive: true, force: true });
+});
+
+test.skipIf(!HAS_GIT)("a submodule's source is indexed, not hidden behind its gitlink", () => {
+    const git = (cwd: string, ...args: string[]): void => {
+        spawnSync("git", ["-C", cwd, "-c", "user.email=t@t", "-c", "user.name=t", "-c", "protocol.file.allow=always", ...args], { stdio: "ignore", windowsHide: true });
+    };
+    const sub = mkdtempSync(join(tmpdir(), "enigma-cg-submodule-"));
+    git(sub, "init");
+    writeFileSync(join(sub, "lib.ts"), "export function fromSubmodule() { return 1; }\n");
+    git(sub, "add", "-A");
+    git(sub, "commit", "-m", "init");
+
+    const root = mkdtempSync(join(tmpdir(), "enigma-cg-super-"));
+    git(root, "init");
+    writeFileSync(join(root, "app.ts"), "export function app() { return 1; }\n");
+    git(root, "submodule", "add", sub.split("\\").join("/"), "external/sub");
+
+    // A submodule is ONE gitlink entry in the superproject's listing, so its whole source used to
+    // vanish - and silently: the outer repo still lists files, so the fallback walk never runs and
+    // the graph reports complete coverage of a tree it never saw.
+    const scanned = cg.scanFiles(root);
+    expect(scanned.files.map((f) => f.path).sort()).toEqual(["app.ts", "external/sub/lib.ts"]);
+    rmSync(root, { recursive: true, force: true });
+    rmSync(sub, { recursive: true, force: true });
 });
 
 test("a bare package specifier never becomes an edge, however a project file is named", () => {

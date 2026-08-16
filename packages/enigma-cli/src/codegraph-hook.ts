@@ -27,7 +27,7 @@
 import { homedir } from "node:os";
 import { spawn } from "node:child_process";
 import { basename, join, relative, resolve } from "node:path";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 
 /** Prompts shorter than this ("ok", "continue", "fix it") carry nothing to retrieve on. */
 const MIN_PROMPT_CHARS = 12;
@@ -180,12 +180,46 @@ async function sessionStart(dir: string): Promise<void> {
 function coveringProject(cg: typeof import("./codegraph"), dir: string): string | null {
     const project = cg.findProjectForCwd(dir);
     if (project) return project;
-    backgroundIndex(dir);
+    backgroundIndex(cg, dir);
     return null;
 }
 
+/**
+ * How long after a spawn another one for the same directory is treated as a duplicate.
+ *
+ * Without it the miss path is a storm: in a repo whose SessionStart index was killed at its budget
+ * nothing ever covers `dir`, so every prompt and every edit starts another full scan and parse of
+ * the same tree, and each one finishes in a read-modify-write of projects.json that can drop what
+ * the others wrote. Skipping a refresh costs nothing in return - a query re-indexes on drift
+ * before it answers.
+ */
+const INDEX_COOLDOWN_MS = 60_000;
+
+function indexMarkerFile(dir: string): string {
+    const key = dir.replace(/[^A-Za-z0-9]/g, "").slice(-40) || "default";
+    return join(stateDir(), `indexing-${key}`);
+}
+
+/** May this process start an index for `dir`? False while a recent one is assumed to still run. */
+function claimIndex(dir: string): boolean {
+    const file = indexMarkerFile(dir);
+    try {
+        // A marker dated in the future (a clock change) must expire, not block the graph forever.
+        const age = Date.now() - statSync(file).mtimeMs;
+        if (age >= 0 && age < INDEX_COOLDOWN_MS) return false;
+    } catch { /* no marker: nothing in flight */ }
+    try {
+        mkdirSync(stateDir(), { recursive: true });
+        writeFileSync(file, String(Date.now()));
+    } catch { /* an unwritable marker costs the dedup, never the index */ }
+    return true;
+}
+
 /** Index `dir` without waiting for it. Best-effort: the next query refreshes anyway. */
-function backgroundIndex(dir: string): void {
+function backgroundIndex(cg: typeof import("./codegraph"), dir: string): void {
+    // Inside enigma's own managed directory indexProject refuses by design, so the spawn is a
+    // process guaranteed to fail - once per prompt and once per edit for the whole session.
+    if (cg.isManagedPath(dir) || !claimIndex(dir)) return;
     try {
         const child = spawn(process.execPath, [process.argv[1], "codegraph", "index", dir], { detached: true, stdio: "ignore", windowsHide: true });
         child.unref();
@@ -260,16 +294,16 @@ async function stop(input: HookInput, dir: string): Promise<void> {
     const state = readState(dir, sessionId);
     if (!state.dirty) return;
     writeState(dir, sessionId, { ...state, dirty: false });
+    const cg = await import("./codegraph");
     try {
         const q = await import("./codegraph-query");
-        const cg = await import("./codegraph");
         const project = cg.findProjectForCwd(dir);
         if (!project) throw new Error("not indexed yet");
         const fresh = q.codeGraphCheck(project);
         const map = q.codeGraphMap({ project, refresh: false });
         writeStatuslineSnapshot(dir, map?.totals.symbols ?? 0, fresh?.stale ?? 0);
     } catch { /* the snapshot is cosmetic; the re-index below is the real work */ }
-    backgroundIndex(dir);
+    backgroundIndex(cg, dir);
 }
 
 /**

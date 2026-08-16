@@ -16,7 +16,7 @@
 
 import { execFileSync } from "node:child_process";
 import { extname, join, relative, resolve } from "node:path";
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 
 export type SymbolKind = "function" | "class" | "interface" | "type" | "struct" | "enum" | "trait" | "module" | "method";
 
@@ -379,16 +379,29 @@ export function extractFile(lang: string, content: string): { symbols: CodeSymbo
  * codebase. One project here carried 228k cached files beside 250 of its own, which cost 18 s per
  * walk - and the walk runs on every drift probe, so that was per query, not per index.
  */
-function gitSourceFiles(root: string): string[] | null {
-    let out: string;
+function gitList(root: string, args: string[]): string | null {
     try {
-        out = execFileSync("git", ["-C", root, "ls-files", "--cached", "--others", "--exclude-standard", "-z"], {
+        return execFileSync("git", ["-C", root, "ls-files", ...args, "-z"], {
             encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"], windowsHide: true,
         });
     } catch { return null; }
+}
+
+function gitSourceFiles(root: string): string[] | null {
+    const out = gitList(root, ["--cached", "--others", "--exclude-standard"]);
+    if (out === null) return null;
+    // A submodule is ONE gitlink entry in the superproject's listing, never its contents, so every
+    // submodule's source silently left the graph - and unlike an ignored root this is invisible:
+    // the outer repo still lists plenty of files, so the fallback walk never runs and the graph
+    // reports complete coverage of a tree it never saw. `--recurse-submodules` lists them, but git
+    // only accepts it in --cached mode, so it is a second pass and only when there are any.
+    const nested = existsSync(join(root, ".gitmodules")) ? gitList(root, ["--recurse-submodules"]) : null;
     const files: string[] = [];
-    for (const rel of out.split("\0")) {
-        if (!rel || files.length >= MAX_FILES) break;
+    const seen = new Set<string>();
+    for (const rel of [...out.split("\0"), ...(nested ?? "").split("\0")]) {
+        if (files.length >= MAX_FILES) break;
+        if (!rel || seen.has(rel)) continue;
+        seen.add(rel);
         if (!LANG_BY_EXT[extname(rel).toLowerCase()]) continue;
         if (rel.split("/").some((seg) => seg.startsWith(".") || IGNORE_DIRS.has(seg))) continue;
         files.push(join(root, rel));

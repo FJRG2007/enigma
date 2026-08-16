@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 import { join, dirname } from "node:path";
 import { spawnSync } from "node:child_process";
 import { test, expect, afterAll } from "bun:test";
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const HOME = mkdtempSync(join(tmpdir(), "enigma-cg-hooks-"));
@@ -98,6 +98,37 @@ test("the status-line snapshot names the repo it describes", async () => {
     expect(readCodeGraphStatus(snap.root)?.symbols).toBe(snap.symbols);
     // A snapshot from another repo must never put its numbers on this session's line.
     expect(readCodeGraphStatus(join(tmpdir(), "some-other-repo"))).toBeNull();
+});
+
+test("an unindexed tree is handed to one background index, and a managed checkout to none", () => {
+    const markers = (): string[] => {
+        const dir = join(STORE, "sessions");
+        return existsSync(dir) ? readdirSync(dir).filter((f) => f.startsWith("indexing-")) : [];
+    };
+    const before = markers().length;
+
+    const cold = mkdtempSync(join(tmpdir(), "enigma-cg-hooks-cold-"));
+    mkdirSync(join(cold, ".git"), { recursive: true });
+    writeFileSync(join(cold, "a.ts"), "export function coldStart() { return 1; }\n");
+    expect(hook("prompt", { cwd: cold, session_id: "g", prompt: "where does the cold start happen" })).toBe("");
+    expect(markers().length).toBe(before + 1);
+
+    // Once handed over, not again on the next prompt: nothing covers the tree until that index
+    // lands, so every prompt and every edit used to start another full scan of the same tree - each
+    // ending in a read-modify-write of projects.json that can drop what the others wrote.
+    const claimed = markers().map((f) => statSync(join(STORE, "sessions", f)).mtimeMs);
+    expect(hook("prompt", { cwd: cold, session_id: "g", prompt: "where does the cold start happen" })).toBe("");
+    expect(markers().map((f) => statSync(join(STORE, "sessions", f)).mtimeMs)).toEqual(claimed);
+
+    // A gate worktree is inside enigma's own managed directory, where indexing refuses by design -
+    // so spawning there is a process guaranteed to fail, once per prompt for the whole session.
+    const managed = join(HOME, ".enigma", "gate", "worktrees", "abc123", "01M04CKE0P0GTY1T5WM6BFGJ8D");
+    mkdirSync(join(managed, ".git"), { recursive: true });
+    writeFileSync(join(managed, "a.ts"), "export function coldStart() { return 1; }\n");
+    expect(hook("prompt", { cwd: managed, session_id: "h", prompt: "where does the cold start happen" })).toBe("");
+    expect(markers().length).toBe(before + 1);
+
+    rmSync(cold, { recursive: true, force: true });
 });
 
 test("the wiring installs every event and removes every one of them again", () => {

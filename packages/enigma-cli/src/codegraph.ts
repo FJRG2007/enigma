@@ -55,7 +55,7 @@ function writeJson(file: string, value: unknown): void {
 // --- types ---------------------------------------------------------------------------
 
 /** Bumped when the stored shape changes; an older graph is re-indexed instead of misread. */
-export const GRAPH_VERSION = 3;
+export const GRAPH_VERSION = 4;
 
 export interface CodeGraph {
     version: number;
@@ -68,8 +68,6 @@ export interface CodeGraph {
     importEdges: [string, string][];
     /** Typed wiring, symbol ids on both ends except imports (file ids) and unresolved targets. */
     edges: CodeEdge[];
-    /** symbolName -> inbound reference count. Kept as the architecture view's hotspot ranking. */
-    refs: Record<string, number>;
     /** external module specifier -> usage count. */
     externalModules: Record<string, number>;
     /**
@@ -112,12 +110,21 @@ const MIN_REF_NAME = 3;
 const MAX_EDGES = 400_000;
 
 /**
- * Languages that can reference each other's definitions. Only ts/js form a family (a .mjs script
- * importing a .ts module is real); every other language stands alone, because a name shared across
- * two languages is a coincidence, not a reference.
+ * Languages that can reference each other's definitions, grouped into families. A name shared
+ * across two families is a coincidence, not a reference - but a family is not always one language
+ * key: `.h` is keyed `c` while `.cpp` and `.hpp` are keyed `cpp`, so a per-key rule would drop
+ * every edge from a C++ definition to the header that declares it. Kotlin and Java compile to the
+ * same classes and call each other directly, and a .mjs script importing a .ts module is real.
+ * Anything not named here stands alone.
  */
+const LANG_FAMILY: Record<string, string> = {
+    ts: "js", js: "js",
+    c: "c", cpp: "c",
+    java: "jvm", kotlin: "jvm",
+};
+
 function langFamily(lang: string): string {
-    return lang === "js" || lang === "ts" ? "js" : lang;
+    return LANG_FAMILY[lang] ?? lang;
 }
 
 /** Directory entry points, in the order a module path falls back through them. */
@@ -322,7 +329,7 @@ function buildEdges(
     files: CodeFile[],
     importEdges: [string, string][],
     resolveImport: (fromRel: string, lang: string, spec: string) => string[],
-): { edges: CodeEdge[]; refs: Record<string, number>; bodies: BodyIndex; } {
+): { edges: CodeEdge[]; bodies: BodyIndex; } {
     const nodes = mintNodes(files);
     const spansByFile = new Map<string, { id: string; line: number; endLine: number; }[]>();
     const defsByName = new Map<string, { id: string; path: string; }[]>();
@@ -422,10 +429,7 @@ function buildEdges(
         };
     }
 
-    const refs: Record<string, number> = {};
     const bodies: BodyIndex = [];
-    const nameById = new Map(nodes.map((n) => [n.id, n.name]));
-    const pathById = new Map(nodes.map((n) => [n.id, n.path]));
 
     for (const f of files) {
         let content = "";
@@ -464,15 +468,11 @@ function buildEdges(
                 if (!target || target === from) continue;
                 const after = line.slice(m.index + name.length);
                 push(from, target, /^\s*\(/.test(after) ? "calls" : "references");
-                if (pathById.get(target) !== f.path) {
-                    const targetName = nameById.get(target) ?? name;
-                    refs[targetName] = (refs[targetName] || 0) + 1;
-                }
             }
         }
     }
 
-    return { edges, refs, bodies };
+    return { edges, bodies };
 }
 
 /** Distinct tokens kept per node - enough to make a definition findable by its own vocabulary,
@@ -512,7 +512,7 @@ function topTokens(text: string): [string, number][] {
  * on by default every run indexed that checkout as a project of its own - listed under the run's
  * ULID, duplicating a repo the user already has indexed, and left behind when the worktree went.
  */
-function isManagedPath(dir: string): boolean {
+export function isManagedPath(dir: string): boolean {
     const managed = resolve(join(enigmaHome(), ".enigma"));
     return dir === managed || dir.startsWith(managed + (dir.includes("\\") ? "\\" : "/"));
 }
@@ -542,36 +542,55 @@ export function indexProject(rootDir?: string): ProjectEntry {
         }
     }
 
-    const { edges, refs, bodies } = buildEdges(root, files, importEdges, resolveImport);
-    const graph: CodeGraph = { version: GRAPH_VERSION, id, name, root, indexedAt: Date.now(), files, importEdges, edges, refs, externalModules, truncated };
+    const { edges, bodies } = buildEdges(root, files, importEdges, resolveImport);
+    const graph: CodeGraph = { version: GRAPH_VERSION, id, name, root, indexedAt: Date.now(), files, importEdges, edges, externalModules, truncated };
     writeJson(graphFile(id), graph);
     writeJson(bodyIndexFile(id), bodies);
 
     const symbols = files.reduce((n, f) => n + f.symbols.length, 0);
     const entry: ProjectEntry = { id, name, root, indexedAt: graph.indexedAt, files: files.length, symbols, truncated };
-    writeJson(projectsFile(), [...listProjects().filter((p) => p.id !== id), entry]);
+    // The stored list, not the visible one: a project whose volume happens to be detached right
+    // now must not be dropped from projects.json by an index of some other project.
+    writeJson(projectsFile(), [...storedProjects().filter((p) => p.id !== id), entry]);
     return entry;
 }
 
 // --- queries -------------------------------------------------------------------------
 
-/** All indexed projects (most-recently-indexed first). */
-export function listProjects(): ProjectEntry[] {
+/**
+ * Every stored entry that is still a project at all, with the rest deleted for good: an entry with
+ * no root, or one that was never a project to begin with - a gate worktree indexed before enigma's
+ * own directory was excluded, which every run used to add under its run id and leave ~25 MB behind
+ * that nothing would read again. Deleting those is safe by construction: a graph is derived from a
+ * tree, never a source of truth, and that tree is gone.
+ */
+function storedProjects(): ProjectEntry[] {
     const stored = readJsonSafe<ProjectEntry[]>(projectsFile(), [])
         .map((p) => ({ ...p, truncated: p.truncated === true }));
-    const live = stored.filter((p) => p.root && existsSync(p.root) && !isManagedPath(p.root));
-    // A project whose root is gone - or that was never one, like a gate worktree indexed before
-    // enigma's own directory was excluded - is dropped and its graph deleted. Every gate run used
-    // to add an entry named after its run id and ~25 MB nothing would read again. Deleting is safe
-    // by construction: a graph is derived from the tree, never a source of truth.
-    if (live.length !== stored.length) {
-        for (const dead of stored.filter((p) => !live.includes(p))) {
+    const kept = stored.filter((p) => p.root && !isManagedPath(p.root));
+    if (kept.length !== stored.length) {
+        for (const dead of stored.filter((p) => !kept.includes(p))) {
             rmSync(graphFile(dead.id), { force: true });
             rmSync(bodyIndexFile(dead.id), { force: true });
         }
-        writeJson(projectsFile(), live);
+        writeJson(projectsFile(), kept);
     }
-    return live.sort((a, b) => b.indexedAt - a.indexedAt);
+    return kept;
+}
+
+/**
+ * The indexed projects a query can be answered from (most-recently-indexed first).
+ *
+ * A root that is not there RIGHT NOW is hidden, never deleted. `existsSync` is equally false for an
+ * unmounted drive, a disconnected share and a permission change as it is for a directory that was
+ * removed, and this is a read path - every query runs it. Deleting the graph here would mean
+ * opening the dashboard with a project volume detached costs a full cold re-index; hiding it means
+ * the project comes back with its disk.
+ */
+export function listProjects(): ProjectEntry[] {
+    return storedProjects()
+        .filter((p) => existsSync(p.root))
+        .sort((a, b) => b.indexedAt - a.indexedAt);
 }
 
 /** dashboard/CLI-facing project list (alias of listProjects with the compat shape). */

@@ -1544,8 +1544,9 @@ async function runCodeGraphQuery(sub: string, args: string[]): Promise<number> {
         }
         default: {
             // `check <project>` reads as naming one, so it names one: taking the working directory
-            // anyway answered about a different repository than the one asked about, silently.
-            const r = q.codeGraphCheck(f.positionals[0] ?? project());
+            // anyway answered about a different repository than the one asked about, silently. An
+            // explicit `--project` still wins, as it does in every other subcommand here.
+            const r = q.codeGraphCheck(f.project ?? f.positionals[0] ?? project());
             if (!r) { console.error(`  ${q.NOT_INDEXED}`); return 1; }
             emit(r, fmt.formatFreshness(r));
             // `check` is the drift report, so it never repairs what it finds - a non-zero exit is
