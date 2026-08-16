@@ -405,7 +405,11 @@ const MAX_ENTRIES = 60_000;
 
 function walk(root: string): { files: string[]; truncated: boolean; } {
     const tracked = gitSourceFiles(root);
-    if (tracked) return { files: tracked, truncated: tracked.length >= MAX_FILES };
+    // An EMPTY git answer is not an answer. git succeeds and lists nothing for a root that an
+    // enclosing repository ignores (a project indexed from the dashboard, or one whose root walk
+    // never found a .git of its own), and taking that literally indexes a real codebase as an
+    // empty graph reported as complete. Nothing to list is exactly when the walk has to run.
+    if (tracked && tracked.length) return { files: tracked, truncated: tracked.length >= MAX_FILES };
     const files: string[] = [];
     // Breadth-first, so when the budget does run out it has been spent on the shallow directories
     // a project keeps its source in, not on one deep tree it happened to descend into first.

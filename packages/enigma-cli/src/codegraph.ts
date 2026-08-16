@@ -87,7 +87,23 @@ export type CodeGraphProject = ProjectEntry;
 
 // --- resolution + build --------------------------------------------------------------
 
-const RESOLVE_EXTS = ["", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".py", ".go", ".rs", ".java", ".rb", ".php", ".cs", ".kt"];
+const RESOLVE_EXTS = [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs", ".py", ".go", ".rs", ".java", ".rb", ".php", ".cs", ".kt"];
+
+/**
+ * The extensions an importer of each language means first. A fixed order is language-blind: in a
+ * polyglot tree `from src.utils.api import x` bound src/utils/api.ts whenever both spellings of
+ * the file existed, because .ts is tried before .py. The rest of the list still follows, so a
+ * cross-language import (a generated binding, a sidecar) resolves as it did.
+ */
+const LANG_EXTS: Record<string, string[]> = {
+    ts: [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"],
+    js: [".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts"],
+    python: [".py"], go: [".go"], rust: [".rs"], java: [".java"], kotlin: [".kt"],
+    ruby: [".rb"], php: [".php"], csharp: [".cs"],
+};
+
+/** Directory entry point each language writes, tried before the others for that language. */
+const LANG_INDEX: Record<string, string[]> = { python: ["__init__"], go: ["mod"], rust: ["mod"] };
 
 /** Names shorter than this collide across unrelated files far more often than they resolve. */
 const MIN_REF_NAME = 3;
@@ -118,18 +134,37 @@ const MODULE_ROOTS = ["", "src", "lib", "app", "source", "src/main/java", "src/m
 const MODULE_SEPARATOR: Record<string, string> = { python: ".", java: ".", kotlin: ".", csharp: ".", php: "\\", rust: "::" };
 
 /**
+ * Languages where a specifier with no path in it names a package, not a file of this project.
+ * Ruby's `require "helper"` and a quoted C include do name a file that way, so they are not here.
+ */
+const BARE_IS_PACKAGE = new Set(["ts", "js"]);
+
+/**
  * Does a project-relative module path (no extension) name a file in this project? Every candidate
  * is checked against the real file set, which is what makes non-relative resolution safe: a
  * spelling that matches nothing resolves to nothing, so a guess can never become an edge.
  */
-function verifyModule(base: string, known: Set<string>): string | null {
+function verifyModule(base: string, known: Set<string>, lang: string): string | null {
     if (!base || base.startsWith("..")) return null;
-    for (const ext of RESOLVE_EXTS) if (known.has(base + ext)) return base + ext;
-    for (const name of INDEX_NAMES) {
-        for (const ext of RESOLVE_EXTS) if (ext && known.has(`${base}/${name}${ext}`)) return `${base}/${name}${ext}`;
+    if (known.has(base)) return base;
+    const exts = EXT_ORDER[lang] ?? RESOLVE_EXTS;
+    for (const ext of exts) if (known.has(base + ext)) return base + ext;
+    for (const name of INDEX_ORDER[lang] ?? INDEX_NAMES) {
+        for (const ext of exts) if (known.has(`${base}/${name}${ext}`)) return `${base}/${name}${ext}`;
     }
     return null;
 }
+
+/** The language's own spellings first, then whatever of `all` they did not name - no duplicates. */
+function orders(all: string[], byLang: Record<string, string[]>): Record<string, string[]> {
+    const out: Record<string, string[]> = {};
+    for (const [lang, preferred] of Object.entries(byLang)) out[lang] = [...preferred, ...all.filter((v) => preferred.indexOf(v) === -1)];
+    return out;
+}
+
+/** Candidate order per importing language, resolved once - verifyModule runs per module root, per import. */
+const EXT_ORDER = orders(RESOLVE_EXTS, LANG_EXTS);
+const INDEX_ORDER = orders(INDEX_NAMES, LANG_INDEX);
 
 /** The module path of a Go project, read from go.mod - the only non-guessy way to tell its own packages from the ecosystem's. */
 function goModulePath(root: string): string | null {
@@ -155,16 +190,16 @@ function createImportResolver(root: string, known: Set<string>): (fromRel: strin
 
     const dirOf = (rel: string): string => (rel.includes("/") ? rel.slice(0, rel.lastIndexOf("/")) : "");
     const joinRel = (dir: string, rest: string[]): string => [...(dir ? [dir] : []), ...rest].join("/");
-    const underRoots = (segments: string[]): string | null => {
+    const underRoots = (segments: string[], lang: string): string | null => {
         for (const base of MODULE_ROOTS) {
-            const hit = verifyModule(joinRel(base, segments), known);
+            const hit = verifyModule(joinRel(base, segments), known, lang);
             if (hit) return hit;
         }
         return null;
     };
-    const relative = (fromRel: string, spec: string): string | null => {
+    const relative = (fromRel: string, spec: string, lang: string): string | null => {
         const abs = resolve(join(root, fromRel), "..", spec);
-        return verifyModule(relPath(root, abs), known);
+        return verifyModule(relPath(root, abs), known, lang);
     };
 
     return (fromRel, lang, spec) => {
@@ -191,26 +226,33 @@ function createImportResolver(root: string, known: Set<string>): (fromRel: strin
             if (dots > 0) {
                 let dir = dirOf(fromRel);
                 for (let up = 1; up < dots; up++) dir = dirOf(dir);
-                return [verifyModule(joinRel(dir, segments), known)].filter((p): p is string => !!p);
+                return [verifyModule(joinRel(dir, segments), known, lang)].filter((p): p is string => !!p);
             }
-            return [underRoots(segments)].filter((p): p is string => !!p);
+            return [underRoots(segments, lang)].filter((p): p is string => !!p);
         }
 
-        if (spec.startsWith(".")) return [relative(fromRel, spec)].filter((p): p is string => !!p);
+        if (spec.startsWith(".")) return [relative(fromRel, spec, lang)].filter((p): p is string => !!p);
 
         const separator = MODULE_SEPARATOR[lang];
         if (separator) {
             const segments = spec.split(separator).filter((s) => s && s !== "crate" && s !== "self");
             // The last segment of a namespace is usually the type, not the file; `a.b.Thing` is
             // tried as a file first, then as a member of `a/b`.
-            return [underRoots(segments) ?? (segments.length > 1 ? underRoots(segments.slice(0, -1)) : null)]
+            return [underRoots(segments, lang) ?? (segments.length > 1 ? underRoots(segments.slice(0, -1), lang) : null)]
                 .filter((p): p is string => !!p);
         }
 
         // Everything left is written as a path: a bundler alias (`@/lib/x`), a source-root import
         // (`src/lib/x`), a `require_relative`, or a quoted C include.
+        const alias = /^[@~#]\//.test(spec);
+        // In JS a specifier that is neither relative nor path-shaped is a PACKAGE, and treating it
+        // as one more path is how `import { join } from "path"` becomes an edge to a src/path.ts it
+        // has nothing to do with - a guess wearing the clothes of a resolved import, and one that
+        // also drops the package from the third-party surface the architecture view reports.
+        // `@scope/pkg` is the same package written with a slash in it; only `@/x` is an alias.
+        if (BARE_IS_PACKAGE.has(lang) && !alias && (!spec.includes("/") || spec.startsWith("@"))) return [];
         const path = spec.replace(/^[@~#]\//, "").replace(/^\/+/, "");
-        return [relative(fromRel, `./${path}`) ?? underRoots(path.split("/"))].filter((p): p is string => !!p);
+        return [relative(fromRel, `./${path}`, lang) ?? underRoots(path.split("/"), lang)].filter((p): p is string => !!p);
     };
 }
 
@@ -547,12 +589,25 @@ export function codeGraphProjects(): CodeGraphProject[] {
 function resolveProject(project?: string): ProjectEntry | null {
     const all = listProjects();
     if (!all.length) return null;
-    if (project) return all.find((p) => p.id === project || p.name === project || p.root === project) || null;
-    const cwd = resolve(process.cwd());
-    const covering = all
-        .filter((p) => cwd === p.root || cwd.startsWith(`${p.root}${cwd.includes("\\") ? "\\" : "/"}`))
-        .sort((a, b) => b.root.length - a.root.length);
-    return covering[0] ?? all[0];
+    if (project) {
+        const named = all.find((p) => p.id === project || p.name === project || p.root === project);
+        // A stored root is absolute and normalized, so `.`, `./repo` or a path with a trailing
+        // slash matched nothing - the one spelling a positional that reads as a path invites.
+        return named ?? (looksLikePath(project) ? covering(all, resolve(project)) : null);
+    }
+    return covering(all, resolve(process.cwd())) ?? all[0];
+}
+
+/** Is this identifier written as a path rather than as an id or a project name? */
+function looksLikePath(value: string): boolean {
+    return value.startsWith(".") || value.includes("/") || value.includes("\\");
+}
+
+/** The indexed project containing `dir` - the innermost one, when several nest. */
+function covering(all: ProjectEntry[], dir: string): ProjectEntry | null {
+    return all
+        .filter((p) => dir === p.root || dir.startsWith(`${p.root}${dir.includes("\\") ? "\\" : "/"}`))
+        .sort((a, b) => b.root.length - a.root.length)[0] ?? null;
 }
 
 /** Files that mark the top of a project - checked walking up from the working directory. */
@@ -611,11 +666,7 @@ export function ensureProjectForCwd(dir?: string): string {
  * blow past its 10 s budget and have its output discarded, on every prompt, in an unindexed repo.
  */
 export function findProjectForCwd(dir?: string): string | null {
-    const from = resolve(dir || process.cwd());
-    const covering = listProjects()
-        .filter((p) => from === p.root || from.startsWith(`${p.root}${from.includes("\\") ? "\\" : "/"}`))
-        .sort((a, b) => b.root.length - a.root.length)[0];
-    return covering?.id ?? null;
+    return covering(listProjects(), resolve(dir || process.cwd()))?.id ?? null;
 }
 
 export function loadGraph(project?: string): CodeGraph | null {

@@ -3580,7 +3580,8 @@ export {
                     + s.choices.map((c) => '<option value="' + esc(c) + '"' + (c === s.choice ? " selected" : "") + ">" + esc(prettyChoice(c)) + "</option>").join("")
                     + "</select>"
                 : '<button type="button" class="toggle' + (s.value ? " on" : "") + '" data-skey="' + esc(s.key)
-                    + '" data-kind="bool" data-on="' + (s.value ? 1 : 0) + '">' + (s.value ? "On" : "Off") + "</button>";
+                    + '" data-kind="bool" role="switch" aria-checked="' + (s.value ? "true" : "false")
+                    + '" data-on="' + (s.value ? 1 : 0) + '">' + (s.value ? "On" : "Off") + "</button>";
             return '<div class="set-row"><div class="set-meta"><div class="set-name">' + settingIcon(s.key) + labelWithBadges(s.label) + "</div>"
                 + '<div class="set-hint">' + linkify(s.hint) + (s.globalOnly ? " · global" : "") + "</div></div>"
                 + '<div class="set-ctl">' + ctl + "</div></div>";
@@ -3598,7 +3599,19 @@ export {
                 + '<div class="set-grid">' + c.settings.map(settingRow).join("") + "</div></div>").join("");
         }
 
-        function applyBool(ctl, on) { ctl.classList.toggle("on", on); ctl.textContent = on ? "On" : "Off"; ctl.dataset.on = on ? 1 : 0; }
+        // The one painter for every switch on this page: the class the CSS reads, the ARIA state a
+        // screen reader reads, the data-on the click handlers read, and the label when the switch
+        // carries one. Painted before the write lands and rolled back if the server refuses - every
+        // switch here writes through something slow (re-rendering skills, rewriting each agent's
+        // settings and hooks), so one that only moves once the write returns reads as dead.
+        function paintSwitch(btn, on, onLabel, offLabel) {
+            if (!btn) return;
+            btn.classList.toggle("on", !!on);
+            btn.setAttribute("aria-checked", on ? "true" : "false");
+            btn.dataset.on = on ? "1" : "0";
+            if (onLabel != null) btn.textContent = on ? onLabel : offLabel;
+        }
+        function applyBool(ctl, on) { paintSwitch(ctl, on, "On", "Off"); }
 
         // One place that turns an /api/* call into parsed JSON, or an Error naming the real
         // cause. res.json() throws on any reply that is not JSON - an empty 405, or an HTML
@@ -4561,12 +4574,7 @@ export {
         }
         // The two on/off switches at the top of the page. Both are optimistic: the switch flips
         // first and rolls back if the server refuses, like every other control here.
-        function gateBool(btn, on) {
-            btn.textContent = on ? "on" : "off";
-            btn.classList.toggle("on", !!on);
-            btn.dataset.on = on ? "1" : "0";
-            btn.setAttribute("aria-checked", on ? "true" : "false");
-        }
+        function gateBool(btn, on) { paintSwitch(btn, on, "on", "off"); }
         // Defaults for every gate setting, straight from the gate's own config loader (the
         // server resolves an empty config rather than keeping a second copy of the numbers).
         // They drive the "default N" hint and the per-row reset below.
@@ -5570,15 +5578,6 @@ export {
                 + entries.map(([k, v]) => '<div class="set-row"><div class="set-meta"><div class="set-name">' + esc(k) + '</div><div class="set-hint">' + cgVal(v) + "</div></div></div>").join("")
                 + "</div>";
         }
-        // Paint a switch without waiting for the server. Every switch on this page writes through
-        // something slow - re-rendering skills, rewriting each agent's settings and hook wiring -
-        // so a switch that only moves once the write lands reads as a control that did nothing.
-        function paintSwitch(btn, on, onLabel, offLabel) {
-            if (!btn) return;
-            btn.classList.toggle("on", !!on);
-            btn.setAttribute("aria-checked", on ? "true" : "false");
-            if (onLabel != null) btn.textContent = on ? onLabel : offLabel;
-        }
         function renderCodeGraph(view) {
             view = view || {};
             const on = !!view.enabled;
@@ -5783,7 +5782,7 @@ export {
             $("pgSend").addEventListener("click", pgSend);
             $("pgSaveDefault").addEventListener("click", pgSaveDefault);
             const tog = $("pgTools");
-            tog.addEventListener("click", () => { const on = tog.getAttribute("aria-checked") !== "true"; tog.classList.toggle("on", on); tog.setAttribute("aria-checked", on ? "true" : "false"); tog.textContent = on ? "On" : "Off"; });
+            tog.addEventListener("click", () => paintSwitch(tog, tog.getAttribute("aria-checked") !== "true", "On", "Off"));
             $("pgMode").addEventListener("change", pgSyncMode);
             const copyBtn = $("pgCopyCurl");
             // The button is an icon, so the toast is not the only confirmation: swap the icon for a
@@ -5876,11 +5875,7 @@ export {
             $("recallKey").disabled = !!p.keyFromEnv;
             // claude-local needs no base/key; hide that row for it.
             $("recallKeyRow").style.display = p.provider === "claude-local" ? "none" : "";
-            const llmBtn = $("recallLlmBtn");
-            llmBtn.textContent = p.llm ? "on" : "off";
-            llmBtn.classList.toggle("on", !!p.llm);
-            llmBtn.dataset.on = p.llm ? "1" : "0";
-            llmBtn.setAttribute("aria-checked", p.llm ? "true" : "false");
+            paintSwitch($("recallLlmBtn"), p.llm, "on", "off");
         }
         let recallItemsById = {};
         // Multi-select state for the Recall list: a Set of selected ids, the ordered ids as

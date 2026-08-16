@@ -362,3 +362,71 @@ test("a name shared across two languages is a coincidence, not a reference", () 
     expect(edges.some(([from]) => from.startsWith("lib/other.rb"))).toBe(false);
     rmSync(root, { recursive: true, force: true });
 });
+
+test.skipIf(!HAS_GIT)("a root an enclosing repository ignores is walked, not indexed as an empty graph", () => {
+    const outer = mkdtempSync(join(tmpdir(), "enigma-cg-ignored-"));
+    spawnSync("git", ["-C", outer, "init"], { stdio: "ignore", windowsHide: true });
+    writeFileSync(join(outer, ".gitignore"), "vendored/\n");
+    const root = join(outer, "vendored", "thing");
+    mkdirSync(join(root, "src"), { recursive: true });
+    writeFileSync(join(root, "src", "a.ts"), 'import { b } from "./b";\nexport function a() { return b(); }\n');
+    writeFileSync(join(root, "src", "b.ts"), "export function b() { return 1; }\n");
+
+    // git runs fine here and lists nothing, because the outer repository ignores this tree. Taking
+    // that as the answer indexed a real codebase as an empty graph reported as complete.
+    const scanned = cg.scanFiles(root);
+    expect(scanned.files.map((f) => f.path).sort()).toEqual(["src/a.ts", "src/b.ts"]);
+    expect(scanned.truncated).toBe(false);
+    rmSync(outer, { recursive: true, force: true });
+});
+
+test("a bare package specifier never becomes an edge, however a project file is named", () => {
+    const root = mkdtempSync(join(tmpdir(), "enigma-cg-bare-"));
+    mkdirSync(join(root, "src", "util"), { recursive: true });
+    writeFileSync(join(root, "src", "util", "path.ts"), "export function joinAll() { return \"\"; }\n");
+    writeFileSync(join(root, "src", "util", "fs-helpers.ts"), 'import { join } from "path";\nimport { z } from "@acme/schema";\nimport { thing } from "@/src/util/path";\nexport function read() { return join(thing(), z); }\n');
+
+    const entry = cg.indexProject(root);
+    const graph = cg.loadGraph(entry.id)!;
+    // "path" names a package that happens to share a name with a sibling file; only the aliased
+    // specifier names this project. A guess must never wear the clothes of a resolved import.
+    expect(graph.importEdges).toEqual([["src/util/fs-helpers.ts", "src/util/path.ts"]]);
+    expect(Object.keys(graph.externalModules).sort()).toEqual(["@acme/schema", "path"]);
+    rmSync(root, { recursive: true, force: true });
+});
+
+test("a module path resolves in the importing language first, in a polyglot tree", () => {
+    const root = mkdtempSync(join(tmpdir(), "enigma-cg-poly-"));
+    mkdirSync(join(root, "src", "utils"), { recursive: true });
+    mkdirSync(join(root, "src", "pkg"), { recursive: true });
+    // Both spellings of the same module exist, which is what made a fixed extension order pick
+    // the TypeScript one for a Python import.
+    writeFileSync(join(root, "src", "utils", "api.ts"), "export function apiTs() { return 1; }\n");
+    writeFileSync(join(root, "src", "utils", "api.py"), "def api_py():\n    return 1\n");
+    writeFileSync(join(root, "src", "pkg", "index.js"), "export function idx() { return 1; }\n");
+    writeFileSync(join(root, "src", "pkg", "__init__.py"), "def init_py():\n    return 1\n");
+    writeFileSync(join(root, "main.py"), "from src.utils.api import api_py\nfrom src.pkg import init_py\n\ndef run():\n    return api_py()\n");
+    writeFileSync(join(root, "main.ts"), 'import { apiTs } from "@/src/utils/api";\nexport function runTs() { return apiTs(); }\n');
+
+    const entry = cg.indexProject(root);
+    const edges = cg.loadGraph(entry.id)!.importEdges.map(([from, to]) => `${from} -> ${to}`);
+    expect(edges).toContain("main.py -> src/utils/api.py");
+    expect(edges).toContain("main.py -> src/pkg/__init__.py");
+    expect(edges).toContain("main.ts -> src/utils/api.ts");
+    rmSync(root, { recursive: true, force: true });
+});
+
+test("a project named as a path is the project it names, in any spelling of that path", async () => {
+    const root = mkdtempSync(join(tmpdir(), "enigma-cg-bypath-"));
+    mkdirSync(join(root, "src"), { recursive: true });
+    writeFileSync(join(root, "src", "only.ts"), "export function only() { return 1; }\n");
+    const entry = cg.indexProject(root);
+    const q = await import("../src/codegraph-query");
+
+    // A stored root is absolute and normalized; a positional that reads as a path is not.
+    expect(q.codeGraphCheck(entry.root)!.project).toBe(entry.name);
+    expect(q.codeGraphCheck(`${entry.root}/`)!.project).toBe(entry.name);
+    expect(q.codeGraphCheck(join(entry.root, "src"))!.project).toBe(entry.name);
+    expect(q.codeGraphCheck("./does-not-exist-anywhere")).toBeNull();
+    rmSync(root, { recursive: true, force: true });
+});

@@ -1490,8 +1490,13 @@ async function runCodeGraphQuery(sub: string, args: string[]): Promise<number> {
     const fmt = await import("./codegraph-format");
     const { ensureProjectForCwd } = await import("./codegraph");
     const f = parseQueryFlags(args);
-    const project = f.project ?? ensureProjectForCwd();
-    const base = { project, refresh: f.refresh, in: f.in };
+    // Resolved on demand, never up front: indexing the working directory is the fallback for a
+    // query that did not name a project, and `check <project>` names one - paying for a full index
+    // of a repository nobody asked about, to then answer about a different one, is the cost the
+    // positional exists to avoid.
+    let cached: string | undefined;
+    const project = (): string => (cached ??= f.project ?? ensureProjectForCwd());
+    const base = (): { project: string; refresh: boolean; in?: string; } => ({ project: project(), refresh: f.refresh, in: f.in });
     const emit = (data: unknown, text: string): number => {
         console.log(f.json ? JSON.stringify(data, null, 2) : text);
         return 0;
@@ -1502,7 +1507,7 @@ async function runCodeGraphQuery(sub: string, args: string[]): Promise<number> {
         case "ask": {
             const query = f.positionals.join(" ").trim();
             if (!query) return missing("ask \"<question>\" [--source] [--limit N] [--in <path>]");
-            const r = q.codeGraphAsk(query, { ...base, limit: f.limit, source: f.source });
+            const r = q.codeGraphAsk(query, { ...base(), limit: f.limit, source: f.source });
             if (!r) { console.error(`  ${q.NOT_INDEXED}`); return 1; }
             return emit(r, fmt.formatAsk(r));
         }
@@ -1510,19 +1515,19 @@ async function runCodeGraphQuery(sub: string, args: string[]): Promise<number> {
             const symbol = f.positionals[0];
             if (!symbol) return missing(`${sub} <symbol> [--depth N] [--in <path>]`);
             const direction = f.direction ?? (sub === "callees" ? "out" : "in");
-            const r = q.codeGraphTrace(symbol, { ...base, direction, depth: f.depth });
+            const r = q.codeGraphTrace(symbol, { ...base(), direction, depth: f.depth });
             if (!r) { console.error(`  ${q.NOT_INDEXED}`); return 1; }
             return emit(r, fmt.formatTrace(r));
         }
         case "skeleton": {
             const file = f.positionals[0];
             if (!file) return missing("skeleton <file>");
-            const r = q.codeGraphSkeleton(file, base);
+            const r = q.codeGraphSkeleton(file, base());
             if (!r) { console.error(`  ${q.NOT_INDEXED}`); return 1; }
             return emit(r, fmt.formatSkeleton(r));
         }
         case "map": {
-            const r = q.codeGraphMap({ ...base, maxDirs: f.maxDirs });
+            const r = q.codeGraphMap({ ...base(), maxDirs: f.maxDirs });
             if (!r) { console.error(`  ${q.NOT_INDEXED}`); return 1; }
             return emit(r, fmt.formatMap(r));
         }
@@ -1532,7 +1537,7 @@ async function runCodeGraphQuery(sub: string, args: string[]): Promise<number> {
             let r: ReturnType<typeof q.codeGraphGrep>;
             // A pattern that does not compile is a usage error, not a crash: without this the
             // SyntaxError escapes run() and prints a stack trace instead of what to fix.
-            try { r = q.codeGraphGrep(pattern, { ...base, ignoreCase: f.ignoreCase, fixed: f.fixed, maxHits: f.maxHits }); }
+            try { r = q.codeGraphGrep(pattern, { ...base(), ignoreCase: f.ignoreCase, fixed: f.fixed, maxHits: f.maxHits }); }
             catch (e) { console.error(`  ${(e as Error).message}`); return 1; }
             if (!r) { console.error(`  ${q.NOT_INDEXED}`); return 1; }
             return emit(r, fmt.formatGrep(r));
@@ -1540,7 +1545,7 @@ async function runCodeGraphQuery(sub: string, args: string[]): Promise<number> {
         default: {
             // `check <project>` reads as naming one, so it names one: taking the working directory
             // anyway answered about a different repository than the one asked about, silently.
-            const r = q.codeGraphCheck(f.positionals[0] ?? project);
+            const r = q.codeGraphCheck(f.positionals[0] ?? project());
             if (!r) { console.error(`  ${q.NOT_INDEXED}`); return 1; }
             emit(r, fmt.formatFreshness(r));
             // `check` is the drift report, so it never repairs what it finds - a non-zero exit is

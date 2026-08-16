@@ -179,7 +179,7 @@ export interface EnigmaConfig {
     verifyCommand: string;
     /** Deploy the context-compression MCP server (enigma_compress/retrieve/stats) into managed agents (opt-in). */
     compress: boolean;
-    /** Expose enigma's native code-graph tools (index a codebase into a knowledge graph of symbols/imports/references) to agents over MCP (opt-in). */
+    /** Expose enigma's native code-graph tools (index a codebase into a knowledge graph of symbols/imports/references) to agents over MCP, and wire the session hooks that push it (on by default). */
     codeGraph: boolean;
     /** EXPERIMENTAL but ON by default: the local AI quality gate. Deploys the /gate command AND renders an always-on memory block telling agents to auto-drive the gate once a code task is committed (auto `enigma gate init`, no prompt needed); per-project opt-out via a repo `.enigma.json` gate:false (nearest-wins). */
     gate: boolean;
