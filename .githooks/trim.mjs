@@ -4,8 +4,8 @@
 import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { extname, join } from "path";
-import { execFileSync } from "child_process";
 import { open, stat } from "fs/promises";
+import { execFileSync } from "child_process";
 var TAIL_BYTES = 4096;
 var MAX_TAIL = 1024 * 1024;
 var CONCURRENCY = 32;
