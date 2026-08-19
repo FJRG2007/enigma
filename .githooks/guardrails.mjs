@@ -2026,8 +2026,12 @@ function missingPathAlias(content, file) {
 }
 var NAMED_IMPORT = /^import[ \t]+(?:[\w$]+[ \t]*,[ \t]*)?(?:type[ \t]+)?\{([^}]*)\}[ \t]*from[ \t]*["']([^"']+)["'].*$/gm;
 var GENERIC_ACCOUNTS = /* @__PURE__ */ new Set(["runner", "root", "ubuntu", "debian", "vagrant", "node", "user", "users", "developer", "ec2-user", "codespace", "gitpod", "jenkins", "circleci", "travis", "docker", "app"]);
+function operatorHome() {
+  const env = process.platform === "win32" ? process.env.USERPROFILE : process.env.HOME;
+  return env?.trim() || homedir();
+}
 function operatorHomePathLeak(content) {
-  const home = homedir();
+  const home = operatorHome();
   if (!home || home.length < 6) return [];
   const account = home.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || "";
   if (!account || GENERIC_ACCOUNTS.has(account.toLowerCase())) return [];
