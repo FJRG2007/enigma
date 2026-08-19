@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 import { join, dirname } from "node:path";
 import { spawnSync } from "node:child_process";
 import { test, expect, afterAll } from "bun:test";
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { chmodSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const HOME = mkdtempSync(join(tmpdir(), "enigma-cli-dispatch-"));
@@ -23,11 +23,16 @@ afterAll(() => rmSync(HOME, { recursive: true, force: true }));
 
 /** Run the CLI with a throwaway home, so a dispatch test can never touch the real config. */
 function cli(...args: string[]): { code: number; stdout: string; stderr: string; } {
+    return cliEnv({}, ...args);
+}
+
+/** `cli`, plus environment the child needs (e.g. the stand-in agent binary). */
+function cliEnv(extra: Record<string, string>, ...args: string[]): { code: number; stdout: string; stderr: string; } {
     const run = spawnSync(process.execPath, [join(ROOT, "src", "bin", "enigma.ts"), ...args], {
         encoding: "utf8",
         input: "",
         windowsHide: true,
-        env: { ...process.env, HOME, USERPROFILE: HOME, ENIGMA_CONFIG_HOME: HOME, ENIGMA_OFFLINE: "1" },
+        env: { ...process.env, HOME, USERPROFILE: HOME, ENIGMA_CONFIG_HOME: HOME, ENIGMA_OFFLINE: "1", ...extra },
     });
     return { code: run.status ?? -1, stdout: run.stdout || "", stderr: run.stderr || "" };
 }
@@ -100,4 +105,53 @@ test("an unknown option is still an error", () => {
     const res = cli("install", "--no-such-flag");
     expect(res.code).toBe(1);
     expect(res.stderr).toContain("Unknown option: --no-such-flag");
+});
+
+/**
+ * A stand-in for the agent binary: it prints the argv it was handed and exits 0, so a launch
+ * test asserts what the tool ACTUALLY received rather than what the parser meant to send.
+ * `ENIGMA_CLAUDE_BIN` is the documented override `launchTool` resolves before anything else.
+ */
+function fakeAgent(): string {
+    const win = process.platform === "win32";
+    const file = join(HOME, win ? "fake-agent.cmd" : "fake-agent.sh");
+    const script = win ? ["@echo off", "echo ARGV:%*"] : ["#!/bin/sh", "echo \"ARGV:$@\""];
+    writeFileSync(file, `${script.join("\n")}\n`);
+    if (!win) chmodSync(file, 0o755);
+    return file;
+}
+
+/** Launch `claude` through the CLI with the stand-in agent in place, and return what it echoed. */
+function launched(...args: string[]): { code: number; argv: string; } {
+    const res = cliEnv({ ENIGMA_CLAUDE_BIN: fakeAgent() }, ...args);
+    const line = res.stdout.split("\n").find((l) => l.includes("ARGV:")) ?? "";
+    return { code: res.code, argv: line.slice(line.indexOf("ARGV:") + 5).trim() };
+}
+
+test("a launch line forwards its flags to the agent", () => {
+    // The bug this pins: Windows PowerShell drops a bare `--` before the process is spawned, so
+    // the documented `enigma claude -- --resume <id>` reached the CLI as `claude --resume <id>`
+    // and died on `Unknown option: --resume` - the exact line Claude Code's own exit hint tells
+    // the user to type. A launch line owns no flags, so every one of them is the agent's.
+    expect(launched("claude", "--resume", "abc123").argv).toBe("--resume abc123");
+    // The value follows its flag instead of being read as the account name, which is why the
+    // forward starts at the first flag and takes the rest of the line with it. The account is
+    // created first: a launch that cannot resolve one never reaches the binary at all, so the
+    // row would pass on an error instead of on the forwarding it is here to assert.
+    expect(cli("account", "add", "work").code).toBe(0);
+    expect(launched("claude", "work", "--resume", "abc123").argv).toBe("--resume abc123");
+    // Flags the shared parser owns for other commands (`-c` is `--cwd`, `-p` is `--path`) are
+    // the agent's here, and must not be swallowed together with the argument behind them.
+    expect(launched("claude", "-c").argv).toBe("-c");
+    expect(launched("claude", "-p", "prompt").argv).toBe("-p prompt");
+    // `--` still works, and is still stripped rather than passed on.
+    expect(launched("claude", "--", "--version").argv).toBe("--version");
+});
+
+test("a launch line keeps enigma's own help", () => {
+    // The one exception: `-h` prints the launch help rather than the agent's, which is what
+    // documents the forwarding in the first place.
+    const res = cli("claude", "-h");
+    expect(res.code).toBe(0);
+    expect(res.stdout).toContain("enigma claude");
 });

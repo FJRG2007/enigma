@@ -334,7 +334,7 @@ enigma claude work                # run Claude Code as 'work'
 enigma codex acme                 # run Codex as 'acme'
 enigma account use personal       # make 'personal' the active account
 enigma claude                     # run the resolved account (profile > active)
-enigma claude work -- --version   # forward args after -- to the tool
+enigma claude work --resume <id>  # flags after the tool go to the tool
 enigma account rename work corp   # rename an account (its config dir moves)
 enigma account remove work        # delete an account and its config dir
 ```

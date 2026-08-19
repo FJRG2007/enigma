@@ -116,6 +116,17 @@ interface CliOptions extends skillsMod.InstallOptions {
     json: boolean;
 }
 
+/** A command that launches an agent: a tool name (`claude`, `codex`, ...) or a pack id. */
+function isLaunchCommand(command: string): boolean {
+    return acct.isToolName(command) || !!packs.getPack(command);
+}
+
+/** The only flags a launch line keeps for enigma: its own help, and a pack's target tool. */
+function launchOwnsFlag(command: string, flag: string): boolean {
+    if (flag === "-h" || flag === "--help") return true;
+    return !!packs.getPack(command) && (flag === "-t" || flag === "--tool");
+}
+
 function parseArgs(argv: string[]): CliOptions {
     const opts: CliOptions = {
         command: null, positionals: [], passthrough: [], tool: acct.DEFAULT_TOOL,
@@ -157,6 +168,20 @@ function parseArgs(argv: string[]): CliOptions {
         }
         // Everything after a literal `--` is forwarded verbatim (e.g. to Claude Code).
         if (a === "--") { opts.passthrough.push(...argv.slice(i + 1)); break; }
+        // A launch line (a tool name or a pack id) owns no flags of its own beyond the two
+        // above, so from its FIRST flag on the rest of the line belongs to the agent and is
+        // forwarded verbatim. `--` is the documented spelling and it is not enough: Windows
+        // PowerShell drops a bare `--` before the process is even spawned, so
+        // `enigma claude -- --resume <id>` arrives here as `claude --resume <id>` and used to
+        // die on `Unknown option`, which is precisely what Claude Code's own exit hint tells
+        // the user to type. Forwarding from the first flag rather than flag by flag is what
+        // keeps a flag's VALUE with it - nothing here knows which agent flags take one, and a
+        // stray `<id>` left behind would be read as the account name - and it keeps the
+        // agent's flags away from a shared parser that already owns `-c`, `-p` and `--model`.
+        if (opts.command && a.startsWith("-") && isLaunchCommand(opts.command) && !launchOwnsFlag(opts.command, a)) {
+            opts.passthrough.push(...argv.slice(i));
+            break;
+        }
         switch (a) {
             case "-t": case "--tool": opts.tool = next(); break;
             case "-g": case "--global": opts.scope = "global"; break;
@@ -261,7 +286,7 @@ Commands:
                        auto-syncs deployed skills first (see auto-sync config key) and
                        keeps managed accounts stocked with skills, memory and the
                        mirrored settings (bypass, attribution) of the default account;
-                       pass args to the tool after '--' (e.g. claude work -- --version)
+                       flags go straight to the tool (e.g. claude work --resume <id>)
   account <subcommand> Manage tool accounts (multi-login without logging out).
                        Defaults to Claude Code; target another tool with --tool <name>:
                          list                 List accounts (active one marked)
@@ -379,7 +404,7 @@ Commands:
                          run <id> [account]   Launch the pack's isolated agent
   <pack> [account]     Launch a pack directly (e.g. 'enigma helio', 'enigma helio work') in its
                        isolated context, seeded with the chosen/pinned/active login (--tool to
-                       target codex/opencode); pass tool args after '--'
+                       target codex/opencode); other flags go straight to the tool
   seal                 Maintenance: (re)compute skill content hashes
   check                Integrity gate: verify skills are well-formed and sealed
   statusline           Render the agent status bar (badge, model, context, cost, live gate progress)
@@ -685,12 +710,15 @@ agent's status payload on stdin; wired automatically unless you pass --no-status
 
 /** Launch commands share one help text; they take an account and forward args after `--`. */
 function launchHelp(name: string): string {
-    return `usage: enigma ${name} [account] [-- <args for ${name}>]
+    return `usage: enigma ${name} [account] [<args for ${name}>]
 Launch ${name} with an account's config (resolution: explicit > active profile > tool active).
 Deployed skills are auto-synced first ('enigma config auto-sync off' to stop that).
 
-Everything after '--' goes to ${name} verbatim, so '${name} --help' is:
-  enigma ${name} -- --help`;
+Flags go to ${name} verbatim, starting at the first one:
+  enigma ${name} --resume <id>
+  enigma ${name} work --model opus
+
+'-h' and '--help' stay enigma's; for ${name}'s own, run '${name} --help'.`;
 }
 
 /** Prints one command's usage. Returns false when the command has no dedicated help. */

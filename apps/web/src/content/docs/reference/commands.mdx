@@ -19,12 +19,12 @@ Fetch the latest skills from GitHub (no package release needed), sync every depl
 
 ## Launch a tool
 
-Run a coding agent through enigma so it gets your skills, memory and managed settings. Resolution order: explicit account &gt; active profile &gt; the tool's active account. Pass args to the tool after `--`.
+Run a coding agent through enigma so it gets your skills, memory and managed settings. Resolution order: explicit account &gt; active profile &gt; the tool's active account. Flags after the tool name are passed to it.
 
 ```bash
 enigma claude              # launch Claude Code (default account)
 enigma claude work         # a named account
-enigma codex -- --version  # forward args to the tool
+enigma claude --resume <id> # flags go to the tool
 ```
 
 ## accounts & profiles
