@@ -2130,6 +2130,17 @@ const NAMED_IMPORT = /^import[ \t]+(?:[\w$]+[ \t]*,[ \t]*)?(?:type[ \t]+)?\{([^}
 const GENERIC_ACCOUNTS = new Set(["runner", "root", "ubuntu", "debian", "vagrant", "node", "user", "users", "developer", "ec2-user", "codespace", "gitpod", "jenkins", "circleci", "travis", "docker", "app"]);
 
 /**
+ * The home directory of the account running the check, read from the environment first.
+ * `homedir()` resolves from the OS account on some runtimes and ignores an overridden `HOME`,
+ * so keying on it alone makes the rule untestable: a synthetic home never reaches it and the
+ * check silently reports nothing.
+ */
+function operatorHome(): string {
+    const env = process.platform === "win32" ? process.env.USERPROFILE : process.env.HOME;
+    return env?.trim() || homedir();
+}
+
+/**
  * Lines carrying THIS machine's home directory - the operator's own environment about to be
  * committed (see the sec-operator-env-leak rule).
  *
@@ -2146,7 +2157,7 @@ const GENERIC_ACCOUNTS = new Set(["runner", "root", "ubuntu", "debian", "vagrant
  * the finding, because the ledger and the terminal are not places to repeat it.
  */
 export function operatorHomePathLeak(content: string): { line: number; detail: string; }[] {
-    const home = homedir();
+    const home = operatorHome();
     if (!home || home.length < 6) return [];
     const account = home.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || "";
     if (!account || GENERIC_ACCOUNTS.has(account.toLowerCase())) return [];
