@@ -33,12 +33,16 @@ afterAll(() => {
 });
 
 test("encodeWorkDirKey matches the key Kimi Code writes itself", () => {
-    // Observed: ~/.kimi-code/workspace-trust/wd_portfolio_935eec9160da for this directory.
-    expect(encodeWorkDirKey("C:\\Users\\admin\\Documents\\DEV\\FJRG2007\\portfolio"))
-        .toBe("wd_portfolio_935eec9160da");
+    // Kimi's scheme, read off a workspace-trust document it wrote for a real directory: the
+    // slugified basename, then the first 12 hex of sha256 over the slash-normalized absolute
+    // path. The vector is a synthetic directory rather than the observed one - a real work dir
+    // carries the machine's account name, and a test in a public repository is exactly where
+    // that becomes permanent (security-policy, sec-operator-env-leak).
+    expect(encodeWorkDirKey("C:\\Users\\example\\Documents\\DEV\\demo\\portfolio"))
+        .toBe("wd_portfolio_6b99e401e19c");
     // Same directory, already slash-normalized or with a trailing separator: one key.
-    expect(encodeWorkDirKey("C:/Users/admin/Documents/DEV/FJRG2007/portfolio/"))
-        .toBe("wd_portfolio_935eec9160da");
+    expect(encodeWorkDirKey("C:/Users/example/Documents/DEV/demo/portfolio/"))
+        .toBe("wd_portfolio_6b99e401e19c");
 });
 
 test("a name that is not slug-safe still yields a usable key", () => {
