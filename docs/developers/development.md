@@ -89,8 +89,10 @@ Skills and memory only persuade the model; correctness is enforced mechanically.
   exposes `--range <base>..<head>` (a post-commit scan, for pre-push hooks and
   CI) and `--json`; see "The guard" below.
 - `npm run verify` - `typecheck && check && guard`. The full pre-publish/CI gate.
-- `npm run check:hooks` - rebuilds `guard.js` from source and diffs it against
-  the committed `.githooks/guard.mjs`; see "The guard" below.
+- `npm run check:hooks` - rebuilds every hook bundle this repo's own
+  pre-commit runs (`guard.js`, `guardrails.js`, `trim.js`) from source and
+  diffs each against its committed `.githooks/*.mjs` copy; see "The guard"
+  below.
 
 Always run `npm run verify` before committing or publishing.
 
@@ -132,10 +134,13 @@ before dispatch. Keep that guard if you touch the footer.
 (`enigma security` writes it the same way it would into any target repo), so it
 goes stale silently the moment `src/guard.ts` changes and nobody re-runs
 `enigma security` here - the pre-commit hook keeps passing while running an
-older engine. `npm run check:hooks` (`scripts/check-hook-drift.mjs`) rebuilds
-`guard.js` from source and fails if it differs from the committed copy; it runs
-in CI right after the `build` job. If it fails: `npm run build && cp
-packages/enigma-cli/dist/guard.js .githooks/guard.mjs`, then commit the result.
+older engine. The same is true of `.githooks/guardrails.mjs` and
+`.githooks/trim.mjs`, copies of `dist/guardrails.js` and `dist/trim.js`.
+`npm run check:hooks` (`scripts/check-hook-drift.mjs`) reads the list of hook
+copies straight from `.githooks/pre-commit` (so a copy added there is covered
+automatically), rebuilds each from source, and fails if any differs from its
+committed copy; it runs in CI right after the `build` job. If it fails, it
+prints the exact `cp` command(s) to rerun and commit.
 
 ## Adding a new policy skill
 
