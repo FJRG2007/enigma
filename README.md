@@ -166,7 +166,7 @@ A loopback browser control panel for all of enigma - accounts, skills, settings,
 Save each server once - key or encrypted password, jump host - then reach it by a short alias or its name. Passwords are stored encrypted and **auto-filled with no extra tools** (enigma acts as OpenSSH's own `SSH_ASKPASS`). Tunnels are standalone (bound to a rebindable server): start/stop them on demand with live status, from the CLI or a table in the dashboard.
 
 ```bash
-enigma ssh add lirio-0 --name lirio-prod --host 192.168.1.138 --user fjrg2007 --password
+enigma ssh add lirio-0 --name lirio-prod --host 192.0.2.10 --user deploy --password
 enigma ssh lirio-0
 enigma ssh tunnel add pg lirio-0 9090:5432 && enigma ssh tunnel start pg
 ```

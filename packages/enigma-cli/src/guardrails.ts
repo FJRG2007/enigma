@@ -2153,10 +2153,15 @@ export function operatorHomePathLeak(content: string): { line: number; detail: s
     const forms = [home];
     const drive = /^([A-Za-z]):[\\/](.*)$/.exec(home);
     if (drive) forms.push(`/${drive[1]!.toLowerCase()}/${drive[2]}`);
-    // Separators are interchangeable in every form, so one regex covers all of them.
-    const alt = forms.map((f) => f.replace(/[.+^${}()|[\]]/g, "\\$&").replace(/[\\/]/g, "[\\\\/]")).join("|");
+    // Separators are interchangeable in every form, so one regex covers all of them. Each
+    // segment is escaped on its own and the separators are inserted afterwards, or the escape
+    // backslashes would themselves be rewritten as separator classes and an account name
+    // carrying any metacharacter (`first.last`) would build a regex that cannot match its
+    // own home. The trailing boundary keeps a longer neighbour out (`/home/dev` is not
+    // `/home/developer`), while still allowing the path to end a sentence.
+    const alt = forms.map((f) => f.split(/[\\/]/).map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("[\\\\/]")).join("|");
     let re: RegExp;
-    try { re = new RegExp(`(?:${alt})`, "i"); } catch { return []; }
+    try { re = new RegExp(`(?:${alt})(?![A-Za-z0-9_-]|\\.[A-Za-z0-9_-])`, "i"); } catch { return []; }
     const out: { line: number; detail: string; }[] = [];
     const lines = content.split("\n");
     for (let i = 0; i < lines.length; i++) {

@@ -22,16 +22,31 @@ import { spawnSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { existsSync, readFileSync } from "node:fs";
 
-/** Hook copy -> the dist file it must equal, byte for byte. */
-const COPIES = [
-    { hook: "guard.mjs", built: "guard.js", source: "src/guard.ts" },
-    { hook: "guardrails.mjs", built: "guardrails.js", source: "src/guardrails.ts" },
-    { hook: "trim.mjs", built: "trim.js", source: "src/trim.ts" },
-];
-
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const hookPath = (name) => join(repoRoot, ".githooks", name);
 const builtPath = (name) => join(repoRoot, "packages", "enigma-cli", "dist", name);
+
+/**
+ * Hook copy -> the dist file it must equal, byte for byte, read from the pre-commit shim
+ * itself rather than listed here: the shim IS the authority on which bundles pre-commit
+ * runs, so a copy added to it is covered the moment it is added. A hardcoded list is the
+ * same defect this check exists for - the one nobody remembers to update is the one that
+ * drifts. Every bundle is copied from `dist/<name>.js` built from `src/<name>.ts`, which is
+ * how `enigma security` installs them; a copy that ever breaks that mapping fails loudly
+ * below as an unbuilt bundle rather than passing silently.
+ */
+const shimPath = join(repoRoot, ".githooks", "pre-commit");
+if (!existsSync(shimPath)) {
+    console.error(`hook-drift: ${shimPath} is missing; run 'npm run enigma -- security' to install the hooks.`);
+    process.exit(2);
+}
+const COPIES = [...new Set([...readFileSync(shimPath, "utf8").matchAll(/\.githooks\/([\w.-]+)\.mjs/g)].map((m) => m[1]))]
+    .sort()
+    .map((name) => ({ hook: `${name}.mjs`, built: `${name}.js`, source: `src/${name}.ts` }));
+if (!COPIES.length) {
+    console.error(`hook-drift: ${shimPath} runs no hook bundle, so nothing was compared. Check the shim.`);
+    process.exit(2);
+}
 
 const missing = COPIES.filter((c) => !existsSync(hookPath(c.hook)));
 if (missing.length) {

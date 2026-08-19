@@ -16,7 +16,7 @@ process.env.USERPROFILE = HOME;
 process.env.HOME = HOME;
 process.env.ENIGMA_GUARDRAILS_CONFIG = join(HOME, "guardrails.json");
 
-const { BUILTIN_RULES, checkFile } = await import("../src/guardrails");
+const { BUILTIN_RULES, checkFile, operatorHomePathLeak } = await import("../src/guardrails");
 
 afterAll(() => rmSync(HOME, { recursive: true, force: true }));
 
@@ -545,3 +545,37 @@ matrix("sec-operator-env-leak", false, [
     { name: "vendored code is out of scope", file: "node_modules/pkg/README.md", code: `installed from ${WIN_HOME}\\ai` },
     { name: "a lockfile is out of scope", file: "package-lock.json", code: `{ "resolved": "file:${HOME.replace(/\\/g, "/")}/ai/pkg" }` },
 ]);
+
+/**
+ * The match is built from a home path this machine happens to have, so the two shapes that
+ * silently break it cannot be reached through the temp HOME above: an account name carrying a
+ * regex metacharacter, and an account name another one starts with. Both drive the function
+ * directly with a synthetic home, which is also the only way to assert the second - a home that
+ * is a prefix of somebody else's belongs to a different person by definition.
+ */
+function leaksUnder(home: string, content: string): boolean {
+    const prevWin = process.env.USERPROFILE, prevPosix = process.env.HOME;
+    process.env.USERPROFILE = home;
+    process.env.HOME = home;
+    try { return operatorHomePathLeak(content).length > 0; } finally {
+        process.env.USERPROFILE = prevWin;
+        process.env.HOME = prevPosix;
+    }
+}
+
+test("operatorHomePathLeak: an account name with a metacharacter still matches its own home", () => {
+    expect(leaksUnder("/home/john.doe", "cd /home/john.doe/ai && ./run")).toBe(true);
+    expect(leaksUnder("C:\\Users\\ad(min)", "File \"C:\\Users\\ad(min)\\Documents\\x.py\", line 61")).toBe(true);
+    expect(leaksUnder("C:\\Users\\john.doe", "the root is C:/Users/john.doe/ai")).toBe(true);
+});
+
+test("operatorHomePathLeak: a longer neighbouring account is not the operator's home", () => {
+    expect(leaksUnder("/home/dev", "cd /home/developer/ai && ./run")).toBe(false);
+    expect(leaksUnder("/home/dev", "cd /home/dev.old/ai && ./run")).toBe(false);
+    expect(leaksUnder("C:\\Users\\ana", "Run it from C:\\Users\\anabel\\ai and it works.")).toBe(false);
+});
+
+test("operatorHomePathLeak: the home path still matches at the end of a sentence", () => {
+    expect(leaksUnder("/home/dev", "Everything lives under /home/dev.")).toBe(true);
+    expect(leaksUnder("C:\\Users\\ana", "Everything lives under C:\\Users\\ana.")).toBe(true);
+});

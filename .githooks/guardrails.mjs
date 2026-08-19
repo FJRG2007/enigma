@@ -2034,10 +2034,10 @@ function operatorHomePathLeak(content) {
   const forms = [home];
   const drive = /^([A-Za-z]):[\\/](.*)$/.exec(home);
   if (drive) forms.push(`/${drive[1].toLowerCase()}/${drive[2]}`);
-  const alt = forms.map((f) => f.replace(/[.+^${}()|[\]]/g, "\\$&").replace(/[\\/]/g, "[\\\\/]")).join("|");
+  const alt = forms.map((f) => f.split(/[\\/]/).map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("[\\\\/]")).join("|");
   let re;
   try {
-    re = new RegExp(`(?:${alt})`, "i");
+    re = new RegExp(`(?:${alt})(?![A-Za-z0-9_-]|\\.[A-Za-z0-9_-])`, "i");
   } catch {
     return [];
   }

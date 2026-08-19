@@ -110,7 +110,7 @@ Marketplace of optional, isolated harness packs (e.g. Helio for bug bounty). Eac
 
 Save each server once (host, user, key or encrypted password, jump host, port forwards) and reach it with a short alias. See <a href={docHref("concepts/ssh")}>SSH connections</a> for detail.
 
-<Cmd name="enigma ssh <alias|name> | <list|add|edit|remove|info|tunnel|forward>" ex={["enigma ssh add lirio-0 --name lirio-prod --host 192.168.1.138 --user fjrg2007 --password", "enigma ssh lirio-0", "enigma ssh tunnel db 9090:5432", "enigma ssh forward add db 9090:5432 pg", "enigma ssh tunnel pg"]}>
+<Cmd name="enigma ssh <alias|name> | <list|add|edit|remove|info|tunnel|forward>" ex={["enigma ssh add lirio-0 --name lirio-prod --host 192.0.2.10 --user deploy --password", "enigma ssh lirio-0", "enigma ssh tunnel db 9090:5432", "enigma ssh forward add db 9090:5432 pg", "enigma ssh tunnel pg"]}>
 `enigma ssh <alias|name>` connects (both are unique connect keys; `--name` sets the second); `add`/`edit` save credentials - a stored password is auto-filled with **no extra tools** (enigma acts as OpenSSH's SSH_ASKPASS). Tunnels are standalone, bound to a server: `enigma ssh tunnel add <name> <server> <spec>`, then `start`/`stop <name>` bring the background `ssh -N` up and down, `enigma ssh tunnels` lists them with live status, `edit`/`rm` re-point or delete. `info` shows a connection; `remove` deletes one.
 </Cmd>
 

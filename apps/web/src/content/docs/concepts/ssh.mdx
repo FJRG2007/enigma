@@ -12,7 +12,7 @@ The same store powers the **CLI, the TUI hub and the dashboard**. Passwords are 
 
 ## Save a connection
 
-<Cmd name="enigma ssh add <alias> [flags]" ex={["enigma ssh add lirio-0 --name lirio-prod --host 192.168.1.138 --user fjrg2007 --password", "enigma ssh add db --host db.internal --user deploy --jump root@bastion -i ~/.ssh/id_ed25519"]}>
+<Cmd name="enigma ssh add <alias> [flags]" ex={["enigma ssh add lirio-0 --name lirio-prod --host 192.0.2.10 --user deploy --password", "enigma ssh add db --host db.internal --user deploy --jump root@bastion -i ~/.ssh/id_ed25519"]}>
 Flags: `--host`, `--name`/`-n` (a second connect key, see below), `--user`/`-u`, `--port`/`-p`, `--identity`/`-i <key>`, `--jump`/`-j <host>` (ProxyJump), `--forward-agent`/`-A`, `--option`/`-o <K=V>` (repeatable), `--forward`/`-L <spec>` (a saved tunnel, repeatable), and `--password` (prompts hidden; stored encrypted). `enigma ssh edit <alias|name>` changes any field; `--no-password` clears a stored one, `--no-name` clears the name and `--no-port` clears the port (back to 22).
 </Cmd>
 
