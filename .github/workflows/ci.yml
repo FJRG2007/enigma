@@ -169,6 +169,9 @@ jobs:
       - name: Test provider editor TUI
         run: bun test tests/tui.provider.test.ts
         working-directory: packages/enigma-cli
+      - name: Test CLI command dispatch
+        run: bun test tests/cli-dispatch.test.ts
+        working-directory: packages/enigma-cli
 
       # The package must build (tsup) so dist is publishable.
       - name: Build

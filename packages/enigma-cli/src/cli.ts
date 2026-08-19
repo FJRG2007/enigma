@@ -226,8 +226,10 @@ function parseArgs(argv: string[]): CliOptions {
                 // consequence of two runtimes on one machine (nvm with a global install per
                 // node version) and not a mistake the user can act on. It exits 0 in silence:
                 // the alternative is an unknown-command error on every single turn, which is
-                // what a hook failure looks like to the agent and its user. A genuinely
-                // mistyped hidden command is machine-written too, so nothing is lost.
+                // what a hook failure looks like to the agent and its user. What it costs is
+                // the signal for a hidden command THIS build wires and never dispatches, which
+                // would now no-op forever; tests/cli-dispatch.test.ts matches the two sets so
+                // that case fails in CI instead of in silence on a user machine.
                 else if (a.startsWith("__")) { process.exit(0); }
                 else { console.error(`Unknown command: ${a}`); process.exit(1); }
         }
