@@ -1,6 +1,6 @@
 {
   "generator": "enigma seal",
-  "cliVersion": "1.36.1",
+  "cliVersion": "1.36.2",
   "count": 20,
   "skills": [
     {
@@ -40,7 +40,7 @@
       "version": "1.2.0",
       "description": "Pre-delivery self-review gate, prioritized review dimensions, and change-quality criteria.",
       "provider": "FJRG2007/enigma",
-      "updated": "2026-08-02T04:15:47+02:00",
+      "updated": "2026-08-19T12:37:59+02:00",
       "sha": "6b8a924cc11b61d4b45b73384aeb095ce622229359b7cc2c6ce4bb0cf3015ed7"
     },
     {
@@ -104,7 +104,7 @@
       "version": "1.6.0",
       "description": "Git & contribution policy (senior engineering standards).",
       "provider": "FJRG2007/enigma",
-      "updated": "2026-08-04T20:04:42+02:00",
+      "updated": "2026-08-19T12:37:59+02:00",
       "sha": "a29889e7c0ac872f39b03d2f17a5b52d503a26eb1a9b5f4d8e369fa79fef432e"
     },
     {
@@ -120,7 +120,7 @@
       "version": "1.4.0",
       "description": "Application and AI-agent security: secrets, authn/authz (least privilege), credential flows with breach-checked passwords (Have I Been Pwned), OWASP Top 10, transport/crypto baseline, cookies and consent, secure logging, and agent/MCP/tool-use safety.",
       "provider": "FJRG2007/enigma",
-      "updated": "2026-08-02T19:59:01+02:00",
+      "updated": "2026-08-19T12:37:59+02:00",
       "sha": "0270c33d2b4559e831aec794c188d293d26fc17e2a8064a967d716ceb3a7bab6"
     },
     {
@@ -144,7 +144,7 @@
       "version": "1.4.0",
       "description": "Concise, realistic technical copy - UI microcopy, descriptions, hints, empty/error states, and README/doc prose that informs without over-explaining or restating the obvious, and never uses a typographic dash.",
       "provider": "FJRG2007/enigma",
-      "updated": "2026-07-28T20:30:23+02:00",
+      "updated": "2026-08-19T12:37:59+02:00",
       "sha": "a5a228a302f50d975a947b9d84676b4c2a4780f2b222f819388cc98d6a12f207"
     },
     {
