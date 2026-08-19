@@ -220,6 +220,15 @@ function parseArgs(argv: string[]): CliOptions {
             default:
                 if (a.startsWith("-")) { console.error(`Unknown option: ${a}`); process.exit(1); }
                 else if (opts.command) { opts.positionals.push(a); }
+                // A `__`-prefixed command is one enigma wrote into an agent's hook config for
+                // itself, never something a person types - so reaching here means a NEWER
+                // enigma wired a hook that THIS binary does not implement, which is a routine
+                // consequence of two runtimes on one machine (nvm with a global install per
+                // node version) and not a mistake the user can act on. It exits 0 in silence:
+                // the alternative is an unknown-command error on every single turn, which is
+                // what a hook failure looks like to the agent and its user. A genuinely
+                // mistyped hidden command is machine-written too, so nothing is lost.
+                else if (a.startsWith("__")) { process.exit(0); }
                 else { console.error(`Unknown command: ${a}`); process.exit(1); }
         }
     }
