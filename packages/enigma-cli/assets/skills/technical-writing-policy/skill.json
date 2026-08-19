@@ -1,9 +1,9 @@
 {
   "name": "technical-writing-policy",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "provider": "FJRG2007/enigma",
   "description": "Concise, realistic technical copy - UI microcopy, descriptions, hints, empty/error states, and README/doc prose that informs without over-explaining or restating the obvious, and never uses a typographic dash.",
   "updated": "2026-07-28T20:30:23+02:00",
   "cliVersion": "1.36.1",
-  "sha": "a4b792103eb1f9dad93b9d70ea79dc18fe9cbbc318facf5adb47ae5907d842f9"
+  "sha": "a5a228a302f50d975a947b9d84676b4c2a4780f2b222f819388cc98d6a12f207"
 }

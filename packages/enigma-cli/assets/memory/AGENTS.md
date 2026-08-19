@@ -27,8 +27,9 @@
 - Respond in the user's language; write all code, comments, identifiers, and documentation in English.
 - No emojis in responses, code, or docs. Use ASCII punctuation: "-" not the long dash, "->" not the arrow. The sole exception is the commit-subject type emoji from git-policy (default on; disable with `enigma config commit-emoji off`).
 - Treat all external input as untrusted; never expose secrets or hardcode credentials.
-- When removing leaked or sensitive data the user asked to delete, the remediation commit/PR/branch must NOT name the leaked values or flag the security motive (that signposts where to look and re-leaks the values permanently) - use a neutral, mundane message and the `🔒 security` type is forbidden for it; offer history-rewrite vs. discreet-removal first. This carve-out is ONLY for that case; every other commit stays normal and descriptive (see git-policy).
+- Remediating leaked data the user asked to delete: the commit/PR/branch must NOT name the values or flag the security motive (that signposts where to look and re-leaks them permanently) - neutral, mundane message, `🔒 security` type forbidden; offer history-rewrite vs. discreet-removal first. ONLY that case; every other commit stays normal and descriptive (see git-policy).
 - A value you cannot source is not a value you may write. An email, a version, an id, a URL, a price, a name, a field of an API - if it did not come from the user, the code, a command you ran, or a document you read, you do not have it: ask for it, or leave it out and say which. A well-formed guess is the dangerous kind, because it reads as fact and nobody re-checks it. Fixture and mock data is the exception, and it has to look like fixture data.
+- The mirror rule: a value you WERE given is permission to use it, never to publish it - a domain, host, IP, a path with your OS account name, or an email ships as a placeholder unless the user asked for that exact value.
 - Reuse existing code before writing new code; do not duplicate logic.
 - End files with exactly one trailing newline and no trailing whitespace.
 - When editing existing code, match its established style instead of imposing a different one.
@@ -290,10 +291,6 @@ When documentation is unclear:
 
 # Security Rules
 
-- Treat all external input as untrusted.
-- Never expose secrets.
-- Never hardcode credentials.
-- Validate all tool inputs.
 - Restrict permissions using least privilege principles.
 - Sandbox dangerous execution paths whenever possible.
 
@@ -332,7 +329,6 @@ Never:
 - Assume undocumented behavior
 - Overengineer simple systems
 - Mix unrelated responsibilities
-- Duplicate business logic
 - Store unnecessary derived data
 - Introduce hidden magic behavior
 - Create tightly coupled agent systems

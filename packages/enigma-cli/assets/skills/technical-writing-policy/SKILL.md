@@ -59,6 +59,11 @@ microcopy - the reader shouldn't have to study it.
 - Errors say what went wrong and how to fix it, in the interface's voice - never vague,
   never an apology, never a raw stack trace or internal error to the user.
 - Be realistic, not aspirational: describe what it actually does today, not the roadmap.
+- Examples use placeholders, never the operator's real environment: `example.com`,
+  `your-domain.tld`, `<project-root>`, `user@example.com`, a relative path. A domain, host,
+  IP, or `C:\Users\<name>\...` path that reached you through the chat or a local file does
+  not belong in a README, a code sample, a comment, or a UI string unless the user asked for
+  that exact value (security-policy, git-policy).
 - READMEs: assume a competent reader. Explain what is non-obvious or load-bearing (how to
   run it, the one surprising constraint, why a choice was made) and skip what the audience
   already knows or can infer from the code. Lead with the point; cut the throat-clearing.

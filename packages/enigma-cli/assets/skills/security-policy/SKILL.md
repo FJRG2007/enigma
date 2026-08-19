@@ -24,6 +24,13 @@ description: Application and AI-agent security - secrets management, authenticat
 - Assume any secret that touches the repo, a log, or an error message is compromised and must be rotated.
 - Scope secrets to the narrowest environment and lifetime possible; prefer short-lived, rotatable credentials over long-lived static ones.
 
+### The Operator's Environment Is Sensitive By Default
+
+- Deployment domains and URLs, host names, server IPs and ports, absolute local paths carrying an OS username, machine names, and personal or internal email addresses are not secrets in the cryptographic sense, but publishing them hands an attacker the target list and the operator's identity. Treat them as sensitive by default.
+- Being given one of these values to work with is not permission to write it into source, comments, docs, tests, fixtures, error strings, telemetry, commit messages, or PR text. Read it from configuration and ship a placeholder; the real value stays in the local gitignored config that already holds it.
+- Never echo an absolute path from the developer machine into anything the product emits - logs, user-facing error messages, generated docs, or committed snapshots and fixtures. Log a project-relative path.
+- Publish a real value only when the user explicitly asks for that value to be published. If one is genuinely required and you were not given it, ask.
+
 ---
 
 ## Authentication & Authorization

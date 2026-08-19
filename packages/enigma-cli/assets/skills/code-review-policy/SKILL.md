@@ -27,7 +27,7 @@ Before declaring a change complete, verify:
 1. The change does exactly what was asked - no more, no less.
 2. The full diff was re-read; no debug code, stray logs, commented-out blocks, or TODOs left behind.
 3. Only relevant files are touched; unrelated changes are removed.
-4. No secrets, credentials, or sensitive data are included.
+4. No secrets, credentials, or sensitive data are included - and no operator-environment values either (deployment domains and URLs, host names, IPs, absolute local paths with the OS username, personal emails), in the code, docs, fixtures, commit message, or PR text (per security-policy and git-policy).
 5. Existing patterns, naming, and structure are followed (per core-engineering-policy).
 6. Tests exist and pass for the changed behavior (per testing-policy).
 7. The change covers the whole class the request implied, not only the example the user named (per core-engineering-policy's Generalization Rule) - or states which siblings were deliberately left and why.
@@ -38,7 +38,7 @@ Before declaring a change complete, verify:
 
 Evaluate every change across these dimensions, in priority order:
 
-1. Security: untrusted input, injection, authz/authn, secret exposure, least privilege.
+1. Security: untrusted input, injection, authz/authn, secret and operator-environment exposure, least privilege.
 2. Correctness: logic, edge cases, error/failure paths, concurrency, off-by-one, null handling.
 3. Data integrity: transactions, consistency, and the database-expert rules when persistence is involved.
 4. Reuse & architecture: duplication, single responsibility, fit with existing modules.

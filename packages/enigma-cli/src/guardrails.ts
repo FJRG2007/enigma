@@ -967,6 +967,13 @@ export const BUILTIN_RULES: GuardrailRule[] = [
     // distinct complete value, no re-fire after a failure, no auto-retry on 429) are behaviour a
     // regex cannot read at all. It stays in frontend-policy's auth section, with the attempt-cap
     // half in security-policy.
+    // NOTE: sec-operator-env-leak covers the operator's HOME PATH and nothing else, though the
+    // policy it serves also names deployment domains, host names, server IPs and internal email
+    // addresses. Those have no exact signature: the domain a project deploys to is legitimately
+    // in its own code, and a rule keyed on "a URL that is not example.com" would flag most of
+    // every codebase. The home path is different - the string can be compared against the actual
+    // machine, so the check is exact rather than heuristic. The rest stays in security-policy and
+    // git-policy, where a reader can weigh it.
     // NOTE: there is deliberately no "card inside a card" or "border with no information"
     // rule, even though both are named in frontend-policy. They are RELATIONAL defects: a
     // container is redundant only relative to the ancestor it sits in and the spacing around
@@ -1305,6 +1312,29 @@ export const BUILTIN_RULES: GuardrailRule[] = [
         severity: "block",
         skill: "security-policy",
     },
+    {
+        id: "sec-operator-env-leak",
+        label: "Do not publish the operator's own environment",
+        // Every text file a change touches: the leak lands in source and comments, but just as
+        // often in a README, a snapshot, a config, or a log somebody committed by accident.
+        files: ["**"],
+        excludeFiles: [
+            "**/node_modules/**", "**/dist/**", "**/build/**", "**/vendor/**", "**/.next/**",
+            "node_modules/**", "dist/**", "build/**", "vendor/**",
+            "*.lock", "*.lockb", "package-lock.json", "*.min.js", "*.map",
+        ],
+        scope: "file",
+        // DIFF stage, for the reason the stage exists: a machine's own paths are all over the
+        // logs and scratch files a long-lived repository already carries, and a rule that
+        // reports those on an unrelated edit gets switched off within a day. Here it can only
+        // fire on a line the current change ADDED - which is exactly the moment to catch it,
+        // because after the push the value is in the history for good.
+        stage: "diff",
+        fileCheck: "sec-operator-env-leak",
+        message: "This line carries THIS machine's home directory into a tracked file. A path with the OS account name in it publishes who you are and how your machine is laid out, and a commit keeps it forever - the same class as a deployment domain, a host name, a server IP or an internal email address, none of which belong in code, comments, docs, examples, fixtures, or a committed log. Write a placeholder (`<project-root>`, `$HOME`, `%USERPROFILE%`) or a repository-relative path, and keep the real value in the local gitignored config that already holds it. Being handed a path or a URL to work with is permission to USE it, never permission to publish it - only an explicit request to put that value in the file is (security-policy, git-policy).",
+        severity: "block",
+        skill: "security-policy",
+    },
 ];
 
 /**
@@ -1344,6 +1374,7 @@ export const FILE_CHECKS: Record<string, (content: string, file: string) => { li
     "ts-import-extension": (content, file) => extensionImports(content, file),
     "ts-alias-deep-relative": (content, file) => deepRelativeImports(content, file),
     "ts-alias-paths": (content, file) => missingPathAlias(content, file),
+    "sec-operator-env-leak": (content) => operatorHomePathLeak(content),
 };
 
 /**
@@ -2090,6 +2121,49 @@ export function missingPathAlias(content: string, file: string): { line: number;
  * so a trailing `// enigma:` note is part of the match.
  */
 const NAMED_IMPORT = /^import[ \t]+(?:[\w$]+[ \t]*,[ \t]*)?(?:type[ \t]+)?\{([^}]*)\}[ \t]*from[ \t]*["']([^"']+)["'].*$/gm;
+
+/**
+ * Account names that are the placeholder rather than a person: CI runners, container defaults,
+ * and the generic ones every tutorial uses. A developer whose home is `/home/runner` would
+ * otherwise have every pipeline config in the repository reported at them.
+ */
+const GENERIC_ACCOUNTS = new Set(["runner", "root", "ubuntu", "debian", "vagrant", "node", "user", "users", "developer", "ec2-user", "codespace", "gitpod", "jenkins", "circleci", "travis", "docker", "app"]);
+
+/**
+ * Lines carrying THIS machine's home directory - the operator's own environment about to be
+ * committed (see the sec-operator-env-leak rule).
+ *
+ * Keyed on the REAL home path, not on a generic `C:\\Users\\<x>` shape, and that is the whole
+ * design: a fixture, a path-parsing test, or a doc example that says `/home/alice` is correct
+ * code and must never be flagged, while the same line carrying this machine's actual account
+ * name tells every reader of the repository who wrote it and how their disk is laid out. The
+ * comparison is against a value only this machine has, so the check is exact - it cannot fire
+ * on anything the author did not take from their own environment.
+ *
+ * Three spellings of one home reach a file on Windows: the native `C:\\Users\\x` from a
+ * traceback, `C:/Users/x` from anything that normalised the separators, and `/c/Users/x` from a
+ * POSIX shell on the same box. All three are matched; the leaked value is never echoed back in
+ * the finding, because the ledger and the terminal are not places to repeat it.
+ */
+export function operatorHomePathLeak(content: string): { line: number; detail: string; }[] {
+    const home = homedir();
+    if (!home || home.length < 6) return [];
+    const account = home.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || "";
+    if (!account || GENERIC_ACCOUNTS.has(account.toLowerCase())) return [];
+    const forms = [home];
+    const drive = /^([A-Za-z]):[\\/](.*)$/.exec(home);
+    if (drive) forms.push(`/${drive[1]!.toLowerCase()}/${drive[2]}`);
+    // Separators are interchangeable in every form, so one regex covers all of them.
+    const alt = forms.map((f) => f.replace(/[.+^${}()|[\]]/g, "\\$&").replace(/[\\/]/g, "[\\\\/]")).join("|");
+    let re: RegExp;
+    try { re = new RegExp(`(?:${alt})`, "i"); } catch { return []; }
+    const out: { line: number; detail: string; }[] = [];
+    const lines = content.split("\n");
+    for (let i = 0; i < lines.length; i++) {
+        if (re.test(lines[i]!)) out.push({ line: i + 1, detail: "the path resolves to this machine's home directory" });
+    }
+    return out;
+}
 
 /** A module the project owns: relative, a subpath import, or a path alias. */
 const INTERNAL_MODULE = /^\.|^#|^[@~]\//;

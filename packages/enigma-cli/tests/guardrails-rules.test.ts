@@ -522,3 +522,26 @@ matrix("db-sqlite-app-datastore", false, [
     { name: "a sqlite mention in a comment", file: "prisma/schema.prisma", code: "// migrated off provider = \"sqlite\" in v2\ndatasource db {\n  provider = \"postgresql\"\n}" },
     { name: "not a prisma schema", file: "src/db/config.ts", code: "export const config = { provider: \"sqlite\" };" },
 ]);
+
+// --- sec-operator-env-leak ---------------------------------------------------------
+
+// Keyed on the REAL home of the machine running the check, which here is the temp HOME set
+// above - so the fixtures build their paths from it rather than hardcoding one, and a path
+// belonging to anybody else must stay clean no matter how much it looks like a home.
+const WIN_HOME = HOME.replace(/\//g, "\\");
+
+matrix("sec-operator-env-leak", true, [
+    { name: "home path in a readme", file: "README.md", code: `Run it from ${WIN_HOME}\\ai and it works.` },
+    { name: "slash-normalized home path in source", file: "src/paths.ts", code: `const root = "${HOME.replace(/\\/g, "/")}/ai";` },
+    { name: "home path inside a committed traceback", file: "logs/scraper.log", code: `  File "${WIN_HOME}\\Documents\\x.py", line 61, in save` },
+    { name: "home path in a comment", file: "src/a.ts", code: `// generated from ${WIN_HOME}\\fixtures` },
+]);
+
+matrix("sec-operator-env-leak", false, [
+    { name: "somebody else's home", file: "README.md", code: "Run it from C:\\Users\\alice\\ai and it works." },
+    { name: "a placeholder", file: "README.md", code: "Run it from <project-root>, or $HOME/ai on a mac." },
+    { name: "the home read at runtime", file: "src/paths.ts", code: "const root = join(homedir(), \"ai\");" },
+    { name: "a generic CI account path", file: ".github/workflows/ci.yml", code: "      working-directory: /home/runner/work/repo" },
+    { name: "vendored code is out of scope", file: "node_modules/pkg/README.md", code: `installed from ${WIN_HOME}\\ai` },
+    { name: "a lockfile is out of scope", file: "package-lock.json", code: `{ "resolved": "file:${HOME.replace(/\\/g, "/")}/ai/pkg" }` },
+]);

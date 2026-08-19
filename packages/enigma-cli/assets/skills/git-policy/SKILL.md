@@ -128,6 +128,42 @@ When the user asks for a human co-author, the trailer is `Co-authored-by: Name <
 
 ---
 
+## Public Surface Hygiene (Never Publish the Operator's Environment)
+
+A commit message, a branch name, a PR title, body, or comment, and a reviewer note are
+permanent, public, and indexed. Treat everything you write there - and everything the diff
+itself carries - as readable by anyone, forever.
+
+Unless the user explicitly asked for that exact value to be published, none of this belongs
+in a commit, branch, PR, or the code and docs the change adds:
+
+- Deployment domains, subdomains, URLs, host names, server IPs, ports, or the name of the
+  machine something runs on.
+- Absolute local paths that expose an account or a machine (`C:\Users\<name>\...`,
+  `/home/<name>/...`, `/Users/<name>/...`), the OS username, or the machine name.
+- Personal or internal email addresses, account handles, customer or company names, and
+  content from private trackers.
+- Internal infrastructure detail a reviewer does not need: how the operator reaches
+  production, what is installed on their laptop, which host holds the live data.
+
+Where the value came from does not matter. A URL the user pasted so you could fix a bug, a
+path printed by a command you ran, a hostname read from a local `.env` - being given it is
+permission to USE it, never permission to publish it.
+
+Write a placeholder instead (`example.com`, `your-domain.tld`, `<project-root>`, `$HOME`), a
+relative path, or the name of the config key that holds the value rather than its contents.
+Keep explanations generic: "not reproducible in this environment" instead of naming the
+operator's host and how it is reached. When the real value is genuinely required and was not
+given to you, ask for it.
+
+Before committing and before opening a PR, re-read the message, the branch name, and the
+diff for these classes specifically. Catching it here costs one edit; catching it after a
+push costs the remediation below. The `sec-operator-env-leak` guardrail blocks the one form
+of this that has an exact signature (this machine's own home directory reaching a tracked
+file); everything else on the list is yours to catch.
+
+---
+
 ## Removing Leaked or Sensitive Data (Discreet-Commit Carve-Out)
 
 Applies ONLY when remediating sensitive data the user wants removed from a repository - a
@@ -261,4 +297,5 @@ Before creating a commit or PR:
 - Verify only relevant files are included
 - Ensure no debug or temporary code is committed
 - Ensure no secrets or sensitive data are included
+- Ensure no operator-environment values leaked in (deployment domains, host names, IPs, absolute local paths with the OS username, personal emails) - in the diff, the message, the branch name, and the PR text
 - Ensure the change aligns with repository architecture

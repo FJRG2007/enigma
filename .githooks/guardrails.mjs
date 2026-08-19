@@ -142,6 +142,72 @@ var BUILTIN_RULES = [
   // enforces shape - a rule for either would false-positive. The generic "validate every input"
   // principle for those languages lives in the always-on memory kernel instead.
   {
+    id: "fe-marquee-duration",
+    label: "Looping row driven by a speed, not a duration",
+    files: ["*.ts", "*.tsx", "*.js", "*.jsx", "*.css", "*.scss", "*.astro", "*.vue", "*.svelte"],
+    excludeFiles: [
+      "*.test.*",
+      "*.spec.*",
+      "*.stories.*",
+      "*.min.js",
+      "*.min.css",
+      "**/tests/**",
+      "tests/**",
+      "**/__tests__/**",
+      "__tests__/**",
+      "**/dist/**",
+      "dist/**",
+      "**/build/**",
+      "build/**",
+      "**/node_modules/**",
+      "node_modules/**",
+      "**/vendor/**",
+      "vendor/**"
+    ],
+    ignoreFileCase: true,
+    scope: "file",
+    // Only newly written code: a duration-driven marquee is common in existing
+    // pages, and the rule has to name the one being added, not the backlog.
+    stage: "diff",
+    // A duration named on the same line as the looping row it drives. Requiring
+    // both words keeps every unrelated animation-duration out of the match.
+    pattern: "(marquee|ticker|logo-?wall|infinite-?scroll)[^\\n]*(animation-duration|animationDuration|--duration)|(animation-duration|animationDuration|--duration)[^\\n]*(marquee|ticker|logo-?wall|infinite-?scroll)",
+    absent: "px/s|pixels per second|pixelsPerSecond|\\bspeed\\b|@enigmax/primitives|useMarquee|createMarquee|enigma:allow-marquee-duration",
+    message: "Looping row driven by a duration. A lap is as long as its content, so the speed becomes content/duration and the row runs faster every time an item is added - measured at 45, 67 and 87 px/s for one rail at 10, 15 and 20 items. Take a speed in px/s and derive the duration, or use the primitive that already does: `enigma add marquee` (@enigmax/primitives), which also measures the lap from the DOM instead of computing it. Mark the line `enigma:allow-marquee-duration` when the duration is genuinely the contract.",
+    severity: "warn",
+    skill: "frontend-policy"
+  },
+  {
+    id: "fe-pointer-capture-drag",
+    label: "Drag bound to window, not setPointerCapture",
+    files: ["*.ts", "*.tsx", "*.js", "*.jsx", "*.astro", "*.vue", "*.svelte"],
+    excludeFiles: [
+      "*.test.*",
+      "*.spec.*",
+      "*.stories.*",
+      "*.min.js",
+      "**/tests/**",
+      "tests/**",
+      "**/__tests__/**",
+      "__tests__/**",
+      "**/dist/**",
+      "dist/**",
+      "**/build/**",
+      "build/**",
+      "**/node_modules/**",
+      "node_modules/**",
+      "**/vendor/**",
+      "vendor/**"
+    ],
+    scope: "file",
+    stage: "diff",
+    pattern: "\\.setPointerCapture\\s*\\(",
+    absent: "enigma:allow-pointer-capture",
+    message: "setPointerCapture retargets the compatibility mouse events too, so a plain click on a descendant arrives on the capturing element and the descendant's link never opens - a row of nine logo links quietly stops being nine links and nothing in the source looks wrong. Bind pointermove/pointerup/pointercancel to `window` instead, which is all the capture was for: a mousedown already captures the mouse at the OS level, so a release outside the window still arrives. Fine when the element has no interactive descendants (a slider thumb, a resize handle) - mark it `enigma:allow-pointer-capture` there (frontend-policy).",
+    severity: "warn",
+    skill: "frontend-policy"
+  },
+  {
     id: "fe-password-input",
     label: "Reusable password input (show/hide)",
     files: ["*.tsx", "*.jsx"],
@@ -264,6 +330,133 @@ var BUILTIN_RULES = [
     skill: "validation-policy"
   },
   {
+    id: "fe-password-reveal-hand-rolled",
+    label: "Password reveal toggled by hand",
+    files: ["*.ts", "*.tsx", "*.js", "*.jsx", "*.astro", "*.vue", "*.svelte"],
+    excludeFiles: [
+      "*.test.*",
+      "*.spec.*",
+      "*.stories.*",
+      "*.min.js",
+      "**/tests/**",
+      "tests/**",
+      "**/__tests__/**",
+      "__tests__/**",
+      "**/dist/**",
+      "dist/**",
+      "**/build/**",
+      "build/**",
+      "**/node_modules/**",
+      "node_modules/**",
+      "**/vendor/**",
+      "vendor/**"
+    ],
+    scope: "file",
+    stage: "diff",
+    // The ternary that switches a field's type, in either order. Precise enough that
+    // it does not fire on anything else that mentions both words.
+    pattern: `["']password["']\\s*:\\s*["']text["']|["']text["']\\s*:\\s*["']password["']`,
+    absent: "@enigmax/primitives|useInput|createInput|<Input|enigma:allow-password-toggle",
+    message: 'A password reveal written by hand. Three things go wrong here and each has been measured: a `<button>` with no `type="button"` defaults to submit, so looking at your password posts the half-filled form; pressing the button pulls focus out of the field unless `mousedown` is prevented; and assigning `input.type` inside a click handler resets the caret to 0 in Chromium ONE MACROTASK later, so a restore that runs inline silently loses. `enigma add input` (@enigmax/primitives) is that behaviour with a test for each, and brings the generator, the strength meter and the breach check as props you can leave off. Mark the line `enigma:allow-password-toggle` to keep your own.',
+    severity: "warn",
+    skill: "frontend-policy"
+  },
+  {
+    id: "sec-generated-secret-math-random",
+    label: "A secret generated from Math.random",
+    files: ["*.ts", "*.tsx", "*.js", "*.jsx", "*.mjs", "*.cjs", "*.astro", "*.vue", "*.svelte"],
+    excludeFiles: [
+      "*.test.*",
+      "*.spec.*",
+      "*.stories.*",
+      "*.min.js",
+      "**/tests/**",
+      "tests/**",
+      "**/__tests__/**",
+      "__tests__/**",
+      "**/dist/**",
+      "dist/**",
+      "**/build/**",
+      "build/**",
+      "**/node_modules/**",
+      "node_modules/**",
+      "**/vendor/**",
+      "vendor/**"
+    ],
+    scope: "file",
+    // Both orders on one line: the word that says what is being made, and the call
+    // that makes it predictable.
+    pattern: "(?:password|passphrase|secret|token|otp|api[_-]?key|recovery[_-]?code|session[_-]?id)[^\\n]{0,80}Math\\.random|Math\\.random[^\\n]{0,80}(?:password|passphrase|secret|token|otp|api[_-]?key|recovery[_-]?code|session[_-]?id)",
+    absent: "getRandomValues|randomBytes|randomUUID|enigma:allow-insecure-random",
+    message: "A secret built from Math.random. It is a fast PRNG, not a CSPRNG: its state is recoverable from a handful of outputs, so anyone who sees one generated value can predict the next. Use `crypto.getRandomValues` in a browser or `crypto.randomBytes` in Node, and draw each index by REJECTION rather than `% alphabet.length`, which is biased because 2^32 is not a multiple of most alphabet sizes. `enigma add input` (@enigmax/primitives) exports `generatePassword` doing both, and throwing rather than falling back when no CSPRNG is available - a generator that quietly produces predictable secrets is worse than one that refuses, because nothing downstream can tell the difference. Mark the line `enigma:allow-insecure-random` where the value is genuinely not a secret.",
+    severity: "block",
+    skill: "security-policy"
+  },
+  {
+    id: "fe-clipboard-fallback-unchecked",
+    label: "Copy fallback whose result is thrown away",
+    files: ["*.ts", "*.tsx", "*.js", "*.jsx", "*.mjs", "*.astro", "*.vue", "*.svelte"],
+    excludeFiles: [
+      "*.test.*",
+      "*.spec.*",
+      "*.stories.*",
+      "*.min.js",
+      "**/tests/**",
+      "tests/**",
+      "**/__tests__/**",
+      "__tests__/**",
+      "**/dist/**",
+      "dist/**",
+      "**/build/**",
+      "build/**",
+      "**/node_modules/**",
+      "node_modules/**",
+      "**/vendor/**",
+      "vendor/**"
+    ],
+    scope: "file",
+    stage: "diff",
+    // A bare statement: the call is not assigned, returned, or tested. execCommand
+    // returns a boolean saying whether the copy happened, and this shape discards it.
+    pattern: `^[\\t ]*document\\.execCommand\\(["']copy["']\\)\\s*;`,
+    absent: "enigma:allow-unchecked-copy",
+    message: 'The clipboard fallback\'s result is discarded. `document.execCommand("copy")` RETURNS whether the copy happened - it fails silently under a clipboard-guard extension, in a cross-origin frame, and without a user gesture - so a button that flashes a tick after calling it is telling the reader something it never checked, and they find out on paste. Test the return value and show the confirmation only when it is true. While you are there: give the scratch textarea `position: fixed` and `opacity: 0`, because appending a visible one scrolls the page to the bottom on every copy. Mark the line `enigma:allow-unchecked-copy` where the outcome genuinely does not matter (frontend-policy).',
+    severity: "warn",
+    skill: "frontend-policy"
+  },
+  {
+    id: "fe-relative-time-hand-rolled",
+    label: "Relative time computed by hand",
+    files: ["*.ts", "*.tsx", "*.js", "*.jsx", "*.astro", "*.vue", "*.svelte"],
+    excludeFiles: [
+      "*.test.*",
+      "*.spec.*",
+      "*.stories.*",
+      "*.min.js",
+      "**/tests/**",
+      "tests/**",
+      "**/__tests__/**",
+      "__tests__/**",
+      "**/dist/**",
+      "dist/**",
+      "**/build/**",
+      "build/**",
+      "**/node_modules/**",
+      "node_modules/**",
+      "**/vendor/**",
+      "vendor/**"
+    ],
+    scope: "file",
+    stage: "diff",
+    // A millisecond difference divided into units - the shape every hand-rolled
+    // "3 hours ago" has, and one a real formatter never needs.
+    pattern: "(?:Date\\.now\\(\\)|getTime\\(\\))[^\\n]{0,60}-[^\\n]{0,60}\\/\\s*(?:1000|60000|3600000|86400000|1000\\s*\\*)",
+    absent: "@enigmax/utils|RelativeTime|relativeTimeView|relative-time-element|Intl\\.RelativeTimeFormat|date-fns|dayjs|luxon|moment|enigma:allow-manual-relative-time",
+    message: '"3 hours ago" computed from a millisecond difference. Three things this misses: it is English-only, where `Intl.RelativeTimeFormat` speaks the reader\'s language; it renders once and then goes stale, so a page left open says "3 hours ago" tomorrow; and a timestamp with no zone (`2026-08-13 22:41:00` out of a date column) is read as LOCAL time by `new Date()`, which puts every reader away from the server hours out - silently, because a wrong time is still a valid one. `enigma add relative-time` (@enigmax/utils) handles all three and renders the absolute date as a fallback, so a server render and a reader without JavaScript still see a real date. Mark the line `enigma:allow-manual-relative-time` when the arithmetic is the point.',
+    severity: "warn",
+    skill: "frontend-policy"
+  },
+  {
     id: "sec-password-breach-check",
     label: "A new password is checked against the breach corpus",
     files: ["*.tsx", "*.jsx", "*.vue", "*.svelte", "*.astro", "*.html", "*.htm", "*.ts", "*.js"],
@@ -294,7 +487,7 @@ var BUILTIN_RULES = [
     // it, including a call into a shared hook whose name carries `pwned`/`breach`.
     pattern: `autocomplete=\\{?["']new-password["']`,
     absent: "pwnedpasswords|haveibeenpwned|hibp|pwned|breach|enigma:allow-no-breach-check",
-    message: "A password is created here with no breach check. Length and symbol rules do not stop a password that is already in a credential-stuffing list. Check it against Have I Been Pwned's Pwned Passwords range API - free, no key, and the password never leaves the client: SHA-1 it, uppercase the hex, GET https://api.pwnedpasswords.com/range/<first 5 chars> with `Add-Padding: true`, and look for the remaining 35 characters in the `SUFFIX:COUNT` lines. Debounce it as the user types, abort the in-flight request when the value changes, repeat the check server-side on submit, and fail OPEN if the lookup errors so an outage never blocks a signup. For a flow that genuinely cannot reach it, add an `enigma:allow-no-breach-check` note (security-policy).",
+    message: "A password is created here with no breach check. Length and symbol rules do not stop a password that is already in a credential-stuffing list. Check it against Have I Been Pwned's Pwned Passwords range API - free, no key, and the password never leaves the client: SHA-1 it, uppercase the hex, GET https://api.pwnedpasswords.com/range/<first 5 chars> with `Add-Padding: true`, and look for the remaining 35 characters in the `SUFFIX:COUNT` lines. `enigma add password-breach` (@enigmax/utils) is exactly that call, with the padding header, the decoy entries rejected and the range responses cached. Debounce it as the user types, abort the in-flight request when the value changes, repeat the check server-side on submit, and fail OPEN if the lookup errors so an outage never blocks a signup. For a flow that genuinely cannot reach it, add an `enigma:allow-no-breach-check` note (security-policy).",
     severity: "block",
     skill: "security-policy"
   },
@@ -334,7 +527,7 @@ var BUILTIN_RULES = [
     // of an equality/containment operator.
     pattern: `autocomplete=\\{?["']new-password["']`,
     absent: "userInputs|user_inputs|UserAttributeSimilarity|sameAs(?:Email|Username|Identity)|matchesIdentity|containsIdentity|identityMatch|notIdentity|personalInfo|(?:password|passwd|pwd)[^\\n]{0,60}(?:===|==|!==|\\.includes\\(|\\.indexOf\\(|\\.startsWith\\(|localeCompare)[^\\n]{0,60}(?:email|username|user_?name|handle)|(?:email|username|user_?name|handle)[^\\n]{0,60}(?:===|==|!==|\\.includes\\(|\\.indexOf\\(|\\.startsWith\\(|localeCompare)[^\\n]{0,60}(?:password|passwd|pwd)|enigma:allow-identity-password",
-    message: "A password is created here with nothing stopping it from being the account's own identity. `Fjrg2007` for the user `fjrg2007` is one guess for anyone who knows the email address. Refuse a candidate that equals, contains (4 characters or more), or closely resembles the email, its local part, the username, the display name or the site name - comparing NORMALIZED values on both sides (lowercase, trim, NFKD then strip accents, drop everything that is not a letter or a digit), so `F.J.R.G_2007` and `fjrg2007` are the same string and casing is never a difference. Declare it on the OBJECT schema, since a password field cannot see the email beside it, and run it again on the server where the real identity lives. A strength meter fed `userInputs` scores this badly but is advisory - keep the refusal as its own rule. For a flow with no identity to compare against, add an `enigma:allow-identity-password` note (security-policy, validation-policy).",
+    message: "A password is created here with nothing stopping it from being the account's own identity. `Fjrg2007` for the user `fjrg2007` is one guess for anyone who knows the email address. Refuse a candidate that equals, contains (4 characters or more), or closely resembles the email, its local part, the username, the display name or the site name - comparing NORMALIZED values on both sides (lowercase, trim, NFKD then strip accents, drop everything that is not a letter or a digit), so `F.J.R.G_2007` and `fjrg2007` are the same string and casing is never a difference. Declare it on the OBJECT schema, since a password field cannot see the email beside it, and run it again on the server where the real identity lives. A strength meter fed `userInputs` scores this badly but is advisory - keep the refusal as its own rule; `enigma add input` (@enigmax/primitives) takes `strength={{ userInputs }}` and reports it. For a flow with no identity to compare against, add an `enigma:allow-identity-password` note (security-policy, validation-policy).",
     severity: "block",
     skill: "security-policy"
   },
@@ -868,6 +1061,13 @@ var BUILTIN_RULES = [
   // distinct complete value, no re-fire after a failure, no auto-retry on 429) are behaviour a
   // regex cannot read at all. It stays in frontend-policy's auth section, with the attempt-cap
   // half in security-policy.
+  // NOTE: sec-operator-env-leak covers the operator's HOME PATH and nothing else, though the
+  // policy it serves also names deployment domains, host names, server IPs and internal email
+  // addresses. Those have no exact signature: the domain a project deploys to is legitimately
+  // in its own code, and a rule keyed on "a URL that is not example.com" would flag most of
+  // every codebase. The home path is different - the string can be compared against the actual
+  // machine, so the check is exact rather than heuristic. The rest stays in security-policy and
+  // git-policy, where a reader can weigh it.
   // NOTE: there is deliberately no "card inside a card" or "border with no information"
   // rule, even though both are named in frontend-policy. They are RELATIONAL defects: a
   // container is redundant only relative to the ancestor it sits in and the spacing around
@@ -1409,6 +1609,40 @@ var BUILTIN_RULES = [
     message: "Credential endpoint with no rate limiting. Login, registration, password reset and every 2FA/OTP verification are guessing surfaces: limit them BY IP (blunt, stops the broad sweep) AND BY ACCOUNT or identifier (stops the slow distributed attack the IP limit misses), count failures rather than requests, back off exponentially, and answer 429 with Retry-After. Keep the accounting server-side and identical for an unknown account, so the limiter itself does not become an account-existence oracle. If the limit is enforced upstream (gateway, middleware, WAF), note it in the file with an `enigma:allow-unlimited-auth` marker (security-policy, backend-policy).",
     severity: "block",
     skill: "security-policy"
+  },
+  {
+    id: "sec-operator-env-leak",
+    label: "Do not publish the operator's own environment",
+    // Every text file a change touches: the leak lands in source and comments, but just as
+    // often in a README, a snapshot, a config, or a log somebody committed by accident.
+    files: ["**"],
+    excludeFiles: [
+      "**/node_modules/**",
+      "**/dist/**",
+      "**/build/**",
+      "**/vendor/**",
+      "**/.next/**",
+      "node_modules/**",
+      "dist/**",
+      "build/**",
+      "vendor/**",
+      "*.lock",
+      "*.lockb",
+      "package-lock.json",
+      "*.min.js",
+      "*.map"
+    ],
+    scope: "file",
+    // DIFF stage, for the reason the stage exists: a machine's own paths are all over the
+    // logs and scratch files a long-lived repository already carries, and a rule that
+    // reports those on an unrelated edit gets switched off within a day. Here it can only
+    // fire on a line the current change ADDED - which is exactly the moment to catch it,
+    // because after the push the value is in the history for good.
+    stage: "diff",
+    fileCheck: "sec-operator-env-leak",
+    message: "This line carries THIS machine's home directory into a tracked file. A path with the OS account name in it publishes who you are and how your machine is laid out, and a commit keeps it forever - the same class as a deployment domain, a host name, a server IP or an internal email address, none of which belong in code, comments, docs, examples, fixtures, or a committed log. Write a placeholder (`<project-root>`, `$HOME`, `%USERPROFILE%`) or a repository-relative path, and keep the real value in the local gitignored config that already holds it. Being handed a path or a URL to work with is permission to USE it, never permission to publish it - only an explicit request to put that value in the file is (security-policy, git-policy).",
+    severity: "block",
+    skill: "security-policy"
   }
 ];
 var PROJECT_CHECKS = {
@@ -1431,7 +1665,8 @@ var FILE_CHECKS = {
   "fe-page-await-no-boundary": (content, file) => pageAwaitWithoutBoundary(content, file),
   "ts-import-extension": (content, file) => extensionImports(content, file),
   "ts-alias-deep-relative": (content, file) => deepRelativeImports(content, file),
-  "ts-alias-paths": (content, file) => missingPathAlias(content, file)
+  "ts-alias-paths": (content, file) => missingPathAlias(content, file),
+  "sec-operator-env-leak": (content) => operatorHomePathLeak(content)
 };
 var FIXERS = {
   "fe-name-input-capitalize": (line, file) => {
@@ -1790,6 +2025,29 @@ function missingPathAlias(content, file) {
   return [{ line: anchor === -1 ? 1 : anchor + 1, detail: `no alias for ./${src}` }];
 }
 var NAMED_IMPORT = /^import[ \t]+(?:[\w$]+[ \t]*,[ \t]*)?(?:type[ \t]+)?\{([^}]*)\}[ \t]*from[ \t]*["']([^"']+)["'].*$/gm;
+var GENERIC_ACCOUNTS = /* @__PURE__ */ new Set(["runner", "root", "ubuntu", "debian", "vagrant", "node", "user", "users", "developer", "ec2-user", "codespace", "gitpod", "jenkins", "circleci", "travis", "docker", "app"]);
+function operatorHomePathLeak(content) {
+  const home = homedir();
+  if (!home || home.length < 6) return [];
+  const account = home.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || "";
+  if (!account || GENERIC_ACCOUNTS.has(account.toLowerCase())) return [];
+  const forms = [home];
+  const drive = /^([A-Za-z]):[\\/](.*)$/.exec(home);
+  if (drive) forms.push(`/${drive[1].toLowerCase()}/${drive[2]}`);
+  const alt = forms.map((f) => f.replace(/[.+^${}()|[\]]/g, "\\$&").replace(/[\\/]/g, "[\\\\/]")).join("|");
+  let re;
+  try {
+    re = new RegExp(`(?:${alt})`, "i");
+  } catch {
+    return [];
+  }
+  const out = [];
+  const lines = content.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    if (re.test(lines[i])) out.push({ line: i + 1, detail: "the path resolves to this machine's home directory" });
+  }
+  return out;
+}
 var INTERNAL_MODULE = /^\.|^#|^[@~]\//;
 function wideNamedImports(content, max) {
   const per = /* @__PURE__ */ new Map();
@@ -2199,6 +2457,7 @@ export {
   loadRules,
   missingPathAlias,
   missingWindowsHide,
+  operatorHomePathLeak,
   pageAwaitWithoutBoundary,
   readLedger,
   readReplyLedger,
