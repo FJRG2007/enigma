@@ -133,6 +133,54 @@ test("neighbours left outside the slice are counted, never silently dropped", ()
     expect(r.nodes.some((n) => n.hidden > 0)).toBe(true);
 });
 
+test("a hidden neighbour is one expanding could actually reveal, never a symbol's own file", () => {
+    // Wide enough to reach the whole fixture, so anything still counted as hidden is a phantom.
+    // Every symbol has a `contains` edge from its file, and the walk never crosses one: counting
+    // it would badge every node in every symbol slice with a "+" that adds nothing.
+    const r = sub.codeGraphSubgraph({ ...base, focus: "readSettings", depth: 3 })!;
+    expect(r.nodes.length).toBeGreaterThan(3);
+    expect(r.nodes.every((n) => n.hidden === 0)).toBe(true);
+});
+
+test("hidden is the whole-graph neighbour count minus what the slice draws", () => {
+    const r = sub.codeGraphSubgraph({ ...base, focus: "readSettings", depth: 1 })!;
+    const kept = new Set(r.nodes.map((n) => n.id));
+    for (const n of r.nodes) {
+        const drawn = r.edges.filter((e) => (e.source === n.id) || (e.target === n.id && e.relation !== "contains")).length;
+        expect(n.neighbours).toBe(drawn + n.hidden);
+        expect(kept.has(n.id)).toBe(true);
+    }
+});
+
+test("the cap binds the seeds too, and says so when it does", () => {
+    // A file seed carries every symbol it defines, which is how a request for one node used to
+    // answer with a whole file's worth and still report itself complete.
+    const r = sub.codeGraphSubgraph({ ...base, focus: "src/config.ts", limit: 1 })!;
+    expect(r.nodes.length).toBe(1);
+    expect(r.focus!.map((f) => f.path)).toEqual(["src/config.ts"]);
+    expect(r.truncated).toBe(true);
+    expect(r.nodes[0].hidden).toBeGreaterThan(0);
+});
+
+test("an overview that dropped ranked seeds reports truncated, not just the walk", () => {
+    const r = sub.codeGraphSubgraph({ ...base, limit: 3 })!;
+    expect(r.truncated).toBe(true);
+    expect(r.nodes.length).toBeLessThanOrEqual(3);
+});
+
+test("the file scope stays the import graph when a focus is given", () => {
+    // The result labels itself `scope: "files"`, so it has to BE the file graph - a symbol slice
+    // under a file label makes the scope control a no-op the moment the focus box is filled.
+    const r = sub.codeGraphSubgraph({ ...base, scope: "files", focus: "readSettings" })!;
+    expect(r.scope).toBe("files");
+    expect(r.nodes.every((n) => n.kind === "file")).toBe(true);
+    expect(r.edges.every((e) => e.relation === "imports")).toBe(true);
+    // A symbol focus centres on the file it lives in, and says so rather than reporting a symbol
+    // no edge in this pool could reach.
+    expect(r.focus!.map((f) => f.path)).toEqual(["src/config.ts"]);
+    expect(r.nodes.map((n) => n.path)).toContain("src/worker.ts");
+});
+
 test("the file scope draws the import graph, with file nodes on both ends", () => {
     const r = sub.codeGraphSubgraph({ ...base, scope: "files" })!;
     expect(r.nodes.every((n) => n.kind === "file")).toBe(true);
@@ -174,4 +222,13 @@ test("the text rendering states both caps and never rounds a real share down to 
     const text = fmt.formatSubgraph(capped);
     expect(text).toContain("TRUNCATED");
     expect(text).not.toContain("- 0% of the graph's wiring");
+});
+
+test("the share is read against the edge population the scope draws from", () => {
+    // A file slice carries import edges only; measuring it against the symbol graph's total
+    // reports a complete picture as a fraction of itself.
+    const r = sub.codeGraphSubgraph({ ...base, scope: "files" })!;
+    expect(r.edges.length).toBe(r.totals.importEdges);
+    expect(r.totals.importEdges).toBeLessThan(r.totals.edges);
+    expect(fmt.formatSubgraph(r)).toContain("100% of the graph's wiring");
 });

@@ -136,7 +136,9 @@ export function formatSubgraph(r: sub.SubgraphResult): string {
     const lines = [
         head,
         "",
-        `${r.nodes.length} nodes - ${r.edges.length} edges - depth ${r.depth} - ${sliceShare(r.edges.length, r.totals.edges)} of the graph's wiring`,
+        // Against the population this scope draws from: a file slice carries import edges only,
+        // so measuring it against the symbol graph's total understates it several times over.
+        `${r.nodes.length} nodes - ${r.edges.length} edges - depth ${r.depth} - ${sliceShare(r.edges.length, r.scope === "files" ? r.totals.importEdges : r.totals.edges)} of the graph's wiring`,
         "",
     ];
     const out = new Map<string, string[]>();

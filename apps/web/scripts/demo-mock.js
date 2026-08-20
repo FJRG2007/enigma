@@ -287,51 +287,113 @@
     ];
     var CG_FILES = ["src/config.ts", "src/util.ts", "src/tool-launch.ts", "src/agents.ts", "src/skills.ts", "src/mcp.ts", "src/cli.ts", "src/dashboard.ts", "src/bin/enigma.ts"];
 
-    function cgNode(row, depth, hidden) {
-        return { id: row[0], name: row[1], kind: row[2], path: row[3], line: row[4], endLine: row[5], signature: row[6], inDegree: row[7], depth: depth, hidden: hidden || 0 };
+    // The import view of the same fixture, deduped the way the engine dedupes its edges, so the
+    // file scope has one edge list whichever way it is entered - overview or focused.
+    var CG_FILE_EDGES = (function () {
+        var out = [], seen = {};
+        for (var i = 0; i < CG_EDGES.length; i++) {
+            var from = CG_EDGES[i][0].split("#")[0], to = CG_EDGES[i][1].split("#")[0], key = `${from}>${to}`;
+            if (from === to || seen[key]) continue;
+            seen[key] = 1;
+            out.push({ source: from, target: to, relation: "imports" });
+        }
+        return out;
+    })();
+
+    /** Whole-fixture neighbour count per node id, over one edge list. */
+    function cgDegrees(edges) {
+        var deg = {};
+        for (var i = 0; i < edges.length; i++) {
+            var s = edges[i].source || edges[i][0], t = edges[i].target || edges[i][1];
+            deg[s] = (deg[s] || 0) + 1;
+            deg[t] = (deg[t] || 0) + 1;
+        }
+        return deg;
+    }
+    var CG_SYMBOL_DEG = cgDegrees(CG_EDGES);
+    var CG_FILE_DEG = cgDegrees(CG_FILE_EDGES);
+
+    /**
+     * Fill the counts the panel draws its "+N" badge and Expand button from: `neighbours` is the
+     * whole-graph total and `hidden` what this slice leaves out, so a merged picture can recount
+     * the badge against what is actually on screen.
+     */
+    function cgCount(nodes, edges, degree) {
+        var drawn = cgDegrees(edges);
+        for (var i = 0; i < nodes.length; i++) {
+            nodes[i].neighbours = degree[nodes[i].id] || 0;
+            nodes[i].hidden = Math.max(0, nodes[i].neighbours - (drawn[nodes[i].id] || 0));
+        }
+        return nodes;
+    }
+    function cgNode(row, depth) {
+        return { id: row[0], name: row[1], kind: row[2], path: row[3], line: row[4], endLine: row[5], signature: row[6], inDegree: row[7], depth: depth, hidden: 0, neighbours: 0 };
+    }
+    function cgFileNode(path, depth, inDegree) {
+        return { id: path, name: path.split("/").pop(), kind: "file", path: path, line: 1, endLine: 200, signature: "", inDegree: inDegree || 0, depth: depth, hidden: 0, neighbours: 0 };
     }
     function codeGraphSlice(body) {
         var b = body || {};
-        var totals = { files: 214, symbols: 3312, edges: 6424 };
+        var totals = { files: 214, symbols: 3312, edges: 6424, importEdges: 1204 };
         var base = { project: CODEGRAPH.selected || "enigma", root: "/home/you/dev/enigma", scope: b.scope === "files" ? "files" : "symbols", depth: b.depth || 1, focus: null, truncated: false, incomplete: false };
-        if (base.scope === "files" && !b.focus) {
-            var counts = {};
-            var fileEdges = [];
-            for (var i = 0; i < CG_EDGES.length; i++) {
-                var from = CG_EDGES[i][0].split("#")[0], to = CG_EDGES[i][1].split("#")[0];
-                if (from === to) continue;
-                fileEdges.push({ source: from, target: to, relation: "imports" });
-                counts[to] = (counts[to] || 0) + 1;
-            }
-            var fileNodes = CG_FILES.map(function (path, idx) {
-                return { id: path, name: path.split("/").pop(), kind: "file", path: path, line: 1, endLine: 200, signature: "", inDegree: counts[path] || 0, depth: idx === 0 ? 0 : 1, hidden: 0 };
-            });
-            return Object.assign({}, base, { nodes: fileNodes, edges: fileEdges, totals: totals });
-        }
         var focus = (b.focus || "").trim().toLowerCase();
-        if (!focus) {
+        var missing = function () {
+            return Object.assign({}, base, { nodes: [], edges: [], totals: totals, focus: [], note: `No symbol or file named '${b.focus}' in the graph.` });
+        };
+        var counts = {};
+        for (var i = 0; i < CG_FILE_EDGES.length; i++) counts[CG_FILE_EDGES[i].target] = (counts[CG_FILE_EDGES[i].target] || 0) + 1;
+        // The scope decides the edge population whether or not there is a focus: a symbol slice
+        // under a "files" label would make the scope control a no-op the moment a focus is typed.
+        if (base.scope === "files") {
+            var centre = null;
+            if (focus) {
+                for (var f = 0; f < CG_FILES.length && !centre; f++) if (CG_FILES[f].toLowerCase() === focus) centre = CG_FILES[f];
+                for (var g = 0; g < CG_SYMBOLS.length && !centre; g++) {
+                    var sym = CG_SYMBOLS[g];
+                    if (sym[0].toLowerCase() === focus || sym[1].toLowerCase() === focus) centre = sym[3];
+                }
+                if (!centre) return missing();
+            }
+            var keepFiles = {};
+            if (centre) {
+                keepFiles[centre] = 0;
+                for (var h = 0; h < CG_FILE_EDGES.length; h++) {
+                    var fe = CG_FILE_EDGES[h];
+                    if (fe.source === centre && keepFiles[fe.target] === undefined) keepFiles[fe.target] = 1;
+                    if (fe.target === centre && keepFiles[fe.source] === undefined) keepFiles[fe.source] = 1;
+                }
+            } else {
+                CG_FILES.forEach(function (path, idx) { keepFiles[path] = idx === 0 ? 0 : 1; });
+            }
+            var fileNodes = CG_FILES.filter(function (path) { return keepFiles[path] !== undefined; })
+                .map(function (path) { return cgFileNode(path, keepFiles[path], counts[path]); });
+            var fileEdges = CG_FILE_EDGES.filter(function (e) { return keepFiles[e.source] !== undefined && keepFiles[e.target] !== undefined; });
             return Object.assign({}, base, {
-                nodes: CG_SYMBOLS.map(function (r) { return cgNode(r, 0, 0); }),
-                edges: CG_EDGES.map(function (e) { return { source: e[0], target: e[1], relation: e[2] }; }),
-                totals: totals
+                nodes: cgCount(fileNodes, fileEdges, CG_FILE_DEG), edges: fileEdges, totals: totals,
+                focus: centre ? [{ id: centre, name: centre.split("/").pop(), path: centre, line: 1 }] : null
             });
+        }
+        if (!focus) {
+            var allNodes = CG_SYMBOLS.map(function (r) { return cgNode(r, 0); });
+            var allEdges = CG_EDGES.map(function (e) { return { source: e[0], target: e[1], relation: e[2] }; });
+            return Object.assign({}, base, { nodes: cgCount(allNodes, allEdges, CG_SYMBOL_DEG), edges: allEdges, totals: totals });
         }
         var hit = null;
         for (var j = 0; j < CG_SYMBOLS.length; j++) {
             var r = CG_SYMBOLS[j];
             if (r[0].toLowerCase() === focus || r[1].toLowerCase() === focus || r[3].toLowerCase() === focus) { hit = r; break; }
         }
-        if (!hit) return Object.assign({}, base, { nodes: [], edges: [], totals: totals, focus: [], note: `No symbol or file named '${b.focus}' in the graph.` });
+        if (!hit) return missing();
         var keep = {};
         keep[hit[0]] = 0;
         for (var k = 0; k < CG_EDGES.length; k++) {
             if (CG_EDGES[k][0] === hit[0] && keep[CG_EDGES[k][1]] === undefined) keep[CG_EDGES[k][1]] = 1;
             if (CG_EDGES[k][1] === hit[0] && keep[CG_EDGES[k][0]] === undefined) keep[CG_EDGES[k][0]] = 1;
         }
-        var nodes = CG_SYMBOLS.filter(function (r) { return keep[r[0]] !== undefined; }).map(function (r) { return cgNode(r, keep[r[0]], 0); });
+        var nodes = CG_SYMBOLS.filter(function (r) { return keep[r[0]] !== undefined; }).map(function (r) { return cgNode(r, keep[r[0]]); });
         var edges = CG_EDGES.filter(function (e) { return keep[e[0]] !== undefined && keep[e[1]] !== undefined; })
             .map(function (e) { return { source: e[0], target: e[1], relation: e[2] }; });
-        return Object.assign({}, base, { nodes: nodes, edges: edges, totals: totals, focus: [{ id: hit[0], name: hit[1], path: hit[3], line: hit[4] }] });
+        return Object.assign({}, base, { nodes: cgCount(nodes, edges, CG_SYMBOL_DEG), edges: edges, totals: totals, focus: [{ id: hit[0], name: hit[1], path: hit[3], line: hit[4] }] });
     }
 
     function codeGraphAsk(query) {

@@ -48,6 +48,12 @@ export interface SubgraphNode {
     depth: number;
     /** Neighbours left outside this slice, so a viewer can say what expanding would add. */
     hidden: number;
+    /**
+     * Every neighbour expanding this node could reveal, drawn or not. A viewer that merges
+     * slices needs the total to recompute `hidden` against what is actually on screen - the
+     * slice-local count goes stale the moment a second slice is drawn beside it.
+     */
+    neighbours: number;
 }
 
 export interface SubgraphEdge {
@@ -65,8 +71,12 @@ export interface SubgraphResult {
     focus: { id: string; name: string; path: string; line: number; }[] | null;
     nodes: SubgraphNode[];
     edges: SubgraphEdge[];
-    /** The whole graph behind the slice, so the view can state what share of it is on screen. */
-    totals: { files: number; symbols: number; edges: number; };
+    /**
+     * The whole graph behind the slice, so the view can state what share of it is on screen.
+     * `edges` is the symbol graph and `importEdges` the file graph: a slice is cut from ONE of
+     * them, so the share has to be read against the population its own scope draws from.
+     */
+    totals: { files: number; symbols: number; edges: number; importEdges: number; };
     /** The cap left reachable nodes out - stated, so a slice is never mistaken for the whole. */
     truncated: boolean;
     /** The INDEX does not cover the whole tree (the scan hit a limit), which the slice inherits. */
@@ -137,7 +147,10 @@ export function codeGraphSubgraph(opts: SubgraphOptions = {}): SubgraphResult | 
     // The file/import graph is its own edge list: import edges carry file paths, not node ids, so
     // it is built directly rather than walked out of `edges` like the symbol slice below.
     // A file node's id IS its repo-relative path, so an import edge is already a pair of node ids.
-    const edgePool: cg.CodeEdge[] = scope === "files" && !opts.focus
+    // The scope decides this whether or not there is a focus: drawing the symbol graph while the
+    // result still says `scope: "files"` labels the picture as something it is not.
+    const fileScope = scope === "files";
+    const edgePool: cg.CodeEdge[] = fileScope
         ? graph.importEdges.map(([from, to]) => [from, to, "imports"] as cg.CodeEdge)
         : graph.edges;
 
@@ -146,6 +159,7 @@ export function codeGraphSubgraph(opts: SubgraphOptions = {}): SubgraphResult | 
         files: graph.files.length,
         symbols: graph.files.reduce((n, f) => n + f.symbols.length, 0),
         edges: graph.edges.length,
+        importEdges: graph.importEdges.length,
     };
     const base = {
         project: graph.name,
@@ -158,6 +172,26 @@ export function codeGraphSubgraph(opts: SubgraphOptions = {}): SubgraphResult | 
 
     let seeds: cg.GraphNode[] = [];
     let focus: SubgraphResult["focus"] = null;
+    let seedsDropped = false;
+
+    /**
+     * The cap binds the SEEDS too, and it has to: one file defines hundreds of symbols, so a
+     * seeding that ignored `limit` would answer a request for ten nodes with a thousand and
+     * still call itself complete. Ranked before it bites, deduped, and outside-`--in` seeds
+     * dropped here rather than downstream so the count is of what actually gets drawn.
+     */
+    const capSeeds = (ranked: cg.GraphNode[], cap: number): cg.GraphNode[] => {
+        const out: cg.GraphNode[] = [];
+        const taken = new Set<string>();
+        for (const n of ranked) {
+            if (taken.has(n.id) || !byId.has(n.id) || !visible(n)) continue;
+            taken.add(n.id);
+            out.push(n);
+        }
+        if (out.length <= cap) return out;
+        seedsDropped = true;
+        return out.slice(0, cap);
+    };
 
     if (opts.focus && opts.focus.trim()) {
         const query = opts.focus.trim();
@@ -172,38 +206,56 @@ export function codeGraphSubgraph(opts: SubgraphOptions = {}): SubgraphResult | 
                 note: `No symbol or file named '${query}' in the graph. Try: enigma codegraph search ${query}`,
             };
         }
-        // A file seed also carries the symbols it defines: a call from another file targets the
-        // SYMBOL, never the file, so seeding the file alone draws an island. Same rule as `trace`.
-        seeds = [...matches];
-        for (const m of matches) {
-            if (m.kind !== "file") continue;
-            for (const n of nodes) if (n.kind !== "file" && n.path === m.path) seeds.push(n);
+        if (fileScope) {
+            // The import graph wires files to files, so a file slice centres on the file the
+            // focus LIVES IN: a symbol seeded here would sit on the canvas with no edge in the
+            // pool able to reach it. Reported as the focus too, so the picture says what it
+            // actually centred on.
+            const files = new Map<string, cg.GraphNode>();
+            for (const m of matches) {
+                const file = m.kind === "file" ? m : byId.get(m.path);
+                if (file) files.set(file.id, file);
+            }
+            const picked = [...files.values()];
+            seeds = capSeeds(picked, limit);
+            focus = picked.map((m) => ({ id: m.id, name: m.name, path: m.path, line: m.line }));
+        } else {
+            // A file seed also carries the symbols it defines: a call from another file targets
+            // the SYMBOL, never the file, so seeding the file alone draws an island. Same rule as
+            // `trace`. The matches come first so the cap can never drop the focus itself.
+            const paths = new Set(matches.filter((m) => m.kind === "file").map((m) => m.path));
+            const contained = paths.size
+                ? nodes
+                    .filter((n) => n.kind !== "file" && paths.has(n.path))
+                    .sort((a, b) => (degree.get(b.id) ?? 0) - (degree.get(a.id) ?? 0) || a.name.localeCompare(b.name))
+                : [];
+            seeds = capSeeds([...matches, ...contained], limit);
+            focus = matches.map((m) => ({ id: m.id, name: m.name, path: m.path, line: m.line }));
         }
-        focus = matches.map((m) => ({ id: m.id, name: m.name, path: m.path, line: m.line }));
-    } else if (scope === "files") {
+    } else if (fileScope) {
         const importDegree = new Map<string, number>();
         for (const [, to] of graph.importEdges) importDegree.set(to, (importDegree.get(to) ?? 0) + 1);
-        seeds = nodes
-            .filter((n) => n.kind === "file" && visible(n))
-            .sort((a, b) => (importDegree.get(b.path) ?? 0) - (importDegree.get(a.path) ?? 0) || a.path.localeCompare(b.path))
-            .slice(0, limit);
+        seeds = capSeeds(nodes
+            .filter((n) => n.kind === "file")
+            .sort((a, b) => (importDegree.get(b.path) ?? 0) - (importDegree.get(a.path) ?? 0) || a.path.localeCompare(b.path)), limit);
     } else {
         // The symbols the most other files depend on: the same ranking `map` puts at the top, so
         // the picture opens on the same code every other surface calls important.
-        seeds = nodes
-            .filter((n) => n.kind !== "file" && visible(n) && (degree.get(n.id) ?? 0) > 0)
-            .sort((a, b) => (degree.get(b.id) ?? 0) - (degree.get(a.id) ?? 0) || a.name.localeCompare(b.name))
-            .slice(0, Math.max(1, Math.ceil(limit / 3)));
+        seeds = capSeeds(nodes
+            .filter((n) => n.kind !== "file" && (degree.get(n.id) ?? 0) > 0)
+            .sort((a, b) => (degree.get(b.id) ?? 0) - (degree.get(a.id) ?? 0) || a.name.localeCompare(b.name)), Math.max(1, Math.ceil(limit / 3)));
     }
 
     const adj = undirectedAdjacency(edgePool);
     const depthOf = new Map<string, number>();
-    for (const s of seeds) if (visible(s) && byId.has(s.id)) depthOf.set(s.id, 0);
+    for (const s of seeds) depthOf.set(s.id, 0);
     // An unfocused overview is already the ranked answer; walking it out would drown the hubs in
     // the callers that made them hubs. A focused slice is the one that wants its neighbourhood.
-    const walkDepth = focus ? depth : (scope === "files" ? depth : 1);
+    const walkDepth = focus ? depth : (fileScope ? depth : 1);
 
-    let truncated = false;
+    // A seed the ranking dropped is a node left out exactly like one the walk could not fit, and
+    // the walk raising the flag alone misses the case where it finds nothing new to add.
+    let truncated = seedsDropped;
     let frontier = [...depthOf.keys()];
     for (let d = 1; d <= walkDepth && frontier.length; d++) {
         // Ranked before the cap bites, so what survives is what the rest of the codebase depends
@@ -222,14 +274,23 @@ export function codeGraphSubgraph(opts: SubgraphOptions = {}): SubgraphResult | 
     const kept = new Set(depthOf.keys());
     const outEdges: SubgraphEdge[] = [];
     const hidden = new Map<string, number>();
-    const bump = (id: string): void => { hidden.set(id, (hidden.get(id) ?? 0) + 1); };
+    const total = new Map<string, number>();
+    const bump = (map: Map<string, number>, id: string): void => { map.set(id, (map.get(id) ?? 0) + 1); };
     for (const [source, target, relation] of edgePool) {
         const hasSource = kept.has(source);
         const hasTarget = kept.has(target);
+        // A neighbour counts only where EXPANDING could actually reveal it. `contains` is not a
+        // dependency edge, so the walk never crosses it: counting one against the symbol would
+        // promise its own file as a neighbour that no expand can add - and every symbol has
+        // exactly one, which is every node in a symbol slice claiming a phantom. The other
+        // direction stands, because expanding a file does re-seed the symbols it defines.
+        const reachesTarget = cg.WALK_RELATIONS.has(relation);
+        if (hasSource && byId.has(target)) bump(total, source);
+        if (hasTarget && reachesTarget && byId.has(source)) bump(total, target);
         if (hasSource && hasTarget) { outEdges.push({ source, target, relation }); continue; }
         // Counted, not drawn: the node stays honest about how much it is standing in front of.
-        if (hasSource && byId.has(target)) bump(source);
-        else if (hasTarget && byId.has(source)) bump(target);
+        if (hasSource && byId.has(target)) bump(hidden, source);
+        else if (hasTarget && reachesTarget && byId.has(source)) bump(hidden, target);
     }
 
     const outNodes: SubgraphNode[] = [...kept].map((id) => {
@@ -237,7 +298,7 @@ export function codeGraphSubgraph(opts: SubgraphOptions = {}): SubgraphResult | 
         return {
             id, name: n.name, kind: n.kind, path: n.path, line: n.line, endLine: n.endLine,
             signature: n.signature, inDegree: degree.get(id) ?? 0,
-            depth: depthOf.get(id) ?? 0, hidden: hidden.get(id) ?? 0,
+            depth: depthOf.get(id) ?? 0, hidden: hidden.get(id) ?? 0, neighbours: total.get(id) ?? 0,
         };
     }).sort((a, b) => a.depth - b.depth || b.inDegree - a.inDegree || a.path.localeCompare(b.path) || a.line - b.line);
 

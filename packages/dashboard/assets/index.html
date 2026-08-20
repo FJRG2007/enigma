@@ -5932,8 +5932,10 @@ export {
             const m = cg.meta;
             if (!m) { $("cgGraphMeta").textContent = ""; return; }
             // A real but tiny share rounds to "0%", which reads as "nothing" - the one thing it
-            // is not - so it is reported as "<1%" instead.
-            const total = (m.totals && m.totals.edges) || 0;
+            // is not - so it is reported as "<1%" instead. Measured against the population this
+            // scope draws from: the file view carries import edges only.
+            const totals = m.totals || {};
+            const total = (m.scope === "files" ? totals.importEdges : totals.edges) || 0;
             const pct = total && cg.edges.length ? (cg.edges.length / total) * 100 : 0;
             const share = !pct ? "0%" : pct < 1 ? "<1%" : Math.round(pct) + "%";
             const bits = [cg.nodes.length + " nodes", cg.edges.length + " edges", share + " of the graph's wiring"];
@@ -5969,6 +5971,25 @@ export {
             node.vy = 0;
         }
 
+        /**
+         * Recount, per node, the neighbours NOT on screen. The server's `hidden` is relative to
+         * the slice it came from, so after a merge it would claim neighbours already drawn beside
+         * it - a "+" badge and an Expand button that add nothing. `neighbours` is the whole-graph
+         * total, so the honest count is that minus what the merged picture actually draws.
+         *
+         * Same asymmetry the engine counts by: expanding a node re-seeds the symbols a file
+         * contains, but a symbol's own file is never reachable across a `contains` edge.
+         */
+        function cgRecount() {
+            const drawn = new Map();
+            const bump = (id) => drawn.set(id, (drawn.get(id) || 0) + 1);
+            for (const e of cg.edges) {
+                if (cg.byId.has(e.source)) bump(e.source);
+                if (cg.byId.has(e.target) && e.relation !== "contains") bump(e.target);
+            }
+            for (const n of cg.nodes) n.hidden = Math.max(0, (n.neighbours || 0) - (drawn.get(n.id) || 0));
+        }
+
         function cgApply(slice, merge, near) {
             const before = cg.nodes.length;
             if (!merge) { cg.nodes = []; cg.byId = new Map(); cg.edges = []; cg.selected = null; cg.hover = null; }
@@ -5977,7 +5998,7 @@ export {
                 const seen = cg.byId.get(raw.id);
                 // Keep the live object on a merge: replacing it would reset its position, and every
                 // expand would look like the whole layout jumped.
-                if (seen) { seen.inDegree = raw.inDegree; seen.hidden = raw.hidden; continue; }
+                if (seen) { seen.inDegree = raw.inDegree; seen.neighbours = raw.neighbours; continue; }
                 const n = Object.assign({}, raw);
                 cgPlace(n, merge ? added : cg.nodes.length, near);
                 cg.byId.set(n.id, n);
@@ -5992,7 +6013,13 @@ export {
                 cg.edges.push({ source: e.source, target: e.target, relation: e.relation });
             }
             for (const e of cg.edges) { e.s = cg.byId.get(e.source); e.t = cg.byId.get(e.target); }
-            cg.meta = slice;
+            cgRecount();
+            // An expand widens the picture; it does not re-answer what the picture is OF. Taking
+            // the sub-slice's meta would relabel the whole canvas with the expanded node's focus
+            // and report its cap instead of the one the drawn graph was cut at.
+            cg.meta = merge && cg.meta
+                ? Object.assign({}, cg.meta, { truncated: cg.meta.truncated || slice.truncated })
+                : slice;
             cgRegroup();
             cgRenderLegend();
             cgRenderMeta();
@@ -6035,19 +6062,31 @@ export {
                 cg.nodes = []; cg.edges = []; cg.byId = new Map(); cg.selected = null;
                 cgRegroup(); cgRenderLegend(); cgRenderDetail(); cgDraw();
             };
+            // The overlay covers the whole canvas, so it belongs only to a draw that has nothing
+            // to show. An expand that failed leaves a perfectly good graph on screen: veiling it
+            // would swallow every click on it until the next Draw, so that one reports as a toast.
             if (!out || !out.ok || !out.graph) {
-                if (!o.merge) { reset(); cg.meta = null; cgRenderMeta(); }
-                cgOverlay((out && out.error) || "Could not draw the graph.");
+                const why = (out && out.error) || "Could not draw the graph.";
+                if (o.merge) { toast.error("Could not expand that node", { description: why }); return; }
+                reset();
+                cg.meta = null;
+                cgRenderMeta();
+                cgOverlay(why);
                 return;
             }
             const slice = out.graph;
             if (!slice.nodes.length) {
-                if (!o.merge) { reset(); cg.meta = slice; cgRenderMeta(); }
-                cgOverlay(slice.note || "Nothing to draw for this project yet.");
+                const why = slice.note || "Nothing to draw for this project yet.";
+                if (o.merge) { toast.info("Nothing to add", { description: why }); return; }
+                reset();
+                cg.meta = slice;
+                cgRenderMeta();
+                cgOverlay(why);
                 return;
             }
             cgOverlay("");
-            cgApply(slice, !!o.merge, o.merge ? cg.byId.get(o.focus) : null);
+            const added = cgApply(slice, !!o.merge, o.merge ? cg.byId.get(o.focus) : null);
+            if (o.merge && !added) toast.info("Nothing to add", { description: "Every neighbour of that node is already drawn." });
         }
 
         function cgWireCanvas() {
