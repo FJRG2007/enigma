@@ -25,6 +25,7 @@ Turning the setting on exposes enigma's code-graph tools to your agents through 
 | What is this file's API? | `enigma_codegraph_skeleton` | `codegraph skeleton <file>` |
 | What does this repo look like? | `enigma_codegraph_map` | `codegraph map` |
 | Every occurrence, ranked | `enigma_codegraph_grep` | `codegraph grep "<regex>"` |
+| Draw what depends on what | dashboard **Code graph** tab | `codegraph graph [focus]` |
 
 `ask` blends word matching with a walk over the graph, so the result is the code wired into what you asked about rather than whatever happened to share a word with it, and each hit carries an exact path and line range with the source inlined. `grep` attributes every hit to the symbol enclosing it and ranks groups by how much other code depends on that symbol - the part plain `grep -rn` cannot tell you.
 
@@ -59,12 +60,22 @@ Nothing needs indexing by hand: the first query indexes the project it is asked 
 
 You can also toggle it, index a project, run a query and see how far the graph has drifted from the code in the dashboard's **Code graph** tab.
 
+## See it
+
+The **Code graph** tab draws the graph itself. Nodes are files and symbols, sized by how many other files depend on them and coloured by the directory they live in; edges are the imports, calls and references between them. Click a node for its signature and location, double-click to pull in its neighbours, and type a symbol or file in the focus box to re-centre on it. Switch between the symbol view and the file/import view, and widen the neighbourhood from one hop to four.
+
+A repo has far more nodes than a picture can carry, so the view always draws a ranked slice - the code the rest of the codebase depends on most - and says when the cap left something out.
+
+<Cmd name="enigma codegraph graph [focus]" ex={["enigma codegraph graph", "enigma codegraph graph readConfig --depth 2", "enigma codegraph graph --scope files --in src", "enigma codegraph graph --dot"]}>
+The same slice in the terminal, or as Graphviz DOT with `--dot` (pipe it into `dot -Tsvg`). `--scope files` draws the import graph instead of the symbol graph, `--depth N` widens the neighbourhood around a focus, and `--limit N` sets the node cap. `--json` prints the raw nodes and edges.
+</Cmd>
+
 ## Use it
 
-<Cmd name="enigma codegraph [action]" ex={["enigma codegraph index", "enigma codegraph ask \"where is the session token refreshed\" --source", "enigma codegraph callers readConfig --depth 2", "enigma codegraph skeleton src/api.ts", "enigma codegraph map", "enigma codegraph grep \"TODO\\(perf\\)\"", "enigma codegraph check"]}>
+<Cmd name="enigma codegraph [action]" ex={["enigma codegraph index", "enigma codegraph ask \"where is the session token refreshed\" --source", "enigma codegraph callers readConfig --depth 2", "enigma codegraph skeleton src/api.ts", "enigma codegraph map", "enigma codegraph graph readConfig", "enigma codegraph grep \"TODO\\(perf\\)\"", "enigma codegraph check"]}>
 Manage: `index [path]` builds the graph (defaults to the current directory), `projects` lists indexed projects, `arch [project]` prints the architecture overview, `search <name>` finds symbols by name. Turning the tools on and off is `enigma config code-graph on|off`, like every other setting.
 
-Query: `ask` returns ranked hits with `--source` to inline the code; `callers`/`callees` walk dependencies with `--depth N`; `skeleton` prints one file's signatures; `map` orients you in an unfamiliar repo; `grep` finds every occurrence grouped by symbol; `check` reports drift. All of them take `--in <path>`, `--limit N`, `--json` and `--no-refresh`.
+Query: `ask` returns ranked hits with `--source` to inline the code; `callers`/`callees` walk dependencies with `--depth N`; `skeleton` prints one file's signatures; `map` orients you in an unfamiliar repo; `grep` finds every occurrence grouped by symbol; `graph` cuts a drawable slice (`--scope files`, `--dot`); `check` reports drift. All of them take `--in <path>`, `--limit N`, `--json` and `--no-refresh`.
 </Cmd>
 
 Once it's on, your agent queries the graph directly over MCP, which typically replaces many grep/read cycles with a single structural query.

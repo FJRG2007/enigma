@@ -759,6 +759,30 @@
            rather than a second label competing with the name. */
         .set-def{opacity:.72;font-variant-numeric:tabular-nums;white-space:nowrap}
         .set-ctl .gate-reset{flex:none}
+
+        /* --- Code graph canvas -------------------------------------------------------
+           The picture is drawn on one canvas: at a few hundred nodes an SVG/DOM node per
+           symbol costs more in layout than the whole simulation does in maths, and the
+           label/zoom rules below need per-frame control the DOM cannot give. */
+        .cg-wrap { position: relative; height: 460px; margin-top: 10px; border: 1px solid var(--border); border-radius: 10px; background: radial-gradient(circle at 50% 40%, rgba(255,255,255,0.03), transparent 70%), var(--surface2); overflow: hidden; }
+        .cg-wrap canvas { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
+        .cg-wrap canvas.grabbing { cursor: grabbing; }
+        .cg-wrap canvas:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+        .cg-overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; padding: 20px; color: var(--muted); font-size: 12.5px; line-height: 1.6; background: rgba(8,10,16,0.55); }
+        /* `display: flex` outranks the UA's [hidden] rule, so without this the dismissed overlay
+           keeps covering the canvas and swallows every click, drag and wheel event on it. */
+        .cg-overlay[hidden], .cg-detail[hidden] { display: none; }
+        .cg-zoom { position: absolute; right: 10px; bottom: 10px; display: flex; flex-direction: column; gap: 4px; }
+        .cg-zoom .iconbtn { background: rgba(8,10,16,0.72); border: 1px solid var(--border); border-radius: 7px; padding: 5px; }
+        .cg-legend { position: absolute; left: 10px; top: 10px; display: flex; flex-wrap: wrap; gap: 4px 10px; max-width: 62%; pointer-events: none; }
+        .cg-legend span { display: inline-flex; align-items: center; gap: 5px; font-family: var(--mono); font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; }
+        .cg-legend i { width: 8px; height: 8px; border-radius: 50%; display: block; }
+        .cg-detail { position: absolute; right: 10px; top: 10px; width: min(300px, 62%); max-height: calc(100% - 70px); overflow: auto; background: rgba(8,10,16,0.9); border: 1px solid var(--border); border-radius: 9px; padding: 10px 11px; }
+        .cg-detail h4 { margin: 0 6px 2px 0; font-size: 12.5px; font-family: var(--mono); color: var(--text); word-break: break-all; }
+        .cg-detail .cg-sig { font-family: var(--mono); font-size: 10.5px; color: var(--muted); white-space: pre-wrap; word-break: break-word; margin: 6px 0 0; }
+        .cg-detail .cg-where { font-family: var(--mono); font-size: 10.5px; color: var(--accent2); word-break: break-all; }
+        .cg-detail .cg-acts { display: flex; gap: 6px; margin-top: 9px; flex-wrap: wrap; }
+        .cg-detail .cg-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; }
     </style>
 </head>
 <body>
@@ -1345,6 +1369,36 @@
             <button id="cgRefresh" type="button" class="iconbtn" title="Refresh" aria-label="Refresh"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg></button>
         </div>
         <div id="cgNote" class="set-note"></div>
+        <div class="panel">
+            <div class="set-cat-h">Graph</div>
+            <div class="set-hint" style="padding:4px 0">What depends on what. Click a node for its signature and location, double-click to pull in its neighbours. Empty focus draws the code the rest of the repo leans on most.</div>
+            <div class="ladd" style="flex-wrap:wrap;align-items:center">
+                <input id="cgFocus" class="linput" placeholder="centre on a symbol or file (optional)" style="flex:1;min-width:220px">
+                <select id="cgScope" aria-label="What the nodes are">
+                    <option value="symbols">Symbols</option>
+                    <option value="files">Files</option>
+                </select>
+                <select id="cgDepth" aria-label="Hops from the focus">
+                    <option value="1">1 hop</option>
+                    <option value="2">2 hops</option>
+                    <option value="3">3 hops</option>
+                    <option value="4">4 hops</option>
+                </select>
+                <button id="cgDraw" type="button" class="toggle on">Draw</button>
+            </div>
+            <div id="cgWrap" class="cg-wrap">
+                <canvas id="cgCanvas" tabindex="0" role="img" aria-label="Code graph"></canvas>
+                <div class="cg-legend" id="cgLegend"></div>
+                <div class="cg-zoom">
+                    <button id="cgZoomIn" type="button" class="iconbtn" title="Zoom in" aria-label="Zoom in"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
+                    <button id="cgZoomOut" type="button" class="iconbtn" title="Zoom out" aria-label="Zoom out"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"/></svg></button>
+                    <button id="cgFit" type="button" class="iconbtn" title="Fit to view" aria-label="Fit to view"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M16 21h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg></button>
+                </div>
+                <div id="cgDetail" class="cg-detail" hidden></div>
+                <div id="cgGraphOverlay" class="cg-overlay">Drawing...</div>
+            </div>
+            <div id="cgGraphMeta" class="set-hint" style="padding:6px 0 0"></div>
+        </div>
         <div class="panel">
             <div class="set-cat-h">Index a project</div>
             <div class="set-hint" style="padding:4px 0">Build the graph for a codebase. Leave the path empty to index enigma's own working directory.</div>
@@ -5578,6 +5632,500 @@ export {
                 + entries.map(([k, v]) => '<div class="set-row"><div class="set-meta"><div class="set-name">' + esc(k) + '</div><div class="set-hint">' + cgVal(v) + "</div></div></div>").join("")
                 + "</div>";
         }
+        // --- Code graph canvas ------------------------------------------------------------
+        // A force-directed picture of the slice the server cut. Everything is hand-rolled on one
+        // canvas: no graph library, no CDN - the dashboard ships as a single offline file, and at
+        // a few hundred nodes the whole simulation costs less than a DOM node per symbol would.
+        // Colour says WHERE a node lives, shape says WHAT it is (a file is a rounded square, a
+        // symbol a circle). Colouring by kind instead made the file view - where every node is a
+        // file - a single grey cloud, and told you nothing you could not read off the shape.
+        const CG_GROUP_COLOR = ["#e0a458", "#5aa9e6", "#6fcf97", "#a78bfa", "#d7875f", "#56c8c8", "#e3c14e", "#c586c0", "#7f9cf5", "#8a93a3"];
+        const CG_UNGROUPED = "#8a93a3";
+        const CG_REL_COLOR = {
+            imports: "rgba(138,147,163,0.55)", calls: "rgba(224,164,88,0.55)",
+            references: "rgba(138,147,163,0.30)", extends: "rgba(111,207,151,0.55)",
+            implements: "rgba(90,169,230,0.55)", contains: "rgba(138,147,163,0.20)"
+        };
+        // Tuned together: weaker links or a longer cutoff and dense clusters never separate.
+        const CG_LINK_LEN = 82, CG_LINK_K = 0.22, CG_CHARGE = 4200, CG_CUTOFF = 260, CG_GRAVITY = 0.05, CG_DAMP = 0.74;
+        const CG_ALPHA_DECAY = 0.021, CG_ALPHA_MIN = 0.004, CG_MAX_TICKS_PER_FRAME = 3, CG_SEPARATION = 7;
+        const cg = {
+            nodes: [], byId: new Map(), edges: [], meta: null,
+            alpha: 0, raf: 0, seq: 0,
+            zoom: 1, tx: 0, ty: 0,
+            hover: null, selected: null, drag: null, pan: null, moved: false,
+            groupColor: new Map(), groupCount: new Map()
+        };
+        const cgColor = (group) => cg.groupColor.get(group) || CG_UNGROUPED;
+        /**
+         * Group every node by the first directory segment that actually separates them: the paths
+         * in a slice usually share a long prefix (a whole slice can sit under one package), and
+         * grouping on the raw first segment would put every node in the same bucket.
+         */
+        function cgRegroup() {
+            const paths = cg.nodes.map((n) => n.path || "");
+            let prefix = "";
+            if (paths.length > 1) {
+                const parts = paths[0].split("/").slice(0, -1);
+                let common = parts.length;
+                for (const path of paths) {
+                    const p = path.split("/");
+                    let i = 0;
+                    while (i < common && i < p.length - 1 && p[i] === parts[i]) i++;
+                    common = i;
+                    if (!common) break;
+                }
+                prefix = parts.slice(0, common).join("/");
+            }
+            const counts = new Map();
+            for (const n of cg.nodes) {
+                const rest = prefix && n.path.startsWith(prefix + "/") ? n.path.slice(prefix.length + 1) : n.path;
+                const cut = rest.indexOf("/");
+                // Files sitting directly in the shared prefix have no segment of their own; "."
+                // reads as a path fragment in the legend, where the label has to name a place.
+                n.group = cut === -1 ? "(root)" : rest.slice(0, cut);
+                counts.set(n.group, (counts.get(n.group) || 0) + 1);
+            }
+            // The biggest groups take the most distinct colours; everything past the palette
+            // shares the neutral one rather than repeating a colour that already means something.
+            cg.groupColor = new Map([...counts.entries()]
+                .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+                .slice(0, CG_GROUP_COLOR.length - 1)
+                .map(([name], i) => [name, CG_GROUP_COLOR[i]]));
+            cg.groupCount = counts;
+        }
+        // In WORLD units, so the separation pass in cgTick can guarantee the drawn circles never
+        // overlap: a radius measured in screen pixels is a size the simulation cannot see, and at
+        // any zoom below 1 the dots grow past the spacing the layout worked out for them.
+        const cgRadius = (n) => 4 + Math.min(8, Math.sqrt(n.inDegree || 0) * 2.2);
+        // Labels declutter by zoom: far out only the hubs are named, and every step in lowers the
+        // bar. Without it a 300-node slice is a wall of overlapping text at every scale - but the
+        // bar is set by how crowded the picture actually is, not by the zoom alone, or a slice of
+        // fifteen nodes hides most of its own names for no reason.
+        const cgLabelFloor = (z, count) => {
+            if (count <= 40) return z >= 0.45 ? 0 : 4;
+            if (count <= 120) return z >= 1 ? 0 : z >= 0.7 ? 3 : 9;
+            return z >= 2.6 ? 0 : z >= 1.8 ? 2 : z >= 1.2 ? 5 : z >= 0.8 ? 10 : 22;
+        };
+
+        function cgCanvasSize() {
+            const c = $("cgCanvas");
+            const dpr = Math.min(2, window.devicePixelRatio || 1);
+            // Bail when unchanged: a ResizeObserver fires for subpixel and browser-zoom rounding
+            // too, and resizing the canvas every time clears it and can feed back into a shake.
+            const w = Math.round(c.clientWidth * dpr), h = Math.round(c.clientHeight * dpr);
+            if (w > 0 && h > 0 && (c.width !== w || c.height !== h)) { c.width = w; c.height = h; }
+            return { c, dpr, w: c.clientWidth, h: c.clientHeight };
+        }
+        const cgToWorld = (px, py, box) => ({ x: (px - box.w / 2 - cg.tx) / cg.zoom, y: (py - box.h / 2 - cg.ty) / cg.zoom });
+
+        function cgDraw() {
+            const box = cgCanvasSize();
+            const ctx = box.c.getContext("2d");
+            ctx.setTransform(box.dpr, 0, 0, box.dpr, 0, 0);
+            ctx.clearRect(0, 0, box.w, box.h);
+            ctx.save();
+            ctx.translate(box.w / 2 + cg.tx, box.h / 2 + cg.ty);
+            ctx.scale(cg.zoom, cg.zoom);
+            const focusId = (cg.selected && cg.selected.id) || (cg.hover && cg.hover.id) || null;
+            const lit = new Set();
+            if (focusId) for (const e of cg.edges) { if (e.source === focusId) lit.add(e.target); else if (e.target === focusId) lit.add(e.source); }
+            ctx.lineWidth = 1 / cg.zoom;
+            for (const e of cg.edges) {
+                const s = e.s, t = e.t;
+                if (!s || !t) continue;
+                const on = focusId && (e.source === focusId || e.target === focusId);
+                ctx.strokeStyle = on ? "rgba(224,164,88,0.85)" : (focusId ? "rgba(138,147,163,0.13)" : (CG_REL_COLOR[e.relation] || CG_REL_COLOR.references));
+                ctx.beginPath();
+                ctx.moveTo(s.x, s.y);
+                ctx.lineTo(t.x, t.y);
+                ctx.stroke();
+            }
+            const z = cg.zoom;
+            const floor = cgLabelFloor(z, cg.nodes.length);
+            const seeded = !!(cg.meta && cg.meta.focus && cg.meta.focus.length);
+            const dimmed = (n) => focusId && n.id !== focusId && !lit.has(n.id);
+            for (const n of cg.nodes) {
+                const r = cgRadius(n);
+                ctx.globalAlpha = dimmed(n) ? 0.28 : 1;
+                ctx.beginPath();
+                if (n.kind === "file") ctx.roundRect(n.x - r, n.y - r, r * 2, r * 2, r * 0.35);
+                else ctx.arc(n.x, n.y, r, 0, 6.283185);
+                ctx.fillStyle = cgColor(n.group);
+                ctx.fill();
+                if (n.id === focusId) { ctx.strokeStyle = "#eceef2"; ctx.lineWidth = 2 / z; ctx.stroke(); }
+                else if (n.depth === 0 && seeded) { ctx.strokeStyle = "rgba(236,238,242,0.55)"; ctx.lineWidth = 1.5 / z; ctx.stroke(); }
+                ctx.globalAlpha = 1;
+            }
+            // Labels in a second pass so a node drawn later cannot cover the caption of one drawn
+            // earlier - the single most common way a readable graph turns into half-words.
+            ctx.textBaseline = "middle";
+            ctx.font = (11 / z) + "px ui-monospace, Menlo, Consolas, monospace";
+            for (const n of cg.nodes) {
+                if (dimmed(n) || (n.id !== focusId && (n.inDegree || 0) < floor)) continue;
+                const r = cgRadius(n);
+                ctx.textAlign = "left";
+                const tw = ctx.measureText(n.name).width;
+                ctx.fillStyle = "rgba(8,10,16,0.78)";
+                ctx.fillRect(n.x + r + 3 / z, n.y - 7 / z, tw + 5 / z, 14 / z);
+                ctx.fillStyle = n.id === focusId ? "#eceef2" : "#c3cad6";
+                ctx.fillText(n.name, n.x + r + 5 / z, n.y);
+            }
+            // The "expand me" badge sits above both, or a neighbouring node hides the one cue that
+            // says this node is standing in front of more of the graph.
+            for (const n of cg.nodes) {
+                if (!n.hidden || z < 1.1 || dimmed(n)) continue;
+                const r = cgRadius(n);
+                const bx = n.x + r * 0.78, by = n.y - r * 0.78;
+                ctx.beginPath();
+                ctx.arc(bx, by, 5.5 / z, 0, 6.283185);
+                ctx.fillStyle = "rgba(8,10,16,0.9)";
+                ctx.fill();
+                ctx.fillStyle = "#8a93a3";
+                ctx.font = (9 / z) + "px ui-monospace, Menlo, Consolas, monospace";
+                ctx.textAlign = "center";
+                ctx.fillText("+", bx, by);
+                ctx.font = (11 / z) + "px ui-monospace, Menlo, Consolas, monospace";
+            }
+            ctx.restore();
+        }
+
+        function cgTick() {
+            const nodes = cg.nodes;
+            if (!nodes.length) return;
+            const a = cg.alpha;
+            for (const e of cg.edges) {
+                const s = e.s, t = e.t;
+                if (!s || !t || s === t) continue;
+                const dx = t.x - s.x, dy = t.y - s.y;
+                const d = Math.sqrt(dx * dx + dy * dy) || 0.01;
+                const f = ((d - CG_LINK_LEN) / d) * CG_LINK_K * a;
+                s.vx += dx * f; s.vy += dy * f;
+                t.vx -= dx * f; t.vy -= dy * f;
+            }
+            // Repulsion over a uniform grid, not every pair: at the 2000-node cap the all-pairs
+            // version is four million distance checks a tick and the panel stops responding.
+            const grid = new Map();
+            for (const n of nodes) {
+                const k = ((n.x / CG_CUTOFF) | 0) + ":" + ((n.y / CG_CUTOFF) | 0);
+                const arr = grid.get(k);
+                if (arr) arr.push(n); else grid.set(k, [n]);
+            }
+            for (const n of nodes) {
+                const cx = (n.x / CG_CUTOFF) | 0, cy = (n.y / CG_CUTOFF) | 0;
+                const rn = cgRadius(n);
+                for (let gx = cx - 1; gx <= cx + 1; gx++) {
+                    for (let gy = cy - 1; gy <= cy + 1; gy++) {
+                        const arr = grid.get(gx + ":" + gy);
+                        if (!arr) continue;
+                        for (const o of arr) {
+                            if (o === n) continue;
+                            const dx = n.x - o.x, dy = n.y - o.y;
+                            const d2 = Math.max(1, dx * dx + dy * dy);
+                            if (d2 > CG_CUTOFF * CG_CUTOFF) continue;
+                            const d = Math.sqrt(d2);
+                            n.vx += (dx * CG_CHARGE * a) / (d2 * d);
+                            n.vy += (dy * CG_CHARGE * a) / (d2 * d);
+                            // Separation, applied to the POSITION and not the velocity: charge
+                            // alone loses to a node's own springs once it has a dozen neighbours,
+                            // and the result is the hairball where every hub sits under its
+                            // callers. This is the only thing that guarantees drawn circles do
+                            // not overlap, so it runs regardless of how cold the layout is.
+                            const minD = rn + cgRadius(o) + CG_SEPARATION;
+                            if (d >= minD) continue;
+                            const push = ((minD - d) / d) * 0.5;
+                            if (!n.pinned) { n.x += dx * push; n.y += dy * push; }
+                            if (!o.pinned) { o.x -= dx * push; o.y -= dy * push; }
+                        }
+                    }
+                }
+            }
+            for (const n of nodes) {
+                if (n.pinned) { n.vx = 0; n.vy = 0; continue; }
+                n.vx -= n.x * CG_GRAVITY * a;
+                n.vy -= n.y * CG_GRAVITY * a;
+                n.vx *= CG_DAMP; n.vy *= CG_DAMP;
+                // Clamped so a node that lands on top of another cannot be flung off the canvas
+                // by the inverse-square term and take the layout's whole scale with it.
+                n.x += Math.max(-40, Math.min(40, n.vx));
+                n.y += Math.max(-40, Math.min(40, n.vy));
+            }
+            cg.alpha -= cg.alpha * CG_ALPHA_DECAY;
+            if (cg.alpha < CG_ALPHA_MIN) cg.alpha = 0;
+        }
+
+        function cgLoop() {
+            cg.raf = 0;
+            // A hidden tab must not keep a simulation running: the loop stops, and anything that
+            // matters re-enters through cgKick when the tab comes back.
+            if ($("view-codegraph").style.display === "none") { cg.alpha = 0; return; }
+            for (let i = 0; i < CG_MAX_TICKS_PER_FRAME && cg.alpha > 0; i++) cgTick();
+            cgDraw();
+            if (cg.alpha > 0 || cg.drag) cg.raf = requestAnimationFrame(cgLoop);
+        }
+        function cgKick(alpha) {
+            if (typeof alpha === "number") cg.alpha = Math.max(cg.alpha, alpha);
+            if (!cg.raf) cg.raf = requestAnimationFrame(cgLoop);
+        }
+
+        function cgFit() {
+            if (!cg.nodes.length) return;
+            const box = cgCanvasSize();
+            let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+            for (const n of cg.nodes) { x0 = Math.min(x0, n.x); y0 = Math.min(y0, n.y); x1 = Math.max(x1, n.x); y1 = Math.max(y1, n.y); }
+            const bw = Math.max(1, x1 - x0), bh = Math.max(1, y1 - y0);
+            cg.zoom = Math.max(0.12, Math.min(1.6, Math.min((box.w - 90) / bw, (box.h - 70) / bh)));
+            cg.tx = -((x0 + x1) / 2) * cg.zoom;
+            cg.ty = -((y0 + y1) / 2) * cg.zoom;
+            cgKick(0);
+        }
+        function cgZoomBy(factor, at) {
+            const box = cgCanvasSize();
+            const next = Math.max(0.08, Math.min(8, cg.zoom * factor));
+            const px = at ? at.x : box.w / 2, py = at ? at.y : box.h / 2;
+            // Anchor the point under the cursor: without it wheel-zoom drifts the graph away from
+            // whatever the user was pointing at.
+            const w = cgToWorld(px, py, box);
+            cg.zoom = next;
+            cg.tx = px - box.w / 2 - w.x * next;
+            cg.ty = py - box.h / 2 - w.y * next;
+            cgKick(0);
+        }
+
+        function cgNodeAt(px, py) {
+            const box = cgCanvasSize();
+            const w = cgToWorld(px, py, box);
+            let best = null, bestD = Infinity;
+            for (const n of cg.nodes) {
+                const r = cgRadius(n) + 4 / cg.zoom;
+                const d = (n.x - w.x) * (n.x - w.x) + (n.y - w.y) * (n.y - w.y);
+                if (d <= r * r && d < bestD) { best = n; bestD = d; }
+            }
+            return best;
+        }
+
+        function cgRenderLegend() {
+            const rest = cg.groupCount.size - cg.groupColor.size;
+            $("cgLegend").innerHTML = [...cg.groupColor.keys()]
+                .map((g) => '<span><i style="background:' + cgColor(g) + '"></i>' + esc(g) + "</span>").join("")
+                + (rest > 0 ? '<span><i style="background:' + CG_UNGROUPED + '"></i>' + rest + " more</span>" : "");
+        }
+        function cgRenderDetail() {
+            const el = $("cgDetail");
+            const n = cg.selected;
+            if (!n) { el.hidden = true; el.innerHTML = ""; return; }
+            const where = n.kind === "file" ? n.path : n.path + ":" + n.line;
+            el.hidden = false;
+            el.innerHTML = '<div class="cg-head"><h4>' + esc(n.name) + "</h4>"
+                + '<button type="button" class="iconbtn" data-cg-close title="Close" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div>'
+                + '<div class="cg-where">' + esc(where) + "</div>"
+                + '<div class="set-hint" style="padding:4px 0 0">' + esc(n.kind) + " - " + n.inDegree + " file" + (n.inDegree === 1 ? "" : "s") + " depend on it"
+                + (n.hidden > 0 ? " - " + n.hidden + " neighbour" + (n.hidden === 1 ? "" : "s") + " not shown" : "") + "</div>"
+                + (n.signature ? '<pre class="cg-sig">' + esc(n.signature.slice(0, 400)) + "</pre>" : "")
+                + '<div class="cg-acts">'
+                + '<button type="button" class="toggle on" data-cg-focus="' + esc(n.id) + '">Centre here</button>'
+                + (n.hidden > 0 ? '<button type="button" class="toggle" data-cg-expand="' + esc(n.id) + '">Expand</button>' : "")
+                + '<button type="button" class="iconbtn" data-cg-copy="' + esc(where) + '" title="Copy location" aria-label="Copy location"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>'
+                + "</div>";
+        }
+        function cgRenderMeta() {
+            const m = cg.meta;
+            if (!m) { $("cgGraphMeta").textContent = ""; return; }
+            // A real but tiny share rounds to "0%", which reads as "nothing" - the one thing it
+            // is not - so it is reported as "<1%" instead.
+            const total = (m.totals && m.totals.edges) || 0;
+            const pct = total && cg.edges.length ? (cg.edges.length / total) * 100 : 0;
+            const share = !pct ? "0%" : pct < 1 ? "<1%" : Math.round(pct) + "%";
+            const bits = [cg.nodes.length + " nodes", cg.edges.length + " edges", share + " of the graph's wiring"];
+            if (m.focus && m.focus.length) bits.push("centred on " + m.focus.map((f) => f.name).join(", "));
+            // Both caps are stated: one hid part of the picture, the other means part of the tree
+            // was never indexed - a drawn graph reads as complete unless it says otherwise.
+            if (m.truncated) bits.push("truncated at the node cap");
+            if (m.incomplete) bits.push("index incomplete: the scan hit a limit");
+            $("cgGraphMeta").textContent = bits.join(" - ");
+            $("cgCanvas").setAttribute("aria-label",
+                "Code graph: " + cg.nodes.length + " nodes and " + cg.edges.length + " edges"
+                + (m.focus && m.focus.length ? " around " + m.focus.map((f) => f.name).join(", ") : ""));
+        }
+        function cgOverlay(msg) {
+            const el = $("cgGraphOverlay");
+            if (!msg) { el.hidden = true; return; }
+            el.hidden = false;
+            el.textContent = msg;
+        }
+
+        /** Seed a node deterministically: phyllotaxis, or beside the node it was expanded from. */
+        function cgPlace(node, index, near) {
+            const th = index * 2.399963;
+            if (near) {
+                node.x = near.x + Math.cos(th) * (30 + index * 1.5);
+                node.y = near.y + Math.sin(th) * (30 + index * 1.5);
+            } else {
+                const r = 12 * Math.sqrt(index + 1);
+                node.x = Math.cos(th) * r;
+                node.y = Math.sin(th) * r;
+            }
+            node.vx = 0;
+            node.vy = 0;
+        }
+
+        function cgApply(slice, merge, near) {
+            const before = cg.nodes.length;
+            if (!merge) { cg.nodes = []; cg.byId = new Map(); cg.edges = []; cg.selected = null; cg.hover = null; }
+            let added = 0;
+            for (const raw of slice.nodes) {
+                const seen = cg.byId.get(raw.id);
+                // Keep the live object on a merge: replacing it would reset its position, and every
+                // expand would look like the whole layout jumped.
+                if (seen) { seen.inDegree = raw.inDegree; seen.hidden = raw.hidden; continue; }
+                const n = Object.assign({}, raw);
+                cgPlace(n, merge ? added : cg.nodes.length, near);
+                cg.byId.set(n.id, n);
+                cg.nodes.push(n);
+                added++;
+            }
+            const key = (e) => e.source + " " + e.target + " " + e.relation;
+            const have = new Set(cg.edges.map(key));
+            for (const e of slice.edges) {
+                if (have.has(key(e))) continue;
+                have.add(key(e));
+                cg.edges.push({ source: e.source, target: e.target, relation: e.relation });
+            }
+            for (const e of cg.edges) { e.s = cg.byId.get(e.source); e.t = cg.byId.get(e.target); }
+            cg.meta = slice;
+            cgRegroup();
+            cgRenderLegend();
+            cgRenderMeta();
+            cgRenderDetail();
+            cgKick(merge ? 0.55 : 1);
+            if (!merge || before === 0) setTimeout(cgFit, 420);
+            return added;
+        }
+
+        async function cgFetchGraph(payload) {
+            try {
+                const res = await fetch("/api/codegraph", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(Object.assign({ op: "graph", project: cgProject || undefined }, payload))
+                });
+                return await res.json();
+            } catch { return { ok: false, error: "Could not reach the server." }; }
+        }
+
+        async function cgDrawGraph(opts) {
+            const o = opts || {};
+            const seq = ++cg.seq;
+            if (!o.merge) cgOverlay("Drawing...");
+            const out = await cgFetchGraph({
+                focus: o.focus || undefined,
+                depth: Number($("cgDepth").value) || 1,
+                scope: $("cgScope").value,
+                // Deliberately below the engine's cap: past roughly this many nodes an overview
+                // stops being a picture you can read and becomes one you can only zoom into, and
+                // the meta line says when the cap cut something off.
+                limit: 200
+            });
+            // A slower earlier request must not overwrite a newer answer: clicking through three
+            // nodes quickly would otherwise leave whichever call happened to finish last.
+            if (seq !== cg.seq) return;
+            // The legend goes with the nodes: leaving the previous slice's colour key over an
+            // empty canvas describes a picture that is no longer on it.
+            const reset = () => {
+                cg.nodes = []; cg.edges = []; cg.byId = new Map(); cg.selected = null;
+                cgRegroup(); cgRenderLegend(); cgRenderDetail(); cgDraw();
+            };
+            if (!out || !out.ok || !out.graph) {
+                if (!o.merge) { reset(); cg.meta = null; cgRenderMeta(); }
+                cgOverlay((out && out.error) || "Could not draw the graph.");
+                return;
+            }
+            const slice = out.graph;
+            if (!slice.nodes.length) {
+                if (!o.merge) { reset(); cg.meta = slice; cgRenderMeta(); }
+                cgOverlay(slice.note || "Nothing to draw for this project yet.");
+                return;
+            }
+            cgOverlay("");
+            cgApply(slice, !!o.merge, o.merge ? cg.byId.get(o.focus) : null);
+        }
+
+        function cgWireCanvas() {
+            const c = $("cgCanvas");
+            const local = (e) => { const r = c.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+            c.addEventListener("pointerdown", (e) => {
+                const p = local(e);
+                const hit = cgNodeAt(p.x, p.y);
+                cg.moved = false;
+                c.setPointerCapture(e.pointerId);
+                if (hit) { cg.drag = { node: hit, wasPinned: hit.pinned }; hit.pinned = true; }
+                else { cg.pan = { x: p.x - cg.tx, y: p.y - cg.ty }; c.classList.add("grabbing"); }
+            });
+            c.addEventListener("pointermove", (e) => {
+                const p = local(e);
+                if (cg.drag) {
+                    const w = cgToWorld(p.x, p.y, cgCanvasSize());
+                    cg.drag.node.x = w.x;
+                    cg.drag.node.y = w.y;
+                    cg.moved = true;
+                    cgKick(0.28);
+                    return;
+                }
+                if (cg.pan) { cg.tx = p.x - cg.pan.x; cg.ty = p.y - cg.pan.y; cg.moved = true; cgKick(0); return; }
+                const hit = cgNodeAt(p.x, p.y);
+                if (hit !== cg.hover) { cg.hover = hit; c.style.cursor = hit ? "pointer" : ""; cgKick(0); }
+            });
+            const release = (e) => {
+                if (cg.drag) { if (!cg.moved) cg.drag.node.pinned = cg.drag.wasPinned; cg.drag = null; }
+                if (cg.pan) { cg.pan = null; c.classList.remove("grabbing"); }
+                if (!cg.moved && e) {
+                    const p = local(e);
+                    cg.selected = cgNodeAt(p.x, p.y) || null;
+                    cgRenderDetail();
+                }
+                cgKick(0);
+            };
+            c.addEventListener("pointerup", release);
+            c.addEventListener("pointercancel", () => release(null));
+            c.addEventListener("dblclick", (e) => {
+                const p = local(e);
+                const hit = cgNodeAt(p.x, p.y);
+                if (hit) cgDrawGraph({ focus: hit.id, merge: true });
+            });
+            c.addEventListener("wheel", (e) => {
+                e.preventDefault();
+                cgZoomBy(e.deltaY < 0 ? 1.14 : 1 / 1.14, local(e));
+            }, { passive: false });
+            // The canvas is focusable, so the same picture is reachable without a pointer.
+            c.addEventListener("keydown", (e) => {
+                if (e.key === "Escape") { cg.selected = null; cgRenderDetail(); cgKick(0); }
+                else if (e.key === "+" || e.key === "=") cgZoomBy(1.2);
+                else if (e.key === "-") cgZoomBy(1 / 1.2);
+                else if (e.key === "0") cgFit();
+                else return;
+                e.preventDefault();
+            });
+            new ResizeObserver(() => cgKick(0)).observe($("cgWrap"));
+            const redraw = () => cgDrawGraph({ focus: $("cgFocus").value.trim() });
+            $("cgZoomIn").addEventListener("click", () => cgZoomBy(1.25));
+            $("cgZoomOut").addEventListener("click", () => cgZoomBy(1 / 1.25));
+            $("cgFit").addEventListener("click", cgFit);
+            $("cgDraw").addEventListener("click", redraw);
+            $("cgFocus").addEventListener("keydown", (e) => { if (e.key === "Enter") redraw(); });
+            $("cgScope").addEventListener("change", redraw);
+            $("cgDepth").addEventListener("change", redraw);
+            $("cgDetail").addEventListener("click", (e) => {
+                const close = e.target.closest("[data-cg-close]");
+                if (close) { cg.selected = null; cgRenderDetail(); cgKick(0); return; }
+                const focus = e.target.closest("[data-cg-focus]");
+                if (focus) { $("cgFocus").value = focus.dataset.cgFocus; cgDrawGraph({ focus: focus.dataset.cgFocus }); return; }
+                const expand = e.target.closest("[data-cg-expand]");
+                if (expand) { cgDrawGraph({ focus: expand.dataset.cgExpand, merge: true }); return; }
+                const copy = e.target.closest("[data-cg-copy]");
+                if (copy) copyToClipboard(copy.dataset.cgCopy, copy);
+            });
+        }
+
         function renderCodeGraph(view) {
             view = view || {};
             const on = !!view.enabled;
@@ -5617,7 +6165,12 @@ export {
             $("cgNote").textContent = "";
             try {
                 const q = cgProject ? "?project=" + encodeURIComponent(cgProject) : "";
-                renderCodeGraph(await (await fetch("/api/codegraph" + q, { cache: "no-store" })).json());
+                const view = await (await fetch("/api/codegraph" + q, { cache: "no-store" })).json();
+                renderCodeGraph(view);
+                // The picture is a second request on purpose: it is the expensive half, and the
+                // panel around it (projects, freshness, architecture) must not wait on it.
+                if (view && (view.projects || []).length) cgDrawGraph({ focus: $("cgFocus").value.trim() });
+                else cgOverlay("Index a project to draw its graph.");
             } catch { $("cgBody").innerHTML = '<div class="empty" style="padding:12px 0">Code graph unavailable.</div>'; }
         }
         async function cgPost(payload, working) {
@@ -5646,7 +6199,10 @@ export {
         async function cgIndexAction() {
             const root = $("cgRoot").value.trim();
             const out = await cgPost({ op: "index", root: root || undefined }, "Indexing...");
-            if (out) { if (out.view && out.view.selected) cgProject = out.view.selected; setNote("cgNote", out.ok ? "Indexed." : (out.error || "Indexing failed."), out.ok ? "ok" : "err"); }
+            if (!out) return;
+            if (out.view && out.view.selected) cgProject = out.view.selected;
+            setNote("cgNote", out.ok ? "Indexed." : (out.error || "Indexing failed."), out.ok ? "ok" : "err");
+            if (out.ok) cgDrawGraph({ focus: $("cgFocus").value.trim() });
         }
         async function cgAskAction() {
             const query = $("cgQuery").value.trim();
@@ -5655,6 +6211,7 @@ export {
             if (out) setNote("cgNote", out.ok ? "" : (out.error || "Query failed."), out.ok ? "ok" : "err");
         }
         function wireCodeGraph() {
+            cgWireCanvas();
             $("cgRefresh").addEventListener("click", loadCodeGraph);
             $("cgToggle").addEventListener("click", cgToggleAction);
             $("cgIndex").addEventListener("click", cgIndexAction);
@@ -5664,12 +6221,17 @@ export {
                 const reindex = e.target.closest("button[data-cg-reindex]");
                 if (reindex) {
                     cgPost({ op: "index", root: reindex.dataset.cgReindex }, "Re-indexing...")
-                        .then((out) => { if (out) setNote("cgNote", out.ok ? "Re-indexed." : (out.error || "Indexing failed."), out.ok ? "ok" : "err"); });
+                        .then((out) => {
+                            if (!out) return;
+                            setNote("cgNote", out.ok ? "Re-indexed." : (out.error || "Indexing failed."), out.ok ? "ok" : "err");
+                            if (out.ok) cgDrawGraph({ focus: $("cgFocus").value.trim() });
+                        });
                     return;
                 }
                 const b = e.target.closest("button[data-cg-project]");
                 if (!b) return;
                 cgProject = b.dataset.cgProject;
+                $("cgFocus").value = "";
                 loadCodeGraph();
             });
         }

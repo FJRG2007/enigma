@@ -245,6 +245,95 @@
         ask: null
     };
 
+    // A small, fixed slice of a plausible codebase so the demo's graph panel draws something
+    // real-shaped: symbol nodes with cross-file wiring, plus the file/import view behind them.
+    var CG_SYMBOLS = [
+        ["src/config.ts#readConfig", "readConfig", "function", "src/config.ts", 42, 58, "function readConfig(): { config: EnigmaConfig; path: string }", 61],
+        ["src/config.ts#writeConfig", "writeConfig", "function", "src/config.ts", 64, 91, "function writeConfig(next: EnigmaConfig): void", 18],
+        ["src/config.ts#EnigmaConfig", "EnigmaConfig", "interface", "src/config.ts", 12, 38, "export interface EnigmaConfig", 44],
+        ["src/util.ts#readJson", "readJson", "function", "src/util.ts", 20, 31, "function readJson<T>(path: string): T | null", 39],
+        ["src/util.ts#isDir", "isDir", "function", "src/util.ts", 33, 36, "function isDir(path: string): boolean", 27],
+        ["src/tool-launch.ts#resolveBin", "resolveBin", "function", "src/tool-launch.ts", 71, 96, "function resolveBin(tool: string): string | null", 34],
+        ["src/agents.ts#installedAgents", "installedAgents", "function", "src/agents.ts", 55, 88, "function installedAgents(): Agent[]", 21],
+        ["src/agents.ts#Agent", "Agent", "interface", "src/agents.ts", 14, 29, "export interface Agent", 25],
+        ["src/skills.ts#syncTarget", "syncTarget", "function", "src/skills.ts", 210, 288, "function syncTarget(target: Target): SyncReport", 22],
+        ["src/skills.ts#renderSkill", "renderSkill", "function", "src/skills.ts", 132, 186, "function renderSkill(skill: Skill, cfg: EnigmaConfig): string", 9],
+        ["src/mcp.ts#toolList", "toolList", "function", "src/mcp.ts", 230, 244, "function toolList(): Tool[]", 7],
+        ["src/cli.ts#run", "run", "function", "src/cli.ts", 2525, 2740, "async function run(argv: string[]): Promise<void>", 3],
+        ["src/dashboard.ts#serveDashboard", "serveDashboard", "function", "src/dashboard.ts", 980, 1090, "function serveDashboard(opts: DashboardOptions): Server", 4],
+        ["src/bin/enigma.ts#main", "main", "function", "src/bin/enigma.ts", 8, 21, "async function main(): Promise<void>", 0]
+    ];
+    var CG_EDGES = [
+        ["src/config.ts#readConfig", "src/util.ts#readJson", "calls"],
+        ["src/config.ts#readConfig", "src/config.ts#EnigmaConfig", "references"],
+        ["src/config.ts#writeConfig", "src/config.ts#EnigmaConfig", "references"],
+        ["src/config.ts#writeConfig", "src/util.ts#isDir", "calls"],
+        ["src/tool-launch.ts#resolveBin", "src/config.ts#readConfig", "calls"],
+        ["src/tool-launch.ts#resolveBin", "src/util.ts#isDir", "calls"],
+        ["src/agents.ts#installedAgents", "src/tool-launch.ts#resolveBin", "calls"],
+        ["src/agents.ts#installedAgents", "src/agents.ts#Agent", "references"],
+        ["src/skills.ts#syncTarget", "src/config.ts#readConfig", "calls"],
+        ["src/skills.ts#syncTarget", "src/skills.ts#renderSkill", "calls"],
+        ["src/skills.ts#syncTarget", "src/agents.ts#installedAgents", "calls"],
+        ["src/skills.ts#renderSkill", "src/config.ts#EnigmaConfig", "references"],
+        ["src/mcp.ts#toolList", "src/config.ts#readConfig", "calls"],
+        ["src/dashboard.ts#serveDashboard", "src/config.ts#readConfig", "calls"],
+        ["src/dashboard.ts#serveDashboard", "src/util.ts#readJson", "calls"],
+        ["src/cli.ts#run", "src/skills.ts#syncTarget", "calls"],
+        ["src/cli.ts#run", "src/dashboard.ts#serveDashboard", "calls"],
+        ["src/cli.ts#run", "src/mcp.ts#toolList", "calls"],
+        ["src/cli.ts#run", "src/agents.ts#installedAgents", "calls"],
+        ["src/bin/enigma.ts#main", "src/cli.ts#run", "calls"]
+    ];
+    var CG_FILES = ["src/config.ts", "src/util.ts", "src/tool-launch.ts", "src/agents.ts", "src/skills.ts", "src/mcp.ts", "src/cli.ts", "src/dashboard.ts", "src/bin/enigma.ts"];
+
+    function cgNode(row, depth, hidden) {
+        return { id: row[0], name: row[1], kind: row[2], path: row[3], line: row[4], endLine: row[5], signature: row[6], inDegree: row[7], depth: depth, hidden: hidden || 0 };
+    }
+    function codeGraphSlice(body) {
+        var b = body || {};
+        var totals = { files: 214, symbols: 3312, edges: 6424 };
+        var base = { project: CODEGRAPH.selected || "enigma", root: "/home/you/dev/enigma", scope: b.scope === "files" ? "files" : "symbols", depth: b.depth || 1, focus: null, truncated: false, incomplete: false };
+        if (base.scope === "files" && !b.focus) {
+            var counts = {};
+            var fileEdges = [];
+            for (var i = 0; i < CG_EDGES.length; i++) {
+                var from = CG_EDGES[i][0].split("#")[0], to = CG_EDGES[i][1].split("#")[0];
+                if (from === to) continue;
+                fileEdges.push({ source: from, target: to, relation: "imports" });
+                counts[to] = (counts[to] || 0) + 1;
+            }
+            var fileNodes = CG_FILES.map(function (path, idx) {
+                return { id: path, name: path.split("/").pop(), kind: "file", path: path, line: 1, endLine: 200, signature: "", inDegree: counts[path] || 0, depth: idx === 0 ? 0 : 1, hidden: 0 };
+            });
+            return Object.assign({}, base, { nodes: fileNodes, edges: fileEdges, totals: totals });
+        }
+        var focus = (b.focus || "").trim().toLowerCase();
+        if (!focus) {
+            return Object.assign({}, base, {
+                nodes: CG_SYMBOLS.map(function (r) { return cgNode(r, 0, 0); }),
+                edges: CG_EDGES.map(function (e) { return { source: e[0], target: e[1], relation: e[2] }; }),
+                totals: totals
+            });
+        }
+        var hit = null;
+        for (var j = 0; j < CG_SYMBOLS.length; j++) {
+            var r = CG_SYMBOLS[j];
+            if (r[0].toLowerCase() === focus || r[1].toLowerCase() === focus || r[3].toLowerCase() === focus) { hit = r; break; }
+        }
+        if (!hit) return Object.assign({}, base, { nodes: [], edges: [], totals: totals, focus: [], note: `No symbol or file named '${b.focus}' in the graph.` });
+        var keep = {};
+        keep[hit[0]] = 0;
+        for (var k = 0; k < CG_EDGES.length; k++) {
+            if (CG_EDGES[k][0] === hit[0] && keep[CG_EDGES[k][1]] === undefined) keep[CG_EDGES[k][1]] = 1;
+            if (CG_EDGES[k][1] === hit[0] && keep[CG_EDGES[k][0]] === undefined) keep[CG_EDGES[k][0]] = 1;
+        }
+        var nodes = CG_SYMBOLS.filter(function (r) { return keep[r[0]] !== undefined; }).map(function (r) { return cgNode(r, keep[r[0]], 0); });
+        var edges = CG_EDGES.filter(function (e) { return keep[e[0]] !== undefined && keep[e[1]] !== undefined; })
+            .map(function (e) { return { source: e[0], target: e[1], relation: e[2] }; });
+        return Object.assign({}, base, { nodes: nodes, edges: edges, totals: totals, focus: [{ id: hit[0], name: hit[1], path: hit[3], line: hit[4] }] });
+    }
+
     function codeGraphAsk(query) {
         return `code graph - "${query}" (hybrid)\n\n- readConfig - function - src/config.ts:42-58\n    function readConfig(): { config: EnigmaConfig; path: string }\n- resolveBin - function - src/tool-launch.ts:71-96\n    function resolveBin(tool: string): string | null\n\nSaved you from opening 2 files (~410 lines).\n`;
     }
@@ -495,6 +584,7 @@
             if (method === "POST") {
                 if (body && body.op === "toggle" && typeof body.on === "boolean") CODEGRAPH.enabled = body.on;
                 if (body && body.op === "index") return { ok: true, note: "Demo - indexing is disabled in the preview.", view: CODEGRAPH };
+                if (body && body.op === "graph") return { ok: true, graph: codeGraphSlice(body) };
                 if (body && body.op === "ask") {
                     var q = (body.query || "").trim();
                     if (!q) return { ok: false, error: "missing query" };

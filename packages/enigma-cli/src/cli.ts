@@ -377,7 +377,8 @@ Commands:
                        (hybrid keyword+vector search; opt-in; reads your own logs)
   codegraph [action]   Native codebase memory / code graph: status, on, off,
                        index [path], projects, arch [project], search <name>,
-                       ask <q>, callers <sym>, skeleton <file>, map, grep <re>, check
+                       ask <q>, callers <sym>, skeleton <file>, map, grep <re>,
+                       graph [focus], check
                        (opt-in; structural code intelligence over MCP, no external tool)
   autoskills [path]    Detect the project's tech stack and install matching agent skills
                        (separate from the policy skills; --dry-run to preview)
@@ -670,6 +671,8 @@ Retrieval (refreshes the graph first, so answers include uncommitted edits):
   skeleton <file>       every signature, no bodies
   map                   directory clusters, hubs and hotspots
   grep "<regex>"        every hit, grouped by enclosing symbol   -i  --fixed
+  graph [focus]         a drawable slice: nodes and edges around a symbol, file or
+                        the whole repo    --scope files|symbols  --depth N  --dot
   check                 report drift between the graph and the tree (exit 1 if stale)
 
 Shared flags: --in <path>  --limit N  --project <name>  --json  --no-refresh`,
@@ -1443,12 +1446,12 @@ async function runCodeGraphCli(args: string[]): Promise<number> {
         return 0;
     }
     if (RETRIEVAL_SUBCOMMANDS.has(sub)) return runCodeGraphQuery(sub, rest);
-    console.error(`Unknown subcommand '${sub}'. Use: enigma codegraph <status | index [path] | projects | arch [project] | search <name> | ask <query> | callers <symbol> | callees <symbol> | skeleton <file> | map | grep <regex> | check>`);
+    console.error(`Unknown subcommand '${sub}'. Use: enigma codegraph <status | index [path] | projects | arch [project] | search <name> | ask <query> | callers <symbol> | callees <symbol> | skeleton <file> | map | grep <regex> | graph [focus] | check>`);
     return 1;
 }
 
 /** The subcommands that read the graph to answer a question, rather than manage it. */
-const RETRIEVAL_SUBCOMMANDS = new Set(["ask", "callers", "callees", "skeleton", "map", "grep", "check"]);
+const RETRIEVAL_SUBCOMMANDS = new Set(["ask", "callers", "callees", "skeleton", "map", "grep", "graph", "check"]);
 
 /** Flags shared by the retrieval subcommands, pulled out of the positional arguments. */
 interface QueryFlags {
@@ -1460,6 +1463,8 @@ interface QueryFlags {
     maxHits?: number;
     maxDirs?: number;
     direction?: "in" | "out";
+    scope?: "symbols" | "files";
+    dot: boolean;
     source: boolean;
     refresh: boolean;
     ignoreCase: boolean;
@@ -1476,7 +1481,7 @@ interface QueryFlags {
  * pattern that starts with a dash still has a way through.
  */
 function parseQueryFlags(args: string[]): QueryFlags {
-    const flags: QueryFlags = { positionals: [], source: false, refresh: true, ignoreCase: false, fixed: false, json: false };
+    const flags: QueryFlags = { positionals: [], dot: false, source: false, refresh: true, ignoreCase: false, fixed: false, json: false };
     const fail: (message: string) => never = (message) => { console.error(message); process.exit(2); };
     let i = 0;
     const value = (flag: string): string => {
@@ -1506,6 +1511,13 @@ function parseQueryFlags(args: string[]): QueryFlags {
                 flags.direction = raw;
                 break;
             }
+            case "--scope": {
+                const raw = value(a);
+                if (raw !== "symbols" && raw !== "files") fail(`Invalid value for --scope: '${raw}' (expected 'symbols' or 'files')`);
+                flags.scope = raw;
+                break;
+            }
+            case "--dot": flags.dot = true; break;
             case "--source": flags.source = true; break;
             case "--no-refresh": flags.refresh = false; break;
             case "--ignore-case": case "-i": flags.ignoreCase = true; break;
@@ -1520,7 +1532,7 @@ function parseQueryFlags(args: string[]): QueryFlags {
 }
 
 /**
- * `enigma codegraph <ask|callers|callees|skeleton|map|grep|check>`: the retrieval half of the code
+ * `enigma codegraph <ask|callers|callees|skeleton|map|grep|graph|check>`: the retrieval half of the code
  * graph. Every one of them refreshes the graph first when the tree moved, so the answer describes
  * the code as it is now, and indexes the current directory when nothing covers it yet.
  */
@@ -1569,6 +1581,19 @@ async function runCodeGraphQuery(sub: string, args: string[]): Promise<number> {
             const r = q.codeGraphMap({ ...base(), maxDirs: f.maxDirs });
             if (!r) { console.error(`  ${q.NOT_INDEXED}`); return 1; }
             return emit(r, fmt.formatMap(r));
+        }
+        case "graph": {
+            const sub = await import("./codegraph-subgraph");
+            const r = sub.codeGraphSubgraph({
+                ...base(),
+                focus: f.positionals.join(" ").trim() || undefined,
+                depth: f.depth, limit: f.limit, scope: f.scope,
+            });
+            if (!r) { console.error(`  ${q.NOT_INDEXED}`); return 1; }
+            // --dot writes the graph itself, so it bypasses the text renderer entirely: piping it
+            // into `dot` is the point, and a human-readable header would corrupt the file.
+            if (f.dot) { console.log(sub.subgraphToDot(r)); return 0; }
+            return emit(r, fmt.formatSubgraph(r));
         }
         case "grep": {
             const pattern = f.positionals.join(" ").trim();

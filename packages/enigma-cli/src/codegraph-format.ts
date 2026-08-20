@@ -11,6 +11,7 @@
  */
 
 import * as q from "./codegraph-query";
+import * as sub from "./codegraph-subgraph";
 
 /** Rough tokens for a byte length (about 4 chars per token - an estimate, and labeled as one). */
 function toTokens(chars: number): number {
@@ -111,6 +112,52 @@ export function formatGrep(r: q.GrepResult): string {
     }
     lines.push(...notes);
     return `${withSavings(lines.join("\n").trimEnd(), r.saved)}\n`;
+}
+
+/**
+ * What share of the whole graph's wiring a slice carries. A real but tiny share rounds to "0%",
+ * which reads as "nothing" - the one thing it is not - so it is reported as "<1%" instead.
+ */
+function sliceShare(shown: number, total: number): string {
+    if (!total || !shown) return "0%";
+    const pct = (shown / total) * 100;
+    return pct < 1 ? "<1%" : `${Math.round(pct)}%`;
+}
+
+/**
+ * A graph slice as text. The picture belongs in the dashboard (or in DOT); this is the terminal's
+ * version of it - what is on screen, how much of the graph that is, and the wiring per node - so
+ * `codegraph graph` answers something without a browser open.
+ */
+export function formatSubgraph(r: sub.SubgraphResult): string {
+    const what = r.focus ? `around ${r.focus.map((f) => `${f.name} (${f.path}:${f.line})`).join(", ")}` : `${r.scope} overview`;
+    const head = `${r.project} - graph slice: ${what}`;
+    if (!r.nodes.length) return `${head}\n\n${r.note ?? "Nothing to draw."}\n`;
+    const lines = [
+        head,
+        "",
+        `${r.nodes.length} nodes - ${r.edges.length} edges - depth ${r.depth} - ${sliceShare(r.edges.length, r.totals.edges)} of the graph's wiring`,
+        "",
+    ];
+    const out = new Map<string, string[]>();
+    for (const e of r.edges) {
+        const arr = out.get(e.source);
+        if (arr) arr.push(`${e.relation} ${e.target}`);
+        else out.set(e.source, [`${e.relation} ${e.target}`]);
+    }
+    for (const n of r.nodes.slice(0, 40)) {
+        const where = n.kind === "file" ? n.path : `${n.path}:${n.line}`;
+        const links = out.get(n.id) ?? [];
+        lines.push(`- ${n.name} - ${n.kind} - ${where} (${n.inDegree} in${n.hidden ? `, +${n.hidden} hidden` : ""})`);
+        for (const l of links.slice(0, 6)) lines.push(`    -> ${l}`);
+        if (links.length > 6) lines.push(`    -> (+${links.length - 6} more)`);
+    }
+    if (r.nodes.length > 40) lines.push(`  (+${r.nodes.length - 40} more nodes; raise --limit or narrow with --in)`);
+    // Both caps are stated because they mislead in opposite ways: one hid part of the picture,
+    // the other means part of the tree was never in the graph to begin with.
+    if (r.truncated) lines.push("", "TRUNCATED: the node cap was reached, so reachable nodes were left out.");
+    if (r.incomplete) lines.push("", INCOMPLETE_INDEX);
+    return `${lines.join("\n")}\n`;
 }
 
 export function formatFreshness(r: q.FreshnessResult): string {

@@ -133,6 +133,9 @@ jobs:
       - name: Test code-graph retrieval
         run: bun test tests/codegraph-query.test.ts
         working-directory: packages/enigma-cli
+      - name: Test code-graph subgraph slices
+        run: bun test tests/codegraph-subgraph.test.ts
+        working-directory: packages/enigma-cli
       - name: Test code-graph session hooks
         run: bun test tests/codegraph-hooks.test.ts
         working-directory: packages/enigma-cli

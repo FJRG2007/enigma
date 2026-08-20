@@ -621,12 +621,18 @@ function serveCodeGraph(req: import("node:http").IncomingMessage, res: import("n
         .catch(() => { res.writeHead(500, JSON_HDR); res.end('{"error":"code-graph unavailable"}'); });
 }
 
-/** Apply a code-graph action from a POST body { op, on?, project? } (toggle | refresh). */
+/** A body number, or undefined when it is absent or not a finite number the engine would accept. */
+function boundedNumber(value: unknown, min: number, max: number): number | undefined {
+    if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+    return Math.min(max, Math.max(min, Math.floor(value)));
+}
+
+/** Apply a code-graph action from a POST body { op, ... } (toggle | index | ask | graph | refresh). */
 function writeCodeGraph(req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse): void {
     let body = "";
     req.on("data", (chunk) => { body += chunk; if (body.length > 8192) req.destroy(); });
     req.on("end", () => {
-        let parsed: { op?: unknown; on?: unknown; project?: unknown; root?: unknown; query?: unknown; };
+        let parsed: { op?: unknown; on?: unknown; project?: unknown; root?: unknown; query?: unknown; focus?: unknown; depth?: unknown; limit?: unknown; scope?: unknown; };
         try { parsed = JSON.parse(body || "{}"); } catch { res.writeHead(400, JSON_HDR); res.end('{"error":"bad json"}'); return; }
         if (typeof parsed.op !== "string") { res.writeHead(400, JSON_HDR); res.end('{"error":"missing op"}'); return; }
         const payload = {
@@ -634,6 +640,11 @@ function writeCodeGraph(req: import("node:http").IncomingMessage, res: import("n
             project: typeof parsed.project === "string" ? parsed.project : undefined,
             root: typeof parsed.root === "string" ? parsed.root : undefined,
             query: typeof parsed.query === "string" ? parsed.query.slice(0, 500) : undefined,
+            // A node id carries a path, so it is longer than a query but still bounded.
+            focus: typeof parsed.focus === "string" ? parsed.focus.slice(0, 1000) : undefined,
+            depth: boundedNumber(parsed.depth, 1, 4),
+            limit: boundedNumber(parsed.limit, 1, 2000),
+            scope: parsed.scope === "files" ? "files" as const : parsed.scope === "symbols" ? "symbols" as const : undefined,
         };
         import("./dashboard-codegraph")
             .then(({ applyCodeGraphAction }) => applyCodeGraphAction(parsed.op as string, payload))

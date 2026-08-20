@@ -2,14 +2,15 @@
  * Bridge exposing the native codebase-memory (code graph) engine to the dashboard's HTTP API:
  * a serializable view (enabled state, indexed projects, and a selected project's architecture +
  * graph schema, freshness) and actions - toggle the codeGraph setting on/off (which (de)registers
- * the enigma MCP server that hosts the tools), index a project directory, and run a query against
- * the graph. Imported dynamically by dashboard.ts. Everything is computed in-process by enigma's
- * own engine - no external tool.
+ * the enigma MCP server that hosts the tools), index a project directory, run a query against the
+ * graph, and cut a drawable slice of it for the panel's canvas. Imported dynamically by
+ * dashboard.ts. Everything is computed in-process by enigma's own engine - no external tool.
  */
 
 import { readConfig } from "./config";
 import * as q from "./codegraph-query";
 import * as fmt from "./codegraph-format";
+import * as sub from "./codegraph-subgraph";
 import {
     codeGraphArchitecture,
     codeGraphSchema,
@@ -61,9 +62,27 @@ export function codeGraphDashboard(opts: { project?: string; ask?: { query: stri
     };
 }
 
-export interface CodeGraphActionPayload { on?: boolean; project?: string; root?: string; query?: string; }
+export interface CodeGraphActionPayload {
+    on?: boolean;
+    project?: string;
+    root?: string;
+    query?: string;
+    /** A symbol name, file path or node id to centre the slice on. */
+    focus?: string;
+    depth?: number;
+    limit?: number;
+    scope?: sub.SubgraphScope;
+}
 
-export interface CodeGraphActionResult { ok: boolean; error?: string; view?: CodeGraphView; enabled?: boolean; note?: string; }
+export interface CodeGraphActionResult {
+    ok: boolean;
+    error?: string;
+    view?: CodeGraphView;
+    enabled?: boolean;
+    note?: string;
+    /** The drawable slice, for the `graph` action only. */
+    graph?: sub.SubgraphResult;
+}
 
 /** Apply a code-graph action and return the refreshed view. */
 export async function applyCodeGraphAction(op: string, payload: CodeGraphActionPayload = {}): Promise<CodeGraphActionResult> {
@@ -100,6 +119,24 @@ export async function applyCodeGraphAction(op: string, payload: CodeGraphActionP
             return { ok: true, view: codeGraphDashboard({ project: payload.project, ask: { query, report: fmt.formatAsk(answer) } }) };
         } catch (e) {
             return { ok: false, error: `query failed: ${(e as Error).message}` };
+        }
+    }
+    if (op === "graph") {
+        try {
+            // Same refusal as `ask`: no refresh inside the request. Panning a graph must not
+            // re-parse the tree, and the Freshness panel already states the drift with the repair.
+            const slice = sub.codeGraphSubgraph({
+                project: payload.project,
+                focus: payload.focus,
+                depth: payload.depth,
+                limit: payload.limit,
+                scope: payload.scope,
+                refresh: false,
+            });
+            if (!slice) return { ok: false, error: q.NOT_INDEXED };
+            return { ok: true, graph: slice };
+        } catch (e) {
+            return { ok: false, error: `graph failed: ${(e as Error).message}` };
         }
     }
     if (op === "refresh") return { ok: true, view: codeGraphDashboard({ project: payload.project }) };
