@@ -32,14 +32,22 @@ const EDIT_MATCHER = "Edit|Write|MultiEdit|NotebookEdit";
 
 /**
  * One entry per event. The timeouts are the budget each hook has to answer in, and they differ on
- * purpose: the prompt hook sits between the user pressing enter and the model seeing the turn, so
- * it gets the least room; session start is paid once and may need a cold index.
+ * purpose: session start is paid once and may need a cold index, so it gets the most room.
+ *
+ * None of them can be tight, because the floor is not the hook's own work. Every entry spawns the
+ * launcher's Node process and then the ~108 MB Bun binary, and the engine then parses the whole
+ * stored graph before it can answer - measured on this monorepo (1.5k files, 23k symbols) at 3-4.5 s
+ * to reach `--version` and 5-7.5 s to load the graph and probe drift, on a host with Defender
+ * real-time scanning on. A budget that only covers the happy path does not degrade gracefully: the
+ * host kills the hook, discards its output, and prints a "timed out" warning into the session, so
+ * the process cost is paid on every prompt and buys nothing but noise. These are sized for the
+ * measured worst case rather than the median.
  */
 const HOOK_EVENTS: { event: string; arg: string; matcher?: string; timeout: number; }[] = [
-    { event: "SessionStart", arg: "session-start", timeout: 20 },
-    { event: "UserPromptSubmit", arg: "prompt", timeout: 10 },
-    { event: "PostToolUse", arg: "post-edit", matcher: EDIT_MATCHER, timeout: 10 },
-    { event: "Stop", arg: "stop", timeout: 10 },
+    { event: "SessionStart", arg: "session-start", timeout: 45 },
+    { event: "UserPromptSubmit", arg: "prompt", timeout: 25 },
+    { event: "PostToolUse", arg: "post-edit", matcher: EDIT_MATCHER, timeout: 25 },
+    { event: "Stop", arg: "stop", timeout: 25 },
 ];
 
 /**

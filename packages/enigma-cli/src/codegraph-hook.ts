@@ -234,7 +234,12 @@ async function prompt(input: HookInput, dir: string): Promise<void> {
     const project = coveringProject(cg, dir);
     if (!project) return;
 
-    const answer = q.codeGraphAsk(text, { project, limit: PROMPT_HITS * 2 });
+    // `refresh: false` for the same reason coveringProject never indexes inline: the default
+    // re-indexes the whole tree when the graph has drifted, which on a monorepo is longer than the
+    // whole hook budget, so the host kills the hook and discards the output - the cost is paid on
+    // every prompt that follows an edit and buys nothing. The Stop hook re-indexes in the
+    // background after any turn that wrote a file, so a drifted graph is already being repaired.
+    const answer = q.codeGraphAsk(text, { project, refresh: false, limit: PROMPT_HITS * 2 });
     if (!answer || !answer.hits.length) return;
     // A lexical answer whose top hit barely overlaps the question is a coincidence, not a lead.
     // A structural answer ("who calls X") came from edges, so it needs no lexical gate.
