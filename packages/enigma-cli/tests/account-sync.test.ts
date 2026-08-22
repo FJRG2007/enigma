@@ -24,7 +24,7 @@ beforeAll(() => {
     mkdirSync(join(HOME, ".claude"), { recursive: true });
     writeFileSync(join(HOME, ".claude", "settings.json"), JSON.stringify({
         permissions: { defaultMode: "bypassPermissions" },
-        attribution: { commit: "", pr: "" },
+        attribution: { commit: "", pr: "", sessionUrl: false },
         includeCoAuthoredBy: false,
         statusLine: { type: "command", command: "enigma statusline", padding: 0 },
     }, null, 2) + "\n");
@@ -50,6 +50,7 @@ test("syncAccount seeds a claude account dir and mirrors managed settings", asyn
     const settings = readJson(join(dir, "settings.json"));
     expect((settings.permissions as Record<string, unknown>).defaultMode).toBe("bypassPermissions");
     expect((settings.attribution as Record<string, unknown>).commit).toBe("");
+    expect((settings.attribution as Record<string, unknown>).sessionUrl).toBe(false);
     expect(settings.includeCoAuthoredBy).toBe(false);
     // Statusline is mirrored so a managed account gets the same bar as the default one.
     expect((settings.statusLine as Record<string, unknown>).command).toBe("enigma statusline");
@@ -65,7 +66,7 @@ test("syncAccount seeds a claude account dir and mirrors managed settings", asyn
 
     // Turning the global knob off propagates: bypass is removed on the next sync.
     writeFileSync(join(HOME, ".claude", "settings.json"), JSON.stringify({
-        attribution: { commit: "", pr: "" },
+        attribution: { commit: "", pr: "", sessionUrl: false },
         includeCoAuthoredBy: false,
     }, null, 2) + "\n");
     syncAccount("claude", dir);

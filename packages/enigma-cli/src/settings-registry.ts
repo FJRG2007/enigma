@@ -572,7 +572,7 @@ const RAW_CATEGORIES: Category[] = [
             {
                 key: "claude-attribution",
                 label: "Claude commit attribution",
-                hint: "let Claude Code commit as its own contributor (Co-Authored-By / PR footer); enigma default: off",
+                hint: "let Claude Code commit as its own contributor (Co-Authored-By, PR footer, session link); enigma default: off",
                 read: (scope) => getClaudeAttribution(scope),
                 write: (value, scope) => ({ changed: setClaudeAttribution(scope, value) }),
             },

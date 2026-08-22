@@ -59,7 +59,7 @@ test("deploy mirrors the user's enigma-managed Claude settings into the pack con
     const globalSettings = join(HOME, ".claude", "settings.json");
     mkdirSync(join(HOME, ".claude"), { recursive: true });
     writeFileSync(globalSettings, JSON.stringify({
-        attribution: { commit: "", pr: "" },
+        attribution: { commit: "", pr: "", sessionUrl: false },
         includeCoAuthoredBy: false,
         env: { CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY: "1" },
     }));
@@ -69,6 +69,7 @@ test("deploy mirrors the user's enigma-managed Claude settings into the pack con
     const settings = JSON.parse(readFileSync(join(HOME, "packs", "helio", "context", "claude", "settings.json"), "utf8"));
     expect(settings.attribution.commit).toBe("");
     expect(settings.attribution.pr).toBe("");
+    expect(settings.attribution.sessionUrl).toBe(false);
     expect(settings.includeCoAuthoredBy).toBe(false);
     expect(settings.env.CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY).toBe("1");
     // The pack's forced bypass default still wins over the mirror.

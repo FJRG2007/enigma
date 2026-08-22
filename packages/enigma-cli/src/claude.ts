@@ -79,8 +79,9 @@ const FEEDBACK_SURVEY_ENV = "CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY";
 /**
  * Merge the attribution-disabling keys into Claude's settings.json without
  * clobbering other settings. Sets the current `attribution` object (commit/pr
- * empty) and the legacy `includeCoAuthoredBy: false` for older versions.
- * Returns true if the file was written (i.e. something changed).
+ * empty, `sessionUrl: false` so no `Claude-Session:` link trailer is appended)
+ * and the legacy `includeCoAuthoredBy: false` for older versions. Returns true
+ * if the file was written (i.e. something changed).
  */
 export function disableClaudeAttribution(scope: "global" | "local"): boolean {
     const path = claudeSettingsPath(scope);
@@ -90,13 +91,13 @@ export function disableClaudeAttribution(scope: "global" | "local"): boolean {
         ? current.attribution as Record<string, unknown>
         : {};
 
-    const alreadyOff =
-        attribution.commit === "" && attribution.pr === "" && current.includeCoAuthoredBy === false;
+    const alreadyOff = attribution.commit === "" && attribution.pr === ""
+        && attribution.sessionUrl === false && current.includeCoAuthoredBy === false;
     if (alreadyOff) return false;
 
     const next = {
         ...current,
-        attribution: { ...attribution, commit: "", pr: "" },
+        attribution: { ...attribution, commit: "", pr: "", sessionUrl: false },
         includeCoAuthoredBy: false,
     };
 
@@ -116,14 +117,14 @@ export function getClaudeAttribution(scope: "global" | "local"): boolean {
     const current = readJson<Record<string, unknown>>(claudeSettingsPath(scope)) || {};
     const attribution = current.attribution as Record<string, unknown> | undefined;
     const disabled = Boolean(attribution) && attribution!.commit === "" && attribution!.pr === ""
-        && current.includeCoAuthoredBy === false;
+        && attribution!.sessionUrl === false && current.includeCoAuthoredBy === false;
     return !disabled;
 }
 
 /**
  * Enable or disable Claude commit attribution for a scope. Disabling delegates to
  * `disableClaudeAttribution`. Enabling restores Claude's defaults by removing the
- * overrides enigma wrote (empty `attribution.commit`/`pr` and
+ * overrides enigma wrote (empty `attribution.commit`/`pr`, `sessionUrl: false` and
  * `includeCoAuthoredBy: false`), without touching unrelated settings. Returns
  * true if the file was written.
  */
@@ -139,6 +140,7 @@ export function setClaudeAttribution(scope: "global" | "local", enabled: boolean
     let changed = false;
     if (attribution.commit === "") { delete attribution.commit; changed = true; }
     if (attribution.pr === "") { delete attribution.pr; changed = true; }
+    if (attribution.sessionUrl === false) { delete attribution.sessionUrl; changed = true; }
     if (current.includeCoAuthoredBy === false) changed = true;
     if (!changed) return false;
 
@@ -529,7 +531,7 @@ export function mirrorClaudeTrust(accountDir: string): boolean {
  * Mirror the enigma-managed settings.json knobs from the user's global Claude
  * settings into a managed account's config dir, so an account launched via
  * `enigma claude <account>` behaves like the default one. Mirrored knobs:
- * attribution overrides (commit/pr + includeCoAuthoredBy), permission bypass
+ * attribution overrides (commit/pr/sessionUrl + includeCoAuthoredBy), permission bypass
  * (permissions.defaultMode), the feedback-survey env override
  * (env.CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY) and the enigma statusline (added only
  * when the account has none - never clobbers a custom one). Every other account setting
@@ -553,6 +555,8 @@ export function mirrorClaudeSettings(accountDir: string): boolean {
         if (globalAttr[key] === "") attr[key] = "";
         else if (attr[key] === "") delete attr[key];
     }
+    if (globalAttr.sessionUrl === false) attr.sessionUrl = false;
+    else if (attr.sessionUrl === false) delete attr.sessionUrl;
     if (Object.keys(attr).length) next.attribution = attr;
     else delete next.attribution;
     if (global.includeCoAuthoredBy === false) next.includeCoAuthoredBy = false;
