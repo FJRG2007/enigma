@@ -23,7 +23,8 @@ process.env.ENIGMA_CONFIG_HOME = HOME;
 
 const PROJECT = mkdtempSync(join(tmpdir(), "enigma-gate-severity-project-"));
 
-const { hasBlockingFindings } = await import("@/gate/pipeline/steps/commonFix");
+const { hasBlockingFindings, hasFixableSeverityFindings, hasBlockingAskUserFindingsJSON } =
+    await import("@/gate/pipeline/findings");
 const { CONFIG_DEFAULTS, GATE_SEVERITIES } = await import("@/config");
 const { ALL_SETTINGS } = await import("@/settings-registry");
 
@@ -33,8 +34,13 @@ function setProjectSeverity(severity: string | null): void {
     writeFileSync(join(PROJECT, ".enigma.json"), `${JSON.stringify(body, null, 4)}\n`);
 }
 
-function finding(severity: string): Finding {
-    return { severity, description: `a ${severity} finding`, action: "auto-fix" } as Finding;
+function finding(severity: string, action = "auto-fix"): Finding {
+    return { severity, description: `a ${severity} finding`, action } as Finding;
+}
+
+/** The findings payload shape the executor inspects for ask-user parks. */
+function payload(items: Finding[]): string {
+    return JSON.stringify({ findings: items, summary: "", risk_level: "", risk_rationale: "" });
 }
 
 afterAll(() => {
@@ -89,4 +95,29 @@ test("the setting reaches the CLI, dashboard and TUI through one registry entry"
     expect(setting!.writeChoice).toBeDefined();
     setting!.writeChoice!("error", "global");
     expect(setting!.readChoice!("global")).toBe("error");
+});
+
+test("an ask-user finding parks the executor only at or above the threshold", () => {
+    setProjectSeverity("warning");
+    expect(hasBlockingAskUserFindingsJSON(payload([finding("warning", "ask-user")]), PROJECT)).toBe(true);
+    // The carve-out this pins: the action alone used to park the run, so a single info
+    // ask-user finding still cost a full re-review round however high the threshold was set.
+    expect(hasBlockingAskUserFindingsJSON(payload([finding("info", "ask-user")]), PROJECT)).toBe(false);
+    setProjectSeverity("error");
+    expect(hasBlockingAskUserFindingsJSON(payload([finding("warning", "ask-user")]), PROJECT)).toBe(false);
+    expect(hasBlockingAskUserFindingsJSON(payload([finding("error", "ask-user")]), PROJECT)).toBe(true);
+    // An auto-fix finding is not an ask-user park no matter how severe it is.
+    expect(hasBlockingAskUserFindingsJSON(payload([finding("error")]), PROJECT)).toBe(false);
+    expect(hasBlockingAskUserFindingsJSON("", PROJECT)).toBe(false);
+    expect(hasBlockingAskUserFindingsJSON("not json", PROJECT)).toBe(false);
+});
+
+test("auto-fixing keeps its own bar, so a raised threshold costs no coverage", () => {
+    for (const severity of GATE_SEVERITIES) {
+        setProjectSeverity(severity);
+        expect(hasFixableSeverityFindings([finding("warning")])).toBe(true);
+        expect(hasFixableSeverityFindings([finding("error")])).toBe(true);
+        expect(hasFixableSeverityFindings([finding("info")])).toBe(false);
+        expect(hasFixableSeverityFindings([])).toBe(false);
+    }
 });

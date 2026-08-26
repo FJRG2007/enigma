@@ -15,11 +15,12 @@
 
 import * as git from "@/gate/git";
 import type { Result } from "@/gate/agent/agent";
+import { executeFixMode } from "./commonFix";
 import { hasNonIgnoredPath } from "./commonDiff";
+import { hasBlockingFindings } from "../findings";
 import { resolveBranchBaseSHA } from "./commonGit";
 import { userIntentPromptSection } from "./intentPrompt";
 import { roundHistoryPromptSection } from "./roundHistory";
-import { executeFixMode, hasBlockingFindings } from "./commonFix";
 import { executionContextPromptSection } from "./executionContext";
 import { newStepOutcome, type Step, type StepContext, type StepOutcome } from "../types";
 import { reviewFindingsSchema, sanitizePromptText, sanitizePromptMultilineText } from "./common";

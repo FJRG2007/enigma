@@ -12,8 +12,6 @@
  */
 
 import * as git from "@/gate/git";
-import { readConfigAt } from "@/config";
-import type { Finding } from "@/gate/types";
 import type { StepContext } from "../types";
 import { updateRunHeadSHA } from "@/gate/db";
 import type { StepName } from "@/gate/types";
@@ -40,21 +38,6 @@ export const commitSummarySchema = {
     },
     required: ["summary"]
 };
-
-/** Severity order used to compare a finding against the configured threshold. */
-const SEVERITY_RANK: Record<string, number> = { info: 1, warning: 2, error: 3 };
-
-/**
- * Returns true if any finding is at or above the repo's blocking severity, which is what
- * makes a step stop and wait for the user instead of advancing. `repoPath` is the registered
- * repo rather than the worktree, so the threshold comes from the same `.enigma.json` the rest
- * of the pipeline reads. A finding below it still rides on the step outcome and is reported;
- * it just does not cost a round. An unrecognized severity never blocks.
- */
-export function hasBlockingFindings(items: Finding[], repoPath: string): boolean {
-    const threshold = SEVERITY_RANK[readConfigAt(repoPath).gateSeverity] ?? SEVERITY_RANK.warning;
-    return items.some(f => (SEVERITY_RANK[f.severity] ?? 0) >= threshold);
-}
 
 function errMessage(err: unknown): string {
     return err instanceof Error ? err.message : String(err);

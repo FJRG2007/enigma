@@ -5,9 +5,49 @@
  *
  * Go keys maps by a zeroed Finding struct (value equality); the port reproduces
  * that with a deterministic string key over the identity fields.
+ *
+ * It also owns the one predicate deciding which findings HALT a run, so the two
+ * layers that can park - the steps, through `needsApproval`, and the executor,
+ * through an `ask-user` action - answer that question the same way.
  */
 
 import * as types from "../types";
+import { readConfigAt } from "@/config";
+
+/** Severity order used to compare a finding against the configured threshold. */
+const SEVERITY_RANK: Record<string, number> = { info: 1, warning: 2, error: 3 };
+
+/** The repo's blocking severity as a rank, read once per predicate call rather than per finding. */
+function blockingThreshold(repoPath: string): number {
+    return SEVERITY_RANK[readConfigAt(repoPath).gateSeverity] ?? SEVERITY_RANK.warning;
+}
+
+/** Reports whether a single finding sits at or above a blocking rank. */
+function meetsThreshold(item: types.Finding, threshold: number): boolean {
+    return (SEVERITY_RANK[item.severity] ?? 0) >= threshold;
+}
+
+/**
+ * Returns true if any finding is at or above the repo's blocking severity, which is what
+ * makes a step stop and wait for the user instead of advancing. `repoPath` is the registered
+ * repo rather than the worktree, so the threshold comes from the same `.enigma.json` the rest
+ * of the pipeline reads. A finding below it still rides on the step outcome and is reported;
+ * it just does not cost a round. An unrecognized severity never blocks.
+ */
+export function hasBlockingFindings(items: types.Finding[], repoPath: string): boolean {
+    const threshold = blockingThreshold(repoPath);
+    return items.some(item => meetsThreshold(item, threshold));
+}
+
+/**
+ * Returns true if any finding carries error or warning severity, the fixed rule the threshold
+ * deliberately does NOT govern. Auto-fixing is unattended and costs no approval round, so it
+ * stays available at its own bar however high the halt threshold is raised - the threshold
+ * buys time, not coverage.
+ */
+export function hasFixableSeverityFindings(items: types.Finding[]): boolean {
+    return items.some(item => meetsThreshold(item, SEVERITY_RANK.warning));
+}
 
 /** Identity key ignoring id/action/source/userInstructions (Go findingKey). */
 function findingKey(item: types.Finding): string {
@@ -224,14 +264,23 @@ export function autoFixableFindingsJSON(raw: string): string {
     }
 }
 
-/** Reports whether the payload has any ask-user finding. */
-export function hasAskUserFindingsJSON(raw: string): boolean {
+/**
+ * Reports whether the payload has an ask-user finding the run must actually park on: the
+ * action asks for a decision, and the severity is at or above the repo's blocking threshold.
+ * An `ask-user` finding below the threshold is still reported on the outcome, it just does not
+ * halt - otherwise raising `gate-severity` would leave the very loop it was added to break
+ * (one more low-severity finding per round) fully intact.
+ */
+export function hasBlockingAskUserFindingsJSON(raw: string, repoPath: string): boolean {
     if (raw === "") return false;
+    let findings: types.Findings;
     try {
-        return types.hasAskUserFindings(types.parseFindingsJSON(raw));
+        findings = types.parseFindingsJSON(raw);
     } catch {
         return false;
     }
+    const threshold = blockingThreshold(repoPath);
+    return findings.items.some(item => item.action === types.ACTION_ASKUSER && meetsThreshold(item, threshold));
 }
 
 /**

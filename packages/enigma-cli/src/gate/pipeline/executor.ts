@@ -40,10 +40,10 @@ import {
     marshalFindingIDs,
     filterFindingsJSON,
     normalizeFindingsJSON,
-    hasAskUserFindingsJSON,
     mergeUserOverridesJSON,
     autoFixableFindingsJSON,
-    combineSelectedFindingIDs
+    combineSelectedFindingIDs,
+    hasBlockingAskUserFindingsJSON
 } from "./findings";
 
 /** Called when a pipeline event occurs, for streaming to subscribers. */
@@ -328,7 +328,7 @@ export class Executor {
                     }
                 }
 
-                if (!outcome.needsApproval && !hasAskUserFindingsJSON(outcome.findings)) {
+                if (!outcome.needsApproval && !hasBlockingAskUserFindingsJSON(outcome.findings, repo.workingPath)) {
                     skipRemaining = outcome.skipRemaining;
                     stepSkipped = outcome.skipped;
                     break;

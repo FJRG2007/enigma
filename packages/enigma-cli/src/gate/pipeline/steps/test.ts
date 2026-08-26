@@ -13,6 +13,7 @@ import * as git from "@/gate/git";
 import { mkdirSync } from "node:fs";
 import { STEP_TEST } from "@/gate/types";
 import { newStepOutcome } from "../types";
+import { executeFixMode } from "./commonFix";
 import { testFindingsSchema } from "./common";
 import type { Result } from "@/gate/agent/agent";
 import { detectNewTestFiles } from "./commonDiff";
@@ -23,12 +24,12 @@ import type { TestEvidenceLocation } from "./evidence";
 import { roundHistoryPromptSection } from "./roundHistory";
 import type { Step, StepContext, StepOutcome } from "../types";
 import type { StepName, Finding, Findings } from "@/gate/types";
-import { executeFixMode, hasBlockingFindings } from "./commonFix";
 import { executionContextPromptSection } from "./executionContext";
 import { parseFindingsJSON, marshalFindingsJSON } from "@/gate/types";
 import { cleanedUserIntent, userIntentPromptSection } from "./intent";
 import { resolveTestEvidenceLocation, testEvidenceDir } from "./evidence";
 import { sanitizePromptText, sanitizePromptMultilineText } from "./common";
+import { hasBlockingFindings, hasFixableSeverityFindings } from "../findings";
 
 function errMessage(err: unknown): string {
     return err instanceof Error ? err.message : String(err);
@@ -282,7 +283,10 @@ Rules:
             }
 
             let needsApproval = hasBlockingFindings(findings.items, sctx.repo.workingPath);
-            let autoFixable = needsApproval;
+            // Auto-fixing is unattended and costs no approval round, so it keeps its own fixed
+            // bar instead of following the halt threshold: raising `gate-severity` must buy
+            // time, never drop a warning the pipeline would otherwise have fixed on its own.
+            let autoFixable = hasFixableSeverityFindings(findings.items);
 
             // Check if the agent wrote new test files.
             const newTests = await detectNewTestFiles(signal, sctx.workDir);

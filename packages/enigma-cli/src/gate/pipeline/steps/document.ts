@@ -16,6 +16,7 @@ import * as git from "@/gate/git";
 import { commitAgentFixes } from "./commonFix";
 import type { Result } from "@/gate/agent/agent";
 import { hasNonIgnoredPath } from "./commonDiff";
+import { hasBlockingFindings } from "../findings";
 import { resolveBranchBaseSHA } from "./commonGit";
 import { userIntentPromptSection } from "./rebase";
 import { roundHistoryPromptSection } from "./roundHistory";
@@ -145,7 +146,7 @@ ${sanitizedPreviousFindingsForPrompt(sctx.previousFindings)}`;
             return documentApprovalOutcome(summary);
         }
 
-        const needsApproval = findings.items.length > 0;
+        const needsApproval = hasBlockingFindings(findings.items, sctx.repo.workingPath);
         const findingsJSON = marshalFindingsJSON(findings);
 
         sctx.log(`document findings: ${findings.items.length} unresolved items`);

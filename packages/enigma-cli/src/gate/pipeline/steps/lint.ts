@@ -14,14 +14,15 @@
 
 import { findingsSchema } from "./common";
 import type { Result } from "@/gate/agent/agent";
+import { hasBlockingFindings } from "../findings";
 import { runStepShellCommand } from "./commonExec";
 import { resolveBranchBaseSHA } from "./commonGit";
 import { userIntentPromptSection } from "./intentPrompt";
 import { roundHistoryPromptSection } from "./roundHistory";
 import { sanitizedPreviousFindingsForPrompt } from "./review";
 import { executionContextPromptSection } from "./executionContext";
+import { commitAgentFixes, executeFixMode, extractCommitSummary } from "./commonFix";
 import { newStepOutcome, type Step, type StepContext, type StepOutcome } from "../types";
-import { commitAgentFixes, executeFixMode, extractCommitSummary, hasBlockingFindings } from "./commonFix";
 import {
     emptyFindings,
     parseFindingsJSON,

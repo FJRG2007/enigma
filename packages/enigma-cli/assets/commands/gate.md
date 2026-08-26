@@ -118,9 +118,11 @@ What follows from that:
 - **When the rounds are the cost, raise `gate-severity`.** It is the lowest
   severity that stops a run to ask you - `error | warning | info`, default
   `warning`. Anything below it is still found and reported, the run just does not
-  halt for it. `enigma config gate-severity error` (`-g` for every project) is the
-  answer to a diff that keeps surfacing one more `info` per round instead of
-  converging. Report the change; it is the user's strictness you are lowering.
+  halt for it. `enigma config gate-severity error -l` is the answer to a diff that
+  keeps surfacing one more `info` per round instead of converging. Scope it like
+  `/gate off`: `-l` for this project, `-g` only when the user says every project -
+  a bare `enigma config` writes the GLOBAL file. Report the change and its scope;
+  it is the user's strictness you are lowering.
 - **Propose `--skip test,document` on a throwaway diff** (a typo, a comment, a
   version bump) and let the user decide. Skipping them means no test evidence was
   gathered and no docs were checked, so it is their call - unless they already

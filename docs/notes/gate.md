@@ -168,17 +168,26 @@ The levers that actually change a run's duration and token cost, in order:
    `axi respond --action fix` is another two passes. Batch every finding into ONE fix round.
    Note this is the PIPELINE's own fixing; who answers the resulting pause is `fix_policy`,
    below. WHICH findings can open a pause at all is `gateSeverity` (CLI key `gate-severity`,
-   `.enigma.json`, default `warning`): `hasBlockingFindings` (pipeline/steps/commonFix.ts)
-   compares every finding against it and only a finding at or above the threshold sets
-   `needsApproval`, on all three steps that can pause (review, test, lint). This is a TIME
-   knob, not a coverage one - a finding below the threshold is still found, still recorded on
-   the step outcome and still reported; it just does not cost a round. The failure mode it was
-   added for: a diff where each full re-review surfaces one more `info`, answered with `fix`,
+   `.enigma.json`, default `warning`): `hasBlockingFindings` (pipeline/findings.ts) compares
+   every finding against it and only a finding at or above the threshold sets `needsApproval`,
+   on all four finding-driven steps (review, test, lint, document). This is a TIME knob, not a
+   coverage one - a finding below the threshold is still found, still recorded on the step
+   outcome and still reported; it just does not cost a round. The failure mode it was added
+   for: a diff where each full re-review surfaces one more `info`, answered with `fix`,
    answered again - ten rounds and four hours of review on a run whose measured average is
    1.57 rounds. The threshold comes from `readConfigAt(sctx.repo.workingPath)`, the registered
    repo rather than the worktree, same as `gateCommitMessage`; config reads are uncached, so a
    change applies to the next step the running daemon evaluates. An unrecognized severity never
-   blocks. Tests: `tests/gate/severity-threshold.test.ts`.
+   blocks. Three things it deliberately does NOT govern, each a place a run can still stop:
+   (a) `autoFixable` - the executor's unattended auto-fix costs no approval round, so test.ts
+   keeps the fixed error-or-warning bar (`hasFixableSeverityFindings`) instead of following the
+   threshold, otherwise raising it would silently drop coverage; (b) the infrastructure pauses
+   in ciChecks.ts and rebase.ts and document.ts's unparsable-output fallback, which set
+   `needsApproval` unconditionally because they report a broken run rather than a graded
+   finding; (c) nothing else - the executor's second park path, an `ask-user` finding, DOES
+   honor it through `hasBlockingAskUserFindingsJSON` (same file), which is what keeps a
+   low-severity `ask-user` from re-opening the very loop the threshold closes. Tests:
+   `tests/gate/severity-threshold.test.ts`.
 3. **`ignore_patterns`** in the repo's `.enigma-gate.yaml`: review and document read the whole
    diff, so lockfiles, generated clients, migrations and snapshots are pure cost.
 4. **Explicit `commands.test` / `commands.lint`.** Left empty, those steps spend an agent pass
