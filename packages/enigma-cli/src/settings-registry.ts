@@ -405,6 +405,18 @@ const RAW_CATEGORIES: Category[] = [
                 removeItem: (item, scope) => ({ path: conf.updateEnigmaList("gateProtectedBranches", item.trim(), false, scope), changed: true }),
             },
             {
+                key: "gate-severity",
+                label: "Gate blocking severity",
+                hint: "lowest finding severity that stops a run to ask you: error | warning | info. Anything below it is still found and reported, the run just does not wait on it; each round you do wait on re-reviews the whole diff, so a lower threshold costs real time; enigma default: warning",
+                choices: conf.GATE_SEVERITIES,
+                // No off state - a threshold is always set; the boolean face stays "on" so the row reads green.
+                offChoice: "__none__",
+                read: () => true,
+                write: () => ({ changed: false }),
+                readChoice: () => conf.readConfig().config.gateSeverity,
+                writeChoice: (value, scope) => ({ path: conf.setEnigmaValue("gateSeverity", value, scope), changed: true }),
+            },
+            {
                 key: "auto-lint",
                 label: "Auto-lint on edit",
                 hint: "auto-fix edited files and surface only unfixable findings; on enable installs @enigmax/linter and wires a post-write hook (Claude + opencode); enigma default: off",

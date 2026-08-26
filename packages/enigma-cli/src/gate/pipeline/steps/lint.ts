@@ -109,7 +109,7 @@ Rules:
             }
             await commitAgentFixes(sctx, this.name(), summary, "fix lint issues");
 
-            const needsApproval = hasBlockingFindings(findings.items);
+            const needsApproval = hasBlockingFindings(findings.items, sctx.repo.workingPath);
             const findingsJSON = marshalFindingsJSON(findings);
             return newStepOutcome({
                 needsApproval,

@@ -89,6 +89,16 @@ export const LOGO_COLOR_POLICIES: readonly LogoColorPolicy[] = ["ask", "adapt-ba
 export type RecallProvider = "claude-local" | "anthropic" | "openai";
 export const RECALL_PROVIDERS: readonly RecallProvider[] = ["claude-local", "anthropic", "openai"];
 
+/**
+ * Lowest finding severity that stops a gate run to ask the user what to do. "error" waits
+ * only on what must not merge, "warning" (default) also on what is worth fixing now, "info"
+ * on everything including nice-to-haves. The threshold buys time rather than coverage: a
+ * finding below it is still found, recorded and reported, the run simply advances instead of
+ * spending another full re-review round on it.
+ */
+export type GateSeverity = "error" | "warning" | "info";
+export const GATE_SEVERITIES: readonly GateSeverity[] = ["error", "warning", "info"];
+
 export interface EnigmaConfig {
     commitEmoji: boolean;
     updateNotifier: boolean;
@@ -192,6 +202,8 @@ export interface EnigmaConfig {
      * Merged nearest-wins like every other key, so a repo's own .enigma.json overrides the global list.
      */
     gateProtectedBranches: string[];
+    /** Lowest finding severity that stops a gate run for the user's decision. */
+    gateSeverity: GateSeverity;
     /** Local savings dashboard: off | on-demand (default when enabled) | always (background daemon). */
     dashboard: DashboardMode;
     /** Dashboard money estimate: USD per 1M input tokens; 0 = use per-source defaults. */
@@ -362,7 +374,7 @@ export const CONFIG_DEFAULTS: EnigmaConfig = {
     autoSync: true, statusline: true, statuslineRefresh: 10, claudeTrust: true, kimiTrust: true, remoteSkills: true, skillUpdatePolicy: "overwrite", permissionBypass: true, autoLint: false, guardrails: true, trim: true, verify: true, verifyCommand: "", compress: false, codeGraph: true, gate: true, dashboard: "off", tokenPrice: 0, tokenSpeed: 0, usageStats: false, recall: false, recallLlm: true, recallProvider: "claude-local", recallModel: "", recallApiBase: "", recallApiKey: "", proxy: false, usageApi: false, promptSecretGuard: false, promptSecretMode: "redact",
     resourceCap: 60, lowMemoryCap: 80,
     planSessionLimit: 0, planWeeklyLimit: 0, planWeeklySonnetLimit: 0, planWeeklyOpusLimit: 0, planWeeklyReset: "mon 00:00",
-    dashboardLive: true, dashboardPort: 0, dashboardBind: "loopback", dashboardBindAddress: "", apiPort: 8000, apiAccount: "", apiProfile: "", apiPack: "", toolPaths: {}, bypassDisabled: [], discardedSkills: [], skillAgentsOff: {}, packs: [], packAccounts: {}, gateProtectedBranches: [],
+    dashboardLive: true, dashboardPort: 0, dashboardBind: "loopback", dashboardBindAddress: "", apiPort: 8000, apiAccount: "", apiProfile: "", apiPack: "", toolPaths: {}, bypassDisabled: [], discardedSkills: [], skillAgentsOff: {}, packs: [], packAccounts: {}, gateProtectedBranches: [], gateSeverity: "warning",
 };
 
 export type EnigmaConfigKey = keyof EnigmaConfig;
@@ -382,6 +394,7 @@ export const CONFIG_CHOICES: Partial<Record<EnigmaConfigKey, readonly string[]>>
     skillUpdatePolicy: SKILL_UPDATE_POLICIES,
     logoColorPolicy: LOGO_COLOR_POLICIES,
     recallProvider: RECALL_PROVIDERS,
+    gateSeverity: GATE_SEVERITIES,
 };
 
 function configPath(scope: "global" | "local"): string {

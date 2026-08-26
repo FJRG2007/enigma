@@ -196,7 +196,7 @@ Risk assessment (after listing all findings):
             }
         }
 
-        const needsApproval = hasBlockingFindings(findings.items);
+        const needsApproval = hasBlockingFindings(findings.items, sctx.repo.workingPath);
         const findingsJSON = marshalFindingsJSON(findings);
 
         return newStepOutcome({

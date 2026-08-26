@@ -281,7 +281,7 @@ Rules:
                 findings.tested = [...tested, ...(findings.tested ?? [])];
             }
 
-            let needsApproval = hasBlockingFindings(findings.items);
+            let needsApproval = hasBlockingFindings(findings.items, sctx.repo.workingPath);
             let autoFixable = needsApproval;
 
             // Check if the agent wrote new test files.
