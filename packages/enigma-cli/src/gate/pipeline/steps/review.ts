@@ -14,8 +14,8 @@
  */
 
 import * as git from "@/gate/git";
-import type { Result } from "@/gate/agent/agent";
 import { executeFixMode } from "./commonFix";
+import type { Result } from "@/gate/agent/agent";
 import { hasNonIgnoredPath } from "./commonDiff";
 import { hasBlockingFindings } from "../findings";
 import { resolveBranchBaseSHA } from "./commonGit";
