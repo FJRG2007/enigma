@@ -75,6 +75,14 @@ If a branch must only ever be reached through review, list it:
 Branch names are matched exactly. `axi run` then refuses that branch and says how to lift the protection. The list is empty by default, lives in `.enigma.json`, and a project's own list overrides the global one.
 </Cmd>
 
+## How strict it is
+
+A finding below your threshold is still found and reported on the run, it just does not stop the pipeline for a decision - only a finding at or above it does. Raise the bar when a diff keeps parking on one more low-priority finding per round instead of converging:
+
+<Cmd name="enigma config gate-severity error" ex={["enigma config gate-severity error -l", "enigma config gate-severity", "enigma config gate-severity warning -g"]}>
+Lowest severity that halts a run: `error`, `warning` (the default), or `info`. `-l` scopes it to this project, `-g` to every project. Every pause you answer with `fix` costs the pipeline a full re-review of the diff, so this is the knob for a run that will not stop finding nice-to-haves.
+</Cmd>
+
 ## Automatic driving
 
 You do not have to ask your agent to run the gate or initialize repos by hand. The deployed agent memory carries an always-on instruction: once the agent has committed a code task, it **drives the gate itself** on whatever branch that work is on - running `enigma gate init` once if the repo is not set up yet - then handles findings the way `fix_policy` says (by default: applies every fix it can, and comes back only for an `ask-user` finding whose repair would go against what you asked for), and leaves the PR ready for you to review and merge (it never merges on its own).
