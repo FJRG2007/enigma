@@ -9,16 +9,20 @@
  */
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { spawnSync } from "node:child_process";
 import { test, expect, afterAll } from "bun:test";
 import { mkdtempSync, rmSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 
-const HOME = mkdtempSync(join(tmpdir(), "enigma-ci-watch-"));
-process.env.USERPROFILE = HOME;
-process.env.HOME = HOME;
+// Every prior value is captured BEFORE anything is overwritten: reading HOME back after the
+// assignment would capture the temp path and make the restore below point at the directory
+// afterAll then deletes.
 const PRIOR_HOME = process.env.HOME;
 const PRIOR_USERPROFILE = process.env.USERPROFILE;
 const PRIOR_CONFIG_HOME = process.env.ENIGMA_CONFIG_HOME;
 const PRIOR_WATCH_DIR = process.env.ENIGMA_CI_WATCH_DIR;
+const HOME = mkdtempSync(join(tmpdir(), "enigma-ci-watch-"));
+process.env.USERPROFILE = HOME;
+process.env.HOME = HOME;
 process.env.ENIGMA_CONFIG_HOME = HOME;
 process.env.ENIGMA_CI_WATCH_DIR = join(HOME, "ci-watch");
 
@@ -46,7 +50,7 @@ afterAll(() => {
 });
 
 /** Seeds the state file as the poller would after reaching a verdict. */
-function seedFailure(delivered = false): void {
+function seedFailure(delivered = false, log = "review.ts:18:1  imports should be sorted"): void {
     const path = ciWatchStatePath();
     mkdirSync(join(path, ".."), { recursive: true });
     writeFileSync(path, JSON.stringify({
@@ -54,10 +58,16 @@ function seedFailure(delivered = false): void {
         repos: {
             [REPO]: {
                 repoPath: REPO, sha: SHA, at: Date.now(), delivered,
-                failure: { sha: SHA, workflow: "CI", job: "linter", url: "https://example.com/run/1", log: "review.ts:18:1  imports should be sorted" }
+                failure: { sha: SHA, workflow: "CI", job: "linter", url: "https://example.com/run/1", log }
             }
         }
     }));
+}
+
+/** Runs git in `cwd`, with an identity so committing works on a bare CI runner. */
+function git(cwd: string, ...args: string[]): void {
+    const r = spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t.t", "-c", "commit.gpgsign=false", ...args], { cwd, encoding: "utf8", windowsHide: true });
+    if (r.status !== 0) throw new Error(`git ${args.join(" ")} failed: ${r.stderr || r.stdout}`);
 }
 
 /** Runs the hook and returns what it wrote to stdout. */
@@ -95,7 +105,7 @@ test("a recorded failure is handed over once, with the reason attached", () => {
 test("UserPromptSubmit delivers but never arms", () => {
     // That hook chain runs before the turn starts and several tools share its budget - it was
     // already timing out on a loaded box before this feature was added to it. Arming costs
-    // three git subprocesses, so it belongs on PostToolUse, where a push comes from anyway.
+    // four git subprocesses, so it belongs on PostToolUse, where a push comes from anyway.
     seedFailure();
     expect(hookOutput(REPO, "UserPromptSubmit")).toContain("FAILED");
 
@@ -110,3 +120,44 @@ test("a failure already delivered stays quiet, and another project's failure is 
     // The state is keyed per repository, so a session elsewhere sees nothing of this one.
     expect(hookOutput(join(HOME, "somewhere-else"))).toBe("");
 });
+
+test("a failure with no readable log reports the run instead of an empty heading", () => {
+    // `gh` cannot read the logs of an expired run. The heading with nothing under it read as
+    // "fix this, reason withheld", which is worse than pointing at the run and saying no more.
+    seedFailure(false, "");
+    const out = hookOutput(REPO);
+    expect(out).toContain("FAILED");
+    expect(out).toContain("https://example.com/run/1");
+    expect(out).not.toContain("The tail of the failing step's log");
+});
+
+test("pulling someone else's commit does not arm a watch", () => {
+    // A pull leaves the upstream an ancestor of HEAD exactly like a push does, so the ancestor
+    // test alone cannot tell them apart - and reporting a teammate's build would send the agent
+    // after a break it did not cause. What separates them is why the tracking ref moved: git
+    // writes "update by push" for a push and "<command>: fast-forward" for a pull.
+    const remote = join(HOME, "remote.git");
+    const clone = join(HOME, "clone");
+    const other = join(HOME, "other");
+    mkdirSync(remote, { recursive: true });
+    git(HOME, "init", "-q", "--bare", "-b", "main", remote);
+    git(HOME, "clone", "-q", remote, other);
+    writeFileSync(join(other, "a.txt"), "a\n");
+    git(other, "add", "-A");
+    git(other, "commit", "-qm", "a");
+    git(other, "push", "-q", "origin", "main");
+    git(HOME, "clone", "-q", remote, clone);
+
+    writeFileSync(join(other, "b.txt"), "b\n");
+    git(other, "add", "-A");
+    git(other, "commit", "-qm", "b");
+    git(other, "push", "-q", "origin", "main");
+    git(clone, "pull", "-q", "--no-rebase", "origin", "main");
+
+    const before = readFileSync(ciWatchStatePath(), "utf8");
+    expect(hookOutput(clone)).toBe("");
+    // Nothing claimed: no entry for this repository, so no poller was spawned for it either.
+    expect(readFileSync(ciWatchStatePath(), "utf8")).toBe(before);
+    // Generous: this is the one test that builds real repositories, and cloning three times
+    // on a cold Windows runner outruns the 5s default.
+}, 60_000);

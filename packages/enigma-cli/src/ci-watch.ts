@@ -27,10 +27,10 @@
  */
 
 import { enigmaHome } from "./util";
-import { readConfig } from "./config";
-import { join, dirname } from "node:path";
+import { isCiWatchOn } from "./ci-watch-deploy";
+import { basename, join, dirname } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 
 /** Schema version of the state file. */
 const STATE_VERSION = 1;
@@ -43,6 +43,12 @@ const POLL_BUDGET_MS = 30 * 60_000;
 
 /** Gap between polls. GitHub's API is rate limited and a workflow takes minutes, not seconds. */
 const POLL_INTERVAL_MS = 30_000;
+
+/** How recently the tracking ref must have been pushed for the build to still be ours to fix. */
+const PUSH_RECENCY_MS = 10 * 60_000;
+
+/** How long a push is given to register a workflow run before we conclude it triggered none. */
+const RUN_REGISTER_GRACE_MS = 3 * 60_000;
 
 /** Cap on the failing-log excerpt handed to the agent, in characters. */
 const LOG_EXCERPT_LIMIT = 4000;
@@ -78,11 +84,6 @@ interface RepoState {
 interface StateFile {
     version: number;
     repos: Record<string, RepoState>;
-}
-
-/** True when the CI notifier is enabled (default on). */
-export function isCiWatchOn(): boolean {
-    return readConfig().config.ciWatch;
 }
 
 /** Path to the state file the poller writes and the hook reads. */
@@ -136,18 +137,44 @@ export function repoRootOf(cwd: string): string | null {
 }
 
 /**
- * The commit the tracking branch points at, but only when it is one this repository
- * actually produced.
+ * Whether the tracking ref moved because THIS repository pushed, moments ago.
  *
- * The ancestor test is what keeps a plain `git fetch` from arming a watch: pulling a
- * teammate's commit moves the upstream ref exactly like a push does, and reporting on
- * someone else's build would be noise the agent cannot act on.
+ * Git records why a remote-tracking ref moved, and the wording is the discriminator: a push
+ * writes "update by push", while a fetch or a pull writes "<command>: fast-forward". Without
+ * that test every way of acquiring commits arms a watch - `git pull` leaves the upstream an
+ * ancestor of HEAD exactly like a push does - and the agent is handed a build it never
+ * touched, which is worse than no notifier at all.
+ *
+ * The recency window is the second half of the same guard. A tracking ref keeps the last push
+ * in its reflog forever, so `git checkout` of a branch pushed last week would otherwise look
+ * identical to a push made now; a build that old has been dealt with by someone already.
+ */
+function recentlyPushed(repoRoot: string, ref: string): boolean {
+    const entry = run("git", ["reflog", "show", "--date=unix", "--format=%gd%x09%gs", "-1", ref], repoRoot, 10_000);
+    if (entry === null || entry === "") return false;
+    const [selector = "", subject = ""] = entry.split("\t");
+    if (!subject.startsWith("update by push")) return false;
+    const at = Number(/@\{(\d+)\}/.exec(selector)?.[1] ?? "");
+    return Number.isFinite(at) && at > 0 && Date.now() - at * 1000 <= PUSH_RECENCY_MS;
+}
+
+/**
+ * The commit the tracking branch points at, but only when it is one this repository
+ * actually pushed, just now.
+ *
+ * The ancestor test keeps a ref that moved to something we do not have from arming a watch;
+ * the reflog test above is what separates an actual push from every other way that ref moves.
+ * One `rev-parse` answers both "where" and "which ref", so the added precision costs one
+ * subprocess, not two.
  */
 function pushedHead(repoRoot: string): string | null {
-    const upstream = run("git", ["rev-parse", "@{u}"], repoRoot, 10_000);
-    if (upstream === null || upstream === "") return null;
+    const out = run("git", ["rev-parse", "@{u}", "--symbolic-full-name", "@{u}"], repoRoot, 10_000);
+    if (out === null) return null;
+    const [upstream = "", ref = ""] = out.split("\n").map(l => l.trim());
+    if (upstream === "" || ref === "") return null;
     const r = spawnSync("git", ["merge-base", "--is-ancestor", upstream, "HEAD"], { cwd: repoRoot, windowsHide: true, timeout: 10_000 });
-    return r.status === 0 ? upstream : null;
+    if (r.status !== 0) return null;
+    return recentlyPushed(repoRoot, ref) ? upstream : null;
 }
 
 /** Resolves the `gh` binary, honoring the same override the rest of enigma uses. */
@@ -192,9 +219,18 @@ function failureLog(repoRoot: string, runId: number): { job: string; log: string
     return { job, log };
 }
 
-/** Records the verdict for `sha`, replacing this repository's entry and leaving others alone. */
+/**
+ * Records the verdict for `sha`, replacing this repository's entry and leaving others alone.
+ *
+ * A no-op once the entry has moved on to a newer commit. A poller lives up to half an hour, so
+ * a second push overtakes the first routinely, and writing the older verdict back would undo
+ * the newer push's claim on the slot: the hook would see a SHA it has not watched, arm a
+ * duplicate poller for it, and - the entry having lost its `delivered` flag on the way - hand
+ * the agent the same failure a second time.
+ */
 function recordVerdict(repoRoot: string, sha: string, failure: FailureReport | null): void {
     const state = readState();
+    if (state.repos[repoRoot]?.sha !== sha) return;
     const entry: RepoState = { repoPath: repoRoot, sha, at: Date.now() };
     if (failure) entry.failure = failure;
     state.repos[repoRoot] = entry;
@@ -207,14 +243,21 @@ function recordVerdict(repoRoot: string, sha: string, failure: FailureReport | n
  *
  * Bounded rather than open-ended: a workflow queued behind a busy runner, or one waiting on
  * an environment approval, would otherwise leave this process alive indefinitely.
+ *
+ * A push that triggers no run at all stands down far sooner. GitHub registers a run within
+ * seconds, so an empty answer that stays empty past the grace period means this repository has
+ * no workflow for the commit - and spending the whole budget on it would cost sixty API calls
+ * per push in every repository that has a GitHub remote and nothing to build.
  */
 export async function runCiWatchPoll(repoRoot: string, sha: string): Promise<number> {
-    const deadline = Date.now() + POLL_BUDGET_MS;
+    const started = Date.now();
+    const deadline = started + POLL_BUDGET_MS;
     for (;;) {
         const rows = runsForSha(repoRoot, sha);
         // gh unusable (absent, unauthenticated, not a GitHub remote) is a silent stand-down:
         // this feature is a convenience and must never announce its own plumbing.
         if (rows === null) return 0;
+        if (rows.length === 0 && Date.now() - started >= RUN_REGISTER_GRACE_MS) return 0;
         const settled = rows.length > 0 && rows.every(r => r.status === "completed");
         if (settled) {
             const failed = rows.find(r => FAILED_CONCLUSIONS.has(r.conclusion));
@@ -235,26 +278,42 @@ export async function runCiWatchPoll(repoRoot: string, sha: string): Promise<num
 /** Spawns the poller for `sha` and returns immediately; the child outlives this process. */
 function startPoller(repoRoot: string, sha: string): void {
     try {
-        const child = spawn(process.execPath, [process.argv[1] as string, "__ci-watch", repoRoot, sha], {
+        // Same runtime dispatch as the lint-install/update-check children: a compiled binary
+        // takes the hidden command directly (every arg goes to the embedded CLI); node/bun on
+        // the source entry need the entry path (argv[1]) before it. Getting this wrong is
+        // invisible - the SHA is claimed either way, and the child that never polls simply
+        // exits, so the watch looks armed and no verdict ever arrives.
+        const exe = basename(process.execPath).toLowerCase();
+        const dev = exe === "node" || exe === "node.exe" || exe === "bun" || exe === "bun.exe";
+        const args = dev ? [process.argv[1]!, "__ci-watch", repoRoot, sha] : ["__ci-watch", repoRoot, sha];
+        const child = spawn(process.execPath, args, {
             detached: true,
             stdio: "ignore",
             windowsHide: true
         });
+        // A spawn failure surfaces as an async `error` event; with no listener the child
+        // rethrows it as an uncaught exception, which this try/catch cannot intercept - and
+        // here that would crash the hook the agent's tool call is waiting on.
+        child.on("error", () => { /* the watch just did not arm */ });
         child.unref();
     } catch { /* the notifier is a convenience; failing to arm it changes nothing else */ }
 }
 
-/** The block handed to the agent. Written as an instruction because it is one. */
+/**
+ * The block handed to the agent. Written as an instruction because it is one.
+ *
+ * The log section is dropped when there is no excerpt - `gh` cannot read the logs of an
+ * expired run, and a heading followed by nothing reads as "fix this, reason withheld". The
+ * run URL is what is left to go on, so it carries the report on its own.
+ */
 function reportText(failure: FailureReport): string {
     const where = failure.job === "" ? failure.workflow : `${failure.workflow} / ${failure.job}`;
+    const log = String(failure.log ?? "").trim();
     return [
-        `The GitHub Actions run for the commit you pushed (${failure.sha.slice(0, 8)}) FAILED: ${where}.`,
-        failure.url === "" ? "" : failure.url,
+        `The GitHub Actions run for the commit you pushed (${String(failure.sha ?? "").slice(0, 8)}) FAILED: ${where}.`,
+        String(failure.url ?? ""),
         "",
-        "The tail of the failing step's log:",
-        "",
-        failure.log,
-        "",
+        ...log === "" ? [] : ["The tail of the failing step's log:", "", log, ""],
         "Fix it now rather than reporting the push as finished. Nothing is blocked - this arrived on its own, no one asked for it."
     ].join("\n");
 }
@@ -295,9 +354,9 @@ function emit(event: string, additionalContext: string): void {
  *
  *  1. Delivers a failure the poller has recorded and has not been handed over yet, then
  *     marks it delivered so a build breaks the agent's flow once rather than every tick.
- *  2. On PostToolUse only, notices that the tracking branch has moved to a commit this
- *     repository produced and arms a poller for it. Delivery happens on every event; arming
- *     does not, because it costs subprocesses and UserPromptSubmit cannot afford them.
+ *  2. On PostToolUse only, notices that this repository has just pushed the tracking branch
+ *     and arms a poller for that commit. Delivery happens on every event; arming does not,
+ *     because it costs subprocesses and UserPromptSubmit cannot afford them.
  *
  * Always exits 0. A notifier that can deny a tool call would be a worse problem than the
  * one it was written to solve.
@@ -318,7 +377,7 @@ export function runCiWatchHook(payload: string, event = "PostToolUse"): number {
         return 0;
     }
 
-    // Arming is the expensive half - three git subprocesses to answer "did you push?" - and
+    // Arming is the expensive half - four git subprocesses to answer "did you push?" - and
     // UserPromptSubmit is the wrong place to spend them: that hook chain runs before the turn
     // starts, several tools share its budget, and it was already timing out on a loaded box
     // before this feature added to it. A push comes from Bash, so PostToolUse arms and

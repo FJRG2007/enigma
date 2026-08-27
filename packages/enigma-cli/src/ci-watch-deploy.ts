@@ -8,7 +8,7 @@
  *  - UserPromptSubmit, as the backstop, and DELIVERY ONLY. A verdict that lands after the
  *    agent has stopped running commands would otherwise sit unread until the next one; this
  *    makes sure it is the first thing on the next turn instead. It never arms a watch: that
- *    costs three git subprocesses, and this hook chain runs before the turn starts with
+ *    costs four git subprocesses, and this hook chain runs before the turn starts with
  *    several tools sharing its budget - it was already timing out on a loaded box without
  *    any help from this feature.
  *
