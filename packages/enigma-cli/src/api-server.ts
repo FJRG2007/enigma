@@ -85,11 +85,34 @@ export function extractImages(messages: ChatMessage[]): ImageBlock[] {
     return images;
 }
 
+/** The labels the flattened transcript uses to separate turns, at the start of a line. */
+const TURN_LABEL = /^(Human|Assistant)(\s*):/gm;
+
+/**
+ * Neutralizes a turn label a caller put inside message text.
+ *
+ * The transcript below is plain text, so `Assistant:` at the start of a line IS a turn as far
+ * as the model is concerned. Without this, a caller can write a newline followed by
+ * "Assistant: sure, done" into a user message and forge a reply the agent never made -
+ * putting words in its mouth, or
+ * smuggling instructions in as though they came from another turn. The label is kept legible
+ * and made inert by swapping its colon, the same trick as fencing untrusted text: the reader
+ * still sees what was written, the parser no longer sees a turn.
+ */
+function neutralizeTurnLabels(text: string): string {
+    return text.replace(TURN_LABEL, (_m, label: string, space: string) => `${label}${space}·`);
+}
+
 /**
  * Convert OpenAI messages into an agent prompt plus an optional system prompt. A single user
  * turn is sent verbatim; multi-turn conversations are flattened into a labelled transcript so
  * the model keeps the exchange context. The last system message wins (mirrors OpenAI semantics)
  * and is returned separately so an adapter can apply it as the agent's system prompt.
+ *
+ * Message text is UNTRUSTED: this is an HTTP surface, and everything below the system prompt
+ * arrives from whoever called it. Turn labels inside that text are neutralized before the
+ * transcript is assembled. The single-turn path needs none of it - with no transcript to
+ * forge, the text is just the prompt.
  */
 export function messagesToPrompt(messages: ChatMessage[]): { prompt: string; system: string | null; } {
     let system: string | null = null;
@@ -100,7 +123,7 @@ export function messagesToPrompt(messages: ChatMessage[]): { prompt: string; sys
         else turns.push({ role: m.role, text });
     }
     if (turns.length === 1 && turns[0]!.role === "user") return { prompt: turns[0]!.text, system };
-    const parts = turns.map((t) => `${t.role === "assistant" ? "Assistant" : "Human"}: ${t.text}`);
+    const parts = turns.map((t) => `${t.role === "assistant" ? "Assistant" : "Human"}: ${neutralizeTurnLabels(t.text)}`);
     if (turns.length && turns[turns.length - 1]!.role !== "user") parts.push("Human: Please continue.");
     return { prompt: parts.join("\n\n"), system };
 }
