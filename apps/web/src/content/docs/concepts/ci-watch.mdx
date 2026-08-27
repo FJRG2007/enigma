@@ -1,0 +1,36 @@
+---
+title: CI failure notifier
+description: Tells your agent when the GitHub Actions run its push triggered has failed, with the failing log attached, so nobody has to relay it by hand.
+group: Concepts
+order: 39
+---
+import { docHref } from "../../../lib/url";
+
+An agent pushes and moves on to the next thing. If the build breaks, nothing tells it - the loop only closes when a person notices the red check and pastes it back into the chat. `ci-watch` closes that loop without spending a single token on the common case: a green build.
+
+## How it works
+
+Polling from the agent is the obvious fix, and the wrong one: every check would spend model tokens on the answer "still green", which is the answer almost every time. So the work is split so the model's loop pays for neither half:
+
+1. Right after a push, a **detached background process** starts watching the run with the GitHub CLI (`gh`). It lives outside the agent's turn entirely.
+2. On the agent's next tool call, a hook checks whether that process recorded a failure. A green build (or one still running) prints nothing. A failure prints once - the workflow, the job, and the tail of the failing log - and is marked delivered so it is never repeated.
+
+The hook never blocks or denies a call; it only adds context when there is something to report.
+
+## Requirements
+
+The [GitHub CLI](https://cli.github.com) (`gh`), authenticated, on a repository with a GitHub remote. Without any of those, the watcher stands down silently - a convenience feature must never announce its own missing plumbing.
+
+## What counts as "your push"
+
+Only a commit this repository just pushed arms a watch - not a `git fetch` or `git pull` that moved the same tracking ref, and not a push from minutes ago that someone already dealt with. Reporting on a build the agent had no part in would be noise it cannot act on.
+
+## Turn it off
+
+On by default, since the common case costs nothing:
+
+```bash
+enigma config ci-watch off
+```
+
+See the <a href={docHref("reference/configuration")}>configuration reference</a> for the full toggle table.

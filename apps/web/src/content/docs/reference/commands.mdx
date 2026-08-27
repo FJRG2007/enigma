@@ -154,6 +154,14 @@ Remove the blank line agents leave at the end of a file. On by default: it runs 
 No argument fixes the staged files and re-stages them; `--all` sweeps every tracked file, which is how you clean a repo retroactively. A file is only changed when it has real content followed by one or more blank lines at the end, so an empty file, a file of only blank lines, and a last line with no closing newline are all left alone. A staged file that also has unstaged edits is fixed on disk but not re-staged, so `git add` never pulls unrelated work into the commit.
 </Cmd>
 
+## ci-watch
+
+Tells your agent when the GitHub Actions run its push triggered has failed, with the failing log attached. On by default; needs the `gh` CLI. See <a href={docHref("concepts/ci-watch")}>CI failure notifier</a> for detail.
+
+<Cmd name="enigma config ci-watch off" ex={["enigma config ci-watch off", "enigma config ci-watch on"]}>
+No standalone command - it runs as a background process plus a hook, both wired automatically. Toggle it with `enigma config ci-watch on|off`.
+</Cmd>
+
 ## verify
 
 Check that work reported as finished actually is. Runs automatically at turn end (on by default). See <a href={docHref("concepts/verify")}>Verified completion</a> for detail.
