@@ -37,11 +37,10 @@ afterAll(() => {
 });
 
 /** Builds a gate DB with one active run: intent done, review running. */
-function seed() {
-    const paths = Paths.withRoot(join(DIR, `gate-${newId()}`));
+function seed(repoPath = REPO_PATH, paths = Paths.withRoot(join(DIR, `gate-${newId()}`))) {
     paths.ensureDirs();
     const db = new Database(paths.db());
-    const repo = insertRepoWithIDAndFork(db, newId(), REPO_PATH, "https://example.com/o/r.git", "", "main");
+    const repo = insertRepoWithIDAndFork(db, newId(), repoPath, "https://example.com/o/r.git", "", "main");
     const run = insertRun(db, repo.id, "feat/bar", "a".repeat(40), "b".repeat(40));
     updateRunStatus(db, run.id, "running");
     const intent = insertStepResult(db, run.id, "intent");
@@ -98,18 +97,68 @@ test("a snapshot is rejected when it is foreign, stale, or from a dead daemon", 
     // A subdirectory of the repo still counts as inside it.
     expect(readSnapshot(join(REPO_PATH, "packages", "app"))).not.toBeNull();
 
-    const rewrite = (patch) => writeFileSync(file, JSON.stringify({ ...base, ...patch }));
+    const rewriteEntry = (patch) => writeFileSync(file, JSON.stringify({ version: 2, repos: { [REPO_PATH]: { ...base, ...patch } } }));
     // A daemon that died cannot leave a phantom run on screen. PID 0 is never a
     // live process on either platform.
-    rewrite({ pid: 0 });
+    rewriteEntry({ pid: 0 });
     expect(readSnapshot(REPO_PATH)).toBeNull();
     // A future schema is ignored rather than guessed at.
-    rewrite({ version: 99 });
+    writeFileSync(file, JSON.stringify({ version: 99, repos: { [REPO_PATH]: base } }));
     expect(readSnapshot(REPO_PATH)).toBeNull();
+    // The pre-map file one build older is still read, so an upgrade does not blank the bar.
+    writeFileSync(file, JSON.stringify({ ...base, version: 1 }));
+    expect(readSnapshot(REPO_PATH)).not.toBeNull();
     // Corrupt JSON degrades to no gate line, never an exception.
     writeFileSync(file, "{not json");
     expect(readSnapshot(REPO_PATH)).toBeNull();
     db.close();
+});
+
+test("concurrent runs in different repositories each keep their own bar", () => {
+    // The bug this pins: the snapshot was ONE slot, so whichever daemon broadcast last owned
+    // it and every other project's session simply lost its gate line - the reader drops a
+    // snapshot whose repo does not contain its cwd, so a clobber looked like "it disappeared".
+    const paths = Paths.withRoot(join(DIR, `gate-${newId()}`));
+    // Derived from REPO_PATH, which is already normalized to forward slashes.
+    const other = REPO_PATH.replace(/repo$/, "other-repo");
+    const first = seed(REPO_PATH, paths);
+    const second = seed(other, paths);
+    process.env.ENIGMA_GATE_HOME = paths.root();
+
+    writeSnapshot(first.db, paths, first.run.id);
+    writeSnapshot(second.db, paths, second.run.id);
+
+    expect(readSnapshot(REPO_PATH)?.repoPath).toBe(REPO_PATH);
+    expect(readSnapshot(other)?.repoPath).toBe(other);
+    // A third project still sees nothing, which was never the bug.
+    expect(readSnapshot(join(DIR, "elsewhere"))).toBeNull();
+
+    // One run settling drops only its own entry.
+    updateRunStatus(second.db, second.run.id, "completed");
+    writeSnapshot(second.db, paths, second.run.id);
+    expect(readSnapshot(other)).toBeNull();
+    expect(readSnapshot(REPO_PATH)?.repoPath).toBe(REPO_PATH);
+
+    first.db.close();
+    second.db.close();
+});
+
+test("a repository nested inside another reads its own snapshot, not its parent's", () => {
+    const paths = Paths.withRoot(join(DIR, `gate-${newId()}`));
+    const nested = `${REPO_PATH}/vendor/inner`;
+    const outer = seed(REPO_PATH, paths);
+    const inner = seed(nested, paths);
+    process.env.ENIGMA_GATE_HOME = paths.root();
+
+    writeSnapshot(outer.db, paths, outer.run.id);
+    writeSnapshot(inner.db, paths, inner.run.id);
+
+    // Both entries contain the nested cwd; the deepest root is the one that owns it.
+    expect(readSnapshot(nested)?.repoPath).toBe(nested);
+    expect(readSnapshot(REPO_PATH)?.repoPath).toBe(REPO_PATH);
+
+    outer.db.close();
+    inner.db.close();
 });
 
 test("the bar never exceeds the terminal width, dropping the least useful parts first", () => {

@@ -27,7 +27,7 @@
 import { homedir } from "node:os";
 import { spawn } from "node:child_process";
 import { basename, join, relative, resolve } from "node:path";
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 
 /** Prompts shorter than this ("ok", "continue", "fix it") carry nothing to retrieve on. */
 const MIN_PROMPT_CHARS = 12;
@@ -114,18 +114,62 @@ function writeState(dir: string, sessionId: string, state: SessionState): void {
     } catch { /* best-effort: losing session state costs a duplicate injection, never correctness */ }
 }
 
+/** Schema version of the code-graph status snapshot; 2 introduced the per-repository map. */
+const STATUSLINE_SNAPSHOT_VERSION = 2;
+
+/** Cap on remembered repositories, mirroring the gate snapshot and the run ledger. */
+const STATUSLINE_MAX_REPOS = 100;
+
+/** One repository's code-graph counters, as the status bar reads them. */
+interface StatuslineSnapshot {
+    root: string;
+    symbols: number;
+    stale: number;
+}
+
+/** The serialized file: one entry per repository, keyed by its root. */
+interface StatuslineSnapshotFile {
+    version: number;
+    repos: Record<string, StatuslineSnapshot>;
+}
+
+/** Reads the snapshot file, or an empty one when it is missing, corrupt or a version we do not write. */
+function readStatuslineSnapshots(path: string): StatuslineSnapshotFile {
+    try {
+        const parsed = JSON.parse(readFileSync(path, "utf8")) as StatuslineSnapshotFile;
+        if (!parsed || parsed.version !== STATUSLINE_SNAPSHOT_VERSION || typeof parsed.repos !== "object" || parsed.repos === null) {
+            return { version: STATUSLINE_SNAPSHOT_VERSION, repos: {} };
+        }
+        return parsed;
+    } catch { return { version: STATUSLINE_SNAPSHOT_VERSION, repos: {} }; }
+}
+
 /**
  * Leave the two numbers the status line shows behind in a file.
  *
  * The status line is a Node script and the engine is compiled into the Bun binary, so it can never
  * call this code - exactly the split the gate snapshot exists for. A hook that has already run the
  * engine is the cheapest place to record them.
+ *
+ * Keyed per repository, like the gate snapshot and the run ledger. This one matters more than
+ * either: it is written from a SESSION HOOK, so ordinary prompts rewrite it, and a single slot
+ * meant every prompt in one project blanked the segment in every session open on another.
+ *
+ * Written atomically (temp file plus rename) because the status bar polls on a timer; a torn
+ * read would be swallowed by its parser and show up as the segment silently missing.
  */
 function writeStatuslineSnapshot(root: string, symbols: number, stale: number): void {
     try {
         const dir = process.env.ENIGMA_CODEGRAPH_DIR || join(homedir(), ".enigma", "codegraph");
         mkdirSync(dir, { recursive: true });
-        writeFileSync(join(dir, "statusline.json"), JSON.stringify({ root, symbols, stale }));
+        const target = join(dir, "statusline.json");
+        const file = readStatuslineSnapshots(target);
+        file.repos[root] = { root, symbols, stale };
+        const entries = Object.entries(file.repos);
+        if (entries.length > STATUSLINE_MAX_REPOS) file.repos = Object.fromEntries(entries.slice(-STATUSLINE_MAX_REPOS));
+        const tmp = join(dir, `statusline.${process.pid}.tmp`);
+        writeFileSync(tmp, JSON.stringify(file));
+        renameSync(tmp, target);
     } catch { /* best-effort: a missing snapshot just hides the segment */ }
 }
 

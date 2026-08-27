@@ -41,11 +41,43 @@ RunManager.broadcast ─► writeSnapshot ─► ~/.enigma/gate/statusline.json 
 location independently - they cannot import each other across the runtime split, so
 changing the path means changing both.
 
+## One entry per repository (the bug that made the line vanish)
+
+Both snapshots are keyed by repository, `{ version, repos: { [repoPath]: entry } }`,
+the same shape `gate-ledger.ts` uses for `last-runs.json`.
+
+They were not, and that was a real bug rather than a tidiness point. A single slot is
+fine with one project and wrong with two: whichever writer fired last owned the file,
+and because the reader DROPS an entry whose repo does not contain its cwd, the loser
+did not see someone else's run - it saw nothing. A clobber and "no run in flight" are
+the same picture, which is why the symptom reads as "the gate line disappears" and
+"it shows up in a session that has nothing to do with it".
+
+The code graph's snapshot is the one that hurts more, and it is easy to miss why: its
+writer is a **session hook**, so ordinary prompts rewrite it. With several projects
+open, every prompt in one of them blanked the segment in all the others. Its write is
+also atomic now (temp file plus rename), which the gate's already was.
+
+Where more than one entry contains the cwd - a worktree, a clone vendored inside
+another repo - the **deepest** root wins, matching `lastGateRun`. Both files are capped
+at 100 repositories, and the gate's writer DELETES a repository's entry once its run
+settles rather than storing a finished run.
+
+Version 2 is the map. `readSnapshot` still accepts a version-1 file (one flat snapshot)
+because during an upgrade the renderer is new while the daemon is still the old
+long-running process, and a dark bar in that window would look exactly like the bug
+this replaced. The code graph's pre-map file carried no `version` at all, so that is
+what identifies it.
+
+Not fixed, deliberately: two sessions open on the SAME repository both show that
+repository's run. A run IS in flight there, and keying per session would need the
+daemon to know which session started the run, which it does not.
+
 ## Rejection rules (why the gate line sometimes does not appear)
 
-`readSnapshot` returns null - and the bar silently drops to one line - when the
-snapshot is for another repository (cwd must be the repo root or below it), from an
-unrecognized schema version, for a run that has already settled, or **written by a
+`readSnapshot` returns null - and the bar silently drops to one line - when no entry is
+for this repository (cwd must be the repo root or below it), the file is from an
+unrecognized schema version, the run has already settled, or the entry was **written by a
 daemon whose PID is no longer alive**. That last one is what stops a crashed daemon
 from leaving a phantom run on screen forever, and it is checked with
 `process.kill(pid, 0)` rather than a staleness timeout, because a run can legitimately
@@ -227,7 +259,10 @@ spawning a process; nothing but the tests passes them.
 `tests/gate/statusline.test.ts` covers the round trip that no single runtime can
 verify alone: `writeSnapshot` against a real gate DB, then `readSnapshot` and
 `render` from the `.mjs` side, plus the rejection rules, the animation, and the
-width invariant. The last two cases cover the exits above: `readSession` over a
+width invariant. Two cases pin the per-repository map: concurrent runs in different
+repositories each keeping their own bar (and one settling dropping only its own entry),
+and a repository nested inside another reading its own snapshot. The code graph's half
+is pinned in `tests/codegraph-hooks.test.ts`. The last two cases cover the exits above: `readSession` over a
 `PassThrough` for the unclosed pipe, the split payload and the cap, and a spawned
 renderer whose stdout is destroyed before it writes, which must still exit 0 with an
 empty stderr.

@@ -21,7 +21,13 @@ import { join } from "node:path";
 import { readFileSync } from "node:fs";
 
 /** Snapshot schema this renderer understands; a newer file is ignored, not guessed at. */
-const SNAPSHOT_VERSION = 1;
+const SNAPSHOT_VERSION = 2;
+
+/** The pre-map file: a single flat snapshot. Still read during an upgrade, never written. */
+const LEGACY_SNAPSHOT_VERSION = 1;
+
+/** Schema version of the code graph's snapshot; a pre-map file carried no version at all. */
+const CODEGRAPH_SNAPSHOT_VERSION = 2;
 
 /** Spinner frames, advanced once per second (the status bar's fastest refresh). */
 const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
@@ -160,17 +166,31 @@ function badge(color256) {
  * Same reason the gate has one: this is a Node script and the engine is compiled into the Bun
  * binary, so the statusline can never call it. A hook that already ran the engine leaves the two
  * numbers worth showing behind in a small file, and this only reads them.
+ *
+ * Keyed per repository for the same reason the gate snapshot is, and more urgently: the writer
+ * is a session hook, so with several projects open every prompt in one of them used to blank
+ * this segment in the others. The deepest matching root wins, so a clone nested inside another
+ * repository reads its own counters.
  */
 export function readCodeGraphStatus(cwd) {
     if (typeof cwd !== "string" || !cwd) return null;
     try {
         const root = process.env.ENIGMA_CODEGRAPH_DIR || join(os.homedir(), ".enigma", "codegraph");
-        const snap = parseJson(readFileSync(join(root, "statusline.json"), "utf8"));
-        if (!snap || typeof snap.root !== "string") return null;
-        // Only speak for the repo this session is actually in - a snapshot from another project
-        // would put someone else's file count on this status line.
-        if (!isInside(cwd, snap.root)) return null;
-        return { symbols: Number(snap.symbols) || 0, stale: Number(snap.stale) || 0 };
+        const file = parseJson(readFileSync(join(root, "statusline.json"), "utf8"));
+        if (!file) return null;
+        let entries;
+        if (file.version === CODEGRAPH_SNAPSHOT_VERSION && file.repos && typeof file.repos === "object") entries = Object.values(file.repos);
+        else if (file.version === undefined && typeof file.root === "string") entries = [file];
+        else return null;
+        let best = null;
+        for (const snap of entries) {
+            if (!snap || typeof snap.root !== "string") continue;
+            // Only speak for the repo this session is actually in - another project's counters
+            // on this status line would be worse than none.
+            if (!isInside(cwd, snap.root)) continue;
+            if (best === null || snap.root.length > best.root.length) best = snap;
+        }
+        return best === null ? null : { symbols: Number(best.symbols) || 0, stale: Number(best.stale) || 0 };
     } catch { return null; }
 }
 
@@ -194,22 +214,40 @@ function pidAlive(pid) {
 
 /**
  * Loads the gate snapshot for `cwd`, or null when there is nothing to show.
- * Rejects a snapshot that is for another repository, from an unknown schema
- * version, already settled, or left behind by a daemon that is no longer running.
+ *
+ * The file carries one entry per repository, so a run in another project can no longer
+ * take this repository's slot and blank its bar. Where several entries contain `cwd` -
+ * a repository checked out inside another one, a worktree, a vendored clone - the
+ * deepest root wins, matching how the run ledger resolves the same ambiguity.
+ *
+ * Rejects an entry that is for another repository, already settled, carries no steps,
+ * or was left behind by a daemon that is no longer running. A version-1 file (one flat
+ * snapshot, no map) is still read: during an upgrade the renderer is new while the
+ * daemon is still the old long-running process, and a dark bar there would look like
+ * this very bug.
  */
 export function readSnapshot(cwd, path = snapshotPath()) {
-    let snap;
+    let file;
     try {
-        snap = parseJson(readFileSync(path, "utf8"));
+        file = parseJson(readFileSync(path, "utf8"));
     } catch {
         return null;
     }
-    if (!snap || snap.version !== SNAPSHOT_VERSION) return null;
-    if (!ACTIVE_RUN_STATUSES.has(snap.status)) return null;
-    if (!Array.isArray(snap.steps) || snap.steps.length === 0) return null;
-    if (typeof snap.repoPath !== "string" || !isInside(cwd, snap.repoPath)) return null;
-    if (!pidAlive(snap.pid)) return null;
-    return snap;
+    if (!file) return null;
+    let entries;
+    if (file.version === SNAPSHOT_VERSION && file.repos && typeof file.repos === "object") entries = Object.values(file.repos);
+    else if (file.version === LEGACY_SNAPSHOT_VERSION) entries = [file];
+    else return null;
+    let best = null;
+    for (const snap of entries) {
+        if (!snap || typeof snap.repoPath !== "string") continue;
+        if (!ACTIVE_RUN_STATUSES.has(snap.status)) continue;
+        if (!Array.isArray(snap.steps) || snap.steps.length === 0) continue;
+        if (!isInside(cwd, snap.repoPath)) continue;
+        if (!pidAlive(snap.pid)) continue;
+        if (best === null || snap.repoPath.length > best.repoPath.length) best = snap;
+    }
+    return best;
 }
 
 /** Reports whether `cwd` is the repo root or a directory beneath it. */

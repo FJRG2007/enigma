@@ -90,14 +90,27 @@ test("editing a file reports what depends on it", () => {
     expect(out).toContain("handleRequest");
 });
 
-test("the status-line snapshot names the repo it describes", async () => {
+test("the status-line snapshot names the repo it describes, and one project never blanks another", async () => {
     hook("session-start", { session_id: "f" });
-    const snap = JSON.parse(readFileSync(join(STORE, "statusline.json"), "utf8")) as { root: string; symbols: number; };
+    const file = JSON.parse(readFileSync(join(STORE, "statusline.json"), "utf8")) as { version: number; repos: Record<string, { root: string; symbols: number; stale: number; }>; };
+    expect(file.version).toBe(2);
+    const snap = Object.values(file.repos)[0]!;
     expect(snap.symbols).toBeGreaterThan(0);
     const { readCodeGraphStatus } = await import("../bin/statusline.mjs") as { readCodeGraphStatus: (cwd: string) => { symbols: number; } | null; };
     expect(readCodeGraphStatus(snap.root)?.symbols).toBe(snap.symbols);
     // A snapshot from another repo must never put its numbers on this session's line.
     expect(readCodeGraphStatus(join(tmpdir(), "some-other-repo"))).toBeNull();
+
+    // The bug this pins: the file was a single slot, and the writer is a SESSION HOOK - so an
+    // ordinary prompt in another project overwrote this repo's entry and the segment silently
+    // vanished from every session open here. A second repository must leave the first readable.
+    const other = `${snap.root}-other`;
+    writeFileSync(join(STORE, "statusline.json"), JSON.stringify({
+        version: 2,
+        repos: { ...file.repos, [other]: { root: other, symbols: 7, stale: 2 } }
+    }));
+    expect(readCodeGraphStatus(snap.root)?.symbols).toBe(snap.symbols);
+    expect(readCodeGraphStatus(other)?.symbols).toBe(7);
 });
 
 test("an unindexed tree is handed to one background index, and a managed checkout to none", () => {
