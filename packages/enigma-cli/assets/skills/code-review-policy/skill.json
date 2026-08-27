@@ -4,6 +4,6 @@
   "provider": "FJRG2007/enigma",
   "description": "Pre-delivery self-review gate, prioritized review dimensions, and change-quality criteria.",
   "updated": "2026-08-19T12:37:59+02:00",
-  "cliVersion": "1.36.5",
+  "cliVersion": "1.36.6",
   "sha": "6b8a924cc11b61d4b45b73384aeb095ce622229359b7cc2c6ce4bb0cf3015ed7"
 }
