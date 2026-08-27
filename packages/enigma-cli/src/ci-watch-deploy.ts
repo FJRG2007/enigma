@@ -5,9 +5,12 @@
  *  - PostToolUse on Bash, which is where a push comes from. This is the hook that ARMS a
  *    watch, and the one that delivers a verdict soonest - the agent is usually mid-task when
  *    the build breaks, and that is exactly when it is cheapest to fix.
- *  - UserPromptSubmit, as the backstop. A verdict that lands after the agent has stopped
- *    running commands would otherwise sit unread until the next one; this makes sure it is
- *    the first thing on the next turn instead.
+ *  - UserPromptSubmit, as the backstop, and DELIVERY ONLY. A verdict that lands after the
+ *    agent has stopped running commands would otherwise sit unread until the next one; this
+ *    makes sure it is the first thing on the next turn instead. It never arms a watch: that
+ *    costs three git subprocesses, and this hook chain runs before the turn starts with
+ *    several tools sharing its budget - it was already timing out on a loaded box without
+ *    any help from this feature.
  *
  * Both call the same hidden command, which prints NOTHING unless there is an undelivered
  * failure - so on the common path (a green build) these hooks cost a process start and not

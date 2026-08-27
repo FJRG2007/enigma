@@ -77,6 +77,12 @@ Two Claude Code hooks (`ci-watch-deploy.ts`), both calling the same command:
   to fix.
 - `UserPromptSubmit` as the backstop, so a verdict landing after the agent stopped
   running commands is the first thing on the next turn instead of sitting unread.
+  **Delivery only** - it never arms. Arming costs three git subprocesses to answer
+  "did you push?", and this chain runs before the turn starts with several hooks
+  sharing its budget; it was observed timing out (`UserPromptSubmit hook timed out
+  after 30s`) on a loaded box before this feature existed. A push comes from Bash, so
+  `PostToolUse` is where those subprocesses belong. `runCiWatchHook` enforces it: any
+  event other than `PostToolUse` returns after the state read.
 
 Claude Code only, deliberately: the delivery channel is a hook whose stdout is fed back
 to the model. opencode and Kimi get nothing rather than a hook firing into a void - the

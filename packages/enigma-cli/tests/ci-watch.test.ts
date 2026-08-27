@@ -51,11 +51,11 @@ function seedFailure(delivered = false): void {
 }
 
 /** Runs the hook and returns what it wrote to stdout. */
-function hookOutput(cwd: string): string {
+function hookOutput(cwd: string, event = "PostToolUse"): string {
     const chunks: string[] = [];
     const write = process.stdout.write.bind(process.stdout);
     (process.stdout as unknown as { write: unknown; }).write = (c: string) => { chunks.push(String(c)); return true; };
-    try { runCiWatchHook(JSON.stringify({ cwd })); } finally { (process.stdout as unknown as { write: unknown; }).write = write; }
+    try { runCiWatchHook(JSON.stringify({ cwd }), event); } finally { (process.stdout as unknown as { write: unknown; }).write = write; }
     return chunks.join("");
 }
 
@@ -80,6 +80,18 @@ test("a recorded failure is handed over once, with the reason attached", () => {
     expect(hookOutput(REPO)).toBe("");
     const state = JSON.parse(readFileSync(ciWatchStatePath(), "utf8")) as { repos: Record<string, { delivered?: boolean; }>; };
     expect(state.repos[REPO]!.delivered).toBe(true);
+});
+
+test("UserPromptSubmit delivers but never arms", () => {
+    // That hook chain runs before the turn starts and several tools share its budget - it was
+    // already timing out on a loaded box before this feature was added to it. Arming costs
+    // three git subprocesses, so it belongs on PostToolUse, where a push comes from anyway.
+    seedFailure();
+    expect(hookOutput(REPO, "UserPromptSubmit")).toContain("FAILED");
+
+    // With nothing to deliver the event must be a pure state read: no repo is resolved, so a
+    // path that is not a work tree at all still costs nothing and says nothing.
+    expect(hookOutput(join(HOME, "not-a-repo"), "UserPromptSubmit")).toBe("");
 });
 
 test("a failure already delivered stays quiet, and another project's failure is never read here", () => {

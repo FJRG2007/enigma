@@ -295,8 +295,9 @@ function emit(event: string, additionalContext: string): void {
  *
  *  1. Delivers a failure the poller has recorded and has not been handed over yet, then
  *     marks it delivered so a build breaks the agent's flow once rather than every tick.
- *  2. Notices that the tracking branch has moved to a commit this repository produced and
- *     arms a poller for it.
+ *  2. On PostToolUse only, notices that the tracking branch has moved to a commit this
+ *     repository produced and arms a poller for it. Delivery happens on every event; arming
+ *     does not, because it costs subprocesses and UserPromptSubmit cannot afford them.
  *
  * Always exits 0. A notifier that can deny a tool call would be a worse problem than the
  * one it was written to solve.
@@ -317,7 +318,12 @@ export function runCiWatchHook(payload: string, event = "PostToolUse"): number {
         return 0;
     }
 
-    // Only arming needs git, and only once delivery has found nothing to say.
+    // Arming is the expensive half - three git subprocesses to answer "did you push?" - and
+    // UserPromptSubmit is the wrong place to spend them: that hook chain runs before the turn
+    // starts, several tools share its budget, and it was already timing out on a loaded box
+    // before this feature added to it. A push comes from Bash, so PostToolUse arms and
+    // UserPromptSubmit only ever delivers, which costs one JSON read.
+    if (event !== "PostToolUse") return 0;
     const repoRoot = repoRootOf(cwd);
     if (repoRoot === null) return 0;
     const head = pushedHead(repoRoot);
