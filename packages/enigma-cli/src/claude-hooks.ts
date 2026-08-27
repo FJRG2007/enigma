@@ -11,8 +11,8 @@
  * Node builtins + util only, so it stays as cheap to load as the deploy modules that use it.
  */
 
-import { readJson } from "./util";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
+import { readJson, enigmaHome } from "./util";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 
 /** One hook entry as Claude Code's settings.json stores it. */
@@ -33,6 +33,16 @@ export type HookWrite = "changed" | "unchanged" | "refused";
  * `marker` appearing in its command so the operation is idempotent and never touches a hook
  * the user wrote.
  */
+/**
+ * Global Claude settings.json for the default account.
+ *
+ * enigmaHome(), never a raw homedir(): bun on Linux does not reflect a runtime-reassigned
+ * $HOME through os.homedir(), so a test would wire its hooks into the real home dir.
+ */
+export function claudeGlobalSettings(): string {
+    return join(enigmaHome(), ".claude", "settings.json");
+}
+
 export function applyClaudeHook(settingsPath: string, event: string, marker: string, group: HookGroup, on: boolean): HookWrite {
     const parsed = readJson<Record<string, unknown>>(settingsPath);
     // Refuse to touch a settings file that exists but cannot be parsed: writing a fresh one

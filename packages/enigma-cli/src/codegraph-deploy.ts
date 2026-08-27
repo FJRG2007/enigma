@@ -19,7 +19,7 @@
 
 import { join } from "node:path";
 import { enigmaHome } from "./util";
-import { applyClaudeHook } from "./claude-hooks";
+import { applyClaudeHook, claudeGlobalSettings } from "./claude-hooks";
 import { readConfig, setEnigmaToggle } from "./config";
 
 /** True when the code graph is enabled. */
@@ -68,11 +68,6 @@ export function applyClaudeCodeGraphHooks(settingsPath: string, on: boolean): bo
     return changed;
 }
 
-// enigmaHome(), never a raw homedir(): bun on Linux does not reflect a runtime-reassigned
-// $HOME through os.homedir(), so a test would wire its hooks into the real home dir.
-function claudeGlobalSettings(): string {
-    return join(enigmaHome(), ".claude", "settings.json");
-}
 
 /**
  * Re-assert the global wiring to match the current toggle (presence AND absence). Called on

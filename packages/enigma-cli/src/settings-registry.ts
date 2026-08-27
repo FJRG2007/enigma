@@ -13,6 +13,7 @@ import * as conf from "./config";
 import { AGENTS } from "./agents";
 import { setKimiTrust } from "./kimi";
 import { setTrim } from "./trim-deploy";
+import { setCiWatch } from "./ci-watch-deploy";
 import { setVerify } from "./verify-deploy";
 import { clampCapPercent } from "./governor";
 import { applyMcpToggle } from "./mcp-deploy";
@@ -403,6 +404,13 @@ const RAW_CATEGORIES: Category[] = [
                 listValues: (scope) => conf.readEnigmaList("gateProtectedBranches", scope),
                 addItem: (item, scope) => ({ path: conf.updateEnigmaList("gateProtectedBranches", item.trim(), true, scope), changed: true }),
                 removeItem: (item, scope) => ({ path: conf.updateEnigmaList("gateProtectedBranches", item.trim(), false, scope), changed: true }),
+            },
+            {
+                key: "ci-watch",
+                label: "CI failure notifier",
+                hint: "watch the GitHub Actions run your push triggers and tell the agent when it breaks, with the failing log attached, so you do not have to paste it in; needs the gh CLI, costs no model tokens (a detached process does the waiting and a green build prints nothing) and never blocks the agent; enigma default: on",
+                read: () => conf.readConfig().config.ciWatch,
+                write: (value, scope) => ({ path: setCiWatch(scope, value), changed: true }),
             },
             {
                 key: "gate-severity",

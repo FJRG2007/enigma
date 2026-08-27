@@ -204,6 +204,12 @@ export interface EnigmaConfig {
     gateProtectedBranches: string[];
     /** Lowest finding severity that stops a gate run for the user's decision. */
     gateSeverity: GateSeverity;
+    /**
+     * Watch the GitHub Actions run a push triggers and tell the agent when it fails, with the
+     * failing log attached. Costs no model tokens: a detached process does the waiting and the
+     * hook prints nothing at all on a green build.
+     */
+    ciWatch: boolean;
     /** Local savings dashboard: off | on-demand (default when enabled) | always (background daemon). */
     dashboard: DashboardMode;
     /** Dashboard money estimate: USD per 1M input tokens; 0 = use per-source defaults. */
@@ -374,7 +380,7 @@ export const CONFIG_DEFAULTS: EnigmaConfig = {
     autoSync: true, statusline: true, statuslineRefresh: 10, claudeTrust: true, kimiTrust: true, remoteSkills: true, skillUpdatePolicy: "overwrite", permissionBypass: true, autoLint: false, guardrails: true, trim: true, verify: true, verifyCommand: "", compress: false, codeGraph: true, gate: true, dashboard: "off", tokenPrice: 0, tokenSpeed: 0, usageStats: false, recall: false, recallLlm: true, recallProvider: "claude-local", recallModel: "", recallApiBase: "", recallApiKey: "", proxy: false, usageApi: false, promptSecretGuard: false, promptSecretMode: "redact",
     resourceCap: 60, lowMemoryCap: 80,
     planSessionLimit: 0, planWeeklyLimit: 0, planWeeklySonnetLimit: 0, planWeeklyOpusLimit: 0, planWeeklyReset: "mon 00:00",
-    dashboardLive: true, dashboardPort: 0, dashboardBind: "loopback", dashboardBindAddress: "", apiPort: 8000, apiAccount: "", apiProfile: "", apiPack: "", toolPaths: {}, bypassDisabled: [], discardedSkills: [], skillAgentsOff: {}, packs: [], packAccounts: {}, gateProtectedBranches: [], gateSeverity: "warning",
+    dashboardLive: true, dashboardPort: 0, dashboardBind: "loopback", dashboardBindAddress: "", apiPort: 8000, apiAccount: "", apiProfile: "", apiPack: "", toolPaths: {}, bypassDisabled: [], discardedSkills: [], skillAgentsOff: {}, packs: [], packAccounts: {}, gateProtectedBranches: [], gateSeverity: "warning", ciWatch: true,
 };
 
 export type EnigmaConfigKey = keyof EnigmaConfig;

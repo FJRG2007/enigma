@@ -24,7 +24,7 @@
 
 import { enigmaHome } from "./util";
 import { join, dirname } from "node:path";
-import { applyClaudeHook } from "./claude-hooks";
+import { applyClaudeHook, claudeGlobalSettings } from "./claude-hooks";
 import { readConfig, setEnigmaToggle } from "./config";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 
@@ -100,12 +100,6 @@ export const EnigmaGuardrails = async () => ({
 
 // --- global apply / per-account mirror / toggle ------------------------------------
 
-/** Global Claude settings.json for the default account. */
-// enigmaHome(), never a raw homedir(): bun on Linux does not reflect a runtime-reassigned
-// $HOME through os.homedir(), so a test would wire its hooks into the real home dir.
-function claudeGlobalSettings(): string {
-    return join(enigmaHome(), ".claude", "settings.json");
-}
 
 /** Global opencode config dir for the default account. */
 function opencodeGlobalConfig(): string {

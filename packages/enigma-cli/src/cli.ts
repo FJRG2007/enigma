@@ -2627,6 +2627,19 @@ export async function run(argv: string[]): Promise<void> {
     }
     // Hidden: the post-edit EOF trimmer. Same early dispatch and synchronous stdin read as
     // the guardrails hook, for the same reasons. Always exits 0 - it is a silent tidy, not a gate.
+    // Hidden: the CI failure notifier. The hook half runs at tool boundaries and prints only
+    // when a push's workflow has failed; the poller half is the detached process it spawns,
+    // which does the waiting outside the model's loop so a green build costs nothing.
+    if (argv[0] === "__ci-hook") {
+        let payload = "";
+        try { payload = readFileSync(0, "utf8"); } catch { /* no stdin */ }
+        const { runCiWatchHook } = await import("./ci-watch");
+        process.exit(runCiWatchHook(payload, argv[1] || "PostToolUse"));
+    }
+    if (argv[0] === "__ci-watch") {
+        const { runCiWatchPoll } = await import("./ci-watch");
+        process.exit(await runCiWatchPoll(argv[1] || "", argv[2] || ""));
+    }
     if (argv[0] === "__trim-hook") {
         let payload = "";
         try { payload = readFileSync(0, "utf8"); } catch { /* no stdin */ }
