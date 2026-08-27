@@ -187,3 +187,40 @@ test("the dashboard switch wires the same three effects the CLI does, not just t
     // alone stats every file of the project.
     expect(on.view).toBeUndefined();
 });
+
+test("the snapshot is keyed by the indexed root, not by wherever the session was started", async () => {
+    // Keying on the session cwd filed `repo/` and `repo/packages/app/` as two repositories, and
+    // the reader takes the DEEPEST root containing its cwd - so a session started in a
+    // subdirectory shadowed the whole repository's counters with its own, and spent a slot doing it.
+    const file = join(STORE, "statusline.json");
+    rmSync(file, { force: true });
+    hook("session-start", { session_id: "sub", cwd: join(PROJ, "src") });
+    const repos = (JSON.parse(readFileSync(file, "utf8")) as { repos: Record<string, { symbols: number; }>; }).repos;
+    const roots = Object.keys(repos);
+    expect(roots).toHaveLength(1);
+    expect(roots[0]!.replace(/\\/g, "/").endsWith("/src")).toBe(false);
+    const { readCodeGraphStatus } = await import("../bin/statusline.mjs") as { readCodeGraphStatus: (cwd: string) => { symbols: number; } | null; };
+    expect(readCodeGraphStatus(PROJ)?.symbols).toBeGreaterThan(0);
+});
+
+test("the repository this hook just wrote survives the cap, however old its entry was", () => {
+    // The cap dropped by INSERTION order, and assigning to a key already present does not move
+    // it - so past a hundred repositories the entry written by this very call was the one
+    // evicted, and the segment vanished for the session that had just refreshed it.
+    const file = join(STORE, "statusline.json");
+    rmSync(file, { force: true });
+    hook("session-start", { session_id: "cap-seed" });
+    const root = Object.keys((JSON.parse(readFileSync(file, "utf8")) as { repos: Record<string, unknown>; }).repos)[0]!;
+
+    const repos: Record<string, unknown> = { [root]: { root, symbols: 1, stale: 0, at: 1 } };
+    for (let i = 0; i < 100; i++) {
+        const filler = `${root}-filler-${i}`;
+        repos[filler] = { root: filler, symbols: i, stale: 0, at: 2 };
+    }
+    writeFileSync(file, JSON.stringify({ version: 2, repos }));
+
+    hook("session-start", { session_id: "cap" });
+    const after = (JSON.parse(readFileSync(file, "utf8")) as { repos: Record<string, { symbols: number; }>; }).repos;
+    expect(Object.keys(after)).toHaveLength(100);
+    expect(after[root]!.symbols).toBeGreaterThan(1);
+});

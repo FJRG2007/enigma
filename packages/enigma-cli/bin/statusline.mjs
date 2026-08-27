@@ -182,14 +182,9 @@ export function readCodeGraphStatus(cwd) {
         if (file.version === CODEGRAPH_SNAPSHOT_VERSION && file.repos && typeof file.repos === "object") entries = Object.values(file.repos);
         else if (file.version === undefined && typeof file.root === "string") entries = [file];
         else return null;
-        let best = null;
-        for (const snap of entries) {
-            if (!snap || typeof snap.root !== "string") continue;
-            // Only speak for the repo this session is actually in - another project's counters
-            // on this status line would be worse than none.
-            if (!isInside(cwd, snap.root)) continue;
-            if (best === null || snap.root.length > best.root.length) best = snap;
-        }
+        // Only speak for the repo this session is actually in - another project's counters
+        // on this status line would be worse than none.
+        const best = deepestEntryFor(entries, cwd, "root");
         return best === null ? null : { symbols: Number(best.symbols) || 0, stale: Number(best.stale) || 0 };
     } catch { return null; }
 }
@@ -238,14 +233,26 @@ export function readSnapshot(cwd, path = snapshotPath()) {
     if (file.version === SNAPSHOT_VERSION && file.repos && typeof file.repos === "object") entries = Object.values(file.repos);
     else if (file.version === LEGACY_SNAPSHOT_VERSION) entries = [file];
     else return null;
+    return deepestEntryFor(entries, cwd, "repoPath", (snap) =>
+        ACTIVE_RUN_STATUSES.has(snap.status) && Array.isArray(snap.steps) && snap.steps.length > 0 && pidAlive(snap.pid));
+}
+
+/**
+ * The entry of a per-repository snapshot file that owns `cwd`, or null when none does.
+ *
+ * Both files enigma keeps for this bar - the gate snapshot and the code graph's counters - are
+ * maps from a repository root to one entry, and both resolve a cwd the same way: skip an entry
+ * whose root does not contain it, then let the DEEPEST root win, so a repository checked out
+ * inside another one (a worktree, a vendored clone) reads its own entry rather than its
+ * parent's. `accept` carries whatever else that file rejects on.
+ */
+function deepestEntryFor(entries, cwd, key, accept) {
     let best = null;
-    for (const snap of entries) {
-        if (!snap || typeof snap.repoPath !== "string") continue;
-        if (!ACTIVE_RUN_STATUSES.has(snap.status)) continue;
-        if (!Array.isArray(snap.steps) || snap.steps.length === 0) continue;
-        if (!isInside(cwd, snap.repoPath)) continue;
-        if (!pidAlive(snap.pid)) continue;
-        if (best === null || snap.repoPath.length > best.repoPath.length) best = snap;
+    for (const entry of entries) {
+        if (!entry || typeof entry[key] !== "string") continue;
+        if (!isInside(cwd, entry[key])) continue;
+        if (accept && !accept(entry)) continue;
+        if (best === null || entry[key].length > best[key].length) best = entry;
     }
     return best;
 }

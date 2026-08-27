@@ -27,7 +27,8 @@
 import { homedir } from "node:os";
 import { spawn } from "node:child_process";
 import { basename, join, relative, resolve } from "node:path";
-import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { readRepoKeyedFile, writeRepoKeyedFile } from "./repo-keyed-file";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 
 /** Prompts shorter than this ("ok", "continue", "fix it") carry nothing to retrieve on. */
 const MIN_PROMPT_CHARS = 12;
@@ -117,31 +118,25 @@ function writeState(dir: string, sessionId: string, state: SessionState): void {
 /** Schema version of the code-graph status snapshot; 2 introduced the per-repository map. */
 const STATUSLINE_SNAPSHOT_VERSION = 2;
 
-/** Cap on remembered repositories, mirroring the gate snapshot and the run ledger. */
-const STATUSLINE_MAX_REPOS = 100;
-
 /** One repository's code-graph counters, as the status bar reads them. */
 interface StatuslineSnapshot {
     root: string;
     symbols: number;
     stale: number;
+    /** Unix milliseconds of this write, so the cap evicts the least recently seen repository. */
+    at: number;
 }
 
-/** The serialized file: one entry per repository, keyed by its root. */
-interface StatuslineSnapshotFile {
-    version: number;
-    repos: Record<string, StatuslineSnapshot>;
-}
-
-/** Reads the snapshot file, or an empty one when it is missing, corrupt or a version we do not write. */
-function readStatuslineSnapshots(path: string): StatuslineSnapshotFile {
-    try {
-        const parsed = JSON.parse(readFileSync(path, "utf8")) as StatuslineSnapshotFile;
-        if (!parsed || parsed.version !== STATUSLINE_SNAPSHOT_VERSION || typeof parsed.repos !== "object" || parsed.repos === null) {
-            return { version: STATUSLINE_SNAPSHOT_VERSION, repos: {} };
-        }
-        return parsed;
-    } catch { return { version: STATUSLINE_SNAPSHOT_VERSION, repos: {} }; }
+/**
+ * The indexed root of a project, which is what the snapshot is keyed by.
+ *
+ * NOT the session's working directory: a hook fires wherever the agent was started, so keying on
+ * that files `repo/` and `repo/packages/app/` as two repositories. The reader picks the deepest
+ * root containing its cwd, so the subdirectory entry would win even while holding older counters,
+ * and each stray directory spends one of the hundred slots.
+ */
+function projectRoot(cg: typeof import("./codegraph"), project: string, fallback: string): string {
+    try { return cg.listProjects().find((p) => p.id === project)?.root ?? fallback; } catch { return fallback; }
 }
 
 /**
@@ -151,25 +146,18 @@ function readStatuslineSnapshots(path: string): StatuslineSnapshotFile {
  * call this code - exactly the split the gate snapshot exists for. A hook that has already run the
  * engine is the cheapest place to record them.
  *
- * Keyed per repository, like the gate snapshot and the run ledger. This one matters more than
- * either: it is written from a SESSION HOOK, so ordinary prompts rewrite it, and a single slot
- * meant every prompt in one project blanked the segment in every session open on another.
- *
- * Written atomically (temp file plus rename) because the status bar polls on a timer; a torn
- * read would be swallowed by its parser and show up as the segment silently missing.
+ * Keyed per repository, like the gate snapshot and the run ledger, and sharing their read/cap/write
+ * (`repo-keyed-file.ts`). This one matters more than either: it is written from a SESSION HOOK, so
+ * ordinary prompts rewrite it, and a single slot meant every prompt in one project blanked the
+ * segment in every session open on another.
  */
 function writeStatuslineSnapshot(root: string, symbols: number, stale: number): void {
     try {
         const dir = process.env.ENIGMA_CODEGRAPH_DIR || join(homedir(), ".enigma", "codegraph");
-        mkdirSync(dir, { recursive: true });
         const target = join(dir, "statusline.json");
-        const file = readStatuslineSnapshots(target);
-        file.repos[root] = { root, symbols, stale };
-        const entries = Object.entries(file.repos);
-        if (entries.length > STATUSLINE_MAX_REPOS) file.repos = Object.fromEntries(entries.slice(-STATUSLINE_MAX_REPOS));
-        const tmp = join(dir, `statusline.${process.pid}.tmp`);
-        writeFileSync(tmp, JSON.stringify(file));
-        renameSync(tmp, target);
+        const repos = readRepoKeyedFile<StatuslineSnapshot>(target, STATUSLINE_SNAPSHOT_VERSION);
+        repos[root] = { root, symbols, stale, at: Date.now() };
+        writeRepoKeyedFile(target, STATUSLINE_SNAPSHOT_VERSION, repos, s => s.at);
     } catch { /* best-effort: a missing snapshot just hides the segment */ }
 }
 
@@ -199,7 +187,7 @@ async function sessionStart(dir: string): Promise<void> {
     const map = q.codeGraphMap({ project, refresh: false, maxDirs: 8 });
     const fresh = q.codeGraphCheck(project);
     const stale = fresh && fresh.stale > 0 ? `\n${fresh.stale} file(s) changed since the last index; the next query refreshes them.` : "";
-    writeStatuslineSnapshot(dir, map?.totals.symbols ?? 0, fresh?.stale ?? 0);
+    writeStatuslineSnapshot(projectRoot(cg, project, dir), map?.totals.symbols ?? 0, fresh?.stale ?? 0);
     emit("SessionStart", map ? `${directive}\n\n${fmt.formatMap(map).trimEnd()}${stale}` : directive);
 }
 
@@ -350,7 +338,7 @@ async function stop(input: HookInput, dir: string): Promise<void> {
         if (!project) throw new Error("not indexed yet");
         const fresh = q.codeGraphCheck(project);
         const map = q.codeGraphMap({ project, refresh: false });
-        writeStatuslineSnapshot(dir, map?.totals.symbols ?? 0, fresh?.stale ?? 0);
+        writeStatuslineSnapshot(projectRoot(cg, project, dir), map?.totals.symbols ?? 0, fresh?.stale ?? 0);
     } catch { /* the snapshot is cosmetic; the re-index below is the real work */ }
     backgroundIndex(cg, dir);
 }

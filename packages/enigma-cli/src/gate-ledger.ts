@@ -15,14 +15,12 @@
  */
 
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { readRepoKeyedFile, writeRepoKeyedFile } from "./repo-keyed-file";
 
 /** Schema version; a reader ignores anything it does not recognize. */
 const LEDGER_VERSION = 1;
-
-/** How many repositories to keep. Oldest entries drop, so the file stays small. */
-const MAX_REPOS = 100;
 
 /** Statuses that mean the run stopped without clearing anything (`gate/types.ts`). */
 const ABANDONED = new Set(["failed", "cancelled"]);
@@ -63,13 +61,6 @@ export function validatingRun(record: GateRunRecord | null | undefined): GateRun
     return validatingRun(record.prior);
 }
 
-/** The serialized file. */
-interface Ledger {
-    version: number;
-    /** Keyed by repository path exactly as recorded, so a rename becomes a new entry. */
-    repos: Record<string, GateRunRecord>;
-}
-
 /** Gate home, resolved the same way `Paths` and `bin/statusline.mjs` resolve it. */
 function gateHome(): string {
     return process.env.ENIGMA_GATE_HOME || join(homedir(), ".enigma", "gate");
@@ -101,13 +92,12 @@ export function gateLedgerReady(path = gateLedgerPath()): boolean {
     return existsSync(path);
 }
 
-/** Reads the ledger, or an empty one when it is missing, unreadable or unknown. */
-function readLedger(path: string): Ledger {
-    try {
-        const parsed = JSON.parse(readFileSync(path, "utf8")) as Ledger;
-        if (!parsed || parsed.version !== LEDGER_VERSION || typeof parsed.repos !== "object" || parsed.repos === null) return { version: LEDGER_VERSION, repos: {} };
-        return parsed;
-    } catch { return { version: LEDGER_VERSION, repos: {} }; }
+/**
+ * Reads the ledger's entries, or none when it is missing, unreadable or unknown. Keyed by
+ * repository path exactly as recorded, so a rename becomes a new entry.
+ */
+function readLedger(path: string): Record<string, GateRunRecord> {
+    return readRepoKeyedFile<GateRunRecord>(path, LEDGER_VERSION);
 }
 
 /**
@@ -119,28 +109,20 @@ function readLedger(path: string): Ledger {
  * carry unchanged, which is what stops a run's own `pending`/`running` stamps from vouching
  * for it after it is aborted.
  *
- * Written atomically (temp file plus rename) because the reader is a turn-end hook that
- * must never parse half a file, and failures are swallowed: bookkeeping must never be
- * able to disturb a run. `path` is the ledger the caller is already using, so a test or an
+ * Written atomically and capped by `repo-keyed-file.ts` because the reader is a turn-end
+ * hook that must never parse half a file, and failures are swallowed: bookkeeping must never
+ * be able to disturb a run. `path` is the ledger the caller is already using, so a test or an
  * isolated daemon writes where it reads.
  */
 export function recordGateRun(record: GateRunRecord, path = gateLedgerPath()): void {
     try {
-        const ledger = readLedger(path);
-        const previous = ledger.repos[record.repoPath];
+        const repos = readLedger(path);
+        const previous = repos[record.repoPath];
         const prior = previous && previous.runId === record.runId ? previous.prior : validatingRun(previous);
         // Flattened to one generation: `prior` is already a validating run, so its own carry
         // answers for nothing this reader would ever reach.
-        ledger.repos[record.repoPath] = { ...record, prior: prior ? { ...prior, prior: undefined } : undefined };
-        const entries = Object.entries(ledger.repos);
-        if (entries.length > MAX_REPOS) {
-            entries.sort((a, b) => b[1].at - a[1].at);
-            ledger.repos = Object.fromEntries(entries.slice(0, MAX_REPOS));
-        }
-        mkdirSync(dirname(path), { recursive: true });
-        const tmp = `${path}.${process.pid}.tmp`;
-        writeFileSync(tmp, `${JSON.stringify(ledger)}\n`);
-        renameSync(tmp, path);
+        repos[record.repoPath] = { ...record, prior: prior ? { ...prior, prior: undefined } : undefined };
+        writeRepoKeyedFile(path, LEDGER_VERSION, repos, r => r.at);
     } catch { /* a cosmetic-cost cache; losing a write only costs one extra gate run */ }
 }
 
@@ -160,9 +142,8 @@ function isInside(dir: string, root: string): boolean {
  * its parent's.
  */
 export function lastGateRun(cwd: string, path = gateLedgerPath()): GateRunRecord | null {
-    const ledger = readLedger(path);
     let best: GateRunRecord | null = null;
-    for (const record of Object.values(ledger.repos)) {
+    for (const record of Object.values(readLedger(path))) {
         if (!record || typeof record.repoPath !== "string" || typeof record.at !== "number") continue;
         if (!isInside(cwd, record.repoPath)) continue;
         if (best === null || record.repoPath.length > best.repoPath.length) best = record;

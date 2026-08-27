@@ -36,18 +36,23 @@ afterAll(() => {
     } catch { /* the OS reclaims a temp dir on its own */ }
 });
 
-/** Builds a gate DB with one active run: intent done, review running. */
-function seed(repoPath = REPO_PATH, paths = Paths.withRoot(join(DIR, `gate-${newId()}`))) {
-    paths.ensureDirs();
-    const db = new Database(paths.db());
-    const repo = insertRepoWithIDAndFork(db, newId(), repoPath, "https://example.com/o/r.git", "", "main");
-    const run = insertRun(db, repo.id, "feat/bar", "a".repeat(40), "b".repeat(40));
+/** Starts one active run on `branch`: intent done, review running. */
+function activeRun(db, repoId: string, branch: string) {
+    const run = insertRun(db, repoId, branch, "a".repeat(40), "b".repeat(40));
     updateRunStatus(db, run.id, "running");
     const intent = insertStepResult(db, run.id, "intent");
     completeStepWithStatus(db, intent.id, "completed", 0, 10, "");
     const review = insertStepResult(db, run.id, "review");
     startStep(db, review.id);
-    return { db, paths, run };
+    return run;
+}
+
+/** Builds a gate DB with one active run: intent done, review running. */
+function seed(repoPath = REPO_PATH, paths = Paths.withRoot(join(DIR, `gate-${newId()}`))) {
+    paths.ensureDirs();
+    const db = new Database(paths.db());
+    const repo = insertRepoWithIDAndFork(db, newId(), repoPath, "https://example.com/o/r.git", "", "main");
+    return { db, paths, run: activeRun(db, repo.id, "feat/bar") };
 }
 
 test("a run written by the daemon is readable and renderable by the Node status bar", () => {
@@ -141,6 +146,34 @@ test("concurrent runs in different repositories each keep their own bar", () => 
 
     first.db.close();
     second.db.close();
+});
+
+test("a run settling leaves the entry a concurrent branch of the same repository owns", () => {
+    // Runs are serialized per repo+BRANCH, so two of them share one repository key. Deleting that
+    // key on the first to settle blanked the bar of the one still running - the very symptom the
+    // per-repository map exists to prevent, just one level in.
+    const paths = Paths.withRoot(join(DIR, `gate-${newId()}`));
+    paths.ensureDirs();
+    const db = new Database(paths.db());
+    const repo = insertRepoWithIDAndFork(db, newId(), REPO_PATH, "https://example.com/o/r.git", "", "main");
+    process.env.ENIGMA_GATE_HOME = paths.root();
+
+    const first = activeRun(db, repo.id, "feat/one");
+    const second = activeRun(db, repo.id, "feat/two");
+    writeSnapshot(db, paths, first.id);
+    writeSnapshot(db, paths, second.id);
+    expect(readSnapshot(REPO_PATH)?.branch).toBe("feat/two");
+
+    updateRunStatus(db, first.id, "completed");
+    writeSnapshot(db, paths, first.id);
+    expect(readSnapshot(REPO_PATH)?.branch).toBe("feat/two");
+
+    // The run that DOES own the entry settling still clears it.
+    updateRunStatus(db, second.id, "completed");
+    writeSnapshot(db, paths, second.id);
+    expect(readSnapshot(REPO_PATH)).toBeNull();
+
+    db.close();
 });
 
 test("a repository nested inside another reads its own snapshot, not its parent's", () => {

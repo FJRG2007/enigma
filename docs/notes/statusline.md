@@ -56,12 +56,34 @@ the same picture, which is why the symptom reads as "the gate line disappears" a
 The code graph's snapshot is the one that hurts more, and it is easy to miss why: its
 writer is a **session hook**, so ordinary prompts rewrite it. With several projects
 open, every prompt in one of them blanked the segment in all the others. Its write is
-also atomic now (temp file plus rename), which the gate's already was.
+also atomic now (temp file plus rename), which the gate's already was. Its key is the
+INDEXED PROJECT ROOT, not the hook's cwd: a hook fires wherever the agent was started,
+so keying on that files `repo/` and `repo/packages/app/` as two repositories, and the
+deepest-root rule then lets the subdirectory shadow the real counters.
 
 Where more than one entry contains the cwd - a worktree, a clone vendored inside
-another repo - the **deepest** root wins, matching `lastGateRun`. Both files are capped
-at 100 repositories, and the gate's writer DELETES a repository's entry once its run
-settles rather than storing a finished run.
+another repo - the **deepest** root wins, matching `lastGateRun`; one `deepestEntryFor`
+in the renderer answers that for both files.
+
+The read, the 100-repository cap and the atomic write are one implementation,
+`src/repo-keyed-file.ts`, shared by all three of these files (both snapshots and
+`last-runs.json`). They were written three times first, and the divergence cost
+exactly what you would expect: one of them capped by INSERTION order while the others
+capped by recency, so past a hundred repositories the entry a writer had just
+refreshed was the one it evicted. Eviction is by recency everywhere now, which is why
+the code graph's entry carries an `at` timestamp it does not otherwise need.
+
+The gate's writer DELETES a repository's entry once its run settles rather than
+storing a finished run - but only when the stored entry is still that run's own.
+Runs are serialized per repo+BRANCH, so a second branch of the same repository can be
+in flight and holding the key, and deleting that would blank a bar that should be lit.
+Hence `runId` on the snapshot; an entry without one predates the field and is cleared
+unconditionally, since leaving it would strand a finished run on screen.
+
+Two processes that read and write the file at the same time still drop one another's
+entry - the temp-file-plus-rename buys torn-read safety, not lost-update safety. Both
+files are derived caches that the next event rewrites, so the window self-heals; it is
+not worth a lock.
 
 Version 2 is the map. `readSnapshot` still accepts a version-1 file (one flat snapshot)
 because during an upgrade the renderer is new while the daemon is still the old
@@ -259,10 +281,13 @@ spawning a process; nothing but the tests passes them.
 `tests/gate/statusline.test.ts` covers the round trip that no single runtime can
 verify alone: `writeSnapshot` against a real gate DB, then `readSnapshot` and
 `render` from the `.mjs` side, plus the rejection rules, the animation, and the
-width invariant. Two cases pin the per-repository map: concurrent runs in different
+width invariant. Three cases pin the per-repository map: concurrent runs in different
 repositories each keeping their own bar (and one settling dropping only its own entry),
-and a repository nested inside another reading its own snapshot. The code graph's half
-is pinned in `tests/codegraph-hooks.test.ts`. The last two cases cover the exits above: `readSession` over a
+a run settling while another BRANCH of the same repository owns the entry, and a
+repository nested inside another reading its own snapshot. The code graph's half is
+pinned in `tests/codegraph-hooks.test.ts`, including that the key is the indexed root
+rather than the session's cwd and that a refreshed entry survives the cap. The last two
+cases cover the exits above: `readSession` over a
 `PassThrough` for the unclosed pipe, the split payload and the cap, and a spawned
 renderer whose stdout is destroyed before it writes, which must still exit 0 with an
 empty stderr.
