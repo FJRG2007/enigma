@@ -31,6 +31,12 @@ jobs:
       - name: Test remote skill updates
         run: bun test tests/skills-remote.test.ts
         working-directory: packages/enigma-cli
+      - name: Test the gate severity threshold
+        run: bun test tests/gate/severity-threshold.test.ts
+        working-directory: packages/enigma-cli
+      - name: Test the CI failure notifier
+        run: bun test tests/ci-watch.test.ts
+        working-directory: packages/enigma-cli
       - name: Test local dashboard
         run: bun test tests/dashboard.test.ts
         working-directory: packages/enigma-cli

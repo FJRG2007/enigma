@@ -15,6 +15,8 @@ import { mkdtempSync, rmSync, readFileSync, writeFileSync, mkdirSync } from "nod
 const HOME = mkdtempSync(join(tmpdir(), "enigma-ci-watch-"));
 process.env.USERPROFILE = HOME;
 process.env.HOME = HOME;
+const PRIOR_HOME = process.env.HOME;
+const PRIOR_USERPROFILE = process.env.USERPROFILE;
 const PRIOR_CONFIG_HOME = process.env.ENIGMA_CONFIG_HOME;
 const PRIOR_WATCH_DIR = process.env.ENIGMA_CI_WATCH_DIR;
 process.env.ENIGMA_CONFIG_HOME = HOME;
@@ -28,6 +30,14 @@ const REPO = join(HOME, "repo").split(String.fromCharCode(92)).join("/");
 const SHA = "c".repeat(40);
 
 afterAll(() => {
+    // `bun test` shares one process across files, and this one points HOME at a temp dir it
+    // then deletes. Leaving it pointed there sends every file loaded afterwards at a home
+    // that no longer exists. CI runs each file in its own step so it would not notice, which
+    // is exactly why the restore has to be deliberate.
+    if (PRIOR_HOME === undefined) delete process.env.HOME;
+    else process.env.HOME = PRIOR_HOME;
+    if (PRIOR_USERPROFILE === undefined) delete process.env.USERPROFILE;
+    else process.env.USERPROFILE = PRIOR_USERPROFILE;
     if (PRIOR_CONFIG_HOME === undefined) delete process.env.ENIGMA_CONFIG_HOME;
     else process.env.ENIGMA_CONFIG_HOME = PRIOR_CONFIG_HOME;
     if (PRIOR_WATCH_DIR === undefined) delete process.env.ENIGMA_CI_WATCH_DIR;
