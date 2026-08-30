@@ -19,6 +19,7 @@ import { pinnedRef } from "./skills-remote";
 import { collectReporter } from "./reporter";
 import { hostname, userInfo } from "node:os";
 import type { ContentType } from "./compress";
+import type { CompletionShell } from "./completion";
 import { spawnSync } from "node:child_process";
 import { starRepoInBackground } from "./github";
 import { parseGuardArgv, runGuardCli } from "./guard";
@@ -49,7 +50,7 @@ const COMMANDS = new Set<string>([
     "install", "update", "security", "guard", "seal", "check", "config", "account", "accounts",
     "profile", "profiles", "skill", "skills", "issue", "improve", "qa", "compress", "guardrails", "trim", "verify", "mcp", "api", "gate", "dashboard", "dash", "fix-path", "resources", "recall", "codegraph", "autoskills", "statusline", "help", "version",
     "add", "components",
-    "pack", "packs", "ssh",
+    "pack", "packs", "ssh", "completion",
     ...acct.TOOL_NAMES,
     ...packs.PACKS.map((p) => p.id),
 ]);
@@ -412,6 +413,7 @@ Commands:
   seal                 Maintenance: (re)compute skill content hashes
   check                Integrity gate: verify skills are well-formed and sealed
   statusline           Render the agent status bar (badge, model, context, cost, live gate progress)
+  completion [shell]   Print a shell completion script (bash | zsh | fish | powershell)
   help, version
 
 Config keys: commit-emoji, update-notifier, auto-sync, remote-skills, fullscreen,
@@ -713,6 +715,10 @@ enigma_recall*). Normally launched by an agent, not by hand. Register it with
 Render the agent status bar (badge, model, context, cost, live gate progress). Reads the
 agent's status payload on stdin; wired automatically unless you pass --no-statusline.`,
 
+    completion: `usage: enigma completion [bash | zsh | fish | powershell]
+Print a shell completion script on stdout; enigma never edits a shell profile itself.
+Without a shell it guesses from $SHELL. Install it where your shell reads completions,
+e.g. eval "$(enigma completion zsh)" in ~/.zshrc.`,
     seal: "usage: enigma seal\nRecompute the skill content hashes. Run it after editing any SKILL.md or skill.json.",
     check: "usage: enigma check\nIntegrity gate: verify the skills are well-formed and sealed. Exits non-zero when they are not.",
 };
@@ -2173,6 +2179,21 @@ function runCompressCli(opts: CliOptions): number {
 }
 
 /**
+ * `enigma completion` - print the completion script for a shell on stdout. Writing it into
+ * a shell profile is left to the user: a CLI that edits someone's rc file on their behalf is
+ * exactly the kind of surprise enigma does not do. Returns an exit code.
+ */
+async function runCompletionCli(positionals: string[]): Promise<number> {
+    const { completionScript, detectShell, COMPLETION_SHELLS } = await import("./completion");
+    const requested = positionals[0];
+    if (requested && !COMPLETION_SHELLS.includes(requested as CompletionShell)) {
+        console.error(`Unknown shell '${requested}'. Supported: ${COMPLETION_SHELLS.join(", ")}.`);
+        return 1;
+    }
+    process.stdout.write(completionScript((requested as CompletionShell) ?? detectShell(), [...COMMANDS].sort()));
+    return 0;
+}
+/**
  * `enigma guardrails` surface: inspect and manage the convention rules the post-edit hook
  * enforces. No subcommand lists rules; `check <file>` runs them against a file; `stats [days]`
  * reports the compliance ledger (which rules the agent breaks, and whether it was stopped or got
@@ -2749,6 +2770,7 @@ export async function run(argv: string[]): Promise<void> {
     if (opts.command === "profile") { process.exit(await runProfileCli(opts, interactive)); }
     if (opts.command === "skills") { process.exit(runSkillsCli(opts)); }
     if (opts.command === "issue") { process.exit(await runIssueCli(opts.positionals[0], version, interactive)); }
+    if (opts.command === "completion") { process.exit(await runCompletionCli(opts.positionals)); }
     if (opts.command === "compress") { process.exit(runCompressCli(opts)); }
     if (opts.command === "guardrails") { process.exit(runGuardrailsCli(opts.positionals)); }
     if (opts.command === "trim") {

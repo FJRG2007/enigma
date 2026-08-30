@@ -58,6 +58,7 @@ Subsystems (read the one you are touching):
 - `secret-protection.md` - commit guard lists and the prompt secret guard.
 - `tool-launch-path.md` - repairing a tool that is installed but not on PATH.
 - `system-resources.md` - process/port/WSL/Docker cleanup.
+- `shell-completion.md` - `enigma completion`: word lists derived from the command set and the settings registry, and the test that stops the one hand-written list from drifting.
 - `statusline.md` - the agent status bar: the Node/Bun split that forces the gate snapshot file, rejection rules, animation and width rules. Read before touching `bin/statusline.mjs` or the snapshot.
 - `tui.md` - OpenTUI renderer, gotchas, headless testing.
 - `website-astro.md` - `apps/web` structure, base path, docs collection, search.
