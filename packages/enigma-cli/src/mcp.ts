@@ -10,7 +10,8 @@
  *
  * Tools:
  *   enigma_compress    - compress tool output/logs/text; returns the compressed
- *                        payload (carrying a CCR marker when lossy).
+ *                        payload (carrying a CCR marker when lossy). Pass the command
+ *                        behind the output and it is filtered by that tool's rules.
  *   enigma_retrieve    - restore the original behind a CCR hash.
  *   enigma_stats       - cumulative token savings.
  *   enigma_recall      - search the local session-memory index (when recall is on).
@@ -50,11 +51,14 @@ const TOOLS = [
         description:
             "Compress large tool output, logs, JSON, or text before reading it - same information, far fewer tokens. "
             + "Returns the compressed content; when data is dropped it carries a marker <<enigma:ccr:HASH ...>> whose "
-            + "HASH can be passed to enigma_retrieve to get the full original back.",
+            + "HASH can be passed to enigma_retrieve to get the full original back. When the content is the output of a "
+            + "shell command, pass that command as 'command' - the output is then reduced to the failures and the summary "
+            + "using the rules for that tool instead of being truncated blindly.",
         inputSchema: {
             type: "object",
             properties: {
                 content: { type: "string", description: "The raw content to compress." },
+                command: { type: "string", description: "Optional: the shell command that produced the content (e.g. \"npm test\")." },
                 content_type: { type: "string", enum: CONTENT_TYPES, description: "Optional: force a content type instead of auto-detecting." },
             },
             required: ["content"],
@@ -309,7 +313,8 @@ function callTool(name: string, args: Record<string, unknown>, source?: string):
             const content = typeof args.content === "string" ? args.content : "";
             if (!content) return textResult("enigma_compress: 'content' is required.", true);
             const type = CONTENT_TYPES.includes(args.content_type as ContentType) ? (args.content_type as ContentType) : undefined;
-            const r = compress(content, { type, source });
+            const command = typeof args.command === "string" ? args.command : undefined;
+            const r = compress(content, { type, command, source });
             return textResult(r.compressed);
         }
         case "enigma_retrieve": {

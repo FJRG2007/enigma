@@ -4,9 +4,12 @@
  * rules covers the content that actually reaches a coding agent (JSON tool
  * outputs, logs, diffs, code, prose) without an ONNX runtime. JSON is confirmed
  * by an actual parse, so it is never guessed wrong.
+ *
+ * "shell" is never returned here: command output is identified by the command that
+ * produced it, not by its shape (see ./shell), so only compress() assigns that type.
  */
 
-export type ContentType = "json" | "code" | "log" | "diff" | "markdown" | "text" | "unknown";
+export type ContentType = "json" | "code" | "log" | "diff" | "markdown" | "shell" | "text" | "unknown";
 
 export interface Detection {
     type: ContentType;

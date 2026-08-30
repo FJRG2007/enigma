@@ -2535,7 +2535,7 @@ export {
             "cli": "CLI (enigma compress)", "unknown": "Unattributed",
         };
         function prettySource(k) { return SOURCE_LABELS[k] || String(k).replace(/[-_]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()); }
-        const TYPE_LABELS = { json: "JSON", log: "Logs", text: "Text", code: "Code", diff: "Diffs", markdown: "Markdown", unknown: "Other" };
+        const TYPE_LABELS = { json: "JSON", log: "Logs", text: "Text", code: "Code", diff: "Diffs", markdown: "Markdown", shell: "Command output", unknown: "Other" };
         function prettyType(k) { return TYPE_LABELS[k] || String(k).replace(/\b\w/g, (c) => c.toUpperCase()); }
 
         // One bar per key (source or type), sorted by tokens saved, with an optional $ column.

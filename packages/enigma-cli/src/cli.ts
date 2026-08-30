@@ -72,6 +72,8 @@ interface CliOptions extends skillsMod.InstallOptions {
     retrieve: string | null;
     /** `compress`: force a content type instead of auto-detecting. */
     compressType: string | null;
+    /** `compress`: the shell command that produced the input, to pick its output filter. */
+    shellCommand: string | null;
     /** `compress`: delete all CCR data (stats, history, cache) and reset the dashboard. */
     clear: boolean;
     /** `account provider`: built-in provider preset id (e.g. "minimax"). */
@@ -135,7 +137,7 @@ function parseArgs(argv: string[]): CliOptions {
         ref: null, assetsFrom: null, offline: false,
         bypass: null, noBypass: false, outputStyle: null, minimalCode: null, dashboard: null, promptSecretGuard: null,
         force: false, all: false, yes: false, login: false, dryRun: false, help: false, version: false,
-        stats: false, retrieve: null, compressType: null, clear: false,
+        stats: false, retrieve: null, compressType: null, shellCommand: null, clear: false,
         copy: false, list: false, dest: null, target: null, style: null, noDeps: false,
         overwrite: false, cwd: null, silent: false,
         preset: null, token: null, base: null, providerModel: null,
@@ -224,6 +226,7 @@ function parseArgs(argv: string[]): CliOptions {
             case "--stats": opts.stats = true; break;
             case "--retrieve": opts.retrieve = next(); break;
             case "--type": opts.compressType = next(); break;
+            case "--command": opts.shellCommand = next(); break;
             case "--clear": opts.clear = true; break;
             case "--json": opts.json = true; break;
             case "--force": opts.force = true; break;
@@ -625,9 +628,12 @@ List skills and choose where each one deploys.
   enable <name> [agent]     Re-deploy globally, or to one agent
   discard|restore <name>    Aliases of disable/enable`,
 
-    compress: `usage: enigma compress [file] [--type <t>] [--retrieve <hash>] [--stats] [--clear]
-Compress JSON/logs/text to fewer tokens, reversibly (CCR). Reads a file or stdin.
+    compress: `usage: enigma compress [file] [--command <cmd>] [--type <t>] [--retrieve <hash>] [--stats] [--clear]
+Compress command output, JSON, logs and text to fewer tokens, reversibly (CCR).
+Reads a file or stdin. Pass the command that produced the output and it is filtered
+down to the failures and the summary instead of head-and-tail truncated.
 
+      --command <cmd>     The command behind the output (e.g. "npm test")
       --retrieve <hash>   Restore an original behind a CCR hash
       --stats             Cumulative savings
       --clear             Wipe all CCR data (stats, history, cache)
@@ -2157,11 +2163,12 @@ function runCompressCli(opts: CliOptions): number {
     catch (err) { console.error(`Cannot read input: ${(err as Error).message}`); return 1; }
 
     const type = (opts.compressType as ContentType | null) ?? undefined;
-    const r = compress(content, { type, source: "cli" });
+    const r = compress(content, { type, source: "cli", command: opts.shellCommand ?? undefined });
     process.stdout.write(r.compressed);
     if (!r.compressed.endsWith("\n")) process.stdout.write("\n");
     const pct = r.tokensBefore ? Math.round((r.tokensSaved / r.tokensBefore) * 100) : 0;
-    console.error(`enigma compress: ${r.contentType}, ${r.tokensBefore} -> ${r.tokensAfter} tokens (${pct}% saved${r.ccrHash ? `, retrieve with: enigma compress --retrieve ${r.ccrHash}` : ""}).`);
+    const via = r.filter ? `${r.contentType}:${r.filter}` : r.contentType;
+    console.error(`enigma compress: ${via}, ${r.tokensBefore} -> ${r.tokensAfter} tokens (${pct}% saved${r.ccrHash ? `, retrieve with: enigma compress --retrieve ${r.ccrHash}` : ""}).`);
     return 0;
 }
 

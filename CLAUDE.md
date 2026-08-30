@@ -38,7 +38,7 @@ Architecture and doctrine:
 
 Subsystems (read the one you are touching):
 
-- `compression-and-mcp.md` - the native compression engine and the hand-rolled MCP server (`enigma compress`, `enigma mcp`).
+- `compression-and-mcp.md` - the native compression engine (including the command-aware output filters behind `compress --command`) and the hand-rolled MCP server (`enigma compress`, `enigma mcp`).
 - `gate.md` - the AI quality gate: the nine steps, where a run's time and tokens actually go (review and its fix rounds), the two config files and their Bun-only validator, and the dashboard bridge. Read before touching anything under `src/gate/` or the gate view.
 - `dashboard.md` - the loopback dashboard: server, daemon, hosts entry, on-demand `@enigmax/dashboard` UI package, charts, settings bridge, UI conventions (brand logos for agents, one dropdown component, toasts). Read before touching any dashboard panel.
 - `dashboard-exposure.md` - bind modes, token auth, the fragment bootstrap, the single auth gate.

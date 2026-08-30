@@ -1,0 +1,682 @@
+[
+  {
+    "filter": "aws",
+    "name": "inline sample",
+    "command": "aws s3 cp",
+    "input": "Completed 1.0 MiB/2.0 MiB\nupload: ./app.log to s3://bucket/app.log\nAn error occurred (AccessDenied) when calling the PutObject operation: denied\n",
+    "essential": [
+      "upload: ./app.log to s3://bucket/app.log",
+      "An error occurred (AccessDenied) when calling the PutObject operation: denied"
+    ]
+  },
+  {
+    "filter": "biome",
+    "name": "inline sample",
+    "command": "biome",
+    "input": "Checked 10 files in 20ms\nerror lint/a.ts:1:1 boom\nFixed 1 file\n",
+    "essential": [
+      "error lint/a.ts:1:1 boom",
+      "Fixed 1 file"
+    ]
+  },
+  {
+    "filter": "build-eslint",
+    "name": "inline sample",
+    "command": "(?:eslint|npm run lint)",
+    "input": "/repo/a.ts\n  1:1  error  boom  no-boom\n✖ 1 problem (1 error, 0 warnings)\n",
+    "essential": [
+      "/repo/a.ts",
+      "  1:1  error  boom  no-boom",
+      "✖ 1 problem (1 error, 0 warnings)"
+    ]
+  },
+  {
+    "filter": "build-typescript",
+    "name": "inline sample",
+    "command": "(?:tsc|npm run typecheck)",
+    "input": "src/a.ts:1:1 - error TS2322: Type string is not assignable\nFound 1 error.\n",
+    "essential": [
+      "src/a.ts:1:1 - error TS2322: Type string is not assignable",
+      "Found 1 error."
+    ]
+  },
+  {
+    "filter": "build-vite",
+    "name": "inline sample",
+    "command": "vite build",
+    "input": "vite v5.0.0 building for production...\n✓ 10 modules transformed.\n✓ built in 100ms\n",
+    "essential": [
+      "vite: build ok"
+    ]
+  },
+  {
+    "filter": "build-webpack",
+    "name": "inline sample",
+    "command": "webpack",
+    "input": "asset main.js 10 KiB\nERROR in ./src/a.ts\ncompiled with 1 error\n",
+    "essential": [
+      "asset main.js 10 KiB",
+      "ERROR in ./src/a.ts",
+      "compiled with 1 error"
+    ]
+  },
+  {
+    "filter": "bundle-install",
+    "name": "inline sample",
+    "command": "bundle install",
+    "input": "Using rake 13.0\nInstalling pg 1.5\nBundle complete! 4 Gemfile dependencies\n",
+    "essential": [
+      "Bundle complete! 4 Gemfile dependencies"
+    ]
+  },
+  {
+    "filter": "composer",
+    "name": "successful install",
+    "command": "composer install",
+    "input": "Loading composer repositories with package information\nUpdating dependencies\nLock file operations: 5 installs, 0 updates, 0 removals\n  - Locking laravel/framework (v11.0.0)\nWriting lock file\nInstalling dependencies from lock file (including require-dev)\nPackage operations: 5 installs, 0 updates, 0 removals\n  - Downloading laravel/framework (v11.0.0)\n  - Installing laravel/framework (v11.0.0)\nGenerating optimized autoload files\n",
+    "essential": [
+      "Package operations: 5 installs, 0 updates, 0 removals",
+      "  - Installing laravel/framework (v11.0.0)",
+      "Generating optimized autoload files"
+    ]
+  },
+  {
+    "filter": "composer",
+    "name": "dependency conflict",
+    "command": "composer require",
+    "input": "Your requirements could not be resolved to an installable set of packages.\n\n  Problem 1\n    - laravel/framework[v11.0.0] requires php ^8.2 but your php version (8.1.0) does not satisfy that requirement.\n",
+    "essential": [
+      "Your requirements could not be resolved to an installable set of packages.",
+      "  Problem 1",
+      "    - laravel/framework[v11.0.0] requires php ^8.2 but your php version (8.1.0) does not satisfy that requirement."
+    ]
+  },
+  {
+    "filter": "curl",
+    "name": "inline sample",
+    "command": "curl -i",
+    "input": "% Total    % Received\n  0     0    0     0\nHTTP/1.1 500 Internal Server Error\ncurl: (22) The requested URL returned error: 500\n",
+    "essential": [
+      "HTTP/1.1 500 Internal Server Error",
+      "curl: (22) The requested URL returned error: 500"
+    ]
+  },
+  {
+    "filter": "df",
+    "name": "inline sample",
+    "command": "df -h",
+    "input": "Filesystem      Size  Used Avail Use% Mounted on\nudev            2.0G     0  2.0G   0% /dev\n/dev/sda1        50G   45G  5.0G  90% /\n",
+    "essential": [
+      "Filesystem      Size  Used Avail Use% Mounted on",
+      "/dev/sda1        50G   45G  5.0G  90% /"
+    ]
+  },
+  {
+    "filter": "docker-build",
+    "name": "successful build",
+    "command": "docker build",
+    "input": "Step 1/3 : FROM node:20\nStep 2/3 : COPY . /app\nStep 3/3 : RUN npm install\n ---> Running in abc123\n ---> def456\nRemoving intermediate container abc123\nSuccessfully built def456\nSuccessfully tagged myapp:latest\n",
+    "essential": [
+      "Step 1/3 : FROM node:20",
+      "Step 2/3 : COPY . /app",
+      "Step 3/3 : RUN npm install",
+      "Successfully built def456",
+      "Successfully tagged myapp:latest"
+    ]
+  },
+  {
+    "filter": "docker-build",
+    "name": "build failure",
+    "command": "docker build",
+    "input": "Step 1/2 : FROM node:20\nStep 2/2 : RUN npm install\nERROR: failed to solve: process \"/bin/sh -c npm install\" did not complete successfully: exit code: 1\n",
+    "essential": [
+      "Step 1/2 : FROM node:20",
+      "Step 2/2 : RUN npm install",
+      "ERROR: failed to solve: process \"/bin/sh -c npm install\" did not complete successfully: exit code: 1"
+    ]
+  },
+  {
+    "filter": "docker-build",
+    "name": "preserves buildkit-prefixed RUN step errors",
+    "command": "docker build",
+    "input": "#8 [build 3/4] RUN npm run build\n#8 0.456 src/a.ts:1:1 - ERROR TS2322: Type 'string' is not assignable\n#8 0.789 npm ERR! exit code 1\n#8 ERROR: process \"/bin/sh -c npm run build\" did not complete successfully: exit code: 1\n",
+    "essential": [
+      "#8 0.456 src/a.ts:1:1 - ERROR TS2322: Type 'string' is not assignable",
+      "#8 0.789 npm ERR! exit code 1",
+      "#8 ERROR: process \"/bin/sh -c npm run build\" did not complete successfully: exit code: 1"
+    ]
+  },
+  {
+    "filter": "docker-logs",
+    "name": "inline sample",
+    "command": "docker (?:compose )?logs",
+    "input": "Attaching to api\nINFO started\nINFO started\nERROR failed to connect\n",
+    "essential": [
+      "INFO started",
+      "ERROR failed to connect"
+    ]
+  },
+  {
+    "filter": "docker-ps",
+    "name": "inline sample",
+    "command": "docker ps",
+    "input": "CONTAINER ID   IMAGE   COMMAND\nabc123         node    \"npm start\"\n",
+    "essential": [
+      "CONTAINER ID   IMAGE   COMMAND",
+      "abc123         node    \"npm start\""
+    ]
+  },
+  {
+    "filter": "dotnet",
+    "name": "drops build banner + restore chatter, keeps status",
+    "command": "dotnet build",
+    "input": "Microsoft (R) Build Engine version 17.8\n  Determining projects to restore...\nBuild succeeded.\n",
+    "essential": [
+      "Build succeeded."
+    ]
+  },
+  {
+    "filter": "du",
+    "name": "inline sample",
+    "command": "du -sh *",
+    "input": "4.0K package.json\n120M node_modules\n120M node_modules\n",
+    "essential": [
+      "4.0K package.json",
+      "120M node_modules",
+      "120M node_modules"
+    ]
+  },
+  {
+    "filter": "error-stacktrace",
+    "name": "inline sample",
+    "command": null,
+    "input": "Error: boom\n    at fn (/repo/a.ts:1:1)\n    at fn (/repo/a.ts:1:1)\nCaused by: bad\n",
+    "essential": [
+      "Error: boom",
+      "    at fn (/repo/a.ts:1:1)",
+      "Caused by: bad"
+    ]
+  },
+  {
+    "filter": "gcloud",
+    "name": "inline sample",
+    "command": "gcloud run deploy",
+    "input": "Waiting for operation [deploy]\nUpdated property [core/project].\nERROR: (gcloud.run.deploy) PERMISSION_DENIED: denied\n",
+    "essential": [
+      "Updated property [core/project].",
+      "ERROR: (gcloud.run.deploy) PERMISSION_DENIED: denied"
+    ]
+  },
+  {
+    "filter": "generic-output",
+    "name": "inline sample",
+    "command": null,
+    "input": "\nError: boom\n\nTraceback (most recent call last):\n  file.py:1\n",
+    "essential": [
+      "Error: boom",
+      "Traceback (most recent call last):",
+      "  file.py:1"
+    ]
+  },
+  {
+    "filter": "gh",
+    "name": "pr create",
+    "command": "gh pr create",
+    "input": "\nCreating pull request for feat/foo into main in owner/repo\n\nhttps://github.com/owner/repo/pull/123\n",
+    "essential": [
+      "Creating pull request for feat/foo into main in owner/repo",
+      "https://github.com/owner/repo/pull/123"
+    ]
+  },
+  {
+    "filter": "gh",
+    "name": "auth error",
+    "command": "gh pr list",
+    "input": "error: must be authenticated to use this command\n",
+    "essential": [
+      "error: must be authenticated to use this command"
+    ]
+  },
+  {
+    "filter": "gh",
+    "name": "skips gh api (structured JSON output)",
+    "command": "gh api repos/owner/repo/pulls/1",
+    "input": "{\n  \"number\": 1,\n  \"title\": \"feat: x\",\n  \"user\": { \"login\": \"alice\" }\n}\n",
+    "essential": [
+      "{",
+      "  \"number\": 1,",
+      "  \"title\": \"feat: x\",",
+      "  \"user\": { \"login\": \"alice\" }",
+      "}"
+    ]
+  },
+  {
+    "filter": "gh",
+    "name": "skips --json output (would corrupt structured data)",
+    "command": "gh pr list --json number,title",
+    "input": "[\n  { \"number\": 1, \"title\": \"feat: x\" },\n  { \"number\": 2, \"title\": \"fix: y\" }\n]\n",
+    "essential": [
+      "[",
+      "  { \"number\": 1, \"title\": \"feat: x\" },",
+      "  { \"number\": 2, \"title\": \"fix: y\" }",
+      "]"
+    ]
+  },
+  {
+    "filter": "git-branch",
+    "name": "inline sample",
+    "command": "git (?:branch|checkout|switch)",
+    "input": "  main\n* feature/rtk\n  release\n",
+    "essential": [
+      "  main",
+      "* feature/rtk",
+      "  release"
+    ]
+  },
+  {
+    "filter": "git-diff",
+    "name": "inline sample",
+    "command": "git (?:diff|show)",
+    "input": "diff --git a/a.ts b/a.ts\n@@ -1,2 +1,2 @@\n-console.log(\"old\")\n+console.log(\"new\")\n",
+    "essential": [
+      "diff --git a/a.ts b/a.ts",
+      "@@ -1,2 +1,2 @@",
+      "-console.log(\"old\")",
+      "+console.log(\"new\")"
+    ]
+  },
+  {
+    "filter": "git-log",
+    "name": "inline sample",
+    "command": "git log",
+    "input": "commit abcdef1234567890\nAuthor: Dev <dev@example.com>\nDate: today\n\n    feat: add rtk\n",
+    "essential": [
+      "commit abcdef1234567890",
+      "    feat: add rtk"
+    ]
+  },
+  {
+    "filter": "git-status",
+    "name": "inline sample",
+    "command": "git status",
+    "input": "On branch main\nChanges not staged for commit:\n  (use \"git add\" to update)\n\tmodified: src/app.ts\nnothing added to commit\n",
+    "essential": [
+      "On branch main",
+      "Changes not staged for commit:",
+      "\tmodified: src/app.ts"
+    ]
+  },
+  {
+    "filter": "golangci-lint",
+    "name": "inline sample",
+    "command": "golangci-lint",
+    "input": "main.go:1:1: issue text\nlevel=error msg=\"runner failed\"\nissues: 1\n",
+    "essential": [
+      "main.go:1:1: issue text",
+      "level=error msg=\"runner failed\"",
+      "issues: 1"
+    ]
+  },
+  {
+    "filter": "gradle",
+    "name": "drops welcome + up-to-date tasks, keeps build status",
+    "command": "gradle build",
+    "input": "Welcome to Gradle 8.5!\n> Task :app:compileJava UP-TO-DATE\nBUILD SUCCESSFUL in 3s\n",
+    "essential": [
+      "BUILD SUCCESSFUL in 3s"
+    ]
+  },
+  {
+    "filter": "json-output",
+    "name": "inline sample",
+    "command": "(?:jq\\b|cat .*\\.json\\b)",
+    "input": "{\n  \"status\": \"ok\",\n  \"items\": [1,2,3]\n}\n",
+    "essential": [
+      "{",
+      "  \"status\": \"ok\",",
+      "  \"items\": [1,2,3]",
+      "}"
+    ]
+  },
+  {
+    "filter": "kubectl",
+    "name": "pod listing with failure",
+    "command": "kubectl get",
+    "input": "NAME       READY   STATUS             RESTARTS   AGE\napi-7d8    1/1     Running            0          2h\nweb-2c4    0/1     CrashLoopBackOff   5          12m\ndb-9f1     1/1     Running            0          2h\n",
+    "essential": [
+      "NAME       READY   STATUS             RESTARTS   AGE",
+      "web-2c4    0/1     CrashLoopBackOff   5          12m"
+    ]
+  },
+  {
+    "filter": "kubectl",
+    "name": "rollout success",
+    "command": "kubectl rollout status",
+    "input": "Waiting for deployment \"api\" rollout to finish: 0 of 3 updated replicas are available...\nWaiting for deployment \"api\" rollout to finish: 1 of 3 updated replicas are available...\ndeployment \"api\" successfully rolled out\n",
+    "essential": [
+      "deployment \"api\" successfully rolled out"
+    ]
+  },
+  {
+    "filter": "kubectl",
+    "name": "skips kubectl logs (arbitrary application output)",
+    "command": "kubectl logs api-pod",
+    "input": "2026-05-28T10:00:00 INFO request handled\n2026-05-28T10:00:01 INFO request handled\n",
+    "essential": [
+      "2026-05-28T10:00:00 INFO request handled",
+      "2026-05-28T10:00:01 INFO request handled"
+    ]
+  },
+  {
+    "filter": "kubectl",
+    "name": "skips json output (would corrupt structured data)",
+    "command": "kubectl get pods -o json",
+    "input": "{\n  \"apiVersion\": \"v1\",\n  \"items\": [\n    { \"metadata\": { \"name\": \"api\" } }\n  ]\n}\n",
+    "essential": [
+      "{",
+      "  \"apiVersion\": \"v1\",",
+      "  \"items\": [",
+      "    { \"metadata\": { \"name\": \"api\" } }",
+      "  ]",
+      "}"
+    ]
+  },
+  {
+    "filter": "make",
+    "name": "inline sample",
+    "command": "make",
+    "input": "make[1]: Entering directory '/repo'\ngcc -O2 foo.c\nmake[1]: Leaving directory '/repo'\n",
+    "essential": [
+      "gcc -O2 foo.c"
+    ]
+  },
+  {
+    "filter": "mypy",
+    "name": "inline sample",
+    "command": "mypy",
+    "input": "app.py:1: error: Incompatible types\nFound 1 error in 1 file\n",
+    "essential": [
+      "app.py:1: error: Incompatible types",
+      "Found 1 error in 1 file"
+    ]
+  },
+  {
+    "filter": "npm-audit",
+    "name": "inline sample",
+    "command": "(?:npm|pnpm|yarn) audit",
+    "input": "# npm audit report\ncritical vulnerability in foo\nfound 1 vulnerabilities\nnpm audit fix\n",
+    "essential": [
+      "critical vulnerability in foo",
+      "found 1 vulnerabilities",
+      "npm audit fix"
+    ]
+  },
+  {
+    "filter": "npm-install",
+    "name": "inline sample",
+    "command": "(?:npm|pnpm|yarn) (?:install|add|update)",
+    "input": "added 3 packages\npackages are looking for funding\naudited 3 packages\n",
+    "essential": [
+      "added 3 packages",
+      "audited 3 packages"
+    ]
+  },
+  {
+    "filter": "nx",
+    "name": "inline sample",
+    "command": "nx",
+    "input": "> nx run app:build\nNX   Failed tasks:\nERROR boom\n",
+    "essential": [
+      "NX   Failed tasks:",
+      "ERROR boom"
+    ]
+  },
+  {
+    "filter": "pip",
+    "name": "inline sample",
+    "command": "pip (?:install|sync|download)",
+    "input": "Collecting requests\nDownloading requests.whl\nSuccessfully installed requests-2.0\n",
+    "essential": [
+      "Successfully installed requests-2.0"
+    ]
+  },
+  {
+    "filter": "playwright",
+    "name": "inline sample",
+    "command": "playwright test",
+    "input": "Running 2 tests using 1 worker\n  ✘  1 login.spec.ts:3:1 › login\nError: expected visible\n  1 failed\n",
+    "essential": [
+      "  ✘  1 login.spec.ts:3:1 › login",
+      "Error: expected visible",
+      "  1 failed"
+    ]
+  },
+  {
+    "filter": "poetry-install",
+    "name": "inline sample",
+    "command": "poetry (?:install|update)",
+    "input": "Installing dependencies\nPackage operations: 2 installs, 0 updates\n  - Installing foo (1.0)\nWriting lock file\n",
+    "essential": [
+      "Package operations: 2 installs, 0 updates",
+      "Writing lock file"
+    ]
+  },
+  {
+    "filter": "prettier",
+    "name": "inline sample",
+    "command": "prettier",
+    "input": "[warn] src/a.ts\n[warn] Code style issues found in the above file. Forgot to run Prettier?\n",
+    "essential": [
+      "[warn] src/a.ts",
+      "[warn] Code style issues found in the above file. Forgot to run Prettier?"
+    ]
+  },
+  {
+    "filter": "ps",
+    "name": "inline sample",
+    "command": "ps aux",
+    "input": "USER       PID %CPU COMMAND\nroot         1  0.0 init\nnode      1234  5.0 node server.js\n",
+    "essential": [
+      "USER       PID %CPU COMMAND",
+      "root         1  0.0 init",
+      "node      1234  5.0 node server.js"
+    ]
+  },
+  {
+    "filter": "rsync",
+    "name": "inline sample",
+    "command": "rsync -av",
+    "input": "sending incremental file list\napp.js\nsent 120 bytes received 20 bytes\nrsync error: some files could not be transferred (code 23)\n",
+    "essential": [
+      "app.js",
+      "rsync error: some files could not be transferred (code 23)"
+    ]
+  },
+  {
+    "filter": "rubocop",
+    "name": "inline sample",
+    "command": "rubocop",
+    "input": "Inspecting 2 files\n.C\napp/models/user.rb:12:3: C: Style/IfUnlessModifier: Favor modifier if usage.\n2 files inspected, 1 offense detected\n",
+    "essential": [
+      "app/models/user.rb:12:3: C: Style/IfUnlessModifier: Favor modifier if usage.",
+      "2 files inspected, 1 offense detected"
+    ]
+  },
+  {
+    "filter": "ruff",
+    "name": "inline sample",
+    "command": "ruff",
+    "input": "F401 app.py:1:1 unused import\nFound 1 error.\n",
+    "essential": [
+      "F401 app.py:1:1 unused import",
+      "Found 1 error."
+    ]
+  },
+  {
+    "filter": "shell-find",
+    "name": "inline sample",
+    "command": "find",
+    "input": "./src/a.ts\n./src/b.ts\n./node_modules/pkg/index.js\n",
+    "essential": [
+      "./src/a.ts",
+      "./src/b.ts",
+      "./node_modules/pkg/index.js"
+    ]
+  },
+  {
+    "filter": "shell-grep",
+    "name": "inline sample",
+    "command": "(?:grep|rg|ag)",
+    "input": "src/a.ts:1:match\nsrc/a.ts:1:match\nsrc/b.ts:2:other\n",
+    "essential": [
+      "src/a.ts:1:match",
+      "src/a.ts:1:match",
+      "src/b.ts:2:other"
+    ]
+  },
+  {
+    "filter": "shell-ls",
+    "name": "inline sample",
+    "command": "(?:ls(?: -[A-Za-z]+)?|find)",
+    "input": "total 8\ndrwxr-xr-x 2 user user 4096 May 1 src\n-rw-r--r-- 1 user user 10 May 1 package.json\n",
+    "essential": [
+      "total 8",
+      "drwxr-xr-x 2 user user 4096 May 1 src",
+      "-rw-r--r-- 1 user user 10 May 1 package.json"
+    ]
+  },
+  {
+    "filter": "ssh",
+    "name": "inline sample",
+    "command": "ssh host",
+    "input": "debug1: Connecting to host\nWelcome to Ubuntu\nPermission denied (publickey).\n",
+    "essential": [
+      "Welcome to Ubuntu",
+      "Permission denied (publickey)."
+    ]
+  },
+  {
+    "filter": "systemctl-status",
+    "name": "inline sample",
+    "command": "systemctl status",
+    "input": "Loaded: loaded (/etc/systemd/system/app.service)\nActive: failed (Result: exit-code)\nMain PID: 123\nMay 1 app[123]: error boot failed\n",
+    "essential": [
+      "Loaded: loaded (/etc/systemd/system/app.service)",
+      "Active: failed (Result: exit-code)",
+      "Main PID: 123",
+      "May 1 app[123]: error boot failed"
+    ]
+  },
+  {
+    "filter": "terraform-plan",
+    "name": "inline sample",
+    "command": "terraform plan",
+    "input": "Refreshing state... [id=a]\nTerraform will perform the following actions:\n  # aws_instance.web will be created\nPlan: 1 to add, 0 to change, 0 to destroy.\n",
+    "essential": [
+      "Terraform will perform the following actions:",
+      "  # aws_instance.web will be created",
+      "Plan: 1 to add, 0 to change, 0 to destroy."
+    ]
+  },
+  {
+    "filter": "test-cargo",
+    "name": "inline sample",
+    "command": "cargo (?:test|nextest)",
+    "input": "running 2 tests\ntest a ... ok\ntest b ... FAILED\nfailures:\n---- b stdout ----\nthread b panicked at boom\ntest result: FAILED. 1 passed; 1 failed\n",
+    "essential": [
+      "running 2 tests",
+      "test b ... FAILED",
+      "failures:",
+      "---- b stdout ----",
+      "thread b panicked at boom",
+      "test result: FAILED. 1 passed; 1 failed"
+    ]
+  },
+  {
+    "filter": "test-go",
+    "name": "inline sample",
+    "command": "go test",
+    "input": "=== RUN TestA\n--- FAIL: TestA (0.00s)\n    a_test.go:1: boom\nFAIL\t./pkg\t0.1s\n",
+    "essential": [
+      "--- FAIL: TestA (0.00s)",
+      "    a_test.go:1: boom",
+      "FAIL\t./pkg\t0.1s"
+    ]
+  },
+  {
+    "filter": "test-jest",
+    "name": "inline sample",
+    "command": "(?:jest|npm (?:run )?test)",
+    "input": "PASS src/a.test.ts\nFAIL src/b.test.ts\nError: boom\nTest Suites: 1 failed, 1 passed\nTests: 1 failed, 1 passed\n",
+    "essential": [
+      "FAIL src/b.test.ts",
+      "Test Suites: 1 failed, 1 passed",
+      "Tests: 1 failed, 1 passed"
+    ]
+  },
+  {
+    "filter": "test-pytest",
+    "name": "inline sample",
+    "command": "(?:pytest|python -m pytest)",
+    "input": "FAILED tests/test_a.py::test_a - AssertionError\nE assert 1 == 2\n================ 1 failed, 2 passed ================\n",
+    "essential": [
+      "FAILED tests/test_a.py::test_a - AssertionError",
+      "E assert 1 == 2",
+      "================ 1 failed, 2 passed ================"
+    ]
+  },
+  {
+    "filter": "test-vitest",
+    "name": "inline sample",
+    "command": "(?:vitest|npm (?:run )?test:vitest)",
+    "input": " ✓ src/a.test.ts (1)\n ❯ src/b.test.ts (1)\n FAIL src/b.test.ts > fails\nError: boom\nTest Files 1 failed | 1 passed\nTests 1 failed | 1 passed\n",
+    "essential": [
+      " ❯ src/b.test.ts (1)",
+      " FAIL src/b.test.ts > fails",
+      "Error: boom",
+      "Test Files 1 failed | 1 passed",
+      "Tests 1 failed | 1 passed"
+    ]
+  },
+  {
+    "filter": "tofu-plan",
+    "name": "inline sample",
+    "command": "tofu plan",
+    "input": "Refreshing state... [id=a]\nOpenTofu will perform the following actions:\n  # tofu_resource.web will be created\nPlan: 1 to add, 0 to change, 0 to destroy.\n",
+    "essential": [
+      "OpenTofu will perform the following actions:",
+      "  # tofu_resource.web will be created",
+      "Plan: 1 to add, 0 to change, 0 to destroy."
+    ]
+  },
+  {
+    "filter": "turbo",
+    "name": "inline sample",
+    "command": "turbo",
+    "input": "cache hit app#build\napp#test: failed\nTasks: 1 successful, 1 failed\nTime: 2s\n",
+    "essential": [
+      "app#test: failed",
+      "Tasks: 1 successful, 1 failed",
+      "Time: 2s"
+    ]
+  },
+  {
+    "filter": "uv-sync",
+    "name": "inline sample",
+    "command": "uv sync",
+    "input": "Resolved 10 packages in 1ms\nInstalled 10 packages in 2ms\n",
+    "essential": [
+      "uv: ok"
+    ]
+  },
+  {
+    "filter": "wget",
+    "name": "inline sample",
+    "command": "wget",
+    "input": "--2026-05-02-- https://example.test/file\nSaving to: 'file'\nHTTP request sent, awaiting response... 404 Not Found\nERROR 404: Not Found.\n",
+    "essential": [
+      "HTTP request sent, awaiting response... 404 Not Found",
+      "ERROR 404: Not Found."
+    ]
+  }
+]
