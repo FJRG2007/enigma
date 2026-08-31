@@ -106,20 +106,141 @@ const EMOJI_FLAG = /^[\u{1F1E6}-\u{1F1FF}]{2}$/u;
  * two the same string, and then one of them is always wrong.
  */
 const LOCALE_TAG = /^([A-Za-z]{2,3})[-_]([A-Z]{2})$/;
-/** What the sets actually name their files: `es`, `gb-eng`, `au-nsw`, `easter_island`. */
-const FILE_CODE = /^[a-z]{2,}(?:[-_][a-z0-9]+)*$/;
+/**
+ * A SUBDIVISION or a named file, which is the only shape that cannot be checked against
+ * anything: `gb-eng`, `au-nsw`, `es-ct`, `easter_island`. It must carry a separator - that
+ * is what distinguishes a file name from an ordinary word, and without it `banana` was
+ * accepted as a code and rendered as a 404.
+ */
+const FILE_CODE = /^[a-z]{2,}[-_][a-z0-9_-]+$/;
 /** A plain country: exactly the shape `Intl.DisplayNames` can put a name to. */
 const COUNTRY_CODE = /^[a-z]{2}$/;
 
 /**
+ * Accent-, case- and apostrophe-insensitive, so `espana`, `España` and `ESPAÑA` are one
+ * string - and so are `Cote d'Ivoire` and `Côte d’Ivoire`.
+ *
+ * The apostrophe matters more than it looks: CLDR writes the typographic one (U+2019) and
+ * every keyboard, database and API writes the straight one, so a lookup that kept them
+ * apart failed on exactly the countries whose names contain one.
+ */
+function fold(value: string): string {
+    return value
+        .normalize("NFD")
+        .replace(/\p{Diacritic}/gu, "")
+        .replace(/['‘’ʼ`´]/g, "")
+        .toLowerCase()
+        // Three spellings of the same name, and all three are mechanical - CLDR writes
+        // "St. Lucia" and "Trinidad & Tobago", while a form, a database and an API write
+        // "Saint Lucia" and "Trinidad and Tobago". Both sides of the lookup go through this,
+        // so it is a normalization rather than a table of alternative names.
+        .replace(/&/g, " and ")
+        .replace(/\bst\.?\s/g, "saint ")
+        .replace(/^the\s+/, "")
+        .replace(/[.,]/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+}
+
+/**
+ * Every two-letter region the runtime can name, folded, mapped back to its code.
+ *
+ * Built by asking `Intl.DisplayNames` for all 676 letter pairs and keeping the ones it has a
+ * name for - which is also how an unknown code is detected, since it echoes the input back.
+ * The runtime already holds this data, translated and maintained; shipping a table of 250
+ * country names would be a copy of it that goes stale.
+ *
+ * Memoized per locale and built only when something that is not a code arrives, so a page
+ * that passes codes never pays for it.
+ */
+const nameIndexes = new Map<string, Map<string, string> | null>();
+
+/**
+ * The code a region is FILED under.
+ *
+ * `Intl.Locale` canonicalizes a deprecated or alias subtag, which is the difference between
+ * a flag and a 404: `UK` is not the ISO code for the United Kingdom (`GB` is), `AN` became
+ * `CW`, `SU` became `RU`. All three have a name, so a name lookup that skipped this step
+ * resolved "United Kingdom" to `uk` and asked for a file that does not exist.
+ */
+function canonicalRegion(code: string): string {
+    try {
+        return new Intl.Locale(`und-${code}`).region?.toLowerCase() ?? code.toLowerCase();
+    } catch {
+        return code.toLowerCase();
+    }
+}
+
+/**
+ * The name the runtime uses for a region it does not know.
+ *
+ * `ZZ` IS that region by definition, so its name is the sentinel: any code the runtime
+ * cannot place comes back either echoing the code (`QQ`) or carrying this exact string, and
+ * both have to be refused. Comparing against `of("ZZ")` rather than the English words keeps
+ * that true in every language.
+ */
+function unknownRegionName(names: Intl.DisplayNames): string | undefined {
+    return names.of("ZZ");
+}
+
+function regionsByName(locale: string): Map<string, string> | null {
+    const cached = nameIndexes.get(locale);
+    if (cached !== undefined) return cached;
+
+    let index: Map<string, string> | null = null;
+    try {
+        const names = new Intl.DisplayNames([locale], { type: "region" });
+        const unknown = unknownRegionName(names);
+        index = new Map();
+        for (let first = 65; first <= 90; first++) {
+            for (let second = 65; second <= 90; second++) {
+                const code = String.fromCharCode(first, second);
+                const name = names.of(code);
+                if (!name || name === code || name === unknown) continue;
+                const key = fold(name);
+                // First wins, and the code is canonical, so an alias can neither overwrite
+                // the real entry nor become one.
+                if (!index.has(key)) index.set(key, canonicalRegion(code));
+            }
+        }
+    } catch {
+        index = null;   // No Intl, or no data for this locale.
+    }
+    nameIndexes.set(locale, index);
+    return index;
+}
+
+/** Whether the runtime knows this two-letter code as a region at all. */
+function isKnownRegion(code: string): boolean {
+    try {
+        const names = new Intl.DisplayNames(["en"], { type: "region" });
+        const upper = code.toUpperCase();
+        const name = names.of(upper);
+        return Boolean(name) && name !== upper && name !== unknownRegionName(names);
+    } catch {
+        // Without Intl there is nothing to check against, and refusing every code would be
+        // worse than passing one through: two letters is the shape of a flag file.
+        return true;
+    }
+}
+
+/**
  * Anything a codebase calls a country into the file name the sets use, or null.
  *
- * Null rather than a guess: a code this cannot resolve would otherwise become a 404 image
- * with no alt text, and a broken flag beside a country name is worse than no flag at all.
- * An emoji flag is accepted and converted, so migrating an existing picker is a rename of
- * the component and nothing else.
+ * What it accepts: a code (`es`, `ES`), a locale tag (`en-GB`, `es_ES`), a subdivision or
+ * named file (`gb-eng`, `au-nsw`, `easter_island`), the emoji flag you are replacing, and
+ * the country's NAME - in English or in the page's own language, accents optional, so
+ * `Spain`, `España` and `espana` all resolve. A name is what a database column or an API
+ * payload usually holds, and requiring the caller to convert it first is how a flag ends up
+ * not being rendered at all.
+ *
+ * Null rather than a guess, and that is the point of the strictness: `banana` used to pass
+ * as a file code and render as a 404 with no alt text, which is worse than no flag. A
+ * two-letter code is checked against the runtime's own region list, a bare word is resolved
+ * as a name or refused, and only a separator-carrying file name is taken on trust, because
+ * nothing can check those without shipping the whole directory listing.
  */
-export function normalizeFlagCode(value: string | null | undefined): string | null {
+export function normalizeFlagCode(value: string | null | undefined, locale?: string): string | null {
     if (!value) return null;
     const raw = value.trim();
     if (!raw) return null;
@@ -129,11 +250,25 @@ export function normalizeFlagCode(value: string | null | undefined): string | nu
         return letters.join("");
     }
 
-    const locale = LOCALE_TAG.exec(raw);
-    if (locale) return locale[2].toLowerCase();
+    const tag = LOCALE_TAG.exec(raw);
+    if (tag) return tag[2].toLowerCase();
 
-    const code = raw.toLowerCase();
-    return FILE_CODE.test(code) ? code : null;
+    const lower = raw.toLowerCase();
+    // Canonical, so `uk` reaches the file the United Kingdom is actually filed under.
+    if (COUNTRY_CODE.test(lower)) return isKnownRegion(lower) ? canonicalRegion(lower) : null;
+    if (FILE_CODE.test(lower)) return lower;
+
+    // A name, then, in this order: the locale you asked for, the page's own, English, and
+    // finally the runtime's. English is always tried because it is what an API or a database
+    // column holds even on a translated page; the runtime's is last so it can rescue a name
+    // nothing else placed without ever overriding a match that was more specific.
+    const folded = fold(raw);
+    for (const candidate of [locale, documentLocale(), "en", runtimeLocale()]) {
+        if (!candidate) continue;
+        const found = regionsByName(candidate)?.get(folded);
+        if (found) return found;
+    }
+    return null;
 }
 
 /**
@@ -158,6 +293,15 @@ export function flagName(code: string | null | undefined, locale?: string): stri
         return !name || name === region ? null : name;
     } catch {
         return null;
+    }
+}
+
+/** Whatever language this runtime is set to - the browser's, or the server's. */
+function runtimeLocale(): string | undefined {
+    try {
+        return Intl.DateTimeFormat().resolvedOptions().locale;
+    } catch {
+        return undefined;
     }
 }
 

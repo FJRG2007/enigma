@@ -76,9 +76,24 @@ instead. Same for a runtime with no `Intl`.
 
 ## The code you pass
 
-`code` takes what a codebase already holds: `es`, `ES`, `en-GB`, `es_ES`, a subdivision
-(`gb-eng`, `au-nsw`, `es-ct`), or the emoji flag you are replacing - so a migration is the
-component and nothing else.
+`code` takes what a codebase already holds, which is rarely a tidy ISO code:
+
+| | |
+| --- | --- |
+| `es`, `ES` | The code |
+| `Spain`, `spain`, `Cote d'Ivoire` | The NAME, in English or in the page's language. Accents, apostrophes, `&` for `and` and `St.` for `Saint` are all folded |
+| `en-GB`, `es_ES` | A locale tag |
+| `gb-eng`, `au-nsw`, `es-ct` | A subdivision |
+| the emoji flag | So a migration is the component and nothing else |
+| `uk`, `an`, `su` | Alias codes, canonicalized to `gb`, `cw`, `ru` - `uk.svg` does not exist |
+
+The name comes from the runtime's own region data, so there is no table of 250 names here to
+go stale, and `<Flag code={row.country} />` works against a column that holds "Germany".
+
+**Anything else is `null`, deliberately.** A bare word used to be taken as a file name and
+rendered as a broken image with no alt text, which is worse than no flag: `banana` and `zz`
+resolve to nothing now, and only a name with a separator (`easter_island`) is taken on
+trust, because nothing can check those without shipping the whole directory listing.
 
 A BCP 47 tag is read by its **casing**, before anything is lowercased: `es-ES` is a locale
 and means the flag `es`, while `es-ct` is Catalonia and means the file `es-ct`. Lowercasing

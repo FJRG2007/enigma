@@ -37,6 +37,51 @@ test("a code that resolves to nothing is null, never a guess", () => {
     assert.equal(flagAttributes("not a country!"), null);
 });
 
+test("an ordinary word is refused rather than turned into a file name", () => {
+    // The defect this replaced: any lowercase word passed as a "file code" and rendered as a
+    // 404 with no alt text, which is worse than no flag at all.
+    for (const value of ["banana", "unknown", "none", "null", "x"]) {
+        assert.equal(normalizeFlagCode(value), null, `${value} is not a country`);
+    }
+    // And a two-letter code has to be a region the runtime actually knows.
+    assert.equal(normalizeFlagCode("zz"), null, "ZZ is the unknown region by definition");
+    assert.equal(normalizeFlagCode("qq"), null);
+});
+
+test("the country's name resolves, which is what a database column holds", () => {
+    assert.equal(normalizeFlagCode("Spain"), "es");
+    assert.equal(normalizeFlagCode("spain"), "es");
+    assert.equal(normalizeFlagCode("  United States  "), "us");
+    // Accents are folded, and so is the typographic apostrophe an API tends to send.
+    assert.equal(normalizeFlagCode("Cote d'Ivoire"), "ci");
+    assert.equal(normalizeFlagCode("Côte d’Ivoire"), "ci");
+});
+
+test("the spellings a form and a database actually use resolve too", () => {
+    // CLDR writes "St. Lucia" and "Trinidad & Tobago"; everything else writes these.
+    assert.equal(normalizeFlagCode("Saint Lucia"), "lc");
+    assert.equal(normalizeFlagCode("St. Lucia"), "lc");
+    assert.equal(normalizeFlagCode("Trinidad and Tobago"), "tt");
+    assert.equal(normalizeFlagCode("Trinidad & Tobago"), "tt");
+    assert.equal(normalizeFlagCode("The Netherlands"), "nl");
+});
+
+test("a name resolves in the language you ask for", () => {
+    assert.equal(normalizeFlagCode("España", "es"), "es");
+    assert.equal(normalizeFlagCode("Alemania", "es"), "de");
+    assert.equal(normalizeFlagCode("Allemagne", "fr"), "de");
+});
+
+test("an alias code reaches the file the country is actually filed under", () => {
+    // UK is not the ISO code for the United Kingdom, GB is - and `uk.svg` does not exist.
+    assert.equal(normalizeFlagCode("uk"), "gb");
+    assert.equal(normalizeFlagCode("UK"), "gb");
+    assert.equal(normalizeFlagCode("United Kingdom"), "gb");
+    // Same class: the Netherlands Antilles became Curaçao, the USSR became Russia.
+    assert.equal(normalizeFlagCode("an"), "cw");
+    assert.equal(normalizeFlagCode("su"), "ru");
+});
+
 test("every shape is served from enigma's own tree, in one layout", () => {
     // One layout everywhere is what makes a mirror the same string with a different host.
     assert.match(flagSrc("es"), /\/assets\/flags\/rect\/es\.svg$/);
