@@ -125,6 +125,32 @@ git tag is cut for you, keeping npm and git in sync.
 > the head commit message, body included. Mentioning it while describing the
 > release process is enough to fire a publish run.
 
+### When the publish job fails with `E404 ... is not in this registry`
+
+That message is npm's answer to an **unauthorized** publish, not to a missing
+package. npm returns 404 rather than 403 so that a token cannot be used to probe
+which private packages exist, which means the error names the wrong problem: the
+package is on the registry, the credential is what was refused.
+
+Every publish workflow now proves the credential before doing anything expensive
+(the `auth` job in `publish.yml`, gating the four binary builds; an equivalent
+step in the dashboard, linter and components workflows). A dead token fails in
+seconds with the cause spelled out instead of after a full matrix build.
+
+The fix is always the same, and it is not in this repository:
+
+1. npmjs.com -> Access Tokens -> Generate New Token -> **Automation** (publish
+   rights; classic automation tokens expire, which is the usual cause).
+2. Repo Settings -> Secrets and variables -> Actions -> update `NPM_TOKEN`.
+3. Re-run the failed workflow (Actions -> the run -> Re-run jobs), or dispatch
+   `Publish enigma-cli` and `Publish dashboard` manually. No code change and no
+   version bump is needed: each workflow skips a version already on npm.
+
+If a release was tagged and its binaries uploaded while npm publishing was
+broken, that tag is harmless on its own - nobody can install a version npm does
+not have. Bump past it only when the tagged commit predates a fix that must ship
+in the published build.
+
 ## Publishing manually (without CI)
 
 If you ever publish from your machine:

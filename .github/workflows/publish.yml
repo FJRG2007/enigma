@@ -27,13 +27,46 @@ permissions:
   id-token: write
 
 jobs:
-  build:
+  # Prove the npm credential works BEFORE four runners spend two minutes building
+  # binaries for a publish that cannot happen. npm answers an unauthenticated publish
+  # with `E404 ... is not in this registry`, which reads as "no such package" and sends
+  # whoever is on call looking at the wrong thing - so the check names the real cause
+  # itself. (Observed: NPM_TOKEN last rotated 2026-06-01, publishes green through
+  # 2026-08-27 and 404 from 2026-08-31 - a 90-day automation token expiring on schedule.)
+  auth:
     # Publish on a release, a manual dispatch, or a push whose head commit message
     # contains "publish:". Plain pushes without that marker are ignored.
     if: >-
       github.event_name == 'release' ||
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'push' && contains(github.event.head_commit.message, 'publish:'))
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+
+      - name: The npm token can publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "$NODE_AUTH_TOKEN" ]; then
+            echo "::error::The NPM_TOKEN secret is empty or not set for this repository."
+            echo "Add an npm automation token with publish rights: Settings -> Secrets and variables -> Actions -> NPM_TOKEN."
+            exit 1
+          fi
+          if ! WHO="$(npm whoami 2>&1)"; then
+            echo "::error::The NPM_TOKEN secret is set but npm rejected it, so nothing can be published."
+            echo "npm said: $WHO"
+            echo "Almost always an expired or revoked automation token (they carry an expiry)."
+            echo "Mint a new one at npmjs.com -> Access Tokens -> Generate -> Automation, then update the NPM_TOKEN secret and re-run this workflow."
+            exit 1
+          fi
+          echo "Authenticated to npm as $WHO."
+
+  build:
+    needs: auth
     strategy:
       fail-fast: true
       matrix:
@@ -73,7 +106,7 @@ jobs:
           retention-days: 1
 
   publish:
-    needs: build
+    needs: [auth, build]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

@@ -25,6 +25,23 @@ jobs:
           node-version: 20
           registry-url: https://registry.npmjs.org
 
+      # A publish with a bad credential comes back as `E404 ... is not in this registry`,
+      # which reads as "no such package" and points at the wrong problem. Say it plainly.
+      - name: The npm token can publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "$NODE_AUTH_TOKEN" ]; then
+            echo "::error::The NPM_TOKEN secret is empty or not set for this repository."
+            exit 1
+          fi
+          if ! WHO="$(npm whoami 2>&1)"; then
+            echo "::error::The NPM_TOKEN secret is set but npm rejected it, so nothing can be published."
+            echo "npm said: $WHO"
+            echo "Almost always an expired or revoked automation token. Mint a new one at npmjs.com -> Access Tokens -> Generate -> Automation, update the NPM_TOKEN secret, and re-run."
+            exit 1
+          fi
+          echo "Authenticated to npm as $WHO."
       - name: Install dependencies
         run: npm ci || npm install
 
