@@ -1,6 +1,6 @@
+import type { NotificationTone } from "@enigmax/primitives/react/toast";
 import { Playground, type Control, type StyleToken } from "./Playground";
 import { Toaster, useNotifications } from "@enigmax/primitives/react/toast";
-import type { NotificationTone, ToastPosition } from "@enigmax/primitives/react";
 
 /**
  * The toast's playground. Raising one is the only way to judge a toast, so the preview is a
@@ -34,15 +34,15 @@ const CONTROLS: Control<Values>[] = [
 ];
 
 /**
- * The variables the toast theme declares - the one `<Toaster />` injects itself, so this
- * page imports no stylesheet at all and the CSS tab still prints real theming.
+ * The variables the vendored stylesheet declares - the one `<Toaster />` injects itself, so
+ * this page imports no stylesheet at all and the CSS tab still prints real theming.
  */
 const STYLE: StyleToken[] = [
-    { name: "enigma-toast-bg", label: "Toast", type: "color", property: "--enigma-toast-bg", value: "#101010" },
-    { name: "enigma-toast-border", label: "Border", type: "color", property: "--enigma-toast-border", value: "#2a2a2a" },
-    { name: "enigma-toast-text", label: "Text", type: "color", property: "--enigma-toast-text", value: "#f5f5f5" },
-    { name: "enigma-toast-radius", label: "Radius", type: "px", property: "--enigma-toast-radius", value: "12px", min: 0, max: 28 },
-    { name: "enigma-toast-width", label: "Width", type: "px", property: "--enigma-toast-width", value: "352px", min: 240, max: 480 }
+    { name: "normal-bg", label: "Toast", type: "color", property: "--normal-bg", value: "#000000" },
+    { name: "normal-border", label: "Border", type: "color", property: "--normal-border", value: "#2a2a2a" },
+    { name: "normal-text", label: "Text", type: "color", property: "--normal-text", value: "#f5f5f5" },
+    { name: "border-radius", label: "Radius", type: "px", property: "--border-radius", value: "8px", min: 0, max: 24 },
+    { name: "width", label: "Width", type: "px", property: "--width", value: "356px", min: 240, max: 480 }
 ];
 
 const INITIAL: Values = { title: "Saved", body: "Two files changed", tone: "success", position: "bottom-right", action: false, sticky: false };
@@ -98,7 +98,7 @@ export function ToastPlayground() {
                     <Raise values={values} />
                     {/* The real one, on the page. Hover it and the timer stops; drag it
                         towards its edge and it goes. */}
-                    <Toaster position={values.position as ToastPosition} />
+                    <Toaster position={values.position as "bottom-right"} />
                 </>
             )}
         />

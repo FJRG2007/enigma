@@ -15,26 +15,23 @@ import { join, dirname } from "node:path";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const SOURCE = join(ROOT, "packages", "primitives", "src", "react", "toast-styles.ts");
+const SOURCE = join(ROOT, "packages", "primitives", "src", "react", "toast", "styles.ts");
 const OUT = join(ROOT, "packages", "primitives", "recipes", "toast", "styles.css");
 
 const HEADER = `/*
- * The toast theme.
+ * The toast stylesheet.
  *
- * GENERATED from src/react/toast-styles.ts by scripts/sync-recipes.mjs - edit that file, not
- * this one. It exists as a stylesheet as well as a string because <Toaster /> injects the
- * theme itself, and this is the same look for anyone who would rather import it, copy it
- * with \`enigma add toast --copy\`, or fork it outright.
- *
- * Every value is a custom property on [data-enigma-toaster]: override them there, or on
- * :root, and you have a different toast without touching a selector.
+ * GENERATED from src/react/toast/styles.ts by scripts/sync-recipes.mjs - edit that file, not
+ * this one. It exists as a stylesheet as well as a string because <Toaster /> injects it,
+ * and this is the same sheet for anyone who would rather import it, copy it with
+ * \`enigma add toast --copy\`, or fork it outright.
  */
 `;
 
 /** The template literal's body, which is the stylesheet. */
 function extract(source) {
     const start = source.indexOf("export const TOAST_STYLES = `");
-    if (start === -1) throw new Error("TOAST_STYLES not found in toast-styles.ts");
+    if (start === -1) throw new Error("TOAST_STYLES not found in react/toast/styles.ts");
     const from = source.indexOf("`", start) + 1;
     const to = source.indexOf("`;", from);
     if (to === -1) throw new Error("TOAST_STYLES is not terminated");
@@ -49,7 +46,7 @@ if (process.argv.includes("--check")) {
         console.log("sync-recipes: the generated stylesheets match their source.");
         process.exit(0);
     }
-    console.error("sync-recipes: packages/primitives/recipes/toast/styles.css is out of date with src/react/toast-styles.ts.");
+    console.error("sync-recipes: packages/primitives/recipes/toast/styles.css is out of date with src/react/toast/styles.ts.");
     console.error("  node scripts/sync-recipes.mjs");
     process.exit(1);
 }

@@ -721,6 +721,7 @@
       "exports": {
         "react": [
           "Toaster",
+          "toast",
           "useNotifications"
         ]
       },
@@ -743,16 +744,60 @@
           }
         },
         {
-          "path": "src/react/toaster.tsx",
-          "dest": "toast/index.tsx",
-          "main": true,
+          "path": "src/react/toast/types.ts",
+          "dest": "toast/vendor/types.ts",
           "targets": [
             "react"
-          ],
-          "rewrite": {
-            "@/core/notifications": "./notifications",
-            "@/react/use-notifications": "./use-notifications"
-          }
+          ]
+        },
+        {
+          "path": "src/react/toast/hooks.ts",
+          "dest": "toast/vendor/hooks.ts",
+          "targets": [
+            "react"
+          ]
+        },
+        {
+          "path": "src/react/toast/cn.ts",
+          "dest": "toast/vendor/cn.ts",
+          "targets": [
+            "react"
+          ]
+        },
+        {
+          "path": "src/react/toast/assets.tsx",
+          "dest": "toast/vendor/assets.tsx",
+          "targets": [
+            "react"
+          ]
+        },
+        {
+          "path": "src/react/toast/state.ts",
+          "dest": "toast/vendor/state.ts",
+          "targets": [
+            "react"
+          ]
+        },
+        {
+          "path": "src/react/toast/styles.ts",
+          "dest": "toast/vendor/styles.ts",
+          "targets": [
+            "react"
+          ]
+        },
+        {
+          "path": "src/react/toast/index.tsx",
+          "dest": "toast/vendor/index.tsx",
+          "targets": [
+            "react"
+          ]
+        },
+        {
+          "path": "src/react/toast/NOTICE",
+          "dest": "toast/vendor/NOTICE",
+          "targets": [
+            "react"
+          ]
         },
         {
           "path": "recipes/toast/styles.css",
@@ -763,35 +808,38 @@
           "style": "css"
         },
         {
-          "path": "recipes/toast/tailwind.tsx",
-          "dest": "toast/AppToaster.tsx",
+          "path": "src/react/toaster.tsx",
+          "dest": "toast/index.tsx",
+          "main": true,
           "targets": [
             "react"
           ],
-          "style": "tailwind",
           "rewrite": {
-            "@enigmax/utils/react": "./index"
+            "@/react/toast/styles": "./vendor/styles",
+            "@/react/toast/state": "./vendor/state",
+            "@/react/toast/index": "./vendor/index",
+            "@/react/toast/types": "./vendor/types",
+            "@/react/use-notifications": "./use-notifications",
+            "@/core/notifications": "./notifications"
           }
         }
       ],
       "styles": true,
       "themeHooks": [
-        "[data-enigma-toaster]",
-        "[data-enigma-toaster][data-position]",
-        "[data-enigma-toaster][data-expanded]",
-        "[data-enigma-toast]",
-        "[data-enigma-toast][data-tone=error]",
-        "[data-enigma-toast][data-front]",
-        "[data-enigma-toast][data-mounted]",
-        "[data-enigma-toast][data-state=leaving]",
-        "[data-enigma-toast][data-swiping]",
-        "[data-enigma-toast][data-hidden]",
-        "[data-enigma-toast-icon]",
-        "[data-enigma-toast-content]",
-        "[data-enigma-toast-title]",
-        "[data-enigma-toast-body]",
-        "[data-enigma-toast-action]",
-        "[data-enigma-toast-close]"
+        "[data-toastcmp-toaster]",
+        "[data-toastcmp-toaster][data-theme]",
+        "[data-toastcmp-toaster][data-lifted]",
+        "[data-toastcmp-toast]",
+        "[data-toastcmp-toast][data-type=error]",
+        "[data-toastcmp-toast][data-front]",
+        "[data-toastcmp-toast][data-mounted]",
+        "[data-toastcmp-toast][data-removed]",
+        "[data-toastcmp-toast][data-swiping]",
+        "[data-title]",
+        "[data-description]",
+        "[data-button]",
+        "[data-close-button]",
+        "[data-icon]"
       ],
       "docs": "docs/notes/primitives.md#toast",
       "recipes": [

@@ -19,7 +19,12 @@ export interface SearchMatch<T> {
 
 /** The shape of Fuse's constructor, declared here so the package need not depend on it. */
 export interface FuseLike<T> {
-    search(query: string): { item: T; score?: number; matches?: { key?: string; }[]; }[];
+    /**
+     * Readonly arrays, because Fuse's own signature returns them - and a mutable array is
+     * not assignable to one, so the stricter shape made `fuse={Fuse}` a type error at the
+     * call site while working perfectly at runtime.
+     */
+    search(query: string): readonly { item: T; score?: number; matches?: readonly { key?: string; }[]; }[];
 }
 export type FuseConstructor = new <T>(items: readonly T[], options?: Record<string, unknown>) => FuseLike<T>;
 

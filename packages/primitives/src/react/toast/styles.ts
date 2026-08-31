@@ -1,12 +1,16 @@
-/*
- * The toast stylesheet.
+/**
+ * The toast stylesheet, VERBATIM.
  *
- * GENERATED from src/react/toast/styles.ts by scripts/sync-recipes.mjs - edit that file, not
- * this one. It exists as a stylesheet as well as a string because <Toaster /> injects it,
- * and this is the same sheet for anyone who would rather import it, copy it with
- * `enigma add toast --copy`, or fork it outright.
+ * It is a string rather than a `.css` file because the component injects it: a toast renders
+ * at the edge of the screen, stacked and animated, so a consumer who forgets an import does
+ * not get an unstyled toast - they get a pile of text in a corner. `<Toaster styles={false} />`
+ * turns the injection off, and `@enigmax/primitives/toast.css` is this same sheet for anyone
+ * who would rather import it.
+ *
+ * Do not edit this by hand: `scripts/sync-recipes.mjs` writes `recipes/toast/styles.css`
+ * from it, so the injected sheet and the imported one cannot drift apart.
  */
-:where(html[dir="ltr"]),
+export const TOAST_STYLES = `:where(html[dir="ltr"]),
 :where([data-toastcmp-toaster][dir="ltr"]) {
     --toast-icon-margin-start: -3px;
     --toast-icon-margin-end: 4px;
@@ -731,4 +735,4 @@
 .toastcmp-loader[data-visible="false"] {
     opacity: 0;
     transform: scale(0.8) translate(-50%, -50%);
-}
+}`;

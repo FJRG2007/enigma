@@ -36,7 +36,8 @@ export {
     type PasswordScore
 } from "@/core/password";
 export { useNotifications, createNotificationQueue, defaultQueue, type UseNotificationsResult } from "@/react/use-notifications";
-export { Toaster, type ToasterProps, type ToastPosition, type ToastControls } from "@/react/toaster";
+export { Toaster, toast, useSonner, type ToasterProps } from "@/react/toaster";
+export type { ToastT, ExternalToast, ToastClassnames, Action } from "@/react/toast/types";
 export { useNetworkState } from "@/react/use-network-state";
 export { type NetworkState } from "@/core/network";
 export { RelativeTime, type RelativeTimeProps } from "@/react/relative-time";

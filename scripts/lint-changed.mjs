@@ -34,9 +34,11 @@ function parseArgs(argv) {
  * enigma commits verbatim and does not own the style of (the autoskills registry),
  * and enigma's own committed BUILD artifacts (the .githooks guard/guardrails bundles are
  * tsup output, and the dashboard's lib/ holds Chart.js plus the vendored primitives core -
- * minified builds, not hand-authored source).
+ * minified builds, not hand-authored source), and code vendored from elsewhere that is kept
+ * verbatim on purpose (the toast component, which carries its own NOTICE): restyling it here
+ * would be a diff to re-apply on every refresh from upstream.
  */
-const IGNORE_PREFIXES = ["assets/skills-registry/", "packages/helio/assets/", ".githooks/", "packages/dashboard/assets/lib/"];
+const IGNORE_PREFIXES = ["assets/skills-registry/", "packages/helio/assets/", ".githooks/", "packages/dashboard/assets/lib/", "packages/primitives/src/react/toast/"];
 
 /** The changed source files (added/copied/modified) for the selected diff. */
 function changedFiles({ staged, range }) {

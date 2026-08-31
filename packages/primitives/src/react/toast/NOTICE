@@ -1,0 +1,20 @@
+The files in this directory are vendored, not written here.
+
+They are the toast component from TPEOficial/dymo-saas
+(src/components/internal/toast), itself derived from Sonner
+(https://github.com/emilkowalski/sonner, MIT, Emil Kowalski), and they are kept
+as close to verbatim as a library can keep them so the toast looks the same
+everywhere it is used.
+
+Three mechanical changes were unavoidable, and they are the only ones:
+
+  - `@/utils/cn` became `./cn`, a two-line local file: a package cannot resolve a
+    consumer's path alias.
+  - `import "./styles.css"` was removed. The stylesheet lives in `styles.ts` as a
+    string and `<Toaster />` injects it, because a package cannot assume its
+    consumer has a CSS-capable bundler - and a toast at the edge of the screen is
+    the one component a forgotten import ruins rather than merely undresses.
+  - `JSX.Element` became `React.JSX.Element` in assets.tsx, which is where React
+    19's types put it.
+
+Refresh them from upstream rather than editing them here.

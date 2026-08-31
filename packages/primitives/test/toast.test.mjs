@@ -80,38 +80,36 @@ test("an action rides along on the notification", () => {
     queue.destroy();
 });
 
-test("the toaster renders nothing when the queue is empty", () => {
+test("the toaster renders its live region, empty or not", () => {
+    // The vendored component always renders the region: a live region announced only once
+    // something is already in it is a region a screen reader may never pick up.
     const queue = createNotifications();
-    // An empty fixed-position region still intercepts pointer events in some layouts.
-    assert.equal(renderToStaticMarkup(createElement(Toaster, { queue })), "");
+    const html = renderToStaticMarkup(createElement(Toaster, { queue }));
+    assert.match(html, /aria-live="polite"/);
+    assert.doesNotMatch(html, /data-toastcmp-toast/, "nothing in the queue, nothing on screen");
     queue.destroy();
 });
 
-test("a toast carries its tone, its state and the right live region", async () => {
+test("a server render carries no toast, because the bridge is an effect", () => {
+    // The queue reaches the stack through an effect, which does not run on the server. That
+    // is deliberate: a toast is a client event, and rendering one into the HTML would
+    // announce it again on hydration.
+    const queue = createNotifications();
+    queue.notify({ title: "Signed out" });
+    assert.doesNotMatch(renderToStaticMarkup(createElement(Toaster, { queue })), /Signed out/);
+    queue.destroy();
+});
+
+test("the queue still owns tone, body, sticky and the action", () => {
+    // What the bridge forwards. The rendering is the vendored component's; this is the half
+    // this package is responsible for, and it is what every existing call site passes.
     const queue = createNotifications();
     queue.notify({ title: "Saved", body: "Two files", tone: "success" });
-    queue.notify({ title: "Broke", tone: "error" });
+    queue.notify({ title: "Broke", tone: "error", duration: Infinity });
 
-    const html = renderToStaticMarkup(createElement(Toaster, { queue, position: "top-center" }));
-    assert.match(html, /data-position="top-center"/);
-    assert.match(html, /data-tone="success"[^>]*data-state="open"/);
-    assert.match(html, /<p data-enigma-toast-title="">Saved<\/p>/);
-    assert.match(html, /<p data-enigma-toast-body="">Two files<\/p>/);
-    assert.match(html, /aria-label="Dismiss"/);
-
-    // An error interrupts; anything else waits its turn rather than talking over whatever
-    // a screen reader is already reading.
-    assert.match(html, /role="alert"[^>]*aria-live="assertive"/);
-    assert.match(html, /role="status"[^>]*aria-live="polite"/);
-    await settle();
-    queue.destroy();
-});
-
-test("the stack is seeded from the queue, so a toast raised before it mounted is not lost", () => {
-    const queue = createNotifications();
-    // A notify() during a redirect, or from a module that runs early, arrives before the
-    // Toaster exists. Starting from an empty list would drop it for a frame.
-    queue.notify({ title: "Signed out" });
-    assert.match(renderToStaticMarkup(createElement(Toaster, { queue })), /Signed out/);
+    assert.equal(queue.items[0].tone, "success");
+    assert.equal(queue.items[0].body, "Two files");
+    assert.equal(queue.items[1].tone, "error");
+    assert.equal(queue.items[1].duration, Infinity);
     queue.destroy();
 });

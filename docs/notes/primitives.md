@@ -469,37 +469,33 @@ file, where someone editing the classes will actually read it.
 
 ## toast
 
-**The one component in the package that ships a look.** Everywhere else a missing stylesheet
+**Vendored, not written here.** `src/react/toast/` is the toast from dymo-saas (itself a
+Sonner derivative), kept as close to verbatim as a library can keep it, with its NOTICE
+beside it. The reason is not laziness: a second toast that merely resembled the first would
+be a different thing on every screen these projects put in front of somebody, and "looks
+about right" is exactly the failure that gets reported and never reproduced.
+
+Three mechanical changes, and they are the only ones: `@/utils/cn` became a local two-line
+file (a package cannot resolve a consumer's path alias), `import "./styles.css"` became an
+injected string (a package cannot assume a CSS-capable bundler), and `JSX.Element` became
+`React.JSX.Element`, which is where React 19's types put it. Refresh from upstream rather
+than editing in place.
+
+**It is the one component here that ships a look.** Everywhere else a missing stylesheet
 gives you something unstyled you can see and fix; a toast renders at the edge of the screen,
 stacked and animated, so the same omission gives you a pile of text in a corner - and
-"remember to import the CSS" is a footgun for a component that appears once every few
-minutes. `<Toaster />` injects the theme once, `styles={false}` turns it off, and
-`@enigmax/primitives/toast.css` is the same sheet for anyone who would rather import it.
+"remember to import the CSS" is a footgun for something that appears once every few minutes.
+The sheet is injected once and PREPENDED to `<head>`, so anything the document already has
+outranks it by source order without a single `!important`. `styles={false}` opts out, and
+`@enigmax/primitives/toast.css` is the same sheet, generated from the same module by
+`scripts/sync-recipes.mjs` and checked in CI, so the injected and the imported one cannot
+drift.
 
-The sheet is PREPENDED to `<head>`, which is the whole trick: at equal specificity the later
-rule wins, so anything the document already has outranks the injected theme without a single
-`!important`.
-
-`src/react/toast-styles.ts` is the source of truth and `recipes/toast/styles.css` is
-GENERATED from it by `scripts/sync-recipes.mjs` (checked in CI by `npm run check:recipes`).
-Two hand-maintained copies of one look drift the first time somebody edits the one they
-happened to open.
-
-The stack is the reference pattern, and every part of it is measured rather than assumed:
-
-- Each toast reports its own height through a `ResizeObserver`, because a body that wraps
-  differently after a font loads changes every offset behind it. The fan-out offset is the
-  SUM of the heights in front plus one gap each.
-- COLLAPSED, the ones behind are clipped to the front toast's height and scaled back by 6%
-  per position; their content is hidden but still rendered, so the box does not jump when
-  the stack expands.
-- EXPANDED (pointer on the stack, or `expand`), each one lifts by its offset. The same
-  pointer already paused the timers, so a message cannot expire while it is being read.
-- `data-mounted` is set one frame AFTER the mount, or the browser has no "before" to
-  animate from and the toast appears instead of arriving.
-- The mounted rule has to be scoped under the toaster, because the enter rules are: at equal
-  specificity the later one wins, and the first version left every mounted toast sitting at
-  its entry offset - visible, and 110% of its own height off the bottom.
+**The queue still works.** `useNotifications().notify()` predates the vendored component, so
+`<Toaster>` subscribes to the queue and forwards each item into it, keeping one stack rather
+than two competing ones. The forwarded toast is given `duration: Infinity` on purpose: the
+queue owns the countdown, and leaving both timers running would let the shorter of the two
+win at random. `queue={null}` unsubscribes for anyone who only wants `toast()`.
 
 ## network
 
