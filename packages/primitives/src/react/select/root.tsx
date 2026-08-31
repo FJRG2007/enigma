@@ -198,31 +198,56 @@ export function SelectRoot(props: SelectRootProps): ReactNode {
      * actually changed. React nodes are left out of the signature on purpose: an icon is a
      * fresh element object every render and no two are ever equal.
      */
-    const signature = JSON.stringify(options.map((option) =>
-        [option.value, option.label, option.description, option.group, option.disabled, option.keywords]));
+    // Built only when the array itself is new, because the root re-renders on every
+    // keystroke and serialising a list of 250 countries per render is work nobody asked
+    // for: a stable array pays for this once.
+    const signature = useMemo(() => JSON.stringify(options.map((option) =>
+        [option.value, option.label, option.description, option.group, option.disabled, option.keywords])), [options]);
 
-    // The newest array, pushed in whenever the signature says it is a different list - so
-    // the instance holds the current option objects and not the ones from the first render.
+    /**
+     * What the FILTER is, as a string.
+     *
+     * The same problem as the options, one prop over: `fuseOptions={{ threshold: 0.3 }}`
+     * and `searchKeys={["label"]}` are the documented way to write them and a new object on
+     * every render, so depending on their identity pushes them in each time - and that
+     * rebuilds Fuse's index over the whole list for a filter nobody changed. They are plain
+     * data, so their content is comparable; `fuse` and `matcher` are functions and stay on
+     * identity, where a rebuild is what a genuinely different one needs.
+     */
+    const filterSignature = JSON.stringify([searchKeys ?? null, fuseOptions ?? null]);
+
+    // The newest values, pushed in whenever a signature says something is different - so
+    // the instance holds the current objects and not the ones from the first render.
     const currentOptions = useRef(options);
     currentOptions.current = options;
+    const currentFilter = useRef({ fuseOptions, searchKeys });
+    currentFilter.current = { fuseOptions, searchKeys };
 
     useEffect(() => {
-        instance.update({ options: currentOptions.current, multiple, searchable: isSearchable, closeOnSelect, fuse, fuseOptions, matcher, searchKeys });
-    }, [instance, signature, multiple, isSearchable, closeOnSelect, fuse, fuseOptions, matcher, searchKeys]);
+        const { fuseOptions: currentFuseOptions, searchKeys: currentKeys } = currentFilter.current;
+        instance.update({
+            options: currentOptions.current, multiple, searchable: isSearchable, closeOnSelect,
+            fuse, matcher, fuseOptions: currentFuseOptions, searchKeys: currentKeys
+        });
+    }, [instance, signature, filterSignature, multiple, isSearchable, closeOnSelect, fuse, matcher]);
 
-    // A controlled value is the caller's, always: without this the component keeps its own
-    // copy and a parent that refuses a change still sees it applied. Compared as a string
-    // for the same reason as the options - `value={[...]}` is a new array every render.
-    const valueSignature = controlledValue === undefined
-        ? undefined
-        : Array.isArray(controlledValue) ? JSON.stringify(controlledValue) : String(controlledValue ?? "");
-    const currentValue = useRef(controlledValue);
-    currentValue.current = controlledValue;
-
+    /**
+     * A controlled value is the caller's, always.
+     *
+     * Compared after EVERY render rather than when the prop changes, because the case this
+     * exists for is the prop NOT changing: a parent that validates a choice and keeps its
+     * own value has already had the instance move underneath it, and an effect keyed on the
+     * prop would never run to put it back. The comparison is by content - `value={[...]}`
+     * is a new array every render - so the two settle in one pass: the push renders once
+     * more, that render finds them equal, and nothing further is pushed.
+     */
     useEffect(() => {
-        if (valueSignature === undefined) return;
-        instance.update({ value: currentValue.current ?? null });
-    }, [instance, valueSignature]);
+        if (controlledValue === undefined) return;
+        const wanted = controlledValue === null ? [] : Array.isArray(controlledValue) ? controlledValue : [controlledValue];
+        const current = instance.state.value;
+        if (current.length === wanted.length && current.every((entry, index) => entry === wanted[index])) return;
+        instance.update({ value: [...wanted] });
+    });
 
     const [uncontrolledOpen, setUncontrolledOpen] = useState(defaultOpen);
     const open = openProp ?? uncontrolledOpen;
@@ -250,7 +275,13 @@ export function SelectRoot(props: SelectRootProps): ReactNode {
     useEffect(() => {
         const closedItself = wasOpen.current && !state.open;
         wasOpen.current = state.open;
-        if (closedItself && open) setOpen(false);
+        if (!closedItself || !open) return;
+        // Whatever closed it was inside the panel - a row, or Enter in the search field -
+        // and the panel is about to unmount with the focus still in it. Focus goes back to
+        // the trigger rather than to the body, exactly as Escape does it.
+        const held = rootRef.current?.contains(document.activeElement);
+        setOpen(false);
+        if (held) triggerRef.current?.focus();
     }, [state.open, open, setOpen]);
 
     const close = useCallback(() => {
@@ -296,6 +327,20 @@ export function SelectRoot(props: SelectRootProps): ReactNode {
         }
         if (event.key === "Tab" && open) {
             setOpen(false);
+            return;
+        }
+        // Backspace and Delete take a value off, and only on the trigger: in the search
+        // field they edit the query. The × that does this with a pointer sits INSIDE the
+        // trigger button, where it cannot be a tab stop of its own, so without this a
+        // clearable select is one no keyboard can empty.
+        if ((event.key === "Backspace" || event.key === "Delete") && event.currentTarget === triggerRef.current) {
+            const chosen = instance.state.value;
+            if (chosen.length === 0) return;
+            event.preventDefault();
+            // Many values drop the last one, the way removing a tag does; one value has
+            // nothing to drop but itself.
+            if (instance.state.multiple) instance.remove(chosen[chosen.length - 1]);
+            else instance.clear();
             return;
         }
         // Space chooses on the trigger, where it is not text; inside the search field it is

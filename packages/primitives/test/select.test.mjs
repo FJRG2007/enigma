@@ -174,6 +174,34 @@ test("new options reach the list and the filter that searches it", () => {
     assert.deepEqual(select.state.visible.map((option) => option.value), ["jp"]);
 });
 
+test("an update that changes nothing reports nothing", () => {
+    // A renderer subscribes to this and pushes its props back in on every render, so an
+    // emit per update is a render per render - the loop, closed here rather than in the
+    // one adapter that happened to notice it.
+    const select = make({ searchable: true });
+    let emits = 0;
+    select.subscribe(() => { emits++; });
+
+    select.update({ options: OPTIONS, searchKeys: ["label"], fuseOptions: { threshold: 0.3 } });
+    assert.equal(emits, 0, "the same list and a fresh options object are not a change");
+
+    select.update({ options: [...OPTIONS, { value: "jp", label: "Japan" }] });
+    assert.equal(emits, 1, "a list that really changed still reports");
+});
+
+test("highlighting the row that is already highlighted reports nothing", () => {
+    // This arrives from `pointermove`, which fires on every pixel: emitting there redraws
+    // the whole panel sixty times a second for a highlight that has not moved.
+    const select = make();
+    select.setOpen(true);
+    let emits = 0;
+    select.subscribe(() => { emits++; });
+
+    select.setActive(1);
+    select.setActive(1);
+    assert.equal(emits, 1);
+});
+
 test("every row disabled leaves the highlight nowhere rather than spinning", () => {
     const select = createSelect({ options: [{ value: "a", label: "A", disabled: true }, { value: "b", label: "B", disabled: true }] });
     select.setOpen(true);

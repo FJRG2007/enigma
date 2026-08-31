@@ -2,7 +2,7 @@ import { Select } from "@enigmax/primitives/react/select";
 import "./playground.css";
 import { highlight } from "./highlight";
 import { COPY_ICON, bindCopy } from "../../lib/copy";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 
 /**
  * Turn the props on and off, watch the real component react, take the code away.
@@ -107,6 +107,8 @@ export function Playground<V extends Record<string, string | boolean>>({ control
         bindCopy(button, () => sourceRef.current);
     }, []);
     const set = (name: string, value: string | boolean): void => setValues((current) => ({ ...current, [name]: value }));
+    // One prefix per playground, so two on a page do not hand out the same caption id.
+    const rows = useId();
 
     return (
         <div className="pg">
@@ -153,43 +155,61 @@ export function Playground<V extends Record<string, string | boolean>>({ control
                         </label>
                     ))}
 
-                    {(!style || tab === "props") && shown.map((control) => (
-                        <label key={control.name} className="pg-row">
-                            <span className="pg-label">
+                    {(!style || tab === "props") && shown.map((control) => {
+                        const captionId = `${rows}-${control.name}`;
+                        const caption = (
+                            <span className="pg-label" id={captionId}>
                                 {control.label}
                                 {control.hint && <span className="pg-hint">{control.hint}</span>}
                             </span>
+                        );
 
-                            {control.type === "boolean" && (
-                                <input
-                                    type="checkbox"
-                                    className="pg-check"
-                                    checked={Boolean(values[control.name])}
-                                    onChange={(event) => set(control.name, event.target.checked)}
-                                />
-                            )}
-                            {control.type === "text" && (
-                                <input
-                                    type="text"
-                                    className="pg-text"
-                                    value={String(values[control.name] ?? "")}
-                                    placeholder={control.placeholder}
-                                    onChange={(event) => set(control.name, event.target.value)}
-                                />
-                            )}
-                            {control.type === "select" && (
-                                // The package's own select, not the platform's: these pages
-                                // are the first place a component has to hold up, and the
-                                // native popup is drawn by the OS and cannot be themed.
+                        // The package's own select, not the platform's: these pages are the
+                        // first place a component has to hold up, and the native popup is
+                        // drawn by the OS and cannot be themed.
+                        //
+                        // Outside a <label>, unlike every other row: its control is a
+                        // BUTTON, so a label around it forwards a click on the caption to
+                        // the trigger - and the caption sits outside the select, where that
+                        // same press has just closed the panel, so the forwarded click
+                        // reopens it. The name is tied to the trigger by id instead.
+                        if (control.type === "select") return (
+                            <div key={control.name} className="pg-row">
+                                {caption}
                                 <Select
                                     className="pg-select"
                                     options={control.options}
                                     value={String(values[control.name] ?? "")}
                                     onValueChange={(next) => set(control.name, next)}
+                                    triggerProps={{ "aria-labelledby": captionId }}
                                 />
-                            )}
-                        </label>
-                    ))}
+                            </div>
+                        );
+
+                        return (
+                            <label key={control.name} className="pg-row">
+                                {caption}
+
+                                {control.type === "boolean" && (
+                                    <input
+                                        type="checkbox"
+                                        className="pg-check"
+                                        checked={Boolean(values[control.name])}
+                                        onChange={(event) => set(control.name, event.target.checked)}
+                                    />
+                                )}
+                                {control.type === "text" && (
+                                    <input
+                                        type="text"
+                                        className="pg-text"
+                                        value={String(values[control.name] ?? "")}
+                                        placeholder={control.placeholder}
+                                        onChange={(event) => set(control.name, event.target.value)}
+                                    />
+                                )}
+                            </label>
+                        );
+                    })}
                     <button
                         type="button"
                         className="pg-reset"

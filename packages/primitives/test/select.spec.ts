@@ -13,14 +13,18 @@ import { test, expect, type Page, type Locator } from "@playwright/test";
 interface FixtureWindow extends Window {
     __ready: boolean;
     __country: string;
+    __guard: string;
     __stack: string[];
     __renders: number;
+    __rows: number;
 }
 
 const single = '[data-testid="country"]';
 const multi = '[data-testid="stack"]';
 const many = '[data-testid="many"]';
 const inline = '[data-testid="inline"]';
+const filters = '[data-testid="filters"]';
+const guarded = '[data-testid="guarded"]';
 const trigger = "[data-enigma-select-trigger]";
 const content = "[data-enigma-select-content]";
 const options = "[data-enigma-select-option]";
@@ -210,6 +214,69 @@ test.describe("Select", () => {
         const first = await read(page, "__renders");
         await page.waitForTimeout(400);
         expect(await read(page, "__renders")).toBe(first);
+    });
+
+    test("the filter's own props written inline leave the panel settled", async ({ page }) => {
+        await open(page);
+        // `searchKeys={[...]}` and `fuseOptions={{...}}` are a new object on every render,
+        // exactly like the options: pushing them in on identity re-indexes the whole list
+        // and redraws the panel for a filter that has not changed.
+        await at(page, filters, trigger).click();
+        await expect(at(page, filters, content)).toBeVisible();
+
+        const first = await read(page, "__rows");
+        await page.waitForTimeout(400);
+        expect(await read(page, "__rows")).toBe(first);
+        // Still there: a loop that React stops for hitting its update depth takes the tree
+        // down with it, which is a panel that has vanished rather than one that settled.
+        await expect(at(page, filters, content)).toBeVisible();
+    });
+
+    test("a parent that refuses a choice keeps the value it holds", async ({ page }) => {
+        await open(page);
+        await at(page, guarded, trigger).click();
+        await at(page, guarded, options).filter({ hasText: "France" }).click();
+
+        // The parent validated and kept its own value: the trigger has to show THAT, not
+        // the choice it turned down.
+        expect(await read(page, "__guard")).toBe("");
+        await expect(at(page, guarded, trigger)).toContainText("Guarded");
+
+        await at(page, guarded, trigger).click();
+        await at(page, guarded, options).filter({ hasText: "Spain" }).click();
+        expect(await read(page, "__guard")).toBe("es");
+        await expect(at(page, guarded, trigger)).toContainText("Spain");
+    });
+
+    test("choosing from the search field puts focus back on the trigger", async ({ page }) => {
+        await open(page);
+        await at(page, many, trigger).click();
+        await expect(at(page, many, search)).toBeFocused();
+
+        // The panel closes on the choice and unmounts the field the focus is in: without
+        // handing it back, the visitor is left on the body, tabbing from the top of the page.
+        await page.keyboard.press("Enter");
+        await expect(at(page, many, content)).toBeHidden();
+        await expect(at(page, many, trigger)).toBeFocused();
+    });
+
+    test("Backspace on the trigger takes a value off, since the × cannot be tabbed to", async ({ page }) => {
+        await open(page);
+        await at(page, single, trigger).click();
+        await at(page, single, options).filter({ hasText: "Italy" }).click();
+        expect(await read(page, "__country")).toBe("it");
+
+        await at(page, single, trigger).focus();
+        await page.keyboard.press("Backspace");
+        expect(await read(page, "__country")).toBe("");
+
+        // Many values drop the last one, the way the × on its tag does.
+        await at(page, multi, trigger).click();
+        await at(page, multi, options).filter({ hasText: "Spain" }).click();
+        await at(page, multi, options).filter({ hasText: "Mexico" }).click();
+        await page.keyboard.press("Escape");
+        await page.keyboard.press("Backspace");
+        expect(await read(page, "__stack")).toEqual(["es"]);
     });
 
     test("a click outside closes it without choosing anything", async ({ page }) => {

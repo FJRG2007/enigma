@@ -87,10 +87,25 @@ Icons are images: `<Flag>` already asks the browser to defer the ones off screen
 | --- | --- |
 | Typeahead | Type `m` on a closed select and it opens on Mexico, the way the native one does |
 | Keyboard | Arrows wrap, Home/End, PageUp/PageDown, Enter chooses, Escape closes and returns focus |
+| Backspace | Empties a single select and drops the last tag of a multiple one, since the × sits inside the trigger and cannot be tabbed to |
 | Disabled rows | Listed, announced, never highlighted and never chosen - including by a click |
 | Forms | `name` renders a hidden field per value, so a plain form still posts it |
 | Screen readers | `role="listbox"`, `aria-selected` per row, `aria-activedescendant` on the field |
 | Both directions | The panel opens upwards when there is no room below it |
+
+## Labelling it
+
+Point at the caption, do not wrap the control:
+
+```tsx
+<span id="country-label">Country</span>
+<Select options={countries} triggerProps={{ "aria-labelledby": "country-label" }} />
+```
+
+A `<label>` around it looks right and misbehaves: the trigger is a `button`, which a label
+labels, so a click on the caption is forwarded to the trigger. The caption is outside the
+select, so that press also closes an open panel - and the forwarded click reopens it, which
+is a select that refuses to be dismissed from its own label.
 
 ## Installation
 

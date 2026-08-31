@@ -27,8 +27,10 @@ interface FixtureWindow extends Window {
     __breachCalls: string[];
     __selected: string;
     __country: string;
+    __guard: string;
     __stack: string[];
     __renders: number;
+    __rows: number;
 }
 
 const fixture = window as unknown as FixtureWindow;
@@ -39,9 +41,11 @@ fixture.__breach = null;
 fixture.__breachCalls = [];
 fixture.__selected = "";
 fixture.__country = "";
+fixture.__guard = "";
 fixture.__stack = [];
 fixture.__presses = 0;
 fixture.__clickTarget = "";
+fixture.__rows = 0;
 
 /**
  * Stands in for next/link: a component that renders an anchor and marks itself, so a test
@@ -110,8 +114,10 @@ function Form(): React.ReactNode {
     fixture.__renders = ++renders;
     const [password, setPassword] = useState("");
     const [country, setCountry] = useState("");
+    const [guard, setGuard] = useState("");
     const [stack, setStack] = useState<string[]>([]);
     fixture.__country = country;
+    fixture.__guard = guard;
     fixture.__stack = stack;
     const [, redraw] = useState(0);
     fixture.__value = password;
@@ -233,6 +239,34 @@ function Form(): React.ReactNode {
                     options={COUNTRIES.map((option) => ({ ...option }))}
                     placeholder="Inline"
                     searchable={false}
+                />
+            </div>
+
+            {/* The filter's own props written inline: `searchKeys={[...]}` and
+                `fuseOptions={{...}}` are a new object every render too. */}
+            <div data-testid="filters">
+                <Select
+                    options={COUNTRIES}
+                    searchable
+                    searchKeys={["label"]}
+                    fuseOptions={{ threshold: 0.3 }}
+                    placeholder="Filtered"
+                    // Counted rather than the whole tree's renders: a select that renders
+                    // itself in a loop never reaches the component ABOVE it, so the number
+                    // that has to stand still is one taken from inside the panel.
+                    renderOption={(option) => { fixture.__rows++; return option.label; }}
+                />
+            </div>
+
+            {/* Controlled, and the parent REFUSES one of the values: what it holds is what
+                the select shows, which is the whole contract of a controlled component. */}
+            <div data-testid="guarded">
+                <Select
+                    options={COUNTRIES}
+                    searchable={false}
+                    value={guard}
+                    onValueChange={(next) => { if (next !== "fr") setGuard(next); }}
+                    placeholder="Guarded"
                 />
             </div>
 

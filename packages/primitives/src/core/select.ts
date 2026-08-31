@@ -115,6 +115,26 @@ function toList(value: SelectOptions["value"]): string[] {
     return Array.isArray(value) ? [...value] : [value as string];
 }
 
+function sameValues(left: readonly string[], right: readonly string[]): boolean {
+    return left.length === right.length && left.every((entry, index) => entry === right[index]);
+}
+
+/** By identity: the option objects are the caller's, and a rebuilt list holds the same ones. */
+function sameRows(left: readonly SelectOption[], right: readonly SelectOption[]): boolean {
+    return left.length === right.length && left.every((option, index) => option === right[index]);
+}
+
+function sameState(left: SelectState, right: SelectState): boolean {
+    return left.open === right.open
+        && left.query === right.query
+        && left.active === right.active
+        && left.multiple === right.multiple
+        && left.empty === right.empty
+        && sameValues(left.value, right.value)
+        && sameRows(left.visible, right.visible)
+        && sameRows(left.selected, right.selected);
+}
+
 export function createSelect(options: SelectOptions = {}): SelectInstance {
     let opts: SelectOptions = { ...options };
     let all: readonly SelectOption[] = opts.options ?? [];
@@ -266,7 +286,11 @@ export function createSelect(options: SelectOptions = {}): SelectInstance {
         },
 
         setActive(index: number) {
-            if (destroyed || index < 0 || index >= visible.length || visible[index]?.disabled) return;
+            // The row already highlighted is not a change: this arrives from `pointermove`,
+            // which fires on every pixel, and emitting there re-renders the whole panel
+            // sixty times a second - and the scroll it triggers moves the row under a
+            // stationary cursor, which fires it again.
+            if (destroyed || index === active || index < 0 || index >= visible.length || visible[index]?.disabled) return;
             active = index;
             lastActive = visible[active];
             emit();
@@ -340,6 +364,7 @@ export function createSelect(options: SelectOptions = {}): SelectInstance {
 
         update(next: Partial<SelectOptions>) {
             if (destroyed) return;
+            const before = snapshot();
             const hadOptions = next.options !== undefined;
             opts = { ...opts, ...next };
             if (hadOptions) all = next.options ?? [];
@@ -354,7 +379,11 @@ export function createSelect(options: SelectOptions = {}): SelectInstance {
                 });
             }
             refilter();
-            emit();
+            // An update that changed nothing must not emit. A renderer subscribes to this
+            // and pushes its props back in whenever it renders, so emitting regardless
+            // redraws the whole panel for a list, a filter and a value that are the ones it
+            // already had - and hands any renderer that rebuilds those props a render loop.
+            if (!sameState(before, snapshot())) emit();
         },
 
         subscribe(listener) {
