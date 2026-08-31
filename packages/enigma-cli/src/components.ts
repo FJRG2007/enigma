@@ -116,9 +116,33 @@ export function listComponents(projectDir: string = process.cwd()): ResolvedItem
     return items;
 }
 
+/**
+ * An item by name, forgiving the one mistake everybody makes: the plural.
+ *
+ * `enigma add flag` and `enigma add flags` have to reach the same component - a reader who
+ * has just seen `<Flag>` in a snippet types the singular, and an item called `flags` is not
+ * something to be right about. Matching is exact first, so a real name can never be lost to
+ * a near one.
+ */
 export function findComponent(name: string, projectDir: string = process.cwd()): ResolvedItem | null {
     const wanted = name.trim().toLowerCase();
-    return listComponents(projectDir).find((item) => item.name === wanted) ?? null;
+    const items = listComponents(projectDir);
+    const exact = items.find((item) => item.name === wanted);
+    if (exact) return exact;
+    return items.find((item) => item.name === `${wanted}s` || `${item.name}s` === wanted) ?? null;
+}
+
+/**
+ * Names close enough to be worth offering when one is not found. Prefix and substring only:
+ * a suggestion that is not obviously related is noise on top of an error.
+ */
+export function suggestComponents(name: string, projectDir: string = process.cwd()): string[] {
+    const wanted = name.trim().toLowerCase();
+    if (!wanted) return [];
+    return listComponents(projectDir)
+        .map((item) => item.name)
+        .filter((item) => item.startsWith(wanted.slice(0, 3)) || item.includes(wanted) || wanted.includes(item))
+        .slice(0, 3);
 }
 
 /** The project's framework, from its manifest. Falls back to vanilla, which every item supports. */

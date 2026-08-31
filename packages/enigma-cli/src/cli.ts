@@ -1680,6 +1680,13 @@ async function runCodeGraphQuery(sub: string, args: string[]): Promise<number> {
  * The catalogue is read from the package installed in the project, so an agent is
  * shown the API the project actually compiles against rather than a frozen copy.
  */
+/** Where the catalogue this run is showing actually came from, for an error worth reading. */
+function item2Source(projectDir: string): string {
+    return existsSync(join(projectDir, "node_modules", "@enigmax", "primitives", "registry.json"))
+        ? "the @enigmax/primitives installed in this project"
+        : "this CLI's bundled copy, because @enigmax/primitives is not installed here";
+}
+
 async function runAddCli(opts: CliOptions, interactive: boolean): Promise<number> {
     const components = await import("./components");
     const projectDir = opts.cwd ? resolve(opts.cwd) : process.cwd();
@@ -1745,7 +1752,12 @@ async function runAddCli(opts: CliOptions, interactive: boolean): Promise<number
     for (const name of names) {
         const item = components.findComponent(name, projectDir);
         if (!item) {
-            console.error(`    ${red("x")} ${name} ${dim("- not in the catalogue")}`);
+            const near = components.suggestComponents(name, projectDir);
+            console.error(`    ${red("x")} ${name} ${dim(near.length ? `- not in the catalogue. Did you mean ${near.join(", ")}?` : "- not in the catalogue")}`);
+            // The catalogue is READ from the installed package (or this CLI's bundled copy),
+            // so a component that exists but is missing here means one of the two is behind -
+            // which is worth saying, because the name is not the problem in that case.
+            console.error(`      ${dim(`The catalogue comes from ${item2Source(projectDir)}. A newer component needs a newer one: enigma update, or ${components.installCommand(manager, ["@enigmax/primitives@latest"])}.`)}`);
             failures++;
             continue;
         }
@@ -1804,7 +1816,7 @@ async function setupFlagAssets(opts: CliOptions, projectDir: string, interactive
         const answer = await p.select({
             message: "Where should the flag images come from?",
             options: [
-                { value: "cdn", label: "CDN (jsDelivr)", hint: "nothing to download, nothing to serve" },
+                { value: "cdn", label: "Served by enigma", hint: "nothing to download, nothing to serve" },
                 { value: "local", label: "Download into the project", hint: "no third-party request at runtime" }
             ],
             initialValue: "cdn"
@@ -1815,7 +1827,7 @@ async function setupFlagAssets(opts: CliOptions, projectDir: string, interactive
     if (!mode) mode = "cdn";
 
     if (mode !== "local") {
-        say(`      ${dim("flags: served from jsDelivr. --flags local downloads them instead.")}`);
+        say(`      ${dim("flags: served by enigma over a CDN. --flags local downloads them into the project instead.")}`);
         return;
     }
 
