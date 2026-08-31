@@ -180,6 +180,20 @@ jobs:
         working-directory: packages/enigma-cli
       - name: Test CLI command dispatch
         run: bun test tests/cli-dispatch.test.ts
+
+      - name: Test command-aware output compression
+        run: bun test tests/shell-compress.test.ts
+
+      - name: Test shell completion
+        run: bun test tests/completion.test.ts
+
+      - name: Test gate run right-sizing
+        run: bun test tests/gate/change-profile.test.ts
+
+      # Slow (it builds a real git repository per refusal) and worth every second: this
+      # is the suite standing between a merged branch and a deleted one that still held work.
+      - name: Test branch cleanup
+        run: bun test tests/git-tidy.test.ts --timeout 90000
         working-directory: packages/enigma-cli
 
       # The package must build (tsup) so dist is publishable.
