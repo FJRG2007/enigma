@@ -310,6 +310,37 @@ export class RunManager {
         }
     }
 
+    /**
+     * Add the steps this particular diff makes pointless to whatever the caller already
+     * asked to skip. A change with no executable file in it cannot break a test, and
+     * asking the document step whether a documentation change needs documenting is the
+     * gate charging for work it cannot do - which is how adding a line to a slash command
+     * bought a full nine-step run.
+     *
+     * An EXPLICIT skip always wins: this only ever adds. And a diff it cannot read adds
+     * nothing, so an unreadable change runs the whole pipeline rather than a trimmed one.
+     */
+    private async rightSizeSkips(
+        repo: gateDb.Repo,
+        baseSHA: string,
+        headSHA: string,
+        requested: StepName[],
+    ): Promise<StepName[]> {
+        try {
+            const { diffNameOnly } = await import("../git");
+            const { profileChange } = await import("../pipeline/profile");
+            const files = await diffNameOnly(repo.workingPath, baseSHA, headSHA);
+            const profile = profileChange(files);
+            if (profile.skip.length === 0) return requested;
+            const merged = new Set<StepName>([...requested, ...profile.skip]);
+            log.info("right-sized the run", "skipped", [...merged].join(","), "reason", profile.reason);
+            return [...merged];
+        } catch (err) {
+            log.warn("could not right-size the run, running every step", "error", errMessage(err));
+            return requested;
+        }
+    }
+
     private async startRunLocked(
         repo: gateDb.Repo,
         branch: string,
@@ -479,6 +510,7 @@ export class RunManager {
             };
 
             const execSteps = this.steps();
+            skipSteps = await this.rightSizeSkips(repo, baseSHA, headSHA, skipSteps);
             track("run", {
                 action: "started",
                 trigger,
