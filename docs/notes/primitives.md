@@ -548,10 +548,11 @@ injected string (a package cannot assume a CSS-capable bundler), and `JSX.Elemen
 `React.JSX.Element`, which is where React 19's types put it. Refresh from upstream rather
 than editing in place.
 
-**It is the one component here that ships a look.** Everywhere else a missing stylesheet
-gives you something unstyled you can see and fix; a toast renders at the edge of the screen,
-stacked and animated, so the same omission gives you a pile of text in a corner - and
-"remember to import the CSS" is a footgun for something that appears once every few minutes.
+**It is one of two components here that ship a look** (select is the other). Everywhere
+else a missing stylesheet gives you something unstyled you can see and fix; a toast renders
+at the edge of the screen, stacked and animated, so the same omission gives you a pile of
+text in a corner - and "remember to import the CSS" is a footgun for something that appears
+once every few minutes.
 The sheet is injected once and PREPENDED to `<head>`, so anything the document already has
 outranks it by source order without a single `!important`. `styles={false}` opts out, and
 `@enigmax/primitives/toast.css` is the same sheet, generated from the same module by
