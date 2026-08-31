@@ -1,14 +1,22 @@
-/*
- * The toast theme.
+/**
+ * The toast theme, as a string, because `<Toaster />` injects it.
  *
- * GENERATED from src/react/toast-styles.ts by scripts/sync-recipes.mjs - edit that file, not
- * this one. It exists as a stylesheet as well as a string because <Toaster /> injects the
- * theme itself, and this is the same look for anyone who would rather import it, copy it
- * with `enigma add toast --copy`, or fork it outright.
+ * A toast is the one component where "bring your own CSS" is the wrong default: it is
+ * rendered into a portal at the edge of the screen, it stacks, and it animates - so a
+ * consumer who forgets the stylesheet does not get an unstyled toast, they get a pile of
+ * text in the corner. `<Toaster styles={false} />` turns it off for anyone who wants their
+ * own, and the injected sheet is PREPENDED to `<head>` so any stylesheet in the document
+ * outranks it by source order without needing a single `!important`.
  *
- * Every value is a custom property on [data-enigma-toaster]: override them there, or on
- * :root, and you have a different toast without touching a selector.
+ * This module is the source of truth for `recipes/toast/styles.css` too, which
+ * `scripts/sync-recipes.mjs` writes from it - one look, whether it is injected or copied.
+ *
+ * The geometry is the stacked-card pattern: the newest toast is the front one, older ones
+ * sit behind it scaled down and clipped to the front one's height, and hovering the stack
+ * fans them out by the summed height of the ones in front. Every number below is one of
+ * those two states.
  */
+export const TOAST_STYLES = `
 [data-enigma-toaster] {
     --enigma-toast-width: 356px;
     --enigma-toast-edge: 24px;
@@ -236,3 +244,4 @@
     [data-enigma-toast], [data-enigma-toast] > * { transition: opacity 200ms !important; }
     [data-enigma-toast][data-mounted] { transform: none !important; }
 }
+`;

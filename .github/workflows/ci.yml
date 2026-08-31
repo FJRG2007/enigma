@@ -211,6 +211,11 @@ jobs:
       - name: Vendored primitives bundle is in sync with the package
         run: npm run check:vendor
 
+      # The toast theme is a string the component injects AND a stylesheet consumers import;
+      # the second is generated from the first, so a hand edit to it would be silently lost.
+      - name: Generated stylesheets are in sync with their source
+        run: npm run check:recipes
+
   components:
     runs-on: ubuntu-latest
     steps:

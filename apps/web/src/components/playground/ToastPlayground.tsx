@@ -1,6 +1,5 @@
-import "@enigmax/primitives/toast.css";
 import { Playground, type Control, type StyleToken } from "./Playground";
-import { Toaster, useNotifications } from "@enigmax/primitives/react";
+import { Toaster, useNotifications } from "@enigmax/primitives/react/toast";
 import type { NotificationTone, ToastPosition } from "@enigmax/primitives/react";
 
 /**
@@ -34,7 +33,10 @@ const CONTROLS: Control<Values>[] = [
     { name: "sticky", label: "Stays until dismissed", type: "boolean", hint: "errors do anyway" }
 ];
 
-/** The variables `@enigmax/primitives/toast.css` declares, so the CSS tab is real theming. */
+/**
+ * The variables the toast theme declares - the one `<Toaster />` injects itself, so this
+ * page imports no stylesheet at all and the CSS tab still prints real theming.
+ */
 const STYLE: StyleToken[] = [
     { name: "enigma-toast-bg", label: "Toast", type: "color", property: "--enigma-toast-bg", value: "#101010" },
     { name: "enigma-toast-border", label: "Border", type: "color", property: "--enigma-toast-border", value: "#2a2a2a" },
@@ -54,8 +56,7 @@ function code(values: Values): string {
 
     const mount = values.position === "bottom-right" ? "<Toaster />" : `<Toaster position="${values.position}" />`;
     return [
-        'import { Toaster, useNotifications } from "@enigmax/primitives/react";',
-        'import "@enigmax/primitives/toast.css";',
+        'import { Toaster, useNotifications } from "@enigmax/primitives/react/toast";',
         "",
         "// once, near the root",
         mount,

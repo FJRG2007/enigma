@@ -14,11 +14,13 @@ import { highlightedRecipe } from "../../../lib/recipe";
 export const tailwindRecipe = highlightedRecipe("@enigmax/primitives", "toast/tailwind.tsx");
 export const cssSheet = highlightedRecipe("@enigmax/primitives", "toast/styles.css");
 
-Mount it once, notify from anywhere.
+Mount it once, notify from anywhere. There is no stylesheet to import: this is the one
+component in the package that brings its own look, because a toast renders at the edge of
+the screen and a forgotten import gives you a pile of text in a corner rather than something
+you can see is unstyled.
 
 ```tsx
-import { Toaster, useNotifications } from "@enigmax/primitives/react";
-import "@enigmax/primitives/toast.css";
+import { Toaster, useNotifications } from "@enigmax/primitives/react/toast";
 
 // once, near the root
 <Toaster position="bottom-right" />
@@ -27,6 +29,11 @@ import "@enigmax/primitives/toast.css";
 const { notify } = useNotifications();
 notify({ title: "Saved", body: "Two files changed", tone: "success" });
 ```
+
+The theme is injected once and **prepended** to `<head>`, so anything your app already has
+outranks it by source order - no `!important` anywhere. `<Toaster styles={false} />` turns it
+off entirely, and `@enigmax/primitives/toast.css` is the same sheet if you would rather
+import it yourself.
 
 ## Customize
 

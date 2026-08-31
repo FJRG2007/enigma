@@ -711,12 +711,12 @@
     {
       "name": "toast",
       "title": "Toast",
-      "description": "The notification queue with a renderer on top: stacking, swipe to dismiss, a pointer that stops the clock, and a toast that is still on screen while it animates out. Ships the Ember theme, which is a stylesheet you own.",
+      "description": "The notification queue with a renderer on top: the newest toast in front, the older ones stacked behind it and fanning out when the pointer arrives, swipe to dismiss, a pointer that stops the clock, and a toast that is still on screen while it animates out. It brings its own theme - a toast at the edge of the screen is the one component a forgotten stylesheet ruins rather than merely undresses.",
       "targets": [
         "react"
       ],
       "entry": {
-        "react": "@enigmax/primitives/react"
+        "react": "@enigmax/primitives/react/toast"
       },
       "exports": {
         "react": [
@@ -774,15 +774,20 @@
           }
         }
       ],
-      "styles": false,
+      "styles": true,
       "themeHooks": [
         "[data-enigma-toaster]",
         "[data-enigma-toaster][data-position]",
+        "[data-enigma-toaster][data-expanded]",
         "[data-enigma-toast]",
         "[data-enigma-toast][data-tone=error]",
+        "[data-enigma-toast][data-front]",
+        "[data-enigma-toast][data-mounted]",
         "[data-enigma-toast][data-state=leaving]",
         "[data-enigma-toast][data-swiping]",
-        "[data-enigma-toast][data-front]",
+        "[data-enigma-toast][data-hidden]",
+        "[data-enigma-toast-icon]",
+        "[data-enigma-toast-content]",
         "[data-enigma-toast-title]",
         "[data-enigma-toast-body]",
         "[data-enigma-toast-action]",

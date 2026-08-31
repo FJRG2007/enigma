@@ -467,6 +467,40 @@ add up and the row drifts. Anything that needs offsetting goes on the lane or on
 element, never on the moved one. Both marquee recipes carry that warning at the top of the
 file, where someone editing the classes will actually read it.
 
+## toast
+
+**The one component in the package that ships a look.** Everywhere else a missing stylesheet
+gives you something unstyled you can see and fix; a toast renders at the edge of the screen,
+stacked and animated, so the same omission gives you a pile of text in a corner - and
+"remember to import the CSS" is a footgun for a component that appears once every few
+minutes. `<Toaster />` injects the theme once, `styles={false}` turns it off, and
+`@enigmax/primitives/toast.css` is the same sheet for anyone who would rather import it.
+
+The sheet is PREPENDED to `<head>`, which is the whole trick: at equal specificity the later
+rule wins, so anything the document already has outranks the injected theme without a single
+`!important`.
+
+`src/react/toast-styles.ts` is the source of truth and `recipes/toast/styles.css` is
+GENERATED from it by `scripts/sync-recipes.mjs` (checked in CI by `npm run check:recipes`).
+Two hand-maintained copies of one look drift the first time somebody edits the one they
+happened to open.
+
+The stack is the reference pattern, and every part of it is measured rather than assumed:
+
+- Each toast reports its own height through a `ResizeObserver`, because a body that wraps
+  differently after a font loads changes every offset behind it. The fan-out offset is the
+  SUM of the heights in front plus one gap each.
+- COLLAPSED, the ones behind are clipped to the front toast's height and scaled back by 6%
+  per position; their content is hidden but still rendered, so the box does not jump when
+  the stack expands.
+- EXPANDED (pointer on the stack, or `expand`), each one lifts by its offset. The same
+  pointer already paused the timers, so a message cannot expire while it is being read.
+- `data-mounted` is set one frame AFTER the mount, or the browser has no "before" to
+  animate from and the toast appears instead of arriving.
+- The mounted rule has to be scoped under the toaster, because the enter rules are: at equal
+  specificity the later one wins, and the first version left every mounted toast sitting at
+  its entry offset - visible, and 110% of its own height off the bottom.
+
 ## network
 
 `createNetworkMonitor()` / `useNetworkState()` in utils, not primitives: connection state
