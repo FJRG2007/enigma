@@ -23,7 +23,7 @@
 
 import { join } from "node:path";
 import * as git from "./gate/git";
-import { homedir } from "node:os";
+import { enigmaHome } from "./util";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 
 /** Branch names never deleted, whatever the containment check says. */
@@ -82,9 +82,18 @@ export interface TidyResult {
     problems: string[];
 }
 
-/** Path of the undo ledger; resolved lazily so tests can move HOME. */
+/**
+ * Path of the undo ledger, resolved lazily per call so a test can move the home.
+ *
+ * Through `enigmaHome()` rather than the os helper: bun on Linux resolves that one from
+ * the OS account and ignores a reassigned `$HOME`, so the ledger went to the runner's
+ * real home while the test had blocked a path under its temp one - the write succeeded,
+ * the branch was deleted, and the single test asserting that an unwritable ledger STOPS a
+ * deletion passed on Windows and failed on CI. Every other `~/.enigma` path resolves the
+ * same way for the same reason (util.ts).
+ */
 function ledgerPath(): string {
-    return join(homedir(), ".enigma", "deleted-branches.json");
+    return join(enigmaHome(), ".enigma", "deleted-branches.json");
 }
 
 interface LedgerEntry {
@@ -110,7 +119,7 @@ export function readLedger(): LedgerEntry[] {
  */
 function recordDeletion(repo: string, entry: Omit<LedgerEntry, "at" | "repo">): void {
     const next = [{ at: new Date().toISOString(), repo, ...entry }, ...readLedger()].slice(0, LEDGER_LIMIT);
-    mkdirSync(join(homedir(), ".enigma"), { recursive: true });
+    mkdirSync(join(enigmaHome(), ".enigma"), { recursive: true });
     writeFileSync(ledgerPath(), `${JSON.stringify(next, null, 2)}\n`);
 }
 

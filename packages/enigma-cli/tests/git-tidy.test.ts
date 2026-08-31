@@ -5,7 +5,11 @@
  * squash merge (which ancestry alone gets wrong), a dirty tree, a stash, another
  * worktree, a remote that is ahead, a remote that cannot be read.
  *
- * Temp HOME (set BEFORE import) isolates the undo ledger.
+ * Temp HOME (set BEFORE import) isolates the undo ledger. ENIGMA_CONFIG_HOME is the one
+ * that actually does it: bun on Linux resolves the os home helper from the OS account and
+ * ignores a reassigned $HOME, so setting HOME alone left the ledger in the runner's real
+ * home - which passed every assertion here except the one that blocks the ledger path and
+ * expects the deletion to stop, and that is the assertion protecting the work.
  */
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -16,6 +20,7 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync } from "node:
 const HOME = mkdtempSync(join(tmpdir(), "enigma-tidy-home-"));
 process.env.USERPROFILE = HOME;
 process.env.HOME = HOME;
+process.env.ENIGMA_CONFIG_HOME = HOME;
 
 const { planTidy, tidy, readLedger, restoreCommand } = await import("../src/git-tidy");
 
