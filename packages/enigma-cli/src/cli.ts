@@ -50,7 +50,7 @@ const COMMANDS = new Set<string>([
     "install", "update", "security", "guard", "seal", "check", "config", "account", "accounts",
     "profile", "profiles", "skill", "skills", "issue", "improve", "qa", "compress", "guardrails", "trim", "verify", "mcp", "api", "gate", "dashboard", "dash", "fix-path", "resources", "recall", "codegraph", "autoskills", "statusline", "help", "version",
     "add", "components",
-    "pack", "packs", "ssh", "completion",
+    "pack", "packs", "ssh", "completion", "branches",
     ...acct.TOOL_NAMES,
     ...packs.PACKS.map((p) => p.id),
 ]);
@@ -75,6 +75,8 @@ interface CliOptions extends skillsMod.InstallOptions {
     compressType: string | null;
     /** `compress`: the shell command that produced the input, to pick its output filter. */
     shellCommand: string | null;
+    /** `branches tidy`: leave every remote alone. */
+    noRemote: boolean;
     /** `compress`: delete all CCR data (stats, history, cache) and reset the dashboard. */
     clear: boolean;
     /** `account provider`: built-in provider preset id (e.g. "minimax"). */
@@ -138,7 +140,7 @@ function parseArgs(argv: string[]): CliOptions {
         ref: null, assetsFrom: null, offline: false,
         bypass: null, noBypass: false, outputStyle: null, minimalCode: null, dashboard: null, promptSecretGuard: null,
         force: false, all: false, yes: false, login: false, dryRun: false, help: false, version: false,
-        stats: false, retrieve: null, compressType: null, shellCommand: null, clear: false,
+        stats: false, retrieve: null, compressType: null, shellCommand: null, noRemote: false, clear: false,
         copy: false, list: false, dest: null, target: null, style: null, noDeps: false,
         overwrite: false, cwd: null, silent: false,
         preset: null, token: null, base: null, providerModel: null,
@@ -228,6 +230,7 @@ function parseArgs(argv: string[]): CliOptions {
             case "--retrieve": opts.retrieve = next(); break;
             case "--type": opts.compressType = next(); break;
             case "--command": opts.shellCommand = next(); break;
+            case "--no-remote": opts.noRemote = true; break;
             case "--clear": opts.clear = true; break;
             case "--json": opts.json = true; break;
             case "--force": opts.force = true; break;
@@ -413,6 +416,8 @@ Commands:
   seal                 Maintenance: (re)compute skill content hashes
   check                Integrity gate: verify skills are well-formed and sealed
   statusline           Render the agent status bar (badge, model, context, cost, live gate progress)
+  branches [tidy]      Report finished working branches; 'tidy' removes the ones the
+                       default branch already contains, locally and on the remote
   completion [shell]   Print a shell completion script (bash | zsh | fish | powershell)
   help, version
 
@@ -719,6 +724,19 @@ agent's status payload on stdin; wired automatically unless you pass --no-status
 Print a shell completion script on stdout; enigma never edits a shell profile itself.
 Without a shell it guesses from $SHELL. Install it where your shell reads completions,
 e.g. eval "$(enigma completion zsh)" in ~/.zshrc.`,
+    branches: `usage: enigma branches [tidy [branch...]] [--dry-run] [--no-remote]
+Report which working branches are finished, and remove the ones that are. A branch is
+only removed when the default branch already contains every change it made, byte for
+byte - unmerged commits, uncommitted or stashed work, a remote copy that is ahead or
+unreadable, or a branch checked out elsewhere are reported and kept.
+
+  tidy [branch...]   Remove the finished branches (all of them, or just those named)
+      --dry-run      Show what tidy would remove
+      --no-remote    Leave every remote alone
+      --target <r>   Remote to clean up (default: origin)
+
+Every deletion is recorded in ~/.enigma/deleted-branches.json with the command that
+restores it. Runs automatically after a gate run unless 'enigma config gate-tidy-branches off'.`,
     seal: "usage: enigma seal\nRecompute the skill content hashes. Run it after editing any SKILL.md or skill.json.",
     check: "usage: enigma check\nIntegrity gate: verify the skills are well-formed and sealed. Exits non-zero when they are not.",
 };
@@ -2194,6 +2212,47 @@ async function runCompletionCli(positionals: string[]): Promise<number> {
     return 0;
 }
 /**
+ * `enigma branches` - report which working branches are finished, and remove the ones that
+ * are. With no subcommand it only REPORTS: every local branch with the verdict and, when it
+ * is being kept, the reason. `tidy` performs it. Returns an exit code.
+ */
+async function runBranchesCli(positionals: string[], opts: CliOptions): Promise<number> {
+    const tidyMod = await import("./git-tidy");
+    const dir = opts.cwd ?? process.cwd();
+    const remote = opts.noRemote ? "" : (opts.target ?? "origin");
+    const [sub, ...only] = positionals;
+    if (sub && sub !== "tidy") { console.error(`Unknown subcommand '${sub}'. Usage: enigma branches [tidy] [branch...]`); return 1; }
+
+    if (sub !== "tidy") {
+        const plan = await tidyMod.planTidy(dir, remote);
+        if (plan.blocked) { console.log(`Nothing can be cleaned up here: ${plan.blocked}.`); return 0; }
+        const ready = plan.verdicts.filter((v) => v.tidyable);
+        for (const v of plan.verdicts) console.log(`  ${v.tidyable ? "x" : "-"} ${v.branch.padEnd(32)} ${v.detail}`);
+        console.log(ready.length
+            ? `\n${ready.length} branch(es) finished. Remove them with: enigma branches tidy`
+            : "\nNothing to clean up.");
+        return 0;
+    }
+
+    const result = await tidyMod.tidy(dir, { remote, dryRun: opts.dryRun, only });
+    if (result.plan.blocked) { console.error(`Refusing to touch anything: ${result.plan.blocked}.`); return 1; }
+    if (opts.dryRun) {
+        const ready = result.plan.verdicts.filter((v) => v.tidyable);
+        for (const v of ready) console.log(`  would remove ${v.branch}${v.remote ? ` (and on ${remote})` : ""}`);
+        if (!ready.length) console.log("Nothing to clean up.");
+        return 0;
+    }
+    if (result.switched) console.log(`Back on ${result.plan.defaultBranch}.`);
+    for (const branch of result.deleted) {
+        const sha = result.plan.verdicts.find((v) => v.branch === branch)?.sha ?? "";
+        const alsoRemote = result.deletedRemote.includes(branch) ? ` and on ${remote}` : "";
+        console.log(`Removed ${branch}${alsoRemote}. Restore it with: ${tidyMod.restoreCommand(branch, sha)}`);
+    }
+    for (const problem of result.problems) console.error(`  ${problem}`);
+    if (!result.deleted.length && !result.problems.length) console.log("Nothing to clean up.");
+    return result.problems.length ? 1 : 0;
+}
+/**
  * `enigma guardrails` surface: inspect and manage the convention rules the post-edit hook
  * enforces. No subcommand lists rules; `check <file>` runs them against a file; `stats [days]`
  * reports the compliance ledger (which rules the agent breaks, and whether it was stopped or got
@@ -2770,6 +2829,7 @@ export async function run(argv: string[]): Promise<void> {
     if (opts.command === "profile") { process.exit(await runProfileCli(opts, interactive)); }
     if (opts.command === "skills") { process.exit(runSkillsCli(opts)); }
     if (opts.command === "issue") { process.exit(await runIssueCli(opts.positionals[0], version, interactive)); }
+    if (opts.command === "branches") { process.exit(await runBranchesCli(opts.positionals, opts)); }
     if (opts.command === "completion") { process.exit(await runCompletionCli(opts.positionals)); }
     if (opts.command === "compress") { process.exit(runCompressCli(opts)); }
     if (opts.command === "guardrails") { process.exit(runGuardrailsCli(opts.positionals)); }

@@ -412,6 +412,12 @@ const RAW_CATEGORIES: Category[] = [
                 read: () => conf.readConfig().config.ciWatch,
                 write: (value, scope) => ({ path: setCiWatch(scope, value), changed: true }),
             },
+            enigmaToggle(
+                "gate-tidy-branches",
+                "gateTidyBranches",
+                "Clean up finished branches",
+                "when a gate run ends, delete the working branches the default branch already contains - locally and on the remote - and put the checkout back on the default branch, instead of leaving you on a branch nobody will touch again. It only removes a branch whose every change is already in the default branch, byte for byte, and refuses on anything else: unmerged commits, uncommitted or stashed work, a remote copy it could not read or that is ahead, a branch checked out in another worktree, a protected name. Every deletion is written to ~/.enigma/deleted-branches.json with the command that restores it; enigma default: on",
+            ),
             {
                 key: "gate-severity",
                 label: "Gate blocking severity",

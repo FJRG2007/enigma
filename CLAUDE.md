@@ -55,6 +55,7 @@ Subsystems (read the one you are touching):
 - `verified-completion.md` - the turn-end gate against false "done" claims (`enigma verify`), parity check, loop safety.
 - `eof-trim.md` - removing the blank line agents leave at the end of a file (`enigma trim`): the conservative rule, the stat/tail/truncate cost model, partial-staging, and the vendored-tree ignore list.
 - `ci-watch.md` - the CI failure notifier (`ciWatch`): a detached poller plus a hook that prints only on a red build, so a broken workflow reaches the agent with its log and a green one costs nothing.
+- `branch-tidy.md` - `enigma branches`: what proves a working branch is finished (and why ancestry alone is wrong), every refusal, and the undo ledger. Read before touching anything that deletes a ref.
 - `secret-protection.md` - commit guard lists and the prompt secret guard.
 - `tool-launch-path.md` - repairing a tool that is installed but not on PATH.
 - `system-resources.md` - process/port/WSL/Docker cleanup.

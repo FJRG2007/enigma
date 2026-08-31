@@ -192,6 +192,37 @@ export class Executor {
         gateDb.updateRunStatus(this.db, run.id, "completed");
         run.status = "completed";
         this.emitRunEvent(EventRunCompleted, run, repo);
+        await this.tidyFinishedBranches(repo);
+    }
+
+    /**
+     * Put the user's checkout back on the default branch and remove the working branches
+     * it already contains. A run that just finished has NOT landed yet, so this never
+     * touches the branch it was validating - what it clears is the previous ones, whose
+     * PRs have since merged and which would otherwise pile up locally and on the remote
+     * with the checkout stranded on a dead branch.
+     *
+     * Never fatal: the run is already completed and reported, and a repository this
+     * cannot tidy (dirty tree, unreadable remote) is a repository it must leave alone
+     * anyway. Failures are logged, never thrown.
+     */
+    private async tidyFinishedBranches(repo: gateDb.Repo): Promise<void> {
+        try {
+            // readConfigAt, not readConfig: the daemon's cwd is not the user's repository,
+            // so a project-local .enigma.json only reaches us when the path is named.
+            const { readConfigAt } = await import("@/config");
+            if (!readConfigAt(repo.workingPath).gateTidyBranches) return;
+            const { tidy } = await import("@/git-tidy");
+            const result = await tidy(repo.workingPath);
+            if (result.plan.blocked) return log.info("branch cleanup skipped", "reason", result.plan.blocked);
+            for (const branch of result.deleted) {
+                const sha = result.plan.verdicts.find((v) => v.branch === branch)?.sha ?? "";
+                log.info("removed a finished branch", "branch", branch, "restore", `git branch ${branch} ${sha}`);
+            }
+            for (const problem of result.problems) log.warn("branch cleanup", "detail", problem);
+        } catch (err) {
+            log.warn("branch cleanup failed", "error", String(err));
+        }
     }
 
     /** Runs a single step with approval coordination. Returns skipRemaining. */
