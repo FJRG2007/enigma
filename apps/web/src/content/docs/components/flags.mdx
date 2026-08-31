@@ -1,6 +1,6 @@
 ---
 title: Flags
-description: A country flag as an image, rectangular or round, from a CDN or from files downloaded into your project. The emoji flag is what this replaces.
+description: A country flag as an image, rectangular or round, that names itself in the reader's language. The emoji flag is what this replaces.
 group: Data
 order: 34
 space: components
@@ -8,6 +8,8 @@ space: components
 import Installation from "../../../components/Installation.astro";
 import Frameworks from "../../../components/Frameworks.astro";
 import Command from "../../../components/Command.astro";
+import Preview from "../../../components/Preview.astro";
+import { FlagPlayground } from "../../../components/playground/FlagPlayground";
 
 A flag is an image. The emoji version of it is the thing this component exists to replace:
 a flag emoji is a pair of regional-indicator code points (`U+1F1EA U+1F1F8` for Spain), and
@@ -15,16 +17,18 @@ a flag emoji is a pair of regional-indicator code points (`U+1F1EA U+1F1F8` for 
 "ES" for most desktop readers. There is no font stack that fixes it, and on the platforms
 that do draw a flag, each one draws a different one.
 
+<FlagPlayground client:load />
+
 ## Usage
 
 <Frameworks>
     <div slot="react">
 ```tsx
-import { Flag } from "@enigmax/primitives/react";
+import { Flag } from "@enigmax/primitives/react/flag";
 
-<Flag code="es" />                          // 4:3, 16px tall, from the CDN
+<Flag code="es" />                          // 4:3, 16px tall, named automatically
 <Flag code="es" shape="circle" size={20} /> // round, for a chip or an avatar row
-<Flag code="en-GB" label="United Kingdom" /> // labelled: it is the only content
+<Flag code="es" decorative />               // beside a country name that is already there
 ```
     </div>
     <div slot="vanilla">
@@ -41,27 +45,58 @@ for (const [name, value] of Object.entries(flagAttributes("es", { shape: "circle
 
 ## Installation
 
-<Installation item="flags" pkg="@enigmax/primitives" entry="@enigmax/primitives/react">
+<Installation item="flags" pkg="@enigmax/primitives" entry="@enigmax/primitives/react/flag">
     <div slot="manual">
 
-Nothing else to install. The images come from jsDelivr unless you download them.
+Nothing else to install. The images are served by enigma unless you download them.
 
     </div>
 </Installation>
 
+## The name is automatic
+
+`<Flag code="es" />` is announced as **Spain** - or *España* on a Spanish page - because the
+name comes from `Intl.DisplayNames`, which is already in the runtime, already translated,
+and maintained by whoever maintains the platform. No table of 250 country names ships with
+the component, and none of them goes stale.
+
+| | |
+| --- | --- |
+| nothing | The country's own name, in the reader's language |
+| `label="Spanish"` | Yours, when the flag stands for a language or a region rather than a country |
+| `decorative` | No name at all. Right beside a country name that is already on screen, where repeating it makes a screen reader say it twice |
+
+A name is never invented. A subdivision such as `gb-eng` is England, and falling back to its
+region would announce "United Kingdom" - confidently wrong - so it renders as decoration
+instead. Same for a runtime with no `Intl`.
+
+## The code you pass
+
+`code` takes what a codebase already holds: `es`, `ES`, `en-GB`, `es_ES`, a subdivision
+(`gb-eng`, `au-nsw`, `es-ct`), or the emoji flag you are replacing - so a migration is the
+component and nothing else.
+
+A BCP 47 tag is read by its **casing**, before anything is lowercased: `es-ES` is a locale
+and means the flag `es`, while `es-ct` is Catalonia and means the file `es-ct`. Lowercasing
+first makes those the same string, and then one of them is always wrong.
+
+A code that resolves to nothing renders `fallback` (nothing, by default). Never a broken
+image: a 404 with no alt text beside a country name is worse than no flag.
+
 ## Where the images come from
 
-Two upstream sets, both SVG, both served from jsDelivr by default:
+enigma serves all three sets over a CDN, so nothing has to be installed and no request goes
+to anyone else:
 
-| Shape | Set | Ratio |
+| Shape | | Ratio |
 | --- | --- | --- |
-| `rect` (default) | [lipis/flag-icons](https://github.com/lipis/flag-icons) `4x3` | 4:3 |
-| `square` | lipis/flag-icons `1x1` | 1:1 |
-| `circle` | [HatScripts/circle-flags](https://github.com/HatScripts/circle-flags) | 1:1 |
+| `rect` (default) | the usual rectangular artwork | 4:3 |
+| `square` | the same flags, cropped square | 1:1 |
+| `circle` | round, for a chip or an avatar row | 1:1 |
 
-Nothing has to be installed to use them. For a project that will not make a third-party
-request at runtime - an offline install, a CSP with no `img-src` for a CDN, a build that
-must not break the day a CDN does - the same files are downloaded into the project:
+For a project that will not make a third-party request at runtime - an offline install, a
+CSP with no `img-src` for a CDN, a build that must not break the day a CDN does - the same
+files are downloaded into the project:
 
 <Command command="enigma add flags --flags local" />
 
@@ -79,43 +114,22 @@ configureFlags({ source: "local", basePath: "/flags" });
 
 | Flag | |
 | --- | --- |
-| `--flags cdn\|local` | CDN, or files in the project |
+| `--flags cdn\|local` | served by enigma, or files in the project |
 | `--flag-shapes rect,square,circle\|all` | which sets to download |
 | `--flag-formats svg,png,webp` | png and webp are rasterised locally and need `sharp` |
 | `--countries es,fr,us\|all` | which countries |
 | `--flags-out <dir>` | default `public/flags` |
 
-**SVG is the only format the two upstreams publish**, so a CDN can serve nothing else. Ask
-the CDN for `webp` and you get SVG plus one warning in development; `png` and `webp` are for
-a local set, where they are rasterised from the SVG at download time.
-
-## The code you pass
-
-`code` takes what a codebase already holds: `es`, `ES`, `en-GB`, `es_ES`, a subdivision both
-sets publish (`gb-eng`, `au-nsw`, `es-ct`), or the emoji flag you are replacing - so a
-migration is the component and nothing else.
-
-A BCP 47 tag is read by its **casing**, before anything is lowercased: `es-ES` is a locale
-and means the flag `es`, while `es-ct` is Catalonia and means the file `es-ct`. Lowercasing
-first makes those the same string, and then one of them is always wrong.
-
-A code that resolves to nothing renders `fallback` (nothing, by default). Never a broken
-image: a 404 with no alt text beside a country name is worse than no flag.
-
-## Labels
-
-`label` is the accessible name and there is no default for it. Without one the flag is
-**decorative**: empty `alt` and `aria-hidden`, which is correct beside a country name that
-is already there - the reader hears it once instead of twice. Pass `label` when the flag is
-the only content, as in a compact language switcher.
-
-A name is never invented from the code. "ES" read out by a screen reader is not a country,
-and a name guessed in the reader's wrong language is worse than silence.
+**The artwork is stored as SVG**, so that is what a remote source serves. Ask for `webp` and
+you get SVG plus one warning in development; `png` and `webp` are for a local set, where
+they are rasterised at download time.
 
 | Prop | |
 | --- | --- |
 | `code` | `es`, `ES`, `en-GB`, `gb-eng`, or the emoji |
-| `label` | Accessible name. Omitted means decorative |
+| `label` | Your own accessible name. Automatic when omitted |
+| `decorative` | Renders with no name at all |
+| `locale` | Language the automatic name is written in. Follows the document's `lang` otherwise |
 | `shape` | `rect` (default), `square`, `circle` |
 | `size` | Rendered height in px, default 16. Width follows the shape |
 | `format` | `svg` (default), `png`, `webp` |

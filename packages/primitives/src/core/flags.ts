@@ -8,12 +8,14 @@
  * out of them looks broken to those readers, with nothing in the code to explain why.
  * There is no font stack that fixes it, so the fix is not a font: it is an image.
  *
- * Two upstream sets, both SVG, both installable or served from a CDN:
+ * Three sets, all SVG, all served by enigma itself:
  *
- * - `rect` / `square` - lipis/flag-icons (`flags/4x3`, `flags/1x1`), the classic
- *   rectangular set, 271 flags plus subdivisions.
- * - `circle` - HatScripts/circle-flags (`flags/*.svg` on its gh-pages branch), 445 round
- *   flags, which is what a flag next to an avatar or inside a chip usually wants.
+ * - `rect` (4:3) and `square` (1:1) - the classic rectangular artwork.
+ * - `circle` - round, which is what a flag next to an avatar or inside a chip wants.
+ *
+ * They are served from enigma's own tree rather than from anyone else's, because a
+ * component whose default source is a third party is a component that breaks when that
+ * third party moves, renames a branch, or goes away.
  *
  * Nothing here touches the DOM, so it renders on a server.
  */
@@ -21,26 +23,24 @@
 export type FlagShape = "rect" | "square" | "circle";
 
 /**
- * `svg` is the only format the two upstreams publish, so it is the only one a CDN can
- * serve. `png` and `webp` exist for a LOCAL set (`enigma add flags --flags local
- * --flag-formats webp`), which rasterises what it downloads, and for a mirror of your own.
+ * `svg` is what the sets are stored as, so it is what a remote source can serve. `png` and
+ * `webp` exist for a LOCAL set (`enigma add flags --flags local --flag-formats webp`), which
+ * rasterises what it downloads, and for a mirror of your own.
  */
 export type FlagFormat = "svg" | "png" | "webp";
 
 /**
  * Where the files come from.
  *
- * - `"cdn"` - jsDelivr, straight from the two upstream projects. Nothing to install.
+ * - `"cdn"` - enigma's own artwork, over a CDN. Nothing to install.
  * - `"local"` - files under `basePath` in your own public directory.
- * - any URL - a mirror of your own with the same layout as the local one
+ * - any URL - a mirror of your own with the same layout
  *   (`<base>/<shape>/<code>.<format>`), which is exactly the tree the downloader writes.
  */
 export type FlagSource = "cdn" | "local" | (string & {});
 
-/** Pinned so an upgrade upstream is a decision here, never a surprise in production. */
-export const FLAG_ICONS_VERSION = "7.5.0";
-/** circle-flags publishes from a branch, not a tag; gh-pages is its default branch. */
-export const CIRCLE_FLAGS_REF = "gh-pages";
+/** enigma's own artwork, over a CDN. Every source shares this layout. */
+export const FLAG_CDN = "https://cdn.jsdelivr.net/gh/FJRG2007/enigma@main/assets/flags";
 
 export interface FlagOptions {
     shape?: FlagShape;
@@ -50,10 +50,16 @@ export interface FlagOptions {
     basePath?: string;
     /** Rendered HEIGHT in px. The width follows the shape's ratio. Default 16. */
     size?: number;
+    /**
+     * Language the automatic name is written in. Left out, it follows the document's own
+     * `lang`, which is what a translated page wants.
+     */
+    locale?: string;
 }
 
-export interface FlagConfig extends Required<Omit<FlagOptions, "size">> {
+export interface FlagConfig extends Required<Omit<FlagOptions, "size" | "locale">> {
     size: number;
+    locale?: string;
 }
 
 const DEFAULTS: FlagConfig = {
@@ -96,12 +102,14 @@ const EMOJI_FLAG = /^[\u{1F1E6}-\u{1F1FF}]{2}$/u;
  * A BCP 47 tag whose region is spelled the way the standard spells it: UPPERCASE. That
  * casing is the whole discriminator, and it has to be read before the value is lowercased -
  * `es-ES` is Spanish-in-Spain and means the flag `es`, while `es-ct` is a subdivision code
- * both sets publish (Catalonia) and means the file `es-ct`. Lowercasing first makes those
+ * the sets publish (Catalonia) and means the file `es-ct`. Lowercasing first makes those
  * two the same string, and then one of them is always wrong.
  */
 const LOCALE_TAG = /^([A-Za-z]{2,3})[-_]([A-Z]{2})$/;
-/** What the two sets actually name their files: `es`, `gb-eng`, `au-nsw`, `easter_island`. */
+/** What the sets actually name their files: `es`, `gb-eng`, `au-nsw`, `easter_island`. */
 const FILE_CODE = /^[a-z]{2,}(?:[-_][a-z0-9]+)*$/;
+/** A plain country: exactly the shape `Intl.DisplayNames` can put a name to. */
+const COUNTRY_CODE = /^[a-z]{2}$/;
 
 /**
  * Anything a codebase calls a country into the file name the sets use, or null.
@@ -128,21 +136,48 @@ export function normalizeFlagCode(value: string | null | undefined): string | nu
     return FILE_CODE.test(code) ? code : null;
 }
 
+/**
+ * The country's name, in the reader's language, or null.
+ *
+ * `Intl.DisplayNames` is the whole implementation: the names are in the runtime already,
+ * translated, and maintained by whoever maintains the platform - so this ships no table of
+ * 250 country names to go stale, and a Spanish page says "España" without being told.
+ *
+ * Null for anything it cannot name, and that is deliberate for SUBDIVISIONS: `gb-eng` is
+ * England, and falling back to the region (`gb`, "United Kingdom") would put a confidently
+ * wrong name on the flag. A name nobody can source is worse than no name.
+ */
+export function flagName(code: string | null | undefined, locale?: string): string | null {
+    const normalized = normalizeFlagCode(code);
+    if (!normalized || !COUNTRY_CODE.test(normalized)) return null;
+    const region = normalized.toUpperCase();
+    try {
+        const names = new Intl.DisplayNames([locale ?? documentLocale() ?? "en"], { type: "region" });
+        const name = names.of(region);
+        // It echoes the input back when it has no name for the code.
+        return !name || name === region ? null : name;
+    } catch {
+        return null;
+    }
+}
+
+/** The page's own language, which is what a translated page wants the name written in. */
+function documentLocale(): string | undefined {
+    if (typeof document === "undefined") return undefined;
+    return document.documentElement.lang || undefined;
+}
+
 /** Everything a renderer needs, computed in one pass. Null when the code is unusable. */
 export interface FlagView {
-    /** The upstream file name, e.g. `es`, `gb-eng`. */
+    /** The file name, e.g. `es`, `gb-eng`. */
     code: string;
     src: string;
     shape: FlagShape;
     format: FlagFormat;
     width: number;
     height: number;
-}
-
-function cdnUrl(code: string, shape: FlagShape): string {
-    if (shape === "circle") return `https://cdn.jsdelivr.net/gh/HatScripts/circle-flags@${CIRCLE_FLAGS_REF}/flags/${code}.svg`;
-    const size = shape === "square" ? "1x1" : "4x3";
-    return `https://cdn.jsdelivr.net/npm/flag-icons@${FLAG_ICONS_VERSION}/flags/${size}/${code}.svg`;
+    /** The automatic name, when there is one. */
+    name: string | null;
 }
 
 /** One warning per process, not one per flag: a list of 200 would print 200 times. */
@@ -151,32 +186,32 @@ let warnedAboutFormat = false;
 /**
  * The URL for one flag. Null when the code cannot be resolved.
  *
- * A raster format asked of the CDN falls back to SVG rather than producing a 404: neither
- * upstream publishes anything but SVG, so `format: "webp"` is only meaningful against a
- * local set or a mirror. It says so once, in development, instead of silently disagreeing
- * with what the call site asked for.
+ * A raster format asked of the CDN falls back to SVG rather than producing a 404: the sets
+ * are stored as SVG, so `format: "webp"` is only meaningful against a local set or a mirror.
+ * It says so once, in development, instead of silently disagreeing with the call site.
  */
 export function flagSrc(code: string | null | undefined, options: FlagOptions = {}): string | null {
     const settings = { ...config, ...options };
     const normalized = normalizeFlagCode(code);
     if (!normalized) return null;
 
-    const remoteCdn = settings.source === "cdn";
+    const remote = settings.source === "cdn";
     let format = settings.format;
-    if (remoteCdn && format !== "svg") {
+    if (remote && format !== "svg") {
         if (!warnedAboutFormat && typeof process !== "undefined" && process.env?.NODE_ENV !== "production") {
             warnedAboutFormat = true;
-            console.warn(`[enigma/flags] The flag CDNs publish SVG only, so "${format}" was served as SVG. Download a local set for raster formats: enigma add flags --flags local --flag-formats ${format}`);
+            console.warn(`[enigma/flags] The flags are served as SVG, so "${format}" was served as SVG. Download a local set for raster formats: enigma add flags --flags local --flag-formats ${format}`);
         }
         format = "svg";
     }
-    if (remoteCdn) return cdnUrl(normalized, settings.shape);
 
-    const base = (settings.source === "local" ? settings.basePath : settings.source).replace(/\/+$/, "");
+    // One layout everywhere - `<base>/<shape>/<code>.<format>` - so a mirror is the same
+    // string with a different host, and the downloader writes exactly what this reads.
+    const base = remote ? FLAG_CDN : (settings.source === "local" ? settings.basePath : settings.source).replace(/\/+$/, "");
     return `${base}/${settings.shape}/${normalized}.${format}`;
 }
 
-/** `flagSrc` plus the resolved geometry, for a renderer that has to size the box. */
+/** `flagSrc` plus the resolved geometry and name, for a renderer that has to size the box. */
 export function flagView(code: string | null | undefined, options: FlagOptions = {}): FlagView | null {
     const settings = { ...config, ...options };
     const normalized = normalizeFlagCode(code);
@@ -189,25 +224,36 @@ export function flagView(code: string | null | undefined, options: FlagOptions =
         shape: settings.shape,
         format: settings.source === "cdn" ? "svg" : settings.format,
         width: Math.round(height * FLAG_RATIO[settings.shape]),
-        height
+        height,
+        name: flagName(normalized, settings.locale)
     };
+}
+
+export interface FlagAttributeOptions extends FlagOptions {
+    /** Your own accessible name, which wins over the automatic one. */
+    label?: string;
+    /**
+     * Beside a country name that is already on screen, the flag is decoration and repeating
+     * the name only makes a screen reader say it twice.
+     */
+    decorative?: boolean;
 }
 
 /**
  * Attributes for a plain `<img>`, for vanilla, Astro and any template language.
  *
- * `label` is the accessible name and there is no default for it: a flag with no label is
- * DECORATIVE (empty alt, `aria-hidden`), which is correct beside a country name and is the
- * common case. Inventing one from the code would put "ES" or "es" into a screen reader,
- * and a country name guessed in the reader's wrong language is worse than silence.
+ * The accessible name is AUTOMATIC: the country's own name, in the reader's language, from
+ * `Intl.DisplayNames`. `label` replaces it and `decorative` drops it. Nothing is ever
+ * invented - a subdivision the platform cannot name, or a runtime without `Intl`, renders
+ * as decoration rather than putting a bare "ES" into a screen reader.
  */
-export function flagAttributes(code: string | null | undefined, options: FlagOptions & { label?: string; } = {}): Record<string, string | number> | null {
+export function flagAttributes(code: string | null | undefined, options: FlagAttributeOptions = {}): Record<string, string | number> | null {
     const view = flagView(code, options);
     if (!view) return null;
-    const label = options.label?.trim();
+    const label = options.decorative ? "" : options.label?.trim() || view.name || "";
     return {
         src: view.src,
-        alt: label ?? "",
+        alt: label,
         width: view.width,
         height: view.height,
         loading: "lazy",

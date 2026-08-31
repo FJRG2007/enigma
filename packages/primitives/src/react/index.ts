@@ -45,6 +45,7 @@ export {
     flagSrc,
     flagView,
     flagAttributes,
+    flagName,
     normalizeFlagCode,
     configureFlags,
     type FlagOptions,

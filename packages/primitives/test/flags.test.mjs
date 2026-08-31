@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { flagSrc, flagView, flagAttributes, normalizeFlagCode, configureFlags, resetFlagConfig } from "../dist/index.js";
+import { flagSrc, flagView, flagAttributes, flagName, normalizeFlagCode, configureFlags, resetFlagConfig } from "../dist/index.js";
 
 /** The emoji is built from code points so this file never contains one. */
 const emoji = (a, b) => String.fromCodePoint(0x1f1e6 + a, 0x1f1e6 + b);
@@ -37,10 +37,11 @@ test("a code that resolves to nothing is null, never a guess", () => {
     assert.equal(flagAttributes("not a country!"), null);
 });
 
-test("each shape points at the set that publishes it", () => {
-    assert.match(flagSrc("es"), /flag-icons@[\d.]+\/flags\/4x3\/es\.svg$/);
-    assert.match(flagSrc("es", { shape: "square" }), /flag-icons@[\d.]+\/flags\/1x1\/es\.svg$/);
-    assert.match(flagSrc("es", { shape: "circle" }), /circle-flags@gh-pages\/flags\/es\.svg$/);
+test("every shape is served from enigma's own tree, in one layout", () => {
+    // One layout everywhere is what makes a mirror the same string with a different host.
+    assert.match(flagSrc("es"), /\/assets\/flags\/rect\/es\.svg$/);
+    assert.match(flagSrc("es", { shape: "square" }), /\/assets\/flags\/square\/es\.svg$/);
+    assert.match(flagSrc("es", { shape: "circle" }), /\/assets\/flags\/circle\/es\.svg$/);
 });
 
 test("a raster format asked of the CDN is served as SVG rather than as a 404", () => {
@@ -71,12 +72,32 @@ test("the box is sized from the shape, not assumed square", () => {
     assert.deepEqual({ width: circle.width, height: circle.height }, { width: 24, height: 24 });
 });
 
-test("a flag with no label is decorative, and a labelled one is not", () => {
-    const bare = flagAttributes("es");
-    assert.equal(bare.alt, "");
-    assert.equal(bare["aria-hidden"], "true");
+test("the accessible name is automatic, in the reader's language", () => {
+    // From Intl.DisplayNames, so no table of 250 country names ships with the component.
+    assert.equal(flagName("es", "en"), "Spain");
+    assert.equal(flagName("es", "es"), "España");
+    assert.equal(flagName("fr", "en"), "France");
 
-    const named = flagAttributes("es", { label: "Spain" });
-    assert.equal(named.alt, "Spain");
-    assert.equal("aria-hidden" in named, false, "a named flag is content, not decoration");
+    const bare = flagAttributes("es", { locale: "en" });
+    assert.equal(bare.alt, "Spain");
+    assert.equal("aria-hidden" in bare, false, "a flag that names itself is content, not decoration");
+});
+
+test("a name is never invented for something the platform cannot name", () => {
+    // gb-eng is England: falling back to the region would say "United Kingdom", which is
+    // confidently wrong. No name at all is the honest answer.
+    assert.equal(flagName("gb-eng"), null);
+    assert.equal(flagName("easter_island"), null);
+    const attributes = flagAttributes("gb-eng");
+    assert.equal(attributes.alt, "");
+    assert.equal(attributes["aria-hidden"], "true");
+});
+
+test("an explicit label wins, and decorative drops the name entirely", () => {
+    assert.equal(flagAttributes("es", { label: "Spanish" }).alt, "Spanish");
+
+    // Beside a country name already on screen, repeating it makes a reader say it twice.
+    const decoration = flagAttributes("es", { decorative: true, locale: "en" });
+    assert.equal(decoration.alt, "");
+    assert.equal(decoration["aria-hidden"], "true");
 });

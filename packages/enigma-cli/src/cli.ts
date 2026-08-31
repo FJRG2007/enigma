@@ -1824,9 +1824,9 @@ async function setupFlagAssets(opts: CliOptions, projectDir: string, interactive
         const answer = await p.multiselect({
             message: "Which sets?",
             options: [
-                { value: "rect", label: "Rectangular 4:3", hint: "flag-icons" },
-                { value: "square", label: "Square 1:1", hint: "flag-icons" },
-                { value: "circle", label: "Circular", hint: "circle-flags" }
+                { value: "rect", label: "Rectangular 4:3", hint: "the usual one" },
+                { value: "square", label: "Square 1:1" },
+                { value: "circle", label: "Circular", hint: "for a chip or an avatar row" }
             ],
             initialValues: ["rect", "square", "circle"],
             required: false

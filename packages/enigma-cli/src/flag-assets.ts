@@ -1,19 +1,20 @@
 /**
  * Downloading a flag set into a project, for the `flags` primitive.
  *
- * The primitive points at jsDelivr by default and needs none of this. This exists for the
- * project that will not depend on a third-party CDN - an offline install, an air-gapped
- * deployment, a CSP with no `img-src` for it, or simply a build that must not break the day
- * a CDN does. It writes the same layout the primitive reads for a local source:
+ * The primitive already serves its images from enigma over a CDN and needs none of this.
+ * This exists for the project that will not make a third-party request at runtime - an
+ * offline install, an air-gapped deployment, a CSP with no `img-src` for a CDN, or simply a
+ * build that must not break the day a CDN does. It writes the same layout the primitive
+ * reads for a local source:
  *
- *     <out>/rect/es.svg      lipis/flag-icons    flags/4x3
- *     <out>/square/es.svg    lipis/flag-icons    flags/1x1
- *     <out>/circle/es.svg    HatScripts/circle-flags
+ *     <out>/rect/es.svg      4:3
+ *     <out>/square/es.svg    1:1
+ *     <out>/circle/es.svg    round
  *
- * Both upstreams publish SVG and nothing else, so png/webp are RASTERISED here rather than
- * fetched. That needs `sharp`, which is resolved from the project and never installed
- * behind the user's back: without it the SVGs are still written and the shortfall is
- * reported, because a silent half of what was asked for is the worst outcome.
+ * The artwork is stored as SVG, so png/webp are RASTERISED here rather than fetched. That
+ * needs `sharp`, which is resolved from the project and never installed behind the user's
+ * back: without it the SVGs are still written and the shortfall is reported, because a
+ * silent half of what was asked for is the worst outcome.
  */
 
 import { join } from "node:path";
@@ -27,59 +28,36 @@ export type FlagFormat = "svg" | "png" | "webp";
 export const FLAG_SHAPES: FlagShape[] = ["rect", "square", "circle"];
 export const FLAG_FORMATS: FlagFormat[] = ["svg", "png", "webp"];
 
-/** Pinned upstream, same versions the primitive builds its CDN URLs from. */
-const FLAG_ICONS_VERSION = "7.5.0";
-const CIRCLE_FLAGS_REF = "gh-pages";
+/** enigma's own artwork, the same base the primitive builds its URLs from. */
+const FLAG_CDN = "https://cdn.jsdelivr.net/gh/FJRG2007/enigma@main/assets/flags";
 
 /** Width in px a rasterised flag is written at. Height follows the shape's ratio. */
 const RASTER_WIDTH = 160;
 
-interface JsdelivrEntry { type?: string; name?: string; }
-
-function packageUrl(shape: FlagShape): string {
-    return shape === "circle"
-        ? `https://data.jsdelivr.com/v1/packages/gh/HatScripts/circle-flags@${CIRCLE_FLAGS_REF}?structure=flat`
-        : `https://data.jsdelivr.com/v1/packages/npm/flag-icons@${FLAG_ICONS_VERSION}?structure=flat`;
-}
-
-/** The directory each shape's files live in inside its upstream package. */
-function upstreamDir(shape: FlagShape): string {
-    if (shape === "circle") return "/flags/";
-    return shape === "square" ? "/flags/1x1/" : "/flags/4x3/";
-}
-
 function fileUrl(shape: FlagShape, code: string): string {
-    return shape === "circle"
-        ? `https://cdn.jsdelivr.net/gh/HatScripts/circle-flags@${CIRCLE_FLAGS_REF}/flags/${code}.svg`
-        : `https://cdn.jsdelivr.net/npm/flag-icons@${FLAG_ICONS_VERSION}${upstreamDir(shape)}${code}.svg`;
+    return `${FLAG_CDN}/${shape}/${code}.svg`;
 }
 
 const listings = new Map<FlagShape, string[]>();
 
 /**
- * Every code a shape publishes, read from the CDN's own file index.
+ * Every code a shape publishes, read from the index shipped beside the artwork.
  *
- * Asked of the index rather than kept as a list here: a hardcoded set of countries goes
- * stale the first time upstream adds a subdivision, and a stale list is invisible - the
- * download simply never fetches the flag nobody noticed was missing.
+ * An index file rather than a hardcoded list here: a country set in the source goes stale
+ * the first time a subdivision is added, and a stale list is invisible - the download simply
+ * never fetches the flag nobody noticed was missing. One request answers for every shape.
  */
 export async function listFlagCodes(shape: FlagShape): Promise<string[]> {
     const cached = listings.get(shape);
     if (cached) return cached;
 
-    const response = await fetch(packageUrl(shape));
-    if (!response.ok) throw new Error(`Could not list the ${shape} flags (${response.status} from jsDelivr).`);
-    const body = await response.json() as { files?: JsdelivrEntry[]; };
-    const dir = upstreamDir(shape);
-    const codes = (body.files ?? [])
-        .map((file) => file.name ?? "")
-        .filter((name) => name.startsWith(dir) && name.endsWith(".svg"))
-        .map((name) => name.slice(dir.length, -".svg".length))
-        // The circle set's directory is flat, so a nested path would be a different asset.
-        .filter((code) => code && !code.includes("/"))
-        .sort();
-    listings.set(shape, codes);
-    return codes;
+    const response = await fetch(`${FLAG_CDN}/index.json`);
+    if (!response.ok) throw new Error(`Could not read the flag index (${response.status}).`);
+    const index = await response.json() as Partial<Record<FlagShape, string[]>>;
+    for (const [name, codes] of Object.entries(index)) {
+        if (Array.isArray(codes)) listings.set(name as FlagShape, codes);
+    }
+    return listings.get(shape) ?? [];
 }
 
 export interface FlagDownloadOptions {

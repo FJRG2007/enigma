@@ -372,21 +372,31 @@ platform there is, and every platform that does draw one draws a different one. 
 font stack that fixes it, so the fix is an image. The guardrail `ui-no-flag-emoji` is the
 enforcement half; this is the thing it points at.
 
-Two upstream sets, both SVG only, pinned in the core: lipis/flag-icons at 7.5.0 (`flags/4x3`
-for `rect`, `flags/1x1` for `square`, 271 flags) and HatScripts/circle-flags on `gh-pages`
-(`circle`, 445 flags). jsDelivr serves both, so the default costs the project nothing to
-install.
+Three sets, all SVG, all served by ENIGMA itself over a CDN (`assets/flags/<shape>/<code>.svg`
+in this repo, refreshed by `scripts/vendor-flags.mjs`, 948 files and 4.1 MB). The artwork was
+vendored for one reason: a component whose default source is somebody else's repository
+breaks when that repository moves, renames a branch, or goes away, and enigma cannot promise
+anything about a URL it does not control. Provenance lives in the vendor script and in
+`assets/flags/NOTICE`, which is where a licence notice belongs - not in the API, the docs or
+the URLs.
 
 - **The source is one decision, taken once.** `configureFlags({ source: "local" })` at
   startup moves every flag on the site off the CDN; no call site mentions where an image
   comes from. `source` takes `"cdn"`, `"local"` or a base URL, and the local layout
   (`<base>/<shape>/<code>.<format>`) is exactly what the downloader writes, so a mirror of
   your own is the same string with a different host.
-- **`png`/`webp` cannot come from a CDN**, because neither upstream publishes them. Asking
+- **`png`/`webp` cannot come from the CDN**, because the artwork is stored as SVG. Asking
   for one is downgraded to SVG with a single dev warning rather than a 404 - one warning per
   process, not one per flag, or a list of 200 prints 200 times. The raster formats are for a
   LOCAL set, where `enigma add flags --flags local --flag-formats webp` rasterises what it
   downloaded.
+- **The accessible name is AUTOMATIC**, from `Intl.DisplayNames`: the country's own name in
+  the reader's language, with no table of 250 names to ship and none to go stale. `label`
+  replaces it, `decorative` drops it. Nothing is invented - a subdivision such as `gb-eng` is
+  England, and falling back to its region would announce "United Kingdom", so it renders as
+  decoration instead. The React component sets `suppressHydrationWarning` for the same reason
+  the relative timestamp does: the name is written in the runtime's language, and a server
+  and a browser can legitimately disagree about which one that is.
 - **A BCP 47 tag is read by its casing, before anything is lowercased.** `es-ES` is a locale
   and means the flag `es`; `es-ct` is a subdivision both sets publish and means the file
   `es-ct`. Lowercase first and those two are the same string, and then one of them is always
@@ -402,10 +412,10 @@ install.
 ### The downloader (`enigma-cli/src/flag-assets.ts`)
 
 Runs from `enigma add flags` when the answer is `local`, and only then - the primitive needs
-none of it. The codes come from jsDelivr's own file index rather than a list in the source:
-a hardcoded country set goes stale the first time upstream adds a subdivision, and a stale
-list is invisible, because the download simply never fetches the flag nobody noticed was
-missing. A fixed pool of 12 workers rather than a `Promise.all` over a thousand fetches,
+none of it. The codes come from `assets/flags/index.json`, shipped beside the artwork, rather
+than from a list in the source: a hardcoded country set goes stale the first time a
+subdivision is added, and a stale list is invisible, because the download simply never
+fetches the flag nobody noticed was missing. A fixed pool of 12 workers rather than a `Promise.all` over a thousand fetches,
 which opens a thousand sockets and gets rate-limited into failing. `sharp` is resolved from
 the PROJECT and never installed behind the user: without it the SVGs are still written and
 the shortfall is reported, because a silent half of what was asked for is the worst outcome.

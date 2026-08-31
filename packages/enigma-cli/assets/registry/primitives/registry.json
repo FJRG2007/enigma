@@ -577,7 +577,7 @@
     {
       "name": "flags",
       "title": "Country flags",
-      "description": "A flag as an image, from the CDN or from files you downloaded, in the rectangular set or the round one. Emoji flags are the thing this replaces: Windows ships no glyph for them, so a picker built out of emoji renders as bare letters for most desktop readers.",
+      "description": "A flag as an image, served by enigma or from files in your project, rectangular, square or round. It names itself in the reader's language, and accepts the emoji flag it replaces as its code - Windows ships no glyph for those, so a picker built out of emoji renders as bare letters for most desktop readers.",
       "targets": [
         "vanilla",
         "astro",
@@ -586,7 +586,7 @@
       "entry": {
         "vanilla": "@enigmax/primitives",
         "astro": "@enigmax/primitives",
-        "react": "@enigmax/primitives/react"
+        "react": "@enigmax/primitives/react/flag"
       },
       "exports": {
         "vanilla": [
