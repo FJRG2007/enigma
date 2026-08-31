@@ -7,3 +7,18 @@
 - SEARCH = command palette (the old `lib/fuse.min.js` 404'd because `pages.yml` never copied `apps/web/lib/` - the whole reason for this migration). `src/lib/search.ts` builds the index at BUILD time from the content collection (`render()` headings + `entry.body`, markdown/MDX stripped to prose snippets); `CommandPalette.astro` serializes it into a `<script type="application/json">` and a bundled module runs Fuse over it - centered modal, blur backdrop, real-time results, keyboard nav, `Cmd/Ctrl+K` + `[data-search-open]` triggers. Fuse is bundled into `_astro/*.js` (no separate file to 404).
 - COPY BUTTONS: a client script in `DocsLayout.astro` adds a hover-reveal copy button to every `.doc pre`, using `navigator.clipboard.writeText` with a synchronous `document.execCommand("copy")` FALLBACK (covers a browser clipboard-guard extension that breaks `clipboard.writeText` - that injected `clipboard-protection.js` is NOT ours). The landing install-block copy uses the same fallback.
 - To add a doc: drop a `.mdx` in `src/content/docs/` with frontmatter; it auto-appears in the sidebar (by `order`) and the search index. To deploy: push to main touching `apps/web/**` (pages.yml). DO NOT add `apps/web` to root workspaces (keeps Astro's ~313 deps off the CLI install).
+
+## The docs palette runs on the package the site documents
+
+`CommandPalette.astro` keeps its hand-written DOM and takes its BRAINS from
+`@enigmax/primitives`: `createSearch` (with Fuse handed in), `moveActive`, `groupRows`,
+`createRecentStore` and `isPaletteShortcut`.
+
+The DOM stays hand-written on purpose. `SearchPalette` is React, and mounting a React island
+on every docs page to replace a working dialog would charge every reader the framework for
+one panel - the opposite of what the package is for. What is shared is the part that has no
+framework in it at all, which is also the part that was duplicated: the keyboard arithmetic,
+the grouping, and the history the site did not have before and now does.
+
+That split is the rule for dogfooding here: take the core, not the renderer, wherever the
+surrounding page is not already React.

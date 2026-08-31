@@ -45,3 +45,19 @@ export {
     type FlagFormat,
     type FlagSource
 } from "@/core/flags";
+// The palette's non-rendering half: no framework anywhere near it, so a vanilla or Astro
+// page can run the same keyboard arithmetic, grouping and history the React palette does.
+export {
+    createRecentStore,
+    recentKey,
+    groupRows,
+    moveActive,
+    shortcutLabel,
+    isPaletteShortcut,
+    type RecentEntry,
+    type RecentStore,
+    type RecentStoreOptions,
+    type RowGroup,
+    type PositionedRow,
+    type PaletteKey
+} from "@/core/palette";

@@ -79,6 +79,11 @@ const records = index.map((r) => ({
     .cmdk-row:hover { background: var(--surface2); }
     .cmdk-row.sel { background: var(--surface2); box-shadow: inset 2px 0 0 var(--accent); }
 
+    .cmdk-group-label {
+        margin: 6px 8px 2px; font-family: var(--mono); font-size: 10.5px; font-weight: 600;
+        letter-spacing: .5px; text-transform: uppercase; color: var(--muted);
+    }
+
     .cmdk-foot {
         display: flex; gap: 16px; padding: 9px 14px; border-top: 1px solid var(--border-soft);
         color: var(--muted); font-size: 11px; font-family: var(--mono);
@@ -88,6 +93,18 @@ const records = index.map((r) => ({
 
 <script>
     import Fuse from "fuse.js";
+    import { createSearch } from "@enigmax/primitives/search";
+    import { moveActive, groupRows, createRecentStore, isPaletteShortcut, type RecentEntry } from "@enigmax/primitives";
+
+    /**
+     * The site's own palette, running on the package the site documents.
+     *
+     * The DOM here stays hand-written on purpose: `SearchPalette` is React, and putting a
+     * React island on every docs page to replace a working panel would cost every reader
+     * the framework for one dialog. What is shared is the part worth sharing - the engine,
+     * the keyboard arithmetic, the grouping and the history - all of which are plain
+     * TypeScript with no framework anywhere near them.
+     */
 
     interface Rec { title: string; group: string; text: string; href: string; }
 
@@ -95,65 +112,139 @@ const records = index.map((r) => ({
     const input = document.getElementById("cmdk-input") as HTMLInputElement;
     const list = document.getElementById("cmdk-list")!;
     const data: Rec[] = JSON.parse(document.getElementById("cmdk-data")?.textContent || "[]");
-    const fuse = new Fuse(data, {
-        keys: [{ name: "title", weight: 2 }, { name: "text", weight: 1 }, { name: "group", weight: 0.5 }],
-        threshold: 0.4, ignoreLocation: true, minMatchCharLength: 2,
+
+    /** Eight rows: past that the query is the thing to narrow, not the list. */
+    const LIMIT = 8;
+    const recents = createRecentStore({ key: "enigma:docs:recent", limit: 5 });
+
+    const search = createSearch<Rec>({
+        items: data,
+        fuse: Fuse,
+        fuseOptions: {
+            keys: [{ name: "title", weight: 2 }, { name: "text", weight: 1 }, { name: "group", weight: 0.5 }],
+            threshold: 0.4, ignoreLocation: true, minMatchCharLength: 2
+        },
+        debounce: 0,
+        limit: LIMIT,
+        onResults: (matches) => {
+            rows = matches.map((match) => match.item);
+            active = 0;
+            paint();
+        }
     });
 
     const esc = (s: string) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]!));
     const SEARCH_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>';
-    let results: Rec[] = [];
-    let sel = 0;
 
-    function empty(msg: string) {
-        results = []; sel = 0;
-        list.innerHTML = `<div class="cmdk-empty">${SEARCH_ICON}<span>${esc(msg)}</span></div>`;
+    let rows: Rec[] = [];
+    let remembered: RecentEntry[] = [];
+    let active = 0;
+
+    /** What an empty query shows: what was opened before, which is the shortcut on a second visit. */
+    function recentRows(): Rec[] {
+        return remembered
+            .filter((entry) => entry.href && entry.label)
+            .map((entry) => ({ title: entry.label!, group: "Recent", text: "", href: entry.href! }));
     }
-    function render(q: string) {
-        if (!q) { empty("Type to search the docs..."); return; }
-        results = fuse.search(q).slice(0, 8).map((r) => r.item);
-        sel = 0;
-        if (!results.length) { empty(`No matches for "${q}"`); return; }
-        list.innerHTML = results.map((r, i) =>
-            `<button type="button" class="cmdk-row${i === 0 ? " sel" : ""}" role="option" data-i="${i}">`
-            + `<span class="t">${esc(r.title)}</span><span class="g">${esc(r.group)}</span>`
-            + `<span class="s">${esc(r.text)}</span></button>`).join("");
+
+    function paint() {
+        if (!rows.length) {
+            const query = input.value.trim();
+            list.innerHTML = `<div class="cmdk-empty">${SEARCH_ICON}<span>${esc(query ? `No matches for "${query}"` : "Type to search the docs...")}</span></div>`;
+            return;
+        }
+        // Grouped for the heading, but the index each row carries is its FLAT one, so the
+        // arrows run straight through a group boundary.
+        const rowMarkup = ({ row, position }: { row: Rec; position: number; }) => `
+            <button type="button" class="cmdk-row${position === active ? " sel" : ""}" role="option" data-i="${position}">
+                <span class="t">${esc(row.title)}</span><span class="g">${esc(row.group)}</span>
+                ${row.text ? `<span class="s">${esc(row.text)}</span>` : ""}
+            </button>`;
+
+        list.innerHTML = groupRows(rows, (row) => row.group).map((group) => `
+            <div class="cmdk-group" role="group" aria-label="${esc(group.label)}">
+                <p class="cmdk-group-label" aria-hidden="true">${esc(group.label)}</p>
+                ${group.rows.map(rowMarkup).join("")}
+            </div>`).join("");
     }
-    function move(d: number) {
-        if (!results.length) return;
-        sel = (sel + d + results.length) % results.length;
-        [...list.children].forEach((el, i) => (el as HTMLElement).classList.toggle("sel", i === sel));
-        (list.children[sel] as HTMLElement | undefined)?.scrollIntoView({ block: "nearest" });
+
+    function move(key: "ArrowDown" | "ArrowUp" | "Home" | "End") {
+        active = moveActive(active, rows.length, key);
+        [...list.querySelectorAll(".cmdk-row")].forEach((el) =>
+            el.classList.toggle("sel", Number((el as HTMLElement).dataset.i) === active));
+        list.querySelector(".cmdk-row.sel")?.scrollIntoView({ block: "nearest" });
     }
-    function go(r?: Rec) { if (!r) return; close(); location.href = r.href; }
+
+    function go(row?: Rec) {
+        if (!row) return;
+        remembered = recents.remember({ term: input.value.trim(), label: row.title, href: row.href, scope: row.group });
+        close();
+        location.href = row.href;
+    }
+
     function open() {
         overlay.hidden = false;
         document.body.style.overflow = "hidden";
         input.value = "";
-        empty("Type to search the docs...");
+        remembered = recents.list();
+        rows = recentRows();
+        active = 0;
+        paint();
         requestAnimationFrame(() => { overlay.classList.add("show"); input.focus(); });
     }
+
     function close() {
         overlay.classList.remove("show");
         document.body.style.overflow = "";
         setTimeout(() => { overlay.hidden = true; }, 160);
     }
 
-    input.addEventListener("input", () => render(input.value.trim()));
+    input.addEventListener("input", () => {
+        const query = input.value.trim();
+        if (!query) {
+            rows = recentRows();
+            active = 0;
+            paint();
+            return;
+        }
+        search.search(query);
+    });
+
     overlay.addEventListener("keydown", (e) => {
-        if (e.key === "ArrowDown") { e.preventDefault(); move(1); }
-        else if (e.key === "ArrowUp") { e.preventDefault(); move(-1); }
-        else if (e.key === "Enter") { e.preventDefault(); go(results[sel]); }
-        else if (e.key === "Escape") { e.preventDefault(); close(); }
+        if (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "Home" || e.key === "End") {
+            e.preventDefault();
+            move(e.key);
+        } else if (e.key === "Enter") {
+            e.preventDefault();
+            go(rows[active]);
+        } else if (e.key === "Escape") {
+            e.preventDefault();
+            close();
+        }
     });
+
     list.addEventListener("click", (e) => {
-        const b = (e.target as HTMLElement).closest(".cmdk-row") as HTMLElement | null;
-        if (b) go(results[Number(b.dataset.i)]);
+        const button = (e.target as HTMLElement).closest(".cmdk-row") as HTMLElement | null;
+        if (button) go(rows[Number(button.dataset.i)]);
     });
+    // The pointer moves the SAME highlight the keyboard uses: two of them on screen and
+    // Enter opens the row the mouse is not on.
+    list.addEventListener("mousemove", (e) => {
+        const button = (e.target as HTMLElement).closest(".cmdk-row") as HTMLElement | null;
+        if (!button) return;
+        const index = Number(button.dataset.i);
+        if (index === active) return;
+        active = index;
+        [...list.querySelectorAll(".cmdk-row")].forEach((el) =>
+            el.classList.toggle("sel", Number((el as HTMLElement).dataset.i) === active));
+    });
+
     overlay.addEventListener("mousedown", (e) => { if (e.target === overlay) close(); });
     document.querySelectorAll("[data-search-open]").forEach((el) =>
         el.addEventListener("click", (e) => { e.preventDefault(); open(); }));
     document.addEventListener("keydown", (e) => {
-        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); overlay.hidden ? open() : close(); }
+        if (!isPaletteShortcut(e)) return;
+        e.preventDefault();
+        overlay.hidden ? open() : close();
     });
 </script>
