@@ -665,3 +665,30 @@ matrix("fe-unbounded-remote-list", false, [
         code: `const { data: orders } = useQuery({ queryKey: ["orders"] });\nreturn <ul>{orders.map((o) => <li key={o.id} />)}</ul>;`,
     },
 ]);
+// --- ui-no-flag-emoji --------------------------------------------------------------
+
+/**
+ * Built from code points so this file never contains what the rule forbids - the same
+ * discipline the rule's own pattern follows, and the reason a self-flagging test cannot
+ * happen here.
+ */
+const flag = (first: number, second: number): string => String.fromCodePoint(0x1f1e6 + first, 0x1f1e6 + second);
+/** England: the black flag plus a tag sequence, the other encoding a flag emoji has. */
+const tagFlag = (subdivision: string): string =>
+    String.fromCodePoint(0x1f3f4, ...[...`gb${subdivision}`].map((char) => 0xe0000 + char.charCodeAt(0)), 0xe007f);
+
+matrix("ui-no-flag-emoji", true, [
+    { name: "language switcher label", file: "src/LanguagePicker.tsx", code: `const LANGUAGES = [{ id: "es", label: "${flag(4, 18)} Espanol" }];` },
+    { name: "i18n locale map", file: "src/locales/index.json", code: `{ "fr": { "name": "Francais", "flag": "${flag(5, 17)}" } }` },
+    { name: "readme language table", file: "README.md", code: `| ${flag(20, 18)} English | done |` },
+    { name: "tag sequence flag", file: "src/Regions.tsx", code: `<span>${tagFlag("eng")} England</span>` },
+]);
+
+matrix("ui-no-flag-emoji", false, [
+    { name: "the country as text", file: "src/LanguagePicker.tsx", code: "const LANGUAGES = [{ id: 'es', label: 'Espanol' }];" },
+    { name: "the flag primitive", file: "src/LanguagePicker.tsx", code: "<Flag code='es' /> <span>Espanol</span>" },
+    { name: "the word flag", file: "src/config.ts", code: "const featureFlag = process.env.FLAG_NEW_NAV === '1';" },
+    { name: "a plain black flag, no tags", file: "src/Icons.tsx", code: `const CHECKPOINT = "${String.fromCodePoint(0x1f3f4)}";` },
+    { name: "a single regional indicator", file: "src/Alphabet.ts", code: `const A = "${String.fromCodePoint(0x1f1e6)}";` },
+    { name: "generated bundle is excluded", file: "dist/bundle.js", code: `var l=[{id:"es",label:"${flag(4, 18)} Espanol"}];` },
+]);

@@ -9,7 +9,7 @@ import * as acct from "./accounts";
 import * as p from "@clack/prompts";
 import * as dash from "./dashboard";
 import * as skillsMod from "./skills";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { isDir, readJson } from "./util";
 import { fileURLToPath } from "node:url";
 import type { IssueKind } from "./issue";
@@ -23,7 +23,7 @@ import type { CompletionShell } from "./completion";
 import { spawnSync } from "node:child_process";
 import { starRepoInBackground } from "./github";
 import { parseGuardArgv, runGuardCli } from "./guard";
-import { dirname, join, relative, resolve } from "node:path";
+import { sep, dirname, join, relative, resolve } from "node:path";
 import { buildIssueUrl, isHeadless, openUrl } from "./issue";
 import { setupGitHooks, GUARD_PROTECTIONS } from "./security";
 import { ensureLaunchable, toolPathStatuses } from "./tool-path";
@@ -105,6 +105,16 @@ interface CliOptions extends skillsMod.InstallOptions {
     cwd: string | null;
     /** `add`: print nothing but failures. */
     silent: boolean;
+    /** `add flags`: `cdn` (jsDelivr) or `local` (download the files into the project). */
+    flags: string | null;
+    /** `add flags --flags local`: sets to download - rect, square, circle, or all. */
+    flagShapes: string | null;
+    /** `add flags --flags local`: formats to write - svg, png, webp. */
+    flagFormats: string | null;
+    /** `add flags --flags local`: countries to download, or all. */
+    flagCountries: string | null;
+    /** `add flags --flags local`: directory the flag tree is written to. */
+    flagsOut: string | null;
     /** `api`: port override for the local Claude Code API server. */
     port: number | null;
     /** `api`: optional bearer key required by the local API server. */
@@ -143,6 +153,7 @@ function parseArgs(argv: string[]): CliOptions {
         stats: false, retrieve: null, compressType: null, shellCommand: null, noRemote: false, clear: false,
         copy: false, list: false, dest: null, target: null, style: null, noDeps: false,
         overwrite: false, cwd: null, silent: false,
+        flags: null, flagShapes: null, flagFormats: null, flagCountries: null, flagsOut: null,
         preset: null, token: null, base: null, providerModel: null,
         port: null, apiKey: null, apiAccount: null, apiProfile: null, apiPack: null, expose: false, newToken: false,
         json: false,
@@ -247,6 +258,11 @@ function parseArgs(argv: string[]): CliOptions {
             case "--target": opts.target = next(); break;
             case "--style": opts.style = next(); break;
             case "--no-deps": opts.noDeps = true; break;
+            case "--flags": opts.flags = next(); break;
+            case "--flag-shapes": opts.flagShapes = next(); break;
+            case "--flag-formats": opts.flagFormats = next(); break;
+            case "--countries": opts.flagCountries = next(); break;
+            case "--flags-out": opts.flagsOut = next(); break;
             case "-h": case "--help": opts.help = true; break;
             case "-v": case "--version": opts.version = true; break;
             default:
@@ -398,6 +414,11 @@ Commands:
                          --list <query> search      --dry-run  report without writing
                          --style tailwind|css|none for a copied recipe (auto-detected)
                          --no-deps  skip the extra packages an item declares
+                       add flags also decides where the flag images come from:
+                         --flags cdn|local        jsDelivr, or files in the project
+                         --flag-shapes rect,square,circle|all   which sets to download
+                         --flag-formats svg,png,webp   raster needs sharp in the project
+                         --countries es,fr,us|all --flags-out <dir> (default public/flags)
                        Installs with the project's own package manager (npm, pnpm, yarn, bun),
                        and follows a shadcn components.json where the project has one.
   pack <subcommand>    Marketplace of optional, isolated harness packs (e.g. Helio for bug
@@ -1657,7 +1678,7 @@ async function runCodeGraphQuery(sub: string, args: string[]): Promise<number> {
  * The catalogue is read from the package installed in the project, so an agent is
  * shown the API the project actually compiles against rather than a frozen copy.
  */
-async function runAddCli(opts: CliOptions): Promise<number> {
+async function runAddCli(opts: CliOptions, interactive: boolean): Promise<number> {
     const components = await import("./components");
     const projectDir = opts.cwd ? resolve(opts.cwd) : process.cwd();
 
@@ -1755,10 +1776,120 @@ async function runAddCli(opts: CliOptions): Promise<number> {
         for (const file of result.skipped) say(`      ${dim(`kept ${relative(projectDir, file)}`)}`);
         say(`      ${dim(components.usageSnippet(item, target, opts.copy ? destination : null))}`);
         if (!item.styles) say(`      ${dim("unstyled: style it through its data-* hooks")}`);
+        // An item can carry an asset set as well as code - the flags primitive reads images,
+        // and where those come from is a decision the install is the right moment to take.
+        if (item.assets === "flags") await setupFlagAssets(opts, projectDir, interactive, say, dim);
     }
 
     say("");
     return failures ? 1 : 0;
+}
+
+/**
+ * The asset half of `enigma add flags`: where the flag images come from.
+ *
+ * The primitive already works with nothing here - it points at jsDelivr - so this only ever
+ * runs for the project that wants the files locally: an offline or air-gapped install, a CSP
+ * with no third-party `img-src`, or a build that must not break the day a CDN does. It asks
+ * once, downloads what was chosen, and prints the single line that moves the whole app onto
+ * those files.
+ */
+async function setupFlagAssets(opts: CliOptions, projectDir: string, interactive: boolean, say: (line: string) => void, dim: (s: string) => string): Promise<void> {
+    const flags = await import("./flag-assets");
+
+    let mode = (opts.flags ?? "").trim().toLowerCase();
+    if (!mode && interactive) {
+        const answer = await p.select({
+            message: "Where should the flag images come from?",
+            options: [
+                { value: "cdn", label: "CDN (jsDelivr)", hint: "nothing to download, nothing to serve" },
+                { value: "local", label: "Download into the project", hint: "no third-party request at runtime" }
+            ],
+            initialValue: "cdn"
+        });
+        // A cancelled prompt is not a choice for the other option: leave the default in place.
+        mode = p.isCancel(answer) ? "cdn" : String(answer);
+    }
+    if (!mode) mode = "cdn";
+
+    if (mode !== "local") {
+        say(`      ${dim("flags: served from jsDelivr. --flags local downloads them instead.")}`);
+        return;
+    }
+
+    // Everything below defaults to "all of it": a set that is missing the one country the
+    // page needed is the failure mode, and the whole tree is a few megabytes of SVG.
+    let shapes = (opts.flagShapes ?? "").trim().toLowerCase();
+    if (!shapes && interactive) {
+        const answer = await p.multiselect({
+            message: "Which sets?",
+            options: [
+                { value: "rect", label: "Rectangular 4:3", hint: "flag-icons" },
+                { value: "square", label: "Square 1:1", hint: "flag-icons" },
+                { value: "circle", label: "Circular", hint: "circle-flags" }
+            ],
+            initialValues: ["rect", "square", "circle"],
+            required: false
+        });
+        shapes = p.isCancel(answer) || !Array.isArray(answer) || !answer.length ? "all" : answer.join(",");
+    }
+    const wantedShapes = (!shapes || shapes === "all" ? flags.FLAG_SHAPES : shapes.split(",").map((part) => part.trim()))
+        .filter((shape): shape is import("./flag-assets").FlagShape => (flags.FLAG_SHAPES as string[]).includes(shape));
+    if (!wantedShapes.length) {
+        console.error(`      ${dim(`No such flag set: ${shapes}. Use rect, square, circle or all.`)}`);
+        return;
+    }
+
+    let countries = (opts.flagCountries ?? "").trim().toLowerCase();
+    if (!countries && interactive) {
+        const answer = await p.text({
+            message: "Which countries? (ISO codes, comma separated)",
+            placeholder: "all",
+            defaultValue: "all"
+        });
+        countries = p.isCancel(answer) ? "all" : String(answer || "all").trim().toLowerCase();
+    }
+    const codes = !countries || countries === "all"
+        ? "all" as const
+        : countries.split(",").map((part) => part.trim()).filter(Boolean);
+
+    const formats = (opts.flagFormats ?? "svg").split(",").map((part) => part.trim().toLowerCase())
+        .filter((format): format is import("./flag-assets").FlagFormat => (flags.FLAG_FORMATS as string[]).includes(format));
+    if (!formats.length) {
+        console.error(`      ${dim(`No such flag format: ${opts.flagFormats}. Use svg, png or webp.`)}`);
+        return;
+    }
+
+    // The public directory the project already has, so the URL the primitive builds resolves.
+    const publicDir = ["public", "static", "assets"].find((dir) => existsSync(join(projectDir, dir))) ?? "public";
+    const outDir = opts.flagsOut ? resolve(projectDir, opts.flagsOut) : join(projectDir, publicDir, "flags");
+
+    const spinner = interactive ? p.spinner() : null;
+    spinner?.start("Downloading flags");
+    let result: import("./flag-assets").FlagDownloadResult;
+    try {
+        result = await flags.downloadFlags(
+            { shapes: wantedShapes, codes, formats, outDir, projectDir, overwrite: opts.overwrite },
+            (done, total) => spinner?.message(`Downloading flags ${done}/${total}`)
+        );
+    } catch (error) {
+        spinner?.stop("Download failed");
+        console.error(`      ${dim(`flags: ${(error as Error).message}`)}`);
+        return;
+    }
+    spinner?.stop(`Downloaded ${result.written.length} file(s)`);
+
+    say(`      ${dim(`flags: ${result.written.length} file(s) in ${relative(projectDir, outDir) || outDir}${result.skipped ? `, ${result.skipped} already there` : ""}`)}`);
+    if (result.unknown.length) console.error(`      ${dim(`no such flag: ${result.unknown.join(", ")}`)}`);
+    if (result.failed.length) console.error(`      ${dim(`failed: ${result.failed.slice(0, 5).join(", ")}${result.failed.length > 5 ? ` and ${result.failed.length - 5} more` : ""}`)}`);
+    if (result.missingRaster.length) {
+        console.error(`      ${dim(`${result.missingRaster.join(" and ")} needs sharp in this project; SVG was written instead. Install sharp and re-run.`)}`);
+    }
+
+    // The base path is a URL, not a file path: whatever the public directory is called, it
+    // is served from the site root.
+    const basePath = `/${(relative(join(projectDir, publicDir), outDir) || "flags").split(sep).join("/")}`;
+    say(`      ${dim(`configureFlags({ source: "local", basePath: "${basePath}" }) once at startup`)}`);
 }
 
 /**
@@ -2844,7 +2975,7 @@ export async function run(argv: string[]): Promise<void> {
     if (opts.command === "recall") { process.exit(await runRecallCli(opts.positionals)); }
     if (opts.command === "codegraph") { process.exit(await runCodeGraphCli(opts.positionals)); }
     if (opts.command === "autoskills") { process.exit(await runAutoskillsCli(opts, interactive)); }
-    if (opts.command === "add" || opts.command === "components") { process.exit(await runAddCli(opts)); }
+    if (opts.command === "add" || opts.command === "components") { process.exit(await runAddCli(opts, interactive)); }
     if (opts.command === "api") { process.exit(await runApiCli(opts)); }
 
     if (opts.command === "update") {

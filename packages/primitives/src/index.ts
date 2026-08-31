@@ -27,3 +27,21 @@ export {
     type RelativeTimePrecision,
     type RelativeTimeStyle
 } from "@/core/relative-time";
+export {
+    flagSrc,
+    flagView,
+    flagAttributes,
+    normalizeFlagCode,
+    configureFlags,
+    flagConfig,
+    resetFlagConfig,
+    FLAG_RATIO,
+    FLAG_ICONS_VERSION,
+    CIRCLE_FLAGS_REF,
+    type FlagOptions,
+    type FlagConfig,
+    type FlagView,
+    type FlagShape,
+    type FlagFormat,
+    type FlagSource
+} from "@/core/flags";

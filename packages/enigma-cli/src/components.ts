@@ -55,6 +55,12 @@ export interface RegistryItem {
     files: RegistryFile[];
     /** Packages this item needs beyond its own, installed with it. */
     dependencies?: Record<string, string>;
+    /**
+     * An asset set the item can be pointed at, handled by `add` after the code lands.
+     * Only `flags` today: the flag primitive reads a CDN by default and can be moved onto
+     * files downloaded into the project instead.
+     */
+    assets?: string;
     styles: boolean;
     themeHooks?: string[];
     docs?: string;

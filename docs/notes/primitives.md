@@ -277,6 +277,53 @@ Fuse indexes on construction, so the engine is rebuilt in `setItems`/`update` an
 per keystroke. `limit` applies to the empty-query branch too - a caller asking for 10 rows
 means 10 rows, and "show everything" is the longest list of them all.
 
+## flags
+
+**The emoji flag is what this replaces, and the reason is not taste.** A flag emoji is a
+pair of regional-indicator code points, and Windows has never shipped a glyph for that pair
+in Segoe UI Emoji - it renders as the two bare letters ("ES") for the largest desktop
+platform there is, and every platform that does draw one draws a different one. There is no
+font stack that fixes it, so the fix is an image. The guardrail `ui-no-flag-emoji` is the
+enforcement half; this is the thing it points at.
+
+Two upstream sets, both SVG only, pinned in the core: lipis/flag-icons at 7.5.0 (`flags/4x3`
+for `rect`, `flags/1x1` for `square`, 271 flags) and HatScripts/circle-flags on `gh-pages`
+(`circle`, 445 flags). jsDelivr serves both, so the default costs the project nothing to
+install.
+
+- **The source is one decision, taken once.** `configureFlags({ source: "local" })` at
+  startup moves every flag on the site off the CDN; no call site mentions where an image
+  comes from. `source` takes `"cdn"`, `"local"` or a base URL, and the local layout
+  (`<base>/<shape>/<code>.<format>`) is exactly what the downloader writes, so a mirror of
+  your own is the same string with a different host.
+- **`png`/`webp` cannot come from a CDN**, because neither upstream publishes them. Asking
+  for one is downgraded to SVG with a single dev warning rather than a 404 - one warning per
+  process, not one per flag, or a list of 200 prints 200 times. The raster formats are for a
+  LOCAL set, where `enigma add flags --flags local --flag-formats webp` rasterises what it
+  downloaded.
+- **A BCP 47 tag is read by its casing, before anything is lowercased.** `es-ES` is a locale
+  and means the flag `es`; `es-ct` is a subdivision both sets publish and means the file
+  `es-ct`. Lowercase first and those two are the same string, and then one of them is always
+  wrong. An emoji flag is accepted as a `code` and converted, which is what makes migrating
+  an existing picker a rename of the component.
+- **An unresolvable code renders nothing, never a broken image.** A 404 with no alt beside a
+  country name is worse than no flag.
+- **`label` has no default and no fallback.** Without one the flag is decorative (empty alt,
+  `aria-hidden`), which is right beside a country name that is already on screen. A name is
+  never derived from the code: "ES" in a screen reader is not a country, and a name guessed
+  in the reader's wrong language is worse than silence.
+
+### The downloader (`enigma-cli/src/flag-assets.ts`)
+
+Runs from `enigma add flags` when the answer is `local`, and only then - the primitive needs
+none of it. The codes come from jsDelivr's own file index rather than a list in the source:
+a hardcoded country set goes stale the first time upstream adds a subdivision, and a stale
+list is invisible, because the download simply never fetches the flag nobody noticed was
+missing. A fixed pool of 12 workers rather than a `Promise.all` over a thousand fetches,
+which opens a thousand sockets and gets rate-limited into failing. `sharp` is resolved from
+the PROJECT and never installed behind the user: without it the SVGs are still written and
+the shortfall is reported, because a silent half of what was asked for is the worst outcome.
+
 ## cache and notifications
 
 `cache`: the in-flight dedupe matters more than the TTL. Rejections are never

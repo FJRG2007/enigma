@@ -33,3 +33,15 @@ export { Toaster, type ToasterProps, type ToastPosition, type ToastControls } fr
 export { useNetworkState } from "@/react/use-network-state";
 export { type NetworkState } from "@/core/network";
 export { RelativeTime, type RelativeTimeProps } from "@/react/relative-time";
+export { Flag, type FlagProps } from "@/react/flag";
+export {
+    flagSrc,
+    flagView,
+    flagAttributes,
+    normalizeFlagCode,
+    configureFlags,
+    type FlagOptions,
+    type FlagShape,
+    type FlagFormat,
+    type FlagSource
+} from "@/core/flags";

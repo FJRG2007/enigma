@@ -418,6 +418,68 @@
       "docs": "docs/notes/primitives.md#button"
     },
     {
+      "name": "flags",
+      "title": "Country flags",
+      "description": "A flag as an image, from the CDN or from files you downloaded, in the rectangular set or the round one. Emoji flags are the thing this replaces: Windows ships no glyph for them, so a picker built out of emoji renders as bare letters for most desktop readers.",
+      "targets": [
+        "vanilla",
+        "astro",
+        "react"
+      ],
+      "entry": {
+        "vanilla": "@enigmax/primitives",
+        "astro": "@enigmax/primitives",
+        "react": "@enigmax/primitives/react"
+      },
+      "exports": {
+        "vanilla": [
+          "flagAttributes",
+          "flagSrc",
+          "configureFlags"
+        ],
+        "astro": [
+          "flagAttributes",
+          "flagSrc",
+          "configureFlags"
+        ],
+        "react": [
+          "Flag",
+          "configureFlags"
+        ]
+      },
+      "files": [
+        {
+          "path": "src/core/flags.ts",
+          "dest": "flags/flags.ts",
+          "targets": [
+            "vanilla",
+            "astro",
+            "react"
+          ]
+        },
+        {
+          "path": "src/react/flag.tsx",
+          "dest": "flags/index.tsx",
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/core/flags": "./flags"
+          },
+          "main": true
+        }
+      ],
+      "styles": false,
+      "themeHooks": [
+        "[data-enigma-flag]",
+        "[data-enigma-flag][data-flag-shape=rect]",
+        "[data-enigma-flag][data-flag-shape=square]",
+        "[data-enigma-flag][data-flag-shape=circle]"
+      ],
+      "assets": "flags",
+      "docs": "docs/notes/primitives.md#flags"
+    },
+    {
       "name": "notifications",
       "title": "Notification queue",
       "description": "Ordering, dedupe by key, sticky errors and dismiss timers that hold instead of running while the tab is hidden. No rendering.",
