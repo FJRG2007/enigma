@@ -4,6 +4,6 @@
   "provider": "FJRG2007/enigma",
   "description": "Transactional email: React Email templates instead of hand-written HTML tables, server-side rendering, one send module behind the provider SDK, plain-text alternatives, idempotent background sending, link safety, and deliverability (SPF/DKIM/DMARC, bounce suppression, unsubscribe).",
   "updated": "2026-07-30T19:29:19+02:00",
-  "cliVersion": "1.36.8",
+  "cliVersion": "1.37.0",
   "sha": "c9724fdbcdbeab99573be3fd44d4cdd97c2a394d99f3c4395f118f17356b00ed"
 }
