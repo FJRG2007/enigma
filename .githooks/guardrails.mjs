@@ -1065,6 +1065,43 @@ var BUILTIN_RULES = [
     severity: "block",
     skill: "technical-writing-policy"
   },
+  {
+    id: "ui-no-flag-emoji",
+    label: "A flag is an image, never an emoji",
+    // Copy files plus the data files a language or country list actually lives in: an
+    // i18n locale map with a "flag" key is the single most common home for these.
+    files: ["*.tsx", "*.jsx", "*.vue", "*.svelte", "*.astro", "*.html", "*.htm", "*.ts", "*.js", "*.mts", "*.cts", "*.json", "*.md", "*.mdx"],
+    excludeFiles: [
+      "*.test.*",
+      "*.spec.*",
+      "**/tests/**",
+      "**/__tests__/**",
+      "**/fixtures/**",
+      "*.min.js",
+      "**/dist/**",
+      "**/build/**",
+      "**/_build/**",
+      "**/node_modules/**",
+      "**/vendor/**",
+      "dist/**",
+      "build/**",
+      "_build/**",
+      "node_modules/**",
+      "vendor/**"
+    ],
+    scope: "file",
+    // The two encodings a flag emoji has, both written as escapes so this file never
+    // contains one: a regional-indicator PAIR (U+1F1E6..U+1F1FF, the country flags), and
+    // the black-flag-plus-tags sequence (U+1F3F4 followed by tag characters) used for
+    // England, Scotland and Wales. The tag branch needs the trailing tag characters, so
+    // a plain black flag and the ZWJ pirate flag are not matched.
+    pattern: "[\\u{1F1E6}-\\u{1F1FF}]{2}|\\u{1F3F4}[\\u{E0020}-\\u{E007F}]+",
+    // `u` (not the default `i`): the escapes above are code-point escapes, which only
+    // mean that with the unicode flag on.
+    flags: "u",
+    message: 'Flag emoji. There is no font fix for this and it is not a style preference: Windows has never shipped country flags in its emoji font, so this renders as two bare letters ("ES") for most desktop readers, and iOS, Android, macOS and Linux each draw a different one. Render a flag as an IMAGE: `enigma add flags` (@enigmax/primitives) is `<Flag code="es" />`, which serves the rectangular set (lipis/flag-icons) or the round one (HatScripts/circle-flags) from a CDN, or from files it downloads into the project with `--flags local`. It also accepts the emoji you are replacing as its `code`, so a migration is the component and nothing else. In terminal output, a commit or a log line, drop the flag entirely rather than replacing it - a country name is the information, the glyph never was.',
+    severity: "block"
+  },
   // NOTE: there is deliberately no "Save button with no dirty check" rule, even though
   // no-op detection is one of frontend-policy's headline rules. It has no file-local
   // signature that survives measurement. The dirtiness normally lives in a parent, a store
