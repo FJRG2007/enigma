@@ -406,7 +406,9 @@ Commands:
   autoskills [path]    Detect the project's tech stack and install matching agent skills
                        (separate from the policy skills; --dry-run to preview)
   add [name...]        Headless primitives and utilities: behaviour, timing and a11y with
-                       no styles of their own. No name lists the catalogue.
+                       no styles of their own. No name lists the catalogue. Add them as a
+                       DEPENDENCY: that is how a fix reaches your project. --copy vendors the
+                       source and freezes it at today's version - for editing it, not using it.
                          -a --all       every item      --copy  vendor the source in
                          -p --path      where copies land       --target vanilla|react|astro
                          -o --overwrite replace files that are already there
@@ -1728,8 +1730,8 @@ async function runAddCli(opts: CliOptions, interactive: boolean): Promise<number
             }
         }
         if (query && !shown) console.log(`\n  ${dim("Nothing matches that. `enigma add` on its own lists everything.")}`);
-        console.log(`\n  ${dim("enigma add <name>            add as a dependency")}`);
-        console.log(`  ${dim("enigma add <name> --copy     copy the source in, yours to edit")}`);
+        console.log(`\n  ${dim("enigma add <name>            add as a dependency - the way to use these")}`);
+        console.log(`  ${dim("enigma add <name> --copy     vendor the source instead: no more updates")}`);
         console.log(`  ${dim("enigma add <name> --copy -o  and replace what is already there")}`);
         console.log(`  ${dim("enigma add --all             everything in the catalogue")}`);
         console.log(`  ${dim("enigma add --list <query>    search the catalogue")}\n`);

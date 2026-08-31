@@ -34,12 +34,13 @@ const MANAGERS = [
 ---
 <Tabs tabs={[{ id: "cli", label: "Auto" }, { id: "manual", label: "Manual" }]}>
     <div slot="cli">
-        <p class="in-lead">Adds the package and prints the import to use. Append <code>--copy</code> to write the source into your project instead.</p>
+        <p class="in-lead">Adds the package and prints the import to use. This is the way to use them: the package keeps getting fixes, and a dependency is how they reach you.</p>
         <Command command={item ? `enigma add ${item}` : "enigma add --all"} />
         {deps.length > 0 && (
             <p class="in-note">Brings <strong>{deps.join(", ")}</strong> with it. <code>--no-deps</code> leaves them out.</p>
         )}
         <p class="in-note">Installs with your project's own package manager - npm, pnpm, yarn or bun - read from its <code>packageManager</code> field or its lockfile.</p>
+        <p class="in-note"><code>--copy</code> writes the source into your project instead. Reach for it to EDIT a component, not to use one: a copy is frozen at today's version and stops receiving fixes.</p>
     </div>
 
     <div slot="manual">
