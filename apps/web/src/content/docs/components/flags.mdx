@@ -60,9 +60,13 @@ name comes from `Intl.DisplayNames`, which is already in the runtime, already tr
 and maintained by whoever maintains the platform. No table of 250 country names ships with
 the component, and none of them goes stale.
 
+It lands on `alt` AND on `title`, because those do different jobs and only one of them is
+visible: `alt` is what a screen reader reads and what shows when the image does not load,
+while a hover tooltip comes from `title` and from nothing else.
+
 | | |
 | --- | --- |
-| nothing | The country's own name, in the reader's language |
+| nothing | The country's own name, in the reader's language, read out and shown on hover |
 | `label="Spanish"` | Yours, when the flag stands for a language or a region rather than a country |
 | `decorative` | No name at all. Right beside a country name that is already on screen, where repeating it makes a screen reader say it twice |
 

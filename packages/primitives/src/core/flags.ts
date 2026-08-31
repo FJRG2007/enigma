@@ -246,6 +246,12 @@ export interface FlagAttributeOptions extends FlagOptions {
  * `Intl.DisplayNames`. `label` replaces it and `decorative` drops it. Nothing is ever
  * invented - a subdivision the platform cannot name, or a runtime without `Intl`, renders
  * as decoration rather than putting a bare "ES" into a screen reader.
+ *
+ * The name goes on `title` as well as `alt`, because those two do different jobs and only
+ * one of them is visible: `alt` is what a screen reader reads and what shows when the image
+ * fails, while a POINTER tooltip comes from `title` and from nothing else. A flag with a
+ * name nobody can see on hover is the common complaint, and it is not an accessibility
+ * nicety - the flag is often the only thing in a cell. A decorative flag gets neither.
  */
 export function flagAttributes(code: string | null | undefined, options: FlagAttributeOptions = {}): Record<string, string | number> | null {
     const view = flagView(code, options);
@@ -261,6 +267,6 @@ export function flagAttributes(code: string | null | undefined, options: FlagAtt
         "data-enigma-flag": "",
         "data-flag-code": view.code,
         "data-flag-shape": view.shape,
-        ...(label ? {} : { "aria-hidden": "true" })
+        ...(label ? { title: label } : { "aria-hidden": "true" })
     };
 }

@@ -6,7 +6,7 @@ order: 22.5
 space: components
 ---
 import Installation from "../../../components/Installation.astro";
-import { PalettePlayground } from "../../../components/playground/PalettePlayground";
+import PaletteDemo from "../../../components/PaletteDemo.astro";
 
 The panel that opens on Ctrl/Cmd+K. It is a dialog, not a field: a trigger, an overlay, a
 focus trap, a listbox and a footer, which is why it is its own component rather than a prop
@@ -17,7 +17,7 @@ on the search input - and why it is made of parts you can compose.
     demo renders, because the site's palette hydrates first and would not see it yet. */}
 <div data-palette-demo hidden></div>
 
-<PalettePlayground client:only="react" />
+<PaletteDemo />
 
 ## Usage
 

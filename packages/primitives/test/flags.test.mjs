@@ -93,6 +93,17 @@ test("a name is never invented for something the platform cannot name", () => {
     assert.equal(attributes["aria-hidden"], "true");
 });
 
+test("the name is on title as well, because that is the half a pointer can see", () => {
+    // `alt` is read out and shown when the image fails; a hover tooltip comes from `title`
+    // and from nothing else, and a flag is often the only thing in its cell.
+    const named = flagAttributes("es", { locale: "en" });
+    assert.equal(named.title, "Spain");
+    assert.equal(named.alt, named.title);
+
+    const decoration = flagAttributes("es", { decorative: true });
+    assert.equal("title" in decoration, false, "decoration has nothing to say on hover either");
+});
+
 test("an explicit label wins, and decorative drops the name entirely", () => {
     assert.equal(flagAttributes("es", { label: "Spanish" }).alt, "Spanish");
 

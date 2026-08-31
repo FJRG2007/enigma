@@ -52,6 +52,9 @@ export function Flag({ code, label, decorative = false, locale, shape, format, s
         <img
             src={view.src}
             alt={name}
+            // `alt` is read; `title` is what a pointer shows. Only one of them is visible,
+            // and a flag whose name never appears on hover is the thing people report.
+            title={name || undefined}
             width={view.width}
             height={view.height}
             loading="lazy"

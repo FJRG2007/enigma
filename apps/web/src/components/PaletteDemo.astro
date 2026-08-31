@@ -1,0 +1,21 @@
+---
+import { docHref } from "../lib/url";
+import { buildSearchIndex } from "../lib/search";
+import { PalettePlayground } from "./playground/PalettePlayground";
+
+/**
+ * The palette's demo, holding the site's own search index.
+ *
+ * It lives in an .astro file because that is where the index can be built: MDX has no
+ * top-level await, and a demo that searches eight invented rows demonstrates nothing about a
+ * component whose whole job is what it finds.
+ */
+const index = await buildSearchIndex();
+const records = index.map((record) => ({
+    title: record.title,
+    section: record.group,
+    text: record.text,
+    href: docHref(record.page, record.id)
+}));
+---
+<PalettePlayground client:only="react" records={records} />

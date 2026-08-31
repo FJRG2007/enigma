@@ -35,8 +35,15 @@ const STYLE: StyleToken[] = [
 
 const INITIAL: Values = { placeholder: "Search the components", grouped: true, recents: true, footer: true };
 
-/** The same corpus the docs search uses, small enough to see the ranking work. */
-const DOCS = [
+export interface DemoRecord {
+    title: string;
+    section: string;
+    text?: string;
+    href?: string;
+}
+
+/** The fallback corpus, for a page that does not hand one over. */
+const FALLBACK: DemoRecord[] = [
     { title: "Marquee", section: "Motion" },
     { title: "Logo wall", section: "Motion" },
     { title: "Input", section: "Forms" },
@@ -57,7 +64,17 @@ function code(values: Values): string {
     return `import { SearchPalette } from "@enigmax/primitives/react/palette";\n\n<SearchPalette\n${props.map((prop) => `    ${prop}`).join("\n")}\n/>`;
 }
 
-export function PalettePlayground() {
+export interface PalettePlaygroundProps {
+    /**
+     * The site's own search index, so the demo searches THESE DOCS rather than a toy list -
+     * the point of a palette is what it finds, and eight invented rows demonstrate nothing.
+     * Selecting a row opens the page, exactly as the site's palette does.
+     */
+    records?: DemoRecord[];
+}
+
+export function PalettePlayground({ records }: PalettePlaygroundProps = {}) {
+    const items = records?.length ? records : FALLBACK;
     return (
         <Playground<Values>
             controls={CONTROLS}
@@ -67,11 +84,12 @@ export function PalettePlayground() {
             styleSelector=":root"
             render={(values) => (
                 <div className="pg-palette" data-palette-demo="">
-                    <SearchPalette
-                        items={DOCS}
-                        keys={["title"]}
+                    <SearchPalette<DemoRecord>
+                        items={items}
+                        keys={["title", "text", "section"]}
                         delay={0}
                         labelOf={(doc) => doc.title}
+                        descriptionOf={(doc) => doc.text?.slice(0, 90)}
                         groupBy={values.grouped ? (doc) => doc.section : undefined}
                         recents={values.recents}
                         recentsKey="enigma:docs:palette-demo"
@@ -80,7 +98,9 @@ export function PalettePlayground() {
                         // The real key. The site's own palette reads the marker below and
                         // stands down on this page, so the two never fight over it.
                         shortcut="k"
-                        onSelect={() => undefined}
+                        // A row goes where the site's palette would go, so the demo is the
+                        // real thing rather than a picture of it.
+                        onSelect={(doc) => { if (doc.href) window.location.href = doc.href; }}
                     />
                     <p className="pg-flag-alt">or press Ctrl/Cmd + K anywhere on this page</p>
                 </div>
