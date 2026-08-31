@@ -579,3 +579,89 @@ test("operatorHomePathLeak: the home path still matches at the end of a sentence
     expect(leaksUnder("/home/dev", "Everything lives under /home/dev.")).toBe(true);
     expect(leaksUnder("C:\\Users\\ana", "Everything lives under C:\\Users\\ana.")).toBe(true);
 });
+
+// --- fe-unbounded-remote-list ------------------------------------------------------
+
+matrix("fe-unbounded-remote-list", true, [
+    {
+        name: "useQuery collection mapped whole",
+        file: "src/OrdersTable.tsx",
+        code: `export function Orders() {\n  const { data: orders } = useQuery({ queryKey: ["orders"], queryFn: getOrders });\n  return <tbody>{orders.map((o) => <Row key={o.id} order={o} />)}</tbody>;\n}`,
+    },
+    {
+        name: "generated RTK Query hook",
+        file: "src/Invoices.tsx",
+        code: `export function Invoices() {\n  const { data: invoices } = useGetInvoicesQuery();\n  return <ul>{invoices.map((i) => <li key={i.id}>{i.total}</li>)}</ul>;\n}`,
+    },
+    {
+        name: "server component awaiting findMany",
+        file: "app/orders/page.tsx",
+        code: `export default async function Page() {\n  const rows = await prisma.order.findMany({ where: { userId } });\n  return <ul>{rows.map((r) => <li key={r.id} />)}</ul>;\n}`,
+    },
+    {
+        name: "svelte each over a fetched list",
+        file: "src/routes/Orders.svelte",
+        code: `<script>\n  const orders = await getDocs(query);\n</script>\n{#each orders as order}\n  <Row {order} />\n{/each}`,
+    },
+    {
+        name: "vue v-for over a fetched list",
+        file: "src/Orders.vue",
+        code: `<script setup>\nconst { data: orders } = useSWR("/api/orders");\n</script>\n<template>\n  <li v-for="o in orders" :key="o.id" />\n</template>`,
+    },
+]);
+
+matrix("fe-unbounded-remote-list", false, [
+    // The false positives the first cut produced when it only asked "fetches?" and "maps?":
+    // every one of these maps a module constant in a component that fetches something else.
+    {
+        name: "maps a module constant, not the fetched list",
+        file: "src/Wizard.tsx",
+        code: `const STEPS = ["one", "two", "three"];\nexport function Wizard() {\n  const { data: draft } = useQuery({ queryKey: ["draft"] });\n  return <ol>{STEPS.map((s) => <li key={s}>{s}</li>)}</ol>;\n}`,
+    },
+    {
+        name: "maps a literal array with no fetch at all",
+        file: "src/Nav.tsx",
+        code: `const links = [{ href: "/a" }, { href: "/b" }];\nexport const Nav = () => <nav>{links.map((l) => <a key={l.href} href={l.href} />)}</nav>;`,
+    },
+    // Every dialect of "the author already bounded it":
+    {
+        name: "asks the server for a page",
+        file: "src/Orders.tsx",
+        code: `const { data: orders } = useQuery({ queryKey: ["orders", page], queryFn: () => get({ pageSize: 50 }) });\nreturn <ul>{orders.map((o) => <li key={o.id} />)}</ul>;`,
+    },
+    {
+        name: "infinite query",
+        file: "src/Feed.tsx",
+        code: `const { data: posts, fetchNextPage } = useInfiniteQuery({ queryKey: ["posts"] });\nreturn <ul>{posts.map((p) => <li key={p.id} />)}</ul>;`,
+    },
+    {
+        name: "virtualized",
+        file: "src/Rows.tsx",
+        code: `const { data: rows } = useQuery({ queryKey: ["rows"] });\nconst v = useVirtualizer({ count: rows.length });\nreturn <ul>{rows.map((r) => <li key={r.id} />)}</ul>;`,
+    },
+    {
+        name: "bounded in the query itself",
+        file: "app/page.tsx",
+        code: `const rows = await prisma.order.findMany({ where: { userId }, take: 50 });\nreturn <ul>{rows.map((r) => <li key={r.id} />)}</ul>;`,
+    },
+    {
+        name: "sliced before rendering",
+        file: "src/Recent.tsx",
+        code: `const { data: events } = useQuery({ queryKey: ["events"] });\nreturn <ul>{events.slice(0, 5).map((e) => <li key={e.id} />)}</ul>;`,
+    },
+    {
+        name: "marked as bounded by construction",
+        file: "src/Cards.tsx",
+        code: `const { data: cards } = useQuery({ queryKey: ["cards"] });\n// enigma:allow-unbounded-list - at most three payment methods per account\nreturn <ul>{cards.map((c) => <li key={c.id} />)}</ul>;`,
+    },
+    {
+        name: "fetches a single record, renders its fields",
+        file: "src/Profile.tsx",
+        code: `const { data: user } = useQuery({ queryKey: ["me"] });\nreturn <dl><dt>{user.name}</dt><dd>{user.email}</dd></dl>;`,
+    },
+    {
+        name: "test file is excluded",
+        file: "src/Orders.test.tsx",
+        code: `const { data: orders } = useQuery({ queryKey: ["orders"] });\nreturn <ul>{orders.map((o) => <li key={o.id} />)}</ul>;`,
+    },
+]);

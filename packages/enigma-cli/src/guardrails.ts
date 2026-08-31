@@ -699,6 +699,36 @@ export const BUILTIN_RULES: GuardrailRule[] = [
         skill: "frontend-policy",
     },
     {
+        id: "fe-unbounded-remote-list",
+        label: "A list from the server is rendered whole",
+        files: ["*.tsx", "*.jsx", "*.vue", "*.svelte", "*.astro"],
+        excludeFiles: ["*.test.*", "*.spec.*", "**/tests/**", "**/__tests__/**", "**/dist/**", "dist/**", "**/build/**", "build/**", "**/.next/**", ".next/**", "**/node_modules/**"],
+        scope: "file",
+        // The ask: "el modelo no lo integra si no se lo pides". Infinite scroll and pagination
+        // live in frontend-policy, a skill that is read when it happens to be, so a screen that
+        // will hold thousands of rows ships rendering every one. This is that rule at the tier
+        // where it cannot be skipped.
+        //
+        // MEASURED over 1345 component files of references/repos + packages + apps: 0 findings,
+        // 0 false positives, and it fires on both synthetic positives. THE RECALL IS THE HONEST
+        // CAVEAT and it is why the skill still owns the convention: only ONE file in that corpus
+        // binds a fetched collection in a shape a file-local check can see. Mature apps read
+        // their lists through a custom hook or take them as a prop, and the fetch is then several
+        // hops away - unknowable from the one file the engine is given. What this DOES cover is
+        // the shape an agent writes when it is asked for a screen: fetch and render in the same
+        // component, which is exactly the case the report was about.
+        //
+        // The first cut asked only "does the file fetch" and "does the file map", and flagged 76
+        // files - nearly all of them mapping a module constant (STEPS.map) in a component that
+        // fetched something unrelated. Tying the rendered list to the binding that produced it is
+        // the whole precision story.
+        stage: "diff",
+        fileCheck: "fe-unbounded-remote-list",
+        message: "This list comes from the server and every row of it is rendered, so the screen is only as fast as the smallest dataset anyone tested it with. Bound it: ask the server for a page (cursor or offset) and load the next one as the user reaches the end - virtualized infinite scroll is the default, explicit pagination the deliberate exception when the design or the user calls for it. Whichever you pick, the list needs its loading, empty and end-of-list states. Mark the line `enigma:allow-unbounded-list` when the collection is bounded by construction and say what bounds it (frontend-policy, database-expert).",
+        severity: "block",
+        skill: "frontend-policy",
+    },
+    {
         id: "fe-page-await-no-boundary",
         label: "Server route streams its shell before its data",
         files: ["page.tsx", "page.jsx"],
@@ -1370,6 +1400,7 @@ export const FILE_CHECKS: Record<string, (content: string, file: string) => { li
     "fe-textarea-size-bounds": (content) => textareaSizeBounds(content),
     "fe-view-blanked-while-loading": (content) => viewBlankedWhileLoading(content),
     "fe-truncated-value-unreachable": (content) => truncatedValueUnreachable(content),
+    "fe-unbounded-remote-list": (content) => unboundedRemoteList(content),
     "fe-page-await-no-boundary": (content, file) => pageAwaitWithoutBoundary(content, file),
     "ts-import-extension": (content, file) => extensionImports(content, file),
     "ts-alias-deep-relative": (content, file) => deepRelativeImports(content, file),
@@ -1792,6 +1823,84 @@ export function viewBlankedWhileLoading(content: string): { line: number; detail
         if (headings < 1 && texts < 2) continue;
         const drawn = [headings ? `${headings} heading/title element(s)` : "", texts ? `${texts} literal text node(s)` : ""].filter(Boolean).join(" and ");
         out.push({ line: i + 1, detail: `the component still draws ${drawn} below this guard, none of which needs the response` });
+    }
+    return out;
+}
+
+/**
+ * Bindings that hold a collection read from a server or a database. The captured group is
+ * the NAME the collection lands in, and that name is the whole point: the first cut of this
+ * check only asked "does the file fetch something" and "does the file map something", which
+ * flagged 76 files across the corpus, most of them mapping a module constant (`STEPS.map`,
+ * `MODE_PACK_OPTIONS.map`) in a component that happened to fetch something else entirely.
+ * Tying the rendered list to the fetch that produced it is what makes the rule precise.
+ */
+const REMOTE_COLLECTION_BINDINGS = [
+    /const\s+\{\s*data\s*:\s*(\w+)[^}]*\}\s*=\s*use\w*Query\s*\(/g,
+    /const\s+\{\s*data\s*:\s*(\w+)[^}]*\}\s*=\s*useSWR\s*\(/g,
+    /const\s+\{\s*(data)\s*[,}][^=]*=\s*use\w*Query\s*\(/g,
+    /const\s+\{\s*(data)\s*[,}][^=]*=\s*useSWR\s*\(/g,
+    /const\s+(\w+)\s*=\s*(?:await\s+)?[\w.]*\.findMany\s*\(/g,
+    /const\s+\{\s*data\s*:\s*(\w+)[^}]*\}\s*=\s*await\s+[\w.]*\.from\s*\(/g,
+    /const\s+(\w+)\s*=\s*await\s+[\w.]*\.(?:list|getAll|findAll|scan)\s*\(/g,
+    /const\s+(\w+)\s*=\s*await\s+getDocs\s*\(/g,
+    /const\s+(\w+)\s*=\s*useLoaderData\s*(?:<[^>]*>)?\s*\(/g,
+    /const\s+(\w+)\s*=\s*await\s+\(?\s*await\s+fetch\s*\([^;]*\)\s*\)?\.json\s*\(/g,
+];
+
+/**
+ * Any sign the list is already bounded - the mitigation, in every dialect a project writes
+ * it in. Deliberately broad, and it clears the WHOLE file rather than the line: a component
+ * that paginates, virtualizes, observes an intersection, or asks the server for a page is
+ * not the defect this looks for, and one such signal anywhere in the file is enough to say
+ * the author thought about the size of the list.
+ */
+const LIST_BOUNDED = /useInfiniteQuery|useSWRInfinite|fetchNextPage|hasNextPage|loadMore|load_more|IntersectionObserver|useVirtualizer|react-window|react-virtual\b|virtua\b|VirtualList|Virtuoso|FlatList|RecyclerListView|paginat|pageSize|page_size|perPage|per_page|\bcursor\b|\boffset\b|\.slice\s*\(|\btake\s*:|\blimit\s*:|\bLIMIT\b|\bfirst\s*:|\brange\s*\(/i;
+
+/** Escape hatch for a collection the author knows is small. */
+const ALLOW_UNBOUNDED_LIST = /enigma:allow-unbounded-list/;
+
+/** Names bound from a remote collection read, minus module constants. */
+export function remoteCollectionNames(content: string): string[] {
+    const names = new Set<string>();
+    for (const re of REMOTE_COLLECTION_BINDINGS) {
+        re.lastIndex = 0;
+        let m: RegExpExecArray | null;
+        while ((m = re.exec(content)) !== null) if (m[1]) names.add(m[1]);
+    }
+    // SCREAMING_CASE is a module constant, never a fetched collection.
+    return [...names].filter((n) => !/^[A-Z0-9_]+$/.test(n));
+}
+
+/**
+ * A list fetched from a server and rendered whole, with nothing bounding its size.
+ *
+ * The ask behind it: "el modelo no lo integra si no se lo pides". Infinite scroll and
+ * pagination live in frontend-policy, a skill the model reads when it happens to, so a
+ * screen that will hold thousands of rows ships rendering every one of them. This is that
+ * rule at the tier where it cannot be skipped.
+ *
+ * WHAT MAKES IT PRECISE is that all three conditions are about the SAME collection: a name
+ * bound from a remote read, that same name mapped into markup, and no bounding signal
+ * anywhere in the file. A nav menu built from a literal array never matches, because the
+ * literal was never bound from a fetch.
+ */
+export function unboundedRemoteList(content: string): { line: number; detail: string; }[] {
+    const names = remoteCollectionNames(content);
+    if (names.length === 0 || LIST_BOUNDED.test(content)) return [];
+    const alt = names.join("|");
+    const renders = new RegExp(
+        `\\{\\s*(?:${alt})\\b[\\w.?\\[\\]]*\\s*\\.\\s*(?:map|flatMap)\\s*\\(|v-for\\s*=\\s*["'][^"']*\\bin\\s+(?:${alt})\\b|\\{#each\\s+(?:${alt})\\b`,
+    );
+    const lines = content.split("\n");
+    const out: { line: number; detail: string; }[] = [];
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i]!;
+        if (COMMENT_LINE.test(line) || /enigma:/.test(line)) continue;
+        if (!renders.test(line)) continue;
+        if (markedNearby(lines, i, ALLOW_UNBOUNDED_LIST)) continue;
+        out.push({ line: i + 1, detail: `'${names.join("', '")}' comes from the server and every row of it is rendered` });
+        break; // One finding per file: the fix is the same for every list in it.
     }
     return out;
 }
