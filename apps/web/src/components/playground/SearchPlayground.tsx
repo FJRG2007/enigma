@@ -1,7 +1,7 @@
 import Fuse from "fuse.js";
 import { useEffect, useState } from "react";
 import { useSearch } from "@enigmax/primitives/react";
-import { Playground, type Control } from "./Playground";
+import { Playground, type Control, type StyleToken } from "./Playground";
 
 /**
  * The search playground. The engine is chosen at construction - it indexes the list once
@@ -49,6 +49,13 @@ const CONTROLS: Control<Values>[] = [
         name: "limit", label: "Limit", type: "select",
         options: [{ value: "0", label: "none" }, { value: "3", label: "3" }, { value: "5", label: "5" }]
     }
+];
+
+/** The engine renders nothing, so what there is to style is the field and its result rows. */
+const STYLE: StyleToken[] = [
+    { name: "demo-row-active", label: "Row hover", type: "color", property: "background", value: "#1c1c1c", tailwind: "bg-[{}]" },
+    { name: "demo-row-color", label: "Text", type: "color", property: "color", value: "#f5f5f5", tailwind: "text-[{}]" },
+    { name: "demo-row-size", label: "Text size", type: "px", property: "font-size", value: "13px", min: 11, max: 18, tailwind: "text-[{}]" }
 ];
 
 const INITIAL: Values = { fuse: true, debounce: "120", minLength: "0", limit: "5" };
@@ -121,6 +128,8 @@ export function SearchPlayground() {
             controls={CONTROLS}
             initial={INITIAL}
             code={code}
+            style={STYLE}
+            styleSelector=".result"
             render={(values) => (
                 <Field
                     // The engine indexes on construction, so any option that shapes it

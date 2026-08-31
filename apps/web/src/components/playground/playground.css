@@ -53,14 +53,14 @@
    it is the CSS recipe's look, so the preview matches what `--copy` writes. */
 .pg-btn {
     display: inline-flex; align-items: center; gap: 8px;
-    font-family: var(--mono); font-size: 13px; font-weight: 600;
+    font-family: var(--mono); font-size: var(--demo-font-size, 13px); font-weight: 600;
     /* Explicit, because this class dresses BOTH a <button> and an <a>: a button takes
        `line-height: normal` from the user agent while an anchor inherits the page's 1.6,
        so the same button grew several pixels taller the moment it was given an href. Every
        property a button gets from the UA and an anchor does not has to be set here. */
     line-height: 1.25;
-    color: #101010; background: var(--accent);
-    border: 1px solid transparent; border-radius: 9px; padding: 9px 16px;
+    color: var(--demo-color, #101010); background: var(--demo-bg, var(--accent));
+    border: 1px solid transparent; border-radius: var(--demo-radius, 9px); padding: var(--demo-padding, 9px 16px);
     cursor: pointer; text-decoration: none; text-align: center;
     transition: opacity 120ms ease-out;
 }
@@ -83,7 +83,12 @@
 .pg-search { display: grid; gap: 10px; width: min(420px, 100%); }
 .pg-search-in { width: 100%; }
 .pg-results { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; min-height: 116px; align-content: start; }
-.pg-results li { display: flex; align-items: center; gap: 10px; font-size: 12.5px; color: var(--text); padding: 3px 2px; }
+.pg-results li {
+    display: flex; align-items: center; gap: 10px;
+    font-size: var(--demo-row-size, 12.5px); color: var(--demo-row-color, var(--text));
+    padding: 3px 6px; border-radius: 6px;
+}
+.pg-results li:hover { background: var(--demo-row-active, transparent); }
 .pg-kind { font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
 .pg-score { margin-left: auto; font-family: var(--mono); font-size: 10.5px; color: var(--accent); }
 .pg-none { color: var(--muted); }
@@ -92,13 +97,14 @@
 .pg-marquee { width: 100%; }
 .pg-pill {
     display: inline-flex; align-items: center;
-    font-family: var(--mono); font-size: 12px; color: var(--muted);
-    background: var(--surface2); border: 1px solid var(--border); border-radius: 999px;
+    font-family: var(--mono); font-size: 12px; color: var(--demo-pill-color, var(--muted));
+    background: var(--demo-pill-bg, var(--surface2)); border: 1px solid var(--border);
+    border-radius: var(--demo-pill-radius, 999px);
     padding: 6px 13px; white-space: nowrap; user-select: none;
 }
 
 /* The timestamp is the whole preview, so it gets read at a size worth reading. */
-.pg-time { font-family: var(--mono); font-size: 19px; color: var(--text); }
+.pg-time { color: var(--demo-time-color, var(--muted)); font-size: var(--demo-time-size, 14px); }
 
 /* The wall wants the full width of the pane - and MUST have a width that does not come
    from its own content. The preview pane centres its items, which sizes them to max-content,
@@ -108,6 +114,33 @@
 
 /* Flag preview: the image, and the name a screen reader would announce beside it. */
 .pg-flags { display: grid; gap: 10px; justify-items: center; }
-.pg-flag { border-radius: 3px; }
+.pg-flag {
+    border-radius: var(--demo-flag-radius, 3px);
+    outline: 1px solid var(--demo-flag-ring, transparent);
+    outline-offset: 1px;
+}
 .pg-flag[data-flag-shape="circle"] { border-radius: 999px; }
 .pg-flag-alt { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+
+/* The Props / Style tabs on the control panel, and the Component / CSS / Tailwind tabs on
+   the code block. Both are the same control: a strip of text buttons, one of them current. */
+.pg-h-tabs { display: flex; gap: 4px; padding: 0; }
+.pg-h-tabs button, .pg-out button {
+    font-family: var(--mono); font-size: 11px; letter-spacing: .4px; text-transform: uppercase;
+    color: var(--muted); background: transparent; border: 0; border-radius: 6px;
+    padding: 4px 8px; cursor: pointer;
+}
+.pg-h-tabs button.is-on, .pg-out button.is-on { color: var(--text); background: var(--surface2); }
+.pg-h-tabs button:hover, .pg-out button:hover { color: var(--text); }
+
+.pg-out { display: flex; gap: 4px; padding: 8px 10px 0; }
+
+/* A colour input is a swatch here, not the browser's chrome around one. */
+.pg-color {
+    width: 34px; height: 22px; padding: 0; cursor: pointer;
+    background: transparent; border: 1px solid var(--border); border-radius: 6px;
+}
+.pg-color::-webkit-color-swatch-wrapper { padding: 2px; }
+.pg-color::-webkit-color-swatch { border: 0; border-radius: 4px; }
+
+.pg-range { width: 120px; accent-color: var(--accent); cursor: pointer; }

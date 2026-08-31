@@ -1,5 +1,5 @@
 import { Flag } from "@enigmax/primitives/react/flag";
-import { Playground, type Control } from "./Playground";
+import { Playground, type Control, type StyleToken } from "./Playground";
 
 /**
  * The flag's playground. Everything here changes what the image IS - which set it comes
@@ -38,6 +38,12 @@ const CONTROLS: Control<Values>[] = [
     { name: "decorative", label: "Decorative", type: "boolean", hint: "no name at all" }
 ];
 
+/** The flag is an image, so its look is the box around it. */
+const STYLE: StyleToken[] = [
+    { name: "demo-flag-radius", label: "Radius", type: "px", property: "border-radius", value: "3px", min: 0, max: 40, tailwind: "rounded-[{}]" },
+    { name: "demo-flag-ring", label: "Ring", type: "color", property: "outline-color", value: "#2a2a2a", tailwind: "outline-[{}]" }
+];
+
 const INITIAL: Values = { code: "es", shape: "rect", size: "24", label: "", decorative: false };
 
 /** Only the props that are not defaults, so the code reads like something you would write. */
@@ -57,6 +63,8 @@ export function FlagPlayground() {
             controls={CONTROLS}
             initial={INITIAL}
             code={code}
+            style={STYLE}
+            styleSelector=".flag"
             render={(values) => (
                 <div className="pg-flags">
                     <Flag

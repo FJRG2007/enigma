@@ -1,5 +1,5 @@
 import "@enigmax/primitives/toast.css";
-import { Playground, type Control } from "./Playground";
+import { Playground, type Control, type StyleToken } from "./Playground";
 import { Toaster, useNotifications } from "@enigmax/primitives/react";
 import type { NotificationTone, ToastPosition } from "@enigmax/primitives/react";
 
@@ -32,6 +32,15 @@ const CONTROLS: Control<Values>[] = [
     },
     { name: "action", label: "Undo action", type: "boolean" },
     { name: "sticky", label: "Stays until dismissed", type: "boolean", hint: "errors do anyway" }
+];
+
+/** The variables `@enigmax/primitives/toast.css` declares, so the CSS tab is real theming. */
+const STYLE: StyleToken[] = [
+    { name: "enigma-toast-bg", label: "Toast", type: "color", property: "--enigma-toast-bg", value: "#101010" },
+    { name: "enigma-toast-border", label: "Border", type: "color", property: "--enigma-toast-border", value: "#2a2a2a" },
+    { name: "enigma-toast-text", label: "Text", type: "color", property: "--enigma-toast-text", value: "#f5f5f5" },
+    { name: "enigma-toast-radius", label: "Radius", type: "px", property: "--enigma-toast-radius", value: "12px", min: 0, max: 28 },
+    { name: "enigma-toast-width", label: "Width", type: "px", property: "--enigma-toast-width", value: "352px", min: 240, max: 480 }
 ];
 
 const INITIAL: Values = { title: "Saved", body: "Two files changed", tone: "success", position: "bottom-right", action: false, sticky: false };
@@ -81,6 +90,8 @@ export function ToastPlayground() {
             controls={CONTROLS}
             initial={INITIAL}
             code={code}
+            style={STYLE}
+            styleSelector=":root"
             render={(values) => (
                 <>
                     <Raise values={values} />

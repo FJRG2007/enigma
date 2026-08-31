@@ -1,5 +1,5 @@
 import { Button } from "@enigmax/primitives/react";
-import { Playground, type Control } from "./Playground";
+import { Playground, type Control, type StyleToken } from "./Playground";
 
 /**
  * The button's own playground. The props here are BEHAVIOUR - a cooldown you have to wait
@@ -34,6 +34,21 @@ const CONTROLS: Control<Values>[] = [
     { name: "disabled", label: "Disabled", type: "boolean" }
 ];
 
+/**
+ * The look, as tokens.
+ *
+ * The primitive ships no styles, so what you see here is this page's CSS - and these are the
+ * five declarations that make it. Change one and the preview changes; the CSS and Tailwind
+ * tabs below print exactly what you just did, ready to paste into your own button.
+ */
+const STYLE: StyleToken[] = [
+    { name: "demo-bg", label: "Background", type: "color", property: "background", value: "#e0a458", tailwind: "bg-[{}]" },
+    { name: "demo-color", label: "Text", type: "color", property: "color", value: "#101010", tailwind: "text-[{}]" },
+    { name: "demo-font-size", label: "Text size", type: "px", property: "font-size", value: "13px", min: 11, max: 20, tailwind: "text-[{}]" },
+    { name: "demo-radius", label: "Radius", type: "px", property: "border-radius", value: "9px", min: 0, max: 24, tailwind: "rounded-[{}]" },
+    { name: "demo-padding", label: "Padding", type: "text", property: "padding", value: "9px 16px", tailwind: "p-[{}]" }
+];
+
 const INITIAL: Values = { label: "Save", async: true, pending: "Saving...", cooldown: "3000", shortcut: "", href: "", disabled: false };
 
 const wait = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 1200));
@@ -64,6 +79,8 @@ export function ButtonPlayground() {
             controls={CONTROLS}
             initial={INITIAL}
             code={code}
+            style={STYLE}
+            styleSelector=".my-button"
             render={(values) => (
                 <Button
                     href={values.href || undefined}

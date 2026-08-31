@@ -2,7 +2,7 @@ import { useState } from "react";
 import "@enigmax/primitives/input.css";
 import { checkPasswordBreach } from "@enigmax/utils";
 import { Input } from "@enigmax/primitives/react/input";
-import { Playground, type Control } from "./Playground";
+import { Playground, type Control, type StyleToken } from "./Playground";
 
 /**
  * The input's playground, driven by `type` - because that is what drives the component.
@@ -72,6 +72,21 @@ function controlsFor(values: Values): Control<Values>[] {
     return [...SHARED, ...TAIL];
 }
 
+/**
+ * The look, as the stylesheet's own custom properties.
+ *
+ * These are not demo-only knobs: they are the variables `@enigmax/primitives/input.css`
+ * declares, so the CSS tab prints a block you can paste into your app and get exactly what
+ * is on screen.
+ */
+const STYLE: StyleToken[] = [
+    { name: "enigma-input-bg", label: "Field", type: "color", property: "--enigma-input-bg", value: "#171717", tailwind: "bg-[{}]" },
+    { name: "enigma-input-border", label: "Border", type: "color", property: "--enigma-input-border", value: "#404040", tailwind: "border-[{}]" },
+    { name: "enigma-input-text", label: "Text", type: "color", property: "--enigma-input-text", value: "#f5f5f5", tailwind: "text-[{}]" },
+    { name: "enigma-input-font-size", label: "Text size", type: "px", property: "--enigma-input-font-size", value: "14px", min: 12, max: 20, tailwind: "text-[{}]" },
+    { name: "enigma-input-radius", label: "Radius", type: "px", property: "--enigma-input-radius", value: "8px", min: 0, max: 24, tailwind: "rounded-[{}]" }
+];
+
 const INITIAL: Values = {
     type: "password",
     placeholder: "Password",
@@ -114,6 +129,8 @@ export function InputPlayground() {
             controls={controlsFor}
             initial={INITIAL}
             code={code}
+            style={STYLE}
+            styleSelector=":root"
             render={(values) => (
                 <div className="pg-field">
                     {values.type === "search" ? (

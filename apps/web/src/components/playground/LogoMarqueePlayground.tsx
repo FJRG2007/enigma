@@ -1,4 +1,4 @@
-import { Playground, type Control } from "./Playground";
+import { Playground, type Control, type StyleToken } from "./Playground";
 // enigma:allow-deep-relative - the recipe is COPIED into a project, not imported from the
 // package, so the docs load the exact file `enigma add logo-marquee --copy` writes. A copy
 // of it here would be a second version to keep in step, which is the drift this avoids.
@@ -52,6 +52,12 @@ const CONTROLS: Control<Values>[] = [
     { name: "hover", label: "Pause on hover", type: "boolean" }
 ];
 
+/** The variables the logo wall's stylesheet declares. */
+const STYLE: StyleToken[] = [
+    { name: "logo-marquee-gap", label: "Gap", type: "px", property: "--logo-marquee-gap", value: "56px", min: 16, max: 120 },
+    { name: "logo-marquee-height", label: "Logo height", type: "px", property: "--logo-marquee-height", value: "28px", min: 16, max: 64 }
+];
+
 const INITIAL: Values = { speed: "40", gap: "56", logoHeight: "28", tone: "mono", fade: true, hover: true };
 
 function code(values: Values): string {
@@ -82,6 +88,8 @@ export function LogoMarqueePlayground() {
             controls={CONTROLS}
             initial={INITIAL}
             code={code}
+            style={STYLE}
+            styleSelector=":root"
             render={(values) => (
                 <div className="pg-wall">
                     <LogoMarquee

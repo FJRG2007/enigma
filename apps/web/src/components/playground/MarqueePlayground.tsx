@@ -1,6 +1,6 @@
 import type { Ref } from "react";
 import "@enigmax/primitives/marquee.css";
-import { Playground, type Control } from "./Playground";
+import { Playground, type Control, type StyleToken } from "./Playground";
 import { useMarquee, type MarqueeHover } from "@enigmax/primitives/react";
 
 /**
@@ -34,6 +34,14 @@ const CONTROLS: Control<Values>[] = [
     },
     { name: "reverse", label: "Reverse", type: "boolean" },
     { name: "fade", label: "Fade the ends", type: "boolean" }
+];
+
+/** A marquee is a row of your own items: what there is to style is the row and the items. */
+const STYLE: StyleToken[] = [
+    { name: "demo-pill-bg", label: "Item", type: "color", property: "background", value: "#171717", tailwind: "bg-[{}]" },
+    { name: "demo-pill-color", label: "Text", type: "color", property: "color", value: "#f5f5f5", tailwind: "text-[{}]" },
+    { name: "demo-pill-radius", label: "Radius", type: "px", property: "border-radius", value: "999px", min: 0, max: 999, tailwind: "rounded-[{}]" },
+    { name: "demo-lane-gap", label: "Gap", type: "px", property: "gap", value: "12px", min: 0, max: 48, tailwind: "gap-[{}]" }
 ];
 
 const INITIAL: Values = { speed: "70", hover: "pause", reverse: false, fade: true };
@@ -88,6 +96,8 @@ export function MarqueePlayground() {
             controls={CONTROLS}
             initial={INITIAL}
             code={code}
+            style={STYLE}
+            styleSelector=".marquee-item"
             // Remounted per speed/direction so the engine restarts from the new cruise
             // rather than easing into it from whatever it was doing.
             render={(values) => <Row key={`${values.speed}-${values.reverse}`} values={values} />}

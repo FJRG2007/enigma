@@ -1,5 +1,5 @@
 import "@enigmax/primitives/palette.css";
-import { Playground, type Control } from "./Playground";
+import { Playground, type Control, type StyleToken } from "./Playground";
 import { SearchPalette } from "@enigmax/primitives/react/palette";
 
 /**
@@ -22,6 +22,15 @@ const CONTROLS: Control<Values>[] = [
     { name: "grouped", label: "Groups", type: "boolean", hint: "one heading per section" },
     { name: "recents", label: "Remember searches", type: "boolean", hint: "in this browser" },
     { name: "footer", label: "Key hints", type: "boolean" }
+];
+
+/** The variables `@enigmax/primitives/palette.css` declares, so the CSS tab is real theming. */
+const STYLE: StyleToken[] = [
+    { name: "enigma-palette-bg", label: "Panel", type: "color", property: "--enigma-palette-bg", value: "#101010" },
+    { name: "enigma-palette-border", label: "Border", type: "color", property: "--enigma-palette-border", value: "#2a2a2a" },
+    { name: "enigma-palette-active", label: "Highlight", type: "color", property: "--enigma-palette-active", value: "#1c1c1c" },
+    { name: "enigma-palette-accent", label: "Accent", type: "color", property: "--enigma-palette-accent", value: "#e0a458" },
+    { name: "enigma-palette-radius", label: "Radius", type: "px", property: "--enigma-palette-radius", value: "14px", min: 0, max: 28 }
 ];
 
 const INITIAL: Values = { placeholder: "Search the docs", grouped: true, recents: true, footer: true };
@@ -54,6 +63,8 @@ export function PalettePlayground() {
             controls={CONTROLS}
             initial={INITIAL}
             code={code}
+            style={STYLE}
+            styleSelector=":root"
             render={(values) => (
                 <div className="pg-palette">
                     <SearchPalette

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import "@enigmax/primitives/relative-time.css";
-import { Playground, type Control } from "./Playground";
+import { Playground, type Control, type StyleToken } from "./Playground";
 import { RelativeTime } from "@enigmax/primitives/react";
 import type { RelativeTimeFormat, RelativeTimeStyle } from "@enigmax/primitives/react";
 
@@ -47,6 +47,12 @@ const CONTROLS: Control<Values>[] = [
     { name: "numeric", label: "Digits past it", type: "boolean", hint: "13/8/2026" }
 ];
 
+/** A timestamp is text, so its look is the text's. */
+const STYLE: StyleToken[] = [
+    { name: "demo-time-color", label: "Text", type: "color", property: "color", value: "#a3a3a3", tailwind: "text-[{}]" },
+    { name: "demo-time-size", label: "Text size", type: "px", property: "font-size", value: "14px", min: 11, max: 22, tailwind: "text-[{}]" }
+];
+
 const INITIAL: Values = { age: "-7200", format: "auto", threshold: "P30D", prefix: "on", locale: "", formatStyle: "long", numeric: false };
 
 function code(values: Values): string {
@@ -77,6 +83,8 @@ export function RelativeTimePlayground() {
             controls={CONTROLS}
             initial={INITIAL}
             code={code}
+            style={STYLE}
+            styleSelector=".timestamp"
             render={(values) => (
                 <span className="pg-time">
                     <RelativeTime
