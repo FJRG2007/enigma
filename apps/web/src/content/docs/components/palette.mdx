@@ -12,6 +12,11 @@ The panel that opens on Ctrl/Cmd+K. It is a dialog, not a field: a trigger, an o
 focus trap, a listbox and a footer, which is why it is its own component rather than a prop
 on the search input - and why it is made of parts you can compose.
 
+{/* The site's own palette reads this and stands down here, so the demo owns Ctrl+K on this
+    page and the two never fight over the key. It is static markup rather than something the
+    demo renders, because the site's palette hydrates first and would not see it yet. */}
+<div data-palette-demo hidden></div>
+
 <PalettePlayground client:only="react" />
 
 ## Usage

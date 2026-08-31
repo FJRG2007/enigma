@@ -3,7 +3,7 @@ import Base from "./Base.astro";
 import { url, docHref } from "../lib/url";
 import { getCollection } from "astro:content";
 import { buildSearchIndex } from "../lib/search";
-import CommandPalette from "../components/CommandPalette.astro";
+import { DocsPalette } from "../components/playground/DocsPalette";
 import FrameworkPicker from "../components/FrameworkPicker.astro";
 
 interface Heading {
@@ -25,6 +25,15 @@ const outline = headings.filter((h) => h.depth === 2 || h.depth === 3);
 
 const docs = (await getCollection("docs")).sort((a, b) => a.data.order - b.data.order);
 const index = await buildSearchIndex();
+
+// Each record's destination is computed here, at build, so the island only sets location and
+// never touches the base-path logic.
+const records = index.map((record) => ({
+    title: record.title,
+    group: record.group,
+    text: record.text,
+    href: docHref(record.page, record.id)
+}));
 
 // The active page decides which section (and which pack) the sidebar shows.
 const current = docs.find((d) => d.id === slug);
@@ -152,7 +161,9 @@ const componentSource = componentName
         Enigma - <a href="https://github.com/FJRG2007/enigma" target="_blank" rel="noopener noreferrer">GitHub</a> - <a href="https://github.com/FJRG2007/enigma/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">Apache-2.0</a>
     </footer>
 
-    <CommandPalette index={index} />
+    <!-- The site's search IS the component the site documents. `client:idle` because nobody
+         needs it for the first paint, and a reader who never presses the key never runs it. -->
+    <DocsPalette client:idle records={records} />
 </Base>
 
 <style is:global>

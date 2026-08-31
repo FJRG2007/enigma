@@ -1,0 +1,49 @@
+/*
+ * The palette, in this site's colours.
+ *
+ * The package's stylesheet follows `prefers-color-scheme`; this site does not - it is dark
+ * whatever the operating system says - so a reader on a light desktop got a white panel over
+ * a dark page. Overriding the tokens is the whole fix, and it is also the shortest possible
+ * demonstration of what those tokens are for.
+ */
+
+/* `:root:root` rather than `:root`: the package's stylesheet declares the same tokens at the
+   same specificity, and which of the two wins would otherwise come down to the order the
+   bundler happened to emit them in - which is not something a theme should depend on. */
+:root:root {
+    --enigma-palette-bg: var(--surface);
+    --enigma-palette-border: var(--border);
+    --enigma-palette-text: var(--text);
+    --enigma-palette-muted: var(--muted);
+    --enigma-palette-active: var(--surface2);
+    --enigma-palette-accent: var(--accent);
+    --enigma-palette-radius: var(--radius, 12px);
+    --enigma-palette-scrim: rgba(4, 6, 10, 0.62);
+    --enigma-palette-shadow: var(--shadow-2, 0 20px 60px rgb(0 0 0 / 55%));
+}
+
+/* The site is dark at every OS setting, so the package's light block must not win here. */
+@media (prefers-color-scheme: light) {
+    :root:root {
+        --enigma-palette-bg: var(--surface);
+        --enigma-palette-border: var(--border);
+        --enigma-palette-text: var(--text);
+        --enigma-palette-muted: var(--muted);
+        --enigma-palette-active: var(--surface2);
+        --enigma-palette-shadow: var(--shadow-2, 0 20px 60px rgb(0 0 0 / 55%));
+        --enigma-palette-scrim: rgba(4, 6, 10, 0.62);
+    }
+}
+
+/* The site's own type, so the palette reads as part of the page rather than as a widget. */
+[data-enigma-palette-field] { font-family: var(--mono); }
+[data-enigma-palette-item-label] { font-family: var(--mono); font-size: 13.5px; }
+[data-enigma-palette-item-description] {
+    /* One line: a snippet that wraps turns an eight-row list into a page of prose. */
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 55%;
+    font-size: 12px;
+}
+[data-enigma-palette-item][data-active="true"] { box-shadow: inset 2px 0 0 var(--accent); }

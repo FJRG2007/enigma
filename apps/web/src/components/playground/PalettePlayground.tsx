@@ -18,7 +18,7 @@ interface Values extends Record<string, string | boolean> {
 }
 
 const CONTROLS: Control<Values>[] = [
-    { name: "placeholder", label: "Placeholder", type: "text", placeholder: "Search the docs" },
+    { name: "placeholder", label: "Placeholder", type: "text", placeholder: "Search the components" },
     { name: "grouped", label: "Groups", type: "boolean", hint: "one heading per section" },
     { name: "recents", label: "Remember searches", type: "boolean", hint: "in this browser" },
     { name: "footer", label: "Key hints", type: "boolean" }
@@ -33,7 +33,7 @@ const STYLE: StyleToken[] = [
     { name: "enigma-palette-radius", label: "Radius", type: "px", property: "--enigma-palette-radius", value: "14px", min: 0, max: 28 }
 ];
 
-const INITIAL: Values = { placeholder: "Search the docs", grouped: true, recents: true, footer: true };
+const INITIAL: Values = { placeholder: "Search the components", grouped: true, recents: true, footer: true };
 
 /** The same corpus the docs search uses, small enough to see the ranking work. */
 const DOCS = [
@@ -66,7 +66,7 @@ export function PalettePlayground() {
             style={STYLE}
             styleSelector=":root"
             render={(values) => (
-                <div className="pg-palette">
+                <div className="pg-palette" data-palette-demo="">
                     <SearchPalette
                         items={DOCS}
                         keys={["title"]}
@@ -77,12 +77,12 @@ export function PalettePlayground() {
                         recentsKey="enigma:docs:palette-demo"
                         placeholder={values.placeholder}
                         footer={values.footer ? undefined : null}
-                        // Bound to a key this page does not otherwise use, so trying it here
-                        // never fights the browser's own Ctrl+K.
-                        shortcut="j"
+                        // The real key. The site's own palette reads the marker below and
+                        // stands down on this page, so the two never fight over it.
+                        shortcut="k"
                         onSelect={() => undefined}
                     />
-                    <p className="pg-flag-alt">or press Ctrl/Cmd + J anywhere on this page</p>
+                    <p className="pg-flag-alt">or press Ctrl/Cmd + K anywhere on this page</p>
                 </div>
             )}
         />

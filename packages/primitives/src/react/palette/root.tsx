@@ -365,6 +365,15 @@ export interface PaletteContentProps extends ComponentPropsWithoutRef<"div"> {
     portal?: boolean;
     /** Rendered behind the panel. Pass null for no overlay of ours. */
     overlayProps?: ComponentPropsWithoutRef<"div"> | null;
+    /**
+     * How long the closing animation is given before the panel leaves the DOM, in ms.
+     *
+     * It exists because a component that unmounts on close can only ever animate IN: the
+     * element is gone before a leaving animation has a frame to run. `data-state="closed"`
+     * is set first, the stylesheet animates it, and only then does it unmount. 0 removes it
+     * immediately, which is also what a reader with reduced motion gets.
+     */
+    closeDuration?: number;
 }
 
 /**
@@ -373,14 +382,27 @@ export interface PaletteContentProps extends ComponentPropsWithoutRef<"div"> {
  * Mounted only while open, so nothing of the palette is in the document (or in the tab
  * order) the rest of the time.
  */
-export function PaletteContent({ title = "Search", portal = true, overlayProps, children, ...props }: PaletteContentProps): ReactNode {
+export function PaletteContent({ title = "Search", portal = true, overlayProps, closeDuration = 160, children, ...props }: PaletteContentProps): ReactNode {
     const palette = usePaletteContext("SearchPalette.Content");
     const panelRef = useRef<HTMLDivElement | null>(null);
     const [mounted, setMounted] = useState(false);
+    /** Stays true through the closing animation, so the panel has frames to leave in. */
+    const [present, setPresent] = useState(palette.open);
 
     // A portal has no server render: `document` does not exist there, and rendering the
     // panel into the tree instead would put it in the wrong place for one frame.
     useEffect(() => setMounted(true), []);
+
+    useEffect(() => {
+        if (palette.open) {
+            setPresent(true);
+            return;
+        }
+        if (!present) return;
+        const reduced = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+        const timer = setTimeout(() => setPresent(false), reduced ? 0 : closeDuration);
+        return () => clearTimeout(timer);
+    }, [palette.open, present, closeDuration]);
 
     useEffect(() => {
         if (!palette.open || typeof document === "undefined") return;
@@ -430,14 +452,15 @@ export function PaletteContent({ title = "Search", portal = true, overlayProps, 
         };
     }, [palette.open, palette.setOpen, palette.triggerRef]);
 
-    if (!palette.open) return null;
+    if (!present) return null;
 
     const panel = (
-        <div data-enigma-palette-portal="">
+        <div data-enigma-palette-portal="" data-state={palette.open ? "open" : "closed"}>
             {overlayProps !== null && (
                 <div
                     {...overlayProps}
                     data-enigma-palette-overlay=""
+                    data-state={palette.open ? "open" : "closed"}
                     // A click outside is a dismiss, and it is not a keyboard event, so it
                     // never reaches the Escape handler.
                     onClick={(event) => {
@@ -453,6 +476,7 @@ export function PaletteContent({ title = "Search", portal = true, overlayProps, 
                 aria-modal="true"
                 aria-labelledby={palette.ids.title}
                 data-enigma-palette-content=""
+                data-state={palette.open ? "open" : "closed"}
             >
                 <h2 id={palette.ids.title} data-enigma-palette-title="">{title}</h2>
                 {children}

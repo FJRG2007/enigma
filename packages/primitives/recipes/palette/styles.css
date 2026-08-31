@@ -22,6 +22,8 @@
     --enigma-palette-accent: #e0a458;
     --enigma-palette-shadow: 0 20px 60px rgb(0 0 0 / 55%);
     --enigma-palette-scrim: rgb(0 0 0 / 55%);
+    --enigma-palette-enter: 160ms;
+    --enigma-palette-exit: 140ms;
 }
 
 @media (prefers-color-scheme: light) {
@@ -76,6 +78,13 @@
     background: var(--enigma-palette-scrim);
     /* Behind the panel, and the only thing a click outside can land on. */
     backdrop-filter: blur(2px);
+    animation: enigma-palette-fade var(--enigma-palette-enter) ease-out;
+}
+
+/* The panel stays in the DOM through its exit (`closeDuration`), which is the only way a
+   component that unmounts on close can animate out at all. */
+[data-enigma-palette-overlay][data-state="closed"] {
+    animation: enigma-palette-fade var(--enigma-palette-exit) ease-in reverse forwards;
 }
 
 [data-enigma-palette-content] {
@@ -95,6 +104,32 @@
     border: 1px solid var(--enigma-palette-border);
     border-radius: var(--enigma-palette-radius);
     box-shadow: var(--enigma-palette-shadow);
+    animation: enigma-palette-in var(--enigma-palette-enter) cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+[data-enigma-palette-content][data-state="closed"] {
+    animation: enigma-palette-in var(--enigma-palette-exit) ease-in reverse forwards;
+}
+
+@keyframes enigma-palette-fade {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+/* Down and in: the panel arrives rather than appearing whole. */
+@keyframes enigma-palette-in {
+    from { opacity: 0; transform: translateX(-50%) translateY(-8px) scale(0.98); }
+    to { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+}
+
+/* Reduced motion keeps the fade and drops the movement: the panel still has to announce
+   itself as new, and a hard cut in the middle of the screen is its own kind of jolt. */
+@media (prefers-reduced-motion: reduce) {
+    [data-enigma-palette-content],
+    [data-enigma-palette-content][data-state="closed"] {
+        animation-name: enigma-palette-fade;
+        animation-duration: 90ms;
+    }
 }
 
 /* The dialog needs a name; nobody needs to see it. */
@@ -110,15 +145,21 @@
 }
 
 [data-enigma-palette-field] {
+    display: block;
     width: 100%;
     padding: 0.95rem 1.1rem;
     font: inherit;
     font-size: 0.95rem;
-    color: inherit;
-    background: transparent;
+    /* Both set explicitly. A field inherits nothing useful from a dialog - a page that
+       styles `input` at all (a reset, a framework, the site's own form CSS) otherwise
+       reaches in and leaves the palette with a field that does not match its own panel. */
+    color: var(--enigma-palette-text);
+    background: var(--enigma-palette-bg);
     border: 0;
     border-bottom: 1px solid var(--enigma-palette-border);
+    border-radius: 0;
     outline: none;
+    box-shadow: none;
 }
 
 [data-enigma-palette-field]::placeholder { color: var(--enigma-palette-muted); }
