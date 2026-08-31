@@ -3,7 +3,7 @@
 import { Slot } from "@/react/slot";
 import { createPortal } from "react-dom";
 import { PaletteContext, usePaletteContext, type PaletteRow } from "@/react/palette/context";
-import { createSearch, type SearchInstance, type SearchMatch, type SearchOptions } from "@/core/search";
+import { createSearch, subsequenceMatcher, type SearchInstance, type SearchMatch, type SearchOptions } from "@/core/search";
 import { createRecentStore, groupRows, moveActive, shortcutLabel, isPaletteShortcut, type RecentEntry, type PaletteKey } from "@/core/palette";
 import {
     useCallback, useEffect, useId, useMemo, useRef, useState,
@@ -146,12 +146,28 @@ export function PaletteRoot<Item>({
 
     /* -------- the engine -------- */
 
+    /**
+     * A palette ranks by SUBSEQUENCE unless told otherwise: "qgate" has to find "Quality
+     * gate" and "plyg" has to find "Playground", which a substring filter cannot do. A plain
+     * search field keeps the substring matcher, where a typo should fail rather than quietly
+     * match something four words away.
+     *
+     * Computed ONCE and used by both the constructor and the update below. Passing the raw
+     * prop to `update` instead is how the first version lost it: the effect overwrote the
+     * default with `undefined` on the very next render, and the palette silently went back
+     * to substring matching.
+     */
+    const ranking = useMemo(
+        () => matcher ?? (fuse ? undefined : subsequenceMatcher<Item>(keys ?? [])),
+        [matcher, fuse, keys]
+    );
+
     const engine = useMemo<SearchInstance<Item>>(() => createSearch<Item>({
         items,
         keys,
         fuse,
         fuseOptions,
-        matcher,
+        matcher: ranking,
         debounce: delay,
         limit,
         onResults: (next) => {
@@ -165,7 +181,7 @@ export function PaletteRoot<Item>({
 
     useEffect(() => () => engine.destroy(), [engine]);
     useEffect(() => { engine.setItems(items ?? []); }, [engine, items]);
-    useEffect(() => { engine.update({ keys, fuse, fuseOptions, matcher, debounce: delay, limit }); }, [engine, keys, fuse, fuseOptions, matcher, delay, limit]);
+    useEffect(() => { engine.update({ keys, fuse, fuseOptions, matcher: ranking, debounce: delay, limit }); }, [engine, keys, fuse, fuseOptions, ranking, delay, limit]);
 
     /* -------- opening and closing -------- */
 

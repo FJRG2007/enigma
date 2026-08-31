@@ -32,10 +32,11 @@ function parseArgs(argv) {
 /**
  * Path prefixes excluded from the style gate: vendored third-party content that
  * enigma commits verbatim and does not own the style of (the autoskills registry),
- * and enigma's own committed BUILD artifacts (the .githooks guard/guardrails bundles
- * are tsup output, not hand-authored source).
+ * and enigma's own committed BUILD artifacts (the .githooks guard/guardrails bundles are
+ * tsup output, and the dashboard's lib/ holds Chart.js plus the vendored primitives core -
+ * minified builds, not hand-authored source).
  */
-const IGNORE_PREFIXES = ["assets/skills-registry/", "packages/helio/assets/", ".githooks/"];
+const IGNORE_PREFIXES = ["assets/skills-registry/", "packages/helio/assets/", ".githooks/", "packages/dashboard/assets/lib/"];
 
 /** The changed source files (added/copied/modified) for the selected diff. */
 function changedFiles({ staged, range }) {

@@ -88,6 +88,16 @@ test.describe("SearchPalette", () => {
         await expect(page.locator(active)).toHaveText(rendered[1]);
     });
 
+    test("the letters only have to be in order, which is what a palette needs", async ({ page }) => {
+        await open(page);
+        await page.keyboard.press("Control+k");
+        // Not a substring of anything: "cmdplt" is Command palette with the vowels left out,
+        // and a substring filter finds nothing at all here.
+        await page.locator(field).fill("mrqe");
+        await expect(page.locator(items)).toHaveCount(1);
+        await expect(page.locator(items).first()).toHaveText(/Marquee/);
+    });
+
     test("the field keeps the caret while the highlight moves", async ({ page }) => {
         await open(page);
         await page.keyboard.press("Control+k");

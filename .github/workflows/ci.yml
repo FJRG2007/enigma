@@ -205,6 +205,12 @@ jobs:
       - name: Committed guard hook is in sync with its source
         run: npm run check:hooks
 
+      # The dashboard is one static file with no bundler, so it takes the primitives core as a
+      # committed build beside Chart.js. An edit to the package that never reaches that copy
+      # would be invisible until someone opened the palette and found the old behaviour.
+      - name: Vendored primitives bundle is in sync with the package
+        run: npm run check:vendor
+
   components:
     runs-on: ubuntu-latest
     steps:

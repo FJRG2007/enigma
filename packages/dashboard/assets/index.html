@@ -2469,6 +2469,11 @@ export {
 };
     </script>
     <script src="/lib/chart.min.js"></script>
+    <!-- The framework-agnostic half of @enigmax/primitives, vendored beside Chart.js by
+         scripts/sync-primitives.mjs. The dashboard writes its own DOM; what it takes from
+         the package is the search engine, the keyboard arithmetic, the grouping and the
+         history - all of which it used to hand-roll. -->
+    <script src="/lib/enigma-primitives.js"></script>
     <script>
         const POLL_MS = 5000;
         const DAY = 86400000;
@@ -5052,30 +5057,28 @@ export {
         // Palette"). enigma: the dashboard is a single dependency-free HTML file served over
         // loopback, so the ~20-line matcher below stands in for fuse.js - upgrade to fuse.js
         // if this page ever gains a build step.
+        const { createSearch, subsequenceMatcher, moveActive, groupRows, createRecentStore, shortcutLabel, isPaletteShortcut } = window.EnigmaPrimitives;
         const palBack = $("palBack"), palInput = $("palInput"), palList = $("palList");
-        const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
         let palItems = [], palSel = 0, palReturnFocus = null;
-        $("palHint").textContent = IS_MAC ? "Cmd K" : "Ctrl K";
+        $("palHint").textContent = shortcutLabel("K");
 
         /**
-         * Fuzzy rank of `query` inside `text`: -1 when the query is not a subsequence, otherwise
-         * a score that rewards consecutive runs and word starts. Beats a substring filter because
-         * "qgate" finds "Quality gate" and "plyg" finds "Playground", which .includes() cannot.
+         * The palette's engine, from @enigmax/primitives: subsequence ranking (so "qgate"
+         * finds "Quality gate" and "plyg" finds "Playground"), the debounce and the
+         * cancellation. The scorer this replaced is the one the package now ships, so the
+         * dashboard and every other consumer rank the same way.
          */
-        function palScore(query, text) {
-            const q = query.toLowerCase(), t = text.toLowerCase();
-            if (!q) return 0;
-            let at = 0, from = 0, score = 0, run = 0;
-            for (let i = 0; i < q.length; i++) {
-                at = t.indexOf(q[i], from);
-                if (at === -1) return -1;
-                run = (i > 0 && at === from) ? run + 1 : 0;
-                const wordStart = at === 0 || /[^a-z0-9]/.test(t[at - 1]);
-                score += 10 + run * 6 + (wordStart ? 8 : 0) - Math.min(at - from, 6);
-                from = at + 1;
+        const palRecents = createRecentStore({ key: "enigma:dashboard:palette", limit: 5 });
+        const palSearch = createSearch({
+            keys: ["name", "kind"],
+            matcher: subsequenceMatcher(["name", "kind"]),
+            debounce: 0,
+            onResults: (matches) => {
+                palItems = matches.map((match) => match.item);
+                palSel = 0;
+                palPaint();
             }
-            return score;
-        }
+        });
 
         /** Built from the live DOM on every open, so it can never drift from the rail or the scopes. */
         function palIndex() {
@@ -5105,36 +5108,59 @@ export {
 
         function palRender(query) {
             const q = query.trim();
-            const all = palIndex();
-            palItems = (!q ? all : all
-                .map((it) => ({ it, s: Math.max(palScore(q, it.name), palScore(q, it.kind + " " + it.name) - 4) }))
-                .filter((r) => r.s >= 0)
-                .sort((a, b) => b.s - a.s)
-                .map((r) => r.it));
-            palSel = 0;
+            const index = palIndex();
+            palSearch.setItems(index);
+            if (!q) {
+                // An empty query opens on what was run before, which is the shortcut on the
+                // second visit. Anything no longer in the index is dropped rather than shown
+                // as a row that goes nowhere.
+                const remembered = palRecents.list()
+                    .map((entry) => index.find((item) => item.kind + "::" + item.name === entry.term))
+                    .filter(Boolean)
+                    .map((item) => ({ ...item, kind: "Recent" }));
+                palItems = remembered.concat(index);
+                palSel = 0;
+                palPaint();
+                return;
+            }
+            palSearch.searchNow(q);
+        }
+
+        /** Draws whatever is in `palItems`, grouped. The selection is applied by palMove. */
+        function palPaint() {
             if (!palItems.length) {
-                palList.innerHTML = '<div class="pal-empty">No view or project matches "' + esc(q) + '".</div>';
+                palList.innerHTML = '<div class="pal-empty">No view or project matches "' + esc(palInput.value.trim()) + '".</div>';
                 palInput.removeAttribute("aria-activedescendant");
                 return;
             }
-            let html = "", kind = null;
-            palItems.forEach((it, i) => {
-                if (it.kind !== kind) { kind = it.kind; html += '<div class="pal-gt">' + esc(kind === "View" ? "Views" : "Switch scope") + "</div>"; }
-                html += '<div class="pal-row' + (i === 0 ? " sel" : "") + '" role="option" id="pal-o' + i + '"'
-                    + ' aria-selected="' + (i === 0 ? "true" : "false") + '" data-i="' + i + '">'
-                    + it.icon
-                    + '<span class="pal-name">' + esc(it.name) + "</span>"
-                    + (it.group ? '<span class="pal-hint">' + esc(it.group) + "</span>" : (it.hint ? '<span class="pal-hint">' + esc(it.hint) + "</span>" : ""))
-                    + "</div>";
-            });
-            palList.innerHTML = html;
+            // Grouped for the headings, but each row carries its FLAT index, so the arrows
+            // run straight through a group boundary.
+            const heading = (kind) => (kind === "View" ? "Views" : kind === "Recent" ? "Recent" : "Switch scope");
+            palList.innerHTML = groupRows(palItems, (item) => item.kind).map((group) => (
+                '<div class="pal-gt">' + esc(heading(group.label)) + "</div>"
+                + group.rows.map(({ row, position }) =>
+                    '<div class="pal-row" role="option" id="pal-o' + position + '"'
+                    + ' aria-selected="false" data-i="' + position + '">'
+                    + row.icon
+                    + '<span class="pal-name">' + esc(row.name) + "</span>"
+                    + (row.group ? '<span class="pal-hint">' + esc(row.group) + "</span>"
+                        : (row.hint ? '<span class="pal-hint">' + esc(row.hint) + "</span>" : ""))
+                    + "</div>").join("")
+            )).join("");
             palMove(0);
         }
 
+        /**
+         * Where the highlight lands. A key name goes through the package's own arithmetic -
+         * it wraps, which in a short list is what the arrow keys are expected to do - and a
+         * number is the pointer landing on a row directly.
+         */
         function palMove(next) {
             if (!palItems.length) return;
             const rows = palList.querySelectorAll(".pal-row");
-            palSel = (next + palItems.length) % palItems.length;
+            palSel = typeof next === "string"
+                ? moveActive(palSel, palItems.length, next)
+                : (next + palItems.length) % palItems.length;
             rows.forEach((r, i) => {
                 const on = i === palSel;
                 r.classList.toggle("sel", on);
@@ -5163,6 +5189,7 @@ export {
         function palRun() {
             const it = palItems[palSel];
             if (!it) return;
+            palRecents.remember({ term: it.kind + "::" + it.name, label: it.name });
             palClose();
             setNav(false);
             it.run();
@@ -5175,8 +5202,7 @@ export {
         palBack.addEventListener("mousedown", (e) => { if (e.target === palBack) palClose(); });
         // Focus stays inside: the dialog holds one input and a list driven from it.
         palBack.addEventListener("keydown", (e) => {
-            if (e.key === "ArrowDown") { e.preventDefault(); palMove(palSel + 1); }
-            else if (e.key === "ArrowUp") { e.preventDefault(); palMove(palSel - 1); }
+            if (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "Home" || e.key === "End") { e.preventDefault(); palMove(e.key); }
             else if (e.key === "Enter") { e.preventDefault(); palRun(); }
             // Escape closes the topmost surface only: the drawer behind it stays open.
             else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); palClose(); }
@@ -5184,7 +5210,7 @@ export {
         });
         document.addEventListener("keydown", (e) => {
             // Ctrl+K is the browser's own search-bar shortcut, so it has to be taken explicitly.
-            if (e.key.toLowerCase() !== "k" || !(IS_MAC ? e.metaKey : e.ctrlKey) || e.altKey) return;
+            if (!isPaletteShortcut(e) || e.altKey) return;
             e.preventDefault();
             if (palBack.hidden) palOpen(); else palClose();
         });

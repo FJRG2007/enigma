@@ -106,6 +106,61 @@ function substringMatcher<T>(query: string, items: readonly T[], keys: string[])
     return results.sort((left, right) => left.score - right.score);
 }
 
+/**
+ * Subsequence ranking: every letter of the query, in order, anywhere in the text.
+ *
+ * This is what a COMMAND palette wants and a substring filter cannot do: "qgate" finds
+ * "Quality gate" and "plyg" finds "Playground", because the letters only have to appear in
+ * order. The score rewards consecutive runs and word starts and penalises gaps, so the
+ * closest thing to what was typed comes first rather than the first thing that happened to
+ * contain the letters.
+ *
+ * Pass it as `matcher`, or take it as the default from the palette. The substring matcher
+ * stays the default for a plain search FIELD, where a typo should fail rather than quietly
+ * match something four words away.
+ */
+export function subsequenceMatcher<T>(keys: string[] = []): NonNullable<SearchOptions<T>["matcher"]> {
+    return (query, items) => {
+        const needle = fold(query);
+        const results: SearchMatch<T>[] = [];
+
+        for (const item of items) {
+            const fields = keys.length ? keys : [""];
+            let best: SearchMatch<T> | null = null;
+
+            for (const key of fields) {
+                const haystack = fold(key ? readPath(item, key) : String(item));
+                const score = subsequenceScore(needle, haystack);
+                if (score < 0) continue;
+                // The engine orders by ASCENDING score (Fuse's convention, 0 is exact), and
+                // this one counts upwards, so it is negated rather than compared backwards -
+                // getting that wrong ranks the worst match first and looks like a broken
+                // search rather than a sign error.
+                const ranked = -score;
+                if (!best || ranked < best.score) best = { item, score: ranked, key: key || undefined };
+            }
+            if (best) results.push(best);
+        }
+
+        return results.sort((left, right) => left.score - right.score);
+    };
+}
+
+/** -1 when the query is not a subsequence of the text; otherwise higher is better. */
+function subsequenceScore(query: string, text: string): number {
+    if (!query) return 0;
+    let from = 0, score = 0, run = 0;
+    for (let i = 0; i < query.length; i++) {
+        const at = text.indexOf(query[i], from);
+        if (at === -1) return -1;
+        run = i > 0 && at === from ? run + 1 : 0;
+        const wordStart = at === 0 || /[^a-z0-9]/.test(text[at - 1]);
+        score += 10 + run * 6 + (wordStart ? 8 : 0) - Math.min(at - from, 6);
+        from = at + 1;
+    }
+    return score;
+}
+
 export function createSearch<T>(options: SearchOptions<T> = {}): SearchInstance<T> {
     let opts: SearchOptions<T> = { ...options };
     let items: readonly T[] = opts.items ?? [];
