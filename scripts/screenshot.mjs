@@ -123,7 +123,14 @@ const server = createServer((req, res) => {
     const url = (req.url || "/").split("?")[0];
     try {
         if (url === "/" || url === "/index.html") { res.writeHead(200, { "content-type": "text/html" }); res.end(serve("index.html").body); return; }
-        if (url === "/lib/chart.min.js") { res.writeHead(200, { "content-type": "text/javascript" }); res.end(serve("lib/chart.min.js").body); return; }
+        // Anything the page loads from lib/, not just Chart.js. Naming one file here is how
+        // the preview broke the day the dashboard started loading a second one: the script
+        // threw on a 404 and every card in the render came out as "-".
+        if (url.startsWith("/lib/") && !url.includes("..")) {
+            res.writeHead(200, { "content-type": "text/javascript" });
+            res.end(serve(url.slice(1)).body);
+            return;
+        }
         if (ROUTES[url]) { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify(ROUTES[url])); return; }
     } catch { /* fall through to 404 */ }
     res.writeHead(404).end();

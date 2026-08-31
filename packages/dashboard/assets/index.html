@@ -5057,7 +5057,17 @@ export {
         // Palette"). enigma: the dashboard is a single dependency-free HTML file served over
         // loopback, so the ~20-line matcher below stands in for fuse.js - upgrade to fuse.js
         // if this page ever gains a build step.
-        const { createSearch, subsequenceMatcher, moveActive, groupRows, createRecentStore, shortcutLabel, isPaletteShortcut } = window.EnigmaPrimitives;
+        // Guarded rather than destructured outright: this page is ONE script, so a missing
+        // vendored file would throw here and take every panel below it with it - which is
+        // exactly how the README's preview render came out with "-" in every card. Only the
+        // four things called at MODULE scope need a stand-in; the rest are called from
+        // handlers, where a failure is contained to the palette that is already degraded.
+        const primitives = window.EnigmaPrimitives || {};
+        const { moveActive, groupRows, isPaletteShortcut } = primitives;
+        const subsequenceMatcher = primitives.subsequenceMatcher || (() => undefined);
+        const createSearch = primitives.createSearch || (() => ({ setItems() {}, search() {}, searchNow() {}, update() {}, destroy() {} }));
+        const createRecentStore = primitives.createRecentStore || (() => ({ list: () => [], remember: () => [], forget: () => [], clear() {} }));
+        const shortcutLabel = primitives.shortcutLabel || ((key) => "Ctrl " + key);
         const palBack = $("palBack"), palInput = $("palInput"), palList = $("palList");
         let palItems = [], palSel = 0, palReturnFocus = null;
         $("palHint").textContent = shortcutLabel("K");
