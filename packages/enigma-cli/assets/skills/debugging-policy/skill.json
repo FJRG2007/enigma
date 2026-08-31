@@ -4,6 +4,6 @@
   "provider": "FJRG2007/enigma",
   "description": "Reproduce-isolate-fix debugging methodology with root-cause discipline and regression verification.",
   "updated": "2026-08-02T04:15:47+02:00",
-  "cliVersion": "1.36.7",
+  "cliVersion": "1.36.8",
   "sha": "968876bcac9ce6e5a20be05c89ac97191b112c9e08679a8dc506d150c375fec4"
 }
