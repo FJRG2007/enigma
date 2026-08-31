@@ -322,6 +322,67 @@ below were paid for once already:
   working palette. They are read on OPEN rather than on mount, because another tab may have
   written since.
 
+## select
+
+A listbox that replaces `<select>`, because the native one cannot hold an icon, a second
+line, a checkbox or a tag, and its popup is drawn by the OS - unstylable and different on
+every platform. `core/select.ts` is the arithmetic (selection, filter, highlight),
+`react/select/` is the rendering, and `<Select>` is the parts in the order they belong in.
+
+What it costs to replace the native element is everything the platform was doing for free,
+so all of it is deliberate here:
+
+- **The filter is the search core**, with `empty: "all"` and `debounce: 0` - the opposite of
+  a search field on both counts. An empty query in a select means every row, and the data is
+  already in memory, so a debounce is only the list lagging behind the field. It reads the
+  label, the description, the group and `keywords`, and Fuse arrives the same way it does
+  everywhere else: a constructor the caller passes, never a dependency.
+- **`searchable="auto"` is a count** (`SEARCHABLE_FROM = 8`). Filtering a list of three is a
+  bigger panel for nothing; filtering a list of two hundred is the only way to use it.
+- **A disabled row is listed, announced and unreachable** - `enabledIndex` walks past it at
+  most once around the list, so every-row-disabled leaves the highlight at -1 rather than
+  spinning, and `select()` refuses the value even when a click gets through.
+- **Typeahead**: one letter walks through the rows that start with it, a longer buffer
+  refines instead of jumping. Six hundred ms, then the buffer resets. Without it a select
+  with no filter is slower than the native one it replaced.
+- **The value is a list internally**, and `multiple` decides what is reported outwards. That
+  is what makes one state machine serve both modes; the React layer narrows the types per
+  mode so a call site never widens them back by hand.
+- **`name` renders a hidden input per value.** A select that only exists in React state
+  cannot be submitted by the form it sits in, and that is where it usually sits.
+- **The panel measures before it opens.** `data-side="top"` when the space below is smaller
+  than the panel and the space above is larger - near the bottom of the window the list is
+  otherwise unreachable.
+
+Two defects that are easy to reintroduce, both fixed with a comment in place:
+
+- **The open flag is React's; the instance follows it.** Comparing the two directly reads
+  the one render where React has opened and the core has not caught up, and closes the panel
+  a frame after it opened. Only the TRANSITION counts (`wasOpen`), and `setOpen` drives the
+  instance synchronously so that whatever the same handler does next - a typeahead, a move -
+  runs against a panel that is already open.
+- **The options effect compares CONTENT, not identity.** `options={[{ ... }]}` is a new array
+  of new objects on every render: pushing it in on identity emits a new state, renders again,
+  and never stops. The signature is `JSON.stringify` of the data fields; React nodes are
+  excluded because an icon element is never equal to the one before it. Same for `value`,
+  which is an array literal in `multiple` mode. There is a browser test for the loop.
+
+**A long list is rendered a window at a time** (`SelectList`, `chunk = 40`). A select of
+every country is 250 rows and 250 flags for the seven anybody sees, which is what made the
+panel slow to open. The window grows on scroll through an IntersectionObserver sentinel, and
+immediately to `active + OVERSCAN`, because the keyboard reaches row 200 without scrolling
+at all. No observer -> render everything: slower to open beats unreachable rows.
+
+**It ships a theme**, like the toast and for the same reason: an unstyled popup is not a
+plain-looking control, it is transparent text lying on top of the page. The sheet lives in
+`react/select/styles.ts`, is injected once and PREPENDED to `<head>`, and is generated into
+`recipes/select/styles.css` by `scripts/sync-recipes.mjs` (checked in CI, so the two cannot
+drift). `styles={false}` opts out; every colour and distance is a `--enigma-select-*`
+property, and the docs site maps them onto its own palette in `global.css`.
+
+`className` on `<Select>` goes to the ROOT, not the trigger: the root is the element with a
+size and the trigger fills it. `triggerProps` dresses the button.
+
 ## search
 
 The recipe kills WebKit's `::-webkit-search-cancel-button`. `<Input type="search">` renders
@@ -689,6 +750,10 @@ Agents should reach for this instead of formatting a date difference by hand, wh
 habit the GitHub skills encourage.
 
 ## The docs playground
+
+The controls are the package's own components: a `type: "select"` control renders `<Select>`
+and not `<select>`, so the docs are the first place a component has to hold up. The site
+themes it through `--enigma-select-*` in `global.css` rather than by writing selectors.
 
 `apps/web/src/components/playground/`. Every component page opens with a Customize panel
 beside a live preview, and the code below is generated from the SAME state object that drove

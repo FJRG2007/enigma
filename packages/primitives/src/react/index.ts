@@ -91,3 +91,21 @@ export {
     type RecentEntry,
     type RecentStore
 } from "@/core/palette";
+export {
+    Select,
+    SelectRoot,
+    SelectTrigger,
+    SelectValue,
+    SelectContent,
+    SelectSearch,
+    SelectList,
+    SelectOptionRow,
+    useSelectContext,
+    type SelectProps,
+    type SelectRootProps,
+    type SelectSingleProps,
+    type SelectMultipleProps,
+    type SelectItem,
+    type SelectContextValue
+} from "@/react/select";
+export { createSelect, type SelectOption, type SelectOptions, type SelectState, type SelectInstance } from "@/core/select";

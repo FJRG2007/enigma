@@ -9,6 +9,24 @@
     --max: 1080px;
 }
 
+/* The select's baseline theme, mapped onto this site's palette. The component injects its
+   own sheet and prepends it, so these override it on source order alone. */
+:root {
+    --enigma-select-bg: var(--surface);
+    --enigma-select-border: var(--border);
+    --enigma-select-border-focus: var(--muted);
+    --enigma-select-text: var(--text);
+    --enigma-select-muted: var(--muted);
+    --enigma-select-radius: 7px;
+    --enigma-select-panel-bg: var(--surface);
+    --enigma-select-panel-border: var(--border);
+    --enigma-select-panel-radius: var(--radius-sm);
+    --enigma-select-panel-shadow: var(--shadow-2);
+    --enigma-select-active-bg: var(--surface2);
+    --enigma-select-accent: var(--accent);
+    --enigma-select-tag-bg: var(--surface2);
+}
+
 * { box-sizing: border-box; }
 /* An icon never gives up its size to the text beside it: a flex item shrinks by default, so a
    long label in a nav entry or a palette result squeezes the glyph down to a sliver. Every svg

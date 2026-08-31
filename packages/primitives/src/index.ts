@@ -61,3 +61,14 @@ export {
     type PositionedRow,
     type PaletteKey
 } from "@/core/palette";
+// The select's non-rendering half, for the same reason as the palette's: the selection
+// rules, the filter and the highlight are arithmetic, not React.
+export {
+    createSelect,
+    SELECT_SEARCH_KEYS,
+    type SelectOption,
+    type SelectOptions,
+    type SelectInstance,
+    type SelectState,
+    type SelectMoveKey
+} from "@/core/select";

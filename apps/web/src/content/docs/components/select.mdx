@@ -1,0 +1,140 @@
+---
+title: Select
+description: A listbox that replaces the native select - icons, disabled rows, many values as tags, groups, an optional filter and the whole keyboard.
+group: Forms
+order: 22.7
+space: components
+---
+import Installation from "../../../components/Installation.astro";
+import { SelectPlayground } from "../../../components/playground/SelectPlayground";
+
+The native `<select>` cannot hold an icon, a second line, a checkbox or a tag, and its popup
+is drawn by the operating system: not themable, not stylable, a different control on every
+platform. This is a listbox instead - and everything the native element used to give you for
+free (the typeahead, the keyboard, the value the form posts, what a screen reader says) is
+given back deliberately.
+
+<SelectPlayground client:load />
+
+## Usage
+
+```tsx
+import { Select } from "@enigmax/primitives/react/select";
+
+<Select
+    options={[
+        { value: "es", label: "Spain", icon: <Flag code="es" /> },
+        { value: "fr", label: "France" },
+        { value: "de", label: "Germany", disabled: true }
+    ]}
+    value={country}
+    onValueChange={setCountry}
+/>
+```
+
+`multiple` changes the types with it - `value` becomes a list, and so does what the change
+reports, checked by the compiler at the call site:
+
+```tsx
+<Select multiple options={markets} value={chosen} onValueChange={setChosen} />
+```
+
+Everything it renders is a part, so any of them can be yours instead:
+
+```tsx
+<Select.Root options={countries} value={country} onValueChange={setCountry}>
+    <Select.Trigger asChild>
+        <MyButton><Select.Value placeholder="Country" /></MyButton>
+    </Select.Trigger>
+
+    <Select.Content>
+        <Select.Search placeholder="Find a country" />
+        <Select.List>
+            {(option) => <Row option={option} />}
+        </Select.List>
+    </Select.Content>
+</Select.Root>
+```
+
+## The filter
+
+A list of eight or more brings its own field. That is the default (`searchable="auto"`) and
+not a rule - `searchable` and `searchable={false}` decide it outright.
+
+Matching is the search component's, which means the same three levels:
+
+```tsx
+<Select options={countries} />                    // accent-insensitive substring, no dependency
+<Select options={countries} fuse={Fuse} />        // fuzzy, if you have Fuse.js
+<Select options={countries} matcher={mine} />     // your own ranking
+```
+
+It reads the label, the description, the group and any `keywords` you put on an option - so
+"espana" finds Spain if that is the synonym your visitors type.
+
+## A long list stays fast
+
+A select of every country is 250 rows and 250 flags, and about seven of them can be seen.
+The list renders a window - 40 rows, then another chunk whenever the scroll reaches the end,
+and immediately whatever the highlight is heading towards, so the keyboard never runs into a
+row that is not there. `chunk={Infinity}` on `Select.List` renders the lot.
+
+Icons are images: `<Flag>` already asks the browser to defer the ones off screen.
+
+## What it gives back
+
+| | |
+| --- | --- |
+| Typeahead | Type `m` on a closed select and it opens on Mexico, the way the native one does |
+| Keyboard | Arrows wrap, Home/End, PageUp/PageDown, Enter chooses, Escape closes and returns focus |
+| Disabled rows | Listed, announced, never highlighted and never chosen - including by a click |
+| Forms | `name` renders a hidden field per value, so a plain form still posts it |
+| Screen readers | `role="listbox"`, `aria-selected` per row, `aria-activedescendant` on the field |
+| Both directions | The panel opens upwards when there is no room below it |
+
+## Installation
+
+<Installation item="select" pkg="@enigmax/primitives" entry="@enigmax/primitives/react/select">
+    <div slot="manual">
+
+The theme comes with it. `<Select.Root>` injects its stylesheet once and prepends it to
+`<head>`, so anything your page already has outranks it on source order - a popup with no
+styles is transparent text lying on top of the page, which is broken rather than merely
+plain. `styles={false}` turns it off, and `@enigmax/primitives/select.css` is the same sheet
+if you would rather import it yourself.
+
+Every colour and distance is a custom property on `:root`, so a select that matches your
+brand is a handful of declarations and no selectors:
+
+```css
+:root {
+    --enigma-select-bg: #12161f;
+    --enigma-select-panel-bg: #12161f;
+    --enigma-select-active-bg: #1a1f2b;
+    --enigma-select-accent: #e0a458;
+    --enigma-select-radius: 8px;
+}
+```
+
+    </div>
+</Installation>
+
+| Prop | |
+| --- | --- |
+| `options` | `{ value, label, icon?, description?, group?, disabled?, keywords? }[]` |
+| `value` / `defaultValue` | A string, or a list when `multiple`. Controlled and uncontrolled both work |
+| `onValueChange` | `(value, option)` - a string and an option, or a list of each |
+| `multiple` | Many values, tags on the trigger, and the panel stays open |
+| `searchable` | `"auto"` (eight rows or more), `true`, `false` |
+| `fuse` / `fuseOptions` / `matcher` | The filter, exactly as the search component takes them |
+| `tags` / `maxTags` | Removable tags, and how many before the rest collapse into `+N` |
+| `clearable` | A × that empties the selection |
+| `name` / `required` | The hidden field, for a form that posts |
+| `disabled` | The whole control |
+| `open` / `defaultOpen` / `onOpenChange` | The panel, if you want to own it |
+| `renderOption` | Draw a row yourself |
+| `styles` | `false` leaves the markup bare for a theme of your own |
+
+Styling hooks: `[data-enigma-select-trigger]`, `[data-enigma-select-content]`,
+`[data-enigma-select-option]` with `[data-active]`, `[data-selected]` and `[data-disabled]`,
+`[data-enigma-select-tag]`, `[data-enigma-select-search]`, `[data-enigma-select-empty]`.

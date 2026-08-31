@@ -2,7 +2,7 @@
  * The toast stylesheet.
  *
  * GENERATED from src/react/toast/styles.ts by scripts/sync-recipes.mjs - edit that file, not
- * this one. It exists as a stylesheet as well as a string because <Toaster /> injects it,
+ * this one. It exists as a stylesheet as well as a string because the component injects it,
  * and this is the same sheet for anyone who would rather import it, copy it with
  * `enigma add toast --copy`, or fork it outright.
  */

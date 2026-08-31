@@ -1,0 +1,196 @@
+/*
+ * The select stylesheet.
+ *
+ * GENERATED from src/react/select/styles.ts by scripts/sync-recipes.mjs - edit that file, not
+ * this one. It exists as a stylesheet as well as a string because the component injects it,
+ * and this is the same sheet for anyone who would rather import it, copy it with
+ * `enigma add select --copy`, or fork it outright.
+ */
+:root {
+    --enigma-select-bg: #171717;
+    --enigma-select-border: #404040;
+    --enigma-select-border-focus: #a3a3a3;
+    --enigma-select-text: #f5f5f5;
+    --enigma-select-muted: #a3a3a3;
+    --enigma-select-radius: 0.5rem;
+    --enigma-select-font-size: 0.875rem;
+    --enigma-select-padding: 0.5rem 0.75rem;
+
+    --enigma-select-panel-bg: #1c1c1c;
+    --enigma-select-panel-border: #333333;
+    --enigma-select-panel-radius: 0.625rem;
+    --enigma-select-panel-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+    --enigma-select-panel-width: 100%;
+    --enigma-select-list-height: 15rem;
+
+    --enigma-select-active-bg: #2a2a2a;
+    --enigma-select-accent: #fbbf24;
+    --enigma-select-tag-bg: #2a2a2a;
+}
+
+@media (prefers-color-scheme: light) {
+    :root {
+        --enigma-select-bg: #ffffff;
+        --enigma-select-border: #d4d4d4;
+        --enigma-select-border-focus: #737373;
+        --enigma-select-text: #171717;
+        --enigma-select-muted: #737373;
+        --enigma-select-panel-bg: #ffffff;
+        --enigma-select-panel-border: #e5e5e5;
+        --enigma-select-panel-shadow: 0 12px 32px rgba(0, 0, 0, 0.12);
+        --enigma-select-active-bg: #f5f5f5;
+        --enigma-select-accent: #b45309;
+        --enigma-select-tag-bg: #f0f0f0;
+    }
+}
+
+[data-enigma-select-root] { position: relative; display: inline-block; min-width: 0; }
+
+[data-enigma-select-trigger] {
+    display: flex; align-items: center; gap: 0.5rem;
+    width: 100%; min-width: 0; box-sizing: border-box;
+    padding: var(--enigma-select-padding);
+    font: inherit; font-size: var(--enigma-select-font-size); text-align: left;
+    color: var(--enigma-select-text); background: var(--enigma-select-bg);
+    border: 1px solid var(--enigma-select-border); border-radius: var(--enigma-select-radius);
+    cursor: pointer;
+}
+[data-enigma-select-trigger]:focus-visible { outline: 2px solid var(--enigma-select-border-focus); outline-offset: 1px; }
+[data-enigma-select-trigger][data-open] { border-color: var(--enigma-select-border-focus); }
+[data-enigma-select-trigger]:disabled,
+[data-enigma-select-trigger][aria-disabled="true"] { opacity: 0.5; cursor: not-allowed; }
+
+/* The caret. Drawn rather than loaded: an icon font or an SVG file is a request, and this
+   is two borders. */
+[data-enigma-select-trigger]::after {
+    content: ""; flex: none; margin-left: auto;
+    width: 0.4rem; height: 0.4rem;
+    border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
+    transform: translateY(-0.1rem) rotate(45deg);
+    opacity: 0.6; transition: transform 120ms ease-out;
+}
+[data-enigma-select-trigger][data-open]::after { transform: translateY(0.1rem) rotate(225deg); }
+
+[data-enigma-select-value] {
+    display: flex; align-items: center; gap: 0.375rem;
+    /* min-width: 0 is what lets the ellipsis happen: a flex item's default minimum is its
+       content, so without it a long label pushes the caret out of the button. */
+    min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+}
+[data-enigma-select-value][data-placeholder] { color: var(--enigma-select-muted); }
+[data-enigma-select-value][data-tags] { flex-wrap: wrap; white-space: normal; }
+
+[data-enigma-select-tag] {
+    display: inline-flex; align-items: center; gap: 0.25rem;
+    padding: 0.125rem 0.25rem 0.125rem 0.5rem;
+    font-size: 0.8125rem; line-height: 1.4;
+    background: var(--enigma-select-tag-bg); border-radius: 999px;
+}
+[data-enigma-select-tag][data-rest] { padding: 0.125rem 0.5rem; color: var(--enigma-select-muted); }
+
+[data-enigma-select-tag-remove] {
+    display: grid; place-items: center;
+    width: 1rem; height: 1rem; border-radius: 999px;
+    color: var(--enigma-select-muted); font-size: 0.875rem; line-height: 1; cursor: pointer;
+}
+[data-enigma-select-tag-remove]:hover { color: var(--enigma-select-text); background: var(--enigma-select-active-bg); }
+
+[data-enigma-select-clear] {
+    display: grid; place-items: center; flex: none;
+    width: 1.25rem; height: 1.25rem; margin-left: 0.125rem;
+    color: var(--enigma-select-muted); background: none; border: 0; border-radius: 999px;
+    font-size: 0.875rem; line-height: 1; cursor: pointer;
+}
+[data-enigma-select-clear]:hover { color: var(--enigma-select-text); background: var(--enigma-select-active-bg); }
+
+[data-enigma-select-content] {
+    position: absolute; z-index: 50;
+    top: calc(100% + 0.25rem); left: 0;
+    min-width: var(--enigma-select-panel-width); box-sizing: border-box;
+    padding: 0.25rem;
+    background: var(--enigma-select-panel-bg);
+    border: 1px solid var(--enigma-select-panel-border);
+    border-radius: var(--enigma-select-panel-radius);
+    box-shadow: var(--enigma-select-panel-shadow);
+    animation: enigma-select-in 120ms ease-out;
+}
+/* Opening upwards is not a variant, it is the same panel measured against the window: near
+   the bottom of the screen the list would otherwise be unreachable. */
+[data-enigma-select-content][data-side="top"] { top: auto; bottom: calc(100% + 0.25rem); }
+[data-enigma-select-content][data-state="closed"] { animation: enigma-select-out 120ms ease-in forwards; pointer-events: none; }
+
+@keyframes enigma-select-in {
+    from { opacity: 0; transform: translateY(-0.25rem); }
+    to { opacity: 1; transform: none; }
+}
+@keyframes enigma-select-out {
+    from { opacity: 1; }
+    to { opacity: 0; transform: translateY(-0.125rem); }
+}
+@media (prefers-reduced-motion: reduce) {
+    [data-enigma-select-content],
+    [data-enigma-select-content][data-state="closed"] { animation: none; }
+    [data-enigma-select-trigger]::after { transition: none; }
+}
+
+[data-enigma-select-search] {
+    width: 100%; box-sizing: border-box;
+    padding: 0.375rem 0.5rem 0.5rem;
+    font: inherit; font-size: var(--enigma-select-font-size);
+    color: var(--enigma-select-text); background: transparent;
+    border: 0; border-bottom: 1px solid var(--enigma-select-panel-border);
+    outline: none;
+}
+/* WebKit's own clear cross, gone: it is drawn on no other engine, so leaving it in gives
+   half the visitors a control the other half never sees. */
+[data-enigma-select-search]::-webkit-search-cancel-button,
+[data-enigma-select-search]::-webkit-search-decoration { -webkit-appearance: none; appearance: none; }
+
+[data-enigma-select-list] {
+    max-height: var(--enigma-select-list-height);
+    margin-top: 0.25rem;
+    overflow-y: auto; overscroll-behavior: contain;
+}
+
+[data-enigma-select-group-label] {
+    margin: 0.375rem 0 0.125rem; padding: 0 0.5rem;
+    font-size: 0.6875rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--enigma-select-muted);
+}
+
+[data-enigma-select-option] {
+    display: flex; align-items: center; gap: 0.5rem;
+    padding: 0.4375rem 0.5rem; border-radius: 0.375rem;
+    font-size: var(--enigma-select-font-size); color: var(--enigma-select-text);
+    cursor: pointer;
+}
+[data-enigma-select-option][data-active] { background: var(--enigma-select-active-bg); }
+[data-enigma-select-option][data-disabled] { opacity: 0.45; cursor: not-allowed; }
+
+[data-enigma-select-option-text] { display: grid; min-width: 0; }
+[data-enigma-select-option-label] { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+[data-enigma-select-option-description] {
+    font-size: 0.75rem; color: var(--enigma-select-muted);
+    overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+}
+
+[data-enigma-select-icon] { display: inline-flex; align-items: center; flex: none; max-height: 1.25em; line-height: 0; }
+
+/* The check, drawn with two borders and shown only where it belongs. Reserved space either
+   way, so choosing a row does not shift the label under the pointer. */
+[data-enigma-select-check] {
+    flex: none; margin-left: auto;
+    width: 0.35rem; height: 0.6rem;
+    border-right: 2px solid var(--enigma-select-accent); border-bottom: 2px solid var(--enigma-select-accent);
+    transform: rotate(45deg) translate(-0.05rem, -0.05rem);
+    opacity: 0;
+}
+[data-enigma-select-option][data-selected] [data-enigma-select-check] { opacity: 1; }
+
+/* The end-of-window marker: one pixel, so it has a box to be scrolled into. */
+[data-enigma-select-more] { height: 1px; }
+
+[data-enigma-select-empty] {
+    margin: 0; padding: 0.75rem 0.5rem;
+    font-size: var(--enigma-select-font-size); color: var(--enigma-select-muted);
+}

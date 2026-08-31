@@ -33,6 +33,11 @@
 }
 .pg-text:focus { outline: none; border-color: var(--muted); }
 
+/* The select control, sized like the text field it sits beside. */
+.pg-select { width: 118px; flex: 0 0 auto; }
+.pg-select [data-enigma-select-trigger] { font-family: var(--mono); font-size: 12px; padding: 5px 8px; }
+.pg-select [data-enigma-select-option] { font-family: var(--mono); font-size: 12px; }
+
 .pg-reset {
     justify-self: start; margin-top: 4px;
     font-family: var(--mono); font-size: 11px; color: var(--muted);
@@ -78,6 +83,9 @@
    working. Dimmed and `not-allowed`, same as disabled, is the honest version. */
 /* The cooldown is the one state worth showing as more than dimmed text. */
 .pg-btn[data-cooldown] { color: var(--text); background: var(--surface2); border-color: var(--border); }
+
+/* The select preview: a width to live in, since the control fills whatever it is given. */
+.pg-picker { width: min(280px, 100%); }
 
 /* Gives the field a width to live in; the recipe's stylesheet does the rest. */
 .pg-field { width: min(340px, 100%); }

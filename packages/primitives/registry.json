@@ -586,6 +586,138 @@
       ]
     },
     {
+      "name": "select",
+      "title": "Select",
+      "description": "A listbox that replaces the native select: icons and a second line on an option, rows that cannot be chosen, one value or many with removable tags, groups, a filter that appears on its own once the list is long enough (fuzzy with Fuse.js, plain without it), typeahead and the full keyboard, a hidden field so a plain form still posts it, and a long list rendered a window at a time. It brings its own theme - an unstyled popup is transparent text over the page rather than a plain-looking control.",
+      "targets": [
+        "react"
+      ],
+      "entry": {
+        "react": "@enigmax/primitives/react/select"
+      },
+      "exports": {
+        "react": [
+          "Select",
+          "useSelectContext",
+          "createSelect"
+        ]
+      },
+      "files": [
+        {
+          "path": "src/core/search.ts",
+          "dest": "select/search-core.ts",
+          "targets": [
+            "react"
+          ]
+        },
+        {
+          "path": "src/core/palette.ts",
+          "dest": "select/rows.ts",
+          "targets": [
+            "react"
+          ]
+        },
+        {
+          "path": "src/core/select.ts",
+          "dest": "select/select.ts",
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/core/search": "./search-core"
+          }
+        },
+        {
+          "path": "src/react/slot.tsx",
+          "dest": "select/slot.tsx",
+          "targets": [
+            "react"
+          ]
+        },
+        {
+          "path": "src/react/select/styles.ts",
+          "dest": "select/styles.ts",
+          "targets": [
+            "react"
+          ]
+        },
+        {
+          "path": "recipes/select/styles.css",
+          "dest": "select/styles.css",
+          "targets": [
+            "react"
+          ],
+          "style": "css"
+        },
+        {
+          "path": "src/react/select/context.ts",
+          "dest": "select/context.ts",
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/core/select": "./select"
+          }
+        },
+        {
+          "path": "src/react/select/root.tsx",
+          "dest": "select/root.tsx",
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/core/select": "./select",
+            "@/core/palette": "./rows",
+            "@/react/slot": "./slot",
+            "@/react/select/styles": "./styles",
+            "@/react/select/context": "./context"
+          }
+        },
+        {
+          "path": "src/react/select/index.tsx",
+          "dest": "select/index.tsx",
+          "main": true,
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/react/select/root": "./root",
+            "@/react/select/context": "./context",
+            "@/react/select/styles": "./styles",
+            "@/core/select": "./select"
+          }
+        }
+      ],
+      "styles": true,
+      "themeHooks": [
+        "[data-enigma-select-root]",
+        "[data-enigma-select-trigger]",
+        "[data-enigma-select-trigger][data-open]",
+        "[data-enigma-select-value][data-placeholder]",
+        "[data-enigma-select-tag]",
+        "[data-enigma-select-tag-remove]",
+        "[data-enigma-select-clear]",
+        "[data-enigma-select-content]",
+        "[data-enigma-select-content][data-side=top]",
+        "[data-enigma-select-search]",
+        "[data-enigma-select-list]",
+        "[data-enigma-select-group-label]",
+        "[data-enigma-select-option]",
+        "[data-enigma-select-option][data-active]",
+        "[data-enigma-select-option][data-selected]",
+        "[data-enigma-select-option][data-disabled]",
+        "[data-enigma-select-option-label]",
+        "[data-enigma-select-option-description]",
+        "[data-enigma-select-icon]",
+        "[data-enigma-select-check]",
+        "[data-enigma-select-empty]"
+      ],
+      "docs": "docs/notes/primitives.md#select",
+      "recipes": [
+        "css"
+      ]
+    },
+    {
       "name": "flags",
       "title": "Country flags",
       "description": "A flag as an image, served by enigma or from files in your project, rectangular, square or round. It names itself in the reader's language, and accepts the emoji flag it replaces as its code - Windows ships no glyph for those, so a picker built out of emoji renders as bare letters for most desktop readers.",

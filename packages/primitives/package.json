@@ -25,6 +25,10 @@
       "types": "./dist/react/palette.d.ts",
       "import": "./dist/react/palette.js"
     },
+    "./react/select": {
+      "types": "./dist/react/select.d.ts",
+      "import": "./dist/react/select.js"
+    },
     "./react/button": {
       "types": "./dist/react/button.d.ts",
       "import": "./dist/react/button.js"
@@ -79,7 +83,8 @@
     "./input.css": "./recipes/input/styles.css",
     "./marquee.css": "./recipes/marquee/styles.css",
     "./logo-marquee.css": "./recipes/logo-marquee/styles.css",
-    "./palette.css": "./recipes/palette/styles.css"
+    "./palette.css": "./recipes/palette/styles.css",
+    "./select.css": "./recipes/select/styles.css"
   },
   "scripts": {
     "build": "tsup",
@@ -156,6 +161,7 @@
     "react",
     "relative-time",
     "search",
+    "select",
     "toast",
     "unstyled",
     "vanilla"

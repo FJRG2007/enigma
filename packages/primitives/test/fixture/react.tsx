@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { createRoot } from "react-dom/client";
 import { SearchPalette } from "@/react/palette";
+import { Select, type SelectItem } from "@/react/select";
 // The Next entry, with next/link aliased to a stub at bundle time.
 import { Button as NextButton } from "@/next/index";
 // The React Router entry, with react-router aliased to a stub at bundle time.
@@ -25,6 +26,9 @@ interface FixtureWindow extends Window {
     __breach: BreachState | null;
     __breachCalls: string[];
     __selected: string;
+    __country: string;
+    __stack: string[];
+    __renders: number;
 }
 
 const fixture = window as unknown as FixtureWindow;
@@ -34,6 +38,8 @@ fixture.__strength = null;
 fixture.__breach = null;
 fixture.__breachCalls = [];
 fixture.__selected = "";
+fixture.__country = "";
+fixture.__stack = [];
 fixture.__presses = 0;
 fixture.__clickTarget = "";
 
@@ -54,6 +60,32 @@ const DOCS = [
     { title: "Installation", section: "Guides", href: "/install" }
 ];
 
+/**
+ * Nine options with a group, an icon, a description and one that cannot be chosen - every
+ * shape the select has to draw, in the list the tests read.
+ */
+const COUNTRIES: SelectItem[] = [
+    { value: "es", label: "Spain", group: "Europe", icon: <i data-flag="es" /> },
+    { value: "fr", label: "France", group: "Europe" },
+    { value: "de", label: "Germany", group: "Europe", disabled: true },
+    { value: "pt", label: "Portugal", group: "Europe" },
+    { value: "it", label: "Italy", group: "Europe" },
+    { value: "us", label: "United States", group: "Americas", description: "USA" },
+    { value: "mx", label: "Mexico", group: "Americas" },
+    { value: "br", label: "Brazil", group: "Americas" },
+    { value: "ar", label: "Argentina", group: "Americas" }
+];
+
+/**
+ * Two hundred rows with an icon each - the case that made the panel slow to open, and the
+ * one the list's window exists for.
+ */
+const MANY: SelectItem[] = Array.from({ length: 200 }, (_, index) => ({
+    value: `row-${index}`,
+    label: `Row ${index}`,
+    icon: <i data-icon={index} />
+}));
+
 /** Answers instantly and locally, so the test measures the component and not a network. */
 const BREACHED = new Set(["password", "hunter2"]);
 
@@ -70,8 +102,17 @@ function checkBreach(password: string, { signal }: { signal: AbortSignal; }): Pr
     });
 }
 
+let renders = 0;
+
 function Form(): React.ReactNode {
+    // Every render of this tree, so a component that renders itself in a loop is a number
+    // that keeps climbing rather than a page that merely feels slow.
+    fixture.__renders = ++renders;
     const [password, setPassword] = useState("");
+    const [country, setCountry] = useState("");
+    const [stack, setStack] = useState<string[]>([]);
+    fixture.__country = country;
+    fixture.__stack = stack;
     const [, redraw] = useState(0);
     fixture.__value = password;
 
@@ -155,6 +196,45 @@ function Form(): React.ReactNode {
                     </ul>
                 )}
             />
+
+            {/* One value, no filter: the keyboard and the typeahead are the whole interface. */}
+            <div data-testid="country">
+                <Select
+                    options={COUNTRIES}
+                    searchable={false}
+                    value={country}
+                    onValueChange={setCountry}
+                    placeholder="Country"
+                    name="country"
+                />
+            </div>
+
+            {/* Many values: tags, a filter turned on by the option count, and a form name. */}
+            <div data-testid="stack">
+                <Select
+                    multiple
+                    options={COUNTRIES}
+                    value={stack}
+                    onValueChange={setStack}
+                    placeholder="Anywhere"
+                    name="markets"
+                />
+            </div>
+
+            {/* Long list: what reaches the document is a window, not two hundred rows. */}
+            <div data-testid="many">
+                <Select options={MANY} placeholder="Pick a row" />
+            </div>
+
+            {/* Options built in the render, which is how they are usually written: a new
+                array of new objects every time, and the component must not chase it. */}
+            <div data-testid="inline">
+                <Select
+                    options={COUNTRIES.map((option) => ({ ...option }))}
+                    placeholder="Inline"
+                    searchable={false}
+                />
+            </div>
 
             <SearchPalette
                 items={DOCS}

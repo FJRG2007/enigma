@@ -1,3 +1,4 @@
+import { Select } from "@enigmax/primitives/react/select";
 import "./playground.css";
 import { highlight } from "./highlight";
 import { COPY_ICON, bindCopy } from "../../lib/copy";
@@ -177,13 +178,15 @@ export function Playground<V extends Record<string, string | boolean>>({ control
                                 />
                             )}
                             {control.type === "select" && (
-                                <select
-                                    className="pg-text"
+                                // The package's own select, not the platform's: these pages
+                                // are the first place a component has to hold up, and the
+                                // native popup is drawn by the OS and cannot be themed.
+                                <Select
+                                    className="pg-select"
+                                    options={control.options}
                                     value={String(values[control.name] ?? "")}
-                                    onChange={(event) => set(control.name, event.target.value)}
-                                >
-                                    {control.options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                                </select>
+                                    onValueChange={(next) => set(control.name, next)}
+                                />
                             )}
                         </label>
                     ))}
