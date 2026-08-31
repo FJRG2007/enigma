@@ -60,6 +60,12 @@
     transition: opacity 120ms ease-out;
 }
 .pg-btn:hover { opacity: 0.9; }
+/* The shortcut badge: a key, sized to the label rather than to the button. */
+.pg-btn kbd {
+    font-family: var(--mono); font-size: 11px; line-height: 1;
+    padding: 3px 6px; border-radius: 5px;
+    color: inherit; background: rgba(0, 0, 0, 0.14);
+}
 .pg-btn[aria-disabled="true"] { opacity: 0.45; cursor: not-allowed; }
 .pg-btn[data-loading] { cursor: progress; }
 /* The cooldown is the one state worth showing as more than dimmed text. */

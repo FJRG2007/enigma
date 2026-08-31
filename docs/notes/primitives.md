@@ -178,6 +178,39 @@ Three changes, in the order they matter:
    `loading="lazy"` on a marquee image either: the row measures its lap from the rendered
    width, and a lazy image has none.
 
+## One entry per component, not one entry for the package
+
+`@enigmax/primitives/react` exports everything and is still the convenient import, but every
+component ALSO has its own entry - `/react/input`, `/react/palette`, `/react/button`. That is
+the shape Radix ships, and the reason is measurable rather than stylistic.
+
+A barrel is only as tree-shakeable as its least pure module. Enough of what a component
+library does at module scope reads as a side effect to a bundler - `forwardRef(...)`,
+`createContext(...)`, `lazy(...)`, `SearchPalette.Root = PaletteRoot` - and one of those
+keeps the whole chunk alive. Measured on a form of two text fields, importing from the
+barrel: **20.8 KB before the split, 4.5 KB after**, with no palette, no password estimator
+and no search engine in it. The barrel improved too, because it is now a re-export of small
+modules rather than one fat chunk.
+
+`sideEffects: ["*.css"]` in the manifest is the other half: without it a bundler must assume
+every module might do something on import and keeps them all. The CSS recipes are listed
+because a stylesheet IS a side effect, and dropping one leaves a component styled by nothing.
+
+## asChild: the escape hatch that decides whether a package is usable
+
+`Slot` (`react/slot.tsx`) is Radix's, deliberately - the semantics are the ones a React
+developer already knows. A component that always renders its own `<button>` forces anyone
+who needs a `motion.button`, a router `Link` or their own design system's button to
+reimplement the behaviour, and that is the moment a team stops using the package.
+
+Its rules, and why each is the way round it is: the CHILD's props win, because the child is
+what someone wrote by hand at that call site; event handlers are CHAINED, ours first, since
+dropping ours takes the behaviour with it silently (the exact failure `onClick` on the Button
+cost once); `className` and `style` are merged; refs are composed.
+
+`<Button asChild>` does not inject its shortcut badge, because a slot takes exactly one child
+and a second one throws. `state.shortcut` from `useButton` is how a custom render places it.
+
 ## input
 
 **React gets a component, not a hook over a DOM mutator.** `<Input>` renders the field, its
@@ -212,6 +245,25 @@ forms and are noise on a sign-in.
   and a count and stops there: a breach is a warning in one form, a hard block in another,
   and each form already renders that its own way.
 
+**One component keyed on `type`, because that is what HTML is.** `type` is an attribute of a
+single element, so `<Input type="password">` and `<Input type="search">` are one component -
+what differs is which PROPS exist, and that is a discriminated union: `strength` on a text
+field is a compile error rather than a prop that silently does nothing. Radix splits Select,
+Checkbox and Slider into their own primitives because those are composed WIDGETS rather than
+an `<input>`; the same reasoning puts the command palette in its own component and keeps the
+field as one.
+
+**Each type loads its own machinery.** `react/input/index.tsx` is the field, its buttons and
+the reveal, and nothing else. `password.tsx` (estimator, meter, breach watcher) and
+`search.tsx` (the engine) are separate modules pulled in with `lazy()` the moment a type that
+needs them is used, and the generator is imported on the first press of its button. A form of
+text and email fields therefore downloads none of it. Nothing may re-export a value from those
+chunks through the field: a static edge is exactly what stops a chunk being a chunk, and the
+bundler folds it straight back in. The types are re-exported freely, because a type is erased.
+
+The icons moved to `core/input-icons.ts` for the same reason - importing two arrays of path
+data from `core/input.ts` put the whole imperative vanilla renderer into every React bundle.
+
 `createInput(field, options)`. A `type="password"` field gets a reveal toggle; the icon,
 the labels, the side and the container are all replaceable, and the built-in is expressed
 as an ordinary `InputAction` so passing one named `"reveal"` replaces it outright.
@@ -235,6 +287,40 @@ Four things the hand-rolled version gets wrong, each with a test:
 
 `destroy()` puts a revealed field back to `password`; leaving it as text would show the
 value to whoever sees the screen next.
+
+## palette
+
+The Ctrl/Cmd+K panel. A DIALOG, which is why it is its own component rather than a prop on
+the search field: a palette is a trigger, an overlay, a focus trap, a listbox and a footer,
+and what makes those usable together is composition. `SearchPalette.Root` and its parts are
+the anatomy; `<SearchPalette>` is those parts in the order they belong in.
+
+The design is generalised from the Polaris command palette, which is where the decisions
+below were paid for once already:
+
+- **One flat keyboard sequence across every group.** `groupRows` keeps each row's flat
+  position, so a group boundary is invisible to the arrow keys. A renderer that grouped into
+  separate arrays would have to reconstruct that sequence, which is where an off-by-one makes
+  Enter open the row above the highlighted one.
+- **The highlight wraps.** In a short list the row after the last one is the first, and an
+  arrow key that does nothing at the end reads as a frozen panel.
+- **A shorter list pulls the highlight back.** Otherwise it sits past the end and Enter opens
+  nothing, which is the single most common palette bug.
+- **The caret stays in the field.** The arrows move a highlight somewhere else, so the row is
+  announced through `aria-activedescendant`; focus never leaves, and without that attribute a
+  screen reader hears nothing move.
+- **The pointer moves the SAME highlight.** Two highlights on screen is what makes a palette
+  feel unpredictable, because Enter then opens the row the mouse is not on.
+- **Opening clears the query.** A palette that comes back holding the last search is one you
+  have to empty before using, and it hides what an empty query is for - the recents, which are
+  the shortcut on the second visit.
+- **Closing hands focus back to the trigger**, or dismissing with Escape drops the visitor at
+  the top of the document. The scroll lock compensates for the scrollbar width, since hiding
+  it without that shifts the whole page.
+- **Recents are guarded end to end** (`core/palette.ts`): storage throws in a private window,
+  when the quota is full, and on a file URL, and a palette that cannot remember is still a
+  working palette. They are read on OPEN rather than on mount, because another tab may have
+  written since.
 
 ## search
 

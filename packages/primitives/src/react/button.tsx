@@ -1,9 +1,10 @@
 "use client";
 
+import { Slot } from "@/react/slot";
 import { useButton } from "@/react/use-button";
 import { getLinkComponent } from "@/react/link";
 import type { ButtonOptions, ButtonState } from "@/core/button";
-import { createElement, forwardRef, type ComponentPropsWithoutRef, type ElementType, type ReactNode } from "react";
+import { createElement, forwardRef, isValidElement, type ComponentPropsWithoutRef, type ElementType, type ReactNode } from "react";
 
 /**
  * `<Button>` - the component, for the ninety percent.
@@ -51,6 +52,49 @@ export interface ButtonProps extends ButtonOptions, Omit<ComponentPropsWithoutRe
     pending?: ReactNode;
     /** `type` on a real button. Ignored on a link, which has none. */
     type?: "button" | "submit" | "reset";
+    /**
+     * Show the shortcut as a key badge after the label, the way Stripe writes
+     * "Create invoice n".
+     *
+     * `"auto"` (the default) shows it when there is a shortcut AND the label renders text:
+     * beside a lone glyph on an icon-only button the badge is noise, and it would double the
+     * width of the smallest control on the screen. `true` and `false` decide it outright.
+     */
+    shortcutHint?: boolean | "auto";
+    /** Render the badge yourself. Return null to drop it for one button. */
+    renderShortcut?: (key: string) => ReactNode;
+    /**
+     * Put the behaviour on YOUR element instead of ours - a `motion.button`, your design
+     * system's button, a router Link, anything.
+     *
+     * ```tsx
+     * <Button asChild cooldown={30_000} onPress={resend}>
+     *     <motion.button whileTap={{ scale: 0.98 }}>Resend</motion.button>
+     * </Button>
+     * ```
+     *
+     * The child owns its own markup, so the shortcut badge is not injected - the child is
+     * rendered exactly as written. Read `state.shortcut` from `useButton` to place your own.
+     */
+    asChild?: boolean;
+}
+
+/**
+ * Whether a label renders any TEXT.
+ *
+ * Walked rather than assumed: `<Button shortcut="s"><Icon /></Button>` and
+ * `<Button shortcut="s"><Icon /> Save</Button>` differ only in a string buried in the tree,
+ * and that string is the whole difference between a hint and a decoration. An element whose
+ * text arrives from somewhere this cannot see reports false, so `auto` errs towards the
+ * quieter button; `shortcutHint` overrides it in one word.
+ */
+function hasText(node: ReactNode): boolean {
+    if (node === null || node === undefined || typeof node === "boolean") return false;
+    if (typeof node === "string") return node.trim().length > 0;
+    if (typeof node === "number") return true;
+    if (Array.isArray(node)) return node.some(hasText);
+    if (isValidElement(node)) return hasText((node.props as { children?: ReactNode; }).children);
+    return false;
 }
 
 export const Button = forwardRef<HTMLElement, ButtonProps>(function Button({
@@ -66,6 +110,9 @@ export const Button = forwardRef<HTMLElement, ButtonProps>(function Button({
     onClick,
     onChange,
     type = "button",
+    shortcutHint = "auto",
+    renderShortcut,
+    asChild = false,
     ...rest
 }, ref) {
     const button = useButton({ href, disabled, loading, cooldown, shortcut, onPress: onPress ?? onClick, onChange });
@@ -75,17 +122,36 @@ export const Button = forwardRef<HTMLElement, ButtonProps>(function Button({
     // to setLinkComponent - and a plain <a> when nothing was. The package cannot import a
     // router itself, so registering one is what turns every href into a client navigation
     // without a word at the call site.
-    const Tag: ElementType = as ?? (state.element === "a" ? getLinkComponent() : "button");
+    const Tag: ElementType = asChild ? Slot : as ?? (state.element === "a" ? getLinkComponent() : "button");
 
     // `type="button"` is the default on purpose. A bare <button> inside a form submits it,
-    // so an action button that forgot it posts the form instead of doing its job.
+    // so an action button that forgot it posts the form instead of doing its job. Never
+    // injected through a slot: the child may be an anchor or a div, where `type` is either
+    // invalid or means something else entirely.
     const native = Tag === "button" ? { type } : {};
 
     const label = typeof children === "function" ? children(state) : children;
+    const content = state.loading && pending !== undefined ? pending : label;
+
+    // Not while it is working: the label has already been replaced by whatever `pending`
+    // says, and a key that does nothing right now is not a hint.
+    // Never through a slot: it takes exactly one child, and a second one would throw.
+    const showHint = !asChild && Boolean(state.shortcut) && !state.loading &&
+        (shortcutHint === "auto" ? hasText(content) : shortcutHint);
+    const hint = showHint && state.shortcut
+        ? renderShortcut?.(state.shortcut) ?? createElement(
+            "kbd",
+            // Hidden from the accessible name - the button already carries
+            // `aria-keyshortcuts`, and "Save n" is not what anyone wants read out.
+            { "data-enigma-button-key": "", "aria-hidden": true },
+            state.shortcut
+        )
+        : null;
 
     return createElement(
         Tag,
         { ref, ...button.props, ...native, ...rest },
-        state.loading && pending !== undefined ? pending : label
+        content,
+        hint
     );
 });

@@ -3,6 +3,9 @@
   "version": "0.17.0",
   "description": "Headless components: the behaviour, the timing and the accessibility, with no styles of their own. Framework-agnostic core plus thin adapters.",
   "type": "module",
+  "sideEffects": [
+    "*.css"
+  ],
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -13,6 +16,50 @@
     "./react": {
       "types": "./dist/react/index.d.ts",
       "import": "./dist/react/index.js"
+    },
+    "./react/input": {
+      "types": "./dist/react/input.d.ts",
+      "import": "./dist/react/input.js"
+    },
+    "./react/palette": {
+      "types": "./dist/react/palette.d.ts",
+      "import": "./dist/react/palette.js"
+    },
+    "./react/button": {
+      "types": "./dist/react/button.d.ts",
+      "import": "./dist/react/button.js"
+    },
+    "./react/flag": {
+      "types": "./dist/react/flag.d.ts",
+      "import": "./dist/react/flag.js"
+    },
+    "./react/toast": {
+      "types": "./dist/react/toast.d.ts",
+      "import": "./dist/react/toast.js"
+    },
+    "./react/marquee": {
+      "types": "./dist/react/marquee.d.ts",
+      "import": "./dist/react/marquee.js"
+    },
+    "./react/search": {
+      "types": "./dist/react/search.d.ts",
+      "import": "./dist/react/search.js"
+    },
+    "./react/network": {
+      "types": "./dist/react/network.d.ts",
+      "import": "./dist/react/network.js"
+    },
+    "./react/notifications": {
+      "types": "./dist/react/notifications.d.ts",
+      "import": "./dist/react/notifications.js"
+    },
+    "./react/relative-time": {
+      "types": "./dist/react/relative-time.d.ts",
+      "import": "./dist/react/relative-time.js"
+    },
+    "./react/slot": {
+      "types": "./dist/react/slot.d.ts",
+      "import": "./dist/react/slot.js"
     },
     "./registry.json": "./registry.json",
     "./search": {
@@ -51,6 +98,7 @@
   ],
   "peerDependencies": {
     "@github/relative-time-element": ">=4",
+    "react-dom": ">=18",
     "fuse.js": ">=6",
     "next": ">=13",
     "react": ">=18",
@@ -58,6 +106,9 @@
   },
   "peerDependenciesMeta": {
     "react": {
+      "optional": true
+    },
+    "react-dom": {
       "optional": true
     },
     "fuse.js": {

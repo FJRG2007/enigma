@@ -155,8 +155,8 @@
     },
     {
       "name": "input",
-      "title": "Input, with what a password field needs",
-      "description": "A field you pass props to, with no styles of its own. A password gets its reveal toggle automatically; a generator, a strength meter and a breach check are one prop each and off until you ask. React renders every part of it, so nothing fights your tree.",
+      "title": "Input, one field for every type",
+      "description": "A field you pass props to, typed by its `type`: password gets the reveal toggle, a generator, a strength meter and a breach check; search gets debouncing, ranking and a clear button; everything else is a plain field with native props. What each type needs is loaded when that type is used, so a form of text fields ships none of it.",
       "targets": [
         "vanilla",
         "astro",
@@ -165,7 +165,7 @@
       "entry": {
         "vanilla": "@enigmax/primitives",
         "astro": "@enigmax/primitives",
-        "react": "@enigmax/primitives/react"
+        "react": "@enigmax/primitives/react/input"
       },
       "exports": {
         "vanilla": [
@@ -181,17 +181,28 @@
       },
       "files": [
         {
+          "path": "src/core/input-icons.ts",
+          "dest": "input/input-icons.ts",
+          "targets": [
+            "vanilla",
+            "astro",
+            "react"
+          ]
+        },
+        {
           "path": "src/core/input.ts",
           "dest": "input/input.ts",
           "targets": [
             "vanilla",
-            "astro",
-            "react"
-          ]
+            "astro"
+          ],
+          "rewrite": {
+            "@/core/input-icons": "./input-icons"
+          }
         },
         {
           "path": "src/core/password.ts",
-          "dest": "input/password.ts",
+          "dest": "input/password-core.ts",
           "targets": [
             "vanilla",
             "astro",
@@ -199,13 +210,56 @@
           ]
         },
         {
-          "path": "src/react/use-input.ts",
-          "dest": "input/use-input.ts",
+          "path": "src/core/search.ts",
+          "dest": "input/search-core.ts",
+          "targets": [
+            "react"
+          ]
+        },
+        {
+          "path": "src/react/input/types.ts",
+          "dest": "input/types.ts",
           "targets": [
             "react"
           ],
           "rewrite": {
-            "@/core/input": "./input"
+            "@/core/search": "./search-core",
+            "@/core/password": "./password-core"
+          }
+        },
+        {
+          "path": "src/react/input/icon.tsx",
+          "dest": "input/icon.tsx",
+          "targets": [
+            "react"
+          ]
+        },
+        {
+          "path": "src/react/input/write-value.ts",
+          "dest": "input/write-value.ts",
+          "targets": [
+            "react"
+          ]
+        },
+        {
+          "path": "src/react/input/password.tsx",
+          "dest": "input/password.tsx",
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/core/password": "./password-core",
+            "@/react/input/types": "./types"
+          }
+        },
+        {
+          "path": "src/react/input/search.tsx",
+          "dest": "input/search.tsx",
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/core/search": "./search-core"
           }
         },
         {
@@ -219,15 +273,20 @@
           "style": "css"
         },
         {
-          "path": "src/react/input.tsx",
+          "path": "src/react/input/index.tsx",
           "dest": "input/index.tsx",
           "main": true,
           "targets": [
             "react"
           ],
           "rewrite": {
-            "@/core/input": "./input",
-            "@/core/password": "./password"
+            "@/react/input/icon": "./icon",
+            "@/react/input/write-value": "./write-value",
+            "@/core/input-icons": "./input-icons",
+            "@/react/input/types": "./types",
+            "@/react/input/password": "./password",
+            "@/react/input/search": "./search",
+            "@/core/password": "./password-core"
           }
         },
         {
@@ -262,7 +321,8 @@
         "[data-enigma-password-strength-segment]",
         "[data-enigma-password-strength-segment][data-filled]",
         "[data-enigma-password-strength-label]",
-        "[data-enigma-password-strength-warning]"
+        "[data-enigma-password-strength-warning]",
+        "[data-enigma-input-action=clear]"
       ],
       "docs": "docs/notes/primitives.md#input",
       "recipes": [
@@ -273,7 +333,7 @@
     {
       "name": "search",
       "title": "Search as you type",
-      "description": "Search as you type, fuzzy by default with Fuse.js. Debouncing, ranking and cancellation are the primitive's; the matching is replaceable, and dropping Fuse falls back to a built-in accent-insensitive substring matcher.",
+      "description": "The engine behind `<Input type=\"search\">` and the palette: debouncing, ranking and cancellation, fuzzy with Fuse.js or a built-in accent-insensitive substring matcher with no dependency at all.",
       "targets": [
         "vanilla",
         "astro",
@@ -282,7 +342,7 @@
       "entry": {
         "vanilla": "@enigmax/primitives/search",
         "astro": "@enigmax/primitives/search",
-        "react": "@enigmax/primitives/react"
+        "react": "@enigmax/primitives/react/search"
       },
       "exports": {
         "vanilla": [
@@ -413,9 +473,106 @@
         "[data-loading]",
         "[data-cooldown]",
         "[aria-disabled=true]",
-        "[aria-busy=true]"
+        "[aria-busy=true]",
+        "[data-enigma-button-key]"
       ],
       "docs": "docs/notes/primitives.md#button"
+    },
+    {
+      "name": "palette",
+      "title": "Command palette",
+      "description": "Ctrl/Cmd+K, search as you type, what was searched before, groups, and every key a palette is expected to answer to. A dialog made of parts you can compose or take whole, with the focus trap, the scroll lock and the listbox wiring already right.",
+      "targets": [
+        "react"
+      ],
+      "entry": {
+        "react": "@enigmax/primitives/react/palette"
+      },
+      "exports": {
+        "react": [
+          "SearchPalette"
+        ]
+      },
+      "files": [
+        {
+          "path": "src/core/palette.ts",
+          "dest": "palette/palette.ts",
+          "targets": [
+            "react"
+          ]
+        },
+        {
+          "path": "src/core/search.ts",
+          "dest": "palette/search-core.ts",
+          "targets": [
+            "react"
+          ]
+        },
+        {
+          "path": "src/react/slot.tsx",
+          "dest": "palette/slot.tsx",
+          "targets": [
+            "react"
+          ]
+        },
+        {
+          "path": "src/react/palette/context.ts",
+          "dest": "palette/context.ts",
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/core/palette": "./palette",
+            "@/core/search": "./search-core"
+          }
+        },
+        {
+          "path": "src/react/palette/root.tsx",
+          "dest": "palette/root.tsx",
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/core/palette": "./palette",
+            "@/core/search": "./search-core",
+            "@/react/slot": "./slot",
+            "@/react/palette/context": "./context"
+          }
+        },
+        {
+          "path": "src/react/palette/index.tsx",
+          "dest": "palette/index.tsx",
+          "main": true,
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/react/palette/root": "./root",
+            "@/react/palette/context": "./context"
+          }
+        }
+      ],
+      "styles": false,
+      "themeHooks": [
+        "[data-enigma-palette-trigger]",
+        "[data-enigma-palette-trigger-key]",
+        "[data-enigma-palette-overlay]",
+        "[data-enigma-palette-content]",
+        "[data-enigma-palette-title]",
+        "[data-enigma-palette-field]",
+        "[data-enigma-palette-list]",
+        "[data-enigma-palette-group]",
+        "[data-enigma-palette-group-label]",
+        "[data-enigma-palette-item]",
+        "[data-enigma-palette-item][data-active=true]",
+        "[data-enigma-palette-item][data-kind=recent]",
+        "[data-enigma-palette-item-label]",
+        "[data-enigma-palette-item-description]",
+        "[data-enigma-palette-empty]",
+        "[data-enigma-palette-footer]",
+        "[data-enigma-palette-hint]"
+      ],
+      "docs": "docs/notes/primitives.md#palette"
     },
     {
       "name": "flags",

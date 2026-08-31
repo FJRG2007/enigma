@@ -13,6 +13,8 @@ export interface UseButtonResult extends ButtonState {
         disabled?: boolean;
         href?: string;
         title?: string;
+        /** The ARIA way to announce the key. `title` is the pointer half of the same fact. */
+        "aria-keyshortcuts"?: string;
     };
     press: () => void;
     reset: () => void;
@@ -85,7 +87,7 @@ export function useButton(options: ButtonOptions = {}): UseButtonResult {
             ...(state.loading ? { "data-loading": "" as const } : {}),
             ...(state.cooldown > 0 ? { "data-cooldown": "" as const } : {}),
             ...(state.element === "button" ? { disabled: state.disabled } : { href: options.href }),
-            ...(state.shortcut ? { title: `Shortcut: ${state.shortcut.toUpperCase()}` } : {})
+            ...(state.shortcut ? { title: `Shortcut: ${state.shortcut.toUpperCase()}`, "aria-keyshortcuts": state.shortcut } : {})
         }
     };
 }

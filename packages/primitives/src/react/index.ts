@@ -10,16 +10,23 @@ export { useButton, type UseButtonResult } from "@/react/use-button";
 export { Button, type ButtonProps } from "@/react/button";
 export { setLinkComponent, getLinkComponent } from "@/react/link";
 export { type ButtonOptions, type ButtonState } from "@/core/button";
+export { Input } from "@/react/input";
 export {
-    Input,
-    PasswordStrength,
     type InputProps,
-    type PasswordStrengthProps,
+    type InputBaseProps,
+    type InputType,
     type FieldAction,
     type BreachChecker,
     type BreachState,
-    type BreachStatus
-} from "@/react/input";
+    type BreachStatus,
+    type PasswordOnlyProps,
+    type SearchOnlyProps,
+    type PlainOnlyProps
+} from "@/react/input/types";
+// The meter as a standalone component, for a form that renders it somewhere else. Re-exported
+// from the chunk rather than through `Input`, so importing only `Input` leaves it behind.
+export { PasswordStrength, type PasswordStrengthProps } from "@/react/input/password";
+export { Slot, mergeSlotProps, type SlotProps } from "@/react/slot";
 export {
     generatePassword,
     estimatePasswordStrength,
@@ -45,3 +52,30 @@ export {
     type FlagFormat,
     type FlagSource
 } from "@/core/flags";
+export {
+    SearchPalette,
+    PaletteRoot,
+    PaletteTrigger,
+    PaletteContent,
+    PaletteField,
+    PaletteList,
+    PaletteItem,
+    PaletteFooter,
+    usePaletteContext,
+    type SearchPaletteProps,
+    type PaletteRootProps,
+    type PaletteListProps,
+    type PaletteSection,
+    type PaletteRow,
+    type PaletteContextValue
+} from "@/react/palette";
+export {
+    createRecentStore,
+    recentKey,
+    groupRows,
+    moveActive,
+    shortcutLabel,
+    isPaletteShortcut,
+    type RecentEntry,
+    type RecentStore
+} from "@/core/palette";

@@ -114,7 +114,12 @@ const panels = await Promise.all(
     .tabs-panel.is-flush { padding: 0; }
     /* A fenced block brings its own frame; inside a panel it is the panel. */
     .tabs-panel :global(pre) { margin: 0; border: 0; border-radius: 0; }
-    .tabs-panel.is-flush :global(pre + pre) { border-top: 1px solid var(--border-soft); }
+    /* Two blocks in a row are two blocks. The panel is their frame, so each one drops its
+       own margin - and without this they touch, which reads as one block with a stray blank
+       line in it (the command and the import it is followed by, on every install panel). */
+    .tabs-panel :global(pre + pre) { margin-top: 10px; }
+    /* A flush panel is deliberately edge to edge, so there it stays a rule, not a gap. */
+    .tabs-panel.is-flush :global(pre + pre) { margin-top: 0; border-top: 1px solid var(--border-soft); }
     .tabs-panel :global(> :first-child) { margin-top: 0; }
     .tabs-panel :global(> :last-child) { margin-bottom: 0; }
 

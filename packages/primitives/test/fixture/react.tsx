@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { createRoot } from "react-dom/client";
+import { SearchPalette } from "@/react/palette";
 // The Next entry, with next/link aliased to a stub at bundle time.
 import { Button as NextButton } from "@/next/index";
 // The React Router entry, with react-router aliased to a stub at bundle time.
@@ -23,6 +24,7 @@ interface FixtureWindow extends Window {
     __strength: PasswordStrengthReport | null;
     __breach: BreachState | null;
     __breachCalls: string[];
+    __selected: string;
 }
 
 const fixture = window as unknown as FixtureWindow;
@@ -31,6 +33,7 @@ fixture.__value = "";
 fixture.__strength = null;
 fixture.__breach = null;
 fixture.__breachCalls = [];
+fixture.__selected = "";
 fixture.__presses = 0;
 fixture.__clickTarget = "";
 
@@ -42,6 +45,14 @@ function FakeLink({ href, children, ...rest }: { href?: string; children?: React
     return <a href={href} data-router-link="" {...rest}>{children}</a>;
 }
 setLinkComponent(FakeLink);
+
+/** A tiny corpus with two groups, so the palette's grouping is exercised for real. */
+const DOCS = [
+    { title: "Marquee", section: "Components", href: "/marquee" },
+    { title: "Input", section: "Components", href: "/input" },
+    { title: "Flags", section: "Components", href: "/flags" },
+    { title: "Installation", section: "Guides", href: "/install" }
+];
 
 /** Answers instantly and locally, so the test measures the component and not a network. */
 const BREACHED = new Set(["password", "hunter2"]);
@@ -123,6 +134,22 @@ function Form(): React.ReactNode {
 
             {/* The React Router entry: same href, translated to its `to`. */}
             <RouterButton data-testid="rr-link" href="/settings">Settings</RouterButton>
+
+            {/* A shortcut on a labelled button shows its key; on an icon-only one it does not. */}
+            <Button data-testid="hinted" shortcut="s" onPress={() => { fixture.__presses++; }}>Save</Button>
+            <Button data-testid="icon-only" shortcut="i" aria-label="Save" onPress={() => { fixture.__presses++; }}>
+                <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M4 4h16v16H4z" /></svg>
+            </Button>
+
+            <SearchPalette
+                items={DOCS}
+                keys={["title"]}
+                delay={0}
+                labelOf={(doc) => doc.title}
+                groupBy={(doc) => doc.section}
+                recentsKey="test:palette"
+                onSelect={(doc) => { fixture.__selected = doc.href; }}
+            />
         </form>
     );
 }
