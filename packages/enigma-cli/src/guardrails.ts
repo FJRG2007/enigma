@@ -376,6 +376,21 @@ export const BUILTIN_RULES: GuardrailRule[] = [
         skill: "validation-policy",
     },
     {
+        id: "fe-new-password-affordance-on-signin",
+        label: "The strength meter belongs on a new password, not on sign-in",
+        files: ["*.tsx", "*.jsx", "*.vue", "*.svelte", "*.astro", "*.html", "*.htm"],
+        excludeFiles: [
+            "*.test.*", "*.spec.*", "**/tests/**", "**/__tests__/**", "**/fixtures/**",
+            "**/dist/**", "**/build/**", "**/node_modules/**", "**/vendor/**",
+            "dist/**", "build/**", "node_modules/**", "vendor/**",
+        ],
+        scope: "file",
+        fileCheck: "fe-new-password-affordance-on-signin",
+        message: "A new-password affordance on a sign-in form. The five-bar strength meter, the generator and the breach check exist for a form that CREATES a password - registration, a reset, a change-password screen - and each is wrong here in its own way: the meter scores a password the visitor already has and cannot change from this screen, so it is noise at best and an accusation at worst; the generator offers to replace the one they are trying to type; and the breach check sends a hash of a real credential on every sign-in attempt. What DOES belong on sign-in is the same format VALIDATION the creation form applied - minimum length, the character rules, the normalizer - because a password that cannot satisfy the rules it was created under cannot be the right one, so the client refuses to send it and the server never sees the attempt. Keep the validation and the reveal toggle; drop the meter, the generator and the breach check. The file says which side it is on through `autocomplete=\"current-password\"`; a change-password screen carries a `new-password` field too and is not flagged. Mark the line with an `enigma:` note if this one really is a creation form (frontend-policy, security-policy, validation-policy).",
+        severity: "block",
+        skill: "frontend-policy",
+    },
+    {
         id: "fe-password-reveal-hand-rolled",
         label: "Password reveal toggled by hand",
         files: ["*.ts", "*.tsx", "*.js", "*.jsx", "*.astro", "*.vue", "*.svelte"],
@@ -1418,6 +1433,46 @@ export const PROJECT_CHECKS: Record<string, (projectRoot: string) => boolean> = 
  * property of the project's module resolution, and whether an alias exists is a property of its
  * tsconfig. A check that needs neither simply ignores the second argument.
  */
+/**
+ * A NEW-password affordance on a SIGN-IN field.
+ *
+ * The five-bar meter, the generator and the breach check belong on a form that is CREATING a
+ * password - registration, a reset, a change-password screen. On sign-in they are all wrong,
+ * and each is wrong in its own way: the meter scores a password the visitor already has and
+ * cannot change from here, so it is either noise or an accusation; the generator offers to
+ * replace the one they are trying to type; and the breach check sends a hash of a real
+ * credential on every sign-in attempt, which is a request nobody asked for.
+ *
+ * `autocomplete="current-password"` is the discriminator, and it is the browser's own: it is
+ * how a page already tells a password manager "this is the existing one". A form that sets it
+ * has declared which side it is on, so a file carrying both that and a new-password prop is
+ * unambiguous - no guessing from a file name or a route.
+ */
+const CURRENT_PASSWORD = /autocomplete\s*=\s*["'{\s]*current-password/i;
+const NEW_PASSWORD = /autocomplete\s*=\s*["'{\s]*new-password/i;
+const NEW_PASSWORD_PROP = /(?:^|\s)(strength|generate|breach)(?:\s*=|\s*\}|\s*\/?>|\s|$)/;
+/**
+ * A line that DECLARES something of that name is not a field's prop. `type` and `return` are
+ * deliberately NOT here: `type="password"` is on the very line being read, and a field is
+ * routinely returned from a render.
+ */
+const NOT_A_JSX_PROP = /\b(?:const|let|var|function|import|export|interface)\b/;
+
+export function newPasswordAffordanceOnSignIn(content: string): { line: number; detail: string; }[] {
+    // A file with BOTH kinds of field is a change-password screen (the old one, then the new
+    // one), where every prop below is exactly right.
+    if (!CURRENT_PASSWORD.test(content) || NEW_PASSWORD.test(content)) return [];
+    const out: { line: number; detail: string; }[] = [];
+    const lines = content.split("\n");
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i]!;
+        if (COMMENT_LINE.test(line) || /enigma:/.test(line) || NOT_A_JSX_PROP.test(line)) continue;
+        const match = NEW_PASSWORD_PROP.exec(line);
+        if (match) out.push({ line: i + 1, detail: `${match[1]} on a sign-in form` });
+    }
+    return out;
+}
+
 export const FILE_CHECKS: Record<string, (content: string, file: string) => { line: number; detail: string; }[]> = {
     "proc-windows-hide": (content) => missingWindowsHide(content),
     "fe-server-first-mutation": (content) => serverFirstMutation(content),
@@ -1430,6 +1485,7 @@ export const FILE_CHECKS: Record<string, (content: string, file: string) => { li
     "ts-alias-deep-relative": (content, file) => deepRelativeImports(content, file),
     "ts-alias-paths": (content, file) => missingPathAlias(content, file),
     "sec-operator-env-leak": (content) => operatorHomePathLeak(content),
+    "fe-new-password-affordance-on-signin": (content) => newPasswordAffordanceOnSignIn(content),
 };
 
 /**

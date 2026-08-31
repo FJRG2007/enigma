@@ -692,3 +692,67 @@ matrix("ui-no-flag-emoji", false, [
     { name: "a single regional indicator", file: "src/Alphabet.ts", code: `const A = "${String.fromCodePoint(0x1f1e6)}";` },
     { name: "generated bundle is excluded", file: "dist/bundle.js", code: `var l=[{id:"es",label:"${flag(4, 18)} Espanol"}];` },
 ]);
+// --- fe-new-password-affordance-on-signin ------------------------------------------
+
+const SIGN_IN = 'autoComplete="current-password"';
+const NEW_PASSWORD_FIELD = 'autoComplete="new-password"';
+
+matrix("fe-new-password-affordance-on-signin", true, [
+    {
+        name: "strength meter on a sign-in field",
+        file: "src/SignIn.tsx",
+        code: `<form>
+  <Input type="password" ${SIGN_IN} strength required minLength={12} />
+</form>`
+    },
+    {
+        name: "generator on a sign-in field, props one per line",
+        file: "app/login/page.tsx",
+        code: `<Input
+  type="password"
+  ${SIGN_IN}
+  generate
+/>`
+    },
+    {
+        name: "breach check on every sign-in attempt",
+        file: "src/SignIn.tsx",
+        code: `return <Input type="password" ${SIGN_IN} breach={checkPasswordBreach} />;`
+    },
+]);
+
+matrix("fe-new-password-affordance-on-signin", false, [
+    {
+        name: "sign-in keeps its validation, which is the point",
+        file: "src/SignIn.tsx",
+        code: `<Input type="password" ${SIGN_IN} required minLength={12} pattern={PASSWORD_RULE} />`
+    },
+    {
+        name: "registration, where all three belong",
+        file: "src/Register.tsx",
+        code: `<Input type="password" ${NEW_PASSWORD_FIELD} strength generate breach={check} />`
+    },
+    {
+        name: "a change-password screen has both fields",
+        file: "src/ChangePassword.tsx",
+        code: `<Input type="password" ${SIGN_IN} />
+<Input type="password" ${NEW_PASSWORD_FIELD} strength generate />`
+    },
+    {
+        name: "a variable that happens to be called strength",
+        file: "src/SignIn.tsx",
+        code: `const strength = score(password);
+<Input type="password" ${SIGN_IN} />`
+    },
+    {
+        name: "a props interface that declares one",
+        file: "src/SignIn.tsx",
+        code: `export interface Props { strength?: boolean }
+<Input type="password" ${SIGN_IN} />`
+    },
+    {
+        name: "marked as a creation form on the line",
+        file: "src/SetPassword.tsx",
+        code: `<Input type="password" ${SIGN_IN} strength /> {/* enigma: this screen creates the password */}`
+    },
+]);

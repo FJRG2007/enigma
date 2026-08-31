@@ -330,6 +330,31 @@ var BUILTIN_RULES = [
     skill: "validation-policy"
   },
   {
+    id: "fe-new-password-affordance-on-signin",
+    label: "The strength meter belongs on a new password, not on sign-in",
+    files: ["*.tsx", "*.jsx", "*.vue", "*.svelte", "*.astro", "*.html", "*.htm"],
+    excludeFiles: [
+      "*.test.*",
+      "*.spec.*",
+      "**/tests/**",
+      "**/__tests__/**",
+      "**/fixtures/**",
+      "**/dist/**",
+      "**/build/**",
+      "**/node_modules/**",
+      "**/vendor/**",
+      "dist/**",
+      "build/**",
+      "node_modules/**",
+      "vendor/**"
+    ],
+    scope: "file",
+    fileCheck: "fe-new-password-affordance-on-signin",
+    message: 'A new-password affordance on a sign-in form. The five-bar strength meter, the generator and the breach check exist for a form that CREATES a password - registration, a reset, a change-password screen - and each is wrong here in its own way: the meter scores a password the visitor already has and cannot change from this screen, so it is noise at best and an accusation at worst; the generator offers to replace the one they are trying to type; and the breach check sends a hash of a real credential on every sign-in attempt. What DOES belong on sign-in is the same format VALIDATION the creation form applied - minimum length, the character rules, the normalizer - because a password that cannot satisfy the rules it was created under cannot be the right one, so the client refuses to send it and the server never sees the attempt. Keep the validation and the reveal toggle; drop the meter, the generator and the breach check. The file says which side it is on through `autocomplete="current-password"`; a change-password screen carries a `new-password` field too and is not flagged. Mark the line with an `enigma:` note if this one really is a creation form (frontend-policy, security-policy, validation-policy).',
+    severity: "block",
+    skill: "frontend-policy"
+  },
+  {
     id: "fe-password-reveal-hand-rolled",
     label: "Password reveal toggled by hand",
     files: ["*.ts", "*.tsx", "*.js", "*.jsx", "*.astro", "*.vue", "*.svelte"],
@@ -1723,6 +1748,22 @@ var PROJECT_CHECKS = {
     return !("prisma" in pkg || "@prisma/client" in pkg);
   }
 };
+var CURRENT_PASSWORD = /autocomplete\s*=\s*["'{\s]*current-password/i;
+var NEW_PASSWORD = /autocomplete\s*=\s*["'{\s]*new-password/i;
+var NEW_PASSWORD_PROP = /(?:^|\s)(strength|generate|breach)(?:\s*=|\s*\}|\s*\/?>|\s|$)/;
+var NOT_A_JSX_PROP = /\b(?:const|let|var|function|import|export|interface)\b/;
+function newPasswordAffordanceOnSignIn(content) {
+  if (!CURRENT_PASSWORD.test(content) || NEW_PASSWORD.test(content)) return [];
+  const out = [];
+  const lines = content.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (COMMENT_LINE.test(line) || /enigma:/.test(line) || NOT_A_JSX_PROP.test(line)) continue;
+    const match = NEW_PASSWORD_PROP.exec(line);
+    if (match) out.push({ line: i + 1, detail: `${match[1]} on a sign-in form` });
+  }
+  return out;
+}
 var FILE_CHECKS = {
   "proc-windows-hide": (content) => missingWindowsHide(content),
   "fe-server-first-mutation": (content) => serverFirstMutation(content),
@@ -1734,7 +1775,8 @@ var FILE_CHECKS = {
   "ts-import-extension": (content, file) => extensionImports(content, file),
   "ts-alias-deep-relative": (content, file) => deepRelativeImports(content, file),
   "ts-alias-paths": (content, file) => missingPathAlias(content, file),
-  "sec-operator-env-leak": (content) => operatorHomePathLeak(content)
+  "sec-operator-env-leak": (content) => operatorHomePathLeak(content),
+  "fe-new-password-affordance-on-signin": (content) => newPasswordAffordanceOnSignIn(content)
 };
 var FIXERS = {
   "fe-name-input-capitalize": (line, file) => {
@@ -2571,6 +2613,7 @@ export {
   loadRules,
   missingPathAlias,
   missingWindowsHide,
+  newPasswordAffordanceOnSignIn,
   operatorHomePathLeak,
   pageAwaitWithoutBoundary,
   readLedger,
