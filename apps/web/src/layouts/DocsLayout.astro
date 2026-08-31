@@ -251,8 +251,10 @@ const componentSource = componentName
         border: 1px solid var(--border); border-radius: 999px; padding: 2px 8px;
         margin-right: 8px; vertical-align: 2px;
     }
-    .doc a { color: var(--accent2); }
-    .doc a:hover { color: var(--accent); }
+    /* Prose links only. An anchor that carries a class came from a component (a demo's
+       button with an href, a card, a logo), and prose typography must not repaint it. */
+    .doc a:not([class]) { color: var(--accent2); }
+    .doc a:not([class]):hover { color: var(--accent); }
 
     /* Code blocks: theme the Shiki output to the surface palette and host the copy button. */
     .doc pre { position: relative; background: var(--surface) !important; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px 16px; overflow-x: auto; font-size: 13px; line-height: 1.7; margin: 14px 0; }

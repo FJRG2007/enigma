@@ -19,8 +19,14 @@ body {
     margin: 0; color: var(--text); font-family: var(--sans); line-height: 1.6;
     background: var(--bg); -webkit-font-smoothing: antialiased;
 }
-a { color: var(--accent2); text-decoration: none; }
-a:hover { color: var(--accent); }
+/* Link colour is a DEFAULT, not a rule: `:where()` contributes no specificity, so any
+   component that renders an anchor - a button with an href, a card, a logo in the marquee -
+   keeps its own colour without having to out-specify the page. Written as a bare `a:hover`
+   this loses that: a pseudo-class outranks a single class, so `<Button href>` styled by one
+   class rendered as a normal button and as a link on hover, which is the one thing a button
+   with an href must never do. */
+:where(a) { color: var(--accent2); text-decoration: none; }
+:where(a:hover) { color: var(--accent); }
 a:focus-visible, button:focus-visible {
     outline: 2px solid rgba(224, 164, 88, 0.6); outline-offset: 3px; border-radius: 6px;
 }
