@@ -72,7 +72,10 @@
     color: inherit; background: rgba(0, 0, 0, 0.14);
 }
 .pg-btn[aria-disabled="true"] { opacity: 0.45; cursor: not-allowed; }
-.pg-btn[data-loading] { cursor: progress; }
+/* Loading is UNAVAILABLE, so it looks like the rule above and nothing else. A `progress`
+   cursor is the browser's spinning pointer, which reads as "the page is busy" over a control
+   whose actual state is "not right now" - and it lands on the one button you already know is
+   working. Dimmed and `not-allowed`, same as disabled, is the honest version. */
 /* The cooldown is the one state worth showing as more than dimmed text. */
 .pg-btn[data-cooldown] { color: var(--text); background: var(--surface2); border-color: var(--border); }
 
