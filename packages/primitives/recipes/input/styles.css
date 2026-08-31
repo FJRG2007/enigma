@@ -57,6 +57,15 @@
     background: transparent; border: 0; outline: none;
 }
 
+/* The platform's own clear button, gone. A search field here already renders one - so
+   WebKit draws a SECOND cross next to it, and only in WebKit, which makes it a duplicate
+   half the visitors see and the other half never do. */
+[data-enigma-input]::-webkit-search-cancel-button,
+[data-enigma-input]::-webkit-search-decoration,
+[data-enigma-input]::-webkit-search-results-button {
+    -webkit-appearance: none; appearance: none; display: none;
+}
+
 /* A breached password is worth showing on the field itself, not only in the message. */
 [data-enigma-input-root][data-breached] [data-enigma-input-field] { border-color: var(--enigma-input-danger); }
 

@@ -324,6 +324,12 @@ below were paid for once already:
 
 ## search
 
+The recipe kills WebKit's `::-webkit-search-cancel-button`. `<Input type="search">` renders
+its own clear button, so the platform's is a SECOND cross - drawn by no other engine, which
+makes it a control half the visitors see and the other half never do. The same reset is in
+`apps/web/src/styles/global.css` and in the dashboard, where it was on one class and is now
+on every search field.
+
 `createSearch(options)`. Debounce, ranking, cancellation and the field wiring; the
 matching is pluggable in three layers:
 

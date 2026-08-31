@@ -286,6 +286,7 @@ A text input is not generic. What it holds decides the keyboard a phone opens, w
 - Phone: `type="tel"`, `inputmode="tel"`, `autocomplete="tel"`. Numeric code: `inputmode="numeric"`, `autocomplete="one-time-code"`.
 - Free prose (bio, message, description): `autocapitalize="sentences"` with spellcheck left on.
 - Set `enterkeyhint` where the key does something specific (`search`, `send`, `done`), and mark the search field `type="search"`.
+- `type="search"` brings a clear cross that only WebKit draws. Kill it (`::-webkit-search-cancel-button { appearance: none; }`) in the shared stylesheet and render your own clear button if you want one: left in, Safari and Chrome users get two crosses side by side and everyone else gets one, which is a control that exists on some machines and not others.
 
 Where this lives and when it runs:
 

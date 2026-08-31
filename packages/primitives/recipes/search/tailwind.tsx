@@ -46,6 +46,7 @@ export function Search<T>({
                     rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2.5
                     text-sm text-neutral-100 outline-none
                     placeholder:text-neutral-500 focus:border-neutral-400
+                    [&::-webkit-search-cancel-button]:appearance-none
                 "
             />
 

@@ -651,12 +651,15 @@
         .modal-back[hidden] { display: none; }
         .modal-back.pal-back { align-items: flex-start; padding-top: 12vh; }
         .modal.pal { max-width: 520px; padding: 12px; }
+        /* WebKit's own clear cross, on every search field. Where we want one we draw it
+           ourselves, so the platform's is a second cross for WebKit users only. */
+        input[type="search"]::-webkit-search-cancel-button,
+        input[type="search"]::-webkit-search-decoration { -webkit-appearance: none; appearance: none; }
         .pal-input {
             width: 100%; background: transparent; color: var(--text); border: none; border-bottom: 1px solid var(--border);
             padding: 8px 6px 12px; font-size: 14px; font-family: var(--mono);
         }
         .pal-input:focus { outline: none; }
-        .pal-input::-webkit-search-cancel-button { display: none; }
         .pal-list { max-height: 46vh; overflow-y: auto; overscroll-behavior: contain; margin-top: 8px; }
         .pal-gt {
             font-family: var(--mono); font-size: 9.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 1.4px;

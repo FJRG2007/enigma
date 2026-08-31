@@ -38,6 +38,12 @@ a:focus-visible, button:focus-visible {
 
 /* Themed scrollbars matching the design. */
 * { scrollbar-width: thin; scrollbar-color: #2b3340 transparent; }
+/* WebKit draws a clear cross inside every search field, and no other engine does. Ours
+   render their own where they want one, so the platform's is a duplicate on half the
+   browsers and nothing on the rest. */
+input[type="search"]::-webkit-search-cancel-button,
+input[type="search"]::-webkit-search-decoration { -webkit-appearance: none; appearance: none; }
+
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #2b3340; border-radius: 999px; }
