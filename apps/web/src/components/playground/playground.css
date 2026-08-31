@@ -54,9 +54,14 @@
 .pg-btn {
     display: inline-flex; align-items: center; gap: 8px;
     font-family: var(--mono); font-size: 13px; font-weight: 600;
+    /* Explicit, because this class dresses BOTH a <button> and an <a>: a button takes
+       `line-height: normal` from the user agent while an anchor inherits the page's 1.6,
+       so the same button grew several pixels taller the moment it was given an href. Every
+       property a button gets from the UA and an anchor does not has to be set here. */
+    line-height: 1.25;
     color: #101010; background: var(--accent);
     border: 1px solid transparent; border-radius: 9px; padding: 9px 16px;
-    cursor: pointer; text-decoration: none;
+    cursor: pointer; text-decoration: none; text-align: center;
     transition: opacity 120ms ease-out;
 }
 .pg-btn:hover { opacity: 0.9; }
