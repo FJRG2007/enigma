@@ -1,0 +1,124 @@
+---
+title: Command palette
+description: Ctrl/Cmd+K, search as you type, what was searched before, groups, and every key a palette is expected to answer to.
+group: Forms
+order: 22.5
+space: components
+---
+import Installation from "../../../components/Installation.astro";
+import { PalettePlayground } from "../../../components/playground/PalettePlayground";
+
+The panel that opens on Ctrl/Cmd+K. It is a dialog, not a field: a trigger, an overlay, a
+focus trap, a listbox and a footer, which is why it is its own component rather than a prop
+on the search input - and why it is made of parts you can compose.
+
+<PalettePlayground client:only="react" />
+
+## Usage
+
+```tsx
+import { SearchPalette } from "@enigmax/primitives/react/palette";
+import "@enigmax/primitives/palette.css";
+
+<SearchPalette
+    items={docs}
+    keys={["title", "body"]}
+    groupBy={(doc) => doc.section}
+    onSelect={(doc) => router.push(doc.href)}
+/>
+```
+
+That renders the trigger, the panel, the field, the list and the key hints. Everything in it
+is a part, so any of them can be yours instead:
+
+```tsx
+<SearchPalette.Root items={docs} keys={["title"]} onSelect={open}>
+    <SearchPalette.Trigger asChild>
+        <MyButton>Search</MyButton>
+    </SearchPalette.Trigger>
+
+    <SearchPalette.Content>
+        <SearchPalette.Field placeholder="Search the docs" />
+        <SearchPalette.List>
+            {(row, { active }) => <Row row={row} active={active} />}
+        </SearchPalette.List>
+        <SearchPalette.Footer />
+    </SearchPalette.Content>
+</SearchPalette.Root>
+```
+
+## Installation
+
+<Installation item="palette" pkg="@enigmax/primitives" entry="@enigmax/primitives/react/palette">
+    <div slot="manual">
+
+The stylesheet is a starting point, not a requirement: `@enigmax/primitives/palette.css` is
+one file of custom properties and selectors, and the component works without it.
+
+    </div>
+</Installation>
+
+## The keyboard is the point
+
+A palette that only works with a mouse is a dropdown with extra steps. Each of these is a
+decision, and each of them is what a palette feels broken without:
+
+| | |
+| --- | --- |
+| One flat sequence | The arrows run straight through group boundaries. Groups are a heading, not a stop |
+| It wraps | In a short list the row after the last one is the first, and a key that does nothing at the end reads as a frozen panel |
+| A shorter list pulls it back | Otherwise the highlight sits past the end and Enter opens nothing |
+| The caret never leaves the field | The row is announced through `aria-activedescendant`, which is what lets you keep typing while the highlight moves |
+| The pointer moves the same highlight | Two highlights on screen is what makes a palette unpredictable: Enter then opens the row the mouse is not on |
+| Escape closes and returns focus | To the trigger, not to the top of the document |
+
+Opening also clears the query. A palette that comes back holding the last search is one you
+have to empty before you can use it, and it hides what an empty query is for.
+
+## What was searched before
+
+`recents` is on by default and lives in this browser only. A remembered QUERY goes back into
+the field and runs again; a remembered RESULT opens. The second visit is a keystroke shorter
+than the first, which is the entire reason to keep them.
+
+```tsx
+<SearchPalette items={docs} recents={false} />          // keep nothing
+<SearchPalette items={docs} recentsKey="admin:search" /> // its own history
+```
+
+Every read and write is guarded: storage throws in a private window, when the quota is full,
+and on a page opened from a file URL - and a palette that cannot remember is still a working
+palette. They are read when it OPENS rather than once at mount, because another tab may have
+written since.
+
+## Rows the app always offers
+
+`sections` puts your own rows in - commands, "create new", a link to settings - beside the
+search results, in the same keyboard sequence:
+
+```tsx
+<SearchPalette
+    items={docs}
+    sections={[{ label: "Actions", items: commands, always: true }]}
+    onSelect={run}
+/>
+```
+
+## Props
+
+| | |
+| --- | --- |
+| `items`, `keys` | What to search, and which fields to read |
+| `fuse`, `fuseOptions`, `matcher` | Fuzzy matching with Fuse.js, or your own engine |
+| `groupBy`, `labelOf`, `descriptionOf` | How a row is grouped and what it says |
+| `sections` | Rows the app declares, searched alongside the results |
+| `onSelect` | What running a row does. Return `false` to keep the palette open |
+| `recents`, `recentsKey`, `recentsLimit` | What is remembered, and where |
+| `shortcut` | The key that opens it, with Ctrl or Cmd. `null` binds nothing. Default `k` |
+| `open`, `onOpenChange`, `defaultOpen` | Controlled or uncontrolled, as usual |
+| `delay`, `limit` | Debounce and the cap on the list |
+
+Styling hooks: `[data-enigma-palette-trigger]`, `[data-enigma-palette-overlay]`,
+`[data-enigma-palette-content]`, `[data-enigma-palette-field]`, `[data-enigma-palette-list]`,
+`[data-enigma-palette-group]`, `[data-enigma-palette-item]` (with `[data-active]` and
+`[data-kind]`), `[data-enigma-palette-empty]` and `[data-enigma-palette-footer]`.

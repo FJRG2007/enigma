@@ -141,6 +141,21 @@ function Form(): React.ReactNode {
                 <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M4 4h16v16H4z" /></svg>
             </Button>
 
+            {/* A search field: the same component, driven by its type. */}
+            <Input
+                data-testid="finder"
+                type="search"
+                placeholder="Search"
+                items={DOCS}
+                keys={["title"]}
+                delay={0}
+                renderResults={(matches, query) => (
+                    <ul data-testid="finder-results" data-query={query}>
+                        {matches.map((match) => <li key={match.item.title}>{match.item.title}</li>)}
+                    </ul>
+                )}
+            />
+
             <SearchPalette
                 items={DOCS}
                 keys={["title"]}

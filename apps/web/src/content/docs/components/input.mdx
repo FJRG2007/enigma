@@ -1,6 +1,6 @@
 ---
 title: Input
-description: A field you pass props to. The password reveal is free, and a generator, a strength meter and a breach check are one prop each.
+description: One field for every type. Password gets the reveal, a generator, a meter and a breach check; search gets ranking and a clear button; everything else is a plain field.
 group: Forms
 order: 20
 space: components
@@ -15,13 +15,18 @@ import { highlightedRecipe } from "../../../lib/recipe";
 export const tailwindRecipe = highlightedRecipe("@enigmax/primitives", "input/tailwind.tsx");
 export const cssSheet = highlightedRecipe("@enigmax/primitives", "input/styles.css");
 
-In React it is a component you pass props to. A `type="password"` field gets its reveal toggle for free, because a password the visitor cannot read back is the most common reason a sign-in fails on the first try. Everything else - the generator, the strength meter, the breach check - is one prop, and off until you ask for it.
+One component, keyed on `type`, the way HTML is: `type` is an attribute of a single element,
+so `password`, `search`, `email`, `number` and the rest are the same field with different
+props. A `type="password"` field gets its reveal toggle for free, because a password the
+visitor cannot read back is the most common reason a sign-in fails on the first try.
+Everything else is one prop, and off until you ask for it.
 
 ## Customize
 
-Nothing here is on until you ask for it, so this panel starts where the component does.
-Type into it, generate one, reveal it - the preview is the real field and the code below is
-generated from the same values.
+Change the type and watch the controls change with it: the props a field has depend on what
+kind of field it is, so this panel offers exactly what TypeScript would let you write. Type
+into it, generate a password, search the list - the preview is the real field and the code
+below is generated from the same values.
 
 <InputPlayground client:only="react" />
 
@@ -115,6 +120,26 @@ installed package at build time, so it cannot drift from what you actually get.
     </div>
 </Installation>
 
+## Every type, one component
+
+What differs per type is which props EXIST, and that is a discriminated union rather than a
+convention: `strength` on a text field is a compile error, not a prop that quietly does
+nothing.
+
+| Type | What it adds |
+| --- | --- |
+| `password` | The reveal toggle, and `generate`, `strength`, `breach` when you ask |
+| `search` | Debounced ranking over `items`, `renderResults`, and a clear button |
+| `email`, `tel`, `url`, `number`, `date`, ... | Nothing but the native field and its own props |
+
+**Each type loads its own machinery.** The estimator, the breach watcher and the search
+engine live in their own chunks and arrive when a type that needs them is used - so a form of
+text and email fields downloads none of them, and the generator is fetched on the first press
+of its button. Measured: a two-field form is 4.5 KB.
+
+A search field that opens a dialog is not a field - see [the command palette](palette) for
+the Ctrl/Cmd+K panel.
+
 ## Generating a password
 
 Off by default. Switch it on for a registration or change-password form, where the visitor
@@ -143,6 +168,16 @@ that refuses.
 
 `strength` renders the meter under the field: five bars, a label, and the top warning.
 
+**It belongs on a form that CREATES a password** - registration, a reset, a change-password
+screen - and nowhere else. On sign-in it scores a password the visitor already has and cannot
+change from that screen, which is noise at best and an accusation at worst; the generator
+offers to replace the one they are typing; and a breach check there sends a hash of a real
+credential on every attempt. What does belong on sign-in is the same format VALIDATION the
+creation form applied, because a password that cannot satisfy the rules it was created under
+cannot be the right one - the client refuses to send it and the server never sees the
+attempt. `autocomplete="current-password"` is how a page says which side it is on, and the
+`fe-new-password-affordance-on-signin` guardrail reads exactly that.
+
 ```tsx
 <Input
     type="password"
@@ -164,8 +199,9 @@ zxcvbn where the number has to mean something.
 ## Has it leaked?
 
 `breach` takes a checker; it is a prop rather than a built-in because it makes a network
-request, and that is not a decision a field should take on its own. `enigma add
-password-breach` gives you one that never sends the password anywhere.
+request, and that is not a decision a field should take on its own. The check itself lives in
+`@enigmax/utils` - it renders nothing, so it is equally usable from a server route where the
+same rule has to hold - and it never sends the password anywhere.
 
 ```tsx
 import { checkPasswordBreach } from "@enigmax/utils";

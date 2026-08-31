@@ -128,6 +128,29 @@ test.describe("search wiring", () => {
 });
 
 test.describe("search attached to a field", () => {
+    test("a field that already holds a value is searched on attach", async ({ page }) => {
+        await page.goto("/test/fixture/input.html");
+        await page.setContent('<input id="q" type="search" value="rec">');
+
+        const count = await page.evaluate(async () => {
+            const module = await import("/dist/index.js");
+            const field = document.getElementById("q") as HTMLInputElement;
+            const search = module.createSearch({
+                items: [{ title: "Guardrails" }, { title: "Recall" }],
+                keys: ["title"],
+                debounce: 0
+            });
+            // The value is there BEFORE the engine is: a query restored from the URL, a
+            // browser refill, or someone typing before the module finished loading. Without
+            // reading it here the field stays full and the list stays empty until the next
+            // keystroke, which is exactly how it failed the first time.
+            search.attach(field);
+            return search.results.length;
+        });
+
+        expect(count).toBe(1);
+    });
+
     test("typing searches and Escape clears", async ({ page }) => {
         // Navigate first so the document has the fixture server's origin; a bare
         // setContent leaves it on about:blank, where a module specifier cannot resolve.

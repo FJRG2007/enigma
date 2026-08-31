@@ -78,7 +78,8 @@
     "./toast.css": "./recipes/toast/styles.css",
     "./input.css": "./recipes/input/styles.css",
     "./marquee.css": "./recipes/marquee/styles.css",
-    "./logo-marquee.css": "./recipes/logo-marquee/styles.css"
+    "./logo-marquee.css": "./recipes/logo-marquee/styles.css",
+    "./palette.css": "./recipes/palette/styles.css"
   },
   "scripts": {
     "build": "tsup",

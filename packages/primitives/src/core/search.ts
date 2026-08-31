@@ -205,6 +205,11 @@ export function createSearch<T>(options: SearchOptions<T> = {}): SearchInstance<
             input.addEventListener("input", onInput);
             input.addEventListener("keydown", onKeyDown);
             input.dataset.enigmaSearch = "";
+            // A field can already hold a value when the engine reaches it: a query restored
+            // from the URL, a browser refill, or simply someone typing before the module
+            // that searches finished loading. Binding without reading it leaves the field
+            // full and the list empty until the NEXT keystroke, which reads as broken.
+            if (input.value) this.searchNow(input.value);
             return () => {
                 input.removeEventListener("input", onInput);
                 input.removeEventListener("keydown", onKeyDown);

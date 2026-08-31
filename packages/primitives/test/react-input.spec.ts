@@ -15,7 +15,9 @@ async function open(page: Page): Promise<void> {
 }
 
 const field = "[data-testid=password]";
-const root = "[data-enigma-input-root]";
+// Scoped to the password field's own root: the fixture renders more than one field, and a
+// bare attribute selector would match whichever came first.
+const root = "[data-enigma-input-root]:has([data-testid=password])";
 const reveal = '[data-enigma-input-action="reveal"]';
 const generate = '[data-enigma-input-action="generate"]';
 

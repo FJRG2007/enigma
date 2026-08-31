@@ -1,0 +1,202 @@
+/*
+ * The palette's look.
+ *
+ * `SearchPalette` renders the structure, the state and every key it answers to; every
+ * colour, distance and curve is in this file. Nothing below is something the package decided
+ * for you, so editing it is the supported way to make it yours.
+ *
+ * The custom properties at the top are the whole API. Override them on `:root` and you have
+ * a different palette without touching a selector.
+ */
+
+:root {
+    --enigma-palette-width: 34rem;
+    --enigma-palette-radius: 0.85rem;
+    --enigma-palette-top: 12vh;
+
+    --enigma-palette-bg: #101010;
+    --enigma-palette-border: #2a2a2a;
+    --enigma-palette-text: #f5f5f5;
+    --enigma-palette-muted: #a3a3a3;
+    --enigma-palette-active: #1c1c1c;
+    --enigma-palette-accent: #e0a458;
+    --enigma-palette-shadow: 0 20px 60px rgb(0 0 0 / 55%);
+    --enigma-palette-scrim: rgb(0 0 0 / 55%);
+}
+
+@media (prefers-color-scheme: light) {
+    :root {
+        --enigma-palette-bg: #ffffff;
+        --enigma-palette-border: #e5e5e5;
+        --enigma-palette-text: #171717;
+        --enigma-palette-muted: #737373;
+        --enigma-palette-active: #f5f5f5;
+        --enigma-palette-shadow: 0 20px 60px rgb(0 0 0 / 18%);
+        --enigma-palette-scrim: rgb(0 0 0 / 25%);
+    }
+}
+
+/* -------- the trigger -------- */
+
+[data-enigma-palette-trigger] {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 12rem;
+    padding: 0.45rem 0.6rem;
+    font: inherit;
+    font-size: 0.8125rem;
+    /* Set explicitly: this may be rendered as a button or, through asChild, as something
+       else entirely, and only a button gets `line-height: normal` from the user agent. */
+    line-height: 1.25;
+    color: var(--enigma-palette-muted);
+    background: transparent;
+    border: 1px solid var(--enigma-palette-border);
+    border-radius: 0.6rem;
+    cursor: pointer;
+}
+
+[data-enigma-palette-trigger]:hover { color: var(--enigma-palette-text); }
+[data-enigma-palette-trigger-label] { flex: 1; text-align: left; }
+
+[data-enigma-palette-trigger-key] {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.6875rem;
+    padding: 0.15rem 0.35rem;
+    border: 1px solid var(--enigma-palette-border);
+    border-radius: 0.3rem;
+}
+
+/* -------- the panel -------- */
+
+[data-enigma-palette-overlay] {
+    position: fixed;
+    inset: 0;
+    z-index: 9998;
+    background: var(--enigma-palette-scrim);
+    /* Behind the panel, and the only thing a click outside can land on. */
+    backdrop-filter: blur(2px);
+}
+
+[data-enigma-palette-content] {
+    position: fixed;
+    z-index: 9999;
+    top: var(--enigma-palette-top);
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    width: min(var(--enigma-palette-width), calc(100vw - 2rem));
+    /* Never taller than the room it has: the list scrolls, the field and the footer stay. */
+    max-height: min(70vh, 32rem);
+    overflow: hidden;
+    color: var(--enigma-palette-text);
+    background: var(--enigma-palette-bg);
+    border: 1px solid var(--enigma-palette-border);
+    border-radius: var(--enigma-palette-radius);
+    box-shadow: var(--enigma-palette-shadow);
+}
+
+/* The dialog needs a name; nobody needs to see it. */
+[data-enigma-palette-title] {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+
+[data-enigma-palette-field] {
+    width: 100%;
+    padding: 0.95rem 1.1rem;
+    font: inherit;
+    font-size: 0.95rem;
+    color: inherit;
+    background: transparent;
+    border: 0;
+    border-bottom: 1px solid var(--enigma-palette-border);
+    outline: none;
+}
+
+[data-enigma-palette-field]::placeholder { color: var(--enigma-palette-muted); }
+/* The platform's own clear button would sit next to a list that already answers to Escape. */
+[data-enigma-palette-field]::-webkit-search-cancel-button { display: none; }
+
+[data-enigma-palette-list] {
+    flex: 1;
+    overflow-y: auto;
+    /* A scroll that reaches the end stays in the panel instead of moving the page under it. */
+    overscroll-behavior: contain;
+    padding: 0.4rem;
+}
+
+[data-enigma-palette-group-label] {
+    margin: 0.4rem 0.6rem 0.25rem;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--enigma-palette-muted);
+}
+
+[data-enigma-palette-item] {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.55rem 0.6rem;
+    border-radius: 0.5rem;
+    cursor: pointer;
+}
+
+/* One highlight, whether it was the keyboard or the pointer that moved it. */
+[data-enigma-palette-item][data-active="true"] { background: var(--enigma-palette-active); }
+[data-enigma-palette-item][data-kind="recent"] [data-enigma-palette-item-label]::before {
+    content: "";
+    display: inline-block;
+    width: 0.35rem;
+    height: 0.35rem;
+    margin-right: 0.5rem;
+    vertical-align: 0.1rem;
+    border-radius: 999px;
+    background: var(--enigma-palette-accent);
+}
+
+[data-enigma-palette-item-label] { flex: 1; min-width: 0; }
+[data-enigma-palette-item-description] { color: var(--enigma-palette-muted); font-size: 0.8125rem; }
+
+[data-enigma-palette-empty] {
+    margin: 0;
+    padding: 2.5rem 1rem;
+    text-align: center;
+    color: var(--enigma-palette-muted);
+    font-size: 0.875rem;
+}
+
+[data-enigma-palette-footer] {
+    display: flex;
+    gap: 1rem;
+    padding: 0.55rem 0.9rem;
+    font-size: 0.75rem;
+    color: var(--enigma-palette-muted);
+    border-top: 1px solid var(--enigma-palette-border);
+}
+
+[data-enigma-palette-hint] kbd {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.6875rem;
+    padding: 0.1rem 0.3rem;
+    margin-right: 0.2rem;
+    border: 1px solid var(--enigma-palette-border);
+    border-radius: 0.25rem;
+}
+
+/* A phone has no Escape key and less room: the panel takes the top of the screen. */
+@media (max-width: 640px) {
+    [data-enigma-palette-content] {
+        top: 0.75rem;
+        max-height: calc(100vh - 1.5rem);
+    }
+}

@@ -17,7 +17,12 @@ export type Control<V> =
     | { name: keyof V & string; label: string; type: "select"; options: { value: string; label: string; }[]; hint?: string; };
 
 export interface PlaygroundProps<V extends Record<string, string | boolean>> {
-    controls: Control<V>[];
+    /**
+     * The controls, or a function of the current values for a component whose props DEPEND
+     * on one of them - a field's `type` decides which props even exist, so showing the
+     * password controls on a date field would be showing props that are a compile error.
+     */
+    controls: Control<V>[] | ((values: V) => Control<V>[]);
     initial: V;
     /** The live component. */
     render: (values: V) => ReactNode;
@@ -28,6 +33,7 @@ export interface PlaygroundProps<V extends Record<string, string | boolean>> {
 export function Playground<V extends Record<string, string | boolean>>({ controls, initial, render, code }: PlaygroundProps<V>) {
     const [values, setValues] = useState<V>(initial);
 
+    const shown = useMemo(() => (typeof controls === "function" ? controls(values) : controls), [controls, values]);
     const source = useMemo(() => code(values), [code, values]);
 
     /**
@@ -57,7 +63,7 @@ export function Playground<V extends Record<string, string | boolean>>({ control
 
                 <div className="pg-controls">
                     <div className="pg-h">Customize</div>
-                    {controls.map((control) => (
+                    {shown.map((control) => (
                         <label key={control.name} className="pg-row">
                             <span className="pg-label">
                                 {control.label}

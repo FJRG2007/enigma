@@ -516,6 +516,14 @@
           ]
         },
         {
+          "path": "recipes/palette/styles.css",
+          "dest": "palette/styles.css",
+          "targets": [
+            "react"
+          ],
+          "style": "css"
+        },
+        {
           "path": "src/react/palette/context.ts",
           "dest": "palette/context.ts",
           "targets": [
@@ -572,7 +580,10 @@
         "[data-enigma-palette-footer]",
         "[data-enigma-palette-hint]"
       ],
-      "docs": "docs/notes/primitives.md#palette"
+      "docs": "docs/notes/primitives.md#palette",
+      "recipes": [
+        "css"
+      ]
     },
     {
       "name": "flags",
