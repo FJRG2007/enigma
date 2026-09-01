@@ -85,7 +85,7 @@ Lowest severity that halts a run: `error`, `warning` (the default), or `info`. `
 
 ## Automatic driving
 
-You do not have to ask your agent to run the gate or initialize repos by hand. The deployed agent memory carries an always-on instruction: once the agent has committed a code task, it **drives the gate itself** on whatever branch that work is on - running `enigma gate init` once if the repo is not set up yet - then handles findings the way `fix_policy` says (by default: applies every fix it can, and comes back only for an `ask-user` finding whose repair would go against what you asked for), and leaves the PR ready for you to review and merge (it never merges on its own).
+You do not have to ask your agent to run the gate or initialize repos by hand. The deployed agent memory carries an always-on instruction: once the agent has committed a code task, it **drives the gate itself** on whatever branch that work is on - running `enigma gate init` once if the repo is not set up yet - then handles findings the way `fix_policy` says (by default: applies every fix it can, and comes back only for an `ask-user` finding whose repair would go against what you asked for), and leaves the PR ready for you to review and merge. It merges on its own only when you told it to - otherwise it reports the run as waiting on you, not on it.
 
 This is **per project**. To opt a single repo out while the gate stays on everywhere else, set `gate: false` in that repo's `.enigma.json` (or run `/gate off` there); the agent skips automatic driving there.
 
@@ -112,7 +112,7 @@ enigma gate axi respond --action skip
 
 While a run is active the pipeline owns the findings and the fixes - decide and respond rather than editing the code yourself. A run ends with one outcome:
 
-- **`checks-passed`** - validated and CI green; the PR is open for you to review and merge.
+- **`checks-passed`** - validated and CI green; the PR is open for you to review and merge. The run now waits on you, not on the pipeline - `enigma gate axi status` and the dashboard both show it as `needs you: merge the PR` instead of `running`. Merge it yourself with `enigma gate axi merge`, or ask your agent to.
 - **`passed`** - cleared the gate and the PR was merged or closed.
 - **`failed` / `cancelled`** - read the output, fix what it points at, commit on the same branch, and run it again.
 
