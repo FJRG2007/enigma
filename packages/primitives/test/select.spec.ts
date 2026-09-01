@@ -345,4 +345,22 @@ test.describe("Select", () => {
         await expect(at(page, single, content)).toBeHidden();
         expect(await read(page, "__country")).toBe("");
     });
+
+    test("with no options it says so and opens nothing", async ({ page }) => {
+        await open(page);
+        const empty = page.locator('[data-testid="empty-select"]');
+        // The panel would hold one line of apology, so the TRIGGER carries it instead.
+        await expect(empty.locator(trigger)).toHaveText("No options");
+        await expect(empty.locator(trigger)).toHaveAttribute("aria-disabled", "true");
+        // Forced, because the point is that a click which gets through still opens nothing.
+        await empty.locator(trigger).click({ force: true });
+        await expect(empty.locator(content)).toHaveCount(0);
+
+        // Still loading is a different thing from having nothing, and it says the other one.
+        const loading = page.locator('[data-testid="loading-select"]');
+        await expect(loading.locator(trigger)).toHaveText("Loading...");
+        await expect(loading.locator(trigger)).toHaveAttribute("aria-busy", "true");
+        await loading.locator(trigger).click({ force: true });
+        await expect(loading.locator(content)).toHaveCount(0);
+    });
 });

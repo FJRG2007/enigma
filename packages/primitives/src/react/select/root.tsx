@@ -91,6 +91,15 @@ interface SelectRootBase extends Omit<SelectOptions, "options" | "value" | "onVa
      * Default: on when many values are allowed.
      */
     clearable?: boolean;
+    /**
+     * The options have not arrived yet. Distinct from having none: a select that is still
+     * loading and one that will never have anything look identical otherwise, and only one of
+     * them is worth waiting for.
+     */
+    loading?: boolean;
+    /** What the trigger says with no options at all. */
+    emptyLabel?: ReactNode;
+    loadingLabel?: ReactNode;
     /** Inject the baseline stylesheet. See the note above. */
     styles?: boolean;
     /**
@@ -131,6 +140,9 @@ export function SelectRoot(props: SelectRootProps): ReactNode {
         open: openProp,
         defaultOpen = false,
         onOpenChange,
+        loading = false,
+        emptyLabel = "No options",
+        loadingLabel = "Loading...",
         styles = true,
         clearable,
         className,
@@ -147,6 +159,9 @@ export function SelectRoot(props: SelectRootProps): ReactNode {
     useLayoutEffect(() => { if (styles) injectStyles(); }, [styles]);
 
     const isSearchable = searchable === "auto" ? options.length >= SEARCHABLE_FROM : searchable;
+    // Nothing to choose from, which is not the same as a filter that matched nothing: the
+    // panel would hold one line of apology, so the TRIGGER says it instead and never opens.
+    const isEmpty = options.length === 0 && !loading;
     const controlledValue = props.value === undefined ? undefined : props.value ?? (multiple ? [] : null);
 
     const id = useId();
@@ -263,7 +278,7 @@ export function SelectRoot(props: SelectRootProps): ReactNode {
     const open = openProp ?? uncontrolledOpen;
 
     const setOpen = useCallback((next: boolean) => {
-        if (disabled && next) return;
+        if ((disabled || isEmpty || loading) && next) return;
         if (openProp === undefined) setUncontrolledOpen(next);
         // The instance is opened HERE and not only from the effect below, so that whatever
         // the same handler does next - a typeahead, a move - runs against a panel that is
@@ -271,7 +286,7 @@ export function SelectRoot(props: SelectRootProps): ReactNode {
         // open, which is a highlight that lands on the wrong row.
         instance.setOpen(next);
         onOpenChange?.(next);
-    }, [instance, disabled, openProp, onOpenChange]);
+    }, [instance, disabled, isEmpty, loading, openProp, onOpenChange]);
 
     useEffect(() => { instance.setOpen(open); }, [instance, open]);
 
@@ -376,13 +391,17 @@ export function SelectRoot(props: SelectRootProps): ReactNode {
         disabled,
         clearable: clearable ?? multiple,
         searchable: isSearchable,
+        empty: isEmpty,
+        loading,
+        emptyLabel,
+        loadingLabel,
         ids,
         optionId: (index: number) => `${id}-option-${index}`,
         triggerRef,
         fieldRef,
         close,
         onListKeyDown
-    }), [instance, state, setOpen, disabled, clearable, multiple, isSearchable, ids, id, close, onListKeyDown]);
+    }), [instance, state, setOpen, disabled, clearable, multiple, isSearchable, isEmpty, loading, emptyLabel, loadingLabel, ids, id, close, onListKeyDown]);
 
     return (
         <SelectContext.Provider value={context}>
@@ -393,6 +412,8 @@ export function SelectRoot(props: SelectRootProps): ReactNode {
                 data-enigma-select-root=""
                 data-open={open ? "" : undefined}
                 data-disabled={disabled ? "" : undefined}
+                data-empty={isEmpty ? "" : undefined}
+                data-loading={loading ? "" : undefined}
                 data-multiple={multiple ? "" : undefined}
             >
                 {children}
@@ -438,6 +459,10 @@ export function SelectTrigger({ asChild = false, indicator = true, children, onC
     const Tag = asChild ? Slot : "button";
     const active = select.state.active;
     const showClear = select.clearable && select.state.value.length > 0 && !select.disabled;
+    // Announced as unavailable rather than removed from the tab order: the reason it cannot be
+    // opened is written inside it, and a `disabled` button takes that text out of reach of the
+    // keyboard and the screen reader that need it most.
+    const unavailable = select.disabled || select.empty || select.loading;
 
     return (
         <Tag
@@ -452,17 +477,20 @@ export function SelectTrigger({ asChild = false, indicator = true, children, onC
             aria-expanded={select.state.open}
             aria-controls={select.state.open ? select.ids.list : undefined}
             aria-activedescendant={!select.searchable && select.state.open && active >= 0 ? select.optionId(active) : undefined}
-            aria-disabled={select.disabled || undefined}
+            aria-disabled={unavailable || undefined}
+            aria-busy={select.loading || undefined}
             disabled={asChild ? undefined : select.disabled}
             data-enigma-select-trigger=""
             data-open={select.state.open ? "" : undefined}
+            data-empty={select.empty ? "" : undefined}
+            data-loading={select.loading ? "" : undefined}
             data-placeholder={select.state.value.length === 0 ? "" : undefined}
             // The stylesheet reads this to hide the caret under the ×. Without it the caret
             // would disappear on hover over a select that has nothing to clear.
             data-clearable={showClear ? "" : undefined}
             onClick={(event) => {
                 onClick?.(event);
-                if (event.defaultPrevented || select.disabled) return;
+                if (event.defaultPrevented || unavailable) return;
                 select.setOpen(!select.state.open);
             }}
             onKeyDown={(event) => {
@@ -525,6 +553,11 @@ export function SelectValue({ placeholder = "Select", tags, maxTags = 3, childre
     const select = useSelectContext("Select.Value");
     const selected = select.state.selected as SelectItem[];
     const showTags = tags ?? select.state.multiple;
+
+    // Before anything else, because both states mean there is nothing chosen AND nothing to
+    // choose - and "Select" over an empty list is the misleading version of that.
+    if (select.loading) return <span {...props} data-enigma-select-value="" data-placeholder="" data-loading="">{select.loadingLabel}</span>;
+    if (select.empty) return <span {...props} data-enigma-select-value="" data-placeholder="" data-empty="">{select.emptyLabel}</span>;
 
     if (typeof children === "function") return <span {...props} data-enigma-select-value="">{children(selected)}</span>;
     if (children) return <span {...props} data-enigma-select-value="">{children}</span>;

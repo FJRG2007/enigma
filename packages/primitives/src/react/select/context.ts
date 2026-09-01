@@ -21,6 +21,16 @@ export interface SelectContextValue {
     /** Whether the trigger offers a × that empties the selection. */
     clearable: boolean;
     searchable: boolean;
+    /**
+     * There is nothing to choose from at all - not a filter that matched nothing, an option
+     * list that is empty. The trigger says so and refuses to open, because a panel holding one
+     * line of apology is worse than a control that reads as unavailable.
+     */
+    empty: boolean;
+    /** The options have not arrived yet, which is a different thing from there being none. */
+    loading: boolean;
+    emptyLabel: ReactNode;
+    loadingLabel: ReactNode;
     /** ids the parts need to point at each other. */
     ids: { trigger: string; list: string; field: string; };
     optionId: (index: number) => string;

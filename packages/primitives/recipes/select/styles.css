@@ -59,6 +59,13 @@
 [data-enigma-select-trigger][data-open] { border-color: var(--enigma-select-border-focus); }
 [data-enigma-select-trigger]:disabled,
 [data-enigma-select-trigger][aria-disabled="true"] { opacity: 0.5; cursor: not-allowed; }
+/* Nothing to choose, or nothing yet: the control reads as unavailable and the caret fades,
+   because a caret at full strength promises a panel that will never open. Not the disabled
+   look, which would say the field is off rather than that the list is empty. */
+[data-enigma-select-trigger][data-empty],
+[data-enigma-select-trigger][data-loading] { opacity: 1; cursor: default; }
+[data-enigma-select-trigger][data-empty] [data-enigma-select-caret],
+[data-enigma-select-trigger][data-loading] [data-enigma-select-caret] { opacity: 0.25; }
 
 /* The indicator: one slot, holding the caret and the × stacked in the same cell. Side by
    side they would be two targets a pixel apart - one of which throws away your choice - and

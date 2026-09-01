@@ -17,6 +17,7 @@ interface Values extends Record<string, string | boolean> {
     groups: boolean;
     clearable: boolean;
     disabled: boolean;
+    state: string;
     placeholder: string;
 }
 
@@ -35,6 +36,15 @@ const CONTROLS: Control<Values>[] = [
     { name: "groups", label: "Groups", type: "boolean" },
     { name: "clearable", label: "Clear button", type: "boolean" },
     { name: "disabled", label: "Disabled", type: "boolean" },
+    {
+        name: "state", label: "Options", type: "select",
+        hint: "an empty list says so instead of opening",
+        options: [
+            { value: "ready", label: "loaded" },
+            { value: "empty", label: "none" },
+            { value: "loading", label: "loading" }
+        ]
+    },
     { name: "placeholder", label: "Placeholder", type: "text", placeholder: "Country" }
 ];
 
@@ -59,6 +69,7 @@ const INITIAL: Values = {
     groups: true,
     clearable: false,
     disabled: false,
+    state: "ready",
     placeholder: "Country"
 };
 
@@ -76,6 +87,9 @@ const COUNTRIES = [
 ];
 
 function options(values: Values) {
+    // Nothing to choose from is a state of its own: the trigger says so and never opens a
+    // panel holding one line of apology.
+    if (values.state !== "ready") return [];
     return COUNTRIES.map((country) => ({
         value: country.value,
         label: country.label,
@@ -94,6 +108,7 @@ function code(values: Values): string {
     if (values.searchable === "off") props.push("searchable={false}");
     if (values.clearable && !values.multiple) props.push("clearable");
     if (values.disabled) props.push("disabled");
+    if (values.state === "loading") props.push("loading");
     if (values.placeholder && values.placeholder !== "Select") props.push(`placeholder="${values.placeholder}"`);
 
     const option = [
@@ -118,6 +133,7 @@ function Live({ values }: { values: Values; }) {
     const [one, setOne] = useState("");
     const [many, setMany] = useState<string[]>([]);
     const searchable = values.searchable === "auto" ? "auto" : values.searchable === "on";
+    const loading = values.state === "loading";
 
     if (values.multiple) {
         return (
@@ -129,6 +145,7 @@ function Live({ values }: { values: Values; }) {
                 onValueChange={setMany}
                 searchable={searchable}
                 disabled={values.disabled}
+                loading={loading}
                 placeholder={values.placeholder || "Select"}
             />
         );
@@ -143,6 +160,7 @@ function Live({ values }: { values: Values; }) {
             searchable={searchable}
             clearable={values.clearable}
             disabled={values.disabled}
+            loading={loading}
             placeholder={values.placeholder || "Select"}
         />
     );

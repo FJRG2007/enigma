@@ -271,6 +271,17 @@ function Form(): React.ReactNode {
                 />
             </div>
 
+            {/* Nothing to choose from: the trigger says so and never opens a panel holding
+                one line of apology. */}
+            <div data-testid="empty-select">
+                <Select options={[]} placeholder="Country" />
+            </div>
+
+            {/* Still loading, which is a different thing from having nothing. */}
+            <div data-testid="loading-select">
+                <Select options={[]} loading placeholder="Country" />
+            </div>
+
             <SearchPalette
                 items={DOCS}
                 keys={["title"]}
