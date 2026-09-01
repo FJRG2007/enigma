@@ -214,6 +214,9 @@
     text-align: center;
     color: var(--enigma-palette-muted);
     font-size: 0.875rem;
+    /* It quotes the query, and a pasted string with no spaces in it has no break
+       opportunity: without this it runs out of the panel rather than wrapping. */
+    overflow-wrap: anywhere;
 }
 
 [data-enigma-palette-footer] {

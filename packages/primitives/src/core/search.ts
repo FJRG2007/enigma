@@ -166,6 +166,25 @@ function subsequenceScore(query: string, text: string): number {
     return score;
 }
 
+/**
+ * A query, short enough to put back on the screen.
+ *
+ * Every empty state quotes what was typed - "Nothing matches ..." - and what was typed is
+ * arbitrary: paste sixty characters with no spaces in them and there is no break opportunity
+ * in the whole string, so the panel grows to fit it and keeps growing. Cut in the TEXT and
+ * not only in CSS, because `text-overflow` needs a bounded box and the box is what the
+ * string is stretching.
+ *
+ * The tail is what identifies a typo, so the start is what survives.
+ */
+export function shortenQuery(query: string, max = 32): string {
+    const trimmed = query.trim();
+    if (trimmed.length <= max) return trimmed;
+    // A real ellipsis, not three dots: one character, and a screen reader says "ellipsis"
+    // rather than reading three full stops.
+    return `${trimmed.slice(0, max - 1).trimEnd()}\u2026`;
+}
+
 export function createSearch<T>(options: SearchOptions<T> = {}): SearchInstance<T> {
     let opts: SearchOptions<T> = { ...options };
     let items: readonly T[] = opts.items ?? [];

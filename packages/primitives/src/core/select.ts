@@ -112,7 +112,12 @@ function fold(value: string): string {
 
 function toList(value: SelectOptions["value"]): string[] {
     if (value == null) return [];
-    return Array.isArray(value) ? [...value] : [value as string];
+    const list = Array.isArray(value) ? [...value] : [value as string];
+    // The empty string is NOTHING CHOSEN, not a value. `value=""` is how React writes an
+    // empty controlled field and how HTML writes a placeholder option, so keeping it would
+    // leave a select that shows its placeholder while holding a value, offering a clear
+    // button for it and posting it with the form.
+    return list.filter((entry) => entry !== "");
 }
 
 function sameValues(left: readonly string[], right: readonly string[]): boolean {

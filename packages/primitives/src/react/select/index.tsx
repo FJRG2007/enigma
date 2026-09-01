@@ -12,8 +12,6 @@ export type SelectProps = SelectRootProps & {
     /** Removable tags instead of a comma-separated line. Default: on when `multiple`. */
     tags?: boolean;
     maxTags?: number;
-    /** A × on the trigger that empties the selection. Default: on when `multiple`. */
-    clearable?: boolean;
     /** Shown when the filter matches nothing. */
     empty?: ReactNode;
     /** Draw a row yourself: the icon, label, description and check are the default. */
@@ -48,7 +46,6 @@ export function Select(props: SelectProps): ReactNode {
         searchPlaceholder = "Search",
         tags,
         maxTags,
-        clearable,
         empty,
         renderOption,
         className,
@@ -61,13 +58,11 @@ export function Select(props: SelectProps): ReactNode {
     // The union survives as far as the props object; the rest spread flattens it, so the
     // cast puts back what TypeScript dropped rather than widening anything.
     const root = rest as SelectRootProps;
-    const showClear = clearable ?? Boolean(root.multiple);
 
     return (
         <parts.SelectRoot {...root} className={className}>
             <parts.SelectTrigger {...triggerProps}>
                 <parts.SelectValue placeholder={placeholder} tags={tags} maxTags={maxTags} />
-                {showClear && <ClearButton />}
             </parts.SelectTrigger>
             <parts.SelectContent {...contentProps}>
                 {/* Rendered on the root's own decision: `searchable="auto"` is a count, and
@@ -84,33 +79,6 @@ export function Select(props: SelectProps): ReactNode {
 function SearchSlot({ placeholder }: { placeholder: string; }): ReactNode {
     const { searchable } = useSelectContext("Select");
     return searchable ? <parts.SelectSearch placeholder={placeholder} /> : null;
-}
-
-/**
- * Empties the selection.
- *
- * A span with a button's role, because it sits INSIDE the trigger button and a button
- * inside a button is markup the browser silently unnests - which drops the handler with it.
- */
-function ClearButton(): ReactNode {
-    const { instance, state, disabled } = useSelectContext("Select");
-    if (state.value.length === 0 || disabled) return null;
-
-    return (
-        <span
-            role="button"
-            tabIndex={-1}
-            aria-label="Clear selection"
-            data-enigma-select-clear=""
-            onPointerDown={(event) => {
-                // Down and stopped: the trigger opens the panel on click, and clearing must
-                // not also open it.
-                event.preventDefault();
-                event.stopPropagation();
-                instance.clear();
-            }}
-        >×</span>
-    );
 }
 
 Select.Root = parts.SelectRoot;

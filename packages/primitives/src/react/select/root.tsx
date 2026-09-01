@@ -2,6 +2,7 @@
 
 import { Slot } from "@/react/slot";
 import { groupRows } from "@/core/palette";
+import { shortenQuery } from "@/core/search";
 import { SELECT_STYLES } from "@/react/select/styles";
 import { SelectContext, useSelectContext, type SelectItem } from "@/react/select/context";
 import { createSelect, type SelectInstance, type SelectMoveKey, type SelectOptions, type SelectState } from "@/core/select";
@@ -84,6 +85,12 @@ interface SelectRootBase extends Omit<SelectOptions, "options" | "value" | "onVa
     open?: boolean;
     defaultOpen?: boolean;
     onOpenChange?: (open: boolean) => void;
+    /**
+     * A × that empties the selection. It takes the caret's place while the pointer is on
+     * the control - see the trigger below for why it is not a second glyph beside it.
+     * Default: on when many values are allowed.
+     */
+    clearable?: boolean;
     /** Inject the baseline stylesheet. See the note above. */
     styles?: boolean;
     /**
@@ -125,6 +132,7 @@ export function SelectRoot(props: SelectRootProps): ReactNode {
         defaultOpen = false,
         onOpenChange,
         styles = true,
+        clearable,
         className,
         style,
         closeOnSelect,
@@ -243,7 +251,9 @@ export function SelectRoot(props: SelectRootProps): ReactNode {
      */
     useEffect(() => {
         if (controlledValue === undefined) return;
-        const wanted = controlledValue === null ? [] : Array.isArray(controlledValue) ? controlledValue : [controlledValue];
+        // The same rule the core applies: an empty string is nothing chosen.
+        const wanted = (controlledValue === null ? [] : Array.isArray(controlledValue) ? controlledValue : [controlledValue])
+            .filter((entry) => entry !== "");
         const current = instance.state.value;
         if (current.length === wanted.length && current.every((entry, index) => entry === wanted[index])) return;
         instance.update({ value: [...wanted] });
@@ -364,6 +374,7 @@ export function SelectRoot(props: SelectRootProps): ReactNode {
         state,
         setOpen,
         disabled,
+        clearable: clearable ?? multiple,
         searchable: isSearchable,
         ids,
         optionId: (index: number) => `${id}-option-${index}`,
@@ -371,7 +382,7 @@ export function SelectRoot(props: SelectRootProps): ReactNode {
         fieldRef,
         close,
         onListKeyDown
-    }), [instance, state, setOpen, disabled, isSearchable, ids, id, close, onListKeyDown]);
+    }), [instance, state, setOpen, disabled, clearable, multiple, isSearchable, ids, id, close, onListKeyDown]);
 
     return (
         <SelectContext.Provider value={context}>
@@ -415,12 +426,18 @@ export function SelectRoot(props: SelectRootProps): ReactNode {
 export interface SelectTriggerProps extends Omit<ComponentPropsWithoutRef<"button">, "value"> {
     /** Put the behaviour on your own element instead of ours. */
     asChild?: boolean;
+    /**
+     * Draw the caret, and the clear × in its place. On by default, and never through a slot:
+     * the child owns its own markup there.
+     */
+    indicator?: boolean;
 }
 
-export function SelectTrigger({ asChild = false, children, onClick, onKeyDown, ...props }: SelectTriggerProps): ReactNode {
+export function SelectTrigger({ asChild = false, indicator = true, children, onClick, onKeyDown, ...props }: SelectTriggerProps): ReactNode {
     const select = useSelectContext("Select.Trigger");
     const Tag = asChild ? Slot : "button";
     const active = select.state.active;
+    const showClear = select.clearable && select.state.value.length > 0 && !select.disabled;
 
     return (
         <Tag
@@ -440,6 +457,9 @@ export function SelectTrigger({ asChild = false, children, onClick, onKeyDown, .
             data-enigma-select-trigger=""
             data-open={select.state.open ? "" : undefined}
             data-placeholder={select.state.value.length === 0 ? "" : undefined}
+            // The stylesheet reads this to hide the caret under the ×. Without it the caret
+            // would disappear on hover over a select that has nothing to clear.
+            data-clearable={showClear ? "" : undefined}
             onClick={(event) => {
                 onClick?.(event);
                 if (event.defaultPrevented || select.disabled) return;
@@ -451,6 +471,38 @@ export function SelectTrigger({ asChild = false, children, onClick, onKeyDown, .
             }}
         >
             {children}
+            {!asChild && indicator && (
+                /**
+                 * One slot, two glyphs, stacked.
+                 *
+                 * The × and the caret occupy the SAME cell and swap on hover, the way a
+                 * select with a clear button is normally drawn: side by side they are two
+                 * targets a pixel apart, one of which dismisses your choice, and the pair
+                 * changes the trigger's width the moment a value appears.
+                 */
+                <span data-enigma-select-indicator="">
+                    <span data-enigma-select-caret="" aria-hidden="true" />
+                    {showClear && (
+                        // A span with a button's role: this is inside the trigger button,
+                        // and a button inside a button is markup the browser unnests -
+                        // which drops the handler with it. Backspace does the same thing
+                        // from the keyboard, since it cannot be a tab stop of its own.
+                        <span
+                            role="button"
+                            tabIndex={-1}
+                            aria-label="Clear selection"
+                            data-enigma-select-clear=""
+                            onPointerDown={(event) => {
+                                // Down and stopped: the trigger opens the panel on click,
+                                // and clearing must not also open it.
+                                event.preventDefault();
+                                event.stopPropagation();
+                                select.instance.clear();
+                            }}
+                        >&times;</span>
+                    )}
+                </span>
+            )}
         </Tag>
     );
 }
@@ -680,7 +732,7 @@ export function SelectList({ children, empty, chunk = 40, ...props }: SelectList
             data-enigma-select-list=""
         >
             {state.visible.length === 0
-                ? empty ?? <p data-enigma-select-empty="">{state.query.trim() ? `Nothing matches "${state.query.trim()}".` : "Nothing to choose."}</p>
+                ? empty ?? <p data-enigma-select-empty="">{state.query.trim() ? `Nothing matches "${shortenQuery(state.query)}".` : "Nothing to choose."}</p>
                 : groups.map((group) => (
                     <div key={group.label} role="group" aria-label={group.label || undefined} data-enigma-select-group="">
                         {group.label && <p data-enigma-select-group-label="" aria-hidden="true">{group.label}</p>}

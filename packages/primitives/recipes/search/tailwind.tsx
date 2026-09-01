@@ -1,6 +1,6 @@
 import Fuse from "fuse.js";
 import type { ReactNode } from "react";
-import { useSearch } from "@enigmax/primitives/react";
+import { useSearch, shortenQuery } from "@enigmax/primitives/react";
 
 /**
  * A styled search field with its result list, yours to edit.
@@ -52,7 +52,7 @@ export function Search<T>({
 
             {query && (
                 <p className="font-mono text-[11px] text-neutral-500">
-                    {results.length} result{results.length === 1 ? "" : "s"} for &quot;{query}&quot;
+                    {results.length} result{results.length === 1 ? "" : "s"} for &quot;{shortenQuery(query)}&quot;
                 </p>
             )}
 

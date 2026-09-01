@@ -279,6 +279,63 @@ test.describe("Select", () => {
         expect(await read(page, "__stack")).toEqual(["es"]);
     });
 
+    test("a long query in the filter does not stretch the panel", async ({ page }) => {
+        await open(page);
+        await at(page, multi, trigger).click();
+        const panel = at(page, multi, content);
+        const before = await panel.evaluate((el) => Math.round(el.getBoundingClientRect().width));
+
+        // Sixty characters with no space in them: nothing in the string is a break
+        // opportunity, so an untruncated echo of it grows the panel and keeps growing.
+        await at(page, multi, search).fill("i".repeat(60));
+        await expect(at(page, multi, "[data-enigma-select-empty]")).toBeVisible();
+
+        const after = await panel.evaluate((el) => Math.round(el.getBoundingClientRect().width));
+        expect(after).toBe(before);
+        const text = await at(page, multi, "[data-enigma-select-empty]").innerText();
+        expect(text).toContain("…");
+        expect(text.length).toBeLessThan(60);
+    });
+
+    test("the × takes the caret's place, and only while the control is under the pointer", async ({ page }) => {
+        await open(page);
+        await at(page, single, trigger).click();
+        await at(page, single, options).filter({ hasText: "Italy" }).click();
+
+        const clear = at(page, single, "[data-enigma-select-clear]");
+        const caret = at(page, single, "[data-enigma-select-caret]");
+        const opacity = (locator: Locator) => locator.evaluate((el) => getComputedStyle(el).opacity);
+
+        // At rest: pointer away and nothing focused. Choosing leaves the trigger focused,
+        // which is one of the two states that reveal the ×.
+        await page.mouse.move(0, 0);
+        await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+
+        // Side by side they would be two targets a pixel apart, one of which throws the
+        // choice away - so they share one cell and swap. Polled, because the swap is a
+        // transition and the computed value is mid-flight for a frame or two.
+        await expect(async () => expect(await opacity(clear)).toBe("0")).toPass();
+        expect(Number(await opacity(caret))).toBeGreaterThan(0);
+        const box = await clear.evaluate((el) => {
+            const mine = el.getBoundingClientRect();
+            const other = el.parentElement.querySelector("[data-enigma-select-caret]").getBoundingClientRect();
+            return { sameSlot: Math.abs(mine.left - other.left) < 8 && Math.abs(mine.top - other.top) < 8 };
+        });
+        expect(box.sameSlot).toBe(true);
+
+        await at(page, single, trigger).hover();
+        await expect(async () => expect(await opacity(clear)).toBe("1")).toPass();
+        expect(await opacity(caret)).toBe("0");
+
+        await clear.click();
+        expect(await read(page, "__country")).toBe("");
+        // Emptying it is not opening it: the × is inside the trigger, which toggles on click.
+        await expect(at(page, single, content)).toBeHidden();
+        // And with nothing to clear the caret is back, hover or no hover.
+        await expect(at(page, single, "[data-enigma-select-clear]")).toHaveCount(0);
+        await expect(async () => expect(Number(await opacity(caret))).toBeGreaterThan(0)).toPass();
+    });
+
     test("a click outside closes it without choosing anything", async ({ page }) => {
         await open(page);
         await at(page, single, trigger).click();

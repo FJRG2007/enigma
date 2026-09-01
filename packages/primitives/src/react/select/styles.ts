@@ -67,16 +67,27 @@ export const SELECT_STYLES = `
 [data-enigma-select-trigger]:disabled,
 [data-enigma-select-trigger][aria-disabled="true"] { opacity: 0.5; cursor: not-allowed; }
 
-/* The caret. Drawn rather than loaded: an icon font or an SVG file is a request, and this
+/* The indicator: one slot, holding the caret and the × stacked in the same cell. Side by
+   side they would be two targets a pixel apart - one of which throws away your choice - and
+   the pair would change the trigger's width the moment a value appeared. */
+[data-enigma-select-indicator] {
+    display: grid; place-items: center; flex: none;
+    margin-left: auto; width: 1rem; height: 1rem;
+}
+[data-enigma-select-indicator] > * { grid-area: 1 / 1; }
+
+/* The caret, drawn rather than loaded: an icon font or an SVG file is a request, and this
    is two borders. */
-[data-enigma-select-trigger]::after {
-    content: ""; flex: none; margin-left: auto;
+[data-enigma-select-caret] {
     width: 0.4rem; height: 0.4rem;
+    /* Decoration, and it must not be the hit target: the rotation gives it a stacking
+       context, which paints it OVER the × sharing its cell and swallows the click. */
+    pointer-events: none;
     border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
     transform: translateY(-0.1rem) rotate(45deg);
-    opacity: 0.6; transition: transform 120ms ease-out;
+    opacity: 0.6; transition: transform 120ms ease-out, opacity 120ms ease-out;
 }
-[data-enigma-select-trigger][data-open]::after { transform: translateY(0.1rem) rotate(225deg); }
+[data-enigma-select-trigger][data-open] [data-enigma-select-caret] { transform: translateY(0.1rem) rotate(225deg); }
 
 [data-enigma-select-value] {
     display: flex; align-items: center; gap: 0.375rem;
@@ -102,12 +113,21 @@ export const SELECT_STYLES = `
 }
 [data-enigma-select-tag-remove]:hover { color: var(--enigma-select-text); background: var(--enigma-select-active-bg); }
 
+/* The ×, in the caret's place and only while the control is under the pointer or holds
+   focus. ":focus" and not ":focus-visible": a tap focuses the button, and on a touch screen
+   there is no hover to reveal it with. */
 [data-enigma-select-clear] {
-    display: grid; place-items: center; flex: none;
-    width: 1.25rem; height: 1.25rem; margin-left: 0.125rem;
-    color: var(--enigma-select-muted); background: none; border: 0; border-radius: 999px;
-    font-size: 0.875rem; line-height: 1; cursor: pointer;
+    display: grid; place-items: center;
+    width: 1rem; height: 1rem; border-radius: 999px;
+    color: var(--enigma-select-muted); font-size: 0.875rem; line-height: 1; cursor: pointer;
+    opacity: 0; pointer-events: none; transition: opacity 120ms ease-out;
 }
+[data-enigma-select-trigger]:hover [data-enigma-select-clear],
+[data-enigma-select-trigger]:focus [data-enigma-select-clear] { opacity: 1; pointer-events: auto; }
+/* Scoped to a trigger that HAS a × - otherwise hovering a select with nothing to clear
+   would hide its caret and leave an empty slot. */
+[data-enigma-select-trigger][data-clearable]:hover [data-enigma-select-caret],
+[data-enigma-select-trigger][data-clearable]:focus [data-enigma-select-caret] { opacity: 0; }
 [data-enigma-select-clear]:hover { color: var(--enigma-select-text); background: var(--enigma-select-active-bg); }
 
 [data-enigma-select-content] {
@@ -120,6 +140,10 @@ export const SELECT_STYLES = `
     border-radius: var(--enigma-select-panel-radius);
     box-shadow: var(--enigma-select-panel-shadow);
     animation: enigma-select-in 120ms ease-out;
+    /* A bound, because the content is arbitrary: a long option label or a query typed into
+       the filter would otherwise widen the panel with it. min-width still wins for a
+       trigger wider than this, which is what it is for. */
+    max-width: min(28rem, calc(100vw - 2rem));
 }
 /* Opening upwards is not a variant, it is the same panel measured against the window: near
    the bottom of the screen the list would otherwise be unreachable. */
@@ -200,5 +224,8 @@ export const SELECT_STYLES = `
 [data-enigma-select-empty] {
     margin: 0; padding: 0.75rem 0.5rem;
     font-size: var(--enigma-select-font-size); color: var(--enigma-select-muted);
+    /* The quoted query is cut in the text as well, but a pasted string with no spaces has
+       no break opportunity at all - so this is what stops it stretching the panel. */
+    overflow-wrap: anywhere;
 }
 `;

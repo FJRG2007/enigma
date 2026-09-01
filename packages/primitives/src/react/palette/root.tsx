@@ -3,7 +3,7 @@
 import { Slot } from "@/react/slot";
 import { createPortal } from "react-dom";
 import { PaletteContext, usePaletteContext, type PaletteRow } from "@/react/palette/context";
-import { createSearch, subsequenceMatcher, type SearchInstance, type SearchMatch, type SearchOptions } from "@/core/search";
+import { createSearch, subsequenceMatcher, shortenQuery, type SearchInstance, type SearchMatch, type SearchOptions } from "@/core/search";
 import { createRecentStore, groupRows, moveActive, shortcutLabel, isPaletteShortcut, type RecentEntry, type PaletteKey } from "@/core/palette";
 import {
     useCallback, useEffect, useId, useMemo, useRef, useState,
@@ -576,7 +576,7 @@ export function PaletteList<Item>({ children, empty, heading, ...props }: Palett
             data-enigma-palette-list=""
         >
             {palette.rows.length === 0
-                ? empty ?? <p data-enigma-palette-empty="">{palette.query.trim() ? `Nothing matches "${palette.query.trim()}".` : "Type to search."}</p>
+                ? empty ?? <p data-enigma-palette-empty="">{palette.query.trim() ? `Nothing matches "${shortenQuery(palette.query)}".` : "Type to search."}</p>
                 : groups.map((group) => (
                     <div key={group.label} role="group" aria-label={group.label} data-enigma-palette-group="">
                         {heading !== null && (

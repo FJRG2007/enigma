@@ -674,7 +674,7 @@
         .pal-row .pal-hint { margin-left: auto; font-family: var(--mono); font-size: 11px; opacity: .6; }
         .pal-row.sel { background: var(--surface2); color: var(--text); }
         .pal-row.sel .tab-ic { opacity: 1; color: var(--accent); }
-        .pal-empty { padding: 18px 8px; color: var(--muted); font-size: 13px; }
+        .pal-empty { padding: 18px 8px; color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
         .pal-foot {
             display: flex; gap: 14px; padding: 10px 8px 2px; border-top: 1px solid var(--border-soft);
             font-family: var(--mono); font-size: 10.5px; color: var(--muted); opacity: .7;
@@ -5068,6 +5068,9 @@ export {
         const primitives = window.EnigmaPrimitives || {};
         const { moveActive, groupRows, isPaletteShortcut } = primitives;
         const subsequenceMatcher = primitives.subsequenceMatcher || (() => undefined);
+        // The empty state quotes what was typed, and what was typed is arbitrary: a pasted
+        // string with no spaces in it has no break opportunity, so it runs out of the panel.
+        const shortenQuery = primitives.shortenQuery || ((value) => value);
         const createSearch = primitives.createSearch || (() => ({ setItems() {}, search() {}, searchNow() {}, update() {}, destroy() {} }));
         const createRecentStore = primitives.createRecentStore || (() => ({ list: () => [], remember: () => [], forget: () => [], clear() {} }));
         const shortcutLabel = primitives.shortcutLabel || ((key) => "Ctrl " + key);
@@ -5142,7 +5145,7 @@ export {
         /** Draws whatever is in `palItems`, grouped. The selection is applied by palMove. */
         function palPaint() {
             if (!palItems.length) {
-                palList.innerHTML = '<div class="pal-empty">No view or project matches "' + esc(palInput.value.trim()) + '".</div>';
+                palList.innerHTML = '<div class="pal-empty">No view or project matches "' + esc(shortenQuery(palInput.value)) + '".</div>';
                 palInput.removeAttribute("aria-activedescendant");
                 return;
             }

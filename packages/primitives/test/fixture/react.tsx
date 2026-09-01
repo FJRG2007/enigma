@@ -208,6 +208,7 @@ function Form(): React.ReactNode {
                 <Select
                     options={COUNTRIES}
                     searchable={false}
+                    clearable
                     value={country}
                     onValueChange={setCountry}
                     placeholder="Country"

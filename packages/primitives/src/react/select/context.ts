@@ -18,6 +18,8 @@ export interface SelectContextValue {
     /** Open or close the panel. React owns that flag; the instance follows it. */
     setOpen: (open: boolean) => void;
     disabled: boolean;
+    /** Whether the trigger offers a × that empties the selection. */
+    clearable: boolean;
     searchable: boolean;
     /** ids the parts need to point at each other. */
     ids: { trigger: string; list: string; field: string; };

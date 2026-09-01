@@ -367,6 +367,26 @@ Two defects that are easy to reintroduce, both fixed with a comment in place:
   excluded because an icon element is never equal to the one before it. Same for `value`,
   which is an array literal in `multiple` mode. There is a browser test for the loop.
 
+**The caret and the × share one slot.** `[data-enigma-select-indicator]` is a grid cell
+holding both, swapped on hover and focus (`:focus`, not `:focus-visible` - a tap focuses the
+button and a touch screen has no hover). Side by side they are two targets a pixel apart,
+one of which discards the selection, and the pair changes the trigger's width the moment a
+value appears. The caret is `pointer-events: none`: its rotation gives it a stacking context,
+which paints it over the × sharing the cell and swallows the click. `data-clearable` on the
+trigger scopes the swap, or hovering a select with nothing to clear would hide its caret and
+leave an empty slot.
+
+**An empty string is nothing chosen** (`toList` filters it out). `value=""` is how React
+writes an empty controlled field and how HTML writes a placeholder option; kept as a value it
+leaves the select showing its placeholder while holding something - a clear button for
+nothing, and an empty entry posted with the form.
+
+**What the empty state quotes is cut** (`shortenQuery`, 32 characters). Every empty state
+puts the query back on screen and a pasted string with no spaces has no break opportunity at
+all, so it stretches the panel and keeps stretching it. Cut in the TEXT and not only in CSS,
+because `text-overflow` needs a bounded box and the box is what the string is stretching -
+the panel's `max-width` and `overflow-wrap: anywhere` are the second half of the same fix.
+
 **A long list is rendered a window at a time** (`SelectList`, `chunk = 40`). A select of
 every country is 250 rows and 250 flags for the seven anybody sees, which is what made the
 panel slow to open. The window grows on scroll through an IntersectionObserver sentinel, and

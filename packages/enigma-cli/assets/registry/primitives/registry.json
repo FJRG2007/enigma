@@ -696,6 +696,8 @@
         "[data-enigma-select-value][data-placeholder]",
         "[data-enigma-select-tag]",
         "[data-enigma-select-tag-remove]",
+        "[data-enigma-select-indicator]",
+        "[data-enigma-select-caret]",
         "[data-enigma-select-clear]",
         "[data-enigma-select-content]",
         "[data-enigma-select-content][data-side=top]",

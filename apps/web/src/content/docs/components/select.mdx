@@ -93,6 +93,17 @@ Icons are images: `<Flag>` already asks the browser to defer the ones off screen
 | Screen readers | `role="listbox"`, `aria-selected` per row, `aria-activedescendant` on the field |
 | Both directions | The panel opens upwards when there is no room below it |
 
+## The clear button
+
+`clearable` puts a × in the **caret's slot**, revealed while the pointer is on the control
+or it holds focus - not beside the caret, where the two are targets a pixel apart and one of
+them throws the choice away, and where the trigger changes width the moment a value appears.
+Backspace does the same thing from the keyboard, since a control inside the trigger button
+cannot be a tab stop of its own.
+
+An empty string is nothing chosen, so `value=""` shows the placeholder and posts nothing -
+which is what `value=""` means in React and what `<option value="">` means in HTML.
+
 ## Labelling it
 
 Point at the caption, do not wrap the control:
@@ -143,7 +154,7 @@ brand is a handful of declarations and no selectors:
 | `searchable` | `"auto"` (eight rows or more), `true`, `false` |
 | `fuse` / `fuseOptions` / `matcher` | The filter, exactly as the search component takes them |
 | `tags` / `maxTags` | Removable tags, and how many before the rest collapse into `+N` |
-| `clearable` | A × that empties the selection |
+| `clearable` | A × that takes the caret's place while the control is hovered or focused |
 | `name` / `required` | The hidden field, for a form that posts |
 | `disabled` | The whole control |
 | `open` / `defaultOpen` / `onOpenChange` | The panel, if you want to own it |
@@ -151,5 +162,7 @@ brand is a handful of declarations and no selectors:
 | `styles` | `false` leaves the markup bare for a theme of your own |
 
 Styling hooks: `[data-enigma-select-trigger]`, `[data-enigma-select-content]`,
+`[data-enigma-select-indicator]` with `[data-enigma-select-caret]` and
+`[data-enigma-select-clear]` stacked in it,
 `[data-enigma-select-option]` with `[data-active]`, `[data-selected]` and `[data-disabled]`,
 `[data-enigma-select-tag]`, `[data-enigma-select-search]`, `[data-enigma-select-empty]`.

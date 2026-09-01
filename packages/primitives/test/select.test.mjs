@@ -151,6 +151,18 @@ test("a tag comes off, and clear empties the lot", () => {
     assert.deepEqual(select.state.selected, []);
 });
 
+test("an empty string is nothing chosen, not a value", () => {
+    // `value=""` is how React writes an empty controlled field and how HTML writes a
+    // placeholder option. Kept as a value it leaves a select showing its placeholder while
+    // holding something: a clear button for nothing, and an empty entry posted with the form.
+    const select = make({ value: "" });
+    assert.deepEqual(select.state.value, []);
+    assert.deepEqual(select.state.selected, []);
+
+    const many = make({ multiple: true, value: ["es", ""] });
+    assert.deepEqual(many.state.value, ["es"]);
+});
+
 test("a value with no option left disappears instead of rendering blank", () => {
     // The list reloaded and the id is gone: the value stays as data, the tag does not.
     const select = make({ multiple: true, value: ["es", "zz"] });
