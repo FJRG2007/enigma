@@ -93,6 +93,18 @@ Icons are images: `<Flag>` already asks the browser to defer the ones off screen
 | Screen readers | `role="listbox"`, `aria-selected` per row, `aria-activedescendant` on the field |
 | Both directions | The panel opens upwards when there is no room below it |
 
+## Nothing to choose from
+
+An empty `options` list is its own state, not a panel with one line of apology: the trigger
+says `emptyLabel` and never opens. `loading` is a third state, distinct from empty - a select
+that has not heard back yet and one that never will look identical otherwise, and only one of
+them is worth waiting for.
+
+```tsx
+<Select options={[]} emptyLabel="No countries yet" />
+<Select options={countries} loading={isFetching} loadingLabel="Loading countries..." />
+```
+
 ## The clear button
 
 `clearable` puts a × in the **caret's slot**, revealed while the pointer is on the control
@@ -157,12 +169,16 @@ brand is a handful of declarations and no selectors:
 | `clearable` | A × that takes the caret's place while the control is hovered or focused |
 | `name` / `required` | The hidden field, for a form that posts |
 | `disabled` | The whole control |
+| `loading` | The options have not arrived yet. Never opens, distinct from `emptyLabel` |
+| `emptyLabel` / `loadingLabel` | What the trigger says with no options at all, or while `loading` |
 | `open` / `defaultOpen` / `onOpenChange` | The panel, if you want to own it |
 | `renderOption` | Draw a row yourself |
 | `styles` | `false` leaves the markup bare for a theme of your own |
 
-Styling hooks: `[data-enigma-select-trigger]`, `[data-enigma-select-content]`,
+Styling hooks: `[data-enigma-select-trigger]` with `[data-empty]` and `[data-loading]`,
+`[data-enigma-select-content]`,
 `[data-enigma-select-indicator]` with `[data-enigma-select-caret]` and
 `[data-enigma-select-clear]` stacked in it,
 `[data-enigma-select-option]` with `[data-active]`, `[data-selected]` and `[data-disabled]`,
-`[data-enigma-select-tag]`, `[data-enigma-select-search]`, `[data-enigma-select-empty]`.
+`[data-enigma-select-tag]`, `[data-enigma-select-search]`, `[data-enigma-select-empty]`,
+`[data-enigma-select-value]` with `[data-placeholder]`, `[data-empty]` and `[data-loading]`.
