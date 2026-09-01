@@ -231,6 +231,52 @@ test("rows that are gone are dropped from the selection", () => {
     assert.equal(list.state.cursor <= 2, true);
 });
 
+test("a list that grew is a new state even when the selection did not change", () => {
+    const seen = [];
+    const list = createSelection({ items: FILES.slice(0, 3), getId: (file) => file.id });
+    list.subscribe((state) => seen.push(state));
+    list.selectAll();
+    assert.equal(list.state.allSelected, true);
+
+    seen.length = 0;
+    list.update({ items: FILES });
+    // A header checkbox reads `allSelected`, and it is measured against the list: left on the
+    // old snapshot it keeps saying "all" over seven rows nobody selected.
+    assert.equal(seen.length, 1, "rows arriving is a state change");
+    assert.equal(list.state.allSelected, false);
+    assert.equal(list.state.partiallySelected, true);
+
+    // The same list again is not: the items come from a render, so an array rebuilt with the
+    // same rows in it must not emit and start the next render.
+    seen.length = 0;
+    list.update({ items: [...FILES] });
+    assert.equal(seen.length, 0);
+});
+
+test("a press nobody performs and nobody listens for is left to the browser", () => {
+    const list = make();
+    // The list owns the selection, so it takes Ctrl+A and Escape wherever they are pressed.
+    assert.equal(list.keyDown(press("a", { ctrlKey: true })), true);
+    // Copy it does not perform, and with no handler for it either the press has to keep the
+    // browser's meaning - otherwise selecting text in a row and pressing Ctrl+C copies nothing.
+    assert.equal(list.keyDown(press("c", { ctrlKey: true })), false);
+    assert.equal(list.keyDown(press("F2")), false);
+
+    const listening = make({ onCommand: () => {} });
+    assert.equal(listening.keyDown(press("c", { ctrlKey: true })), true, "a handler is something taking the press");
+    assert.equal(listening.keyDown(press("F2")), true);
+});
+
+test("a binding is judged by the alternative that matched", () => {
+    const seen = [];
+    // `star` names three modifiers in its second alternative and none in the one a plain
+    // Delete hits, so scoring the whole spec would let it outrank the command bound to Delete.
+    const list = make({ shortcuts: { star: ["Delete", "Mod+Shift+Alt+Backspace"] }, onCommand: (event) => seen.push(event.command) });
+    list.click(1);
+    list.keyDown(press("Delete"));
+    assert.deepEqual(seen, ["delete"]);
+});
+
 test("the selection reads in list order, not in the order it was clicked", () => {
     const list = make();
     list.click(7);

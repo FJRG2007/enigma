@@ -850,6 +850,13 @@ Copy mode rewrites the `@/core/x` specifiers to relative ones using the `rewrite
 map in the registry entry, and refuses to run when the package source is not on
 disk rather than inventing it.
 
+The replacement is literal, so an import a core file gains AFTER its entry was
+written is copied out untouched and resolves to nothing in the reader's project -
+invisible here, where everything compiles against the alias. `test/registry.test.mjs`
+walks every entry and fails on an `@/` specifier that is not rewritten, or rewritten
+to a file the entry does not ship. Adding an import to a shared core means adding it
+to every entry that copies that file.
+
 ## keys
 
 `core/keys.ts` is shortcuts as data - parse, match, format - and it exists because two
@@ -882,8 +889,13 @@ What it copies is the Windows behaviour, and most of the file is the parts peopl
 
 - **The press that opens it must not also choose.** The menu appears under the pointer on
   `contextmenu`, and the RELEASE of that same press lands on whatever row is now beneath it.
-  Rows commit on `pointerup`, and there is a browser test that right-clicks and asserts nothing
-  was chosen.
+  Rows commit on `pointerup`, and on the PRIMARY button only: a right-click inside a panel
+  deliberately leaves the menu open, so its release over a row would otherwise invoke that row.
+  There are browser tests for both.
+- **One close timer, held by the Root.** A timer owned by the panel the pointer LEFT outlives
+  the row it came back to: the row reopens the branch and the orphaned timer shuts it a beat
+  later, with no `pointerenter` left to reopen it. `cancelClose` / `scheduleClose` on the
+  context are the one timer, cancelled by whatever the pointer arrives at.
 - **A submenu closes on a delay, and that number is the feature.** The way OUT of a submenu
   passes over its siblings, so closing on the first crossing makes a nested menu impossible to
   reach diagonally. 140 ms to open, 260 ms to close, and the core deliberately does NOT close
@@ -935,8 +947,10 @@ already paid for every rule in it.
   rows behind it.
 - **The commands are DATA.** Each has a default binding; `false` removes one, `shortcuts={false}`
   removes them all, a string rebinds, and a name that is not a built-in is matched and reported
-  anyway. `keyDown` returns whether a binding matched, so the caller prevents the browser's own
-  meaning only then - `q` still types where the list has not claimed it.
+  anyway. `keyDown` returns whether the press was TAKEN - the list performed it, or an
+  `onCommand` was there to hear it - so the caller prevents the browser's own meaning only then.
+  `q` still types where the list has not claimed it, and a list with no handler leaves Ctrl+C
+  alone rather than swallowing the copy and doing nothing with it.
 - **The list performs the moves and reports everything.** Delete, rename, open, copy, cut and
   paste are the caller's; `preventDefault()` on the event stops the ones the list owns. With
   nothing selected a command applies to the row under the cursor, which is the file-manager rule

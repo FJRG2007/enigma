@@ -141,6 +141,14 @@ export function ContextMenuRoot(props: ContextMenuRootProps): ReactNode {
     const id = useId();
     const ids = useMemo(() => ({ trigger: `${id}-trigger` }), [id]);
     const triggerRef = useRef<HTMLElement | null>(null);
+    /**
+     * The pending "close this branch" beat, one for the whole menu rather than one per panel.
+     *
+     * Whoever the pointer arrives at has to be able to cancel it, and only a timer held here
+     * can be: one owned by the panel the pointer LEFT outlives the row it came back to, and
+     * the branch that row reopens is then shut by a timer nothing on screen can reach.
+     */
+    const closing = useRef(0);
 
     // Kept in a ref so the instance - built once - always calls the CURRENT props rather than
     // the ones it closed over on the first render.
@@ -182,10 +190,29 @@ export function ContextMenuRoot(props: ContextMenuRootProps): ReactNode {
      * React nodes are left out of the signature on purpose: an icon is a fresh element object
      * every render and no two are ever equal. Functions are left out for the same reason,
      * which is why `loadItems` is keyed by the row's id and not by its identity.
+     *
+     * `data` is whatever the caller wants back in `onSelect` - a record, a DOM node, a class
+     * instance that points back at the thing holding it. A cycle in there is not a mistake,
+     * so it is written as a marker rather than followed, and anything else that cannot be
+     * written leaves the tree unsignable instead of throwing out of a render.
      */
-    const signature = useMemo(() => JSON.stringify(items, (key, value) => (
-        key === "icon" ? undefined : typeof value === "function" ? "fn" : value as unknown
-    )), [items]);
+    const signature = useMemo(() => {
+        const seen = new WeakSet<object>();
+        try {
+            return JSON.stringify(items, (key, value) => {
+                if (key === "icon") return undefined;
+                if (typeof value === "function") return "fn";
+                if (typeof value === "bigint") return String(value);
+                if (typeof value === "object" && value !== null) {
+                    if (seen.has(value)) return "[circular]";
+                    seen.add(value);
+                }
+                return value as unknown;
+            });
+        } catch {
+            return "[unserializable]";
+        }
+    }, [items]);
 
     const currentItems = useRef(items);
     currentItems.current = items;
@@ -194,17 +221,28 @@ export function ContextMenuRoot(props: ContextMenuRootProps): ReactNode {
         instance.update({ items: currentItems.current as readonly ContextMenuEntry[], title });
     }, [instance, signature, title]);
 
+    const cancelClose = useCallback(() => { window.clearTimeout(closing.current); }, []);
+
+    const scheduleClose = useCallback((level: number) => {
+        window.clearTimeout(closing.current);
+        closing.current = window.setTimeout(() => instance.closeBelow(level), closeDelay);
+    }, [instance, closeDelay]);
+
+    useEffect(() => cancelClose, [cancelClose]);
+
     const open = useCallback((point: ContextMenuPoint): boolean => {
         if (disabled) return false;
+        cancelClose();
         return instance.open(point);
-    }, [instance, disabled]);
+    }, [instance, disabled, cancelClose]);
 
     const close = useCallback(() => {
+        cancelClose();
         instance.close();
         // Focus goes back to the trigger rather than to the body: the menu is gone, and a
         // keyboard visitor left standing on nothing has to tab from the top of the page.
         triggerRef.current?.focus?.();
-    }, [instance]);
+    }, [instance, cancelClose]);
 
     /**
      * What dismisses it, other than choosing something.
@@ -319,10 +357,12 @@ export function ContextMenuRoot(props: ContextMenuRootProps): ReactNode {
         triggerRef,
         onMenuKeyDown,
         delays: { open: openDelay, close: closeDelay },
+        cancelClose,
+        scheduleClose,
         renderItem,
         loadingLabel,
         emptyLabel
-    }), [instance, state, open, close, ids, id, onMenuKeyDown, openDelay, closeDelay, renderItem, loadingLabel, emptyLabel]);
+    }), [instance, state, open, close, ids, id, onMenuKeyDown, openDelay, closeDelay, cancelClose, scheduleClose, renderItem, loadingLabel, emptyLabel]);
 
     return <ContextMenuContext.Provider value={context}>{children}</ContextMenuContext.Provider>;
 }
@@ -454,7 +494,6 @@ export function ContextMenuPanel({ level, chunk = 40, ...props }: ContextMenuPan
     const state = menu.state.levels[level];
     const ref = useRef<HTMLDivElement | null>(null);
     const [placed, setPlaced] = useState<CSSProperties | null>(null);
-    const closing = useRef(0);
 
     const point = menu.state.point;
     const rows = state?.visible.length ?? 0;
@@ -520,8 +559,6 @@ export function ContextMenuPanel({ level, chunk = 40, ...props }: ContextMenuPan
         (field ?? panel).focus({ preventScroll: true });
     }, [level, state?.searchable, isPlaced, isDeepest]);
 
-    useEffect(() => () => window.clearTimeout(closing.current), []);
-
     if (!state) return null;
 
     return (
@@ -543,9 +580,9 @@ export function ContextMenuPanel({ level, chunk = 40, ...props }: ContextMenuPan
             }}
             onPointerEnter={(event) => {
                 props.onPointerEnter?.(event);
-                // Coming back into a panel cancels the close its own row scheduled on the way
-                // out. Without this, crossing a sibling on the way to a submenu closes it.
-                window.clearTimeout(closing.current);
+                // Coming back into a panel cancels the close scheduled on the way out of one.
+                // Without this, crossing a sibling on the way to a submenu closes it.
+                menu.cancelClose();
             }}
             onPointerLeave={(event) => {
                 props.onPointerLeave?.(event);
@@ -553,8 +590,7 @@ export function ContextMenuPanel({ level, chunk = 40, ...props }: ContextMenuPan
                 // over the parent's other rows on its way somewhere without the branch
                 // vanishing under it.
                 if (level !== menu.state.levels.length - 1 || level === 0) return;
-                window.clearTimeout(closing.current);
-                closing.current = window.setTimeout(() => menu.instance.closeBelow(level - 1), menu.delays.close);
+                menu.scheduleClose(level - 1);
             }}
         >
             {state.title && <p data-enigma-menu-title="" title={state.title}>{state.title}</p>}
@@ -697,7 +733,7 @@ export interface ContextMenuRowProps extends Omit<ComponentPropsWithoutRef<"div"
 export function ContextMenuRow({ level, index, entry, children, ...props }: ContextMenuRowProps): ReactNode {
     const menu = useContextMenuContext("ContextMenu.Item");
     const ref = useRef<HTMLDivElement | null>(null);
-    const timers = useRef({ open: 0, close: 0 });
+    const timers = useRef({ open: 0 });
 
     const state = menu.state.levels[level];
     const isActive = state?.active === index;
@@ -715,10 +751,7 @@ export function ContextMenuRow({ level, index, entry, children, ...props }: Cont
     // through instance.enterSubmenu, so this only cleans up the pointer's timers.
     useEffect(() => {
         const held = timers.current;
-        return () => {
-            window.clearTimeout(held.open);
-            window.clearTimeout(held.close);
-        };
+        return () => { window.clearTimeout(held.open); };
     }, []);
 
     if (!item) {
@@ -752,15 +785,14 @@ export function ContextMenuRow({ level, index, entry, children, ...props }: Cont
             data-submenu={submenu ? "" : undefined}
             onPointerEnter={() => {
                 window.clearTimeout(timers.current.open);
-                window.clearTimeout(timers.current.close);
-                if (item.disabled) return;
-                menu.instance.setActive(level, index);
-                if (submenu) {
+                menu.cancelClose();
+                if (!item.disabled) menu.instance.setActive(level, index);
+                if (!item.disabled && submenu) {
                     timers.current.open = window.setTimeout(() => menu.instance.openSubmenu(level, index), menu.delays.open);
                 } else if (menu.state.levels.length > level + 1) {
                     // Resting on a plain row closes the branch a sibling had open - after the
                     // same beat, so passing over it on the way somewhere costs nothing.
-                    timers.current.close = window.setTimeout(() => menu.instance.closeBelow(level), menu.delays.close);
+                    menu.scheduleClose(level);
                 }
             }}
             onPointerLeave={() => {
@@ -771,7 +803,10 @@ export function ContextMenuRow({ level, index, entry, children, ...props }: Cont
             // on the way down would invoke it before the menu was ever seen.
             onPointerUp={(event) => {
                 props.onPointerUp?.(event);
-                if (event.defaultPrevented || item.disabled) return;
+                // The primary button only: a right-click inside a panel deliberately leaves
+                // the menu open, so its release over a row would invoke that row - and one of
+                // them is usually the destructive one.
+                if (event.defaultPrevented || item.disabled || event.button !== 0) return;
                 menu.instance.select(level, index);
             }}
             onClick={(event) => {

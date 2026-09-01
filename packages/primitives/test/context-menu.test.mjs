@@ -64,6 +64,17 @@ test("the highlight skips furniture and disabled rows", () => {
     assert.equal(row(menu).id, "open", "and the walk wraps rather than stopping");
 });
 
+test("ArrowUp from nothing highlighted lands on the last row", () => {
+    const menu = make();
+    menu.open(point);
+    // A menu opened at the pointer highlights nothing, so the first ArrowUp is the End key:
+    // the row before "the row before the first" is the LAST one, not the one above it.
+    menu.move("ArrowUp");
+    assert.equal(row(menu).id, "delete");
+    menu.move("ArrowUp");
+    assert.equal(row(menu).id, "share", "and the one that cannot be chosen is stepped over");
+});
+
 test("a disabled row is listed, never invoked", () => {
     const chosen = [];
     const menu = make({ onSelect: (item) => chosen.push(item.id) });

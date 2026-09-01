@@ -223,7 +223,7 @@ export function createContextMenu(options: ContextMenuOptions = {}): ContextMenu
     }
 
     function keyOf(path: string[]): string {
-        return path.join(" ");
+        return path.join("\u0000");
     }
 
     function searchableFor(item: ContextMenuAction | null, entries: readonly ContextMenuEntry[]): boolean {
@@ -492,7 +492,9 @@ export function createContextMenu(options: ContextMenuOptions = {}): ContextMenu
                 // the first: clamping leaves the arrow key doing nothing, which reads as a
                 // frozen panel.
                 case "ArrowDown": level.active = enabledIndex(level, from + 1, 1); break;
-                case "ArrowUp": level.active = enabledIndex(level, from - 1 + level.visible.length, -1); break;
+                // From the LAST row when nothing is highlighted, which is how a menu opened at
+                // the pointer starts: `from - 1` there is the row before the last one.
+                case "ArrowUp": level.active = enabledIndex(level, from < 0 ? level.visible.length - 1 : from - 1 + level.visible.length, -1); break;
                 case "Home": level.active = enabledIndex(level, 0, 1); break;
                 case "End": level.active = enabledIndex(level, level.visible.length - 1, -1); break;
                 case "PageDown": level.active = enabledIndex(level, Math.min(level.visible.length - 1, from + PAGE), 1); break;

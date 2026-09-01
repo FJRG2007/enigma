@@ -91,6 +91,34 @@ test.describe("Context menu", () => {
         await expect(page.locator(panel)).toHaveCount(0);
     });
 
+    test("a right-click inside the menu does not choose the row under it", async ({ page }) => {
+        await open(page);
+        await rightClick(page, area);
+        // The menu deliberately stays open for a press inside a panel, so the release of that
+        // press must not invoke the row it landed on - one of them deletes.
+        await row(page, "Delete").click({ button: "right" });
+        expect(await read(page, "__chosen")).toEqual([]);
+        await expect(page.locator(panel).first()).toBeVisible();
+    });
+
+    test("going back to the row that opened a submenu leaves the submenu open", async ({ page }) => {
+        await open(page);
+        await rightClick(page, area);
+        const share = row(page, "Share");
+        await share.hover();
+        await expect(page.locator(panel)).toHaveCount(2);
+
+        // Out of the submenu and back onto its own row: the close the pointer scheduled on the
+        // way out has to be cancelled by the row it arrived at, or the branch shuts a beat
+        // later with nothing left to reopen it.
+        const link = page.locator(panel).nth(1).locator(item).first();
+        const box = (await link.boundingBox())!;
+        await page.mouse.move(box.x + 10, box.y + box.height / 2);
+        await share.hover();
+        await page.waitForTimeout(600);
+        await expect(page.locator(panel)).toHaveCount(2);
+    });
+
     test("a disabled row is listed, announced and never chosen", async ({ page }) => {
         await open(page);
         await rightClick(page, area);

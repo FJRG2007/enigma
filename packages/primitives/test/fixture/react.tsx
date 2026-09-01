@@ -104,11 +104,18 @@ const MANY: SelectItem[] = Array.from({ length: 200 }, (_, index) => ({
 const ROWS = Array.from({ length: 10 }, (_, index) => ({ id: `f${index}`, name: `File ${index}` }));
 
 /**
+ * What a row carries back to `onSelect`: here a node that points at its own parent, which is
+ * what a real caller hands over when the row acts on something it found in the DOM.
+ */
+const CYCLIC: { name: string; self?: unknown; } = { name: "report.pdf" };
+CYCLIC.self = CYCLIC;
+
+/**
  * A menu with every shape in it: a shortcut, a second line, a disabled row, furniture, a
  * destructive row, a submenu known up front and one that has to be fetched.
  */
 const MENU: ContextMenuNode[] = [
-    { id: "open", label: "Open", shortcut: "Enter", icon: <i data-icon="open" /> },
+    { id: "open", label: "Open", shortcut: "Enter", icon: <i data-icon="open" />, data: CYCLIC },
     { id: "rename", label: "Rename", shortcut: "F2", description: "Give it another name" },
     { id: "locked", label: "Move", disabled: true },
     { type: "separator" },

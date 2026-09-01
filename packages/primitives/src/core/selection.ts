@@ -283,6 +283,19 @@ export function createSelection<Item>(options: SelectionOptions<Item> = {}): Sel
         };
     }
 
+    /**
+     * Everything a subscriber can observe that does NOT depend on the identity of the rows.
+     *
+     * `update` emits on a change to this rather than on every call: the items come from a
+     * render, so `items={rows.map(...)}` hands over a new array of new objects each time and
+     * emitting on that alone would render, rebuild the array and emit again.
+     */
+    function summary(): string {
+        let count = 0;
+        for (let index = 0; index < items.length; index++) if (selectable(index)) count++;
+        return `${cursor}:${anchor}:${count}:${orderedIds().join("\u0000")}`;
+    }
+
     /** The last reported selection, so a change that changed nothing reports nothing. */
     let reported: string[] = [];
 
@@ -348,10 +361,12 @@ export function createSelection<Item>(options: SelectionOptions<Item> = {}): Sel
         let match: { command: string; length: number; } | null = null;
         for (const [command, spec] of Object.entries(bindings)) {
             if (spec === false || spec == null) continue;
-            if (!matchesShortcut(event, spec)) continue;
-            // The most SPECIFIC binding wins, counting modifiers: `Shift+Delete` and `Delete`
-            // both describe a shifted press, and the one that named the modifier meant it.
-            const length = Math.max(...shortcutList(spec).map(specificity));
+            // The most SPECIFIC binding wins, counting the modifiers of the alternative that
+            // actually matched - `delete: ["Delete", "Mod+Backspace"]` is a plain Delete when
+            // that is the one the press hit, whatever the other alternative asks for.
+            const hit = shortcutList(spec).find((shortcut) => matchesShortcut(event, shortcut));
+            if (!hit) continue;
+            const length = specificity(hit);
             if (!match || length > match.length) match = { command, length };
         }
         return match?.command ?? null;
@@ -441,10 +456,12 @@ export function createSelection<Item>(options: SelectionOptions<Item> = {}): Sel
             opts.onCommand?.(report);
 
             if (!prevented) perform(command);
-            // Reported as handled either way: the press matched a binding, so the caller has to
-            // prevent the browser's own meaning for it (Ctrl+A selects the page, F2 does
-            // nothing, Backspace navigates back) whether or not the list moved.
-            return true;
+            // Handled when the list acted on it, or when there was a handler listening for it:
+            // the browser's own meaning has to go (Ctrl+A selects the page, F2 does nothing,
+            // Backspace navigates back) exactly where something took the press instead. A list
+            // with no `onCommand` reports `copy` and does nothing with it, and swallowing
+            // Ctrl+C there would leave the text inside its rows uncopyable.
+            return OWNED.has(command) || opts.onCommand !== undefined;
         },
 
         select(ids) {
@@ -592,23 +609,28 @@ export function createSelection<Item>(options: SelectionOptions<Item> = {}): Sel
 
         update(next) {
             if (destroyed) return;
+            const before = summary();
             const hadItems = next.items !== undefined;
             opts = { ...opts, ...next };
-            if (!hadItems) return;
-            items = next.items ?? [];
-            // Ids that are no longer in the list are dropped rather than kept: a selection
-            // holding rows that were deleted or filtered away reports a count nobody can see,
-            // and hands a delete the ids of things that are already gone.
-            const live = new Set<string>();
-            for (let index = 0; index < items.length; index++) {
-                const id = idOf(index);
-                if (id !== null) live.add(id);
+            if (hadItems) {
+                items = next.items ?? [];
+                // Ids that are no longer in the list are dropped rather than kept: a selection
+                // holding rows that were deleted or filtered away reports a count nobody can
+                // see, and hands a delete the ids of things that are already gone.
+                const live = new Set<string>();
+                for (let index = 0; index < items.length; index++) {
+                    const id = idOf(index);
+                    if (id !== null) live.add(id);
+                }
+                for (const id of selected) if (!live.has(id)) selected.delete(id);
+                if (cursor >= items.length) cursor = items.length - 1;
+                if (anchor >= items.length) anchor = items.length - 1;
             }
-            let dropped = false;
-            for (const id of selected) if (!live.has(id)) { selected.delete(id); dropped = true; }
-            if (cursor >= items.length) { cursor = items.length - 1; dropped = true; }
-            if (anchor >= items.length) { anchor = items.length - 1; dropped = true; }
-            if (dropped) emit();
+            // Rows arriving or leaving is a state change even when the selection is untouched:
+            // `count`, `allSelected` and `partiallySelected` are all measured against the list,
+            // so a header checkbox left on the old snapshot keeps reading "all" over a list
+            // that just grew.
+            if (summary() !== before) emit();
         },
 
         subscribe(listener) {

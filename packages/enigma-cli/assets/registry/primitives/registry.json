@@ -455,6 +455,13 @@
           ]
         },
         {
+          "path": "src/react/slot.tsx",
+          "dest": "button/slot.tsx",
+          "targets": [
+            "react"
+          ]
+        },
+        {
           "path": "src/react/button.tsx",
           "dest": "button/index.tsx",
           "main": true,
@@ -464,7 +471,8 @@
           "rewrite": {
             "@/core/button": "./button",
             "@/react/use-button": "./use-button",
-            "@/react/link": "./link"
+            "@/react/link": "./link",
+            "@/react/slot": "./slot"
           }
         }
       ],
@@ -618,13 +626,21 @@
           ]
         },
         {
+          "path": "src/core/keys.ts",
+          "dest": "select/keys.ts",
+          "targets": [
+            "react"
+          ]
+        },
+        {
           "path": "src/core/select.ts",
           "dest": "select/select.ts",
           "targets": [
             "react"
           ],
           "rewrite": {
-            "@/core/search": "./search-core"
+            "@/core/search": "./search-core",
+            "@/core/keys": "./keys"
           }
         },
         {
@@ -668,6 +684,7 @@
           "rewrite": {
             "@/core/select": "./select",
             "@/core/palette": "./rows",
+            "@/core/search": "./search-core",
             "@/react/slot": "./slot",
             "@/react/select/styles": "./styles",
             "@/react/select/context": "./context"
@@ -758,7 +775,8 @@
             "react"
           ],
           "rewrite": {
-            "@/core/search": "./search-core"
+            "@/core/search": "./search-core",
+            "@/core/keys": "./keys"
           }
         },
         {

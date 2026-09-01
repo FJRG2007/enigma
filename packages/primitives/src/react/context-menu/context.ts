@@ -31,6 +31,10 @@ export interface ContextMenuContextValue {
     onMenuKeyDown: (event: React.KeyboardEvent) => void;
     /** How long the pointer must rest on a row before its submenu opens, and before one closes. */
     delays: { open: number; close: number; };
+    /** Drop the pending close, wherever it was scheduled. Called wherever the pointer lands. */
+    cancelClose: () => void;
+    /** Close everything below `level`, after the beat - replacing any close already waiting. */
+    scheduleClose: (level: number) => void;
     /** Draw a row instead of the default icon / label / shortcut. */
     renderItem?: (item: ContextMenuItem, level: number, index: number) => ReactNode;
     /** Shown while a fetched submenu has not answered. */
