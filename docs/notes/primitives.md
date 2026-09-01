@@ -850,6 +850,110 @@ Copy mode rewrites the `@/core/x` specifiers to relative ones using the `rewrite
 map in the registry entry, and refuses to run when the package source is not on
 disk rather than inventing it.
 
+## keys
+
+`core/keys.ts` is shortcuts as data - parse, match, format - and it exists because two
+components need the same three things: the context menu PRINTS a shortcut, the selection list
+LISTENS for one. Split, they drift, and the drift is silent: a menu row that says `Ctrl+A` over
+a list bound to `Meta+A`.
+
+- **`Mod` is the whole point of a spec being a string.** Command on an Apple keyboard, Control
+  everywhere else, resolved at match time and at render time. Ctrl+A on a Mac is the terminal's
+  start-of-line, so a list that answered to it would be the thing at fault.
+- **Every modifier is checked, including the ones the shortcut did not ask for.** `Delete` must
+  not fire on `Shift+Delete`, which means "for good" in every file manager there is. The
+  selection list then picks the most SPECIFIC binding when two match.
+- **`normalizeKey` does not trim**, and that one line has its own comment: the space bar
+  reports its key as `" "`, so trimming turns `Mod+Space` into `Mod+nothing` and the binding
+  silently never fires. It cost a red test to find.
+- **The split is `/[+-](?!$)/`**: `Ctrl-A` reads like `Ctrl+A`, but `Ctrl++` and `Ctrl+-` keep
+  the separator as their key.
+- `typeaheadStep` moved here too, from the select's private copy. Same buffer, same 600 ms, and
+  one rule the select did not have: a REPEATED letter cycles rather than refines, because "rrr"
+  is not a word anybody is typing, it is someone walking through the Rs.
+
+## context-menu
+
+The right-click menu. `core/context-menu.ts` is the arithmetic, `react/context-menu/` is the
+rendering, and the difference from the select is that a menu is a TREE: everything is keyed by
+a PATH (the ids from the root down to the open submenu), not by an index.
+
+What it copies is the Windows behaviour, and most of the file is the parts people leave out:
+
+- **The press that opens it must not also choose.** The menu appears under the pointer on
+  `contextmenu`, and the RELEASE of that same press lands on whatever row is now beneath it.
+  Rows commit on `pointerup`, and there is a browser test that right-clicks and asserts nothing
+  was chosen.
+- **A submenu closes on a delay, and that number is the feature.** The way OUT of a submenu
+  passes over its siblings, so closing on the first crossing makes a nested menu impossible to
+  reach diagonally. 140 ms to open, 260 ms to close, and the core deliberately does NOT close
+  deeper levels in `setActive` - the renderer owns that timing.
+- **Nothing to show means nothing opens.** `open()` returns a boolean, and the trigger prevents
+  the default only when it opened - so a menu with no rows leaves the press to the browser,
+  whose own menu is more use than an empty box. Furniture does not count as a row, and
+  `items: []` on a row is not a submenu.
+- **A `title` names what the rows act on** - the file that was right-clicked, or "12 items
+  selected". It is also the panel's accessible name. Taken from Polaris, where the drive
+  explorer had already paid for the idea.
+- **Furniture only survives if it still divides something.** A filter that empties a block
+  would otherwise leave a rule with nothing on either side of it and a caption over nothing;
+  `trimFurniture` holds furniture back until a row arrives to justify it.
+- **A fetched submenu is three states, and each is real**: cached rows appear immediately, a
+  cold fetch says it is loading rather than looking empty, and a rejection says so rather than
+  looking empty. One request per path (`pending` is shared), the cache survives a close - that
+  is what makes it a cache - and a failure is deliberately NOT cached, so the retry is the next
+  hover. A late answer for a branch that is no longer open is dropped on screen and kept in the
+  cache.
+- **Every panel is portaled and `position: fixed`.** It is placed in viewport coordinates
+  because that is what a pointer event reports; left in the tree it inherits an ancestor's
+  `overflow: hidden`, its `transform` (which re-parents `fixed`) and its stacking context.
+- **Placement flips rather than clamps.** Dragging the left edge back to fit would put the
+  panel under the pointer, and the release would choose its first row.
+
+Two defects found by the browser tests, both fixed with a comment in place:
+
+- **`focus()` on a `visibility: hidden` element does nothing, silently.** The panel is hidden
+  until it has been placed (so it is never seen at 0,0 for a frame), and the focus effect ran
+  before that - so every arrow key went to the trigger and the menu looked like it was ignoring
+  the keyboard. Focus now waits for `data-placed`.
+- **Closing a submenu unmounts the element holding focus**, which leaves it on the body and the
+  next Escape reaching nothing. Each panel refocuses when it becomes the DEEPEST one again, not
+  only when it mounts.
+
+## selection
+
+The file-manager selection model, headless. `core/selection.ts` is the set arithmetic,
+`react/selection/use-selection.ts` is the prop getters, and `<SelectionList>` is those getters
+with a container and rows around them. Generalised from the Polaris drive explorer, which had
+already paid for every rule in it.
+
+- **Anchor and cursor are different things.** Shift+click measures from the ANCHOR every time,
+  so dragging the shift-click grows and shrinks one range instead of leaving a trail of rows -
+  which is the single most common defect in a hand-rolled version.
+- **Ctrl+Shift adds that range to what was already there**, with the base captured once per RUN
+  (`rangeBase`), or extending the range folds the previous extension into the base and strands
+  rows behind it.
+- **The commands are DATA.** Each has a default binding; `false` removes one, `shortcuts={false}`
+  removes them all, a string rebinds, and a name that is not a built-in is matched and reported
+  anyway. `keyDown` returns whether a binding matched, so the caller prevents the browser's own
+  meaning only then - `q` still types where the list has not claimed it.
+- **The list performs the moves and reports everything.** Delete, rename, open, copy, cut and
+  paste are the caller's; `preventDefault()` on the event stops the ones the list owns. With
+  nothing selected a command applies to the row under the cursor, which is the file-manager rule
+  that makes Delete work on the row you just arrowed onto.
+- **The cursor clamps where a menu wraps.** A list is long, and an arrow key that jumps from the
+  last row to the first loses the reader's place.
+- **`targets(index)`** is the bridge to the context menu: a row inside the selection acts on all
+  of it, one outside acts on itself. The React layer applies the same rule to the selection on a
+  right-click, so what the menu acts on is what is highlighted.
+- **The rubber band is measured from the ROWS**, not from an assumed row height, so it works for
+  a grid and for cards of different sizes. `marqueeTo` compares before it applies, because a
+  drag fires on every pixel.
+- **Ids that are gone are dropped** on `update`, or the selection reports a count nobody can see
+  and hands a delete the ids of things that are already gone.
+- It ships **no stylesheet at all**. The one style the component sets is `position: relative` on
+  the container, which the band is positioned against.
+
 ## Adding a primitive
 
 1. `src/core/<name>.ts`, plus an adapter per target it supports.

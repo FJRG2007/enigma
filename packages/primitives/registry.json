@@ -720,6 +720,211 @@
       ]
     },
     {
+      "name": "context-menu",
+      "title": "Context menu",
+      "description": "A right-click menu with the desktop's behaviour: submenus that open on a beat of hovering and survive a diagonal pointer, icons, a second line, shortcuts printed on the right, checkable and radio rows, separators and captions, destructive rows in red, an optional heading naming what it acts on, a filter once a level is long, a long level rendered a window at a time, and a submenu fetched on demand and cached. Opens at the pointer, on a long press, and on Shift+F10. A menu with no rows does not open at all. It brings its own theme - an unstyled popup is transparent text over the page rather than a plain-looking control.",
+      "targets": [
+        "react"
+      ],
+      "entry": {
+        "react": "@enigmax/primitives/react/context-menu"
+      },
+      "exports": {
+        "react": [
+          "ContextMenu",
+          "useContextMenuContext",
+          "createContextMenu"
+        ]
+      },
+      "files": [
+        {
+          "path": "src/core/search.ts",
+          "dest": "context-menu/search-core.ts",
+          "targets": [
+            "react"
+          ]
+        },
+        {
+          "path": "src/core/keys.ts",
+          "dest": "context-menu/keys.ts",
+          "targets": [
+            "react"
+          ]
+        },
+        {
+          "path": "src/core/context-menu.ts",
+          "dest": "context-menu/context-menu.ts",
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/core/search": "./search-core"
+          }
+        },
+        {
+          "path": "src/react/slot.tsx",
+          "dest": "context-menu/slot.tsx",
+          "targets": [
+            "react"
+          ]
+        },
+        {
+          "path": "src/react/context-menu/styles.ts",
+          "dest": "context-menu/styles.ts",
+          "targets": [
+            "react"
+          ]
+        },
+        {
+          "path": "recipes/context-menu/styles.css",
+          "dest": "context-menu/styles.css",
+          "targets": [
+            "react"
+          ],
+          "style": "css"
+        },
+        {
+          "path": "src/react/context-menu/context.ts",
+          "dest": "context-menu/context.ts",
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/core/context-menu": "./context-menu"
+          }
+        },
+        {
+          "path": "src/react/context-menu/root.tsx",
+          "dest": "context-menu/root.tsx",
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/core/context-menu": "./context-menu",
+            "@/core/search": "./search-core",
+            "@/core/keys": "./keys",
+            "@/react/slot": "./slot",
+            "@/react/context-menu/styles": "./styles",
+            "@/react/context-menu/context": "./context"
+          }
+        },
+        {
+          "path": "src/react/context-menu/index.tsx",
+          "dest": "context-menu/index.tsx",
+          "main": true,
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/react/context-menu/root": "./root",
+            "@/react/context-menu/context": "./context",
+            "@/react/context-menu/styles": "./styles",
+            "@/core/context-menu": "./context-menu",
+            "@/core/keys": "./keys"
+          }
+        }
+      ],
+      "styles": true,
+      "themeHooks": [
+        "[data-enigma-menu-trigger]",
+        "[data-enigma-menu-panel]",
+        "[data-enigma-menu-panel][data-placed]",
+        "[data-enigma-menu-title]",
+        "[data-enigma-menu-search]",
+        "[data-enigma-menu-list]",
+        "[data-enigma-menu-item]",
+        "[data-enigma-menu-item][data-active]",
+        "[data-enigma-menu-item][data-disabled]",
+        "[data-enigma-menu-item][data-destructive]",
+        "[data-enigma-menu-item][data-submenu]",
+        "[data-enigma-menu-item-label]",
+        "[data-enigma-menu-item-description]",
+        "[data-enigma-menu-icon]",
+        "[data-enigma-menu-shortcut]",
+        "[data-enigma-menu-arrow]",
+        "[data-enigma-menu-check]",
+        "[data-enigma-menu-separator]",
+        "[data-enigma-menu-label]",
+        "[data-enigma-menu-status]",
+        "[data-enigma-menu-status][data-error]"
+      ],
+      "docs": "docs/notes/primitives.md#context-menu",
+      "recipes": [
+        "css"
+      ]
+    },
+    {
+      "name": "selection",
+      "title": "Selection list",
+      "description": "The file-manager selection model as a headless list: a plain click replaces, Ctrl toggles, Shift takes the range from the anchor, Ctrl+Shift adds that range, Ctrl+A takes everything and Escape drops it, with a rubber band over empty space and arrow keys that move a cursor and extend with Shift. Delete, F2, Enter, copy, cut and paste are reported as commands rather than performed. Every binding can be rebound, removed one at a time, or turned off altogether, and a binding of your own is matched and reported the same way. Ships no styles: state arrives as data attributes.",
+      "targets": [
+        "react"
+      ],
+      "entry": {
+        "react": "@enigmax/primitives/react/selection"
+      },
+      "exports": {
+        "react": [
+          "SelectionList",
+          "useSelection",
+          "createSelection"
+        ]
+      },
+      "files": [
+        {
+          "path": "src/core/keys.ts",
+          "dest": "selection/keys.ts",
+          "targets": [
+            "react"
+          ]
+        },
+        {
+          "path": "src/core/selection.ts",
+          "dest": "selection/selection.ts",
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/core/keys": "./keys"
+          }
+        },
+        {
+          "path": "src/react/selection/use-selection.ts",
+          "dest": "selection/use-selection.ts",
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/core/selection": "./selection"
+          }
+        },
+        {
+          "path": "src/react/selection/index.tsx",
+          "dest": "selection/index.tsx",
+          "main": true,
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/react/selection/use-selection": "./use-selection",
+            "@/core/selection": "./selection",
+            "@/core/keys": "./keys"
+          }
+        }
+      ],
+      "styles": false,
+      "themeHooks": [
+        "[data-enigma-selection-list]",
+        "[data-enigma-selection-item]",
+        "[data-enigma-selection-item][data-selected]",
+        "[data-enigma-selection-item][data-cursor]",
+        "[data-enigma-selection-item][data-disabled]",
+        "[data-enigma-selection-marquee]",
+        "[data-enigma-selection-empty]"
+      ],
+      "docs": "docs/notes/primitives.md#selection"
+    },
+    {
       "name": "flags",
       "title": "Country flags",
       "description": "A flag as an image, served by enigma or from files in your project, rectangular, square or round. It names itself in the reader's language, and accepts the emoji flag it replaces as its code - Windows ships no glyph for those, so a picker built out of emoji renders as bare letters for most desktop readers.",

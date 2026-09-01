@@ -155,3 +155,51 @@
 .pg-color::-webkit-color-swatch { border: 0; border-radius: 4px; }
 
 .pg-range { width: 120px; accent-color: var(--accent); cursor: pointer; }
+
+/* The context menu preview: an area with a size to right-click on, since a menu has no
+   resting appearance of its own to show. */
+.pg-menu { display: grid; gap: 10px; width: min(360px, 100%); }
+.pg-menu-area {
+    display: grid; place-content: center; gap: 4px; justify-items: center;
+    min-height: 132px; padding: 16px;
+    color: var(--muted); font-size: 13px; text-align: center;
+    background: var(--surface2); border: 1px dashed var(--border); border-radius: var(--radius-sm);
+    cursor: context-menu;
+}
+.pg-menu-area:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pg-menu-hint { font-size: 11.5px; opacity: 0.7; }
+.pg-menu-out { margin: 0; min-height: 20px; font-size: 12px; color: var(--muted); }
+.pg-menu-out code { font-family: var(--mono); color: var(--text); }
+
+/* The selection list preview. The primitive ships no styles at all, so everything here is
+   the demo's own CSS reading the state attributes - which is exactly how a project would. */
+.pg-pick-wrap { display: grid; gap: 10px; width: min(380px, 100%); }
+.pg-pick {
+    display: grid; gap: 2px; padding: 6px;
+    background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius-sm);
+    outline: none;
+}
+.pg-pick[data-columns="4"] { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.pg-pick:focus-visible { border-color: var(--accent); }
+.pg-pick [data-enigma-selection-item] {
+    display: flex; align-items: center; gap: 8px; min-width: 0;
+    padding: 5px 8px; border-radius: var(--demo-pick-radius, 7px);
+    font-size: 12.5px; color: var(--text);
+    cursor: default; user-select: none;
+}
+.pg-pick[data-columns="4"] [data-enigma-selection-item] { flex-direction: column; gap: 4px; padding: 10px 4px; text-align: center; }
+.pg-pick [data-enigma-selection-item][data-selected] {
+    color: var(--demo-pick-text, var(--text));
+    background: var(--demo-pick-bg, var(--accent-weak));
+}
+/* An inset ring rather than a border: a border on the cursor row would move every row
+   beside it by a pixel as the cursor walks down the list. */
+.pg-pick [data-enigma-selection-item][data-cursor] { box-shadow: inset 0 0 0 1px var(--demo-pick-cursor, var(--accent)); }
+.pg-pick [data-enigma-selection-item][data-disabled] { opacity: 0.4; }
+.pg-pick-icon { color: var(--muted); }
+.pg-pick-name { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.pg-pick [data-enigma-selection-marquee] {
+    background: var(--demo-pick-band, var(--accent-weak));
+    border: 1px solid var(--accent); border-radius: 4px;
+}
+.pg-pick-out { margin: 0; min-height: 20px; font-size: 12px; color: var(--muted); }

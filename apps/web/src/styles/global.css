@@ -27,6 +27,21 @@
     --enigma-select-tag-bg: var(--surface2);
 }
 
+/* The context menu's, mapped the same way. It injects and prepends its own sheet too, so
+   these win on source order without one !important. */
+:root {
+    --enigma-menu-bg: var(--surface);
+    --enigma-menu-border: var(--border);
+    --enigma-menu-radius: var(--radius-sm);
+    --enigma-menu-shadow: var(--shadow-2);
+    --enigma-menu-text: var(--text);
+    --enigma-menu-muted: var(--muted);
+    --enigma-menu-active-bg: var(--surface2);
+    --enigma-menu-accent: var(--accent);
+    --enigma-menu-danger: var(--accent2);
+    --enigma-menu-danger-bg: var(--accent-weak);
+}
+
 * { box-sizing: border-box; }
 /* An icon never gives up its size to the text beside it: a flex item shrinks by default, so a
    long label in a nav entry or a palette result squeezes the glyph down to a sliver. Every svg

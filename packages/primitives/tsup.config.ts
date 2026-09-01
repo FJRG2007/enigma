@@ -22,6 +22,8 @@ const REACT_ENTRIES = {
     "react/input": "src/react/input/index.tsx",
     "react/palette": "src/react/palette/index.tsx",
     "react/select": "src/react/select/index.tsx",
+    "react/context-menu": "src/react/context-menu/index.tsx",
+    "react/selection": "src/react/selection/index.tsx",
     "react/button": "src/react/button.tsx",
     "react/flag": "src/react/flag.tsx",
     "react/toast": "src/react/toaster.tsx",

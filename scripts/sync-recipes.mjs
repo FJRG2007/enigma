@@ -21,7 +21,8 @@ const PRIMITIVES = join(ROOT, "packages", "primitives");
 /** Every sheet that lives twice: the module that owns it, and the file generated from it. */
 const SHEETS = [
     { name: "toast", export: "TOAST_STYLES", source: join(PRIMITIVES, "src", "react", "toast", "styles.ts"), out: join(PRIMITIVES, "recipes", "toast", "styles.css") },
-    { name: "select", export: "SELECT_STYLES", source: join(PRIMITIVES, "src", "react", "select", "styles.ts"), out: join(PRIMITIVES, "recipes", "select", "styles.css") }
+    { name: "select", export: "SELECT_STYLES", source: join(PRIMITIVES, "src", "react", "select", "styles.ts"), out: join(PRIMITIVES, "recipes", "select", "styles.css") },
+    { name: "context-menu", export: "CONTEXT_MENU_STYLES", source: join(PRIMITIVES, "src", "react", "context-menu", "styles.ts"), out: join(PRIMITIVES, "recipes", "context-menu", "styles.css") }
 ];
 
 function header(sheet) {

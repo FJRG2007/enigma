@@ -29,6 +29,14 @@
       "types": "./dist/react/select.d.ts",
       "import": "./dist/react/select.js"
     },
+    "./react/context-menu": {
+      "types": "./dist/react/context-menu.d.ts",
+      "import": "./dist/react/context-menu.js"
+    },
+    "./react/selection": {
+      "types": "./dist/react/selection.d.ts",
+      "import": "./dist/react/selection.js"
+    },
     "./react/button": {
       "types": "./dist/react/button.d.ts",
       "import": "./dist/react/button.js"
@@ -84,7 +92,8 @@
     "./marquee.css": "./recipes/marquee/styles.css",
     "./logo-marquee.css": "./recipes/logo-marquee/styles.css",
     "./palette.css": "./recipes/palette/styles.css",
-    "./select.css": "./recipes/select/styles.css"
+    "./select.css": "./recipes/select/styles.css",
+    "./context-menu.css": "./recipes/context-menu/styles.css"
   },
   "scripts": {
     "build": "tsup",
@@ -148,12 +157,14 @@
   },
   "keywords": [
     "carousel",
+    "context-menu",
     "enigma",
     "flags",
     "fuse",
     "headless",
     "input",
     "marquee",
+    "menu",
     "network",
     "notifications",
     "password",
@@ -162,6 +173,8 @@
     "relative-time",
     "search",
     "select",
+    "selection",
+    "shortcuts",
     "toast",
     "unstyled",
     "vanilla"

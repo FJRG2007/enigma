@@ -109,3 +109,52 @@ export {
     type SelectContextValue
 } from "@/react/select";
 export { createSelect, type SelectOption, type SelectOptions, type SelectState, type SelectInstance } from "@/core/select";
+export {
+    ContextMenu,
+    ContextMenuRoot,
+    ContextMenuTrigger,
+    ContextMenuContent,
+    ContextMenuPanel,
+    ContextMenuSearch,
+    ContextMenuList,
+    ContextMenuRow,
+    useContextMenuContext,
+    type ContextMenuProps,
+    type ContextMenuRootProps,
+    type ContextMenuTriggerProps,
+    type ContextMenuContentProps,
+    type ContextMenuItem,
+    type ContextMenuNode,
+    type ContextMenuContextValue
+} from "@/react/context-menu";
+export {
+    createContextMenu,
+    isAction,
+    type ContextMenuEntry,
+    type ContextMenuAction,
+    type ContextMenuOptions,
+    type ContextMenuState,
+    type ContextMenuInstance
+} from "@/core/context-menu";
+export {
+    SelectionList,
+    useSelection,
+    type SelectionListProps,
+    type UseSelectionOptions,
+    type UseSelectionResult,
+    type SelectionRenderer,
+    type SelectionRowRender,
+    type MarqueeRect
+} from "@/react/selection";
+export {
+    createSelection,
+    DEFAULT_SELECTION_SHORTCUTS,
+    type SelectionCommand,
+    type SelectionCommandName,
+    type SelectionCommandEvent,
+    type SelectionShortcuts,
+    type SelectionOptions,
+    type SelectionState,
+    type SelectionInstance
+} from "@/core/selection";
+export { parseShortcut, matchesShortcut, shortcutTokens, shortcutText, isApplePlatform, type Shortcut, type ShortcutSpec } from "@/core/keys";

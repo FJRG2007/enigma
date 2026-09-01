@@ -1,0 +1,172 @@
+---
+title: Selection list
+description: The file-manager selection model - Ctrl to add, Shift for a range, Ctrl+A, a rubber band, arrow keys - with every shortcut rebindable or removable.
+group: Forms
+order: 22.9
+space: components
+---
+import Installation from "../../../components/Installation.astro";
+import { SelectionPlayground } from "../../../components/playground/SelectionPlayground";
+
+Everybody already knows how to select things in a list, because Explorer and Finder taught
+them: a click replaces, Ctrl adds one, Shift takes everything between, Ctrl+A takes the lot
+and Escape drops it. What people also know is when a list gets it wrong - the Shift+click that
+measures from the last click instead of the anchor, the Ctrl+click that clears the selection,
+the Escape that does nothing.
+
+<SelectionPlayground client:only="react" />
+
+## Usage
+
+```tsx
+import { SelectionList } from "@enigmax/primitives/react/selection";
+
+<SelectionList
+    items={files}
+    getId={(file) => file.path}
+    onSelectionChange={(ids) => setPicked(ids)}
+    onCommand={(event) => {
+        if (event.command === "delete") remove(event.items);
+        if (event.command === "rename") rename(event.cursor);
+        if (event.command === "open") open(event.cursor);
+    }}
+>
+    {({ item }) => <><FileIcon kind={item.kind} />{item.name}</>}
+</SelectionList>
+```
+
+It renders a container and one element per row, carrying the roles, the ids and the state -
+and nothing else. No borders, no padding, no highlight: `[data-selected]` and `[data-cursor]`
+are there for your stylesheet, so the list looks like your product rather than like this
+package.
+
+```css
+.files [data-enigma-selection-item][data-selected] { background: var(--tint); }
+.files [data-enigma-selection-item][data-cursor] { box-shadow: inset 0 0 0 1px var(--accent); }
+```
+
+## Any other shape uses the hook
+
+A table, a grid of cards, a tree or a virtualized window is the same model with different
+markup, and `useSelection` hands you the props to put on it:
+
+```tsx
+const selection = useSelection({ items: rows, getId: (row) => row.id });
+
+<tbody {...selection.getListProps()}>
+    {rows.map((row, index) => <tr key={row.id} {...selection.getItemProps(index)}>...</tr>)}
+</tbody>
+```
+
+That is also the way to reach the model itself - `selection.instance.clear()` from a toolbar
+button, `selection.state.allSelected` for a header checkbox, `selection.state.count` for the
+"12 selected" line.
+
+## The rules it implements
+
+| | |
+| --- | --- |
+| Click | Replaces the selection, and sets the anchor |
+| Ctrl+click | Toggles one row and re-anchors there, leaving the rest alone |
+| Shift+click | Everything from the anchor to here, measured from the anchor every time |
+| Ctrl+Shift+click | That range ADDED to what was already selected |
+| Arrows | Move the cursor and the selection with it, clamped at the ends |
+| Shift+arrows | Extend from the anchor, growing and shrinking one range |
+| Ctrl+arrows | Move the cursor alone, so you can reach a distant row and add it |
+| Ctrl+Space | Toggle the row the cursor is on |
+| Ctrl+A / Escape | Everything, and nothing |
+| Drag on empty space | A rubber band; hold Ctrl to add to what is selected |
+| A disabled row | Never selected, never landed on, stepped over by a range |
+
+## Commands, not behaviour
+
+Deleting, renaming, opening, copying and pasting are yours - the list reports them and does
+nothing else. Everything it does own (the moves, select-all, clear, invert) is reported the
+same way first, so you can stop it:
+
+```tsx
+onCommand={(event) => {
+    if (event.command === "selectAll" && files.length > 5000) {
+        event.preventDefault();
+        confirmSelectAll();
+    }
+}}
+```
+
+With nothing selected, a command applies to the row under the cursor - which is the
+file-manager rule that makes Delete work on the row you just arrowed onto.
+
+## Rebinding, removing, adding
+
+Each command has a default binding. Leave one out and it keeps it, give it a key and it moves,
+give it `false` and it is gone:
+
+```tsx
+<SelectionList
+    shortcuts={{
+        rename: "F3",        // moved
+        delete: false,       // removed
+        copy: ["Mod+C", "Mod+Insert"],
+        star: "Mod+D"        // your own, reported like any other
+    }}
+/>
+```
+
+`shortcuts={false}` removes every one of them, for a list inside an editor or one whose
+keyboard belongs to something else. `Mod` is Command on an Apple keyboard and Control
+everywhere else, and a press that matched nothing is left to the page - so `q` still types and
+Ctrl+A still selects the document where the list has not claimed them.
+
+The defaults are exported as `DEFAULT_SELECTION_SHORTCUTS`, and `instance.binding(command)`
+gives the one in force - which is how a [context menu](/docs/components/context-menu) prints
+the shortcut the list is actually listening for:
+
+```tsx
+{ id: "rename", label: "Rename", shortcut: selection.instance.binding("rename") }
+```
+
+## With a context menu
+
+`targets(index)` is the rule every file manager's menu follows: a row inside the selection
+acts on the whole selection, and one outside it acts on itself. The list applies it to the
+selection on a right-click, so what the menu acts on is always what is highlighted.
+
+```tsx
+<ContextMenu
+    title={picked.length > 1 ? `${picked.length} items selected` : picked[0]}
+    items={picked.length > 0 ? rows : []}
+>
+    <SelectionList ... />
+</ContextMenu>
+```
+
+## Installation
+
+<Installation item="selection" pkg="@enigmax/primitives" entry="@enigmax/primitives/react/selection">
+    <div slot="manual">
+
+It ships no stylesheet at all - there is nothing to theme, because there is nothing drawn. The
+one style the component sets is `position: relative` on the container, which the rubber band is
+positioned against.
+
+    </div>
+</Installation>
+
+| Prop | |
+| --- | --- |
+| `items` | The rows |
+| `getId` | How a row is identified across reorders and reloads. Default: its index |
+| `disabled` | `(item, index) => boolean` - listed, never selected |
+| `multiple` | `false` makes Ctrl and Shift mean nothing |
+| `columns` | For a grid: Left and Right move by one, Up and Down by a row |
+| `page` | How far PageUp and PageDown jump |
+| `shortcuts` | Rebind, remove or extend the commands. `false` removes them all |
+| `onCommand` | Every command, before the list acts on it |
+| `onSelectionChange` | `(ids, items)`, when the selection actually changed |
+| `marquee` | The rubber band. On by default |
+| `empty` | Shown instead of the rows when there are none |
+| `scrollIntoView` | Bring the cursor into view when the keyboard moves it. On by default |
+
+Styling hooks: `[data-enigma-selection-list]`, `[data-enigma-selection-item]` with
+`[data-selected]`, `[data-cursor]` and `[data-disabled]`,
+`[data-enigma-selection-marquee]`, `[data-enigma-selection-empty]`.

@@ -12,6 +12,7 @@
  * your own matcher. Fuse is never imported here - it is a peer the caller passes or not.
  */
 
+import { typeaheadStep } from "@/core/keys";
 import { createSearch, type FuseConstructor, type SearchOptions, type SearchInstance } from "@/core/search";
 
 export interface SelectOption {
@@ -101,8 +102,6 @@ export interface SelectInstance {
 
 export type SelectMoveKey = "ArrowDown" | "ArrowUp" | "Home" | "End" | "PageDown" | "PageUp";
 
-/** How long a typeahead buffer survives. Long enough to type a word, short enough to reset. */
-const TYPEAHEAD_MS = 600;
 const PAGE = 5;
 
 /** "Perú" must be reachable by typing "peru" - here as in the search core. */
@@ -344,16 +343,16 @@ export function createSelect(options: SelectOptions = {}): SelectInstance {
 
         typeahead(character: string) {
             if (destroyed || character.length !== 1) return;
-            const now = Date.now();
-            typed = now - typedAt > TYPEAHEAD_MS ? character : typed + character;
-            typedAt = now;
+            const step = typeaheadStep({ typed, at: typedAt }, character);
+            typed = step.typed;
+            typedAt = step.at;
 
-            const needle = fold(typed);
-            // A single letter searches from the row AFTER this one, so pressing it again
-            // walks through everything starting with it instead of sticking on the first
-            // match; a longer buffer searches from the current row, so refining a word
-            // does not jump off the option it already found.
-            const from = typed.length === 1 ? 1 : 0;
+            const needle = fold(step.needle);
+            // A cycling press searches from the row AFTER this one, so pressing the letter
+            // again walks through everything starting with it instead of sticking on the
+            // first match; a word searches from the current row, so refining it does not
+            // jump off the option it already found.
+            const from = step.cycle ? 1 : 0;
             for (let step = from; step < visible.length + from; step++) {
                 const index = wrap(Math.max(active, 0) + step);
                 const option = visible[index];

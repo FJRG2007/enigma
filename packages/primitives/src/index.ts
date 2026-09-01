@@ -72,3 +72,51 @@ export {
     type SelectState,
     type SelectMoveKey
 } from "@/core/select";
+// The context menu's non-rendering half: the tree, the highlight, the filter and the cache
+// of a fetched submenu are arithmetic, so a renderer that is not React only has to draw.
+export {
+    createContextMenu,
+    isAction,
+    CONTEXT_MENU_SEARCH_KEYS,
+    type ContextMenuEntry,
+    type ContextMenuAction,
+    type ContextMenuSeparator,
+    type ContextMenuLabel,
+    type ContextMenuOptions,
+    type ContextMenuInstance,
+    type ContextMenuState,
+    type ContextMenuLevel,
+    type ContextMenuPoint,
+    type ContextMenuMoveKey
+} from "@/core/context-menu";
+// The selection model, for the same reason: what a Ctrl+click does to a set is not React.
+export {
+    createSelection,
+    DEFAULT_SELECTION_SHORTCUTS,
+    type SelectionCommand,
+    type SelectionCommandName,
+    type SelectionCommandEvent,
+    type SelectionShortcuts,
+    type SelectionOptions,
+    type SelectionInstance,
+    type SelectionState,
+    type SelectionClickModifiers
+} from "@/core/selection";
+// Shortcuts as data, shared by the two above: the menu PRINTS what the list LISTENS for, and
+// a menu whose label says Ctrl+A over a list bound to Cmd+A is the defect that splitting them
+// produces.
+export {
+    parseShortcut,
+    matchesShortcut,
+    shortcutTokens,
+    shortcutText,
+    shortcutList,
+    isApplePlatform,
+    typeaheadStep,
+    TYPEAHEAD_MS,
+    type Shortcut,
+    type ShortcutSpec,
+    type ShortcutEvent,
+    type TypeaheadState,
+    type TypeaheadStep
+} from "@/core/keys";

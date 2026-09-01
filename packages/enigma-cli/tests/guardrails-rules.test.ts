@@ -756,3 +756,60 @@ matrix("fe-new-password-affordance-on-signin", false, [
         code: `<Input type="password" ${SIGN_IN} strength /> {/* enigma: this screen creates the password */}`
     },
 ]);
+
+/**
+ * The two component rules below are a THREE-part signature each, and the fixtures are chosen
+ * to separate the parts: a handler with no coordinates, coordinates with no handler, a
+ * modifier key with no selection model. Measured over 13,108 source files (this repo, the
+ * docs site, the vendored reference repos and a real dashboard): 4 hits, all genuine
+ * hand-rolled selections, 0 false positives.
+ */
+const HAND_MENU = [
+    "const [menu, setMenu] = useState(null);",
+    "<ul onContextMenu={(event) => { event.preventDefault(); setMenu({ x: event.clientX, y: event.clientY }); }}>",
+    "{menu && <div style={{ position: \"fixed\", left: menu.x, top: menu.y }}>Delete</div>}",
+].join("\n");
+
+matrix("fe-context-menu-hand-rolled", true, [
+    { name: "handler, coordinates and the state holding them", file: "src/Rows.tsx", code: HAND_MENU },
+    {
+        name: "the listener form",
+        file: "src/board.ts",
+        code: "let menuPosition = null;\nel.addEventListener(\"contextmenu\", (event) => { event.preventDefault(); menuPosition = { x: event.pageX, y: event.pageY }; });",
+    },
+]);
+
+matrix("fe-context-menu-hand-rolled", false, [
+    { name: "already the primitive", file: "src/Rows.tsx", code: `import { ContextMenu } from "@enigmax/primitives/react/context-menu";\n${HAND_MENU}` },
+    { name: "another menu library", file: "src/Rows.tsx", code: `import * as ContextMenu from "@radix-ui/react-context-menu";\n${HAND_MENU}` },
+    { name: "suppressing the browser menu over a canvas", file: "src/Board.tsx", code: "const [pan, setPan] = useState({ x: 0, y: 0 });\n<canvas onContextMenu={(event) => event.preventDefault()} onPointerMove={(e) => setPan({ x: e.clientX, y: e.clientY })} />" },
+    { name: "a drag handle: coordinates, no menu", file: "src/Handle.tsx", code: "const [pos, setPos] = useState({ x: 0, y: 0 });\n<div onPointerMove={(event) => setPos({ x: event.clientX, y: event.clientY })} />" },
+    { name: "a dropdown with no pointer behind it", file: "src/More.tsx", code: "const [menuOpen, setMenuOpen] = useState(false);\n<button onClick={() => setMenuOpen(true)}>More</button>" },
+    { name: "deliberate, marked in the file", file: "src/Rows.tsx", code: HAND_MENU.replace("<ul onContextMenu", "// enigma:allow-hand-rolled-menu\n<ul onContextMenu") },
+]);
+
+const HAND_PICK = [
+    "const [selected, setSelected] = useState(new Set());",
+    "function onClick(event, index) {",
+    "    if (event.shiftKey) return setSelected(range(anchor, index));",
+    "    if (event.ctrlKey || event.metaKey) return setSelected(toggle(index));",
+    "    setSelected(new Set([files[index].id]));",
+    "}",
+].join("\n");
+
+matrix("fe-selection-hand-rolled", true, [
+    { name: "Shift, Ctrl and a set of ids", file: "src/Files.tsx", code: HAND_PICK },
+    {
+        name: "the same model over an id array",
+        file: "src/Table.vue",
+        code: "let selectedIds = [];\nfunction pick(event, i) { if (event.shiftKey) selectedIds = range(i); else if (event.metaKey) selectedIds = [...selectedIds, i]; }",
+    },
+]);
+
+matrix("fe-selection-hand-rolled", false, [
+    { name: "already the primitive", file: "src/Files.tsx", code: `import { useSelection } from "@enigmax/primitives/react/selection";\n${HAND_PICK}` },
+    { name: "a save shortcut beside a checkbox column", file: "src/Form.tsx", code: "const [selectedIds, setSelectedIds] = useState([]);\nconst onKey = (event) => { if ((event.ctrlKey || event.metaKey) && event.key === \"s\") save(); };" },
+    { name: "Shift held for something that is not a range", file: "src/Editor.tsx", code: "const onKey = (event) => { if (event.shiftKey && event.key === \"Tab\") outdent(); if (event.ctrlKey) run(); };" },
+    { name: "a checkbox list with no range model", file: "src/Filters.tsx", code: "const [selectedIds, setSelectedIds] = useState([]);\n<input type=\"checkbox\" onChange={() => setSelectedIds(toggle(id))} />" },
+    { name: "deliberate, marked in the file", file: "src/Files.tsx", code: HAND_PICK.replace("    if (event.shiftKey)", "    // enigma:allow-hand-rolled-selection\n    if (event.shiftKey)") },
+]);

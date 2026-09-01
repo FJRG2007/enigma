@@ -1,11 +1,13 @@
 import { useState } from "react";
 import { createRoot } from "react-dom/client";
 import { SearchPalette } from "@/react/palette";
-import { Select, type SelectItem } from "@/react/select";
+import { SelectionList } from "@/react/selection";
 // The Next entry, with next/link aliased to a stub at bundle time.
 import { Button as NextButton } from "@/next/index";
+import { Select, type SelectItem } from "@/react/select";
 // The React Router entry, with react-router aliased to a stub at bundle time.
 import { Button as RouterButton } from "@/react-router/index";
+import { ContextMenu, type ContextMenuNode } from "@/react/context-menu";
 import { Button, Input, setLinkComponent, type BreachState, type PasswordStrengthReport } from "@/react/index";
 
 /**
@@ -31,6 +33,10 @@ interface FixtureWindow extends Window {
     __stack: string[];
     __renders: number;
     __rows: number;
+    __chosen: string[];
+    __commands: string[];
+    __picked: string[];
+    __menuLoads: number;
 }
 
 const fixture = window as unknown as FixtureWindow;
@@ -46,6 +52,10 @@ fixture.__stack = [];
 fixture.__presses = 0;
 fixture.__clickTarget = "";
 fixture.__rows = 0;
+fixture.__chosen = [];
+fixture.__commands = [];
+fixture.__picked = [];
+fixture.__menuLoads = 0;
 
 /**
  * Stands in for next/link: a component that renders an anchor and marks itself, so a test
@@ -89,6 +99,33 @@ const MANY: SelectItem[] = Array.from({ length: 200 }, (_, index) => ({
     label: `Row ${index}`,
     icon: <i data-icon={index} />
 }));
+
+/** Ten files, the list the selection tests click through. */
+const ROWS = Array.from({ length: 10 }, (_, index) => ({ id: `f${index}`, name: `File ${index}` }));
+
+/**
+ * A menu with every shape in it: a shortcut, a second line, a disabled row, furniture, a
+ * destructive row, a submenu known up front and one that has to be fetched.
+ */
+const MENU: ContextMenuNode[] = [
+    { id: "open", label: "Open", shortcut: "Enter", icon: <i data-icon="open" /> },
+    { id: "rename", label: "Rename", shortcut: "F2", description: "Give it another name" },
+    { id: "locked", label: "Move", disabled: true },
+    { type: "separator" },
+    { id: "share", label: "Share", items: [
+        { id: "link", label: "Copy link", shortcut: "Mod+C" },
+        { id: "email", label: "Email" }
+    ] },
+    { id: "tags", label: "Tags", loadItems: async () => {
+        fixture.__menuLoads++;
+        // Slow enough that the loading state is a state and not a frame: the point of the
+        // test is that a branch which takes a moment SAYS so rather than looking empty.
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        return [{ id: "red", label: "Red" }, { id: "blue", label: "Blue" }];
+    } },
+    { type: "separator" },
+    { id: "delete", label: "Delete", shortcut: "Delete", destructive: true }
+];
 
 /** Answers instantly and locally, so the test measures the component and not a network. */
 const BREACHED = new Set(["password", "hunter2"]);
@@ -280,6 +317,43 @@ function Form(): React.ReactNode {
             {/* Still loading, which is a different thing from having nothing. */}
             <div data-testid="loading-select">
                 <Select options={[]} loading placeholder="Country" />
+            </div>
+
+            {/* The right-click menu, over an area with a size to right-click on. */}
+            <div data-testid="menu-area">
+                <ContextMenu
+                    title="report.pdf"
+                    items={MENU}
+                    onSelect={(item, path) => { fixture.__chosen.push(path.join("/")); }}
+                    triggerProps={{ style: { width: 240, height: 120 } }}
+                >
+                    Right-click here
+                </ContextMenu>
+            </div>
+
+            {/* A menu with nothing in it: the press falls through to the browser's own. */}
+            <div data-testid="empty-menu-area">
+                <ContextMenu items={[]} triggerProps={{ style: { width: 120, height: 60 } }}>Nothing here</ContextMenu>
+            </div>
+
+            {/* The selection list, with one row that cannot be picked and rename rebound.
+                The rows are narrower than the list on purpose: a rubber band starts on EMPTY
+                space, and rows that fill the width leave none to start it on. */}
+            <div data-testid="files">
+                <style>{`
+                    [data-testid="files"] [data-enigma-selection-list] { width: 320px; }
+                    [data-testid="files"] [data-enigma-selection-item] { width: 160px; height: 20px; }
+                `}</style>
+                <SelectionList
+                    items={ROWS}
+                    getId={(row) => row.id}
+                    disabled={(row) => row.id === "f3"}
+                    shortcuts={{ rename: "F3", copy: false }}
+                    onSelectionChange={(ids) => { fixture.__picked = ids; }}
+                    onCommand={(event) => { fixture.__commands.push(event.command); }}
+                >
+                    {({ item }) => <span>{item.name}</span>}
+                </SelectionList>
             </div>
 
             <SearchPalette

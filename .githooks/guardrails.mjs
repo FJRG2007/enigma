@@ -981,6 +981,62 @@ var BUILTIN_RULES = [
     skill: "frontend-policy"
   },
   {
+    id: "fe-context-menu-hand-rolled",
+    label: "Right-click menus come from the primitive",
+    files: ["*.tsx", "*.jsx", "*.vue", "*.svelte", "*.astro", "*.ts", "*.js"],
+    excludeFiles: [
+      "*.test.*",
+      "*.spec.*",
+      "**/tests/**",
+      "**/__tests__/**",
+      "**/fixtures/**",
+      "*.min.js",
+      "**/dist/**",
+      "**/build/**",
+      "**/node_modules/**",
+      "**/vendor/**",
+      "dist/**",
+      "build/**",
+      "node_modules/**",
+      "vendor/**"
+    ],
+    scope: "file",
+    // DIFF stage: a hand-rolled menu is one of the things a codebase already has, and the
+    // rule has to name the one being written now rather than the backlog.
+    stage: "diff",
+    fileCheck: "fe-context-menu-hand-rolled",
+    message: "A right-click menu written by hand. What is missing is never the panel, it is the long tail nobody writes on the first pass: the release of the press that OPENED the menu choosing whatever row it landed on, a submenu that closes while the pointer crosses a sibling to reach it (the way out of a submenu goes over them, so closing on the first crossing makes a nested menu unreachable), a panel that opens off the bottom or the right of the window instead of flipping, no Escape, no arrow keys, no Shift+F10 for anyone without a mouse, and a menu left behind when the page scrolls. `enigma add context-menu` (@enigmax/primitives) is all of that with a test each, plus shortcuts printed for the reader's platform, checkable rows, destructive rows, a filter once a level is long and submenus fetched on demand and cached - and it refuses to open at all when there is nothing to show. When the menu genuinely has to be your own, add an `enigma:allow-hand-rolled-menu` note to the file (frontend-policy).",
+    severity: "block",
+    skill: "frontend-policy"
+  },
+  {
+    id: "fe-selection-hand-rolled",
+    label: "List selection comes from the primitive",
+    files: ["*.tsx", "*.jsx", "*.vue", "*.svelte", "*.astro", "*.ts", "*.js"],
+    excludeFiles: [
+      "*.test.*",
+      "*.spec.*",
+      "**/tests/**",
+      "**/__tests__/**",
+      "**/fixtures/**",
+      "*.min.js",
+      "**/dist/**",
+      "**/build/**",
+      "**/node_modules/**",
+      "**/vendor/**",
+      "dist/**",
+      "build/**",
+      "node_modules/**",
+      "vendor/**"
+    ],
+    scope: "file",
+    stage: "diff",
+    fileCheck: "fe-selection-hand-rolled",
+    message: "A file-manager selection written by hand. Everyone already knows these rules from Explorer and Finder, which is exactly why the near-miss is so visible: a Shift+click measured from the last CLICK instead of the anchor leaves a trail of rows behind as it is dragged, a Ctrl+click that replaces instead of toggling throws the selection away, a range walks straight over a row that was not selectable, and the arrow keys, Ctrl+A and Escape usually never arrive at all. `enigma add selection` (@enigmax/primitives) is the whole model - anchor and cursor, Ctrl, Shift, Ctrl+Shift, select-all, invert, a rubber band, and arrow keys that extend from the anchor - with every shortcut rebindable, removable one at a time, or off altogether, and delete/rename/open reported as commands rather than performed. It ships no styles: `[data-selected]` and `[data-cursor]` are yours. When the model genuinely has to be your own, add an `enigma:allow-hand-rolled-selection` note to the file (frontend-policy).",
+    severity: "block",
+    skill: "frontend-policy"
+  },
+  {
     id: "fe-icon-action-button",
     label: "Repeated actions are icon buttons, not text labels",
     files: ["*.tsx", "*.jsx", "*.vue", "*.svelte", "*.astro", "*.html", "*.htm", "*.ts", "*.js", "*.mts", "*.cts"],
@@ -1776,7 +1832,9 @@ var FILE_CHECKS = {
   "ts-alias-deep-relative": (content, file) => deepRelativeImports(content, file),
   "ts-alias-paths": (content, file) => missingPathAlias(content, file),
   "sec-operator-env-leak": (content) => operatorHomePathLeak(content),
-  "fe-new-password-affordance-on-signin": (content) => newPasswordAffordanceOnSignIn(content)
+  "fe-new-password-affordance-on-signin": (content) => newPasswordAffordanceOnSignIn(content),
+  "fe-context-menu-hand-rolled": (content) => handRolledContextMenu(content),
+  "fe-selection-hand-rolled": (content) => handRolledSelection(content)
 };
 var FIXERS = {
   "fe-name-input-capitalize": (line, file) => {
@@ -2032,6 +2090,38 @@ function unboundedRemoteList(content) {
     break;
   }
   return out;
+}
+var MENU_HANDLER = /onContextMenu|addEventListener\(\s*["'`]contextmenu["'`]|@contextmenu|on:contextmenu/;
+var MENU_POINT = /\bclient[XY]\b|\bpage[XY]\b/;
+var MENU_STATE = /\bset(?:ContextMenu|Menu(?:Pos|Position|Point|Anchor|Coords|Origin|At)?)\b|\bmenu(?:Pos|Position|Point|Anchor|Coords)\s*[:=]/i;
+var MENU_MITIGATED = /@enigmax\/primitives|createContextMenu|useContextMenuContext|<ContextMenu|ContextMenu\.|radix-ui|@headlessui|@szhsin\/react-menu|primereact|@mui\/material|antd|enigma:allow-hand-rolled-menu/;
+function handRolledContextMenu(content) {
+  if (MENU_MITIGATED.test(content)) return [];
+  if (!MENU_HANDLER.test(content) || !MENU_POINT.test(content) || !MENU_STATE.test(content)) return [];
+  const lines = content.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (COMMENT_LINE.test(line) || /enigma:/.test(line)) continue;
+    if (!MENU_HANDLER.test(line)) continue;
+    return [{ line: i + 1, detail: "a contextmenu handler, pointer coordinates and the state holding them" }];
+  }
+  return [];
+}
+var SELECT_RANGE_KEY = /\bshiftKey\b/;
+var SELECT_ADD_KEY = /\bctrlKey\b|\bmetaKey\b/;
+var SELECT_STATE = /\bset(?:Selected|Selection|SelectedIds|SelectedRows|Checked)\b|\bselected(?:Ids|Rows|Keys|Items)\b/;
+var SELECT_MITIGATED = /@enigmax\/primitives|createSelection|useSelection|<SelectionList|enigma:allow-hand-rolled-selection/;
+function handRolledSelection(content) {
+  if (SELECT_MITIGATED.test(content)) return [];
+  if (!SELECT_RANGE_KEY.test(content) || !SELECT_ADD_KEY.test(content) || !SELECT_STATE.test(content)) return [];
+  const lines = content.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (COMMENT_LINE.test(line) || /enigma:/.test(line)) continue;
+    if (!SELECT_RANGE_KEY.test(line)) continue;
+    return [{ line: i + 1, detail: "Shift and Ctrl over a set of selected ids" }];
+  }
+  return [];
 }
 var CLIP_ONE_LINE = /\btruncate\b|\btext-ellipsis\b|text-overflow\s*:\s*ellipsis/;
 var DYNAMIC_CHILD = /(?<![=!<>-])>\s*\{(?![#/:@])/;
@@ -2610,6 +2700,8 @@ export {
   extensionImports,
   findProjectRoot,
   formatFindings,
+  handRolledContextMenu,
+  handRolledSelection,
   loadRules,
   missingPathAlias,
   missingWindowsHide,

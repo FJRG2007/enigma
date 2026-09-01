@@ -1,0 +1,173 @@
+/*
+ * The context-menu stylesheet.
+ *
+ * GENERATED from src/react/context-menu/styles.ts by scripts/sync-recipes.mjs - edit that file, not
+ * this one. It exists as a stylesheet as well as a string because the component injects it,
+ * and this is the same sheet for anyone who would rather import it, copy it with
+ * `enigma add context-menu --copy`, or fork it outright.
+ */
+:root {
+    --enigma-menu-bg: #1c1c1c;
+    --enigma-menu-border: #333333;
+    --enigma-menu-radius: 0.625rem;
+    --enigma-menu-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+    --enigma-menu-text: #f5f5f5;
+    --enigma-menu-muted: #a3a3a3;
+    --enigma-menu-font-size: 0.875rem;
+    --enigma-menu-min-width: 12rem;
+    --enigma-menu-max-height: 20rem;
+
+    --enigma-menu-active-bg: #2a2a2a;
+    --enigma-menu-accent: #fbbf24;
+    --enigma-menu-danger: #f87171;
+    --enigma-menu-danger-bg: rgba(248, 113, 113, 0.12);
+}
+
+@media (prefers-color-scheme: light) {
+    :root {
+        --enigma-menu-bg: #ffffff;
+        --enigma-menu-border: #e5e5e5;
+        --enigma-menu-shadow: 0 12px 32px rgba(0, 0, 0, 0.12);
+        --enigma-menu-text: #171717;
+        --enigma-menu-muted: #737373;
+        --enigma-menu-active-bg: #f5f5f5;
+        --enigma-menu-accent: #b45309;
+        --enigma-menu-danger: #b91c1c;
+        --enigma-menu-danger-bg: rgba(185, 28, 28, 0.08);
+    }
+}
+
+/* Every panel is positioned in VIEWPORT coordinates, which is what a pointer event reports
+   and what a menu opened at the pointer needs. Fixed rather than absolute so a scrolling
+   ancestor cannot drag it away from the place it was opened. */
+[data-enigma-menu-panel] {
+    position: fixed; z-index: 60;
+    box-sizing: border-box;
+    min-width: var(--enigma-menu-min-width);
+    max-width: min(22rem, calc(100vw - 1rem));
+    padding: 0.25rem;
+    color: var(--enigma-menu-text);
+    background: var(--enigma-menu-bg);
+    border: 1px solid var(--enigma-menu-border);
+    border-radius: var(--enigma-menu-radius);
+    box-shadow: var(--enigma-menu-shadow);
+    font-size: var(--enigma-menu-font-size);
+    animation: enigma-menu-in 90ms ease-out;
+    /* Measured before it is placed, and placed before it is seen: without this the panel is
+       painted at 0,0 for one frame and jumps to the pointer on the next. */
+    visibility: hidden;
+}
+[data-enigma-menu-panel][data-placed] { visibility: visible; }
+@keyframes enigma-menu-in {
+    from { opacity: 0; transform: scale(0.98); }
+    to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+    [data-enigma-menu-panel] { animation: none; }
+}
+
+/* The heading: what the menu is acting ON. A long file name is cut rather than allowed to
+   set the panel's width, and the full one stays reachable through its title attribute. */
+[data-enigma-menu-title] {
+    margin: 0; padding: 0.375rem 0.5rem 0.25rem;
+    font-size: 0.75rem; font-weight: 600;
+    color: var(--enigma-menu-muted);
+    overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+}
+
+[data-enigma-menu-search] {
+    width: 100%; box-sizing: border-box;
+    padding: 0.375rem 0.5rem 0.5rem;
+    font: inherit; font-size: var(--enigma-menu-font-size);
+    color: var(--enigma-menu-text); background: transparent;
+    border: 0; border-bottom: 1px solid var(--enigma-menu-border);
+    outline: none;
+}
+[data-enigma-menu-search]::-webkit-search-cancel-button,
+[data-enigma-menu-search]::-webkit-search-decoration { -webkit-appearance: none; appearance: none; }
+
+[data-enigma-menu-list] {
+    max-height: var(--enigma-menu-max-height);
+    overflow-y: auto; overscroll-behavior: contain;
+}
+
+[data-enigma-menu-item] {
+    display: flex; align-items: center; gap: 0.5rem;
+    padding: 0.4375rem 0.5rem; border-radius: 0.375rem;
+    color: var(--enigma-menu-text);
+    cursor: default; user-select: none;
+}
+[data-enigma-menu-item][data-active] { background: var(--enigma-menu-active-bg); }
+[data-enigma-menu-item][data-disabled] { opacity: 0.45; cursor: not-allowed; }
+[data-enigma-menu-item][data-destructive] { color: var(--enigma-menu-danger); }
+[data-enigma-menu-item][data-destructive][data-active] { background: var(--enigma-menu-danger-bg); }
+
+[data-enigma-menu-item-text] { display: grid; min-width: 0; }
+[data-enigma-menu-item-label] { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+[data-enigma-menu-item-description] {
+    font-size: 0.75rem; color: var(--enigma-menu-muted);
+    overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+}
+
+[data-enigma-menu-icon] { display: inline-flex; align-items: center; flex: none; width: 1rem; max-height: 1.25em; line-height: 0; }
+
+/* The shortcut, on the right, the way every desktop menu prints it. margin-left: auto is
+   what pushes it there, and flex: none is what stops a long label squashing it. */
+[data-enigma-menu-shortcut] {
+    display: flex; align-items: center; gap: 0.125rem;
+    flex: none; margin-left: auto; padding-left: 1.5rem;
+    font-size: 0.75rem; color: var(--enigma-menu-muted);
+    font-variant-numeric: tabular-nums;
+}
+[data-enigma-menu-shortcut] kbd { font: inherit; }
+
+/* The submenu arrow shares the shortcut's slot, so a row never has both pushed apart. */
+[data-enigma-menu-arrow] {
+    flex: none; margin-left: auto;
+    width: 0.35rem; height: 0.35rem;
+    border-right: 1.5px solid currentColor; border-top: 1.5px solid currentColor;
+    transform: rotate(45deg);
+    opacity: 0.6;
+}
+[data-enigma-menu-shortcut] + [data-enigma-menu-arrow] { margin-left: 0.5rem; }
+
+/* Check and radio: drawn rather than loaded, and reserving their space either way so
+   choosing a row does not shift the label under the pointer. */
+[data-enigma-menu-check] {
+    flex: none; width: 1rem; height: 1rem;
+    display: grid; place-items: center;
+    color: var(--enigma-menu-accent);
+}
+[data-enigma-menu-check]::after { content: ""; width: 0.35rem; height: 0.6rem; opacity: 0; }
+[data-enigma-menu-item][aria-checked="true"] [data-enigma-menu-check]::after {
+    opacity: 1;
+    border-right: 2px solid currentColor; border-bottom: 2px solid currentColor;
+    transform: rotate(45deg) translate(-0.05rem, -0.05rem);
+}
+[data-enigma-menu-item][role="menuitemradio"] [data-enigma-menu-check]::after {
+    width: 0.4rem; height: 0.4rem; border-radius: 999px; background: currentColor;
+    transform: none; border: 0;
+}
+
+[data-enigma-menu-separator] {
+    height: 1px; margin: 0.25rem 0.25rem;
+    background: var(--enigma-menu-border);
+}
+
+[data-enigma-menu-label] {
+    margin: 0.375rem 0 0.125rem; padding: 0 0.5rem;
+    font-size: 0.6875rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--enigma-menu-muted);
+}
+
+[data-enigma-menu-status] {
+    margin: 0; padding: 0.625rem 0.5rem;
+    font-size: var(--enigma-menu-font-size); color: var(--enigma-menu-muted);
+    /* The quoted query is cut in the text as well, but a pasted string with no spaces has no
+       break opportunity at all - so this is what stops it stretching the panel. */
+    overflow-wrap: anywhere;
+}
+[data-enigma-menu-status][data-error] { color: var(--enigma-menu-danger); }
+
+/* The end-of-window marker: one pixel, so it has a box to be scrolled into. */
+[data-enigma-menu-more] { height: 1px; }
