@@ -151,6 +151,41 @@ test("a fetched submenu highlights a row only when the keyboard asked for it", a
     assert.equal(keyed.state.levels[1].active, 0);
 });
 
+test("asking again for the branch already open leaves it exactly as it is", async () => {
+    const menu = make();
+    menu.open(point);
+    const share = menu.state.levels[0].visible.findIndex((entry) => entry.id === "share");
+
+    // Choosing the row opens the branch with a row on it, and the hover timer that was
+    // already running fires a beat later. It must not undo the press that beat it.
+    menu.select(0, share);
+    assert.equal(menu.state.levels[1].active, 0);
+    menu.setQuery(1, "link");
+    menu.openSubmenu(0, share);
+    assert.equal(menu.state.levels[1].active, 0, "the highlight survives the late hover");
+    assert.equal(menu.state.levels[1].query, "link", "and so does what was typed into it");
+
+    // Clicking the parent of a branch hovering already opened still puts a row under the
+    // reader, and the pointer passing back over that parent does not take it away again.
+    const hovered = make();
+    hovered.open(point);
+    hovered.openSubmenu(0, share);
+    assert.equal(hovered.state.levels[1].active, -1);
+    hovered.select(0, share);
+    assert.equal(row(hovered).id, "link", "choosing the row it is on gives the branch a row");
+    hovered.openSubmenu(0, share);
+    assert.equal(hovered.state.levels[1].active, 0, "a re-hover does not empty that highlight");
+
+    let asked = 0;
+    const fetched = createContextMenu({ items: [{ id: "tags", label: "Tags", loadItems: async () => { asked += 1; return [{ id: "red", label: "Red" }]; } }] });
+    fetched.open(point);
+    fetched.openSubmenu(0, 0);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    fetched.openSubmenu(0, 0);
+    assert.equal(fetched.state.levels[1].loading, false, "the answered branch is not put back into loading");
+    assert.equal(asked, 1, "and the request is not made twice");
+});
+
 test("an empty items list is not a submenu", () => {
     const menu = createContextMenu({ items: [{ id: "share", label: "Share", items: [] }, { id: "open", label: "Open" }] });
     menu.open(point);

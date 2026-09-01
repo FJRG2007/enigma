@@ -390,12 +390,29 @@ export function createContextMenu(options: ContextMenuOptions = {}): ContextMenu
         if (!item || item.disabled || !hasSubmenu(item)) return;
 
         const path = [...level.path, item.id];
+        const id = keyOf(path);
+        const shown = levels[parent + 1];
+        // Asking for the branch that is already open is not a reason to rebuild it. A hover
+        // timer landing after the row was clicked, or the pointer passing back over the
+        // parent on its way out, would otherwise throw away the submenu's filter, its deeper
+        // levels and whatever was highlighted in it - and restart a fetch that already ran.
+        if (shown && keyOf(shown.path) === id) {
+            level.active = index;
+            // Arrowing into a branch the pointer opened still takes it over.
+            if (focus) {
+                wantsFocus.add(id);
+                if (shown.active < 0) focusFirst(parent + 1);
+            }
+            emit();
+            return;
+        }
+
         levels = levels.slice(0, parent + 1);
         level.active = index;
         // Remembered per path, because a fetched branch is highlighted when it ARRIVES rather
         // than when it was asked for, and by then nobody knows which opened it.
-        if (focus) wantsFocus.add(keyOf(path));
-        else wantsFocus.delete(keyOf(path));
+        if (focus) wantsFocus.add(id);
+        else wantsFocus.delete(id);
 
         if (item.items) {
             levels.push(makeLevel(path, item, item.items));
@@ -404,7 +421,6 @@ export function createContextMenu(options: ContextMenuOptions = {}): ContextMenu
             return;
         }
 
-        const id = keyOf(path);
         const entry = cache.get(id);
         const fresh = entry?.entries && (cacheMs() <= 0 ? false : Date.now() - entry.at < cacheMs());
         if (fresh && entry?.entries) {

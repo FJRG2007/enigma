@@ -916,6 +916,16 @@ What it copies is the Windows behaviour, and most of the file is the parts peopl
   is what makes it a cache - and a failure is deliberately NOT cached, so the retry is the next
   hover. A late answer for a branch that is no longer open is dropped on screen and kept in the
   cache.
+- **The highlight inside a submenu belongs to the keyboard.** Hovering a parent row opens the
+  branch with nothing highlighted; Enter, Right or a click on that row opens it with its first
+  row highlighted. A row that looks hovered before the pointer has reached it reads as the menu
+  having chosen for you. The decision is made when the branch is ASKED for, not when it
+  answers, so `pushSubmenu` records it per path in `wantsFocus` and `settle` reads it back - a
+  fetched branch arrives long after nobody knows which opened it.
+- **Re-asking for the branch already open is a no-op**, beyond the highlight the keyboard adds.
+  Rebuilding it would throw away the submenu's filter, its deeper levels and its highlight, and
+  put an answered fetch back into loading - which is what a 140 ms hover timer firing after the
+  row was clicked, or the pointer passing back over the parent, would otherwise do.
 - **Every panel is portaled and `position: fixed`.** It is placed in viewport coordinates
   because that is what a pointer event reports; left in the tree it inherits an ancestor's
   `overflow: hidden`, its `transform` (which re-parents `fixed`) and its stacking context.
