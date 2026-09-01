@@ -49,7 +49,12 @@ if (has("--real")) {
         const url = (req.url || "/").split("?")[0];
         if (url === "/" || url === "/index.html") return send(res, 200, injectMock(readFileSync(join(ASSETS, "index.html"), "utf8")), TYPES[".html"]);
         if (url === "/__preview/demo-mock.js") return file(res, MOCK);
-        if (url === "/lib/chart.min.js") return file(res, join(ASSETS, "lib", "chart.min.js"));
+        // Anything the page loads from lib/, not one named file. Naming one is how the
+        // screenshot server broke the day the dashboard started loading a second: the page
+        // is ONE script, a 404 threw inside it, and every card rendered as "-". This preview
+        // had the same hole, and a palette that throws on the first keystroke is what it
+        // looked like here.
+        if (url.startsWith("/lib/") && !url.includes("..")) return file(res, join(ASSETS, url.slice(1)));
         // Any /api/* request only reaches the network if the shim missed one - report it loudly
         // instead of hanging, so a new endpoint that needs a mock is obvious.
         if (url.startsWith("/api/")) { console.warn("unmocked API call:", url); return send(res, 200, "{}", TYPES[".json"]); }
