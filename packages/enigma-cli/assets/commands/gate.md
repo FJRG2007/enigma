@@ -123,12 +123,26 @@ What follows from that:
   `/gate off`: `-l` for this project, `-g` only when the user says every project -
   a bare `enigma config` writes the GLOBAL file. Report the change and its scope;
   it is the user's strictness you are lowering.
-- **Propose `--skip test,document` on a throwaway diff** (a typo, a comment, a
-  version bump) and let the user decide. Skipping them means no test evidence was
-  gathered and no docs were checked, so it is their call - unless they already
-  asked for speed, in which case skip and say so. Either way, always report which
-  steps were skipped, so the user knows what was and was not validated.
-- **Never skip `review`.** It is the only step that justifies the gate.
+- **Sizing the run is YOUR job, not a question.** Pick the shape from the change in
+  front of you, run it, and report which steps were skipped. Asking the user which
+  phases to skip spends a turn on a decision you are better placed to make: you know
+  what the diff touches and what you already verified. `--quick` (`-q`) is the shape
+  below in one flag - it drops `test` and `document` and nothing else.
+
+  | The change | Run |
+  | --- | --- |
+  | A typo, a comment, a version bump, generated output | `--quick` |
+  | Styles, copy, markup - no new logic | `--quick` |
+  | Code whose suite you ALREADY ran green this session, over these commits | `--quick`, and name the suite in your report |
+  | New behaviour, a fix with no test run yet, anything touching auth, money, data loss or a public API | the full run |
+
+  The gate also right-sizes itself: a diff with no executable file in it skips `test`
+  and `document` on its own, so a docs-only change needs no flag from you.
+- **What you already verified is evidence, and it does not stop being evidence
+  because a pipeline is running.** Re-running a suite you watched pass ten minutes
+  ago buys nothing but minutes. Skip it and say what you ran and what it reported.
+- **Never skip `review`.** It is the only step that justifies the gate, and a quick
+  run is still a gated one.
 - **`test` costs a full pass even when `commands.test` is set.** The step runs its
   evidence agent when the test command is empty *or* the run supplied intent, and
   `--intent` is mandatory, so a configured command makes the step thorough, not
@@ -147,6 +161,7 @@ model while review keeps the strong one.
 1. Start the run. It blocks until the first decision point or the end:
    ```sh
    enigma gate axi run --intent "<what the user set out to accomplish>"
+   enigma gate axi run --intent "..." --quick   # small, or already tested: no test/document
    ```
    `axi run` and every `axi respond` block synchronously - review, test, and CI
    can each take several minutes, so a single call may not return for a while.

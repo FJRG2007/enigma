@@ -15,7 +15,7 @@ import { homedir } from "node:os";
 import { realpathSync } from "node:fs";
 import { type StepName } from "../types";
 import { track, type Fields } from "../telemetry";
-import { parseSkipSteps, validStep } from "./steps";
+import { parseRunSkips, validStep } from "./steps";
 import { field, toonHelp, toonTable, type ToonField } from "../toon";
 import {
     type Run,
@@ -296,6 +296,7 @@ export function axiSubcommandHelp(sub: string): string {
             "usage: enigma gate axi run --intent \"<what the user set out to accomplish>\" [flags]",
             "  --intent <text>   required; the goal behind the work, in the user's terms",
             "  --skip <steps>    comma-separated: intent, rebase, review, test, document, lint, push, pr, ci",
+            "  --quick, -q       skip test and document: the change is small or already tested",
             "  --yes, -y         treat every actionable finding as consent to fix (drives unattended)"
         ].join("\n"),
         respond: [
@@ -342,19 +343,21 @@ export async function runAxi(argv: string[], deps: Pick<AxiDeps, "daemon"> & Par
 
     switch (sub) {
         case "run": {
-            const f = parseFlags(rest, new Set(["yes"]), new Set(["skip", "intent"]), { y: "yes" });
+            const f = parseFlags(rest, new Set(["yes", "quick"]), new Set(["skip", "intent"]), { y: "yes", q: "quick" });
             if ("error" in f) return emitError(resolved.io, 2, f.error);
             const autoYes = f.bools.has("yes");
+            const quick = f.bools.has("quick");
             const skipValue = f.values.get("skip") ?? "";
             const intent = f.values.get("intent") ?? "";
             return trackAxiSurface("axi-run", "/axi/run", {
                 auto_yes: autoYes,
+                quick,
                 has_intent: intent.trim() !== "",
                 has_skip: skipValue.trim() !== ""
             }, () => {
                 let skipSteps: StepName[];
                 try {
-                    skipSteps = parseSkipSteps(skipValue);
+                    skipSteps = parseRunSkips(skipValue, quick);
                 } catch (err) {
                     return Promise.resolve(emitError(resolved.io, 2, errMessage(err),
                         "Valid steps: intent, rebase, review, test, document, lint, push, pr, ci"));

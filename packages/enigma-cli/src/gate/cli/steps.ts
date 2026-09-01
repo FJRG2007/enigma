@@ -49,6 +49,28 @@ export function parseSkipSteps(value: string): StepName[] {
     return dedupeSteps(steps);
 }
 
+/**
+ * What `--quick` stands for.
+ *
+ * The two steps that pay off least when the caller already knows what the change is:
+ * `test` runs an evidence pass over a suite the author has usually just run, and
+ * `document` asks whether a change needs documenting. Review is never in here - it is
+ * the step that justifies the gate, and a quick run is still a gated one.
+ */
+export const QUICK_SKIP_STEPS: StepName[] = ["test", "document"];
+
+/**
+ * The steps a run skips: what was asked for, plus `--quick` when it was passed.
+ *
+ * One function because the two are additive - `--quick --skip lint` is a caller who
+ * wants both - and because a run's shape is worth being able to test without starting
+ * a pipeline.
+ */
+export function parseRunSkips(value: string, quick: boolean): StepName[] {
+    const asked = parseSkipSteps(value);
+    return quick ? dedupeSteps([...asked, ...QUICK_SKIP_STEPS]) : asked;
+}
+
 /** Encodes the skip-step selection as push options, or [] when none. */
 export function formatSkipPushOptions(steps: StepName[]): string[] {
     if (steps.length === 0) return [];

@@ -28,6 +28,24 @@ before optimizing anything; the shape is not what it feels like from the status 
 Re-measured at 93 runs: median run **22.8m**, p90 59.1m, mean 30.9m (max 465m, a stuck CI).
 So the "the gate always takes an hour" complaint is the p90, not the floor - quote the median.
 
+### Right-sizing a run
+
+Two levers, and they answer different halves of "why did this take an hour".
+
+- **The pipeline sizes itself by file class** (`pipeline/profile.ts`): a diff with no
+  executable file in it skips `test` and `document`, because there is nothing for a suite to
+  exercise and the change is itself documentation. Deliberately NOT by size - a three-line
+  auth change gets every step - and an unrecognised extension counts as code, so the error
+  goes towards over-running.
+- **The caller sizes it by what the caller knows** (`--quick` / `-q` on `axi run`, which is
+  `--skip test,document` in one flag, `parseRunSkips` in `cli/steps.ts`). The agent picks it
+  rather than asking: a typo, a version bump, styles or copy, or code whose suite it just ran
+  green. `review` is never in it - a quick run is still a gated one.
+
+The agent-facing rule lives in `assets/commands/gate.md` as a table, because the failure it
+replaced was a turn spent asking the user which phases to skip - a decision the agent is
+better placed to make, having just watched the tests pass.
+
 ### Head-to-head against upstream, on the same diff
 
 Six runs over one 12-line diff (3 files), same agent and model, isolated gate homes,
