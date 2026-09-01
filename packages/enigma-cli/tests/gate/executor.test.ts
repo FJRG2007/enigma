@@ -109,6 +109,49 @@ test("a step that parks on the user records the reason, and the executor clears 
     db.close();
 });
 
+test("a blocked-reason write that fails leaves the marker unset, so the next call retries", async () => {
+    // The dedupe in setBlocked compares against the in-memory field. Marking it set
+    // before the write succeeded would turn every retry into a no-op, and a step
+    // parked on a person for hours would never get the marker at all.
+    const { db, repo, run } = setup();
+    let fail = true;
+    const attempts: string[] = [];
+    const guarded = new Proxy(db, {
+        get(target, prop, recv) {
+            if (prop !== "sql") return Reflect.get(target, prop, recv);
+            return new Proxy(target.sql, {
+                get(sqlTarget, sqlProp, sqlRecv) {
+                    if (sqlProp !== "query") return Reflect.get(sqlTarget, sqlProp, sqlRecv);
+                    return (text: string) => {
+                        if (text.includes("blocked_reason")) {
+                            attempts.push(text);
+                            if (fail) throw new Error("disk is full");
+                        }
+                        return sqlTarget.query(text);
+                    };
+                }
+            });
+        }
+    });
+
+    const step: Step = {
+        name: () => "ci" as StepName,
+        execute: async (sctx: StepContext): Promise<StepOutcome> => {
+            sctx.setBlocked("merge the PR");
+            fail = false;
+            sctx.setBlocked("merge the PR");
+            return newStepOutcome({});
+        }
+    };
+    const ex = new Executor(guarded, paths, null, mockAgent, [step]);
+    await ex.execute(new AbortController().signal, run, repo, repo.workingPath);
+
+    // Two set attempts plus the clear on the way out: the retry was not swallowed.
+    expect(attempts.length).toBe(3);
+    expect(getRun(db, run.id)?.blockedReason).toBeNull();
+    db.close();
+});
+
 test("user fix re-executes the step then completes", async () => {
     const { db, repo, run } = setup();
     const findings = "{\"findings\":[{\"id\":\"r1\",\"severity\":\"error\",\"description\":\"bug\",\"action\":\"auto-fix\"}]}";

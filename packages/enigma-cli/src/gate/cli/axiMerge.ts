@@ -25,6 +25,7 @@ import { detectProvider, PROVIDER_UNKNOWN, type Provider } from "../scm/host";
 import {
     type AxiEnv,
     type AxiDeps,
+    sleep,
     errMessage,
     openAxiEnv,
     repoInitHelp
@@ -53,25 +54,6 @@ export interface MergeArgs {
     method: string;
     /** Merge even when checks are failing or still running. */
     force: boolean;
-}
-
-/** Resolves after ms, or rejects when the signal aborts first. */
-function sleep(ms: number, signal?: AbortSignal): Promise<void> {
-    return new Promise((resolve, reject) => {
-        if (signal?.aborted) {
-            reject(new Error("context canceled"));
-            return;
-        }
-        const onAbort = (): void => {
-            clearTimeout(timer);
-            reject(new Error("context canceled"));
-        };
-        const timer = setTimeout(() => {
-            signal?.removeEventListener("abort", onAbort);
-            resolve();
-        }, ms);
-        signal?.addEventListener("abort", onAbort, { once: true });
-    });
 }
 
 /** The provider a run's PR lives on, preferring the remote over the PR URL. */
@@ -236,6 +218,14 @@ export async function runAxiMerge(deps: AxiDeps, args: MergeArgs): Promise<numbe
         if (run === null) {
             return emitError(deps.io, 1, "no run to merge in this repository",
                 "Run `enigma gate axi run --intent \"<what the user set out to accomplish>\"` first");
+        }
+        if (run.repoId !== env.repo.id) {
+            // The gate database is global, so an id from another checkout resolves
+            // here just fine - and the merge would then be aimed at the CURRENT
+            // repository, because that is where the provider slug comes from. There
+            // is no undoing a PR merged in the wrong repository, so refuse.
+            return emitError(deps.io, 1, `run ${run.id} belongs to another repository`,
+                "Run `enigma gate axi merge` from that repository's checkout, or drop --run to use this one's run");
         }
         if ((run.prUrl ?? "") === "") {
             return emitError(deps.io, 1, `run ${run.id} has no PR to merge`,

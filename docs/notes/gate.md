@@ -331,10 +331,18 @@ So runs carry a second marker, `blocked_reason` (`db/run.ts`, migration in `db/s
 
 **The user says "merge it" and the agent had no way to.** The guidance was a flat "never merge
 the PR yourself", so an agent told to merge either disobeyed it or reached for raw `gh`. Now
-there is `enigma gate axi merge` (`cli/axiMerge.ts`), and `axi run --merge` for the same thing
-asked up front. The default is unchanged - the gate opens a PR and leaves it for the user - and
+there is `enigma gate axi merge` (`cli/axiMerge.ts`), and `--merge` on `axi run` and on
+`axi respond` for the same thing asked up front. It is on BOTH drive entry points on purpose:
+"merge it" is an instruction about the run, not about the one invocation that carried the flag,
+and under the default `assisted` policy the drive that actually reaches CI-green is usually a
+`respond`, not the `run` that started it - hence the shared `finishDrive` in `cli/axiDrive.ts`. The default is unchanged - the gate opens a PR and leaves it for the user - and
 the kernel/`/gate`/`verify` texts all say the same thing: merge only when the user asked.
 
+- The gate database is GLOBAL (`~/.enigma`), so `axi merge --run <id>` refuses an id whose
+  `repo_id` is not the current repo's. The run supplies the PR number but the provider slug
+  comes from the current repo's remote, so without that check `gh pr merge <N>` would land
+  PR #N of the wrong repository - and no flag undoes a merge. Read-only `axi status --run`
+  stays lax on purpose; only the irreversible surface refuses.
 - The merge goes through the scm layer, not a shelled-out `gh`: `Host.mergePR` is implemented by
   all three providers (`gh pr merge --<method>`, `glab mr merge --yes`, Bitbucket's
   `POST /merge`). Bitbucket has no rebase strategy, so it refuses `rebase` rather than silently

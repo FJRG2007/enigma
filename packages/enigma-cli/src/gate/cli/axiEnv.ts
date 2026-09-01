@@ -22,6 +22,30 @@ export function errMessage(err: unknown): string {
     return err instanceof Error ? err.message : String(err);
 }
 
+/** Returns the error a signal aborts with, mirroring Go's ctx.Err(). */
+export function abortError(signal: AbortSignal): Error {
+    return signal.reason instanceof Error ? signal.reason : new Error("context canceled");
+}
+
+/** Resolves after ms, or rejects with the abort error if the signal fires. */
+export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+    return new Promise((resolve, reject) => {
+        if (signal?.aborted) {
+            reject(abortError(signal));
+            return;
+        }
+        const onAbort = (): void => {
+            clearTimeout(timer);
+            reject(abortError(signal as AbortSignal));
+        };
+        const timer = setTimeout(() => {
+            signal?.removeEventListener("abort", onAbort);
+            resolve();
+        }, ms);
+        signal?.addEventListener("abort", onAbort, { once: true });
+    });
+}
+
 /**
  * The configured `fix_policy`, which decides how much of a gate the driving agent
  * settles on its own. Any failure to read it falls back to the default rather than

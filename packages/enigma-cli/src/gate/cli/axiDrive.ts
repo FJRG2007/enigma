@@ -33,6 +33,8 @@ import { currentBranch, run as gitRun, pushWithOptions, hasUncommittedChanges } 
 import {
     type AxiEnv,
     type AxiDeps,
+    sleep,
+    abortError,
     errMessage,
     openAxiEnv,
     repoInitHelp,
@@ -58,33 +60,9 @@ const triggerWaitTimeout = 5_000;
 const CHECKS_PASSED_MSG = "all CI checks passed - still monitoring until merged or closed";
 const NO_CHECKS_PASSED_MSG = "no CI checks reported - still monitoring until merged or closed";
 
-/** Returns the error a signal aborts with, mirroring Go's ctx.Err(). */
-function abortError(signal: AbortSignal): Error {
-    return signal.reason instanceof Error ? signal.reason : new Error("context canceled");
-}
-
 /** Throws the abort error when the signal is already aborted. */
 function checkAborted(signal?: AbortSignal): void {
     if (signal?.aborted) throw abortError(signal);
-}
-
-/** Resolves after ms, or rejects with the abort error if the signal fires. */
-function sleep(ms: number, signal?: AbortSignal): Promise<void> {
-    return new Promise((resolve, reject) => {
-        if (signal?.aborted) {
-            reject(abortError(signal));
-            return;
-        }
-        const onAbort = (): void => {
-            clearTimeout(timer);
-            reject(abortError(signal as AbortSignal));
-        };
-        const timer = setTimeout(() => {
-            signal?.removeEventListener("abort", onAbort);
-            resolve();
-        }, ms);
-        signal?.addEventListener("abort", onAbort, { once: true });
-    });
 }
 
 /**
@@ -491,6 +469,44 @@ function renderDriveResult(io: render.AxiIO, run: RunInfo, ciReady: boolean, pol
 }
 
 /**
+ * Renders the end of a drive, merging the PR first when the user asked for it.
+ * Both entry points go through here: the user's "merge it" is an instruction about
+ * the run, not about the one invocation that happened to carry the flag, and under
+ * the default `assisted` policy the drive that reaches CI-green is usually a
+ * `respond`, not the `run` that started it.
+ */
+async function finishDrive(
+    deps: AxiDeps,
+    env: AxiEnv,
+    runID: string,
+    result: DriveResult,
+    policy: FixPolicy,
+    merge: boolean
+): Promise<number> {
+    if (!result.ciReady || !merge) return renderDriveResult(deps.io, result.run, result.ciReady, policy);
+
+    let outcome: MergeOutcome;
+    try {
+        outcome = await mergeRunPR(env.repo, result.run.prUrl, DEFAULT_MERGE_METHOD, false, deps.signal);
+    } catch (err) {
+        // The validation itself passed; only the merge failed, and the PR is
+        // still there to merge by hand, so say which of the two happened.
+        const help = ["CI passed and the PR is ready; only the merge was refused"];
+        if (result.run.prUrl !== null) help.push(`Merge it by hand: ${result.run.prUrl}`);
+        return render.emitError(deps.io, 1, `merge: ${errMessage(err)}`, ...help);
+    }
+    // Drive again with no CI-ready shortcut, so the loop now waits for the
+    // pipeline to see the merged PR and close the run.
+    let settled: DriveResult;
+    try {
+        settled = await driveRun(deps.io, env.client, runID, policy, null, deps.signal);
+    } catch (err) {
+        return render.emitError(deps.io, 1, `drive run: ${errMessage(err)}`);
+    }
+    return renderDriveResult(deps.io, settled.run, false, policy, outcome.prURL);
+}
+
+/**
  * Validates code changes, blocking until a decision point or the outcome. `merge`
  * is the user's instruction to land the PR themselves-by-proxy: without it the run
  * hands back at `checks-passed` and the PR waits for a human, which is the default
@@ -554,27 +570,7 @@ export async function runAxiRun(
         } catch (err) {
             return render.emitError(deps.io, 1, `drive run: ${errMessage(err)}`);
         }
-        if (result.ciReady && merge) {
-            let outcome: MergeOutcome;
-            try {
-                outcome = await mergeRunPR(env.repo, result.run.prUrl, DEFAULT_MERGE_METHOD, false, signal);
-            } catch (err) {
-                // The validation itself passed; only the merge failed, and the PR is
-                // still there to merge by hand, so say which of the two happened.
-                const help = ["CI passed and the PR is ready; only the merge was refused"];
-                if (result.run.prUrl !== null) help.push(`Merge it by hand: ${result.run.prUrl}`);
-                return render.emitError(deps.io, 1, `merge: ${errMessage(err)}`, ...help);
-            }
-            // Drive again with no CI-ready shortcut, so the loop now waits for the
-            // pipeline to see the merged PR and close the run.
-            try {
-                result = await driveRun(deps.io, env.client, runID, policy, null, signal);
-            } catch (err) {
-                return render.emitError(deps.io, 1, `drive run: ${errMessage(err)}`);
-            }
-            return renderDriveResult(deps.io, result.run, false, policy, outcome.prURL);
-        }
-        return renderDriveResult(deps.io, result.run, result.ciReady, policy);
+        return await finishDrive(deps, env, runID, result, policy, merge);
     } finally {
         env.close();
     }
@@ -608,6 +604,8 @@ export interface RespondArgs {
     instructions: string;
     addFinding: string;
     autoYes: boolean;
+    /** ONLY when the user asked for the merge: land the PR once CI is green. */
+    merge: boolean;
 }
 
 /** Answers the current approval gate and continues the run. */
@@ -725,7 +723,7 @@ export async function runAxiRespond(deps: AxiDeps, ra: RespondArgs): Promise<num
         } catch (err) {
             return render.emitError(deps.io, 1, `drive run: ${errMessage(err)}`);
         }
-        return renderDriveResult(deps.io, result.run, result.ciReady, policy);
+        return await finishDrive(deps, env, runID, result, policy, ra.merge);
     } finally {
         env.close();
     }

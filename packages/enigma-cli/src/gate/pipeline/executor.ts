@@ -531,12 +531,17 @@ export class Executor {
     private setBlocked(run: gateDb.Run, repo: gateDb.Repo, reason: string): void {
         const value = reason.trim() === "" ? null : reason.trim();
         if (value === run.blockedReason) return;
-        run.blockedReason = value;
         try {
             gateDb.setRunBlockedReason(this.db, run.id, reason);
         } catch (err) {
+            // Leave the in-memory marker as it was: claiming the reason is set when
+            // the DB write failed would make the dedupe above swallow every retry,
+            // and the run would go the whole wait - hours, for a step parked on a
+            // person - without ever getting the marker.
             log.warn("failed to record blocked reason", "run_id", run.id, "error", String(err));
+            return;
         }
+        run.blockedReason = value;
         this.emitRunEvent(EventRunUpdated, run, repo);
     }
 

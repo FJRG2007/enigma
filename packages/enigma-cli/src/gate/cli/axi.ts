@@ -308,7 +308,8 @@ export function axiSubcommandHelp(sub: string): string {
             "  --skip <steps>    comma-separated: intent, rebase, review, test, document, lint, push, pr, ci",
             "  --quick, -q       skip test and document: the change is small or already tested",
             "  --yes, -y         treat every actionable finding as consent to fix (drives unattended)",
-            "  --merge, -m       ONLY when the user asked for the merge: merge the PR once CI is green"
+            "  --merge, -m       ONLY when the user asked for the merge: merge the PR once CI is green",
+            "                    a run that hands back at a gate needs it on the `respond` that reaches CI-green too"
         ].join("\n"),
         respond: [
             "usage: enigma gate axi respond --action <approve|fix|skip> [flags]",
@@ -317,7 +318,8 @@ export function axiSubcommandHelp(sub: string): string {
             "  --instructions <text> guidance for the fix; @<file> reads it from a file",
             "  --add-finding <json>  add your own finding, e.g. {\"description\":\"...\"}",
             "  --step <name>         target a specific step instead of the awaiting one",
-            "  --yes, -y             accept the resulting fix review without a second prompt"
+            "  --yes, -y             accept the resulting fix review without a second prompt",
+            "  --merge, -m           ONLY when the user asked for the merge: merge the PR once CI is green"
         ].join("\n"),
         merge: [
             "usage: enigma gate axi merge [flags]",
@@ -387,8 +389,8 @@ export async function runAxi(argv: string[], deps: Pick<AxiDeps, "daemon"> & Par
             });
         }
         case "respond": {
-            const f = parseFlags(rest, new Set(["yes"]),
-                new Set(["action", "step", "findings", "instructions", "add-finding"]), { y: "yes" });
+            const f = parseFlags(rest, new Set(["yes", "merge"]),
+                new Set(["action", "step", "findings", "instructions", "add-finding"]), { y: "yes", m: "merge" });
             if ("error" in f) return emitError(resolved.io, 2, f.error);
             const action = f.values.get("action") ?? "";
             const ra: RespondArgs = {
@@ -397,10 +399,12 @@ export async function runAxi(argv: string[], deps: Pick<AxiDeps, "daemon"> & Par
                 findings: f.values.get("findings") ?? "",
                 instructions: f.values.get("instructions") ?? "",
                 addFinding: f.values.get("add-finding") ?? "",
-                autoYes: f.bools.has("yes")
+                autoYes: f.bools.has("yes"),
+                merge: f.bools.has("merge")
             };
             return trackAxiSurface("axi-respond", "/axi/respond", {
                 action: sanitizeAxiTelemetryAction(action),
+                merge: ra.merge,
                 auto_yes: ra.autoYes
             }, () => runAxiRespond(resolved, ra));
         }

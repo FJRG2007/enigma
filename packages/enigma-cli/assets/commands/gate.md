@@ -217,7 +217,9 @@ model while review keeps the strong one.
      It refuses a PR with failing or unfinished checks unless you pass `--force`,
      and it waits for the run to close. You can also ask for it up front with
      `enigma gate axi run --intent "..." --merge`, which merges as soon as CI is
-     green. Never merge unless the user asked.
+     green - but a run that hands back at a gate first needs `--merge` on the
+     `axi respond` that reaches CI-green too, since that is the call that gets
+     there. Never merge unless the user asked.
    - `passed` - cleared the gate and the PR was merged or closed. On the default
      branch this is the normal ending: no PR is opened and CI monitoring is
      skipped, so the run finishes here once the push lands.
