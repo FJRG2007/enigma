@@ -106,11 +106,49 @@ test("a submenu is a level, and Left goes back to the row that opened it", () =>
     menu.openSubmenu(0, share);
     assert.equal(menu.state.levels.length, 2);
     assert.deepEqual(menu.state.levels[1].path, ["share"]);
-    assert.equal(row(menu).id, "link", "a submenu opens with its first row highlighted");
 
     menu.leaveSubmenu();
     assert.equal(menu.state.levels.length, 1);
     assert.equal(row(menu).id, "share", "and the highlight is back where it came from");
+});
+
+test("a submenu the pointer opened highlights nothing; one the keyboard opened does", () => {
+    const hovered = make();
+    hovered.open(point);
+    const share = hovered.state.levels[0].visible.findIndex((entry) => entry.id === "share");
+    hovered.openSubmenu(0, share);
+    // A row that looks hovered before the pointer has reached it reads as the menu having
+    // chosen something on your behalf.
+    assert.equal(hovered.state.levels[1].active, -1);
+    // And the arrows still start at the top from there, rather than at nothing.
+    hovered.move("ArrowDown");
+    assert.equal(row(hovered).id, "link");
+
+    const keyed = make();
+    keyed.open(point);
+    keyed.move("ArrowDown");
+    keyed.move("ArrowDown");
+    keyed.move("ArrowDown");
+    keyed.enterSubmenu();
+    assert.equal(row(keyed).id, "link", "ArrowRight has to land somewhere");
+});
+
+test("a fetched submenu highlights a row only when the keyboard asked for it", async () => {
+    const rows = [{ id: "red", label: "Red" }, { id: "blue", label: "Blue" }];
+    const hovered = createContextMenu({ items: [{ id: "tags", label: "Tags", loadItems: async () => rows }] });
+    hovered.open(point);
+    hovered.openSubmenu(0, 0);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    // Decided when the branch was ASKED for, not when it answered - by then nobody knows
+    // which of the two opened it.
+    assert.equal(hovered.state.levels[1].active, -1);
+
+    const keyed = createContextMenu({ items: [{ id: "tags", label: "Tags", loadItems: async () => rows }] });
+    keyed.open(point);
+    keyed.move("ArrowDown");
+    keyed.enterSubmenu();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(keyed.state.levels[1].active, 0);
 });
 
 test("an empty items list is not a submenu", () => {

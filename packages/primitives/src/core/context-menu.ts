@@ -158,8 +158,14 @@ export interface ContextMenuInstance {
     move(key: ContextMenuMoveKey): void;
     setActive(level: number, index: number): void;
     setQuery(level: number, query: string): void;
-    /** Open the submenu of the row at `index` in `level`, closing any deeper branch. */
-    openSubmenu(level: number, index: number): void;
+    /**
+     * Open the submenu of the row at `index` in `level`, closing any deeper branch.
+     *
+     * `focus` highlights its first row, which is what the KEYBOARD needs and what a pointer
+     * must not do: a row that looks hovered before the pointer arrives reads as the menu
+     * having chosen for you. Default false, so hovering is the plain case.
+     */
+    openSubmenu(level: number, index: number, focus?: boolean): void;
     /** Close every level below `level`. */
     closeBelow(level: number): void;
     /** Invoke a row: reports it, and closes unless it is disabled or opens a submenu. */
@@ -209,6 +215,8 @@ export function createContextMenu(options: ContextMenuOptions = {}): ContextMenu
     const listeners = new Set<(state: ContextMenuState) => void>();
     /** Fetched submenus, keyed by their path. Survives a close: that is what makes it a cache. */
     const cache = new Map<string, CacheEntry>();
+    /** Paths whose submenu was opened by the KEYBOARD, and so arrives with a row highlighted. */
+    const wantsFocus = new Set<string>();
     /**
      * One filter engine per level, kept while its rows are the same ones.
      *
@@ -376,7 +384,7 @@ export function createContextMenu(options: ContextMenuOptions = {}): ContextMenu
      * immediately, a cold fetch shows the level as loading rather than as empty, and a
      * rejection says so rather than leaving a panel with nothing in it and no reason.
      */
-    function pushSubmenu(parent: number, index: number): void {
+    function pushSubmenu(parent: number, index: number, focus: boolean): void {
         const level = levels[parent];
         const item = actionAt(level, index);
         if (!item || item.disabled || !hasSubmenu(item)) return;
@@ -384,10 +392,14 @@ export function createContextMenu(options: ContextMenuOptions = {}): ContextMenu
         const path = [...level.path, item.id];
         levels = levels.slice(0, parent + 1);
         level.active = index;
+        // Remembered per path, because a fetched branch is highlighted when it ARRIVES rather
+        // than when it was asked for, and by then nobody knows which opened it.
+        if (focus) wantsFocus.add(keyOf(path));
+        else wantsFocus.delete(keyOf(path));
 
         if (item.items) {
             levels.push(makeLevel(path, item, item.items));
-            focusFirst(levels.length - 1);
+            if (focus) focusFirst(levels.length - 1);
             emit();
             return;
         }
@@ -397,7 +409,7 @@ export function createContextMenu(options: ContextMenuOptions = {}): ContextMenu
         const fresh = entry?.entries && (cacheMs() <= 0 ? false : Date.now() - entry.at < cacheMs());
         if (fresh && entry?.entries) {
             levels.push(makeLevel(path, item, entry.entries));
-            focusFirst(levels.length - 1);
+            if (focus) focusFirst(levels.length - 1);
             emit();
             return;
         }
@@ -433,11 +445,19 @@ export function createContextMenu(options: ContextMenuOptions = {}): ContextMenu
         if (index === -1) return;
         levels = levels.slice(0, index);
         levels.push(makeLevel(path, item, entries, false, error));
-        focusFirst(index);
+        // Only if the keyboard is what opened it. A branch the POINTER opened must arrive with
+        // nothing highlighted, whenever it arrives.
+        if (wantsFocus.has(id)) focusFirst(index);
         emit();
     }
 
-    /** Highlight the first row a submenu can land on. A menu opened by key needs one. */
+    /**
+     * Highlight the first row a submenu can land on.
+     *
+     * Only where the KEYBOARD opened it. Hovering a row that has a submenu highlights nothing
+     * inside it, the way every desktop menu behaves: a row that looks hovered before the
+     * pointer has reached it reads as the menu having chosen something on your behalf.
+     */
     function focusFirst(index: number): void {
         const level = levels[index];
         if (!level) return;
@@ -467,6 +487,7 @@ export function createContextMenu(options: ContextMenuOptions = {}): ContextMenu
             // and a filter still typed is one you have to reset before using.
             levels = [makeLevel([], null, root)];
             typed = "";
+            wantsFocus.clear();
             if (!wasOpen) opts.onOpenChange?.(true);
             emit();
             return true;
@@ -478,6 +499,7 @@ export function createContextMenu(options: ContextMenuOptions = {}): ContextMenu
             point = null;
             levels = [];
             typed = "";
+            wantsFocus.clear();
             opts.onOpenChange?.(false);
             emit();
         },
@@ -532,9 +554,9 @@ export function createContextMenu(options: ContextMenuOptions = {}): ContextMenu
             emit();
         },
 
-        openSubmenu(levelIndex: number, index: number) {
+        openSubmenu(levelIndex: number, index: number, focus = false) {
             if (destroyed) return;
-            pushSubmenu(levelIndex, index);
+            pushSubmenu(levelIndex, index, focus);
         },
 
         closeBelow(levelIndex: number) {
@@ -550,7 +572,9 @@ export function createContextMenu(options: ContextMenuOptions = {}): ContextMenu
             // A disabled row is listed and announced, never invoked - including by a click
             // that got through, which is the one path a renderer tends to forget.
             if (!item || item.disabled) return;
-            if (hasSubmenu(item)) { pushSubmenu(levelIndex, index); return; }
+            // Choosing a row that HAS a submenu opens it, and that press came from a pointer
+            // or from Enter - either way the reader is now looking at it, so it gets a row.
+            if (hasSubmenu(item)) { pushSubmenu(levelIndex, index, true); return; }
 
             const path = [...(level?.path ?? []), item.id];
             // Closed BEFORE the handler runs: the handler usually opens a dialog or moves
@@ -559,6 +583,7 @@ export function createContextMenu(options: ContextMenuOptions = {}): ContextMenu
             point = null;
             levels = [];
             typed = "";
+            wantsFocus.clear();
             opts.onOpenChange?.(false);
             emit();
             opts.onSelect?.(item, path);
@@ -575,7 +600,7 @@ export function createContextMenu(options: ContextMenuOptions = {}): ContextMenu
             const level = levels[index];
             if (!level || level.active < 0) return;
             const item = actionAt(level, level.active);
-            if (item && hasSubmenu(item)) pushSubmenu(index, level.active);
+            if (item && hasSubmenu(item)) pushSubmenu(index, level.active, true);
         },
 
         leaveSubmenu() {
@@ -645,6 +670,7 @@ export function createContextMenu(options: ContextMenuOptions = {}): ContextMenu
             destroyed = true;
             listeners.clear();
             cache.clear();
+            wantsFocus.clear();
             for (const held of engines.values()) held.engine.destroy();
             engines.clear();
         }

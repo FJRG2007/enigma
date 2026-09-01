@@ -28,7 +28,7 @@ const CONTROLS: Control<Values>[] = [
     { name: "destructive", label: "Destructive row", type: "boolean" },
     { name: "submenu", label: "Submenu", type: "boolean" },
     { name: "lazy", label: "Fetched submenu", type: "boolean", hint: "loads once, then cached" },
-    { name: "many", label: "Long level", type: "boolean", hint: "200 rows, filtered and windowed" },
+    { name: "many", label: "Long level", type: "boolean", hint: "200 more rows here, with a filter" },
     { name: "empty", label: "No rows", type: "boolean", hint: "nothing opens at all" }
 ];
 
@@ -109,18 +109,15 @@ function items(values: Values): ContextMenuNode[] {
             id: "tags",
             label: "Tags",
             title: "Add a tag",
-            // Deliberately slow, so the loading state is a state you can see rather than a
-            // frame you cannot - and so the second open shows the cache doing its job.
-            loadItems: async () => {
-                await new Promise((resolve) => setTimeout(resolve, 700));
-                return values.many ? MANY : [{ id: "red", label: "Red" }, { id: "blue", label: "Blue" }, { id: "green", label: "Green" }];
-            }
+            // Resolved immediately: this demo is about the branch being FETCHED and then
+            // cached, and an artificial wait only makes the panel feel slow.
+            loadItems: async () => [{ id: "red", label: "Red" }, { id: "blue", label: "Blue" }, { id: "green", label: "Green" }]
         });
     }
 
-    if (values.many && !values.lazy) {
-        rows.push({ type: "separator" }, { type: "label", label: "Tags" }, ...MANY);
-    }
+    // Appended to the ROOT level, so the filter and the render window are the first thing
+    // you see rather than something hidden one hover deep.
+    if (values.many) rows.push({ type: "separator" }, { type: "label", label: "Tags" }, ...MANY);
 
     if (values.destructive) {
         rows.push({ type: "separator" }, {

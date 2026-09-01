@@ -154,6 +154,10 @@ test.describe("Context menu", () => {
         const link = submenu.locator(item).first();
         const box = await link.boundingBox();
 
+        // Nothing inside it is highlighted yet: the pointer has not reached a row, and one
+        // that looks hovered before it does reads as the menu having chosen for you.
+        await expect(submenu.locator(`${item}[data-active]`)).toHaveCount(0);
+
         // The way out of a submenu passes over its siblings. Closing on the first crossing is
         // what makes a nested menu impossible to reach diagonally, so this is the assertion
         // the hover delay exists for.

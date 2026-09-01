@@ -13,7 +13,7 @@
     --enigma-menu-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
     --enigma-menu-text: #f5f5f5;
     --enigma-menu-muted: #a3a3a3;
-    --enigma-menu-font-size: 0.875rem;
+    --enigma-menu-font-size: 0.8125rem;
     --enigma-menu-min-width: 12rem;
     --enigma-menu-max-height: 20rem;
 
@@ -70,7 +70,7 @@
    set the panel's width, and the full one stays reachable through its title attribute. */
 [data-enigma-menu-title] {
     margin: 0; padding: 0.375rem 0.5rem 0.25rem;
-    font-size: 0.75rem; font-weight: 600;
+    font-size: 0.6875rem; font-weight: 600;
     color: var(--enigma-menu-muted);
     overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
 }
@@ -93,9 +93,13 @@
 
 [data-enigma-menu-item] {
     display: flex; align-items: center; gap: 0.5rem;
-    padding: 0.4375rem 0.5rem; border-radius: 0.375rem;
+    padding: 0.3125rem 0.5rem; border-radius: 0.375rem;
+    line-height: 1.4;
     color: var(--enigma-menu-text);
-    cursor: default; user-select: none;
+    /* The hand, not the arrow. A native menu uses the arrow because the whole surface is
+       drawn by the OS and nothing on a page looks like it; here the rows sit on a web page,
+       where the hand is what says "this is a thing you press". */
+    cursor: pointer; user-select: none;
 }
 [data-enigma-menu-item][data-active] { background: var(--enigma-menu-active-bg); }
 [data-enigma-menu-item][data-disabled] { opacity: 0.45; cursor: not-allowed; }
@@ -105,7 +109,7 @@
 [data-enigma-menu-item-text] { display: grid; min-width: 0; }
 [data-enigma-menu-item-label] { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 [data-enigma-menu-item-description] {
-    font-size: 0.75rem; color: var(--enigma-menu-muted);
+    font-size: 0.6875rem; color: var(--enigma-menu-muted);
     overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
 }
 
@@ -116,7 +120,7 @@
 [data-enigma-menu-shortcut] {
     display: flex; align-items: center; gap: 0.125rem;
     flex: none; margin-left: auto; padding-left: 1.5rem;
-    font-size: 0.75rem; color: var(--enigma-menu-muted);
+    font-size: 0.6875rem; color: var(--enigma-menu-muted);
     font-variant-numeric: tabular-nums;
 }
 [data-enigma-menu-shortcut] kbd { font: inherit; }
