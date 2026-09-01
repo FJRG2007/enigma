@@ -227,6 +227,21 @@ test.describe("Context menu", () => {
         await expect(page.locator(`${area} [data-enigma-menu-trigger]`)).toBeFocused();
     });
 
+    test("walking it with the arrows draws no ring around the panel", async ({ page }) => {
+        await open(page);
+        await rightClick(page, area);
+        await page.keyboard.press("ArrowDown");
+        await expect(page.locator(`${item}[data-active]`)).toHaveCount(1);
+
+        // The panel holds focus so the keyboard has somewhere to be, not because it is a
+        // control - the row is what moves, and a ring around the whole menu says otherwise.
+        const ring = await page.locator(panel).first().evaluate((el) => {
+            const style = getComputedStyle(el);
+            return { style: style.outlineStyle, width: style.outlineWidth };
+        });
+        expect(ring.style === "none" || ring.width === "0px").toBe(true);
+    });
+
     test("Shift+F10 opens it without a pointer", async ({ page }) => {
         await open(page);
         await page.locator(`${area} [data-enigma-menu-trigger]`).focus();

@@ -58,6 +58,14 @@
     visibility: hidden;
 }
 [data-enigma-menu-panel][data-placed] { visibility: visible; }
+/* No focus ring around the panel. It takes focus so the keyboard has somewhere to be, not
+   because it is a control: what MOVES is the highlighted row, drawn by [data-active] and
+   announced through aria-activedescendant. A ring around the whole menu says the menu is the
+   thing focused, which is not what is happening - and it appears the moment you press an
+   arrow, over a surface that was already showing you where you are. Nothing is lost by
+   removing it, because nothing inside is reachable by Tab: the menu owns that key. */
+[data-enigma-menu-panel]:focus,
+[data-enigma-menu-panel]:focus-visible { outline: none; }
 @keyframes enigma-menu-in {
     from { opacity: 0; transform: scale(0.98); }
     to { opacity: 1; transform: none; }
