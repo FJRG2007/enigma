@@ -1,6 +1,7 @@
 /**
- * Pipeline run records: lifecycle, intent, awaiting-agent marker, and stale-run
- * recovery. Faithful port of upstream's `internal/db/run.go`.
+ * Pipeline run records: lifecycle, intent, the two parked markers (awaiting the
+ * driving agent, blocked on the user), and stale-run recovery. Ported from
+ * upstream's `internal/db/run.go`; the blocked-on-user marker is local.
  */
 
 import { now, newId } from "./id";
@@ -25,6 +26,15 @@ export interface Run {
      * observability only and does not affect gate resolution.
      */
     awaitingAgentSince: number | null;
+    /**
+     * Short description of the human action the run is waiting on, or null when it
+     * is not waiting on one. Distinct from `awaitingAgentSince`: that marks a gate
+     * the DRIVING AGENT answers, while this marks work only the user can do (merge
+     * the PR), which no agent will ever clear by responding. A step that parks on
+     * a person sets it so the status bar and `axi status` say so instead of showing
+     * a step that looks busy but is idle.
+     */
+    blockedReason: string | null;
     intent: string | null;
     intentSource: string | null;
     intentSessionId: string | null;
@@ -41,7 +51,7 @@ export interface RunIntent {
     score: number;
 }
 
-const RUN_COLUMNS = "id, repo_id, branch, head_sha, base_sha, status, pr_url, error, awaiting_agent_since, intent, intent_source, intent_session_id, intent_score, created_at, updated_at";
+const RUN_COLUMNS = "id, repo_id, branch, head_sha, base_sha, status, pr_url, error, awaiting_agent_since, blocked_reason, intent, intent_source, intent_session_id, intent_score, created_at, updated_at";
 
 function scanRun(row: any[]): Run {
     return {
@@ -54,12 +64,13 @@ function scanRun(row: any[]): Run {
         prUrl: (row[6] ?? null) as string | null,
         error: (row[7] ?? null) as string | null,
         awaitingAgentSince: (row[8] ?? null) as number | null,
-        intent: (row[9] ?? null) as string | null,
-        intentSource: (row[10] ?? null) as string | null,
-        intentSessionId: (row[11] ?? null) as string | null,
-        intentScore: (row[12] ?? null) as number | null,
-        createdAt: row[13] as number,
-        updatedAt: row[14] as number
+        blockedReason: (row[9] ?? null) as string | null,
+        intent: (row[10] ?? null) as string | null,
+        intentSource: (row[11] ?? null) as string | null,
+        intentSessionId: (row[12] ?? null) as string | null,
+        intentScore: (row[13] ?? null) as number | null,
+        createdAt: row[14] as number,
+        updatedAt: row[15] as number
     };
 }
 
@@ -76,6 +87,7 @@ export function insertRun(db: Database, repoId: string, branch: string, headSha:
         prUrl: null,
         error: null,
         awaitingAgentSince: null,
+        blockedReason: null,
         intent: null,
         intentSource: null,
         intentSessionId: null,
@@ -181,6 +193,17 @@ export function clearRunAwaitingAgent(db: Database, id: string): void {
 }
 
 /**
+ * Records the human action the run is waiting on, or clears the marker when reason
+ * is empty. Like the awaiting-agent marker this is observability only: it changes
+ * nothing about how the run resolves, it only lets the status bar and `axi status`
+ * name who the run is actually waiting for.
+ */
+export function setRunBlockedReason(db: Database, id: string, reason: string): void {
+    const value = reason.trim() === "" ? null : reason.trim();
+    db.sql.query("UPDATE runs SET blocked_reason = ?, updated_at = ? WHERE id = ?").run(value, now(), id);
+}
+
+/**
  * Marks any runs stuck in pending/running status as failed and fails any
  * in-progress steps. Called at daemon startup to clean up after a previous crash.
  * Returns the number of recovered runs.
@@ -192,10 +215,10 @@ export function recoverStaleRuns(db: Database, errMsg: string): number {
         db.sql.query(
             "UPDATE step_results SET status = ?, error = ?, completed_at = ? WHERE status IN (?, ?, ?, ?)"
         ).run("failed", errMsg, ts, "running", "awaiting_approval", "fixing", "fix_review");
-        // Fail stale runs. Clear any awaiting-agent marker so a recovered (now
-        // failed) run is never reported as still parked awaiting the agent.
+        // Fail stale runs. Clear both parked markers so a recovered (now failed) run
+        // is never reported as still waiting on the agent or on the user.
         const result = db.sql.query(
-            "UPDATE runs SET status = ?, error = ?, awaiting_agent_since = NULL, updated_at = ? WHERE status IN (?, ?)"
+            "UPDATE runs SET status = ?, error = ?, awaiting_agent_since = NULL, blocked_reason = NULL, updated_at = ? WHERE status IN (?, ?)"
         ).run("failed", errMsg, ts, "pending", "running");
         return result.changes;
     });

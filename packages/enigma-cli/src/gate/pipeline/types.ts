@@ -24,6 +24,15 @@ export interface StepContext {
     logChunk: (text: string) => void;
     /** File-only log line (not shown to the user). */
     logFile: (text: string) => void;
+    /**
+     * Records that the step is waiting on a human action the user alone can take
+     * ("merge the PR"), or clears the marker when reason is empty. A step that
+     * blocks on a person must call this: without it the run looks like a step that
+     * is still working, and the user is never told the pipeline is waiting on them.
+     * The executor clears it when the step ends, so a step only has to say when it
+     * enters and leaves the wait.
+     */
+    setBlocked: (reason: string) => void;
     /** True when re-executing after a "fix" action. */
     fixing: boolean;
     /** JSON findings from the previous execution (set during the fix loop). */

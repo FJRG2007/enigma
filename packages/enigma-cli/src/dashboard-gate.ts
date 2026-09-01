@@ -65,6 +65,12 @@ export interface GateRunView {
     prUrl: string | null;
     error: string | null;
     awaitingAgent: boolean;
+    /**
+     * The human action the run is waiting on, or null. Separate from awaitingAgent:
+     * that one is a gate the driving agent answers, this one only the user can clear
+     * (merging the PR once CI is green), and the run reads as `running` throughout.
+     */
+    blockedReason: string | null;
     intent: string | null;
     createdAt: number;
     updatedAt: number;
@@ -278,6 +284,7 @@ async function readRuns(dbPath: string, projectPath: string | null, limit: numbe
                 prUrl: run.prUrl,
                 error: run.error,
                 awaitingAgent: run.awaitingAgentSince !== null,
+                blockedReason: run.blockedReason,
                 intent: run.intent,
                 createdAt: run.createdAt,
                 updatedAt: run.updatedAt,

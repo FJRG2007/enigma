@@ -99,6 +99,12 @@ export interface RunView {
      * null when not parked. Powers the top-level parked signal in the run object.
      */
     awaitingAgentSince: number | null;
+    /**
+     * The human action the run is waiting on, or "" when it is not waiting on one.
+     * Separate from `awaitingAgentSince`, which the driving agent clears by
+     * responding: this one only the user can clear.
+     */
+    blockedReason: string;
     steps: StepView[];
 }
 
@@ -111,6 +117,7 @@ export function runViewFromIPC(r: RunInfo): RunView {
         headSHA: r.headSha,
         prURL: r.prUrl ?? "",
         awaitingAgentSince: r.awaitingAgentSince,
+        blockedReason: r.blockedReason ?? "",
         steps: r.steps.map(s => ({
             name: s.stepName,
             status: s.status,
@@ -130,6 +137,7 @@ export function runViewFromDB(r: Run, steps: StepResult[]): RunView {
         headSHA: r.headSha,
         prURL: r.prUrl ?? "",
         awaitingAgentSince: r.awaitingAgentSince,
+        blockedReason: r.blockedReason ?? "",
         steps: steps.map(s => ({
             name: s.stepName,
             status: s.status,
@@ -278,6 +286,12 @@ export function runObjectFieldWithKey(key: string, rv: RunView): ToonField {
     // marker on a non-terminal run).
     if (rv.awaitingAgentSince !== null && !terminalStatus(rv.status)) {
         fields.push(field("awaiting_agent", formatParkedFor(rv.awaitingAgentSince)));
+    }
+    // A run waiting on the user reads as `running` and nothing else says otherwise,
+    // so name the action: the step is not making progress and will not until someone
+    // does this. Reported next to status for the same reason as awaiting_agent.
+    if (rv.blockedReason !== "" && !terminalStatus(rv.status)) {
+        fields.push(field("blocked_on_user", rv.blockedReason));
     }
     fields.push(field("head", shortSHA(rv.headSHA)));
     if (rv.prURL !== "") fields.push(field("pr", rv.prURL));

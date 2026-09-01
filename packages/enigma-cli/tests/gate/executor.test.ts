@@ -86,6 +86,29 @@ test("a needs-approval step parks, then approve completes it", async () => {
     db.close();
 });
 
+test("a step that parks on the user records the reason, and the executor clears it", async () => {
+    // What this pins: the ci step stays `running` while it waits for a human to
+    // merge, so the only thing that can tell the user the pipeline is on them is
+    // this marker. It has to survive while the step waits and be gone once it
+    // returns, or the bar keeps saying "needs you" at a finished run.
+    const { db, repo, run } = setup();
+    const seen: (string | null)[] = [];
+    const step: Step = {
+        name: () => "ci" as StepName,
+        execute: async (sctx: StepContext): Promise<StepOutcome> => {
+            sctx.setBlocked("merge the PR");
+            seen.push(getRun(db, run.id)?.blockedReason ?? null);
+            return newStepOutcome({});
+        }
+    };
+    const ex = new Executor(db, paths, null, mockAgent, [step]);
+    await ex.execute(new AbortController().signal, run, repo, repo.workingPath);
+
+    expect(seen).toEqual(["merge the PR"]);
+    expect(getRun(db, run.id)?.blockedReason).toBeNull();
+    db.close();
+});
+
 test("user fix re-executes the step then completes", async () => {
     const { db, repo, run } = setup();
     const findings = "{\"findings\":[{\"id\":\"r1\",\"severity\":\"error\",\"description\":\"bug\",\"action\":\"auto-fix\"}]}";

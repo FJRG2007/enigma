@@ -59,6 +59,13 @@ export const MERGEABLE_OK: MergeableState = "MERGEABLE";
 export const MERGEABLE_CONFLICT: MergeableState = "CONFLICTING";
 export const MERGEABLE_PENDING: MergeableState = "PENDING";
 
+/**
+ * MergeMethod is how a merge writes the branch's commits onto the base. Mirrored
+ * from scm/types like the other value types in this file, and named after the `gh
+ * pr merge` flags it maps onto one-for-one.
+ */
+export type MergeMethod = "squash" | "merge" | "rebase";
+
 /** CheckBucket is the normalized outcome of a CI check. */
 export type CheckBucket = string;
 
@@ -303,6 +310,18 @@ export class Host {
         const { out, err } = await this.cmd(signal, "gh", ...args).output();
         if (err != null) throw new Error(`gh pr view mergeable: ${err.message}`);
         return normalizeMergeableState(out.trim());
+    }
+
+    /**
+     * Merges the PR. `gh` refuses a non-interactive merge without a method flag, so
+     * one is always passed. The combined output carries the reason a refused merge
+     * was refused (failing checks, branch protection, no permission), which is the
+     * only useful thing to report back, so it goes into the error.
+     */
+    async mergePR(signal: AbortSignal | undefined, pr: PR, method: MergeMethod): Promise<void> {
+        const args = ["pr", "merge", pr.number, ...this.repoArgs(), `--${method}`];
+        const { out, err } = await this.cmd(signal, "gh", ...args).combinedOutput();
+        if (err != null) throw new Error(`gh pr merge: ${out.trim()}: ${err.message}`);
     }
 
     async fetchFailedCheckLogs(

@@ -14,8 +14,10 @@ import { sep } from "node:path";
 import { homedir } from "node:os";
 import { realpathSync } from "node:fs";
 import { type StepName } from "../types";
+import { isMergeMethod } from "../scm/types";
 import { track, type Fields } from "../telemetry";
 import { parseRunSkips, validStep } from "./steps";
+import { runAxiMerge, type MergeArgs } from "./axiMerge";
 import { field, toonHelp, toonTable, type ToonField } from "../toon";
 import {
     type Run,
@@ -59,6 +61,7 @@ export type { AxiDeps, AxiDaemon } from "./axiEnv";
 export type { AxiIO } from "./axiRender";
 export { defaultIO, setNowUnix } from "./axiRender";
 export { runAxiRun, runAxiRespond, runAxiAbort } from "./axiDrive";
+export { runAxiMerge } from "./axiMerge";
 export { runAxiStatus, runAxiLogs } from "./axiQuery";
 
 /**
@@ -219,6 +222,13 @@ function sanitizeAxiTelemetryAction(action: string): string {
     return a === "approve" || a === "fix" || a === "skip" ? a : "invalid";
 }
 
+/** Reports the merge method for telemetry, masking an unknown one as "invalid". */
+function sanitizeAxiTelemetryMergeMethod(method: string): string {
+    const m = method.trim();
+    if (m === "") return "default";
+    return isMergeMethod(m) ? m : "invalid";
+}
+
 /**
  * Records an axi command as a pageview and a command event (with status and
  * duration), then runs it. The surface is recorded even when the command fails.
@@ -297,7 +307,8 @@ export function axiSubcommandHelp(sub: string): string {
             "  --intent <text>   required; the goal behind the work, in the user's terms",
             "  --skip <steps>    comma-separated: intent, rebase, review, test, document, lint, push, pr, ci",
             "  --quick, -q       skip test and document: the change is small or already tested",
-            "  --yes, -y         treat every actionable finding as consent to fix (drives unattended)"
+            "  --yes, -y         treat every actionable finding as consent to fix (drives unattended)",
+            "  --merge, -m       ONLY when the user asked for the merge: merge the PR once CI is green"
         ].join("\n"),
         respond: [
             "usage: enigma gate axi respond --action <approve|fix|skip> [flags]",
@@ -308,11 +319,18 @@ export function axiSubcommandHelp(sub: string): string {
             "  --step <name>         target a specific step instead of the awaiting one",
             "  --yes, -y             accept the resulting fix review without a second prompt"
         ].join("\n"),
+        merge: [
+            "usage: enigma gate axi merge [flags]",
+            "Merges the run's PR. Only ever when the user asked you to merge it.",
+            "  --method <m>   squash (default), merge or rebase",
+            "  --force        merge even with checks failing or still running",
+            "  --run <id>     target a specific run instead of the current branch's"
+        ].join("\n"),
         status: "usage: enigma gate axi status\nFull detail of the resolved run.",
         logs: "usage: enigma gate axi logs --step <name> [--full]\nPrints a step's log.",
         abort: "usage: enigma gate axi abort [--run <id>]\nCancels the current-branch run, or the run with that id."
     };
-    return `${usage[sub] ?? "usage: enigma gate axi [run|respond|status|logs|abort]\nAdd --help to a subcommand for its flags."}\n`;
+    return `${usage[sub] ?? "usage: enigma gate axi [run|respond|merge|status|logs|abort]\nAdd --help to a subcommand for its flags."}\n`;
 }
 
 /**
@@ -343,14 +361,17 @@ export async function runAxi(argv: string[], deps: Pick<AxiDeps, "daemon"> & Par
 
     switch (sub) {
         case "run": {
-            const f = parseFlags(rest, new Set(["yes", "quick"]), new Set(["skip", "intent"]), { y: "yes", q: "quick" });
+            const f = parseFlags(rest, new Set(["yes", "quick", "merge"]), new Set(["skip", "intent"]),
+                { y: "yes", q: "quick", m: "merge" });
             if ("error" in f) return emitError(resolved.io, 2, f.error);
             const autoYes = f.bools.has("yes");
             const quick = f.bools.has("quick");
+            const merge = f.bools.has("merge");
             const skipValue = f.values.get("skip") ?? "";
             const intent = f.values.get("intent") ?? "";
             return trackAxiSurface("axi-run", "/axi/run", {
                 auto_yes: autoYes,
+                merge,
                 quick,
                 has_intent: intent.trim() !== "",
                 has_skip: skipValue.trim() !== ""
@@ -362,7 +383,7 @@ export async function runAxi(argv: string[], deps: Pick<AxiDeps, "daemon"> & Par
                     return Promise.resolve(emitError(resolved.io, 2, errMessage(err),
                         "Valid steps: intent, rebase, review, test, document, lint, push, pr, ci"));
                 }
-                return runAxiRun(resolved, autoYes, skipSteps, intent);
+                return runAxiRun(resolved, autoYes, skipSteps, intent, merge);
             });
         }
         case "respond": {
@@ -382,6 +403,19 @@ export async function runAxi(argv: string[], deps: Pick<AxiDeps, "daemon"> & Par
                 action: sanitizeAxiTelemetryAction(action),
                 auto_yes: ra.autoYes
             }, () => runAxiRespond(resolved, ra));
+        }
+        case "merge": {
+            const f = parseFlags(rest, new Set(["force"]), new Set(["run", "method"]), {});
+            if ("error" in f) return emitError(resolved.io, 2, f.error);
+            const ma: MergeArgs = {
+                run: f.values.get("run") ?? "",
+                method: f.values.get("method") ?? "",
+                force: f.bools.has("force")
+            };
+            return trackAxiSurface("axi-merge", "/axi/merge", {
+                method: sanitizeAxiTelemetryMergeMethod(ma.method),
+                force: ma.force
+            }, () => runAxiMerge(resolved, ma));
         }
         case "status": {
             const f = parseFlags(rest, new Set(), new Set(["run"]), {});
@@ -411,6 +445,6 @@ export async function runAxi(argv: string[], deps: Pick<AxiDeps, "daemon"> & Par
         }
         default:
             return emitError(resolved.io, 2, `unknown axi command "${sub}"`,
-                "Valid commands: run, respond, status, logs, abort");
+                "Valid commands: run, respond, merge, status, logs, abort");
     }
 }

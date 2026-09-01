@@ -280,7 +280,8 @@ export class Executor {
                     this.emitLogChunk(run, repo, stepName, text);
                     writeLog(text);
                 },
-                logFile: (text: string) => writeLog(`${text}\n`)
+                logFile: (text: string) => writeLog(`${text}\n`),
+                setBlocked: (reason: string) => this.setBlocked(run, repo, reason)
             };
 
             let autoFixLimitVal = 0;
@@ -298,6 +299,10 @@ export class Executor {
                 try {
                     outcome = await step.execute(sctx);
                 } catch (err) {
+                    // A step that threw while parked on the user is no longer waiting
+                    // on anyone; leaving the marker would strand "needs you" on a run
+                    // that has already failed.
+                    this.setBlocked(run, repo, "");
                     roundNum++;
                     const durationMS = executionMS + (Date.now() - phaseStart);
                     const msg = String((err as Error)?.message ?? err);
@@ -310,6 +315,8 @@ export class Executor {
                     this.emitStepEvent2(EventStepCompleted, run, repo, stepName, "failed", "", "", msg, durationMS);
                     throw new Error(`step ${stepName} failed: ${msg}`);
                 }
+                // The step returned, so whatever it was waiting on is settled.
+                this.setBlocked(run, repo, "");
                 roundNum++;
                 const roundDuration = Date.now() - phaseStart;
 
@@ -512,6 +519,25 @@ export class Executor {
         run.error = errMsg;
         this.emitRunEvent(EventRunCompleted, run, repo);
         throw err;
+    }
+
+    /**
+     * Persists (or clears) the human action a step is waiting on and broadcasts it.
+     * The event is what makes it visible: the status bar reads a snapshot the daemon
+     * rewrites on every non-log event, so a DB write alone would sit there unseen
+     * until the next step transition - which, for a step parked on a person, may be
+     * hours away.
+     */
+    private setBlocked(run: gateDb.Run, repo: gateDb.Repo, reason: string): void {
+        const value = reason.trim() === "" ? null : reason.trim();
+        if (value === run.blockedReason) return;
+        run.blockedReason = value;
+        try {
+            gateDb.setRunBlockedReason(this.db, run.id, reason);
+        } catch (err) {
+            log.warn("failed to record blocked reason", "run_id", run.id, "error", String(err));
+        }
+        this.emitRunEvent(EventRunUpdated, run, repo);
     }
 
     // --- event helpers ---

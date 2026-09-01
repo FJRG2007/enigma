@@ -4628,7 +4628,7 @@ export {
                 : "";
             return '<div class="gate-run"><div class="gate-run-h">'
                 + '<span class="gate-run-b">' + esc(r.branch) + "</span>"
-                + '<span class="cstatus ' + (r.status === "completed" ? "ok" : r.status === "running" ? "orange" : r.status === "failed" ? "bad" : "") + '"><span class="cdot"></span>' + esc(r.status) + (r.awaitingAgent ? " · parked" : "") + "</span>"
+                + '<span class="cstatus ' + (r.status === "completed" ? "ok" : r.status === "running" ? "orange" : r.status === "failed" ? "bad" : "") + '"><span class="cdot"></span>' + esc(r.status) + (r.blockedReason ? " · needs you: " + esc(r.blockedReason) : r.awaitingAgent ? " · parked" : "") + "</span>"
                 + '<span class="gate-run-meta">' + esc(r.headSha) + pr + "</span>"
                 + '<span style="flex:1"></span>' + stop
                 + "</div>" + '<div class="gate-steps">' + steps + "</div>"

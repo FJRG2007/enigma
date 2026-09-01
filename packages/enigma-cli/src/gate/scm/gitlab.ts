@@ -429,6 +429,19 @@ export class GitLabHost implements types.Host {
         }
     }
 
+    /**
+     * Merges the MR. `--yes` suppresses glab's confirmation prompt, which would
+     * otherwise hang a non-interactive call. GitLab's default is a merge commit, so
+     * only squash and rebase carry a flag.
+     */
+    async mergePR(pr: types.PR, method: types.MergeMethod, signal?: AbortSignal): Promise<void> {
+        const args = ["mr", "merge", pr.number, "--yes"];
+        if (method === "squash") args.push("--squash");
+        else if (method === "rebase") args.push("--rebase");
+        const [out, err] = await this.cmd(signal, "glab", ...args).combinedOutput();
+        if (err !== null) throw new Error(`glab mr merge: ${out.trim()}: ${err.message}`);
+    }
+
     private async viewMR(id: string, signal?: AbortSignal): Promise<MrPayload> {
         const [out, err] = await this.cmd(signal, "glab", "mr", "view", id, "--output", "json").combinedOutput();
         if (err !== null) throw new Error(`glab mr view: ${out.trim()}: ${err.message}`);

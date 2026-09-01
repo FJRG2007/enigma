@@ -1,7 +1,7 @@
 /**
  * Gate database (bun:sqlite): schema + migrations apply idempotently, run/step
- * CRUD round-trips, recoverStaleRuns fails in-flight runs/steps and clears the
- * awaiting-agent marker, and ULIDs are monotonic + lexicographically sortable.
+ * CRUD round-trips, recoverStaleRuns fails in-flight runs/steps and clears both
+ * parked markers (awaiting-agent and blocked-on-user), and ULIDs are monotonic + lexicographically sortable.
  * A temp HOME isolates state; the DB file lives in a temp dir.
  */
 import { tmpdir } from "node:os";
@@ -23,6 +23,7 @@ const {
     getActiveRun,
     updateRunStatus,
     setRunAwaitingAgent,
+    setRunBlockedReason,
     recoverStaleRuns,
     insertStepResult,
     startStep,
@@ -70,6 +71,26 @@ test("recoverStaleRuns fails in-flight runs and clears the awaiting-agent marker
     expect(after?.status).toBe("failed");
     expect(after?.error).toBe("daemon restarted");
     expect(after?.awaitingAgentSince).toBeNull();
+    db.close();
+});
+
+test("the blocked-on-user marker round-trips and a recovered run drops it", () => {
+    const db = freshDB();
+    const repo = insertRepoWithIDAndFork(db, newId(), "/work/repo3", "git@github.com:o/r.git", "", "main");
+    const run = insertRun(db, repo.id, "b", "h", "base");
+    updateRunStatus(db, run.id, "running");
+    expect(getRun(db, run.id)?.blockedReason).toBeNull();
+
+    setRunBlockedReason(db, run.id, "merge the PR");
+    expect(getRun(db, run.id)?.blockedReason).toBe("merge the PR");
+    // An empty reason is how a step says it is no longer waiting on anyone.
+    setRunBlockedReason(db, run.id, "");
+    expect(getRun(db, run.id)?.blockedReason).toBeNull();
+
+    // A crashed run must not be left claiming it is waiting on the user.
+    setRunBlockedReason(db, run.id, "merge the PR");
+    recoverStaleRuns(db, "daemon restarted");
+    expect(getRun(db, run.id)?.blockedReason).toBeNull();
     db.close();
 });
 

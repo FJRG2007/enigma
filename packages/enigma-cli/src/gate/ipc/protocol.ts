@@ -197,6 +197,12 @@ export interface RunInfo {
      */
     awaitingAgent: boolean;
     awaitingAgentSince: number | null;
+    /**
+     * The human action the run is waiting on ("merge the PR"), or null. Unlike
+     * `awaitingAgent` this one no agent can clear by responding to a gate: only the
+     * user can, so a reader that sees it should say so rather than report progress.
+     */
+    blockedReason: string | null;
     steps: StepResultInfo[];
     createdAt: number;
     updatedAt: number;
@@ -506,6 +512,7 @@ export function encodeRunInfo(r: RunInfo): Record<string, unknown> {
     if (r.error != null) w.error = r.error;
     if (r.awaitingAgent) w.awaiting_agent = true;
     if (r.awaitingAgentSince != null) w.awaiting_agent_since = r.awaitingAgentSince;
+    if (r.blockedReason != null && r.blockedReason !== "") w.blocked_reason = r.blockedReason;
     if (r.steps && r.steps.length > 0) w.steps = r.steps.map(encodeStepResultInfo);
     w.created_at = r.createdAt;
     w.updated_at = r.updatedAt;
@@ -525,6 +532,7 @@ export function decodeRunInfo(raw: any): RunInfo {
         error: raw.error ?? null,
         awaitingAgent: raw.awaiting_agent ?? false,
         awaitingAgentSince: raw.awaiting_agent_since ?? null,
+        blockedReason: raw.blocked_reason ?? null,
         steps: Array.isArray(raw.steps) ? raw.steps.map(decodeStepResultInfo) : [],
         createdAt: raw.created_at ?? 0,
         updatedAt: raw.updated_at ?? 0
@@ -632,6 +640,7 @@ export function runToInfo(r: Run, steps: StepResultInfo[] = []): RunInfo {
         error: r.error,
         awaitingAgent: r.awaitingAgentSince != null,
         awaitingAgentSince: r.awaitingAgentSince,
+        blockedReason: r.blockedReason,
         steps,
         createdAt: r.createdAt,
         updatedAt: r.updatedAt

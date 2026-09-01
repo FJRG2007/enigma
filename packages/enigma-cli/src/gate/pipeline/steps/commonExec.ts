@@ -31,6 +31,19 @@ const MAX_BUFFER = 256 * 1024 * 1024;
 /** Go's runtime.GOOS dialect ("windows"/"darwin"/"linux"). */
 const GOOS = process.platform === "win32" ? "windows" : process.platform;
 
+/**
+ * The execution context a command needs: where to run, what environment to run it
+ * with, and what cancels it. A StepContext satisfies it, and so does a caller
+ * outside the pipeline (the `axi merge` command builds an scm host without ever
+ * having a step), which is why the helpers below take this rather than a full
+ * StepContext.
+ */
+export interface CmdEnv {
+    workDir: string;
+    env: string[];
+    signal?: AbortSignal;
+}
+
 /** The subset of Go's `*exec.Cmd` the step helpers and scm hosts consume. */
 export interface StepCmd {
     /** Runs and resolves to the failure Error or null on success (cmd.Run). */
@@ -194,7 +207,7 @@ function makeStepCmd(
     args: string[],
     cwd: string,
     envObj: NodeJS.ProcessEnv | undefined,
-    signal: AbortSignal,
+    signal: AbortSignal | undefined,
     presetErr: Error | null
 ): StepCmd {
     let input: string | undefined;
@@ -251,7 +264,7 @@ function makeStepCmd(
  * sctx.env overrides PATH, the binary is resolved from the overridden PATH so
  * tests can inject fake binaries without modifying the process environment.
  */
-export function stepCmd(sctx: StepContext, name: string, ...args: string[]): StepCmd {
+export function stepCmd(sctx: CmdEnv, name: string, ...args: string[]): StepCmd {
     let resolved = name;
     let missingFromPath = false;
     if (sctx.env.length > 0 && !name.includes(sep)) {
@@ -376,7 +389,7 @@ function defaultLookPath(name: string): boolean {
 }
 
 /** Checks whether the provider CLI is available, respecting a custom PATH. */
-export function stepCLIAvailable(sctx: StepContext, provider: Provider): boolean {
+export function stepCLIAvailable(sctx: CmdEnv, provider: Provider): boolean {
     const name = providerCLIName(provider);
     if (name === "") return false;
     if (sctx.env.length === 0) return providerCLIAvailable(provider);
@@ -387,7 +400,7 @@ export function stepCLIAvailable(sctx: StepContext, provider: Provider): boolean
 }
 
 /** Checks whether the provider CLI is authenticated, resolving via sctx.env. */
-export async function stepAuthConfigured(sctx: StepContext, provider: Provider): Promise<boolean> {
+export async function stepAuthConfigured(sctx: CmdEnv, provider: Provider): Promise<boolean> {
     const args = providerAuthCheckCommand(provider);
     if (args.length === 0) return false;
     const cmd = stepCmd(sctx, args[0], ...args.slice(1));

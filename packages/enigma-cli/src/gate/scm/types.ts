@@ -49,6 +49,28 @@ export const MERGEABLE_PENDING: MergeableState = "PENDING";
 /** Merge status could not be determined. */
 export const MERGEABLE_UNKNOWN: MergeableState = "UNKNOWN";
 
+/**
+ * How a merge writes the branch's commits onto the base. Named rather than left to
+ * the provider's default because most providers refuse a non-interactive merge that
+ * does not state one.
+ */
+export type MergeMethod = "squash" | "merge" | "rebase";
+
+/** The merge methods, for validating a user-supplied value. */
+export const MERGE_METHODS: readonly MergeMethod[] = ["squash", "merge", "rebase"];
+
+/**
+ * The merge method used when the caller names none. Squash, because a gate PR
+ * carries the original commits plus however many fix rounds the pipeline pushed,
+ * and that history is noise on the base branch.
+ */
+export const DEFAULT_MERGE_METHOD: MergeMethod = "squash";
+
+/** Reports whether value is a merge method, for validating CLI input. */
+export function isMergeMethod(value: string): value is MergeMethod {
+    return (MERGE_METHODS as readonly string[]).includes(value);
+}
+
 /** Normalized outcome bucket of a CI check. */
 export type CheckBucket = string;
 
@@ -104,6 +126,12 @@ export interface Host {
     getPRState(pr: PR, signal?: AbortSignal): Promise<PRState>;
     getChecks(pr: PR, signal?: AbortSignal): Promise<Check[]>;
     getMergeableState(pr: PR, signal?: AbortSignal): Promise<MergeableState>;
+    /**
+     * Merges the PR with the given method. Throws when the provider refuses (checks
+     * still failing, conflicts, branch protection, no permission) - the message is
+     * the provider's, since only it knows which rule stopped the merge.
+     */
+    mergePR(pr: PR, method: MergeMethod, signal?: AbortSignal): Promise<void>;
     fetchFailedCheckLogs(
         pr: PR,
         branch: string,

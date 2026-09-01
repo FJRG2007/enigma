@@ -124,6 +124,15 @@ export class Client {
         return toPullRequest(response);
     }
 
+    /**
+     * Merges a pull request with one of Bitbucket Cloud's merge strategies
+     * (`merge_commit`, `squash`, `fast_forward`). The response is the merged PR,
+     * which the caller does not need: a non-2xx status already throws.
+     */
+    async mergePR(repo: RepoRef, prID: number, strategy: string, signal?: AbortSignal): Promise<void> {
+        await this.doJSON<unknown>("POST", `${repoPRPath(repo)}/${prID}/merge`, null, { merge_strategy: strategy }, signal);
+    }
+
     async getPR(repo: RepoRef, prID: number, signal?: AbortSignal): Promise<PullRequest | null> {
         const response = await this.doJSON<unknown>("GET", `${repoPRPath(repo)}/${prID}`, null, null, signal);
         return toPullRequest(response);
@@ -477,6 +486,19 @@ export class BitbucketHost implements types.Host {
 
     async getMergeableState(_pr: types.PR, _signal?: AbortSignal): Promise<types.MergeableState> {
         throw types.ERR_UNSUPPORTED;
+    }
+
+    /**
+     * Merges the PR. Bitbucket Cloud's merge strategies are merge_commit, squash and
+     * fast_forward; there is no rebase strategy, and picking fast_forward as a
+     * stand-in would silently merge differently than asked, so rebase is refused.
+     */
+    async mergePR(pr: types.PR, method: types.MergeMethod, signal?: AbortSignal): Promise<void> {
+        if (method === "rebase") {
+            throw new Error("Bitbucket has no rebase merge strategy: use squash or merge");
+        }
+        const id = atoi(pr.number);
+        await this.client!.mergePR(this.repo, id, method === "squash" ? "squash" : "merge_commit", signal);
     }
 
     async fetchFailedCheckLogs(

@@ -59,6 +59,12 @@ interface Snapshot {
     status: string;
     startedAt: number;
     awaiting: boolean;
+    /**
+     * The human action the run is waiting on, when it is waiting on one. The bar
+     * renders it in place of the active step's name, because a step parked on a
+     * person is not progress and must not animate like it is.
+     */
+    blocked?: string;
     steps: SnapshotStep[];
     prUrl?: string;
 }
@@ -83,6 +89,7 @@ export function buildSnapshot(db: Database, runId: string): Snapshot | null {
             ...(s.startedAt === null ? {} : { startedAt: s.startedAt })
         }))
     };
+    if (run.blockedReason) snapshot.blocked = run.blockedReason;
     if (run.prUrl) snapshot.prUrl = run.prUrl;
     return snapshot;
 }

@@ -14,7 +14,7 @@
  */
 
 import type { StepContext } from "../types";
-import { stepCmd, stepCLIAvailable, type StepCmd } from "./commonExec";
+import { stepCmd, stepCLIAvailable, type StepCmd, type CmdEnv } from "./commonExec";
 import { newClientFromEnv, newBitbucketHost, parseRepoRef, type RepoRef } from "@/gate/scm/bitbucket";
 import { newGitLabHost, type Cmd as GitLabCmd, type CmdFactory as GitLabCmdFactory } from "@/gate/scm/gitlab";
 import {
@@ -99,6 +99,7 @@ function adaptGitHubHost(gh: GitHubHost): Host {
                 completedAt: c.completedAt ?? undefined
             })),
         getMergeableState: (pr, signal) => gh.getMergeableState(signal, pr),
+        mergePR: (pr, method, signal) => gh.mergePR(signal, pr, method),
         fetchFailedCheckLogs: (pr, branch, headSHA, failingNames, signal) =>
             gh.fetchFailedCheckLogs(signal, pr, branch, headSHA, failingNames)
     };
@@ -121,24 +122,49 @@ function resolveBitbucketRepoRef(upstreamURL: string, prURL: string | null): Rep
 }
 
 /**
+ * What building a host needs: where to run the provider CLI, and which repository
+ * and PR to talk about. A pipeline step supplies it from its StepContext; `axi
+ * merge` supplies it from the run row, which is the point of the split - merging on
+ * request happens outside any step, and must not reimplement provider detection,
+ * repo-slug resolution or Bitbucket credential loading to do it.
+ */
+export interface HostTarget extends CmdEnv {
+    upstreamUrl: string;
+    forkUrl: string;
+    prUrl: string | null;
+}
+
+/**
  * Returns an scm.Host for the given provider, wired to sctx's working directory
  * and environment. When the host cannot be constructed (unknown provider,
  * missing Bitbucket config, etc) it returns [null, reason] with a human-readable
  * skip reason suitable for logging.
  */
 export function buildHost(sctx: StepContext, provider: Provider): [Host | null, string] {
+    return buildHostFor({
+        workDir: sctx.workDir,
+        env: sctx.env,
+        signal: sctx.signal,
+        upstreamUrl: sctx.repo.upstreamUrl,
+        forkUrl: sctx.repo.forkUrl,
+        prUrl: sctx.run.prUrl
+    }, provider);
+}
+
+/** buildHost over a bare target, for callers that have no StepContext. */
+export function buildHostFor(sctx: HostTarget, provider: Provider): [Host | null, string] {
     switch (provider) {
         case PROVIDER_GITHUB: {
             // Resolve the owner/name slug so gh commands carry --repo and work from
             // the daemon's fixed (non-repo) working directory. Fall back to the PR
             // URL when the upstream remote URL is unavailable.
-            let repo = repoSlug(sctx.repo.upstreamUrl);
-            if (repo === "" && sctx.run.prUrl !== null) {
-                repo = repoSlug(sctx.run.prUrl);
+            let repo = repoSlug(sctx.upstreamUrl);
+            if (repo === "" && sctx.prUrl !== null) {
+                repo = repoSlug(sctx.prUrl);
             }
             let forkRepo = "";
-            if (sctx.repo.forkUrl !== "") {
-                forkRepo = repoSlug(sctx.repo.forkUrl);
+            if (sctx.forkUrl !== "") {
+                forkRepo = repoSlug(sctx.forkUrl);
             }
             const cmdFactory: GitHubCmdFactory = (_signal, name, ...args) =>
                 wrapGitHubCmd(stepCmd(sctx, name, ...args));
@@ -146,7 +172,7 @@ export function buildHost(sctx: StepContext, provider: Provider): [Host | null, 
             return [adaptGitHubHost(gh), ""];
         }
         case PROVIDER_GITLAB: {
-            if (sctx.repo.forkUrl !== "") {
+            if (sctx.forkUrl !== "") {
                 // Fork MR routing for GitLab is intentionally not half-wired. The
                 // push step may use fork_url, but PR creation must skip until
                 // GitLab source-project routing is implemented end to end.
@@ -157,7 +183,7 @@ export function buildHost(sctx: StepContext, provider: Provider): [Host | null, 
             return [newGitLabHost(cmdFactory, () => stepCLIAvailable(sctx, provider)), ""];
         }
         case PROVIDER_BITBUCKET: {
-            if (sctx.repo.forkUrl !== "") {
+            if (sctx.forkUrl !== "") {
                 // Fork PR routing for Bitbucket is intentionally not half-wired. The
                 // API needs distinct source and destination repositories before
                 // this provider can safely consume fork_url for PR creation.
@@ -171,7 +197,7 @@ export function buildHost(sctx: StepContext, provider: Provider): [Host | null, 
             }
             let repo: RepoRef;
             try {
-                repo = resolveBitbucketRepoRef(sctx.repo.upstreamUrl, sctx.run.prUrl);
+                repo = resolveBitbucketRepoRef(sctx.upstreamUrl, sctx.prUrl);
             } catch (err) {
                 return [null, errMessage(err)];
             }

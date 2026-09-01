@@ -322,16 +322,25 @@ function renderGate(snap, columns, frame, nowSec, color256) {
         return paint(glyph, style.color, color256);
     }).join("");
 
-    // The spinner turns only while a step is actually working; a failed run holds
-    // a red marker instead, so a stalled pipeline never looks like a busy one.
-    const spinner = active
-        ? paint(SPINNER[frame % SPINNER.length], snap.awaiting ? "yellow" : "blue", color256)
-        : paint(BAR_FILLED, failed ? "red" : "dim", color256);
+    // What the run is waiting on that only the user can do (merging the PR once CI
+    // is green). The step stays `running` throughout, so without this the bar spins
+    // over a step that is idle and nothing ever says the wait is on the user.
+    const blocked = typeof snap.blocked === "string" && snap.blocked !== "" ? snap.blocked : null;
+
+    // The spinner turns only while a step is actually working; a failed run holds a
+    // red marker instead, and a run waiting on the user a yellow one, so a stalled
+    // pipeline never looks like a busy one.
+    let spinner;
+    if (blocked) spinner = paint(BAR_FILLED, "yellow", color256);
+    else if (active) spinner = paint(SPINNER[frame % SPINNER.length], snap.awaiting ? "yellow" : "blue", color256);
+    else spinner = paint(BAR_FILLED, failed ? "red" : "dim", color256);
 
     let labelColor = "blue";
-    if (snap.awaiting) labelColor = "yellow";
+    if (blocked || snap.awaiting) labelColor = "yellow";
     else if (!active && failed) labelColor = "red";
-    const label = snap.awaiting ? "needs you" : (current ? current.name : snap.status);
+    let label = current ? current.name : snap.status;
+    if (blocked) label = `needs you: ${blocked}`;
+    else if (snap.awaiting) label = "needs you";
     // A negative age means the snapshot and this process disagree about the clock.
     // Dropping the segment is honest; a confident "0s" is not.
     const started = current?.startedAt ?? snap.startedAt;

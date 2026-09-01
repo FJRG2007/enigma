@@ -8,7 +8,9 @@
  * human/agent decision; with --yes it resolves each gate ("agree to fix every
  * finding", then accept) until a decision point or outcome. Each step is fixed at
  * most once so a finding the fix cannot clear converges to an approval. Once CI
- * checks pass the loop hands control back (the PR awaits a human merge).
+ * checks pass the loop hands control back (the PR awaits a human merge), unless the
+ * user asked for the merge (`--merge`), in which case it merges and drives the run
+ * to its close.
  *
  * The CI "checks passed" detection is the relevant subset of upstream's
  * `cimonitor` package, reading the exact log strings the CI step emits.
@@ -22,6 +24,8 @@ import * as render from "./axiRender";
 import { readFileSync } from "node:fs";
 import type { FixPolicy } from "../config";
 import type { RunInfo } from "../ipc/protocol";
+import { DEFAULT_MERGE_METHOD } from "../scm/types";
+import { mergeRunPR, type MergeOutcome } from "./axiMerge";
 import { parseAddFinding, splitLogLines } from "./axiQuery";
 import { field, toonHelp, toonTable, type ToonField } from "../toon";
 import { formatSkipPushOptions, formatIntentPushOption } from "./steps";
@@ -437,19 +441,25 @@ function successReportHelp(fixes: string[][]): string[] {
  * (exit 0), or the terminal outcome (exit 0 passed, exit 1 blocked/failed/
  * cancelled). Successful outcomes carry applied fixes and reporting instructions.
  */
-function renderDriveResult(io: render.AxiIO, run: RunInfo, ciReady: boolean, policy: FixPolicy): number {
+function renderDriveResult(io: render.AxiIO, run: RunInfo, ciReady: boolean, policy: FixPolicy, mergedPR = ""): number {
     const rv = render.runViewFromIPC(run);
     const fields: ToonField[] = [render.runObjectField(rv)];
+    if (mergedPR !== "") fields.push(field("merged", mergedPR));
 
     if (ciReady) {
         fields.push(field("outcome", "checks-passed"));
-        let merge = "CI checks passed - the PR is ready. Ask the user to review and merge it.";
+        // The run is now waiting on a person, and saying so is the whole point: the
+        // ci step stays `running` until someone merges, so an agent that reports
+        // "still running" here leaves the user waiting on a pipeline that is waiting
+        // on them.
+        let merge = "CI checks passed - the PR is ready and the run is now waiting on the user to merge it. Tell them that, and that nothing else will happen until they do.";
         if (rv.prURL !== "") {
-            merge = `CI checks passed - the PR is ready. Ask the user to review and merge it: ${rv.prURL}`;
+            merge = `CI checks passed - the PR is ready and the run is now waiting on the user to merge it: ${rv.prURL}. Tell them that, and that nothing else will happen until they do.`;
         }
+        const mergeOnRequest = "If the user has already asked you to merge it, run `enigma gate axi merge` - otherwise leave the merge to them.";
         const fixes = render.fixRows(rv);
         appendFixesField(fields, fixes);
-        fields.push(toonHelp([merge, ...successReportHelp(fixes)]));
+        fields.push(toonHelp([merge, mergeOnRequest, ...successReportHelp(fixes)]));
         render.emitDoc(io, fields);
         return 0;
     }
@@ -480,8 +490,19 @@ function renderDriveResult(io: render.AxiIO, run: RunInfo, ciReady: boolean, pol
     return 1;
 }
 
-/** Validates code changes, blocking until a decision point or the outcome. */
-export async function runAxiRun(deps: AxiDeps, autoYes: boolean, skipSteps: StepName[], intent: string): Promise<number> {
+/**
+ * Validates code changes, blocking until a decision point or the outcome. `merge`
+ * is the user's instruction to land the PR themselves-by-proxy: without it the run
+ * hands back at `checks-passed` and the PR waits for a human, which is the default
+ * and stays the default.
+ */
+export async function runAxiRun(
+    deps: AxiDeps,
+    autoYes: boolean,
+    skipSteps: StepName[],
+    intent: string,
+    merge = false
+): Promise<number> {
     const signal = deps.signal;
     let env: AxiEnv;
     try {
@@ -532,6 +553,26 @@ export async function runAxiRun(deps: AxiDeps, autoYes: boolean, skipSteps: Step
             result = await driveRun(deps.io, env.client, runID, policy, ciLogReader(env.p), signal);
         } catch (err) {
             return render.emitError(deps.io, 1, `drive run: ${errMessage(err)}`);
+        }
+        if (result.ciReady && merge) {
+            let outcome: MergeOutcome;
+            try {
+                outcome = await mergeRunPR(env.repo, result.run.prUrl, DEFAULT_MERGE_METHOD, false, signal);
+            } catch (err) {
+                // The validation itself passed; only the merge failed, and the PR is
+                // still there to merge by hand, so say which of the two happened.
+                const help = ["CI passed and the PR is ready; only the merge was refused"];
+                if (result.run.prUrl !== null) help.push(`Merge it by hand: ${result.run.prUrl}`);
+                return render.emitError(deps.io, 1, `merge: ${errMessage(err)}`, ...help);
+            }
+            // Drive again with no CI-ready shortcut, so the loop now waits for the
+            // pipeline to see the merged PR and close the run.
+            try {
+                result = await driveRun(deps.io, env.client, runID, policy, null, signal);
+            } catch (err) {
+                return render.emitError(deps.io, 1, `drive run: ${errMessage(err)}`);
+            }
+            return renderDriveResult(deps.io, result.run, false, policy, outcome.prURL);
         }
         return renderDriveResult(deps.io, result.run, result.ciReady, policy);
     } finally {

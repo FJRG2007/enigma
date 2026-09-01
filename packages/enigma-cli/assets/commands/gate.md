@@ -168,7 +168,9 @@ model while review keeps the strong one.
    That is normal; allow a long timeout and do not cancel or re-issue it. To
    check progress, use `enigma gate axi status` from a separate call. When status
    shows `awaiting_agent: parked <duration>`, the run is parked at a gate waiting
-   for your `axi respond`.
+   for your `axi respond`. When it shows `blocked_on_user: <action>`, the run is
+   waiting on the USER, not on you or on the pipeline - say so instead of reporting
+   it as still running.
 2. If the output contains a `gate:` object, the pipeline is waiting on you. Read
    its `findings` table. Each finding has an `action`:
    - `auto-fix` - mechanical, low-risk; authorize on your own judgment with
@@ -201,9 +203,21 @@ model while review keeps the strong one.
    has the pipeline apply the fix and re-review.
 3. Repeat step 2 until the output has an `outcome:` instead of a `gate:`:
    - `checks-passed` - validated and CI green, PR not merged yet. You are done
-     driving. Tell the user the PR is ready and ask them to review and merge it
-     (link in the `help` line). The gate keeps monitoring the PR in the
-     background; do not poll for the merge.
+     driving. Tell the user the PR is ready AND that the run is now waiting on them
+     to merge it - the `ci` step stays `running` until they do, so reporting "still
+     running" leaves them waiting on a pipeline that is waiting on them. Link the PR
+     (in the `help` line) and stop polling for the merge.
+
+     If the user has already told you to merge it ("mergealo", "metelo en main",
+     "merge it when CI passes"), that is the one case where you merge:
+     ```sh
+     enigma gate axi merge                 # squash by default
+     enigma gate axi merge --method merge  # or merge, or rebase
+     ```
+     It refuses a PR with failing or unfinished checks unless you pass `--force`,
+     and it waits for the run to close. You can also ask for it up front with
+     `enigma gate axi run --intent "..." --merge`, which merges as soon as CI is
+     green. Never merge unless the user asked.
    - `passed` - cleared the gate and the PR was merged or closed. On the default
      branch this is the normal ending: no PR is opened and CI monitoring is
      skipped, so the run finishes here once the push lands.

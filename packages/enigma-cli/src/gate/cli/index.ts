@@ -53,7 +53,7 @@ export function gateSubcommandHelp(sub: string): string {
         runs: "usage: enigma gate runs [--limit <n>]\nLists recent runs.",
         rerun: "usage: enigma gate rerun\nStarts a new run from the current branch, reusing the last run's applied fixes.",
         daemon: "usage: enigma gate daemon <start|stop|status>\nControls the background daemon.",
-        axi: "usage: enigma gate axi [run|respond|status|logs|abort] [flags]\nThe machine-readable surface agents drive. Add --help to a subcommand for its flags."
+        axi: "usage: enigma gate axi [run|respond|merge|status|logs|abort] [flags]\nThe machine-readable surface agents drive. Add --help to a subcommand for its flags."
     };
     return usage[sub] ?? "usage: enigma gate <init|status|runs|rerun|doctor|eject|daemon|axi>\nAdd --help to any subcommand for its usage.";
 }

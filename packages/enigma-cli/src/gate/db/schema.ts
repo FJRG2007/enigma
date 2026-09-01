@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS runs (
     pr_url               TEXT,
     error                TEXT,
     awaiting_agent_since INTEGER,
+    blocked_reason       TEXT,
     created_at           INTEGER NOT NULL,
     updated_at           INTEGER NOT NULL
 );
@@ -81,5 +82,6 @@ export const migrationStatements: string[] = [
     "ALTER TABLE runs ADD COLUMN intent_source TEXT",
     "ALTER TABLE runs ADD COLUMN intent_session_id TEXT",
     "ALTER TABLE runs ADD COLUMN intent_score REAL",
-    "ALTER TABLE runs ADD COLUMN awaiting_agent_since INTEGER"
+    "ALTER TABLE runs ADD COLUMN awaiting_agent_since INTEGER",
+    "ALTER TABLE runs ADD COLUMN blocked_reason TEXT"
 ];

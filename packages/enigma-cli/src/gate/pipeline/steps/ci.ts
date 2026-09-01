@@ -40,6 +40,13 @@ const CI_CHECKS_PASSED_MSG = "all CI checks passed - still monitoring until merg
 const CI_NO_CHECKS_PASSED_MSG = "no CI checks reported - still monitoring until merged or closed";
 const CI_CHECKS_RUNNING_MSG = "CI checks running, waiting for results...";
 
+/**
+ * What the run is waiting for once CI is green: a person to merge the PR. The step
+ * stays `running` through that wait, so without this marker the status bar animates
+ * a step that is doing nothing and the user is never told the pipeline is on them.
+ */
+const CI_MERGE_BLOCK_REASON = "merge the PR";
+
 function errMessage(err: unknown): string {
     return err instanceof Error ? err.message : String(err);
 }
@@ -265,6 +272,12 @@ export class CIStep implements Step {
         for (;;) {
             if (signal.aborted) throw signalError(signal);
 
+            // Set once per poll, from what this poll actually observed: green checks
+            // on an open PR mean the pipeline is waiting on a human merge. Anything
+            // else - failures, re-running checks, an unreadable PR - is the pipeline's
+            // own work again, so the marker clears.
+            let waitingOnMerge = false;
+
             if (!unlimited && now() - timeoutAnchor >= timeout) {
                 return timeoutOutcome();
             }
@@ -474,12 +487,16 @@ export class CIStep implements Step {
                         lastMonitorLog = "";
                         sctx.log("no CI checks reported yet, waiting for checks to register...");
                     } else if (checks.length === 0) {
+                        waitingOnMerge = true;
                         lastMonitorLog = logCIMonitorStatus(sctx, CI_NO_CHECKS_PASSED_MSG, lastMonitorLog);
                     } else {
+                        waitingOnMerge = true;
                         lastMonitorLog = logCIMonitorStatus(sctx, CI_CHECKS_PASSED_MSG, lastMonitorLog);
                     }
                 }
             }
+
+            sctx.setBlocked(waitingOnMerge ? CI_MERGE_BLOCK_REASON : "");
 
             // Sleep for the poll interval.
             let interval = this.pollIntervalOverride;

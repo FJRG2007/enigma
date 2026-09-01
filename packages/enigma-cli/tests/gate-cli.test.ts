@@ -15,7 +15,7 @@ afterAll(() => rmSync(DIR, { recursive: true, force: true }));
 const { promptFitsArgv, ARGV_PROMPT_BUDGET } = await import("../src/gate/agent/argv");
 const { readInstructions } = await import("../src/gate/cli/axiDrive");
 const { gateSubcommandHelp } = await import("../src/gate/cli/index");
-const { axiSubcommandHelp } = await import("../src/gate/cli/axi");
+const { runAxi, axiSubcommandHelp } = await import("../src/gate/cli/axi");
 
 test("a normal prompt rides in argv; an oversized one is routed to stdin", () => {
   expect(promptFitsArgv("review this diff")).toBe(true);
@@ -40,6 +40,24 @@ test("--instructions takes text directly or @file, and says why a bad path faile
   expect(() => readInstructions("@")).toThrow(/needs a file path/);
   // The error must name the path, not just "ENOENT".
   expect(() => readInstructions(`@${join(DIR, "missing.txt")}`)).toThrow(/missing\.txt/);
+});
+
+test("axi merge validates the method before it can touch a repository", async () => {
+  // The guard that matters: an unknown method must be rejected as usage, not passed
+  // to the provider, and never after the command has already started merging.
+  let out = "";
+  const io = { stdout: (s: string) => { out += s; }, stderr: () => {} };
+  const daemon = { ensureDaemon: async () => {}, isDaemonRunning: async () => false };
+
+  const code = await runAxi(["merge", "--method", "octopus"], { io, daemon });
+  expect(code).toBe(2);
+  expect(out).toContain("unknown merge method");
+  expect(out).toContain("squash");
+
+  // And the command is documented where an agent looks for it.
+  expect(axiSubcommandHelp("merge")).toContain("usage: enigma gate axi merge");
+  expect(axiSubcommandHelp("merge")).toContain("--force");
+  expect(axiSubcommandHelp("run")).toContain("--merge");
 });
 
 test("--help prints usage for every subcommand instead of running it", () => {

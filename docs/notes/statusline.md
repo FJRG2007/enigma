@@ -119,6 +119,12 @@ sit parked at a gate for a long time.
   a red marker, so a stalled pipeline never looks like a busy one.
 - The pipeline bar doubles as the legend - cell N is step N - which is what makes the
   whole run fit on one line.
+- A run waiting on the USER renders `needs you: <action>` in yellow and holds a steady
+  marker instead of the spinner. It comes from the snapshot's `blocked` field, which
+  mirrors the run's `blocked_reason` (gate.md has the mechanism). This is not the same
+  as `awaiting`: that one is a gate the driving agent answers, this one is work only
+  the user can do - after CI goes green the `ci` step stays `running` until someone
+  merges, and without this the bar spun over a step doing nothing.
 - A negative elapsed time (snapshot and reader disagreeing about the clock) drops the
   segment rather than printing a confident `0s`.
 

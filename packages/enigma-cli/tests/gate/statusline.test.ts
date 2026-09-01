@@ -21,7 +21,7 @@ process.env.HOME = DIR;
 
 const REPO_PATH = join(DIR, "repo").replace(/\\/g, "/");
 
-const { Database, newId, insertRepoWithIDAndFork, insertRun, insertStepResult, startStep, completeStepWithStatus, updateRunStatus } = await import("@/gate/db");
+const { Database, newId, insertRepoWithIDAndFork, insertRun, insertStepResult, startStep, completeStepWithStatus, updateRunStatus, setRunBlockedReason } = await import("@/gate/db");
 const { Paths } = await import("@/gate/paths");
 const { writeSnapshot } = await import("@/gate/daemon/snapshot");
 const { recordRun } = await import("@/gate/daemon/ledger");
@@ -70,6 +70,32 @@ test("a run written by the daemon is readable and renderable by the Node status 
     const line = render({ snapshot: snap, columns: 120, frame: 0, nowSec: snap.startedAt, color256: false });
     expect(line).toContain("review");
     expect(line).toContain("1/2");
+    db.close();
+});
+
+test("a run waiting on the user says so instead of animating a busy step", () => {
+    // The gap this closes: the ci step keeps polling a green PR until someone merges
+    // it, so the run stays `running` and the bar spun over a step doing nothing. The
+    // marker is the only thing that says the pipeline is waiting on the user.
+    const { db, paths, run } = seed();
+    setRunBlockedReason(db, run.id, "merge the PR");
+    writeSnapshot(db, paths, run.id);
+    process.env.ENIGMA_GATE_HOME = paths.root();
+
+    const snap = readSnapshot(REPO_PATH);
+    expect(snap.blocked).toBe("merge the PR");
+    const line = render({ snapshot: snap, columns: 120, frame: 0, nowSec: snap.startedAt, color256: false });
+    expect(line).toContain("needs you: merge the PR");
+    // A run parked on a person must not animate like one that is working.
+    const frames = [0, 1, 2, 3].map((frame) => render({ snapshot: snap, columns: 120, frame, nowSec: snap.startedAt, color256: false }));
+    expect(new Set(frames.map((f) => f.split("gate")[0])).size).toBe(1);
+
+    // Cleared, the bar goes back to naming the running step.
+    setRunBlockedReason(db, run.id, "");
+    writeSnapshot(db, paths, run.id);
+    const back = readSnapshot(REPO_PATH);
+    expect(back.blocked).toBeUndefined();
+    expect(render({ snapshot: back, columns: 120, frame: 0, nowSec: back.startedAt, color256: false })).not.toContain("needs you");
     db.close();
 });
 

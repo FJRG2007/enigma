@@ -301,6 +301,56 @@ it, not the executor:
 Note the gate reads one setting from the OTHER config (`.enigma.json`, not `.enigma-gate.yaml`):
 `commitEmoji`. See the commit subjects section below.
 
+## Waiting on the USER, and merging when they asked (an enigma extension)
+
+Two things the pipeline could not say, and one it could not do.
+
+**The run parks on a person and nothing said so.** After CI goes green the `ci` step keeps
+polling until the PR is merged or closed (`CI_CHECKS_PASSED_MSG`, `steps/ci.ts`). The step stays
+`running` the whole time, so every reader reported a busy pipeline: the status bar spun a blue
+`ci` with a rising clock, `axi status` said `running`, and the agent told the user the gate was
+"still working" while the gate was waiting for the user to click merge. The awaiting-agent
+marker does not cover it - that one means a gate the DRIVING AGENT answers, and it clears when
+the agent responds; nothing an agent does clears this one.
+
+So runs carry a second marker, `blocked_reason` (`db/run.ts`, migration in `db/schema.ts`):
+
+- A step declares it through `sctx.setBlocked(reason)` (`pipeline/types.ts`). The executor
+  persists it AND emits `EventRunUpdated`, because the status bar reads a snapshot the daemon
+  rewrites on non-log events only - a DB write alone would sit unseen until the next step
+  transition, which for a step parked on a person can be hours away.
+- The executor clears it whenever the step returns or throws, so no finished run can be left
+  claiming it needs you. `recoverStaleRuns` clears it too, for the crash path.
+- `ci.ts` sets `"merge the PR"` from what each poll observed (green checks on an open PR) and
+  clears it on anything else - failures, re-running checks, an unreadable PR. It is derived per
+  poll rather than latched, so a PR that goes red again stops claiming to be waiting on you.
+- Readers: the bar renders `needs you: merge the PR` in yellow and holds a STEADY marker instead
+  of the spinner (a step parked on a person must not animate like one that is working);
+  `axi status` and the drive result carry `blocked_on_user`; the `checks-passed` help line now
+  tells the agent to report the wait rather than the run.
+
+**The user says "merge it" and the agent had no way to.** The guidance was a flat "never merge
+the PR yourself", so an agent told to merge either disobeyed it or reached for raw `gh`. Now
+there is `enigma gate axi merge` (`cli/axiMerge.ts`), and `axi run --merge` for the same thing
+asked up front. The default is unchanged - the gate opens a PR and leaves it for the user - and
+the kernel/`/gate`/`verify` texts all say the same thing: merge only when the user asked.
+
+- The merge goes through the scm layer, not a shelled-out `gh`: `Host.mergePR` is implemented by
+  all three providers (`gh pr merge --<method>`, `glab mr merge --yes`, Bitbucket's
+  `POST /merge`). Bitbucket has no rebase strategy, so it refuses `rebase` rather than silently
+  substituting `fast_forward`.
+- `buildHost` was split so a caller with no StepContext can build one: `buildHostFor(target)`
+  takes just workdir/env/urls (`HostTarget`), and `stepCmd`/`stepCLIAvailable` widened from
+  `StepContext` to `CmdEnv`. That is why merging on request does not reimplement provider
+  detection, repo-slug resolution or Bitbucket credential loading.
+- The bar for merging is the PROVIDER's view of the PR, not the run's logs: failing or still
+  running checks refuse the merge unless `--force`, and a closed PR or a known conflict refuses
+  it either way (no flag makes those true). Default method is squash - a gate PR carries the
+  original commits plus every fix round the pipeline pushed.
+- After the merge the CLI just waits: the `ci` step sees `PR_STATE_MERGED` on its next poll
+  (up to two minutes on the backoff) and closes the run. Nothing tells the daemon to stop; the
+  pipeline ends exactly where it would have ended had a human clicked merge.
+
 ## Commit subjects (`pipeline/steps/commitMessage.ts`)
 
 A run commits into the same history the user's agent does, so its subjects honor the same
