@@ -32,6 +32,13 @@ Every step this hook runs is Node-compatible, so `src/post-edit-hook.ts` is bund
 binary is never started for an edit. What the model gets back - the trimmed file, the lint
 findings, a guardrails BLOCK on exit 2, the blast radius - is identical.
 
+Measured A/B on the same machine, seven runs each, one real edit per run (a file with a
+trailing blank line and a lint finding, so every step does work): **median 2294 ms** for the
+one-process path against **5794 ms** for the launcher-plus-binary path followed by the separate
+lint process - 1571-7024 ms against 2663-9352 ms. The spread is the machine, not the change,
+which is the point of taking medians: the floor moves by seconds between two runs of the same
+command.
+
 - The fast path sits beside the `statusline` one, before `resolveBinary()`, and reads stdin
   with a synchronous `readFileSync(0)` BEFORE any await: an await lets Node drain the pipe and
   the hook silently sees an empty payload (the guardrails-hook lesson, which cli.ts records
