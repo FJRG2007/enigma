@@ -89,6 +89,7 @@
     "./relative-time.css": "./recipes/relative-time/styles.css",
     "./toast.css": "./recipes/toast/styles.css",
     "./input.css": "./recipes/input/styles.css",
+    "./color.css": "./recipes/color/styles.css",
     "./marquee.css": "./recipes/marquee/styles.css",
     "./logo-marquee.css": "./recipes/logo-marquee/styles.css",
     "./palette.css": "./recipes/palette/styles.css",
@@ -157,6 +158,7 @@
   },
   "keywords": [
     "carousel",
+    "color-picker",
     "context-menu",
     "enigma",
     "flags",

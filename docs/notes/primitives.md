@@ -288,6 +288,80 @@ Four things the hand-rolled version gets wrong, each with a test:
 `destroy()` puts a revealed field back to `password`; leaving it as text would show the
 value to whoever sees the screen next.
 
+### type="color": the picker
+
+`<Input type="color">` is the same field with a swatch in it, and the swatch opens a panel:
+a saturation/brightness square, a hue rail, an optional alpha rail, presets, and the
+browser's screen eyedropper where there is one. Its own chunk (`react/input/color.tsx`)
+behind the same `lazy()` as the meter and the search engine, plus `core/color.ts` for the
+arithmetic, so a form of text fields downloads none of it.
+
+**The field is a TEXT input in the DOM**, not `type="color"`. The native one opens a picker
+drawn by the OPERATING SYSTEM: unstylable, different on every platform, with no presets, no
+alpha, and a value that can only ever be `#rrggbb` - and it cannot be typed or pasted into,
+which is the fastest way to enter a colour somebody already has. So the value is a plain
+string in a plain field, submitted with the form like any other, and the panel is ours. It is
+the same reasoning that replaced the native `<select>`, for the same cost.
+
+**Hue is what the component keeps state for, and the only thing.** Hue is undefined at black,
+at white and at every grey - there is no dominant channel to measure it from - so a picker
+that re-derives HSV from the field's RGB on every render answers 0, and dragging the square
+into a corner and back resets a hue the visitor chose. `rgbToHsv(rgb, fallbackHue)` takes the
+hue in hand for exactly that case, the component holds the HSV, and the field is re-read only
+when it says a genuinely DIFFERENT colour (`colorEquals` against what the current HSV
+produces). There is a browser test that walks a colour through a grey and asserts the rail
+did not move; it is the one defect this component exists for.
+
+The rest of the arithmetic, each with the case it was written for:
+
+- **Five and seven hex digits are refused, not padded.** A truncated paste is how you arrive
+  at one, and inventing the missing digit invents a colour nobody picked.
+- **`oklch()` and `color()` parse to null** rather than being clipped into sRGB. Answering
+  with a hex for a colour a hex cannot hold changes the value silently.
+- **Named colours are not a table here.** 148 names to drag a square is weight, and the DOM
+  already resolves them. The swatch takes the same route: its fill is `style={{ background:
+  value }}`, so the BROWSER validates it and an unparseable string simply paints nothing.
+- **Both syntaxes are read** - `rgba(59, 130, 246, .5)` and `rgb(59 130 246 / 50%)` - because
+  the space-and-slash form is what devtools puts on the clipboard. Only the legacy comma form
+  is written back, because that is what older toolchains still take.
+- **Alpha is off by default.** It turns `#3b82f6` into `#3b82f680`, which is not what a column
+  typed as a seven-character hex, or a server reading a native colour input, expects.
+- **Normalizing happens on BLUR.** `#3b8` and `RGB(59 130 246)` are the same colour as what
+  the picker writes, and storing both is two spellings of one value; rewriting mid-keystroke
+  would fight the caret.
+
+**It ships a theme**, like the toast and the select and for the same reason: there is no
+useful "unstyled" version of a gradient someone drags a handle across - a saturation square
+with no size is nothing at all. `react/input/color-styles.ts` is the source, injected once and
+prepended to `<head>`, and generated into `recipes/color/styles.css` by
+`scripts/sync-recipes.mjs` (checked in CI, so the two cannot drift). `styles={false}` opts out;
+every colour and distance is a `--enigma-color-*` property. The rest of `<Input>` still ships
+none.
+
+Four smaller things that are easy to get wrong, all fixed in place:
+
+- **The swatch is `type="button"`.** Inside a form a bare `<button>` submits, so opening the
+  picker would post the half-filled form - the same trap as the password reveal.
+- **The panel is a child of the field**, absolutely positioned, so it moves with it: no
+  portal, no scroll listener, and nothing to keep in sync. The cost is an ancestor with
+  `overflow: hidden`, which clips it - the select makes the same trade.
+- **A press on the panel's own padding is not a press outside.** Dismissal listens to
+  `pointerdown` outside the anchor and to `focusin` on a real element; focus landing on
+  `document.body` (which is what clicking a gap does) is ignored, or the panel would close
+  every time somebody clicks between two controls.
+- **`touch-action: none` on the square and the rails.** Here the drag IS the control, which is
+  the opposite of the marquee's case, where the same declaration steals the page scroll.
+
+A 2D slider has no ARIA role. The square is `role="slider"` with saturation as `aria-valuenow`
+and an `aria-valuetext` that says saturation, brightness and the resulting colour, because the
+number alone announces half the control. The arrows drive both axes, the hue rail wraps at
+360, and the corners of the square are unreachable by pointer - it is rounded, so the last few
+pixels of a corner are outside its own shape.
+
+Vanilla has the maths and not the picker: `createInput` does not grow a colour panel, so a
+non-React page imports `parseColor` and friends from the package root and draws its own. Said
+here rather than discovered - it is the same "no adapter yet" as Vue and Svelte.
+
 ## palette
 
 The Ctrl/Cmd+K panel. A DIALOG, which is why it is its own component rather than a prop on
@@ -941,6 +1015,55 @@ Two defects found by the browser tests, both fixed with a comment in place:
 - **Closing a submenu unmounts the element holding focus**, which leaves it on the body and the
   next Escape reaching nothing. Each panel refocuses when it becomes the DEEPEST one again, not
   only when it mounts.
+
+### Copy, Cut and Paste, on by default
+
+A custom context menu REPLACES the browser's, and the browser's has these three. Leaving them
+out is not a smaller menu, it is a menu that cannot copy - and nobody decides that, they
+discover it. So `clipboard` defaults to on, `clipboard={false}` turns it off, and an object
+turns off one of the three or renames them. `core/clipboard-menu.ts` holds the whole thing:
+what a selection is, whether a field takes writes, and how text goes back in are DOM questions,
+so a menu drawn by something that is not React gets the same rows.
+
+Which rows appear is decided from what was RIGHT-CLICKED, at the moment of the press:
+
+- **Copy**, where there is selected text under the pointer.
+- **Cut**, where that selection is also in something writable.
+- **Paste**, in anything writable, greyed when the clipboard is known to be empty.
+
+They go in FRONT of the caller's rows with a separator after them, because they act on the
+selection rather than on the thing the menu was opened over, and because that is where every
+desktop menu puts them. The ids are namespaced (`enigma:clipboard:copy`), so they cannot collide
+with a caller's own, and they are still reported through `onSelect` after being performed - a
+caller may want to log the copy or undo it.
+
+The details, each with the case behind it:
+
+- **The target is read at open time, not derived from a render.** The selection and the caret
+  belong to the DOM at the instant of the press; a render later they are gone, because choosing
+  a row moves focus into the panel. The rows are pushed into the instance SYNCHRONOUSLY for the
+  same reason - state would arrive a render late and the menu's first paint would lack them.
+- **The caret is put back before anything happens.** By the time the action runs the field is
+  not focused and its selection is gone, so Cut would delete nothing and Paste would insert at
+  position zero.
+- **`selectionStart` throws on the wrong input type.** The selection API is only defined for
+  `text`, `search`, `url`, `tel` and `password` - reading it on `number`, `date`, `email` or
+  `color` is an `InvalidStateError`. An allowlist, not a try/catch that hides which is which.
+- **A password field is never copied out of**, only pasted into. The clipboard is shared with
+  every application on the machine and is not cleared; the browser's own menu refuses too.
+- **A selection elsewhere on the page does not count.** The range has to intersect the element
+  clicked on, or a right-click away from a selection offers to copy something the visitor is not
+  pointing at.
+- **Insertion goes through `execCommand("insertText")` first**, deprecated as it is: it is the
+  only path that joins the browser's undo stack, so Ctrl+Z after a paste undoes a paste. The
+  fallback writes through the element's OWN prototype setter and dispatches an `input` event -
+  a textarea's setter is not an input's - which is what makes a controlled React field see it.
+- **Whether the clipboard has anything in it is usually unknowable.** Reading it needs
+  permission, and asking would put a browser prompt on screen to decide how to draw a row. So
+  the permission is READ and never requested: where it is already granted the answer is real and
+  Paste greys out on an empty clipboard; everywhere else the row stays enabled and a paste with
+  nothing to paste does nothing. Greyed rather than dropped - a row that disappears between two
+  opens reads as an unreliable menu.
 
 ## selection
 

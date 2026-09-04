@@ -110,6 +110,11 @@ test.describe("Selection list", () => {
 
     test("a band dragged over empty space selects what it covers", async ({ page }) => {
         await open(page);
+        // Scrolled to first, because this is the one test that drives the mouse by absolute
+        // coordinates: `boundingBox` is viewport-relative, so a list below the fold is
+        // measured at a point the pointer can never reach - and a fixture that grows by one
+        // component is enough to put it there.
+        await page.locator(`${files} ${list}`).scrollIntoViewIfNeeded();
         const container = (await page.locator(`${files} ${list}`).boundingBox())!;
         const first = (await row(page, 0).boundingBox())!;
         const third = (await row(page, 2).boundingBox())!;

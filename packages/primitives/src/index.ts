@@ -12,6 +12,23 @@ export {
     type PasswordStrengthReport,
     type PasswordScore
 } from "@/core/password";
+// The colour maths behind `<Input type="color">`. The picker is React, the conversions are
+// not, so a vanilla page drawing its own square has the same parser and the same hue rule.
+export {
+    parseColor,
+    formatColor,
+    toHex,
+    rgbToHsv,
+    hsvToRgb,
+    rgbToHsl,
+    hslToRgb,
+    colorEquals,
+    type Rgb,
+    type Hsv,
+    type Hsl,
+    type ColorFormat,
+    type FormatColorOptions
+} from "@/core/color";
 export { createNotifications, type Notifications, type Notification, type NotificationInput, type NotificationTone, type NotificationAction, type NotificationsOptions, type PromiseMessages } from "@/core/notifications";
 export { createNetworkMonitor, SERVER_NETWORK_STATE, type NetworkState, type NetworkMonitor } from "@/core/network";
 export {
@@ -89,6 +106,21 @@ export {
     type ContextMenuPoint,
     type ContextMenuMoveKey
 } from "@/core/context-menu";
+// Copy, Cut and Paste for a menu, and the DOM questions behind them: what is selected,
+// whether it can be written to, and how text goes back in without breaking undo.
+export {
+    CLIPBOARD_PREFIX,
+    clipboardEntries,
+    clipboardAction,
+    clipboardHasText,
+    inspectClipboardTarget,
+    performClipboardAction,
+    type ClipboardAction,
+    type ClipboardTarget,
+    type ClipboardMenuOptions,
+    type ClipboardMenuLabels
+} from "@/core/clipboard-menu";
+
 // The selection model, for the same reason: what a Ctrl+click does to a set is not React.
 export {
     createSelection,

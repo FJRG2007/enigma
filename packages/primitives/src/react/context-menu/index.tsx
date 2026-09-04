@@ -90,5 +90,19 @@ export {
     type ContextMenuPoint,
     type ContextMenuMoveKey
 } from "@/core/context-menu";
+// The clipboard rows as their own surface: a menu built from the parts can add them
+// itself, and a caller that performs Copy in its own way has the same reader and writer.
+export {
+    CLIPBOARD_PREFIX,
+    clipboardEntries,
+    clipboardAction,
+    clipboardHasText,
+    inspectClipboardTarget,
+    performClipboardAction,
+    type ClipboardAction,
+    type ClipboardTarget,
+    type ClipboardMenuOptions,
+    type ClipboardMenuLabels
+} from "@/core/clipboard-menu";
 export { CONTEXT_MENU_STYLES } from "@/react/context-menu/styles";
 export { shortcutTokens, shortcutText, parseShortcut, matchesShortcut, type Shortcut, type ShortcutSpec } from "@/core/keys";

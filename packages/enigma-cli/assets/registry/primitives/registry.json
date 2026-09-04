@@ -156,7 +156,7 @@
     {
       "name": "input",
       "title": "Input, one field for every type",
-      "description": "A field you pass props to, typed by its `type`: password gets the reveal toggle, a generator, a strength meter and a breach check; search gets debouncing, ranking and a clear button; everything else is a plain field with native props. What each type needs is loaded when that type is used, so a form of text fields ships none of it.",
+      "description": "A field you pass props to, typed by its `type`: password gets the reveal toggle, a generator, a strength meter and a breach check; search gets debouncing, ranking and a clear button; color gets a swatch and a picker panel - saturation square, hue and alpha rails, presets and the screen eyedropper - instead of the operating system popup; everything else is a plain field with native props. What each type needs is loaded when that type is used, so a form of text fields ships none of it.",
       "targets": [
         "vanilla",
         "astro",
@@ -224,7 +224,8 @@
           ],
           "rewrite": {
             "@/core/search": "./search-core",
-            "@/core/password": "./password-core"
+            "@/core/password": "./password-core",
+            "@/core/color": "./color-core"
           }
         },
         {
@@ -263,6 +264,43 @@
           }
         },
         {
+          "path": "src/core/color.ts",
+          "dest": "input/color-core.ts",
+          "targets": [
+            "vanilla",
+            "astro",
+            "react"
+          ]
+        },
+        {
+          "path": "src/react/input/color-styles.ts",
+          "dest": "input/color-styles.ts",
+          "targets": [
+            "react"
+          ]
+        },
+        {
+          "path": "src/react/input/color.tsx",
+          "dest": "input/color.tsx",
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/core/color": "./color-core",
+            "@/react/input/write-value": "./write-value",
+            "@/react/input/color-styles": "./color-styles",
+            "@/react/input/types": "./types"
+          }
+        },
+        {
+          "path": "recipes/color/styles.css",
+          "dest": "input/color.css",
+          "targets": [
+            "react"
+          ],
+          "style": "css"
+        },
+        {
           "path": "recipes/input/styles.css",
           "dest": "input/styles.css",
           "targets": [
@@ -286,7 +324,8 @@
             "@/react/input/types": "./types",
             "@/react/input/password": "./password",
             "@/react/input/search": "./search",
-            "@/core/password": "./password-core"
+            "@/core/password": "./password-core",
+            "@/react/input/color": "./color"
           }
         },
         {
@@ -322,7 +361,26 @@
         "[data-enigma-password-strength-segment][data-filled]",
         "[data-enigma-password-strength-label]",
         "[data-enigma-password-strength-warning]",
-        "[data-enigma-input-action=clear]"
+        "[data-enigma-input-action=clear]",
+        "[data-enigma-color]",
+        "[data-enigma-color][data-open]",
+        "[data-enigma-color-swatch]",
+        "[data-enigma-color-swatch][data-invalid]",
+        "[data-enigma-color-checkers]",
+        "[data-enigma-color-fill]",
+        "[data-enigma-color-panel]",
+        "[data-enigma-color-panel][data-side=top]",
+        "[data-enigma-color-area]",
+        "[data-enigma-color-controls]",
+        "[data-enigma-color-rails]",
+        "[data-enigma-color-rail=hue]",
+        "[data-enigma-color-rail=alpha]",
+        "[data-enigma-color-gradient]",
+        "[data-enigma-color-thumb]",
+        "[data-enigma-color-preview]",
+        "[data-enigma-color-eyedropper]",
+        "[data-enigma-color-swatches]",
+        "[data-enigma-color-preset]"
       ],
       "docs": "docs/notes/primitives.md#input",
       "recipes": [
@@ -739,7 +797,7 @@
     {
       "name": "context-menu",
       "title": "Context menu",
-      "description": "A right-click menu with the desktop's behaviour: submenus that open on a beat of hovering and survive a diagonal pointer, icons, a second line, shortcuts printed on the right, checkable and radio rows, separators and captions, destructive rows in red, an optional heading naming what it acts on, a filter once a level is long, a long level rendered a window at a time, and a submenu fetched on demand and cached. Opens at the pointer, on a long press, and on Shift+F10. A menu with no rows does not open at all. It brings its own theme - an unstyled popup is transparent text over the page rather than a plain-looking control.",
+      "description": "A right-click menu with the desktop's behaviour: submenus that open on a beat of hovering and survive a diagonal pointer, icons, a second line, shortcuts printed on the right, checkable and radio rows, separators and captions, destructive rows in red, an optional heading naming what it acts on, a filter once a level is long, a long level rendered a window at a time, and a submenu fetched on demand and cached. Opens at the pointer, on a long press, and on Shift+F10. Copy, Cut and Paste are built from whatever was right-clicked and are on by default, because the browser menu this one replaces has them. A menu with no rows does not open at all. It brings its own theme - an unstyled popup is transparent text over the page rather than a plain-looking control.",
       "targets": [
         "react"
       ],
@@ -777,6 +835,16 @@
           "rewrite": {
             "@/core/search": "./search-core",
             "@/core/keys": "./keys"
+          }
+        },
+        {
+          "path": "src/core/clipboard-menu.ts",
+          "dest": "context-menu/clipboard-menu.ts",
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/core/context-menu": "./context-menu"
           }
         },
         {
@@ -823,7 +891,8 @@
             "@/core/keys": "./keys",
             "@/react/slot": "./slot",
             "@/react/context-menu/styles": "./styles",
-            "@/react/context-menu/context": "./context"
+            "@/react/context-menu/context": "./context",
+            "@/core/clipboard-menu": "./clipboard-menu"
           }
         },
         {
@@ -838,7 +907,8 @@
             "@/react/context-menu/context": "./context",
             "@/react/context-menu/styles": "./styles",
             "@/core/context-menu": "./context-menu",
-            "@/core/keys": "./keys"
+            "@/core/keys": "./keys",
+            "@/core/clipboard-menu": "./clipboard-menu"
           }
         }
       ],

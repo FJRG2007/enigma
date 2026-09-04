@@ -7,6 +7,10 @@ import { shortcutTokens } from "@/core/keys";
 import { CONTEXT_MENU_STYLES } from "@/react/context-menu/styles";
 import { ContextMenuContext, useContextMenuContext, type ContextMenuItem, type ContextMenuNode } from "@/react/context-menu/context";
 import {
+    CLIPBOARD_PREFIX, clipboardEntries, clipboardAction, clipboardHasText, inspectClipboardTarget, performClipboardAction,
+    type ClipboardMenuOptions, type ClipboardTarget
+} from "@/core/clipboard-menu";
+import {
     useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState,
     type ComponentPropsWithoutRef, type CSSProperties, type KeyboardEvent, type PointerEvent, type ReactNode
 } from "react";
@@ -36,6 +40,41 @@ import {
  * rather than the window) and any stacking context - so the menu ends up clipped by the row
  * that opened it. Rendered into `<body>`, it is subject to none of them.
  */
+
+/**
+ * The three glyphs the clipboard rows carry.
+ *
+ * Drawn here rather than imported: a menu whose caller gives every row an icon and whose
+ * built-in rows have none reads as three broken rows, and an icon file would be a request.
+ * Stroked with `currentColor` at 1em, so they inherit the row's colour and size.
+ */
+const CLIPBOARD_ICON = {
+    viewBox: "0 0 24 24", width: "1em", height: "1em", fill: "none",
+    stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round",
+    "aria-hidden": true
+} as const;
+
+const CLIPBOARD_ICONS = {
+    copy: (
+        <svg {...CLIPBOARD_ICON}>
+            <rect x="9" y="9" width="12" height="12" rx="2" />
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+        </svg>
+    ),
+    cut: (
+        <svg {...CLIPBOARD_ICON}>
+            <circle cx="6" cy="6" r="3" />
+            <circle cx="6" cy="18" r="3" />
+            <path d="M20 4 8.12 15.88M14.47 14.48 20 20M8.12 8.12 12 12" />
+        </svg>
+    ),
+    paste: (
+        <svg {...CLIPBOARD_ICON}>
+            <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+            <rect x="8" y="2" width="8" height="4" rx="1" />
+        </svg>
+    )
+};
 
 let injected = false;
 
@@ -97,6 +136,16 @@ export interface ContextMenuRootProps {
     onOpenChange?: (open: boolean) => void;
     /** Nothing opens, and the press is left to the browser. For a disabled row or a read-only view. */
     disabled?: boolean;
+    /**
+     * Copy, Cut and Paste, built from whatever was right-clicked. ON by default, and `false`
+     * turns them off; an object turns off one of the three, renames them, or both.
+     *
+     * On by default because the browser's own menu has them and this one replaces it - a
+     * custom menu over a text field that cannot copy is a loss the visitor discovers rather
+     * than one anybody decided on. They appear only where they mean something: Copy over a
+     * selection, Cut over a selection in something writable, Paste in anything writable.
+     */
+    clipboard?: boolean | ClipboardMenuOptions;
     /** Fuse.js's constructor, for fuzzy filtering. Omit it for the built-in matcher. */
     fuse?: ContextMenuOptions["fuse"];
     fuseOptions?: Record<string, unknown>;
@@ -132,6 +181,7 @@ export function ContextMenuRoot(props: ContextMenuRootProps): ReactNode {
         loadingLabel = "Loading...",
         emptyLabel = "Nothing here.",
         styles = true,
+        clipboard = true,
         children
     } = props;
 
@@ -163,7 +213,14 @@ export function ContextMenuRoot(props: ContextMenuRootProps): ReactNode {
         matcher,
         searchKeys,
         cacheMs,
-        onSelect: (item, path) => latest.current.onSelect?.(item as ContextMenuItem, path),
+        onSelect: (item, path) => {
+            // Ours are performed here and STILL reported: the caller may want to log the
+            // copy, or undo it, and a row that reaches onSelect for every other item but
+            // these three would be a hole nobody expects.
+            const action = clipboardAction(item.id);
+            if (action) void performClipboardAction(action, clipboardTarget.current);
+            latest.current.onSelect?.(item as ContextMenuItem, path);
+        },
         onOpenChange: (open) => latest.current.onOpenChange?.(open)
         // Built once: rebuilding it would drop the open branch and the highlight on every
         // render. Every option below is pushed in through update().
@@ -217,9 +274,41 @@ export function ContextMenuRoot(props: ContextMenuRootProps): ReactNode {
     const currentItems = useRef(items);
     currentItems.current = items;
 
+    /* -------- the clipboard rows, and what they were built over -------- */
+
+    /**
+     * What the menu was opened over, and the rows that came out of it.
+     *
+     * Refs rather than state, and read at open time rather than derived: the selection and the
+     * caret belong to the DOM at the instant of the press, and a render later they are gone -
+     * choosing a row moves focus into the panel. Keeping them here also means the merge below
+     * never re-runs the inspection, so what is performed is what the rows were built from.
+     */
+    const clipboardTarget = useRef<ClipboardTarget>(inspectClipboardTarget(null));
+    const clipboardRows = useRef<ContextMenuEntry[]>([]);
+
+    const clipboardOptions = useMemo<ClipboardMenuOptions | null>(() => {
+        if (clipboard === false) return null;
+        return { icons: CLIPBOARD_ICONS, ...(clipboard === true ? {} : clipboard) };
+    }, [clipboard]);
+
+    /**
+     * The caller's rows with ours in front of them.
+     *
+     * In front because that is where every desktop menu puts them, and separated because they
+     * are about the SELECTION rather than about the thing the menu was opened on - two blocks
+     * with a rule between them, not one list where Copy sits next to Delete.
+     */
+    const withClipboard = useCallback((rows: readonly ContextMenuNode[]): readonly ContextMenuEntry[] => {
+        const clip = clipboardRows.current;
+        if (clip.length === 0) return rows as readonly ContextMenuEntry[];
+        if (rows.length === 0) return clip;
+        return [...clip, { type: "separator", id: `${CLIPBOARD_PREFIX}rule` }, ...(rows as readonly ContextMenuEntry[])];
+    }, []);
+
     useEffect(() => {
-        instance.update({ items: currentItems.current as readonly ContextMenuEntry[], title });
-    }, [instance, signature, title]);
+        instance.update({ items: withClipboard(currentItems.current), title });
+    }, [instance, signature, title, withClipboard]);
 
     const cancelClose = useCallback(() => { window.clearTimeout(closing.current); }, []);
 
@@ -230,11 +319,40 @@ export function ContextMenuRoot(props: ContextMenuRootProps): ReactNode {
 
     useEffect(() => cancelClose, [cancelClose]);
 
-    const open = useCallback((point: ContextMenuPoint): boolean => {
+    /**
+     * Open at a point, over `target` - whatever the press actually landed on.
+     *
+     * The rows are pushed in SYNCHRONOUSLY, before the menu opens: state would arrive a render
+     * too late and the first paint of the menu would be the one without them.
+     */
+    const open = useCallback((point: ContextMenuPoint, target?: EventTarget | null): boolean => {
         if (disabled) return false;
         cancelClose();
+
+        if (clipboardOptions) {
+            clipboardTarget.current = inspectClipboardTarget(target ?? null);
+            clipboardRows.current = clipboardEntries(clipboardTarget.current, clipboardOptions);
+            instance.update({ items: withClipboard(currentItems.current) });
+
+            /**
+             * And then, where the browser will say so without a prompt, whether there is
+             * anything to paste. It answers a microtask later at best, so Paste opens enabled
+             * and greys out if the clipboard turns out to be empty - the other way round would
+             * flash a disabled row on every menu that opens over a field.
+             */
+            if (clipboardRows.current.some((entry) => isAction(entry) && clipboardAction(entry.id) === "paste")) {
+                void clipboardHasText().then((has) => {
+                    if (has !== false || !instance.state.open) return;
+                    clipboardRows.current = clipboardRows.current.map((entry) => (
+                        isAction(entry) && clipboardAction(entry.id) === "paste" ? { ...entry, disabled: true } : entry
+                    ));
+                    instance.update({ items: withClipboard(currentItems.current) });
+                });
+            }
+        }
+
         return instance.open(point);
-    }, [instance, disabled, cancelClose]);
+    }, [instance, disabled, cancelClose, clipboardOptions, withClipboard]);
 
     const close = useCallback(() => {
         cancelClose();
@@ -409,14 +527,18 @@ export function ContextMenuTrigger({ asChild = false, longPress = true, children
                 if (event.defaultPrevented) return;
                 // The default is prevented only when a menu actually opened. With nothing to
                 // show, the browser's own menu is better than none - and than an empty box.
-                if (menu.open({ x: event.clientX, y: event.clientY })) event.preventDefault();
+                // The event TARGET, not the trigger: the clipboard rows are built from the
+                // field or the selection the press actually landed on, which is usually a
+                // descendant of the area this menu covers.
+                if (menu.open({ x: event.clientX, y: event.clientY }, event.target)) event.preventDefault();
             }}
             onPointerDown={(event: PointerEvent<HTMLDivElement>) => {
                 props.onPointerDown?.(event);
                 if (event.defaultPrevented || !longPress || event.pointerType !== "touch") return;
                 const { clientX: x, clientY: y } = event;
                 cancelPress();
-                press.current = { x, y, timer: window.setTimeout(() => { press.current = null; menu.open({ x, y }); }, LONG_PRESS_MS) };
+                const target = event.target;
+                press.current = { x, y, timer: window.setTimeout(() => { press.current = null; menu.open({ x, y }, target); }, LONG_PRESS_MS) };
             }}
             onPointerMove={(event: PointerEvent<HTMLDivElement>) => {
                 props.onPointerMove?.(event);
@@ -437,7 +559,9 @@ export function ContextMenuTrigger({ asChild = false, longPress = true, children
                 const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
                 // At the element's own corner, inset a little: a menu opened by key has no
                 // pointer to appear under, and the corner is where every platform puts it.
-                if (menu.open({ x: rect.left + 8, y: rect.top + 8 })) event.preventDefault();
+                // Opened by key, so what it is over is wherever the caret is - which is what
+                // a keyboard visitor means by "here".
+                if (menu.open({ x: rect.left + 8, y: rect.top + 8 }, document.activeElement)) event.preventDefault();
             }}
         >
             {children}

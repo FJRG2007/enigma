@@ -24,6 +24,7 @@ interface FixtureWindow extends Window {
     __clickTarget: string;
     __submits: number;
     __value: string;
+    __color: string;
     __strength: PasswordStrengthReport | null;
     __breach: BreachState | null;
     __breachCalls: string[];
@@ -42,6 +43,7 @@ interface FixtureWindow extends Window {
 const fixture = window as unknown as FixtureWindow;
 fixture.__submits = 0;
 fixture.__value = "";
+fixture.__color = "";
 fixture.__strength = null;
 fixture.__breach = null;
 fixture.__breachCalls = [];
@@ -134,6 +136,9 @@ const MENU: ContextMenuNode[] = [
     { id: "delete", label: "Delete", shortcut: "Delete", destructive: true }
 ];
 
+/** One row of the caller's own, to prove the clipboard rows arrive ON TOP of them. */
+const EDIT_MENU: ContextMenuNode[] = [{ id: "custom", label: "Do something" }];
+
 /** Answers instantly and locally, so the test measures the component and not a network. */
 const BREACHED = new Set(["password", "hunter2"]);
 
@@ -159,6 +164,8 @@ function Form(): React.ReactNode {
     const [password, setPassword] = useState("");
     const [country, setCountry] = useState("");
     const [guard, setGuard] = useState("");
+    const [colour, setColour] = useState("#3b82f6");
+    fixture.__color = colour;
     const [stack, setStack] = useState<string[]>([]);
     fixture.__country = country;
     fixture.__guard = guard;
@@ -246,6 +253,19 @@ function Form(): React.ReactNode {
                     </ul>
                 )}
             />
+
+            {/* A colour field: a text input holding the canonical string, a swatch that opens
+                the picker, and the alpha rail turned on so the value carries eight digits. */}
+            <div data-testid="colour">
+                <Input
+                    data-testid="colour-field"
+                    type="color"
+                    alpha
+                    swatches={["#ef4444", "#22c55e", "#3b82f6"]}
+                    value={colour}
+                    onChange={(event) => setColour(event.target.value)}
+                />
+            </div>
 
             {/* One value, no filter: the keyboard and the typeahead are the whole interface. */}
             <div data-testid="country">
@@ -335,6 +355,43 @@ function Form(): React.ReactNode {
                     triggerProps={{ style: { width: 240, height: 120 } }}
                 >
                     Right-click here
+                </ContextMenu>
+            </div>
+
+            {/* The clipboard rows: a menu over something editable gets Copy, Cut and Paste
+                on top of whatever the caller passed, and  gets none. */}
+            <div data-testid="editor-area">
+                <ContextMenu items={EDIT_MENU} onSelect={(item) => { fixture.__chosen.push(item.id); }}>
+                    <textarea data-testid="notes" defaultValue="hello world" />
+                </ContextMenu>
+            </div>
+
+            <div data-testid="plain-area">
+                <ContextMenu items={EDIT_MENU} clipboard={false}>
+                    <textarea data-testid="plain-notes" defaultValue="hello world" />
+                </ContextMenu>
+            </div>
+
+            {/* A password never reaches the clipboard, and a read-only field takes nothing. */}
+            <div data-testid="secret-area">
+                <ContextMenu items={EDIT_MENU}>
+                    {/* enigma:allow-raw-password-input - bare on purpose. What is under test
+                        is that the clipboard rows refuse to copy a masked value, and <Input>
+                        would bring a reveal toggle that has nothing to do with it. */}
+                    <input data-testid="secret" type="password" defaultValue="hunter2" />
+                </ContextMenu>
+            </div>
+
+            <div data-testid="frozen-area">
+                <ContextMenu items={EDIT_MENU}>
+                    <input data-testid="frozen" readOnly defaultValue="frozen text" />
+                </ContextMenu>
+            </div>
+
+            {/* Not editable at all: a paragraph offers Copy over a selection and nothing else. */}
+            <div data-testid="prose-area">
+                <ContextMenu items={EDIT_MENU}>
+                    <p data-testid="prose">Selectable prose</p>
                 </ContextMenu>
             </div>
 

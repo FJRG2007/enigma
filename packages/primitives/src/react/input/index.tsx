@@ -14,6 +14,7 @@ import { forwardRef, lazy, Suspense, useCallback, useEffect, useId, useRef, useS
  * <Input type="email" required />
  * <Input type="password" generate strength breach={checkPasswordBreach} />
  * <Input type="search" items={docs} keys={["title"]} renderResults={...} />
+ * <Input type="color" alpha swatches={brand} />
  * ```
  *
  * ONE component keyed on `type`, because that is what HTML is: `type` is an attribute of a
@@ -23,15 +24,31 @@ import { forwardRef, lazy, Suspense, useCallback, useEffect, useId, useRef, useS
  * PALETTE is a dialog, so it lives in `SearchPalette` rather than behind a prop here.
  *
  * WHAT LOADS. The field, its buttons and the reveal are this module and nothing else. The
- * password estimator, the breach watcher and the search engine each live in their own chunk
- * and are imported the moment the type that needs them is used - so a form of text and email
- * fields ships none of them, and a page with one password field does not pay for search.
+ * password estimator, the breach watcher, the search engine and the colour picker each live
+ * in their own chunk and are imported the moment the type that needs them is used - so a form
+ * of text and email fields ships none of them, and a page with one password field pays for
+ * neither search nor a colour wheel.
  * The generator is loaded on the first press of its button, because until then it is a
  * function nobody has called.
  */
 
+/**
+ * What a colour field is given that a text field is not.
+ *
+ * Spread BEFORE `{...rest}`, so every one of them is still the caller's to override. A hex
+ * string is not a word, not a saved form value, and not something to capitalize - and an
+ * autocomplete menu over a colour field covers the panel that just opened.
+ */
+const COLOR_FIELD_PROPS = {
+    autoComplete: "off",
+    autoCorrect: "off",
+    autoCapitalize: "off",
+    spellCheck: false
+} as const;
+
 const PasswordExtras = lazy(() => import("@/react/input/password").then((module) => ({ default: module.PasswordExtras })));
 const SearchExtras = lazy(() => import("@/react/input/search").then((module) => ({ default: module.SearchExtras })));
+const ColorExtras = lazy(() => import("@/react/input/color").then((module) => ({ default: module.ColorExtras })));
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(props, forwardedRef) {
     const {
@@ -60,6 +77,13 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(pro
         renderResults,
         clearable,
         clearLabel = "Clear",
+        format,
+        alpha,
+        swatches,
+        eyedropper,
+        placement,
+        styles,
+        colorLabels,
         wrapperProps,
         fieldProps,
         classNames,
@@ -76,6 +100,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(pro
 
     const isPassword = type === "password";
     const isSearch = type === "search";
+    const isColor = type === "color";
     const showReveal = reveal ?? isPassword;
     const showGenerate = generate !== false && isPassword;
     const showClear = (clearable ?? isSearch) && isSearch;
@@ -238,8 +263,28 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(pro
             data-score={score ?? undefined}
         >
             <div {...fieldProps} data-enigma-input-field="">
+                {/* No fallback, for the reason the meter has none: the field is already on
+                    screen and typeable, and a placeholder where a swatch is about to appear
+                    would be a second layout shift rather than one. */}
+                {isColor && (
+                    <Suspense fallback={null}>
+                        <ColorExtras
+                            input={element}
+                            value={value}
+                            format={format}
+                            alpha={alpha}
+                            swatches={swatches}
+                            eyedropper={eyedropper}
+                            placement={placement}
+                            styles={styles}
+                            locked={locked}
+                            labels={colorLabels}
+                        />
+                    </Suspense>
+                )}
                 {position === "start" && buttons}
                 <input
+                    {...(isColor ? COLOR_FIELD_PROPS : null)}
                     {...rest}
                     ref={(node) => {
                         innerRef.current = node;
@@ -248,8 +293,10 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(pro
                         else if (forwardedRef) forwardedRef.current = node;
                     }}
                     // Revealing a password is a type switch, which is what the caret dance
-                    // above exists for.
-                    type={revealed && isPassword ? "text" : type}
+                    // above exists for. A colour field is a TEXT one in the DOM: the native
+                    // `type="color"` renders a swatch whose popup is the operating system's -
+                    // unstylable, alpha-less, and impossible to type or paste a value into.
+                    type={isColor ? "text" : revealed && isPassword ? "text" : type}
                     onChange={handleChange}
                     data-enigma-input=""
                     aria-describedby={score !== null ? describedBy : rest["aria-describedby"]}
@@ -303,5 +350,6 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(pro
 export type {
     InputProps, InputBaseProps, InputType, FieldAction,
     BreachChecker, BreachState, BreachStatus,
-    PasswordOnlyProps, SearchOnlyProps, PlainOnlyProps
+    ColorLabels, ColorPanelPlacement,
+    PasswordOnlyProps, SearchOnlyProps, ColorOnlyProps, PlainOnlyProps
 } from "@/react/input/types";

@@ -18,11 +18,18 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const PRIMITIVES = join(ROOT, "packages", "primitives");
 
-/** Every sheet that lives twice: the module that owns it, and the file generated from it. */
+/**
+ * Every sheet that lives twice: the module that owns it, and the file generated from it.
+ *
+ * `item` is the registry entry `enigma add` copies it with, where that is not the sheet's own
+ * name - the colour picker is a TYPE of the input rather than a component of its own, so
+ * `enigma add color` would send the reader after something that does not exist.
+ */
 const SHEETS = [
     { name: "toast", export: "TOAST_STYLES", source: join(PRIMITIVES, "src", "react", "toast", "styles.ts"), out: join(PRIMITIVES, "recipes", "toast", "styles.css") },
     { name: "select", export: "SELECT_STYLES", source: join(PRIMITIVES, "src", "react", "select", "styles.ts"), out: join(PRIMITIVES, "recipes", "select", "styles.css") },
-    { name: "context-menu", export: "CONTEXT_MENU_STYLES", source: join(PRIMITIVES, "src", "react", "context-menu", "styles.ts"), out: join(PRIMITIVES, "recipes", "context-menu", "styles.css") }
+    { name: "context-menu", export: "CONTEXT_MENU_STYLES", source: join(PRIMITIVES, "src", "react", "context-menu", "styles.ts"), out: join(PRIMITIVES, "recipes", "context-menu", "styles.css") },
+    { name: "color", item: "input", export: "COLOR_STYLES", source: join(PRIMITIVES, "src", "react", "input", "color-styles.ts"), out: join(PRIMITIVES, "recipes", "color", "styles.css") }
 ];
 
 function header(sheet) {
@@ -33,7 +40,7 @@ function header(sheet) {
  * GENERATED from ${from} by scripts/sync-recipes.mjs - edit that file, not
  * this one. It exists as a stylesheet as well as a string because the component injects it,
  * and this is the same sheet for anyone who would rather import it, copy it with
- * \`enigma add ${sheet.name} --copy\`, or fork it outright.
+ * \`enigma add ${sheet.item ?? sheet.name} --copy\`, or fork it outright.
  */
 `;
 }

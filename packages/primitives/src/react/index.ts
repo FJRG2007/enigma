@@ -19,13 +19,33 @@ export {
     type BreachChecker,
     type BreachState,
     type BreachStatus,
+    type ColorLabels,
+    type ColorPanelPlacement,
     type PasswordOnlyProps,
     type SearchOnlyProps,
+    type ColorOnlyProps,
     type PlainOnlyProps
 } from "@/react/input/types";
 // The meter as a standalone component, for a form that renders it somewhere else. Re-exported
 // from the chunk rather than through `Input`, so importing only `Input` leaves it behind.
 export { PasswordStrength, type PasswordStrengthProps } from "@/react/input/password";
+// The colour maths, for a form that has to read or write the value the picker produced. The
+// picker itself arrives through `<Input type="color">`, so nothing here reaches into its chunk.
+export {
+    parseColor,
+    formatColor,
+    toHex,
+    rgbToHsv,
+    hsvToRgb,
+    rgbToHsl,
+    hslToRgb,
+    colorEquals,
+    type Rgb,
+    type Hsv,
+    type Hsl,
+    type ColorFormat,
+    type FormatColorOptions
+} from "@/core/color";
 export { Slot, mergeSlotProps, type SlotProps } from "@/react/slot";
 export {
     generatePassword,
@@ -127,6 +147,18 @@ export {
     type ContextMenuNode,
     type ContextMenuContextValue
 } from "@/react/context-menu";
+export {
+    CLIPBOARD_PREFIX,
+    clipboardEntries,
+    clipboardAction,
+    clipboardHasText,
+    inspectClipboardTarget,
+    performClipboardAction,
+    type ClipboardAction,
+    type ClipboardTarget,
+    type ClipboardMenuOptions,
+    type ClipboardMenuLabels
+} from "@/core/clipboard-menu";
 export {
     createContextMenu,
     isAction,

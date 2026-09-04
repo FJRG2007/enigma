@@ -813,3 +813,32 @@ matrix("fe-selection-hand-rolled", false, [
     { name: "a checkbox list with no range model", file: "src/Filters.tsx", code: "const [selectedIds, setSelectedIds] = useState([]);\n<input type=\"checkbox\" onChange={() => setSelectedIds(toggle(id))} />" },
     { name: "deliberate, marked in the file", file: "src/Files.tsx", code: HAND_PICK.replace("    if (event.shiftKey)", "    // enigma:allow-hand-rolled-selection\n    if (event.shiftKey)") },
 ]);
+
+const HAND_COLOR = [
+    'const [color, setColor] = useState("#3b82f6");',
+    "function onDown(event) {",
+    "    const rect = event.currentTarget.getBoundingClientRect();",
+    "    const s = (event.clientX - rect.left) / rect.width;",
+    "    setColor(hsvToRgb({ h: hue, s, v }));",
+    "}",
+    '<div className="saturation" onPointerDown={onDown} />',
+].join("\n");
+
+matrix("fe-color-picker-hand-rolled", true, [
+    { name: "a conversion, a drag measured off the box, and the colour it sets", file: "src/Picker.tsx", code: HAND_COLOR },
+    {
+        name: "the same square in Vue",
+        file: "src/Swatch.vue",
+        code: "let hue = 0;\nfunction pick(e) { const r = el.getBoundingClientRect(); hue = ((e.clientX - r.left) / r.width) * 360; paint(hslToHex(hue, 1, 0.5)); }\n<div @pointerdown=\"pick\" />",
+    },
+]);
+
+matrix("fe-color-picker-hand-rolled", false, [
+    { name: "already the primitive", file: "src/Picker.tsx", code: `import { Input } from "@enigmax/primitives/react/input";\n${HAND_COLOR}` },
+    { name: "another picker library", file: "src/Picker.tsx", code: `import { HexColorPicker } from "react-colorful";\n${HAND_COLOR}` },
+    { name: "conversions in a theme file, with nothing to drag", file: "src/theme.ts", code: "export const shade = (hex) => rgbToHex(darken(hexToRgb(hex), 0.2));" },
+    { name: "a chart palette built from HSL", file: "src/chart.ts", code: "const series = keys.map((key, i) => hslToRgb((i / keys.length) * 360, 0.6, 0.5));" },
+    { name: "a slider with no colour in it", file: "src/Slider.tsx", code: "const [value, setValue] = useState(0);\nconst onDown = (e) => { const r = e.currentTarget.getBoundingClientRect(); setValue((e.clientX - r.left) / r.width); };\n<div onPointerDown={onDown} />" },
+    { name: "a colour field that is the plain native input", file: "src/Form.tsx", code: "const [color, setColor] = useState(\"#000\");\n<input type=\"color\" value={color} onChange={(e) => setColor(e.target.value)} />" },
+    { name: "deliberate, marked in the file", file: "src/Picker.tsx", code: HAND_COLOR.replace("function onDown(event) {", "// enigma:allow-hand-rolled-color-picker\nfunction onDown(event) {") },
+]);

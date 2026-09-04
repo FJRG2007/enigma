@@ -19,8 +19,15 @@ export type ContextMenuNode = ContextMenuItem | Exclude<ContextMenuEntry, Contex
 export interface ContextMenuContextValue {
     instance: ContextMenuInstance;
     state: ContextMenuState;
-    /** Open at a point. False when there was nothing to show, so the press is left alone. */
-    open: (point: ContextMenuPoint) => boolean;
+    /**
+     * Open at a point, over what the press landed on. False when there was nothing to show,
+     * so the press is left alone.
+     *
+     * `target` is what the clipboard rows are built from - the field or the selection under
+     * the pointer - and a caller that leaves it out gets a menu with none of them, which is
+     * the right answer for a menu opened from somewhere that is not a press.
+     */
+    open: (point: ContextMenuPoint, target?: EventTarget | null) => boolean;
     close: () => void;
     /** ids the parts need to point at each other. */
     ids: { trigger: string; };

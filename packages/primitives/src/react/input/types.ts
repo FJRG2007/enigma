@@ -12,6 +12,7 @@
  * are compile errors rather than props that quietly do nothing.
  */
 
+import type { ColorFormat } from "@/core/color";
 import type { ComponentPropsWithoutRef, ReactNode } from "react";
 import type { SearchMatch, FuseConstructor, SearchOptions } from "@/core/search";
 import type { GeneratePasswordOptions, EstimateOptions, PasswordStrengthReport } from "@/core/password";
@@ -135,12 +136,67 @@ export interface SearchOnlyProps<Item = unknown> {
     clearLabel?: string;
 }
 
-/** Everything else: one `<input>`, its native props, and no extras to bundle. */
-export interface PlainOnlyProps {
-    type?: Exclude<InputType, "password" | "search">;
+/** Which side of the field the picker's panel opens on. `auto` measures the room there is. */
+export type ColorPanelPlacement = "auto" | "top" | "bottom";
+
+/** The picker's accessible names, for a UI that is not in English. */
+export interface ColorLabels {
+    /** The swatch that opens the panel. */
+    open?: string;
+    /** The panel itself. */
+    panel?: string;
+    /** The saturation and brightness square. */
+    area?: string;
+    hue?: string;
+    alpha?: string;
+    eyedropper?: string;
+    swatches?: string;
+    /** The word before the colour in what a screen reader announces. Default "Colour". */
+    color?: string;
 }
 
-export type InputProps<Item = unknown> = InputBaseProps & (PasswordOnlyProps | SearchOnlyProps<Item> | PlainOnlyProps);
+/** The half only a colour field has. */
+export interface ColorOnlyProps {
+    type: "color";
+    /**
+     * How the picker writes the value back: `#3b82f6`, `rgb(59, 130, 246)` or an `hsl()`.
+     * Default hex. Whatever the format, every one of them is READ - a pasted `rgb()` in a hex
+     * field is understood and normalized on blur rather than rejected.
+     */
+    format?: ColorFormat;
+    /**
+     * The opacity rail, and the alpha channel in the value. OFF by default: it turns
+     * `#3b82f6` into `#3b82f680`, which is not what a column typed as a 7-character hex, or a
+     * `<input type="color">` on the server side, is expecting.
+     */
+    alpha?: boolean;
+    /** Preset colours under the rails - a brand palette, or the last few that were used. */
+    swatches?: readonly string[];
+    /**
+     * The screen eyedropper, where the browser has one (Chromium today). Default true, and
+     * feature-detected: the button is not rendered at all where the API is missing.
+     */
+    eyedropper?: boolean;
+    /** Which side the panel opens on. Default `auto`, which flips near the bottom of the window. */
+    placement?: ColorPanelPlacement;
+    /**
+     * The panel's baseline stylesheet, injected once. Default true, and the one place this
+     * package ships a look - see `color-styles.ts` for why a picker cannot be unstyled.
+     */
+    styles?: boolean;
+    colorLabels?: ColorLabels;
+}
+
+/** Everything else: one `<input>`, its native props, and no extras to bundle. */
+export interface PlainOnlyProps {
+    type?: Exclude<InputType, "password" | "search" | "color">;
+}
+
+export type InputProps<Item = unknown> = InputBaseProps & (PasswordOnlyProps | SearchOnlyProps<Item> | ColorOnlyProps | PlainOnlyProps);
 
 /** Everything the implementation reads, after the union has done its job at the call site. */
-export type AnyInputProps<Item = unknown> = InputBaseProps & Partial<Omit<PasswordOnlyProps, "type">> & Partial<Omit<SearchOnlyProps<Item>, "type">> & { type?: InputType; };
+export type AnyInputProps<Item = unknown> = InputBaseProps
+    & Partial<Omit<PasswordOnlyProps, "type">>
+    & Partial<Omit<SearchOnlyProps<Item>, "type">>
+    & Partial<Omit<ColorOnlyProps, "type">>
+    & { type?: InputType; };
