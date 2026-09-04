@@ -1037,6 +1037,33 @@ var BUILTIN_RULES = [
     skill: "frontend-policy"
   },
   {
+    id: "fe-color-picker-hand-rolled",
+    label: "Colour pickers come from the primitive",
+    files: ["*.tsx", "*.jsx", "*.vue", "*.svelte", "*.astro", "*.ts", "*.js"],
+    excludeFiles: [
+      "*.test.*",
+      "*.spec.*",
+      "**/tests/**",
+      "**/__tests__/**",
+      "**/fixtures/**",
+      "*.min.js",
+      "**/dist/**",
+      "**/build/**",
+      "**/node_modules/**",
+      "**/vendor/**",
+      "dist/**",
+      "build/**",
+      "node_modules/**",
+      "vendor/**"
+    ],
+    scope: "file",
+    stage: "diff",
+    fileCheck: "fe-color-picker-hand-rolled",
+    message: 'A colour picker written by hand. The one that always breaks is the hue: it is undefined at black, at white and at every grey, so re-deriving HSV from the field\'s RGB answers 0 and the rail snaps to red the moment the square is dragged into a corner - the hue has to be kept as state and carried through those cases. The rest of the tail is just as reliable: a hex parser that pads five digits into a colour nobody picked, `#rrggbbaa` written into a column that takes seven characters, no keyboard on either axis (there is no ARIA role for a 2D slider - `aria-valuetext` is what says what `aria-valuenow` cannot), a panel that opens off the bottom of the window, and `touch-action` left alone so the page scrolls under the finger that is dragging. `enigma add input` (@enigmax/primitives) is `<Input type="color">`: a text field holding the canonical string - typed, pasted and submitted like any other value, instead of the operating system\'s own popup that `<input type="color">` opens - with the square, the rails, presets and the screen eyedropper in a chunk that only a colour field downloads, and a baseline theme so the panel is not transparent boxes on the page. Mark the line `enigma:allow-hand-rolled-color-picker` when the picker genuinely has to be your own (frontend-policy).',
+    severity: "block",
+    skill: "frontend-policy"
+  },
+  {
     id: "fe-icon-action-button",
     label: "Repeated actions are icon buttons, not text labels",
     files: ["*.tsx", "*.jsx", "*.vue", "*.svelte", "*.astro", "*.html", "*.htm", "*.ts", "*.js", "*.mts", "*.cts"],
@@ -1834,7 +1861,8 @@ var FILE_CHECKS = {
   "sec-operator-env-leak": (content) => operatorHomePathLeak(content),
   "fe-new-password-affordance-on-signin": (content) => newPasswordAffordanceOnSignIn(content),
   "fe-context-menu-hand-rolled": (content) => handRolledContextMenu(content),
-  "fe-selection-hand-rolled": (content) => handRolledSelection(content)
+  "fe-selection-hand-rolled": (content) => handRolledSelection(content),
+  "fe-color-picker-hand-rolled": (content) => handRolledColorPicker(content)
 };
 var FIXERS = {
   "fe-name-input-capitalize": (line, file) => {
@@ -2120,6 +2148,23 @@ function handRolledSelection(content) {
     if (COMMENT_LINE.test(line) || /enigma:/.test(line)) continue;
     if (!SELECT_RANGE_KEY.test(line)) continue;
     return [{ line: i + 1, detail: "Shift and Ctrl over a set of selected ids" }];
+  }
+  return [];
+}
+var COLOR_MATHS = /\b(?:hsv|hsl|hwb|rgb|hex)(?:To|2)(?:Rgb|Hsv|Hsl|Hwb|Hex|String)\b/i;
+var COLOR_DRAG = /onPointerDown|onMouseDown|@pointerdown|@mousedown|on:pointerdown|on:mousedown|addEventListener\(\s*["'`](?:pointerdown|mousedown)["'`]/;
+var COLOR_MEASURE = /getBoundingClientRect/;
+var COLOR_STATE = /\bset(?:Color|Colour|Hue|Saturation|Lightness|Brightness|Alpha|Opacity)\b|\b(?:hue|saturation)\s*[:=]/i;
+var COLOR_MITIGATED = /@enigmax\/primitives|type=["']color["']|react-colorful|react-color|@uiw\/react-color|vue-color|ngx-color|@radix-ui|enigma:allow-hand-rolled-color-picker/;
+function handRolledColorPicker(content) {
+  if (COLOR_MITIGATED.test(content)) return [];
+  if (!COLOR_MATHS.test(content) || !COLOR_DRAG.test(content) || !COLOR_MEASURE.test(content) || !COLOR_STATE.test(content)) return [];
+  const lines = content.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (COMMENT_LINE.test(line) || /enigma:/.test(line)) continue;
+    if (!COLOR_DRAG.test(line)) continue;
+    return [{ line: i + 1, detail: "a colour-space conversion, a drag measured off a box, and the colour it sets" }];
   }
   return [];
 }
@@ -2700,6 +2745,7 @@ export {
   extensionImports,
   findProjectRoot,
   formatFindings,
+  handRolledColorPicker,
   handRolledContextMenu,
   handRolledSelection,
   loadRules,
