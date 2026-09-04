@@ -19,20 +19,25 @@
 
 import { join } from "node:path";
 import { enigmaHome } from "./util";
-import { applyClaudeHook, claudeGlobalSettings } from "./claude-hooks";
 import { readConfig, setEnigmaToggle } from "./config";
+import { applyClaudePostEditHook } from "./post-edit-deploy";
+import { applyClaudeHook, claudeGlobalSettings } from "./claude-hooks";
 
 /** True when the code graph is enabled. */
 export function isCodeGraphOn(): boolean {
     return readConfig().config.codeGraph;
 }
 
-/** Edit tools whose writes should draw a blast radius. */
-const EDIT_MATCHER = "Edit|Write|MultiEdit|NotebookEdit";
-
 /**
- * One entry per event. The timeouts are the budget each hook has to answer in, and they differ on
- * purpose: session start is paid once and may need a cold index, so it gets the most room.
+ * One entry per event, for the events the graph is the only writer of.
+ *
+ * PostToolUse is NOT here. Three features write after an edit and each used to wire its own entry,
+ * which cost three process starts per edit; post-edit-deploy.ts now owns one merged entry and
+ * dispatches the blast radius inside it. These three events keep their own entries because nothing
+ * else fires on them, so there is nothing to merge with.
+ *
+ * The timeouts are the budget each hook has to answer in, and they differ on purpose: session start
+ * is paid once and may need a cold index, so it gets the most room.
  *
  * None of them can be tight, because the floor is not the hook's own work. Every entry spawns the
  * launcher's Node process and then the ~108 MB Bun binary, and the engine then parses the whole
@@ -46,16 +51,20 @@ const EDIT_MATCHER = "Edit|Write|MultiEdit|NotebookEdit";
 const HOOK_EVENTS: { event: string; arg: string; matcher?: string; timeout: number; }[] = [
     { event: "SessionStart", arg: "session-start", timeout: 45 },
     { event: "UserPromptSubmit", arg: "prompt", timeout: 25 },
-    { event: "PostToolUse", arg: "post-edit", matcher: EDIT_MATCHER, timeout: 25 },
     { event: "Stop", arg: "stop", timeout: 25 },
 ];
 
 /**
  * Add (on) or remove (off) every enigma code-graph hook in a Claude settings.json, preserving all
  * other hooks and settings. Returns true when the file changed.
+ *
+ * The post-edit half goes through the shared reconciler, which owns that one entry for all three
+ * features that write after an edit and decides its presence from their toggles - so this function
+ * calls it unconditionally rather than passing `on` down: turning the graph off must not delete an
+ * entry the trimmer and guardrails are still using.
  */
 export function applyClaudeCodeGraphHooks(settingsPath: string, on: boolean): boolean {
-    let changed = false;
+    let changed = applyClaudePostEditHook(settingsPath);
     for (const { event, arg, matcher, timeout } of HOOK_EVENTS) {
         const group = {
             ...(matcher ? { matcher } : {}),
@@ -67,7 +76,6 @@ export function applyClaudeCodeGraphHooks(settingsPath: string, on: boolean): bo
     }
     return changed;
 }
-
 
 /**
  * Re-assert the global wiring to match the current toggle (presence AND absence). Called on

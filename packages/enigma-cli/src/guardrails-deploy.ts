@@ -24,8 +24,9 @@
 
 import { enigmaHome } from "./util";
 import { join, dirname } from "node:path";
-import { applyClaudeHook, claudeGlobalSettings } from "./claude-hooks";
+import { claudeGlobalSettings } from "./claude-hooks";
 import { readConfig, setEnigmaToggle } from "./config";
+import { applyClaudePostEditHook } from "./post-edit-deploy";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 
 /** True when guardrails is enabled (default on). */
@@ -34,20 +35,12 @@ export function isGuardrailsOn(): boolean {
 }
 
 // --- Claude Code: PostToolUse hook in settings.json --------------------------------
-
-const HOOK_MATCHER = "Edit|Write|MultiEdit|NotebookEdit";
-/** The hook command: the hidden guardrails subcommand of the enigma binary on PATH. */
-function hookCommand(): string {
-    return "enigma __guardrails-hook";
-}
-
-/**
- * Add (on) or remove (off) the enigma PostToolUse guardrails hook in a Claude settings.json,
- * preserving every other hook and setting. Returns true when the file changed.
- */
-export function applyClaudeGuardrailsHook(settingsPath: string, on: boolean): boolean {
-    return applyClaudeHook(settingsPath, "PostToolUse", "__guardrails-hook", { matcher: HOOK_MATCHER, hooks: [{ type: "command", command: hookCommand(), timeout: 30 }] }, on) === "changed";
-}
+//
+// Not written here any more. Claude Code starts a process per settings.json entry, and guardrails
+// is one of three features that write after an edit, so three entries meant three starts of the
+// ~99 MB binary per edit. post-edit-deploy.ts owns the single merged entry and reads this toggle
+// itself; the hidden `enigma __guardrails-hook` command it replaces still exists, because the
+// opencode plugin below invokes it directly.
 
 // --- opencode: auto-loaded plugin --------------------------------------------------
 
@@ -100,7 +93,6 @@ export const EnigmaGuardrails = async () => ({
 
 // --- global apply / per-account mirror / toggle ------------------------------------
 
-
 /** Global opencode config dir for the default account. */
 function opencodeGlobalConfig(): string {
     return join(enigmaHome(), ".config", "opencode");
@@ -111,9 +103,8 @@ function opencodeGlobalConfig(): string {
  * and the opencode plugin. Called on install and on toggle (presence AND absence).
  */
 export function applyGuardrailsWiring(): void {
-    const on = isGuardrailsOn();
-    applyClaudeGuardrailsHook(claudeGlobalSettings(), on);
-    applyOpencodeGuardrailsPlugin(opencodeGlobalConfig(), on);
+    applyClaudePostEditHook(claudeGlobalSettings());
+    applyOpencodeGuardrailsPlugin(opencodeGlobalConfig(), isGuardrailsOn());
 }
 
 /**
@@ -122,9 +113,8 @@ export function applyGuardrailsWiring(): void {
  * Mirrors only the tools that have a per-account config surface (claude, opencode).
  */
 export function mirrorGuardrailsWiring(toolName: string, accountDir: string): void {
-    const on = isGuardrailsOn();
-    if (toolName === "claude") applyClaudeGuardrailsHook(join(accountDir, "settings.json"), on);
-    else if (toolName === "opencode") applyOpencodeGuardrailsPlugin(join(accountDir, "xdg-config", "opencode"), on);
+    if (toolName === "claude") applyClaudePostEditHook(join(accountDir, "settings.json"));
+    else if (toolName === "opencode") applyOpencodeGuardrailsPlugin(join(accountDir, "xdg-config", "opencode"), isGuardrailsOn());
 }
 
 /**

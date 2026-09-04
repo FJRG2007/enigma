@@ -19,12 +19,13 @@
  * Node-builtins + config/util only (no engine import), the deploy counterpart of trim.ts.
  */
 
-import { enigmaHome } from "./util";
 import { kimiHome } from "./kimi";
+import { enigmaHome } from "./util";
 import { join, dirname } from "node:path";
 import { applyKimiHook } from "./kimi-hooks";
-import { applyClaudeHook, claudeGlobalSettings } from "./claude-hooks";
+import { claudeGlobalSettings } from "./claude-hooks";
 import { readConfig, setEnigmaToggle } from "./config";
+import { applyClaudePostEditHook } from "./post-edit-deploy";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 
 /** True when the EOF trimmer is enabled (default on). */
@@ -33,16 +34,16 @@ export function isTrimOn(): boolean {
 }
 
 // --- Claude Code: PostToolUse hook in settings.json --------------------------------
-
-const HOOK_MATCHER = "Edit|Write|MultiEdit|NotebookEdit";
-
-/**
- * Add (on) or remove (off) the enigma PostToolUse trim hook in a Claude settings.json,
- * preserving every other hook and setting. Returns true when the file changed.
- */
-export function applyClaudeTrimHook(settingsPath: string, on: boolean): boolean {
-    return applyClaudeHook(settingsPath, "PostToolUse", "__trim-hook", { matcher: HOOK_MATCHER, hooks: [{ type: "command", command: "enigma __trim-hook", timeout: 10 }] }, on) === "changed";
-}
+//
+// Not written here any more. Claude Code starts a process per settings.json entry, and the trimmer
+// is one of three features that write after an edit, so three entries meant three starts of the
+// ~99 MB binary per edit. post-edit-deploy.ts owns the single merged entry and reads this toggle
+// itself. Kimi keeps its own entry below: it wires only the trimmer, so there is nothing to merge
+// there, and its PostToolUse is observation-only anyway.
+//
+// The merge also settled an ordering race this file could not settle alone - the trimmer rewrites
+// the file that guardrails then scans, and as separate entries the host was free to run them in
+// either order. In one process the trimmer goes first (post-edit-hook.ts).
 
 // --- opencode: auto-loaded plugin --------------------------------------------------
 
@@ -107,7 +108,6 @@ export function applyKimiTrimHook(configPath: string, on: boolean): boolean {
 
 // --- global apply / per-account mirror / toggle ------------------------------------
 
-
 /** Global opencode config dir for the default account. */
 function opencodeGlobalConfig(): string {
     return join(enigmaHome(), ".config", "opencode");
@@ -124,7 +124,7 @@ function kimiGlobalConfig(): string {
  */
 export function applyTrimWiring(): void {
     const on = isTrimOn();
-    applyClaudeTrimHook(claudeGlobalSettings(), on);
+    applyClaudePostEditHook(claudeGlobalSettings());
     applyOpencodeTrimPlugin(opencodeGlobalConfig(), on);
     applyKimiTrimHook(kimiGlobalConfig(), on);
 }
@@ -135,7 +135,7 @@ export function applyTrimWiring(): void {
  */
 export function mirrorTrimWiring(toolName: string, accountDir: string): void {
     const on = isTrimOn();
-    if (toolName === "claude") applyClaudeTrimHook(join(accountDir, "settings.json"), on);
+    if (toolName === "claude") applyClaudePostEditHook(join(accountDir, "settings.json"));
     else if (toolName === "opencode") applyOpencodeTrimPlugin(join(accountDir, "xdg-config", "opencode"), on);
     else if (toolName === "kimi") applyKimiTrimHook(join(accountDir, "config.toml"), on);
 }

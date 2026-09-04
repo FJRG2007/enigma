@@ -52,6 +52,7 @@ Subsystems (read the one you are touching):
 - `primitives.md` - the headless component registry (`@enigmax/primitives`, `@enigmax/utils`) and `enigma add`: core+adapter architecture, theming by data attribute, the marquee's twelve measured rules. Read before adding a primitive or a utility.
 - `autoskills.md` - stack detection and community stack-skill installation.
 - `guardrails.md` - the convention rule engine, its rules and the three-tier routing doctrine. Read before adding a rule.
+- `post-edit-hook.md` - the ONE Claude PostToolUse entry shared by trim, guardrails and the graph's blast radius: why one process instead of three, the ordering it settled, and the toggle gating that moved into the runtime. Read before adding anything that runs after an edit.
 - `verified-completion.md` - the turn-end gate against false "done" claims (`enigma verify`), parity check, loop safety.
 - `eof-trim.md` - removing the blank line agents leave at the end of a file (`enigma trim`): the conservative rule, the stat/tail/truncate cost model, partial-staging, and the vendored-tree ignore list.
 - `ci-watch.md` - the CI failure notifier (`ciWatch`): a detached poller plus a hook that prints only on a red build, so a broken workflow reaches the agent with its log and a green one costs nothing.

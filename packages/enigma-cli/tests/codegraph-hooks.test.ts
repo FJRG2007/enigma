@@ -146,24 +146,42 @@ test("an unindexed tree is handed to one background index, and a managed checkou
     rmSync(cold, { recursive: true, force: true });
 });
 
-test("the wiring installs every event and removes every one of them again", () => {
+test("the wiring installs its own events and hands the post-edit one to the merged entry", () => {
     const settings = join(HOME, "claude-settings.json");
     expect(deploy.applyClaudeCodeGraphHooks(settings, true)).toBe(true);
     const on = JSON.parse(readFileSync(settings, "utf8")) as { hooks: Record<string, unknown[]>; };
-    for (const event of ["SessionStart", "UserPromptSubmit", "PostToolUse", "Stop"]) {
+    // The three events nothing else fires on keep their own entries; there is nothing to merge with.
+    for (const event of ["SessionStart", "UserPromptSubmit", "Stop"]) {
         expect(JSON.stringify(on.hooks[event])).toContain("__codegraph-hook");
     }
+    // The blast radius rides inside the shared post-edit process instead of starting its own, which
+    // is the whole point of the merge - a second PostToolUse entry here is the regression.
+    expect(JSON.stringify(on.hooks.PostToolUse)).toContain("__post-edit-hook");
+    expect(JSON.stringify(on.hooks.PostToolUse)).not.toContain("__codegraph-hook");
+    expect(on.hooks.PostToolUse!.length).toBe(1);
+
     expect(deploy.applyClaudeCodeGraphHooks(settings, false)).toBe(true);
-    expect(JSON.parse(readFileSync(settings, "utf8")).hooks ?? {}).toEqual({});
+    const off = JSON.parse(readFileSync(settings, "utf8")).hooks as Record<string, unknown[]>;
+    for (const event of ["SessionStart", "UserPromptSubmit", "Stop"]) expect(off[event]).toBeUndefined();
+    // Turning the graph off must NOT delete the entry the trimmer and guardrails still use. Three
+    // independent writers could not honour that, which is why one module owns the entry now.
+    expect(JSON.stringify(off.PostToolUse)).toContain("__post-edit-hook");
 });
 
 test("the wiring leaves another tool's hooks untouched", () => {
     const settings = join(HOME, "claude-shared.json");
     const theirs = { hooks: { PostToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "their-tool" }] }] } };
     writeFileSync(settings, JSON.stringify(theirs));
-    deploy.applyClaudeCodeGraphHooks(settings, true);
-    deploy.applyClaudeCodeGraphHooks(settings, false);
-    expect(JSON.parse(readFileSync(settings, "utf8"))).toEqual(theirs);
+    // All three post-edit features off, so the round trip has to come back to exactly their file -
+    // with any of them on, the merged entry legitimately stays behind (asserted above).
+    writeFileSync(join(HOME, ".enigma.json"), JSON.stringify({ codeGraph: false, trim: false, guardrails: false }));
+    try {
+        deploy.applyClaudeCodeGraphHooks(settings, true);
+        deploy.applyClaudeCodeGraphHooks(settings, false);
+        expect(JSON.parse(readFileSync(settings, "utf8"))).toEqual(theirs);
+    } finally {
+        writeFileSync(join(HOME, ".enigma.json"), JSON.stringify({ codeGraph: true }));
+    }
 });
 
 test("the dashboard switch wires the same three effects the CLI does, not just the config value", async () => {

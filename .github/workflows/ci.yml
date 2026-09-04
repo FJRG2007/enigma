@@ -160,6 +160,12 @@ jobs:
       - name: Test EOF trimmer deployment
         run: bun test tests/trim-deploy.test.ts
         working-directory: packages/enigma-cli
+      - name: Test merged post-edit hook deployment
+        run: bun test tests/post-edit-deploy.test.ts
+        working-directory: packages/enigma-cli
+      - name: Test merged post-edit hook runtime
+        run: bun test tests/post-edit-hook.test.ts
+        working-directory: packages/enigma-cli
       - name: Test completion gate
         run: bun test tests/verify.test.ts
         working-directory: packages/enigma-cli

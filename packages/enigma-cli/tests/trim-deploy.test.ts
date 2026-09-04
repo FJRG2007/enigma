@@ -1,76 +1,37 @@
 /**
- * EOF-trimmer hook deployment: the Claude PostToolUse group and the opencode plugin are
- * added/removed idempotently, live alongside the guardrails hook rather than replacing it,
- * and never clobber a user's own hooks. Explicit paths are passed, so no config is touched;
- * a temp HOME is set only for hygiene.
+ * EOF-trimmer hook deployment: the opencode plugin is written and removed idempotently.
+ *
+ * The Claude Code half is NOT here any more. The trimmer is one of three features that write after
+ * an edit, and they now share one PostToolUse entry owned by post-edit-deploy.ts - covered by
+ * post-edit-deploy.test.ts, including the case this file used to guard as "coexists with the
+ * guardrails hook": two entries can no longer clobber each other because there is only one, and
+ * what replaced that risk is the toggle interaction, tested there.
+ *
+ * Kimi keeps its own entry (it wires only the trimmer, so there is nothing to merge) and is covered
+ * by applyKimiTrimHook's own round-trip in the Kimi tests.
+ *
+ * Explicit paths are passed, so no config is touched; a temp HOME is set only for hygiene.
  */
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { test, expect, afterAll } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from "node:fs";
+import { mkdtempSync, rmSync, readFileSync, existsSync } from "node:fs";
 
 const HOME = mkdtempSync(join(tmpdir(), "enigma-trim-deploy-"));
 process.env.USERPROFILE = HOME;
 process.env.HOME = HOME;
 
-const { applyClaudeTrimHook, applyOpencodeTrimPlugin } = await import("../src/trim-deploy");
-const { applyClaudeGuardrailsHook } = await import("../src/guardrails-deploy");
+const { applyOpencodeTrimPlugin } = await import("../src/trim-deploy");
 
 afterAll(() => rmSync(HOME, { recursive: true, force: true }));
-
-test("adds and removes the Claude PostToolUse hook idempotently", () => {
-    const settings = join(HOME, "settings.json");
-    expect(applyClaudeTrimHook(settings, true)).toBe(true);
-    const groups = JSON.parse(readFileSync(settings, "utf8")).hooks.PostToolUse;
-    expect(groups.length).toBe(1);
-    expect(groups[0].hooks[0].command).toContain("__trim-hook");
-    expect(groups[0].matcher).toContain("Edit");
-    expect(applyClaudeTrimHook(settings, true)).toBe(false); // idempotent
-    expect(applyClaudeTrimHook(settings, false)).toBe(true); // remove
-    expect(JSON.parse(readFileSync(settings, "utf8")).hooks).toBeUndefined();
-});
-
-test("coexists with the guardrails hook instead of replacing it", () => {
-    // Both are PostToolUse groups with the same matcher, so a group-identity bug here would
-    // show up as one silently overwriting the other.
-    const settings = join(HOME, "both.json");
-    applyClaudeGuardrailsHook(settings, true);
-    applyClaudeTrimHook(settings, true);
-    const commands = JSON.parse(readFileSync(settings, "utf8")).hooks.PostToolUse.map((g: { hooks: { command: string; }[]; }) => g.hooks[0]!.command);
-    expect(commands.some((c: string) => c.includes("__guardrails-hook"))).toBe(true);
-    expect(commands.some((c: string) => c.includes("__trim-hook"))).toBe(true);
-    // Removing one leaves the other in place.
-    applyClaudeTrimHook(settings, false);
-    const left = JSON.parse(readFileSync(settings, "utf8")).hooks.PostToolUse.map((g: { hooks: { command: string; }[]; }) => g.hooks[0]!.command);
-    expect(left.some((c: string) => c.includes("__guardrails-hook"))).toBe(true);
-    expect(left.some((c: string) => c.includes("__trim-hook"))).toBe(false);
-});
-
-test("preserves an unrelated user hook when adding and removing ours", () => {
-    const settings = join(HOME, "settings2.json");
-    writeFileSync(settings, JSON.stringify({ hooks: { PostToolUse: [{ matcher: "Write", hooks: [{ type: "command", command: "echo hi" }] }] }, other: 1 }));
-    applyClaudeTrimHook(settings, true);
-    const data = JSON.parse(readFileSync(settings, "utf8"));
-    expect(data.hooks.PostToolUse.length).toBe(2);
-    expect(data.other).toBe(1);
-    applyClaudeTrimHook(settings, false);
-    const after = JSON.parse(readFileSync(settings, "utf8"));
-    expect(after.hooks.PostToolUse.length).toBe(1);
-    expect(after.hooks.PostToolUse[0].hooks[0].command).toBe("echo hi");
-});
-
-test("refuses to write a settings file it cannot parse", () => {
-    const settings = join(HOME, "broken.json");
-    writeFileSync(settings, "{ not json");
-    expect(applyClaudeTrimHook(settings, true)).toBe(false);
-    expect(readFileSync(settings, "utf8")).toBe("{ not json");
-});
 
 test("writes and removes the opencode plugin", () => {
     const dir = join(HOME, "opencode");
     const plugin = join(dir, "plugins", "enigma-trim.js");
     expect(applyOpencodeTrimPlugin(dir, true)).toBe(true);
     const source = readFileSync(plugin, "utf8");
+    // opencode invokes the per-feature command directly, so that hidden command outlives the merge
+    // of the Claude entries and must keep its name.
     expect(source).toContain("__trim-hook");
     // The Windows shell it uses must not flash a console window on every edit.
     expect(source).toContain("windowsHide: true");

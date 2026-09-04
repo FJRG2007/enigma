@@ -9,7 +9,6 @@ import * as acct from "./accounts";
 import * as p from "@clack/prompts";
 import * as dash from "./dashboard";
 import * as skillsMod from "./skills";
-import { existsSync, readFileSync } from "node:fs";
 import { isDir, readJson } from "./util";
 import { fileURLToPath } from "node:url";
 import type { IssueKind } from "./issue";
@@ -19,14 +18,15 @@ import { pinnedRef } from "./skills-remote";
 import { collectReporter } from "./reporter";
 import { hostname, userInfo } from "node:os";
 import type { ContentType } from "./compress";
-import type { CompletionShell } from "./completion";
 import { spawnSync } from "node:child_process";
 import { starRepoInBackground } from "./github";
+import { existsSync, readFileSync } from "node:fs";
+import type { CompletionShell } from "./completion";
 import { parseGuardArgv, runGuardCli } from "./guard";
-import { sep, dirname, join, relative, resolve } from "node:path";
 import { buildIssueUrl, isHeadless, openUrl } from "./issue";
 import { setupGitHooks, GUARD_PROTECTIONS } from "./security";
 import { ensureLaunchable, toolPathStatuses } from "./tool-path";
+import { sep, dirname, join, relative, resolve } from "node:path";
 import type { ComponentTarget, ComponentStyle } from "./components";
 import { compress, retrieve, readStats, clearCcr } from "./compress";
 import { ensureDashboardToken, readDashboardToken } from "./dashboard-token";
@@ -2817,6 +2817,17 @@ export async function run(argv: string[]): Promise<void> {
         const { runMcpServer } = await import("./mcp");
         await runMcpServer(process.env.ENIGMA_VERSION || PKG.version || "0.0.0");
         return;
+    }
+    // Hidden: the merged post-edit hook - trim, guardrails and the graph's blast radius in ONE
+    // process, because Claude Code starts a fresh one per settings.json entry and three starts of
+    // the ~99 MB binary per edit is what a long session feels as input lag (post-edit-hook.ts).
+    // The three commands below stay: opencode's plugins call them directly, and a settings.json
+    // that predates the merge still names them until its next reconcile.
+    if (argv[0] === "__post-edit-hook") {
+        let payload = "";
+        try { payload = readFileSync(0, "utf8"); } catch { /* no stdin */ }
+        const { runPostEditHook } = await import("./post-edit-hook");
+        process.exit(await runPostEditHook(payload));
     }
     // Hidden: the post-edit guardrails hook each agent invokes. Reads the PostToolUse
     // payload from stdin, scans that file, and exits 2 on a BLOCK convention violation
