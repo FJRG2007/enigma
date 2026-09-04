@@ -12,10 +12,20 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { mkdirSync, mkdtempSync, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 
-const PRIOR_ENV = { USERPROFILE: process.env.USERPROFILE, HOME: process.env.HOME, ENIGMA_LINT_DIR: process.env.ENIGMA_LINT_DIR };
+const PRIOR_ENV = {
+    USERPROFILE: process.env.USERPROFILE,
+    HOME: process.env.HOME,
+    ENIGMA_LINT_DIR: process.env.ENIGMA_LINT_DIR,
+    ENIGMA_CONFIG_HOME: process.env.ENIGMA_CONFIG_HOME,
+};
 const HOME = mkdtempSync(join(tmpdir(), "enigma-lint-"));
 process.env.USERPROFILE = HOME;
 process.env.HOME = HOME;
+// The one that actually steers it. HOME alone does not: `os.homedir()` does not follow a
+// reassigned HOME under every runtime, so a test that only sets it passes on one platform and
+// writes into the operator's real home on another - which is how this file passed for months
+// while it was not in CI. ENIGMA_CONFIG_HOME is what every path in the source reads.
+process.env.ENIGMA_CONFIG_HOME = HOME;
 process.env.ENIGMA_LINT_DIR = join(HOME, "lintdir");
 
 // Stub the managed install so isLinterInstalled() is true (no npm, no spawn).

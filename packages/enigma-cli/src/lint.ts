@@ -27,9 +27,8 @@
  * cycles and cheap to load.
  */
 
-import { homedir } from "node:os";
 import { kimiHome } from "./kimi";
-import { isDir, isOffline } from "./util";
+import { isDir, isOffline, enigmaHome } from "./util";
 import { applyKimiHook } from "./kimi-hooks";
 import { join, dirname, basename } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
@@ -37,10 +36,16 @@ import { readConfig, setEnigmaToggle } from "./config";
 import { applyClaudePostEditHook } from "./post-edit-deploy";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 
-/** Managed dir where @enigmax/linter is installed on demand. */
-export const LINT_INSTALL_DIR = process.env.ENIGMA_LINT_DIR || join(homedir(), ".enigma", "linter");
-/** The shared post-write runner both agents invoke. */
-export const LINT_RUNNER_PATH = join(homedir(), ".enigma", "hooks", "lint-hook.mjs");
+/**
+ * Managed dir where @enigmax/linter is installed on demand, and the runner beside it.
+ *
+ * Both hang off `enigmaHome()` rather than `homedir()`, which is what every other path in this
+ * codebase reads: it honours ENIGMA_CONFIG_HOME, so a pack or an isolated account gets its own
+ * copy instead of reaching into the operator's real home - and a test can point the whole
+ * feature at a temp dir on any platform, which `homedir()` does not allow under every runtime.
+ */
+export const LINT_INSTALL_DIR = process.env.ENIGMA_LINT_DIR || join(enigmaHome(), ".enigma", "linter");
+export const LINT_RUNNER_PATH = join(enigmaHome(), ".enigma", "hooks", "lint-hook.mjs");
 
 /** True when the user has opted into auto-lint. */
 export function isAutoLintOn(): boolean {
@@ -183,12 +188,12 @@ export const EnigmaLint = async () => ({
 
 /** Global Claude settings.json for the default account. */
 function claudeGlobalSettings(): string {
-    return join(homedir(), ".claude", "settings.json");
+    return join(enigmaHome(), ".claude", "settings.json");
 }
 
 /** Global opencode config dir for the default account. */
 function opencodeGlobalConfig(): string {
-    return join(homedir(), ".config", "opencode");
+    return join(enigmaHome(), ".config", "opencode");
 }
 
 /** Global Kimi config.toml for the default account (kimiHome honors ENIGMA_CONFIG_HOME). */
