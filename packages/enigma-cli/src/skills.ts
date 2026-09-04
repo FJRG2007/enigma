@@ -20,13 +20,14 @@ import { applyDashboardMode } from "./dashboard";
 import { execFileSync } from "node:child_process";
 import type { SecurityOptions } from "./security";
 import { dirname, join, resolve } from "node:path";
+import { applyPostEditWiring } from "./post-edit-deploy";
 import { applyLintWiring, mirrorLintWiring } from "./lint";
 import type { RemoteRefreshResult } from "./skills-remote";
 import { setGhTelemetry, starRepoInBackground } from "./github";
 import { applyTrimWiring, mirrorTrimWiring } from "./trim-deploy";
-import { applyCiWatchWiring, mirrorCiWatchWiring } from "./ci-watch-deploy";
 import type { Agent, AgentTarget, DiscoveredAgent } from "./agents";
 import { applyMcpForAgent, applyMcpForAccount } from "./mcp-deploy";
+import { applyCiWatchWiring, mirrorCiWatchWiring } from "./ci-watch-deploy";
 import { applyCodeGraphWiring, mirrorCodeGraphWiring } from "./codegraph-deploy";
 import { isDir, isNewer, readJson, listFilesRel, computeContentSha } from "./util";
 import { applyVerifyWiring, isVerifyOn, mirrorVerifyWiring } from "./verify-deploy";
@@ -1634,6 +1635,13 @@ export function syncDeployed(agentNames?: string[]): string[] {
         if (agent.name === "claude" && hasDeployment(agent, "global") && applyVerifyWiring() && isVerifyOn()) {
             notices.push("Completion checks are on: when the agent reports work as finished, enigma now verifies that against the change. Turn off with 'enigma config verify off'.");
         }
+        // The merged post-edit entry, same reasoning once more - and this is the path that carries
+        // the migration. `enigma update` reaches an existing install through here and nothing else
+        // rewrites that group, so without this call an install that predates the merge would keep
+        // its three separate entries, and go on paying three process starts per edit, until the
+        // user happened to run `enigma install` or toggle one of the three features. Silent on
+        // purpose: nothing the agent does changes, only how many processes it takes to do it.
+        if (agent.name === "claude" && hasDeployment(agent, "global")) applyPostEditWiring();
         // Same reasoning: the status bar is on by default and is settings.json WIRING, not a
         // file the copy loop above touches, so an existing deployment has to pick it up on
         // update rather than only on an explicit install. Gated on the config flag, so a bar

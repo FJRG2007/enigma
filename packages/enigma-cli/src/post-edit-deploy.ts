@@ -19,7 +19,7 @@
  */
 
 import { readConfig } from "./config";
-import { applyClaudeHook } from "./claude-hooks";
+import { applyClaudeHook, claudeGlobalSettings } from "./claude-hooks";
 
 /** Edit tools whose writes run the post-edit steps. */
 const HOOK_MATCHER = "Edit|Write|MultiEdit|NotebookEdit";
@@ -70,4 +70,19 @@ export function applyClaudePostEditHook(settingsPath: string): boolean {
     const group = { matcher: HOOK_MATCHER, hooks: [{ type: "command", command: HOOK_COMMAND, timeout: HOOK_TIMEOUT }] };
     if (applyClaudeHook(settingsPath, "PostToolUse", HOOK_MARKER, group, isPostEditHookOn()) === "changed") changed = true;
     return changed;
+}
+
+/**
+ * Re-assert the merged entry in the default account's global Claude settings.
+ *
+ * The counterpart of applyVerifyWiring, and it exists for the same reason: this group is hook
+ * WIRING, not a file the sync loop copies, so an EXISTING install only picks it up if something
+ * re-writes it. `enigma update` reaches an install through syncDeployed and nothing else touches
+ * this group, so without a call there a pre-merge install keeps its three separate entries - and
+ * keeps paying three process starts per edit - until the user happens to run `enigma install` or
+ * toggle one of the three features. That is exactly the upgrade step the migration is supposed to
+ * remove, so leaving it out would make the whole change a no-op for everyone already installed.
+ */
+export function applyPostEditWiring(): boolean {
+    return applyClaudePostEditHook(claudeGlobalSettings());
 }

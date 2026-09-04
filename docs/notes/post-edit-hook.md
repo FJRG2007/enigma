@@ -63,6 +63,15 @@ config value instead of relying on its entry being absent. Two consequences wort
 - The code graph's marker carries its event argument (`__codegraph-hook post-edit`) because
   all four of its entries share a command name; matching the bare name would delete its
   `SessionStart`, `UserPromptSubmit` and `Stop` entries too.
+- `applyPostEditWiring()` is called from `syncDeployed()` (skills.ts), next to the verify
+  re-assert, and **that call is the migration's only carrier for an existing install**. This
+  group is wiring, not a file the sync loop copies, and nothing else rewrites it: `enigma
+  update` reaches an install through `syncDeployed`, so without that call a pre-merge install
+  keeps its three separate entries and goes on paying three process starts per edit until the
+  user happens to run `enigma install` or toggle one of the three features. The failure is
+  invisible from the inside - the hooks still work, they just cost triple - which is why
+  `tests/post-edit-deploy.test.ts` pins the call rather than trusting it to stay. It shipped
+  missing in 1.40.0 and was fixed in 1.40.1.
 - `cli.ts` dispatches `__post-edit-hook` EARLY with a synchronous `readFileSync(0)` before any
   await - the guardrails-hook lesson: an await lets Node drain the pipe and the hook silently
   sees an empty payload.

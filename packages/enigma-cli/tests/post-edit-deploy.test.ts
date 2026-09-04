@@ -14,9 +14,9 @@
  * the same readConfig() path the deployed reconciler uses.
  */
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import { test, expect, afterAll, beforeEach } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 
 const HOME = mkdtempSync(join(tmpdir(), "enigma-post-edit-deploy-"));
 process.env.ENIGMA_CONFIG_HOME = HOME;
@@ -133,4 +133,29 @@ test("refuses a settings file it cannot parse rather than replacing it", () => {
     writeFileSync(settings, "{ not json");
     expect(applyClaudePostEditHook(settings)).toBe(false);
     expect(readFileSync(settings, "utf8")).toBe("{ not json");
+});
+
+test("the sync path re-asserts the entry, which is what migrates an existing install", async () => {
+    // The migration's ONLY carrier for someone already installed. `enigma update` reaches an
+    // install through syncDeployed, and nothing else rewrites this group - so if applyPostEditWiring
+    // ever stops being called there, a pre-merge install silently keeps its three separate entries
+    // and the whole change becomes a no-op for every existing user. That failure is invisible from
+    // the inside: the hooks still work, they just cost three process starts instead of one.
+    const { applyPostEditWiring } = await import("../src/post-edit-deploy");
+    const settings = join(HOME, ".claude", "settings.json");
+    mkdirSync(dirname(settings), { recursive: true });
+    writeFileSync(settings, JSON.stringify({
+        hooks: {
+            PostToolUse: [
+                { matcher: "Edit|Write|MultiEdit|NotebookEdit", hooks: [{ type: "command", command: "enigma __guardrails-hook", timeout: 30 }] },
+                { matcher: "Edit|Write|MultiEdit|NotebookEdit", hooks: [{ type: "command", command: "enigma __trim-hook", timeout: 10 }] },
+                { matcher: "Edit|Write|MultiEdit|NotebookEdit", hooks: [{ type: "command", command: "enigma __codegraph-hook post-edit", timeout: 25 }] },
+            ],
+        },
+    }));
+    toggles(true, true, true);
+    expect(applyPostEditWiring()).toBe(true);
+    expect(commands(settings)).toEqual(["enigma __post-edit-hook"]);
+    // Idempotent, because it runs on every sync and every agent launch, not just on update.
+    expect(applyPostEditWiring()).toBe(false);
 });
