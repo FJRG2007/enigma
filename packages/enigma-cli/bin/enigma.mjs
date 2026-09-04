@@ -17,8 +17,9 @@
 
 import os from "node:os";
 import { join } from "node:path";
-import { existsSync } from "node:fs";
+import { pathToFileURL } from "node:url";
 import { spawn } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
 import { downloadBinary, installedBinary } from "./download.mjs";
 import { ARCH, PLATFORM, packageVersion, pkgRoot } from "./platform.mjs";
 
@@ -38,6 +39,38 @@ if (process.argv[2] === "statusline") {
     process.exit(0);
 }
 
+/**
+ * Fast path: the post-edit hook, which is the most-invoked command there is.
+ *
+ * It fires on every Edit/Write in every session, and spawning the ~99 MB binary for it costs a
+ * Bun start on top of this Node one - measured on Windows 11 with Defender real-time on at
+ * 109-1658 ms for the binary alone, against 112-874 ms for `node -e 0`. Every step the hook runs
+ * (auto-lint, trim, guardrails, the graph's blast radius) is Node-compatible and bundled into
+ * `dist/post-edit.js`, so it is answered HERE and the binary is never started. A turn with five
+ * edits stops paying five Bun starts for work whose own runtime is milliseconds.
+ *
+ * Bundle missing (an install from before it shipped) -> fall through untouched, stdin included,
+ * and let the binary answer as it always did.
+ */
+const postEditBundle = join(pkgRoot, "dist", "post-edit.js");
+if (process.argv[2] === "__post-edit-hook" && existsSync(postEditBundle)) {
+    // Read SYNCHRONOUSLY, before any await: an await lets Node drain the pipe and the hook then
+    // sees an empty payload - the same lesson cli.ts records for this command.
+    let payload = "";
+    try { payload = readFileSync(0, "utf8"); } catch { /* no stdin; the steps below no-op on it */ }
+    try {
+        const { runPostEditHook } = await import(pathToFileURL(postEditBundle).href);
+        // 2 is the channel Claude Code feeds back to the model. Losing it turns a gate into a
+        // silent no-op, so it is the one thing here that is never swallowed.
+        process.exit(await runPostEditHook(payload));
+    } catch (error) {
+        // Said out loud rather than exiting 0 quietly: a post-edit hook that stops running looks
+        // exactly like a clean edit, and that is the failure nobody notices.
+        process.stderr.write(`enigma: the post-edit hook could not run: ${error.message}\n`);
+        process.exit(0);
+    }
+}
+
 /** Resolve the binary, downloading it on first run if the postinstall was skipped. */
 async function resolveBinary() {
     if (process.env.ENIGMA_BIN_PATH && existsSync(process.env.ENIGMA_BIN_PATH)) return process.env.ENIGMA_BIN_PATH;
@@ -52,10 +85,8 @@ try {
     binary = await resolveBinary();
 } catch (error) {
     const platform = PLATFORM && ARCH ? `${PLATFORM}-${ARCH}` : `${os.platform()}-${os.arch()}`;
-    process.stderr.write(
-        `Could not obtain the enigma binary for ${platform}: ${error.message}\n` +
-        `Check your network/proxy, or set ENIGMA_BIN_PATH to a compatible binary.\n`,
-    );
+    const help = "Check your network/proxy, or set ENIGMA_BIN_PATH to a compatible binary.";
+    process.stderr.write(`Could not obtain the enigma binary for ${platform}: ${error.message}\n${help}\n`);
     process.exit(1);
 }
 

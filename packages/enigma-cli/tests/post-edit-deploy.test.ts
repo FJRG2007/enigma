@@ -1,12 +1,12 @@
 /**
- * The merged Claude PostToolUse entry: one hook entry for the three features that write after an
- * edit (trim, guardrails, the code graph's blast radius), because Claude Code starts a process per
- * entry and three starts of the ~99 MB binary per edit is what a long session feels as input lag.
+ * The merged Claude PostToolUse entry: one hook entry for the four features that write after an
+ * edit (auto-lint, trim, guardrails, the code graph's blast radius), because Claude Code starts a
+ * process per entry and four starts per edit is what a long session feels as input lag.
  *
  * What is actually load-bearing here, and what each test is guarding:
- *  - presence is a function of the THREE toggles, not one - turning a single feature off must not
- *    delete an entry the other two are still using, which is the bug three independent writers had;
- *  - the three legacy entries are removed on every reconcile, so an install that predates the merge
+ *  - presence is a function of the FOUR toggles, not one - turning a single feature off must not
+ *    delete an entry the other three are still using, which is the bug independent writers had;
+ *  - the four legacy entries are removed on every reconcile, so an install that predates the merge
  *    migrates itself and never double-spawns;
  *  - a user's own PostToolUse hook survives both directions.
  *
@@ -27,9 +27,9 @@ const { applyClaudePostEditHook, isPostEditHookOn } = await import("../src/post-
 
 afterAll(() => rmSync(HOME, { recursive: true, force: true }));
 
-/** Set the three post-edit toggles in the global .enigma.json the reconciler reads. */
-function toggles(trim: boolean, guardrails: boolean, codeGraph: boolean): void {
-    writeFileSync(join(HOME, ".enigma.json"), JSON.stringify({ trim, guardrails, codeGraph }));
+/** Set the four post-edit toggles in the global .enigma.json the reconciler reads. */
+function toggles(trim: boolean, guardrails: boolean, codeGraph: boolean, autoLint = false): void {
+    writeFileSync(join(HOME, ".enigma.json"), JSON.stringify({ trim, guardrails, codeGraph, autoLint }));
 }
 
 /** The PostToolUse groups of a settings.json, or [] when it has none. */
@@ -77,9 +77,15 @@ test("presence follows the three toggles together, not any one of them", () => {
     expect(isPostEditHookOn()).toBe(false);
     expect(applyClaudePostEditHook(settings)).toBe(true);
     expect(commands(settings)).toEqual([]);
+
+    // Auto-lint is the fourth, and it is the one that used to write an entry of its own.
+    toggles(false, false, false, true);
+    expect(isPostEditHookOn()).toBe(true);
+    expect(applyClaudePostEditHook(settings)).toBe(true);
+    expect(commands(settings)).toEqual(["enigma __post-edit-hook"]);
 });
 
-test("migrates an install that predates the merge by removing the three legacy entries", () => {
+test("migrates an install that predates the merge by removing the four legacy entries", () => {
     // Exactly what enigma used to write: three groups, same event, same matcher.
     const settings = join(HOME, "legacy.json");
     writeFileSync(settings, JSON.stringify({
@@ -88,11 +94,14 @@ test("migrates an install that predates the merge by removing the three legacy e
                 { matcher: "Edit|Write|MultiEdit|NotebookEdit", hooks: [{ type: "command", command: "enigma __guardrails-hook", timeout: 30 }] },
                 { matcher: "Edit|Write|MultiEdit|NotebookEdit", hooks: [{ type: "command", command: "enigma __codegraph-hook post-edit", timeout: 25 }] },
                 { matcher: "Edit|Write|MultiEdit|NotebookEdit", hooks: [{ type: "command", command: "enigma __trim-hook", timeout: 10 }] },
+                // Auto-lint's, identified by its runner path rather than by a subcommand: it is a
+                // second PROCESS per edit, and the merged hook does that step itself now.
+                { matcher: "Edit|Write|MultiEdit|NotebookEdit", hooks: [{ type: "command", command: 'node "/home/u/.enigma/hooks/lint-hook.mjs"', timeout: 30 }] },
             ],
         },
     }));
     expect(applyClaudePostEditHook(settings)).toBe(true);
-    // All three gone and one in their place - a leftover would keep paying the process start the
+    // All four gone and one in their place - a leftover would keep paying the process start the
     // merge exists to stop, invisibly.
     expect(commands(settings)).toEqual(["enigma __post-edit-hook"]);
 });

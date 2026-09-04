@@ -10,14 +10,20 @@
  *  - a guardrails BLOCK still exits 2, which is the channel Claude Code feeds back to the model.
  *    Losing that would turn a gate into a silent no-op, which is the worst way for this to break.
  *
+ * And one more, which is the other half of the saving: the npm LAUNCHER answers this hook itself
+ * instead of spawning the ~99 MB binary, so an edit costs one Node start rather than a Node start
+ * plus a Bun start. The last test pins that by pointing ENIGMA_BIN_PATH at something that could
+ * never serve the hook - if the fast path stopped firing, the launcher would spawn it and the case
+ * would fail rather than quietly go back to costing double.
+ *
  * The code graph is off throughout: it is the slow step and none of the above depends on it.
  */
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { join, dirname } from "node:path";
 import { spawnSync } from "node:child_process";
-import { test, expect, afterAll } from "bun:test";
-import { mkdtempSync, rmSync, readFileSync, writeFileSync } from "node:fs";
+import { test, expect, afterAll, beforeAll } from "bun:test";
+import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const HOME = mkdtempSync(join(tmpdir(), "enigma-post-edit-hook-"));
@@ -100,4 +106,35 @@ test("a clean file passes both steps without a finding", () => {
     const file = withTrailingBlank("clean.sql", "CREATE TABLE users (id UUID PRIMARY KEY);");
     expect(hook(file).status).toBe(0);
     expect(readFileSync(file, "utf8")).toBe("CREATE TABLE users (id UUID PRIMARY KEY);\n");
+}, TIMEOUT);
+
+/**
+ * The launcher's fast path, driven exactly as the wiring drives it.
+ *
+ * `dist/post-edit.js` is what it imports, and the suite runs before the build does, so the bundle
+ * is built here - which also pins the thing that makes any of this possible: every step, the code
+ * graph included, still bundles for Node.
+ */
+const BUNDLE = join(ROOT, "dist", "post-edit.js");
+
+beforeAll(() => {
+    if (existsSync(BUNDLE)) return;
+    const built = spawnSync("npx", ["tsup"], { cwd: ROOT, encoding: "utf8", shell: true, windowsHide: true, timeout: 120_000 });
+    expect(built.status, built.stderr || "").toBe(0);
+    expect(existsSync(BUNDLE)).toBe(true);
+});
+
+test("the launcher answers the hook itself, without ever starting the binary", () => {
+    toggles(true, false);
+    const file = withTrailingBlank("launched.ts", "export const c = 3;");
+    const run = spawnSync(process.execPath, [join(ROOT, "bin", "enigma.mjs"), "__post-edit-hook"], {
+        encoding: "utf8",
+        input: JSON.stringify({ tool_input: { file_path: file } }),
+        windowsHide: true,
+        // Node itself, standing in for the binary: it exists, so the launcher would happily spawn
+        // it - and `node __post-edit-hook` fails, which is what makes the assertions below proof.
+        env: { ...process.env, HOME, USERPROFILE: HOME, ENIGMA_CONFIG_HOME: HOME, ENIGMA_BIN_PATH: process.execPath },
+    });
+    expect(run.status ?? 0).toBe(0);
+    expect(readFileSync(file, "utf8")).toBe("export const c = 3;\n");
 }, TIMEOUT);

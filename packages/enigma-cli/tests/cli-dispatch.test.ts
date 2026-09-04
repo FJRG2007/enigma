@@ -146,7 +146,10 @@ test("a launch line forwards its flags to the agent", () => {
     expect(launched("claude", "-p", "prompt").argv).toBe("-p prompt");
     // `--` still works, and is still stripped rather than passed on.
     expect(launched("claude", "--", "--version").argv).toBe("--version");
-});
+    // Six real CLI processes in one case, and a process start is the expensive part on a box with
+    // real-time scanning: measured at 109-1658 ms for the same binary minutes apart. The default
+    // 5 s makes this read as a broken test on a slow machine rather than as a slow one.
+}, 60_000);
 
 test("a launch line keeps enigma's own help", () => {
     // The one exception: `-h` prints the launch help rather than the agent's, which is what

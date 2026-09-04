@@ -166,6 +166,9 @@ jobs:
       - name: Test merged post-edit hook runtime
         run: bun test tests/post-edit-hook.test.ts
         working-directory: packages/enigma-cli
+      - name: Test auto-lint wiring
+        run: bun test tests/lint.test.ts
+        working-directory: packages/enigma-cli
       - name: Test completion gate
         run: bun test tests/verify.test.ts
         working-directory: packages/enigma-cli

@@ -1,7 +1,9 @@
 /**
- * Auto-lint wiring: the toggle must write the shared runner and add/remove the
- * Claude PostToolUse hook and the opencode plugin, idempotently and without
- * clobbering unrelated config. Runs against a temp HOME (set BEFORE import, since
+ * Auto-lint wiring: the toggle must write the shared runner, reconcile Claude's ONE merged
+ * post-edit entry and add/remove the opencode plugin, idempotently and without clobbering
+ * unrelated config. Claude has no lint entry of its own any more - the merged hook lints -
+ * so what is pinned here is that none is written and that turning auto-lint off leaves the
+ * merged entry alone while trim, guardrails or the graph still need it. Runs against a temp HOME (set BEFORE import, since
  * the module resolves paths at load). ENIGMA_LINT_DIR points at a stub install so
  * the background npm install never spawns during the test.
  */
@@ -42,14 +44,16 @@ afterAll(() => {
     rmSync(HOME, { recursive: true, force: true });
 });
 
-test("enabling auto-lint writes the runner, the Claude hook and the opencode plugin", () => {
+test("enabling auto-lint writes the runner and the merged entry, never a lint entry", () => {
     lint.setAutoLint("global", true);
     expect(lint.isAutoLintOn()).toBe(true);
     expect(existsSync(lint.LINT_RUNNER_PATH)).toBe(true);
 
     const groups = readJson(claudeSettings).hooks.PostToolUse as any[];
-    const ours = groups.find((g) => g.hooks?.some((h: any) => h.command?.includes("lint-hook.mjs")));
-    expect(ours?.matcher).toBe("Edit|Write|MultiEdit|NotebookEdit");
+    const merged = groups.find((g) => g.hooks?.some((h: any) => h.command?.includes("__post-edit-hook")));
+    expect(merged?.matcher).toBe("Edit|Write|MultiEdit|NotebookEdit");
+    // A second entry is a second process per edit, which is the whole reason the step moved.
+    expect(groups.some((g) => g.hooks?.some((h: any) => h.command?.includes("lint-hook.mjs")))).toBe(false);
     // The unrelated Bash hook is preserved.
     expect(groups.some((g) => g.matcher === "Bash")).toBe(true);
 
@@ -57,33 +61,33 @@ test("enabling auto-lint writes the runner, the Claude hook and the opencode plu
     expect(readFileSync(opencodePlugin, "utf8")).toContain("tool.execute.after");
 });
 
-test("re-applying the hook is idempotent (no duplicate group)", () => {
-    expect(lint.applyClaudeLintHook(claudeSettings, true)).toBe(false);
+test("re-applying the wiring is idempotent (no duplicate group)", () => {
+    lint.applyLintWiring();
     const groups = readJson(claudeSettings).hooks.PostToolUse as any[];
-    const ours = groups.filter((g) => g.hooks?.some((h: any) => h.command?.includes("lint-hook.mjs")));
+    const ours = groups.filter((g) => g.hooks?.some((h: any) => h.command?.includes("__post-edit-hook")));
     expect(ours.length).toBe(1);
 });
 
-test("disabling auto-lint removes the hook and plugin, keeps unrelated config", () => {
+test("disabling auto-lint keeps the entry the other three steps still need", () => {
     lint.setAutoLint("global", false);
     expect(lint.isAutoLintOn()).toBe(false);
 
     const groups = readJson(claudeSettings).hooks.PostToolUse as any[];
-    expect(groups.some((g) => g.hooks?.some((h: any) => h.command?.includes("lint-hook.mjs")))).toBe(false);
+    // trim, guardrails and the graph are on by default, so the group stays: deleting it here
+    // is precisely the failure that made one shared entry need one owner.
+    expect(groups.some((g) => g.hooks?.some((h: any) => h.command?.includes("__post-edit-hook")))).toBe(true);
     expect(groups.some((g) => g.matcher === "Bash")).toBe(true); // unrelated hook survives
     expect(existsSync(opencodePlugin)).toBe(false);
 });
 
-test("mirrorLintWiring propagates the toggle into a managed account dir", () => {
+test("mirrorLintWiring reconciles the merged entry in a managed account dir", () => {
     const accountDir = join(HOME, ".enigma", "claude", "work");
     lint.setAutoLint("global", true);
 
     lint.mirrorLintWiring("claude", accountDir);
     const groups = readJson(join(accountDir, "settings.json")).hooks.PostToolUse as any[];
-    expect(groups.some((g) => g.hooks?.some((h: any) => h.command?.includes("lint-hook.mjs")))).toBe(true);
-
-    lint.setAutoLint("global", false);
-    lint.mirrorLintWiring("claude", accountDir);
-    const after = readJson(join(accountDir, "settings.json")).hooks?.PostToolUse as any[] | undefined;
-    expect((after || []).some((g) => g.hooks?.some((h: any) => h.command?.includes("lint-hook.mjs")))).toBe(false);
+    expect(groups.some((g) => g.hooks?.some((h: any) => h.command?.includes("__post-edit-hook")))).toBe(true);
+    // And an account that predates the merge is migrated by the same call, rather than keeping
+    // a second entry nobody looks at that goes on paying a process start per edit.
+    expect(groups.some((g) => g.hooks?.some((h: any) => h.command?.includes("lint-hook.mjs")))).toBe(false);
 });

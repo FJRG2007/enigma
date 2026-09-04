@@ -1,16 +1,16 @@
 /**
  * Deployment of the single Claude Code PostToolUse entry that runs every post-edit step.
  *
- * Three features write after an edit - the EOF trimmer, guardrails and the code graph - and each
- * used to wire its own entry under PostToolUse. Claude Code starts a fresh process per entry, so
+ * Four features write after an edit - auto-lint, the EOF trimmer, guardrails and the code graph -
+ * and each used to wire its own entry under PostToolUse. Claude Code starts a fresh process per entry, so
  * that was three starts of the same ~99 MB binary per edit; see post-edit-hook.ts for the measured
  * cost and why it dominates the hook's own runtime. This module owns that one entry instead, which
  * means the three deploy modules no longer write to PostToolUse themselves: a group whose presence
  * depends on three independent toggles cannot have three independent writers without each of them
  * deleting the others' work.
  *
- * Presence is a pure function of the toggles - the entry exists when ANY of the three is on, and
- * the runtime gates each step on its own toggle. Every reconcile also strips the three legacy
+ * Presence is a pure function of the toggles - the entry exists when ANY of the four is on, and
+ * the runtime gates each step on its own toggle. Every reconcile also strips the four legacy
  * entries, so an install that predates the merge is migrated the first moment any wiring is
  * re-asserted, with no upgrade step to remember and nothing left behind to double-spawn.
  *
@@ -29,13 +29,18 @@ const HOOK_MARKER = "__post-edit-hook";
 const HOOK_COMMAND = `enigma ${HOOK_MARKER}`;
 
 /**
- * Markers of the three entries this one replaces, removed on every reconcile.
+ * Markers of the four entries this one replaces, removed on every reconcile.
  *
  * The code graph's marker carries its event argument because all four of its entries share a
  * command name - matching on the bare name would delete its SessionStart, UserPromptSubmit and Stop
  * entries too, which are separate events and still spawn separately because they have to.
+ *
+ * Auto-lint is matched by its RUNNER PATH (`lint-hook.mjs`), which is how lint.ts identified its
+ * own entry: the command runs that script under node rather than naming an enigma subcommand. It
+ * still exists and is still what opencode and Kimi invoke - only Claude's entry is gone, because
+ * the merged hook lints there itself.
  */
-const LEGACY_MARKERS = ["__guardrails-hook", "__trim-hook", "__codegraph-hook post-edit"];
+const LEGACY_MARKERS = ["__guardrails-hook", "__trim-hook", "__codegraph-hook post-edit", "lint-hook.mjs"];
 
 /**
  * The budget the merged entry answers in.
@@ -54,7 +59,7 @@ const HOOK_TIMEOUT = 45;
 /** True when at least one post-edit step is enabled, so the entry has work to do. */
 export function isPostEditHookOn(): boolean {
     const { config } = readConfig();
-    return config.trim || config.guardrails || config.codeGraph;
+    return config.trim || config.guardrails || config.codeGraph || config.autoLint;
 }
 
 /**

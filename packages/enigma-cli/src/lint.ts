@@ -7,18 +7,21 @@
  * it is an explicit opt-in.
  *
  * Wiring per agent:
- *  - Claude Code: a PostToolUse hook in settings.json (matcher Edit|Write|MultiEdit|
- *    NotebookEdit) that runs the shared runner; on unfixable findings the runner
- *    exits 2 with a compact stderr, which Claude feeds to the model.
+ *  - Claude Code: no entry of its own. The lint step runs inside the one merged
+ *    PostToolUse hook (post-edit-deploy.ts), so an edit costs one process instead of
+ *    two; on unfixable findings that hook exits 2 with a compact stderr, which Claude
+ *    feeds to the model exactly as the separate entry did.
  *  - opencode: an auto-loaded plugin in the plugins dir whose tool.execute.after
  *    runs the same runner and appends the findings to the tool output the model sees.
  *  - Kimi Code: a PostToolUse hook in config.toml (matcher Write|Edit). That event is
  *    observation-only there, so the auto-FIX lands (which is the point) but the leftover
  *    findings do not reach the model - unlike the other two, where they do.
  *
- * One runner (~/.enigma/hooks/lint-hook.mjs) serves all three: it fixes the file in place
- * and prints remaining findings to stderr. It resolves the linter from the managed
- * install and no-ops cleanly until that install lands (self-healing).
+ * One runner (~/.enigma/hooks/lint-hook.mjs) serves opencode and Kimi: it fixes the file
+ * in place and prints remaining findings to stderr, resolving the linter from the managed
+ * install and no-opping cleanly until that install lands (self-healing). Claude's copy of
+ * that logic is the lint step inside the merged post-edit hook, which does the same three
+ * things with no second process to start.
  *
  * Node-builtins + config/util only (no agent-module imports) so it stays free of
  * cycles and cheap to load.
@@ -26,11 +29,12 @@
 
 import { homedir } from "node:os";
 import { kimiHome } from "./kimi";
+import { isDir, isOffline } from "./util";
 import { applyKimiHook } from "./kimi-hooks";
 import { join, dirname, basename } from "node:path";
-import { isDir, readJson, isOffline } from "./util";
 import { spawn, spawnSync } from "node:child_process";
 import { readConfig, setEnigmaToggle } from "./config";
+import { applyClaudePostEditHook } from "./post-edit-deploy";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 
 /** Managed dir where @enigmax/linter is installed on demand. */
@@ -66,7 +70,7 @@ export function ensureLinterInstalled(): boolean {
     try {
         mkdirSync(LINT_INSTALL_DIR, { recursive: true });
         const manifest = join(LINT_INSTALL_DIR, "package.json");
-        if (!existsSync(manifest)) writeFileSync(manifest, JSON.stringify({ name: "enigma-linter-host", private: true }, null, 2) + "\n");
+        if (!existsSync(manifest)) writeFileSync(manifest, `${JSON.stringify({ name: "enigma-linter-host", private: true }, null, 2)}\n`);
         // shell:true so Windows resolves npm.cmd; windowsHide so the cmd.exe it spawns never
         // flashes a console window; output suppressed to keep installs quiet. --prefer-online
         // revalidates the registry so a stale npm cache never pins an old @latest.
@@ -115,46 +119,17 @@ export function writeRunner(): void {
     writeFileSync(LINT_RUNNER_PATH, RUNNER_SOURCE);
 }
 
-// --- Claude Code: PostToolUse hook in settings.json --------------------------------
-
-const HOOK_MATCHER = "Edit|Write|MultiEdit|NotebookEdit";
-/** The hook command both identifies our entry and runs the runner. */
-function hookCommand(): string {
-    return `node "${LINT_RUNNER_PATH}"`;
-}
-
-interface HookGroup { matcher?: string; hooks?: Array<{ type?: string; command?: string; timeout?: number; }>; }
-
-/** Whether a PostToolUse group is the enigma lint hook (identified by the runner path). */
-function isOurGroup(group: HookGroup): boolean {
-    return Array.isArray(group.hooks) && group.hooks.some((h) => typeof h.command === "string" && h.command.includes("lint-hook.mjs"));
-}
-
-/**
- * Add (on) or remove (off) the enigma PostToolUse lint hook in a Claude settings.json,
- * preserving every other hook and setting. Identified by the runner path so it is
- * idempotent and never clobbers the user's own hooks. Returns true when the file changed.
- */
-export function applyClaudeLintHook(settingsPath: string, on: boolean): boolean {
-    const current = readJson<Record<string, unknown>>(settingsPath) || {};
-    const hooks = (typeof current.hooks === "object" && current.hooks !== null) ? { ...current.hooks as Record<string, unknown> } : {};
-    const post: HookGroup[] = Array.isArray(hooks.PostToolUse) ? [...hooks.PostToolUse as HookGroup[]] : [];
-
-    const rest = post.filter((g) => !isOurGroup(g));
-    const next: HookGroup[] = on
-        ? [...rest, { matcher: HOOK_MATCHER, hooks: [{ type: "command", command: hookCommand(), timeout: 30 }] }]
-        : rest;
-
-    if (next.length) hooks.PostToolUse = next; else delete hooks.PostToolUse;
-    const nextSettings: Record<string, unknown> = { ...current };
-    if (Object.keys(hooks).length) nextSettings.hooks = hooks; else delete nextSettings.hooks;
-
-    if (JSON.stringify(nextSettings) === JSON.stringify(current)) return false;
-    if (!existsSync(settingsPath) && Object.keys(nextSettings).length === 0) return false;
-    mkdirSync(dirname(settingsPath), { recursive: true });
-    writeFileSync(settingsPath, JSON.stringify(nextSettings, null, 2) + "\n");
-    return true;
-}
+// --- Claude Code: no entry of its own ----------------------------------------------
+//
+// Claude runs the lint step inside the ONE merged PostToolUse hook (post-edit-deploy.ts),
+// which is why there is no applyClaudeLintHook here any more. A second entry meant a second
+// process per edit - a Node start for work whose own runtime is about 160 ms - and the merged
+// hook is itself answered by the npm launcher under Node, which is the only runtime that can
+// resolve the managed linter at all. Toggling auto-lint therefore reconciles that group, and
+// the group's legacy-marker sweep removes the old entry from an install that predates this.
+//
+// opencode and Kimi keep invoking the runner directly: neither has a merged hook to fold into,
+// and the runner is what they were always given.
 
 // --- opencode: auto-loaded plugin --------------------------------------------------
 
@@ -238,7 +213,11 @@ export function applyKimiLintHook(configPath: string, on: boolean): boolean {
 export function applyLintWiring(): void {
     const on = isAutoLintOn();
     if (on) { writeRunner(); spawnLinterInstall(); }
-    applyClaudeLintHook(claudeGlobalSettings(), on);
+    // Claude's lint step lives in the merged post-edit entry, so what a toggle changes there is
+    // that group's presence - and turning auto-lint OFF must not delete an entry trim, guardrails
+    // or the graph are still using, which is what reconciling it (rather than removing it) gets
+    // right.
+    applyClaudePostEditHook(claudeGlobalSettings());
     applyOpencodePlugin(opencodeGlobalConfig(), on);
     applyKimiLintHook(kimiGlobalConfig(), on);
 }
@@ -251,7 +230,7 @@ export function applyLintWiring(): void {
 export function mirrorLintWiring(toolName: string, accountDir: string): void {
     const on = isAutoLintOn();
     if (on) writeRunner();
-    if (toolName === "claude") applyClaudeLintHook(join(accountDir, "settings.json"), on);
+    if (toolName === "claude") applyClaudePostEditHook(join(accountDir, "settings.json"));
     else if (toolName === "opencode") applyOpencodePlugin(join(accountDir, "xdg-config", "opencode"), on);
     else if (toolName === "kimi") applyKimiLintHook(join(accountDir, "config.toml"), on);
 }
