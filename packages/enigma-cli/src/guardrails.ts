@@ -953,6 +953,70 @@ export const BUILTIN_RULES: GuardrailRule[] = [
         skill: "frontend-policy",
     },
     {
+        id: "sec-2fa-reauth-prompt",
+        label: "A credential just proven is not asked for again",
+        files: ["*.tsx", "*.jsx", "*.vue", "*.svelte", "*.astro", "*.ts", "*.js", "*.py", "*.rb", "*.php"],
+        excludeFiles: [
+            "*.test.*", "*.spec.*", "**/tests/**", "**/__tests__/**", "**/fixtures/**", "*.min.js",
+            "**/dist/**", "**/build/**", "**/node_modules/**", "**/vendor/**",
+            "dist/**", "build/**", "node_modules/**", "vendor/**",
+        ],
+        scope: "file",
+        stage: "diff",
+        fileCheck: "sec-2fa-reauth-prompt",
+        message: "Turning 2FA on asks for the password the visitor typed a moment ago. Nothing is verified by asking: the session was established by that exact credential during sign-up or sign-in, so the answer is already known - and what the prompt teaches is that a password box can appear at any moment for no stated reason, which is the habit every phishing page relies on. The step that proves the factor works is the CODE from the authenticator, not the password. Re-authentication is a real control and this is not it: it belongs to a sensitive change on a session that is no longer FRESH, so record `authenticatedAt` when the session is created and treat it as fresh for 5-15 minutes; ask again only past that window, and prefer the second factor or a passkey over the password when you do. The actions worth guarding that way are changing the password or the email, disabling 2FA or removing a factor, regenerating recovery codes, issuing an API token, changing payout details and deleting the account. Mark the line `enigma:allow-2fa-password-prompt` where a policy genuinely requires the prompt (security-policy).",
+        severity: "block",
+        skill: "security-policy",
+    },
+    {
+        id: "fe-select-hand-rolled",
+        label: "Custom selects come from the primitive",
+        files: ["*.tsx", "*.jsx", "*.vue", "*.svelte", "*.astro", "*.ts", "*.js"],
+        excludeFiles: [
+            "*.test.*", "*.spec.*", "**/tests/**", "**/__tests__/**", "**/fixtures/**", "*.min.js",
+            "**/dist/**", "**/build/**", "**/node_modules/**", "**/vendor/**",
+            "dist/**", "build/**", "node_modules/**", "vendor/**",
+        ],
+        scope: "file",
+        stage: "diff",
+        fileCheck: "fe-select-hand-rolled",
+        message: "A select written by hand. Replacing the native one is often right - it cannot hold an icon, a second line or a tag, and its popup is drawn by the OS - but what replaces it has to do everything the platform was doing for free, and the panel is the part that gets written. Missing every time: a typeahead (one letter walks the rows that start with it, a longer buffer refines), a disabled row that is listed and announced but that the arrow keys walk PAST rather than onto, a highlight that the pointer and the keyboard share (two highlights on screen is what makes Enter open the row the mouse is not on), a panel that measures before it opens instead of hanging off the bottom of the window, a hidden input so the form it sits in can actually submit the value, and a long list rendered a window at a time instead of 250 rows for the seven anybody sees. `enigma add select` (@enigmax/primitives) is all of it with a test each, plus a filter that turns itself on from the option count, multi-select with tags, and a baseline theme because an unstyled popup is transparent text lying on the page. Mark the line `enigma:allow-hand-rolled-select` when the listbox genuinely has to be your own (frontend-policy).",
+        severity: "block",
+        skill: "frontend-policy",
+    },
+    {
+        id: "fe-toast-hand-rolled",
+        label: "Toasts come from the primitive",
+        files: ["*.tsx", "*.jsx", "*.vue", "*.svelte", "*.astro", "*.ts", "*.js"],
+        excludeFiles: [
+            "*.test.*", "*.spec.*", "**/tests/**", "**/__tests__/**", "**/fixtures/**", "*.min.js",
+            "**/dist/**", "**/build/**", "**/node_modules/**", "**/vendor/**",
+            "dist/**", "build/**", "node_modules/**", "vendor/**",
+        ],
+        scope: "file",
+        stage: "diff",
+        fileCheck: "fe-toast-hand-rolled",
+        message: "A toast stack written by hand: an array of messages and a `setTimeout` that removes them. The queue is the easy half; what is missing is the timing. A timer that does not PAUSE while the pointer is over the toast dismisses the one thing somebody stopped to read, and one that does not pause on a hidden tab expires every toast the moment the tab is left. A timer restarted by a re-render never fires at all, and one keyed on the array index dismisses the wrong toast as soon as two overlap. Then the stack pushes the page around as it grows, and none of it is announced, because a toast needs a live region rather than a div that appeared. `enigma add toast` (@enigmax/primitives) is the real thing - hover and focus pause it, the tab pauses it, promise toasts, actions, and one styled surface you can restyle. Mark the line `enigma:allow-hand-rolled-toast` when the stack genuinely has to be your own (frontend-policy).",
+        severity: "block",
+        skill: "frontend-policy",
+    },
+    {
+        id: "fe-palette-hand-rolled",
+        label: "The Ctrl+K palette comes from the primitive",
+        files: ["*.tsx", "*.jsx", "*.vue", "*.svelte", "*.astro", "*.ts", "*.js"],
+        excludeFiles: [
+            "*.test.*", "*.spec.*", "**/tests/**", "**/__tests__/**", "**/fixtures/**", "*.min.js",
+            "**/dist/**", "**/build/**", "**/node_modules/**", "**/vendor/**",
+            "dist/**", "build/**", "node_modules/**", "vendor/**",
+        ],
+        scope: "file",
+        stage: "diff",
+        fileCheck: "fe-palette-hand-rolled",
+        message: "A command palette written by hand. The shortcut and the panel are an afternoon; the list underneath is where every palette breaks. A shorter result list leaves the highlight past the end, so Enter opens nothing - the single most common palette bug. The arrows stop at the last row instead of wrapping, which reads as a frozen panel. Focus moves to the row, so the caret leaves the field and a screen reader hears nothing (a row is announced through `aria-activedescendant`, with focus never leaving the input). The pointer gets its own highlight beside the keyboard's, so Enter opens the row the mouse is not on. It reopens holding the last query, which hides what an empty query is for - the recents. And dismissing hands focus to the top of the document instead of back to the trigger. `enigma add palette` (@enigmax/primitives) has each of those with a test, plus grouping whose keyboard sequence stays flat across groups, recents guarded against a storage that throws in a private window, and a scroll lock that compensates for the scrollbar. Mark the line `enigma:allow-hand-rolled-palette` when the palette genuinely has to be your own (frontend-policy).",
+        severity: "block",
+        skill: "frontend-policy",
+    },
+    {
         id: "fe-icon-action-button",
         label: "Repeated actions are icon buttons, not text labels",
         files: ["*.tsx", "*.jsx", "*.vue", "*.svelte", "*.astro", "*.html", "*.htm", "*.ts", "*.js", "*.mts", "*.cts"],
@@ -1539,6 +1603,10 @@ export const FILE_CHECKS: Record<string, (content: string, file: string) => { li
     "fe-context-menu-hand-rolled": (content) => handRolledContextMenu(content),
     "fe-selection-hand-rolled": (content) => handRolledSelection(content),
     "fe-color-picker-hand-rolled": (content) => handRolledColorPicker(content),
+    "sec-2fa-reauth-prompt": (content) => twoFactorPasswordPrompt(content),
+    "fe-select-hand-rolled": (content) => handRolledSelect(content),
+    "fe-toast-hand-rolled": (content) => handRolledToast(content),
+    "fe-palette-hand-rolled": (content) => handRolledPalette(content),
 };
 
 /**
@@ -2128,6 +2196,164 @@ export function handRolledColorPicker(content: string): { line: number; detail: 
         if (COMMENT_LINE.test(line) || /enigma:/.test(line)) continue;
         if (!COLOR_DRAG.test(line)) continue;
         return [{ line: i + 1, detail: "a colour-space conversion, a drag measured off a box, and the colour it sets" }];
+    }
+    return [];
+}
+
+/**
+ * The 2FA setup that asks for the password the visitor typed thirty seconds ago.
+ *
+ * Reported from a real flow: sign up, type the password, land in the app, open "enable two-factor
+ * authentication" - and the first field is the password again. Nothing is verified by asking: the
+ * session was established by that exact credential moments earlier, so the answer is already
+ * known. What it does teach is that a password prompt can appear at any moment for no stated
+ * reason, which is the habit every credential-phishing page depends on.
+ *
+ * Re-authentication is a real control, and this is not it. It exists for a sensitive change on a
+ * session that is no longer FRESH (GitHub's sudo mode, Google's reauth), which is a timestamp
+ * question - so any file that actually implements freshness is left alone: that is the shape the
+ * rule is asking for, not the absence of a prompt.
+ *
+ * PROXIMITY, not co-occurrence: a settings page legitimately holds a change-password form and a
+ * 2FA panel far apart in the same file, and flagging that would be a false positive on nearly
+ * every account page there is. The password field has to be within a window of the enrollment.
+ */
+/**
+ * No word boundaries, because none of this is written as separate words: `enableTotp`,
+ * `setupMfa`, `EnableTwoFactor`. A `\b` before `totp` fails on every one of them, which is how
+ * the first version of this rule passed its own sweep and flagged nothing real.
+ *
+ * The verbs refuse their PAST PARTICIPLE (`enable(?!d)`), which is the difference between doing
+ * it and reporting it: `twoFactorEnabled` on a settings row is a status, and a status line beside
+ * a change-password form is the false positive that costs the rule its credibility.
+ */
+const TWOFA_SUBJECT = /2fa|two[-_ ]?factor|totp|mfa|authenticator|otpauth/i;
+const TWOFA_ENROLL = /enroll?(?!ed)|set[-_ ]?up|activate(?!d)|enable(?!d)|provision(?!ed)/i;
+const TWOFA_PASSWORD = /type=["']password["']|\bpassword\s*[:=]|\bpassword\b\s*[,)]|currentPassword|current_password/i;
+const TWOFA_MITIGATED = /authenticatedAt|authenticated_at|reauthenticat|sudo[-_ ]?mode|sudoMode|freshSession|fresh_session|requireFresh|lastAuthAt|last_auth_at|recentlyAuthenticated|stepUp|step_up|enigma:allow-2fa-password-prompt/i;
+/** How far a password field may sit from the enrollment before it belongs to something else. */
+const TWOFA_WINDOW = 25;
+
+export function twoFactorPasswordPrompt(content: string): { line: number; detail: string; }[] {
+    if (TWOFA_MITIGATED.test(content)) return [];
+    if (!TWOFA_SUBJECT.test(content) || !TWOFA_ENROLL.test(content)) return [];
+    const lines = content.split("\n");
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i]!;
+        if (COMMENT_LINE.test(line) || /enigma:/.test(line)) continue;
+        // The enrollment itself: the subject and the verb on ONE line, so "2fa" in an import and
+        // "enable" in an unrelated toggle thirty lines apart are not read as a setup form.
+        if (!TWOFA_SUBJECT.test(line) || !TWOFA_ENROLL.test(line)) continue;
+        for (let j = Math.max(0, i - TWOFA_WINDOW); j < Math.min(lines.length, i + TWOFA_WINDOW); j++) {
+            const near = lines[j]!;
+            if (COMMENT_LINE.test(near) || /enigma:/.test(near)) continue;
+            if (!TWOFA_PASSWORD.test(near)) continue;
+            return [{ line: j + 1, detail: "a password field inside a first-time 2FA enrollment" }];
+        }
+    }
+    return [];
+}
+
+/**
+ * The three a DASHBOARD is made of, and the three that had no rule.
+ *
+ * The other hand-rolled rules here were each written after somebody rebuilt one component. These
+ * came from the opposite direction: an agent asked for "a dashboard from scratch" wrote a select,
+ * a toast stack and a Ctrl+K palette by hand and nothing stopped it, because the deterministic
+ * tier only covered the marquee, the field, the menu, the selection and the flags. A rule that
+ * exists for five of fourteen primitives is a rule the fourteen do not have - the skill says the
+ * catalogue exists, and a skill is skippable, which is the whole reason this tier is here.
+ *
+ * Each keeps the three-part shape that made the menu and selection rules precise: one signature
+ * part is a role, one is state, one is behaviour, and a file needs all of them.
+ */
+
+/**
+ * A select built by hand: a listbox role over an options list that opens.
+ *
+ * `role="listbox"`/`role="option"` and `aria-activedescendant` are what separate it from every
+ * other popup - a dropdown MENU is `role="menu"`, a native `<select>` needs no role at all, and
+ * neither of those is what this flags. What goes wrong is never the panel: it is the highlight
+ * that does not follow the pointer, the typeahead nobody writes, the panel that opens off the
+ * bottom of the window, and the disabled row the arrow keys walk onto anyway.
+ */
+const LISTBOX_ROLE = /role=["'{\s]*["']?(?:listbox|option)\b|aria-activedescendant/;
+// `isOpen` is in there for the frameworks with no setter: a Vue or Svelte select assigns the
+// flag directly. It can never fire on its own - the listbox role and the options list are
+// required beside it - which is what keeps a bare panel state out of this.
+const LISTBOX_OPEN = /\bset(?:Open|IsOpen|DropdownOpen|MenuOpen|Expanded)\b|\bisOpen\b|\baria-expanded\b/;
+const LISTBOX_OPTIONS = /\b(?:options|choices)\b/;
+const LISTBOX_MITIGATED = /@enigmax\/primitives|createSelect|useSelectContext|<Select|SelectRoot|radix-ui|@headlessui|downshift|react-select|@mui\/material|antd|@mantine|@chakra-ui|primereact|enigma:allow-hand-rolled-select/;
+
+export function handRolledSelect(content: string): { line: number; detail: string; }[] {
+    if (LISTBOX_MITIGATED.test(content)) return [];
+    if (!LISTBOX_ROLE.test(content) || !LISTBOX_OPEN.test(content) || !LISTBOX_OPTIONS.test(content)) return [];
+    const lines = content.split("\n");
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i]!;
+        if (COMMENT_LINE.test(line) || /enigma:/.test(line)) continue;
+        if (!LISTBOX_ROLE.test(line)) continue;
+        return [{ line: i + 1, detail: "a listbox role over an options list with its own open state" }];
+    }
+    return [];
+}
+
+/**
+ * A toast stack built by hand: a queue of messages and a timer that removes them.
+ *
+ * Two parts, not three, because together they are already unambiguous - an array named for
+ * toasts plus a `setTimeout` is a toast stack and nothing else. What it is missing is the part
+ * nobody writes on the first pass: a timer that pauses on hover and on a hidden tab, one that
+ * survives a re-render without restarting, a stack that does not push the page around as it
+ * grows, and an announcement a screen reader actually hears.
+ */
+const TOAST_QUEUE = /\bset(?:Toasts?|Snackbars?)\b|\btoasts\.(?:map|filter|slice)\b|\btoastQueue\b/;
+const TOAST_TIMER = /setTimeout\(/;
+/**
+ * `ToastT` and `ToasterProps` are in there so the rule never flags the implementation it points
+ * at: the primitive's own `react/toast/index.tsx` is a queue of toasts on a timer, which is
+ * exactly the signature. A rule that blocks its own answer is worse than no rule.
+ */
+const TOAST_MITIGATED = /@enigmax\/primitives|createNotifications|useNotifications|<Toaster|ToastT\b|ToasterProps\b|["']sonner["']|react-hot-toast|react-toastify|notistack|@radix-ui|@mui\/material|@chakra-ui|@mantine|antd|enigma:allow-hand-rolled-toast/;
+
+export function handRolledToast(content: string): { line: number; detail: string; }[] {
+    if (TOAST_MITIGATED.test(content)) return [];
+    if (!TOAST_QUEUE.test(content) || !TOAST_TIMER.test(content)) return [];
+    const lines = content.split("\n");
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i]!;
+        if (COMMENT_LINE.test(line) || /enigma:/.test(line)) continue;
+        if (!TOAST_QUEUE.test(line)) continue;
+        return [{ line: i + 1, detail: "a queue of toasts dismissed by a timer" }];
+    }
+    return [];
+}
+
+/**
+ * A command palette built by hand: Ctrl/Cmd+K, an open panel, and a filtered list.
+ *
+ * The shortcut alone is not enough - Cmd+K that focuses a search field is a shortcut, not a
+ * palette - so the panel and the filter have to be there too. The defects are the ones the
+ * palette primitive lists: a highlight that sits past the end of a shortened list so Enter opens
+ * nothing, arrow keys that stop at the last row instead of wrapping, focus that leaves the field
+ * so a screen reader hears nothing move, and a query that is still there when it reopens.
+ */
+const PALETTE_SHORTCUT = /key\s*===?\s*["'`][kK]["'`]/;
+const PALETTE_MODIFIER = /metaKey|ctrlKey/;
+const PALETTE_OPEN = /\bset(?:Open|IsOpen|PaletteOpen|CommandOpen|Palette)\b/;
+const PALETTE_FILTER = /\bquery\b|\bfilter\(|\bsearch\b/i;
+const PALETTE_MITIGATED = /@enigmax\/primitives|isPaletteShortcut|usePaletteContext|<SearchPalette|PaletteRoot|["']cmdk["']|\bkbar\b|enigma:allow-hand-rolled-palette/;
+
+export function handRolledPalette(content: string): { line: number; detail: string; }[] {
+    if (PALETTE_MITIGATED.test(content)) return [];
+    if (!PALETTE_SHORTCUT.test(content) || !PALETTE_MODIFIER.test(content)) return [];
+    if (!PALETTE_OPEN.test(content) || !PALETTE_FILTER.test(content)) return [];
+    const lines = content.split("\n");
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i]!;
+        if (COMMENT_LINE.test(line) || /enigma:/.test(line)) continue;
+        if (!PALETTE_SHORTCUT.test(line)) continue;
+        return [{ line: i + 1, detail: "Ctrl/Cmd+K opening a filtered panel" }];
     }
     return [];
 }

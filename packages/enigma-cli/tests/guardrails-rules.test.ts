@@ -842,3 +842,148 @@ matrix("fe-color-picker-hand-rolled", false, [
     { name: "a colour field that is the plain native input", file: "src/Form.tsx", code: "const [color, setColor] = useState(\"#000\");\n<input type=\"color\" value={color} onChange={(e) => setColor(e.target.value)} />" },
     { name: "deliberate, marked in the file", file: "src/Picker.tsx", code: HAND_COLOR.replace("function onDown(event) {", "// enigma:allow-hand-rolled-color-picker\nfunction onDown(event) {") },
 ]);
+
+/**
+ * The three a dashboard is made of. Measured over the 556 tracked UI files in this repo at the
+ * diff stage: 1 hit, and it is a genuine hand-rolled listbox in the docs site - 0 false
+ * positives. The "no flag" tables below carry the shapes that share one part of each signature
+ * without being the component: a native select, a dropdown menu, a tab list, a debounce timer,
+ * and a shortcut that only focuses a field.
+ */
+const HAND_SELECT = [
+    "const [open, setOpen] = useState(false);",
+    "const [selected, setSelected] = useState(options[0]);",
+    "<button aria-expanded={open} onClick={() => setOpen(!open)}>{selected.label}</button>",
+    '{open && <ul role="listbox">{options.map((o) => (',
+    '    <li role="option" aria-selected={o === selected} onClick={() => setSelected(o)}>{o.label}</li>',
+    "))}</ul>}",
+].join("\n");
+
+matrix("fe-select-hand-rolled", true, [
+    { name: "a listbox role, an open panel and an options list", file: "src/Picker.tsx", code: HAND_SELECT },
+    {
+        name: "the same control in Vue",
+        file: "src/Dropdown.vue",
+        code: 'let isOpen = false;\nconst options = props.choices;\n<ul role="listbox"><li role="option" v-for="o in options">{{ o.label }}</li></ul>',
+    },
+]);
+
+matrix("fe-select-hand-rolled", false, [
+    { name: "already the primitive", file: "src/Picker.tsx", code: `import { Select } from "@enigmax/primitives/react/select";\n${HAND_SELECT}` },
+    { name: "another listbox library", file: "src/Picker.tsx", code: `import { Listbox } from "@headlessui/react";\n${HAND_SELECT}` },
+    { name: "the native element, which needs no role at all", file: "src/Form.tsx", code: "const [value, setValue] = useState(\"\");\n<select value={value} onChange={(e) => setValue(e.target.value)}>{options.map((o) => <option key={o.id}>{o.label}</option>)}</select>" },
+    { name: "a dropdown menu, which is role=menu", file: "src/More.tsx", code: 'const [open, setOpen] = useState(false);\nconst options = actions;\n<div role="menu" aria-expanded={open}>{options.map((a) => <button role="menuitem">{a.label}</button>)}</div>' },
+    { name: "a tab strip", file: "src/Tabs.tsx", code: 'const [selected, setSelected] = useState(0);\nconst options = tabs;\n<div role="tablist">{options.map((t, i) => <button role="tab" aria-selected={i === selected}>{t.label}</button>)}</div>' },
+    { name: "deliberate, marked in the file", file: "src/Picker.tsx", code: HAND_SELECT.replace("const [open,", "// enigma:allow-hand-rolled-select\nconst [open,") },
+]);
+
+const HAND_TOAST = [
+    "const [toasts, setToasts] = useState([]);",
+    "function notify(message) {",
+    "    const id = Date.now();",
+    "    setToasts((current) => [...current, { id, message }]);",
+    "    setTimeout(() => setToasts((current) => current.filter((t) => t.id !== id)), 4000);",
+    "}",
+].join("\n");
+
+matrix("fe-toast-hand-rolled", true, [
+    { name: "a queue of toasts on a timer", file: "src/Toasts.tsx", code: HAND_TOAST },
+    {
+        name: "the same stack in Svelte",
+        file: "src/toasts.js",
+        code: "let toastQueue = [];\nexport function push(message) { toastQueue = [...toastQueue, message]; setTimeout(() => toastQueue.shift(), 3000); }",
+    },
+]);
+
+matrix("fe-toast-hand-rolled", false, [
+    { name: "already the primitive", file: "src/Toasts.tsx", code: `import { toast } from "@enigmax/primitives/react/toast";\n${HAND_TOAST}` },
+    { name: "another toast library", file: "src/Toasts.tsx", code: `import toast from "react-hot-toast";\n${HAND_TOAST}` },
+    { name: "a debounce, which is a timer and nothing else", file: "src/search.ts", code: "let handle;\nexport function debounce(fn) { clearTimeout(handle); handle = setTimeout(fn, 200); }" },
+    { name: "a list of banners with no timer", file: "src/Banners.tsx", code: "const [toasts, setToasts] = useState(alerts);\nreturn toasts.map((t) => <Banner key={t.id} {...t} />);" },
+    { name: "deliberate, marked in the file", file: "src/Toasts.tsx", code: HAND_TOAST.replace("const [toasts,", "// enigma:allow-hand-rolled-toast\nconst [toasts,") },
+]);
+
+const HAND_PALETTE = [
+    "const [open, setOpen] = useState(false);",
+    "const [query, setQuery] = useState(\"\");",
+    "useEffect(() => {",
+    '    const onKey = (event) => { if (event.key === "k" && (event.metaKey || event.ctrlKey)) setOpen(true); };',
+    '    window.addEventListener("keydown", onKey);',
+    '    return () => window.removeEventListener("keydown", onKey);',
+    "}, []);",
+    "const rows = commands.filter((c) => c.label.includes(query));",
+].join("\n");
+
+matrix("fe-palette-hand-rolled", true, [
+    { name: "Ctrl/Cmd+K, a panel and a filtered list", file: "src/Palette.tsx", code: HAND_PALETTE },
+]);
+
+matrix("fe-palette-hand-rolled", false, [
+    { name: "already the primitive", file: "src/Palette.tsx", code: `import { SearchPalette } from "@enigmax/primitives/react/palette";\n${HAND_PALETTE}` },
+    { name: "another palette library", file: "src/Palette.tsx", code: `import { Command } from "cmdk";\n${HAND_PALETTE}` },
+    { name: "a shortcut that only focuses the search field", file: "src/Header.tsx", code: 'const onKey = (event) => { if (event.key === "k" && event.metaKey) inputRef.current?.focus(); };\nconst query = "";' },
+    { name: "a save shortcut beside a filter", file: "src/Editor.tsx", code: 'const [open, setOpen] = useState(false);\nconst rows = items.filter(Boolean);\nconst onKey = (event) => { if (event.key === "s" && event.metaKey) save(); };' },
+    { name: "deliberate, marked in the file", file: "src/Palette.tsx", code: HAND_PALETTE.replace("const [open,", "// enigma:allow-hand-rolled-palette\nconst [open,") },
+]);
+
+/**
+ * The 2FA setup that re-asks for the password. Swept over 15,482 files (this repo, the docs
+ * site and the vendored reference repos): 0 hits, because none of them enrols a factor - so the
+ * "no flag" table below carries the shapes that would be false positives if it did, including
+ * the two that legitimately hold a password beside the word "2fa": a settings page whose
+ * change-password form is elsewhere in the file, and a re-auth that measures session freshness.
+ */
+const TWOFA_SETUP = [
+    "export function EnableTwoFactor() {",
+    "    const [password, setPassword] = useState(\"\");",
+    "    const [code, setCode] = useState(\"\");",
+    "    return (",
+    "        <form onSubmit={() => enableTotp({ password, code })}>",
+    "            <input type=\"password\" value={password} onChange={(e) => setPassword(e.target.value)} />",
+    "            <input value={code} onChange={(e) => setCode(e.target.value)} />",
+    "        </form>",
+    "    );",
+    "}",
+].join("\n");
+
+matrix("sec-2fa-reauth-prompt", true, [
+    { name: "a password field inside the enrollment form", file: "src/EnableTwoFactor.tsx", code: TWOFA_SETUP },
+    {
+        name: "the same thing on the server",
+        file: "src/routes/mfa.ts",
+        code: "export async function setupMfa(req) {\n  const { password, token } = req.body;\n  if (!(await verifyPassword(req.user, password))) throw new Error(\"bad password\");\n  return provisionTotp(req.user, token);\n}",
+    },
+]);
+
+matrix("sec-2fa-reauth-prompt", false, [
+    {
+        name: "re-auth that actually measures freshness",
+        file: "src/EnableTwoFactor.tsx",
+        code: `const fresh = Date.now() - session.authenticatedAt < 10 * 60 * 1000;\n${TWOFA_SETUP}`,
+    },
+    {
+        name: "the enrollment asks for the CODE, which is the step that proves the factor",
+        file: "src/EnableTwoFactor.tsx",
+        code: "export function EnableTwoFactor() {\n  const [code, setCode] = useState(\"\");\n  return <form onSubmit={() => enableTotp({ code })}><input value={code} /></form>;\n}",
+    },
+    {
+        name: "a settings page whose change-password form is far from the 2FA panel",
+        file: "src/Settings.tsx",
+        code: [
+            "export function Settings() {",
+            "  return (<>",
+            "    <ChangePassword />",
+            "    <input type=\"password\" name=\"newPassword\" />",
+            ...Array.from({ length: 30 }, (_, i) => `    <Row key={${i}} />`),
+            "    <button onClick={() => setupTotp()}>Enable two-factor authentication</button>",
+            "  </>);",
+            "}",
+        ].join("\n"),
+    },
+    {
+        name: "disabling a factor, which is the sensitive change re-auth is actually for",
+        file: "src/DisableTwoFactor.tsx",
+        code: "export function DisableTwoFactor() {\n  const [password, setPassword] = useState(\"\");\n  return <form onSubmit={() => disableTotp({ password })}><input type=\"password\" value={password} /></form>;\n}",
+    },
+    { name: "deliberate, marked in the file", file: "src/EnableTwoFactor.tsx", code: TWOFA_SETUP.replace("export function EnableTwoFactor", "// enigma:allow-2fa-password-prompt\nexport function EnableTwoFactor") },
+]);

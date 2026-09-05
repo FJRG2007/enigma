@@ -54,6 +54,15 @@ These four screens are one system: an attacker who cannot guess a password will 
 - Keep email verification asynchronous. Let them in unverified, ask for confirmation, and gate only the actions that genuinely need a verified address (billing, invites, outbound mail).
 - The exception is an account created by someone else (admin provisioning, an approval queue). Then say so in the code, because the redirect looks like the defect.
 
+### A credential just proven is not asked for again
+
+- Enrolling the first second factor right after sign-up or sign-in must NOT ask for the password. It was verified seconds ago and it established the session that is rendering the page: asking verifies nothing, and it teaches the visitor that a password box can appear at any moment for no stated reason, which is the habit every phishing page depends on. `sec-2fa-reauth-prompt` blocks it.
+- What proves the enrollment is the CODE from the authenticator app, not the password. Show the secret and its QR once, require one valid code before the factor counts as active, then issue single-use recovery codes and show them once.
+- Re-authentication is a real control, and it is a question about FRESHNESS rather than about the action. Record `authenticatedAt` when the session is created, treat it as fresh for 5 to 15 minutes, and ask again only past that window - GitHub's sudo mode, and Google's reauth, are exactly this.
+- Guard these with a fresh session, and only these: changing the password or the email, disabling 2FA or removing a factor, viewing or regenerating recovery codes, issuing an API token, changing payout or billing details, and deleting the account.
+- When the window has passed, prefer stepping up with the SECOND factor or a passkey over the password: it is the stronger proof, and it is the one an attacker holding a stolen password does not have.
+- The same rule applies to every other credential in a flow. Do not ask for the email again on the screen that just verified it, and do not ask a user to retype a password they entered on the previous step of the same wizard. A form that re-asks for what the flow already holds is a bug in the flow, not a security control.
+
 ### Password recovery is part of every password login
 
 - Every sign-in form with a password field needs a visible recovery entry point. A login screen with no way out of a forgotten password is an incomplete flow, not a simpler one.
