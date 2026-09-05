@@ -953,6 +953,38 @@ export const BUILTIN_RULES: GuardrailRule[] = [
         skill: "frontend-policy",
     },
     {
+        id: "fe-lightbox-hand-rolled",
+        label: "Image viewers come from the primitive",
+        files: ["*.tsx", "*.jsx", "*.vue", "*.svelte", "*.astro", "*.ts", "*.js"],
+        excludeFiles: [
+            "*.test.*", "*.spec.*", "**/tests/**", "**/__tests__/**", "**/fixtures/**", "*.min.js",
+            "**/dist/**", "**/build/**", "**/node_modules/**", "**/vendor/**",
+            "dist/**", "build/**", "node_modules/**", "vendor/**",
+        ],
+        scope: "file",
+        stage: "diff",
+        fileCheck: "fe-lightbox-hand-rolled",
+        message: "A lightbox written by hand: a picture in a dialog, a wheel that scales it, and a zoom kept as state. The tail is long and always the same. A wheel listener is PASSIVE by default, so every notch zooms the image and scrolls the article behind the backdrop with it. Scaling around the frame's centre slides whatever was under the pointer away from it, so zooming into a face means hunting for it again. Nothing bounds the pan, so a drag strands the picture off screen with no way back but closing. The dialog is left in the page rather than portalled, and the first ancestor with `overflow: hidden` clips it. Escape does not close it, the body still scrolls under it, and focus never returns to the image it was opened from. `enigma add image` (@enigmax/primitives) is `<Image>`: a press enlarges it and the wheel zooms around the cursor by default, with a drag to pan, a pinch on touch and the keyboard driving both - and the arrows, the strip of previews, a download menu and a discard action off until asked for. The viewer is its own chunk, fetched on intent, so a page of images nobody enlarges downloads none of it. Mark the line `enigma:allow-hand-rolled-lightbox` when the viewer genuinely has to be your own (frontend-policy).",
+        severity: "block",
+        skill: "frontend-policy",
+    },
+    {
+        id: "fe-video-player-hand-rolled",
+        label: "Video controls come from the primitive",
+        files: ["*.tsx", "*.jsx", "*.vue", "*.svelte", "*.astro", "*.ts", "*.js"],
+        excludeFiles: [
+            "*.test.*", "*.spec.*", "**/tests/**", "**/__tests__/**", "**/fixtures/**", "*.min.js",
+            "**/dist/**", "**/build/**", "**/node_modules/**", "**/vendor/**",
+            "dist/**", "build/**", "node_modules/**", "vendor/**",
+        ],
+        scope: "file",
+        stage: "diff",
+        fileCheck: "fe-video-player-hand-rolled",
+        message: "Controls written by hand over a `<video>`. What follows is the same every time: `play()` returns a promise that REJECTS - no gesture yet, an autoplay policy, no source - and the unhandled rejection leaves the button saying pause over a video that never started; the state is kept in the component instead of read back from the element's own events, so anything else that plays or pauses it (the media keys, picture in picture, the operating system) desynchronises the bar; the scrubber is a div with a click handler rather than a slider a keyboard can drive or a screen reader can read; the buffered ranges are ignored, or read as `buffered.end(0)`, which reports a range nobody is watching; the clock changes width as it passes ten minutes and shoves every control along with it; the shortcuts fire while somebody is typing in a comment box; and fullscreen calls `requestFullscreen` on a container, which iOS Safari does not have at all. `enigma add video` (@enigmax/primitives) is `<Video>`, shaped after Plyr: the same control set and the same shortcuts, the element as the source of truth, and a theme restyled through `data-*` attributes. Mark the line `enigma:allow-hand-rolled-video-player` when the player genuinely has to be your own (frontend-policy).",
+        severity: "block",
+        skill: "frontend-policy",
+    },
+    {
         id: "sec-2fa-reauth-prompt",
         label: "A credential just proven is not asked for again",
         files: ["*.tsx", "*.jsx", "*.vue", "*.svelte", "*.astro", "*.ts", "*.js", "*.py", "*.rb", "*.php"],
@@ -1603,6 +1635,8 @@ export const FILE_CHECKS: Record<string, (content: string, file: string) => { li
     "fe-context-menu-hand-rolled": (content) => handRolledContextMenu(content),
     "fe-selection-hand-rolled": (content) => handRolledSelection(content),
     "fe-color-picker-hand-rolled": (content) => handRolledColorPicker(content),
+    "fe-lightbox-hand-rolled": (content) => handRolledLightbox(content),
+    "fe-video-player-hand-rolled": (content) => handRolledVideoPlayer(content),
     "sec-2fa-reauth-prompt": (content) => twoFactorPasswordPrompt(content),
     "fe-select-hand-rolled": (content) => handRolledSelect(content),
     "fe-toast-hand-rolled": (content) => handRolledToast(content),
@@ -2196,6 +2230,75 @@ export function handRolledColorPicker(content: string): { line: number; detail: 
         if (COMMENT_LINE.test(line) || /enigma:/.test(line)) continue;
         if (!COLOR_DRAG.test(line)) continue;
         return [{ line: i + 1, detail: "a colour-space conversion, a drag measured off a box, and the colour it sets" }];
+    }
+    return [];
+}
+
+/**
+ * A lightbox built by hand: a picture, a wheel that scales it, the zoom kept as state, and the
+ * dialog all of it sits in.
+ *
+ * FOUR parts, because each of the first three is ordinary on its own. An `<img>` is an image. A
+ * wheel handler is a chart, a map or a scroller. A scale in state is any transform. What makes it
+ * a viewer is all three plus the dialog - an overlay, an Escape, or a portal.
+ */
+const LIGHTBOX_IMAGE = /<img\b|<Image\b|createElement\(\s*["'`]img["'`]/;
+const LIGHTBOX_WHEEL = /onWheel|@wheel|on:wheel|addEventListener\(\s*["'`]wheel["'`]/;
+/** The zoom itself: a scale in state, or one written into a transform. */
+const LIGHTBOX_ZOOM = /\bset(?:Scale|Zoom)\b|\b(?:scale|zoom)\s*[:=]\s*[0-9(]|scale\(/;
+/** The dialog around it, in any of the spellings a lightbox uses. */
+const LIGHTBOX_DIALOG = /role=["']dialog["']|aria-modal|lightbox|createPortal|["']Escape["']|backdrop/i;
+const LIGHTBOX_MITIGATED = /@enigmax\/primitives|data-enigma-image|ImageViewer\b|yet-another-react-lightbox|react-image-lightbox|photoswipe|medium-zoom|viewerjs|fancybox|lightgallery|react-medium-image-zoom|enigma:allow-hand-rolled-lightbox/i;
+
+export function handRolledLightbox(content: string): { line: number; detail: string; }[] {
+    if (LIGHTBOX_MITIGATED.test(content)) return [];
+    if (!LIGHTBOX_IMAGE.test(content) || !LIGHTBOX_WHEEL.test(content)) return [];
+    if (!LIGHTBOX_ZOOM.test(content) || !LIGHTBOX_DIALOG.test(content)) return [];
+    const lines = content.split("\n");
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i]!;
+        if (COMMENT_LINE.test(line) || /enigma:/.test(line)) continue;
+        if (!LIGHTBOX_WHEEL.test(line)) continue;
+        return [{ line: i + 1, detail: "a picture in a dialog, a wheel that scales it, and the zoom it keeps" }];
+    }
+    return [];
+}
+
+/**
+ * A video player built by hand: the element, its playback driven by code, and a bar of controls
+ * drawn over it.
+ *
+ * `<video controls>` is the browser's own player and is left alone - this rule is about REPLACING
+ * that bar. So the signature needs the element, a call that plays or pauses it, the timeline it
+ * reads, and a control of its own to show for it.
+ */
+const VIDEO_ELEMENT = /<video\b|createElement\(\s*["'`]video["'`]|HTMLVideoElement/;
+const VIDEO_DRIVEN = /\.play\(\)|\.pause\(\)|\bplaybackRate\b|requestPictureInPicture/;
+/**
+ * The timeline the bar is drawn from. `timeupdate` is matched as a bare word rather than as a
+ * quoted string: it is a media event name and nothing else, and every framework spells the
+ * binding its own way (`onTimeUpdate`, `@timeupdate`, `on:timeupdate`).
+ */
+const VIDEO_TIMELINE = /\bcurrentTime\b|timeupdate|\.buffered\b/i;
+/** A bar of its own: a play button, a scrubber, or a fullscreen control the page draws. */
+const VIDEO_CONTROLS = /aria-label=["'](?:Play|Pause|Mute|Seek|Fullscreen)|onClick=\{[^}]*(?:play|pause)|requestFullscreen|toggleFullscreen|isPlaying|setPlaying/i;
+/**
+ * Case-INSENSITIVE, so the component's own marker cannot be listed here: `<Video` would match
+ * `<video` and exempt every player there is. `data-enigma-video` is the marker instead, which is
+ * what the primitive renders and nothing else does.
+ */
+const VIDEO_MITIGATED = /@enigmax\/primitives|data-enigma-video|["'`]plyr|from\s+["'`]plyr|video\.js|videojs|react-player|vidstack|media-chrome|@vime|shaka-player|enigma:allow-hand-rolled-video-player/i;
+
+export function handRolledVideoPlayer(content: string): { line: number; detail: string; }[] {
+    if (VIDEO_MITIGATED.test(content)) return [];
+    if (!VIDEO_ELEMENT.test(content) || !VIDEO_DRIVEN.test(content)) return [];
+    if (!VIDEO_TIMELINE.test(content) || !VIDEO_CONTROLS.test(content)) return [];
+    const lines = content.split("\n");
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i]!;
+        if (COMMENT_LINE.test(line) || /enigma:/.test(line)) continue;
+        if (!VIDEO_DRIVEN.test(line)) continue;
+        return [{ line: i + 1, detail: "a video element, its playback driven by code, and a bar of controls over it" }];
     }
     return [];
 }

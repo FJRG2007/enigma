@@ -37,6 +37,14 @@
       "types": "./dist/react/selection.d.ts",
       "import": "./dist/react/selection.js"
     },
+    "./react/image": {
+      "types": "./dist/react/image.d.ts",
+      "import": "./dist/react/image.js"
+    },
+    "./react/video": {
+      "types": "./dist/react/video.d.ts",
+      "import": "./dist/react/video.js"
+    },
     "./react/button": {
       "types": "./dist/react/button.d.ts",
       "import": "./dist/react/button.js"
@@ -90,6 +98,8 @@
     "./toast.css": "./recipes/toast/styles.css",
     "./input.css": "./recipes/input/styles.css",
     "./color.css": "./recipes/color/styles.css",
+    "./image.css": "./recipes/image/styles.css",
+    "./video.css": "./recipes/video/styles.css",
     "./marquee.css": "./recipes/marquee/styles.css",
     "./logo-marquee.css": "./recipes/logo-marquee/styles.css",
     "./palette.css": "./recipes/palette/styles.css",
@@ -179,7 +189,10 @@
     "shortcuts",
     "toast",
     "unstyled",
-    "vanilla"
+    "vanilla",
+    "lightbox",
+    "image-viewer",
+    "video-player"
   ],
   "license": "Apache-2.0",
   "author": "FJRG2007 <fjrg2007@tpeoficial.com>",

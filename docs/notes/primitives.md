@@ -1120,6 +1120,114 @@ already paid for every rule in it.
 - It ships **no stylesheet at all**. The one style the component sets is `position: relative` on
   the container, which the band is positioned against.
 
+## image
+
+`<Image>` is the picture in the page plus the lightbox a press opens: a fitted frame, zoom on
+the wheel around the cursor, a drag to pan, a pinch on touch, and the keyboard driving all of
+it. The rest - the arrows and counter of a set, the strip of previews, a three-dot menu, and a
+discard action - is OFF until a prop asks for it. That default is the API's whole shape: an
+image in a page is expected to enlarge when pressed, and everything past that is a decision
+about the page it sits in.
+
+**The chunk split follows the colour picker's lesson, one step further.** `react/image/index`
+is the `<img>` and the press; `react/image/viewer` is the lightbox; `react/image/menu` is the
+menu and the context-menu component it composes. So a page of images nobody enlarges downloads
+one small module, and a viewer nobody gives a menu to downloads two. The viewer is prefetched
+on INTENT - `pointerenter` or `focus` on the picture - so the press usually lands on code that
+is already here, and a press that beats it opens the viewer when it arrives rather than being
+dropped. The affordance itself is never in the chunk, which is the rule the picker's swatch
+established.
+
+**Portalled, unlike the picker's panel.** A lightbox covers the window: left in the page it is
+clipped by the first ancestor with `overflow: hidden` and stacked under anything the page gave
+a `z-index`. So it goes to `document.body`, at `--enigma-image-z: 9999` - above the page's own
+chrome rather than merely above its content, which a sticky header with a z-index of its own
+would otherwise paint over.
+
+The arithmetic is `core/image-viewer.ts`, and every function in it is a defect somebody ships:
+
+- **`zoomAt` keeps the point under the pointer.** Scaling around the frame's centre slides what
+  the visitor was aiming at out from under them, so zooming into a face means hunting for it
+  again.
+- **`wheelFactor` reads `deltaMode`.** Firefox reports a wheel in LINES and a page scroll in
+  PAGES; treating every delta as pixels makes the same gesture a hundred times stronger in one
+  browser. The exponential keeps a notch proportional, so 1x to 8x and back take the same turns.
+- **`clampPan` bounds the offset by what actually hangs outside the frame**, measured on the
+  DRAWN size (`fittedSize`), not the natural one. Without it a drag strands the picture off
+  screen and the only way back is closing the viewer.
+- **`nextIndex` skips what was discarded** and answers -1 when nothing is left, which is the
+  viewer's cue to close rather than sit over an empty frame. It walks at most one full pass, so
+  a set that is entirely discarded terminates.
+- **`downloadFile` fetches the bytes and hands over a blob.** `<a download>` is honoured only
+  same-origin: on a CDN the browser ignores the attribute and opens the picture in a tab, which
+  is not what the row said. The plain anchor is the fallback for a refused CORS fetch.
+
+Four smaller things, all found by driving the real page:
+
+- **The wheel listener is bound by hand, `{ passive: false }`.** React's `onWheel` is passive
+  and cannot `preventDefault`, so every notch would zoom the image AND scroll the article
+  behind the backdrop.
+- **`grid-template-rows: auto minmax(0, 1fr) auto`.** A plain `1fr` is `minmax(auto, 1fr)`, and
+  that automatic minimum is the content's min-content size - so a picture taller than the frame
+  GREW the row and had its bottom clipped instead of being fitted. The same family as the
+  `min-width: 0` trap in `text-overflow.md`.
+- **The trigger is a real box, never `display: contents`.** An element with no box cannot be
+  focused in Chromium, so closing with Escape handed focus to the body and the next Tab started
+  at the top of the page.
+- **A press on the dark area beside the picture closes it.** Answering only the few pixels
+  outside the frame is the same as not answering at all; a drag that merely ENDS there does
+  not, which is what the 4px of slop is for.
+
+The strip uses `justify-content: safe center`: a short row is centred, and a long one starts at
+its beginning rather than putting its first thumbnail off the left edge where no scroll can
+reach it.
+
+The discard set is a SESSION, held by the viewer while it is open. The list belongs to the
+caller - `onDiscard` is how they drop it from their own state - and a set that outlived the
+dialog would fight whatever they did with it.
+
+## video
+
+`<Video>` is a player shaped after Plyr: the same control set, the same shortcuts, the same bar
+that fades while playing. What differs is what it is made of - React markup with `data-*`
+attributes rather than a template string a library parses - so it is themed the way every other
+primitive here is.
+
+**The element is the source of truth.** Every control reads the video back through its own
+events (`play`, `pause`, `timeupdate`, `progress`, `volumechange`, `ratechange`, `waiting`)
+instead of keeping a second copy of what is playing. Anything else that changes playback - the
+media keys, picture in picture, the operating system, the caller's own ref - would otherwise
+desynchronise the bar, and a player that believes its own state says "playing" over a video the
+browser refused to autoplay. `play()` returns a promise that REJECTS for exactly that reason,
+and the rejection is handled rather than left in a console.
+
+`core/player.ts` holds what is not rendering, and the cases are the visible ones:
+
+- **`formatTime(seconds, duration)` is sized by the LONGEST time it will show.** A 1h04m video
+  passing ten minutes would otherwise go `9:59` -> `10:00` -> `1:00:00` and shove every control
+  along with it.
+- **`bufferedAhead` reports the range UNDER the playhead**, not the largest one: a viewer who
+  seeks past the buffer should see a bar that says nothing is loaded, because nothing is.
+- **`commandFor` is the platform's map** - space/K, J/L, arrows, M, F, C, P, digits - and
+  `isTypingTarget` is what keeps a space bar in a comment box from pausing the video.
+- **`toggleFullscreen` has the iOS branch.** Safari on iPhone has no Fullscreen API for an
+  arbitrary element; the only thing that can fill the screen is the video, through
+  `webkitEnterFullscreen`. Without it the button does nothing at all where most video is
+  watched.
+
+`react/video/rail.tsx` is ONE control used by the scrubber and the volume: a fraction set by a
+press, dragged with the pointer captured so it keeps following outside the box, and driven by
+the arrows with `role="slider"`. It stops the arrow keys from bubbling, or setting the volume
+would also seek the video.
+
+The bar hides after `autoHideDelay` of playing and comes back on a pointer move, focus or
+pause - never while the settings menu is open, because a bar that vanishes under the pointer
+takes the panel being read with it.
+
+The docs playground ships no media on purpose: a file big enough to be worth playing is a file
+every reader downloads to look at a control bar. It plays whatever the reader points it at,
+read locally through an object URL and never uploaded.
+
 ## Adding a primitive
 
 1. `src/core/<name>.ts`, plus an adapter per target it supports.

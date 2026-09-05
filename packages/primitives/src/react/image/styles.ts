@@ -1,0 +1,143 @@
+/**
+ * The image viewer's look.
+ *
+ * It ships one, for the reason the colour picker and the toast do: there is no useful
+ * "unstyled" lightbox. A dialog with no backdrop, no size and no stacking is not a plain
+ * viewer, it is the page with an image lying across it - so the panel arrives dressed and
+ * `styles={false}` takes it away for anyone drawing their own.
+ *
+ * A string because the component injects it. `scripts/sync-recipes.mjs` generates
+ * `recipes/image/styles.css` from here and CI fails when the two drift, so this module is the
+ * source and the stylesheet is the copy for anyone who prefers an import.
+ *
+ * Everything below is a custom property or an attribute selector: the sheet is PREPENDED to
+ * `<head>`, so anything the document already has wins at equal specificity.
+ */
+
+export const IMAGE_STYLES = `
+:root {
+    --enigma-image-backdrop: rgba(0, 0, 0, 0.92);
+    --enigma-image-text: #f5f5f5;
+    --enigma-image-muted: #a3a3a3;
+    --enigma-image-control-bg: rgba(23, 23, 23, 0.72);
+    --enigma-image-control-hover: rgba(64, 64, 64, 0.82);
+    --enigma-image-control-size: 2.25rem;
+    --enigma-image-radius: 0.625rem;
+    --enigma-image-gap: 0.75rem;
+    --enigma-image-thumb-size: 3.5rem;
+    --enigma-image-focus: #f5f5f5;
+    /* Above the page's own chrome, not merely above its content: a header or a sticky sidebar
+       with a z-index of its own would otherwise paint over the dialog covering it. */
+    --enigma-image-z: 9999;
+}
+
+/* The thumbnail in the page. Only what the behaviour needs: the pointer says it opens, and
+   the box is the caller's to size. */
+[data-enigma-image] { display: inline-flex; max-width: 100%; }
+[data-enigma-image][data-clickable] { cursor: zoom-in; }
+[data-enigma-image] img { display: block; max-width: 100%; height: auto; }
+/* A real box, never display:contents: an element without one cannot be focused in Chromium,
+   so a viewer closed with Escape would hand focus to the body instead of back to the picture
+   it was opened from, and the next Tab would start at the top of the page. */
+[data-enigma-image-trigger] {
+    display: inline-flex; max-width: 100%; padding: 0; margin: 0;
+    background: none; border: 0; color: inherit; font: inherit; cursor: inherit;
+}
+[data-enigma-image-trigger]:focus-visible img { outline: 2px solid var(--enigma-image-focus); outline-offset: 3px; }
+
+/* The viewer. Fixed and portalled: a lightbox inside the page's own stacking context is a
+   lightbox some ancestor's overflow or transform will clip. */
+[data-enigma-image-viewer] {
+    position: fixed; inset: 0; z-index: var(--enigma-image-z);
+    display: grid; grid-template-rows: auto minmax(0, 1fr) auto;
+    background: var(--enigma-image-backdrop);
+    color: var(--enigma-image-text);
+    animation: enigma-image-in 120ms ease-out;
+}
+@keyframes enigma-image-in { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+    [data-enigma-image-viewer] { animation: none; }
+}
+
+[data-enigma-image-bar] {
+    display: flex; align-items: center; gap: 0.5rem;
+    padding: var(--enigma-image-gap);
+}
+[data-enigma-image-counter] {
+    font-size: 0.8125rem; font-variant-numeric: tabular-nums; color: var(--enigma-image-muted);
+    margin-inline-end: auto;
+}
+
+[data-enigma-image-button] {
+    display: grid; place-items: center; flex: none;
+    width: var(--enigma-image-control-size); height: var(--enigma-image-control-size);
+    padding: 0; color: var(--enigma-image-text);
+    background: var(--enigma-image-control-bg); border: 0; border-radius: 999px;
+    cursor: pointer;
+}
+[data-enigma-image-button]:hover { background: var(--enigma-image-control-hover); }
+[data-enigma-image-button]:focus-visible { outline: 2px solid var(--enigma-image-focus); outline-offset: 2px; }
+[data-enigma-image-button][disabled] { opacity: 0.35; cursor: not-allowed; }
+
+/* The frame the picture is fitted into, and the surface every gesture is measured against. */
+[data-enigma-image-frame] {
+    position: relative; overflow: hidden;
+    display: grid; place-items: center;
+    /* Room for the arrows down each side, so they sit beside the picture rather than on it. */
+    padding: 0 calc(var(--enigma-image-control-size) + var(--enigma-image-gap) * 1.5);
+    /* The drag IS the control once zoomed, so the page must not scroll under it. */
+    touch-action: none;
+    -webkit-user-select: none; user-select: none;
+}
+[data-enigma-image-frame] img {
+    max-width: 100%; max-height: 100%;
+    -webkit-user-drag: none;
+    will-change: transform;
+}
+[data-enigma-image-frame][data-zoomed] { cursor: grab; }
+[data-enigma-image-frame][data-panning] { cursor: grabbing; }
+[data-enigma-image-frame][data-loading] img { opacity: 0.35; }
+
+/* Left and right sit over the picture rather than beside it: the frame is the biggest thing
+   on screen and the arrows have to be reachable without hunting for an edge. */
+[data-enigma-image-nav] {
+    position: absolute; top: 50%; translate: 0 -50%;
+    width: var(--enigma-image-control-size); height: var(--enigma-image-control-size);
+}
+[data-enigma-image-nav="previous"] { left: var(--enigma-image-gap); }
+[data-enigma-image-nav="next"] { right: var(--enigma-image-gap); }
+
+[data-enigma-image-spinner] {
+    position: absolute; width: 1.75rem; height: 1.75rem;
+    border: 2px solid rgba(255, 255, 255, 0.25); border-top-color: var(--enigma-image-text);
+    border-radius: 999px; animation: enigma-image-spin 700ms linear infinite;
+}
+@keyframes enigma-image-spin { to { rotate: 360deg; } }
+@media (prefers-reduced-motion: reduce) {
+    [data-enigma-image-spinner] { animation-duration: 2s; }
+}
+
+[data-enigma-image-foot] { display: grid; gap: 0.5rem; padding: var(--enigma-image-gap); }
+[data-enigma-image-caption] {
+    margin: 0; text-align: center; font-size: 0.8125rem; line-height: 1.5;
+    color: var(--enigma-image-muted);
+}
+
+/* The strip. Scrolls on its own rather than wrapping: a gallery of forty is one row you drag
+   through, not five rows that push the picture off the screen. */
+[data-enigma-image-strip] {
+    display: flex; gap: 0.5rem; overflow-x: auto; scrollbar-width: thin;
+    justify-content: safe center;
+    padding-bottom: 0.25rem;
+}
+[data-enigma-image-thumb] {
+    flex: none; width: var(--enigma-image-thumb-size); height: var(--enigma-image-thumb-size);
+    padding: 0; overflow: hidden;
+    background: none; border: 0; border-radius: 0.375rem;
+    opacity: 0.55; cursor: pointer;
+}
+[data-enigma-image-thumb] img { width: 100%; height: 100%; object-fit: cover; }
+[data-enigma-image-thumb]:hover { opacity: 0.85; }
+[data-enigma-image-thumb][aria-current="true"] { opacity: 1; box-shadow: 0 0 0 2px var(--enigma-image-focus); }
+[data-enigma-image-thumb]:focus-visible { outline: 2px solid var(--enigma-image-focus); outline-offset: 2px; }
+`;

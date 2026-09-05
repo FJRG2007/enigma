@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { Image } from "@/react/image";
+import { Video } from "@/react/video";
 import { createRoot } from "react-dom/client";
 import { SearchPalette } from "@/react/palette";
 import { SelectionList } from "@/react/selection";
@@ -9,6 +11,21 @@ import { Select, type SelectItem } from "@/react/select";
 import { Button as RouterButton } from "@/react-router/index";
 import { ContextMenu, type ContextMenuNode } from "@/react/context-menu";
 import { Button, Input, setLinkComponent, type BreachState, type PasswordStrengthReport } from "@/react/index";
+
+/** A picture with a real intrinsic size and no request behind it. */
+function photo(color: string, label: string, width = 800, height = 600): string {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="100%" height="100%" fill="${color}"/><text x="50%" y="50%" font-size="96" text-anchor="middle" fill="#fff">${label}</text></svg>`;
+    return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+}
+
+const PHOTOS = [
+    { src: photo("#1d4ed8", "1"), alt: "The first picture", caption: "A blue rectangle" },
+    { src: photo("#15803d", "2", 600, 900), alt: "The second picture" },
+    { src: photo("#b91c1c", "3"), alt: "The third picture" }
+];
+
+/** One cue, inline, so the captions control has a track without a file to fetch. */
+const CAPTIONS = `data:text/vtt,${encodeURIComponent(["WEBVTT", "", "00:00:00.000 --> 00:00:05.000", "A caption", ""].join("\n"))}`;
 
 /**
  * The React fixture: a registration form of the kind `<Input>` is for, wired the way a real
@@ -38,6 +55,8 @@ interface FixtureWindow extends Window {
     __commands: string[];
     __picked: string[];
     __menuLoads: number;
+    __discarded: string[];
+    __imageIndex: number;
 }
 
 const fixture = window as unknown as FixtureWindow;
@@ -58,6 +77,8 @@ fixture.__chosen = [];
 fixture.__commands = [];
 fixture.__picked = [];
 fixture.__menuLoads = 0;
+fixture.__discarded = [];
+fixture.__imageIndex = 0;
 
 /**
  * Stands in for next/link: a component that renders an anchor and marks itself, so a test
@@ -418,6 +439,41 @@ function Form(): React.ReactNode {
                 >
                     {({ item }) => <span>{item.name}</span>}
                 </SelectionList>
+            </div>
+
+            {/* A gallery with everything turned on: the arrows, the strip, the menu and the
+                discard action, which is what the props are for. */}
+            <div data-testid="gallery">
+                <Image
+                    data-testid="gallery-image"
+                    src={PHOTOS[0]!.src}
+                    alt="The first picture"
+                    images={PHOTOS}
+                    navigation
+                    thumbnails
+                    menu
+                    discardable
+                    onDiscard={(item) => { fixture.__discarded.push(item.alt ?? item.src); }}
+                    onIndexChange={(index) => { fixture.__imageIndex = index; }}
+                />
+            </div>
+
+            {/* The defaults, and only those: a press opens it and the wheel zooms. */}
+            <div data-testid="plain-image">
+                <Image data-testid="plain-image-img" src={PHOTOS[2]!.src} alt="On its own" />
+            </div>
+
+            {/* The player. The source never loads on purpose: the controls, their state and
+                the shortcuts are the component's, and a real file would make the suite wait
+                on decoding rather than on the thing being tested. */}
+            <div data-testid="player">
+                <Video
+                    data-testid="player-video"
+                    src="/test/fixture/missing.mp4"
+                    poster={PHOTOS[1]!.src}
+                    tracks={[{ src: CAPTIONS, srcLang: "en", label: "English", default: true }]}
+                    wrapperProps={{ style: { width: 480 } }}
+                />
             </div>
 
             <SearchPalette

@@ -844,6 +844,71 @@ matrix("fe-color-picker-hand-rolled", false, [
 ]);
 
 /**
+ * The two the media surfaces are made of. Both signatures need FOUR parts, because each part on
+ * its own is ordinary: an `<img>` is an image, a wheel handler is a chart or a map, a scale in
+ * state is any transform, and `<video controls>` is the browser's own player - which is exactly
+ * what the "no flag" tables below hold.
+ */
+const HAND_LIGHTBOX = [
+    "const [open, setOpen] = useState(false);",
+    "const [scale, setScale] = useState(1);",
+    "const onWheel = (e) => setScale((s) => s * (e.deltaY < 0 ? 1.1 : 0.9));",
+    "return open ? (",
+    "  <div role=\"dialog\" onClick={() => setOpen(false)}>",
+    "    <img src={photo} style={{ transform: `scale(${scale})` }} onWheel={onWheel} />",
+    "  </div>",
+    ") : <img src={photo} onClick={() => setOpen(true)} />;",
+].join("\n");
+
+matrix("fe-lightbox-hand-rolled", true, [
+    { name: "a picture in a dialog, a wheel that scales it, and the zoom it keeps", file: "src/Gallery.tsx", code: HAND_LIGHTBOX },
+    {
+        name: "the same viewer in Vue",
+        file: "src/Lightbox.vue",
+        code: "let zoom = 1;\nfunction onWheel(e) { zoom = zoom * (e.deltaY < 0 ? 1.1 : 0.9); }\n<div class=\"backdrop\"><img :src=\"photo\" :style=\"{ transform: `scale(${zoom})` }\" @wheel=\"onWheel\" /></div>",
+    },
+]);
+
+matrix("fe-lightbox-hand-rolled", false, [
+    { name: "already the primitive", file: "src/Gallery.tsx", code: `import { Image } from "@enigmax/primitives/react/image";\n${HAND_LIGHTBOX}` },
+    { name: "another viewer library", file: "src/Gallery.tsx", code: `import Lightbox from "yet-another-react-lightbox";\n${HAND_LIGHTBOX}` },
+    { name: "a plain image that opens a page", file: "src/Card.tsx", code: "<a href={photo.href}><img src={photo.thumb} alt={photo.alt} /></a>" },
+    { name: "a chart that zooms on the wheel, with no picture in it", file: "src/Chart.tsx", code: "const [scale, setScale] = useState(1);\n<svg onWheel={(e) => setScale(scale * (e.deltaY < 0 ? 1.1 : 0.9))} />" },
+    { name: "a modal with an image and no zoom at all", file: "src/Modal.tsx", code: "<div role=\"dialog\"><img src={photo} alt=\"\" /><button onClick={close}>Close</button></div>" },
+    { name: "deliberate, marked in the file", file: "src/Gallery.tsx", code: HAND_LIGHTBOX.replace("const onWheel", "// enigma:allow-hand-rolled-lightbox\nconst onWheel") },
+]);
+
+const HAND_PLAYER = [
+    "const ref = useRef(null);",
+    "const [isPlaying, setIsPlaying] = useState(false);",
+    "const [time, setTime] = useState(0);",
+    "const toggle = () => { const v = ref.current; if (v.paused) { v.play(); setIsPlaying(true); } else { v.pause(); setIsPlaying(false); } };",
+    "return (<div>",
+    "  <video ref={ref} src={src} onTimeUpdate={(e) => setTime(e.currentTarget.currentTime)} />",
+    "  <button aria-label=\"Play\" onClick={toggle}>{isPlaying ? \"Pause\" : \"Play\"}</button>",
+    "  <div className=\"rail\" onClick={(e) => { ref.current.currentTime = fraction(e) * ref.current.duration; }} />",
+    "</div>);",
+].join("\n");
+
+matrix("fe-video-player-hand-rolled", true, [
+    { name: "an element driven by code, with a bar of its own over it", file: "src/Player.tsx", code: HAND_PLAYER },
+    {
+        name: "the same player in Svelte",
+        file: "src/Player.svelte",
+        code: "let video;\nlet isPlaying = false;\nfunction toggle() { if (video.paused) { video.play(); } else { video.pause(); } }\n<video bind:this={video} on:timeupdate={() => (t = video.currentTime)}></video>\n<button aria-label=\"Play\" on:click={toggle}></button>",
+    },
+]);
+
+matrix("fe-video-player-hand-rolled", false, [
+    { name: "already the primitive", file: "src/Player.tsx", code: `import { Video } from "@enigmax/primitives/react/video";\n${HAND_PLAYER}` },
+    { name: "another player library", file: "src/Player.tsx", code: `import Plyr from "plyr";\n${HAND_PLAYER}` },
+    { name: "the browser's own controls", file: "src/Clip.tsx", code: "<video src={src} controls poster={poster} playsInline />" },
+    { name: "an autoplaying background loop with no controls", file: "src/Hero.tsx", code: "const ref = useRef(null);\nuseEffect(() => { ref.current?.play(); }, []);\n<video ref={ref} muted loop playsInline src={clip} />" },
+    { name: "an audio element with a play button", file: "src/Sound.tsx", code: "const ref = useRef(null);\n<audio ref={ref} src={src} />\n<button aria-label=\"Play\" onClick={() => ref.current.play()}>Play</button>" },
+    { name: "deliberate, marked in the file", file: "src/Player.tsx", code: HAND_PLAYER.replace("const toggle", "// enigma:allow-hand-rolled-video-player\nconst toggle") },
+]);
+
+/**
  * The three a dashboard is made of. Measured over the 556 tracked UI files in this repo at the
  * diff stage: 1 hit, and it is a genuine hand-rolled listbox in the docs site - 0 false
  * positives. The "no flag" tables below carry the shapes that share one part of each signature

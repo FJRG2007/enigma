@@ -29,7 +29,9 @@ const SHEETS = [
     { name: "toast", export: "TOAST_STYLES", source: join(PRIMITIVES, "src", "react", "toast", "styles.ts"), out: join(PRIMITIVES, "recipes", "toast", "styles.css") },
     { name: "select", export: "SELECT_STYLES", source: join(PRIMITIVES, "src", "react", "select", "styles.ts"), out: join(PRIMITIVES, "recipes", "select", "styles.css") },
     { name: "context-menu", export: "CONTEXT_MENU_STYLES", source: join(PRIMITIVES, "src", "react", "context-menu", "styles.ts"), out: join(PRIMITIVES, "recipes", "context-menu", "styles.css") },
-    { name: "color", item: "input", export: "COLOR_STYLES", source: join(PRIMITIVES, "src", "react", "input", "color-styles.ts"), out: join(PRIMITIVES, "recipes", "color", "styles.css") }
+    { name: "color", item: "input", export: "COLOR_STYLES", source: join(PRIMITIVES, "src", "react", "input", "color-styles.ts"), out: join(PRIMITIVES, "recipes", "color", "styles.css") },
+    { name: "image", export: "IMAGE_STYLES", source: join(PRIMITIVES, "src", "react", "image", "styles.ts"), out: join(PRIMITIVES, "recipes", "image", "styles.css") },
+    { name: "video", export: "VIDEO_STYLES", source: join(PRIMITIVES, "src", "react", "video", "styles.ts"), out: join(PRIMITIVES, "recipes", "video", "styles.css") }
 ];
 
 function header(sheet) {

@@ -190,3 +190,6 @@ export {
     type SelectionInstance
 } from "@/core/selection";
 export { parseShortcut, matchesShortcut, shortcutTokens, shortcutText, isApplePlatform, type Shortcut, type ShortcutSpec } from "@/core/keys";
+
+export { Image, type ImageProps, type ImageItem, type ImageSource, type ImageLabels, type ImageMenuOptions, type ZoomOptions } from "@/react/image";
+export { Video, type VideoProps, type VideoSource, type VideoTrack, type VideoControls, type VideoLabels } from "@/react/video";

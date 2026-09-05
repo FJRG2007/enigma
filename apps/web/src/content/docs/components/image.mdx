@@ -1,0 +1,179 @@
+---
+title: Image
+description: A picture that opens into a viewer - press to enlarge, wheel to zoom, drag to pan. The gallery arrows, the strip of previews, the download menu and the discard action are off until you ask.
+group: Media
+order: 23
+space: components
+---
+import Installation from "../../../components/Installation.astro";
+import { ImagePlayground } from "../../../components/playground/ImagePlayground";
+
+An image in a page is expected to do one thing when you press it: get bigger. So that is what
+this does with no props at all, and the wheel zooms once it is open. Everything past that -
+moving through a set, the strip along the bottom, a menu that downloads the file, throwing one
+away - is a decision about the page it sits in, so each is a prop you turn on rather than one
+you have to remember to turn off.
+
+<ImagePlayground client:only="react" />
+
+## Usage
+
+```tsx
+import { Image } from "@enigmax/primitives/react/image";
+
+// A press opens it, the wheel zooms, the arrows and the strip are not there.
+<Image src="/shot.png" alt="The dashboard" />
+
+// A gallery: the same component, told what the set is.
+<Image
+    src={photos[0].src}
+    alt={photos[0].alt}
+    images={photos}
+    navigation
+    thumbnails
+/>
+```
+
+`images` takes a URL or an object per picture, so a set can carry more than a source:
+
+```tsx
+const photos = [
+    { src: "/full/1.jpg", thumbnail: "/thumb/1.jpg", alt: "The lobby", caption: "Ground floor" },
+    { src: "/full/2.jpg", thumbnail: "/thumb/2.jpg", alt: "The stairs", download: "/original/2.tif" }
+];
+```
+
+`thumbnail` is used in the strip and while the full picture loads; `download` is the file the
+menu saves when it is not the one on screen.
+
+## What is on, and what is not
+
+| Prop | Default | |
+| --- | --- | --- |
+| `lightbox` | `true` | A press opens the viewer |
+| `zoom` | `true` | Wheel, pinch, double press, and `+` `-` `0` |
+| `navigation` | `false` | Arrows over the picture, a counter, and Left/Right |
+| `thumbnails` | `false` | The strip along the bottom |
+| `menu` | `false` | The three dots, with Download under them |
+| `discardable` | `false` | Take this one out of the set and move to the next |
+| `loop` | `true` | The arrows and the strip wrap at the ends |
+| `styles` | `true` | The viewer's stylesheet |
+
+`zoom` also takes `{ min, max, wheel, doubleClick }` when the defaults are wrong for your
+picture, and `menu` takes `{ download, items, onSelect }` to add rows of your own.
+
+## Zoom that stays where you put it
+
+The wheel zooms **around the cursor**, not around the middle of the frame. Scaling from the
+centre slides whatever you were pointing at out from under you, so zooming into a face means
+zooming and then hunting for it again.
+
+Three more things the gesture needs, all done here. The wheel listener is not passive, so a
+notch zooms the picture instead of also scrolling the article behind the backdrop. The pan is
+bounded by how much of the image actually hangs outside the frame, so a drag cannot strand it
+off screen. And a notch is the same size in every browser: Firefox reports a wheel in lines
+and a page scroll in pages, so treating every delta as pixels makes the same gesture a
+hundred times stronger in one of them.
+
+On touch it is a pinch, and the keyboard drives all of it: `+` and `-` zoom, `0` fits, and the
+arrows pan once there is somewhere to pan to.
+
+## A set, and taking one out of it
+
+`discardable` adds the bin to the toolbar and answers Delete. The list stays **yours**: the
+viewer skips what was discarded for as long as it is open and tells you which one it was, so
+you drop it from your own state - and if it was the last one, the viewer closes rather than
+sitting over an empty frame.
+
+```tsx
+<Image
+    src={photos[0].src}
+    alt={photos[0].alt}
+    images={photos}
+    navigation
+    thumbnails
+    discardable
+    onDiscard={(item) => setPhotos((current) => current.filter((photo) => photo.src !== item.src))}
+    onIndexChange={(index, item) => track("viewed", item.src)}
+/>
+```
+
+## The menu, and downloading the file
+
+`menu` is the three dots, and what opens under it is
+[the context menu](context-menu) with a left press instead of a right one - the same panel,
+keyboard and roles, rather than a second popup written for one toolbar.
+
+Download is the row it comes with. It **fetches the file and hands over the blob**, because
+`<a download>` is honoured only for a same-origin URL: on a CDN the browser ignores the
+attribute and opens the picture in a tab, which is not what the row said it would do. Where
+the fetch is refused for want of a CORS header, the plain anchor is the fallback.
+
+```tsx
+<Image
+    src={photo.src}
+    alt={photo.alt}
+    menu={{
+        items: [{ id: "report", label: "Report this image" }],
+        onSelect: (id, item) => { if (id === "report") report(item.src); }
+    }}
+/>
+```
+
+## What loads, and when
+
+The viewer is its own chunk and the menu another under it, so a page of images nobody enlarges
+downloads neither. The chunk is fetched **on intent** - a pointer over the picture, or focus
+reaching it - so by the time the press lands it is usually already there, and a press that
+beats it opens the viewer as soon as it arrives instead of being dropped.
+
+What the page renders is never in the chunk: the `<img>` and the press are this module, which
+is what keeps the affordance from appearing late.
+
+## Installation
+
+<Installation item="image" pkg="@enigmax/primitives" entry="@enigmax/primitives/react/image">
+    <div slot="manual">
+
+The viewer brings a theme, for the reason [the toast](toast) and
+[the colour picker](input) do: an unstyled lightbox is not a plain one, it is the page with an
+image lying across it. `styles={false}` turns it off, and
+`@enigmax/primitives/image.css` is the same sheet if you would rather import it.
+
+Every colour and distance is a custom property:
+
+```css
+:root {
+    --enigma-image-backdrop: rgba(0, 0, 0, 0.86);
+    --enigma-image-control-bg: rgba(23, 23, 23, 0.72);
+    --enigma-image-control-size: 2.25rem;
+    --enigma-image-thumb-size: 3.5rem;
+    --enigma-image-z: 80;
+}
+```
+
+    </div>
+</Installation>
+
+## Styling hooks
+
+| Attribute | On |
+| --- | --- |
+| `[data-enigma-image]` | The wrapper in the page - `data-clickable` when it opens |
+| `[data-enigma-image-trigger]` | The button around the picture |
+| `[data-enigma-image-viewer]` | The dialog, portalled to the body |
+| `[data-enigma-image-bar]` | The toolbar, and `[data-enigma-image-counter]` in it |
+| `[data-enigma-image-frame]` | The frame - `data-zoomed`, `data-panning`, `data-loading` |
+| `[data-enigma-image-nav="previous"]`, `[data-enigma-image-nav="next"]` | The arrows |
+| `[data-enigma-image-strip]`, `[data-enigma-image-thumb]` | The previews. `aria-current` marks the one showing |
+| `[data-enigma-image-caption]` | The line under the picture |
+
+## What it gives back
+
+| | |
+| --- | --- |
+| Keyboard | Escape closes, `+` `-` `0` zoom and fit, arrows navigate or pan, Delete discards |
+| Focus | Into the frame on open, back to the picture on close |
+| The page behind | Cannot scroll while the viewer is up |
+| Screen readers | `role="dialog"`, `aria-modal`, the picture's own `alt` as the trigger's name |
+| A press beside the picture | Closes it, the way every lightbox does - and a drag that ends there does not |

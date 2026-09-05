@@ -152,3 +152,43 @@ export {
     type TypeaheadState,
     type TypeaheadStep
 } from "@/core/keys";
+
+// The image viewer's arithmetic: zoom that stays under the cursor, a pan that cannot lose the
+// picture, and moving through a set. The lightbox is React; none of this is.
+export {
+    zoomAt,
+    clampPan,
+    clampScale,
+    wheelFactor,
+    fittedSize,
+    pinchDistance,
+    nextIndex,
+    filenameFrom,
+    downloadFile,
+    IDENTITY,
+    ZOOM_LIMITS,
+    ZOOM_STEP,
+    ZOOM_DOUBLE,
+    type Transform,
+    type ZoomLimits,
+    type Box
+} from "@/core/image-viewer";
+// The video player's arithmetic: times, seeking, buffering and the shortcut map.
+export {
+    formatTime,
+    progress,
+    fractionAt,
+    bufferedAhead,
+    nextSpeed,
+    commandFor,
+    isTypingTarget,
+    fullscreenElement,
+    toggleFullscreen,
+    supportsPip,
+    togglePip,
+    SPEEDS,
+    SEEK_STEP,
+    SEEK_JUMP,
+    VOLUME_STEP,
+    type PlayerCommand
+} from "@/core/player";

@@ -24,6 +24,8 @@ const REACT_ENTRIES = {
     "react/select": "src/react/select/index.tsx",
     "react/context-menu": "src/react/context-menu/index.tsx",
     "react/selection": "src/react/selection/index.tsx",
+    "react/image": "src/react/image/index.tsx",
+    "react/video": "src/react/video/index.tsx",
     "react/button": "src/react/button.tsx",
     "react/flag": "src/react/flag.tsx",
     "react/toast": "src/react/toaster.tsx",

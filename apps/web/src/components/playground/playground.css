@@ -209,3 +209,15 @@
     border: 1px solid var(--accent); border-radius: 4px;
 }
 .pg-pick-out { margin: 0; min-height: 20px; font-size: 12px; color: var(--muted); }
+
+/* The gallery preview: four pictures in a row, each one its own <Image>, which is how a real
+   grid is written - the set is passed to every one of them. */
+.pg-gallery { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; width: min(420px, 100%); }
+.pg-gallery-item { width: 96px; height: 72px; border-radius: var(--radius-sm); overflow: hidden; }
+.pg-gallery-item img { width: 100%; height: 100%; object-fit: cover; }
+
+/* The player preview, and the control that gives it something to play. */
+.pg-player { display: grid; gap: 10px; width: min(420px, 100%); }
+.pg-player-frame { width: 100%; }
+.pg-player-pick { display: grid; gap: 6px; font-size: 12px; color: var(--muted); }
+.pg-player-pick input { font: inherit; color: inherit; }

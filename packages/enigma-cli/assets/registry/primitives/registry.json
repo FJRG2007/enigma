@@ -1402,6 +1402,342 @@
       "dependencies": {
         "@github/relative-time-element": "^4.4.0"
       }
+    },
+    {
+      "name": "image",
+      "title": "Image, with the viewer a press on it opens",
+      "description": "An image that opens into a lightbox: a press enlarges it and the wheel zooms around the cursor, with a drag to pan, a pinch on touch, and the keyboard driving all of it. Everything else is a decision about the page it sits in, so it is off until asked for - the arrows and counter of a set, the strip of previews along the bottom, a three-dot menu that downloads the file, and a discard action that drops an image and moves to the next. The viewer is its own chunk, fetched on intent, and the menu another under that, so a page of images nobody enlarges downloads neither. It brings a theme: there is no useful unstyled lightbox.",
+      "targets": [
+        "react"
+      ],
+      "entry": {
+        "react": "@enigmax/primitives/react/image"
+      },
+      "exports": {
+        "react": [
+          "Image"
+        ]
+      },
+      "files": [
+        {
+          "path": "src/core/image-viewer.ts",
+          "dest": "image/image-viewer.ts",
+          "targets": [
+            "react"
+          ]
+        },
+        {
+          "path": "src/core/context-menu.ts",
+          "dest": "image/context-menu.ts",
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/core/search": "./search-core",
+            "@/core/keys": "./keys"
+          }
+        },
+        {
+          "path": "src/core/search.ts",
+          "dest": "image/search-core.ts",
+          "targets": [
+            "react"
+          ]
+        },
+        {
+          "path": "src/core/keys.ts",
+          "dest": "image/keys.ts",
+          "targets": [
+            "react"
+          ]
+        },
+        {
+          "path": "src/react/image/types.ts",
+          "dest": "image/types.ts",
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/react/context-menu/context": "./context"
+          }
+        },
+        {
+          "path": "src/react/image/icons.tsx",
+          "dest": "image/icons.tsx",
+          "targets": [
+            "react"
+          ]
+        },
+        {
+          "path": "src/react/image/styles.ts",
+          "dest": "image/styles.ts",
+          "targets": [
+            "react"
+          ]
+        },
+        {
+          "path": "src/core/clipboard-menu.ts",
+          "dest": "image/clipboard-menu.ts",
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/core/context-menu": "./context-menu",
+            "@/react/context-menu/styles": "./context-menu-styles"
+          }
+        },
+        {
+          "path": "src/react/slot.tsx",
+          "dest": "image/slot.tsx",
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/react/context-menu/styles": "./context-menu-styles"
+          }
+        },
+        {
+          "path": "src/react/context-menu/styles.ts",
+          "dest": "image/context-menu-styles.ts",
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/react/context-menu/styles": "./context-menu-styles"
+          }
+        },
+        {
+          "path": "recipes/context-menu/styles.css",
+          "dest": "image/context-menu-styles.css",
+          "targets": [
+            "react"
+          ],
+          "style": "css",
+          "rewrite": {
+            "@/react/context-menu/styles": "./context-menu-styles"
+          }
+        },
+        {
+          "path": "src/react/context-menu/context.ts",
+          "dest": "image/context.ts",
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/core/context-menu": "./context-menu",
+            "@/react/context-menu/styles": "./context-menu-styles"
+          }
+        },
+        {
+          "path": "src/react/context-menu/root.tsx",
+          "dest": "image/root.tsx",
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/core/context-menu": "./context-menu",
+            "@/core/search": "./search-core",
+            "@/core/keys": "./keys",
+            "@/react/slot": "./slot",
+            "@/react/context-menu/styles": "./context-menu-styles",
+            "@/react/context-menu/context": "./context",
+            "@/core/clipboard-menu": "./clipboard-menu"
+          }
+        },
+        {
+          "path": "src/react/context-menu/index.tsx",
+          "dest": "image/context-menu-ui.tsx",
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/react/context-menu/root": "./root",
+            "@/react/context-menu/context": "./context",
+            "@/react/context-menu/styles": "./context-menu-styles",
+            "@/core/context-menu": "./context-menu",
+            "@/core/keys": "./keys",
+            "@/core/clipboard-menu": "./clipboard-menu"
+          }
+        },
+        {
+          "path": "src/react/image/menu.tsx",
+          "dest": "image/menu.tsx",
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/react/image/icons": "./icons",
+            "@/react/image/types": "./types",
+            "@/react/image/viewer": "./viewer",
+            "@/core/image-viewer": "./image-viewer",
+            "@/react/context-menu": "./context-menu-ui"
+          }
+        },
+        {
+          "path": "src/react/image/viewer.tsx",
+          "dest": "image/viewer.tsx",
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/react/image/icons": "./icons",
+            "@/react/image/types": "./types",
+            "@/react/image/styles": "./styles",
+            "@/react/image/menu": "./menu",
+            "@/core/image-viewer": "./image-viewer"
+          }
+        },
+        {
+          "path": "src/react/image/index.tsx",
+          "dest": "image/index.tsx",
+          "main": true,
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/react/image/types": "./types",
+            "@/react/image/viewer": "./viewer"
+          }
+        },
+        {
+          "path": "recipes/image/styles.css",
+          "dest": "image/styles.css",
+          "targets": [
+            "react"
+          ],
+          "style": "css"
+        }
+      ],
+      "styles": true,
+      "themeHooks": [
+        "[data-enigma-image]",
+        "[data-enigma-image][data-clickable]",
+        "[data-enigma-image-trigger]",
+        "[data-enigma-image-viewer]",
+        "[data-enigma-image-bar]",
+        "[data-enigma-image-counter]",
+        "[data-enigma-image-button]",
+        "[data-enigma-image-frame]",
+        "[data-enigma-image-frame][data-zoomed]",
+        "[data-enigma-image-frame][data-panning]",
+        "[data-enigma-image-frame][data-loading]",
+        "[data-enigma-image-nav]",
+        "[data-enigma-image-spinner]",
+        "[data-enigma-image-foot]",
+        "[data-enigma-image-caption]",
+        "[data-enigma-image-strip]",
+        "[data-enigma-image-thumb]"
+      ],
+      "docs": "docs/notes/primitives.md#image",
+      "recipes": [
+        "css"
+      ]
+    },
+    {
+      "name": "video",
+      "title": "Video player",
+      "description": "A video with the controls a video is expected to have, shaped after Plyr: a big play button over the poster, a scrubber showing what is buffered, current time and duration, volume that folds away until reached, captions when there are tracks, a speed menu, picture in picture and fullscreen. The keyboard is the platform's - space and K play, J and L jump ten seconds, the arrows nudge and set the volume, M mutes, F is fullscreen, C captions, a digit seeks to that tenth - and it stands down inside anything that takes text. The bar fades while playing and comes back on the first pointer move. The element stays the source of truth: state is read back from its own events rather than kept twice.",
+      "targets": [
+        "react"
+      ],
+      "entry": {
+        "react": "@enigmax/primitives/react/video"
+      },
+      "exports": {
+        "react": [
+          "Video"
+        ]
+      },
+      "files": [
+        {
+          "path": "src/core/player.ts",
+          "dest": "video/player.ts",
+          "targets": [
+            "react"
+          ]
+        },
+        {
+          "path": "src/react/video/types.ts",
+          "dest": "video/types.ts",
+          "targets": [
+            "react"
+          ]
+        },
+        {
+          "path": "src/react/video/icons.tsx",
+          "dest": "video/icons.tsx",
+          "targets": [
+            "react"
+          ]
+        },
+        {
+          "path": "src/react/video/styles.ts",
+          "dest": "video/styles.ts",
+          "targets": [
+            "react"
+          ]
+        },
+        {
+          "path": "src/react/video/rail.tsx",
+          "dest": "video/rail.tsx",
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/core/player": "./player"
+          }
+        },
+        {
+          "path": "src/react/video/index.tsx",
+          "dest": "video/index.tsx",
+          "main": true,
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/core/player": "./player",
+            "@/react/video/icons": "./icons",
+            "@/react/video/rail": "./rail",
+            "@/react/video/styles": "./styles",
+            "@/react/video/types": "./types"
+          }
+        },
+        {
+          "path": "recipes/video/styles.css",
+          "dest": "video/styles.css",
+          "targets": [
+            "react"
+          ],
+          "style": "css"
+        }
+      ],
+      "styles": true,
+      "themeHooks": [
+        "[data-enigma-video]",
+        "[data-enigma-video][data-playing]",
+        "[data-enigma-video][data-hidden]",
+        "[data-enigma-video][data-fullscreen]",
+        "[data-enigma-video-big]",
+        "[data-enigma-video-overlay]",
+        "[data-enigma-video-spinner]",
+        "[data-enigma-video-controls]",
+        "[data-enigma-video-button]",
+        "[data-enigma-video-time]",
+        "[data-enigma-video-rail]",
+        "[data-enigma-video-track]",
+        "[data-enigma-video-buffer]",
+        "[data-enigma-video-played]",
+        "[data-enigma-video-knob]",
+        "[data-enigma-video-volume]",
+        "[data-enigma-video-menu]",
+        "[data-enigma-video-panel]",
+        "[data-enigma-video-option]",
+        "[data-enigma-video-heading]"
+      ],
+      "docs": "docs/notes/primitives.md#video",
+      "recipes": [
+        "css"
+      ]
     }
   ]
 }
