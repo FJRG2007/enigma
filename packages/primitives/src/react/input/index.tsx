@@ -1,6 +1,7 @@
 "use client";
 
 import { Icon } from "@/react/input/icon";
+import { ColorSwatch } from "@/react/input/color-swatch";
 import { INPUT_ICON_PATHS } from "@/core/input-icons";
 import { writeValue } from "@/react/input/write-value";
 import type { AnyInputProps, InputProps, FieldAction, BreachState } from "@/react/input/types";
@@ -96,6 +97,14 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(pro
     const innerRef = useRef<HTMLInputElement | null>(null);
     const [element, setElement] = useState<HTMLInputElement | null>(null);
     const [revealed, setRevealed] = useState(false);
+    /**
+     * The swatch was pressed before the picker's code arrived.
+     *
+     * Remembered rather than dropped: the press was a request to open the panel, and a
+     * control that ignores one because a chunk was in flight is a control that feels broken
+     * for exactly as long as the network is slow.
+     */
+    const [colorWanted, setColorWanted] = useState(false);
     const describedBy = useId();
 
     const isPassword = type === "password";
@@ -263,12 +272,26 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(pro
             data-score={score ?? undefined}
         >
             <div {...fieldProps} data-enigma-input-field="">
-                {/* No fallback, for the reason the meter has none: the field is already on
-                    screen and typeable, and a placeholder where a swatch is about to appear
-                    would be a second layout shift rather than one. */}
+                {/* The swatch is NOT part of the picker's chunk, unlike the meter, which has
+                    nothing to show until it has been asked a question. A colour field with no
+                    swatch until a request lands is a field whose only affordance is missing,
+                    and a press in that window reaches nothing: so the button is here from the
+                    first frame, and a press before the panel's code arrives opens it as soon
+                    as it does. */}
                 {isColor && (
-                    <Suspense fallback={null}>
+                    <Suspense
+                        fallback={
+                            <ColorSwatch
+                                value={value}
+                                locked={locked}
+                                baseline={styles !== false}
+                                label={colorLabels?.open ?? "Pick a colour"}
+                                onPress={() => setColorWanted(true)}
+                            />
+                        }
+                    >
                         <ColorExtras
+                            openOnMount={colorWanted}
                             input={element}
                             value={value}
                             format={format}

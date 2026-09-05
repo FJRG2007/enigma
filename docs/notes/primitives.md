@@ -352,6 +352,25 @@ Four smaller things that are easy to get wrong, all fixed in place:
 - **`touch-action: none` on the square and the rails.** Here the drag IS the control, which is
   the opposite of the marquee's case, where the same declaration steals the page scroll.
 
+**The swatch is not in the chunk, and that is the point of `color-swatch.tsx`.** The picker is
+imported on demand, so a swatch living inside it does not exist until that request lands: the
+field renders as a bare text box, the only affordance it has appears late and shifts the row,
+and every press in that window reaches nothing. Reported as "the picker freezes for a couple
+of seconds before it activates", which is exactly what a chunk fetch looks like from the
+outside. So the swatch renders with the field (`Suspense` fallback), it is painted by handing
+the raw value to the browser - no parser in the base chunk - and it carries the handful of
+declarations that make it a swatch inline, because the panel's stylesheet is in the chunk too.
+A press during the wait sets `openOnMount`, and the panel opens the moment its code arrives
+rather than asking for a second press.
+
+**The readout is the row the browser's own picker has**, and leaving it out was the same class
+of loss as the menu's Copy: a picker that prints no code cannot be read from, pasted into, or
+checked against a hex somebody sent you. The button cycles HEX / RGB / HSL and changes what is
+PRINTED and nothing else - `format` is the caller's contract with their column, so a hex field
+stays hex however the panel is being read. Typing is applied as soon as it parses (so a pasted
+value moves the square immediately) and reverts to the canonical spelling on blur, which is the
+same rule the field itself follows.
+
 A 2D slider has no ARIA role. The square is `role="slider"` with saturation as `aria-valuenow`
 and an `aria-valuetext` that says saturation, brightness and the resulting colour, because the
 number alone announces half the control. The arrows drive both axes, the hue rail wraps at

@@ -1,6 +1,7 @@
 "use client";
 
 import { writeValue } from "@/react/input/write-value";
+import { ColorSwatch } from "@/react/input/color-swatch";
 import { COLOR_STYLES } from "@/react/input/color-styles";
 import type { ColorLabels, ColorPanelPlacement } from "@/react/input/types";
 import { parseColor, formatColor, rgbToHsv, hsvToRgb, toHex, colorEquals, type Hsv, type ColorFormat } from "@/core/color";
@@ -47,6 +48,10 @@ const STEP = { fine: 0.01, coarse: 0.1, hue: 1, hueCoarse: 10 };
 /** Kept clear of the window edge when deciding which side to open on. */
 const MARGIN = 12;
 
+/** The notations the readout cycles through, in the order the button steps over them. */
+const FORMATS: ColorFormat[] = ["hex", "rgb", "hsl"];
+const FORMAT_LABELS: Record<ColorFormat, string> = { hex: "HEX", rgb: "RGB", hsl: "HSL" };
+
 let injected = false;
 
 function injectStyles(): void {
@@ -76,6 +81,11 @@ export interface ColorExtrasProps {
     styles?: boolean;
     /** The field is disabled or read-only: the swatch is inert and the panel never opens. */
     locked?: boolean;
+    /**
+     * The swatch was already pressed, while this module was still being fetched. Opens the
+     * panel on the first render rather than asking for the press a second time.
+     */
+    openOnMount?: boolean;
     labels?: ColorLabels;
 }
 
@@ -89,6 +99,7 @@ export function ColorExtras({
     placement = "auto",
     styles = true,
     locked = false,
+    openOnMount = false,
     labels
 }: ColorExtrasProps): ReactNode {
     // Before paint: a sheet applied after the first frame shows the panel unstyled first.
@@ -99,7 +110,7 @@ export function ColorExtras({
     const swatchRef = useRef<HTMLButtonElement | null>(null);
     const areaRef = useRef<HTMLDivElement | null>(null);
 
-    const [open, setOpen] = useState(false);
+    const [open, setOpen] = useState(openOnMount && !locked);
     const [side, setSide] = useState<"top" | "bottom">(placement === "top" ? "top" : "bottom");
 
     const parsed = useMemo(() => parseColor(value), [value]);
@@ -296,6 +307,33 @@ export function ColorExtras({
         }
     }, [commit, hsv]);
 
+    /* -------- the readout, which is the value in whichever notation you want to read it -------- */
+
+    /**
+     * Which notation the panel PRINTS the colour in, and only that.
+     *
+     * `format` is the caller's contract - the spelling their column, their API or their CSS
+     * expects - so cycling this button never changes what is written into the field. It
+     * changes what you can read out of the panel and paste elsewhere, which is what the
+     * browser's own picker offers and what a picker showing no code at all cannot.
+     */
+    const [shown, setShown] = useState<ColorFormat>(format);
+    useEffect(() => setShown(format), [format]);
+
+    /** What is being typed, while it is being typed. Null means "show the current colour". */
+    const [draft, setDraft] = useState<string | null>(null);
+
+    const readout = useMemo(() => formatColor(rgb, shown, { alpha }), [rgb, shown, alpha]);
+    const nextFormat = FORMATS[(FORMATS.indexOf(shown) + 1) % FORMATS.length] as ColorFormat;
+
+    const typed = useCallback((next: string) => {
+        setDraft(next);
+        const colour = parseColor(next);
+        // Applied as it becomes a colour, so the square and the rails follow a pasted value
+        // rather than waiting for a blur. Half-typed text simply is not one yet.
+        if (colour) commit(rgbToHsv(alpha ? colour : { ...colour, a: 1 }, hsv.h));
+    }, [commit, alpha, hsv.h]);
+
     /* -------- rendering -------- */
 
     const css = useMemo(() => formatColor(rgb, "hex", { alpha: true }), [rgb]);
@@ -306,27 +344,16 @@ export function ColorExtras({
     const panelStyle = { "--enigma-color-hue": Math.round(hsv.h), "--enigma-color-opaque": opaque } as CSSProperties;
 
     return (
-        <span ref={anchorRef} data-enigma-color="" data-open={open ? "" : undefined}>
-            <button
-                ref={swatchRef}
-                // Never a bare `<button>`: inside a form it would default to submit, so opening
-                // the picker would post the half-filled form. The same trap the reveal has.
-                type="button"
-                data-enigma-color-swatch=""
-                data-enigma-color-checkers=""
-                data-invalid={parsed ? undefined : ""}
-                aria-haspopup="dialog"
-                aria-expanded={open}
-                aria-label={text.open ?? "Pick a colour"}
-                title={text.open ?? "Pick a colour"}
-                disabled={locked}
-                onClick={() => (open ? close(true) : setOpenState(true))}
-            >
-                {/* The browser parses the value for us: an unparseable string simply applies
-                    nothing, which is why the swatch needs no colour maths to fall back on. */}
-                <span data-enigma-color-fill="" style={{ background: parsed ? css : undefined }} />
-            </button>
-
+        <ColorSwatch
+            anchorRef={anchorRef}
+            buttonRef={swatchRef}
+            value={css}
+            invalid={!parsed}
+            open={open}
+            locked={locked}
+            label={text.open ?? "Pick a colour"}
+            onPress={() => (open ? close(true) : setOpenState(true))}
+        >
             {open && !locked && (
                 <div
                     ref={panelRef}
@@ -421,6 +448,40 @@ export function ColorExtras({
                         </div>
                     </div>
 
+                    {/* The colour as text, editable, with the notation next to it. A picker
+                        that shows no code is one you cannot read a value out of, cannot paste
+                        one into, and cannot check against the hex somebody sent you. */}
+                    <div data-enigma-color-value="">
+                        <button
+                            type="button"
+                            data-enigma-color-format=""
+                            aria-label={`${text.formatAs ?? "Show as"} ${FORMAT_LABELS[nextFormat]}`}
+                            title={`${text.formatAs ?? "Show as"} ${FORMAT_LABELS[nextFormat]}`}
+                            onClick={() => { setShown(nextFormat); setDraft(null); }}
+                        >
+                            {FORMAT_LABELS[shown]}
+                        </button>
+                        <input
+                            type="text"
+                            data-enigma-color-input=""
+                            value={draft ?? readout}
+                            aria-label={text.value ?? "Colour value"}
+                            spellCheck={false}
+                            autoComplete="off"
+                            autoCorrect="off"
+                            autoCapitalize="off"
+                            onChange={(event) => typed(event.target.value)}
+                            // What was typed goes back to the canonical spelling the moment the
+                            // field is left, the way the input itself normalizes on blur.
+                            onBlur={() => setDraft(null)}
+                            onKeyDown={(event) => {
+                                if (event.key !== "Enter") return;
+                                event.preventDefault();
+                                setDraft(null);
+                            }}
+                        />
+                    </div>
+
                     {swatches && swatches.length > 0 && (
                         <div data-enigma-color-swatches="" role="group" aria-label={text.swatches ?? "Preset colours"}>
                             {swatches.map((preset) => {
@@ -445,7 +506,7 @@ export function ColorExtras({
                     )}
                 </div>
             )}
-        </span>
+        </ColorSwatch>
     );
 }
 

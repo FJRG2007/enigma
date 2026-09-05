@@ -151,6 +151,10 @@ export interface ColorLabels {
     alpha?: string;
     eyedropper?: string;
     swatches?: string;
+    /** The editable readout under the rails. Default "Colour value". */
+    value?: string;
+    /** The button that cycles the readout between HEX, RGB and HSL. Default "Show as". */
+    formatAs?: string;
     /** The word before the colour in what a screen reader announces. Default "Colour". */
     color?: string;
 }

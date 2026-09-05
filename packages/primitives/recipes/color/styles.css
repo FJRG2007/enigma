@@ -134,6 +134,26 @@
 [data-enigma-color-eyedropper]:hover { color: var(--enigma-color-text); }
 [data-enigma-color-eyedropper]:focus-visible { outline: 2px solid var(--enigma-color-focus); outline-offset: 2px; }
 
+/* The value as text, with the notation beside it. Monospace on purpose: a hex whose digits
+   shift width as you drag is a value nobody can read at a glance. */
+[data-enigma-color-value] { display: flex; align-items: center; gap: 0.375rem; }
+[data-enigma-color-format] {
+    flex: none; padding: 0.3125rem 0.375rem;
+    font: inherit; font-size: 0.625rem; line-height: 1; letter-spacing: 0.06em;
+    color: var(--enigma-color-muted); background: none;
+    border: 1px solid var(--enigma-color-border); border-radius: 0.25rem; cursor: pointer;
+}
+[data-enigma-color-format]:hover { color: var(--enigma-color-text); }
+[data-enigma-color-input] {
+    flex: 1; min-width: 0; padding: 0.25rem 0.375rem;
+    font: inherit; font-family: var(--enigma-color-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+    font-size: 0.75rem; line-height: 1.4;
+    color: var(--enigma-color-text); background: none;
+    border: 1px solid var(--enigma-color-border); border-radius: 0.25rem;
+}
+[data-enigma-color-format]:focus-visible,
+[data-enigma-color-input]:focus-visible { outline: 2px solid var(--enigma-color-focus); outline-offset: 1px; }
+
 [data-enigma-color-swatches] { display: flex; flex-wrap: wrap; gap: 0.25rem; }
 [data-enigma-color-preset] {
     width: 1.125rem; height: 1.125rem; padding: 0;

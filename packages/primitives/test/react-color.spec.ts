@@ -26,6 +26,8 @@ const panel = `${scope} [data-enigma-color-panel]`;
 const area = `${scope} [data-enigma-color-area]`;
 const hue = `${scope} [data-enigma-color-rail=hue]`;
 const alpha = `${scope} [data-enigma-color-rail=alpha]`;
+const readout = `${scope} [data-enigma-color-input]`;
+const cycle = `${scope} [data-enigma-color-format]`;
 
 async function colour(page: Page): Promise<string> {
     return page.evaluate(() => (window as unknown as FixtureWindow).__color);
@@ -166,6 +168,59 @@ test.describe("Input type=color (React)", () => {
         await page.locator(field).blur();
         await expect(page.locator(field)).toHaveValue("#ff0000");
         expect(await colour(page)).toBe("#ff0000");
+    });
+
+    test("the panel prints the colour, and the button steps through the notations", async ({ page }) => {
+        await open(page);
+        await page.click(swatch);
+        // The value has to be READABLE from the panel: a picker that shows no code is one you
+        // cannot check against the hex somebody sent you, or paste anywhere.
+        await expect(page.locator(readout)).toHaveValue("#3b82f6");
+        await expect(page.locator(cycle)).toHaveText("HEX");
+
+        await page.click(cycle);
+        await expect(page.locator(cycle)).toHaveText("RGB");
+        await expect(page.locator(readout)).toHaveValue("rgb(59, 130, 246)");
+
+        await page.click(cycle);
+        await expect(page.locator(readout)).toHaveValue(/^hsl\(/);
+
+        await page.click(cycle);
+        await expect(page.locator(readout)).toHaveValue("#3b82f6");
+    });
+
+    test("the printed notation is the panel's, and never what the field is written in", async ({ page }) => {
+        await open(page);
+        await page.click(swatch);
+        await page.click(cycle);
+        await pressAt(page, page.locator(hue), 0.5, 0.5);
+        // The readout says rgb() because that is what was asked to be SHOWN; the field is
+        // still hex, because that is the caller's contract with their own storage.
+        await expect(page.locator(readout)).toHaveValue(/^rgb\(/);
+        expect(await colour(page)).toMatch(/^#[0-9a-f]{6}/);
+    });
+
+    test("a colour typed into the readout reaches the field and moves the controls", async ({ page }) => {
+        await open(page);
+        await page.click(swatch);
+        await page.fill(readout, "rgb(255, 0, 0)");
+        expect(await colour(page)).toMatch(/^#ff0000/);
+        await expect(page.locator(hue)).toHaveAttribute("aria-valuenow", "0");
+
+        await page.fill(readout, "#22c55e");
+        expect(await colour(page)).toMatch(/^#22c55e/);
+        // Back to the notation the readout is set to, once the field is left.
+        await page.locator(readout).blur();
+        await expect(page.locator(readout)).toHaveValue("#22c55e");
+    });
+
+    test("the readout follows the square, so the number and the handle never disagree", async ({ page }) => {
+        await open(page);
+        await page.click(swatch);
+        const before = await page.locator(readout).inputValue();
+        await pressAt(page, page.locator(area), 0.2, 0.8);
+        expect(await page.locator(readout).inputValue()).not.toBe(before);
+        expect(await page.locator(readout).inputValue()).toBe((await colour(page)).replace(/ff$/, ""));
     });
 
     test("an unparseable value leaves the swatch empty rather than stale", async ({ page }) => {

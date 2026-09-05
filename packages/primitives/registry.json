@@ -156,7 +156,7 @@
     {
       "name": "input",
       "title": "Input, one field for every type",
-      "description": "A field you pass props to, typed by its `type`: password gets the reveal toggle, a generator, a strength meter and a breach check; search gets debouncing, ranking and a clear button; color gets a swatch and a picker panel - saturation square, hue and alpha rails, presets and the screen eyedropper - instead of the operating system popup; everything else is a plain field with native props. What each type needs is loaded when that type is used, so a form of text fields ships none of it.",
+      "description": "A field you pass props to, typed by its `type`: password gets the reveal toggle, a generator, a strength meter and a breach check; search gets debouncing, ranking and a clear button; color gets a swatch and a picker panel - saturation square, hue and alpha rails, an editable readout that prints the value as hex, rgb() or hsl(), presets and the screen eyedropper - instead of the operating system popup, and the swatch is there from the first frame rather than when the panel's code lands; everything else is a plain field with native props. What each type needs is loaded when that type is used, so a form of text fields ships none of it.",
       "targets": [
         "vanilla",
         "astro",
@@ -280,6 +280,13 @@
           ]
         },
         {
+          "path": "src/react/input/color-swatch.tsx",
+          "dest": "input/color-swatch.tsx",
+          "targets": [
+            "react"
+          ]
+        },
+        {
           "path": "src/react/input/color.tsx",
           "dest": "input/color.tsx",
           "targets": [
@@ -289,7 +296,8 @@
             "@/core/color": "./color-core",
             "@/react/input/write-value": "./write-value",
             "@/react/input/color-styles": "./color-styles",
-            "@/react/input/types": "./types"
+            "@/react/input/types": "./types",
+            "@/react/input/color-swatch": "./color-swatch"
           }
         },
         {
@@ -325,7 +333,8 @@
             "@/react/input/password": "./password",
             "@/react/input/search": "./search",
             "@/core/password": "./password-core",
-            "@/react/input/color": "./color"
+            "@/react/input/color": "./color",
+            "@/react/input/color-swatch": "./color-swatch"
           }
         },
         {

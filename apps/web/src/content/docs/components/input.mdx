@@ -138,6 +138,11 @@ and the colour picker live in their own chunks and arrive when a type that needs
 used - so a form of text and email fields downloads none of them, and the generator is
 fetched on the first press of its button. Measured: a two-field form is 4.5 KB.
 
+What a type puts ON SCREEN is never in the chunk: the swatch of a colour field is rendered
+with the field, painted by the value it already holds, and a press on it while the panel's
+code is still in flight opens the panel the moment it lands. A control that appears late and
+swallows the press until it does is the defect this arrangement exists to avoid.
+
 A search field that opens a dialog is not a field - see [the command palette](palette) for
 the Ctrl/Cmd+K panel.
 
@@ -309,8 +314,8 @@ while one is in flight.
 ## Picking a colour
 
 `type="color"` is a swatch inside the field, and the swatch opens a panel: a
-saturation/brightness square, a hue rail, an optional alpha rail, your presets, and the
-browser's screen eyedropper where there is one.
+saturation/brightness square, a hue rail, an optional alpha rail, the value as editable text,
+your presets, and the browser's screen eyedropper where there is one.
 
 ```tsx
 <Input
@@ -340,6 +345,17 @@ to enter a colour somebody already has. It is the same trade [the select](select
 **Alpha is off on purpose.** It turns `#3b82f6` into `#3b82f680`, which is not what a column
 typed as a seven-character hex, or a server reading what used to be a native colour input,
 expects. Turn it on where the value really carries opacity.
+
+### The value, in whichever notation you want to read it
+
+Under the rails is the colour as text, editable, with a button that steps the notation through
+HEX, RGB and HSL. It is the row the browser's own picker has, and a picker without it is one
+you cannot read a value out of, paste a value into, or check against the hex somebody sent
+you.
+
+Cycling changes what the panel PRINTS and nothing else. `format` is your contract with your
+own storage, so a field written as hex stays hex however the panel is being read; typing
+`rgb(255, 0, 0)` into the readout moves the square and writes `#ff0000` into the field.
 
 ### What it accepts, and what it refuses
 
@@ -431,6 +447,7 @@ above.
 | `[data-enigma-color-panel]` | The panel, positioned against the field |
 | `[data-enigma-color-area]` | The saturation and brightness square |
 | `[data-enigma-color-rail="hue"]`, `[data-enigma-color-rail="alpha"]` | The two rails |
+| `[data-enigma-color-value]` | The readout row - the notation button and the text field |
 | `[data-enigma-color-preset]` | One preset from `swatches` |
 
 In Tailwind, the parts you cannot reach with a `className` take one through `classNames`,
