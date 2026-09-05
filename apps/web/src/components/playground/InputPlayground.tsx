@@ -20,6 +20,11 @@ interface Values extends Record<string, string | boolean> {
     strength: boolean;
     breach: boolean;
     clearable: boolean;
+    format: string;
+    placement: string;
+    alpha: boolean;
+    presets: boolean;
+    eyedropper: boolean;
     position: string;
     disabled: boolean;
 }
@@ -34,7 +39,10 @@ const DOCS = [
     { title: "Relative time", section: "Data" }
 ];
 
-const TYPES = ["text", "email", "password", "search", "number", "date", "tel", "url"];
+const TYPES = ["text", "email", "password", "search", "color", "number", "date", "tel", "url"];
+
+/** A brand palette, which is what `swatches` is for: the colours this project actually uses. */
+const SWATCHES = ["#3b82f6", "#22c55e", "#eab308", "#f97316", "#ef4444", "#a855f7"];
 
 const SHARED: Control<Values>[] = [
     {
@@ -69,6 +77,25 @@ function controlsFor(values: Values): Control<Values>[] {
             ...TAIL
         ];
     }
+    if (values.type === "color") {
+        return [
+            ...SHARED,
+            {
+                name: "format", label: "Writes", type: "select",
+                hint: "every format is still read",
+                options: [{ value: "hex", label: "hex" }, { value: "rgb", label: "rgb()" }, { value: "hsl", label: "hsl()" }]
+            },
+            {
+                name: "placement", label: "Panel side", type: "select",
+                hint: "auto measures the room there is",
+                options: [{ value: "bottom", label: "bottom" }, { value: "top", label: "top" }, { value: "auto", label: "auto" }]
+            },
+            { name: "alpha", label: "Opacity rail", type: "boolean", hint: "puts alpha in the value" },
+            { name: "presets", label: "Presets", type: "boolean", hint: "swatches under the rails" },
+            { name: "eyedropper", label: "Eyedropper", type: "boolean", hint: "Chromium only, feature-detected" },
+            ...TAIL
+        ];
+    }
     return [...SHARED, ...TAIL];
 }
 
@@ -94,6 +121,11 @@ const INITIAL: Values = {
     strength: true,
     breach: false,
     clearable: true,
+    format: "hex",
+    placement: "bottom",
+    alpha: false,
+    presets: true,
+    eyedropper: true,
     position: "end",
     disabled: false
 };
@@ -111,6 +143,14 @@ function code(values: Values): string {
         if (!values.clearable) props.push("clearable={false}");
         props.push("renderResults={(matches) => <Results matches={matches} />}");
     }
+    if (values.type === "color") {
+        props.push("value={brand}", "onChange={(event) => setBrand(event.target.value)}");
+        if (values.format !== "hex") props.push(`format="${values.format}"`);
+        if (values.placement !== "auto") props.push(`placement="${values.placement}"`);
+        if (values.alpha) props.push("alpha");
+        if (values.presets) props.push("swatches={palette}");
+        if (!values.eyedropper) props.push("eyedropper={false}");
+    }
     if (values.position !== "end") props.push(`position="${values.position}"`);
     if (values.disabled) props.push("disabled");
     if (values.placeholder) props.push(`placeholder="${values.placeholder}"`);
@@ -118,11 +158,16 @@ function code(values: Values): string {
     const imports = ['import { Input } from "@enigmax/primitives/react/input";'];
     if (values.type === "password" && values.breach) imports.push('import { checkPasswordBreach } from "@enigmax/utils";');
 
-    return `${imports.join("\n")}\n\n<Input\n${props.map((prop) => `    ${prop}`).join("\n")}\n/>`;
+    const consts = values.type === "color" && values.presets
+        ? `\nconst palette = [${SWATCHES.map((color) => `"${color}"`).join(", ")}];\n`
+        : "";
+
+    return `${imports.join("\n")}\n${consts}\n<Input\n${props.map((prop) => `    ${prop}`).join("\n")}\n/>`;
 }
 
 export function InputPlayground() {
     const [value, setValue] = useState("");
+    const [color, setColor] = useState("#3b82f6");
 
     return (
         <Playground<Values>
@@ -169,6 +214,20 @@ export function InputPlayground() {
                             // Only when asked: it is a request to a third party, so it should
                             // never be something a docs page does behind the reader's back.
                             breach={values.breach ? checkPasswordBreach : undefined}
+                        />
+                    ) : values.type === "color" ? (
+                        <Input
+                            type="color"
+                            placeholder={values.placeholder}
+                            value={color}
+                            onChange={(event) => setColor(event.target.value)}
+                            disabled={values.disabled}
+                            position={values.position === "start" ? "start" : "end"}
+                            format={values.format as "hex"}
+                            placement={values.placement as "auto"}
+                            alpha={values.alpha}
+                            swatches={values.presets ? SWATCHES : undefined}
+                            eyedropper={values.eyedropper}
                         />
                     ) : (
                         <Input

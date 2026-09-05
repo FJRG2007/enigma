@@ -168,6 +168,12 @@
 }
 .pg-menu-area:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .pg-menu-hint { font-size: 11.5px; opacity: 0.7; }
+.pg-menu-field {
+    width: 260px; max-width: 100%; margin-top: 8px; padding: 6px 9px;
+    font-size: 12.5px; color: var(--text);
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
+}
+.pg-menu-field:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .pg-menu-out { margin: 0; min-height: 20px; font-size: 12px; color: var(--muted); }
 .pg-menu-out code { font-family: var(--mono); color: var(--text); }
 

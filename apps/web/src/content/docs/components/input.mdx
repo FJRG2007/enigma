@@ -1,6 +1,6 @@
 ---
 title: Input
-description: One field for every type. Password gets the reveal, a generator, a meter and a breach check; search gets ranking and a clear button; everything else is a plain field.
+description: One field for every type. Password gets the reveal, a generator, a meter and a breach check; search gets ranking and a clear button; color gets a picker panel instead of the operating system's; everything else is a plain field.
 group: Forms
 order: 20
 space: components
@@ -130,12 +130,13 @@ nothing.
 | --- | --- |
 | `password` | The reveal toggle, and `generate`, `strength`, `breach` when you ask |
 | `search` | Debounced ranking over `items`, `renderResults`, and a clear button |
+| `color` | A swatch that opens the picker: `format`, `alpha`, `swatches`, `eyedropper` |
 | `email`, `tel`, `url`, `number`, `date`, ... | Nothing but the native field and its own props |
 
-**Each type loads its own machinery.** The estimator, the breach watcher and the search
-engine live in their own chunks and arrive when a type that needs them is used - so a form of
-text and email fields downloads none of them, and the generator is fetched on the first press
-of its button. Measured: a two-field form is 4.5 KB.
+**Each type loads its own machinery.** The estimator, the breach watcher, the search engine
+and the colour picker live in their own chunks and arrive when a type that needs them is
+used - so a form of text and email fields downloads none of them, and the generator is
+fetched on the first press of its button. Measured: a two-field form is 4.5 KB.
 
 A search field that opens a dialog is not a field - see [the command palette](palette) for
 the Ctrl/Cmd+K panel.
@@ -305,6 +306,93 @@ beside the schema rather than inside it: it arrives asynchronously, so folding i
 synchronous parse would either block the form on a network request or lie about the state
 while one is in flight.
 
+## Picking a colour
+
+`type="color"` is a swatch inside the field, and the swatch opens a panel: a
+saturation/brightness square, a hue rail, an optional alpha rail, your presets, and the
+browser's screen eyedropper where there is one.
+
+```tsx
+<Input
+    type="color"
+    value={brand}
+    onChange={(event) => setBrand(event.target.value)}
+    swatches={["#3b82f6", "#22c55e", "#f97316", "#ef4444"]}
+/>
+```
+
+**The field itself is a TEXT input**, holding `#3b82f6` as a plain string and submitting with
+the form like any other. The native `type="color"` opens a picker drawn by the operating
+system: unstylable, different on every platform, with no presets and no alpha, and a value
+that can only ever be `#rrggbb` and cannot be typed or pasted into - which is the fastest way
+to enter a colour somebody already has. It is the same trade [the select](select) makes.
+
+| Prop | Default | |
+| --- | --- | --- |
+| `format` | `"hex"` | What the picker WRITES: `"hex"`, `"rgb"` or `"hsl"`. Every format is still read |
+| `alpha` | `false` | The opacity rail, and the alpha channel in the value |
+| `swatches` | none | Presets under the rails: a brand palette, or the last few used |
+| `eyedropper` | `true` | Feature-detected. The button is absent where the browser has no `EyeDropper` |
+| `placement` | `"auto"` | Which side the panel opens on. `auto` flips near the bottom of the window |
+| `styles` | `true` | The panel's stylesheet. See below |
+| `colorLabels` | English | The accessible names, for a UI that is not in English |
+
+**Alpha is off on purpose.** It turns `#3b82f6` into `#3b82f680`, which is not what a column
+typed as a seven-character hex, or a server reading what used to be a native colour input,
+expects. Turn it on where the value really carries opacity.
+
+### What it accepts, and what it refuses
+
+Whatever `format` writes, everything is READ: a pasted `rgb(59 130 246 / 50%)` in a hex field
+is understood rather than rejected, and normalized to the field's format **on blur** - not
+mid-keystroke, which would fight the caret. Both `rgb()` syntaxes parse, because the
+space-and-slash form is what devtools puts on the clipboard, and named colours resolve
+through the DOM instead of a 148-entry table nobody needed shipped.
+
+Two refusals are deliberate. Five and seven hex digits parse to nothing rather than being
+padded, because a truncated paste is how you arrive at one and the missing digit would be a
+colour nobody chose. `oklch()` and `color()` parse to nothing rather than being clipped into
+sRGB, because answering with a hex for a colour a hex cannot hold changes the value silently.
+
+The arithmetic is exported from the package root, so a form that validates the string before
+storing it, or a page that draws its own picker, uses the same parser:
+
+```ts
+import { parseColor, formatColor } from "@enigmax/primitives";
+
+const rgb = parseColor(input);          // null when it is not a colour this can hold
+const value = rgb && formatColor(rgb, "hex");
+```
+
+### It ships a theme
+
+This is the one place `<Input>` has a look of its own, for the same reason
+[the toast](toast) and [the select](select) do: there is no useful unstyled version of a
+gradient someone drags a handle across - a saturation square with no size is nothing at all.
+The sheet is injected once and prepended to `<head>`, so anything your page already has
+outranks it. `styles={false}` opts out, and `@enigmax/primitives/color.css` is the same sheet
+if you would rather import it.
+
+Every colour and distance is a custom property, and the sheet already answers
+`prefers-color-scheme`:
+
+```css
+:root {
+    --enigma-color-panel-bg: #1c1c1c;
+    --enigma-color-panel-border: #333333;
+    --enigma-color-panel-width: 13.5rem;
+    --enigma-color-area-height: 8rem;
+    --enigma-color-rail-height: 0.625rem;
+    --enigma-color-thumb: #ffffff;
+}
+```
+
+### Vanilla has the maths, not the panel
+
+`createInput` does not grow a colour picker: the square, the rails and their pointer handling
+are the React chunk. A page that is not React imports `parseColor` and the conversions above
+and draws its own - the same "no adapter yet" as Vue and Svelte.
+
 ## Replacing a button, or adding your own
 
 The reveal and the generator are ordinary actions. Passing one with the same `name` replaces
@@ -326,7 +414,8 @@ false is removed from the DOM rather than hidden - the `hidden` attribute works 
 
 ## Styling hooks
 
-Nothing here ships a colour.
+Nothing here ships a look, with one exception: the colour picker's panel, for the reason
+above.
 
 | Attribute | On |
 | --- | --- |
@@ -337,6 +426,12 @@ Nothing here ships a colour.
 | `[data-enigma-input-action="reveal"]` | One button, by name. `aria-pressed` tracks the state |
 | `[data-enigma-password-strength]` | The meter - `data-empty` while there is nothing to score |
 | `[data-enigma-password-strength-segment]` | One bar. `data-filled` when it is lit |
+| `[data-enigma-color]` | The swatch and its panel - carries `data-open` while the panel is up |
+| `[data-enigma-color-swatch]` | The button in the field. Its fill is the value the browser resolved |
+| `[data-enigma-color-panel]` | The panel, positioned against the field |
+| `[data-enigma-color-area]` | The saturation and brightness square |
+| `[data-enigma-color-rail="hue"]`, `[data-enigma-color-rail="alpha"]` | The two rails |
+| `[data-enigma-color-preset]` | One preset from `swatches` |
 
 In Tailwind, the parts you cannot reach with a `className` take one through `classNames`,
 and a segment colours itself from the score on the root:

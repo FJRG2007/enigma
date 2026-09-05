@@ -1,6 +1,6 @@
 ---
 title: Context menu
-description: The right-click menu, with the behaviour a desktop one has - submenus that survive a diagonal pointer, shortcuts on the right, a filter when a level is long, and rows fetched on demand.
+description: The right-click menu, with the behaviour a desktop one has - Copy, Cut and Paste built from what was clicked, submenus that survive a diagonal pointer, shortcuts on the right, a filter when a level is long, and rows fetched on demand.
 group: Forms
 order: 22.8
 space: components
@@ -72,6 +72,50 @@ what is selected: with nothing selected, there is nothing to offer.
 ```tsx
 <ContextMenu items={selection.length > 0 ? rows : []}>{list}</ContextMenu>
 ```
+
+## Copy, Cut and Paste
+
+A custom menu REPLACES the browser's, and the browser's has these three. So they are on by
+default here rather than opt-in: a menu over a text field that cannot copy is not a smaller
+menu, it is a loss nobody decides on and the visitor discovers.
+
+Which of them appear is read from what was right-clicked, at the moment of the press:
+
+- **Copy**, where there is selected text under the pointer.
+- **Cut**, where that selection is also in something writable.
+- **Paste**, in anything writable, and greyed rather than dropped when the clipboard is known
+  to be empty - a row that disappears between two opens reads as an unreliable menu.
+
+They go in front of your rows with a separator after them, because they act on the selection
+rather than on the thing the menu was opened over. Their ids are namespaced
+(`enigma:clipboard:copy`), so they cannot collide with yours, and they still reach `onSelect`
+after being performed, for a caller that wants to log or undo the edit.
+
+```tsx
+<ContextMenu items={rows} clipboard={false} />                      {/* none of them */}
+<ContextMenu items={rows} clipboard={{ cut: false }} />             {/* copy and paste */}
+<ContextMenu items={rows} clipboard={{ labels: { copy: "Copiar" } }} />
+```
+
+`{ copy, cut, paste, labels, icons }` is the whole object: turn one off, rename them, or draw
+them with your own icons.
+
+Three behaviours worth knowing, because each is a defect somewhere else:
+
+- **A password field is pasted into and never copied out of.** The clipboard is shared with
+  every application on the machine and is not cleared; the browser's own menu refuses too.
+- **A selection elsewhere on the page does not count.** The range has to intersect what was
+  clicked, or a right-click away from a selection offers to copy something the visitor is not
+  pointing at.
+- **Ctrl+Z after a paste undoes the paste.** Insertion goes through the browser's own editing
+  command first, which is the only path that joins its undo stack; the fallback writes through
+  the element's own setter and fires an `input` event, so a controlled React field sees it.
+
+Whether the clipboard has anything in it is usually unknowable: reading it needs permission,
+and asking would put a browser prompt on screen just to decide how to draw a row. So the
+permission is queried and never requested. Where it is already granted, Paste greys out on an
+empty clipboard; everywhere else the row stays enabled and a paste with nothing to paste does
+nothing.
 
 ## The heading
 
@@ -170,6 +214,7 @@ Every colour and distance is a custom property on `:root`:
 | `title` | A heading naming what the rows act on |
 | `onSelect` | `(item, path)` - the row, and the ids from the root down to it |
 | `disabled` | Nothing opens, and the press is left to the browser |
+| `clipboard` | Copy, Cut and Paste. On by default; `false` drops them, an object tunes them |
 | `openDelay` / `closeDelay` | The hover timings, in ms |
 | `fuse` / `fuseOptions` / `matcher` / `searchKeys` | The filter, exactly as the search component takes them |
 | `cacheMs` | How long a fetched submenu stays cached |

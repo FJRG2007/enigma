@@ -10,6 +10,7 @@ import { ContextMenu, type ContextMenuNode } from "@enigmax/primitives/react/con
 
 interface Values extends Record<string, string | boolean> {
     title: string;
+    clipboard: boolean;
     icons: boolean;
     shortcuts: boolean;
     descriptions: boolean;
@@ -22,6 +23,7 @@ interface Values extends Record<string, string | boolean> {
 
 const CONTROLS: Control<Values>[] = [
     { name: "title", label: "Heading", type: "text", placeholder: "report.pdf", hint: "what the rows act on" },
+    { name: "clipboard", label: "Copy / Cut / Paste", type: "boolean", hint: "on by default - try the field" },
     { name: "icons", label: "Icons", type: "boolean" },
     { name: "shortcuts", label: "Shortcuts", type: "boolean", hint: "written for your platform" },
     { name: "descriptions", label: "Second line", type: "boolean" },
@@ -43,6 +45,7 @@ const STYLE: StyleToken[] = [
 
 const INITIAL: Values = {
     title: "report.pdf",
+    clipboard: true,
     icons: true,
     shortcuts: true,
     descriptions: false,
@@ -135,6 +138,7 @@ function items(values: Values): ContextMenuNode[] {
 function code(values: Values): string {
     const props: string[] = ["items={rows}", "onSelect={(item) => run(item.id)}"];
     if (values.title) props.push(`title="${values.title}"`);
+    if (!values.clipboard) props.push("clipboard={false}");
 
     const row = [
         '    { id: "rename", label: "Rename"',
@@ -169,10 +173,14 @@ function Live({ values }: { values: Values; }) {
                 title={values.title || undefined}
                 items={items(values)}
                 onSelect={(item, path) => setChosen(path.join(" / "))}
+                clipboard={values.clipboard}
                 triggerProps={{ className: "pg-menu-area" }}
             >
                 <span>Right-click here</span>
                 <span className="pg-menu-hint">or press Shift+F10</span>
+                {/* A real field, because Copy, Cut and Paste are built from what was clicked:
+                    over the pane they cannot appear, and over a selection in here they do. */}
+                <input className="pg-menu-field" defaultValue="Select this, then right-click" aria-label="Something to copy" />
             </ContextMenu>
             <p className="pg-menu-out" aria-live="polite">
                 {chosen ? <>Chose <code>{chosen}</code></> : values.empty ? "Nothing to show, so nothing opens." : "Nothing chosen yet."}
