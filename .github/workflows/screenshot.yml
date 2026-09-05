@@ -42,10 +42,17 @@ jobs:
           node-version: 20
 
       # Playwright is CI-only and never a package dependency: install it ephemerally.
+      #
+      # The browsers are installed through the CLI of the module that will be IMPORTED, not
+      # through `npx playwright`: the repo already carries @playwright/test at its own pinned
+      # version, so `npx` resolves that one and downloads the browser build IT wants, while
+      # `scripts/screenshot.mjs` imports the freshly installed `playwright` and looks for a
+      # different build. The run then fails with "Executable doesn't exist" for a revision
+      # nothing installed.
       - name: Install Playwright + Chromium
         run: |
           npm install --no-save playwright
-          npx playwright install --with-deps chromium
+          node node_modules/playwright/cli.js install --with-deps chromium
 
       - name: Render dashboard preview
         run: node scripts/screenshot.mjs
