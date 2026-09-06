@@ -77,6 +77,11 @@ export interface ImageProps extends Omit<ComponentPropsWithoutRef<"img">, "child
     lightbox?: boolean;
     /** Zoom, with the wheel and the keyboard. ON by default. */
     zoom?: boolean | ZoomOptions;
+    /**
+     * The picture flies out of the page into the viewer, and back into it on the way out. ON
+     * by default, and skipped anyway for a reader who has asked for less movement.
+     */
+    animate?: boolean;
     /** Arrows, the counter, and Left/Right on the keyboard. Off by default. */
     navigation?: boolean;
     /** The strip of previews along the bottom. Off by default. */

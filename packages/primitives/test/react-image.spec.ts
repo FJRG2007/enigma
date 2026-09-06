@@ -42,6 +42,40 @@ async function wheelOverFrame(page: Page, deltaY: number): Promise<void> {
     await page.waitForTimeout(60);
 }
 
+interface Rect { x: number; y: number; width: number; height: number; }
+
+/**
+ * Where the picture actually IS on each animation frame for the next `ms`.
+ *
+ * The rectangle rather than the scale: a thumbnail the same size as the fitted picture flies
+ * without changing size at all, so a scale-only sampler would have called that no animation.
+ * Measured off the element, and started before the press that begins the flight - the rule the
+ * marquee's measurements are written under.
+ */
+async function flightPath(page: Page, ms: number): Promise<Rect[]> {
+    return page.evaluate((duration) => new Promise<Rect[]>((resolve) => {
+        const seen: Rect[] = [];
+        const started = performance.now();
+        const sample = (): void => {
+            const picture = document.querySelector("[data-enigma-image-frame] img");
+            // Only frames the reader can see: the picture is in the DOM before it has been
+            // measured, and where it sits then is not where it is drawn.
+            if (picture && getComputedStyle(picture).visibility !== "hidden") {
+                const box = picture.getBoundingClientRect();
+                seen.push({ x: box.x, y: box.y, width: box.width, height: box.height });
+            }
+            if (performance.now() - started < duration) requestAnimationFrame(sample);
+            else resolve(seen);
+        };
+        requestAnimationFrame(sample);
+    }), ms);
+}
+
+/** How far two rectangles are from being the same one. */
+function apart(a: Rect, b: Rect): number {
+    return Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y), Math.abs(a.width - b.width), Math.abs(a.height - b.height));
+}
+
 test.describe("Image", () => {
     test("a press opens the viewer, and Escape closes it and gives focus back", async ({ page }) => {
         await open(page);
@@ -184,6 +218,85 @@ test.describe("Image", () => {
         await expect(page.locator(viewer)).toHaveCount(0);
     });
 
+    /**
+     * The picture flies out of the page rather than a dialog appearing over it.
+     *
+     * FLIP: the full-size image is laid out where it belongs, measured, then drawn back ON the
+     * thumbnail and released - so what is asserted is that the first frames are the thumbnail's
+     * scale and the last is the fitted one.
+     */
+    test("the picture flies out of the thumbnail and back into it", async ({ page }) => {
+        await open(page);
+        // Measured where it will BE when it is pressed: a press scrolls the trigger into view,
+        // and a rectangle read at another scroll position is a rectangle from another page.
+        await page.locator(`${plain} [data-enigma-image-trigger]`).scrollIntoViewIfNeeded();
+        const thumbnail = await page.locator(`${plain} img`).first().boundingBox();
+        if (!thumbnail) throw new Error("the thumbnail has no box");
+
+        const sampling = flightPath(page, 600);
+        await page.click(`${plain} [data-enigma-image-trigger]`);
+        const opening = await sampling;
+
+        expect(opening.length).toBeGreaterThan(5);
+        // It travelled, and it settled somewhere else: that is the trip.
+        const landed = opening[opening.length - 1]!;
+        const trip = apart(landed, thumbnail);
+        expect(trip).toBeGreaterThan(20);
+
+        // And the first frame anybody sees is essentially ON the thumbnail, which is the whole
+        // trick - without it the picture simply appears in the middle of a dialog. A fraction
+        // rather than a pixel: the first visible frame is a frame or two into a 300ms
+        // transition, and pinning it exactly would be timing the machine rather than the code.
+        expect(apart(opening[0]!, thumbnail)).toBeLessThan(trip / 4);
+        await expect(page.locator(viewer)).toHaveAttribute("data-state", "open");
+
+        const closing = flightPath(page, 600);
+        await page.keyboard.press("Escape");
+        const back = await closing;
+        // And on the way out it goes home before the dialog does.
+        expect(apart(back[back.length - 1]!, thumbnail)).toBeLessThan(trip / 4);
+        await expect(page.locator(viewer)).toHaveCount(0);
+    });
+
+    test("a reader who asked for less movement gets no flight at all", async ({ page }) => {
+        await page.emulateMedia({ reducedMotion: "reduce" });
+        await open(page);
+        // Asserted, not assumed: the project's device descriptor has swallowed this emulation
+        // before, and a preference that never applied would make the rest of this a false pass.
+        expect(await page.evaluate(() => matchMedia("(prefers-reduced-motion: reduce)").matches)).toBe(true);
+
+        await page.click(`${plain} [data-enigma-image-trigger]`);
+        // Open outright: no "opening" phase to pass through, and the picture is where it
+        // belongs from the first frame rather than on its way there.
+        await expect(page.locator(viewer)).toHaveAttribute("data-state", "open");
+        expect(await scale(page)).toBeCloseTo(1, 2);
+
+        await page.keyboard.press("Escape");
+        await expect(page.locator(viewer)).toHaveCount(0);
+    });
+
+    /**
+     * The cursor says what a press does, which in a lightbox is three different things: the
+     * thumbnail enlarges, the empty part of the frame closes, and the picture zooms - then
+     * becomes something you drag.
+     */
+    test("the cursor says what each part of the viewer does", async ({ page }) => {
+        await open(page);
+        const cursor = (selector: string) => page.locator(selector).first().evaluate((node) => getComputedStyle(node).cursor);
+
+        expect(await cursor(`${plain} img`)).toBe("zoom-in");
+
+        await page.click(`${plain} [data-enigma-image-trigger]`);
+        await expect(page.locator(viewer)).toHaveAttribute("data-state", "open");
+        expect(await cursor(frame)).toBe("zoom-out");
+        expect(await cursor(`${frame} img`)).toBe("zoom-in");
+
+        await wheelOverFrame(page, -240);
+        expect(await scale(page)).toBeGreaterThan(1);
+        // Once there is somewhere to pan to, the gesture is a drag.
+        expect(await cursor(`${frame} img`)).toBe("grab");
+    });
+
     test("the picture is announced, and the page behind it cannot scroll", async ({ page }) => {
         await open(page);
         await expect(page.locator(`${plain} [data-enigma-image-trigger]`)).toHaveAttribute("aria-label", "On its own");
@@ -192,6 +305,8 @@ test.describe("Image", () => {
         await page.waitForSelector(frame);
         expect(await page.evaluate(() => document.body.style.overflow)).toBe("hidden");
         await page.keyboard.press("Escape");
+        // Given back when the dialog actually goes, which is the end of the flight home.
+        await expect(page.locator(viewer)).toHaveCount(0);
         expect(await page.evaluate(() => document.body.style.overflow)).not.toBe("hidden");
     });
 });

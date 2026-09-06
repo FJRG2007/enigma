@@ -3,7 +3,7 @@
 import { createPortal } from "react-dom";
 import * as icons from "@/react/image/icons";
 import * as viewer from "@/core/image-viewer";
-import { IMAGE_STYLES } from "@/react/image/styles";
+import { injectImageStyles } from "@/react/image/styles";
 import type { ImageItem, ImageLabels, ImageMenuOptions, ZoomOptions } from "@/react/image/types";
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 
@@ -22,18 +22,6 @@ import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRe
 
 const ImageMenu = lazy(() => import("@/react/image/menu").then((module) => ({ default: module.ImageMenu })));
 
-let injected = false;
-
-function injectStyles(): void {
-    if (injected || typeof document === "undefined") return;
-    injected = true;
-    if (document.querySelector("[data-enigma-image-styles]")) return;
-    const element = document.createElement("style");
-    element.setAttribute("data-enigma-image-styles", "");
-    element.textContent = IMAGE_STYLES;
-    document.head.prepend(element);
-}
-
 export interface ImageViewerProps {
     items: readonly ImageItem[];
     index: number;
@@ -47,6 +35,16 @@ export interface ImageViewerProps {
     onDiscard?: (item: ImageItem, index: number) => void;
     loop: boolean;
     caption?: ReactNode;
+    /**
+     * Where the picture is in the PAGE, read at the moment it is needed.
+     *
+     * A getter rather than a rectangle: the flight back happens whenever the viewer is closed,
+     * and by then the page may have scrolled, reflowed, or be showing a different image of the
+     * set. A rectangle captured on open would fly the picture at where the thumbnail used to be.
+     */
+    origin?: () => DOMRect | null;
+    /** Fly in and out of the thumbnail. Off leaves the dialog appearing outright. */
+    animate: boolean;
     styles: boolean;
     labels: ImageLabels;
 }
@@ -64,11 +62,13 @@ export function ImageViewer({
     onDiscard,
     loop,
     caption,
+    origin,
+    animate,
     styles,
     labels
 }: ImageViewerProps): ReactNode {
     // Before paint: a sheet applied after the first frame shows the dialog undressed first.
-    useLayoutEffect(() => { if (styles) injectStyles(); }, [styles]);
+    useLayoutEffect(() => { if (styles) injectImageStyles(); }, [styles]);
 
     const frameRef = useRef<HTMLDivElement | null>(null);
     const stripRef = useRef<HTMLDivElement | null>(null);
@@ -77,6 +77,26 @@ export function ImageViewer({
     const [transform, setTransform] = useState<viewer.Transform>(viewer.IDENTITY);
     const [loading, setLoading] = useState(true);
     const [panning, setPanning] = useState(false);
+    /**
+     * Where the dialog is in its own life.
+     *
+     * "measuring" is the beat before the picture can be drawn at all: the dialog is up, and
+     * where the picture is going to land is not known until it has been laid out. Then it
+     * flies, then it sits there, then it flies home.
+     *
+     * It starts at "open" whenever there is nothing to fly from - no origin, no animation
+     * asked for, or a reader who has asked for less movement - so every path below has a
+     * viewer that simply exists, and the flight is the decoration on top of it.
+     *
+     * The phases are four rather than three because "no flight yet" and "the flight has been
+     * released" are not the same state and cannot share one: written as `flight === null` they
+     * did, and the picture was hidden for the whole animation.
+     */
+    const [phase, setPhase] = useState<"measuring" | "flying" | "open" | "closing">(() => (
+        animate && origin && !viewer.prefersReducedMotion() ? "measuring" : "open"
+    ));
+    /** The transform that holds the picture ON the thumbnail, for the frame before it is let go. */
+    const [flight, setFlight] = useState<viewer.Transform | null>(null);
     /**
      * What has been discarded, for as long as this viewer is open.
      *
@@ -96,6 +116,41 @@ export function ImageViewer({
         for (let at = 0; at <= index && at < items.length; at += 1) if (!discarded.has(at)) seen += 1;
         return seen;
     }, [index, items.length, discarded]);
+
+    /* -------- the flight between the thumbnail and the frame -------- */
+
+    /**
+     * Where the picture SITS, ignoring whatever transform it is carrying.
+     *
+     * `getBoundingClientRect` would report the zoomed, panned box, which is useless for
+     * computing the transform that lands it somewhere. `offsetLeft`/`offsetWidth` are layout,
+     * so they are the same number mid-zoom as they are at rest, and the frame - which carries
+     * no transform of its own - anchors them to the viewport.
+     */
+    const layoutBox = useCallback((): viewer.Box | null => {
+        const frame = frameRef.current;
+        const element = imageRef.current;
+        if (!frame || !element?.offsetWidth) return null;
+        const box = frame.getBoundingClientRect();
+        return { left: box.left + element.offsetLeft, top: box.top + element.offsetTop, width: element.offsetWidth, height: element.offsetHeight };
+    }, []);
+
+    /**
+     * Close, flying the picture back onto the thumbnail it came from.
+     *
+     * Every dismissal goes through here - Escape, the button, a press on the backdrop, the
+     * last image being discarded - so there is one place where the dialog can be leaving, and
+     * `onClose` is called once, at the end of it.
+     */
+    const requestClose = useCallback(() => {
+        if (phase === "closing" || phase === "measuring") return onClose();
+        const from = origin?.();
+        const to = layoutBox();
+        const back = animate && !viewer.prefersReducedMotion() && from && to ? viewer.flightFrom(from, to) : null;
+        if (!back) return onClose();
+        setPhase("closing");
+        setFlight(back);
+    }, [phase, origin, layoutBox, animate, onClose]);
 
     /* -------- moving through the set -------- */
 
@@ -117,9 +172,9 @@ export function ImageViewer({
         onDiscard?.(item, index);
         // Nothing left to show: an empty frame is not a viewer, so it closes rather than
         // sitting there with the toolbar over a black rectangle.
-        if (next === -1) onClose();
+        if (next === -1) requestClose();
         else onIndex(next);
-    }, [discardable, item, index, items.length, discarded, onDiscard, onIndex, onClose]);
+    }, [discardable, item, index, items.length, discarded, onDiscard, onIndex, requestClose]);
 
     /* -------- zoom and pan -------- */
 
@@ -231,8 +286,87 @@ export function ImageViewer({
         if (!started || event.target !== event.currentTarget) return;
         // A drag that happens to end on the backdrop is not a press on it: 4px of slop, which
         // is what a hand resting on a trackpad moves.
-        if (Math.abs(event.clientX - started.x) < 4 && Math.abs(event.clientY - started.y) < 4) onClose();
-    }, [onClose]);
+        if (Math.abs(event.clientX - started.x) < 4 && Math.abs(event.clientY - started.y) < 4) requestClose();
+    }, [requestClose]);
+
+    /**
+     * The flight in.
+     *
+     * FLIP, and in that order: the full-size picture is laid out where it belongs, measured,
+     * then drawn back ON the thumbnail and released. Reversing it - animating a small image up
+     * - would need the destination size before layout has produced it.
+     *
+     * It waits for the picture to have a size. A flight measured before the image decodes flies
+     * from the thumbnail into a box of nothing, and the usual case is not slow: the viewer
+     * opens on an image the page has already loaded, so `complete` is true on the first pass.
+     */
+    useLayoutEffect(() => {
+        if (phase !== "measuring") return;
+        const element = imageRef.current;
+        const from = origin?.();
+        if (!element || !from) {
+            setPhase("open");
+            return;
+        }
+        // Not ready: this effect runs again when `loading` turns over, which is the load event
+        // the picture is waiting on.
+        if (!element.complete) return;
+
+        const to = layoutBox();
+        const start = to ? viewer.flightFrom(from, to) : null;
+        if (!start) {
+            setPhase("open");
+            return;
+        }
+
+        setFlight(start);
+        /**
+         * Released two frames later, and it has to be two.
+         *
+         * A layout effect commits its own state change before the browser paints, and a
+         * callback booked from there runs at the START of the next frame - still before that
+         * paint. Releasing there means the picture is never once drawn on the thumbnail, the
+         * browser sees identity to identity, and there is no transition at all: the viewer
+         * simply appears. The second frame is what guarantees the first position was painted.
+         *
+         * Both go in one update: the frame that lets the transform go is the frame the picture
+         * becomes visible in, or the flight happens behind a hidden element.
+         */
+        let second = 0;
+        const first = requestAnimationFrame(() => {
+            second = requestAnimationFrame(() => {
+                setFlight(null);
+                setPhase("flying");
+            });
+        });
+        return () => {
+            cancelAnimationFrame(first);
+            cancelAnimationFrame(second);
+        };
+    }, [phase, origin, layoutBox, loading]);
+
+    /**
+     * The end of either flight.
+     *
+     * The timer is not belt and braces: a transform that happens to equal the one already on
+     * the element fires no `transitionend` at all, and a dialog left in "closing" would be a
+     * lightbox that never goes away.
+     */
+    useEffect(() => {
+        if (phase !== "flying" && phase !== "closing") return;
+        const element = imageRef.current;
+        const done = (event?: TransitionEvent): void => {
+            if (event && event.propertyName !== "transform") return;
+            if (phase === "closing") onClose();
+            else setPhase("open");
+        };
+        element?.addEventListener("transitionend", done);
+        const timer = window.setTimeout(() => done(), viewer.flightMs(element) + 80);
+        return () => {
+            element?.removeEventListener("transitionend", done);
+            window.clearTimeout(timer);
+        };
+    }, [phase, onClose]);
 
     /* -------- the keyboard, which is the same viewer by other means -------- */
 
@@ -241,7 +375,7 @@ export function ImageViewer({
             if (event.defaultPrevented) return;
             const key = event.key;
 
-            if (key === "Escape") return void (event.preventDefault(), onClose());
+            if (key === "Escape") return void (event.preventDefault(), requestClose());
             if (navigation && (key === "ArrowRight" || key === "ArrowLeft") && !zoomed) {
                 event.preventDefault();
                 return go(key === "ArrowRight" ? 1 : -1);
@@ -261,7 +395,7 @@ export function ImageViewer({
 
         document.addEventListener("keydown", onKeyDown);
         return () => document.removeEventListener("keydown", onKeyDown);
-    }, [onClose, navigation, zoom, zoomed, go, zoomBy, reset, bounded, discardable, discard]);
+    }, [requestClose, navigation, zoom, zoomed, go, zoomBy, reset, bounded, discardable, discard]);
 
     /* -------- what a dialog owes the page it covers -------- */
 
@@ -284,18 +418,25 @@ export function ImageViewer({
 
     if (!item) return null;
 
-    const style = { transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})` } satisfies CSSProperties;
+    // The flight wins while there is one: it is the same transform channel, and the pan the
+    // reader left behind is where the picture flies back FROM.
+    const drawn = flight ?? transform;
+    const style = { transform: `translate(${drawn.x}px, ${drawn.y}px) scale(${drawn.scale})` } satisfies CSSProperties;
     const counter = (labels.counter ?? "{index} of {total}").replace("{index}", String(position)).replace("{total}", String(remaining));
 
     return createPortal(
         <div
             data-enigma-image-viewer=""
+            // Three states outside, four inside: "measuring" and "flying" are one thing to a
+            // stylesheet - the dialog is arriving - and splitting them in the theme would make
+            // an internal beat part of the API.
+            data-state={phase === "measuring" || phase === "flying" ? "opening" : phase}
             role="dialog"
             aria-modal="true"
             aria-label={labels.viewer ?? "Image viewer"}
             // A press on the backdrop closes; one that started on the picture does not, or a
             // drag that ends outside the image would shut the viewer mid-pan.
-            onPointerDown={(event) => { if (event.target === event.currentTarget) onClose(); }}
+            onPointerDown={(event) => { if (event.target === event.currentTarget) requestClose(); }}
         >
             <div data-enigma-image-bar="">
                 {navigation && <span data-enigma-image-counter="">{counter}</span>}
@@ -324,7 +465,7 @@ export function ImageViewer({
                     </Suspense>
                 )}
 
-                <button type="button" data-enigma-image-button="" aria-label={labels.close ?? "Close"} title={labels.close ?? "Close"} onClick={onClose}>
+                <button type="button" data-enigma-image-button="" aria-label={labels.close ?? "Close"} title={labels.close ?? "Close"} onClick={requestClose}>
                     <icons.Close />
                 </button>
             </div>
@@ -332,6 +473,12 @@ export function ImageViewer({
             <div
                 ref={frameRef}
                 data-enigma-image-frame=""
+                data-zoom={zoom ? "" : undefined}
+                // "pending" is the beat before the picture can be drawn anywhere sensible.
+                // Drawing during it would put one frame of the full-size image where it is
+                // going to LAND, and the flight would then start by jumping back to the
+                // thumbnail.
+                data-flying={phase === "open" ? undefined : phase === "measuring" ? "pending" : "moving"}
                 data-zoomed={zoomed ? "" : undefined}
                 data-panning={panning ? "" : undefined}
                 data-loading={loading ? "" : undefined}
@@ -341,7 +488,7 @@ export function ImageViewer({
                 onPointerUp={endPointer}
                 onPointerCancel={endPointer}
                 onDoubleClick={(event) => {
-                    if (!zoom?.doubleClick) return;
+                    if (!zoom?.doubleClick || phase !== "open") return;
                     if (zoomed) return reset();
                     zoomBy(viewer.ZOOM_DOUBLE / transform.scale, { x: event.clientX, y: event.clientY });
                 }}

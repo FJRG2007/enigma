@@ -1,6 +1,6 @@
 ---
 title: Video
-description: A player with the controls a video is expected to have - shaped after Plyr, with the element as the source of truth and a theme you restyle through data attributes.
+description: A player with the controls a video is expected to have - shaped after Plyr, with subtitles, casting and a right-click menu, the element as the source of truth, and a theme you restyle through data attributes.
 group: Media
 order: 23.5
 space: components
@@ -55,9 +55,10 @@ element.
 | `progress` | on | Scrubber, with what is buffered behind it |
 | `currentTime`, `duration` | on | The two clocks |
 | `volume` | on | Mute, and a rail that unfolds when reached |
-| `captions` | on | Only where `tracks` were given |
-| `settings` | on | Playback speed |
+| `captions` | on | Only where the element has subtitle tracks |
+| `settings` | on | Playback speed, and the subtitle language |
 | `pip` | on | Feature-detected: absent where the browser has no picture in picture |
+| `cast` | on | Feature-detected twice: the browser must have the API **and** report a screen |
 | `fullscreen` | on | Including the iOS path, which is the video's own |
 | `download` | **off** | A video a page shows is not always one it means to hand over |
 
@@ -69,6 +70,67 @@ picture in picture, and a digit seeks to that tenth of the video.
 
 It stands down inside anything that takes text, so a space bar in a comment box is a space and
 not a pause. `keyboard={false}` turns the lot off.
+
+## Subtitles
+
+The button and the menu report **the element**, not a flag of their own. That distinction is
+the whole feature: a `<track default>` is already showing before anybody pressed anything, a
+page can add a track after mount, and `<track>` children written by hand are subtitles the
+component was never told about. All three are in `textTracks`, which is what is read.
+
+So the settings panel lists Off and every subtitle track the element carries, one is showing
+at a time, and **C** comes back to the language that was chosen rather than to the first in
+the list.
+
+```tsx
+<Video
+    src="/demo.mp4"
+    tracks={[
+        { src: "/demo.en.vtt", srcLang: "en", label: "English", default: true },
+        { src: "/demo.es.vtt", srcLang: "es", label: "Espanol" }
+    ]}
+/>
+```
+
+Only `subtitles` and `captions` tracks are offered. Chapters and metadata draw nothing over
+the picture, so listing them would be a language row that does nothing.
+
+## Casting
+
+`cast` uses the browser's own [Remote Playback API](https://w3c.github.io/remote-playback/),
+with Safari's older AirPlay picker behind it - so it is a real cast to a Chromecast or an Apple
+TV, not a script from a CDN. The device list belongs to the platform: nothing in a page can
+enumerate the screens on a network, so the button opens the browser's picker.
+
+It appears only where there is somewhere to cast **to**. The button follows the availability
+the browser reports, `disableRemotePlayback` on the element removes it, and the player carries
+`data-casting` while the video is playing on the other screen.
+
+## The menu a right-click opens
+
+Shaped the way YouTube's is: play, loop, the speed, the subtitle language, and the two rows
+that put the link on the clipboard - the second with `#t=` at the second you are watching.
+Picture in picture, casting and fullscreen are under it where the browser has them.
+
+It **is** [the context menu](context-menu) - the same panel, keyboard model and roles, rather
+than a second popup written for one player. `contextMenu={false}` gives the browser's own menu
+back, and an object adds rows of your own:
+
+```tsx
+<Video
+    src="/demo.mp4"
+    contextMenu={{
+        title: "Release notes, 2.4",
+        items: [{ id: "transcript", label: "Open the transcript" }],
+        onSelect: (item) => { if (item.id === "transcript") openTranscript(); }
+    }}
+/>
+```
+
+Its code is a chunk of its own, mounted the first time a pointer reaches the player - so a page
+of embedded videos nobody right-clicks downloads none of it. A press that beats the chunk falls
+through to the browser's menu, which is a better answer than swallowing it. The player carries
+`data-menu` once its own menu will answer.
 
 ## The element is the source of truth
 
@@ -85,10 +147,15 @@ first second instead of growing from `9:59` to `1:00:00` and shoving every contr
 
 ## The bar that gets out of the way
 
-It fades after a couple of seconds of playing and comes back on the first pointer move, focus,
-or pause - never while the settings menu is open, because a bar that vanishes under the pointer
-takes the panel being read with it. `autoHide={false}` keeps it, and `autoHideDelay` changes
-the wait.
+It fades after a couple of seconds of playing and comes back on the first pointer move, key
+press, focus, or pause. `autoHide={false}` keeps it, and `autoHideDelay` changes the wait.
+
+Three things it will not do. It does not go while the settings menu is open, because a bar that
+vanishes under the pointer takes the panel being read with it. It does not go **while the
+pointer is resting on it** - the controls used to disappear under the cursor that was on its
+way to them, which reads as the buttons vanishing rather than as a bar getting out of the way,
+and fullscreen is where that trip is longest. And a key brings it back like a pointer does, so
+seeking from the keyboard in fullscreen is not done blind.
 
 ## Installation
 
@@ -104,8 +171,13 @@ sheet as an import. Most projects override one property:
     --enigma-video-accent: #3b82f6;
     --enigma-video-panel-bg: rgba(23, 23, 23, 0.96);
     --enigma-video-control-size: 2rem;
+    --enigma-video-icon-size: 1.125rem;
     --enigma-video-rail-height: 0.3125rem;
 }
+
+The icons are sized by `--enigma-video-icon-size` rather than in `em` of the bar's own text:
+`1.25em` of a 13px label is a 16px icon, and the same markup in a project with larger type is
+silently a different player.
 ```
 
     </div>
@@ -115,13 +187,14 @@ sheet as an import. Most projects override one property:
 
 | Attribute | On |
 | --- | --- |
-| `[data-enigma-video]` | The wrapper - carries `data-playing`, `data-hidden`, `data-fullscreen` |
+| `[data-enigma-video]` | The wrapper - carries `data-playing`, `data-hidden`, `data-fullscreen`, `data-casting`, `data-menu` |
 | `[data-enigma-video-big]` | The round play button over the poster |
 | `[data-enigma-video-controls]` | The bar |
-| `[data-enigma-video-button]` | One control. `aria-pressed` tracks captions |
+| `[data-enigma-video-button]` | One control. `aria-pressed` tracks captions and casting |
 | `[data-enigma-video-rail]` | A slider - the scrubber and the volume are the same control |
 | `[data-enigma-video-buffer]`, `[data-enigma-video-played]`, `[data-enigma-video-knob]` | Inside the rail |
-| `[data-enigma-video-panel]`, `[data-enigma-video-option]` | The settings menu and its rows |
+| `[data-enigma-video-panel]` | The settings menu. Bounded to the player and scrolls: it opens upward inside a box that clips |
+| `[data-enigma-video-option="speed"]`, `[data-enigma-video-option="captions"]` | Its rows, by the list they belong to |
 | `[data-enigma-video-spinner]` | Shown while the video is waiting for data |
 
 Anything you render as a child sits over the picture and under the bar, which is where a title,

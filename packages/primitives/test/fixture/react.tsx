@@ -471,8 +471,23 @@ function Form(): React.ReactNode {
                     data-testid="player-video"
                     src="/test/fixture/missing.mp4"
                     poster={PHOTOS[1]!.src}
-                    tracks={[{ src: CAPTIONS, srcLang: "en", label: "English", default: true }]}
+                    tracks={[
+                        { src: CAPTIONS, srcLang: "en", label: "English", default: true },
+                        { src: CAPTIONS, srcLang: "es", label: "Espanol" }
+                    ]}
                     wrapperProps={{ style: { width: 480 } }}
+                />
+            </div>
+
+            {/* A player too short to hold its own settings panel, which is what the panel has
+                to survive: it opens upward inside a box that clips. */}
+            <div data-testid="short-player">
+                <Video
+                    data-testid="short-player-video"
+                    src="/test/fixture/missing.mp4"
+                    poster={PHOTOS[1]!.src}
+                    tracks={[{ src: CAPTIONS, srcLang: "en", label: "English" }]}
+                    wrapperProps={{ style: { width: 320, height: 180 } }}
                 />
             </div>
 

@@ -17,6 +17,7 @@ interface Values extends Record<string, string | boolean> {
     discardable: boolean;
     zoom: boolean;
     captions: boolean;
+    animate: boolean;
 }
 
 function photo(from: string, to: string, label: string, width = 1200, height = 800): string {
@@ -39,6 +40,7 @@ const PHOTOS = [
 
 const CONTROLS: Control<Values>[] = [
     { name: "zoom", label: "Zoom", type: "boolean", hint: "wheel, pinch, double press" },
+    { name: "animate", label: "Flight", type: "boolean", hint: "out of the page and back" },
     { name: "navigation", label: "Arrows", type: "boolean", hint: "and a counter" },
     { name: "thumbnails", label: "Preview strip", type: "boolean" },
     { name: "menu", label: "Three dots", type: "boolean", hint: "download lives here" },
@@ -56,6 +58,7 @@ const STYLE: StyleToken[] = [
 /** Everything off but the two that ship on, which is what the component's defaults are. */
 const INITIAL: Values = {
     zoom: true,
+    animate: true,
     navigation: false,
     thumbnails: false,
     menu: false,
@@ -67,6 +70,7 @@ function code(values: Values): string {
     const props = ["src={photos[0].src}", 'alt="A blue gradient"'];
     if (values.navigation || values.thumbnails || values.discardable) props.push("images={photos}");
     if (!values.zoom) props.push("zoom={false}");
+    if (!values.animate) props.push("animate={false}");
     if (values.navigation) props.push("navigation");
     if (values.thumbnails) props.push("thumbnails");
     if (values.menu) props.push("menu");
@@ -97,6 +101,7 @@ export function ImagePlayground() {
                             index={index}
                             images={values.captions ? PHOTOS : PHOTOS.map(({ caption, ...rest }) => rest)}
                             zoom={values.zoom}
+                            animate={values.animate}
                             navigation={values.navigation}
                             thumbnails={values.thumbnails}
                             menu={values.menu}

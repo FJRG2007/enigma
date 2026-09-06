@@ -8,6 +8,7 @@
  */
 
 import type { ComponentPropsWithoutRef, ReactNode } from "react";
+import type { ContextMenuItem, ContextMenuNode } from "@/react/context-menu/context";
 
 export interface VideoSource {
     src: string;
@@ -34,6 +35,8 @@ export interface VideoControls {
     captions?: boolean;
     settings?: boolean;
     pip?: boolean;
+    /** Play on a TV. Feature-detected, and absent until the browser reports a screen to cast to. */
+    cast?: boolean;
     fullscreen?: boolean;
     /** Off by default: a video a page shows is not always one it means to hand over. */
     download?: boolean;
@@ -47,10 +50,21 @@ export interface VideoLabels {
     volume?: string;
     seek?: string;
     captions?: string;
+    /** The row that turns subtitles off. Default "Off". */
+    captionsOff?: string;
+    /** The heading over the language rows. Default "Subtitles". */
+    subtitles?: string;
     settings?: string;
     speed?: string;
     normal?: string;
     pip?: string;
+    cast?: string;
+    /** While it is playing on the other screen. Default "Stop casting". */
+    stopCast?: string;
+    /** The context menu's rows. */
+    loop?: string;
+    copyUrl?: string;
+    copyUrlAtTime?: string;
     enterFullscreen?: string;
     exitFullscreen?: string;
     download?: string;
@@ -58,7 +72,9 @@ export interface VideoLabels {
     player?: string;
 }
 
-export interface VideoProps extends Omit<ComponentPropsWithoutRef<"video">, "controls" | "children" | "src"> {
+// `contextMenu` is taken off the element's own props: it is a long-dead HTML attribute
+// naming a `<menu>` element, and this one is a menu the player draws.
+export interface VideoProps extends Omit<ComponentPropsWithoutRef<"video">, "controls" | "children" | "src" | "contextMenu"> {
     /** One file, or the list the browser should choose from. */
     src?: string | readonly VideoSource[];
     poster?: string;
@@ -75,6 +91,13 @@ export interface VideoProps extends Omit<ComponentPropsWithoutRef<"video">, "con
     autoHide?: boolean;
     /** How long the pointer has to be still before the bar goes, in ms. Default 2600. */
     autoHideDelay?: number;
+    /**
+     * The menu a right-click opens, shaped the way YouTube's is. ON by default.
+     *
+     * `false` gives the browser's own menu back - which is what a page wants when the point of
+     * the video is that it can be saved from the native menu.
+     */
+    contextMenu?: boolean | VideoContextMenuOptions;
     /** The player's stylesheet, injected once. There is no useful unstyled player. */
     styles?: boolean;
     labels?: VideoLabels;
@@ -86,6 +109,17 @@ export interface VideoProps extends Omit<ComponentPropsWithoutRef<"video">, "con
     wrapperProps?: ComponentPropsWithoutRef<"div">;
 }
 
+export interface VideoContextMenuOptions {
+    /** Rows of your own, after the built-in ones. */
+    items?: readonly ContextMenuNode[];
+    /** A row was invoked - yours, or one of the built-in ids. */
+    onSelect?: (item: ContextMenuItem) => void;
+    /** The two "copy the link" rows. On whenever the menu is, where there is a URL to copy. */
+    copyUrl?: boolean;
+    /** The heading over the rows, naming what the menu is acting on. */
+    title?: string;
+}
+
 export const CONTROL_DEFAULTS: Required<VideoControls> = {
     play: true,
     progress: true,
@@ -95,6 +129,7 @@ export const CONTROL_DEFAULTS: Required<VideoControls> = {
     captions: true,
     settings: true,
     pip: true,
+    cast: true,
     fullscreen: true,
     download: false
 };

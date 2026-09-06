@@ -1,8 +1,9 @@
 "use client";
 
 import { toItem } from "@/react/image/types";
+import { injectImageStyles } from "@/react/image/styles";
 import type { ImageItem, ImageProps, ZoomOptions } from "@/react/image/types";
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 /**
  * `<Image>` - the picture in the page, and the viewer a press on it opens.
@@ -45,6 +46,7 @@ export function Image(props: ImageProps): ReactNode {
         index,
         lightbox = true,
         zoom = true,
+        animate = true,
         navigation = false,
         thumbnails = false,
         menu = false,
@@ -59,6 +61,10 @@ export function Image(props: ImageProps): ReactNode {
         wrapperProps,
         ...rest
     } = props;
+
+    // Before paint, and from HERE rather than only from the viewer: the picture in the page is
+    // styled from the first frame, so it says it enlarges before anybody has opened one.
+    useLayoutEffect(() => { if (styles) injectImageStyles(); }, [styles]);
 
     const [open, setOpen] = useState(false);
 
@@ -79,6 +85,25 @@ export function Image(props: ImageProps): ReactNode {
     useEffect(() => setCurrent(initial), [initial]);
 
     const triggerRef = useRef<HTMLButtonElement | null>(null);
+    const thumbnailRef = useRef<HTMLImageElement | null>(null);
+
+    const shown = useRef(current);
+    shown.current = current;
+
+    /**
+     * Where this picture is in the page, read at the moment the viewer needs it.
+     *
+     * Read live rather than captured on open: the flight back happens whenever the viewer is
+     * closed, and by then the page may have scrolled. A rectangle taken at open would land the
+     * picture where the thumbnail used to be.
+     *
+     * Null once the reader has moved through a set to a different image. This component knows
+     * where ITS picture is and nothing about anyone else's, so flying the fourth image back
+     * onto the first one's thumbnail would be a lie; the viewer then closes without one.
+     */
+    const origin = useCallback((): DOMRect | null => (
+        shown.current === initial ? thumbnailRef.current?.getBoundingClientRect() ?? null : null
+    ), [initial]);
 
     const zoomOptions = useMemo(() => {
         if (zoom === false) return null;
@@ -110,7 +135,7 @@ export function Image(props: ImageProps): ReactNode {
         if (item) onIndexChange?.(next, item);
     }, [items, onIndexChange]);
 
-    const image = <img src={src} alt={alt} {...rest} />;
+    const image = <img ref={thumbnailRef} src={src} alt={alt} {...rest} />;
 
     return (
         <span {...wrapperProps} data-enigma-image="" data-clickable={lightbox ? "" : undefined}>
@@ -146,6 +171,8 @@ export function Image(props: ImageProps): ReactNode {
                         onDiscard={onDiscard}
                         loop={loop}
                         caption={caption}
+                        origin={origin}
+                        animate={animate}
                         styles={styles}
                         labels={labels}
                     />

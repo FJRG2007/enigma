@@ -29,12 +29,20 @@ export const IMAGE_STYLES = `
     /* Above the page's own chrome, not merely above its content: a header or a sticky sidebar
        with a z-index of its own would otherwise paint over the dialog covering it. */
     --enigma-image-z: 9999;
+    /* How long the picture takes to fly out of the page and back into it, and the curve it
+       flies on. They are the numbers core/image-viewer.ts waits for, so a project that
+       changes one here changes it there - see the note above the keyframes. */
+    --enigma-image-flight: 300ms;
+    --enigma-image-flight-ease: cubic-bezier(0.2, 0, 0.2, 1);
 }
 
 /* The thumbnail in the page. Only what the behaviour needs: the pointer says it opens, and
    the box is the caller's to size. */
 [data-enigma-image] { display: inline-flex; max-width: 100%; }
 [data-enigma-image][data-clickable] { cursor: zoom-in; }
+/* Stated on the picture as well as inherited: a project that restyles the trigger button is
+   one cursor: pointer away from a thumbnail that no longer says it enlarges. */
+[data-enigma-image][data-clickable] img { cursor: zoom-in; }
 [data-enigma-image] img { display: block; max-width: 100%; height: auto; }
 /* A real box, never display:contents: an element without one cannot be focused in Chromium,
    so a viewer closed with Escape would hand focus to the body instead of back to the picture
@@ -52,11 +60,31 @@ export const IMAGE_STYLES = `
     display: grid; grid-template-rows: auto minmax(0, 1fr) auto;
     background: var(--enigma-image-backdrop);
     color: var(--enigma-image-text);
-    animation: enigma-image-in 120ms ease-out;
 }
-@keyframes enigma-image-in { from { opacity: 0; } to { opacity: 1; } }
-@media (prefers-reduced-motion: reduce) {
-    [data-enigma-image-viewer] { animation: none; }
+
+/* The opening: the backdrop arrives while the picture flies out of the page, and the toolbar
+   and the strip arrive with it rather than being there first over a picture that is still on
+   its way. data-state is only ever "opening" or "closing" while an animation is meant to be
+   running, so a viewer that skipped the flight - reduced motion, animate={false} - matches
+   none of these rules and simply exists. */
+@keyframes enigma-image-in { from { background-color: transparent; } to { background-color: var(--enigma-image-backdrop); } }
+@keyframes enigma-image-chrome { from { opacity: 0; } to { opacity: 1; } }
+[data-enigma-image-viewer][data-state="opening"] { animation: enigma-image-in var(--enigma-image-flight) ease-out; }
+[data-enigma-image-viewer][data-state="opening"] [data-enigma-image-bar],
+[data-enigma-image-viewer][data-state="opening"] [data-enigma-image-foot],
+[data-enigma-image-viewer][data-state="opening"] [data-enigma-image-nav] {
+    animation: enigma-image-chrome var(--enigma-image-flight) ease-out;
+}
+/* On the way out the backdrop drains, and the dialog stops taking presses: it is over the
+   page again, so a click through it would land on whatever is now under the pointer. */
+[data-enigma-image-viewer][data-state="closing"] {
+    background-color: transparent; pointer-events: none;
+    transition: background-color var(--enigma-image-flight) var(--enigma-image-flight-ease);
+}
+[data-enigma-image-viewer][data-state="closing"] [data-enigma-image-bar],
+[data-enigma-image-viewer][data-state="closing"] [data-enigma-image-foot],
+[data-enigma-image-viewer][data-state="closing"] [data-enigma-image-nav] {
+    opacity: 0; transition: opacity calc(var(--enigma-image-flight) / 2) ease-in;
 }
 
 [data-enigma-image-bar] {
@@ -94,8 +122,29 @@ export const IMAGE_STYLES = `
     -webkit-user-drag: none;
     will-change: transform;
 }
-[data-enigma-image-frame][data-zoomed] { cursor: grab; }
-[data-enigma-image-frame][data-panning] { cursor: grabbing; }
+/* Only while it is MOVING, which is not the same as "during the flight".
+   A transition left on permanently would put 300ms of lag between the wheel and the zoom, and
+   turn every pan into a drag the picture follows late. And one left on during "pending" is
+   worse than useless: putting the picture on the thumbnail is itself a transform change, so it
+   animated there over 300ms - behind a hidden element - and by the time anybody could see it
+   the flight was nearly over. */
+[data-enigma-image-frame][data-flying="moving"] img { transition: transform var(--enigma-image-flight) var(--enigma-image-flight-ease); }
+/* Not drawn until there is somewhere to fly from - see the note on the attribute. The spinner
+   is what stands in for it, the same one a slow picture gets. */
+[data-enigma-image-frame][data-flying="pending"] img { visibility: hidden; }
+@media (prefers-reduced-motion: reduce) {
+    [data-enigma-image-frame][data-flying="moving"] img { transition: none; }
+}
+
+/* The cursor says what a press does, which in a lightbox is three different things. The empty
+   part of the frame IS the backdrop and closes it; the picture at rest takes a double press to
+   enlarge; once it is enlarged the gesture is a drag. */
+[data-enigma-image-frame] { cursor: zoom-out; }
+[data-enigma-image-frame][data-zoom] img { cursor: zoom-in; }
+[data-enigma-image-frame][data-zoomed],
+[data-enigma-image-frame][data-zoomed] img { cursor: grab; }
+[data-enigma-image-frame][data-panning],
+[data-enigma-image-frame][data-panning] img { cursor: grabbing; }
 [data-enigma-image-frame][data-loading] img { opacity: 0.35; }
 
 /* Left and right sit over the picture rather than beside it: the frame is the biggest thing
@@ -141,3 +190,24 @@ export const IMAGE_STYLES = `
 [data-enigma-image-thumb][aria-current="true"] { opacity: 1; box-shadow: 0 0 0 2px var(--enigma-image-focus); }
 [data-enigma-image-thumb]:focus-visible { outline: 2px solid var(--enigma-image-focus); outline-offset: 2px; }
 `;
+
+let injected = false;
+
+/**
+ * Put the sheet in the document, once.
+ *
+ * It lives here rather than in the component because BOTH halves need it and they are in
+ * different chunks: the thumbnail is in the page from the first paint, and the viewer arrives
+ * with its own module later. Injecting only from the viewer left the picture in the page
+ * unstyled until somebody opened one - so the cursor did not say it enlarges, and the focus
+ * ring around it did not exist, until after the first press.
+ */
+export function injectImageStyles(): void {
+    if (injected || typeof document === "undefined") return;
+    injected = true;
+    if (document.querySelector("[data-enigma-image-styles]")) return;
+    const element = document.createElement("style");
+    element.setAttribute("data-enigma-image-styles", "");
+    element.textContent = IMAGE_STYLES;
+    document.head.prepend(element);
+}

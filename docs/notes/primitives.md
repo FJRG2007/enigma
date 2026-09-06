@@ -1186,6 +1186,52 @@ The discard set is a SESSION, held by the viewer while it is open. The list belo
 caller - `onDiscard` is how they drop it from their own state - and a set that outlived the
 dialog would fight whatever they did with it.
 
+### The flight, and the three ways it silently does not happen
+
+The picture grows out of the thumbnail and settles home on close - the move
+react-medium-image-zoom made standard, done without the dependency. `flightFrom(from, to)` in
+the core is the whole maths: one scale (both boxes are the same picture) and a centre-to-centre
+offset, because `translate(x, y) scale(s)` scales about the element's own centre first.
+
+FLIP, in that order: lay the full-size picture out where it belongs, MEASURE it, then draw it
+back on the thumbnail and release. The reverse would need the destination size before layout
+has produced it. Each of the three failures below leaves a viewer that just appears, with no
+error anywhere:
+
+1. **Release two frames later, not one.** A layout effect commits its own state change before
+   the browser paints, and a callback booked from there runs at the START of the next frame -
+   still before that paint. Releasing there means the picture is never once drawn on the
+   thumbnail, the browser sees identity to identity, and there is no transition at all.
+2. **The transition is on only while it is MOVING.** Putting the picture on the thumbnail is
+   itself a transform change, so a transition scoped to "the whole flight"
+   (`[data-flying]` rather than `[data-flying="moving"]`) animated that placement too, behind a
+   hidden element - and by the time anything was visible the flight was 90% over. Measured: the
+   first visible frame sat 28px from the landing spot on a 232px trip.
+3. **"Not measured yet" and "released" cannot be the same state.** Written as `flight === null`
+   they were, so the picture was hidden for the entire animation. The phases are four -
+   `measuring`, `flying`, `open`, `closing` - and the theme only ever sees three, because
+   `measuring` and `flying` are one thing to a stylesheet.
+
+The untransformed box comes from `offsetLeft`/`offsetWidth` against the frame's own rect:
+`getBoundingClientRect` on the picture reports the zoomed, panned box, which is useless for
+computing a transform that has to land somewhere. `origin` is a GETTER for the same reason -
+the page may have scrolled by the time the viewer closes - and it returns null once the reader
+has moved through a set, because this component knows where its own picture is and nothing
+about anyone else's.
+
+The duration lives in CSS (`--enigma-image-flight`) and the component reads it back off the
+element (`flightMs`) for its fallback timer: a `transitionend` that never fires - a transform
+equal to the one already there - would otherwise leave a lightbox that never goes away.
+
+**The sheet is injected by the picture in the page, not by the viewer's chunk.** It used to be
+the viewer's, so `cursor: zoom-in` on the thumbnail and the focus ring around it did not exist
+until somebody had opened a lightbox - the affordance arrived after the interaction it was
+advertising. `injectImageStyles` lives in `styles.ts` so both halves call the same one.
+
+Three cursors, because a press means three things: `zoom-in` on the picture, `zoom-out` on the
+dark area beside it (which is the backdrop, and closes), `grab`/`grabbing` once there is
+somewhere to pan to.
+
 ## video
 
 `<Video>` is a player shaped after Plyr: the same control set, the same shortcuts, the same bar
@@ -1220,9 +1266,70 @@ press, dragged with the pointer captured so it keeps following outside the box, 
 the arrows with `role="slider"`. It stops the arrow keys from bubbling, or setting the volume
 would also seek the video.
 
-The bar hides after `autoHideDelay` of playing and comes back on a pointer move, focus or
-pause - never while the settings menu is open, because a bar that vanishes under the pointer
-takes the panel being read with it.
+The bar hides after `autoHideDelay` of playing and comes back on a pointer move, a KEY press,
+focus or pause. Three things suspend it, and the second was a real complaint about fullscreen:
+the settings menu being open (a bar that vanishes under the pointer takes the panel being read
+with it), **the pointer resting on the bar itself** (the controls went away under the cursor
+that was travelling towards them - fullscreen is where that trip is longest), and the video not
+playing. A key waking it matters for the same screen: seeking from the keyboard with the bar
+gone shows no clock, no scrubber, and no sign the press did anything.
+
+Fullscreen needs no CSS of its own beyond the corner. The UA stylesheet pins the fullscreen
+element to the screen with `!important`, which outranks anything a page or this sheet can say,
+and a `<video>` already fits itself with `object-fit: contain`. Rules that restate it are dead
+weight that reads like a fix.
+
+### The settings panel is bounded, because the player clips
+
+The panel opens UPWARD from a button on the bottom edge, inside a box with `overflow: hidden` -
+which it must have, or a rounded corner is not rounded. So a panel taller than the picture is a
+panel with its top cut off, and seven speeds plus a language list is taller than any player
+under about 300px. The room is MEASURED when it opens (the distance from the top of the player
+to the top of the button) and set inline, and what does not fit scrolls. `box-sizing:
+border-box` on it is not cosmetic: `max-height` is the content box, so the panel overflowed by
+exactly its own 8px of padding.
+
+### Subtitles are read off the element
+
+`textTracks`, never a flag of the component's own. A `<track default>` is SHOWING before
+anything is pressed, so a player holding its own `captions` boolean said "off" over a picture
+with subtitles on it and took two presses to turn them off. A page can also add a track after
+mount, or write `<track>` children the component was never told about. `captionTracks` filters
+to `subtitles`/`captions` - chapters and metadata draw nothing over the picture - and the
+toggle returns to the language that was CHOSEN rather than to the first in the list.
+
+### Casting is the browser's, not a script
+
+`supportsRemote`/`watchRemote`/`promptRemote` wrap the Remote Playback API with Safari's older
+AirPlay picker behind it, so a Chromecast or an Apple TV works with no CDN dependency. The
+device list belongs to the platform: nothing in a page can enumerate the screens on a network.
+Two details. `watchAvailability` REJECTS with NotSupportedError on platforms that can still
+`prompt()`, so a rejection is treated as "available" - a button that opens an empty picker is a
+smaller loss than a missing one. And `disableRemotePlayback` on the element is honoured: a page
+that asked for the control to be gone does not get one drawn over its video.
+
+### The right-click menu is the context-menu component
+
+`react/video/menu.tsx` has no trigger part at all: the player opens the menu itself, at the
+point of the press, and what the module renders into the tree is nothing (the panel is
+portalled). It publishes its opener upward, which doubles as the signal that the menu is
+READY - the player carries `data-menu` then, and until then a right-click is deliberately left
+to the browser rather than swallowed by a handler that cannot answer it.
+
+Its chunk is mounted the first time a pointer reaches the player rather than on render, which
+is the `<Image>` prefetch-on-intent rule with the mount attached to it. It is a SIBLING of the
+`<video>`, never a wrapper: swapping a wrapper in when the pointer arrives would remount the
+media element and restart playback.
+
+The rows are YouTube's - play, loop, speed, subtitles, copy the link, copy the link at this
+second (`#t=`, the media fragment a plain file understands) - built in the player because only
+the player knows what is playing.
+
+The icons are on one 24x24 grid and inside it. The gear used to carry absolute `V21`/`H4`
+commands, which drew a shape half again the size of the box hanging off the bottom of its
+button: an icon that leaves the viewBox cannot be centred by the button holding it. Their size
+is `--enigma-video-icon-size`, not an `em` of the bar's label - `1.25em` of 13px is a 16px
+icon, and the same markup in a project with larger type was silently a different player.
 
 The docs playground ships no media on purpose: a file big enough to be worth playing is a file
 every reader downloads to look at a control bar. It plays whatever the reader points it at,

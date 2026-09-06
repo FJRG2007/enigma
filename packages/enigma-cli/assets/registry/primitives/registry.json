@@ -1406,7 +1406,7 @@
     {
       "name": "image",
       "title": "Image, with the viewer a press on it opens",
-      "description": "An image that opens into a lightbox: a press enlarges it and the wheel zooms around the cursor, with a drag to pan, a pinch on touch, and the keyboard driving all of it. Everything else is a decision about the page it sits in, so it is off until asked for - the arrows and counter of a set, the strip of previews along the bottom, a three-dot menu that downloads the file, and a discard action that drops an image and moves to the next. The viewer is its own chunk, fetched on intent, and the menu another under that, so a page of images nobody enlarges downloads neither. It brings a theme: there is no useful unstyled lightbox.",
+      "description": "An image that opens into a lightbox: a press enlarges it and the picture flies out of the page into the viewer, the wheel zooms around the cursor, with a drag to pan, a pinch on touch, and the keyboard driving all of it. Everything else is a decision about the page it sits in, so it is off until asked for - the arrows and counter of a set, the strip of previews along the bottom, a three-dot menu that downloads the file, and a discard action that drops an image and moves to the next. The viewer is its own chunk, fetched on intent, and the menu another under that, so a page of images nobody enlarges downloads neither. It brings a theme: there is no useful unstyled lightbox.",
       "targets": [
         "react"
       ],
@@ -1596,7 +1596,8 @@
           ],
           "rewrite": {
             "@/react/image/types": "./types",
-            "@/react/image/viewer": "./viewer"
+            "@/react/image/viewer": "./viewer",
+            "@/react/image/styles": "./styles"
           }
         },
         {
@@ -1626,7 +1627,9 @@
         "[data-enigma-image-foot]",
         "[data-enigma-image-caption]",
         "[data-enigma-image-strip]",
-        "[data-enigma-image-thumb]"
+        "[data-enigma-image-thumb]",
+        "[data-enigma-image-viewer][data-state]",
+        "[data-enigma-image-frame][data-flying]"
       ],
       "docs": "docs/notes/primitives.md#image",
       "recipes": [
@@ -1636,7 +1639,7 @@
     {
       "name": "video",
       "title": "Video player",
-      "description": "A video with the controls a video is expected to have, shaped after Plyr: a big play button over the poster, a scrubber showing what is buffered, current time and duration, volume that folds away until reached, captions when there are tracks, a speed menu, picture in picture and fullscreen. The keyboard is the platform's - space and K play, J and L jump ten seconds, the arrows nudge and set the volume, M mutes, F is fullscreen, C captions, a digit seeks to that tenth - and it stands down inside anything that takes text. The bar fades while playing and comes back on the first pointer move. The element stays the source of truth: state is read back from its own events rather than kept twice.",
+      "description": "A video with the controls a video is expected to have, shaped after Plyr: a big play button over the poster, a scrubber showing what is buffered, current time and duration, volume that folds away until reached, subtitles with a language picker, a speed menu, picture in picture, casting to a TV and fullscreen. A right-click opens a menu the way YouTube's does - play, loop, speed, subtitles, copy the link or the link at this second - built from the context-menu primitive rather than hand-rolled. The keyboard is the platform's - space and K play, J and L jump ten seconds, the arrows nudge and set the volume, M mutes, F is fullscreen, C captions, a digit seeks to that tenth - and it stands down inside anything that takes text. The bar fades while playing and comes back on the first pointer move. The element stays the source of truth: playback, the subtitle list and the cast target are all read back from it rather than kept twice.",
       "targets": [
         "react"
       ],
@@ -1650,6 +1653,115 @@
       },
       "files": [
         {
+          "path": "src/core/context-menu.ts",
+          "dest": "video/context-menu.ts",
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/core/search": "./search-core",
+            "@/core/keys": "./keys"
+          }
+        },
+        {
+          "path": "src/core/search.ts",
+          "dest": "video/search-core.ts",
+          "targets": [
+            "react"
+          ]
+        },
+        {
+          "path": "src/core/keys.ts",
+          "dest": "video/keys.ts",
+          "targets": [
+            "react"
+          ]
+        },
+        {
+          "path": "src/core/clipboard-menu.ts",
+          "dest": "video/clipboard-menu.ts",
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/core/context-menu": "./context-menu",
+            "@/react/context-menu/styles": "./context-menu-styles"
+          }
+        },
+        {
+          "path": "src/react/slot.tsx",
+          "dest": "video/slot.tsx",
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/react/context-menu/styles": "./context-menu-styles"
+          }
+        },
+        {
+          "path": "src/react/context-menu/styles.ts",
+          "dest": "video/context-menu-styles.ts",
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/react/context-menu/styles": "./context-menu-styles"
+          }
+        },
+        {
+          "path": "recipes/context-menu/styles.css",
+          "dest": "video/context-menu-styles.css",
+          "targets": [
+            "react"
+          ],
+          "style": "css",
+          "rewrite": {
+            "@/react/context-menu/styles": "./context-menu-styles"
+          }
+        },
+        {
+          "path": "src/react/context-menu/context.ts",
+          "dest": "video/context.ts",
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/core/context-menu": "./context-menu",
+            "@/react/context-menu/styles": "./context-menu-styles"
+          }
+        },
+        {
+          "path": "src/react/context-menu/root.tsx",
+          "dest": "video/root.tsx",
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/core/context-menu": "./context-menu",
+            "@/core/search": "./search-core",
+            "@/core/keys": "./keys",
+            "@/react/slot": "./slot",
+            "@/react/context-menu/styles": "./context-menu-styles",
+            "@/react/context-menu/context": "./context",
+            "@/core/clipboard-menu": "./clipboard-menu"
+          }
+        },
+        {
+          "path": "src/react/context-menu/index.tsx",
+          "dest": "video/context-menu-ui.tsx",
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/react/context-menu/root": "./root",
+            "@/react/context-menu/context": "./context",
+            "@/react/context-menu/styles": "./context-menu-styles",
+            "@/core/context-menu": "./context-menu",
+            "@/core/keys": "./keys",
+            "@/core/clipboard-menu": "./clipboard-menu"
+          }
+        },
+        {
           "path": "src/core/player.ts",
           "dest": "video/player.ts",
           "targets": [
@@ -1661,7 +1773,10 @@
           "dest": "video/types.ts",
           "targets": [
             "react"
-          ]
+          ],
+          "rewrite": {
+            "@/react/context-menu/context": "./context"
+          }
         },
         {
           "path": "src/react/video/icons.tsx",
@@ -1688,6 +1803,17 @@
           }
         },
         {
+          "path": "src/react/video/menu.tsx",
+          "dest": "video/menu.tsx",
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/core/context-menu": "./context-menu",
+            "@/react/context-menu": "./context-menu-ui"
+          }
+        },
+        {
           "path": "src/react/video/index.tsx",
           "dest": "video/index.tsx",
           "main": true,
@@ -1699,7 +1825,9 @@
             "@/react/video/icons": "./icons",
             "@/react/video/rail": "./rail",
             "@/react/video/styles": "./styles",
-            "@/react/video/types": "./types"
+            "@/react/video/types": "./types",
+            "@/react/context-menu/context": "./context",
+            "@/react/video/menu": "./menu"
           }
         },
         {
@@ -1732,7 +1860,8 @@
         "[data-enigma-video-menu]",
         "[data-enigma-video-panel]",
         "[data-enigma-video-option]",
-        "[data-enigma-video-heading]"
+        "[data-enigma-video-heading]",
+        "[data-enigma-video][data-casting]"
       ],
       "docs": "docs/notes/primitives.md#video",
       "recipes": [

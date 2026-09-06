@@ -149,3 +149,155 @@ export async function togglePip(video: HTMLVideoElement): Promise<void> {
     if (document.pictureInPictureElement) return void await document.exitPictureInPicture();
     await video.requestPictureInPicture();
 }
+
+/* -------- captions -------- */
+
+/** One subtitle track, as the menu lists it. */
+export interface CaptionTrack {
+    /** Where it sits in the element's own `textTracks`, which is what turns it on. */
+    index: number;
+    label: string;
+    language: string;
+}
+
+/** Which of the element's text tracks are subtitles a viewer would choose between. */
+export function captionTracks(list: TextTrackList | null | undefined): CaptionTrack[] {
+    if (!list) return [];
+    const found: CaptionTrack[] = [];
+    for (let at = 0; at < list.length; at += 1) {
+        const track = list[at];
+        // Chapters and metadata are for the page, not for the viewer: listing them offers a
+        // language picker entry that draws nothing over the picture.
+        if (!track || (track.kind !== "subtitles" && track.kind !== "captions")) continue;
+        found.push({ index: at, label: track.label || track.language || `Track ${found.length + 1}`, language: track.language });
+    }
+    return found;
+}
+
+/**
+ * The track the element is SHOWING, or -1.
+ *
+ * Read rather than remembered: a `default` track is showing before any button was pressed, and
+ * a player that assumed "off" would need two presses to turn something off.
+ */
+export function activeCaption(list: TextTrackList | null | undefined): number {
+    if (!list) return -1;
+    for (let at = 0; at < list.length; at += 1) if (list[at]?.mode === "showing") return at;
+    return -1;
+}
+
+/**
+ * Show one track and disable the rest. -1 turns them all off.
+ *
+ * "disabled" rather than "hidden": a hidden track still fires its cues, so a page listening to
+ * `cuechange` for its own transcript would keep receiving a language nobody asked for.
+ */
+export function showCaption(list: TextTrackList | null | undefined, index: number): void {
+    if (!list) return;
+    for (let at = 0; at < list.length; at += 1) {
+        const track = list[at];
+        if (track) track.mode = at === index ? "showing" : "disabled";
+    }
+}
+
+/* -------- casting: the remote screen this is played on -------- */
+
+/** What the cast control knows about the world. */
+export interface RemoteState {
+    /** There is somewhere to cast TO. Before the browser has looked, this is optimistic. */
+    available: boolean;
+    /** Playing on that screen right now. */
+    connected: boolean;
+}
+
+interface RemotePlaybackLike {
+    state: "connected" | "connecting" | "disconnected";
+    watchAvailability: (callback: (available: boolean) => void) => Promise<number>;
+    cancelWatchAvailability: (id: number) => Promise<void>;
+    prompt: () => Promise<void>;
+    addEventListener: (type: string, listener: () => void) => void;
+    removeEventListener: (type: string, listener: () => void) => void;
+}
+
+/** The element, with the two spellings of "play this somewhere else" on it. */
+type CastableVideo = HTMLVideoElement & {
+    remote?: RemotePlaybackLike;
+    /** Safari's AirPlay picker, which predates the standard and is still the only one it has on iOS. */
+    webkitShowPlaybackTargetPicker?: () => void;
+    webkitCurrentPlaybackTargetIsWireless?: boolean;
+};
+
+/**
+ * Whether this element can be cast at all.
+ *
+ * `disableRemotePlayback` is honoured: a page that asked for the button to be gone does not
+ * get one drawn over its video by a component.
+ */
+export function supportsRemote(video: HTMLVideoElement | null): boolean {
+    const element = video as CastableVideo | null;
+    if (!element || element.disableRemotePlayback) return false;
+    return Boolean(element.remote?.prompt ?? element.webkitShowPlaybackTargetPicker);
+}
+
+/**
+ * Watch for a screen to cast to, and for the connection to it.
+ *
+ * WHY AVAILABILITY IS OPTIMISTIC WHEN THE WATCH FAILS. `watchAvailability` rejects with
+ * NotSupportedError on the platforms that can still `prompt()` - Safari, and Chromium for some
+ * sources - so treating a rejection as "no devices" hides a control that works. A button that
+ * opens an empty picker is a smaller loss than a missing one.
+ */
+export function watchRemote(video: HTMLVideoElement, onChange: (state: RemoteState) => void): () => void {
+    const element = video as CastableVideo;
+    const state: RemoteState = { available: false, connected: false };
+    const publish = (next: Partial<RemoteState>): void => {
+        Object.assign(state, next);
+        onChange({ ...state });
+    };
+
+    if (element.remote) {
+        const remote = element.remote;
+        const onState = (): void => publish({ connected: remote.state === "connected" });
+        let watch: number | null = null;
+        let cancelled = false;
+
+        remote.watchAvailability((available) => { if (!cancelled) publish({ available }); })
+            .then((id) => {
+                if (cancelled) void remote.cancelWatchAvailability(id).catch(() => { /* already gone */ });
+                else watch = id;
+            })
+            .catch(() => { if (!cancelled) publish({ available: true }); });
+
+        for (const name of ["connect", "connecting", "disconnect"]) remote.addEventListener(name, onState);
+        onState();
+
+        return () => {
+            cancelled = true;
+            for (const name of ["connect", "connecting", "disconnect"]) remote.removeEventListener(name, onState);
+            if (watch !== null) void remote.cancelWatchAvailability(watch).catch(() => { /* already gone */ });
+        };
+    }
+
+    const onAvailability = (event: Event): void => publish({ available: (event as Event & { availability?: string; }).availability === "available" });
+    const onWireless = (): void => publish({ connected: Boolean(element.webkitCurrentPlaybackTargetIsWireless) });
+    element.addEventListener("webkitplaybacktargetavailabilitychanged", onAvailability);
+    element.addEventListener("webkitcurrentplaybacktargetiswirelesschanged", onWireless);
+    onWireless();
+
+    return () => {
+        element.removeEventListener("webkitplaybacktargetavailabilitychanged", onAvailability);
+        element.removeEventListener("webkitcurrentplaybacktargetiswirelesschanged", onWireless);
+    };
+}
+
+/**
+ * Open the browser's own device picker.
+ *
+ * There is no list to draw ourselves: both APIs hand the choice to the platform, which is the
+ * only thing that can enumerate the screens on the network.
+ */
+export async function promptRemote(video: HTMLVideoElement): Promise<void> {
+    const element = video as CastableVideo;
+    if (element.remote?.prompt) return void await element.remote.prompt();
+    element.webkitShowPlaybackTargetPicker?.();
+}

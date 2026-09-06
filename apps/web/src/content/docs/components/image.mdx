@@ -1,6 +1,6 @@
 ---
 title: Image
-description: A picture that opens into a viewer - press to enlarge, wheel to zoom, drag to pan. The gallery arrows, the strip of previews, the download menu and the discard action are off until you ask.
+description: A picture that opens into a viewer - it flies out of the page, the wheel zooms, a drag pans. The gallery arrows, the strip of previews, the download menu and the discard action are off until you ask.
 group: Media
 order: 23
 space: components
@@ -56,11 +56,47 @@ menu saves when it is not the one on screen.
 | `thumbnails` | `false` | The strip along the bottom |
 | `menu` | `false` | The three dots, with Download under them |
 | `discardable` | `false` | Take this one out of the set and move to the next |
+| `animate` | `true` | The picture flies out of the page and back into it |
 | `loop` | `true` | The arrows and the strip wrap at the ends |
 | `styles` | `true` | The viewer's stylesheet |
 
 `zoom` also takes `{ min, max, wheel, doubleClick }` when the defaults are wrong for your
 picture, and `menu` takes `{ download, items, onSelect }` to add rows of your own.
+
+## It flies out of the page
+
+Pressing a picture does not put a dialog over it: the picture itself grows out of where it was
+sitting and settles in the middle, and closing takes it home. The same move
+[react-medium-image-zoom](https://github.com/rpearce/react-medium-image-zoom) made the standard
+one, done here without the dependency.
+
+It is FLIP, and the order matters: the full-size picture is laid out where it belongs,
+measured, then **drawn back onto the thumbnail** and released. Doing it the other way round
+would need the destination size before layout has produced it. Two consequences worth knowing
+about, because both are silent when they go wrong:
+
+- The picture is not drawn at all until it has been measured. Drawing during that beat puts one
+  frame of the full-size image where it is going to land, and the flight then starts by jumping
+  backwards.
+- The transition is on only while it is **moving**, never while it is being placed. Placing the
+  picture on the thumbnail is itself a transform change, so a transition left on animated that
+  too - invisibly - and by the time anybody could see the picture the flight was nearly over.
+
+`animate={false}` turns it off, and so does the reader's own
+`prefers-reduced-motion: reduce` - a dialog that simply exists is what that preference asks
+for. The duration and the curve are custom properties, so slowing it down is a line of CSS
+rather than a prop; the viewer reads the real duration off the element rather than assuming its
+own default.
+
+The flight home only happens onto **this** picture. Move through a set to the fourth image and
+close, and the viewer closes without one: the component knows where its own picture is and
+nothing about anyone else's, so flying the fourth back onto the first would be a lie.
+
+## The cursor says what a press does
+
+Three different things in one dialog, so three cursors: `zoom-in` on the picture in the page
+and on the picture at rest in the viewer, `zoom-out` on the dark area beside it - which is the
+backdrop, and closes - and `grab` once there is somewhere to pan to.
 
 ## Zoom that stays where you put it
 
@@ -148,9 +184,14 @@ Every colour and distance is a custom property:
     --enigma-image-control-bg: rgba(23, 23, 23, 0.72);
     --enigma-image-control-size: 2.25rem;
     --enigma-image-thumb-size: 3.5rem;
+    --enigma-image-flight: 300ms;
+    --enigma-image-flight-ease: cubic-bezier(0.2, 0, 0.2, 1);
     --enigma-image-z: 80;
 }
 ```
+
+The sheet is injected by the picture in the page, not by the viewer's chunk - so the cursor
+says it enlarges, and the focus ring exists, before anybody has opened one.
 
     </div>
 </Installation>
@@ -161,9 +202,9 @@ Every colour and distance is a custom property:
 | --- | --- |
 | `[data-enigma-image]` | The wrapper in the page - `data-clickable` when it opens |
 | `[data-enigma-image-trigger]` | The button around the picture |
-| `[data-enigma-image-viewer]` | The dialog, portalled to the body |
+| `[data-enigma-image-viewer]` | The dialog, portalled to the body - `data-state` is `opening`, `open` or `closing` |
 | `[data-enigma-image-bar]` | The toolbar, and `[data-enigma-image-counter]` in it |
-| `[data-enigma-image-frame]` | The frame - `data-zoomed`, `data-panning`, `data-loading` |
+| `[data-enigma-image-frame]` | The frame - `data-zoom`, `data-zoomed`, `data-panning`, `data-loading`, and `data-flying` while it is `pending` or `moving` |
 | `[data-enigma-image-nav="previous"]`, `[data-enigma-image-nav="next"]` | The arrows |
 | `[data-enigma-image-strip]`, `[data-enigma-image-thumb]` | The previews. `aria-current` marks the one showing |
 | `[data-enigma-image-caption]` | The line under the picture |

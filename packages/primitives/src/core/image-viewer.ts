@@ -173,3 +173,50 @@ function saveAs(href: string, name: string, external = false): void {
     anchor.click();
     anchor.remove();
 }
+
+/* -------- the flight from the thumbnail into the viewer -------- */
+
+/** How long the picture takes to fly, when the stylesheet does not say otherwise. */
+export const FLIGHT_MS = 300;
+
+/**
+ * How long the flight ACTUALLY lasts, read off the element.
+ *
+ * The duration lives in the stylesheet (`--enigma-image-flight`), so a project that slows it
+ * down would otherwise have the viewer give up waiting halfway through and close mid-flight.
+ * The constant above is only the answer for an element with no transition on it at all.
+ */
+export function flightMs(element: Element | null): number {
+    if (!element || typeof getComputedStyle === "undefined") return FLIGHT_MS;
+    const seconds = Number.parseFloat(getComputedStyle(element).transitionDuration);
+    return Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : FLIGHT_MS;
+}
+
+/**
+ * The transform that puts a picture exactly over another box.
+ *
+ * This is the FLIP the lightbox opens with: the full-size image is laid out where it belongs,
+ * measured, and then drawn back ON the thumbnail with this transform - so releasing it to the
+ * identity transform is the picture growing out of the one in the page rather than a dialog
+ * appearing over it. Closing is the same transform applied in the other direction.
+ *
+ * Both boxes are the same picture, so one scale is enough; the width is used because a
+ * thumbnail is nearly always constrained by it. Null when either box has not been laid out
+ * yet, which is the caller's cue to skip the animation rather than to divide by zero.
+ */
+export function flightFrom(from: Box, to: Box): Transform | null {
+    if (!from.width || !from.height || !to.width || !to.height) return null;
+    return {
+        scale: from.width / to.width,
+        // Centre to centre: `translate(x, y) scale(s)` scales about the element's own centre
+        // first, so the offset that lands it on the thumbnail is the distance between them.
+        x: (from.left + from.width / 2) - (to.left + to.width / 2),
+        y: (from.top + from.height / 2) - (to.top + to.height / 2)
+    };
+}
+
+/** Whether the reader has asked for less movement. Every animation here is skipped when they have. */
+export function prefersReducedMotion(): boolean {
+    if (typeof window === "undefined" || !window.matchMedia) return false;
+    return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}

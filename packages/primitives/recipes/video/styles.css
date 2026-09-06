@@ -16,6 +16,10 @@
     --enigma-video-panel-bg: rgba(23, 23, 23, 0.96);
     --enigma-video-radius: 0.5rem;
     --enigma-video-control-size: 2rem;
+    /* The icons are sized HERE and not in em of the bar's text: 1.25em of a 13px label is a
+       16px icon, and the same markup in a project with larger type silently grew a different
+       player. */
+    --enigma-video-icon-size: 1.125rem;
     --enigma-video-rail-height: 0.3125rem;
     --enigma-video-rail-hover: 0.5rem;
     --enigma-video-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
@@ -28,6 +32,9 @@
     font-size: 0.8125rem; line-height: 1;
 }
 [data-enigma-video] video { display: block; width: 100%; height: 100%; }
+/* Fullscreen needs no sizing of its own: the UA stylesheet pins the fullscreen element to the
+   screen with !important, which outranks anything a page or this sheet can say, and a video
+   element already fits itself with object-fit: contain. Only the corner is ours. */
 [data-enigma-video][data-fullscreen] { border-radius: 0; }
 [data-enigma-video][data-hidden] { cursor: none; }
 
@@ -74,6 +81,8 @@
     padding: 0; color: var(--enigma-video-text); background: none; border: 0; border-radius: 0.375rem;
     cursor: pointer;
 }
+[data-enigma-video-button] svg { width: var(--enigma-video-icon-size); height: var(--enigma-video-icon-size); flex: none; }
+[data-enigma-video-big] svg { width: 1.5rem; height: 1.5rem; }
 [data-enigma-video-button]:hover { background: rgba(255, 255, 255, 0.16); }
 [data-enigma-video-button]:focus-visible { outline: 2px solid var(--enigma-video-text); outline-offset: 1px; }
 [data-enigma-video-button][aria-pressed="true"] { color: var(--enigma-video-accent); }
@@ -114,9 +123,14 @@
 [data-enigma-video-volume]:focus-within [data-enigma-video-rail] { width: 4.5rem; min-width: 4.5rem; opacity: 1; }
 
 [data-enigma-video-menu] { position: relative; flex: none; }
+/* The panel opens upward, and the player CLIPS - it has to, or a rounded corner is not
+   rounded. So its height is bounded by the room above the button that opened it (measured, and
+   set inline) and what does not fit scrolls. Without this a speed list plus a language list is
+   a panel with its top cut off on any player under about 300px. */
 [data-enigma-video-panel] {
     position: absolute; right: 0; bottom: calc(100% + 0.5rem); z-index: 2;
-    min-width: 8.5rem; padding: 0.25rem;
+    box-sizing: border-box; min-width: 8.5rem; max-width: calc(100vw - 2rem); padding: 0.25rem;
+    max-height: 14rem; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin;
     background: var(--enigma-video-panel-bg); border-radius: 0.5rem; box-shadow: var(--enigma-video-shadow);
 }
 [data-enigma-video-option] {
@@ -128,7 +142,13 @@
 [data-enigma-video-option]:hover { background: rgba(255, 255, 255, 0.12); }
 [data-enigma-video-option][aria-checked="true"] { color: var(--enigma-video-accent); }
 [data-enigma-video-option]:focus-visible { outline: 2px solid var(--enigma-video-text); outline-offset: -2px; }
+/* Sticky because the panel scrolls: the language you are choosing between should still say
+   which list it belongs to when the speeds have scrolled past it. */
 [data-enigma-video-heading] {
+    position: sticky; top: 0; z-index: 1; margin: 0;
     padding: 0.375rem 0.5rem; color: var(--enigma-video-muted);
+    background: var(--enigma-video-panel-bg);
     font-size: 0.6875rem; text-transform: uppercase; letter-spacing: 0.06em;
 }
+[data-enigma-video-option] svg { width: 0.875rem; height: 0.875rem; flex: none; }
+[data-enigma-video-option] span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
