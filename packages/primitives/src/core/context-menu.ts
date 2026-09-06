@@ -82,8 +82,18 @@ export function isAction(entry: ContextMenuEntry): entry is ContextMenuAction {
 /** The fields the filter reads when the caller does not say. */
 export const CONTEXT_MENU_SEARCH_KEYS = ["label", "description", "group", "keywords"];
 
-/** Filtering six rows is worth a field; filtering three is a bigger panel for nothing. */
-export const SEARCHABLE_FROM = 8;
+/**
+ * How many rows a level needs before it grows a filter on its own.
+ *
+ * Raised from 8, which turned out to be a number you can still READ. A menu of eight is
+ * scanned in one look, so the field was a row of chrome, a focus stop and a taller panel in
+ * exchange for nothing - the video player's own menu, at nine rows, is what showed it. Twelve
+ * is about where a list stops being a shape and starts being a list.
+ *
+ * It is only the DEFAULT. A menu whose rows arrive from somewhere - a list of files, a
+ * directory, anything fetched - says `searchable` and does not wait to grow into it.
+ */
+export const SEARCHABLE_FROM = 12;
 
 /** Where a menu was opened. Viewport coordinates, which is what a pointer event reports. */
 export interface ContextMenuPoint {
@@ -141,6 +151,12 @@ export interface ContextMenuOptions {
     /** A row was invoked. The menu has already closed unless the row keeps it open. */
     onSelect?: (item: ContextMenuAction, path: string[]) => void;
     onOpenChange?: (open: boolean) => void;
+    /**
+     * Whether the ROOT level draws a filter. `"auto"` (the default) grows one from
+     * `SEARCHABLE_FROM` rows; `true` puts one there whatever the count, which is what a menu
+     * filling itself from somewhere wants; `false` never does.
+     */
+    searchable?: boolean | "auto";
 }
 
 export interface ContextMenuInstance {
@@ -235,7 +251,10 @@ export function createContextMenu(options: ContextMenuOptions = {}): ContextMenu
     }
 
     function searchableFor(item: ContextMenuAction | null, entries: readonly ContextMenuEntry[]): boolean {
-        const asked = item?.searchable ?? "auto";
+        // The root has no item to carry the answer, so it reads the menu's own option - which
+        // is the only way a caller can turn the field on for rows they are about to fetch, or
+        // off for a menu they know is short.
+        const asked = (item ? item.searchable : opts.searchable) ?? "auto";
         if (asked !== "auto") return asked;
         return entries.filter(isAction).length >= SEARCHABLE_FROM;
     }

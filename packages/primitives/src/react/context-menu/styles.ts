@@ -29,6 +29,13 @@ export const CONTEXT_MENU_STYLES = `
     --enigma-menu-accent: #fbbf24;
     --enigma-menu-danger: #f87171;
     --enigma-menu-danger-bg: rgba(248, 113, 113, 0.12);
+
+    /* Above the lightbox, which sits at 9999, because a menu is opened FROM whatever is on
+       top: the image viewer's own three-dot menu was portalled to the same body and painted
+       underneath it, so its rows could be neither seen nor pressed. A menu is the topmost
+       transient surface on a page, and this is the number that says so. It belongs here and
+       not in the light-scheme block, or half the readers get an invalid z-index. */
+    --enigma-menu-z: 10000;
 }
 
 @media (prefers-color-scheme: light) {
@@ -49,7 +56,7 @@ export const CONTEXT_MENU_STYLES = `
    and what a menu opened at the pointer needs. Fixed rather than absolute so a scrolling
    ancestor cannot drag it away from the place it was opened. */
 [data-enigma-menu-panel] {
-    position: fixed; z-index: 60;
+    position: fixed; z-index: var(--enigma-menu-z);
     box-sizing: border-box;
     min-width: var(--enigma-menu-min-width);
     max-width: min(22rem, calc(100vw - 1rem));

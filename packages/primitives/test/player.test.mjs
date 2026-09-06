@@ -131,3 +131,17 @@ test("casting is offered where the browser has it, and never where the page said
     // A page that asked for the control to be gone does not get one drawn over its video.
     assert.equal(player.supportsRemote({ remote: { prompt() {} }, disableRemotePlayback: true }), false);
 });
+
+test("a source's type is read from its extension, and guessed at nowhere else", () => {
+    assert.equal(player.sourceType("/demo.webm"), "video/webm");
+    assert.equal(player.sourceType("https://cdn.example.com/a/b/clip.MP4"), "video/mp4");
+    // A query string is not an extension, and it does not hide the one on the path either.
+    assert.equal(player.sourceType("/clip.mp4?token=abc&x=1"), "video/mp4");
+    assert.equal(player.sourceType("/download?file=x.webm"), undefined);
+    // Nothing to read: the browser fetches and sniffs, which always works.
+    assert.equal(player.sourceType("blob:https://example.com/2b1c"), undefined);
+    assert.equal(player.sourceType("/stream"), undefined);
+    // A WRONG type makes the browser skip the source without trying it, so an extension that
+    // means several things - or nothing - is left alone rather than guessed at.
+    assert.equal(player.sourceType("/clip.bin"), undefined);
+});

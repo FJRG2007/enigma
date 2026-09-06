@@ -197,6 +197,51 @@ test.describe("Image", () => {
         await expect(page.locator("[data-enigma-menu-item]", { hasText: "Download" })).toBeVisible();
         // A lightbox has nothing writable in it, so the menu's own clipboard rows stand down.
         await expect(page.locator("[data-enigma-menu-item]", { hasText: "Paste" })).toHaveCount(0);
+        // Two rows, and neither of them is worth a filter field.
+        await expect(page.locator("[data-enigma-menu-search]")).toHaveCount(0);
+    });
+
+    /**
+     * The menu is portalled to the same body as the lightbox, so the two stack against each
+     * other - and the menu lost. Its panel painted UNDER a backdrop at `z-index: 9999`, which
+     * meant the rows could be neither read nor pressed: the menu was unusable everywhere it
+     * was actually offered.
+     */
+    test("the menu is above the lightbox it was opened in", async ({ page }) => {
+        await open(page);
+        await page.click(`${gallery} [data-enigma-image-trigger]`);
+        await page.click("[data-enigma-image-menu]");
+
+        const row = page.locator("[data-enigma-menu-item]", { hasText: "Download" });
+        const box = await row.boundingBox();
+        if (!box) throw new Error("the row has no box");
+
+        // What the reader would actually press: whatever is painted at the row's middle has to
+        // BE the row, not the dialog over it.
+        const onTop = await page.evaluate(([x, y]) => {
+            const element = document.elementFromPoint(x, y);
+            return Boolean(element?.closest("[data-enigma-menu-panel]"));
+        }, [box.x + box.width / 2, box.y + box.height / 2] as const);
+        expect(onTop).toBe(true);
+    });
+
+    test("Download saves the file, and the other row opens it on its own", async ({ page }) => {
+        await open(page);
+        await page.click(`${gallery} [data-enigma-image-trigger]`);
+        await page.click("[data-enigma-image-menu]");
+
+        const saving = page.waitForEvent("download");
+        await page.locator("[data-enigma-menu-item]", { hasText: "Download" }).click();
+        const saved = await saving;
+        expect(saved.suggestedFilename().length).toBeGreaterThan(0);
+
+        await page.click("[data-enigma-image-menu]");
+        const opening = page.waitForEvent("popup");
+        await page.locator("[data-enigma-menu-item]", { hasText: "Open in a new tab" }).click();
+        const tab = await opening;
+        // A blob, because Chromium refuses to navigate to the data: URL the picture actually is.
+        expect(tab.url()).toMatch(/^blob:/);
+        await tab.close();
     });
 
     test("a press beside the picture closes it; one on the picture does not", async ({ page }) => {

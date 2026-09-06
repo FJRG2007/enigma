@@ -27,14 +27,24 @@ Several files, and the browser takes the first one it can play:
 
 ```tsx
 <Video
-    src={[
-        { src: "/demo.webm", type: "video/webm" },
-        { src: "/demo.mp4", type: "video/mp4" }
-    ]}
+    src={[{ src: "/demo.webm" }, { src: "/demo.mp4" }]}
     poster="/demo.jpg"
     tracks={[{ src: "/demo.en.vtt", srcLang: "en", label: "English", default: true }]}
 />
 ```
+
+`type` is what lets the browser skip a file it cannot play without fetching it, which is the
+only reason to list several - so it is read from the extension when you leave it out. Write it
+yourself when the URL does not carry one:
+
+```tsx
+<Video src={[{ src: "/stream/1234", type: "video/webm" }, { src: "/demo.mp4" }]} />
+```
+
+A URL with an extension that means nothing gets no `type` at all rather than a guess. That is
+the safe way round: with no type the browser fetches and sniffs, which always works, while a
+WRONG type makes it skip the source without trying it - and a video with every source skipped
+does not play.
 
 Native props pass straight through - `autoPlay`, `loop`, `muted`, `preload`, `crossOrigin`,
 and every media event (`onPlay`, `onEnded`, `onTimeUpdate`) - because the element is still an

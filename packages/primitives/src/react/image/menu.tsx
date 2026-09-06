@@ -3,7 +3,7 @@
 import * as icons from "@/react/image/icons";
 import { useRef, type ReactNode } from "react";
 import { MenuButton } from "@/react/image/viewer";
-import { downloadFile } from "@/core/image-viewer";
+import { downloadFile, openInNewTab } from "@/core/image-viewer";
 import type { ImageItem, ImageLabels, ImageMenuOptions } from "@/react/image/types";
 import { ContextMenu, useContextMenuContext, type ContextMenuNode } from "@/react/context-menu";
 
@@ -31,6 +31,9 @@ export function ImageMenu({ item, index, options, labels }: ImageMenuProps): Rea
     if (options.download !== false) {
         rows.push({ id: "download", label: labels.download ?? "Download", icon: <icons.Download /> });
     }
+    if (options.newTab !== false) {
+        rows.push({ id: "new-tab", label: labels.newTab ?? "Open in a new tab", icon: <icons.NewTab /> });
+    }
     if (options.items?.length) {
         if (rows.length > 0) rows.push({ type: "separator" });
         rows.push(...options.items);
@@ -44,6 +47,7 @@ export function ImageMenu({ item, index, options, labels }: ImageMenuProps): Rea
             clipboard={false}
             onSelect={(row) => {
                 if (row.id === "download") void downloadFile(item.download ?? item.src, item.filename);
+                if (row.id === "new-tab") openInNewTab(item.src);
                 options.onSelect?.(row.id, item, index);
             }}
         >

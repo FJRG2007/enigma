@@ -1,6 +1,7 @@
 ---
 import Base from "./Base.astro";
 import { url, docHref } from "../lib/url";
+import { sourcePath } from "../lib/registry";
 import { getCollection } from "astro:content";
 import { buildSearchIndex } from "../lib/search";
 import { DocsPalette } from "../components/playground/DocsPalette";
@@ -70,10 +71,12 @@ const docSource = `${REPO}/edit/main/apps/web/src/content/docs/${slug}.mdx`;
 // A component page is documentation OF something; the thing itself is the more useful
 // link, so both are offered rather than guessing which one the reader wants.
 const componentName = space === "components" && slug !== "components/overview" ? slug.split("/").pop() : null;
-const componentPackage = componentName && ["cache", "notifications"].includes(componentName) ? "utils" : "primitives";
-const componentSource = componentName
-    ? `${REPO}/blob/main/packages/${componentPackage}/src/core/${componentName}.ts`
-    : null;
+// Asked of the registry, never built out of the slug: the page's name is not the file's name.
+// `video` is `core/player.ts`, `image` is `core/image-viewer.ts`, `toast` is a renderer over
+// `core/notifications.ts`, and `notifications` itself has moved package since this guessed.
+// Every one of those was a link to a file that does not exist.
+const source = componentName ? sourcePath(componentName) : null;
+const componentSource = source ? `${REPO}/blob/main/${source}` : null;
 ---
 <Base title={`${title} - Enigma docs`} description={description}>
     <nav>

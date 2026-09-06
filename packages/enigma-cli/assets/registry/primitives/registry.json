@@ -86,6 +86,7 @@
         "[data-enigma-marquee-copy]"
       ],
       "docs": "docs/notes/primitives.md#marquee",
+      "source": "src/core/marquee.ts",
       "recipes": [
         "tailwind",
         "css"
@@ -151,7 +152,8 @@
         ".logo-marquee[data-grabbing]",
         ".logo-marquee__item"
       ],
-      "docs": "docs/notes/primitives.md#logo-marquee"
+      "docs": "docs/notes/primitives.md#logo-marquee",
+      "source": "recipes/logo-marquee/index.tsx"
     },
     {
       "name": "input",
@@ -392,6 +394,7 @@
         "[data-enigma-color-preset]"
       ],
       "docs": "docs/notes/primitives.md#input",
+      "source": "src/core/input.ts",
       "recipes": [
         "tailwind",
         "css"
@@ -460,6 +463,7 @@
         "fuse.js": "Fuzzy matching. Omit it and a built-in substring matcher is used."
       },
       "docs": "docs/notes/primitives.md#search",
+      "source": "src/core/search.ts",
       "recipes": [
         "tailwind"
       ],
@@ -551,7 +555,8 @@
         "[aria-busy=true]",
         "[data-enigma-button-key]"
       ],
-      "docs": "docs/notes/primitives.md#button"
+      "docs": "docs/notes/primitives.md#button",
+      "source": "src/core/button.ts"
     },
     {
       "name": "palette",
@@ -656,6 +661,7 @@
         "[data-enigma-palette-hint]"
       ],
       "docs": "docs/notes/primitives.md#palette",
+      "source": "src/core/palette.ts",
       "recipes": [
         "css"
       ]
@@ -799,6 +805,7 @@
         "[data-enigma-select-empty]"
       ],
       "docs": "docs/notes/primitives.md#select",
+      "source": "src/core/select.ts",
       "recipes": [
         "css"
       ]
@@ -946,6 +953,7 @@
         "[data-enigma-menu-status][data-error]"
       ],
       "docs": "docs/notes/primitives.md#context-menu",
+      "source": "src/core/context-menu.ts",
       "recipes": [
         "css"
       ]
@@ -1019,7 +1027,8 @@
         "[data-enigma-selection-marquee]",
         "[data-enigma-selection-empty]"
       ],
-      "docs": "docs/notes/primitives.md#selection"
+      "docs": "docs/notes/primitives.md#selection",
+      "source": "src/core/selection.ts"
     },
     {
       "name": "flags",
@@ -1081,7 +1090,8 @@
         "[data-enigma-flag][data-flag-shape=circle]"
       ],
       "assets": "flags",
-      "docs": "docs/notes/primitives.md#flags"
+      "docs": "docs/notes/primitives.md#flags",
+      "source": "src/core/flags.ts"
     },
     {
       "name": "notifications",
@@ -1140,6 +1150,7 @@
       ],
       "styles": false,
       "docs": "docs/notes/primitives.md#notifications",
+      "source": "src/core/notifications.ts",
       "recipes": [
         "tailwind"
       ]
@@ -1278,6 +1289,7 @@
         "[data-icon]"
       ],
       "docs": "docs/notes/primitives.md#toast",
+      "source": "src/react/toaster.tsx",
       "recipes": [
         "tailwind",
         "css"
@@ -1331,7 +1343,8 @@
         }
       ],
       "styles": false,
-      "docs": "docs/notes/primitives.md#network"
+      "docs": "docs/notes/primitives.md#network",
+      "source": "src/core/network.ts"
     },
     {
       "name": "relative-time",
@@ -1399,6 +1412,7 @@
         "[data-relative-time-capitalize-first-letter=true]"
       ],
       "docs": "docs/notes/primitives.md#relative-time",
+      "source": "src/core/relative-time.ts",
       "dependencies": {
         "@github/relative-time-element": "^4.4.0"
       }
@@ -1632,6 +1646,7 @@
         "[data-enigma-image-frame][data-flying]"
       ],
       "docs": "docs/notes/primitives.md#image",
+      "source": "src/core/image-viewer.ts",
       "recipes": [
         "css"
       ]
@@ -1864,6 +1879,7 @@
         "[data-enigma-video][data-casting]"
       ],
       "docs": "docs/notes/primitives.md#video",
+      "source": "src/core/player.ts",
       "recipes": [
         "css"
       ]

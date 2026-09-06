@@ -146,6 +146,12 @@ export interface ContextMenuRootProps {
      * selection, Cut over a selection in something writable, Paste in anything writable.
      */
     clipboard?: boolean | ClipboardMenuOptions;
+    /**
+     * A filter field over the rows. `"auto"` (the default) grows one only once there are
+     * enough rows to be worth filtering; `true` asks for one whatever the count - which is
+     * what a menu whose rows are fetched wants - and `false` never draws one.
+     */
+    searchable?: boolean | "auto";
     /** Fuse.js's constructor, for fuzzy filtering. Omit it for the built-in matcher. */
     fuse?: ContextMenuOptions["fuse"];
     fuseOptions?: Record<string, unknown>;
@@ -169,6 +175,7 @@ export function ContextMenuRoot(props: ContextMenuRootProps): ReactNode {
     const {
         items,
         title,
+        searchable,
         disabled = false,
         fuse,
         fuseOptions,
@@ -208,6 +215,7 @@ export function ContextMenuRoot(props: ContextMenuRootProps): ReactNode {
     const instance = useMemo<ContextMenuInstance>(() => createContextMenu({
         items: items as readonly ContextMenuEntry[],
         title,
+        searchable,
         fuse,
         fuseOptions,
         matcher,
@@ -307,8 +315,8 @@ export function ContextMenuRoot(props: ContextMenuRootProps): ReactNode {
     }, []);
 
     useEffect(() => {
-        instance.update({ items: withClipboard(currentItems.current), title });
-    }, [instance, signature, title, withClipboard]);
+        instance.update({ items: withClipboard(currentItems.current), title, searchable });
+    }, [instance, signature, title, searchable, withClipboard]);
 
     const cancelClose = useCallback(() => { window.clearTimeout(closing.current); }, []);
 
@@ -883,6 +891,18 @@ export function ContextMenuRow({ level, index, entry, children, ...props }: Cont
         return <p {...props} data-enigma-menu-label="" aria-hidden="true">{entry.label}</p>;
     }
 
+    /**
+     * Whether the level RESERVES the tick column, which is not the same as this row having a
+     * tick.
+     *
+     * A checkable row carries a check and, usually, an icon; its neighbours carry only the
+     * icon. Drawn per row, the ticked one's label therefore sat a column further right than
+     * everyone else's and the menu read as broken. Every desktop menu reserves the column for
+     * the whole level instead, so this asks the LEVEL. Read from `entries` rather than from
+     * what is visible: filtering a menu must not shift its rows sideways.
+     */
+    const reserveCheck = state?.entries.some((entry) => isAction(entry) && (entry as ContextMenuItem).checked !== undefined) ?? false;
+
     const checkable = item.checked !== undefined;
     // A checkable row inside a group is a radio: choosing one is choosing INSTEAD of its
     // siblings, and a screen reader announces the two differently.
@@ -942,16 +962,18 @@ export function ContextMenuRow({ level, index, entry, children, ...props }: Cont
                 menu.instance.select(level, index);
             }}
         >
-            {children ?? menu.renderItem?.(item, level, index) ?? <ContextMenuRowContent item={item} submenu={submenu} />}
+            {children ?? menu.renderItem?.(item, level, index) ?? <ContextMenuRowContent item={item} submenu={submenu} reserveCheck={reserveCheck} />}
         </div>
     );
 }
 
 /** The default row: what a desktop menu draws, in the order it draws it. */
-function ContextMenuRowContent({ item, submenu }: { item: ContextMenuItem; submenu: boolean; }): ReactNode {
+function ContextMenuRowContent({ item, submenu, reserveCheck }: { item: ContextMenuItem; submenu: boolean; reserveCheck: boolean; }): ReactNode {
     return (
         <>
-            {item.checked !== undefined && <span data-enigma-menu-check="" aria-hidden="true" />}
+            {/* Empty when this row is not checkable and something else in the level is: the
+                column is the level's, not the row's. */}
+            {(item.checked !== undefined || reserveCheck) && <span data-enigma-menu-check="" aria-hidden="true" />}
             {item.icon ? <span data-enigma-menu-icon="">{item.icon}</span> : null}
             <span data-enigma-menu-item-text="">
                 <span data-enigma-menu-item-label="">{item.label}</span>

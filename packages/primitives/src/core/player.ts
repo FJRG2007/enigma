@@ -150,6 +150,48 @@ export async function togglePip(video: HTMLVideoElement): Promise<void> {
     await video.requestPictureInPicture();
 }
 
+/* -------- what a source IS -------- */
+
+/**
+ * The MIME types worth naming from a file extension, and nothing else.
+ *
+ * Deliberately short. A `<source>` with no `type` makes the browser fetch and sniff, which
+ * costs a request and always works; a `<source>` with the WRONG type is skipped outright, and
+ * the video then does not play at all. So a guess is more expensive than silence, and only
+ * extensions that mean one thing are in here.
+ */
+const SOURCE_TYPES: Record<string, string> = {
+    mp4: "video/mp4",
+    m4v: "video/mp4",
+    webm: "video/webm",
+    ogv: "video/ogg",
+    mov: "video/quicktime",
+    mkv: "video/x-matroska",
+    m3u8: "application/vnd.apple.mpegurl",
+    mpd: "application/dash+xml"
+};
+
+/**
+ * The type a URL's extension implies, or undefined.
+ *
+ * Read from the PATH, so a query string or a fragment cannot be mistaken for one -
+ * `/clip.mp4?token=...` is still an mp4, and `/download?file=x.webm` is not a webm, because
+ * the extension has to be on the path's last segment. A `blob:` or `data:` URL has no
+ * extension to read and gets nothing, which is the right answer: the browser sniffs.
+ */
+export function sourceType(url: string): string | undefined {
+    let path = url;
+    try {
+        path = new URL(url, typeof location === "undefined" ? "https://localhost" : location.href).pathname;
+    } catch {
+        path = url.split("?")[0]!.split("#")[0]!;
+    }
+    const name = path.split("/").pop() ?? "";
+    const dot = name.lastIndexOf(".");
+    if (dot <= 0) return undefined;
+    return SOURCE_TYPES[name.slice(dot + 1).toLowerCase()];
+}
+
 /* -------- captions -------- */
 
 /** One subtitle track, as the menu lists it. */

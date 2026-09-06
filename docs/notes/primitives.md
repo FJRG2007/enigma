@@ -1084,6 +1084,28 @@ The details, each with the case behind it:
   nothing to paste does nothing. Greyed rather than dropped - a row that disappears between two
   opens reads as an unreliable menu.
 
+### Three things the menu got wrong by being reasonable
+
+**A filter from eight rows.** Eight is a menu you can still READ: the field was chrome, a focus
+stop and a taller panel in exchange for nothing, and the video player's own menu grew one at
+nine rows. `SEARCHABLE_FROM` is 12. The other half of that fix is that the ROOT level could not
+be told either way - only an item carried `searchable`, and the root has no item - so a menu
+whose rows arrive from somewhere could not ask for a field before it had rows to grow one with.
+`ContextMenuOptions.searchable` is that switch.
+
+**The tick column belongs to the LEVEL, not the row.** A checkable row carries a check and
+usually an icon; its neighbours carry only the icon, so the ticked row's label sat a whole
+column further right and the menu read as broken. Every desktop menu reserves the column for
+the level, which is what `reserveCheck` does - computed from `entries` rather than from what is
+visible, so filtering cannot shift the rows sideways.
+
+**A menu opened inside a dialog painted underneath it.** The panel was `z-index: 60` and the
+image viewer is `9999`, and both portal to the same body: the lightbox's own three-dot menu
+opened behind the backdrop, where its rows could be neither read nor pressed. It had shipped
+that way. A menu is opened FROM whatever is on top, so it is the topmost transient surface by
+definition - `--enigma-menu-z: 10000`, in `:root` and not in the light-scheme block, or half
+the readers get an invalid z-index and no stacking at all.
+
 ## selection
 
 The file-manager selection model, headless. `core/selection.ts` is the set arithmetic,
@@ -1232,6 +1254,12 @@ Three cursors, because a press means three things: `zoom-in` on the picture, `zo
 dark area beside it (which is the backdrop, and closes), `grab`/`grabbing` once there is
 somewhere to pan to.
 
+The menu offers Download and **Open in a new tab**, and the second is not `window.open` and a
+shrug: Chromium refuses a top-level navigation to a `data:` URL, which is what every generated
+placeholder and every inlined thumbnail is, so the row did nothing and said nothing. Those go
+through `dataUrlToBlob` - synchronous on purpose, because a window opened after an `await` is a
+popup with no gesture behind it and gets blocked as well.
+
 ## video
 
 `<Video>` is a player shaped after Plyr: the same control set, the same shortcuts, the same bar
@@ -1330,6 +1358,15 @@ commands, which drew a shape half again the size of the box hanging off the bott
 button: an icon that leaves the viewBox cannot be centred by the button holding it. Their size
 is `--enigma-video-icon-size`, not an `em` of the bar's label - `1.25em` of 13px is a 16px
 icon, and the same markup in a project with larger type was silently a different player.
+
+### A source's type is read, never guessed
+
+`sourceType` maps a file extension to a MIME type for `<source>`, and the map is deliberately
+short. A source with NO type makes the browser fetch and sniff, which costs a request and
+always works; a source with the WRONG type is skipped without being tried, and a video whose
+sources are all skipped does not play. So the guess is the expensive direction, and only
+extensions that mean exactly one thing are in the table. It reads the URL's PATH, so
+`/clip.mp4?token=...` is still an mp4 and `/download?file=x.webm` is not a webm.
 
 The docs playground ships no media on purpose: a file big enough to be worth playing is a file
 every reader downloads to look at a control bar. It plays whatever the reader points it at,

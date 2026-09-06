@@ -240,12 +240,12 @@ test("a submenu that rejects says so instead of showing nothing", async () => {
 });
 
 test("the filter keeps only the furniture that still divides something", () => {
-    const many = Array.from({ length: 10 }, (_, index) => ({ id: `row-${index}`, label: `Row ${index}` }));
+    const many = Array.from({ length: 14 }, (_, index) => ({ id: `row-${index}`, label: `Row ${index}` }));
     const menu = createContextMenu({
         items: [{ type: "label", label: "Recent" }, ...many, { type: "separator" }, { id: "other", label: "Something else" }]
     });
     menu.open(point);
-    assert.equal(menu.state.levels[0].searchable, true, "ten rows is past the point a filter earns its space");
+    assert.equal(menu.state.levels[0].searchable, true, "fifteen rows is past the point a filter earns its space");
 
     menu.setQuery(0, "Row 3");
     const visible = menu.state.levels[0].visible;
@@ -302,4 +302,36 @@ test("a title is the level's, and a submenu can carry its own", () => {
     assert.equal(menu.state.levels[0].title, "report.pdf");
     menu.openSubmenu(0, 0);
     assert.equal(menu.state.levels[1].title, "Share report.pdf");
+});
+
+/**
+ * A filter is chrome until there are enough rows to be worth filtering.
+ *
+ * The threshold used to be eight, which is a menu you can still read at a glance - the video
+ * player's own menu, at nine rows, grew a search field nobody asked for. And the ROOT level had
+ * no way to be told either way: only a submenu's item could carry `searchable`, so a menu whose
+ * rows are fetched could not ask for one before it had them.
+ */
+test("the filter arrives when there are enough rows, or when it is asked for", () => {
+    const rows = (count) => Array.from({ length: count }, (_, index) => ({ id: `row-${index}`, label: `Row ${index}` }));
+    const searchable = (options) => {
+        const menu = createContextMenu(options);
+        menu.open(point);
+        return menu.state.levels[0].searchable;
+    };
+
+    assert.equal(searchable({ items: rows(9) }), false, "nine rows is a shape, not a list");
+    assert.equal(searchable({ items: rows(12) }), true);
+    // Whatever the count, both ways.
+    assert.equal(searchable({ items: rows(3), searchable: true }), true, "a menu that is about to fill itself");
+    assert.equal(searchable({ items: rows(30), searchable: false }), false, "and one that would rather not");
+});
+
+test("the root's filter can be turned on after it is open", () => {
+    const menu = createContextMenu({ items: [{ id: "one", label: "One" }] });
+    menu.open(point);
+    assert.equal(menu.state.levels[0].searchable, false);
+
+    menu.update({ items: [{ id: "one", label: "One" }], searchable: true });
+    assert.equal(menu.state.levels[0].searchable, true);
 });

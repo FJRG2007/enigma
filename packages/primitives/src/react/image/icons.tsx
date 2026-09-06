@@ -53,3 +53,7 @@ export function Dots(): ReactNode {
 export function Download(): ReactNode {
     return <Glyph><path d="M12 3v12M7 11l5 5 5-5M4 20h16" /></Glyph>;
 }
+
+export function NewTab(): ReactNode {
+    return <Glyph><path d="M14 4h6v6" /><path d="M20 4 11 13" /><path d="M18 14v5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 4 19V7.5A1.5 1.5 0 0 1 5.5 6H10" /></Glyph>;
+}

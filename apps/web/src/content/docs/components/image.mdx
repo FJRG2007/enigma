@@ -134,11 +134,20 @@ sitting over an empty frame.
 />
 ```
 
-## The menu, and downloading the file
+## The menu, and what it does with the file
 
 `menu` is the three dots, and what opens under it is
 [the context menu](context-menu) with a left press instead of a right one - the same panel,
 keyboard and roles, rather than a second popup written for one toolbar.
+
+Two rows come with it: **Download**, and **Open in a new tab** for the picture on its own.
+`menu={{ download: false }}` or `{ newTab: false }` drops either.
+
+Opening a tab is not `window.open` and a shrug. Chromium refuses a top-level navigation to a
+`data:` URL - it was a phishing vector - so a picture that IS one, which is every generated
+placeholder and every inlined thumbnail, opened nothing at all and said nothing about it. Those
+are handed over as a blob instead, decoded synchronously, because a window opened after an
+`await` is a popup with no gesture behind it and the browser blocks that too.
 
 Download is the row it comes with. It **fetches the file and hands over the blob**, because
 `<a download>` is honoured only for a same-origin URL: on a CDN the browser ignores the
@@ -202,7 +211,7 @@ says it enlarges, and the focus ring exists, before anybody has opened one.
 | --- | --- |
 | `[data-enigma-image]` | The wrapper in the page - `data-clickable` when it opens |
 | `[data-enigma-image-trigger]` | The button around the picture |
-| `[data-enigma-image-viewer]` | The dialog, portalled to the body - `data-state` is `opening`, `open` or `closing` |
+| `[data-enigma-image-viewer]` | The dialog, portalled to the body - `data-state` is `opening`, `open` or `closing`. Its menu is portalled to the same body and sits above it |
 | `[data-enigma-image-bar]` | The toolbar, and `[data-enigma-image-counter]` in it |
 | `[data-enigma-image-frame]` | The frame - `data-zoom`, `data-zoomed`, `data-panning`, `data-loading`, and `data-flying` while it is `pending` or `moving` |
 | `[data-enigma-image-nav="previous"]`, `[data-enigma-image-nav="next"]` | The arrows |

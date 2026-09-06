@@ -64,6 +64,14 @@ export interface RegistryItem {
     styles: boolean;
     themeHooks?: string[];
     docs?: string;
+    /**
+     * The file a reader should be sent to, relative to the package.
+     *
+     * The docs site builds its "source" link from this. It used to derive the path from the
+     * page's name, which is not the file's name - `video` is `core/player.ts` - so several
+     * pages linked to files that do not exist.
+     */
+    source?: string;
 }
 
 export interface Registry {

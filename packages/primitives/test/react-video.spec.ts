@@ -323,6 +323,28 @@ test.describe("Video", () => {
             await expect(panel.locator("[data-enigma-menu-item]", { hasText: label }).first()).toBeVisible();
         }
 
+        // Nine rows is a menu you read at a glance: a filter field there is chrome, a focus
+        // stop and a taller panel in exchange for nothing.
+        await expect(panel.locator("[data-enigma-menu-search]")).toHaveCount(0);
+
+        /**
+         * Every label starts at the same place.
+         *
+         * Loop and Cast carry a tick as well as an icon and their neighbours carry only the
+         * icon, so drawn per row the checkable ones sat a whole column further right. A level
+         * with one checkable row reserves the column for all of them, the way a desktop menu
+         * does.
+         */
+        // One snapshot, not one measurement per row: the panel settles into its final place
+        // over a frame or two, so reading the rows one at a time measures the settling and not
+        // the alignment - which is a test that fails for a reason it is not about.
+        const lefts = await page.evaluate(() => {
+            const open = document.querySelector("[data-enigma-menu-panel]");
+            return [...(open?.querySelectorAll("[data-enigma-menu-item-label]") ?? [])].map((label) => label.getBoundingClientRect().x);
+        });
+        expect(lefts.length).toBeGreaterThan(4);
+        expect(Math.max(...lefts) - Math.min(...lefts), "the rows do not line up").toBeLessThan(0.5);
+
         await panel.locator("[data-enigma-menu-item]", { hasText: "Loop" }).first().click();
         expect(await page.locator(video).evaluate((node: HTMLVideoElement) => node.loop)).toBe(true);
         await expect(panel).toHaveCount(0);

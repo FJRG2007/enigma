@@ -174,6 +174,53 @@ function saveAs(href: string, name: string, external = false): void {
     anchor.remove();
 }
 
+/**
+ * A `data:` URL as the bytes it stands for.
+ *
+ * Synchronous on purpose: it is used to open a tab, and a window opened after an `await` is a
+ * popup with no gesture behind it, which the browser blocks.
+ */
+export function dataUrlToBlob(url: string): Blob {
+    const comma = url.indexOf(",");
+    if (!url.startsWith("data:") || comma === -1) throw new Error("not a data URL");
+    const head = url.slice("data:".length, comma);
+    const body = url.slice(comma + 1);
+    const base64 = head.endsWith(";base64");
+    const type = (base64 ? head.slice(0, -";base64".length) : head) || "text/plain";
+    if (!base64) return new Blob([decodeURIComponent(body)], { type });
+
+    const binary = atob(body);
+    const bytes = new Uint8Array(binary.length);
+    for (let at = 0; at < binary.length; at += 1) bytes[at] = binary.charCodeAt(at);
+    return new Blob([bytes], { type });
+}
+
+/**
+ * The picture on its own, in another tab.
+ *
+ * Chromium refuses a top-level navigation to a `data:` URL - it was a phishing vector - so a
+ * row that just called `window.open` on one did nothing at all, silently, which is how it
+ * shipped. Those are handed over as a blob instead; everything else opens as it is.
+ *
+ * `noopener` on both: the new tab must not get a handle on the page that opened it.
+ */
+export function openInNewTab(url: string): void {
+    if (typeof window === "undefined") return;
+    if (!url.startsWith("data:")) {
+        window.open(url, "_blank", "noopener,noreferrer");
+        return;
+    }
+    try {
+        const href = URL.createObjectURL(dataUrlToBlob(url));
+        window.open(href, "_blank", "noopener,noreferrer");
+        // Revoked later, not now: the tab has not finished reading it yet.
+        setTimeout(() => URL.revokeObjectURL(href), 60_000);
+    } catch {
+        // Undecodable, or a blocked popup. Better the browser's own refusal than a throw.
+        window.open(url, "_blank", "noopener,noreferrer");
+    }
+}
+
 /* -------- the flight from the thumbnail into the viewer -------- */
 
 /** How long the picture takes to fly, when the stylesheet does not say otherwise. */

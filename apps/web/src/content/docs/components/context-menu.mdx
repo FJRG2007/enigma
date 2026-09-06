@@ -150,12 +150,25 @@ time) and `instance.invalidate(path)` drops one branch after a mutation.
 
 ## Long levels
 
-A submenu that lists files, branches, tags or devices is not short. Past eight rows a level
-gets its own filter - `searchable` on the row decides it outright - matching the label, the
-description, the group and any `keywords`, fuzzy if you hand over Fuse's constructor:
+A submenu that lists files, branches, tags or devices is not short. Past **twelve** rows a
+level grows its own filter, matching the label, the description, the group and any `keywords`,
+fuzzy if you hand over Fuse's constructor:
 
 ```tsx
 <ContextMenu items={rows} fuse={Fuse} />
+```
+
+Twelve rather than a smaller number because a menu you can read at a glance does not want one:
+a field there is chrome, a focus stop and a taller panel in exchange for nothing. Nine rows is
+still a shape; twelve is where it starts being a list.
+
+It is only the default. `searchable` decides it outright - on the menu for its root level, on a
+row for the submenu under it - which is what a level filling itself from somewhere needs, since
+it has no rows to grow into a filter with:
+
+```tsx
+<ContextMenu items={rows} searchable />            {/* whatever the count */}
+<ContextMenu items={rows} searchable={false} />    {/* never */}
 ```
 
 The rows render a window at a time, forty by default, growing as the level is scrolled and
@@ -171,6 +184,8 @@ immediately towards wherever the highlight is heading. `chunk={Infinity}` render
 | The press that opened it | Does not also choose the row that ended up underneath it |
 | Placement | Flips left and up rather than opening off the screen, and closes on a scroll |
 | Screen readers | `role="menu"`, `menuitemcheckbox` and `menuitemradio` where they apply, `aria-keyshortcuts`, the heading as the panel's name |
+| Alignment | One checkable row reserves the tick column for the whole level, so the labels line up rather than the ticked one sitting a column to the right |
+| Stacking | Above a dialog it was opened from - a menu is the topmost transient surface, and `--enigma-menu-z` says so |
 
 ## Shortcuts
 
@@ -202,6 +217,7 @@ Every colour and distance is a custom property on `:root`:
     --enigma-menu-danger: #d7875f;
     --enigma-menu-radius: 10px;
     --enigma-menu-min-width: 200px;
+    --enigma-menu-z: 10000;
 }
 ```
 
@@ -212,6 +228,7 @@ Every colour and distance is a custom property on `:root`:
 | --- | --- |
 | `items` | The rows. An empty list opens no menu |
 | `title` | A heading naming what the rows act on |
+| `searchable` | The root's filter: `"auto"` past twelve rows, or `true` / `false` outright |
 | `onSelect` | `(item, path)` - the row, and the ids from the root down to it |
 | `disabled` | Nothing opens, and the press is left to the browser |
 | `clipboard` | Copy, Cut and Paste. On by default; `false` drops them, an object tunes them |

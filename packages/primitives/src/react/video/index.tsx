@@ -531,7 +531,14 @@ export function Video(props: VideoProps): ReactNode {
                 playsInline={rest.playsInline ?? true}
                 onClick={() => { if (clickToPlay) toggle(); }}
             >
-                {typeof src !== "string" && sources.map((source) => <source key={source.src} src={source.src} type={source.type} />)}
+                {typeof src !== "string" && sources.map((source) => (
+                    // The type is what lets the browser SKIP a file it cannot play without
+                    // fetching it, which is the only reason to list several. Read from the
+                    // extension when it was not given, and left off when the extension means
+                    // nothing - a wrong type is worse than none, because the source is then
+                    // skipped and the video does not play at all.
+                    <source key={source.src} src={source.src} type={source.type ?? player.sourceType(source.src)} />
+                ))}
                 {tracks?.map((track) => (
                     <track
                         key={track.src}

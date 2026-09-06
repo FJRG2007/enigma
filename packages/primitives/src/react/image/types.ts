@@ -39,6 +39,8 @@ export interface ZoomOptions {
 export interface ImageMenuOptions {
     /** The download row. On whenever the menu is. */
     download?: boolean;
+    /** The row that opens the picture on its own, in another tab. On whenever the menu is. */
+    newTab?: boolean;
     /** Rows of your own, after the built-in ones. */
     items?: readonly ContextMenuNode[];
     onSelect?: (id: string, item: ImageItem, index: number) => void;
@@ -55,6 +57,7 @@ export interface ImageLabels {
     next?: string;
     menu?: string;
     download?: string;
+    newTab?: string;
     discard?: string;
     thumbnails?: string;
     /** The frame itself, announced as the dialog's name. Default "Image viewer". */

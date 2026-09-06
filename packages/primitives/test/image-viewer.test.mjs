@@ -108,3 +108,17 @@ test("a box that has not been laid out yet is no flight rather than a division b
     assert.equal(viewer.flightFrom({ left: 0, top: 0, width: 0, height: 0 }, { left: 0, top: 0, width: 800, height: 600 }), null);
     assert.equal(viewer.flightFrom({ left: 0, top: 0, width: 200, height: 150 }, { left: 0, top: 0, width: 0, height: 0 }), null);
 });
+
+test("a data URL becomes the bytes it stands for, so a tab can be opened on it", async () => {
+    // Chromium refuses to navigate to a data: URL, so "open in a new tab" has to hand over a
+    // blob - and it has to do it synchronously, or the window is a popup with no gesture.
+    const plain = viewer.dataUrlToBlob("data:text/plain,hello%20there");
+    assert.equal(plain.type, "text/plain");
+    assert.equal(await plain.text(), "hello there");
+
+    const base64 = viewer.dataUrlToBlob("data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=");
+    assert.equal(base64.type, "image/svg+xml");
+    assert.equal(await base64.text(), "<svg></svg>");
+
+    assert.throws(() => viewer.dataUrlToBlob("https://example.com/a.png"), /not a data URL/);
+});

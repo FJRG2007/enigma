@@ -1,5 +1,5 @@
 import test from "node:test";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import { join, dirname, posix } from "node:path";
@@ -44,4 +44,19 @@ test("the copy bundled with the CLI is the one the package publishes", () => {
     // `npm run seal` copies it. Out of date, the catalogue an agent lists differs from the one
     // an install actually copies from.
     assert.equal(vendored, readFileSync(join(ROOT, "registry.json"), "utf8"));
+});
+
+/**
+ * The docs site builds its "source" link from this field.
+ *
+ * It used to build the path from the page's slug instead, which is not the file's name and
+ * never was - `video` is `core/player.ts`, `image` is `core/image-viewer.ts` - so those pages
+ * linked to files that do not exist. A path nobody clicks is a path nobody notices is broken,
+ * which is the whole reason this is a test rather than a convention.
+ */
+test("every item points at a source file that is really there", () => {
+    for (const item of registry.items) {
+        assert.ok(item.source, `${item.name}: no source path`);
+        assert.ok(existsSync(join(ROOT, item.source)), `${item.name}: ${item.source} does not exist`);
+    }
 });

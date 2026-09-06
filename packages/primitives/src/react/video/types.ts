@@ -12,7 +12,13 @@ import type { ContextMenuItem, ContextMenuNode } from "@/react/context-menu/cont
 
 export interface VideoSource {
     src: string;
-    /** `video/mp4`, `video/webm`. The browser picks the first one it can play. */
+    /**
+     * `video/mp4`, `video/webm`. The browser picks the first one it can play.
+     *
+     * Inferred from the file extension when it is left out, and left off entirely when the
+     * extension means nothing - the browser then fetches and sniffs, which always works. A
+     * WRONG type is the expensive mistake: the source is skipped without being tried.
+     */
     type?: string;
 }
 

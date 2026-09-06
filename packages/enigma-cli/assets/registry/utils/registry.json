@@ -51,7 +51,8 @@
         }
       ],
       "styles": false,
-      "docs": "docs/notes/primitives.md#cache"
+      "docs": "docs/notes/primitives.md#cache",
+      "source": "src/core/cache.ts"
     },
     {
       "name": "password-breach",
@@ -103,7 +104,8 @@
         }
       ],
       "styles": false,
-      "docs": "docs/notes/primitives.md#password-breach"
+      "docs": "docs/notes/primitives.md#password-breach",
+      "source": "src/core/password-breach.ts"
     }
   ]
 }
