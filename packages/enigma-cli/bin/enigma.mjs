@@ -71,6 +71,40 @@ if (process.argv[2] === "__post-edit-hook" && existsSync(postEditBundle)) {
     }
 }
 
+/**
+ * Fast path: the code graph's session hooks, for the same reason as the one above and with more
+ * at stake.
+ *
+ * `UserPromptSubmit` runs BEFORE the message reaches the model and blocks it, so whatever this
+ * costs is time the user spends staring at their own prompt - on every single turn, whether the
+ * hook finds anything to say or not. Spawning the binary for it measured ~21 s here (Windows 11,
+ * Defender real-time on, a ~96 MB unsigned executable rescanned on each launch) against a 25 s
+ * host budget, so it alternated between a twenty-second stall and a timeout whose output was
+ * discarded - the worst of both. The hook's own work is milliseconds.
+ *
+ * Every path in it is already Node-compatible: `dist/post-edit.js` has been calling
+ * `runCodeGraphHook` under Node since the post-edit hook was merged into one process. So it is
+ * answered HERE and the binary is never started.
+ *
+ * Bundle missing (an install from before it shipped) -> fall through untouched, stdin included,
+ * and let the binary answer as it always did.
+ */
+const codeGraphBundle = join(pkgRoot, "dist", "codegraph-hook.js");
+if (process.argv[2] === "__codegraph-hook" && existsSync(codeGraphBundle)) {
+    // Read SYNCHRONOUSLY, before any await: an await lets Node drain the pipe and the hook then
+    // sees an empty payload - the same lesson cli.ts records for this command.
+    let payload = "";
+    try { payload = readFileSync(0, "utf8"); } catch { /* no stdin; the hook no-ops on it */ }
+    try {
+        const { runCodeGraphHook } = await import(pathToFileURL(codeGraphBundle).href);
+        process.exit(await runCodeGraphHook(process.argv[3] ?? "", payload));
+    } catch {
+        // Silent, unlike post-edit: this hook has nothing to enforce. It rides along inside
+        // somebody's turn, and a session must never be interrupted by the thing decorating it.
+        process.exit(0);
+    }
+}
+
 /** Resolve the binary, downloading it on first run if the postinstall was skipped. */
 async function resolveBinary() {
     if (process.env.ENIGMA_BIN_PATH && existsSync(process.env.ENIGMA_BIN_PATH)) return process.env.ENIGMA_BIN_PATH;

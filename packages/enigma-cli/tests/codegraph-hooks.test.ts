@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { join, dirname } from "node:path";
 import { spawnSync } from "node:child_process";
-import { test, expect, afterAll } from "bun:test";
+import { test, expect, afterAll, beforeAll } from "bun:test";
 import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -242,3 +242,38 @@ test("the repository this hook just wrote survives the cap, however old its entr
     expect(Object.keys(after)).toHaveLength(100);
     expect(after[root]!.symbols).toBeGreaterThan(1);
 });
+
+/**
+ * The launcher answers these hooks itself, and that is the difference between a plugin and input
+ * lag.
+ *
+ * `UserPromptSubmit` runs BEFORE the message reaches the model and blocks it, so whatever the hook
+ * costs is time the user spends waiting on their own prompt - every turn, whether it finds anything
+ * to say or not. Spawning the ~96 MB Bun binary for it measured ~21 s on Windows 11 with Defender
+ * real-time on, against the 25 s budget the wiring installs: a twenty-second stall that regularly
+ * lost the race and had its output discarded anyway.
+ *
+ * Driven exactly as the wiring drives it, with `ENIGMA_BIN_PATH` pointing at Node itself. That
+ * stand-in EXISTS, so a launcher that fell through would happily spawn it - and `node
+ * __codegraph-hook prompt` fails, which is what makes a clean exit proof that it did not.
+ */
+const BUNDLE = join(ROOT, "dist", "codegraph-hook.js");
+
+beforeAll(() => {
+    if (existsSync(BUNDLE)) return;
+    const built = spawnSync("npx", ["tsup"], { cwd: ROOT, encoding: "utf8", shell: true, windowsHide: true, timeout: 120_000 });
+    expect(built.status, built.stderr || "").toBe(0);
+    expect(existsSync(BUNDLE)).toBe(true);
+});
+
+test("the launcher answers the graph's hooks itself, without ever starting the binary", () => {
+    const run = spawnSync(process.execPath, [join(ROOT, "bin", "enigma.mjs"), "__codegraph-hook", "prompt"], {
+        encoding: "utf8",
+        input: JSON.stringify({ prompt: "where is the session token refreshed", cwd: PROJ, session_id: "launcher" }),
+        windowsHide: true,
+        env: { ...process.env, HOME, USERPROFILE: HOME, ENIGMA_CONFIG_HOME: HOME, ENIGMA_CODEGRAPH_DIR: STORE, ENIGMA_BIN_PATH: process.execPath }
+    });
+    expect(run.status ?? 0).toBe(0);
+    // What the stand-in would have said on its way out.
+    expect(run.stderr ?? "").not.toContain("Cannot find module");
+}, 120_000);
