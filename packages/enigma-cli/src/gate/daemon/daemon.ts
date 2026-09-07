@@ -209,6 +209,11 @@ function removeQuietly(path: string): void {
  * orphaned worktree directories.
  */
 async function recoverOnStartup(d: gateDb.Database, p: Paths): Promise<void> {
+    // Bracketed by logs because this runs BEFORE the socket exists: everything it spends is
+    // time the CLI's health check is failing, and until these lines the log went quiet between
+    // "environment ready" and "daemon starting" with no way to tell slow from hung.
+    const startedAt = Date.now();
+    log.info("startup recovery beginning");
     reapOrphanedServers(p);
     await migrateGateConfigs(p);
 
@@ -222,6 +227,25 @@ async function recoverOnStartup(d: gateDb.Database, p: Paths): Promise<void> {
     if (count > 0) log.info("recovered stale runs from previous crash", "count", count);
 
     await removeOrphanedWorktrees(p);
+    log.info("startup recovery complete", "ms", Date.now() - startedAt);
+}
+
+/**
+ * Version that last migrated a bare repo, recorded inside it. The migration is idempotent, so
+ * it was simply re-run on every start - three git invocations per repo, every time. That is
+ * free where a process costs a millisecond and it is not free everywhere: fifteen repos on a
+ * Windows machine with an antivirus in the path measured around ninety seconds, spent before
+ * the daemon opens its socket, so `enigma gate axi run` gave up on the health check and every
+ * gate run on that machine was blocked. Stamping the version keeps the work happening exactly
+ * when it can matter - a new enigma may ship a new hook - and never again after that.
+ */
+function migrationStamp(bareDir: string): string {
+    return join(bareDir, "enigma-migrated");
+}
+
+/** The enigma version this daemon is, as the launcher reports it. */
+function currentVersion(): string {
+    return process.env.ENIGMA_VERSION || "dev";
 }
 
 /**
@@ -235,6 +259,9 @@ async function migrateGateConfigs(p: Paths): Promise<void> {
     } catch {
         return; // repos dir may not exist on a fresh install
     }
+    const version = currentVersion();
+    let migrated = 0;
+    const startedAt = Date.now();
     for (const name of entries) {
         const bareDir = join(p.reposDir(), name);
         try {
@@ -242,6 +269,12 @@ async function migrateGateConfigs(p: Paths): Promise<void> {
         } catch {
             continue;
         }
+        // An unreadable or mismatched stamp means migrate; only an exact match skips, so a
+        // corrupted stamp costs one extra migration rather than skipping a needed one.
+        try {
+            if (readFileSync(migrationStamp(bareDir), "utf8").trim() === version) continue;
+        } catch { /* not migrated by this version yet */ }
+        migrated++;
         try {
             refreshManagedPostReceiveHook(bareDir);
         } catch (err) {
@@ -257,6 +290,14 @@ async function migrateGateConfigs(p: Paths): Promise<void> {
         } catch (err) {
             log.warn("isolate gate hooks path failed", "bare", bareDir, "error", errMessage(err));
         }
+        // Stamped after the three steps, and best-effort: a stamp that cannot be written just
+        // means this repo is migrated again next time, which is what used to happen anyway.
+        try {
+            writeFileSync(migrationStamp(bareDir), `${version}\n`, { mode: 0o644 });
+        } catch { /* the migration still ran; it will simply run again */ }
+    }
+    if (migrated > 0) {
+        log.info("migrated gate repos", "count", migrated, "of", entries.length, "ms", Date.now() - startedAt);
     }
 }
 

@@ -32,8 +32,18 @@ import { processRunning, readDaemonPIDFile } from "../daemon/recover";
 /** Spawns a detached daemon for `paths`; returns its PID (0 when unknown). */
 export type SpawnDaemon = (paths: Paths) => number | undefined;
 
-/** Default detached-daemon wait timeout (longer on Windows, as in Go). */
-const DEFAULT_START_TIMEOUT_MS = process.platform === "win32" ? 15_000 : 5_000;
+/**
+ * Default detached-daemon wait timeout.
+ *
+ * This is a CEILING on a poll loop, not a delay: a daemon that answers in 300 ms is waited on
+ * for 300 ms, so the only thing a bigger number costs is how long a genuinely stuck start takes
+ * to give up. The old Windows value of 15 s was smaller than the cold start it had to cover -
+ * an antivirus rescanning the ~96 MB binary on every launch measured 3.5-11.8 s for `--version`
+ * alone, before the daemon opens its database and binds - so `enigma gate axi run` failed on
+ * `start daemon` and every gate run on that machine was blocked. The loop also gives up early
+ * now when the child is gone, which is what keeps the larger ceiling from being felt.
+ */
+const DEFAULT_START_TIMEOUT_MS = process.platform === "win32" ? 180_000 : 30_000;
 /** Default poll cadence while waiting for the daemon to answer health checks. */
 const DEFAULT_START_POLL_MS = 100;
 
@@ -52,7 +62,14 @@ function durationFromEnv(name: string, fallbackMs: number): number {
     return Number.isFinite(n) && n > 0 ? n : fallbackMs;
 }
 
+/**
+ * How long to wait for the daemon to answer. The supported override comes first; the `_TEST_`
+ * name stays because the suite sets it, but a user whose machine is slower than any default
+ * can reasonably assume needs a knob that is not named after the test suite.
+ */
 function startTimeout(): number {
+    const supported = durationFromEnv("ENIGMA_GATE_DAEMON_START_TIMEOUT", 0);
+    if (supported > 0) return supported;
     return durationFromEnv("ENIGMA_GATE_TEST_DAEMON_START_TIMEOUT", DEFAULT_START_TIMEOUT_MS);
 }
 
@@ -140,6 +157,12 @@ async function waitForDaemonStart(paths: Paths, pid?: number): Promise<void> {
     const deadline = Date.now() + timeout;
     while (Date.now() < deadline) {
         if (await isDaemonRunning(paths)) return;
+        // A child that has already exited is never going to answer. Saying so immediately, with
+        // the log that holds the reason, beats spending the rest of the window on a dead process
+        // and then blaming the clock for it - which is what the timeout message used to do.
+        if (pid !== undefined && pid > 0 && processRunning(pid) === false) {
+            throw new Error(`the gate daemon exited while starting up. Its log says why: ${paths.daemonLog()}`);
+        }
         await sleep(startPollInterval());
     }
     if (pid !== undefined && pid > 0 && processRunning(pid) !== false) {
@@ -149,7 +172,7 @@ async function waitForDaemonStart(paths: Paths, pid?: number): Promise<void> {
             // best-effort cleanup of an unresponsive child
         }
     }
-    throw new Error(`daemon started but did not become responsive within ${timeout}ms`);
+    throw new Error(`the gate daemon was still starting after ${timeout}ms, so it was stopped. On Windows an antivirus that rescans the binary on every launch is the usual cause; raise ENIGMA_GATE_DAEMON_START_TIMEOUT (ms) if this machine simply needs longer. Log: ${paths.daemonLog()}`);
 }
 
 /**
