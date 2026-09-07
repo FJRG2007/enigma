@@ -15,15 +15,16 @@
  *   kimi      mcpServers.enigma in ~/.kimi-code/mcp.json (global) /
  *             ./.kimi-code/mcp.json (project) / <accountDir>/mcp.json
  *
- * The MCP server itself is `enigma mcp` (see mcp.ts), so the registered command is
- * the resolved enigma binary; on Windows the agents that spawn without a shell
- * (claude, opencode, kimi) get a `cmd /c` wrapper so a `.cmd` launcher resolves.
+ * The MCP server itself is `enigma mcp` (see mcp.ts), so the registered command is the
+ * resolved enigma binary; on Windows, where that is an npm `.cmd` shim no shell-less spawn
+ * can run, the agents that spawn without a shell (claude, opencode, kimi) are pointed at the
+ * launcher under node instead - see mcpInvocation for why that beats the `cmd /c` wrapper.
  */
 
-import { join } from "node:path";
 import { homedir } from "node:os";
 import { kimiHome } from "./kimi";
 import { readConfig } from "./config";
+import { dirname, join } from "node:path";
 import { readJson, resolveBin } from "./util";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 
@@ -31,12 +32,47 @@ const SERVER_NAME = "enigma";
 
 type Scope = "global" | "local";
 
-/** The command + args that launch the enigma MCP server, resolved per OS and tool. */
-function invocation(tool: string): { command: string; args: string[]; } {
+/**
+ * Absolute path of the npm launcher (`bin/enigma.mjs`), or null when it cannot be located.
+ *
+ * The launcher points ENIGMA_ASSETS_DIR at `<pkgRoot>/assets` for the binary it execs, so the
+ * package root - and the launcher sitting beside it - is recoverable from that one variable.
+ * Nothing inside the compiled binary knows where its own package lives, its __dirname being a
+ * path in Bun's virtual filesystem.
+ */
+function launcherScript(): string | null {
+    const assets = process.env.ENIGMA_ASSETS_DIR;
+    if (!assets) return null;
+    const script = join(dirname(assets), "bin", "enigma.mjs");
+    return existsSync(script) ? script : null;
+}
+
+/**
+ * The command + args that launch the enigma MCP server, resolved per OS and tool.
+ *
+ * `platform` is a parameter rather than a read of `process.platform` so the Windows branch -
+ * the only one with a decision in it - is reachable from a test on the Linux runner that CI
+ * actually uses. Nothing else passes it.
+ */
+export function mcpInvocation(tool: string, platform: NodeJS.Platform = process.platform): { command: string; args: string[]; } {
     const base = resolveBin("enigma") ?? "enigma";
-    // claude and opencode spawn the server without a shell, so a Windows `.cmd`
-    // launcher needs a `cmd /c` wrapper. Codex resolves `.cmd` via PATHEXT itself.
-    if (process.platform === "win32" && tool !== "codex") return { command: "cmd", args: ["/c", base, "mcp"] };
+    // On Windows `enigma` is an npm `.cmd` shim, which CreateProcess cannot run, so an agent
+    // that spawns its servers without a shell (claude, opencode, kimi) needed a `cmd /c`
+    // wrapper. Codex resolves `.cmd` via PATHEXT itself and never did.
+    //
+    // That wrapper costs a second process per session, held open for as long as the agent runs,
+    // and - spawned by a parent with no console to inherit - a console window with it. Running
+    // the launcher under node removes both: node.exe is a real executable, so it is spawned
+    // directly, and it is the same entrypoint `enigma.cmd` would have reached anyway.
+    if (platform === "win32" && tool !== "codex") {
+        const script = launcherScript();
+        const node = resolveBin("node");
+        // Either half unresolved (an unusual install, node off PATH) means falling back rather
+        // than writing an entry that cannot start: a registration that fails silently costs the
+        // user every enigma tool, which is far worse than the extra process.
+        if (script && node) return { command: node, args: [script, "mcp"] };
+        return { command: "cmd", args: ["/c", base, "mcp"] };
+    }
     return { command: base, args: ["mcp"] };
 }
 
@@ -92,7 +128,7 @@ function applyJsonEntry(file: string, parentKey: string, entry: unknown | null):
     else delete current[parentKey];
     if (JSON.stringify(current) === before) return false;
     mkdirSync(join(file, ".."), { recursive: true });
-    writeFileSync(file, JSON.stringify(current, null, 2) + "\n");
+    writeFileSync(file, `${JSON.stringify(current, null, 2)}\n`);
     return true;
 }
 
@@ -139,7 +175,7 @@ function applyCodexEntry(file: string, command: string | null, args: string[]): 
 
 /** Write/remove the enigma MCP entry in `file` for `tool`, per `enabled`. */
 function writeEntry(tool: string, file: string, enabled: boolean): boolean {
-    const inv = invocation(tool);
+    const inv = mcpInvocation(tool);
     switch (tool) {
         case "claude":
             return applyJsonEntry(file, "mcpServers", enabled ? { type: "stdio", command: inv.command, args: inv.args } : null);

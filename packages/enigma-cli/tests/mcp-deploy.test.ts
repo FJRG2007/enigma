@@ -17,7 +17,7 @@ process.env.HOME = HOME;
 // it this file would inherit whatever temp dir a test file that ran earlier left behind.
 process.env.ENIGMA_CONFIG_HOME = HOME;
 
-const { applyMcpForAgent, applyMcpForAccount, applyMcpToggle } = await import("../src/mcp-deploy");
+const { applyMcpForAgent, applyMcpForAccount, applyMcpToggle, mcpInvocation } = await import("../src/mcp-deploy");
 const { setEnigmaValue } = await import("../src/config");
 
 afterAll(() => rmSync(HOME, { recursive: true, force: true }));
@@ -154,5 +154,69 @@ test("compress toggle applies immediately, only to tools with an existing config
         process.env.HOME = prev;
         process.env.ENIGMA_CONFIG_HOME = prev;
         rmSync(home2, { recursive: true, force: true });
+    }
+});
+
+// --- Windows: no `cmd /c` wrapper ------------------------------------------------------
+
+/**
+ * The Windows entry used to be `cmd /c enigma.cmd mcp`, because an npm `.cmd` shim cannot be
+ * started by a shell-less spawn. That wrapper is a whole extra process per agent session, held
+ * open for as long as the agent runs - eight open sessions meant eight of them - and spawned by
+ * a parent with no console to inherit, Windows gives it a console window too.
+ *
+ * The platform is passed in rather than read, so this runs on the Linux runner CI uses.
+ */
+const PKG_ROOT = join(HOME, "enigma-cli-pkg");
+mkdirSync(join(PKG_ROOT, "assets"), { recursive: true });
+mkdirSync(join(PKG_ROOT, "bin"), { recursive: true });
+writeFileSync(join(PKG_ROOT, "bin", "enigma.mjs"), "// stand-in launcher\n");
+
+/** Run `body` with the launcher discoverable, the way the real launcher leaves the env. */
+function withLauncher<T>(body: () => T): T {
+    const previous = process.env.ENIGMA_ASSETS_DIR;
+    process.env.ENIGMA_ASSETS_DIR = join(PKG_ROOT, "assets");
+    try { return body(); } finally {
+        if (previous === undefined) delete process.env.ENIGMA_ASSETS_DIR;
+        else process.env.ENIGMA_ASSETS_DIR = previous;
+    }
+}
+
+test("windows registers the launcher under node, never a cmd /c wrapper", () => {
+    for (const tool of ["claude", "opencode", "kimi"]) {
+        const inv = withLauncher(() => mcpInvocation(tool, "win32"));
+        expect(inv.command, `${tool} still goes through a shell`).not.toBe("cmd");
+        expect(inv.args, `${tool} still passes /c`).not.toContain("/c");
+        expect(inv.args.at(-1), `${tool} does not start the server`).toBe("mcp");
+        expect(inv.args[0], `${tool} does not run the launcher`).toContain("enigma.mjs");
+    }
+});
+
+test("codex is untouched: it resolves a .cmd itself and never needed the wrapper", () => {
+    const inv = withLauncher(() => mcpInvocation("codex", "win32"));
+
+    expect(inv.command).not.toBe("cmd");
+    expect(inv.args).toEqual(["mcp"]);
+});
+
+test("a launcher that cannot be located falls back rather than writing a dead entry", () => {
+    const previous = process.env.ENIGMA_ASSETS_DIR;
+    process.env.ENIGMA_ASSETS_DIR = join(HOME, "nonexistent", "assets");
+    try {
+        const inv = mcpInvocation("claude", "win32");
+
+        // Better one extra process than an entry that cannot start: a silent registration
+        // failure costs the user every enigma tool.
+        expect(inv.command).toBe("cmd");
+        expect(inv.args.at(-1)).toBe("mcp");
+    } finally {
+        if (previous === undefined) delete process.env.ENIGMA_ASSETS_DIR;
+        else process.env.ENIGMA_ASSETS_DIR = previous;
+    }
+});
+
+test("every platform starts the same server", () => {
+    for (const platform of ["win32", "darwin", "linux"] as const) {
+        expect(withLauncher(() => mcpInvocation("claude", platform)).args.at(-1), platform).toBe("mcp");
     }
 });
