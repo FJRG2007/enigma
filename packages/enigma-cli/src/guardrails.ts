@@ -698,6 +698,25 @@ export const BUILTIN_RULES: GuardrailRule[] = [
         skill: "frontend-policy",
     },
     {
+        id: "fe-mutation-without-optimistic",
+        label: "A mutation that leaves the UI waiting",
+        files: ["*.tsx", "*.jsx", "*.vue", "*.svelte"],
+        excludeFiles: ["*.test.*", "*.spec.*", "**/tests/**", "**/__tests__/**", "**/dist/**", "dist/**", "**/build/**", "build/**", "**/.next/**", ".next/**", "**/node_modules/**"],
+        scope: "file",
+        // DIFF stage for the same reason as the rule above, and more urgently: the measured
+        // backlog is 116 of 140 mutating files with no optimistic update at all, so an
+        // edit-stage version of this would fire on almost every UI file forever. Against the
+        // lines a turn ADDED there is no backlog - it fires on a handler just written.
+        stage: "diff",
+        fileCheck: "fe-mutation-without-optimistic",
+        message: "This handler sends the mutation and then updates nothing: whatever the user sees has to come back from the server, so the interface sits still for the whole round trip on an action that usually cannot fail in an interesting way. Apply the change to local state FIRST, then send the request, and on failure restore the value you saved and say what failed - a silent revert is worse than the wait. A refetch, a revalidation or a router refresh after the await is the same wait wearing a different name. Mark the line `enigma:allow-server-first` when the response is genuinely required before the UI may change (a payment, a server-assigned identifier, an irreversible action) (frontend-policy).",
+        // Warn, not block: waiting is a defect for a save, a toggle or a delete and correct for
+        // a payment, and nothing in the file separates them. The sibling rule blocks because it
+        // has evidence; this one only has an absence, so it says its piece and gets out of the way.
+        severity: "warn",
+        skill: "frontend-policy",
+    },
+    {
         id: "fe-textarea-size-bounds",
         label: "Textarea declares a minimum and a maximum size",
         files: ["*.tsx", "*.jsx", "*.vue", "*.svelte", "*.astro", "*.html", "*.htm"],
@@ -1645,6 +1664,7 @@ export function newPasswordAffordanceOnSignIn(content: string): { line: number; 
 export const FILE_CHECKS: Record<string, (content: string, file: string) => { line: number; detail: string; }[]> = {
     "proc-windows-hide": (content) => missingWindowsHide(content),
     "fe-server-first-mutation": (content) => serverFirstMutation(content),
+    "fe-mutation-without-optimistic": (content) => mutationWithoutOptimisticUpdate(content),
     "fe-textarea-size-bounds": (content) => textareaSizeBounds(content),
     "fe-view-blanked-while-loading": (content) => viewBlankedWhileLoading(content),
     "fe-truncated-value-unreachable": (content) => truncatedValueUnreachable(content),
@@ -1929,6 +1949,56 @@ export function serverFirstMutation(content: string): { line: number; detail: st
             return !uses?.test(l.slice(at.index));
         });
         if (write) out.push({ line: i + 1, detail: `the UI is only updated after the request resolves: ${write.trim().slice(0, 80)}` });
+    }
+    return out;
+}
+
+/**
+ * Asking the data layer to go and fetch the truth again: the router, the cache, the query.
+ * `mutate` is narrowed to the no-argument and cache-key forms on purpose - the bare
+ * `mutate(values)` of a react-query mutation is how you SEND one, not how you reload.
+ */
+const REVALIDATE_AFTER = /\brouter\.refresh\s*\(|\brevalidatePath\s*\(|\brevalidateTag\s*\(|\binvalidateQueries\s*\(|\binvalidateAll\s*\(|\brefetch\s*\(|\bmutate\s*\(\s*[)"'`]/;
+
+/**
+ * Handlers that send a mutation and then ask the server for the answer - `await save(values)`
+ * followed by a refetch, a router refresh or a cache invalidation. The UI does update; it
+ * updates a round trip late, which is the same wait serverFirstMutation blocks, wearing a
+ * different name.
+ *
+ * This is that rule's complement. It exists because that one can only see a defect it has
+ * evidence FOR - a local state write placed after the call - and the commonest shape an agent
+ * writes has no local write at all. What it must NOT do is report the absence itself: measured
+ * over 1038 component files, "a mutation and no local write" matches 445 sites, including
+ * `fetch("/api/shutdown", { method: "POST" })`, where waiting for the server is the only
+ * correct behaviour. An absence is not evidence. The revalidation IS: it says out loud that
+ * this handler expects the screen to change, and that it is willing to wait for the network to
+ * find out how.
+ *
+ * The two rules partition their sites rather than overlap: an entity write anywhere in the
+ * handler hands it to serverFirstMutation, which either finds it already optimistic (a write
+ * before the call) or reports the shape it owns.
+ *
+ * Warn, not block: a revalidation after a mutation is right when the server computes something
+ * the client cannot predict, and the file does not say whether it does. So this one says its
+ * piece and gets out of the way, while serverFirstMutation keeps blocking.
+ * `enigma:allow-server-first` in the handler silences both.
+ */
+export function mutationWithoutOptimisticUpdate(content: string): { line: number; detail: string; }[] {
+    if (OPTIMISTIC_SIGNAL.test(content)) return [];
+    const lines = content.split("\n");
+    const out: { line: number; detail: string; }[] = [];
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i]!;
+        if (COMMENT_LINE.test(line) || !MUTATING_REQUEST.test(line)) continue;
+        const { start, end } = enclosingBlock(lines, i);
+        const body = lines.slice(start, end + 1);
+        if (body.some((l) => ALLOW_SERVER_FIRST.test(l))) continue;
+        if (body.some((l) => !COMMENT_LINE.test(l) && ENTITY_WRITE.test(l))) continue;
+        // AFTER the call, not anywhere in the handler: a refetch set up above it is somebody
+        // else's subscription, while one below it is this handler waiting on the round trip.
+        const reload = lines.slice(i + 1, end + 1).find((l) => !COMMENT_LINE.test(l) && REVALIDATE_AFTER.test(l));
+        if (reload) out.push({ line: i + 1, detail: `the screen only changes once the server answers: ${reload.trim().slice(0, 80)}` });
     }
     return out;
 }

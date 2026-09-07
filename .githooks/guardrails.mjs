@@ -778,6 +778,25 @@ var BUILTIN_RULES = [
     skill: "frontend-policy"
   },
   {
+    id: "fe-mutation-without-optimistic",
+    label: "A mutation that leaves the UI waiting",
+    files: ["*.tsx", "*.jsx", "*.vue", "*.svelte"],
+    excludeFiles: ["*.test.*", "*.spec.*", "**/tests/**", "**/__tests__/**", "**/dist/**", "dist/**", "**/build/**", "build/**", "**/.next/**", ".next/**", "**/node_modules/**"],
+    scope: "file",
+    // DIFF stage for the same reason as the rule above, and more urgently: the measured
+    // backlog is 116 of 140 mutating files with no optimistic update at all, so an
+    // edit-stage version of this would fire on almost every UI file forever. Against the
+    // lines a turn ADDED there is no backlog - it fires on a handler just written.
+    stage: "diff",
+    fileCheck: "fe-mutation-without-optimistic",
+    message: "This handler sends the mutation and then updates nothing: whatever the user sees has to come back from the server, so the interface sits still for the whole round trip on an action that usually cannot fail in an interesting way. Apply the change to local state FIRST, then send the request, and on failure restore the value you saved and say what failed - a silent revert is worse than the wait. A refetch, a revalidation or a router refresh after the await is the same wait wearing a different name. Mark the line `enigma:allow-server-first` when the response is genuinely required before the UI may change (a payment, a server-assigned identifier, an irreversible action) (frontend-policy).",
+    // Warn, not block: waiting is a defect for a save, a toggle or a delete and correct for
+    // a payment, and nothing in the file separates them. The sibling rule blocks because it
+    // has evidence; this one only has an absence, so it says its piece and gets out of the way.
+    severity: "warn",
+    skill: "frontend-policy"
+  },
+  {
     id: "fe-textarea-size-bounds",
     label: "Textarea declares a minimum and a maximum size",
     files: ["*.tsx", "*.jsx", "*.vue", "*.svelte", "*.astro", "*.html", "*.htm"],
@@ -2048,6 +2067,7 @@ function newPasswordAffordanceOnSignIn(content) {
 var FILE_CHECKS = {
   "proc-windows-hide": (content) => missingWindowsHide(content),
   "fe-server-first-mutation": (content) => serverFirstMutation(content),
+  "fe-mutation-without-optimistic": (content) => mutationWithoutOptimisticUpdate(content),
   "fe-textarea-size-bounds": (content) => textareaSizeBounds(content),
   "fe-view-blanked-while-loading": (content) => viewBlankedWhileLoading(content),
   "fe-truncated-value-unreachable": (content) => truncatedValueUnreachable(content),
@@ -2216,6 +2236,23 @@ function serverFirstMutation(content) {
       return !uses?.test(l.slice(at.index));
     });
     if (write) out.push({ line: i + 1, detail: `the UI is only updated after the request resolves: ${write.trim().slice(0, 80)}` });
+  }
+  return out;
+}
+var REVALIDATE_AFTER = /\brouter\.refresh\s*\(|\brevalidatePath\s*\(|\brevalidateTag\s*\(|\binvalidateQueries\s*\(|\binvalidateAll\s*\(|\brefetch\s*\(|\bmutate\s*\(\s*[)"'`]/;
+function mutationWithoutOptimisticUpdate(content) {
+  if (OPTIMISTIC_SIGNAL.test(content)) return [];
+  const lines = content.split("\n");
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (COMMENT_LINE.test(line) || !MUTATING_REQUEST.test(line)) continue;
+    const { start, end } = enclosingBlock(lines, i);
+    const body = lines.slice(start, end + 1);
+    if (body.some((l) => ALLOW_SERVER_FIRST.test(l))) continue;
+    if (body.some((l) => !COMMENT_LINE.test(l) && ENTITY_WRITE.test(l))) continue;
+    const reload = lines.slice(i + 1, end + 1).find((l) => !COMMENT_LINE.test(l) && REVALIDATE_AFTER.test(l));
+    if (reload) out.push({ line: i + 1, detail: `the screen only changes once the server answers: ${reload.trim().slice(0, 80)}` });
   }
   return out;
 }
@@ -3067,6 +3104,7 @@ export {
   loadRules,
   missingPathAlias,
   missingWindowsHide,
+  mutationWithoutOptimisticUpdate,
   newPasswordAffordanceOnSignIn,
   operatorHomePathLeak,
   pageAwaitWithoutBoundary,

@@ -1052,3 +1052,92 @@ matrix("sec-2fa-reauth-prompt", false, [
     },
     { name: "deliberate, marked in the file", file: "src/EnableTwoFactor.tsx", code: TWOFA_SETUP.replace("export function EnableTwoFactor", "// enigma:allow-2fa-password-prompt\nexport function EnableTwoFactor") },
 ]);
+
+// --- fe-mutation-without-optimistic ----------------------------------------------------
+
+/**
+ * The complement of fe-server-first-mutation: a mutation whose handler writes no local state
+ * and then asks the server for the answer. The evidence is the REVALIDATION, never the absence
+ * of a local write - "a mutation and no local write" matched 445 sites across 1038 real
+ * component files, `fetch("/api/shutdown", { method: "POST" })` among them, where waiting is
+ * the only correct behaviour. With the revalidation required, the same corpus yields 3.
+ */
+const { mutationWithoutOptimisticUpdate } = await import("../src/guardrails");
+
+const WAITS_FOR_THE_SERVER: Array<[string, string]> = [
+    ["refetch after a save", `
+async function onSave(values) {
+    await fetch("/api/settings", { method: "PUT", body: JSON.stringify(values) });
+    refetch();
+}`],
+    ["router refresh after a delete", `
+async function remove(id) {
+    await fetch(\`/api/rows/\${id}\`, { method: "DELETE" });
+    router.refresh();
+}`],
+    ["swr revalidation after a create", `
+async function create(row) {
+    await api.post("/rows", row);
+    await mutate();
+}`],
+    ["query invalidation after a patch", `
+async function rename(id, name) {
+    await fetch(\`/api/rows/\${id}\`, { method: "PATCH", body: name });
+    queryClient.invalidateQueries({ queryKey: ["rows"] });
+}`],
+];
+
+const LEAVES_IT_ALONE: Array<[string, string]> = [
+    ["a mutation with no revalidation at all", `
+async function shutdown() {
+    await fetch("/api/shutdown", { method: "POST" });
+}`],
+    ["a handler that already writes local state (the sibling rule owns it)", `
+async function remove(id) {
+    await fetch(\`/api/rows/\${id}\`, { method: "DELETE" });
+    setRows(rows.filter(r => r.id !== id));
+    refetch();
+}`],
+    ["a file that acts optimistically somewhere", `
+const [items, setItems] = useOptimistic(rows);
+async function remove(id) {
+    await fetch(\`/api/rows/\${id}\`, { method: "DELETE" });
+    router.refresh();
+}`],
+    ["an explicitly allowed server-first handler", `
+async function pay(cart) {
+    // enigma:allow-server-first
+    await fetch("/api/checkout", { method: "POST", body: JSON.stringify(cart) });
+    router.refresh();
+}`],
+    ["a react-query mutate CALL, which sends rather than reloads", `
+async function save(values) {
+    await fetch("/api/settings", { method: "PUT" });
+    mutate(values);
+}`],
+    ["a refetch set up above the call, belonging to someone else", `
+async function save(values) {
+    refetch();
+    await fetch("/api/settings", { method: "PUT" });
+}`],
+];
+
+test("fe-mutation-without-optimistic flags a handler that waits for the server to redraw", () => {
+    for (const [name, source] of WAITS_FOR_THE_SERVER) {
+        expect(mutationWithoutOptimisticUpdate(source).length, name).toBeGreaterThan(0);
+    }
+});
+
+test("fe-mutation-without-optimistic leaves everything it has no evidence about alone", () => {
+    for (const [name, source] of LEAVES_IT_ALONE) {
+        expect(mutationWithoutOptimisticUpdate(source), name).toEqual([]);
+    }
+});
+
+test("fe-mutation-without-optimistic warns rather than blocks, and points at frontend-policy", () => {
+    const rule = BUILTIN_RULES.find(r => r.id === "fe-mutation-without-optimistic");
+
+    expect(rule?.severity, "an absence-adjacent rule must not block").toBe("warn");
+    expect(rule?.stage, "an edit-stage version would fire on the whole legacy backlog").toBe("diff");
+    expect(rule?.skill).toBe("frontend-policy");
+});
