@@ -196,6 +196,10 @@ jobs:
       - name: Test shell completion
         run: bun test tests/completion.test.ts
 
+      - name: Test hook latency doctor
+        run: bun test tests/doctor-hooks.test.ts
+        working-directory: packages/enigma-cli
+
       - name: Test gate run right-sizing
         run: bun test tests/gate/change-profile.test.ts
 

@@ -35,6 +35,7 @@ export const SUBCOMMANDS: Record<string, string[]> = {
     dashboard: ["stop", "token"],
     verify: ["parity"],
     issue: ["bug", "feature"],
+    doctor: ["hooks"],
 };
 
 /** Flags accepted anywhere on the command line. */

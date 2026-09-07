@@ -17,6 +17,7 @@ import { runConfigCli } from "./settings";
 import { pinnedRef } from "./skills-remote";
 import { collectReporter } from "./reporter";
 import { hostname, userInfo } from "node:os";
+import { runDoctorCli } from "./doctor-hooks";
 import type { ContentType } from "./compress";
 import { spawnSync } from "node:child_process";
 import { starRepoInBackground } from "./github";
@@ -50,7 +51,7 @@ const COMMANDS = new Set<string>([
     "install", "update", "security", "guard", "seal", "check", "config", "account", "accounts",
     "profile", "profiles", "skill", "skills", "issue", "improve", "qa", "compress", "guardrails", "trim", "verify", "mcp", "api", "gate", "dashboard", "dash", "fix-path", "resources", "recall", "codegraph", "autoskills", "statusline", "help", "version",
     "add", "components",
-    "pack", "packs", "ssh", "completion", "branches",
+    "pack", "packs", "ssh", "completion", "branches", "doctor",
     ...acct.TOOL_NAMES,
     ...packs.PACKS.map((p) => p.id),
 ]);
@@ -389,6 +390,8 @@ Commands:
                        prints or rotates it, and the link carries it as a #token= fragment
   fix-path [tool]      Detect a tool's install path (OS-agnostic, even off PATH) and
                        repair its launch command so 'enigma <tool>' works; no tool fixes all
+  doctor [hooks]       Time every hook wired into Claude Code (settings files and enabled
+                       plugins) and name the slow one behind '<event> hook timed out'
   resources [action]   System cleanup: status, or wsl | docker | free-port PORT | kill PID
                        (shut down WSL/vmmemWSL, quit Docker, free a port, kill a process)
   ssh [alias|name]     SSH connection manager: connect by alias or name, or list | add | edit |
@@ -725,6 +728,16 @@ and commands never load into your normal agent.
 
     resources: `usage: enigma resources [action]
 System cleanup: status (the default), wsl, docker, free-port <PORT>, kill <PID>.`,
+
+    doctor: `usage: enigma doctor [hooks] [--all] [--json]
+Time every hook Claude Code would fire here - your user, project and project-local settings
+plus the hooks any enabled plugin contributes - and report them slowest first, so a
+'<event> hook timed out' names the hook and not just the event.
+
+By default it times the two events that fire on every turn (UserPromptSubmit, PostToolUse),
+since that is where a slow hook is felt. --all covers every configured event, including the
+ones whose hooks do real work (Stop, PreCompact). The hooks are EXECUTED, with an inert
+payload: a Read of no file, and a stop hook told a stop is already in flight.`,
 
     "fix-path": `usage: enigma fix-path [tool] [-g | -l]
 Detect a tool's install path (even off PATH) and repair its launch command so
@@ -2996,6 +3009,7 @@ export async function run(argv: string[]): Promise<void> {
     if (opts.command === "verify") { process.exit(await runVerifyCli(opts.positionals, opts.all, opts.json)); }
     if (opts.command === "dashboard") { process.exit(await runDashboardCli(version, opts)); }
     if (opts.command === "fix-path") { process.exit(runFixPathCli(opts.positionals[0], opts.scope)); }
+    if (opts.command === "doctor") { process.exit(runDoctorCli(opts.positionals, opts.all, opts.json)); }
     if (opts.command === "resources") { process.exit(await runResourcesCli(opts.positionals)); }
     if (opts.command === "recall") { process.exit(await runRecallCli(opts.positionals)); }
     if (opts.command === "codegraph") { process.exit(await runCodeGraphCli(opts.positionals)); }

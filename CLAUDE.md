@@ -23,7 +23,7 @@ Same doctrine applies to the memory enigma ships (`packages/enigma-cli/assets/me
 ## Always-on repo rules
 
 - Style conflicts already resolved: ciphera-style-policy mandates 4-space indent but this repo's own JS uses 2-space - when editing an existing file, match that file; Ciphera style governs new code only (consistency outranks style per the priority hierarchy). Commits follow git-policy (Conventional Commits) including its leading type emoji, and that holds for EVERY commit site here - a workflow cannot read `.enigma.json`, so a `git commit -m` inside `.github/workflows/` hardcodes the emoji its type maps to.
-- This shell delivers tool results with delayed/batched flushing. Do not re-issue a tool call because its result has not appeared yet; duplicate Read/Bash calls are wasted.
+- A tool result can take seconds to appear: every `PostToolUse` hook runs before it does, and on a machine where process launch is expensive that is felt as batched flushing. Do not re-issue a tool call because its result has not appeared yet; duplicate Read/Bash calls are wasted. `enigma doctor hooks` says which hook is responsible (`hook-latency.md`).
 
 ## Repo notes index (`docs/notes/`)
 
@@ -52,6 +52,7 @@ Subsystems (read the one you are touching):
 - `primitives.md` - the headless component registry (`@enigmax/primitives`, `@enigmax/utils`) and `enigma add`: core+adapter architecture, theming by data attribute, the marquee's twelve measured rules. Read before adding a primitive or a utility.
 - `autoskills.md` - stack detection and community stack-skill installation.
 - `guardrails.md` - the convention rule engine, its rules and the three-tier routing doctrine. Read before adding a rule.
+- `hook-latency.md` - `enigma doctor hooks`: what actually contributes a hook to an event, why the timeout message names the event and never the hook, and the measured cost of the ones on this machine. Read when a turn feels slow or a hook times out.
 - `post-edit-hook.md` - the ONE Claude PostToolUse entry shared by trim, guardrails and the graph's blast radius: why one process instead of three, the ordering it settled, and the toggle gating that moved into the runtime. Read before adding anything that runs after an edit.
 - `verified-completion.md` - the turn-end gate against false "done" claims (`enigma verify`), parity check, loop safety.
 - `eof-trim.md` - removing the blank line agents leave at the end of a file (`enigma trim`): the conservative rule, the stat/tail/truncate cost model, partial-staging, and the vendored-tree ignore list.
