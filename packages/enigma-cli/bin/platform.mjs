@@ -59,9 +59,45 @@ export function assetName(key) {
     return `enigma-${key}${isWindows ? ".exe" : ""}`;
 };
 
-/** On-disk path of the installed binary inside this package's bin/ directory. */
+/** File name of the compiled binary for this host. */
+const binName = () => (isWindows ? "enigma-bin.exe" : "enigma-bin");
+
+/**
+ * Directory the compiled binaries live in, one subdirectory per package version.
+ *
+ * Deliberately OUTSIDE the npm package, and this is the whole point of it. npm copies a
+ * package's directory aside before replacing it, and Windows refuses to copy or delete an
+ * `.exe` that a running process has mapped as an image - so keeping a 96 MB binary in
+ * `<pkg>/bin` made `npm i -g enigma-cli@latest` fail with EBUSY for anyone holding an agent
+ * session open, which on a machine running several is always. Nothing npm touches can hold
+ * the binary any more.
+ *
+ * Per VERSION because a machine can have enigma installed under more than one Node version
+ * (nvm), and a single shared path would have the two installs overwrite each other's binary
+ * and re-download on every launch, each seeing the other's checksum as stale.
+ */
+export function binDir() {
+    return join(process.env.ENIGMA_CONFIG_HOME || os.homedir(), ".enigma", "bin");
+};
+
+/**
+ * On-disk path of the installed binary for THIS package version.
+ *
+ * The version is read defensively: this path is resolved on every launch, and an unreadable
+ * package.json must degrade to one shared directory rather than throw and take the CLI with it.
+ */
 export function binTargetPath() {
-    return join(pkgRoot, "bin", isWindows ? "enigma-bin.exe" : "enigma-bin");
+    let version = "unknown";
+    try { version = packageVersion(); } catch { /* fall back to the shared directory */ }
+    return join(binDir(), version, binName());
+};
+
+/**
+ * Where releases up to 1.46.3 put the binary: inside the package. Kept so a stale copy can be
+ * swept after an upgrade - it is dead weight, and the thing npm used to trip over.
+ */
+export function legacyBinTargetPath() {
+    return join(pkgRoot, "bin", binName());
 };
 
 /** This package's declared version (release tag is `v<version>`). */

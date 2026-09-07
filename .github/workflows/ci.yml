@@ -204,6 +204,10 @@ jobs:
         run: bun test tests/launcher-window.test.ts
         working-directory: packages/enigma-cli
 
+      - name: Test binary install location
+        run: bun test tests/binary-location.test.ts
+        working-directory: packages/enigma-cli
+
       - name: Test MCP registration
         run: bun test tests/mcp-deploy.test.ts
         working-directory: packages/enigma-cli
