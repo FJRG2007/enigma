@@ -1779,7 +1779,12 @@ function spawnerBindings(content: string): string[] {
  * Precision (the reason this is code and not a regex): the call is read by BALANCING PARENS, so
  * an options object spread over several lines is judged as a whole rather than line by line, and
  * three shapes are deliberately not flagged because the file does not prove a defect -
- *   - `stdio: "inherit"`: the child runs in the user's own terminal on purpose;
+ *   - `stdio: "inherit"`: the child runs in the user's own terminal on purpose. NOT proof of
+ *     safety, and the npm launcher (bin/enigma.mjs) is the case that showed it: it inherits
+ *     whatever its parent had, which from a hook or an MCP client is three pipes and no
+ *     console, so Windows allocated a fresh one per turn. A spawn site reachable both from a
+ *     terminal and from a hook has to decide at run time - `windowsHide` keyed on whether any
+ *     stdio is a TTY - and this rule cannot see which kind of caller a file has;
  *   - options passed as a variable (`spawn(bin, args, opts)`, no inline object): unknowable here;
  *   - an object that spreads another (`{ ...spawnOpts, env }`): the spread may carry the flag.
  * An `enigma:` note inside the call is the explicit escape hatch (e.g. a deliberately visible

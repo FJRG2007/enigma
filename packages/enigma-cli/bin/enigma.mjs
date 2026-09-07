@@ -138,7 +138,24 @@ try {
     env.ENIGMA_VERSION = packageVersion();
 } catch { /* version is best-effort */ }
 
-const child = spawn(binary, process.argv.slice(2), { stdio: "inherit", env });
+/**
+ * Whether spawning the binary could allocate a console window of its own.
+ *
+ * The launcher is reached two ways. From a terminal it HAS a console, `stdio: "inherit"`
+ * hands it to the binary, and nothing new appears - and the binary must keep that console,
+ * because the TUI reads raw keys and mouse from it. From a hook, an MCP client, or any
+ * other windowless parent there is no console to inherit, and Windows then allocates a
+ * fresh one for a console-subsystem executable: a terminal that flashes on screen at the
+ * end of every turn, on every MCP call, on every command a tool runs in the background.
+ * `windowsHide` sets CREATE_NO_WINDOW, which suppresses exactly that allocation and
+ * nothing else - the inherited handles are still written to either way.
+ *
+ * Hence the condition rather than a constant: a TTY on any of the three streams proves a
+ * console is already there to inherit, and a hook has all three piped.
+ */
+const windowless = !process.stdin.isTTY && !process.stdout.isTTY && !process.stderr.isTTY;
+
+const child = spawn(binary, process.argv.slice(2), { stdio: "inherit", env, windowsHide: windowless });
 
 for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
     process.on(signal, () => { try { child.kill(signal); } catch { /* already gone */ } });
