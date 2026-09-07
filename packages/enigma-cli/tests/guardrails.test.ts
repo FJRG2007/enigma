@@ -493,9 +493,47 @@ test("flags a legacy module resolution or target, and only those", () => {
     expect(checkFile(cfg, '{ "compilerOptions": { "target": "es5" } } // enigma: ships to IE11', null)).toEqual([]);
 });
 
+/**
+ * Scroll chaining: the most-missed part of a two-pane layout.
+ *
+ * The wheel reaches the end of the reading pane and keeps going into the list behind it, so both
+ * travel together. It only shows up once content is long enough to reach an end, which is why it
+ * survives review - and why it is worth a rule rather than a paragraph.
+ */
+test("a scroll container that never mentions overscroll-behavior is flagged", () => {
+    const pane = ".reading-pane { flex: 1; min-height: 0; overflow-y: auto; }";
+    const f = checkFile("src/app.css", pane, null, "diff");
+    expect(f.length).toBe(1);
+    expect(f[0]!.ruleId).toBe("fe-scroll-chaining");
+    // A warning, not a block: a lone scroller on a page is a judgement call, and a rule that
+    // stops the commit for one would be a rule people turn off.
+    expect(f[0]!.severity).toBe("warn");
+
+    // Tailwind spells it differently and gets it wrong identically.
+    expect(checkFile("src/Mail.tsx", '<div className="flex-1 min-h-0 overflow-y-auto">{body}</div>', null, "diff").map((x) => x.ruleId)).toEqual(["fe-scroll-chaining"]);
+});
+
+test("never flags a scroll region that contains its own scroll", () => {
+    for (const [file, source] of [
+        // The fix, in both styling models.
+        ["src/app.css", ".reading-pane { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }"],
+        ["src/Mail.tsx", '<div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">{body}</div>'],
+        ["src/app.css", ".drawer { overflow-y: auto; overscroll-behavior-y: none; }"],
+        // Sideways is left alone: a wide table chains into nothing anybody notices, and including
+        // it doubled the rule's noise for no defect.
+        ["src/app.css", ".wide-table { overflow-x: auto; }"],
+        // Not a scroll container at all.
+        ["src/app.css", ".frame { overflow: hidden; }"],
+        // And the deliberate exception.
+        ["src/app.css", ".page { overflow-y: auto; } /* enigma:allow-scroll-chaining - this IS the page */"],
+    ] as const) {
+        expect(checkFile(file, source, null, "diff").map((x) => x.ruleId), source).not.toContain("fe-scroll-chaining");
+    }
+});
+
 test("built-in rules cover the documented conventions", () => {
     const ids = BUILTIN_RULES.map((r) => r.id);
-    for (const id of ["db-uuid-pk", "db-ts-orm-prisma", "be-validate-input-ts", "be-validate-input-py", "val-email-normalize", "db-sqlite-app-datastore", "fe-password-input", "fe-name-input-capitalize", "fe-name-value-normalize", "sec-password-breach-check", "fe-tracking-before-consent", "fe-no-native-dialog", "fe-skeleton-loading", "fe-viewport-meta", "fe-ai-elements-chat", "ui-no-em-dash", "fe-icon-shrink", "ts-import-namespace", "ts-alias-paths", "ts-alias-deep-relative", "ts-import-extension", "ts-legacy-module-resolution", "proc-windows-hide"]) {
+    for (const id of ["db-uuid-pk", "db-ts-orm-prisma", "be-validate-input-ts", "be-validate-input-py", "val-email-normalize", "db-sqlite-app-datastore", "fe-password-input", "fe-name-input-capitalize", "fe-name-value-normalize", "sec-password-breach-check", "fe-tracking-before-consent", "fe-no-native-dialog", "fe-skeleton-loading", "fe-viewport-meta", "fe-ai-elements-chat", "ui-no-em-dash", "fe-icon-shrink", "fe-scroll-chaining", "ts-import-namespace", "ts-alias-paths", "ts-alias-deep-relative", "ts-import-extension", "ts-legacy-module-resolution", "proc-windows-hide"]) {
         expect(ids).toContain(id);
     }
     // Go/Rust input-validation rules are deliberately absent (imprecise - see guardrails.ts).

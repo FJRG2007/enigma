@@ -280,6 +280,29 @@ export const BUILTIN_RULES: GuardrailRule[] = [
         skill: "frontend-policy",
     },
     {
+        id: "fe-scroll-chaining",
+        label: "A scroll region contains its own scroll",
+        files: ["*.css", "*.scss", "*.less", "*.tsx", "*.jsx", "*.astro", "*.vue", "*.svelte"],
+        excludeFiles: [
+            "*.test.*", "*.spec.*", "*.stories.*", "*.min.js", "*.min.css",
+            "**/tests/**", "tests/**", "**/__tests__/**", "__tests__/**",
+            "**/dist/**", "dist/**", "**/build/**", "build/**",
+            "**/node_modules/**", "node_modules/**", "**/vendor/**", "vendor/**",
+        ],
+        scope: "file",
+        stage: "diff",
+        // A VERTICAL scroll container, in CSS or in Tailwind. `overflow-x` is left alone: a wide
+        // table scrolling sideways chains into nothing anybody notices, and including it doubled
+        // the rule's noise for no defect.
+        pattern: "overflow(-y)?\\s*:\\s*(auto|scroll)|\\boverflow-y-(auto|scroll)\\b",
+        // Any mention anywhere in the file, in either spelling, and the file has clearly thought
+        // about it - one declaration usually covers the pane the rule is about.
+        absent: "overscroll-behavior|\\boverscroll-(y-)?(contain|none|auto)\\b|enigma:allow-scroll-chaining",
+        message: "This file makes something scroll but never mentions overscroll-behavior, so its scroll CHAINS: the wheel reaches the end of this box and keeps going into whatever is behind it. In a two-pane view - a list beside the record, a tree beside the editor, a thread beside the conversation - that is the reading pane dragging the list along with it, which is the single most-missed part of a multi-pane layout because it only shows up once content is long enough to reach an end. Add `overscroll-behavior: contain` (Tailwind `overscroll-contain`) to the scroll container, and check the other two halves while you are there: the shell is the viewport (`height: 100dvh; overflow: hidden`) and each pane carries `min-height: 0`, or the pane grows instead of scrolling and the page scrolls in its place. Deliberate - a page-level scroller, or an effect that must reach the browser - mark it `enigma:allow-scroll-chaining` (frontend-policy).",
+        severity: "warn",
+        skill: "frontend-policy",
+    },
+    {
         id: "fe-pointer-capture-drag",
         label: "Drag bound to window, not setPointerCapture",
         files: ["*.ts", "*.tsx", "*.js", "*.jsx", "*.astro", "*.vue", "*.svelte"],
