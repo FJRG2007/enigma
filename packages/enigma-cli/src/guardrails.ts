@@ -717,6 +717,24 @@ export const BUILTIN_RULES: GuardrailRule[] = [
         skill: "frontend-policy",
     },
     {
+        id: "perf-unbounded-fanout",
+        label: "Parallel work over a list nobody counted",
+        files: ["*.ts", "*.tsx", "*.mts", "*.cts", "*.js", "*.jsx", "*.mjs", "*.cjs"],
+        excludeFiles: [
+            "*.test.*", "*.spec.*", "**/tests/**", "**/__tests__/**", "**/fixtures/**", "*.min.js", "*.d.ts",
+            "**/dist/**", "**/build/**", "**/node_modules/**", "**/vendor/**",
+            "dist/**", "build/**", "node_modules/**", "vendor/**",
+        ],
+        scope: "file",
+        // DIFF stage: an existing fan-out has been running in production and is somebody's
+        // decision; the one a turn just wrote is the one nobody has counted yet.
+        stage: "diff",
+        fileCheck: "perf-unbounded-fanout",
+        message: "This starts one expensive operation per element of a list whose length nothing here bounds - a process, a socket, a file handle or a database round trip, times however many the glob, the query or the response happened to return. It is fine for the ten items you have in mind and takes the machine down for the fifty thousand it may actually get. Cap the concurrency (a limiter, a `concurrency` option, or process the list in chunks) so the number is a decision instead of an accident, or say why the list is small enough not to need one.",
+        severity: "warn",
+        skill: "core-engineering-policy",
+    },
+    {
         id: "fe-textarea-size-bounds",
         label: "Textarea declares a minimum and a maximum size",
         files: ["*.tsx", "*.jsx", "*.vue", "*.svelte", "*.astro", "*.html", "*.htm"],
@@ -1665,6 +1683,7 @@ export const FILE_CHECKS: Record<string, (content: string, file: string) => { li
     "proc-windows-hide": (content) => missingWindowsHide(content),
     "fe-server-first-mutation": (content) => serverFirstMutation(content),
     "fe-mutation-without-optimistic": (content) => mutationWithoutOptimisticUpdate(content),
+    "perf-unbounded-fanout": (content) => unboundedFanout(content),
     "fe-textarea-size-bounds": (content) => textareaSizeBounds(content),
     "fe-view-blanked-while-loading": (content) => viewBlankedWhileLoading(content),
     "fe-truncated-value-unreachable": (content) => truncatedValueUnreachable(content),
@@ -1999,6 +2018,75 @@ export function mutationWithoutOptimisticUpdate(content: string): { line: number
         // else's subscription, while one below it is this handler waiting on the round trip.
         const reload = lines.slice(i + 1, end + 1).find((l) => !COMMENT_LINE.test(l) && REVALIDATE_AFTER.test(l));
         if (reload) out.push({ line: i + 1, detail: `the screen only changes once the server answers: ${reload.trim().slice(0, 80)}` });
+    }
+    return out;
+}
+
+// --- unbounded parallel fan-out --------------------------------------------------------
+
+/** Waiting on a whole array of promises at once. */
+const PROMISE_FANOUT = /\bPromise\.(all|allSettled)\s*\(/;
+
+/** Waited on a literal list of calls: the count is written down, so it is bounded by construction. */
+const FANOUT_LITERAL = /\bPromise\.(all|allSettled)\s*\(\s*\[/;
+
+/** The list comes from somewhere else - a directory, a query, a response - so nothing caps it. */
+const FANOUT_MAPPED = /\.\s*map\s*\(/;
+
+/**
+ * Mapping over an object's own keys or values. The object is a shape written in the source, so
+ * its size is as fixed as a literal array's - `Object.values(runtimeDirs).map(mkdir)` creates
+ * exactly as many directories as the code declares. Measured: this was the rule's only false
+ * positive across 6296 files.
+ */
+const FANOUT_OVER_OBJECT = /\bObject\.(values|keys|entries)\s*\(/;
+
+/**
+ * Work heavy enough that doing it once per element is what hurts: a process, a socket, a file
+ * handle, a database round trip. Cheap per-item work (string building, arithmetic) fans out to
+ * thousands harmlessly and must not be flagged.
+ */
+const EXPENSIVE_PER_ITEM = /\b(?:fetch|spawn|spawnSync|exec|execSync|execFile|execFileSync|request)\s*\(|\b(?:readFile|writeFile|readFileSync|writeFileSync|copyFile|rm|mkdir)\s*\(|\.\s*(?:query|findMany|aggregate|createMany|send|upload|download)\s*\(/;
+
+/**
+ * Something in the file already bounds concurrency, so the author has thought about it. Named
+ * limiters, an explicit concurrency option, and the chunk/batch idiom all count.
+ */
+const CONCURRENCY_BOUND = /\bp-?[Ll]imit\b|\bpMap\b|\bBottleneck\b|\bSemaphore\b|\bconcurrency\b|\bchunk(?:ed|s)?\s*\(|\bbatch(?:ed|es)?\s*\(/;
+
+/** Lines after `Promise.all(` that still belong to the call, for the shapes people actually write. */
+const FANOUT_WINDOW = 6;
+
+/**
+ * `Promise.all` over a list nobody counted, doing something expensive per element.
+ *
+ * This is how an agent takes a machine down without writing anything that looks dangerous:
+ * `await Promise.all(files.map(f => readFile(f)))` is idiomatic, reviews cleanly, and opens one
+ * handle per element - which is fine for the ten files in the author's head and fatal for the
+ * fifty thousand the glob actually returns. The same line with `spawn` is a fork bomb with good
+ * manners. Nothing about the shape says how long the list is, which is precisely the defect.
+ *
+ * Three narrowings keep it off the ninety-nine percent of fan-outs that are fine. A literal
+ * array is bounded by construction - `Promise.all([a(), b()])` is two calls, written down. The
+ * per-item work must be expensive; mapping arithmetic over ten thousand items costs nothing.
+ * And any concurrency bound in the file - a limiter, a `concurrency` option, the chunk/batch
+ * idiom - means the author already answered the question, so the rule stays quiet.
+ *
+ * Warn, not block: the right cap depends on what the list is and what the work costs, and the
+ * file cannot say. The point is to make the count a decision rather than an accident.
+ */
+export function unboundedFanout(content: string): { line: number; detail: string; }[] {
+    if (CONCURRENCY_BOUND.test(content)) return [];
+    const lines = content.split("\n");
+    const out: { line: number; detail: string; }[] = [];
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i]!;
+        if (COMMENT_LINE.test(line) || !PROMISE_FANOUT.test(line) || FANOUT_LITERAL.test(line)) continue;
+        const window = lines.slice(i, Math.min(lines.length, i + FANOUT_WINDOW)).filter((l) => !COMMENT_LINE.test(l));
+        const text = window.join("\n");
+        if (!FANOUT_MAPPED.test(text) || FANOUT_OVER_OBJECT.test(text)) continue;
+        const heavy = EXPENSIVE_PER_ITEM.exec(text);
+        if (heavy) out.push({ line: i + 1, detail: `one ${heavy[0].replace(/[\s(.]/g, "")} per element, and nothing says how many elements there are` });
     }
     return out;
 }

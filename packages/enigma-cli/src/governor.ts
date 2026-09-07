@@ -164,6 +164,28 @@ function priorityValue(priority: GovernedPriority): number {
  * Never throws: a governed command must still run if the OS refuses a hint. A failure to
  * lower priority is worth reporting, never worth failing the command over.
  */
+/**
+ * Drop one background child below the user's own work, and do nothing else to it.
+ *
+ * The cheap half of applyBudget, split out for the callers that cannot afford the other half:
+ * setPriority is a syscall, while pinning affinity on Windows goes through a PowerShell spawn.
+ * That price is reasonable for a gate step measured in minutes and absurd inside a hook, which
+ * would pay it on every prompt and every edit - so work a hook starts in the background takes
+ * the priority drop alone. Priority is also the half that matters for staying out of the way:
+ * it is what keeps the machine responsive while the work runs.
+ *
+ * Never throws. A refused scheduling hint is not a reason to skip the work.
+ */
+export function deprioritize(child: ChildProcess): boolean {
+    if (child.pid === undefined) return false;
+    try {
+        setPriority(child.pid, priorityValue("below-normal"));
+        return true;
+    } catch {
+        return false;
+    }
+}
+
 export function applyBudget(child: ChildProcess, budget: ResourceBudget): {
     priority: boolean;
     affinity: boolean;

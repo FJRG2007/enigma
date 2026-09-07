@@ -25,6 +25,7 @@
  */
 
 import { homedir } from "node:os";
+import { deprioritize } from "./governor";
 import { spawn } from "node:child_process";
 import { basename, join, relative, resolve } from "node:path";
 import { readRepoKeyedFile, writeRepoKeyedFile } from "./repo-keyed-file";
@@ -254,6 +255,11 @@ function backgroundIndex(cg: typeof import("./codegraph"), dir: string): void {
     if (cg.isManagedPath(dir) || !claimIndex(dir)) return;
     try {
         const child = spawn(process.execPath, [process.argv[1], "codegraph", "index", dir], { detached: true, stdio: "ignore", windowsHide: true });
+        // Parsing a whole repository is the heaviest thing enigma starts on its own, it is
+        // started from a hook rather than asked for, and it outlives the turn - so it runs
+        // below the user's own work. Priority only: pinning affinity costs a PowerShell spawn
+        // on Windows, which is not a price a hook may pay (see governor.ts).
+        deprioritize(child);
         child.unref();
     } catch { /* nothing to do about it here, and a hook must never fail the turn */ }
 }

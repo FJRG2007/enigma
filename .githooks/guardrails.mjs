@@ -797,6 +797,36 @@ var BUILTIN_RULES = [
     skill: "frontend-policy"
   },
   {
+    id: "perf-unbounded-fanout",
+    label: "Parallel work over a list nobody counted",
+    files: ["*.ts", "*.tsx", "*.mts", "*.cts", "*.js", "*.jsx", "*.mjs", "*.cjs"],
+    excludeFiles: [
+      "*.test.*",
+      "*.spec.*",
+      "**/tests/**",
+      "**/__tests__/**",
+      "**/fixtures/**",
+      "*.min.js",
+      "*.d.ts",
+      "**/dist/**",
+      "**/build/**",
+      "**/node_modules/**",
+      "**/vendor/**",
+      "dist/**",
+      "build/**",
+      "node_modules/**",
+      "vendor/**"
+    ],
+    scope: "file",
+    // DIFF stage: an existing fan-out has been running in production and is somebody's
+    // decision; the one a turn just wrote is the one nobody has counted yet.
+    stage: "diff",
+    fileCheck: "perf-unbounded-fanout",
+    message: "This starts one expensive operation per element of a list whose length nothing here bounds - a process, a socket, a file handle or a database round trip, times however many the glob, the query or the response happened to return. It is fine for the ten items you have in mind and takes the machine down for the fifty thousand it may actually get. Cap the concurrency (a limiter, a `concurrency` option, or process the list in chunks) so the number is a decision instead of an accident, or say why the list is small enough not to need one.",
+    severity: "warn",
+    skill: "core-engineering-policy"
+  },
+  {
     id: "fe-textarea-size-bounds",
     label: "Textarea declares a minimum and a maximum size",
     files: ["*.tsx", "*.jsx", "*.vue", "*.svelte", "*.astro", "*.html", "*.htm"],
@@ -2068,6 +2098,7 @@ var FILE_CHECKS = {
   "proc-windows-hide": (content) => missingWindowsHide(content),
   "fe-server-first-mutation": (content) => serverFirstMutation(content),
   "fe-mutation-without-optimistic": (content) => mutationWithoutOptimisticUpdate(content),
+  "perf-unbounded-fanout": (content) => unboundedFanout(content),
   "fe-textarea-size-bounds": (content) => textareaSizeBounds(content),
   "fe-view-blanked-while-loading": (content) => viewBlankedWhileLoading(content),
   "fe-truncated-value-unreachable": (content) => truncatedValueUnreachable(content),
@@ -2253,6 +2284,28 @@ function mutationWithoutOptimisticUpdate(content) {
     if (body.some((l) => !COMMENT_LINE.test(l) && ENTITY_WRITE.test(l))) continue;
     const reload = lines.slice(i + 1, end + 1).find((l) => !COMMENT_LINE.test(l) && REVALIDATE_AFTER.test(l));
     if (reload) out.push({ line: i + 1, detail: `the screen only changes once the server answers: ${reload.trim().slice(0, 80)}` });
+  }
+  return out;
+}
+var PROMISE_FANOUT = /\bPromise\.(all|allSettled)\s*\(/;
+var FANOUT_LITERAL = /\bPromise\.(all|allSettled)\s*\(\s*\[/;
+var FANOUT_MAPPED = /\.\s*map\s*\(/;
+var FANOUT_OVER_OBJECT = /\bObject\.(values|keys|entries)\s*\(/;
+var EXPENSIVE_PER_ITEM = /\b(?:fetch|spawn|spawnSync|exec|execSync|execFile|execFileSync|request)\s*\(|\b(?:readFile|writeFile|readFileSync|writeFileSync|copyFile|rm|mkdir)\s*\(|\.\s*(?:query|findMany|aggregate|createMany|send|upload|download)\s*\(/;
+var CONCURRENCY_BOUND = /\bp-?[Ll]imit\b|\bpMap\b|\bBottleneck\b|\bSemaphore\b|\bconcurrency\b|\bchunk(?:ed|s)?\s*\(|\bbatch(?:ed|es)?\s*\(/;
+var FANOUT_WINDOW = 6;
+function unboundedFanout(content) {
+  if (CONCURRENCY_BOUND.test(content)) return [];
+  const lines = content.split("\n");
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (COMMENT_LINE.test(line) || !PROMISE_FANOUT.test(line) || FANOUT_LITERAL.test(line)) continue;
+    const window = lines.slice(i, Math.min(lines.length, i + FANOUT_WINDOW)).filter((l) => !COMMENT_LINE.test(l));
+    const text = window.join("\n");
+    if (!FANOUT_MAPPED.test(text) || FANOUT_OVER_OBJECT.test(text)) continue;
+    const heavy = EXPENSIVE_PER_ITEM.exec(text);
+    if (heavy) out.push({ line: i + 1, detail: `one ${heavy[0].replace(/[\s(.]/g, "")} per element, and nothing says how many elements there are` });
   }
   return out;
 }
@@ -3120,6 +3173,7 @@ export {
   textareaSizeBounds,
   truncatedValueUnreachable,
   twoFactorPasswordPrompt,
+  unboundedFanout,
   unboundedRemoteList,
   viewBlankedWhileLoading,
   wideNamedImports

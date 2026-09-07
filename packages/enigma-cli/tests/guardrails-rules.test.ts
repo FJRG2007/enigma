@@ -1141,3 +1141,68 @@ test("fe-mutation-without-optimistic warns rather than blocks, and points at fro
     expect(rule?.stage, "an edit-stage version would fire on the whole legacy backlog").toBe("diff");
     expect(rule?.skill).toBe("frontend-policy");
 });
+
+// --- perf-unbounded-fanout -------------------------------------------------------------
+
+/**
+ * The shape that takes a machine down without looking dangerous. Measured over 6296 real source
+ * files: 17 findings in 16 of them, after the Object.values narrowing removed the only false
+ * positive the first pass produced.
+ */
+const { unboundedFanout } = await import("../src/guardrails");
+
+const FANS_OUT_UNBOUNDED: Array<[string, string]> = [
+    ["a fetch per element of a response", `
+const ids = await listIds();
+await Promise.all(ids.map(async (id) => {
+    const res = await fetch(\`/api/items/\${id}\`);
+    return res.json();
+}));`],
+    ["a file read per glob hit", `
+const files = await glob("**/*.ts");
+await Promise.all(files.map((f) => readFile(f, "utf8")));`],
+    ["a process per row", `
+await Promise.all(rows.map((row) => spawn("convert", [row.path])));`],
+    ["allSettled counts too", `
+await Promise.allSettled(targets.map((t) => fetch(t.url)));`],
+];
+
+const STAYS_QUIET: Array<[string, string]> = [
+    ["a literal list, bounded by construction", `
+await Promise.all([fetch("/a"), fetch("/b"), fetch("/c")]);`],
+    ["cheap per-item work over any number of items", `
+await Promise.all(items.map(async (i) => ({ ...i, label: i.name.trim() })));`],
+    ["a concurrency limiter in the file", `
+const limit = pLimit(8);
+await Promise.all(files.map((f) => limit(() => readFile(f))));`],
+    ["an explicit concurrency option", `
+await Promise.all(chunks.map((c) => upload(c, { concurrency: 4 })));`],
+    ["work processed in chunks", `
+for (const batch of chunk(files, 50)) {
+    await Promise.all(batch.map((f) => readFile(f)));
+}`],
+    ["an object's own values, whose size the source declares", `
+await Promise.all(Object.values(runtimeDirs).map((d) => mkdir(d, { recursive: true })));`],
+];
+
+test("perf-unbounded-fanout flags expensive work per element of an uncounted list", () => {
+    for (const [name, source] of FANS_OUT_UNBOUNDED) {
+        expect(unboundedFanout(source).length, name).toBeGreaterThan(0);
+    }
+});
+
+test("perf-unbounded-fanout stays off every fan-out that is already bounded or cheap", () => {
+    for (const [name, source] of STAYS_QUIET) {
+        expect(unboundedFanout(source), name).toEqual([]);
+    }
+});
+
+test("perf-unbounded-fanout warns, at the diff stage, and points at the priority hierarchy", () => {
+    const rule = BUILTIN_RULES.find(r => r.id === "perf-unbounded-fanout");
+
+    // The right cap depends on the list and the work; the file cannot say, so this makes the
+    // count a decision rather than an accident and leaves the number to the author.
+    expect(rule?.severity).toBe("warn");
+    expect(rule?.stage, "an existing fan-out is somebody's decision; a new one is not").toBe("diff");
+    expect(rule?.skill).toBe("core-engineering-policy");
+});
