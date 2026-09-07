@@ -21,11 +21,10 @@
  * launcher under node instead - see mcpInvocation for why that beats the `cmd /c` wrapper.
  */
 
-import { homedir } from "node:os";
 import { kimiHome } from "./kimi";
 import { readConfig } from "./config";
 import { dirname, join } from "node:path";
-import { readJson, resolveBin } from "./util";
+import { readJson, resolveBin, enigmaHome } from "./util";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 
 const SERVER_NAME = "enigma";
@@ -76,17 +75,25 @@ export function mcpInvocation(tool: string, platform: NodeJS.Platform = process.
     return { command: base, args: ["mcp"] };
 }
 
-/** Config file that holds `tool`'s MCP servers at `scope`, or null if none applies. */
+/**
+ * Config file that holds `tool`'s MCP servers at `scope`, or null if none applies.
+ *
+ * Through enigmaHome(), never a raw homedir(): bun on Linux does not reflect a runtime-
+ * reassigned $HOME through os.homedir(), so these three paths escaped ENIGMA_CONFIG_HOME and
+ * resolved to the REAL home. Kimi already went through kimiHome() and was the only one that
+ * did, which is why its cases passed on the Linux runner while the others silently wrote
+ * nowhere the test could see.
+ */
 function mcpPath(tool: string, scope: Scope): string | null {
     switch (tool) {
         case "claude":
-            return scope === "global" ? join(homedir(), ".claude.json") : join(process.cwd(), ".mcp.json");
+            return scope === "global" ? join(enigmaHome(), ".claude.json") : join(process.cwd(), ".mcp.json");
         case "codex":
             // Codex has no project-local config dir; only the global/account config.toml.
-            return scope === "global" ? join(homedir(), ".codex", "config.toml") : null;
+            return scope === "global" ? join(enigmaHome(), ".codex", "config.toml") : null;
         case "opencode":
             return scope === "global"
-                ? join(homedir(), ".config", "opencode", "opencode.json")
+                ? join(enigmaHome(), ".config", "opencode", "opencode.json")
                 : join(process.cwd(), "opencode.json");
         case "kimi":
             // Through kimiHome(), the single source of truth for Kimi's data root, so every
