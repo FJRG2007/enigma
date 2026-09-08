@@ -212,6 +212,18 @@ An experimental AI quality gate that validates a branch through a review/test/do
 Enable it with `enigma config gate on`, then `enigma gate init` in a repo. `init` sets up the gate (and the `gate` git remote); `status`/`runs` inspect runs; `rerun` re-runs the branch; `doctor` diagnoses; `eject` removes it; `axi` is the machine interface the `/gate` skill drives.
 </Cmd>
 
+## kill & resources
+
+Free what a machine is holding: a port a dead dev server still owns, a process that will not close, Docker Desktop, or WSL's `vmmemWSL` sitting on several GB of RAM.
+
+<Cmd name="enigma kill <target...>" ex={["enigma kill 3000", "enigma kill docker", "enigma kill app.exe", "enigma kill pid 1234", "enigma kill wsl"]}>
+A plain number is a port, so `enigma kill 3000` kills whatever is listening there; `:3000` and `port 3000` say it explicitly, and `pid 1234` kills one process by id. A name kills every process running under it (`.exe` optional; a partial name only when it matches one program). `docker` quits Docker Desktop and shuts its WSL backend down, `wsl` runs `wsl --shutdown` so `vmmemWSL` gives its memory back. Several targets at once are fine. Typing the command is the confirmation, but system processes, enigma itself and its shell are always refused.
+</Cmd>
+
+<Cmd name="enigma resources [action]" ex={["enigma resources", "enigma resources free-port 3000"]}>
+No argument prints the snapshot: memory in use, whether WSL and Docker are up, the top processes by memory and every listening port with its owner. The actions (`wsl`, `docker`, `free-port <port>`, `kill <pid>`) are the long form of `enigma kill`. The same view is a tab in the dashboard and in the TUI, where each action confirms before it runs.
+</Cmd>
+
 ## fix-path & issue
 
 <Cmd name="enigma fix-path [tool]" ex="enigma fix-path claude">

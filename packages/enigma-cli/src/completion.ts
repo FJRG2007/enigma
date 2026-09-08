@@ -32,6 +32,7 @@ export const SUBCOMMANDS: Record<string, string[]> = {
     codegraph: ["status", "index", "projects", "arch", "search", "ask", "callers", "callees", "skeleton", "map", "grep", "graph", "check"],
     guardrails: ["list", "check", "stats", "enable", "disable", "remove"],
     resources: ["status", "wsl", "docker", "free-port", "kill"],
+    kill: ["wsl", "docker", "port", "pid"],
     dashboard: ["stop", "token"],
     verify: ["parity"],
     issue: ["bug", "feature"],

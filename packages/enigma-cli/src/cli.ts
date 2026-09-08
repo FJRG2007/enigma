@@ -49,7 +49,7 @@ const PKG = readJson<{ version?: string; }>(join(__dirname, "..", "package.json"
 // Fixed commands plus one launch command per supported tool (e.g. `enigma claude`).
 const COMMANDS = new Set<string>([
     "install", "update", "security", "guard", "seal", "check", "config", "account", "accounts",
-    "profile", "profiles", "skill", "skills", "issue", "improve", "qa", "compress", "guardrails", "trim", "verify", "mcp", "api", "gate", "dashboard", "dash", "fix-path", "resources", "recall", "codegraph", "autoskills", "statusline", "help", "version",
+    "profile", "profiles", "skill", "skills", "issue", "improve", "qa", "compress", "guardrails", "trim", "verify", "mcp", "api", "gate", "dashboard", "dash", "fix-path", "resources", "kill", "recall", "codegraph", "autoskills", "statusline", "help", "version",
     "add", "components",
     "pack", "packs", "ssh", "completion", "branches", "doctor",
     ...acct.TOOL_NAMES,
@@ -394,6 +394,9 @@ Commands:
                        plugins) and name the slow one behind '<event> hook timed out'
   resources [action]   System cleanup: status, or wsl | docker | free-port PORT | kill PID
                        (shut down WSL/vmmemWSL, quit Docker, free a port, kill a process)
+  kill <target...>     Kill whatever the target names: a port (3000), a PID (pid 1234), a
+                       process (app.exe), 'docker' (Docker Desktop + its WSL backend) or
+                       'wsl' (shuts down WSL, so vmmemWSL gives its RAM back)
   ssh [alias|name]     SSH connection manager: connect by alias or name, or list | add | edit |
                        remove | info. Tunnels are standalone (bound to a server): tunnel add
                        <name> <server> <spec>, tunnel start|stop <name>, tunnels (list w/ status).
@@ -727,7 +730,25 @@ and commands never load into your normal agent.
   list | install <id> | remove <id> | update <id> | setup <id> | use <id> <acct|-> | run <id> [account]`,
 
     resources: `usage: enigma resources [action]
-System cleanup: status (the default), wsl, docker, free-port <PORT>, kill <PID>.`,
+System cleanup: status (the default), wsl, docker, free-port <PORT>, kill <PID>.
+'enigma kill <target>' is the shortcut for the destructive half.`,
+
+    kill: `usage: enigma kill <target...>
+Kill what the target names. Typing the command is the confirmation - nothing prompts.
+
+  3000            free the port: kills every process listening on it
+  :3000           the same, said explicitly (never read as a PID)
+  port 3000       the same again
+  pid 1234        one process, by id
+  app.exe, node   every process with that name ('.exe' optional; a partial name is
+                  accepted only when it matches exactly one program)
+  docker          quit Docker Desktop and shut its WSL backend down
+  wsl             'wsl --shutdown', so vmmemWSL releases its RAM
+
+A plain number is a port, since that is what it usually means; if nothing is listening
+there, the PID reading is offered instead of guessed. Several targets can be given at
+once. System processes, enigma itself and its shell are refused. Exits non-zero when a
+target could not be killed. 'enigma resources' prints what is running and listening.`,
 
     doctor: `usage: enigma doctor [hooks] [--all] [--json]
 Time every hook Claude Code would fire here - your user, project and project-local settings
@@ -1057,6 +1078,42 @@ async function runResourcesCli(args: string[]): Promise<number> {
     if (!r) { console.error(`Unknown subcommand '${sub}'. Use: enigma resources <wsl | docker | free-port PORT | kill PID>`); return 1; }
     console.log(r.message);
     return r.ok ? 0 : 1;
+}
+
+/**
+ * `enigma kill <target...>` - one verb over the destructive resource actions, so the thing
+ * people actually type (`enigma kill 3000`, `enigma kill docker`, `enigma kill app.exe`)
+ * works instead of erroring. Same contract as `enigma resources <action>`: typing the
+ * command IS the confirmation, and the dashboard/TUI keep their interactive one.
+ */
+async function runKillCli(args: string[]): Promise<number> {
+    const { parseKillTarget, killTarget, listPorts } = await import("./resources");
+    // `pid 1234` and `port 3000` are two words on the command line and one token to the
+    // parser, which is what keeps the grammar pure and testable.
+    const tokens: string[] = [];
+    for (let i = 0; i < args.length; i++) {
+        const arg = args[i]!;
+        if (/^(pid|port)$/i.test(arg) && /^\d+$/.test(args[i + 1] || "")) { tokens.push(`${arg}:${args[++i]}`); continue; }
+        tokens.push(arg);
+    }
+    if (!tokens.length) {
+        printCommandHelp("kill");
+        const ports = listPorts(20);
+        if (ports.length) {
+            console.log("Listening now:");
+            for (const port of ports) console.log(`  :${String(port.port).padEnd(6)} pid ${String(port.pid).padEnd(7)} ${port.name}`);
+            console.log("");
+        }
+        return 1;
+    }
+    let allOk = true;
+    for (const token of tokens) {
+        const target = parseKillTarget(token);
+        const result = target ? killTarget(target) : { ok: false, message: `Nothing to kill in '${token}'.` };
+        console.log(result.message);
+        if (!result.ok) allOk = false;
+    }
+    return allOk ? 0 : 1;
 }
 
 /**
@@ -3011,6 +3068,7 @@ export async function run(argv: string[]): Promise<void> {
     if (opts.command === "fix-path") { process.exit(runFixPathCli(opts.positionals[0], opts.scope)); }
     if (opts.command === "doctor") { process.exit(runDoctorCli(opts.positionals, opts.all, opts.json)); }
     if (opts.command === "resources") { process.exit(await runResourcesCli(opts.positionals)); }
+    if (opts.command === "kill") { process.exit(await runKillCli(opts.positionals)); }
     if (opts.command === "recall") { process.exit(await runRecallCli(opts.positionals)); }
     if (opts.command === "codegraph") { process.exit(await runCodeGraphCli(opts.positionals)); }
     if (opts.command === "autoskills") { process.exit(await runAutoskillsCli(opts, interactive)); }
