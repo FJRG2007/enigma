@@ -117,15 +117,34 @@ export function listProcesses(limit = 40): ProcInfo[] {
     return snapshot().sort((a, b) => b.memKB - a.memKB).slice(0, limit);
 }
 
-/** Listening TCP ports with the owning process name. Best-effort; empty on failure. */
-export function listPorts(limit = 60): PortInfo[] {
+/**
+ * Every listening TCP port with the owning process name, UNCAPPED. `listPorts`' limit is a
+ * display cap applied after sorting by port, so anything that has to FIND a port (freePort)
+ * reads this instead - otherwise a machine with many listeners loses the high ports and the
+ * command reports nothing listening on a port that is very much in use.
+ */
+function allPorts(): PortInfo[] {
     let ports = isWin ? parseNetstat(run("netstat", ["-ano"])) : parseLsof(run("lsof", ["-nP", "-iTCP", "-sTCP:LISTEN"]));
     if (isWin && ports.length) {
         // Fill names from a single tasklist snapshot (pid -> name).
         const byPid = new Map(parseTasklist(run("tasklist", ["/fo", "csv", "/nh"])).map((p) => [p.pid, p.name]));
         ports = ports.map((p) => ({ ...p, name: byPid.get(p.pid) || "" }));
     }
-    return ports.sort((a, b) => a.port - b.port).slice(0, limit);
+    return ports;
+}
+
+/** Listening TCP ports with the owning process name. Best-effort; empty on failure. */
+export function listPorts(limit = 60): PortInfo[] {
+    return allPorts().sort((a, b) => a.port - b.port).slice(0, limit);
+}
+
+/**
+ * The listening ports enigma would actually agree to free - the system-owned ones (445, 135,
+ * 3389 and the rest of the low range on Windows) are refused anyway, so offering them as
+ * suggestions only wastes the reader's attention.
+ */
+export function listKillablePorts(limit = 20): PortInfo[] {
+    return allPorts().filter((p) => !killRefusalReason(p.pid, p.name)).sort((a, b) => a.port - b.port).slice(0, limit);
 }
 
 /** True when a process whose name matches `re` is running (cheap snapshot). */
@@ -151,9 +170,17 @@ export function resourceStatus(): ResourceStatus {
 
 // --- actions (DESTRUCTIVE) ------------------------------------------------------
 
-/** Kill one process by PID. Force-kills (Windows `taskkill /F`, POSIX SIGKILL). */
-export function killPid(pid: number): ActionResult {
+/**
+ * Kill one process by PID. Force-kills (Windows `taskkill /F`, POSIX SIGKILL). The refusal
+ * lives HERE, in the single primitive every surface goes through (CLI, dashboard, TUI), so
+ * no caller can reach a protected process by another route. Pass `knownName` when the caller
+ * already has the name, to skip the snapshot.
+ */
+export function killPid(pid: number, knownName?: string): ActionResult {
     if (!Number.isInteger(pid) || pid <= 0) return { ok: false, message: "Invalid PID." };
+    const name = knownName ?? (snapshot().find((p) => p.pid === pid)?.name || "");
+    const refused = killRefusalReason(pid, name);
+    if (refused) return { ok: false, message: `PID ${pid} is ${refused}; enigma will not kill it.` };
     try {
         if (isWin) execFileSync("taskkill", ["/F", "/PID", String(pid)], { timeout: 8000, windowsHide: true, stdio: "ignore" });
         else process.kill(pid, "SIGKILL");
@@ -161,15 +188,34 @@ export function killPid(pid: number): ActionResult {
     } catch (e) { return { ok: false, message: `Could not kill ${pid}: ${(e as Error).message}` }; }
 }
 
-/** Kill every process listening on `port`. */
+/**
+ * Kill every process listening on `port`. Protected owners are skipped and named rather than
+ * killed: the low Windows ports belong to `System`, RPC and the other processes `PROTECTED`
+ * exists for, and `enigma kill 135` must not take the machine down.
+ */
 export function freePort(port: number): ActionResult {
     if (!Number.isInteger(port) || port <= 0 || port > 65535) return { ok: false, message: "Invalid port." };
-    const pids = [...new Set(listPorts(200).filter((p) => p.port === port).map((p) => p.pid))];
-    if (!pids.length) return { ok: false, message: `Nothing is listening on port ${port}.` };
+    const names = new Map<number, string>();
+    for (const listener of allPorts().filter((p) => p.port === port)) if (!names.get(listener.pid)) names.set(listener.pid, listener.name);
+    if (!names.size) return { ok: false, message: `Nothing is listening on port ${port}.` };
+    // lsof/netstat do not always give a name; one snapshot fills whatever is still missing,
+    // because a pid with no name would sail past the protection check.
+    if ([...names.values()].some((name) => !name)) {
+        const byPid = new Map(snapshot().map((p) => [p.pid, p.name]));
+        for (const [pid, name] of names) if (!name) names.set(pid, byPid.get(pid) || "");
+    }
+    const targets: number[] = [], refused: string[] = [];
+    for (const [pid, name] of names) {
+        const reason = killRefusalReason(pid, name);
+        if (reason) refused.push(`${pid} (${reason})`);
+        else targets.push(pid);
+    }
+    const skipped = refused.length ? ` Skipped ${refused.join(", ")}.` : "";
+    if (!targets.length) return { ok: false, message: `Refusing to free port ${port}: nothing there may be killed.${skipped}` };
     const killed: number[] = [], failed: number[] = [];
-    for (const pid of pids) (killPid(pid).ok ? killed : failed).push(pid);
-    if (!killed.length) return { ok: false, message: `Could not free port ${port} (pids ${failed.join(", ")}).` };
-    return { ok: true, message: `Freed port ${port}: killed ${killed.join(", ")}${failed.length ? ` (failed ${failed.join(", ")})` : ""}.` };
+    for (const pid of targets) (killPid(pid, names.get(pid)).ok ? killed : failed).push(pid);
+    if (!killed.length) return { ok: false, message: `Could not free port ${port} (pids ${failed.join(", ")}).${skipped}` };
+    return { ok: true, message: `Freed port ${port}: killed ${killed.join(", ")}${failed.length ? ` (failed ${failed.join(", ")})` : ""}.${skipped}` };
 }
 
 /**
@@ -217,6 +263,18 @@ const PROTECTED = isWin
 /** True when a process name is one enigma refuses to kill. */
 export function isProtectedProcess(name: string): boolean {
     return PROTECTED.test(name.trim());
+}
+
+/**
+ * Why enigma refuses to kill this process, or null when it is fair game. One rule for every
+ * route to a kill (by pid, by name, by port), phrased so it can be read straight back to the
+ * user. An unknown name is not treated as protected: it is the pid the OS itself will refuse.
+ */
+export function killRefusalReason(pid: number, name: string): string | null {
+    if (pid === process.pid) return "enigma itself";
+    if (pid === process.ppid) return "the shell enigma runs in";
+    if (name && isProtectedProcess(name)) return `${name.trim()}, a system process`;
+    return null;
 }
 
 /** What `enigma kill <target>` was asked to kill. */
@@ -275,10 +333,10 @@ export function killByName(raw: string): ActionResult {
     if (!matches.length) return { ok: false, message: `No process named '${raw.trim()}' is running.` };
     const name = matches[0]!.name;
     // Never kill enigma itself or the shell it was launched from - that reads as a crash.
-    const safe = matches.filter((p) => !isProtectedProcess(p.name) && p.pid !== process.pid && p.pid !== process.ppid);
+    const safe = matches.filter((p) => !killRefusalReason(p.pid, p.name));
     if (!safe.length) return { ok: false, message: `Refusing to kill '${name}': it is a system process, enigma itself, or its shell.` };
     const killed: number[] = [], failed: number[] = [];
-    for (const p of safe) (killPid(p.pid).ok ? killed : failed).push(p.pid);
+    for (const p of safe) (killPid(p.pid, p.name).ok ? killed : failed).push(p.pid);
     if (!killed.length) return { ok: false, message: `Could not kill ${name} (pids ${failed.join(", ")}).` };
     return { ok: true, message: `Killed ${name}: ${killed.length} process${killed.length === 1 ? "" : "es"} (${killed.join(", ")})${failed.length ? `, failed ${failed.join(", ")}` : ""}.` };
 }
@@ -290,10 +348,8 @@ export function killTarget(target: KillTarget): ActionResult {
         case "docker": return quitDocker();
         case "name": return killByName(target.name);
         case "pid": {
-            if (target.pid === process.pid || target.pid === process.ppid) return { ok: false, message: `PID ${target.pid} is enigma itself or its shell; refusing.` };
             const proc = snapshot().find((p) => p.pid === target.pid);
-            if (proc && isProtectedProcess(proc.name)) return { ok: false, message: `PID ${target.pid} is ${proc.name}, a system process; enigma will not kill it.` };
-            return killPid(target.pid);
+            return killPid(target.pid, proc?.name ?? "");
         }
         case "port": {
             const result = freePort(target.port);
@@ -301,7 +357,7 @@ export function killTarget(target: KillTarget): ActionResult {
             // at the PID reading rather than killing a process the user never named.
             if (result.ok || !target.bare) return result;
             const proc = snapshot().find((p) => p.pid === target.port);
-            if (!proc || isProtectedProcess(proc.name)) return result; // never point at one that would be refused
+            if (!proc || killRefusalReason(proc.pid, proc.name)) return result; // never point at one that would be refused
             return { ok: false, message: `Nothing is listening on port ${target.port}. PID ${target.port} is ${proc.name} - kill it with 'enigma kill pid ${target.port}'.` };
         }
     }

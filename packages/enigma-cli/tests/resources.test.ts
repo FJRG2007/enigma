@@ -5,7 +5,7 @@
  * killByName/shutdownWsl/quitDocker) are verified by the user.
  */
 import { test, expect } from "bun:test";
-import { parseTasklist, parsePs, parseNetstat, parseLsof, parseKillTarget, isProtectedProcess } from "../src/resources";
+import { parseTasklist, parsePs, parseNetstat, parseLsof, parseKillTarget, isProtectedProcess, killRefusalReason } from "../src/resources";
 
 test("parseTasklist reads name/pid/mem from CSV (commas in mem stripped)", () => {
     const out = '"chrome.exe","1234","Console","1","523,480 K"\r\n"vmmemWSL","9001","Services","0","2,100,000 K"\r\n';
@@ -82,4 +82,12 @@ test("system processes are refused by name, with or without .exe", () => {
     for (const name of ["node", "app.exe", "Docker Desktop.exe", "chrome.exe"]) {
         expect(isProtectedProcess(name), name).toBe(false);
     }
+});
+
+test("the kill refusal covers system processes, enigma itself and its shell", () => {
+    const system = process.platform === "win32" ? "svchost.exe" : "systemd";
+    expect(killRefusalReason(4, system)).toContain("system process");
+    expect(killRefusalReason(process.pid, "bun")).toBe("enigma itself");
+    expect(killRefusalReason(process.ppid, "bash")).toBe("the shell enigma runs in");
+    expect(killRefusalReason(999999, "node")).toBeNull();
 });

@@ -731,6 +731,7 @@ and commands never load into your normal agent.
 
     resources: `usage: enigma resources [action]
 System cleanup: status (the default), wsl, docker, free-port <PORT>, kill <PID>.
+Here 'kill' takes a PID; the top-level 'enigma kill 3000' reads a plain number as a PORT.
 'enigma kill <target>' is the shortcut for the destructive half.`,
 
     kill: `usage: enigma kill <target...>
@@ -1087,7 +1088,7 @@ async function runResourcesCli(args: string[]): Promise<number> {
  * command IS the confirmation, and the dashboard/TUI keep their interactive one.
  */
 async function runKillCli(args: string[]): Promise<number> {
-    const { parseKillTarget, killTarget, listPorts } = await import("./resources");
+    const { parseKillTarget, killTarget, listKillablePorts } = await import("./resources");
     // `pid 1234` and `port 3000` are two words on the command line and one token to the
     // parser, which is what keeps the grammar pure and testable.
     const tokens: string[] = [];
@@ -1098,7 +1099,9 @@ async function runKillCli(args: string[]): Promise<number> {
     }
     if (!tokens.length) {
         printCommandHelp("kill");
-        const ports = listPorts(20);
+        // Only the ports a kill would be allowed to free - the low system ones would just
+        // be refused, and they are never what someone typing `enigma kill` is looking for.
+        const ports = listKillablePorts(20);
         if (ports.length) {
             console.log("Listening now:");
             for (const port of ports) console.log(`  :${String(port.port).padEnd(6)} pid ${String(port.pid).padEnd(7)} ${port.name}`);
