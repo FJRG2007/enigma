@@ -5,7 +5,7 @@
  * killByName/shutdownWsl/quitDocker) are verified by the user.
  */
 import { test, expect } from "bun:test";
-import { parseTasklist, parsePs, parseNetstat, parseLsof, parseKillTarget, isProtectedProcess, killRefusalReason } from "../src/resources";
+import { parseTasklist, parsePs, parseNetstat, parseLsof, parseKillTarget, isProtectedProcess, killRefusalReason, isBulkKill, KILL_BY_NAME_BULK_LIMIT } from "../src/resources";
 
 test("parseTasklist reads name/pid/mem from CSV (commas in mem stripped)", () => {
     const out = '"chrome.exe","1234","Console","1","523,480 K"\r\n"vmmemWSL","9001","Services","0","2,100,000 K"\r\n';
@@ -90,4 +90,11 @@ test("the kill refusal covers system processes, enigma itself and its shell", ()
     expect(killRefusalReason(process.pid, "bun")).toBe("enigma itself");
     expect(killRefusalReason(process.ppid, "bash")).toBe("the shell enigma runs in");
     expect(killRefusalReason(999999, "node")).toBeNull();
+});
+
+test("a by-name kill past the bulk limit needs --yes, a small one never does", () => {
+    expect(isBulkKill(KILL_BY_NAME_BULK_LIMIT)).toBe(false);
+    expect(isBulkKill(KILL_BY_NAME_BULK_LIMIT + 1)).toBe(true);
+    expect(isBulkKill(KILL_BY_NAME_BULK_LIMIT + 1, true)).toBe(false);
+    expect(isBulkKill(1)).toBe(false);
 });

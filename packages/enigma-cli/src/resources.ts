@@ -310,11 +310,27 @@ export function parseKillTarget(raw: string): KillTarget | null {
 }
 
 /**
+ * A name match above this count is a fleet, not "the process the user meant" - `enigma kill
+ * node` on a dev machine can resolve to dozens of editor language servers and extension
+ * hosts, none of which anyone typing four letters intended to take down at once. Past the
+ * threshold, `killByName` refuses instead of killing, so one word cannot mass-kill unrelated
+ * tooling; `opts.yes` is the explicit opt-in past that refusal.
+ */
+export const KILL_BY_NAME_BULK_LIMIT = 5;
+
+/** True when a by-name kill of `count` processes needs the `--yes`/`-y` opt-in to proceed. */
+export function isBulkKill(count: number, yes = false): boolean {
+    return count > KILL_BY_NAME_BULK_LIMIT && !yes;
+}
+
+/**
  * Kill every process with this name (`enigma kill app.exe`). Exact name wins; a substring
  * only matches when it resolves to ONE name, because "node" hitting four different programs
- * has to be the user's decision and not a guess. `.exe` is optional either way.
+ * has to be the user's decision and not a guess. `.exe` is optional either way. Past
+ * `KILL_BY_NAME_BULK_LIMIT` killable matches, refuses unless `opts.yes` is set - see
+ * `KILL_BY_NAME_BULK_LIMIT`.
  */
-export function killByName(raw: string): ActionResult {
+export function killByName(raw: string, opts: { yes?: boolean; } = {}): ActionResult {
     const wanted = raw.trim().toLowerCase().replace(/\.exe$/, "");
     if (!wanted) return { ok: false, message: "Missing process name." };
     if (isProtectedProcess(raw)) return { ok: false, message: `'${raw.trim()}' is a system process; enigma will not kill it.` };
@@ -335,6 +351,12 @@ export function killByName(raw: string): ActionResult {
     // Never kill enigma itself or the shell it was launched from - that reads as a crash.
     const safe = matches.filter((p) => !killRefusalReason(p.pid, p.name));
     if (!safe.length) return { ok: false, message: `Refusing to kill '${name}': it is a system process, enigma itself, or its shell.` };
+    if (isBulkKill(safe.length, opts.yes)) {
+        return {
+            ok: false,
+            message: `'${name}' matches ${safe.length} processes; refusing to kill that many at once. Name one by pid ('enigma kill pid <n>') or repeat the command with --yes/-y.`,
+        };
+    }
     const killed: number[] = [], failed: number[] = [];
     for (const p of safe) (killPid(p.pid, p.name).ok ? killed : failed).push(p.pid);
     if (!killed.length) return { ok: false, message: `Could not kill ${name} (pids ${failed.join(", ")}).` };
@@ -342,11 +364,11 @@ export function killByName(raw: string): ActionResult {
 }
 
 /** Run one parsed kill target. DESTRUCTIVE; the caller owns the confirmation. */
-export function killTarget(target: KillTarget): ActionResult {
+export function killTarget(target: KillTarget, opts: { yes?: boolean; } = {}): ActionResult {
     switch (target.kind) {
         case "wsl": return shutdownWsl();
         case "docker": return quitDocker();
-        case "name": return killByName(target.name);
+        case "name": return killByName(target.name, opts);
         case "pid": {
             const proc = snapshot().find((p) => p.pid === target.pid);
             return killPid(target.pid, proc?.name ?? "");

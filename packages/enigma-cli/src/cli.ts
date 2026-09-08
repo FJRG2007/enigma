@@ -748,8 +748,11 @@ Kill what the target names. Typing the command is the confirmation - nothing pro
 
 A plain number is a port, since that is what it usually means; if nothing is listening
 there, the PID reading is offered instead of guessed. Several targets can be given at
-once. System processes, enigma itself and its shell are refused. Exits non-zero when a
-target could not be killed. 'enigma resources' prints what is running and listening.`,
+once. System processes, enigma itself and its shell are refused. A name matching more
+than 5 processes is refused too (a name can resolve to a whole fleet of unrelated dev
+tooling); name one by pid or repeat the command with --yes/-y to kill them all. Exits
+non-zero when a target could not be killed. 'enigma resources' prints what is running
+and listening.`,
 
     doctor: `usage: enigma doctor [hooks] [--all] [--json]
 Time every hook Claude Code would fire here - your user, project and project-local settings
@@ -1087,7 +1090,7 @@ async function runResourcesCli(args: string[]): Promise<number> {
  * works instead of erroring. Same contract as `enigma resources <action>`: typing the
  * command IS the confirmation, and the dashboard/TUI keep their interactive one.
  */
-async function runKillCli(args: string[]): Promise<number> {
+async function runKillCli(args: string[], yes: boolean): Promise<number> {
     const { parseKillTarget, killTarget, listKillablePorts } = await import("./resources");
     // `pid 1234` and `port 3000` are two words on the command line and one token to the
     // parser, which is what keeps the grammar pure and testable.
@@ -1112,7 +1115,7 @@ async function runKillCli(args: string[]): Promise<number> {
     let allOk = true;
     for (const token of tokens) {
         const target = parseKillTarget(token);
-        const result = target ? killTarget(target) : { ok: false, message: `Nothing to kill in '${token}'.` };
+        const result = target ? killTarget(target, { yes }) : { ok: false, message: `Nothing to kill in '${token}'.` };
         console.log(result.message);
         if (!result.ok) allOk = false;
     }
@@ -3071,7 +3074,7 @@ export async function run(argv: string[]): Promise<void> {
     if (opts.command === "fix-path") { process.exit(runFixPathCli(opts.positionals[0], opts.scope)); }
     if (opts.command === "doctor") { process.exit(runDoctorCli(opts.positionals, opts.all, opts.json)); }
     if (opts.command === "resources") { process.exit(await runResourcesCli(opts.positionals)); }
-    if (opts.command === "kill") { process.exit(await runKillCli(opts.positionals)); }
+    if (opts.command === "kill") { process.exit(await runKillCli(opts.positionals, opts.yes)); }
     if (opts.command === "recall") { process.exit(await runRecallCli(opts.positionals)); }
     if (opts.command === "codegraph") { process.exit(await runCodeGraphCli(opts.positionals)); }
     if (opts.command === "autoskills") { process.exit(await runAutoskillsCli(opts, interactive)); }
