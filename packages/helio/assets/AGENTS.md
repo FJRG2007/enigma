@@ -226,7 +226,7 @@ model: qwen3:8b
 
 Supported model formats:
 - Ollama: `qwen3:8b`, `deepseek-r1:14b`, etc.
-- Claude: `anthropic/claude-3-5-sonnet-20241022`
+- Claude: `anthropic/claude-sonnet-5`
 - OpenAI: `openai/gpt-4o`
 
 ## Directory Structure

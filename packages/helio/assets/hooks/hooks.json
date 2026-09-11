@@ -28,7 +28,7 @@
     "per_command": true,
     "supported_providers": ["ollama", "claude", "openai", "grok"],
     "format_ollama": "qwen3:8b",
-    "format_claude": "anthropic/claude-3-5-sonnet-20241022",
+    "format_claude": "anthropic/claude-sonnet-5",
     "format_openai": "openai/gpt-4o"
   }
 }
