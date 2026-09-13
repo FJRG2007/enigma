@@ -15,6 +15,7 @@ on:
     paths:
       - "packages/primitives/package.json"
       - "packages/utils/package.json"
+      - "packages/icons/package.json"
   workflow_dispatch:
 
 permissions:
@@ -32,7 +33,7 @@ jobs:
       # Never cancel a sibling: one package failing must not leave the other half-published.
       fail-fast: false
       matrix:
-        package: ["@enigmax/primitives", "@enigmax/utils"]
+        package: ["@enigmax/primitives", "@enigmax/utils", "@enigmax/icons"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
