@@ -257,7 +257,7 @@ class LLMClient:
             except Exception: return []
         elif self.provider == "opencode-go": return OPENCODE_GO_MODELS
         elif self.provider == "opencode-zen": return OPENCODE_ZEN_MODELS
-        elif self.provider == "claude": return ["claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5-20251001"]
+        elif self.provider == "claude": return ["claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5"]
         elif self.provider == "openai": return ["gpt-4o", "gpt-4o-mini", "o1", "o3-mini"]
         elif self.provider == "grok": return ["grok-2-latest", "grok-3-mini", "grok-3"]
         return []

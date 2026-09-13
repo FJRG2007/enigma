@@ -2,7 +2,7 @@
 name: recon-ranker
 description: Attack surface ranking agent. Takes recon output and hunt memory, produces a prioritized attack plan. Ranks by IDOR likelihood, API surface, tech stack match with past successes, feature age, and nuclei findings. Use after recon to decide what to test first.
 tools: Read, Bash, Glob, Grep
-model: claude-haiku-4-5-20251001
+model: claude-haiku-4-5
 ---
 
 # Recon Ranker Agent
