@@ -6,14 +6,18 @@
  * source, never a destination). A copy whose origin has since grown is refreshed rather than
  * frozen, unless a client is still writing the copy itself.
  *
+ * unshareSessions is the undo, and what it must not do carries the weight: it deletes, so it
+ * removes only a copy the kept file contains byte for byte, never touches the user's own config
+ * dir, and defers a copy a client still has open.
+ *
  * The trees are passed in rather than discovered: account discovery freezes its base paths
  * when accounts.ts is imported, so in a full-suite run (one process, many files) the HOME a
  * single test sets does not win. Naming the roots keeps this test order-independent.
  */
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { syncSessions } from "../src/session-share";
 import { test, expect, beforeAll, afterAll } from "bun:test";
+import { syncSessions, unshareSessions } from "../src/session-share";
 import { mkdirSync, mkdtempSync, existsSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 
 const BASE = mkdtempSync(join(tmpdir(), "enigma-session-share-"));
@@ -196,4 +200,113 @@ test("syncSessions is a no-op without at least two trees, or without a writable 
     expect(syncSessions("claude", [{ dir: DEFAULT_ROOT, writable: false }])).toBe(0);
     // Only the user's own dir and nothing that may be written: nowhere to mirror to.
     expect(syncSessions("claude", [{ dir: DEFAULT_ROOT, writable: false }, { dir: join(BASE, "other", "projects"), writable: false }])).toBe(0);
+});
+
+/**
+ * The prune runs on its own trees: it deletes, and the mirroring cases above build up shared
+ * state across tests that a deletion would pull out from under them.
+ */
+const PRUNE_OWN = join(BASE, "prune-own", "projects");
+const PRUNE_OTHER = join(BASE, "prune-other", "projects");
+const PRUNE_USER = join(BASE, "prune-user", "projects");
+const PRUNE_ROOTS = [
+    { dir: PRUNE_OWN, writable: true },
+    { dir: PRUNE_OTHER, writable: true },
+    { dir: PRUNE_USER, writable: false },
+];
+
+/** Rebuild the prune trees, so each case starts from a tree nothing before it deleted from. */
+const resetPruneTrees = (): void => {
+    for (const root of [PRUNE_OWN, PRUNE_OTHER, PRUNE_USER]) {
+        rmSync(root, { recursive: true, force: true });
+        mkdirSync(root, { recursive: true });
+    }
+};
+
+test("unshareSessions removes what mirroring copied and leaves the conversation with its account", () => {
+    resetPruneTrees();
+    const rel = join(SLUG, `${FIRST}.jsonl`);
+    const nested = join(SLUG, FIRST, "subagents", "agent-a1.jsonl");
+    writeTranscript(PRUNE_OWN, rel, "{\"n\":1}\n");
+    writeTranscript(PRUNE_OWN, nested, "{\"n\":1}\n");
+    expect(syncSessions("claude", PRUNE_ROOTS)).toBe(2);
+
+    // Only the copies go: the tree that recorded the conversation keeps it, so /resume lists it
+    // once instead of listing the same session under every account that was ever launched.
+    expect(unshareSessions("claude", PRUNE_ROOTS).removed).toBe(2);
+    expect(existsSync(join(PRUNE_OWN, rel))).toBe(true);
+    expect(existsSync(join(PRUNE_OWN, nested))).toBe(true);
+    expect(existsSync(join(PRUNE_OTHER, rel))).toBe(false);
+    // The session's own directory went with its transcripts: an empty shell still reads as a
+    // tree holding conversations.
+    expect(existsSync(join(PRUNE_OTHER, SLUG, FIRST))).toBe(false);
+
+    // Idempotent, and nothing is left for a second pass to find.
+    expect(unshareSessions("claude", PRUNE_ROOTS).removed).toBe(0);
+});
+
+test("unshareSessions drops a copy frozen mid-conversation, keeping the one with every turn", () => {
+    resetPruneTrees();
+    // What sharing being off leaves behind: the copy was taken while the session ran, the origin
+    // continued, and nothing refreshes the copy any more - resuming it would miss the later turns.
+    const rel = join(SLUG, `${GROWING}.jsonl`);
+    writeTranscript(PRUNE_OTHER, rel, "{\"n\":1}\n");
+    writeTranscript(PRUNE_OWN, rel, "{\"n\":1}\n{\"n\":2}\n{\"n\":3}\n", 300_000);
+
+    expect(unshareSessions("claude", PRUNE_ROOTS).removed).toBe(1);
+    expect(existsSync(join(PRUNE_OTHER, rel))).toBe(false);
+    expect(readFileSync(join(PRUNE_OWN, rel), "utf8")).toBe("{\"n\":1}\n{\"n\":2}\n{\"n\":3}\n");
+});
+
+test("unshareSessions leaves a tree that has turns of its own, and the user's own dir", () => {
+    resetPruneTrees();
+    // Diverged: the longer file is not a superset of the shorter one, so deleting either would
+    // lose the turns appended on that side. A prune that cannot prove redundancy keeps both.
+    const diverged = join(SLUG, `${SECOND}.jsonl`);
+    writeTranscript(PRUNE_OWN, diverged, "{\"n\":1}\n{\"own\":2}\n{\"own\":3}\n");
+    writeTranscript(PRUNE_OTHER, diverged, "{\"n\":1}\n{\"other\":2}\n", 300_000);
+
+    // A prefix held by the user's own config dir: redundant, but that dir is a source only - the
+    // same boundary mirroring holds, and the user's transcripts are not enigma's to delete.
+    const mine = join(SLUG, `${HELD}.jsonl`);
+    writeTranscript(PRUNE_USER, mine, "{\"n\":1}\n");
+    writeTranscript(PRUNE_OWN, mine, "{\"n\":1}\n{\"n\":2}\n", 300_000);
+
+    expect(unshareSessions("claude", PRUNE_ROOTS).removed).toBe(0);
+    expect(readFileSync(join(PRUNE_OWN, diverged), "utf8")).toContain("\"own\":3");
+    expect(readFileSync(join(PRUNE_OTHER, diverged), "utf8")).toContain("\"other\":2");
+    expect(existsSync(join(PRUNE_USER, mine))).toBe(true);
+});
+
+test("unshareSessions counts without writing under dryRun, and waits out a live copy", () => {
+    resetPruneTrees();
+    const rel = join(SLUG, `${LIVE}.jsonl`);
+    const idle = join(SLUG, `${ANCIENT}.jsonl`);
+    writeTranscript(PRUNE_OWN, rel, "{\"n\":1}\n");
+    writeTranscript(PRUNE_OWN, idle, "{\"n\":1}\n");
+    expect(syncSessions("claude", PRUNE_ROOTS)).toBe(2);
+
+    const preview = unshareSessions("claude", PRUNE_ROOTS, { dryRun: true });
+    expect(preview.removed).toBe(2);
+    expect(preview.bytes).toBe(statSync(join(PRUNE_OWN, rel)).size * 2);
+    expect(existsSync(join(PRUNE_OTHER, rel))).toBe(true);
+
+    // A client has that copy open right now: deleting it takes the file out from under the
+    // session writing it, so the copy waits for a prune run after it goes idle.
+    const now = new Date();
+    utimesSync(join(PRUNE_OTHER, rel), now, now);
+    expect(unshareSessions("claude", PRUNE_ROOTS).removed).toBe(1);
+    expect(existsSync(join(PRUNE_OTHER, rel))).toBe(true);
+    expect(existsSync(join(PRUNE_OTHER, idle))).toBe(false);
+});
+
+test("unshareSessions touches nothing for another tool, or a single tree", () => {
+    resetPruneTrees();
+    const rel = join(SLUG, `${OTHER_TOOL}.jsonl`);
+    writeTranscript(PRUNE_OWN, rel, "{\"n\":1}\n");
+    writeTranscript(PRUNE_OTHER, rel, "{\"n\":1}\n", 300_000);
+
+    expect(unshareSessions("codex", PRUNE_ROOTS).removed).toBe(0);
+    expect(unshareSessions("claude", [{ dir: PRUNE_OWN, writable: true }]).removed).toBe(0);
+    expect(existsSync(join(PRUNE_OTHER, rel))).toBe(true);
 });

@@ -326,6 +326,8 @@ Commands:
                          sessions             List reusable Claude logins (Claude only)
                          transfer <name> [src] Reuse a live login in a signed-out account
                                               (no re-login; Claude only)
+                         unshare              Remove transcripts an earlier launch mirrored
+                                              between accounts (--dry-run to preview)
   profile <subcommand> Group one account per tool under a profile (e.g. 'work' =
                        claude:acme + codex:acme); the active profile drives launches:
                          list                       List profiles and their mappings
@@ -644,7 +646,9 @@ Multi-login without logging out. Defaults to Claude Code; --tool targets another
   provider <name>           Point Claude Code at another backend:
                             --preset <id> | --base <url> [--model <id>] --token <key>, or --clear
   sessions                  List reusable Claude logins (Claude only)
-  transfer <name> [src]     Reuse a live login in a signed-out account (Claude only)`,
+  transfer <name> [src]     Reuse a live login in a signed-out account (Claude only)
+  unshare [--dry-run] [-y]  Remove transcripts an earlier launch mirrored between accounts,
+                            keeping the copy the recording account holds (Claude only)`,
 
     profile: `usage: enigma profile <subcommand>
 Group one account per tool under a profile; the active profile drives launches.
@@ -2210,6 +2214,14 @@ async function runAccountCli(opts: CliOptions, interactive: boolean): Promise<nu
                 console.log(`     ${s.dir}`);
             }
             console.log("\nReuse one with: enigma account transfer <target> [source-id].");
+            // A tree that was mirrored keeps listing the merged superset in /resume long after
+            // sharing is turned off. Surface the leftovers here rather than leaving the undo to a
+            // command nobody knows to look for.
+            try {
+                const { unshareSessions } = await import("./session-share");
+                const mirrored = unshareSessions(tool, undefined, { dryRun: true });
+                if (mirrored.removed) console.log(`\n${mirrored.removed} transcripts here are copies of another account's - drop them with: enigma account unshare.`);
+            } catch { /* prune unavailable: listing logins still worked */ }
             return 0;
         }
         case "transfer": {
@@ -2236,8 +2248,31 @@ async function runAccountCli(opts: CliOptions, interactive: boolean): Promise<nu
             console.log(`Launch it with: enigma ${tool} ${name}.`);
             return 0;
         }
+        case "unshare": {
+            // The undo for cross-account mirroring. Turning sharing off only stops new copies;
+            // a tree already mirrored keeps listing every other account's conversations in
+            // /resume, and a copy taken mid-session stays truncated once nothing refreshes it.
+            // Both are leftover files, and only this removes them.
+            if (tool !== "claude") { console.error("Session sharing is Claude-only."); return 1; }
+            const { unshareSessions } = await import("./session-share");
+            const preview = unshareSessions(tool, undefined, { dryRun: true });
+            if (!preview.removed) { console.log("No mirrored transcripts: every conversation is held by one account already."); return 0; }
+            const plural = preview.removed === 1 ? "" : "s";
+            const mb = preview.bytes / (1024 * 1024);
+            const size = mb >= 1 ? `${mb.toFixed(1)} MB` : `${Math.round(preview.bytes / 1024)} KB`;
+            console.log(`${preview.removed} transcript${plural} (${size}) are copies another account still holds in full.`);
+            if (opts.dryRun) { console.log("--dry-run: nothing was removed."); return 0; }
+            if (!opts.yes) {
+                if (!interactive) { console.error("Refusing to delete transcripts without confirmation. Re-run with -y."); return 1; }
+                const ok = await p.confirm({ message: `Remove ${preview.removed} mirrored copy${preview.removed === 1 ? "" : "es"}? The account that recorded each conversation keeps it.` });
+                if (p.isCancel(ok) || !ok) { console.log("Aborted."); return 0; }
+            }
+            const res = unshareSessions(tool);
+            console.log(`Removed ${res.removed} mirrored transcript${res.removed === 1 ? "" : "s"}. Each account now lists what it recorded.`);
+            return 0;
+        }
         default:
-            console.error(`Unknown account subcommand: ${sub}. Try: list, add, use, login, run, rename, remove, provider, sessions, transfer.`);
+            console.error(`Unknown account subcommand: ${sub}. Try: list, add, use, login, run, rename, remove, provider, sessions, transfer, unshare.`);
             return 1;
     }
 }

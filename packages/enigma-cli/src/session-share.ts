@@ -25,8 +25,8 @@
  * - The copy lands through a temp file and a rename, so an interrupt cannot leave a
  *   half-written transcript that later runs would read as complete.
  * - Only transcripts touched within `MAX_AGE_MS` are mirrored, which bounds what each account
- *   accumulates. Existing copies are never deleted - pruning a user's transcripts is not
- *   something this does on its own.
+ *   accumulates. Mirroring itself never deletes - pruning a user's transcripts is not something
+ *   a launch does on its own. `unshareSessions` is that undo, and it is asked for explicitly.
  *
  * A transcript written in the last `LIVE_WINDOW_MS` is skipped on BOTH sides: as a source it
  * belongs to a session that is still running and copying it mid-append would publish a truncated
@@ -41,7 +41,7 @@ import { randomUUID } from "node:crypto";
 import { listJsonl } from "./claude-transcripts";
 import { dirname, join, relative } from "node:path";
 import { DEFAULT_NAME, listAccounts } from "./accounts";
-import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, readdirSync, readSync, renameSync, statSync, unlinkSync, utimesSync } from "node:fs";
+import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, readdirSync, readSync, renameSync, rmdirSync, statSync, unlinkSync, utimesSync } from "node:fs";
 
 /** A transcript touched this recently belongs to a live session; copying it would truncate a turn. */
 const LIVE_WINDOW_MS = 60_000;
@@ -227,4 +227,107 @@ export function syncSessions(toolName: string, roots?: SessionRoot[]): number {
         }
     }
     return copied;
+}
+
+/** One tree's copy of a transcript, with the stamps that decide which copy is the one to keep. */
+interface Held { writable: boolean; path: string; size: number; mtimeMs: number; birthtimeMs: number; }
+
+/**
+ * Whether `cand` is the copy to keep over `best`: the LARGER file, since a transcript is
+ * append-only and a copy taken while the session was idle is a prefix of it; between copies of
+ * the same size the earlier `birthtimeMs` wins, which is the tree the conversation was recorded
+ * under rather than one that received it. The ordering `buildUsage` already counts by, so a prune
+ * keeps the copy usage attributes the spend to.
+ */
+function outranks(cand: Held, best: Held): boolean {
+    if (cand.size !== best.size) return cand.size > best.size;
+    if (cand.birthtimeMs > 0 && best.birthtimeMs > 0) return cand.birthtimeMs < best.birthtimeMs;
+    return false;
+}
+
+/**
+ * Remove the directories a prune emptied, up to but never including a tree root. A session whose
+ * transcript is gone leaves its `<session-id>/subagents/` shell behind, and a tree full of empty
+ * session directories reads as one that still holds conversations.
+ */
+function pruneEmpty(from: string, roots: string[]): void {
+    let dir = from;
+    while (!roots.includes(dir)) {
+        try {
+            if (readdirSync(dir).length) return;
+            rmdirSync(dir);
+        } catch { return; }
+        const parent = dirname(dir);
+        if (parent === dir) return;
+        dir = parent;
+    }
+}
+
+/** What a prune removed, or would remove when previewing. */
+export interface UnshareResult { removed: number; bytes: number; }
+
+/**
+ * Undo the mirroring: drop from the writable trees every transcript that is a COPY of one another
+ * account still holds in full, so each conversation is listed by the account that recorded it.
+ *
+ * Turning sharing off only stops NEW copies: a tree already mirrored keeps listing the merged
+ * superset in `/resume` forever, and the refresh that healed a copy taken mid-conversation stops
+ * running too, leaving a truncated snapshot that resumes with turns missing. Both are the same
+ * leftover file, and this is what removes it - the undo for anyone who turns sharing off, and the
+ * cleanup for anyone who moves to the shared store (session-store.ts), where one dir holds the
+ * history and every copy beside it is noise.
+ *
+ * Deleting a transcript is not recoverable, so a copy goes only when it is provably redundant:
+ * the kept file contains it byte for byte, so a tree that diverged here keeps its own turns, and
+ * the keeper itself is never touched - every conversation survives in exactly one place. The
+ * user's own config dir is a source only, the same boundary mirroring holds, and a copy inside
+ * the live window belongs to a running session and waits for the next prune.
+ *
+ * `dryRun` counts without writing, which is what the CLI previews and confirms against.
+ */
+export function unshareSessions(toolName: string, roots?: SessionRoot[], opts: { dryRun?: boolean; } = {}): UnshareResult {
+    const result: UnshareResult = { removed: 0, bytes: 0 };
+    if (toolName !== SHARED_TOOL) return result;
+    const trees = roots ?? sessionRoots(toolName);
+    if (trees.length < 2) return result;
+
+    // Grouped by the path relative to the tree root: a mirrored copy preserves it exactly, which
+    // is the same identity usage.ts dedupes on. No age bound here - what a prune has to reach is
+    // precisely the history the mirroring window let accumulate.
+    const groups = new Map<string, Held[]>();
+    for (const root of trees) {
+        for (const path of listJsonl(root.dir)) {
+            let st: import("node:fs").Stats;
+            try { st = statSync(path); } catch { continue; }
+            const rel = relative(root.dir, path);
+            const held: Held = { writable: root.writable, path, size: st.size, mtimeMs: st.mtimeMs, birthtimeMs: st.birthtimeMs };
+            const group = groups.get(rel);
+            if (group) group.push(held);
+            else groups.set(rel, [held]);
+        }
+    }
+
+    const now = Date.now();
+    const emptied = new Set<string>();
+    for (const group of groups.values()) {
+        if (group.length < 2) continue;
+        let keep = group[0]!;
+        for (const held of group) if (outranks(held, keep)) keep = held;
+        for (const held of group) {
+            if (held === keep || !held.writable) continue;
+            if (now - held.mtimeMs < LIVE_WINDOW_MS) continue;
+            if (held.size > keep.size || !continues(keep.path, held.path, held.size)) continue;
+            if (!opts.dryRun) {
+                try { unlinkSync(held.path); } catch { continue; }
+                emptied.add(dirname(held.path));
+            }
+            result.removed++;
+            result.bytes += held.size;
+        }
+    }
+    if (emptied.size) {
+        const rootDirs = trees.map((tree) => tree.dir);
+        for (const dir of emptied) pruneEmpty(dir, rootDirs);
+    }
+    return result;
 }
