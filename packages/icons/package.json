@@ -55,8 +55,25 @@
             "optional": true
         }
     },
+    "engines": {
+        "node": ">=18"
+    },
+    "keywords": [
+        "icons",
+        "duotone",
+        "enigma",
+        "react",
+        "svg",
+        "tree-shaking"
+    ],
+    "license": "MIT",
+    "author": "FJRG2007 <fjrg2007@tpeoficial.com>",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/FJRG2007/enigma.git",
+        "directory": "packages/icons"
+    },
     "publishConfig": {
         "access": "public"
-    },
-    "license": "MIT"
+    }
 }

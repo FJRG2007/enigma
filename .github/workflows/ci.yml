@@ -260,11 +260,18 @@ jobs:
         run: |
           npm run --workspace @enigmax/primitives typecheck
           npm run --workspace @enigmax/utils typecheck
+          npm run --workspace @enigmax/icons typecheck
           npm run build:components
 
       # Pure logic: cache dedupe/TTL and the notification queue's held timers.
       - name: Test @enigmax/utils
         run: npm run --workspace @enigmax/utils test
+
+      # The generated tree against the map that produced it. A name added to the map and
+      # never generated, or a body that came out empty, renders an invisible square that
+      # nothing at runtime would ever report.
+      - name: Test @enigmax/icons
+        run: npm run --workspace @enigmax/icons test
 
       # The marquee's guarantees are timing and pointer behaviour, so they are only
       # real when measured in a browser: the suite samples the track's computed
