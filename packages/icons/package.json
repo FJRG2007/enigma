@@ -1,0 +1,62 @@
+{
+    "name": "@enigmax/icons",
+    "version": "0.1.0",
+    "description": "Filled duotone icon set for React, one module per icon so a bundle carries only what it renders.",
+    "type": "module",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "import": "./dist/index.js"
+        },
+        "./icons/*": {
+            "types": "./dist/icons/*.d.ts",
+            "import": "./dist/icons/*.js"
+        },
+        "./categories": {
+            "types": "./dist/categories/index.d.ts",
+            "import": "./dist/categories/index.js"
+        },
+        "./categories/*": {
+            "types": "./dist/categories/*.d.ts",
+            "import": "./dist/categories/*.js"
+        }
+    },
+    "files": [
+        "dist",
+        "src",
+        "generate.mjs",
+        "icon-map.json",
+        "README.md",
+        "LICENSE"
+    ],
+    "sideEffects": false,
+    "scripts": {
+        "generate": "node generate.mjs",
+        "build": "tsup",
+        "test": "node --test test/*.test.mjs",
+        "typecheck": "tsc --noEmit",
+        "prepublishOnly": "npm run typecheck && npm run build"
+    },
+    "peerDependencies": {
+        "@tabler/icons-react": ">=3",
+        "react": ">=18"
+    },
+    "devDependencies": {
+        "@tabler/icons-react": "^3.31.0",
+        "@types/react": "^19.0.0",
+        "react": "^19.0.0",
+        "tsup": "^8.0.0",
+        "typescript": "^5.7.3"
+    },
+    "peerDependenciesMeta": {
+        "@tabler/icons-react": {
+            "optional": true
+        }
+    },
+    "publishConfig": {
+        "access": "public"
+    },
+    "license": "MIT"
+}

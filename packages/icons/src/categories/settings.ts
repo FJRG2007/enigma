@@ -1,0 +1,10 @@
+// Settings. GENERATED, do not hand-edit.
+export { IconAdjustmentsAlt } from "../icons/IconAdjustmentsAlt";
+export { IconApps } from "../icons/IconApps";
+export { IconGridDots } from "../icons/IconGridDots";
+export { IconLayoutDashboard } from "../icons/IconLayoutDashboard";
+export { IconLayoutGrid } from "../icons/IconLayoutGrid";
+export { IconPuzzle } from "../icons/IconPuzzle";
+export { IconSettings } from "../icons/IconSettings";
+export { IconSettings2 } from "../icons/IconSettings2";
+export { IconTableOptions } from "../icons/IconTableOptions";

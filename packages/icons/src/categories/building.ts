@@ -1,0 +1,9 @@
+// Building. GENERATED, do not hand-edit.
+export { IconBuilding } from "../icons/IconBuilding";
+export { IconBuildingArch } from "../icons/IconBuildingArch";
+export { IconBuildingBank } from "../icons/IconBuildingBank";
+export { IconBuildingEstate } from "../icons/IconBuildingEstate";
+export { IconBuildingFactory } from "../icons/IconBuildingFactory";
+export { IconBuildingFactory2 } from "../icons/IconBuildingFactory2";
+export { IconBuildingMonument } from "../icons/IconBuildingMonument";
+export { IconBuildingSkyscraper } from "../icons/IconBuildingSkyscraper";

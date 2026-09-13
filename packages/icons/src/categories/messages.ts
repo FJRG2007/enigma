@@ -1,0 +1,15 @@
+// Messages. GENERATED, do not hand-edit.
+export { IconEdit } from "../icons/IconEdit";
+export { IconMail } from "../icons/IconMail";
+export { IconMessage } from "../icons/IconMessage";
+export { IconMessage2 } from "../icons/IconMessage2";
+export { IconMessageCircle } from "../icons/IconMessageCircle";
+export { IconPaperclip } from "../icons/IconPaperclip";
+export { IconPencil } from "../icons/IconPencil";
+export { IconPlane } from "../icons/IconPlane";
+export { IconPlaneInflight } from "../icons/IconPlaneInflight";
+export { IconPlaneOff } from "../icons/IconPlaneOff";
+export { IconPlaneTilt } from "../icons/IconPlaneTilt";
+export { IconQuote } from "../icons/IconQuote";
+export { IconSend } from "../icons/IconSend";
+export { IconSignature } from "../icons/IconSignature";

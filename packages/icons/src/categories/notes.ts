@@ -1,0 +1,11 @@
+// Notes. GENERATED, do not hand-edit.
+export { IconArchive } from "../icons/IconArchive";
+export { IconArchiveOff } from "../icons/IconArchiveOff";
+export { IconClipboard } from "../icons/IconClipboard";
+export { IconClipboardList } from "../icons/IconClipboardList";
+export { IconClipboardPlus } from "../icons/IconClipboardPlus";
+export { IconFileInfo } from "../icons/IconFileInfo";
+export { IconNote } from "../icons/IconNote";
+export { IconNotes } from "../icons/IconNotes";
+export { IconReport } from "../icons/IconReport";
+export { IconStack3 } from "../icons/IconStack3";

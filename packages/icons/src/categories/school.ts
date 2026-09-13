@@ -1,0 +1,10 @@
+// School. GENERATED, do not hand-edit.
+export { IconAddressBook } from "../icons/IconAddressBook";
+export { IconBook } from "../icons/IconBook";
+export { IconBook2 } from "../icons/IconBook2";
+export { IconBookmark } from "../icons/IconBookmark";
+export { IconBookmarkOff } from "../icons/IconBookmarkOff";
+export { IconBookmarks } from "../icons/IconBookmarks";
+export { IconCertificate } from "../icons/IconCertificate";
+export { IconLicense } from "../icons/IconLicense";
+export { IconSchool } from "../icons/IconSchool";

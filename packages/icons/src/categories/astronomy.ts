@@ -1,0 +1,10 @@
+// Astronomy. GENERATED, do not hand-edit.
+export { IconAlien } from "../icons/IconAlien";
+export { IconAtom } from "../icons/IconAtom";
+export { IconCube3dSphere } from "../icons/IconCube3dSphere";
+export { IconDrone } from "../icons/IconDrone";
+export { IconGenderFemale } from "../icons/IconGenderFemale";
+export { IconGenderMale } from "../icons/IconGenderMale";
+export { IconRocket } from "../icons/IconRocket";
+export { IconSatellite } from "../icons/IconSatellite";
+export { IconStarOff } from "../icons/IconStarOff";

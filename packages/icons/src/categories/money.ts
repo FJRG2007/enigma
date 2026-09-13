@@ -1,0 +1,9 @@
+// Money. GENERATED, do not hand-edit.
+export { IconAd } from "../icons/IconAd";
+export { IconCoin } from "../icons/IconCoin";
+export { IconCreditCard } from "../icons/IconCreditCard";
+export { IconReceipt } from "../icons/IconReceipt";
+export { IconReceiptTax } from "../icons/IconReceiptTax";
+export { IconTag } from "../icons/IconTag";
+export { IconTags } from "../icons/IconTags";
+export { IconWallet } from "../icons/IconWallet";
