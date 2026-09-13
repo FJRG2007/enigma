@@ -517,11 +517,21 @@ export function buildUsage(): UsageReport {
     const now = Date.now();
     const global = newAccum();
     const perAccount = new Map<string, Accum>();
+    // Cross-account session sharing (session-share.ts) puts the SAME conversation in several
+    // accounts' trees, and the per-file `message.id` dedupe cannot see across files. Keyed by the
+    // path relative to the tree root - which a mirrored copy preserves exactly - the first source
+    // carrying a transcript is the one counted, so tokens, cost, the 5h block and the weekly
+    // windows are not multiplied by the number of accounts holding a copy, and an account is not
+    // credited with another's spend.
+    const seenTranscripts = new Set<string>();
     for (const src of sources) {
         const root = src.dir + sep;
         let acct = perAccount.get(src.account);
         if (!acct) { acct = newAccum(); perAccount.set(src.account, acct); }
         for (const path of listJsonl(src.dir)) {
+            const rel = path.startsWith(root) ? path.slice(root.length) : path;
+            if (seenTranscripts.has(rel)) continue;
+            seenTranscripts.add(rel);
             let st: import("node:fs").Stats;
             try { st = statSync(path); } catch { continue; }
             const sessionFile = !path.replace(/\\/g, "/").includes("/subagents/");

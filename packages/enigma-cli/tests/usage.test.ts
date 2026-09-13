@@ -5,10 +5,10 @@
  * reuses an mtime/size cache so unchanged files are not re-read. Temp HOME (set BEFORE
  * import) isolates ~/.claude and ~/.enigma, resolved lazily per call.
  */
-import { test, expect, afterAll } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
-import { tmpdir, homedir } from "node:os";
 import { join } from "node:path";
+import { tmpdir, homedir } from "node:os";
+import { test, expect, afterAll } from "bun:test";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 
 const HOME = mkdtempSync(join(tmpdir(), "enigma-usage-"));
 process.env.USERPROFILE = HOME;
@@ -166,6 +166,31 @@ test("reads every Claude account (default + managed) and reports provider covera
         expect(codex.available).toBe(false);
     } finally {
         rmSync(join(homedir(), ".enigma", "claude", "work"), { recursive: true, force: true });
+    }
+});
+
+test("counts a session shared across accounts once, and only for the account it came from", () => {
+    // Cross-account session sharing copies the SAME transcript into another account's tree at
+    // the same path relative to that root. Counting both would multiply tokens, cost and the
+    // rate-limit windows by the number of accounts holding a copy.
+    const base = buildUsage();
+    const mirrored = join(homedir(), ".enigma", "claude", "mirror", "projects", "proj-a");
+    mkdirSync(mirrored, { recursive: true });
+    writeFileSync(join(mirrored, "sess1.jsonl"), readFileSync(join(projDir, "sess1.jsonl"), "utf8"));
+    try {
+        const r = buildUsage();
+        expect(r.input).toBe(base.input);
+        expect(r.output).toBe(base.output);
+        expect(r.messages).toBe(base.messages);
+        expect(r.cost).toBeCloseTo(base.cost, 10);
+        expect(r.scannedFiles).toBe(base.scannedFiles);
+        expect(r.sessions).toBe(base.sessions);
+        expect(r.byProject["proj-a"].output).toBe(base.byProject["proj-a"].output);
+        // The copy does not credit the mirroring account with the origin's spend.
+        expect(r.byAccount.mirror.output).toBe(0);
+        expect(r.accounts.mirror.output).toBe(0);
+    } finally {
+        rmSync(join(homedir(), ".enigma", "claude", "mirror"), { recursive: true, force: true });
     }
 });
 
