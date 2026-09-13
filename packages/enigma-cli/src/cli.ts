@@ -937,7 +937,7 @@ function syncForLaunch(tool: string, account: string): void {
                 .catch(() => { /* recall unavailable */ });
         }, 0);
     }
-    // Mirror session transcripts across this tool's accounts (default on) so a conversation
+    // Mirror session transcripts across this tool's accounts (opt-in) so a conversation
     // started under one account can be resumed from another. Deferred like recall so it never
     // delays the launch, and incremental: once the accounts agree it is a directory walk.
     if (cfg.shareSessions) {
