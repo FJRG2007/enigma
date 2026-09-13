@@ -32,6 +32,7 @@ const SECOND = "bbbbbbbb-0000-4000-8000-000000000002";
 const LIVE = "cccccccc-0000-4000-8000-000000000003";
 const ANCIENT = "dddddddd-0000-4000-8000-000000000004";
 const GROWING = "eeeeeeee-0000-4000-8000-000000000005";
+const OTHER_TOOL = "ffffffff-0000-4000-8000-000000000006";
 
 /** Write a transcript and back-date it by `ageMs`, so the live-session guard does not skip it. */
 const writeTranscript = (root: string, rel: string, body: string, ageMs = 600_000): string => {
@@ -129,6 +130,40 @@ test("syncSessions does not mirror history older than the sharing window", () =>
 
     expect(syncSessions("claude", ROOTS)).toBe(0);
     expect(existsSync(join(WORK_ROOT, SLUG, `${ANCIENT}.jsonl`))).toBe(false);
+});
+
+test("syncSessions clears the temp file an interrupted copy left behind", () => {
+    const dir = join(WORK_ROOT, SLUG);
+    const abandoned = join(dir, ".aaaaaaaa-0000-4000-8000-00000000000a.tmp");
+    const inFlight = join(dir, ".bbbbbbbb-0000-4000-8000-00000000000b.tmp");
+    writeFileSync(abandoned, "half a transcript");
+    const old = new Date(Date.now() - 10 * 60_000);
+    utimesSync(abandoned, old, old);
+    // Another run copying right now: young enough that deleting it would fail that copy.
+    writeFileSync(inFlight, "half a transcript");
+
+    syncSessions("claude", ROOTS);
+
+    expect(existsSync(abandoned)).toBe(false);
+    expect(existsSync(inFlight)).toBe(true);
+    rmSync(inFlight, { force: true });
+});
+
+test("syncSessions mirrors nothing for a tool whose transcript format is not this one", () => {
+    // Every rule here is Claude Code's; another tool that grows a projects/ tree is left alone
+    // until its format is verified rather than copied on assumptions taken from this one.
+    const rel = join(SLUG, `${OTHER_TOOL}.jsonl`);
+    writeTranscript(DEFAULT_ROOT, rel, "{\"type\":\"user\"}\n");
+
+    expect(syncSessions("codex", ROOTS)).toBe(0);
+    expect(syncSessions("opencode", ROOTS)).toBe(0);
+    expect(existsSync(join(WORK_ROOT, rel))).toBe(false);
+
+    // The same transcript under the tool this DOES mirror for: what the calls above refused was
+    // the tool, not an empty tree.
+    expect(syncSessions("claude", ROOTS)).toBe(2);
+    expect(existsSync(join(WORK_ROOT, rel))).toBe(true);
+    expect(existsSync(join(SIDE_ROOT, rel))).toBe(true);
 });
 
 test("syncSessions is a no-op without at least two trees, or without a writable one", () => {

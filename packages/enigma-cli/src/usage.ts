@@ -497,6 +497,26 @@ function foldFile(acc: Accum, agg: FileAgg, path: string, root: string, account:
     if (agg.mtime > now - FIVE_HOURS_MS - 60 * 60 * 1000) acc.blockEvents.push(...agg.events);
 }
 
+/** One account's copy of a transcript, with the stamps that decide which copy is counted. */
+interface Candidate { path: string; root: string; account: string; size: number; mtimeMs: number; birthtimeMs: number; }
+
+/**
+ * Whether `cand` is a better copy of one transcript than the best seen so far.
+ *
+ * A transcript is append-only, so of two copies the larger holds every turn the smaller does:
+ * taking it keeps a session that was mirrored while idle and then continued under its origin
+ * from being counted as the stale prefix. Copies that agree are settled by creation time rather
+ * than by the order the source directories happened to be read in - a copy is made after its
+ * origin, so the earlier birthtime is the account the conversation was recorded under, and the
+ * one credited with the spend. A filesystem reporting no birthtime leaves the first source seen
+ * the winner.
+ */
+function outranks(cand: Candidate, best: Candidate): boolean {
+    if (cand.size !== best.size) return cand.size > best.size;
+    if (cand.birthtimeMs > 0 && best.birthtimeMs > 0) return cand.birthtimeMs < best.birthtimeMs;
+    return false;
+}
+
 /** The newest session rows for a scope (does not mutate the accumulator). */
 function recentOf(acc: Accum): SessionRow[] {
     return acc.sessionRows.slice().sort((a, b) => b.lastActive - a.lastActive).slice(0, RECENT_SESSIONS);
@@ -518,31 +538,33 @@ export function buildUsage(): UsageReport {
     const global = newAccum();
     const perAccount = new Map<string, Accum>();
     // Cross-account session sharing (session-share.ts) puts the SAME conversation in several
-    // accounts' trees, and the per-file `message.id` dedupe cannot see across files. Keyed by the
-    // path relative to the tree root - which a mirrored copy preserves exactly - the first source
-    // carrying a transcript is the one counted, so tokens, cost, the 5h block and the weekly
-    // windows are not multiplied by the number of accounts holding a copy, and an account is not
-    // credited with another's spend.
-    const seenTranscripts = new Set<string>();
+    // accounts' trees, and the per-file `message.id` dedupe cannot see across files, so exactly
+    // one copy of each transcript is folded in - keyed by the path relative to the tree root,
+    // which a mirrored copy preserves exactly, and resolved by `outranks` rather than by which
+    // directory was walked first. Counting them all would multiply the tokens, the cost, the 5h
+    // block and the weekly windows by the number of accounts holding a copy.
+    const counted = new Map<string, Candidate>();
     for (const src of sources) {
         const root = src.dir + sep;
-        let acct = perAccount.get(src.account);
-        if (!acct) { acct = newAccum(); perAccount.set(src.account, acct); }
+        if (!perAccount.has(src.account)) perAccount.set(src.account, newAccum());
         for (const path of listJsonl(src.dir)) {
-            const rel = path.startsWith(root) ? path.slice(root.length) : path;
-            if (seenTranscripts.has(rel)) continue;
-            seenTranscripts.add(rel);
             let st: import("node:fs").Stats;
             try { st = statSync(path); } catch { continue; }
-            const sessionFile = !path.replace(/\\/g, "/").includes("/subagents/");
-            const hit = prev[path];
-            const agg: FileAgg = (hit && hit.mtime === st.mtimeMs && hit.size === st.size && Array.isArray(hit.events) && hit.byDayModel)
-                ? hit
-                : { mtime: st.mtimeMs, size: st.size, sessionFile, ...aggregateFile(path) };
-            next[path] = agg;
-            foldFile(global, agg, path, root, src.account, now);
-            foldFile(acct, agg, path, root, src.account, now);
+            const rel = path.startsWith(root) ? path.slice(root.length) : path;
+            const best = counted.get(rel);
+            const cand: Candidate = { path, root, account: src.account, size: st.size, mtimeMs: st.mtimeMs, birthtimeMs: st.birthtimeMs };
+            if (!best || outranks(cand, best)) counted.set(rel, cand);
         }
+    }
+    for (const file of counted.values()) {
+        const sessionFile = !file.path.replace(/\\/g, "/").includes("/subagents/");
+        const hit = prev[file.path];
+        const agg: FileAgg = (hit && hit.mtime === file.mtimeMs && hit.size === file.size && Array.isArray(hit.events) && hit.byDayModel)
+            ? hit
+            : { mtime: file.mtimeMs, size: file.size, sessionFile, ...aggregateFile(file.path) };
+        next[file.path] = agg;
+        foldFile(global, agg, file.path, file.root, file.account, now);
+        foldFile(perAccount.get(file.account)!, agg, file.path, file.root, file.account, now);
     }
     writeCache(next);
 

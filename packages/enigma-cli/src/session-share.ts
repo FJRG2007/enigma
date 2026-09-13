@@ -36,7 +36,7 @@ import { randomUUID } from "node:crypto";
 import { listJsonl } from "./claude-transcripts";
 import { dirname, join, relative } from "node:path";
 import { DEFAULT_NAME, listAccounts } from "./accounts";
-import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, readSync, renameSync, statSync, unlinkSync, utimesSync } from "node:fs";
+import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, readdirSync, readSync, renameSync, statSync, unlinkSync, utimesSync } from "node:fs";
 
 /** A transcript touched this recently belongs to a live session; copying it would truncate a turn. */
 const LIVE_WINDOW_MS = 60_000;
@@ -47,6 +47,15 @@ const LIVE_WINDOW_MS = 60_000;
  * account's entire history, and the first launch copies that whole corpus.
  */
 const MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * The only tool this mirrors for. Every rule here is Claude Code transcript semantics - the
+ * `projects/<slug>/` layout, the nested `subagents/` directory, append-only JSONL where a longer
+ * file sharing a prefix means more turns, the live window - so another tool that grows a
+ * `projects` directory is left alone until its format is verified, the bar claude-transcripts.ts
+ * holds for the same reason.
+ */
+const SHARED_TOOL = "claude";
 
 /** One account's transcript tree. `writable` is false for the tool's own (the user's) config dir. */
 export interface SessionRoot { dir: string; writable: boolean; }
@@ -105,6 +114,28 @@ function copyTranscript(src: Transcript, target: string): void {
     }
 }
 
+/**
+ * How long a temp file must have sat untouched before it is taken for an interrupted copy rather
+ * than one a concurrent run is still writing. Generous: deleting a live temp file would only fail
+ * that copy, but the window costs nothing to keep wide.
+ */
+const TEMP_GRACE_MS = 5 * 60_000;
+
+/**
+ * Delete the temp files an interrupted copy left in `dir`. A process killed between the copy and
+ * the rename cannot clean up after itself, and the name is deliberately not `.jsonl`, so nothing
+ * else would ever surface them - they would sit in the user's tree at full transcript size.
+ */
+function sweepTemp(dir: string, now: number): void {
+    let entries: import("node:fs").Dirent[];
+    try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+        if (!e.isFile() || !e.name.startsWith(".") || !e.name.endsWith(".tmp")) continue;
+        const path = join(dir, e.name);
+        try { if (now - statSync(path).mtimeMs > TEMP_GRACE_MS) unlinkSync(path); } catch { /* vanished or held open */ }
+    }
+}
+
 /** How much of two transcripts is compared at a time, so the check costs bounded memory. */
 const COMPARE_CHUNK = 64 * 1024;
 
@@ -138,12 +169,16 @@ function continues(src: string, target: string, length: number): boolean {
 
 /**
  * Copy into `dst` every offered transcript it lacks, or holds only an earlier prefix of. Returns
- * how many files were written. A file that cannot be read is skipped, never fatal.
+ * how many files were written. A file that cannot be read is skipped, never fatal. Each directory
+ * written into is swept once per run (`swept` carries that across calls), so a copy an earlier run
+ * was interrupted mid-way through does not leave its temp file behind for good.
  */
-function mirror(offers: Transcript[], dst: string): number {
+function mirror(offers: Transcript[], dst: string, now: number, swept: Set<string>): number {
     let copied = 0;
     for (const src of offers) {
         const target = join(dst, src.rel);
+        const dir = dirname(target);
+        if (!swept.has(dir)) { swept.add(dir); sweepTemp(dir, now); }
         let held: import("node:fs").Stats | null = null;
         try { held = statSync(target); } catch { /* absent: copy it */ }
         // The byte comparison runs only when the source is longer, so the steady state stays one
@@ -160,21 +195,26 @@ function mirror(offers: Transcript[], dst: string): number {
  * a conversation started under one account can be listed and resumed from another. Returns the
  * number of transcripts copied; zero once the accounts agree.
  *
+ * Only `SHARED_TOOL` is mirrored; any other tool is a no-op even if it grows a `projects` tree.
+ *
  * `roots` defaults to the tool's accounts and exists so a caller (the test) can name the trees
  * outright: account discovery freezes its base paths at import, which a test sharing a process
  * with others cannot steer.
  */
-export function syncSessions(toolName: string, roots: SessionRoot[] = sessionRoots(toolName)): number {
-    const writable = roots.filter((root) => root.writable);
-    if (roots.length < 2 || writable.length === 0) return 0;
+export function syncSessions(toolName: string, roots?: SessionRoot[]): number {
+    if (toolName !== SHARED_TOOL) return 0;
+    const trees = roots ?? sessionRoots(toolName);
+    const writable = trees.filter((root) => root.writable);
+    if (trees.length < 2 || writable.length === 0) return 0;
 
     const now = Date.now();
+    const swept = new Set<string>();
     let copied = 0;
-    for (const src of roots) {
+    for (const src of trees) {
         const offers = offered(src.dir, now);
         if (!offers.length) continue;
         for (const dst of writable) {
-            if (dst.dir !== src.dir) copied += mirror(offers, dst.dir);
+            if (dst.dir !== src.dir) copied += mirror(offers, dst.dir, now, swept);
         }
     }
     return copied;

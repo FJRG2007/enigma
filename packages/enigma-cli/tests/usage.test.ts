@@ -8,7 +8,7 @@
 import { join } from "node:path";
 import { tmpdir, homedir } from "node:os";
 import { test, expect, afterAll } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync, mkdirSync } from "node:fs";
 
 const HOME = mkdtempSync(join(tmpdir(), "enigma-usage-"));
 process.env.USERPROFILE = HOME;
@@ -26,6 +26,11 @@ afterAll(() => rmSync(HOME, { recursive: true, force: true }));
 
 const projDir = join(HOME, ".claude", "projects", "proj-a");
 const subDir = join(projDir, "sess1", "subagents");
+
+/** Block the thread briefly, so two files written in a row get distinct creation times. */
+function sleepMs(ms: number): void {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
 
 function assistant(ts: string, id: string, model: string, u: Record<string, number>): string {
     return JSON.stringify({ type: "assistant", timestamp: ts, message: { id, model, role: "assistant", usage: u } });
@@ -191,6 +196,66 @@ test("counts a session shared across accounts once, and only for the account it 
         expect(r.accounts.mirror.output).toBe(0);
     } finally {
         rmSync(join(homedir(), ".enigma", "claude", "mirror"), { recursive: true, force: true });
+    }
+});
+
+test("counts the fuller copy when the session was continued after it was mirrored", () => {
+    // A session mirrored while idle and then resumed under its origin leaves the other account
+    // holding a prefix, and which tree the walk reaches first is arbitrary - here the stale one
+    // sorts first. Transcripts are append-only, so the longer file is the one carrying every
+    // turn; counting the prefix would drop the newest spend from the totals and the windows.
+    const base = buildUsage();
+    const staleRoot = join(homedir(), ".enigma", "claude", "aa-stale");
+    const liveRoot = join(homedir(), ".enigma", "claude", "zz-live");
+    const stale = join(staleRoot, "projects", "proj-c", "sess.jsonl");
+    const live = join(liveRoot, "projects", "proj-c", "sess.jsonl");
+    for (const f of [stale, live]) mkdirSync(join(f, ".."), { recursive: true });
+    const mirrored = assistant("2026-06-05T10:00:00Z", "c_1", "claude-opus-4-8", { input_tokens: 40, output_tokens: 17, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }) + "\n";
+    const appended = assistant("2026-06-05T11:00:00Z", "c_2", "claude-opus-4-8", { input_tokens: 60, output_tokens: 23, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }) + "\n";
+    writeFileSync(stale, mirrored);
+    writeFileSync(live, mirrored + appended);
+    try {
+        const r = buildUsage();
+        expect(r.output).toBe(base.output + 17 + 23);
+        expect(r.input).toBe(base.input + 40 + 60);
+        expect(r.messages).toBe(base.messages + 2);
+        expect(r.byProject["proj-c"].messages).toBe(2);
+        expect(r.byAccount["zz-live"].output).toBe(17 + 23);
+        expect(r.byAccount["aa-stale"].output).toBe(0);
+    } finally {
+        for (const dir of [staleRoot, liveRoot]) rmSync(dir, { recursive: true, force: true });
+    }
+});
+
+test("credits a shared session to the account that recorded it, whatever order the dirs are read in", () => {
+    // Two managed accounts hold identical copies, and the copy's directory sorts FIRST: taking
+    // whichever tree the walk reached first would credit it with the origin's spend, which is
+    // exactly what separate accounts exist to keep apart.
+    const originRoot = join(homedir(), ".enigma", "claude", "zz-origin");
+    const copyRoot = join(homedir(), ".enigma", "claude", "aa-copy");
+    const originFile = join(originRoot, "projects", "proj-s", "shared.jsonl");
+    const copyFile = join(copyRoot, "projects", "proj-s", "shared.jsonl");
+    for (const f of [originFile, copyFile]) mkdirSync(join(f, ".."), { recursive: true });
+    const body = assistant("2026-06-04T10:00:00Z", "s_1", "claude-opus-4-8", { input_tokens: 13, output_tokens: 31, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }) + "\n";
+    writeFileSync(originFile, body);
+    // The copy is made after its origin, which is the signal that tells them apart: sizes match
+    // and a mirrored copy carries the origin's mtime by design.
+    sleepMs(20);
+    writeFileSync(copyFile, body);
+    try {
+        const r = buildUsage();
+        // Counted once either way.
+        expect(r.byProject["proj-s"].output).toBe(31);
+        const origin = statSync(originFile).birthtimeMs, copy = statSync(copyFile).birthtimeMs;
+        // Creation times are filesystem-dependent; where they are not recorded there is nothing
+        // left to tell two identical copies apart, and the dedupe above is all that is claimed.
+        if (origin > 0 && copy > origin) {
+            expect(r.byAccount["zz-origin"].output).toBe(31);
+            expect(r.byAccount["aa-copy"].output).toBe(0);
+            expect(r.accounts["aa-copy"].scannedFiles).toBe(0);
+        }
+    } finally {
+        for (const dir of [originRoot, copyRoot]) rmSync(dir, { recursive: true, force: true });
     }
 });
 
