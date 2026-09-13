@@ -30,6 +30,7 @@
     "check": "npm run -w enigma-cli check",
     "guard": "npm run -w enigma-cli guard",
     "guardrails": "npm run -w enigma-cli guardrails",
+    "test": "npm run -w enigma-cli test",
     "verify": "npm run -w enigma-cli verify",
     "lint": "npm run -w @enigmax/linter dev --",
     "lint:test": "npm run -w @enigmax/linter test",

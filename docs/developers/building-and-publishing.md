@@ -168,8 +168,10 @@ sync. Prefer the CI release flow; manual publish is a fallback.
 ## CI summary
 
 - `.github/workflows/ci.yml` - on push to `main` and on every PR: `npm ci`,
-  `npm run verify`, the `bun test` suites (one step per test file, so a new
-  `tests/*.test.ts` only runs in CI once it is listed there), `npm run build`,
+  `npm run verify`, `npm test` (one step, which runs every `tests/*.test.ts` in a
+  process of its own - see `packages/enigma-cli/scripts/test.ts` for why that is
+  a contract and not a preference; a new test file is covered the day it lands),
+  `npm run build`,
   then `npm run check:hooks` (rebuilds every committed hook copy - guard,
   guardrails, trim - and fails if any has drifted from source). A second
   `linter` job gates `@enigmax/linter` and runs the Ciphera-style lint over
