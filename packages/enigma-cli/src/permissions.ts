@@ -15,12 +15,11 @@
  */
 
 import { join } from "node:path";
-import { homedir } from "node:os";
 import { AGENTS } from "./agents";
 import * as p from "@clack/prompts";
 import type { Agent } from "./agents";
-import { isDir, readJson } from "./util";
 import { kimiHome, mirrorKimiTrust } from "./kimi";
+import { enigmaHome, isDir, readJson } from "./util";
 import { readConfig, setBypassDisabled } from "./config";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { enableClaudeBypass, getClaudeBypass, mirrorClaudeSettings, mirrorClaudeTrust, setClaudeBypass } from "./claude";
@@ -195,9 +194,14 @@ function mirrorTomlKeys(globalPath: string, path: string, keys: string[]): void 
     writeFileSync(path, after);
 }
 
-/** Codex's only config file (there is no project-local equivalent). */
+/**
+ * Codex's only config file (there is no project-local equivalent). Through `enigmaHome()` for the
+ * reason kimiHome() already is: bun on Linux does not reflect a reassigned $HOME through
+ * os.homedir(), so this read the real ~/.codex while the account being mirrored into lived in an
+ * isolated home - the mirror then found no global posture and wrote nothing.
+ */
 function codexConfigPath(): string {
-    return join(homedir(), ".codex", "config.toml");
+    return join(enigmaHome(), ".codex", "config.toml");
 }
 
 /** True when Codex's global config has the full-bypass knobs set. */
@@ -311,10 +315,15 @@ function disableOpencodeBypassAt(path: string, dryRun: boolean): BypassWrite {
     return { path, changed: true };
 }
 
-/** opencode config path for a scope (global user config, or the project root). */
+/**
+ * opencode config path for a scope (global user config, or the project root). The global one
+ * resolves through `enigmaHome()`, like every other agent path in this file: bun on Linux does
+ * not reflect a reassigned $HOME through os.homedir(), so a raw homedir() ignores an isolated
+ * home and reaches the real config.
+ */
 function opencodeConfigPath(scope: "global" | "local"): string {
     return scope === "global"
-        ? join(homedir(), ".config", "opencode", "opencode.json")
+        ? join(enigmaHome(), ".config", "opencode", "opencode.json")
         : join(process.cwd(), "opencode.json");
 }
 

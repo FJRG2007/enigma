@@ -4,13 +4,13 @@
  * (guard.ts) reads under any per-repo .githooks/enigma-guard.json override, so toggling a
  * protection here changes enforcement for every repo that does not override it.
  *
- * Kept dependency-free and light (Node builtins only) so the settings registry - which
- * surfaces these in the TUI AND the dashboard - can import it without pulling in clack or
- * the security install machinery (that lives in security.ts).
+ * Kept light - Node builtins plus `util`, itself a builtins-only leaf - so the settings
+ * registry, which surfaces these in the TUI AND the dashboard, can import it without pulling
+ * in clack or the security install machinery (that lives in security.ts).
  */
 
-import { homedir } from "node:os";
 import { join } from "node:path";
+import { enigmaHome } from "./util";
 import { readFileSync, writeFileSync } from "node:fs";
 
 export type GuardKey = "secrets" | "envFiles" | "depDirs" | "generatedDirs" | "junkFiles" | "largeFiles";
@@ -55,9 +55,14 @@ function defaults(): GuardConfig {
     return { secrets: true, envFiles: true, depDirs: true, generatedDirs: true, junkFiles: true, largeFiles: true, blockPaths: [], allowPaths: [], secretPatterns: [] };
 }
 
-/** The user-wide guard config file enigma's guard reads as its base layer. */
+/**
+ * The user-wide guard config file enigma's guard reads as its base layer. Resolved through
+ * `enigmaHome()`, like every other path enigma owns: bun on Linux does not reflect a reassigned
+ * $HOME through os.homedir(), so a raw homedir() read the real home while its writer used the
+ * isolated one.
+ */
 export function globalGuardPath(): string {
-    return join(homedir(), ".enigma-guard.json");
+    return join(enigmaHome(), ".enigma-guard.json");
 }
 
 /** Read the global guard config (defaults overlaid by ~/.enigma-guard.json). */

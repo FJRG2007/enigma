@@ -9,8 +9,8 @@
  */
 
 import { join } from "node:path";
-import { homedir } from "node:os";
 import * as acct from "./accounts";
+import { enigmaHome } from "./util";
 import { CONFIG_FILE } from "./config";
 import type { EnigmaConfig } from "./config";
 import { ALL_SETTINGS } from "./settings-registry";
@@ -35,8 +35,14 @@ export interface ConfigBundle {
     };
 }
 
+/**
+ * The same file `config.ts` writes, resolved the same way. Through `enigmaHome()` rather than
+ * `homedir()`: bun on Linux does not reflect a reassigned $HOME through os.homedir(), so the two
+ * disagreed there - the setter wrote the isolated home and the export read the real one, which is
+ * a round-trip that silently exported somebody else's config.
+ */
 function globalConfigPath(): string {
-    return join(homedir(), CONFIG_FILE);
+    return join(enigmaHome(), CONFIG_FILE);
 }
 
 /** Config keys that hold a secret and must never be exported. */
