@@ -192,11 +192,18 @@ test("agents.parseKimiLine maps assistant text and the resume hint that carries 
     expect(agents.parseKimiLine("   ")).toBeNull();
 });
 
-test("agents.parseClaudeLine maps init, assistant text, result and errors", () => {
+test("agents.parseClaudeLine maps init, assistant text_final, partial text deltas, result and errors", () => {
     expect(agents.parseClaudeLine('{"type":"system","subtype":"init","session_id":"s1","model":"claude-opus-4-8"}'))
         .toEqual({ kind: "init", sessionId: "s1", model: "claude-opus-4-8" });
+    // A full (non-partial) assistant message is the whole answer -> text_final, not text.
     expect(agents.parseClaudeLine('{"type":"assistant","message":{"content":[{"type":"text","text":"Hello "},{"type":"text","text":"world"}]}}'))
-        .toEqual({ kind: "text", text: "Hello world" });
+        .toEqual({ kind: "text_final", text: "Hello world" });
+    // Partial-message deltas (--include-partial-messages): a text_delta streams as an incremental
+    // `text` event; a thinking_delta and every non-delta stream event carry no answer content.
+    expect(agents.parseClaudeLine('{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hel"}}}'))
+        .toEqual({ kind: "text", text: "Hel" });
+    expect(agents.parseClaudeLine('{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"hmm"}}}')).toBeNull();
+    expect(agents.parseClaudeLine('{"type":"stream_event","event":{"type":"message_start","message":{}}}')).toBeNull();
     expect(agents.parseClaudeLine('{"type":"result","subtype":"success","result":"final","session_id":"s1","usage":{"input_tokens":12,"output_tokens":3}}'))
         .toMatchObject({ kind: "result", text: "final", sessionId: "s1", inputTokens: 12, outputTokens: 3, isError: false });
     expect(agents.parseClaudeLine('{"type":"result","subtype":"error_during_execution","is_error":true,"error_message":"boom"}'))

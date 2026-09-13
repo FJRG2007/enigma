@@ -22,6 +22,10 @@ import { getTool, isToolName } from "./accounts";
 export type AgentEvent =
     | { kind: "init"; sessionId: string | null; model: string | null; }
     | { kind: "text"; text: string; }
+    // The complete assistant-turn text (Claude Code's non-partial `assistant` message). runAgent
+    // uses it only when NOT streaming; with --include-partial-messages the incremental `text`
+    // deltas already delivered the same content token-by-token, so counting both would double it.
+    | { kind: "text_final"; text: string; }
     | { kind: "result"; text: string | null; sessionId: string | null; inputTokens: number; outputTokens: number; isError: boolean; errorMessage?: string; };
 
 /** An image attached to a request, in Anthropic content-block shape (base64 or url source). */
@@ -36,6 +40,12 @@ export interface CompletionOptions {
     system?: string | null;
     sessionId?: string | null;
     enableTools?: boolean;
+    /**
+     * Request token-by-token streaming. Claude Code then gets --include-partial-messages and its
+     * text arrives as incremental `text` deltas; the final `text_final` block is ignored so it is
+     * not counted twice. Off = one `text_final` block per assistant turn (the whole answer at once).
+     */
+    stream?: boolean;
     /** Images for the current user turn (Claude Code only; other agents get text-only). */
     images?: ImageBlock[];
     /** Run under a specific enigma account (its config dir). Overrides the active account. */
@@ -118,7 +128,16 @@ export function parseClaudeLine(line: string): AgentEvent | null {
         const blocks = message?.content;
         if (Array.isArray(blocks)) {
             const text = blocks.filter((b) => b && b.type === "text" && typeof b.text === "string").map((b) => b.text as string).join("");
-            if (text) return { kind: "text", text };
+            if (text) return { kind: "text_final", text };
+        }
+        return null;
+    }
+    // Partial-message deltas (--include-partial-messages): the token-by-token text stream. Only a
+    // text_delta is answer content; thinking_delta and every other delta type are skipped.
+    if (type === "stream_event") {
+        const event = msg.event as { type?: string; delta?: { type?: string; text?: string; }; } | undefined;
+        if (event?.type === "content_block_delta" && event.delta?.type === "text_delta" && typeof event.delta.text === "string") {
+            return { kind: "text", text: event.delta.text };
         }
         return null;
     }
@@ -144,6 +163,10 @@ const claudeAdapter: AgentAdapter = {
     mode: "stream-json",
     build(prompt, opts) {
         const args = ["-p", "--output-format", "stream-json", "--verbose"];
+        // Token-by-token streaming: emit partial content_block_delta events as they arrive, so the
+        // HTTP response forwards real text deltas instead of one final assistant message.
+        // parseClaudeLine turns each text_delta into a `text` event.
+        if (opts.stream) args.push("--include-partial-messages");
         // A named Claude model wins; otherwise (bare "claude" / a foreign id) use the default.
         const model = resolveClaudeModel(opts.model);
         args.push("--model", model && model !== "claude" ? model : DEFAULT_MODEL);

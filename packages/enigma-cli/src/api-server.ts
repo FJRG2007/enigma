@@ -203,6 +203,9 @@ async function runAgent(adapter: AgentAdapter, prompt: string, opts: CompletionO
                 if (!ev) continue;
                 if (ev.kind === "init" && ev.sessionId) summary.sessionId = ev.sessionId;
                 else if (ev.kind === "text") { summary.text += ev.text; if (onText) onText(ev.text); }
+                // Full assistant-turn text. When streaming, the `text` deltas above already delivered
+                // it token-by-token, so skip it to avoid doubling; otherwise it is the whole answer.
+                else if (ev.kind === "text_final") { if (!opts.stream) { summary.text += ev.text; if (onText) onText(ev.text); } }
                 else if (ev.kind === "result") {
                     if (ev.text && !summary.text) summary.text = ev.text;
                     if (ev.sessionId) summary.sessionId = ev.sessionId;
@@ -357,7 +360,7 @@ async function handleChatCompletions(req: IncomingMessage, res: ServerResponse, 
     const { prompt, system } = messagesToPrompt(messages);
     const model = (body.model as string) || DEFAULT_MODEL;
     const adapter = resolveAdapter(model, defaults.tool);
-    const opts: CompletionOptions = { model, system, sessionId: (body.session_id as string) ?? null, enableTools: body.enable_tools === true, images: extractImages(messages), ...contextOf(body, defaults) };
+    const opts: CompletionOptions = { model, system, sessionId: (body.session_id as string) ?? null, enableTools: body.enable_tools === true, stream: body.stream === true, images: extractImages(messages), ...contextOf(body, defaults) };
     const id = `chatcmpl-${randomUUID().replace(/-/g, "").slice(0, 24)}`;
 
     if (body.stream === true) {
@@ -408,7 +411,7 @@ async function handleAnthropicMessages(req: IncomingMessage, res: ServerResponse
     const { prompt } = messagesToPrompt(rawMessages);
     const model = (body.model as string) || DEFAULT_MODEL;
     const adapter = resolveAdapter(model, defaults.tool);
-    const opts: CompletionOptions = { model, system, enableTools: body.enable_tools === true, images: extractImages(rawMessages), ...contextOf(body, defaults) };
+    const opts: CompletionOptions = { model, system, enableTools: body.enable_tools === true, stream: body.stream === true, images: extractImages(rawMessages), ...contextOf(body, defaults) };
     const id = `msg_${randomUUID().replace(/-/g, "").slice(0, 24)}`;
 
     if (body.stream === true) {
