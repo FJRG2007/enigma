@@ -432,9 +432,11 @@ const STYLE_IGNORE_RE = /enigma:style-ignore/;
 
 /**
  * The phrases that report an item as NOT touched, in both languages. A table cell saying nothing
- * but these is the one the style spec calls out as "no list of what you never touched", and the
- * shape that prompted this check: a release summary carried two table rows for packages that had
- * not changed and had not been asked about.
+ * but these is route rather than outcome, which is what the style spec bans ("Report the outcome,
+ * not the route"), and the shape that prompted this check: a release summary carried two table
+ * rows for packages that had not changed and had not been asked about. The spec used to enumerate
+ * the untouched row itself and no longer does - the kernel sits at its byte budget - so this rule
+ * rests on that general clause alone, which is one more reason it only ever records.
  *
  * RECORDED, NEVER BLOCKING - see STYLE_BLOCKING_RULES. Four shapes of this rule were tried and
  * each produced a false block on reporting a user had asked for: bullets, then tallies ("3 suites
@@ -458,8 +460,8 @@ const STYLE_PREAMBLE_RE = /^\s*(?:voy\s+a\b|ahora\s+voy\s+a\b|(?:déjame|dejame|
  * What the preamble forms may be followed by without announcing WORK. "Voy a necesitar las
  * credenciales" and "I'm going to need the npm token" announce a LACK, and naming a blocker is
  * the one shape every other check in this module protects - LEGITIMATE_STOP_RE exists for it, and
- * the style spec itself calls it an outcome ("work left unfinished, unverified or blocked IS an
- * outcome - always name it"). Announcing work is a preamble; announcing a lack is a report.
+ * the style spec itself calls it an outcome ("Unfinished/unverified/blocked work IS an outcome -
+ * name it once"). Announcing work is a preamble; announcing a lack is a report.
  */
 const STYLE_NEED_RE = /^\s*(?:necesit\w*|requier\w*|requer\w*|har[áa]\s+falta|hace\s+falta|need\w*|require\w*)\b/i;
 
