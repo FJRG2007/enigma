@@ -13,7 +13,7 @@ Icons are the one dependency a project takes for granted and then ships whole. I
 
 Every icon is a 24x24 `viewBox` painted with `currentColor`, so it inherits the surrounding text colour and needs no theming of its own.
 
-**Bold duotone is the weight that ships today** - two filled paths, the shape over a background at half opacity - and it is addressable by name, so a second weight is an addition rather than a rename. How that works is in [Weights](#weights) below.
+An icon is always asked for by the **weight** it is drawn in. Bold duotone is what ships today; [Weights](#weights) is why there is no default one.
 
 ## Browse
 
@@ -32,27 +32,28 @@ A plain package, so it installs like one. There is no `enigma add` item and no s
     <div slot="bun"><Command command="bun add @enigmax/icons" bare={true} /></div>
 </Tabs>
 
-React 18 or newer is the only requirement. `@tabler/icons-react` is an optional peer, needed only if you import one of the brand marks below.
+One package holds every weight, so there is nothing to choose at install time. React 18 or newer is the only requirement; `@tabler/icons-react` is an optional peer, needed only if you import one of the brand marks below.
 
 ## Weights
 
-One package holds every weight, so there is nothing to choose at install time. Bold duotone is what ships today, and it is addressable two ways - the root, which is always the default weight, or its own name:
+**There is no default weight.** Every weight is its own subpath and an icon comes from the one it is drawn in:
 
 ```tsx
-import { IconMapPin } from "@enigmax/icons";               // the default weight
-import { IconMapPin } from "@enigmax/icons/bold-duotone";  // the same icon, named
+import { IconMapPin } from "@enigmax/icons/bold-duotone";
 ```
 
-**A weight is a build dimension, not a prop.** `<IconMapPin weight="outline" />` looks friendlier and is the one design this package cannot have: the component would need every body reachable at runtime, so importing one icon would pull all of its weights into your bundle and the rest of this page would stop being true. Each weight is generated into its own directory with its own subpath instead, so two weights of one icon are two imports and a project that uses one never downloads the other.
+A default would make one weight the one you get by not choosing, and with many weights that winner is arbitrary - every other weight then has to argue with it, and the first one to ship keeps an advantage it never earned. The root carries only what the weights share: the `Icon` and `IconProps` types, and the brand marks, which are real logos and have no weight to pick.
 
-That makes a second weight an addition rather than a rename. The default keeps the root paths, so nothing you have written changes the day one lands; `@enigmax/icons/<weight>` is where the new one appears, with the same names and the same categories under it. A weight that is declared but incomplete fails the package's own suite rather than shipping - half a weight renders some icons and vanishes the rest, which reads as a broken page rather than a missing line in a JSON file.
+**A weight is a build dimension, not a prop.** `<IconMapPin weight="outline" />` reads friendlier and is the one design this package cannot have: the component would need every body reachable at runtime, so importing one icon would pull all of its weights into your bundle and the rest of this page would stop being true. Each weight is generated into its own directory instead, so two weights of one icon are two imports and a project that uses one never downloads the other.
+
+That makes a new weight an addition and never a rename: `@enigmax/icons/<weight>` is where it appears, with the same names and the same categories under it, and nothing you have already written changes. A weight that is declared but incomplete fails the package's own suite rather than shipping - half a weight renders some icons and vanishes the rest, which reads as a broken page rather than a missing line in a JSON file.
 
 ## Usage
 
-Import by name from the root. The name is the one shown under each icon in the browser above, prefixed with `Icon`:
+Import by name from a weight. The name is the one shown under each icon in the browser above, prefixed with `Icon`:
 
 ```tsx
-import { IconSearch, IconSun } from "@enigmax/icons";
+import { IconSearch, IconSun } from "@enigmax/icons/bold-duotone";
 
 <IconSearch />
 <IconSun size={18} className="text-muted" />
@@ -60,23 +61,25 @@ import { IconSearch, IconSun } from "@enigmax/icons";
 
 `size` sets both width and height and defaults to 24. Everything else is forwarded to the `<svg>`, so `className`, `style`, `onClick` and the ARIA attributes behave as they would on any element. A `ref` reaches the SVG itself.
 
-`stroke` is accepted and ignored. These icons are filled rather than stroked, so there is no line to widen - and forwarding a number into the SVG `stroke` attribute, which takes a colour, paints the icon with an invalid value until it disappears. Keeping it in the signature means a stroked set can be swapped in without touching the call sites that pass it.
+`stroke` is accepted and ignored. These icons are filled rather than stroked, so there is no line to widen - and forwarding a number into the SVG `stroke` attribute, which takes a colour, paints the icon with an invalid value until it disappears. Keeping it in the signature means a stroked weight can be imported in place of a filled one without touching the call sites that pass it.
 
 ## Only what you render
 
 The package declares no side effects and ships one module per icon, so an icon you never import is unreachable code that never reaches your output. Nothing is resolved at runtime and nothing is fetched at install time - the drawings are plain strings written into the modules at build.
 
-Importing from the root is enough to get that. The subpaths exist for when you want to be explicit, or want a whole group at once:
+The weight's barrel is enough to get that. The deeper subpaths exist for when you want to be explicit, or want a whole group at once:
 
 ```tsx
-import { IconSun } from "@enigmax/icons";                    // one icon
-import { IconSun } from "@enigmax/icons/icons/IconSun";      // the same icon, named directly
-import * as weather from "@enigmax/icons/categories/weather"; // a category
+import { IconSun } from "@enigmax/icons/bold-duotone";                    // one icon
+import { IconSun } from "@enigmax/icons/bold-duotone/icons/IconSun";      // the same icon, named directly
+import * as weather from "@enigmax/icons/bold-duotone/categories/weather"; // a category
 ```
+
+Categories are the same in every weight, because a category is what an icon IS rather than how it is drawn.
 
 ## Brand marks
 
-A logo is a trademark, not a glyph to redraw: this set has none, and hand-drawing one produces something that is recognisably wrong and legally someone else's. The brand names are re-exported from `@tabler/icons-react` instead, so they import from the same place as everything else:
+A logo is a trademark, not a glyph to redraw: this set has none, and hand-drawing one produces something that is recognisably wrong and legally someone else's. The brand names are re-exported from `@tabler/icons-react` instead, and they come from the root rather than from a weight - a logo has only one form:
 
 ```tsx
 import { IconBrandGithub } from "@enigmax/icons";
@@ -86,10 +89,10 @@ That is the only reason the package has an optional peer dependency. Import no b
 
 ## The external link arrow
 
-Use the diagonal arrow pointing up and to the right for an external link, not the box with an arrow leaving it. The box reads as clutter at the size a link marker is actually drawn, and against a filled duotone set it looks like a different icon family:
+Use the diagonal arrow pointing up and to the right for an external link, not the box with an arrow leaving it. The box reads as clutter at the size a link marker is actually drawn, and beside a filled glyph it looks like a different icon family:
 
 ```tsx
-import { IconExternalLink } from "@enigmax/icons";
+import { IconExternalLink } from "@enigmax/icons/bold-duotone";
 ```
 
-`IconExternalLink` is already mapped to the diagonal arrow, so importing it by that name gives the right glyph. The package's own test suite asserts it, so the convention cannot drift back.
+`IconExternalLink` is already mapped to the diagonal arrow in every weight, so importing it by that name gives the right glyph. The package's own test suite asserts it, so the convention cannot drift back.

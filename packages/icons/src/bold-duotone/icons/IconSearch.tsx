@@ -1,0 +1,4 @@
+// IconSearch - magnifer-bold-duotone. GENERATED, do not hand-edit.
+import { icon } from "../../icon";
+
+export const IconSearch = icon("IconSearch", "<path fill=\"currentColor\" d=\"M20.313 11.157a9.157 9.157 0 1 1-18.313 0a9.157 9.157 0 0 1 18.313 0\" opacity=\".5\"/><path fill=\"currentColor\" d=\"m17.1 18.122l3.666 3.666a.723.723 0 0 0 1.023-1.022L18.122 17.1a9 9 0 0 1-1.022 1.022\"/>");

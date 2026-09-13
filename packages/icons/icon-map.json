@@ -1,1571 +1,1570 @@
 {
  "weights": {
-  "default": "bold-duotone",
   "available": ["bold-duotone"]
  },
  "icons": {
   "IconAbc": {
-   "glyph": "text-bold-duotone",
+   "glyphs": { "bold-duotone": "text-bold-duotone" },
    "category": "Text Formatting"
   },
   "IconActivity": {
-   "glyph": "pulse-bold-duotone",
+   "glyphs": { "bold-duotone": "pulse-bold-duotone" },
    "category": "Medicine"
   },
   "IconActivityHeartbeat": {
-   "glyph": "heart-pulse-bold-duotone",
+   "glyphs": { "bold-duotone": "heart-pulse-bold-duotone" },
    "category": "Medicine"
   },
   "IconAd": {
-   "glyph": "sale-bold-duotone",
+   "glyphs": { "bold-duotone": "sale-bold-duotone" },
    "category": "Money"
   },
   "IconAddressBook": {
-   "glyph": "notebook-bookmark-bold-duotone",
+   "glyphs": { "bold-duotone": "notebook-bookmark-bold-duotone" },
    "category": "School"
   },
   "IconAdjustmentsAlt": {
-   "glyph": "tuning-2-bold-duotone",
+   "glyphs": { "bold-duotone": "tuning-2-bold-duotone" },
    "category": "Settings"
   },
   "IconAdjustmentsHorizontal": {
-   "glyph": "slider-horizontal-bold-duotone",
+   "glyphs": { "bold-duotone": "slider-horizontal-bold-duotone" },
    "category": "UI"
   },
   "IconAffiliate": {
-   "glyph": "share-bold-duotone",
+   "glyphs": { "bold-duotone": "share-bold-duotone" },
    "category": "UI"
   },
   "IconAlertCircle": {
-   "glyph": "danger-circle-bold-duotone",
+   "glyphs": { "bold-duotone": "danger-circle-bold-duotone" },
    "category": "UI"
   },
   "IconAlertHexagon": {
-   "glyph": "danger-square-bold-duotone",
+   "glyphs": { "bold-duotone": "danger-square-bold-duotone" },
    "category": "UI"
   },
   "IconAlertOctagon": {
-   "glyph": "exclamation-mark-bold-duotone",
+   "glyphs": { "bold-duotone": "exclamation-mark-bold-duotone" },
    "category": "UI"
   },
   "IconAlertTriangle": {
-   "glyph": "danger-triangle-bold-duotone",
+   "glyphs": { "bold-duotone": "danger-triangle-bold-duotone" },
    "category": "UI"
   },
   "IconAlien": {
-   "glyph": "ufo-bold-duotone",
+   "glyphs": { "bold-duotone": "ufo-bold-duotone" },
    "category": "Astronomy"
   },
   "IconAlignLeft": {
-   "glyph": "align-left-bold-duotone",
+   "glyphs": { "bold-duotone": "align-left-bold-duotone" },
    "category": "Tools"
   },
   "IconAnchor": {
-   "glyph": "magnet-bold-duotone",
+   "glyphs": { "bold-duotone": "magnet-bold-duotone" },
    "category": "UI"
   },
   "IconAntenna": {
-   "glyph": "transmission-bold-duotone",
+   "glyphs": { "bold-duotone": "transmission-bold-duotone" },
    "category": "Parts"
   },
   "IconApi": {
-   "glyph": "code-square-bold-duotone",
+   "glyphs": { "bold-duotone": "code-square-bold-duotone" },
    "category": "IT"
   },
   "IconAppWindow": {
-   "glyph": "window-frame-bold-duotone",
+   "glyphs": { "bold-duotone": "window-frame-bold-duotone" },
    "category": "IT"
   },
   "IconApps": {
-   "glyph": "widget-bold-duotone",
+   "glyphs": { "bold-duotone": "widget-bold-duotone" },
    "category": "Settings"
   },
   "IconArchive": {
-   "glyph": "archive-bold-duotone",
+   "glyphs": { "bold-duotone": "archive-bold-duotone" },
    "category": "Notes"
   },
   "IconArchiveOff": {
-   "glyph": "archive-up-bold-duotone",
+   "glyphs": { "bold-duotone": "archive-up-bold-duotone" },
    "category": "Notes"
   },
   "IconArmchair": {
-   "glyph": "armchair-bold-duotone",
+   "glyphs": { "bold-duotone": "armchair-bold-duotone" },
    "category": "Home"
   },
   "IconArrowBackUp": {
-   "glyph": "undo-left-bold-duotone",
+   "glyphs": { "bold-duotone": "undo-left-bold-duotone" },
    "category": "Arrows Action"
   },
   "IconArrowBigDownLine": {
-   "glyph": "square-arrow-down-bold-duotone",
+   "glyphs": { "bold-duotone": "square-arrow-down-bold-duotone" },
    "category": "Arrows"
   },
   "IconArrowDown": {
-   "glyph": "arrow-down-bold-duotone",
+   "glyphs": { "bold-duotone": "arrow-down-bold-duotone" },
    "category": "Arrows"
   },
   "IconArrowDownToArc": {
-   "glyph": "round-arrow-down-bold-duotone",
+   "glyphs": { "bold-duotone": "round-arrow-down-bold-duotone" },
    "category": "Arrows"
   },
   "IconArrowForward": {
-   "glyph": "forward-bold-duotone",
+   "glyphs": { "bold-duotone": "forward-bold-duotone" },
    "category": "Arrows Action"
   },
   "IconArrowForwardUp": {
-   "glyph": "undo-right-bold-duotone",
+   "glyphs": { "bold-duotone": "undo-right-bold-duotone" },
    "category": "Arrows Action"
   },
   "IconArrowLeft": {
-   "glyph": "arrow-left-bold-duotone",
+   "glyphs": { "bold-duotone": "arrow-left-bold-duotone" },
    "category": "Arrows"
   },
   "IconArrowMerge": {
-   "glyph": "branching-paths-up-bold-duotone",
+   "glyphs": { "bold-duotone": "branching-paths-up-bold-duotone" },
    "category": "Map"
   },
   "IconArrowRamp": {
-   "glyph": "round-arrow-right-up-bold-duotone",
+   "glyphs": { "bold-duotone": "round-arrow-right-up-bold-duotone" },
    "category": "Arrows"
   },
   "IconArrowRight": {
-   "glyph": "arrow-right-bold-duotone",
+   "glyphs": { "bold-duotone": "arrow-right-bold-duotone" },
    "category": "Arrows"
   },
   "IconArrowUp": {
-   "glyph": "arrow-up-bold-duotone",
+   "glyphs": { "bold-duotone": "arrow-up-bold-duotone" },
    "category": "Arrows"
   },
   "IconArrowUpRight": {
-   "glyph": "arrow-right-up-bold-duotone",
+   "glyphs": { "bold-duotone": "arrow-right-up-bold-duotone" },
    "category": "Arrows"
   },
   "IconArrowsLeftRight": {
-   "glyph": "transfer-horizontal-bold-duotone",
+   "glyphs": { "bold-duotone": "transfer-horizontal-bold-duotone" },
    "category": "Arrows"
   },
   "IconArrowsMaximize": {
-   "glyph": "full-screen-square-bold-duotone",
+   "glyphs": { "bold-duotone": "full-screen-square-bold-duotone" },
    "category": "Video"
   },
   "IconArrowsRightLeft": {
-   "glyph": "round-transfer-horizontal-bold-duotone",
+   "glyphs": { "bold-duotone": "round-transfer-horizontal-bold-duotone" },
    "category": "Arrows"
   },
   "IconArrowsSort": {
-   "glyph": "sort-vertical-bold-duotone",
+   "glyphs": { "bold-duotone": "sort-vertical-bold-duotone" },
    "category": "Arrows"
   },
   "IconAt": {
-   "glyph": "mention-circle-bold-duotone",
+   "glyphs": { "bold-duotone": "mention-circle-bold-duotone" },
    "category": "UI"
   },
   "IconAtom": {
-   "glyph": "atom-bold-duotone",
+   "glyphs": { "bold-duotone": "atom-bold-duotone" },
    "category": "Astronomy"
   },
   "IconBan": {
-   "glyph": "forbidden-circle-bold-duotone",
+   "glyphs": { "bold-duotone": "forbidden-circle-bold-duotone" },
    "category": "UI"
   },
   "IconBarcode": {
-   "glyph": "barcode-bold-duotone",
+   "glyphs": { "bold-duotone": "barcode-bold-duotone" },
    "category": "Security"
   },
   "IconBarrierBlock": {
-   "glyph": "slash-square-bold-duotone",
+   "glyphs": { "bold-duotone": "slash-square-bold-duotone" },
    "category": "IT"
   },
   "IconBed": {
-   "glyph": "bed-bold-duotone",
+   "glyphs": { "bold-duotone": "bed-bold-duotone" },
    "category": "Home"
   },
   "IconBeer": {
-   "glyph": "mug-bold-duotone",
+   "glyphs": { "bold-duotone": "mug-bold-duotone" },
    "category": "Food"
   },
   "IconBell": {
-   "glyph": "bell-bold-duotone",
+   "glyphs": { "bold-duotone": "bell-bold-duotone" },
    "category": "Notifications"
   },
   "IconBellOff": {
-   "glyph": "bell-off-bold-duotone",
+   "glyphs": { "bold-duotone": "bell-off-bold-duotone" },
    "category": "Notifications"
   },
   "IconBellRinging": {
-   "glyph": "bell-ring-bold-duotone",
+   "glyphs": { "bold-duotone": "bell-ring-bold-duotone" },
    "category": "Notifications"
   },
   "IconBike": {
-   "glyph": "bicycling-bold-duotone",
+   "glyphs": { "bold-duotone": "bicycling-bold-duotone" },
    "category": "Sports"
   },
   "IconBinaryTree2": {
-   "glyph": "branching-paths-down-bold-duotone",
+   "glyphs": { "bold-duotone": "branching-paths-down-bold-duotone" },
    "category": "Map"
   },
   "IconBolt": {
-   "glyph": "bolt-bold-duotone",
+   "glyphs": { "bold-duotone": "bolt-bold-duotone" },
    "category": "UI"
   },
   "IconBoltFilled": {
-   "glyph": "lightning-bold-duotone",
+   "glyphs": { "bold-duotone": "lightning-bold-duotone" },
    "category": "Devices"
   },
   "IconBomb": {
-   "glyph": "bomb-bold-duotone",
+   "glyphs": { "bold-duotone": "bomb-bold-duotone" },
    "category": "Security"
   },
   "IconBook": {
-   "glyph": "book-bold-duotone",
+   "glyphs": { "bold-duotone": "book-bold-duotone" },
    "category": "School"
   },
   "IconBook2": {
-   "glyph": "book-2-bold-duotone",
+   "glyphs": { "bold-duotone": "book-2-bold-duotone" },
    "category": "School"
   },
   "IconBookmark": {
-   "glyph": "bookmark-bold-duotone",
+   "glyphs": { "bold-duotone": "bookmark-bold-duotone" },
    "category": "School"
   },
   "IconBookmarkOff": {
-   "glyph": "bookmark-opened-bold-duotone",
+   "glyphs": { "bold-duotone": "bookmark-opened-bold-duotone" },
    "category": "School"
   },
   "IconBookmarks": {
-   "glyph": "bookmark-square-bold-duotone",
+   "glyphs": { "bold-duotone": "bookmark-square-bold-duotone" },
    "category": "School"
   },
   "IconBox": {
-   "glyph": "box-bold-duotone",
+   "glyphs": { "bold-duotone": "box-bold-duotone" },
    "category": "UI"
   },
   "IconBraces": {
-   "glyph": "code-2-bold-duotone",
+   "glyphs": { "bold-duotone": "code-2-bold-duotone" },
    "category": "IT"
   },
   "IconBrain": {
-   "glyph": "brain-bold-duotone",
+   "glyphs": { "bold-duotone": "brain-bold-duotone" },
    "category": "Medicine"
   },
   "IconBriefcase": {
-   "glyph": "suitcase-bold-duotone",
+   "glyphs": { "bold-duotone": "suitcase-bold-duotone" },
    "category": "Nature"
   },
   "IconBroadcast": {
-   "glyph": "radio-minimalistic-bold-duotone",
+   "glyphs": { "bold-duotone": "radio-minimalistic-bold-duotone" },
    "category": "Devices"
   },
   "IconBrowser": {
-   "glyph": "display-bold-duotone",
+   "glyphs": { "bold-duotone": "display-bold-duotone" },
    "category": "Devices"
   },
   "IconBrush": {
-   "glyph": "paint-brush-bold-duotone",
+   "glyphs": { "bold-duotone": "paint-brush-bold-duotone" },
    "category": "Tools"
   },
   "IconBug": {
-   "glyph": "bug-bold-duotone",
+   "glyphs": { "bold-duotone": "bug-bold-duotone" },
    "category": "IT"
   },
   "IconBugFilled": {
-   "glyph": "bug-bold-duotone",
+   "glyphs": { "bold-duotone": "bug-bold-duotone" },
    "category": "IT"
   },
   "IconBugOff": {
-   "glyph": "bug-minimalistic-bold-duotone",
+   "glyphs": { "bold-duotone": "bug-minimalistic-bold-duotone" },
    "category": "IT"
   },
   "IconBuilding": {
-   "glyph": "buildings-bold-duotone",
+   "glyphs": { "bold-duotone": "buildings-bold-duotone" },
    "category": "Building"
   },
   "IconBuildingArch": {
-   "glyph": "buildings-bold-duotone",
+   "glyphs": { "bold-duotone": "buildings-bold-duotone" },
    "category": "Building"
   },
   "IconBuildingBank": {
-   "glyph": "buildings-2-bold-duotone",
+   "glyphs": { "bold-duotone": "buildings-2-bold-duotone" },
    "category": "Building"
   },
   "IconBuildingBroadcastTower": {
-   "glyph": "station-bold-duotone",
+   "glyphs": { "bold-duotone": "station-bold-duotone" },
    "category": "IT"
   },
   "IconBuildingEstate": {
-   "glyph": "city-bold-duotone",
+   "glyphs": { "bold-duotone": "city-bold-duotone" },
    "category": "Building"
   },
   "IconBuildingFactory": {
-   "glyph": "garage-bold-duotone",
+   "glyphs": { "bold-duotone": "garage-bold-duotone" },
    "category": "Building"
   },
   "IconBuildingFactory2": {
-   "glyph": "garage-bold-duotone",
+   "glyphs": { "bold-duotone": "garage-bold-duotone" },
    "category": "Building"
   },
   "IconBuildingLighthouse": {
-   "glyph": "signpost-bold-duotone",
+   "glyphs": { "bold-duotone": "signpost-bold-duotone" },
    "category": "Map"
   },
   "IconBuildingMonument": {
-   "glyph": "buildings-3-bold-duotone",
+   "glyphs": { "bold-duotone": "buildings-3-bold-duotone" },
    "category": "Building"
   },
   "IconBuildingSkyscraper": {
-   "glyph": "buildings-bold-duotone",
+   "glyphs": { "bold-duotone": "buildings-bold-duotone" },
    "category": "Building"
   },
   "IconBuildingStore": {
-   "glyph": "shop-bold-duotone",
+   "glyphs": { "bold-duotone": "shop-bold-duotone" },
    "category": "Shopping"
   },
   "IconBulb": {
-   "glyph": "lightbulb-bold-duotone",
+   "glyphs": { "bold-duotone": "lightbulb-bold-duotone" },
    "category": "Devices"
   },
   "IconCake": {
-   "glyph": "donut-bold-duotone",
+   "glyphs": { "bold-duotone": "donut-bold-duotone" },
    "category": "Food"
   },
   "IconCalendar": {
-   "glyph": "calendar-bold-duotone",
+   "glyphs": { "bold-duotone": "calendar-bold-duotone" },
    "category": "Time"
   },
   "IconCalendarEvent": {
-   "glyph": "calendar-mark-bold-duotone",
+   "glyphs": { "bold-duotone": "calendar-mark-bold-duotone" },
    "category": "Time"
   },
   "IconCalendarTime": {
-   "glyph": "calendar-date-bold-duotone",
+   "glyphs": { "bold-duotone": "calendar-date-bold-duotone" },
    "category": "Time"
   },
   "IconCamera": {
-   "glyph": "camera-bold-duotone",
+   "glyphs": { "bold-duotone": "camera-bold-duotone" },
    "category": "Video"
   },
   "IconCar": {
-   "glyph": "traffic-bold-duotone",
+   "glyphs": { "bold-duotone": "traffic-bold-duotone" },
    "category": "UI"
   },
   "IconCarCrash": {
-   "glyph": "siren-bold-duotone",
+   "glyphs": { "bold-duotone": "siren-bold-duotone" },
    "category": "Security"
   },
   "IconCast": {
-   "glyph": "screencast-bold-duotone",
+   "glyphs": { "bold-duotone": "screencast-bold-duotone" },
    "category": "IT"
   },
   "IconCertificate": {
-   "glyph": "diploma-verified-bold-duotone",
+   "glyphs": { "bold-duotone": "diploma-verified-bold-duotone" },
    "category": "School"
   },
   "IconChartArcs": {
-   "glyph": "pie-chart-bold-duotone",
+   "glyphs": { "bold-duotone": "pie-chart-bold-duotone" },
    "category": "Business"
   },
   "IconChartArea": {
-   "glyph": "graph-bold-duotone",
+   "glyphs": { "bold-duotone": "graph-bold-duotone" },
    "category": "Business"
   },
   "IconChartBar": {
-   "glyph": "chart-2-bold-duotone",
+   "glyphs": { "bold-duotone": "chart-2-bold-duotone" },
    "category": "Business"
   },
   "IconChartLine": {
-   "glyph": "graph-new-bold-duotone",
+   "glyphs": { "bold-duotone": "graph-new-bold-duotone" },
    "category": "Business"
   },
   "IconCheck": {
-   "glyph": "check-circle-bold-duotone",
+   "glyphs": { "bold-duotone": "check-circle-bold-duotone" },
    "category": "UI"
   },
   "IconChevronDown": {
-   "glyph": "alt-arrow-down-bold-duotone",
+   "glyphs": { "bold-duotone": "alt-arrow-down-bold-duotone" },
    "category": "Arrows"
   },
   "IconChevronLeft": {
-   "glyph": "alt-arrow-left-bold-duotone",
+   "glyphs": { "bold-duotone": "alt-arrow-left-bold-duotone" },
    "category": "Arrows"
   },
   "IconChevronRight": {
-   "glyph": "alt-arrow-right-bold-duotone",
+   "glyphs": { "bold-duotone": "alt-arrow-right-bold-duotone" },
    "category": "Arrows"
   },
   "IconChevronUp": {
-   "glyph": "alt-arrow-up-bold-duotone",
+   "glyphs": { "bold-duotone": "alt-arrow-up-bold-duotone" },
    "category": "Arrows"
   },
   "IconCircle": {
-   "glyph": "record-circle-bold-duotone",
+   "glyphs": { "bold-duotone": "record-circle-bold-duotone" },
    "category": "Call"
   },
   "IconCircleCheck": {
-   "glyph": "check-circle-bold-duotone",
+   "glyphs": { "bold-duotone": "check-circle-bold-duotone" },
    "category": "UI"
   },
   "IconCircleCheckFilled": {
-   "glyph": "check-circle-bold-duotone",
+   "glyphs": { "bold-duotone": "check-circle-bold-duotone" },
    "category": "UI"
   },
   "IconCircleDashed": {
-   "glyph": "restart-circle-bold-duotone",
+   "glyphs": { "bold-duotone": "restart-circle-bold-duotone" },
    "category": "Arrows"
   },
   "IconCircleDot": {
-   "glyph": "record-circle-bold-duotone",
+   "glyphs": { "bold-duotone": "record-circle-bold-duotone" },
    "category": "Call"
   },
   "IconCircleOff": {
-   "glyph": "slash-circle-bold-duotone",
+   "glyphs": { "bold-duotone": "slash-circle-bold-duotone" },
    "category": "IT"
   },
   "IconCirclePlus": {
-   "glyph": "add-circle-bold-duotone",
+   "glyphs": { "bold-duotone": "add-circle-bold-duotone" },
    "category": "UI"
   },
   "IconCircleX": {
-   "glyph": "close-circle-bold-duotone",
+   "glyphs": { "bold-duotone": "close-circle-bold-duotone" },
    "category": "UI"
   },
   "IconClipboard": {
-   "glyph": "clipboard-bold-duotone",
+   "glyphs": { "bold-duotone": "clipboard-bold-duotone" },
    "category": "Notes"
   },
   "IconClipboardList": {
-   "glyph": "clipboard-list-bold-duotone",
+   "glyphs": { "bold-duotone": "clipboard-list-bold-duotone" },
    "category": "Notes"
   },
   "IconClipboardPlus": {
-   "glyph": "clipboard-add-bold-duotone",
+   "glyphs": { "bold-duotone": "clipboard-add-bold-duotone" },
    "category": "Notes"
   },
   "IconClock": {
-   "glyph": "clock-circle-bold-duotone",
+   "glyphs": { "bold-duotone": "clock-circle-bold-duotone" },
    "category": "Time"
   },
   "IconClockExclamation": {
-   "glyph": "alarm-bold-duotone",
+   "glyphs": { "bold-duotone": "alarm-bold-duotone" },
    "category": "Time"
   },
   "IconClockHour3": {
-   "glyph": "clock-square-bold-duotone",
+   "glyphs": { "bold-duotone": "clock-square-bold-duotone" },
    "category": "Time"
   },
   "IconCloud": {
-   "glyph": "cloud-bold-duotone",
+   "glyphs": { "bold-duotone": "cloud-bold-duotone" },
    "category": "Weather"
   },
   "IconCloudRain": {
-   "glyph": "cloud-rain-bold-duotone",
+   "glyphs": { "bold-duotone": "cloud-rain-bold-duotone" },
    "category": "Weather"
   },
   "IconCloudStorm": {
-   "glyph": "cloud-storm-bold-duotone",
+   "glyphs": { "bold-duotone": "cloud-storm-bold-duotone" },
    "category": "Weather"
   },
   "IconCode": {
-   "glyph": "code-bold-duotone",
+   "glyphs": { "bold-duotone": "code-bold-duotone" },
    "category": "IT"
   },
   "IconCoin": {
-   "glyph": "dollar-bold-duotone",
+   "glyphs": { "bold-duotone": "dollar-bold-duotone" },
    "category": "Money"
   },
   "IconCommand": {
-   "glyph": "command-bold-duotone",
+   "glyphs": { "bold-duotone": "command-bold-duotone" },
    "category": "IT"
   },
   "IconCompass": {
-   "glyph": "compass-bold-duotone",
+   "glyphs": { "bold-duotone": "compass-bold-duotone" },
    "category": "Map"
   },
   "IconCookie": {
-   "glyph": "donut-bitten-bold-duotone",
+   "glyphs": { "bold-duotone": "donut-bitten-bold-duotone" },
    "category": "Food"
   },
   "IconCopy": {
-   "glyph": "copy-bold-duotone",
+   "glyphs": { "bold-duotone": "copy-bold-duotone" },
    "category": "UI"
   },
   "IconCopyOff": {
-   "glyph": "forbidden-bold-duotone",
+   "glyphs": { "bold-duotone": "forbidden-bold-duotone" },
    "category": "UI"
   },
   "IconCornerDownLeft": {
-   "glyph": "arrow-left-down-bold-duotone",
+   "glyphs": { "bold-duotone": "arrow-left-down-bold-duotone" },
    "category": "Arrows"
   },
   "IconCpu": {
-   "glyph": "cpu-bold-duotone",
+   "glyphs": { "bold-duotone": "cpu-bold-duotone" },
    "category": "Devices"
   },
   "IconCreditCard": {
-   "glyph": "card-bold-duotone",
+   "glyphs": { "bold-duotone": "card-bold-duotone" },
    "category": "Money"
   },
   "IconCross": {
-   "glyph": "medical-kit-bold-duotone",
+   "glyphs": { "bold-duotone": "medical-kit-bold-duotone" },
    "category": "Medicine"
   },
   "IconCrosshair": {
-   "glyph": "target-bold-duotone",
+   "glyphs": { "bold-duotone": "target-bold-duotone" },
    "category": "UI"
   },
   "IconCrown": {
-   "glyph": "crown-bold-duotone",
+   "glyphs": { "bold-duotone": "crown-bold-duotone" },
    "category": "UI"
   },
   "IconCube": {
-   "glyph": "box-minimalistic-bold-duotone",
+   "glyphs": { "bold-duotone": "box-minimalistic-bold-duotone" },
    "category": "UI"
   },
   "IconCube3dSphere": {
-   "glyph": "planet-bold-duotone",
+   "glyphs": { "bold-duotone": "planet-bold-duotone" },
    "category": "Astronomy"
   },
   "IconCubeUnfolded": {
-   "glyph": "three-squares-bold-duotone",
+   "glyphs": { "bold-duotone": "three-squares-bold-duotone" },
    "category": "Tools"
   },
   "IconCurrentLocation": {
-   "glyph": "gps-bold-duotone",
+   "glyphs": { "bold-duotone": "gps-bold-duotone" },
    "category": "Map"
   },
   "IconDatabase": {
-   "glyph": "database-bold-duotone",
+   "glyphs": { "bold-duotone": "database-bold-duotone" },
    "category": "UI"
   },
   "IconDeviceCctv": {
-   "glyph": "webcam-bold-duotone",
+   "glyphs": { "bold-duotone": "webcam-bold-duotone" },
    "category": "Video"
   },
   "IconDeviceDesktop": {
-   "glyph": "monitor-bold-duotone",
+   "glyphs": { "bold-duotone": "monitor-bold-duotone" },
    "category": "Devices"
   },
   "IconDeviceFloppy": {
-   "glyph": "diskette-bold-duotone",
+   "glyphs": { "bold-duotone": "diskette-bold-duotone" },
    "category": "Devices"
   },
   "IconDeviceLaptop": {
-   "glyph": "laptop-bold-duotone",
+   "glyphs": { "bold-duotone": "laptop-bold-duotone" },
    "category": "Devices"
   },
   "IconDeviceMobile": {
-   "glyph": "smartphone-bold-duotone",
+   "glyphs": { "bold-duotone": "smartphone-bold-duotone" },
    "category": "Devices"
   },
   "IconDevicesPc": {
-   "glyph": "devices-bold-duotone",
+   "glyphs": { "bold-duotone": "devices-bold-duotone" },
    "category": "Devices"
   },
   "IconDice5": {
-   "glyph": "shuffle-bold-duotone",
+   "glyphs": { "bold-duotone": "shuffle-bold-duotone" },
    "category": "Video"
   },
   "IconDots": {
-   "glyph": "menu-dots-bold-duotone",
+   "glyphs": { "bold-duotone": "menu-dots-bold-duotone" },
    "category": "UI"
   },
   "IconDotsVertical": {
-   "glyph": "menu-dots-bold-duotone",
+   "glyphs": { "bold-duotone": "menu-dots-bold-duotone" },
    "category": "UI"
   },
   "IconDownload": {
-   "glyph": "download-bold-duotone",
+   "glyphs": { "bold-duotone": "download-bold-duotone" },
    "category": "Arrows Action"
   },
   "IconDrone": {
-   "glyph": "ufo-2-bold-duotone",
+   "glyphs": { "bold-duotone": "ufo-2-bold-duotone" },
    "category": "Astronomy"
   },
   "IconDroplet": {
-   "glyph": "waterdrop-bold-duotone",
+   "glyphs": { "bold-duotone": "waterdrop-bold-duotone" },
    "category": "UI"
   },
   "IconEdit": {
-   "glyph": "pen-new-square-bold-duotone",
+   "glyphs": { "bold-duotone": "pen-new-square-bold-duotone" },
    "category": "Messages"
   },
   "IconEraser": {
-   "glyph": "eraser-bold-duotone",
+   "glyphs": { "bold-duotone": "eraser-bold-duotone" },
    "category": "Text Formatting"
   },
   "IconExclamationCircle": {
-   "glyph": "danger-circle-bold-duotone",
+   "glyphs": { "bold-duotone": "danger-circle-bold-duotone" },
    "category": "UI"
   },
   "IconExternalLink": {
-   "glyph": "arrow-right-up-bold-duotone",
+   "glyphs": { "bold-duotone": "arrow-right-up-bold-duotone" },
    "category": "Arrows"
   },
   "IconEye": {
-   "glyph": "eye-bold-duotone",
+   "glyphs": { "bold-duotone": "eye-bold-duotone" },
    "category": "Security"
   },
   "IconEyeOff": {
-   "glyph": "eye-closed-bold-duotone",
+   "glyphs": { "bold-duotone": "eye-closed-bold-duotone" },
    "category": "Security"
   },
   "IconEyeSearch": {
-   "glyph": "eye-scan-bold-duotone",
+   "glyphs": { "bold-duotone": "eye-scan-bold-duotone" },
    "category": "Security"
   },
   "IconFaceId": {
-   "glyph": "face-scan-circle-bold-duotone",
+   "glyphs": { "bold-duotone": "face-scan-circle-bold-duotone" },
    "category": "Faces"
   },
   "IconFile": {
-   "glyph": "file-bold-duotone",
+   "glyphs": { "bold-duotone": "file-bold-duotone" },
    "category": "Files"
   },
   "IconFileCertificate": {
-   "glyph": "file-check-bold-duotone",
+   "glyphs": { "bold-duotone": "file-check-bold-duotone" },
    "category": "Files"
   },
   "IconFileDownload": {
-   "glyph": "file-download-bold-duotone",
+   "glyphs": { "bold-duotone": "file-download-bold-duotone" },
    "category": "Files"
   },
   "IconFileExport": {
-   "glyph": "export-bold-duotone",
+   "glyphs": { "bold-duotone": "export-bold-duotone" },
    "category": "Arrows Action"
   },
   "IconFileImport": {
-   "glyph": "import-bold-duotone",
+   "glyphs": { "bold-duotone": "import-bold-duotone" },
    "category": "Arrows Action"
   },
   "IconFileInfo": {
-   "glyph": "document-text-bold-duotone",
+   "glyphs": { "bold-duotone": "document-text-bold-duotone" },
    "category": "Notes"
   },
   "IconFileText": {
-   "glyph": "file-text-bold-duotone",
+   "glyphs": { "bold-duotone": "file-text-bold-duotone" },
    "category": "Files"
   },
   "IconFileTypeCsv": {
-   "glyph": "code-file-bold-duotone",
+   "glyphs": { "bold-duotone": "code-file-bold-duotone" },
    "category": "Files"
   },
   "IconFileZip": {
-   "glyph": "zip-file-bold-duotone",
+   "glyphs": { "bold-duotone": "zip-file-bold-duotone" },
    "category": "Files"
   },
   "IconFilter": {
-   "glyph": "filter-bold-duotone",
+   "glyphs": { "bold-duotone": "filter-bold-duotone" },
    "category": "UI"
   },
   "IconFingerprint": {
-   "glyph": "face-scan-square-bold-duotone",
+   "glyphs": { "bold-duotone": "face-scan-square-bold-duotone" },
    "category": "Faces"
   },
   "IconFish": {
-   "glyph": "swimming-bold-duotone",
+   "glyphs": { "bold-duotone": "swimming-bold-duotone" },
    "category": "Sports"
   },
   "IconFlag": {
-   "glyph": "flag-bold-duotone",
+   "glyphs": { "bold-duotone": "flag-bold-duotone" },
    "category": "UI"
   },
   "IconFlame": {
-   "glyph": "flame-bold-duotone",
+   "glyphs": { "bold-duotone": "flame-bold-duotone" },
    "category": "Nature"
   },
   "IconFlask": {
-   "glyph": "test-tube-bold-duotone",
+   "glyphs": { "bold-duotone": "test-tube-bold-duotone" },
    "category": "Medicine"
   },
   "IconFocus2": {
-   "glyph": "full-screen-circle-bold-duotone",
+   "glyphs": { "bold-duotone": "full-screen-circle-bold-duotone" },
    "category": "Video"
   },
   "IconFocusCentered": {
-   "glyph": "full-screen-bold-duotone",
+   "glyphs": { "bold-duotone": "full-screen-bold-duotone" },
    "category": "Video"
   },
   "IconFolder": {
-   "glyph": "folder-bold-duotone",
+   "glyphs": { "bold-duotone": "folder-bold-duotone" },
    "category": "Folders"
   },
   "IconFolderOpen": {
-   "glyph": "folder-open-bold-duotone",
+   "glyphs": { "bold-duotone": "folder-open-bold-duotone" },
    "category": "Folders"
   },
   "IconFolderPlus": {
-   "glyph": "add-folder-bold-duotone",
+   "glyphs": { "bold-duotone": "add-folder-bold-duotone" },
    "category": "Folders"
   },
   "IconFolderSearch": {
-   "glyph": "folder-with-files-bold-duotone",
+   "glyphs": { "bold-duotone": "folder-with-files-bold-duotone" },
    "category": "Folders"
   },
   "IconFolders": {
-   "glyph": "folder-2-bold-duotone",
+   "glyphs": { "bold-duotone": "folder-2-bold-duotone" },
    "category": "Folders"
   },
   "IconGenderFemale": {
-   "glyph": "women-bold-duotone",
+   "glyphs": { "bold-duotone": "women-bold-duotone" },
    "category": "Astronomy"
   },
   "IconGenderMale": {
-   "glyph": "men-bold-duotone",
+   "glyphs": { "bold-duotone": "men-bold-duotone" },
    "category": "Astronomy"
   },
   "IconGhost": {
-   "glyph": "ghost-bold-duotone",
+   "glyphs": { "bold-duotone": "ghost-bold-duotone" },
    "category": "UI"
   },
   "IconGhost2": {
-   "glyph": "ghost-smile-bold-duotone",
+   "glyphs": { "bold-duotone": "ghost-smile-bold-duotone" },
    "category": "UI"
   },
   "IconGitMerge": {
-   "glyph": "branching-paths-up-bold-duotone",
+   "glyphs": { "bold-duotone": "branching-paths-up-bold-duotone" },
    "category": "Map"
   },
   "IconGridDots": {
-   "glyph": "widget-3-bold-duotone",
+   "glyphs": { "bold-duotone": "widget-3-bold-duotone" },
    "category": "Settings"
   },
   "IconGripVertical": {
-   "glyph": "hamburger-menu-bold-duotone",
+   "glyphs": { "bold-duotone": "hamburger-menu-bold-duotone" },
    "category": "UI"
   },
   "IconHash": {
-   "glyph": "hashtag-bold-duotone",
+   "glyphs": { "bold-duotone": "hashtag-bold-duotone" },
    "category": "IT"
   },
   "IconHeart": {
-   "glyph": "heart-bold-duotone",
+   "glyphs": { "bold-duotone": "heart-bold-duotone" },
    "category": "Like"
   },
   "IconHeartHandshake": {
-   "glyph": "hand-heart-bold-duotone",
+   "glyphs": { "bold-duotone": "hand-heart-bold-duotone" },
    "category": "Hands"
   },
   "IconHeartbeat": {
-   "glyph": "heart-pulse-2-bold-duotone",
+   "glyphs": { "bold-duotone": "heart-pulse-2-bold-duotone" },
    "category": "Medicine"
   },
   "IconHelpCircle": {
-   "glyph": "question-circle-bold-duotone",
+   "glyphs": { "bold-duotone": "question-circle-bold-duotone" },
    "category": "UI"
   },
   "IconHierarchy": {
-   "glyph": "structure-bold-duotone",
+   "glyphs": { "bold-duotone": "structure-bold-duotone" },
    "category": "IT"
   },
   "IconHistory": {
-   "glyph": "history-bold-duotone",
+   "glyphs": { "bold-duotone": "history-bold-duotone" },
    "category": "Time"
   },
   "IconHome": {
-   "glyph": "home-bold-duotone",
+   "glyphs": { "bold-duotone": "home-bold-duotone" },
    "category": "UI"
   },
   "IconHome2": {
-   "glyph": "home-2-bold-duotone",
+   "glyphs": { "bold-duotone": "home-2-bold-duotone" },
    "category": "UI"
   },
   "IconHomeSearch": {
-   "glyph": "home-angle-bold-duotone",
+   "glyphs": { "bold-duotone": "home-angle-bold-duotone" },
    "category": "UI"
   },
   "IconId": {
-   "glyph": "user-id-bold-duotone",
+   "glyphs": { "bold-duotone": "user-id-bold-duotone" },
    "category": "Users"
   },
   "IconInfinity": {
-   "glyph": "infinity-bold-duotone",
+   "glyphs": { "bold-duotone": "infinity-bold-duotone" },
    "category": "UI"
   },
   "IconInfoCircle": {
-   "glyph": "info-circle-bold-duotone",
+   "glyphs": { "bold-duotone": "info-circle-bold-duotone" },
    "category": "UI"
   },
   "IconKey": {
-   "glyph": "key-bold-duotone",
+   "glyphs": { "bold-duotone": "key-bold-duotone" },
    "category": "Security"
   },
   "IconLanguage": {
-   "glyph": "translation-bold-duotone",
+   "glyphs": { "bold-duotone": "translation-bold-duotone" },
    "category": "IT"
   },
   "IconLayersIntersect": {
-   "glyph": "layers-minimalistic-bold-duotone",
+   "glyphs": { "bold-duotone": "layers-minimalistic-bold-duotone" },
    "category": "Tools"
   },
   "IconLayersLinked": {
-   "glyph": "link-round-bold-duotone",
+   "glyphs": { "bold-duotone": "link-round-bold-duotone" },
    "category": "Text Formatting"
   },
   "IconLayoutDashboard": {
-   "glyph": "widget-5-bold-duotone",
+   "glyphs": { "bold-duotone": "widget-5-bold-duotone" },
    "category": "Settings"
   },
   "IconLayoutGrid": {
-   "glyph": "widget-6-bold-duotone",
+   "glyphs": { "bold-duotone": "widget-6-bold-duotone" },
    "category": "Settings"
   },
   "IconLayoutSidebar": {
-   "glyph": "sidebar-bold-duotone",
+   "glyphs": { "bold-duotone": "sidebar-bold-duotone" },
    "category": "IT"
   },
   "IconLeaf": {
-   "glyph": "leaf-bold-duotone",
+   "glyphs": { "bold-duotone": "leaf-bold-duotone" },
    "category": "Nature"
   },
   "IconLetterCase": {
-   "glyph": "text-format-bold-duotone",
+   "glyphs": { "bold-duotone": "text-format-bold-duotone" },
    "category": "Text Formatting"
   },
   "IconLibrary": {
-   "glyph": "library-bold-duotone",
+   "glyphs": { "bold-duotone": "library-bold-duotone" },
    "category": "Video"
   },
   "IconLicense": {
-   "glyph": "diploma-bold-duotone",
+   "glyphs": { "bold-duotone": "diploma-bold-duotone" },
    "category": "School"
   },
   "IconLifebuoy": {
-   "glyph": "help-bold-duotone",
+   "glyphs": { "bold-duotone": "help-bold-duotone" },
    "category": "UI"
   },
   "IconLink": {
-   "glyph": "link-bold-duotone",
+   "glyphs": { "bold-duotone": "link-bold-duotone" },
    "category": "Text Formatting"
   },
   "IconLinkOff": {
-   "glyph": "link-broken-bold-duotone",
+   "glyphs": { "bold-duotone": "link-broken-bold-duotone" },
    "category": "IT"
   },
   "IconListCheck": {
-   "glyph": "list-check-bold-duotone",
+   "glyphs": { "bold-duotone": "list-check-bold-duotone" },
    "category": "List"
   },
   "IconListDetails": {
-   "glyph": "checklist-bold-duotone",
+   "glyphs": { "bold-duotone": "checklist-bold-duotone" },
    "category": "List"
   },
   "IconListNumbers": {
-   "glyph": "list-bold-duotone",
+   "glyphs": { "bold-duotone": "list-bold-duotone" },
    "category": "List"
   },
   "IconLoader2": {
-   "glyph": "restart-bold-duotone",
+   "glyphs": { "bold-duotone": "restart-bold-duotone" },
    "category": "Arrows"
   },
   "IconLock": {
-   "glyph": "lock-bold-duotone",
+   "glyphs": { "bold-duotone": "lock-bold-duotone" },
    "category": "Security"
   },
   "IconLockExclamation": {
-   "glyph": "lock-keyhole-bold-duotone",
+   "glyphs": { "bold-duotone": "lock-keyhole-bold-duotone" },
    "category": "Security"
   },
   "IconLockOpen": {
-   "glyph": "lock-unlocked-bold-duotone",
+   "glyphs": { "bold-duotone": "lock-unlocked-bold-duotone" },
    "category": "Security"
   },
   "IconLogin": {
-   "glyph": "login-bold-duotone",
+   "glyphs": { "bold-duotone": "login-bold-duotone" },
    "category": "Arrows Action"
   },
   "IconLogout": {
-   "glyph": "logout-bold-duotone",
+   "glyphs": { "bold-duotone": "logout-bold-duotone" },
    "category": "Arrows Action"
   },
   "IconMail": {
-   "glyph": "letter-bold-duotone",
+   "glyphs": { "bold-duotone": "letter-bold-duotone" },
    "category": "Messages"
   },
   "IconMap": {
-   "glyph": "map-bold-duotone",
+   "glyphs": { "bold-duotone": "map-bold-duotone" },
    "category": "Map"
   },
   "IconMap2": {
-   "glyph": "point-on-map-bold-duotone",
+   "glyphs": { "bold-duotone": "point-on-map-bold-duotone" },
    "category": "Map"
   },
   "IconMapPin": {
-   "glyph": "map-point-bold-duotone",
+   "glyphs": { "bold-duotone": "map-point-bold-duotone" },
    "category": "Map"
   },
   "IconMapPinPlus": {
-   "glyph": "map-point-add-bold-duotone",
+   "glyphs": { "bold-duotone": "map-point-add-bold-duotone" },
    "category": "Map"
   },
   "IconMapSearch": {
-   "glyph": "map-point-search-bold-duotone",
+   "glyphs": { "bold-duotone": "map-point-search-bold-duotone" },
    "category": "Map"
   },
   "IconMaximize": {
-   "glyph": "maximize-bold-duotone",
+   "glyphs": { "bold-duotone": "maximize-bold-duotone" },
    "category": "Arrows Action"
   },
   "IconMessage": {
-   "glyph": "chat-round-bold-duotone",
+   "glyphs": { "bold-duotone": "chat-round-bold-duotone" },
    "category": "Messages"
   },
   "IconMessage2": {
-   "glyph": "chat-square-bold-duotone",
+   "glyphs": { "bold-duotone": "chat-square-bold-duotone" },
    "category": "Messages"
   },
   "IconMessageCircle": {
-   "glyph": "chat-round-dots-bold-duotone",
+   "glyphs": { "bold-duotone": "chat-round-dots-bold-duotone" },
    "category": "Messages"
   },
   "IconMessages": {
-   "glyph": "chat-square-2-bold-duotone",
+   "glyphs": { "bold-duotone": "chat-square-2-bold-duotone" },
    "category": "Business"
   },
   "IconMicrophone": {
-   "glyph": "microphone-bold-duotone",
+   "glyphs": { "bold-duotone": "microphone-bold-duotone" },
    "category": "Video"
   },
   "IconMicroscope": {
-   "glyph": "telescope-bold-duotone",
+   "glyphs": { "bold-duotone": "telescope-bold-duotone" },
    "category": "Devices"
   },
   "IconMinimize": {
-   "glyph": "minimize-bold-duotone",
+   "glyphs": { "bold-duotone": "minimize-bold-duotone" },
    "category": "Arrows Action"
   },
   "IconMinus": {
-   "glyph": "minus-bold-duotone",
+   "glyphs": { "bold-duotone": "minus-bold-duotone" },
    "category": "UI"
   },
   "IconMoon": {
-   "glyph": "moon-bold-duotone",
+   "glyphs": { "bold-duotone": "moon-bold-duotone" },
    "category": "Weather"
   },
   "IconMountain": {
-   "glyph": "hiking-bold-duotone",
+   "glyphs": { "bold-duotone": "hiking-bold-duotone" },
    "category": "Sports"
   },
   "IconMovie": {
-   "glyph": "clapperboard-bold-duotone",
+   "glyphs": { "bold-duotone": "clapperboard-bold-duotone" },
    "category": "Video"
   },
   "IconNavigation": {
-   "glyph": "streets-navigation-bold-duotone",
+   "glyphs": { "bold-duotone": "streets-navigation-bold-duotone" },
    "category": "Map"
   },
   "IconNetwork": {
-   "glyph": "routing-2-bold-duotone",
+   "glyphs": { "bold-duotone": "routing-2-bold-duotone" },
    "category": "Map"
   },
   "IconNews": {
-   "glyph": "feed-bold-duotone",
+   "glyphs": { "bold-duotone": "feed-bold-duotone" },
    "category": "UI"
   },
   "IconNote": {
-   "glyph": "notes-minimalistic-bold-duotone",
+   "glyphs": { "bold-duotone": "notes-minimalistic-bold-duotone" },
    "category": "Notes"
   },
   "IconNotes": {
-   "glyph": "notes-bold-duotone",
+   "glyphs": { "bold-duotone": "notes-bold-duotone" },
    "category": "Notes"
   },
   "IconPackage": {
-   "glyph": "box-bold-duotone",
+   "glyphs": { "bold-duotone": "box-bold-duotone" },
    "category": "UI"
   },
   "IconPalette": {
-   "glyph": "palette-bold-duotone",
+   "glyphs": { "bold-duotone": "palette-bold-duotone" },
    "category": "Tools"
   },
   "IconPaperclip": {
-   "glyph": "paperclip-bold-duotone",
+   "glyphs": { "bold-duotone": "paperclip-bold-duotone" },
    "category": "Messages"
   },
   "IconPencil": {
-   "glyph": "pen-bold-duotone",
+   "glyphs": { "bold-duotone": "pen-bold-duotone" },
    "category": "Messages"
   },
   "IconPhone": {
-   "glyph": "phone-bold-duotone",
+   "glyphs": { "bold-duotone": "phone-bold-duotone" },
    "category": "Call"
   },
   "IconPhoto": {
-   "glyph": "gallery-bold-duotone",
+   "glyphs": { "bold-duotone": "gallery-bold-duotone" },
    "category": "Video"
   },
   "IconPhotoCheck": {
-   "glyph": "gallery-check-bold-duotone",
+   "glyphs": { "bold-duotone": "gallery-check-bold-duotone" },
    "category": "Video"
   },
   "IconPhotoSearch": {
-   "glyph": "gallery-minimalistic-bold-duotone",
+   "glyphs": { "bold-duotone": "gallery-minimalistic-bold-duotone" },
    "category": "Video"
   },
   "IconPhotoStar": {
-   "glyph": "gallery-favorite-bold-duotone",
+   "glyphs": { "bold-duotone": "gallery-favorite-bold-duotone" },
    "category": "Video"
   },
   "IconPin": {
-   "glyph": "pin-bold-duotone",
+   "glyphs": { "bold-duotone": "pin-bold-duotone" },
    "category": "UI"
   },
   "IconPinFilled": {
-   "glyph": "pin-bold-duotone",
+   "glyphs": { "bold-duotone": "pin-bold-duotone" },
    "category": "UI"
   },
   "IconPlane": {
-   "glyph": "plane-bold-duotone",
+   "glyphs": { "bold-duotone": "plane-bold-duotone" },
    "category": "Messages"
   },
   "IconPlaneInflight": {
-   "glyph": "plane-3-bold-duotone",
+   "glyphs": { "bold-duotone": "plane-3-bold-duotone" },
    "category": "Messages"
   },
   "IconPlaneOff": {
-   "glyph": "plane-2-bold-duotone",
+   "glyphs": { "bold-duotone": "plane-2-bold-duotone" },
    "category": "Messages"
   },
   "IconPlaneTilt": {
-   "glyph": "plane-bold-duotone",
+   "glyphs": { "bold-duotone": "plane-bold-duotone" },
    "category": "Messages"
   },
   "IconPlayerPause": {
-   "glyph": "pause-bold-duotone",
+   "glyphs": { "bold-duotone": "pause-bold-duotone" },
    "category": "Video"
   },
   "IconPlayerPlay": {
-   "glyph": "play-bold-duotone",
+   "glyphs": { "bold-duotone": "play-bold-duotone" },
    "category": "Video"
   },
   "IconPlayerPlayFilled": {
-   "glyph": "play-bold-duotone",
+   "glyphs": { "bold-duotone": "play-bold-duotone" },
    "category": "Video"
   },
   "IconPlayerStop": {
-   "glyph": "stop-bold-duotone",
+   "glyphs": { "bold-duotone": "stop-bold-duotone" },
    "category": "Video"
   },
   "IconPlayerStopFilled": {
-   "glyph": "stop-bold-duotone",
+   "glyphs": { "bold-duotone": "stop-bold-duotone" },
    "category": "Video"
   },
   "IconPlug": {
-   "glyph": "socket-bold-duotone",
+   "glyphs": { "bold-duotone": "socket-bold-duotone" },
    "category": "Devices"
   },
   "IconPlugConnected": {
-   "glyph": "plug-circle-bold-duotone",
+   "glyphs": { "bold-duotone": "plug-circle-bold-duotone" },
    "category": "Devices"
   },
   "IconPlugX": {
-   "glyph": "unlink-minimalistic-bold-duotone",
+   "glyphs": { "bold-duotone": "unlink-minimalistic-bold-duotone" },
    "category": "Text Formatting"
   },
   "IconPlus": {
-   "glyph": "add-bold-duotone",
+   "glyphs": { "bold-duotone": "add-bold-duotone" },
    "category": "UI"
   },
   "IconPointFilled": {
-   "glyph": "record-bold-duotone",
+   "glyphs": { "bold-duotone": "record-bold-duotone" },
    "category": "Video"
   },
   "IconPolygon": {
-   "glyph": "crop-bold-duotone",
+   "glyphs": { "bold-duotone": "crop-bold-duotone" },
    "category": "Tools"
   },
   "IconPrinter": {
-   "glyph": "printer-bold-duotone",
+   "glyphs": { "bold-duotone": "printer-bold-duotone" },
    "category": "Devices"
   },
   "IconPuzzle": {
-   "glyph": "widget-add-bold-duotone",
+   "glyphs": { "bold-duotone": "widget-add-bold-duotone" },
    "category": "Settings"
   },
   "IconQrcode": {
-   "glyph": "qr-code-bold-duotone",
+   "glyphs": { "bold-duotone": "qr-code-bold-duotone" },
    "category": "Security"
   },
   "IconQuestionMark": {
-   "glyph": "question-mark-bold-duotone",
+   "glyphs": { "bold-duotone": "question-mark-bold-duotone" },
    "category": "UI"
   },
   "IconQuote": {
-   "glyph": "chat-round-line-bold-duotone",
+   "glyphs": { "bold-duotone": "chat-round-line-bold-duotone" },
    "category": "Messages"
   },
   "IconRadar": {
-   "glyph": "radar-bold-duotone",
+   "glyphs": { "bold-duotone": "radar-bold-duotone" },
    "category": "Map"
   },
   "IconRadar2": {
-   "glyph": "radar-2-bold-duotone",
+   "glyphs": { "bold-duotone": "radar-2-bold-duotone" },
    "category": "Map"
   },
   "IconRadio": {
-   "glyph": "radio-bold-duotone",
+   "glyphs": { "bold-duotone": "radio-bold-duotone" },
    "category": "Devices"
   },
   "IconRadioactive": {
-   "glyph": "danger-bold-duotone",
+   "glyphs": { "bold-duotone": "danger-bold-duotone" },
    "category": "UI"
   },
   "IconReceipt": {
-   "glyph": "bill-bold-duotone",
+   "glyphs": { "bold-duotone": "bill-bold-duotone" },
    "category": "Money"
   },
   "IconReceiptTax": {
-   "glyph": "bill-list-bold-duotone",
+   "glyphs": { "bold-duotone": "bill-list-bold-duotone" },
    "category": "Money"
   },
   "IconRefresh": {
-   "glyph": "refresh-bold-duotone",
+   "glyphs": { "bold-duotone": "refresh-bold-duotone" },
    "category": "Arrows"
   },
   "IconRegex": {
-   "glyph": "code-scan-bold-duotone",
+   "glyphs": { "bold-duotone": "code-scan-bold-duotone" },
    "category": "Security"
   },
   "IconReload": {
-   "glyph": "refresh-circle-bold-duotone",
+   "glyphs": { "bold-duotone": "refresh-circle-bold-duotone" },
    "category": "Arrows"
   },
   "IconRepeat": {
-   "glyph": "repeat-bold-duotone",
+   "glyphs": { "bold-duotone": "repeat-bold-duotone" },
    "category": "Video"
   },
   "IconReport": {
-   "glyph": "document-bold-duotone",
+   "glyphs": { "bold-duotone": "document-bold-duotone" },
    "category": "Notes"
   },
   "IconRestore": {
-   "glyph": "history-2-bold-duotone",
+   "glyphs": { "bold-duotone": "history-2-bold-duotone" },
    "category": "Time"
   },
   "IconRipple": {
-   "glyph": "waterdrops-bold-duotone",
+   "glyphs": { "bold-duotone": "waterdrops-bold-duotone" },
    "category": "Weather"
   },
   "IconRoad": {
-   "glyph": "streets-bold-duotone",
+   "glyphs": { "bold-duotone": "streets-bold-duotone" },
    "category": "Map"
   },
   "IconRobot": {
-   "glyph": "bot-bold-duotone",
+   "glyphs": { "bold-duotone": "bot-bold-duotone" },
    "category": "Devices"
   },
   "IconRocket": {
-   "glyph": "rocket-bold-duotone",
+   "glyphs": { "bold-duotone": "rocket-bold-duotone" },
    "category": "Astronomy"
   },
   "IconRotate": {
-   "glyph": "undo-right-round-bold-duotone",
+   "glyphs": { "bold-duotone": "undo-right-round-bold-duotone" },
    "category": "Arrows Action"
   },
   "IconRotate3d": {
-   "glyph": "augmented-reality-bold-duotone",
+   "glyphs": { "bold-duotone": "augmented-reality-bold-duotone" },
    "category": "UI"
   },
   "IconRoute": {
-   "glyph": "route-bold-duotone",
+   "glyphs": { "bold-duotone": "route-bold-duotone" },
    "category": "Map"
   },
   "IconRoute2": {
-   "glyph": "routing-bold-duotone",
+   "glyphs": { "bold-duotone": "routing-bold-duotone" },
    "category": "Map"
   },
   "IconRouteAltLeft": {
-   "glyph": "routing-3-bold-duotone",
+   "glyphs": { "bold-duotone": "routing-3-bold-duotone" },
    "category": "Map"
   },
   "IconRouter": {
-   "glyph": "wi-fi-router-bold-duotone",
+   "glyphs": { "bold-duotone": "wi-fi-router-bold-duotone" },
    "category": "IT"
   },
   "IconRuler": {
-   "glyph": "ruler-bold-duotone",
+   "glyphs": { "bold-duotone": "ruler-bold-duotone" },
    "category": "Tools"
   },
   "IconRuler2": {
-   "glyph": "ruler-angular-bold-duotone",
+   "glyphs": { "bold-duotone": "ruler-angular-bold-duotone" },
    "category": "Tools"
   },
   "IconSailboat": {
-   "glyph": "map-arrow-up-bold-duotone",
+   "glyphs": { "bold-duotone": "map-arrow-up-bold-duotone" },
    "category": "Map"
   },
   "IconSatellite": {
-   "glyph": "satellite-bold-duotone",
+   "glyphs": { "bold-duotone": "satellite-bold-duotone" },
    "category": "Astronomy"
   },
   "IconScale": {
-   "glyph": "scale-bold-duotone",
+   "glyphs": { "bold-duotone": "scale-bold-duotone" },
    "category": "Devices"
   },
   "IconScan": {
-   "glyph": "object-scan-bold-duotone",
+   "glyphs": { "bold-duotone": "object-scan-bold-duotone" },
    "category": "Security"
   },
   "IconSchool": {
-   "glyph": "square-academic-cap-bold-duotone",
+   "glyphs": { "bold-duotone": "square-academic-cap-bold-duotone" },
    "category": "School"
   },
   "IconScissors": {
-   "glyph": "scissors-bold-duotone",
+   "glyphs": { "bold-duotone": "scissors-bold-duotone" },
    "category": "UI"
   },
   "IconScreenShare": {
-   "glyph": "screen-share-bold-duotone",
+   "glyphs": { "bold-duotone": "screen-share-bold-duotone" },
    "category": "Arrows Action"
   },
   "IconSearch": {
-   "glyph": "magnifer-bold-duotone",
+   "glyphs": { "bold-duotone": "magnifer-bold-duotone" },
    "category": "UI"
   },
   "IconSelectAll": {
-   "glyph": "check-square-bold-duotone",
+   "glyphs": { "bold-duotone": "check-square-bold-duotone" },
    "category": "UI"
   },
   "IconSend": {
-   "glyph": "plain-2-bold-duotone",
+   "glyphs": { "bold-duotone": "plain-2-bold-duotone" },
    "category": "Messages"
   },
   "IconServer": {
-   "glyph": "server-bold-duotone",
+   "glyphs": { "bold-duotone": "server-bold-duotone" },
    "category": "Devices"
   },
   "IconSettings": {
-   "glyph": "settings-bold-duotone",
+   "glyphs": { "bold-duotone": "settings-bold-duotone" },
    "category": "Settings"
   },
   "IconSettings2": {
-   "glyph": "settings-minimalistic-bold-duotone",
+   "glyphs": { "bold-duotone": "settings-minimalistic-bold-duotone" },
    "category": "Settings"
   },
   "IconShadow": {
-   "glyph": "moon-fog-bold-duotone",
+   "glyphs": { "bold-duotone": "moon-fog-bold-duotone" },
    "category": "Weather"
   },
   "IconShield": {
-   "glyph": "shield-bold-duotone",
+   "glyphs": { "bold-duotone": "shield-bold-duotone" },
    "category": "Security"
   },
   "IconShieldCheck": {
-   "glyph": "shield-check-bold-duotone",
+   "glyphs": { "bold-duotone": "shield-check-bold-duotone" },
    "category": "Security"
   },
   "IconShieldExclamation": {
-   "glyph": "shield-warning-bold-duotone",
+   "glyphs": { "bold-duotone": "shield-warning-bold-duotone" },
    "category": "Security"
   },
   "IconShieldHalf": {
-   "glyph": "shield-minimalistic-bold-duotone",
+   "glyphs": { "bold-duotone": "shield-minimalistic-bold-duotone" },
    "category": "Security"
   },
   "IconShieldHalfFilled": {
-   "glyph": "shield-minimalistic-bold-duotone",
+   "glyphs": { "bold-duotone": "shield-minimalistic-bold-duotone" },
    "category": "Security"
   },
   "IconShieldLock": {
-   "glyph": "shield-keyhole-bold-duotone",
+   "glyphs": { "bold-duotone": "shield-keyhole-bold-duotone" },
    "category": "Security"
   },
   "IconShieldOff": {
-   "glyph": "shield-minus-bold-duotone",
+   "glyphs": { "bold-duotone": "shield-minus-bold-duotone" },
    "category": "Security"
   },
   "IconShieldX": {
-   "glyph": "shield-cross-bold-duotone",
+   "glyphs": { "bold-duotone": "shield-cross-bold-duotone" },
    "category": "Security"
   },
   "IconShip": {
-   "glyph": "map-arrow-up-bold-duotone",
+   "glyphs": { "bold-duotone": "map-arrow-up-bold-duotone" },
    "category": "Map"
   },
   "IconShoppingBag": {
-   "glyph": "bag-bold-duotone",
+   "glyphs": { "bold-duotone": "bag-bold-duotone" },
    "category": "Shopping"
   },
   "IconShoppingCart": {
-   "glyph": "cart-bold-duotone",
+   "glyphs": { "bold-duotone": "cart-bold-duotone" },
    "category": "Shopping"
   },
   "IconSignature": {
-   "glyph": "pen-new-round-bold-duotone",
+   "glyphs": { "bold-duotone": "pen-new-round-bold-duotone" },
    "category": "Messages"
   },
   "IconSortAZ": {
-   "glyph": "sort-by-alphabet-bold-duotone",
+   "glyphs": { "bold-duotone": "sort-by-alphabet-bold-duotone" },
    "category": "Text Formatting"
   },
   "IconSparkles": {
-   "glyph": "magic-stick-3-bold-duotone",
+   "glyphs": { "bold-duotone": "magic-stick-3-bold-duotone" },
    "category": "UI"
   },
   "IconSpy": {
-   "glyph": "incognito-bold-duotone",
+   "glyphs": { "bold-duotone": "incognito-bold-duotone" },
    "category": "Security"
   },
   "IconSquare": {
-   "glyph": "record-square-bold-duotone",
+   "glyphs": { "bold-duotone": "record-square-bold-duotone" },
    "category": "Call"
   },
   "IconStack2": {
-   "glyph": "layers-bold-duotone",
+   "glyphs": { "bold-duotone": "layers-bold-duotone" },
    "category": "Tools"
   },
   "IconStack3": {
-   "glyph": "documents-bold-duotone",
+   "glyphs": { "bold-duotone": "documents-bold-duotone" },
    "category": "Notes"
   },
   "IconStar": {
-   "glyph": "star-bold-duotone",
+   "glyphs": { "bold-duotone": "star-bold-duotone" },
    "category": "Like"
   },
   "IconStarFilled": {
-   "glyph": "star-bold-duotone",
+   "glyphs": { "bold-duotone": "star-bold-duotone" },
    "category": "Like"
   },
   "IconStarOff": {
-   "glyph": "star-2-bold-duotone",
+   "glyphs": { "bold-duotone": "star-2-bold-duotone" },
    "category": "Astronomy"
   },
   "IconSubtask": {
-   "glyph": "checklist-minimalistic-bold-duotone",
+   "glyphs": { "bold-duotone": "checklist-minimalistic-bold-duotone" },
    "category": "List"
   },
   "IconSun": {
-   "glyph": "sun-bold-duotone",
+   "glyphs": { "bold-duotone": "sun-bold-duotone" },
    "category": "Weather"
   },
   "IconSunElectricity": {
-   "glyph": "sun-2-bold-duotone",
+   "glyphs": { "bold-duotone": "sun-2-bold-duotone" },
    "category": "Weather"
   },
   "IconSunrise": {
-   "glyph": "sunrise-bold-duotone",
+   "glyphs": { "bold-duotone": "sunrise-bold-duotone" },
    "category": "Weather"
   },
   "IconSword": {
-   "glyph": "sledgehammer-bold-duotone",
+   "glyphs": { "bold-duotone": "sledgehammer-bold-duotone" },
    "category": "UI"
   },
   "IconTableOptions": {
-   "glyph": "tuning-bold-duotone",
+   "glyphs": { "bold-duotone": "tuning-bold-duotone" },
    "category": "Settings"
   },
   "IconTag": {
-   "glyph": "tag-bold-duotone",
+   "glyphs": { "bold-duotone": "tag-bold-duotone" },
    "category": "Money"
   },
   "IconTags": {
-   "glyph": "tag-horizontal-bold-duotone",
+   "glyphs": { "bold-duotone": "tag-horizontal-bold-duotone" },
    "category": "Money"
   },
   "IconTarget": {
-   "glyph": "target-bold-duotone",
+   "glyphs": { "bold-duotone": "target-bold-duotone" },
    "category": "UI"
   },
   "IconTargetArrow": {
-   "glyph": "target-bold-duotone",
+   "glyphs": { "bold-duotone": "target-bold-duotone" },
    "category": "UI"
   },
   "IconTerminal": {
-   "glyph": "sidebar-code-bold-duotone",
+   "glyphs": { "bold-duotone": "sidebar-code-bold-duotone" },
    "category": "IT"
   },
   "IconTerminal2": {
-   "glyph": "programming-bold-duotone",
+   "glyphs": { "bold-duotone": "programming-bold-duotone" },
    "category": "IT"
   },
   "IconTextCaption": {
-   "glyph": "subtitles-bold-duotone",
+   "glyphs": { "bold-duotone": "subtitles-bold-duotone" },
    "category": "UI"
   },
   "IconTextRecognition": {
-   "glyph": "text-selection-bold-duotone",
+   "glyphs": { "bold-duotone": "text-selection-bold-duotone" },
    "category": "Text Formatting"
   },
   "IconTextWrap": {
-   "glyph": "paragraph-spacing-bold-duotone",
+   "glyphs": { "bold-duotone": "paragraph-spacing-bold-duotone" },
    "category": "Text Formatting"
   },
   "IconThumbDown": {
-   "glyph": "dislike-bold-duotone",
+   "glyphs": { "bold-duotone": "dislike-bold-duotone" },
    "category": "Like"
   },
   "IconThumbUp": {
-   "glyph": "like-bold-duotone",
+   "glyphs": { "bold-duotone": "like-bold-duotone" },
    "category": "Like"
   },
   "IconTimeline": {
-   "glyph": "chart-bold-duotone",
+   "glyphs": { "bold-duotone": "chart-bold-duotone" },
    "category": "Business"
   },
   "IconTool": {
-   "glyph": "toolbox-bold-duotone",
+   "glyphs": { "bold-duotone": "toolbox-bold-duotone" },
    "category": "UI"
   },
   "IconTools": {
-   "glyph": "toolbox-bold-duotone",
+   "glyphs": { "bold-duotone": "toolbox-bold-duotone" },
    "category": "UI"
   },
   "IconToolsKitchen2": {
-   "glyph": "ladle-bold-duotone",
+   "glyphs": { "bold-duotone": "ladle-bold-duotone" },
    "category": "Food"
   },
   "IconTopologyStar3": {
-   "glyph": "share-circle-bold-duotone",
+   "glyphs": { "bold-duotone": "share-circle-bold-duotone" },
    "category": "UI"
   },
   "IconTrain": {
-   "glyph": "tram-bold-duotone",
+   "glyphs": { "bold-duotone": "tram-bold-duotone" },
    "category": "Parts"
   },
   "IconTrash": {
-   "glyph": "trash-bin-minimalistic-bold-duotone",
+   "glyphs": { "bold-duotone": "trash-bin-minimalistic-bold-duotone" },
    "category": "UI"
   },
   "IconTrashX": {
-   "glyph": "trash-bin-2-bold-duotone",
+   "glyphs": { "bold-duotone": "trash-bin-2-bold-duotone" },
    "category": "UI"
   },
   "IconTrees": {
-   "glyph": "leaf-bold-duotone",
+   "glyphs": { "bold-duotone": "leaf-bold-duotone" },
    "category": "Nature"
   },
   "IconTrendingDown": {
-   "glyph": "graph-down-bold-duotone",
+   "glyphs": { "bold-duotone": "graph-down-bold-duotone" },
    "category": "Business"
   },
   "IconTrendingUp": {
-   "glyph": "graph-up-bold-duotone",
+   "glyphs": { "bold-duotone": "graph-up-bold-duotone" },
    "category": "Business"
   },
   "IconTruck": {
-   "glyph": "delivery-bold-duotone",
+   "glyphs": { "bold-duotone": "delivery-bold-duotone" },
    "category": "UI"
   },
   "IconUnlink": {
-   "glyph": "unlink-bold-duotone",
+   "glyphs": { "bold-duotone": "unlink-bold-duotone" },
    "category": "Text Formatting"
   },
   "IconUpload": {
-   "glyph": "upload-bold-duotone",
+   "glyphs": { "bold-duotone": "upload-bold-duotone" },
    "category": "Arrows Action"
   },
   "IconUser": {
-   "glyph": "user-bold-duotone",
+   "glyphs": { "bold-duotone": "user-bold-duotone" },
    "category": "Users"
   },
   "IconUserCheck": {
-   "glyph": "user-check-bold-duotone",
+   "glyphs": { "bold-duotone": "user-check-bold-duotone" },
    "category": "Users"
   },
   "IconUserCircle": {
-   "glyph": "user-circle-bold-duotone",
+   "glyphs": { "bold-duotone": "user-circle-bold-duotone" },
    "category": "Users"
   },
   "IconUserExclamation": {
-   "glyph": "user-cross-bold-duotone",
+   "glyphs": { "bold-duotone": "user-cross-bold-duotone" },
    "category": "Users"
   },
   "IconUserOff": {
-   "glyph": "user-block-bold-duotone",
+   "glyphs": { "bold-duotone": "user-block-bold-duotone" },
    "category": "Users"
   },
   "IconUserPlus": {
-   "glyph": "user-plus-bold-duotone",
+   "glyphs": { "bold-duotone": "user-plus-bold-duotone" },
    "category": "Users"
   },
   "IconUserScan": {
-   "glyph": "scanner-bold-duotone",
+   "glyphs": { "bold-duotone": "scanner-bold-duotone" },
    "category": "Security"
   },
   "IconUserSearch": {
-   "glyph": "user-rounded-bold-duotone",
+   "glyphs": { "bold-duotone": "user-rounded-bold-duotone" },
    "category": "Users"
   },
   "IconUsers": {
-   "glyph": "users-group-rounded-bold-duotone",
+   "glyphs": { "bold-duotone": "users-group-rounded-bold-duotone" },
    "category": "Users"
   },
   "IconUsersGroup": {
-   "glyph": "users-group-two-rounded-bold-duotone",
+   "glyphs": { "bold-duotone": "users-group-two-rounded-bold-duotone" },
    "category": "Users"
   },
   "IconVariable": {
-   "glyph": "code-circle-bold-duotone",
+   "glyphs": { "bold-duotone": "code-circle-bold-duotone" },
    "category": "IT"
   },
   "IconVectorTriangle": {
-   "glyph": "ruler-cross-pen-bold-duotone",
+   "glyphs": { "bold-duotone": "ruler-cross-pen-bold-duotone" },
    "category": "Tools"
   },
   "IconVideo": {
-   "glyph": "videocamera-bold-duotone",
+   "glyphs": { "bold-duotone": "videocamera-bold-duotone" },
    "category": "Video"
   },
   "IconVideoOff": {
-   "glyph": "videocamera-off-bold-duotone",
+   "glyphs": { "bold-duotone": "videocamera-off-bold-duotone" },
    "category": "Video"
   },
   "IconVirus": {
-   "glyph": "virus-bold-duotone",
+   "glyphs": { "bold-duotone": "virus-bold-duotone" },
    "category": "Medicine"
   },
   "IconWall": {
-   "glyph": "trellis-bold-duotone",
+   "glyphs": { "bold-duotone": "trellis-bold-duotone" },
    "category": "UI"
   },
   "IconWallet": {
-   "glyph": "wallet-bold-duotone",
+   "glyphs": { "bold-duotone": "wallet-bold-duotone" },
    "category": "Money"
   },
   "IconWand": {
-   "glyph": "magic-wand-bold-duotone",
+   "glyphs": { "bold-duotone": "magic-wand-bold-duotone" },
    "category": "UI"
   },
   "IconWaveSine": {
-   "glyph": "soundwave-bold-duotone",
+   "glyphs": { "bold-duotone": "soundwave-bold-duotone" },
    "category": "Video"
   },
   "IconWaveSquare": {
-   "glyph": "soundwave-square-bold-duotone",
+   "glyphs": { "bold-duotone": "soundwave-square-bold-duotone" },
    "category": "Video"
   },
   "IconWifi": {
-   "glyph": "wi-fi-bold-duotone",
+   "glyphs": { "bold-duotone": "wi-fi-bold-duotone" },
    "category": "IT"
   },
   "IconWifiOff": {
-   "glyph": "wi-fi-off-bold-duotone",
+   "glyphs": { "bold-duotone": "wi-fi-off-bold-duotone" },
    "category": "IT"
   },
   "IconWind": {
-   "glyph": "wind-bold-duotone",
+   "glyphs": { "bold-duotone": "wind-bold-duotone" },
    "category": "Weather"
   },
   "IconWorld": {
-   "glyph": "global-bold-duotone",
+   "glyphs": { "bold-duotone": "global-bold-duotone" },
    "category": "Map"
   },
   "IconWorldSearch": {
-   "glyph": "globe-bold-duotone",
+   "glyphs": { "bold-duotone": "globe-bold-duotone" },
    "category": "Map"
   },
   "IconWorldWww": {
-   "glyph": "globus-bold-duotone",
+   "glyphs": { "bold-duotone": "globus-bold-duotone" },
    "category": "IT"
   },
   "IconX": {
-   "glyph": "close-bold-duotone",
+   "glyphs": { "bold-duotone": "close-bold-duotone" },
    "category": "UI"
   },
   "IconZoomIn": {
-   "glyph": "magnifer-zoom-in-bold-duotone",
+   "glyphs": { "bold-duotone": "magnifer-zoom-in-bold-duotone" },
    "category": "UI"
   },
   "IconZoomOut": {
-   "glyph": "magnifer-zoom-out-bold-duotone",
+   "glyphs": { "bold-duotone": "magnifer-zoom-out-bold-duotone" },
    "category": "UI"
   }
  },

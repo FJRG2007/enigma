@@ -63,22 +63,25 @@ export function loadIcons(): IconEntry[] {
     }
 
     const { icons, weights } = JSON.parse(readFileSync(map, "utf8")) as {
-        icons: Record<string, { category: string; glyph: string; }>;
-        weights?: { default: string; available: string[]; };
+        icons: Record<string, { category: string; glyphs: Record<string, string>; }>;
+        weights?: { available: string[]; };
     };
 
-    // The default weight's modules live at the root of `src`, which is the set this page
-    // browses. Another weight is a directory beside it and would be browsed on its own.
-    const suffix = weightSuffix(weights?.default ?? "bold-duotone");
+    // The package has no default weight, so this page picks one to draw rather than
+    // inheriting it. The first declared weight is the choice until the browser grows a
+    // control for it, which is the point at which a second one exists to switch to.
+    const weight = weights?.available?.[0];
+    if (!weight) throw new Error("icon-map.json declares no weights; there is nothing to draw.");
+    const suffix = weightSuffix(weight);
 
     return Object.keys(icons).sort().map((name) => {
-        const module = resolve(PACKAGE, "src", "icons", `${name}.tsx`);
+        const module = resolve(PACKAGE, "src", weight, "icons", `${name}.tsx`);
         const found = readFileSync(module, "utf8").match(BODY);
-        if (!found) throw new Error(`Could not read the drawing out of ${name}.tsx.`);
+        if (!found) throw new Error(`Could not read the drawing out of ${weight}/${name}.tsx.`);
         return {
             name,
             category: icons[name].category,
-            alias: icons[name].glyph.replace(suffix, "").replace(/-/g, " "),
+            alias: icons[name].glyphs[weight].replace(suffix, "").replace(/-/g, " "),
             body: JSON.parse(`"${found[1]}"`) as string,
         };
     });
