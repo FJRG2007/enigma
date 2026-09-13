@@ -1,4 +1,4 @@
-// GENERATED, do not hand-edit. Run: node generate.mjs --solar <set.json>
+// GENERATED, do not hand-edit. Run: node generate.mjs --set <set.json>
 //
 // Import from the root for a single icon (the bundler keeps only that module),
 // or from a category when you want the group:

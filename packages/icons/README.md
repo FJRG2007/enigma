@@ -1,7 +1,10 @@
 # @enigmax/icons
 
-Filled duotone icons for React. 391 icons in 36 categories, each in its own
-module, so a bundle carries only the ones it renders.
+Icons for React. 391 icons in 36 categories, each in its own module, so a
+bundle carries only the ones it renders.
+
+Bold duotone is the weight that ships today. The package is built to hold more
+than one, so nothing in its name, its exports or its API is tied to that weight.
 
 ```tsx
 import { IconMapPin } from "@enigmax/icons";
@@ -47,7 +50,7 @@ one. Install `@tabler/icons-react` only if you import a brand mark.
 ## Regenerating
 
 ```sh
-node generate.mjs --solar <path/to/set.json>
+node generate.mjs --set <path/to/set.json>
 ```
 
 Edit `icon-map.json` to add, remove or re-point an icon, then regenerate. A
@@ -56,9 +59,4 @@ forever.
 
 ## Licence
 
-The icon artwork is the Solar Icon Set by 480 Design, used under
-[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). That licence
-requires attribution: keep this notice, and surface it somewhere in any app
-that ships these icons (an About or Credits screen is the usual place).
-
-The package code is MIT.
+MIT.

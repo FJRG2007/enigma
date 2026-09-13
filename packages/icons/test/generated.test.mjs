@@ -67,12 +67,12 @@ test("the root index exports every icon and re-exports every brand", () => {
 
 test("an external link is the diagonal arrow, not a box with an arrow leaving it", () => {
     // The convention this set is drawn against: at small sizes the box reads as clutter.
-    assert.equal(icons.IconExternalLink.solar, "arrow-right-up-bold-duotone");
+    assert.equal(icons.IconExternalLink.glyph, "arrow-right-up-bold-duotone");
 });
 
 test("no icon is mapped to a name from another visual weight", () => {
     // Mixing weights is the one drift that looks like a rendering bug rather than a typo.
     for (const name of names) {
-        assert.match(icons[name].solar, /-bold-duotone$/, `${name} is not bold duotone`);
+        assert.match(icons[name].glyph, /-bold-duotone$/, `${name} is not bold duotone`);
     }
 });

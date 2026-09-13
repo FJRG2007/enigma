@@ -6,6 +6,15 @@ export interface IconEntry {
     /** The component name a project imports, e.g. IconExternalLink. */
     name: string;
     category: string;
+    /**
+     * What the glyph is called in the set it was drawn for, as plain words.
+     *
+     * A second thing to match on and never something to show. The component names are the
+     * vocabulary of one library, and a reader types the vocabulary of the thing they want:
+     * "camera" should reach the video icon too, because that glyph IS a video camera and is
+     * called one upstream. Ranked below the name so the literal match still comes first.
+     */
+    alias: string;
     /** The SVG children, ready to be injected inside a <svg> element. */
     body: string;
 }
@@ -32,6 +41,15 @@ const PACKAGE = resolve(process.cwd(), "..", "..", "packages", "icons");
 const BODY = /icon\("[^"]+", "(.*)"\);$/m;
 
 /**
+ * The weight suffix every upstream name carries, dropped so it never reaches the index.
+ *
+ * Left in, every alias would end in the same two words and a search for either of them
+ * would match all 391. The package's own suite asserts the suffix, so this stays correct
+ * until a second weight ships - which adds its suffix here rather than changing the shape.
+ */
+const WEIGHT = /-bold-duotone$/;
+
+/**
  * Every icon in the package, sorted by name.
  *
  * Read at build time and rendered to static HTML, so the page paints the whole set on the
@@ -45,13 +63,18 @@ export function loadIcons(): IconEntry[] {
     }
 
     const { icons } = JSON.parse(readFileSync(map, "utf8")) as {
-        icons: Record<string, { category: string; }>;
+        icons: Record<string, { category: string; glyph: string; }>;
     };
 
     return Object.keys(icons).sort().map((name) => {
         const module = resolve(PACKAGE, "src", "icons", `${name}.tsx`);
         const found = readFileSync(module, "utf8").match(BODY);
         if (!found) throw new Error(`Could not read the drawing out of ${name}.tsx.`);
-        return { name, category: icons[name].category, body: JSON.parse(`"${found[1]}"`) as string };
+        return {
+            name,
+            category: icons[name].category,
+            alias: icons[name].glyph.replace(WEIGHT, "").replace(/-/g, " "),
+            body: JSON.parse(`"${found[1]}"`) as string,
+        };
     });
 }

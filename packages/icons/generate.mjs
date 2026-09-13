@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Generate the icon package's source from icon-map.json and the Solar set.
+// Generate the icon package's source from icon-map.json and a set of drawings.
 //
 // One module per icon, one barrel per category, and a root index that re-exports
 // everything. That shape is what lets a bundler drop what an app never renders:
@@ -8,15 +8,11 @@
 // fetched at install time - the bodies are written here as plain strings.
 //
 // Usage:
-//   node generate.mjs --solar <path/to/solar-icons.json> [--out src]
+//   node generate.mjs --set <path/to/icons.json> [--out src]
 //
-// The Solar set is a build-time input, not a dependency of the published
-// package: it is read here and the ~400 bodies the map names are copied out.
-// The full set is 7,759 icons, of which this keeps about five percent.
-//
-// Solar Icon Set by 480 Design, CC BY 4.0
-// (https://creativecommons.org/licenses/by/4.0/). The attribution the licence
-// requires ships in the package README and must not be stripped.
+// The set is a build-time input, not a dependency of the published package: it
+// is read here and the ~400 bodies the map names are copied out. The full set
+// is several thousand icons, of which this keeps about five percent.
 import { fileURLToPath } from "node:url";
 import { resolve, dirname } from "node:path";
 import { readFileSync, writeFileSync, mkdirSync, rmSync, existsSync } from "node:fs";
@@ -30,9 +26,9 @@ const arg = (flag, fallback) => {
 };
 
 const OUT = resolve(HERE, arg("--out", "src"));
-const SOLAR = arg("--solar", null);
-if (!SOLAR || !existsSync(SOLAR)) {
-    console.error("usage: node generate.mjs --solar <path/to/solar-icons.json> [--out src]");
+const SET = arg("--set", null);
+if (!SET || !existsSync(SET)) {
+    console.error("usage: node generate.mjs --set <path/to/icons.json> [--out src]");
     process.exit(1);
 }
 
@@ -95,14 +91,14 @@ export function icon(name: string, body: string): Icon {
 `;
 
 const { icons, brands } = JSON.parse(readFileSync(MAP, "utf8"));
-const solar = JSON.parse(readFileSync(SOLAR, "utf8")).icons;
+const drawings = JSON.parse(readFileSync(SET, "utf8")).icons;
 
 // A name that is not in the set does not throw at runtime - it renders an empty
 // square forever - so it has to fail here instead.
-const missing = Object.entries(icons).filter(([, spec]) => !solar[spec.solar]);
+const missing = Object.entries(icons).filter(([, spec]) => !drawings[spec.glyph]);
 if (missing.length > 0) {
     console.error("Names not present in the icon set:");
-    for (const [name, spec] of missing.slice(0, 10)) console.error(`    ${name} -> ${spec.solar}`);
+    for (const [name, spec] of missing.slice(0, 10)) console.error(`    ${name} -> ${spec.glyph}`);
     process.exit(1);
 }
 
@@ -117,10 +113,10 @@ const byCategory = new Map();
 let bytes = 0;
 
 for (const name of names) {
-    const { solar: solarName, category } = icons[name];
-    const body = solar[solarName].body;
+    const { glyph, category } = icons[name];
+    const body = drawings[glyph].body;
     bytes += body.length;
-    const file = `// ${name} - ${solarName}. GENERATED, do not hand-edit.
+    const file = `// ${name} - ${glyph}. GENERATED, do not hand-edit.
 import { icon } from "../icon";
 
 export const ${name} = icon(${JSON.stringify(name)}, ${JSON.stringify(body)});
@@ -139,7 +135,7 @@ for (const category of categories) {
 }
 
 const index = [
-    "// GENERATED, do not hand-edit. Run: node generate.mjs --solar <set.json>",
+    "// GENERATED, do not hand-edit. Run: node generate.mjs --set <set.json>",
     "//",
     "// Import from the root for a single icon (the bundler keeps only that module),",
     "// or from a category when you want the group:",

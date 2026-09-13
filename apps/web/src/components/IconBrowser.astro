@@ -1,15 +1,18 @@
 ---
 import { loadIcons } from "../lib/icons";
+import { CategoryPicker } from "./CategoryPicker";
 
-// Every glyph is rendered to static HTML here, at build time. The client only ever hides
-// and shows what is already on the page, which is what keeps the whole set on screen from
-// the first frame with no request and no hydration.
+// Every glyph is rendered to static HTML here, at build time. The client only ever hides,
+// shows and reorders what is already on the page, which is what keeps the whole set on
+// screen from the first frame with no request and no hydration.
 const icons = loadIcons();
-const categories = [...new Set(icons.map((icon) => icon.category))].sort();
 
-// What the client searches: names and categories, never the drawings. Shipping the bodies
-// again as JSON would send the entire set twice for no gain.
-const index = icons.map(({ name, category }) => ({ name, category }));
+const counts: Record<string, number> = {};
+for (const icon of icons) counts[icon.category] = (counts[icon.category] ?? 0) + 1;
+
+// What the client searches: names, categories and aliases, never the drawings. Shipping the
+// bodies again as JSON would send the entire set twice for no gain.
+const index = icons.map(({ name, category, alias }) => ({ name, category, alias }));
 ---
 <div class="ib" data-icon-browser>
     <div class="ib-bar">
@@ -23,13 +26,11 @@ const index = icons.map(({ name, category }) => ({ name, category }));
             spellcheck="false"
             data-icon-search
         />
-        <label class="ib-cat">
-            <span class="ib-cat-label">Category</span>
-            <select aria-label="Filter icons by category" data-icon-category>
-                <option value="">All categories</option>
-                {categories.map((category) => <option value={category}>{category}</option>)}
-            </select>
-        </label>
+        {/* The box is sized here rather than by the island, so hydrating the picker cannot
+            shift the toolbar around it. */}
+        <div class="ib-cat">
+            <CategoryPicker client:only="react" counts={counts} total={icons.length} />
+        </div>
         <p class="ib-count" aria-live="polite" data-icon-count>{icons.length} icons</p>
     </div>
 
@@ -38,7 +39,10 @@ const index = icons.map(({ name, category }) => ({ name, category }));
             <li data-icon={icon.name} data-category={icon.category}>
                 <button type="button" title={`Copy ${icon.name}`} aria-label={`Copy ${icon.name}`}>
                     <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" set:html={icon.body} />
-                    <span class="ib-name">{icon.name.replace(/^Icon/, "")}</span>
+                    {/* The name is data, and it runs from 1 to 22 characters. It gets one
+                        line and an ellipsis so every cell is the same height; the full value
+                        stays reachable on the element itself and on the button's label. */}
+                    <span class="ib-name" title={icon.name}>{icon.name.replace(/^Icon/, "")}</span>
                 </button>
             </li>
         ))}
@@ -56,6 +60,7 @@ const index = icons.map(({ name, category }) => ({ name, category }));
     interface Entry {
         name: string;
         category: string;
+        alias: string;
     }
 
     const root = document.querySelector<HTMLElement>("[data-icon-browser]");
@@ -63,7 +68,6 @@ const index = icons.map(({ name, category }) => ({ name, category }));
     if (root && payload) {
         const entries: Entry[] = JSON.parse(payload.textContent ?? "[]");
         const field = root.querySelector<HTMLInputElement>("[data-icon-search]")!;
-        const picker = root.querySelector<HTMLSelectElement>("[data-icon-category]")!;
         const count = root.querySelector<HTMLElement>("[data-icon-count]")!;
         const empty = root.querySelector<HTMLElement>("[data-icon-empty]")!;
         const cells = new Map(
@@ -71,14 +75,19 @@ const index = icons.map(({ name, category }) => ({ name, category }));
         );
 
         let matched = new Set(entries.map((entry) => entry.name));
+        let rank = new Map<string, number>();
+        let category = "";
         let query = "";
 
         const apply = (): void => {
-            const category = picker.value;
             let shown = 0;
             for (const [name, cell] of cells) {
                 const hit = matched.has(name) && (!category || cell.dataset.category === category);
                 cell.hidden = !hit;
+                // The grid is in alphabetical DOM order, which is the right order for
+                // browsing and the wrong one for a query: what matched best has to come
+                // first. `order` re-sequences the cells without moving a single node.
+                cell.style.order = query ? String(rank.get(name) ?? 0) : "";
                 if (hit) shown += 1;
             }
             count.textContent = shown === entries.length
@@ -87,8 +96,8 @@ const index = icons.map(({ name, category }) => ({ name, category }));
             // Naming what was searched for is what separates "no matches" from a broken field.
             empty.hidden = shown > 0;
             empty.textContent = query
-                ? `Nothing matches "${query}"${picker.value ? ` in ${picker.value}` : ""}.`
-                : `No icons in ${picker.value}.`;
+                ? `Nothing matches "${query}"${category ? ` in ${category}` : ""}.`
+                : `No icons in ${category}.`;
         };
 
         // Fuse is already wired into the /search entry, so a typo still finds the icon.
@@ -96,19 +105,38 @@ const index = icons.map(({ name, category }) => ({ name, category }));
         // in-memory pass only makes the field feel broken.
         const search = createSearch<Entry>({
             items: entries,
-            keys: ["name", "category"],
-            fuseOptions: { threshold: 0.3, ignoreLocation: true },
+            keys: ["name", "alias", "category"],
+            fuseOptions: {
+                threshold: 0.3,
+                ignoreLocation: true,
+                // Weighted, because the three are not equally good answers. A reader typing
+                // "camera" wants the camera first and the video camera after it - both are
+                // right, one is what they asked for - so the alias and the category pull a
+                // glyph into the results without ever outranking its own name.
+                keys: [
+                    { name: "name", weight: 0.7 },
+                    { name: "alias", weight: 0.2 },
+                    { name: "category", weight: 0.1 },
+                ],
+            },
             debounce: 0,
             empty: "all",
         });
         search.attach(field);
         search.subscribe((results, text) => {
             matched = new Set(results.map((result) => result.item.name));
+            // Fuse returns them best first, so the position in the list IS the rank.
+            rank = new Map(results.map((result, position) => [result.item.name, position]));
             query = text;
             apply();
         });
 
-        picker.addEventListener("change", apply);
+        // The picker is a React island around the select primitive, so it reports through an
+        // event rather than a prop: the grid belongs to this script, not to a React tree.
+        document.addEventListener("icons:category", (event) => {
+            category = (event as CustomEvent<string>).detail;
+            apply();
+        });
 
         // One listener for the grid rather than 391: the name is on the cell already.
         root.querySelector("[data-icon-grid]")!.addEventListener("click", async (event) => {
@@ -130,7 +158,7 @@ const index = icons.map(({ name, category }) => ({ name, category }));
     .ib-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 16px; }
 
     .ib-search {
-        flex: 1 1 220px; min-width: 0; font-family: inherit; font-size: 14px; color: var(--text);
+        flex: 1 1 200px; min-width: 0; font-family: inherit; font-size: 14px; color: var(--text);
         background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
         padding: 9px 13px;
     }
@@ -138,24 +166,25 @@ const index = icons.map(({ name, category }) => ({ name, category }));
     /* WebKit draws its own clear cross; left in, half the readers get two side by side. */
     .ib-search::-webkit-search-cancel-button { appearance: none; }
 
-    .ib-cat { display: flex; align-items: center; gap: 8px; }
-    .ib-cat-label { font-size: 12px; color: var(--muted); }
-    .ib-cat select {
-        font-family: inherit; font-size: 13px; color: var(--text); background: var(--surface);
-        border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 10px;
-    }
+    /* Reserved so the island hydrating into it does not move the toolbar. */
+    .ib-cat { flex: 0 0 auto; width: 200px; min-height: 38px; }
+    .ib-cat :global([data-enigma-select-trigger]) { width: 100%; font-size: 13px; }
 
     .ib-count { margin: 0; font-family: var(--mono); font-size: 12px; color: var(--muted); }
 
     .ib-grid {
         list-style: none; margin: 0; padding: 0;
-        display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px;
+        display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+        /* A fixed row height: the label is variable-length data, so letting the cell size
+           itself gives a ragged grid where every row is as tall as its longest name. */
+        grid-auto-rows: 86px; gap: 8px;
     }
 
     .ib-grid button {
-        width: 100%; display: flex; flex-direction: column; align-items: center; gap: 8px;
+        width: 100%; height: 100%;
+        display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px;
         background: var(--surface); border: 1px solid var(--border-soft); border-radius: var(--radius-sm);
-        color: var(--text); padding: 14px 8px 10px; cursor: pointer;
+        color: var(--text); padding: 10px 7px; cursor: pointer;
     }
     .ib-grid button:hover { background: var(--surface2); border-color: var(--border); }
     .ib-grid button:active { transform: translateY(1px); }
@@ -163,12 +192,19 @@ const index = icons.map(({ name, category }) => ({ name, category }));
 
     .ib-grid svg { width: 26px; height: 26px; flex-shrink: 0; }
 
+    /* One line, clipped. `title` on the span keeps the whole name reachable, and the
+       button's own label already announces it in full. */
     .ib-name {
+        display: block; width: 100%; min-width: 0;
         font-family: var(--mono); font-size: 10.5px; color: var(--muted); line-height: 1.3;
-        max-width: 100%; overflow-wrap: anywhere; text-align: center;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center;
     }
     .ib-grid button:hover .ib-name { color: var(--text); }
     .ib-grid button.copied .ib-name { color: var(--good); }
 
     .ib-empty { margin: 20px 0 0; font-size: 13px; color: var(--muted); }
+
+    @media (max-width: 520px) {
+        .ib-cat { flex: 1 1 100%; width: auto; }
+    }
 </style>

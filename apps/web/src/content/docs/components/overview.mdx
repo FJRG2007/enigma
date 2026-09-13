@@ -17,7 +17,7 @@ Interaction logic is behaviour, and behaviour that has already been measured and
 - **`@enigmax/primitives`** - interaction behaviour: timing, pointer handling, accessibility. No visual styles.
 - **`@enigmax/utils`** - what renders nothing: a short-TTL read cache, and a breached-password check.
 
-Beside them, **`@enigmax/icons`** holds the glyphs: a filled duotone set with one module per icon, so a bundle carries only what it renders.
+Beside them, **`@enigmax/icons`** holds the glyphs: one module per icon, so a bundle carries only what it renders.
 
 Both are plain npm packages. Nothing about them requires enigma - `enigma add` is a convenience that also lets an agent discover what exists.
 
@@ -150,4 +150,4 @@ A themes package that styles these hooks for you is planned; the attributes are 
 - [Image]({docHref("components/image")}) - a picture that opens into a viewer: press to enlarge, wheel to zoom, with the gallery arrows, previews, download menu and discard action off until asked for.
 - [Video]({docHref("components/video")}) - a player shaped after Plyr, with the element as the source of truth and the platform's own shortcuts.
 - [Selection list]({docHref("components/selection")}) - the file-manager selection model, with every shortcut rebindable or removable.
-- [Icons]({docHref("components/icons")}) - the filled duotone set, searchable by name and category, one module per glyph.
+- [Icons]({docHref("components/icons")}) - the icon set, searchable by name and category, one module per glyph.

@@ -1,16 +1,19 @@
 ---
 title: Icons
-description: A filled duotone icon set for React, one module per icon so a bundle carries only the glyphs it actually renders.
+description: An icon set for React, one module per icon so a bundle carries only the glyphs it actually renders.
 group: Icons
 order: 50
 space: components
 ---
+import Tabs from "../../../components/Tabs.astro";
+import Command from "../../../components/Command.astro";
 import IconBrowser from "../../../components/IconBrowser.astro";
-import Installation from "../../../components/Installation.astro";
 
-Icons are the one dependency a project takes for granted and then ships whole. `@enigmax/icons` is a filled duotone set where every glyph is its own module, so the bundler keeps the handful you import and drops the rest.
+Icons are the one dependency a project takes for granted and then ships whole. In `@enigmax/icons` every glyph is its own module, so the bundler keeps the handful you import and drops the rest.
 
-Every icon is a 24x24 `viewBox` drawn in two filled paths - the shape, and a background at half opacity - painted with `currentColor`. They inherit the surrounding text colour and need no theming of their own.
+Every icon is a 24x24 `viewBox` painted with `currentColor`, so it inherits the surrounding text colour and needs no theming of its own.
+
+**Bold duotone is the weight that ships today** - two filled paths, the shape over a background at half opacity - and it is not what the package is. Nothing in the name, the exports or the props is tied to it, so further weights land as additions rather than a second package or a breaking rename.
 
 ## Browse
 
@@ -20,14 +23,18 @@ Type to search, or narrow by category. Click any icon to copy its component name
 
 ## Installation
 
-<Installation pkg="@enigmax/icons">
-    <div slot="manual">
+A plain package, so it installs like one. There is no `enigma add` item and no scaffolding step: the icons carry no styles and no recipe, so there is nothing to write into your project.
 
-React 18 or newer is the only requirement. `@tabler/icons-react` is an optional peer, needed
-only if you import one of the brand marks below.
+<Tabs tabs={[{ id: "npm", label: "npm" }, { id: "pnpm", label: "pnpm" }, { id: "yarn", label: "yarn" }, { id: "bun", label: "bun" }]} persist="package-manager" flush={true}>
+    <div slot="npm"><Command command="npm install @enigmax/icons" bare={true} /></div>
+    <div slot="pnpm"><Command command="pnpm add @enigmax/icons" bare={true} /></div>
+    <div slot="yarn"><Command command="yarn add @enigmax/icons" bare={true} /></div>
+    <div slot="bun"><Command command="bun add @enigmax/icons" bare={true} /></div>
+</Tabs>
 
-    </div>
-</Installation>
+React 18 or newer is the only requirement. `@tabler/icons-react` is an optional peer, needed only if you import one of the brand marks below.
+
+**There is no weight to choose at install time.** One package holds the set, and the weight is part of each icon's name rather than a build flag or a separate install - so a second weight arrives as new exports you import beside the ones you already use, and nothing you installed changes.
 
 ## Usage
 
@@ -75,7 +82,3 @@ import { IconExternalLink } from "@enigmax/icons";
 ```
 
 `IconExternalLink` is already mapped to the diagonal arrow, so importing it by that name gives the right glyph. The package's own test suite asserts it, so the convention cannot drift back.
-
-## Credit
-
-Drawings from the Solar Icon Set by 480 Design, used under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). The attribution ships inside the package and must not be stripped.

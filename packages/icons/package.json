@@ -1,7 +1,7 @@
 {
     "name": "@enigmax/icons",
-    "version": "0.1.0",
-    "description": "Filled duotone icon set for React, one module per icon so a bundle carries only what it renders.",
+    "version": "0.1.1",
+    "description": "Icon set for React, one module per icon so a bundle carries only what it renders.",
     "type": "module",
     "main": "./dist/index.js",
     "types": "./dist/index.d.ts",
