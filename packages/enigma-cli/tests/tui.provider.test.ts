@@ -38,14 +38,28 @@ const hub: HubContext = {
     setAccountProvider: (tool, name, input) => { provCall = { tool, name, input }; return { ok: true, accounts }; },
 };
 
+/** How long a frame has to appear. Wall clock, for the reason `until` documents. */
+const FRAME_TIMEOUT_MS = 10_000;
+
+/**
+ * Drive render passes until the frame matches (the test scheduler is not free-running).
+ *
+ * Bounded by WALL CLOCK rather than by a pass count. A fixed 50 passes is a budget that shrinks
+ * as the machine gets busier: at the tail of a full-suite run, 87 bun processes deep, a render
+ * that normally costs a millisecond takes enough that the frame arrives on pass 51 - which read
+ * as "frame never matched" and failed a test with nothing wrong with it. The deadline sits well
+ * inside the per-test timeout, so a frame that genuinely never comes still fails, and with the
+ * same message.
+ */
 const until = async (pred: (f: string) => boolean, label: string): Promise<string> => {
     let frame = "";
-    for (let i = 0; i < 50; i++) {
+    const deadline = Date.now() + FRAME_TIMEOUT_MS;
+    do {
         await setup.renderOnce();
         frame = setup.captureCharFrame();
         if (pred(frame)) return frame;
         await new Promise((r) => setTimeout(r, 20));
-    }
+    } while (Date.now() < deadline);
     throw new Error(`frame never matched: ${label}; last frame:\n${frame}`);
 };
 
