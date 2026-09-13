@@ -38,13 +38,13 @@ from openai import OpenAI
 
 client = OpenAI(base_url="http://127.0.0.1:8000/v1", api_key="not-needed")
 resp = client.chat.completions.create(
-    model="claude-opus-4-8",
+    model="claude-opus-5",
     messages=[{"role": "user", "content": "Explain this repo's architecture."}],
 )
 print(resp.choices[0].message.content)
 ```
 
-The default model is **`claude-opus-4-8`** when a request names none (or a non-Claude id). Streaming (`stream=true`), the Anthropic `/v1/messages` shape, and standard OpenAI parameters work as well.
+The default model is **`claude-opus-5`** when a request names none (or a non-Claude id). Streaming (`stream=true`), the Anthropic `/v1/messages` shape, and standard OpenAI parameters work as well.
 
 ## Images
 
@@ -52,7 +52,7 @@ Send images the same way you would with OpenAI or Anthropic - the API forwards t
 
 ```python
 resp = client.chat.completions.create(
-    model="claude-opus-4-8",
+    model="claude-opus-5",
     messages=[{"role": "user", "content": [
         {"type": "text", "text": "What is in this image?"},
         {"type": "image_url", "image_url": {"url": "data:image/png;base64,iVBORw0KGgo..."}},

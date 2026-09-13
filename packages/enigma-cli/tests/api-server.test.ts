@@ -95,13 +95,22 @@ test("agents.resolveAdapter routes by model, defaulting to the given tool", () =
 });
 
 test("agents.DEFAULT_MODEL is Opus and the claude adapter falls back to it", () => {
-    expect(agents.DEFAULT_MODEL).toBe("claude-opus-4-8");
+    expect(agents.DEFAULT_MODEL).toBe("claude-opus-5");
     const claude = agents.adapterFor("claude")!;
     // A bare "claude" or a foreign model routes to Claude but uses the default model.
     const bare = claude.build("hi", { model: "claude" });
-    expect(bare.args[bare.args.indexOf("--model") + 1]).toBe("claude-opus-4-8");
+    expect(bare.args[bare.args.indexOf("--model") + 1]).toBe("claude-opus-5");
     const foreign = claude.build("hi", { model: "gpt-4o" });
-    expect(foreign.args[foreign.args.indexOf("--model") + 1]).toBe("claude-opus-4-8");
+    expect(foreign.args[foreign.args.indexOf("--model") + 1]).toBe("claude-opus-5");
+});
+
+// A model released after CLAUDE_MODELS was written still routes and is forwarded verbatim: the
+// list is what /v1/models advertises, not a whitelist. Regression guard for the next id.
+test("an unlisted claude-* id still routes to Claude and reaches --model", () => {
+    expect(agents.resolveClaudeModel("claude-something-7")).toBe("claude-something-7");
+    expect(agents.resolveAdapter("claude-something-7", "codex").tool).toBe("claude");
+    const built = agents.adapterFor("claude")!.build("hi", { model: "claude-something-7" });
+    expect(built.args[built.args.indexOf("--model") + 1]).toBe("claude-something-7");
 });
 
 test("the claude adapter switches to stream-json input when images are attached", () => {

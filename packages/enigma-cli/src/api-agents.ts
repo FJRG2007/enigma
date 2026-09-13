@@ -62,11 +62,18 @@ export interface AgentAdapter {
     parseLine?(line: string): AgentEvent | null;
 }
 
-/** Claude ids/aliases forwarded to `--model`; foreign ids (gpt-*) fall back to the default. */
-export const CLAUDE_MODELS = ["claude-opus-4-8", "claude-sonnet-5", "claude-haiku-4-5", "claude-fable-5", "opus", "sonnet", "haiku"];
+/**
+ * Claude ids/aliases forwarded to `--model`; foreign ids (gpt-*) fall back to the default.
+ *
+ * This is what `/v1/models` advertises, not what routing accepts: `resolveClaudeModel` passes
+ * through ANY id starting with `claude`, so a model released after this list still works when a
+ * caller names it. The list exists so a client that enumerates models sees the current ones, and
+ * so the bare aliases (which do not start with `claude`) route here at all.
+ */
+export const CLAUDE_MODELS = ["claude-opus-5", "claude-opus-4-8", "claude-sonnet-5", "claude-haiku-4-5", "claude-fable-5-1", "claude-fable-5", "opus", "sonnet", "haiku"];
 
 /** Default model when a request names none (or a foreign one) and routes to Claude Code. */
-export const DEFAULT_MODEL = "claude-opus-4-8";
+export const DEFAULT_MODEL = "claude-opus-5";
 
 /** Strip a `tool` / `tool:` / `tool/` routing prefix from a model id, returning the remainder (or null). */
 export function stripToolPrefix(model: string | null | undefined, tool: string): string | null {
