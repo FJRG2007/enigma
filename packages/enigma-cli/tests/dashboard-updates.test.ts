@@ -12,6 +12,7 @@ import { createServer, type Server } from "node:http";
 
 const HOME = mkdtempSync(join(tmpdir(), "enigma-upd-"));
 process.env.USERPROFILE = HOME;
+process.env.ENIGMA_CONFIG_HOME = HOME;
 process.env.HOME = HOME;
 
 // Fake registry: /<pkg>/latest -> { version }. enigma-cli is the only installed package in a

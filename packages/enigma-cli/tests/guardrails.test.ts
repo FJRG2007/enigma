@@ -18,6 +18,7 @@ setDefaultTimeout(60_000);
 
 const HOME = mkdtempSync(join(tmpdir(), "enigma-guardrails-"));
 process.env.USERPROFILE = HOME;
+process.env.ENIGMA_CONFIG_HOME = HOME;
 process.env.HOME = HOME;
 const CONFIG = join(HOME, "guardrails.json");
 process.env.ENIGMA_GUARDRAILS_CONFIG = CONFIG;

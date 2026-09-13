@@ -13,6 +13,7 @@ import { mkdtempSync, rmSync, readFileSync } from "node:fs";
 
 const HOME = mkdtempSync(join(tmpdir(), "enigma-shell-"));
 process.env.USERPROFILE = HOME;
+process.env.ENIGMA_CONFIG_HOME = HOME;
 process.env.HOME = HOME;
 
 const { compress } = await import("../src/compress");

@@ -12,6 +12,7 @@ import { mkdtempSync, existsSync, readFileSync, rmSync } from "node:fs";
 
 const HOME = mkdtempSync(join(tmpdir(), "enigma-memory-edit-"));
 process.env.USERPROFILE = HOME;
+process.env.ENIGMA_CONFIG_HOME = HOME;
 process.env.HOME = HOME;
 
 const { listMemoryGroups, readMemoryGroup, saveMemoryGroup, resetMemoryGroup } = await import("../src/skills");

@@ -13,6 +13,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 const HOME = mkdtempSync(join(tmpdir(), "enigma-toolpath-"));
 const OFF_PATH_DIR = join(HOME, ".local", "bin");
 process.env.USERPROFILE = HOME;
+process.env.ENIGMA_CONFIG_HOME = HOME;
 process.env.HOME = HOME;
 delete process.env.ENIGMA_CLAUDE_BIN;
 // Never let a test mutate the real user PATH (the launchable path step is gated on this).

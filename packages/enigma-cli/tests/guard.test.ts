@@ -63,6 +63,7 @@ test("redactSecrets replaces the secret with a labelled placeholder", () => {
 test("guard-config persists and dedupes user lists without dropping protections", () => {
     const HOME = mkdtempSync(join(tmpdir(), "enigma-guard-"));
     const prev = { home: process.env.HOME, profile: process.env.USERPROFILE };
+    process.env.ENIGMA_CONFIG_HOME = HOME;
     process.env.HOME = HOME; process.env.USERPROFILE = HOME;
     try {
         setGuardProtection("largeFiles", false);

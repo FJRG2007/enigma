@@ -11,6 +11,7 @@ import { test, expect, afterAll } from "bun:test";
 
 const DIR = mkdtempSync(join(tmpdir(), "enigma-gate-exec-"));
 process.env.USERPROFILE = DIR;
+process.env.ENIGMA_CONFIG_HOME = DIR;
 process.env.HOME = DIR;
 
 const { Database, newId, insertRepoWithIDAndFork, insertRun, getRun, getStepsByRun } = await import("@/gate/db");

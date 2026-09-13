@@ -5,12 +5,17 @@
  * never-overwrite rules as syncDeployed on refresh. Runs against a temp HOME
  * (set BEFORE importing the modules - they resolve some paths at import time).
  */
-import { test, expect, beforeAll, afterAll } from "bun:test";
-import { mkdirSync, mkdtempSync, existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { test, expect, beforeAll, afterAll } from "bun:test";
+import { mkdirSync, mkdtempSync, existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 
 const HOME = mkdtempSync(join(tmpdir(), "enigma-account-sync-"));
+// ENIGMA_CONFIG_HOME as well as HOME: bun on Linux does not reflect a reassigned $HOME through
+// os.homedir(), so the modules would resolve the REAL home and never see the posture written
+// below - the settings mirror then reads nothing and the discard list is never found. Windows
+// follows USERPROFILE, which is why this only ever failed on a Linux runner.
+process.env.ENIGMA_CONFIG_HOME = HOME;
 process.env.USERPROFILE = HOME;
 process.env.HOME = HOME;
 

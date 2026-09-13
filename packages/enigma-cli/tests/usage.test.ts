@@ -12,6 +12,7 @@ import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync, mkdirSync }
 
 const HOME = mkdtempSync(join(tmpdir(), "enigma-usage-"));
 process.env.USERPROFILE = HOME;
+process.env.ENIGMA_CONFIG_HOME = HOME;
 process.env.HOME = HOME;
 // Pin the transcript dir explicitly: under bun on Linux os.homedir() does not reflect a
 // runtime-reassigned $HOME, so the override (not homedir()) makes the test deterministic.

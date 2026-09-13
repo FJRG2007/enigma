@@ -11,6 +11,7 @@ import { join } from "node:path";
 
 const HOME = mkdtempSync(join(tmpdir(), "enigma-guard-"));
 process.env.USERPROFILE = HOME;
+process.env.ENIGMA_CONFIG_HOME = HOME;
 process.env.HOME = HOME;
 
 const { readGlobalGuard, setGuardProtection } = await import("../src/guard-config");

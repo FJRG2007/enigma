@@ -11,6 +11,7 @@ import { join } from "node:path";
 
 const HOME = mkdtempSync(join(tmpdir(), "enigma-io-"));
 process.env.USERPROFILE = HOME;
+process.env.ENIGMA_CONFIG_HOME = HOME;
 process.env.HOME = HOME;
 
 const { exportBundle, importBundle, BUNDLE_KIND } = await import("../src/dashboard-config-io");

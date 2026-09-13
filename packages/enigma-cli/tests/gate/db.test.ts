@@ -11,6 +11,7 @@ import { test, expect, afterAll } from "bun:test";
 
 const DIR = mkdtempSync(join(tmpdir(), "enigma-gate-db-"));
 process.env.USERPROFILE = DIR;
+process.env.ENIGMA_CONFIG_HOME = DIR;
 process.env.HOME = DIR;
 
 const {

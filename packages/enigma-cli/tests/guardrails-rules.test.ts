@@ -13,6 +13,7 @@ import { test, expect, afterAll } from "bun:test";
 
 const HOME = mkdtempSync(join(tmpdir(), "enigma-gr-rules-"));
 process.env.USERPROFILE = HOME;
+process.env.ENIGMA_CONFIG_HOME = HOME;
 process.env.HOME = HOME;
 process.env.ENIGMA_GUARDRAILS_CONFIG = join(HOME, "guardrails.json");
 

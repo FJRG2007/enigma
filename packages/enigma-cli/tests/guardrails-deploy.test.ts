@@ -15,6 +15,7 @@ import { mkdtempSync, rmSync, readFileSync, existsSync } from "node:fs";
 
 const HOME = mkdtempSync(join(tmpdir(), "enigma-gr-deploy-"));
 process.env.USERPROFILE = HOME;
+process.env.ENIGMA_CONFIG_HOME = HOME;
 process.env.HOME = HOME;
 
 const { applyOpencodeGuardrailsPlugin } = await import("../src/guardrails-deploy");

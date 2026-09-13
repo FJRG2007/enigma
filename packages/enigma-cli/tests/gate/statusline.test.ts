@@ -17,6 +17,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 
 const DIR = mkdtempSync(join(tmpdir(), "enigma-statusline-"));
 process.env.USERPROFILE = DIR;
+process.env.ENIGMA_CONFIG_HOME = DIR;
 process.env.HOME = DIR;
 
 const REPO_PATH = join(DIR, "repo").replace(/\\/g, "/");

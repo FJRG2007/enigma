@@ -47,6 +47,7 @@ test("ignores non-messages paths and bodies without usage", () => {
 test("forwards to the upstream verbatim and records the measured usage", async () => {
     const HOME = mkdtempSync(join(tmpdir(), "enigma-proxy-"));
     const prev = { home: process.env.HOME, profile: process.env.USERPROFILE, up: process.env.ENIGMA_PROXY_UPSTREAM };
+    process.env.ENIGMA_CONFIG_HOME = HOME;
     process.env.HOME = HOME; process.env.USERPROFILE = HOME;
     process.env.ENIGMA_PROXY_DIR = join(HOME, ".enigma", "proxy"); // isolate stats/limits (bun-linux homedir() ignores $HOME)
 

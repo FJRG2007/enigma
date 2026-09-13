@@ -13,6 +13,7 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync, readFileSync
 
 const HOME = mkdtempSync(join(tmpdir(), "enigma-dash-"));
 process.env.USERPROFILE = HOME;
+process.env.ENIGMA_CONFIG_HOME = HOME;
 process.env.HOME = HOME;
 // Keep the stats payload's update check from making a real npm request during the test.
 process.env.ENIGMA_NO_UPDATE_CHECK = "1";
