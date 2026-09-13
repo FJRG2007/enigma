@@ -71,6 +71,29 @@ export function listJsonl(dir: string): string[] {
     return out;
 }
 
+/** The stamps that decide which of several copies of one transcript is the authoritative one. */
+export interface TranscriptStamps { size: number; birthtimeMs: number; }
+
+/**
+ * Whether `cand` is a better copy of one transcript than `best`.
+ *
+ * A transcript is append-only, so of two copies the larger holds every turn the smaller does:
+ * taking it keeps a session that was mirrored while idle and then continued under its origin
+ * from being read as the stale prefix. Copies that agree are settled by creation time rather
+ * than by the order the source directories happened to be read in - a copy is made after its
+ * origin, so the earlier birthtime is the account the conversation was recorded under. A
+ * filesystem reporting no birthtime leaves the first copy seen the winner.
+ *
+ * Shared deliberately: usage.ts counts the winner and session-share.ts's prune keeps it, and the
+ * prune is only safe to delete the losers because both pick the SAME copy. Two implementations
+ * would let one drift and start deleting the file the other attributes spend to.
+ */
+export function outranks(cand: TranscriptStamps, best: TranscriptStamps): boolean {
+    if (cand.size !== best.size) return cand.size > best.size;
+    if (cand.birthtimeMs > 0 && best.birthtimeMs > 0) return cand.birthtimeMs < best.birthtimeMs;
+    return false;
+}
+
 /** The project segment a transcript path belongs to (its dir under ~/.claude/projects). */
 export function projectOf(path: string, root: string): string {
     const rel = path.startsWith(root) ? path.slice(root.length) : path;

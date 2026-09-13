@@ -8,16 +8,18 @@
  *
  * unshareSessions is the undo, and what it must not do carries the weight: it deletes, so it
  * removes only a copy the kept file contains byte for byte, never touches the user's own config
- * dir, and defers a copy a client still has open.
+ * dir, defers a copy a client still has open, never mistakes one tree named twice for two trees
+ * holding the same conversation, and stops its directory cleanup at a tree root however that root
+ * is spelled.
  *
  * The trees are passed in rather than discovered: account discovery freezes its base paths
  * when accounts.ts is imported, so in a full-suite run (one process, many files) the HOME a
  * single test sets does not win. Naming the roots keeps this test order-independent.
  */
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import { test, expect, beforeAll, afterAll } from "bun:test";
-import { syncSessions, unshareSessions } from "../src/session-share";
+import { applyUnshare, mirroredCopies, plannedUnshare, syncSessions, unshareSessions } from "../src/session-share";
 import { mkdirSync, mkdtempSync, existsSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 
 const BASE = mkdtempSync(join(tmpdir(), "enigma-session-share-"));
@@ -309,4 +311,84 @@ test("unshareSessions touches nothing for another tool, or a single tree", () =>
     expect(unshareSessions("codex", PRUNE_ROOTS).removed).toBe(0);
     expect(unshareSessions("claude", [{ dir: PRUNE_OWN, writable: true }]).removed).toBe(0);
     expect(existsSync(join(PRUNE_OTHER, rel))).toBe(true);
+});
+
+test("unshareSessions never takes the only copy when one tree is named twice", () => {
+    resetPruneTrees();
+    // A duplicated or hand-edited `dir` in the registry puts one file into its group TWICE, as two
+    // records of the same path. Nothing about that pair means redundancy - a file is trivially its
+    // own prefix, and the sizes match - so a prune blind to the twin would delete the only copy.
+    const rel = join(SLUG, `${FIRST}.jsonl`);
+    writeTranscript(PRUNE_OWN, rel, "{\"n\":1}\n");
+    const twinned = [
+        { dir: PRUNE_OWN, writable: true },
+        { dir: PRUNE_OWN, writable: true },
+        { dir: `${PRUNE_OWN}${sep}`, writable: true },
+    ];
+
+    expect(mirroredCopies("claude", twinned)).toBe(0);
+    expect(unshareSessions("claude", twinned).removed).toBe(0);
+    expect(readFileSync(join(PRUNE_OWN, rel), "utf8")).toBe("{\"n\":1}\n");
+});
+
+test("the prune's directory cleanup stops at a tree root however it is spelled", () => {
+    resetPruneTrees();
+    // pruneEmpty climbs out of the directories a delete emptied and must stop AT the root. Matching
+    // the root as a plain string let a trailing separator slip past it and keep climbing - out of
+    // the tree, and into the account dir holding it.
+    const rel = join(SLUG, `${FIRST}.jsonl`);
+    writeTranscript(PRUNE_OWN, rel, "{\"n\":1}\n");
+    writeTranscript(PRUNE_OTHER, rel, "{\"n\":1}\n", 300_000);
+    const spelled = [
+        { dir: `${PRUNE_OWN}${sep}`, writable: true },
+        { dir: `${PRUNE_OTHER}${sep}`, writable: true },
+    ];
+
+    expect(unshareSessions("claude", spelled).removed).toBe(1);
+    // The copy went, and the workspace directory it was alone in with it - the tree root did not.
+    expect(existsSync(join(PRUNE_OTHER, rel))).toBe(false);
+    expect(existsSync(join(PRUNE_OTHER, SLUG))).toBe(false);
+    expect(existsSync(PRUNE_OTHER)).toBe(true);
+});
+
+test("mirroredCopies counts what looks mirrored without proving it", () => {
+    resetPruneTrees();
+    // What the `account sessions` listing shows. Stat-only on purpose: proving a copy redundant
+    // reads both files to the end, which a listing cannot afford - so it counts the copies that
+    // LOOK mirrored, including one the prune then refuses to touch.
+    const mirrored = join(SLUG, `${FIRST}.jsonl`);
+    const diverged = join(SLUG, `${SECOND}.jsonl`);
+    writeTranscript(PRUNE_OWN, mirrored, "{\"n\":1}\n{\"n\":2}\n");
+    writeTranscript(PRUNE_OTHER, mirrored, "{\"n\":1}\n", 300_000);
+    writeTranscript(PRUNE_OWN, diverged, "{\"n\":1}\n{\"own\":2}\n");
+    writeTranscript(PRUNE_OTHER, diverged, "{\"other\":1}\n", 300_000);
+
+    expect(mirroredCopies("claude", PRUNE_ROOTS)).toBe(2);
+    expect(mirroredCopies("codex", PRUNE_ROOTS)).toBe(0);
+
+    // Only the one the keeper actually contains is removed; the diverged tree keeps its turns.
+    expect(unshareSessions("claude", PRUNE_ROOTS).removed).toBe(1);
+    expect(existsSync(join(PRUNE_OTHER, mirrored))).toBe(false);
+    expect(readFileSync(join(PRUNE_OTHER, diverged), "utf8")).toBe("{\"other\":1}\n");
+});
+
+test("applyUnshare skips a copy that changed after the plan proved it redundant", () => {
+    resetPruneTrees();
+    // The plan is taken before the confirmation prompt, so a session can continue while the user
+    // reads it. Deleting on the stale proof would drop exactly the turns appended in between.
+    const grew = join(SLUG, `${SECOND}.jsonl`);
+    const idle = join(SLUG, `${ANCIENT}.jsonl`);
+    writeTranscript(PRUNE_OWN, grew, "{\"n\":1}\n{\"n\":2}\n");
+    writeTranscript(PRUNE_OTHER, grew, "{\"n\":1}\n", 300_000);
+    writeTranscript(PRUNE_OWN, idle, "{\"n\":1}\n{\"n\":2}\n");
+    writeTranscript(PRUNE_OTHER, idle, "{\"n\":1}\n", 300_000);
+
+    const plan = plannedUnshare("claude", PRUNE_ROOTS);
+    expect(plan.removed).toBe(2);
+
+    writeTranscript(PRUNE_OTHER, grew, "{\"n\":1}\n{\"other\":2}\n", 300_000);
+
+    expect(applyUnshare(plan).removed).toBe(1);
+    expect(readFileSync(join(PRUNE_OTHER, grew), "utf8")).toContain("\"other\":2");
+    expect(existsSync(join(PRUNE_OTHER, idle))).toBe(false);
 });

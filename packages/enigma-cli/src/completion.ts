@@ -24,7 +24,7 @@ export const COMPLETION_SHELLS: CompletionShell[] = ["bash", "zsh", "fish", "pow
  * the CLI rejects.
  */
 export const SUBCOMMANDS: Record<string, string[]> = {
-    account: ["list", "add", "use", "login", "run", "rename", "remove", "provider", "sessions", "transfer"],
+    account: ["list", "add", "use", "login", "run", "rename", "remove", "provider", "sessions", "transfer", "unshare"],
     profile: ["list", "add", "use", "set", "unset", "rename", "remove"],
     skills: ["list", "enable", "disable", "discard", "restore"],
     pack: ["list", "install", "remove", "update", "setup", "use", "run"],

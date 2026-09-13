@@ -2216,11 +2216,13 @@ async function runAccountCli(opts: CliOptions, interactive: boolean): Promise<nu
             console.log("\nReuse one with: enigma account transfer <target> [source-id].");
             // A tree that was mirrored keeps listing the merged superset in /resume long after
             // sharing is turned off. Surface the leftovers here rather than leaving the undo to a
-            // command nobody knows to look for.
+            // command nobody knows to look for - but on the cheap stat-only count, since proving
+            // each copy redundant reads both files whole and this is a listing, not the prune.
             try {
-                const { unshareSessions } = await import("./session-share");
-                const mirrored = unshareSessions(tool, undefined, { dryRun: true });
-                if (mirrored.removed) console.log(`\n${mirrored.removed} transcripts here are copies of another account's - drop them with: enigma account unshare.`);
+                const { mirroredCopies } = await import("./session-share");
+                const mirrored = mirroredCopies(tool);
+                const count = mirrored === 1 ? "1 transcript here looks" : `${mirrored} transcripts here look`;
+                if (mirrored) console.log(`\n${count} like copies of another account's - review them with: enigma account unshare --dry-run.`);
             } catch { /* prune unavailable: listing logins still worked */ }
             return 0;
         }
@@ -2254,20 +2256,23 @@ async function runAccountCli(opts: CliOptions, interactive: boolean): Promise<nu
             // /resume, and a copy taken mid-session stays truncated once nothing refreshes it.
             // Both are leftover files, and only this removes them.
             if (tool !== "claude") { console.error("Session sharing is Claude-only."); return 1; }
-            const { unshareSessions } = await import("./session-share");
-            const preview = unshareSessions(tool, undefined, { dryRun: true });
-            if (!preview.removed) { console.log("No mirrored transcripts: every conversation is held by one account already."); return 0; }
-            const plural = preview.removed === 1 ? "" : "s";
-            const mb = preview.bytes / (1024 * 1024);
-            const size = mb >= 1 ? `${mb.toFixed(1)} MB` : `${Math.round(preview.bytes / 1024)} KB`;
-            console.log(`${preview.removed} transcript${plural} (${size}) are copies another account still holds in full.`);
+            // Planned once and then applied: proving a copy redundant reads both files to the end,
+            // so previewing and deleting off two separate scans pays that for the whole corpus
+            // twice. The plan re-checks each file's stamps before unlinking it.
+            const { applyUnshare, plannedUnshare } = await import("./session-share");
+            const plan = plannedUnshare(tool);
+            if (!plan.removed) { console.log("No mirrored transcripts: every conversation is held by one account already."); return 0; }
+            const one = plan.removed === 1;
+            const mb = plan.bytes / (1024 * 1024);
+            const size = mb >= 1 ? `${mb.toFixed(1)} MB` : `${Math.round(plan.bytes / 1024)} KB`;
+            console.log(`${plan.removed} transcript${one ? "" : "s"} (${size}) ${one ? "is a copy" : "are copies"} another account still holds in full.`);
             if (opts.dryRun) { console.log("--dry-run: nothing was removed."); return 0; }
             if (!opts.yes) {
                 if (!interactive) { console.error("Refusing to delete transcripts without confirmation. Re-run with -y."); return 1; }
-                const ok = await p.confirm({ message: `Remove ${preview.removed} mirrored copy${preview.removed === 1 ? "" : "es"}? The account that recorded each conversation keeps it.` });
+                const ok = await p.confirm({ message: `Remove ${plan.removed} mirrored ${one ? "copy" : "copies"}? The account that recorded each conversation keeps it.` });
                 if (p.isCancel(ok) || !ok) { console.log("Aborted."); return 0; }
             }
-            const res = unshareSessions(tool);
+            const res = applyUnshare(plan);
             console.log(`Removed ${res.removed} mirrored transcript${res.removed === 1 ? "" : "s"}. Each account now lists what it recorded.`);
             return 0;
         }

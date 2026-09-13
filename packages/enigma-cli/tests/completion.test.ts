@@ -46,6 +46,22 @@ test("every completed subcommand is documented by that command's help", () => {
     }
 });
 
+test("every subcommand the CLI names in its own error is completed", () => {
+    // The other direction of the same drift: the test above only catches a word completed that the
+    // help does not document, so a subcommand ADDED to the CLI and forgotten here passed silently
+    // and never completed. `Unknown <cmd> subcommand: ... Try: a, b, c.` is the dispatcher's own
+    // list of what it accepts, so it is the list to hold the map against.
+    const errors = [...CLI_SOURCE.matchAll(/Unknown (\w+) subcommand: \$\{sub\}\. Try: ([^.`]+)\./g)];
+    expect(errors.length, "cli.ts names no subcommand lists to check against").toBeGreaterThan(0);
+    for (const [, command, list] of errors) {
+        const named = list!.split(",").map((word) => word.trim().split(/[\s|]/)[0]!).filter((word) => /^[a-z-]+$/.test(word));
+        expect(named.length, `${command} lists no subcommands`).toBeGreaterThan(0);
+        for (const sub of named) {
+            expect(SUBCOMMANDS[command!] ?? [], `enigma ${command} ${sub} is a real subcommand but is not completed`).toContain(sub);
+        }
+    }
+});
+
 test("every command with subcommands is a real command", () => {
     for (const command of Object.keys(SUBCOMMANDS)) {
         expect(CLI_SOURCE, command).toContain(`"${command}"`);

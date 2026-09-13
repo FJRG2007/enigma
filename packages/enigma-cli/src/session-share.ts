@@ -38,9 +38,9 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { listJsonl } from "./claude-transcripts";
-import { dirname, join, relative } from "node:path";
 import { DEFAULT_NAME, listAccounts } from "./accounts";
+import { listJsonl, outranks } from "./claude-transcripts";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, readdirSync, readSync, renameSync, rmdirSync, statSync, unlinkSync, utimesSync } from "node:fs";
 
 /** A transcript touched this recently belongs to a live session; copying it would truncate a turn. */
@@ -80,6 +80,27 @@ function sessionRoots(toolName: string): SessionRoot[] {
         if (existsSync(dir)) roots.push({ dir, writable: account.name !== DEFAULT_NAME });
     }
     return roots;
+}
+
+/**
+ * The trees with each directory named once.
+ *
+ * Two roots resolving to the same dir would put every transcript into its group TWICE, as two
+ * distinct records of one file - and a file is trivially a byte-for-byte prefix of itself, so the
+ * prune would take the keeper's own copy as redundant and delete the only one there is. The
+ * registry's `dir` is user-editable and `roots` is a parameter, so neither side is trusted to be
+ * distinct; `resolve` settles a trailing separator or a different spelling of the same path.
+ */
+function distinctRoots(trees: SessionRoot[]): SessionRoot[] {
+    const seen = new Set<string>();
+    const out: SessionRoot[] = [];
+    for (const tree of trees) {
+        const key = resolve(tree.dir);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push(tree);
+    }
+    return out;
 }
 
 /**
@@ -212,7 +233,7 @@ function mirror(offers: Transcript[], dst: string, now: number, swept: Set<strin
  */
 export function syncSessions(toolName: string, roots?: SessionRoot[]): number {
     if (toolName !== SHARED_TOOL) return 0;
-    const trees = roots ?? sessionRoots(toolName);
+    const trees = distinctRoots(roots ?? sessionRoots(toolName));
     const writable = trees.filter((root) => root.writable);
     if (trees.length < 2 || writable.length === 0) return 0;
 
@@ -232,27 +253,29 @@ export function syncSessions(toolName: string, roots?: SessionRoot[]): number {
 /** One tree's copy of a transcript, with the stamps that decide which copy is the one to keep. */
 interface Held { writable: boolean; path: string; size: number; mtimeMs: number; birthtimeMs: number; }
 
-/**
- * Whether `cand` is the copy to keep over `best`: the LARGER file, since a transcript is
- * append-only and a copy taken while the session was idle is a prefix of it; between copies of
- * the same size the earlier `birthtimeMs` wins, which is the tree the conversation was recorded
- * under rather than one that received it. The ordering `buildUsage` already counts by, so a prune
- * keeps the copy usage attributes the spend to.
- */
-function outranks(cand: Held, best: Held): boolean {
-    if (cand.size !== best.size) return cand.size > best.size;
-    if (cand.birthtimeMs > 0 && best.birthtimeMs > 0) return cand.birthtimeMs < best.birthtimeMs;
-    return false;
+/** A transcript several trees hold: the copy that outranks the rest, and the prunable ones beside it. */
+interface Duplicate { keep: Held; copies: Held[]; }
+
+/** Whether `dir` sits strictly INSIDE one of `roots` - a root itself, and anything above it, is out. */
+function within(dir: string, roots: string[]): boolean {
+    return roots.some((root) => {
+        const rel = relative(root, dir);
+        return rel !== "" && !isAbsolute(rel) && !rel.split(sep).includes("..");
+    });
 }
 
 /**
  * Remove the directories a prune emptied, up to but never including a tree root. A session whose
  * transcript is gone leaves its `<session-id>/subagents/` shell behind, and a tree full of empty
  * session directories reads as one that still holds conversations.
+ *
+ * The boundary is structural rather than a string match against the roots: this loop deletes, and
+ * a root spelled with a trailing separator, or in another case on a case-insensitive filesystem,
+ * would compare unequal and let it climb straight out of the tree.
  */
 function pruneEmpty(from: string, roots: string[]): void {
     let dir = from;
-    while (!roots.includes(dir)) {
+    while (within(dir, roots)) {
         try {
             if (readdirSync(dir).length) return;
             rmdirSync(dir);
@@ -263,37 +286,16 @@ function pruneEmpty(from: string, roots: string[]): void {
     }
 }
 
-/** What a prune removed, or would remove when previewing. */
-export interface UnshareResult { removed: number; bytes: number; }
-
 /**
- * Undo the mirroring: drop from the writable trees every transcript that is a COPY of one another
- * account still holds in full, so each conversation is listed by the account that recorded it.
+ * Every transcript more than one tree holds, grouped by the path relative to the tree root - which
+ * a mirrored copy preserves exactly, the same identity usage.ts dedupes on. No age bound: what a
+ * prune has to reach is precisely the history the mirroring window let accumulate.
  *
- * Turning sharing off only stops NEW copies: a tree already mirrored keeps listing the merged
- * superset in `/resume` forever, and the refresh that healed a copy taken mid-conversation stops
- * running too, leaving a truncated snapshot that resumes with turns missing. Both are the same
- * leftover file, and this is what removes it - the undo for anyone who turns sharing off, and the
- * cleanup for anyone who moves to the shared store (session-store.ts), where one dir holds the
- * history and every copy beside it is noise.
- *
- * Deleting a transcript is not recoverable, so a copy goes only when it is provably redundant:
- * the kept file contains it byte for byte, so a tree that diverged here keeps its own turns, and
- * the keeper itself is never touched - every conversation survives in exactly one place. The
- * user's own config dir is a source only, the same boundary mirroring holds, and a copy inside
- * the live window belongs to a running session and waits for the next prune.
- *
- * `dryRun` counts without writing, which is what the CLI previews and confirms against.
+ * Stat-only, deliberately. What it returns are CANDIDATES: same relative path, and a sibling that
+ * outranks them. Proving one actually redundant means reading both files whole, which is the
+ * expensive half and belongs to `plannedUnshare` rather than to anything that only wants a count.
  */
-export function unshareSessions(toolName: string, roots?: SessionRoot[], opts: { dryRun?: boolean; } = {}): UnshareResult {
-    const result: UnshareResult = { removed: 0, bytes: 0 };
-    if (toolName !== SHARED_TOOL) return result;
-    const trees = roots ?? sessionRoots(toolName);
-    if (trees.length < 2) return result;
-
-    // Grouped by the path relative to the tree root: a mirrored copy preserves it exactly, which
-    // is the same identity usage.ts dedupes on. No age bound here - what a prune has to reach is
-    // precisely the history the mirroring window let accumulate.
+function duplicates(trees: SessionRoot[], now: number): Duplicate[] {
     const groups = new Map<string, Held[]>();
     for (const root of trees) {
         for (const path of listJsonl(root.dir)) {
@@ -306,28 +308,99 @@ export function unshareSessions(toolName: string, roots?: SessionRoot[], opts: {
             else groups.set(rel, [held]);
         }
     }
-
-    const now = Date.now();
-    const emptied = new Set<string>();
+    const out: Duplicate[] = [];
     for (const group of groups.values()) {
         if (group.length < 2) continue;
         let keep = group[0]!;
         for (const held of group) if (outranks(held, keep)) keep = held;
-        for (const held of group) {
-            if (held === keep || !held.writable) continue;
-            if (now - held.mtimeMs < LIVE_WINDOW_MS) continue;
-            if (held.size > keep.size || !continues(keep.path, held.path, held.size)) continue;
-            if (!opts.dryRun) {
-                try { unlinkSync(held.path); } catch { continue; }
-                emptied.add(dirname(held.path));
+        // The user's own config dir is a source only, the same boundary mirroring holds, and a copy
+        // inside the live window belongs to a running session - deleting that one takes the file out
+        // from under the client writing it, so it waits for the next prune.
+        const copies = group.filter((held) => held !== keep && held.writable && now - held.mtimeMs >= LIVE_WINDOW_MS);
+        if (copies.length) out.push({ keep, copies });
+    }
+    return out;
+}
+
+/**
+ * How many transcripts in the writable trees LOOK like copies another account holds. Stat-only, so
+ * a listing can afford to mention them; the exact figure is what `enigma account unshare` previews,
+ * since proving each one redundant reads both files to the end.
+ */
+export function mirroredCopies(toolName: string, roots?: SessionRoot[]): number {
+    if (toolName !== SHARED_TOOL) return 0;
+    const trees = distinctRoots(roots ?? sessionRoots(toolName));
+    if (trees.length < 2) return 0;
+    return duplicates(trees, Date.now()).reduce((n, dup) => n + dup.copies.length, 0);
+}
+
+/** A copy proved redundant, with the stamps that must still hold when it is actually deleted. */
+interface Doomed { path: string; size: number; mtimeMs: number; }
+
+/** A prune's plan: the copies proved redundant, what removing them reclaims, and the trees scanned. */
+export interface UnsharePlan { removed: number; bytes: number; victims: Doomed[]; roots: string[]; }
+
+/** What a prune removed, or would remove when previewing. */
+export interface UnshareResult { removed: number; bytes: number; }
+
+/**
+ * Plan the undo of the mirroring: every transcript in a writable tree that is a COPY of one another
+ * account still holds in full, so each conversation ends up listed by the account that recorded it.
+ *
+ * Turning sharing off only stops NEW copies: a tree already mirrored keeps listing the merged
+ * superset in `/resume` forever, and the refresh that healed a copy taken mid-conversation stops
+ * running too, leaving a truncated snapshot that resumes with turns missing. Both are the same
+ * leftover file, and this is what finds it. The trees compared are the tool's ACCOUNTS - the shared
+ * store (session-store.ts) is not one of them, so history the store absorbed is out of reach here.
+ *
+ * Deleting a transcript is not recoverable, so a copy is planned only when it is provably redundant:
+ * the kept file contains it byte for byte, so a tree that diverged here keeps its own turns, and the
+ * keeper itself is never touched - every conversation survives in exactly one place.
+ *
+ * Separated from `applyUnshare` so the CLI proves each copy ONCE and then deletes what it previewed
+ * and confirmed, rather than paying the whole byte comparison twice.
+ */
+export function plannedUnshare(toolName: string, roots?: SessionRoot[]): UnsharePlan {
+    const trees = toolName === SHARED_TOOL ? distinctRoots(roots ?? sessionRoots(toolName)) : [];
+    const victims: Doomed[] = [];
+    if (trees.length >= 2) {
+        for (const dup of duplicates(trees, Date.now())) {
+            for (const held of dup.copies) {
+                if (!continues(dup.keep.path, held.path, held.size)) continue;
+                victims.push({ path: held.path, size: held.size, mtimeMs: held.mtimeMs });
             }
-            result.removed++;
-            result.bytes += held.size;
         }
     }
-    if (emptied.size) {
-        const rootDirs = trees.map((tree) => tree.dir);
-        for (const dir of emptied) pruneEmpty(dir, rootDirs);
+    return { removed: victims.length, bytes: victims.reduce((n, v) => n + v.size, 0), victims, roots: trees.map((tree) => tree.dir) };
+}
+
+/**
+ * Delete the copies in `plan`, then remove the directories that emptied.
+ *
+ * Each victim is re-stat'd first: the proof was taken before the confirmation prompt, and a
+ * transcript that grew or was touched since is no longer the file that was proved redundant - it
+ * keeps its turns and waits for the next run.
+ */
+export function applyUnshare(plan: UnsharePlan): UnshareResult {
+    const result: UnshareResult = { removed: 0, bytes: 0 };
+    const now = Date.now();
+    const emptied = new Set<string>();
+    for (const victim of plan.victims) {
+        let st: import("node:fs").Stats;
+        try { st = statSync(victim.path); } catch { continue; }
+        if (st.size !== victim.size || st.mtimeMs !== victim.mtimeMs) continue;
+        if (now - st.mtimeMs < LIVE_WINDOW_MS) continue;
+        try { unlinkSync(victim.path); } catch { continue; }
+        emptied.add(dirname(victim.path));
+        result.removed++;
+        result.bytes += victim.size;
     }
+    for (const dir of emptied) pruneEmpty(dir, plan.roots);
     return result;
+}
+
+/** Plan and run the prune in one call. `dryRun` counts without writing. */
+export function unshareSessions(toolName: string, roots?: SessionRoot[], opts: { dryRun?: boolean; } = {}): UnshareResult {
+    const plan = plannedUnshare(toolName, roots);
+    return opts.dryRun ? { removed: plan.removed, bytes: plan.bytes } : applyUnshare(plan);
 }

@@ -27,8 +27,8 @@ import { join, sep } from "node:path";
 import { readConfig } from "./config";
 import { readProxyLimits } from "./proxy";
 import { maybeProbeUsage } from "./claude-usage-api";
-import { claudeProjectsDirs, listJsonl, projectOf } from "./claude-transcripts";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { claudeProjectsDirs, listJsonl, outranks, projectOf } from "./claude-transcripts";
 
 /** Per-model price in USD per MILLION tokens. Ported from references/repos/claude-usage. */
 export interface ModelPrice { input: number; output: number; cacheRead: number; cacheWrite: number; }
@@ -499,23 +499,6 @@ function foldFile(acc: Accum, agg: FileAgg, path: string, root: string, account:
 
 /** One account's copy of a transcript, with the stamps that decide which copy is counted. */
 interface Candidate { path: string; root: string; account: string; size: number; mtimeMs: number; birthtimeMs: number; }
-
-/**
- * Whether `cand` is a better copy of one transcript than the best seen so far.
- *
- * A transcript is append-only, so of two copies the larger holds every turn the smaller does:
- * taking it keeps a session that was mirrored while idle and then continued under its origin
- * from being counted as the stale prefix. Copies that agree are settled by creation time rather
- * than by the order the source directories happened to be read in - a copy is made after its
- * origin, so the earlier birthtime is the account the conversation was recorded under, and the
- * one credited with the spend. A filesystem reporting no birthtime leaves the first source seen
- * the winner.
- */
-function outranks(cand: Candidate, best: Candidate): boolean {
-    if (cand.size !== best.size) return cand.size > best.size;
-    if (cand.birthtimeMs > 0 && best.birthtimeMs > 0) return cand.birthtimeMs < best.birthtimeMs;
-    return false;
-}
 
 /** The newest session rows for a scope (does not mutate the accumulator). */
 function recentOf(acc: Accum): SessionRow[] {
