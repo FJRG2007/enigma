@@ -453,6 +453,24 @@ half needs `bun:sqlite` and is imported dynamically.
 
 ## Gotchas
 
+- A RUN ON THE DEFAULT BRANCH WHOSE HEAD IS ALREADY PUSHED VALIDATES NOTHING AND STILL REPORTS
+  `outcome: passed`. The signature is unmistakable once you know it: `intent` and `rebase`
+  complete, every other step is `skipped`, and `findings: none`. It is not right-sizing
+  (`profile.ts` returns `skip: []` for an empty path list and never touches `review`/`push`),
+  not a broken base, and not a broken install - `gate doctor` reports green throughout. The
+  mechanism is one line: `updateHeadSHA` (`steps/rebase.ts:489`) diffs the branch base against
+  HEAD and, when that diff is empty, logs `empty diff after rebase, skipping remaining steps`
+  and returns `newStepOutcome({ skipRemaining: true })` (`rebase.ts:512`, the ONLY place in the
+  gate that ever sets it); `executor.ts:178-189` then marks every remaining step `skipped` and
+  breaks. The check is right for what it was written for - a branch already merged has nothing
+  left to review - and on the default branch that condition is STRUCTURAL rather than
+  informative: the work is already in `main`, so the diff is always empty and the pipeline
+  always short-circuits. Observed three times in one session on `main`, including a run that
+  reported `passed` over `d292f337` while that same commit's CI was failing on
+  `check:hooks`. So driving the gate AFTER pushing to the default branch buys nothing, and
+  `axi run` exposes no base or range flag to aim it at an already-pushed commit: run it on a
+  working branch before the merge, where the diff is real. Anything else is a green stamp
+  nobody earned.
 - Windows: worktree teardown routinely logs `git worktree remove failed, falling back to
   recursive delete`. Cosmetic; the fallback removes it.
 - `spawnDetachedDaemon` re-execs `process.argv[1]` under node/bun and takes no subcommand under
