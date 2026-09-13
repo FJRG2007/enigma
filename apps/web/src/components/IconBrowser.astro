@@ -1,0 +1,174 @@
+---
+import { loadIcons } from "../lib/icons";
+
+// Every glyph is rendered to static HTML here, at build time. The client only ever hides
+// and shows what is already on the page, which is what keeps the whole set on screen from
+// the first frame with no request and no hydration.
+const icons = loadIcons();
+const categories = [...new Set(icons.map((icon) => icon.category))].sort();
+
+// What the client searches: names and categories, never the drawings. Shipping the bodies
+// again as JSON would send the entire set twice for no gain.
+const index = icons.map(({ name, category }) => ({ name, category }));
+---
+<div class="ib" data-icon-browser>
+    <div class="ib-bar">
+        <input
+            type="search"
+            class="ib-search"
+            placeholder="Search icons"
+            aria-label="Search icons by name"
+            autocapitalize="none"
+            autocorrect="off"
+            spellcheck="false"
+            data-icon-search
+        />
+        <label class="ib-cat">
+            <span class="ib-cat-label">Category</span>
+            <select aria-label="Filter icons by category" data-icon-category>
+                <option value="">All categories</option>
+                {categories.map((category) => <option value={category}>{category}</option>)}
+            </select>
+        </label>
+        <p class="ib-count" aria-live="polite" data-icon-count>{icons.length} icons</p>
+    </div>
+
+    <ul class="ib-grid" data-icon-grid>
+        {icons.map((icon) => (
+            <li data-icon={icon.name} data-category={icon.category}>
+                <button type="button" title={`Copy ${icon.name}`} aria-label={`Copy ${icon.name}`}>
+                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" set:html={icon.body} />
+                    <span class="ib-name">{icon.name.replace(/^Icon/, "")}</span>
+                </button>
+            </li>
+        ))}
+    </ul>
+
+    <p class="ib-empty" hidden data-icon-empty></p>
+</div>
+
+<script type="application/json" data-icon-index set:html={JSON.stringify(index)}></script>
+
+<script>
+    import { writeClipboard } from "../lib/copy";
+    import { createSearch } from "@enigmax/primitives/search";
+
+    interface Entry {
+        name: string;
+        category: string;
+    }
+
+    const root = document.querySelector<HTMLElement>("[data-icon-browser]");
+    const payload = document.querySelector<HTMLScriptElement>("[data-icon-index]");
+    if (root && payload) {
+        const entries: Entry[] = JSON.parse(payload.textContent ?? "[]");
+        const field = root.querySelector<HTMLInputElement>("[data-icon-search]")!;
+        const picker = root.querySelector<HTMLSelectElement>("[data-icon-category]")!;
+        const count = root.querySelector<HTMLElement>("[data-icon-count]")!;
+        const empty = root.querySelector<HTMLElement>("[data-icon-empty]")!;
+        const cells = new Map(
+            [...root.querySelectorAll<HTMLLIElement>("[data-icon]")].map((cell) => [cell.dataset.icon!, cell]),
+        );
+
+        let matched = new Set(entries.map((entry) => entry.name));
+        let query = "";
+
+        const apply = (): void => {
+            const category = picker.value;
+            let shown = 0;
+            for (const [name, cell] of cells) {
+                const hit = matched.has(name) && (!category || cell.dataset.category === category);
+                cell.hidden = !hit;
+                if (hit) shown += 1;
+            }
+            count.textContent = shown === entries.length
+                ? `${entries.length} icons`
+                : `${shown} of ${entries.length} icons`;
+            // Naming what was searched for is what separates "no matches" from a broken field.
+            empty.hidden = shown > 0;
+            empty.textContent = query
+                ? `Nothing matches "${query}"${picker.value ? ` in ${picker.value}` : ""}.`
+                : `No icons in ${picker.value}.`;
+        };
+
+        // Fuse is already wired into the /search entry, so a typo still finds the icon.
+        // The whole set is in memory, so the match runs on every keystroke: debouncing an
+        // in-memory pass only makes the field feel broken.
+        const search = createSearch<Entry>({
+            items: entries,
+            keys: ["name", "category"],
+            fuseOptions: { threshold: 0.3, ignoreLocation: true },
+            debounce: 0,
+            empty: "all",
+        });
+        search.attach(field);
+        search.subscribe((results, text) => {
+            matched = new Set(results.map((result) => result.item.name));
+            query = text;
+            apply();
+        });
+
+        picker.addEventListener("change", apply);
+
+        // One listener for the grid rather than 391: the name is on the cell already.
+        root.querySelector("[data-icon-grid]")!.addEventListener("click", async (event) => {
+            const cell = (event.target as HTMLElement).closest<HTMLLIElement>("[data-icon]");
+            const button = cell?.querySelector("button");
+            if (!cell || !button) return;
+            // Nothing is confirmed until the write is: a tick over an unchanged clipboard
+            // is a lie the reader only discovers on paste.
+            if (!(await writeClipboard(cell.dataset.icon!))) return;
+            button.classList.add("copied");
+            setTimeout(() => button.classList.remove("copied"), 1200);
+        });
+    }
+</script>
+
+<style>
+    .ib { margin: 22px 0 8px; }
+
+    .ib-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 16px; }
+
+    .ib-search {
+        flex: 1 1 220px; min-width: 0; font-family: inherit; font-size: 14px; color: var(--text);
+        background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
+        padding: 9px 13px;
+    }
+    .ib-search:focus { outline: none; border-color: var(--muted); }
+    /* WebKit draws its own clear cross; left in, half the readers get two side by side. */
+    .ib-search::-webkit-search-cancel-button { appearance: none; }
+
+    .ib-cat { display: flex; align-items: center; gap: 8px; }
+    .ib-cat-label { font-size: 12px; color: var(--muted); }
+    .ib-cat select {
+        font-family: inherit; font-size: 13px; color: var(--text); background: var(--surface);
+        border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 10px;
+    }
+
+    .ib-count { margin: 0; font-family: var(--mono); font-size: 12px; color: var(--muted); }
+
+    .ib-grid {
+        list-style: none; margin: 0; padding: 0;
+        display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px;
+    }
+
+    .ib-grid button {
+        width: 100%; display: flex; flex-direction: column; align-items: center; gap: 8px;
+        background: var(--surface); border: 1px solid var(--border-soft); border-radius: var(--radius-sm);
+        color: var(--text); padding: 14px 8px 10px; cursor: pointer;
+    }
+    .ib-grid button:hover { background: var(--surface2); border-color: var(--border); }
+    .ib-grid button:active { transform: translateY(1px); }
+    .ib-grid button.copied { border-color: var(--good); color: var(--good); }
+
+    .ib-grid svg { width: 26px; height: 26px; flex-shrink: 0; }
+
+    .ib-name {
+        font-family: var(--mono); font-size: 10.5px; color: var(--muted); line-height: 1.3;
+        max-width: 100%; overflow-wrap: anywhere; text-align: center;
+    }
+    .ib-grid button:hover .ib-name { color: var(--text); }
+    .ib-grid button.copied .ib-name { color: var(--good); }
+
+    .ib-empty { margin: 20px 0 0; font-size: 13px; color: var(--muted); }
+</style>

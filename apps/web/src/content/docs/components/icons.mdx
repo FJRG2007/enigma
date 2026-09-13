@@ -1,0 +1,81 @@
+---
+title: Icons
+description: A filled duotone icon set for React, one module per icon so a bundle carries only the glyphs it actually renders.
+group: Icons
+order: 50
+space: components
+---
+import IconBrowser from "../../../components/IconBrowser.astro";
+import Installation from "../../../components/Installation.astro";
+
+Icons are the one dependency a project takes for granted and then ships whole. `@enigmax/icons` is a filled duotone set where every glyph is its own module, so the bundler keeps the handful you import and drops the rest.
+
+Every icon is a 24x24 `viewBox` drawn in two filled paths - the shape, and a background at half opacity - painted with `currentColor`. They inherit the surrounding text colour and need no theming of their own.
+
+## Browse
+
+Type to search, or narrow by category. Click any icon to copy its component name.
+
+<IconBrowser />
+
+## Installation
+
+<Installation pkg="@enigmax/icons">
+    <div slot="manual">
+
+React 18 or newer is the only requirement. `@tabler/icons-react` is an optional peer, needed
+only if you import one of the brand marks below.
+
+    </div>
+</Installation>
+
+## Usage
+
+Import by name from the root. The name is the one shown under each icon in the browser above, prefixed with `Icon`:
+
+```tsx
+import { IconSearch, IconSun } from "@enigmax/icons";
+
+<IconSearch />
+<IconSun size={18} className="text-muted" />
+```
+
+`size` sets both width and height and defaults to 24. Everything else is forwarded to the `<svg>`, so `className`, `style`, `onClick` and the ARIA attributes behave as they would on any element. A `ref` reaches the SVG itself.
+
+`stroke` is accepted and ignored. These icons are filled rather than stroked, so there is no line to widen - and forwarding a number into the SVG `stroke` attribute, which takes a colour, paints the icon with an invalid value until it disappears. Keeping it in the signature means a stroked set can be swapped in without touching the call sites that pass it.
+
+## Only what you render
+
+The package declares no side effects and ships one module per icon, so an icon you never import is unreachable code that never reaches your output. Nothing is resolved at runtime and nothing is fetched at install time - the drawings are plain strings written into the modules at build.
+
+Importing from the root is enough to get that. The subpaths exist for when you want to be explicit, or want a whole group at once:
+
+```tsx
+import { IconSun } from "@enigmax/icons";                    // one icon
+import { IconSun } from "@enigmax/icons/icons/IconSun";      // the same icon, named directly
+import * as weather from "@enigmax/icons/categories/weather"; // a category
+```
+
+## Brand marks
+
+A logo is a trademark, not a glyph to redraw: this set has none, and hand-drawing one produces something that is recognisably wrong and legally someone else's. The brand names are re-exported from `@tabler/icons-react` instead, so they import from the same place as everything else:
+
+```tsx
+import { IconBrandGithub } from "@enigmax/icons";
+```
+
+That is the only reason the package has an optional peer dependency. Import no brand and it is never needed.
+
+## The external link arrow
+
+Use the diagonal arrow pointing up and to the right for an external link, not the box with an arrow leaving it. The box reads as clutter at the size a link marker is actually drawn, and against a filled duotone set it looks like a different icon family:
+
+```tsx
+import { IconExternalLink } from "@enigmax/icons";
+```
+
+`IconExternalLink` is already mapped to the diagonal arrow, so importing it by that name gives the right glyph. The package's own test suite asserts it, so the convention cannot drift back.
+
+## Credit
+
+Drawings from the Solar Icon Set by 480 Design, used under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). The attribution ships inside the package and must not be stripped.

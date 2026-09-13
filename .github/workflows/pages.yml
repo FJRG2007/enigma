@@ -14,6 +14,7 @@ on:
       # them changes the docs it renders and has to redeploy.
       - "packages/primitives/**"
       - "packages/utils/**"
+      - "packages/icons/**"
       - "assets/logos/**"
       - "assets/images/dashboard.png"
       - ".github/workflows/pages.yml"
