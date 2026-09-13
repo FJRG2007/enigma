@@ -41,13 +41,13 @@ const PACKAGE = resolve(process.cwd(), "..", "..", "packages", "icons");
 const BODY = /icon\("[^"]+", "(.*)"\);$/m;
 
 /**
- * The weight suffix every upstream name carries, dropped so it never reaches the index.
+ * The weight name, dropped from an alias so it never reaches the search index.
  *
- * Left in, every alias would end in the same two words and a search for either of them
- * would match all 391. The package's own suite asserts the suffix, so this stays correct
- * until a second weight ships - which adds its suffix here rather than changing the shape.
+ * Left in, every alias would end in the same words and a search for either of them would
+ * match all 391. Read from the map's declared default rather than hard-coded, so the day a
+ * second weight ships this keeps stripping the right thing instead of silently stopping.
  */
-const WEIGHT = /-bold-duotone$/;
+const weightSuffix = (weight: string): RegExp => new RegExp(`-${weight}$`);
 
 /**
  * Every icon in the package, sorted by name.
@@ -62,9 +62,14 @@ export function loadIcons(): IconEntry[] {
         throw new Error(`The icons package is not in the checkout at ${PACKAGE}; this page is built from it.`);
     }
 
-    const { icons } = JSON.parse(readFileSync(map, "utf8")) as {
+    const { icons, weights } = JSON.parse(readFileSync(map, "utf8")) as {
         icons: Record<string, { category: string; glyph: string; }>;
+        weights?: { default: string; available: string[]; };
     };
+
+    // The default weight's modules live at the root of `src`, which is the set this page
+    // browses. Another weight is a directory beside it and would be browsed on its own.
+    const suffix = weightSuffix(weights?.default ?? "bold-duotone");
 
     return Object.keys(icons).sort().map((name) => {
         const module = resolve(PACKAGE, "src", "icons", `${name}.tsx`);
@@ -73,7 +78,7 @@ export function loadIcons(): IconEntry[] {
         return {
             name,
             category: icons[name].category,
-            alias: icons[name].glyph.replace(WEIGHT, "").replace(/-/g, " "),
+            alias: icons[name].glyph.replace(suffix, "").replace(/-/g, " "),
             body: JSON.parse(`"${found[1]}"`) as string,
         };
     });

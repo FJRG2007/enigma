@@ -1,6 +1,6 @@
 {
     "name": "@enigmax/icons",
-    "version": "0.1.1",
+    "version": "0.2.0",
     "description": "Icon set for React, one module per icon so a bundle carries only what it renders.",
     "type": "module",
     "main": "./dist/index.js",
@@ -19,6 +19,22 @@
             "import": "./dist/categories/index.js"
         },
         "./categories/*": {
+            "types": "./dist/categories/*.d.ts",
+            "import": "./dist/categories/*.js"
+        },
+        "./bold-duotone": {
+            "types": "./dist/index.d.ts",
+            "import": "./dist/index.js"
+        },
+        "./bold-duotone/icons/*": {
+            "types": "./dist/icons/*.d.ts",
+            "import": "./dist/icons/*.js"
+        },
+        "./bold-duotone/categories": {
+            "types": "./dist/categories/index.d.ts",
+            "import": "./dist/categories/index.js"
+        },
+        "./bold-duotone/categories/*": {
             "types": "./dist/categories/*.d.ts",
             "import": "./dist/categories/*.js"
         }

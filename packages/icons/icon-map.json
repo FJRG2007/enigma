@@ -1,4 +1,8 @@
 {
+ "weights": {
+  "default": "bold-duotone",
+  "available": ["bold-duotone"]
+ },
  "icons": {
   "IconAbc": {
    "glyph": "text-bold-duotone",

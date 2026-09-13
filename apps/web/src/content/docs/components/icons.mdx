@@ -13,7 +13,7 @@ Icons are the one dependency a project takes for granted and then ships whole. I
 
 Every icon is a 24x24 `viewBox` painted with `currentColor`, so it inherits the surrounding text colour and needs no theming of its own.
 
-**Bold duotone is the weight that ships today** - two filled paths, the shape over a background at half opacity - and it is not what the package is. Nothing in the name, the exports or the props is tied to it, so further weights land as additions rather than a second package or a breaking rename.
+**Bold duotone is the weight that ships today** - two filled paths, the shape over a background at half opacity - and it is addressable by name, so a second weight is an addition rather than a rename. How that works is in [Weights](#weights) below.
 
 ## Browse
 
@@ -34,7 +34,18 @@ A plain package, so it installs like one. There is no `enigma add` item and no s
 
 React 18 or newer is the only requirement. `@tabler/icons-react` is an optional peer, needed only if you import one of the brand marks below.
 
-**There is no weight to choose at install time.** One package holds the set, and the weight is part of each icon's name rather than a build flag or a separate install - so a second weight arrives as new exports you import beside the ones you already use, and nothing you installed changes.
+## Weights
+
+One package holds every weight, so there is nothing to choose at install time. Bold duotone is what ships today, and it is addressable two ways - the root, which is always the default weight, or its own name:
+
+```tsx
+import { IconMapPin } from "@enigmax/icons";               // the default weight
+import { IconMapPin } from "@enigmax/icons/bold-duotone";  // the same icon, named
+```
+
+**A weight is a build dimension, not a prop.** `<IconMapPin weight="outline" />` looks friendlier and is the one design this package cannot have: the component would need every body reachable at runtime, so importing one icon would pull all of its weights into your bundle and the rest of this page would stop being true. Each weight is generated into its own directory with its own subpath instead, so two weights of one icon are two imports and a project that uses one never downloads the other.
+
+That makes a second weight an addition rather than a rename. The default keeps the root paths, so nothing you have written changes the day one lands; `@enigmax/icons/<weight>` is where the new one appears, with the same names and the same categories under it. A weight that is declared but incomplete fails the package's own suite rather than shipping - half a weight renders some icons and vanishes the rest, which reads as a broken page rather than a missing line in a JSON file.
 
 ## Usage
 

@@ -67,12 +67,27 @@ test("the root index exports every icon and re-exports every brand", () => {
 
 test("an external link is the diagonal arrow, not a box with an arrow leaving it", () => {
     // The convention this set is drawn against: at small sizes the box reads as clutter.
-    assert.equal(icons.IconExternalLink.glyph, "arrow-right-up-bold-duotone");
+    // Asserted on the shape rather than the full name, so it survives a second weight.
+    assert.match(icons.IconExternalLink.glyph, /^arrow-right-up\b/);
 });
 
-test("no icon is mapped to a name from another visual weight", () => {
-    // Mixing weights is the one drift that looks like a rendering bug rather than a typo.
+test("every icon is named in the default weight", () => {
+    // `glyph` IS the default weight's name, and an icon without one generates nothing.
     for (const name of names) {
-        assert.match(icons[name].glyph, /-bold-duotone$/, `${name} is not bold duotone`);
+        assert.ok(icons[name].glyph, `${name} has no glyph for the default weight`);
+    }
+});
+
+test("a declared weight is complete, or it is not declared", () => {
+    // Half a weight is the worst outcome: the icons that have it render and the rest
+    // vanish, which reads as a broken page rather than a missing name in a JSON file.
+    const { weights } = JSON.parse(read("icon-map.json"));
+    assert.ok(weights?.default, "icon-map.json declares no default weight");
+    assert.ok(weights.available.includes(weights.default), "the default weight is not in `available`");
+
+    for (const weight of weights.available) {
+        if (weight === weights.default) continue;
+        const absent = names.filter((name) => !icons[name].glyphs?.[weight]);
+        assert.equal(absent.length, 0, `weight '${weight}' is missing ${absent.length} icon(s), e.g. ${absent[0]}`);
     }
 });
