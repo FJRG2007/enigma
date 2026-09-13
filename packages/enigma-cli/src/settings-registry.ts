@@ -13,16 +13,16 @@ import * as conf from "./config";
 import { AGENTS } from "./agents";
 import { setKimiTrust } from "./kimi";
 import { setTrim } from "./trim-deploy";
-import { setCiWatch } from "./ci-watch-deploy";
 import { setVerify } from "./verify-deploy";
 import { clampCapPercent } from "./governor";
 import { applyMcpToggle } from "./mcp-deploy";
+import { setCiWatch } from "./ci-watch-deploy";
 import { applyDashboardMode } from "./dashboard";
 import { isAutoLintOn, setAutoLint } from "./lint";
 import { applyGateToggle } from "./command-deploy";
 import { setGuardrails } from "./guardrails-deploy";
-import { applyCodeGraphWiring } from "./codegraph-deploy";
 import type { GuardListMeta } from "./guard-config";
+import { applyCodeGraphWiring } from "./codegraph-deploy";
 import { BYPASS_GLOBAL_ONLY, BYPASS_SUPPORTED, getBypass, setBypass } from "./permissions";
 import { getGhTelemetryCached, ghTelemetryBlocker, hasGhCli, setGhTelemetry } from "./github";
 import { GUARD_PROTECTIONS, GUARD_LISTS, readGlobalGuard, setGuardProtection, setGuardList } from "./guard-config";
@@ -306,6 +306,7 @@ const RAW_CATEGORIES: Category[] = [
             enigmaToggle("update-notifier", "updateNotifier", "Update notifications", "notify when a newer enigma-cli is published"),
             enigmaToggle("auto-sync", "autoSync", "Auto-sync on launch", "refresh already-deployed skills/memory when launching a tool via enigma (e.g. enigma claude)"),
             enigmaToggle("remote-skills", "remoteSkills", "Remote skill updates", "fetch newer skills from the GitHub repo on install/update, without waiting for a package release"),
+            enigmaToggle("share-sessions", "shareSessions", "Share sessions across accounts", "copy session transcripts between a tool's accounts on launch, so a conversation started under one account can be listed and resumed from another (the client reads only real files, so sharing means copying what is missing)"),
             {
                 key: "resource-cap",
                 label: "Agent resource cap",

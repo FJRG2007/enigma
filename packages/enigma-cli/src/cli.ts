@@ -450,8 +450,8 @@ Commands:
   completion [shell]   Print a shell completion script (bash | zsh | fish | powershell)
   help, version
 
-Config keys: commit-emoji, update-notifier, auto-sync, remote-skills, fullscreen,
-             statusline, parallel-subagents, output-style (off|lite|full|ultra),
+Config keys: commit-emoji, update-notifier, auto-sync, share-sessions, remote-skills,
+             fullscreen, statusline, parallel-subagents, output-style (off|lite|full|ultra),
              minimal-code (off|lite|full|ultra), compress, claude-attribution,
              claude-survey, claude-trust, kimi-trust, gh-telemetry, permission-bypass,
              bypass-claude, bypass-codex, bypass-opencode, bypass-kimi
@@ -626,7 +626,7 @@ No arguments opens the interactive menu; 'config <key> <on|off>' sets one.
   -g, --global   Write to ~/.enigma.json (default)
   -l, --local    Write to this project's .enigma.json
 
-Keys: commit-emoji, update-notifier, auto-sync, remote-skills, fullscreen, statusline,
+Keys: commit-emoji, update-notifier, auto-sync, share-sessions, remote-skills, fullscreen, statusline,
 parallel-subagents, output-style, minimal-code, compress, recall, codegraph, gate,
 guardrails, trim, verify, dashboard, dashboard-bind, claude-attribution, claude-survey,
 claude-trust, gh-telemetry, permission-bypass, bypass-claude, bypass-codex, bypass-opencode.`,
@@ -932,6 +932,16 @@ function syncForLaunch(tool: string, account: string): void {
             import("./recall")
                 .then(async (r) => { try { r.syncRecall(); await r.enrichRecall(); } catch { /* best-effort */ } })
                 .catch(() => { /* recall unavailable */ });
+        }, 0);
+    }
+    // Mirror session transcripts across this tool's accounts (default on) so a conversation
+    // started under one account can be resumed from another. Deferred like recall so it never
+    // delays the launch, and incremental: once the accounts agree it is a directory walk.
+    if (readConfig().config.shareSessions) {
+        setTimeout(() => {
+            import("./session-share")
+                .then((s) => { try { s.syncSessions(tool); } catch { /* best-effort */ } })
+                .catch(() => { /* session sharing unavailable */ });
         }, 0);
     }
 }
