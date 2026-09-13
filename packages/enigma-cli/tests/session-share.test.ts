@@ -1,9 +1,10 @@
 /**
  * Cross-account session sharing: syncSessions must copy the transcripts one account's tree
  * is missing from the others, in both directions, preserving the workspace slug and any
- * nested subagent directory - and must leave alone a transcript that is still being written,
- * one that is older than the mirroring window, and the user's own config dir (a source, never
- * a destination). A copy whose origin has since grown is refreshed rather than frozen.
+ * nested subagent directory - and must leave alone a transcript that is still being written on
+ * either side, one that is older than the mirroring window, and the user's own config dir (a
+ * source, never a destination). A copy whose origin has since grown is refreshed rather than
+ * frozen, unless a client is still writing the copy itself.
  *
  * The trees are passed in rather than discovered: account discovery freezes its base paths
  * when accounts.ts is imported, so in a full-suite run (one process, many files) the HOME a
@@ -33,6 +34,7 @@ const LIVE = "cccccccc-0000-4000-8000-000000000003";
 const ANCIENT = "dddddddd-0000-4000-8000-000000000004";
 const GROWING = "eeeeeeee-0000-4000-8000-000000000005";
 const OTHER_TOOL = "ffffffff-0000-4000-8000-000000000006";
+const HELD = "aaaaaaaa-0000-4000-8000-000000000007";
 
 /** Write a transcript and back-date it by `ageMs`, so the live-session guard does not skip it. */
 const writeTranscript = (root: string, rel: string, body: string, ageMs = 600_000): string => {
@@ -110,6 +112,30 @@ test("syncSessions leaves a transcript that another account has continued alone"
     expect(syncSessions("claude", ROOTS)).toBe(0);
     expect(readFileSync(join(WORK_ROOT, SLUG, `${GROWING}.jsonl`), "utf8")).toContain("\"work\":3");
     expect(readFileSync(join(SIDE_ROOT, SLUG, `${GROWING}.jsonl`), "utf8")).toContain("\"side\":4");
+});
+
+test("syncSessions leaves a destination that a client is still writing alone", () => {
+    // The stale prefix is in the destination this time: side holds what it was mirrored, work has
+    // continued the session, and a client has side's copy open right now. Replacing it renames the
+    // file out from under that writer - its later turns go to an unlinked inode on POSIX, and the
+    // rename fails outright on Windows - so the refresh waits for the session to go idle.
+    const rel = join(SLUG, `${HELD}.jsonl`);
+    writeTranscript(WORK_ROOT, rel, "{\"n\":1}\n");
+    expect(syncSessions("claude", ROOTS)).toBe(1);
+
+    writeTranscript(WORK_ROOT, rel, "{\"n\":1}\n{\"n\":2}\n", 300_000);
+    const target = join(SIDE_ROOT, rel);
+    const now = new Date();
+    utimesSync(target, now, now);
+
+    expect(syncSessions("claude", ROOTS)).toBe(0);
+    expect(readFileSync(target, "utf8")).toBe("{\"n\":1}\n");
+
+    // Idle again: the copy the live window deferred is taken on the next run.
+    const idle = new Date(Date.now() - 600_000);
+    utimesSync(target, idle, idle);
+    expect(syncSessions("claude", ROOTS)).toBe(1);
+    expect(readFileSync(target, "utf8")).toBe("{\"n\":1}\n{\"n\":2}\n");
 });
 
 test("syncSessions leaves a transcript that is still being written alone", () => {

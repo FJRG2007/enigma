@@ -28,8 +28,13 @@
  *   accumulates. Existing copies are never deleted - pruning a user's transcripts is not
  *   something this does on its own.
  *
- * A transcript written in the last `LIVE_WINDOW_MS` is skipped: it belongs to a session that
- * is still running, and copying it mid-append would publish a truncated turn.
+ * A transcript written in the last `LIVE_WINDOW_MS` is skipped on BOTH sides: as a source it
+ * belongs to a session that is still running and copying it mid-append would publish a truncated
+ * turn, and as a destination it is a file a client currently has open - replacing that one swaps
+ * the file out from under the writer, which loses every turn it appends afterwards (POSIX keeps
+ * the unlinked inode) or fails the rename outright (Windows holds the file). Either side being
+ * live leaves the pair for the next run. A copy carries its origin's mtime, so a transcript this
+ * module just wrote never reads as live in its new tree.
  */
 
 import { randomUUID } from "node:crypto";
@@ -181,6 +186,10 @@ function mirror(offers: Transcript[], dst: string, now: number, swept: Set<strin
         if (!swept.has(dir)) { swept.add(dir); sweepTemp(dir, now); }
         let held: import("node:fs").Stats | null = null;
         try { held = statSync(target); } catch { /* absent: copy it */ }
+        // A destination inside the live window is a transcript a client has open right now, so the
+        // rename would pull the file out from under it; the copy it is a stale prefix of waits for
+        // the next run. The guard the source already gets, in the other direction.
+        if (held && now - held.mtimeMs < LIVE_WINDOW_MS) continue;
         // The byte comparison runs only when the source is longer, so the steady state stays one
         // stat per file: same size means the trees already agree, and shorter means this tree is
         // the one that is ahead (the other direction of the mirror carries it back).

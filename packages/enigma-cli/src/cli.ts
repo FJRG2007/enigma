@@ -914,7 +914,10 @@ function printQaHelp(): void {
  * any sync error is reported and ignored.
  */
 function syncForLaunch(tool: string, account: string): void {
-    const auto = readConfig().config.autoSync;
+    // One read for the whole launch: readConfig re-merges both config files on every call, and the
+    // three decisions below belong to the same snapshot.
+    const cfg = readConfig().config;
+    const auto = cfg.autoSync;
     try {
         if (auto) for (const notice of skillsMod.syncDeployed([tool])) console.log(`enigma: synced ${notice}.`);
         if (account === acct.DEFAULT_NAME) return;
@@ -927,7 +930,7 @@ function syncForLaunch(tool: string, account: string): void {
     // Capture session memory in the background (opt-in) so recall stays fresh without a manual
     // sync - the automatic-ingestion role. Deferred so it never delays the launch; silent and
     // best-effort. syncRecall is incremental, so repeat launches are cheap.
-    if (readConfig().config.recall) {
+    if (cfg.recall) {
         setTimeout(() => {
             import("./recall")
                 .then(async (r) => { try { r.syncRecall(); await r.enrichRecall(); } catch { /* best-effort */ } })
@@ -937,7 +940,7 @@ function syncForLaunch(tool: string, account: string): void {
     // Mirror session transcripts across this tool's accounts (default on) so a conversation
     // started under one account can be resumed from another. Deferred like recall so it never
     // delays the launch, and incremental: once the accounts agree it is a directory walk.
-    if (readConfig().config.shareSessions) {
+    if (cfg.shareSessions) {
         setTimeout(() => {
             import("./session-share")
                 .then((s) => { try { s.syncSessions(tool); } catch { /* best-effort */ } })
