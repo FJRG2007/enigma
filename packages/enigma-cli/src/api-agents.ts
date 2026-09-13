@@ -23,8 +23,8 @@ export type AgentEvent =
     | { kind: "init"; sessionId: string | null; model: string | null; }
     | { kind: "text"; text: string; }
     // The complete assistant-turn text (Claude Code's non-partial `assistant` message). runAgent
-    // uses it only when NOT streaming; with --include-partial-messages the incremental `text`
-    // deltas already delivered the same content token-by-token, so counting both would double it.
+    // emits only the part the incremental `text` deltas did not already deliver, so a streamed
+    // turn is not counted twice and a turn that produced no deltas at all is still delivered.
     | { kind: "text_final"; text: string; }
     | { kind: "result"; text: string | null; sessionId: string | null; inputTokens: number; outputTokens: number; isError: boolean; errorMessage?: string; };
 
@@ -42,8 +42,8 @@ export interface CompletionOptions {
     enableTools?: boolean;
     /**
      * Request token-by-token streaming. Claude Code then gets --include-partial-messages and its
-     * text arrives as incremental `text` deltas; the final `text_final` block is ignored so it is
-     * not counted twice. Off = one `text_final` block per assistant turn (the whole answer at once).
+     * text arrives as incremental `text` deltas; the closing `text_final` block contributes only
+     * what those deltas missed. Off = one `text_final` block per assistant turn (the whole answer).
      */
     stream?: boolean;
     /** Images for the current user turn (Claude Code only; other agents get text-only). */
@@ -113,6 +113,17 @@ export function estimateTokens(text: string): number {
 
 // --- Claude Code (verified) -------------------------------------------------
 
+/**
+ * True when a line belongs to a nested turn (a sub-agent running inside a tool use) rather than
+ * the top-level assistant turn. Claude Code tags those with the id of the tool use that spawned
+ * them; the answer is only ever the top-level turn, so a nested turn's text is not answer content.
+ * A missing or null field means top-level, which is also what a CLI that never sets it reports.
+ */
+function isNestedTurn(msg: Record<string, unknown>): boolean {
+    const parent = msg.parent_tool_use_id;
+    return typeof parent === "string" && parent.length > 0;
+}
+
 /** Parse one Claude Code stream-json line into a normalized event. */
 export function parseClaudeLine(line: string): AgentEvent | null {
     const trimmed = line.trim();
@@ -120,6 +131,7 @@ export function parseClaudeLine(line: string): AgentEvent | null {
     let msg: Record<string, unknown>;
     try { msg = JSON.parse(trimmed); } catch { return null; }
     const type = msg.type as string | undefined;
+    if ((type === "assistant" || type === "stream_event") && isNestedTurn(msg)) return null;
     if (type === "system" && msg.subtype === "init") {
         return { kind: "init", sessionId: (msg.session_id as string) ?? null, model: (msg.model as string) ?? null };
     }

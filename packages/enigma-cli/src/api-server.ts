@@ -166,7 +166,7 @@ async function resolveContextDir(tool: string, opts: CompletionOptions): Promise
     return resolveConfigDir(tool, account);
 }
 
-async function runAgent(adapter: AgentAdapter, prompt: string, opts: CompletionOptions, onText?: (t: string) => void): Promise<RunResult> {
+async function runAgent(adapter: AgentAdapter, prompt: string, opts: CompletionOptions, onText?: (t: string) => Promise<void> | void): Promise<RunResult> {
     const toolName = adapter.tool;
     const tool = getTool(toolName);
     const cfg = readConfig().config;
@@ -184,6 +184,28 @@ async function runAgent(adapter: AgentAdapter, prompt: string, opts: CompletionO
         const summary: RunResult = { text: "", sessionId: opts.sessionId ?? null, inputTokens: 0, outputTokens: 0, isError: false };
         let stdoutBuf = "";
         let stderrBuf = "";
+        // What the incremental deltas have delivered for the assistant turn in progress, so the
+        // closing full-text block can contribute only what they missed. Reset at the end of a turn.
+        let streamedTurn = "";
+        // The consumer's latest backpressure signal. Token-level streaming is one frame per token,
+        // so an HTTP consumer that cannot keep up would otherwise be absorbed by Node's socket
+        // buffer; when `onText` reports it is saturated the agent's stdout is paused until it drains.
+        let saturated: Promise<void> | null = null;
+
+        /** Forward answer text to the consumer, honoring the backpressure it reports. */
+        const emit = (text: string): void => {
+            if (!onText) return;
+            const wait = onText(text);
+            if (!wait) return;
+            if (!saturated) child.stdout.pause();
+            saturated = wait;
+            const resume = (): void => {
+                if (saturated !== wait) return;
+                saturated = null;
+                child.stdout.resume();
+            };
+            void wait.then(resume, resume);
+        };
 
         child.on("error", (err) => reject(err));
         child.stdout.setEncoding("utf8");
@@ -191,7 +213,7 @@ async function runAgent(adapter: AgentAdapter, prompt: string, opts: CompletionO
             if (adapter.mode === "plain" || !adapter.parseLine) {
                 // Plain adapters stream raw stdout as it arrives; the full text is the answer.
                 summary.text += chunk;
-                if (onText) onText(chunk);
+                emit(chunk);
                 return;
             }
             stdoutBuf += chunk;
@@ -202,12 +224,22 @@ async function runAgent(adapter: AgentAdapter, prompt: string, opts: CompletionO
                 const ev = adapter.parseLine(line);
                 if (!ev) continue;
                 if (ev.kind === "init" && ev.sessionId) summary.sessionId = ev.sessionId;
-                else if (ev.kind === "text") { summary.text += ev.text; if (onText) onText(ev.text); }
-                // Full assistant-turn text. When streaming, the `text` deltas above already delivered
-                // it token-by-token, so skip it to avoid doubling; otherwise it is the whole answer.
-                else if (ev.kind === "text_final") { if (!opts.stream) { summary.text += ev.text; if (onText) onText(ev.text); } }
+                else if (ev.kind === "text") { summary.text += ev.text; streamedTurn += ev.text; emit(ev.text); }
+                // Full assistant-turn text. While streaming, the `text` deltas above already delivered
+                // what they covered, so only the REMAINDER is emitted - everything when the turn
+                // produced no deltas at all (a CLI that accepts --include-partial-messages without
+                // emitting partials, or a locally synthesized assistant notice), nothing when they
+                // covered the turn. Without streaming it is the whole answer.
+                else if (ev.kind === "text_final") {
+                    const streamed = opts.stream ? streamedTurn : "";
+                    streamedTurn = "";
+                    const rest = ev.text.startsWith(streamed) ? ev.text.slice(streamed.length) : "";
+                    if (rest) { summary.text += rest; emit(rest); }
+                }
                 else if (ev.kind === "result") {
-                    if (ev.text && !summary.text) summary.text = ev.text;
+                    // Last resort: the run carried an answer no assistant message ever delivered.
+                    // It has to reach the consumer too, or a streamed response ends up empty.
+                    if (ev.text && !summary.text) { summary.text = ev.text; emit(ev.text); }
                     if (ev.sessionId) summary.sessionId = ev.sessionId;
                     summary.inputTokens = ev.inputTokens;
                     summary.outputTokens = ev.outputTokens;
@@ -323,6 +355,37 @@ function apiError(res: ServerResponse, status: number, message: string, type = "
     sendJson(res, status, { error: { message, type, code: null, param: null } });
 }
 
+/**
+ * Write one SSE frame, returning a promise ONLY when the socket buffer is already full.
+ *
+ * Token-level streaming sends one frame per token, so a consumer that reads slower than the agent
+ * writes would otherwise be absorbed silently by Node's socket buffer - the whole answer held in
+ * memory with nothing slowing the agent down. `runAgent` pauses the agent's stdout until the
+ * returned promise resolves. A closed response resolves it too, so a disconnect never wedges a run.
+ */
+const drainWaiters = new WeakMap<ServerResponse, Promise<void>>();
+
+function writeSse(res: ServerResponse, frame: string): Promise<void> | void {
+    if (res.write(frame)) return;
+    // One waiter per response, shared by every write that finds the buffer full: the frames
+    // already parsed out of the current stdout chunk all land here, and a listener pair per frame
+    // would trip the max-listeners warning and leak until the first drain.
+    const pending = drainWaiters.get(res);
+    if (pending) return pending;
+    const wait = new Promise<void>((resolve) => {
+        const done = (): void => {
+            res.off("drain", done);
+            res.off("close", done);
+            drainWaiters.delete(res);
+            resolve();
+        };
+        res.once("drain", done);
+        res.once("close", done);
+    });
+    drainWaiters.set(res, wait);
+    return wait;
+}
+
 /** Model catalog aggregated across every installed agent (Claude Code, Codex, OpenCode). */
 function modelsPayload(): unknown {
     const created = Math.floor(Date.now() / 1000);
@@ -367,7 +430,7 @@ async function handleChatCompletions(req: IncomingMessage, res: ServerResponse, 
         res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
         res.write(streamChunk(id, model, { role: "assistant" }));
         try {
-            const result = await runAgent(adapter, prompt, opts, (t) => res.write(streamChunk(id, model, { content: t })));
+            const result = await runAgent(adapter, prompt, opts, (t) => writeSse(res, streamChunk(id, model, { content: t })));
             touchSession(result.sessionId, messages.length + 1);
             if (result.isError) res.write(streamChunk(id, model, { content: `\n[error] ${result.errorMessage ?? "unknown error"}` }));
             const includeUsage = (body.stream_options as { include_usage?: boolean; } | undefined)?.include_usage === true;
@@ -416,11 +479,12 @@ async function handleAnthropicMessages(req: IncomingMessage, res: ServerResponse
 
     if (body.stream === true) {
         res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
-        const send = (event: string, data: unknown): void => { res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`); };
+        const frame = (event: string, data: unknown): string => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+        const send = (event: string, data: unknown): void => { res.write(frame(event, data)); };
         send("message_start", { type: "message_start", message: { id, type: "message", role: "assistant", content: [], model, stop_reason: null, usage: { input_tokens: 0, output_tokens: 0 } } });
         send("content_block_start", { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } });
         try {
-            const result = await runAgent(adapter, prompt, opts, (t) => send("content_block_delta", { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: t } }));
+            const result = await runAgent(adapter, prompt, opts, (t) => writeSse(res, frame("content_block_delta", { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: t } })));
             send("content_block_stop", { type: "content_block_stop", index: 0 });
             send("message_delta", { type: "message_delta", delta: { stop_reason: "end_turn", stop_sequence: null }, usage: { output_tokens: result.outputTokens } });
             send("message_stop", { type: "message_stop" });
