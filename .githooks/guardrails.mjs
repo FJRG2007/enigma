@@ -1257,6 +1257,33 @@ var BUILTIN_RULES = [
     skill: "frontend-policy"
   },
   {
+    id: "fe-native-select-over-primitive",
+    label: "A project with the select primitive uses it",
+    files: ["*.tsx", "*.jsx", "*.vue", "*.svelte", "*.astro", "*.ts", "*.js"],
+    excludeFiles: [
+      "*.test.*",
+      "*.spec.*",
+      "**/tests/**",
+      "**/__tests__/**",
+      "**/fixtures/**",
+      "*.min.js",
+      "**/dist/**",
+      "**/build/**",
+      "**/node_modules/**",
+      "**/vendor/**",
+      "dist/**",
+      "build/**",
+      "node_modules/**",
+      "vendor/**"
+    ],
+    scope: "file",
+    stage: "diff",
+    fileCheck: "fe-native-select-over-primitive",
+    message: "A native <select> built from a list of data, in a file that already imports @enigmax/primitives. The hand-rolled listbox rule deliberately lets the native element through - it needs no role and a bad replacement is worse - but that carve-out is about projects with nothing better; this one HAS the better one installed. The native popup is drawn by the OS: it cannot carry an icon, a second line, a count or a tag, it cannot be searched however long the list gets, and no part of it takes the design system's styling. `Select` from `@enigmax/primitives/react/select` is the same control with a typeahead, a panel that measures before it opens, one highlight shared by pointer and keyboard, a filter that turns itself on past eight rows, and a hidden field so the form still posts. Mark the line `enigma:allow-native-select` where the native element is the right answer anyway - a short fixed list, a form that must work with no JavaScript, or a surface the primitive does not reach (frontend-policy).",
+    severity: "block",
+    skill: "frontend-policy"
+  },
+  {
     id: "fe-toast-hand-rolled",
     label: "Toasts come from the primitive",
     files: ["*.tsx", "*.jsx", "*.vue", "*.svelte", "*.astro", "*.ts", "*.js"],
@@ -2116,6 +2143,7 @@ var FILE_CHECKS = {
   "fe-video-player-hand-rolled": (content) => handRolledVideoPlayer(content),
   "sec-2fa-reauth-prompt": (content) => twoFactorPasswordPrompt(content),
   "fe-select-hand-rolled": (content) => handRolledSelect(content),
+  "fe-native-select-over-primitive": (content) => nativeSelectOverPrimitive(content),
   "fe-toast-hand-rolled": (content) => handRolledToast(content),
   "fe-palette-hand-rolled": (content) => handRolledPalette(content)
 };
@@ -2533,6 +2561,22 @@ function handRolledSelect(content) {
     if (COMMENT_LINE.test(line) || /enigma:/.test(line)) continue;
     if (!LISTBOX_ROLE.test(line)) continue;
     return [{ line: i + 1, detail: "a listbox role over an options list with its own open state" }];
+  }
+  return [];
+}
+var NATIVE_SELECT = /<select\b/;
+var NATIVE_SELECT_MAPPED = /<option\b|\.map\(/;
+var NATIVE_SELECT_TRIGGER = /@enigmax\/primitives/;
+var NATIVE_SELECT_MITIGATED = /enigma:allow-native-select|SelectRoot|useSelectContext/;
+function nativeSelectOverPrimitive(content) {
+  if (NATIVE_SELECT_MITIGATED.test(content)) return [];
+  if (!NATIVE_SELECT_TRIGGER.test(content) || !NATIVE_SELECT.test(content) || !NATIVE_SELECT_MAPPED.test(content)) return [];
+  const lines = content.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (COMMENT_LINE.test(line) || /enigma:/.test(line)) continue;
+    if (!NATIVE_SELECT.test(line)) continue;
+    return [{ line: i + 1, detail: "a native <select> in a file that already imports the primitives package" }];
   }
   return [];
 }
@@ -3158,6 +3202,7 @@ export {
   missingPathAlias,
   missingWindowsHide,
   mutationWithoutOptimisticUpdate,
+  nativeSelectOverPrimitive,
   newPasswordAffordanceOnSignIn,
   operatorHomePathLeak,
   pageAwaitWithoutBoundary,
