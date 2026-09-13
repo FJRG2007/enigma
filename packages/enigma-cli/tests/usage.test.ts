@@ -48,9 +48,9 @@ test("aggregates real usage, dedupes by id, and splits sessions from subagents",
         assistant("2026-06-01T10:00:01Z", "msg_1", "claude-opus-4-8", { input_tokens: 100, output_tokens: 20, cache_read_input_tokens: 5000, cache_creation_input_tokens: 200 }),
         assistant("2026-06-02T09:00:00Z", "msg_2", "claude-sonnet-4-6", { input_tokens: 50, output_tokens: 10, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }),
     ];
-    writeFileSync(join(projDir, "sess1.jsonl"), lines.join("\n") + "\n");
+    writeFileSync(join(projDir, "sess1.jsonl"), `${lines.join("\n")}\n`);
     // a subagent transcript: counts toward tokens but not the session count
-    writeFileSync(join(subDir, "agent-x.jsonl"), assistant("2026-06-02T09:05:00Z", "msg_3", "claude-opus-4-8", { input_tokens: 7, output_tokens: 3, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }) + "\n");
+    writeFileSync(join(subDir, "agent-x.jsonl"), `${assistant("2026-06-02T09:05:00Z", "msg_3", "claude-opus-4-8", { input_tokens: 7, output_tokens: 3, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 })}\n`);
 
     const r = buildUsage();
 
@@ -83,9 +83,10 @@ test("prices per model and reconstructs an active 5-hour block from recent activ
     const iso = (ms: number): string => new Date(ms).toISOString();
     const recent = join(HOME, ".claude", "projects", "proj-recent");
     mkdirSync(recent, { recursive: true });
-    writeFileSync(join(recent, "live.jsonl"),
-        assistant(iso(now - 30 * 60 * 1000), "r1", "claude-opus-4-8", { input_tokens: 1000, output_tokens: 500, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }) + "\n"
-        + assistant(iso(now - 5 * 60 * 1000), "r2", "claude-opus-4-8", { input_tokens: 2000, output_tokens: 800, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }) + "\n");
+    writeFileSync(
+        join(recent, "live.jsonl"),
+        `${assistant(iso(now - 30 * 60 * 1000), "r1", "claude-opus-4-8", { input_tokens: 1000, output_tokens: 500, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 })}\n${assistant(iso(now - 5 * 60 * 1000), "r2", "claude-opus-4-8", { input_tokens: 2000, output_tokens: 800, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 })}\n`,
+    );
 
     const r = buildUsage();
     expect(r.cost).toBeGreaterThan(0);
@@ -148,7 +149,7 @@ test("reads every Claude account (default + managed) and reports provider covera
     const managed = join(homedir(), ".enigma", "claude", "work", "projects", "proj-w");
     mkdirSync(managed, { recursive: true });
     writeFileSync(join(managed, "w1.jsonl"),
-        assistant("2026-06-03T10:00:00Z", "w_1", "claude-opus-4-8", { input_tokens: 11, output_tokens: 22, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }) + "\n");
+        `${assistant("2026-06-03T10:00:00Z", "w_1", "claude-opus-4-8", { input_tokens: 11, output_tokens: 22, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 })}\n`);
     try {
         const r = buildUsage();
         expect(Object.keys(r.byAccount).sort()).toEqual(["default", "work"]);
@@ -210,8 +211,8 @@ test("counts the fuller copy when the session was continued after it was mirrore
     const stale = join(staleRoot, "projects", "proj-c", "sess.jsonl");
     const live = join(liveRoot, "projects", "proj-c", "sess.jsonl");
     for (const f of [stale, live]) mkdirSync(join(f, ".."), { recursive: true });
-    const mirrored = assistant("2026-06-05T10:00:00Z", "c_1", "claude-opus-4-8", { input_tokens: 40, output_tokens: 17, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }) + "\n";
-    const appended = assistant("2026-06-05T11:00:00Z", "c_2", "claude-opus-4-8", { input_tokens: 60, output_tokens: 23, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }) + "\n";
+    const mirrored = `${assistant("2026-06-05T10:00:00Z", "c_1", "claude-opus-4-8", { input_tokens: 40, output_tokens: 17, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 })}\n`;
+    const appended = `${assistant("2026-06-05T11:00:00Z", "c_2", "claude-opus-4-8", { input_tokens: 60, output_tokens: 23, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 })}\n`;
     writeFileSync(stale, mirrored);
     writeFileSync(live, mirrored + appended);
     try {
@@ -236,7 +237,7 @@ test("credits a shared session to the account that recorded it, whatever order t
     const originFile = join(originRoot, "projects", "proj-s", "shared.jsonl");
     const copyFile = join(copyRoot, "projects", "proj-s", "shared.jsonl");
     for (const f of [originFile, copyFile]) mkdirSync(join(f, ".."), { recursive: true });
-    const body = assistant("2026-06-04T10:00:00Z", "s_1", "claude-opus-4-8", { input_tokens: 13, output_tokens: 31, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }) + "\n";
+    const body = `${assistant("2026-06-04T10:00:00Z", "s_1", "claude-opus-4-8", { input_tokens: 13, output_tokens: 31, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 })}\n`;
     writeFileSync(originFile, body);
     // The copy is made after its origin, which is the signal that tells them apart: sizes match
     // and a mirrored copy carries the origin's mtime by design.
