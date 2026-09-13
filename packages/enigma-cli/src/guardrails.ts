@@ -1077,6 +1077,22 @@ export const BUILTIN_RULES: GuardrailRule[] = [
         skill: "frontend-policy",
     },
     {
+        id: "fe-native-select-over-primitive",
+        label: "A project with the select primitive uses it",
+        files: ["*.tsx", "*.jsx", "*.vue", "*.svelte", "*.astro", "*.ts", "*.js"],
+        excludeFiles: [
+            "*.test.*", "*.spec.*", "**/tests/**", "**/__tests__/**", "**/fixtures/**", "*.min.js",
+            "**/dist/**", "**/build/**", "**/node_modules/**", "**/vendor/**",
+            "dist/**", "build/**", "node_modules/**", "vendor/**",
+        ],
+        scope: "file",
+        stage: "diff",
+        fileCheck: "fe-native-select-over-primitive",
+        message: "A native <select> built from a list of data, in a file that already imports @enigmax/primitives. The hand-rolled listbox rule deliberately lets the native element through - it needs no role and a bad replacement is worse - but that carve-out is about projects with nothing better; this one HAS the better one installed. The native popup is drawn by the OS: it cannot carry an icon, a second line, a count or a tag, it cannot be searched however long the list gets, and no part of it takes the design system's styling. `Select` from `@enigmax/primitives/react/select` is the same control with a typeahead, a panel that measures before it opens, one highlight shared by pointer and keyboard, a filter that turns itself on past eight rows, and a hidden field so the form still posts. Mark the line `enigma:allow-native-select` where the native element is the right answer anyway - a short fixed list, a form that must work with no JavaScript, or a surface the primitive does not reach (frontend-policy).",
+        severity: "block",
+        skill: "frontend-policy",
+    },
+    {
         id: "fe-toast-hand-rolled",
         label: "Toasts come from the primitive",
         files: ["*.tsx", "*.jsx", "*.vue", "*.svelte", "*.astro", "*.ts", "*.js"],
@@ -1701,6 +1717,7 @@ export const FILE_CHECKS: Record<string, (content: string, file: string) => { li
     "fe-video-player-hand-rolled": (content) => handRolledVideoPlayer(content),
     "sec-2fa-reauth-prompt": (content) => twoFactorPasswordPrompt(content),
     "fe-select-hand-rolled": (content) => handRolledSelect(content),
+    "fe-native-select-over-primitive": (content) => nativeSelectOverPrimitive(content),
     "fe-toast-hand-rolled": (content) => handRolledToast(content),
     "fe-palette-hand-rolled": (content) => handRolledPalette(content),
 };
@@ -2583,6 +2600,44 @@ export function handRolledSelect(content: string): { line: number; detail: strin
         if (COMMENT_LINE.test(line) || /enigma:/.test(line)) continue;
         if (!LISTBOX_ROLE.test(line)) continue;
         return [{ line: i + 1, detail: "a listbox role over an options list with its own open state" }];
+    }
+    return [];
+}
+
+/**
+ * The NATIVE select, in a project that already ships a better one.
+ *
+ * `fe-select-hand-rolled` above is the other half of this and deliberately lets the native
+ * element through: `<select>` needs no role, and replacing it badly is worse than using it.
+ * What that leaves uncovered is the case this rule exists for - reaching for the native one
+ * in a codebase where the primitive is RIGHT THERE, which is how a filter with 36 options
+ * ends up as an OS-drawn popup that cannot show an icon, cannot be searched, and is styled
+ * by nothing the design system owns.
+ *
+ * The trigger is the primitive's own presence in the same file, which is what keeps this
+ * from firing across the world's forms: a project without `@enigmax/primitives` can never
+ * match, by construction. A mapped options list is required with it, because a native select
+ * over two or three literal `<option>`s is a fine control and not what this is about.
+ */
+// CASE-SENSITIVE, and that is the whole precision of this rule rather than a detail: a JSX
+// component is capitalised and an HTML element is not, so `/<select/i` also matches `<Select>`
+// - the primitive itself. Measured over 6385 files before the flag came off, all three
+// findings were `<Select>` call sites, including the one component written to answer this very
+// rule. A rule that blocks its own answer is worse than no rule.
+const NATIVE_SELECT = /<select\b/;
+const NATIVE_SELECT_MAPPED = /<option\b|\.map\(/;
+const NATIVE_SELECT_TRIGGER = /@enigmax\/primitives/;
+const NATIVE_SELECT_MITIGATED = /enigma:allow-native-select|SelectRoot|useSelectContext/;
+
+export function nativeSelectOverPrimitive(content: string): { line: number; detail: string; }[] {
+    if (NATIVE_SELECT_MITIGATED.test(content)) return [];
+    if (!NATIVE_SELECT_TRIGGER.test(content) || !NATIVE_SELECT.test(content) || !NATIVE_SELECT_MAPPED.test(content)) return [];
+    const lines = content.split("\n");
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i]!;
+        if (COMMENT_LINE.test(line) || /enigma:/.test(line)) continue;
+        if (!NATIVE_SELECT.test(line)) continue;
+        return [{ line: i + 1, detail: "a native <select> in a file that already imports the primitives package" }];
     }
     return [];
 }

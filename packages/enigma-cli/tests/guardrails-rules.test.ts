@@ -942,6 +942,34 @@ matrix("fe-select-hand-rolled", false, [
     { name: "deliberate, marked in the file", file: "src/Picker.tsx", code: HAND_SELECT.replace("const [open,", "// enigma:allow-hand-rolled-select\nconst [open,") },
 ]);
 
+// The native element is fine in general - `fe-select-hand-rolled` says so explicitly - and
+// stops being fine once the project ships a better one. The primitive's presence in the same
+// file is the whole trigger, so a project without it can never match.
+const NATIVE_SELECT = [
+    'import { useSearch } from "@enigmax/primitives/react";',
+    "const [category, setCategory] = useState(\"\");",
+    "<select value={category} onChange={(e) => setCategory(e.target.value)}>",
+    "    {categories.map((c) => <option key={c} value={c}>{c}</option>)}",
+    "</select>",
+].join("\n");
+
+matrix("fe-native-select-over-primitive", true, [
+    { name: "a native select over mapped options beside the primitive", file: "src/Filters.tsx", code: NATIVE_SELECT },
+    {
+        name: "the same control in an Astro page that uses the package",
+        file: "src/Browser.astro",
+        code: '---\nimport { createSearch } from "@enigmax/primitives/search";\n---\n<select aria-label="Category">\n  {items.map((i) => <option>{i}</option>)}\n</select>',
+    },
+]);
+
+matrix("fe-native-select-over-primitive", false, [
+    { name: "a project that does not have the primitive", file: "src/Filters.tsx", code: NATIVE_SELECT.replace('import { useSearch } from "@enigmax/primitives/react";', 'import { useState } from "react";') },
+    { name: "the primitive's own implementation", file: "src/select/root.tsx", code: `import { SelectRoot } from "@enigmax/primitives";\n${NATIVE_SELECT}` },
+    { name: "already the primitive", file: "src/Filters.tsx", code: 'import { Select } from "@enigmax/primitives/react/select";\n<Select options={categories} value={category} onValueChange={setCategory} />' },
+    { name: "the package is there but nothing renders a select", file: "src/Search.tsx", code: 'import { useSearch } from "@enigmax/primitives/react";\nconst { results } = useSearch({ items, keys: ["name"] });' },
+    { name: "deliberate, marked on the line", file: "src/Filters.tsx", code: NATIVE_SELECT.replace("<select", "// enigma:allow-native-select\n<select") },
+]);
+
 const HAND_TOAST = [
     "const [toasts, setToasts] = useState([]);",
     "function notify(message) {",
