@@ -42,6 +42,22 @@ test("require-semicolons: flags missing semicolon, accepts present", () => {
     assert.ok(!flags("const x = 1;\n", "require-semicolons"));
 });
 
+test("require-semicolons: a bare Astro <script> is TypeScript, so a generic is not a comparison", () => {
+    // Astro compiles the block with or without lang="ts". Read as JavaScript, the angle
+    // brackets of `Map<string, number>` become comparison operators, the statement ends at
+    // the comma, and a line that HAS its semicolon is reported as missing one. It takes a
+    // comma inside the brackets to show: a single type argument recovers intact.
+    const astro = (body: string): boolean =>
+        lintText("snippet.astro", `---\nconst a = 1;\n---\n<div>{a}</div>\n\n<script>\n${body}</script>\n`)
+            .some((v) => v.rule === "require-semicolons");
+
+    assert.ok(!astro("    const one = new Map<string, number>();\n"));
+    assert.ok(!astro("    const two = new Map<string, Array<number>>();\n"));
+    assert.ok(!astro("    const three = new Set<string>();\n"));
+    // Still reported when it is genuinely absent.
+    assert.ok(astro("    const four = new Map<string, number>()\n"));
+});
+
 test("require-semicolons: enforced for declarations, imports, exports, directives, class fields", () => {
     const missing = [
         "let x = 1\n",
