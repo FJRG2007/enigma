@@ -88,7 +88,7 @@ class LLMClient:
     DEFAULT_MODELS = {
         "opencode-go": "minimax-m2.5",
         "opencode-zen": "anthropic/claude-3-5-sonnet-20241022",
-        "claude": "claude-3-5-sonnet-20241022",
+        "claude": "claude-sonnet-5",
         "openai": "gpt-4o",
         "grok": "grok-2-latest",
         "ollama": "qwen3:8b"
