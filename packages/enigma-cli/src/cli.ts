@@ -21,6 +21,7 @@ import { runDoctorCli } from "./doctor-hooks";
 import type { ContentType } from "./compress";
 import { spawnSync } from "node:child_process";
 import { starRepoInBackground } from "./github";
+import { sharedStoreFor } from "./session-store";
 import { existsSync, readFileSync } from "node:fs";
 import type { CompletionShell } from "./completion";
 import { parseGuardArgv, runGuardCli } from "./guard";
@@ -450,7 +451,7 @@ Commands:
   completion [shell]   Print a shell completion script (bash | zsh | fish | powershell)
   help, version
 
-Config keys: commit-emoji, update-notifier, auto-sync, share-sessions, remote-skills,
+Config keys: commit-emoji, update-notifier, auto-sync, share-sessions, shared-store, remote-skills,
              fullscreen, statusline, parallel-subagents, output-style (off|lite|full|ultra),
              minimal-code (off|lite|full|ultra), compress, claude-attribution,
              claude-survey, claude-trust, kimi-trust, gh-telemetry, permission-bypass,
@@ -626,7 +627,7 @@ No arguments opens the interactive menu; 'config <key> <on|off>' sets one.
   -g, --global   Write to ~/.enigma.json (default)
   -l, --local    Write to this project's .enigma.json
 
-Keys: commit-emoji, update-notifier, auto-sync, share-sessions, remote-skills, fullscreen, statusline,
+Keys: commit-emoji, update-notifier, auto-sync, share-sessions, shared-store, remote-skills, fullscreen, statusline,
 parallel-subagents, output-style, minimal-code, compress, recall, codegraph, gate,
 guardrails, trim, verify, dashboard, dashboard-bind, claude-attribution, claude-survey,
 claude-trust, gh-telemetry, permission-bypass, bypass-claude, bypass-codex, bypass-opencode.`,
@@ -920,8 +921,11 @@ function syncForLaunch(tool: string, account: string): void {
     const auto = cfg.autoSync;
     try {
         if (auto) for (const notice of skillsMod.syncDeployed([tool])) console.log(`enigma: synced ${notice}.`);
-        if (account === acct.DEFAULT_NAME) return;
-        const dir = acct.resolveConfigDir(tool, account);
+        // With a shared store the tool reads THAT dir, not the account's, so the deployment has
+        // to land there - including on the synthetic default, which otherwise gets none.
+        const store = cfg.sharedStore ? sharedStoreFor(tool) : null;
+        if (!store && account === acct.DEFAULT_NAME) return;
+        const dir = store ?? acct.resolveConfigDir(tool, account);
         if (!auto && skillsMod.hasAccountDeployment(tool, dir)) return;
         for (const notice of skillsMod.syncAccount(tool, dir)) console.log(`enigma: synced ${notice}.`);
     } catch (err) {
@@ -937,7 +941,7 @@ function syncForLaunch(tool: string, account: string): void {
                 .catch(() => { /* recall unavailable */ });
         }, 0);
     }
-    // Mirror session transcripts across this tool's accounts (opt-in) so a conversation
+    // Mirror session transcripts across this tool's accounts (default on) so a conversation
     // started under one account can be resumed from another. Deferred like recall so it never
     // delays the launch, and incremental: once the accounts agree it is a directory walk.
     if (cfg.shareSessions) {

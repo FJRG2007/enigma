@@ -39,6 +39,7 @@ import { basename, join, resolve, sep } from "node:path";
 import { decryptSecret, encryptSecret } from "./secret-box";
 import { spawn, type SpawnOptions } from "node:child_process";
 import { isDir, readJson, resolveBin, enigmaHome } from "./util";
+import { enterSharedStore, leaveSharedStore } from "./session-store";
 import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 
 /**
@@ -779,7 +780,13 @@ export async function launchTool(toolName: string, name: string | null, passthro
     // (toolPaths) > a plain PATH lookup > a bare command name. The toolPaths entry is what
     // makes `enigma <tool>` work when the tool is installed but not on the shell PATH.
     const binary = process.env[tool.binEnv] || cfg.toolPaths?.[toolName] || resolveBin(tool.bin) || tool.bin;
-    const env = { ...process.env, ...tool.envFor(dir) };
+    // Shared store (opt-in): every account launches in ONE config dir, so the account decides
+    // which login is spent rather than which conversations exist. See session-store.ts.
+    const store = cfg.sharedStore ? enterSharedStore(toolName, dir, account !== DEFAULT_NAME) : null;
+    // Said out loud: seeding the user's own history copies gigabytes and the launch visibly
+    // pauses, and an unexplained pause reads as a hang. A rename is instant and says nothing.
+    if (store?.seeded === "copied") process.stdout.write("enigma: seeded this account's history into the shared session store.\n");
+    const env = { ...process.env, ...tool.envFor(store?.dir ?? dir) };
 
     // Per-account provider override (e.g. point Claude Code at MiniMax): inject its env BEFORE the
     // measuring-proxy block so a custom ANTHROPIC_BASE_URL disables the proxy (which must only ever
@@ -794,6 +801,9 @@ export async function launchTool(toolName: string, name: string | null, passthro
         return await spawnInherit(binary, passthrough, env);
     } finally {
         if (proxy) proxy.close();
+        // Hand back whatever token the session refreshed, or the account that lent the login
+        // keeps a refresh token Anthropic has already invalidated - a silent logout.
+        if (store) leaveSharedStore(toolName, dir);
     }
 }
 

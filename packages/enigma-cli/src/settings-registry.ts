@@ -307,6 +307,7 @@ const RAW_CATEGORIES: Category[] = [
             enigmaToggle("auto-sync", "autoSync", "Auto-sync on launch", "refresh already-deployed skills/memory when launching a tool via enigma (e.g. enigma claude)"),
             enigmaToggle("remote-skills", "remoteSkills", "Remote skill updates", "fetch newer skills from the GitHub repo on install/update, without waiting for a package release"),
             enigmaToggle("share-sessions", "shareSessions", "Share sessions across accounts", "copy session transcripts between a tool's accounts on launch, so a conversation started under one account can be listed and resumed from another (the client reads only real files, so sharing means copying what is missing)"),
+            enigmaToggle("shared-store", "sharedStore", "Shared session store", "launch every Claude account in one config dir, so switching accounts changes which login is spent and not which conversations exist; one login at a time, so two accounts running at once is what this trades away"),
             {
                 key: "resource-cap",
                 label: "Agent resource cap",

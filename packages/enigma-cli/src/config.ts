@@ -156,13 +156,26 @@ export interface EnigmaConfig {
      * it skips junctions and refuses hardlinked transcripts - so sharing means copying what
      * is missing, both ways. Incremental and best-effort. See session-share.ts.
      *
-     * OFF by default, because the cost lands on the surface the user actually looks at. A
-     * managed account ends up holding the default dir's whole history as well, so `/resume`
-     * under `enigma <tool>` lists a merged superset of what the tool lists natively, and the
-     * extra entries are conversations recorded in directories the user is not in. On a
-     * single-account setup that is pure noise: there is no second login to resume from.
+     * ON by default: accounts sharing one history is what lets a conversation started on one
+     * login be picked up on the next without losing the thread, and this is the form of it that
+     * needs no migration - each tree keeps working as it is and only what is missing is copied.
+     * `sharedStore` is the other form (one dir, nothing duplicated) for anyone who would rather
+     * pay a one-time move than carry two copies.
      */
     shareSessions: boolean;
+    /**
+     * Launch every Claude account in ONE config dir (default on), so switching accounts changes
+     * which login is spent and nothing else: one `projects` tree, so a conversation started on
+     * one account is listed and resumed from the next without losing the thread and without
+     * anything being copied per launch. Each account's existing history is seeded into the store
+     * once, so turning this on loses nothing.
+     *
+     * The trade, and the reason it is a setting rather than the only behavior: one store holds
+     * one login at a time, so two sessions running CONCURRENTLY under DIFFERENT accounts would
+     * fight over the credential file. Off gives each account its own config dir - and with it
+     * its own, separate history. See session-store.ts.
+     */
+    sharedStore: boolean;
     /** On update, overwrite (default) or keep a skill the user edited locally. */
     skillUpdatePolicy: SkillUpdatePolicy;
     /** Master switch for applying permission bypass on install (default on). */
@@ -393,7 +406,7 @@ export interface EnigmaConfig {
  */
 export const CONFIG_DEFAULTS: EnigmaConfig = {
     commitEmoji: true, updateNotifier: true, fullscreen: true, parallelSubagents: false, outputStyle: "off", minimalCode: "full", logoColorPolicy: "ask",
-    autoSync: true, shareSessions: false, statusline: true, statuslineRefresh: 10, claudeTrust: true, kimiTrust: true, remoteSkills: true, skillUpdatePolicy: "overwrite", permissionBypass: true, autoLint: false, guardrails: true, trim: true, verify: true, verifyCommand: "", compress: false, codeGraph: true, gate: true, dashboard: "off", tokenPrice: 0, tokenSpeed: 0, usageStats: false, recall: false, recallLlm: true, recallProvider: "claude-local", recallModel: "", recallApiBase: "", recallApiKey: "", proxy: false, usageApi: false, promptSecretGuard: false, promptSecretMode: "redact",
+    autoSync: true, shareSessions: true, sharedStore: false, statusline: true, statuslineRefresh: 10, claudeTrust: true, kimiTrust: true, remoteSkills: true, skillUpdatePolicy: "overwrite", permissionBypass: true, autoLint: false, guardrails: true, trim: true, verify: true, verifyCommand: "", compress: false, codeGraph: true, gate: true, dashboard: "off", tokenPrice: 0, tokenSpeed: 0, usageStats: false, recall: false, recallLlm: true, recallProvider: "claude-local", recallModel: "", recallApiBase: "", recallApiKey: "", proxy: false, usageApi: false, promptSecretGuard: false, promptSecretMode: "redact",
     resourceCap: 60, lowMemoryCap: 80,
     planSessionLimit: 0, planWeeklyLimit: 0, planWeeklySonnetLimit: 0, planWeeklyOpusLimit: 0, planWeeklyReset: "mon 00:00",
     dashboardLive: true, dashboardPort: 0, dashboardBind: "loopback", dashboardBindAddress: "", apiPort: 8000, apiAccount: "", apiProfile: "", apiPack: "", toolPaths: {}, bypassDisabled: [], discardedSkills: [], skillAgentsOff: {}, packs: [], packAccounts: {}, gateProtectedBranches: [], gateSeverity: "warning", gateTidyBranches: true, ciWatch: true,
