@@ -12,10 +12,10 @@
 
 import ts from "typescript";
 import { guardedLines } from "./guarded";
-import { isTypeMember, parseSource } from "./parse";
 import { readdirSync, readFileSync } from "node:fs";
 import { join, resolve, dirname, extname } from "node:path";
 import { JS_TS, isContainer, languageFor } from "./languages";
+import { isTypeMember, parseSource, singleLineImportRuns } from "./parse";
 
 /** A replacement of `[start, end)` in the source with `text` (an insertion when start === end). */
 interface Edit {
@@ -41,20 +41,8 @@ function applyEdits(body: string, edits: Edit[]): string {
 function sortImportGroups(file: string, body: string): string {
     const sourceFile = parseSource(file, body, extname(file).toLowerCase());
     if (!sourceFile) return body;
-    const groups: ts.ImportDeclaration[][] = [];
-    let group: ts.ImportDeclaration[] = [];
-    for (const stmt of sourceFile.statements) {
-        if (ts.isImportDeclaration(stmt)) {
-            group.push(stmt);
-        } else if (group.length) {
-            groups.push(group);
-            group = [];
-        }
-    }
-    if (group.length) groups.push(group);
-
     const edits: Edit[] = [];
-    for (const g of groups) {
+    for (const g of singleLineImportRuns(sourceFile)) {
         if (g.length < 2) continue;
         const start = g[0]!.getStart(sourceFile);
         const end = g[g.length - 1]!.getEnd();

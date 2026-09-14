@@ -24,6 +24,14 @@ test("length-sorted-imports: flags out-of-order, accepts sorted", () => {
     assert.ok(!flags("import a from \"y\";\nimport { aVeryLongImportName } from \"x\";\n", "length-sorted-imports"));
 });
 
+test("length-sorted-imports: a multi-line import ends the run instead of dwarfing it", () => {
+    // Its whole declaration text is longer than any single-line neighbour, so measuring it
+    // flagged every import that followed with no ordering that could satisfy the rule.
+    assert.ok(!flags("import a from \"y\";\nimport {\n    alpha,\n    beta\n} from \"./multi\";\nimport c from \"w\";\nimport bb from \"zz\";\n", "length-sorted-imports"));
+    // The ladder is still enforced inside the run that follows it.
+    assert.ok(flags("import {\n    alpha\n} from \"./m\";\nimport { aVeryLongImportName } from \"x\";\nimport a from \"y\";\n", "length-sorted-imports"));
+});
+
 test("prefer-double-quotes: flags single quotes, accepts double", () => {
     assert.ok(flags("const x = 'a';\n", "prefer-double-quotes"));
     assert.ok(!flags("const x = \"a\";\n", "prefer-double-quotes"));
@@ -360,6 +368,15 @@ test("fix: drops the trailing comma from a named import/export list", () => {
 test("fix: punctuation fixes are idempotent", () => {
     const source = "import {\n    a,\n    type B,\n} from \"./x\";\n\ntype L = { a: string, b: number };\n";
     const fixed = fixText("a.ts", source);
+    assert.equal(fixText("a.ts", fixed), fixed);
+});
+
+test("fix: the length sort never moves a multi-line import", () => {
+    // Sorting by whole-declaration length used to hoist the multi-line block to the end of
+    // the group, reordering imports the author had deliberately grouped.
+    const source = "import a from \"y\";\nimport {\n    alpha,\n    beta\n} from \"./multi\";\nimport bb from \"zz\";\nimport c from \"w\";\n";
+    const fixed = fixText("a.ts", source);
+    assert.equal(fixed, "import a from \"y\";\nimport {\n    alpha,\n    beta\n} from \"./multi\";\nimport c from \"w\";\nimport bb from \"zz\";\n");
     assert.equal(fixText("a.ts", fixed), fixed);
 });
 

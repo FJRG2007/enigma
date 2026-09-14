@@ -1,9 +1,8 @@
 /** Ciphera: imports must be ordered by line length, shortest first. */
 
-import ts from "typescript";
-import { locate } from "../parse";
 import { JS_TS } from "../languages";
 import type { Rule, Violation } from "../types";
+import { locate, singleLineImportRuns } from "../parse";
 
 export const lengthSortedImports: Rule = {
     name: "length-sorted-imports",
@@ -13,30 +12,22 @@ export const lengthSortedImports: Rule = {
     check(ctx) {
         const violations: Violation[] = [];
         const sourceFile = ctx.sourceFile!;
-        let group: ts.ImportDeclaration[] = [];
 
-        const flush = (): void => {
-            for (let i = 1; i < group.length; i++) {
-                const prev = group[i - 1]!.getText(sourceFile).length;
-                const curr = group[i]!.getText(sourceFile).length;
-                if (curr < prev) {
-                    const { line, column } = locate(sourceFile, group[i]!.getStart(sourceFile));
-                    violations.push({
-                        rule: "length-sorted-imports", category: "style", severity: "warning",
-                        file: ctx.file, line, column,
-                        message: "imports should be sorted by line length, shortest first",
-                    });
-                }
+        // Each contiguous run of single-line imports is ordered independently; a multi-line
+        // import ends a run rather than joining it (see singleLineImportRuns).
+        for (const run of singleLineImportRuns(sourceFile)) {
+            for (let i = 1; i < run.length; i++) {
+                const prev = run[i - 1]!.getText(sourceFile).length;
+                const curr = run[i]!.getText(sourceFile).length;
+                if (curr >= prev) continue;
+                const { line, column } = locate(sourceFile, run[i]!.getStart(sourceFile));
+                violations.push({
+                    rule: "length-sorted-imports", category: "style", severity: "warning",
+                    file: ctx.file, line, column,
+                    message: "imports should be sorted by line length, shortest first",
+                });
             }
-            group = [];
-        };
-
-        // Check each contiguous block of imports independently.
-        for (const stmt of sourceFile.statements) {
-            if (ts.isImportDeclaration(stmt)) group.push(stmt);
-            else flush();
         }
-        flush();
         return violations;
     },
 };

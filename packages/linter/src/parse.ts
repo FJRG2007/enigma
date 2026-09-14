@@ -28,6 +28,29 @@ export function isTypeMember(node: ts.Node): node is ts.TypeElement {
     return ts.isTypeElement(node) && !!node.parent && (ts.isInterfaceDeclaration(node.parent) || ts.isTypeLiteralNode(node.parent));
 }
 
+/**
+ * Contiguous runs of SINGLE-LINE import declarations, in source order.
+ *
+ * A multi-line import has no line length to sort by. Measuring its whole declaration text
+ * makes it longer than every neighbour, which flagged each import that followed it as out of
+ * order with no ordering that could satisfy the rule, and made the autofix push it to the end
+ * of the block. So a multi-line declaration ends the current run and never joins one: the
+ * ladder is enforced within each run of single-line imports, and multi-line blocks stay put.
+ *
+ * Shared by the rule and the fixer so the two can never disagree about what a group is.
+ */
+export function singleLineImportRuns(sourceFile: ts.SourceFile): ts.ImportDeclaration[][] {
+    const runs: ts.ImportDeclaration[][] = [];
+    let run: ts.ImportDeclaration[] = [];
+    const flush = (): void => { if (run.length) runs.push(run); run = []; };
+    for (const stmt of sourceFile.statements) {
+        if (ts.isImportDeclaration(stmt) && !stmt.getText(sourceFile).includes("\n")) run.push(stmt);
+        else flush();
+    }
+    flush();
+    return runs;
+}
+
 /** Convert a source position to a 1-based line/column. */
 export function locate(sourceFile: ts.SourceFile, pos: number): { line: number; column: number; } {
     const { line, character } = sourceFile.getLineAndCharacterOfPosition(pos);
