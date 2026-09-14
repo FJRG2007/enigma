@@ -188,6 +188,12 @@ const claudeAdapter: AgentAdapter = {
         // permission-bypass posture so a headless run never stalls on a permission prompt.
         const bypass = readConfig().config.permissionBypass;
         args.push("--permission-mode", opts.enableTools && bypass ? "bypassPermissions" : "default");
+        // With tools off (the API default) the agent cannot call any MCP tool, so loading the
+        // user's MCP servers is pure latency: connecting to each one on boot (seconds) and
+        // injecting their tool schemas (tens of thousands of tokens, which slow the model's first
+        // token). --strict-mcp-config with no --mcp-config loads zero servers. When tools are on,
+        // the caller wants those tools, so the MCP servers stay.
+        if (!opts.enableTools) args.push("--strict-mcp-config");
         // With images, drive Claude Code through its realtime streaming input: one user message
         // carrying the text plus image content blocks (the reliable way to send vision content).
         if (opts.images && opts.images.length) {
