@@ -173,22 +173,30 @@ test("a wedged turn times out, releases the session and lets the next turn recov
 test("a second concurrent turn on the same session is refused, not interleaved", async () => {
     reset();
     const id = randomUUID();
-    // The wedged turn ends in a timeout; its handler is attached now so a failing assertion below
-    // can never turn it into an unhandled rejection charged to whatever test runs next.
-    const first = runSessionTurn(spec({}, "hang"), id, { prompt: "one" }, undefined, cfg({ turnTimeoutMs: 400 }));
-    const firstSettled = first.then(() => "answered", () => "timed out");
-    await wait(50);
+    // The wedged turn ends itself via the turn timeout - the only path that settles an in-flight
+    // turn, since a deliberate kill() detaches its exit handler. The timeout is set well past a
+    // cmd+node cold start so the stub always reaches the line that records its argv before it fires;
+    // a constant pre-kill delay (the earlier bug) raced that boot under load. Its handler is attached
+    // now so a failing assertion below can never turn it into an unhandled rejection charged to
+    // whatever test runs next.
+    const first = runSessionTurn(spec({}, "hang"), id, { prompt: "one" }, undefined, cfg({ turnTimeoutMs: 3000 }));
+    const firstSettled = first.then(() => "answered", () => "ended");
+    // Wait until the first process has actually launched (its argv is on disk), not a fixed delay:
+    // the count below must be exact, and the stub records its argv only once it has booted. `busy`
+    // flips synchronously on spawn, so it is already true well before that boot is recorded.
+    for (let i = 0; i < 200 && launches().length < 1; i++) await wait(20);
     expect(isSessionBusy(id)).toBe(true);
+    expect(launches().length).toBe(1);
 
     const err = await runSessionTurn(spec(), id, { prompt: "two" }, undefined, cfg()).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(SessionError);
     expect((err as SessionError).code).toBe("busy");
-
-    // Counted only once the first turn is over: the stub records its argv on startup, and a spawn
-    // through the shell is not instant.
-    expect(await firstSettled).toBe("timed out");
+    // The refused turn must not have spawned a second process.
     expect(launches().length).toBe(1);
-});
+
+    // Let the first turn's timeout fire, releasing the session cleanly.
+    expect(await firstSettled).toBe("ended");
+}, 12_000);
 
 test("a session id is bound to one isolation context, so another account cannot resume it", async () => {
     reset();
