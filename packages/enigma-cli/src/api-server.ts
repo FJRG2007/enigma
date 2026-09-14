@@ -18,7 +18,7 @@ import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { getTool, resolveConfigDir, resolveLaunchAccount, listProfiles } from "./accounts";
-import { runSessionTurn, closeAllSessions, DEFAULT_SESSION_CONFIG, type SessionSpec } from "./session-runtime";
+import { runSessionTurn, closeAllSessions, isSessionBusy, SessionError, DEFAULT_SESSION_CONFIG, type SessionSpec } from "./session-runtime";
 import {
     resolveAdapter,
     availableAdapters,
@@ -438,7 +438,20 @@ async function buildClaudeSessionSpec(opts: CompletionOptions): Promise<SessionS
     const binary = process.env[tool.binEnv] || cfg.toolPaths?.claude || resolveBin(tool.bin) || tool.bin;
     const env = { ...process.env, ...tool.envFor(dir) };
     const useShell = process.platform === "win32" && !binary.toLowerCase().endsWith(".exe");
-    return { binary, env, model: opts.model, system: opts.system, strictMcp: !opts.enableTools, useShell };
+    // `dir` is the resolved isolation context: it binds the session id to this account/profile/pack.
+    return { binary, env, model: opts.model, system: opts.system, enableTools: opts.enableTools === true, contextKey: dir, useShell };
+}
+
+/**
+ * The client-side problem with this request's `session_id`, or null when there is none. Session
+ * mode is Claude-only, so any other adapter ignores the field. Both handlers run this BEFORE a
+ * streaming head is written, which is the only moment a real status code can still be sent.
+ */
+function sessionRequestError(adapter: AgentAdapter, opts: CompletionOptions): RequestError | null {
+    if (!opts.sessionId || adapter.tool !== "claude") return null;
+    if (!SESSION_UUID_RE.test(opts.sessionId)) return new RequestError(400, "session_id must be a UUID (omit it for a stateless request).");
+    if (isSessionBusy(opts.sessionId)) return new RequestError(409, "session busy: a turn is already in progress for this session");
+    return null;
 }
 
 /**
@@ -446,17 +459,22 @@ async function buildClaudeSessionSpec(opts: CompletionOptions): Promise<SessionS
  * RunResult shape. A `session_id` (a UUID) selects session mode: the caller sends only the newest
  * user message and the warm process holds the thread. Only Claude Code has the persistent
  * stream-json interface the warm runtime needs; other agents fall back to a stateless run that
- * carries the whole transcript. Throws RequestError(409) when the session already has a turn in
- * flight; the malformed-id 400 is caught earlier, before any streaming head is written.
+ * carries the whole transcript. A session refusal (busy, wrong context, a turn that timed out)
+ * arrives as a typed SessionError and becomes the matching status; the handlers run the same
+ * up-front check before any streaming head, where that status can still be sent.
  */
 async function drive(adapter: AgentAdapter, messages: ChatMessage[], prompt: string, opts: CompletionOptions, onText?: (t: string) => Promise<void> | void): Promise<RunResult> {
     if (opts.sessionId && adapter.tool === "claude") {
-        if (!SESSION_UUID_RE.test(opts.sessionId)) throw new RequestError(400, "session_id must be a UUID (omit it for a stateless request).");
+        const bad = sessionRequestError(adapter, opts);
+        if (bad) throw bad;
         const spec = await buildClaudeSessionSpec(opts);
         try {
-            return await runSessionTurn(spec, opts.sessionId, lastUserText(messages), onText, DEFAULT_SESSION_CONFIG);
+            return await runSessionTurn(spec, opts.sessionId, { prompt: lastUserText(messages), images: opts.images }, onText, DEFAULT_SESSION_CONFIG);
         } catch (err) {
-            if ((err as Error).message.startsWith("session busy")) throw new RequestError(409, (err as Error).message);
+            if (err instanceof SessionError) {
+                const timedOut = err.code === "timeout";
+                throw new RequestError(timedOut ? 504 : 409, err.message, timedOut ? "api_error" : "invalid_request_error");
+            }
             throw err;
         }
     }
@@ -474,10 +492,10 @@ async function handleChatCompletions(req: IncomingMessage, res: ServerResponse, 
     const model = (body.model as string) || DEFAULT_MODEL;
     const adapter = resolveAdapter(model, defaults.tool);
     const opts: CompletionOptions = { model, system, sessionId: (body.session_id as string) ?? null, enableTools: body.enable_tools === true, stream: body.stream === true, images: extractImages(messages), ...contextOf(body, defaults) };
-    // A malformed session id has to fail before any streaming head is written, so check it up front.
-    if (opts.sessionId && adapter.tool === "claude" && !SESSION_UUID_RE.test(opts.sessionId)) {
-        return apiError(res, 400, "session_id must be a UUID (omit it for a stateless request).");
-    }
+    // A session problem has to fail before any streaming head is written, so check it up front:
+    // afterwards the 200 is already on the wire and the client would read the error as content.
+    const sessionProblem = sessionRequestError(adapter, opts);
+    if (sessionProblem) return apiError(res, sessionProblem.status, sessionProblem.message, sessionProblem.apiType);
     const id = `chatcmpl-${randomUUID().replace(/-/g, "").slice(0, 24)}`;
 
     if (body.stream === true) {
@@ -531,9 +549,8 @@ async function handleAnthropicMessages(req: IncomingMessage, res: ServerResponse
     const model = (body.model as string) || DEFAULT_MODEL;
     const adapter = resolveAdapter(model, defaults.tool);
     const opts: CompletionOptions = { model, system, sessionId: (body.session_id as string) ?? null, enableTools: body.enable_tools === true, stream: body.stream === true, images: extractImages(rawMessages), ...contextOf(body, defaults) };
-    if (opts.sessionId && adapter.tool === "claude" && !SESSION_UUID_RE.test(opts.sessionId)) {
-        return apiError(res, 400, "session_id must be a UUID (omit it for a stateless request).");
-    }
+    const sessionProblem = sessionRequestError(adapter, opts);
+    if (sessionProblem) return apiError(res, sessionProblem.status, sessionProblem.message, sessionProblem.apiType);
     const id = `msg_${randomUUID().replace(/-/g, "").slice(0, 24)}`;
 
     if (body.stream === true) {
