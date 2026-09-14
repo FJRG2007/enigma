@@ -60,7 +60,7 @@ function addToWindowsUserPath(dir: string): PathResult {
 }
 
 /** The shell profile file to edit, chosen from $SHELL (falls back to ~/.profile). */
-function unixProfile(): string {
+export function unixProfile(): string {
     const home = homedir();
     const shell = process.env.SHELL || "";
     if (shell.includes("zsh")) return join(home, ".zshrc");

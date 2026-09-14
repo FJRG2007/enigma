@@ -37,6 +37,7 @@ export const SUBCOMMANDS: Record<string, string[]> = {
     verify: ["parity"],
     issue: ["bug", "feature"],
     doctor: ["hooks"],
+    shim: ["status", "on", "off"],
 };
 
 /** Flags accepted anywhere on the command line. */

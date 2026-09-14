@@ -52,7 +52,7 @@ const COMMANDS = new Set<string>([
     "install", "update", "security", "guard", "seal", "check", "config", "account", "accounts",
     "profile", "profiles", "skill", "skills", "issue", "improve", "qa", "compress", "guardrails", "trim", "verify", "mcp", "api", "gate", "dashboard", "dash", "fix-path", "resources", "kill", "recall", "codegraph", "autoskills", "statusline", "help", "version",
     "add", "components",
-    "pack", "packs", "ssh", "completion", "branches", "doctor",
+    "pack", "packs", "ssh", "completion", "branches", "doctor", "shim",
     ...acct.TOOL_NAMES,
     ...packs.PACKS.map((p) => p.id),
 ]);
@@ -393,6 +393,9 @@ Commands:
                        prints or rotates it, and the link carries it as a #token= fragment
   fix-path [tool]      Detect a tool's install path (OS-agnostic, even off PATH) and
                        repair its launch command so 'enigma <tool>' works; no tool fixes all
+  shim [on|off]        Launch each installed agent under its own name ('claude', not 'enigma
+                       claude') via a shell function, so terminals that read the typed command
+                       keep detecting it; no argument shows what your profile holds
   doctor [hooks]       Time every hook wired into Claude Code (settings files and enabled
                        plugins) and name the slow one behind '<event> hook timed out'
   resources [action]   System cleanup: status, or wsl | docker | free-port PORT | kill PID
@@ -773,6 +776,14 @@ payload: a Read of no file, and a stop hook told a stop is already in flight.`,
 Detect a tool's install path (even off PATH) and repair its launch command so
 'enigma <tool>' works. With no tool, fixes every supported one.`,
 
+    shim: `usage: enigma shim [status | on | off]
+Write a shell function per installed agent so 'claude' launches it through enigma's
+active account. Terminals decide their agent features (toolbars, image paste, tab
+icons) from the command you type, and 'enigma claude' does not match 'claude'.
+Functions only, never a PATH shim: child processes do not inherit them, so anything
+that spawns the agent programmatically still gets the real binary.
+'status' (default) shows the profile and what it holds; 'off' removes the block.`,
+
     issue: `usage: enigma issue [bug | feature]
 Open a prefilled GitHub issue with your OS, versions, terminal and detected agents
 already filled in. Default: bug.`,
@@ -1073,6 +1084,31 @@ function runFixPathCli(tool: string | undefined, scope: "global" | "local" | nul
         if (!result.ok) allOk = false;
     }
     return allOk ? 0 : 1;
+}
+
+/**
+ * `enigma shim [status|on|off]` surface. Writes (or removes) a shell function per installed
+ * agent so it can be launched under its own command name, which is what terminals key their
+ * agent features off - enigma still selects the account behind it.
+ */
+async function runShimCli(args: string[]): Promise<number> {
+    const { applyShim, shimStatus } = await import("./shim");
+    const sub = args[0] || "status";
+    if (sub === "status") {
+        const status = shimStatus();
+        console.log(`profile    ${status.profile}`);
+        console.log(`shim       ${status.enabled ? `on (${status.tools.join(", ")})` : "off"}`);
+        console.log(`installed  ${status.installed.join(", ") || "none"}`);
+        if (!status.enabled) console.log("\nRun 'enigma shim on' to launch each agent under its own name.");
+        return 0;
+    }
+    if (sub === "on" || sub === "off") {
+        const result = applyShim(sub === "on");
+        console.log(result.note);
+        return 0;
+    }
+    console.error(`Unknown shim subcommand: ${sub}. Try: status, on, off.`);
+    return 1;
 }
 
 /**
@@ -3129,6 +3165,7 @@ export async function run(argv: string[]): Promise<void> {
     if (opts.command === "verify") { process.exit(await runVerifyCli(opts.positionals, opts.all, opts.json)); }
     if (opts.command === "dashboard") { process.exit(await runDashboardCli(version, opts)); }
     if (opts.command === "fix-path") { process.exit(runFixPathCli(opts.positionals[0], opts.scope)); }
+    if (opts.command === "shim") { process.exit(await runShimCli(opts.positionals)); }
     if (opts.command === "doctor") { process.exit(runDoctorCli(opts.positionals, opts.all, opts.json)); }
     if (opts.command === "resources") { process.exit(await runResourcesCli(opts.positionals)); }
     if (opts.command === "kill") { process.exit(await runKillCli(opts.positionals, opts.yes)); }

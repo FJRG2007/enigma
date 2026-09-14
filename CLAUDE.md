@@ -60,6 +60,7 @@ Subsystems (read the one you are touching):
 - `branch-tidy.md` - `enigma branches`: what proves a working branch is finished (and why ancestry alone is wrong), every refusal, and the undo ledger. Read before touching anything that deletes a ref.
 - `secret-protection.md` - commit guard lists and the prompt secret guard.
 - `tool-launch-path.md` - repairing a tool that is installed but not on PATH.
+- `shim.md` - `enigma shim`: shell functions that launch each agent under its own command name, because terminals detect the agent from the typed command and not the process. Read before touching the launcher's relationship with the terminal.
 - `system-resources.md` - process/port/WSL/Docker cleanup.
 - `shell-completion.md` - `enigma completion`: word lists derived from the command set and the settings registry, and the test that stops the one hand-written list from drifting.
 - `statusline.md` - the agent status bar: the Node/Bun split that forces the gate snapshot file, rejection rules, animation and width rules. Read before touching `bin/statusline.mjs` or the snapshot.
