@@ -6,12 +6,28 @@
  */
 import { test, expect } from "bun:test";
 import * as agents from "../src/api-agents";
-import { contentToText, messagesToPrompt, streamChunk, extractImages, type ChatMessage } from "../src/api-server";
+import { liveSessionCount, closeAllSessions } from "../src/session-runtime";
+import { contentToText, messagesToPrompt, streamChunk, extractImages, lastUserText, type ChatMessage } from "../src/api-server";
 
 test("contentToText flattens string and text-part content", () => {
     expect(contentToText("hi")).toBe("hi");
     expect(contentToText([{ type: "text", text: "a" }, { type: "text", text: "b" }])).toBe("a\nb");
     expect(contentToText([{ type: "image", text: "x" } as never])).toBe("");
+});
+
+test("lastUserText returns only the newest user message (session mode sends just the new turn)", () => {
+    expect(lastUserText([
+        { role: "user", content: "first" },
+        { role: "assistant", content: "reply" },
+        { role: "user", content: [{ type: "text", text: "newest" }] },
+    ])).toBe("newest");
+    expect(lastUserText([{ role: "assistant", content: "no user turn" }])).toBe("");
+});
+
+test("session runtime starts empty and closeAllSessions is safe with nothing to close", () => {
+    expect(liveSessionCount()).toBe(0);
+    closeAllSessions();
+    expect(liveSessionCount()).toBe(0);
 });
 
 test("messagesToPrompt sends a single user turn verbatim and extracts system", () => {

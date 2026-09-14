@@ -18,6 +18,7 @@ import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { getTool, resolveConfigDir, resolveLaunchAccount, listProfiles } from "./accounts";
+import { runSessionTurn, closeAllSessions, DEFAULT_SESSION_CONFIG, type SessionSpec } from "./session-runtime";
 import {
     resolveAdapter,
     availableAdapters,
@@ -413,6 +414,55 @@ function contextOf(body: Record<string, unknown>, defaults: ServerDefaults): Pic
     };
 }
 
+/** An error carrying the HTTP status a handler should surface (client mistakes, not agent faults). */
+class RequestError extends Error {
+    constructor(public status: number, message: string, public apiType = "invalid_request_error") { super(message); }
+}
+
+/** Claude Code's session ids are UUIDs, and `--session-id`/`--resume` reject anything else. */
+const SESSION_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** The newest user message's text - the only thing a warm session needs, since it holds the rest. */
+export function lastUserText(messages: ChatMessage[]): string {
+    for (let i = messages.length - 1; i >= 0; i--) {
+        if (messages[i]!.role === "user") return contentToText(messages[i]!.content);
+    }
+    return "";
+}
+
+/** Launch spec for a Claude Code session process, mirroring runAgent's binary/env resolution. */
+async function buildClaudeSessionSpec(opts: CompletionOptions): Promise<SessionSpec> {
+    const tool = getTool("claude");
+    const cfg = readConfig().config;
+    const dir = await resolveContextDir("claude", opts);
+    const binary = process.env[tool.binEnv] || cfg.toolPaths?.claude || resolveBin(tool.bin) || tool.bin;
+    const env = { ...process.env, ...tool.envFor(dir) };
+    const useShell = process.platform === "win32" && !binary.toLowerCase().endsWith(".exe");
+    return { binary, env, model: opts.model, system: opts.system, strictMcp: !opts.enableTools, useShell };
+}
+
+/**
+ * Route one request to the warm session runtime or a fresh stateless run - both return the same
+ * RunResult shape. A `session_id` (a UUID) selects session mode: the caller sends only the newest
+ * user message and the warm process holds the thread. Only Claude Code has the persistent
+ * stream-json interface the warm runtime needs; other agents fall back to a stateless run that
+ * carries the whole transcript. Throws RequestError(409) when the session already has a turn in
+ * flight; the malformed-id 400 is caught earlier, before any streaming head is written.
+ */
+async function drive(adapter: AgentAdapter, messages: ChatMessage[], prompt: string, opts: CompletionOptions, onText?: (t: string) => Promise<void> | void): Promise<RunResult> {
+    if (opts.sessionId && adapter.tool === "claude") {
+        if (!SESSION_UUID_RE.test(opts.sessionId)) throw new RequestError(400, "session_id must be a UUID (omit it for a stateless request).");
+        const spec = await buildClaudeSessionSpec(opts);
+        try {
+            return await runSessionTurn(spec, opts.sessionId, lastUserText(messages), onText, DEFAULT_SESSION_CONFIG);
+        } catch (err) {
+            if ((err as Error).message.startsWith("session busy")) throw new RequestError(409, (err as Error).message);
+            throw err;
+        }
+    }
+    return runAgent(adapter, prompt, opts, onText);
+}
+
 async function handleChatCompletions(req: IncomingMessage, res: ServerResponse, defaults: ServerDefaults): Promise<void> {
     const raw = await readBody(req);
     let body: Record<string, unknown>;
@@ -424,13 +474,17 @@ async function handleChatCompletions(req: IncomingMessage, res: ServerResponse, 
     const model = (body.model as string) || DEFAULT_MODEL;
     const adapter = resolveAdapter(model, defaults.tool);
     const opts: CompletionOptions = { model, system, sessionId: (body.session_id as string) ?? null, enableTools: body.enable_tools === true, stream: body.stream === true, images: extractImages(messages), ...contextOf(body, defaults) };
+    // A malformed session id has to fail before any streaming head is written, so check it up front.
+    if (opts.sessionId && adapter.tool === "claude" && !SESSION_UUID_RE.test(opts.sessionId)) {
+        return apiError(res, 400, "session_id must be a UUID (omit it for a stateless request).");
+    }
     const id = `chatcmpl-${randomUUID().replace(/-/g, "").slice(0, 24)}`;
 
     if (body.stream === true) {
         res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
         res.write(streamChunk(id, model, { role: "assistant" }));
         try {
-            const result = await runAgent(adapter, prompt, opts, (t) => writeSse(res, streamChunk(id, model, { content: t })));
+            const result = await drive(adapter, messages, prompt, opts, (t) => writeSse(res, streamChunk(id, model, { content: t })));
             touchSession(result.sessionId, messages.length + 1);
             if (result.isError) res.write(streamChunk(id, model, { content: `\n[error] ${result.errorMessage ?? "unknown error"}` }));
             const includeUsage = (body.stream_options as { include_usage?: boolean; } | undefined)?.include_usage === true;
@@ -450,7 +504,7 @@ async function handleChatCompletions(req: IncomingMessage, res: ServerResponse, 
     }
 
     try {
-        const result = await runAgent(adapter, prompt, opts);
+        const result = await drive(adapter, messages, prompt, opts);
         touchSession(result.sessionId, messages.length + 1);
         if (result.isError) return apiError(res, 502, result.errorMessage ?? `${adapter.tool} returned an error.`, "api_error");
         sendJson(res, 200, {
@@ -458,8 +512,10 @@ async function handleChatCompletions(req: IncomingMessage, res: ServerResponse, 
             choices: [{ index: 0, message: { role: "assistant", content: result.text }, finish_reason: "stop" }],
             usage: { prompt_tokens: result.inputTokens, completion_tokens: result.outputTokens, total_tokens: result.inputTokens + result.outputTokens },
             system_fingerprint: result.sessionId ? `session_${result.sessionId}` : null,
+            session_id: result.sessionId,
         });
     } catch (err) {
+        if (err instanceof RequestError) return apiError(res, err.status, err.message, err.apiType);
         apiError(res, 502, (err as Error).message, "api_error");
     }
 }
@@ -474,7 +530,10 @@ async function handleAnthropicMessages(req: IncomingMessage, res: ServerResponse
     const { prompt } = messagesToPrompt(rawMessages);
     const model = (body.model as string) || DEFAULT_MODEL;
     const adapter = resolveAdapter(model, defaults.tool);
-    const opts: CompletionOptions = { model, system, enableTools: body.enable_tools === true, stream: body.stream === true, images: extractImages(rawMessages), ...contextOf(body, defaults) };
+    const opts: CompletionOptions = { model, system, sessionId: (body.session_id as string) ?? null, enableTools: body.enable_tools === true, stream: body.stream === true, images: extractImages(rawMessages), ...contextOf(body, defaults) };
+    if (opts.sessionId && adapter.tool === "claude" && !SESSION_UUID_RE.test(opts.sessionId)) {
+        return apiError(res, 400, "session_id must be a UUID (omit it for a stateless request).");
+    }
     const id = `msg_${randomUUID().replace(/-/g, "").slice(0, 24)}`;
 
     if (body.stream === true) {
@@ -484,7 +543,7 @@ async function handleAnthropicMessages(req: IncomingMessage, res: ServerResponse
         send("message_start", { type: "message_start", message: { id, type: "message", role: "assistant", content: [], model, stop_reason: null, usage: { input_tokens: 0, output_tokens: 0 } } });
         send("content_block_start", { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } });
         try {
-            const result = await runAgent(adapter, prompt, opts, (t) => writeSse(res, frame("content_block_delta", { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: t } })));
+            const result = await drive(adapter, rawMessages, prompt, opts, (t) => writeSse(res, frame("content_block_delta", { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: t } })));
             send("content_block_stop", { type: "content_block_stop", index: 0 });
             send("message_delta", { type: "message_delta", delta: { stop_reason: "end_turn", stop_sequence: null }, usage: { output_tokens: result.outputTokens } });
             send("message_stop", { type: "message_stop" });
@@ -496,15 +555,17 @@ async function handleAnthropicMessages(req: IncomingMessage, res: ServerResponse
     }
 
     try {
-        const result = await runAgent(adapter, prompt, opts);
+        const result = await drive(adapter, rawMessages, prompt, opts);
         if (result.isError) return apiError(res, 502, result.errorMessage ?? `${adapter.tool} returned an error.`, "api_error");
         sendJson(res, 200, {
             id, type: "message", role: "assistant", model,
             content: [{ type: "text", text: result.text }],
             stop_reason: "end_turn", stop_sequence: null,
             usage: { input_tokens: result.inputTokens, output_tokens: result.outputTokens },
+            session_id: result.sessionId,
         });
     } catch (err) {
+        if (err instanceof RequestError) return apiError(res, err.status, err.message, err.apiType);
         apiError(res, 502, (err as Error).message, "api_error");
     }
 }
@@ -568,7 +629,7 @@ export function startApiServer(options: ApiServerOptions): Promise<RunningApi> {
         server.once("error", reject);
         server.listen(options.port, "127.0.0.1", () => {
             const port = (server.address() as { port: number; }).port;
-            resolve({ url: `http://127.0.0.1:${port}`, port, close: () => { try { server.close(); } catch { /* */ } } });
+            resolve({ url: `http://127.0.0.1:${port}`, port, close: () => { try { server.close(); } catch { /* */ } closeAllSessions(); } });
         });
     });
 }
