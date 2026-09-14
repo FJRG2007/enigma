@@ -96,13 +96,49 @@ You can also set a **persisted default** that `enigma api` uses when no flag is 
 Persist the default account / profile / pack for the API server (`none` clears it). A per-run flag or a per-request field still overrides it.
 </Cmd>
 
-## Tools and sessions
+## Tools
 
 Tools are off by default so plain chat requests stay fast and OpenAI-compatible. Pass `"enable_tools": true` in the request body to let Claude Code use its tools (Read, Write, Bash, ...); when enabled, it honors your global permission-bypass setting so headless runs never stall on a prompt.
 
 With tools off, Claude Code also **skips your MCP servers**: nothing connects to them and their tool schemas stay out of the prompt, which is most of the per-request latency and token cost on a machine with many servers configured. A request that needs an MCP-backed tool must set `"enable_tools": true` - that loads your MCP servers as usual. This applies to Claude Code only; the other backends load their MCP servers either way.
 
-For multi-turn continuity, pass a `"session_id"` in the request - it resumes that Claude Code session. New sessions are tracked and listed under `/v1/sessions`.
+## Sessions
+
+There are two ways to hold a conversation, and both are always available.
+
+**Stateless (default).** Send the full message history on every request, with no `session_id`. Each request runs in isolation from a cold start - the plain OpenAI-compatible behavior.
+
+**Stateful warm sessions.** Set a `session_id` (a **UUID**) and send only the *newest* user message each turn. enigma keeps one warm Claude Code process per session that holds the thread, so you never resend the history and only the first turn pays the startup cost. This mirrors OpenAI's Responses API (`previous_response_id`) and AWS Bedrock AgentCore's per-session compute. Claude Code only; another backend given a `session_id` falls back to a stateless resume that carries the whole transcript.
+
+```python
+import uuid
+
+sid = str(uuid.uuid4())
+
+# Turn 1 - introduce a fact
+client.chat.completions.create(
+    model="claude-opus-5",
+    messages=[{"role": "user", "content": "My name is Ada."}],
+    extra_body={"session_id": sid},
+)
+# Turn 2 - send ONLY the new message; the warm process still remembers turn 1
+client.chat.completions.create(
+    model="claude-opus-5",
+    messages=[{"role": "user", "content": "What is my name?"}],
+    extra_body={"session_id": sid},
+)
+```
+
+The contract:
+
+- `session_id` must be a UUID. Anything else is rejected with `400` before any stream is opened.
+- Turns of one session are **serialized**: a second concurrent turn on the same id gets `409`. Different sessions run in parallel.
+- A turn that produces no result within the turn timeout (10 minutes) gets `504`; the session is reset and the next turn resumes it.
+- The response echoes `session_id` - reuse it. Streaming (`stream=true`) works in both modes.
+- A `session_id` is bound to the **context** (account / profile / pack) that first ran it; reusing it under a different context is refused, so start a fresh UUID per context.
+- Sessions idle past a TTL, or beyond a live-process cap, are evicted to free memory. The transcript survives on disk, so a later turn on that id transparently resumes it.
+
+Live sessions are listed under `GET /v1/sessions` and can be dropped with `DELETE /v1/sessions/{id}`.
 
 ## Configure the default port
 
