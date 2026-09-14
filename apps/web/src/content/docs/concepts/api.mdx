@@ -1,12 +1,12 @@
 ---
 title: Local API (OpenAI-compatible)
-description: Serve your local coding agents (Claude Code, and Codex/OpenCode where installed) over one OpenAI-compatible HTTP API - route per request by model, with your existing auth, tools, skills and MCP.
+description: Serve your local coding agents (Claude Code, and Codex/OpenCode where installed) over one OpenAI-compatible HTTP API - route per request by model, with your existing auth, skills and sessions, and tools and MCP on request.
 group: Concepts
 order: 35
 ---
 import Cmd from "../../../components/Cmd.astro";
 
-`enigma api` exposes your **local coding agents** over an HTTP API that any OpenAI client library can call. Point your existing OpenAI SDK at `http://127.0.0.1:8000/v1` and every request runs through a real agent on your machine - with all of its capabilities: tools, skills, MCP servers, session continuity, and the login you already use.
+`enigma api` exposes your **local coding agents** over an HTTP API that any OpenAI client library can call. Point your existing OpenAI SDK at `http://127.0.0.1:8000/v1` and every request runs through a real agent on your machine - with its skills, session continuity, and the login you already use. Tools and your MCP servers are opt-in per request (`"enable_tools": true`), so plain chat stays fast.
 
 It is **not** a network proxy to Anthropic. Each request spawns the local agent CLI in headless mode and translates its output into OpenAI (`/v1/chat/completions`) and Anthropic (`/v1/messages`) responses. Nothing new to authenticate: it reuses your active account.
 
@@ -99,6 +99,8 @@ Persist the default account / profile / pack for the API server (`none` clears i
 ## Tools and sessions
 
 Tools are off by default so plain chat requests stay fast and OpenAI-compatible. Pass `"enable_tools": true` in the request body to let Claude Code use its tools (Read, Write, Bash, ...); when enabled, it honors your global permission-bypass setting so headless runs never stall on a prompt.
+
+With tools off, Claude Code also **skips your MCP servers**: nothing connects to them and their tool schemas stay out of the prompt, which is most of the per-request latency and token cost on a machine with many servers configured. A request that needs an MCP-backed tool must set `"enable_tools": true` - that loads your MCP servers as usual. This applies to Claude Code only; the other backends load their MCP servers either way.
 
 For multi-turn continuity, pass a `"session_id"` in the request - it resumes that Claude Code session. New sessions are tracked and listed under `/v1/sessions`.
 

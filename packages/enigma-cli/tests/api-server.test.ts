@@ -150,6 +150,8 @@ test("adapters expose the expected read mode and headless args", () => {
     expect(cmd.args).toContain("--append-system-prompt");
     expect(cmd.args[cmd.args.indexOf("--resume") + 1]).toBe("s1");
     expect(cmd.stdin).toBe("hi");
+    expect(cmd.args).toContain("--strict-mcp-config");
+    expect(claude.build("hi", { model: "claude-sonnet-5", enableTools: true }).args).not.toContain("--strict-mcp-config");
 
     const codex = agents.adapterFor("codex")!;
     expect(codex.mode).toBe("stream-json");
