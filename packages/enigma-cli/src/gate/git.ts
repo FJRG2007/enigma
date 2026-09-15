@@ -532,6 +532,17 @@ export async function worktreeRemove(repoDir: string, wtPath: string, signal?: A
 }
 
 /**
+ * WorktreePrune drops the administrative entries of worktrees whose directory is
+ * gone. `worktree remove` cleans up after itself, but every path that deletes the
+ * directory some other way - the recursive-delete fallback when remove fails, a
+ * crash between the two, a user clearing the directory - leaves an entry behind in
+ * the bare repo that git then reports as `prunable` forever.
+ */
+export async function worktreePrune(repoDir: string, signal?: AbortSignal): Promise<void> {
+    await run(repoDir, ["worktree", "prune"], signal);
+}
+
+/**
  * ResolveRef returns the commit SHA that ref resolves to via
  * `git rev-parse --verify <ref>^{commit}`. Throws if the ref does not resolve.
  */

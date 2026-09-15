@@ -18,7 +18,7 @@ import { Server } from "../ipc/server";
 import * as proto from "../ipc/protocol";
 import { applyToProcess } from "../shellenv";
 import { StepFactory, RunManager } from "./manager";
-import { worktreeRemove, run as gitRun } from "../git";
+import { worktreeRemove, worktreePrune, run as gitRun } from "../git";
 import { isolateHooksPath, refreshManagedPostReceiveHook } from "../hook";
 import { setServerPIDsDir, currentProcessStartedAt } from "../agent/serverpid";
 import {
@@ -301,8 +301,17 @@ async function migrateGateConfigs(p: Paths): Promise<void> {
     }
 }
 
-/** Removes leftover worktree directories from a previous daemon's runs. */
-async function removeOrphanedWorktrees(p: Paths): Promise<void> {
+/**
+ * Removes everything a previous daemon's runs left on disk: the worktree
+ * directories, the per-repository directory holding them, the administrative
+ * entries of worktrees whose directory is already gone, and the private temp
+ * directories handed to their agents. Exported for the regression test that
+ * keeps the per-repository directory from surviving again.
+ *
+ * Safe to run wholesale because startup recovery has already terminated every
+ * run inherited from the dead daemon, so nothing here is in use.
+ */
+export async function removeOrphanedWorktrees(p: Paths): Promise<void> {
     const wtRoot = p.worktreesDir();
     let repoEntries: string[];
     try {
@@ -343,7 +352,29 @@ async function removeOrphanedWorktrees(p: Paths): Promise<void> {
                 }
             }
         }
-        if (existsSync(repoPath)) removeQuietly(repoPath);
+        // The recursive-delete fallback above removes the directory but leaves the bare
+        // repo's administrative entry for it, and so does a crash between the two; prune
+        // is what stops those from accumulating as permanently `prunable` entries.
+        try {
+            await worktreePrune(gateDir);
+        } catch (err) {
+            log.warn("failed to prune worktree metadata", "repo", repoName, "error", errMessage(err));
+        }
+        // This used to call removeQuietly, which is unlink and cannot remove a directory:
+        // it failed silently and left one empty directory per repository behind forever.
+        removeDirQuietly(repoPath);
+    }
+    // Each of these belongs to a run that startup recovery has already terminated.
+    removeDirQuietly(p.agentTmpRoot());
+}
+
+/** Best-effort recursive directory removal; a directory already gone counts as removed. */
+function removeDirQuietly(path: string): void {
+    if (!existsSync(path)) return;
+    try {
+        rmSync(path, { recursive: true, force: true });
+    } catch (err) {
+        log.warn("failed to remove directory", "path", path, "error", errMessage(err));
     }
 }
 

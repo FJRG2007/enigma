@@ -472,7 +472,25 @@ half needs `bun:sqlite` and is imported dynamically.
   working branch before the merge, where the diff is real. Anything else is a green stamp
   nobody earned.
 - Windows: worktree teardown routinely logs `git worktree remove failed, falling back to
-  recursive delete`. Cosmetic; the fallback removes it.
+  recursive delete`. The fallback removes the directory, but it is NOT cosmetic: the bare repo
+  keeps an administrative entry for a worktree deleted that way, which git then reports forever
+  as `prunable gitdir file points to non-existent location` (6 such entries across 5 bare repos
+  were measured). `worktreePrune` runs after every removal, in both teardown paths, for that
+  reason.
+- A RUN'S DISPOSABLE PATH IS A LEAK SURFACE, because it is unique per run and never revisited.
+  Three things accumulated one directory per run: (1) `worktrees/<repo id>/` itself, which
+  `removeOrphanedWorktrees` did try to delete - with `removeQuietly`, which is `unlinkSync` and
+  cannot remove a directory, so it threw EPERM into a silent catch and 17 empty directories
+  survived every daemon restart for two months; (2) the prunable entries above; (3) whatever the
+  agent keyed on its working directory inside the machine's temp dir - Claude Code writes a
+  per-cwd scratchpad under `%LOCALAPPDATA%\Temp\claude\<cwd with every separator turned into
+  `-`>` (the dots of a dotted path segment included, so `.enigma` becomes `-enigma`), and 316 of
+  them totalling 52 MB were left behind. That path is undocumented and unstable, so enigma does
+  not derive it: `startRun` provisions `paths.agentTmpDir(repoID, runID)` and `gitSafeEnv` points
+  the child's `TMPDIR`/`TEMP`/`TMP` at it, which works for all six backends without knowing where
+  any of them puts its state. The redirect is conditional on the directory existing - a `TEMP`
+  aimed at nothing breaks every tool that writes a temp file, a worse failure than the leak.
+  `tests/gate/worktree-teardown.test.ts` covers all three.
 - `spawnDetachedDaemon` re-execs `process.argv[1]` under node/bun and takes no subcommand under
   the compiled binary. Testing `startDaemon` by importing it from a scratch script therefore
   re-runs that script, not the daemon - verify daemon start/stop through the real binary

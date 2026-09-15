@@ -31,6 +31,7 @@ import { track } from "../telemetry";
 import { recordRun } from "./ledger";
 import type { Paths } from "../paths";
 import { writeSnapshot } from "./snapshot";
+import { rmSync, mkdirSync } from "node:fs";
 import { type Agent } from "../agent/agent";
 import type { Step } from "../pipeline/types";
 import { Executor } from "../pipeline/executor";
@@ -52,6 +53,7 @@ import {
     isZeroSHA,
     resolveRef,
     worktreeAdd,
+    worktreePrune,
     worktreeRemove,
     fetchRemoteBranch,
     copyLocalUserIdentity
@@ -387,6 +389,15 @@ export class RunManager {
             trackStartFailure("create_worktree");
             throw new Error(`create worktree: ${errMessage(err)}`);
         }
+        // Provisioned before any agent starts, because gitSafeEnv redirects the agent's
+        // temp dir only when this directory already exists - a run that skipped it would
+        // quietly go back to scattering per-run state through the machine's temp dir.
+        // Never fatal: the ambient temp dir still works, it just leaks.
+        try {
+            mkdirSync(this.paths.agentTmpDir(repo.id, run.id), { recursive: true });
+        } catch (err) {
+            log.warn("failed to create the run's private temp dir", "run_id", run.id, "error", errMessage(err));
+        }
         // Matches Go: an identity-copy failure here does NOT remove the worktree
         // (the cleanup is registered only below). A leaked worktree is reclaimed
         // by removeOrphanedWorktrees on the next daemon start.
@@ -403,11 +414,7 @@ export class RunManager {
         let bgOwnsWorktree = false;
         const cleanupWorktree = async (): Promise<void> => {
             if (bgOwnsWorktree) return;
-            try {
-                await worktreeRemove(gateDir, wtDir);
-            } catch (rmErr) {
-                log.warn("failed to remove worktree during setup cleanup", "path", wtDir, "error", errMessage(rmErr));
-            }
+            await this.releaseWorktree(gateDir, wtDir, "setup cleanup");
         };
 
         try {
@@ -541,6 +548,34 @@ export class RunManager {
     }
 
     /**
+     * Releases everything a run held on disk: its worktree, the bare repo's
+     * administrative entry for that worktree, and the private temp directory its
+     * agents were pointed at. Each step is independent and best-effort - a worktree
+     * that refuses to go must not strand the temp directory with it - and every one
+     * of them is safe to repeat, since teardown can be reached twice.
+     */
+    private async releaseWorktree(gateDir: string, wtDir: string, phase: string): Promise<void> {
+        try {
+            await worktreeRemove(gateDir, wtDir);
+        } catch (err) {
+            log.warn(`failed to remove worktree during ${phase}`, "path", wtDir, "error", errMessage(err));
+        }
+        const tmpDir = this.paths.agentTmpDirForWorktree(wtDir);
+        if (tmpDir !== null) {
+            try {
+                rmSync(tmpDir, { recursive: true, force: true });
+            } catch (err) {
+                log.warn("failed to remove the run's private temp dir", "path", tmpDir, "error", errMessage(err));
+            }
+        }
+        try {
+            await worktreePrune(gateDir);
+        } catch (err) {
+            log.warn("failed to prune worktree metadata", "path", gateDir, "error", errMessage(err));
+        }
+    }
+
+    /**
      * Background pipeline task: runs the executor, records terminal telemetry,
      * then (always) closes the agent, ends subscribers, removes the worktree, and
      * clears tracking - the TS equivalent of the Go goroutine's deferred cleanup.
@@ -607,11 +642,7 @@ export class RunManager {
                 }
             }
             this.closeSubscribers(run.id);
-            try {
-                await worktreeRemove(gateDir, wtDir);
-            } catch (rmErr) {
-                log.warn("failed to remove worktree", "path", wtDir, "error", errMessage(rmErr));
-            }
+            await this.releaseWorktree(gateDir, wtDir, "pipeline teardown");
             this.executors.delete(run.id);
             this.cancels.delete(run.id);
             this.dones.delete(run.id);

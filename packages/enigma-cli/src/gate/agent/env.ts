@@ -18,6 +18,8 @@
  * agent turn. Presence is the whole signal.
  */
 
+import { Paths } from "../paths";
+import { existsSync } from "node:fs";
 import { nonInteractiveEnv } from "../git";
 import { GATE_ROLE_ENV_VAR } from "@/util";
 
@@ -29,5 +31,18 @@ import { GATE_ROLE_ENV_VAR } from "@/util";
  * GATE_ROLE_ENV_VAR is applied last so it wins over any ambient value.
  */
 export function gitSafeEnv(dir: string): NodeJS.ProcessEnv {
-    return { ...nonInteractiveEnv(dir), [GATE_ROLE_ENV_VAR]: "1" };
+    const env: NodeJS.ProcessEnv = { ...nonInteractiveEnv(dir), [GATE_ROLE_ENV_VAR]: "1" };
+    // A gate worktree is a fresh path per run that is never revisited, so anything an
+    // agent keys on its working directory inside the OS temp dir is orphaned the moment
+    // the run ends. Handing it a temp dir enigma owns means the run's teardown reclaims
+    // that state, whichever backend produced it. Only when the directory really exists:
+    // a TEMP pointing at nothing breaks every child that writes a temp file, which is a
+    // worse failure than the leak it would prevent.
+    const tmp = Paths.resolve().agentTmpDirForWorktree(dir);
+    if (tmp !== null && existsSync(tmp)) {
+        env.TMPDIR = tmp;
+        env.TEMP = tmp;
+        env.TMP = tmp;
+    }
+    return env;
 }

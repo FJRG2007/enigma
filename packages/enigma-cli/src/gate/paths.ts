@@ -7,10 +7,10 @@
  * per `Paths.resolve()` call so a test that reassigns the env/home is honored.
  */
 
-import { join } from "node:path";
 import { homedir } from "node:os";
 import { mkdirSync } from "node:fs";
 import { gateLedgerPath } from "../gate-ledger";
+import { join, resolve, relative, isAbsolute } from "node:path";
 
 /** Accessor for all gate filesystem locations, rooted at a single directory. */
 export class Paths {
@@ -87,6 +87,37 @@ export class Paths {
 
     worktreeDir(repoID: string, runID: string): string {
         return join(this.rootDir, "worktrees", repoID, runID);
+    }
+
+    /** Root holding the private temp directory of every run. */
+    agentTmpRoot(): string {
+        return join(this.rootDir, "tmp");
+    }
+
+    /**
+     * Private temp directory for one run's agent subprocesses. Agent CLIs keep
+     * per-working-directory state in the OS temp dir, and a gate worktree path is
+     * unique per run and never revisited, so that state is orphaned the moment the
+     * run ends and nothing ever reclaims it. Pointing the subprocess at a temp root
+     * enigma owns makes it disappear with the worktree instead, for every backend,
+     * without depending on where any particular agent chooses to put it.
+     */
+    agentTmpDir(repoID: string, runID: string): string {
+        return join(this.agentTmpRoot(), repoID, runID);
+    }
+
+    /**
+     * Maps a worktree path back to that run's private temp directory, or null when
+     * the path is not a gate worktree - an agent launched anywhere else keeps the
+     * ambient temp dir, which is the caller's to manage.
+     */
+    agentTmpDirForWorktree(worktreePath: string): string | null {
+        if (worktreePath.trim() === "") return null;
+        const rel = relative(this.worktreesDir(), resolve(worktreePath));
+        if (rel === "" || rel.startsWith("..") || isAbsolute(rel)) return null;
+        const parts = rel.split(/[\\/]/);
+        if (parts.length !== 2 || parts[0] === "" || parts[1] === "") return null;
+        return this.agentTmpDir(parts[0], parts[1]);
     }
 
     logsDir(): string {
