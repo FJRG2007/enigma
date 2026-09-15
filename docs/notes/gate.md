@@ -491,6 +491,15 @@ half needs `bun:sqlite` and is imported dynamically.
   any of them puts its state. The redirect is conditional on the directory existing - a `TEMP`
   aimed at nothing breaks every tool that writes a temp file, a worse failure than the leak.
   `tests/gate/worktree-teardown.test.ts` covers all three.
+- The temp redirect reads the layout the daemon PINNED (`setAgentTmpPaths(p)`, next to
+  `setServerPIDsDir`), never `Paths.resolve()` at spawn time. The daemon chooses its root and
+  only then applies the login shell's environment, which can define `ENIGMA_GATE_HOME` where the
+  process had none, so resolving per spawn would hand the child a directory under a root this
+  daemon never provisions and never reclaims - the leak back, silently. Same reason teardown uses
+  the injected `this.paths`.
+- Teardown deletes the worktree directory itself when `git worktree remove` fails, matching the
+  startup path, but only for a path `agentTmpDirForWorktree` maps to a run - that is the one
+  check proving it is exactly `worktrees/<repo id>/<run id>` and therefore inside the gate home.
 - `spawnDetachedDaemon` re-execs `process.argv[1]` under node/bun and takes no subcommand under
   the compiled binary. Testing `startDaemon` by importing it from a scratch script therefore
   re-runs that script, not the daemon - verify daemon start/stop through the real binary

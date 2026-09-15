@@ -555,12 +555,25 @@ export class RunManager {
      * of them is safe to repeat, since teardown can be reached twice.
      */
     private async releaseWorktree(gateDir: string, wtDir: string, phase: string): Promise<void> {
+        // Non-null only for a path that is exactly one run's directory under the
+        // worktrees root, which is also what makes deleting it outright safe below.
+        const tmpDir = this.paths.agentTmpDirForWorktree(wtDir);
         try {
             await worktreeRemove(gateDir, wtDir);
         } catch (err) {
             log.warn(`failed to remove worktree during ${phase}`, "path", wtDir, "error", errMessage(err));
+            // Removal fails routinely on Windows, and leaving the directory would strand
+            // the run's whole working tree until the next daemon start - the startup path
+            // has always fallen back this way. The prune below clears the administrative
+            // entry a direct delete leaves in the bare repo.
+            if (tmpDir !== null) {
+                try {
+                    rmSync(wtDir, { recursive: true, force: true });
+                } catch (rmErr) {
+                    log.warn(`failed to delete worktree directory during ${phase}`, "path", wtDir, "error", errMessage(rmErr));
+                }
+            }
         }
-        const tmpDir = this.paths.agentTmpDirForWorktree(wtDir);
         if (tmpDir !== null) {
             try {
                 rmSync(tmpDir, { recursive: true, force: true });

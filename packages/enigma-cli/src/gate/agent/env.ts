@@ -23,6 +23,22 @@ import { existsSync } from "node:fs";
 import { nonInteractiveEnv } from "../git";
 import { GATE_ROLE_ENV_VAR } from "@/util";
 
+let agentTmpPaths: Paths | null = null;
+
+/**
+ * Pins the gate layout used to map a worktree to its run's private temp directory.
+ * The daemon points this at the very Paths instance it hands the run manager, which
+ * is what provisions and deletes that directory: resolving the root here instead
+ * would read `ENIGMA_GATE_HOME` as it stands at spawn time, and the daemon applies
+ * the login shell's environment after it has already committed to a root, so a shell
+ * profile exporting that variable would aim the child at a directory this daemon
+ * never created and never reclaims. Null restores the ambient resolution, for a
+ * caller with no gate layout of its own. Mirrors `setServerPIDsDir`.
+ */
+export function setAgentTmpPaths(paths: Paths | null): void {
+    agentTmpPaths = paths;
+}
+
 /**
  * Returns the environment for a spawned agent subprocess with git forced into
  * non-interactive mode. `dir` must match the child's working directory so PWD
@@ -38,7 +54,7 @@ export function gitSafeEnv(dir: string): NodeJS.ProcessEnv {
     // that state, whichever backend produced it. Only when the directory really exists:
     // a TEMP pointing at nothing breaks every child that writes a temp file, which is a
     // worse failure than the leak it would prevent.
-    const tmp = Paths.resolve().agentTmpDirForWorktree(dir);
+    const tmp = (agentTmpPaths ?? Paths.resolve()).agentTmpDirForWorktree(dir);
     if (tmp !== null && existsSync(tmp)) {
         env.TMPDIR = tmp;
         env.TEMP = tmp;

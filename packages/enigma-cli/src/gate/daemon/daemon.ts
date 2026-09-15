@@ -17,6 +17,7 @@ import { Paths } from "../paths";
 import { Server } from "../ipc/server";
 import * as proto from "../ipc/protocol";
 import { applyToProcess } from "../shellenv";
+import { setAgentTmpPaths } from "../agent/env";
 import { StepFactory, RunManager } from "./manager";
 import { worktreeRemove, worktreePrune, run as gitRun } from "../git";
 import { isolateHooksPath, refreshManagedPostReceiveHook } from "../hook";
@@ -112,8 +113,10 @@ export async function runWithOptions(p: Paths, d: gateDb.Database, stepFactory?:
     await recoverOnStartup(d, p);
 
     // Point the agent package at our PID dir so managed servers we spawn leave
-    // crash-recovery breadcrumbs; clear it on exit.
+    // crash-recovery breadcrumbs, and at our layout so the temp directory an agent
+    // is handed is the one this daemon provisions and reclaims; clear both on exit.
     setServerPIDsDir(p.serverPIDsDir());
+    setAgentTmpPaths(p);
     try {
         const srv = new Server();
         const mgr = new RunManager(d, p, stepFactory);
@@ -156,6 +159,7 @@ export async function runWithOptions(p: Paths, d: gateDb.Database, stepFactory?:
         log.info("daemon stopped");
     } finally {
         setServerPIDsDir("");
+        setAgentTmpPaths(null);
     }
 }
 
