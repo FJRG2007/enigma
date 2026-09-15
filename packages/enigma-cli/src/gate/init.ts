@@ -11,8 +11,9 @@
 
 import { log } from "./log";
 import { Paths } from "./paths";
+import { existsSync } from "node:fs";
+import { removeDirTree } from "./disk";
 import { createHash } from "node:crypto";
-import { existsSync, rmSync } from "node:fs";
 import { dirname, basename, join } from "node:path";
 import { detectProvider, repoSlug, PROVIDER_GITHUB } from "./scm/host";
 import { isolateHooksPath, refreshManagedPostReceiveHook } from "./hook";
@@ -101,7 +102,7 @@ export async function initWithFork(d: Database, p: Paths, workDir: string, forkU
             } catch {
                 // best-effort rollback
             }
-            rmSync(bareDir, { recursive: true, force: true });
+            removeDirTree(bareDir);
         }
         throw err;
     }
@@ -130,7 +131,7 @@ export async function initWithFork(d: Database, p: Paths, workDir: string, forkU
         } catch {
             // best-effort
         }
-        rmSync(bareDir, { recursive: true, force: true });
+        removeDirTree(bareDir);
         throw new Error(`insert repo: ${(err as Error).message}`);
     }
 
@@ -258,10 +259,14 @@ export async function eject(d: Database, p: Paths, workDir: string): Promise<Rep
     }
 
     // Delete bare repo.
-    rmSync(p.repoDir(repo.id), { recursive: true, force: true });
+    removeDirTree(p.repoDir(repo.id));
 
     // Delete worktrees for this repo.
-    rmSync(join(p.worktreesDir(), repo.id), { recursive: true, force: true });
+    removeDirTree(join(p.worktreesDir(), repo.id));
+
+    // Delete the private temp dirs this repo's agents were pointed at. Eject is their
+    // last owner: once the record is gone no teardown ever revisits them again.
+    removeDirTree(join(p.agentTmpRoot(), repo.id));
 
     // Delete repo record (cascades to runs + steps).
     deleteRepo(d, repo.id);

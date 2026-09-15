@@ -27,11 +27,12 @@
 
 import { log } from "../log";
 import * as gateDb from "../db";
+import { mkdirSync } from "node:fs";
 import { track } from "../telemetry";
 import { recordRun } from "./ledger";
 import type { Paths } from "../paths";
+import { removeDirTree } from "../disk";
 import { writeSnapshot } from "./snapshot";
-import { rmSync, mkdirSync } from "node:fs";
 import { type Agent } from "../agent/agent";
 import type { Step } from "../pipeline/types";
 import { Executor } from "../pipeline/executor";
@@ -568,7 +569,7 @@ export class RunManager {
             // entry a direct delete leaves in the bare repo.
             if (tmpDir !== null) {
                 try {
-                    rmSync(wtDir, { recursive: true, force: true });
+                    removeDirTree(wtDir);
                 } catch (rmErr) {
                     log.warn(`failed to delete worktree directory during ${phase}`, "path", wtDir, "error", errMessage(rmErr));
                 }
@@ -576,7 +577,7 @@ export class RunManager {
         }
         if (tmpDir !== null) {
             try {
-                rmSync(tmpDir, { recursive: true, force: true });
+                removeDirTree(tmpDir);
             } catch (err) {
                 log.warn("failed to remove the run's private temp dir", "path", tmpDir, "error", errMessage(err));
             }

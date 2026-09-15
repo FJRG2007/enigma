@@ -15,6 +15,7 @@ import * as gateDb from "../db";
 import { join } from "node:path";
 import { Paths } from "../paths";
 import { Server } from "../ipc/server";
+import { removeDirTree } from "../disk";
 import * as proto from "../ipc/protocol";
 import { applyToProcess } from "../shellenv";
 import { setAgentTmpPaths } from "../agent/env";
@@ -34,7 +35,6 @@ import {
     readDaemonPIDFileData
 } from "./recover";
 import {
-    rmSync,
     statSync,
     renameSync,
     readdirSync,
@@ -350,7 +350,7 @@ export async function removeOrphanedWorktrees(p: Paths): Promise<void> {
             } catch (err) {
                 log.warn("git worktree remove failed, falling back to recursive delete", "path", wtPath, "error", errMessage(err));
                 try {
-                    rmSync(wtPath, { recursive: true, force: true });
+                    removeDirTree(wtPath);
                 } catch (rmErr) {
                     log.warn("failed to remove orphaned worktree", "path", wtPath, "error", errMessage(rmErr));
                 }
@@ -376,7 +376,7 @@ export async function removeOrphanedWorktrees(p: Paths): Promise<void> {
 function removeDirQuietly(path: string): void {
     if (!existsSync(path)) return;
     try {
-        rmSync(path, { recursive: true, force: true });
+        removeDirTree(path);
     } catch (err) {
         log.warn("failed to remove directory", "path", path, "error", errMessage(err));
     }

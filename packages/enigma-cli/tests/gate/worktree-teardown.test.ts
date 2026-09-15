@@ -8,11 +8,20 @@
  * repo's administrative entry for a worktree the fallback path deleted directly, and
  * whatever the agent kept in the machine's temp dir keyed by that unique working
  * directory - state no agent ever comes back for.
+ *
+ * Eject is the same question asked once per repository rather than once per run, and
+ * it is the last owner of everything that repository holds: once the record is gone,
+ * no later teardown knows the directories existed.
  */
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { test, expect, afterAll } from "bun:test";
+import { execFileSync } from "node:child_process";
+import { test, expect, afterAll, setDefaultTimeout } from "bun:test";
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync } from "node:fs";
+
+// The eject test drives the real git CLI, and process spawn is the slow part on
+// Windows; bun's 5s default is fine on an idle machine and not on a loaded one.
+setDefaultTimeout(60_000);
 
 const ROOT = mkdtempSync(join(tmpdir(), "enigma-gate-teardown-"));
 // Windows keeps a handle on SQLite's WAL files a moment after close, so cleanup is
@@ -24,9 +33,11 @@ afterAll(() => {
     } catch { /* the OS reclaims a temp dir on its own */ }
 });
 
-const { Database } = await import("../../src/gate/db");
 const { Paths } = await import("../../src/gate/paths");
+const { eject } = await import("../../src/gate/init");
+const { findMainRepoRoot } = await import("../../src/gate/git");
 const { RunManager } = await import("../../src/gate/daemon/manager");
+const { Database, getRepoByPath, insertRepoWithIDAndFork } = await import("../../src/gate/db");
 const { gitSafeEnv, setAgentTmpPaths } = await import("../../src/gate/agent/env");
 const { removeOrphanedWorktrees } = await import("../../src/gate/daemon/daemon");
 
@@ -145,5 +156,38 @@ test("a worktree git refuses to remove is deleted anyway, and only inside the la
         expect(existsSync(foreign), "teardown deleted a path outside the worktrees layout").toBe(true);
     } finally {
         close();
+    }
+});
+
+test("eject leaves nothing of the repo under the gate root", async () => {
+    const paths = Paths.withRoot(join(ROOT, "eject"));
+    paths.ensureDirs();
+    const checkout = join(ROOT, "eject-checkout");
+    mkdirSync(checkout, { recursive: true });
+    execFileSync("git", ["init", "-q", "-b", "main"], { cwd: checkout, stdio: "ignore" });
+    // The record has to be keyed the way eject looks it up, which is the resolved root.
+    const absRoot = findMainRepoRoot(checkout);
+
+    const db = new Database(paths.db());
+    try {
+        const repoID = "ejec70000001";
+        const runID = "01EJECTRUNID00000000000000";
+        insertRepoWithIDAndFork(db, repoID, absRoot, "https://example.invalid/o/r.git", "", "main");
+        mkdirSync(paths.repoDir(repoID), { recursive: true });
+        mkdirSync(paths.worktreeDir(repoID, runID), { recursive: true });
+        mkdirSync(join(paths.agentTmpDir(repoID, runID), "session"), { recursive: true });
+
+        await eject(db, paths, checkout);
+
+        expect(existsSync(paths.repoDir(repoID)), "the bare repo survived eject").toBe(false);
+        expect(existsSync(join(paths.worktreesDir(), repoID)), "the repo's worktrees survived eject").toBe(false);
+        // The one nothing else can reclaim: with the record deleted, no later teardown
+        // knows this repo ever had a temp tree.
+        expect(existsSync(join(paths.agentTmpRoot(), repoID)), "the repo's agent temp dirs survived eject").toBe(false);
+        expect(getRepoByPath(db, absRoot), "the repo record survived eject").toBeNull();
+        // The roots themselves are layout, not leftovers.
+        expect(existsSync(paths.agentTmpRoot()), "the temp root must not be removed").toBe(true);
+    } finally {
+        db.close();
     }
 });
