@@ -20,6 +20,8 @@ test("cannot rebuild a Write, a deletion or text the fixer changed, so reports e
     expect(textBeforeEdit("a\n", { content: "a\n" } as never)).toBeNull();
     expect(textBeforeEdit("a\n", { old_string: "b", new_string: "" })).toBeNull();
     expect(textBeforeEdit("a\n", { old_string: "b", new_string: "gone" })).toBeNull();
+    // The new text also appears elsewhere, so which occurrence the edit wrote is unknown.
+    expect(textBeforeEdit("const a = \"it's 'y'\";\nconst b = 'y';\n", { old_string: "\"y\"", new_string: "'y'" })).toBeNull();
     expect(introducedViolations([warn(1)], "x\n", null, null)).toHaveLength(1);
 });
 

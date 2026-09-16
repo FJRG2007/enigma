@@ -150,7 +150,8 @@ interface EditInput {
 
 /**
  * The file as it was before an Edit/MultiEdit, rebuilt by undoing its replacements in reverse, or
- * null when it cannot be rebuilt (a Write, an empty replacement, text no longer found). Null means
+ * null when it cannot be rebuilt (a Write, an empty replacement, text no longer found or found more
+ * than once so the edited occurrence is ambiguous). Null means
  * every finding is reported: a baseline that might be wrong could hide one the edit introduced.
  */
 export function textBeforeEdit(after: string, input: EditInput): string | null {
@@ -160,6 +161,7 @@ export function textBeforeEdit(after: string, input: EditInput): string | null {
     for (const edit of [...edits].reverse()) {
         const { old_string: prev, new_string: next } = edit;
         if (prev === undefined || !next || !text.includes(next)) return null;
+        if (!edit.replace_all && text.indexOf(next) !== text.lastIndexOf(next)) return null;
         text = edit.replace_all ? text.split(next).join(prev) : text.replace(next, () => prev);
     }
     return text;
