@@ -39,6 +39,13 @@ test("prefer-double-quotes: flags single quotes, accepts double", () => {
     assert.ok(!flags("const x = 'say \"hi\"';\n", "prefer-double-quotes"));
 });
 
+test("prefer-double-quotes: flags a template literal only when double quotes need no escaping", () => {
+    assert.ok(flags("const x = `a`;\n", "prefer-double-quotes"));
+    assert.ok(flags("const x = `q('a')`;\n", "prefer-double-quotes"));
+    assert.ok(!flags("const x = `q(\"a\", 'b')`;\n", "prefer-double-quotes"));
+    assert.ok(!flags("const x = `a\nb`;\n", "prefer-double-quotes"));
+});
+
 test("no-useless-concat: flags string concatenation, accepts template literal", () => {
     assert.ok(flags("const x = \"a\" + b;\n", "no-useless-concat"));
     assert.ok(!flags("const x = `a${b}`;\n", "no-useless-concat"));

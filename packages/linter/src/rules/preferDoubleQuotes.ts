@@ -26,8 +26,10 @@ export const preferDoubleQuotes: Rule = {
                     add(node.getStart(sourceFile), "use double quotes for strings");
                 }
             } else if (ts.isNoSubstitutionTemplateLiteral(node)) {
-                // A backtick string with no interpolation and no newline should be a double-quoted string.
-                if (!node.text.includes("\n") && !node.text.includes("`")) {
+                // A backtick string with no interpolation, newline or double quote should be a double-quoted
+                // string. One holding a double quote is the backtick form of the single-quote exemption
+                // above: converting it would only trade the backticks for escapes.
+                if (!/[\n`"]/.test(node.text)) {
                     add(node.getStart(sourceFile), "use double quotes instead of a template literal with no interpolation");
                 }
             }
