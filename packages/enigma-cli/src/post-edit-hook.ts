@@ -129,8 +129,10 @@ async function runLintStep(payload: string): Promise<number> {
 
     // Only what THIS edit introduced. A finding the file already had is not the model's to fix now,
     // and reporting it turned every edit to a legacy file into a block listing lines nobody touched.
-    const violations = introducedViolations(linter.lintText(file, text), text, before === null ? null : linter.lintText(file, before), before);
     // Clean file, no output, no tokens. Silence is what makes this affordable to run on every edit.
+    const found = linter.lintText(file, text);
+    if (!found.length) return 0;
+    const violations = introducedViolations(found, text, before === null ? null : linter.lintText(file, before), before);
     if (!violations.length) return 0;
 
     const shown = violations.slice(0, MAX_FINDINGS).map((v) => `${v.line}:${v.column} ${v.severity === "error" ? "error" : "warn"} ${v.rule} - ${v.message}`);
