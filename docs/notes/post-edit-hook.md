@@ -77,7 +77,12 @@ file comes back trimmed, which only holds if the write landed before the scan.
 
 ## Exit codes
 
-`2` when guardrails BLOCKs or the linter has a finding it could not fix, `0` otherwise. Exit 2
+`2` when guardrails BLOCKs or the edit introduced a lint finding the fixer could not fix, `0`
+otherwise. "Introduced" is measured, not assumed: the step rebuilds the pre-edit text by undoing
+the Edit/MultiEdit replacements, lints both, and drops any finding whose rule and trimmed source
+line the old text already had (counted, so a second copy still reports). A Write, a deletion, or
+a replacement the text no longer contains cannot be rebuilt and reports everything. Before this,
+any edit to a legacy file came back as a block listing warnings on lines nobody touched. Exit 2
 is the channel Claude Code feeds back to the model, and it is the reason the merge cannot
 simply run everything and return 0 - losing it turns a gate into a silent no-op, the worst way
 for this to break. A block short-circuits the blast radius on purpose: the model is about to

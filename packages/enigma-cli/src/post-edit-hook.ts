@@ -99,11 +99,13 @@ const MAX_FINDINGS = 20;
  * `dist/post-edit.js` and never spawns the binary for an edit). Reached through the binary the
  * step no-ops, and nothing else changes.
  *
- * Returns 2 when there are findings, which is the channel Claude Code feeds back to the model.
+ * Returns 2 when the edit introduced a finding, which is the channel Claude Code feeds back to the
+ * model. Findings the file already had are left out: they are not what the model just wrote.
  */
 async function runLintStep(payload: string): Promise<number> {
-    let file: string | undefined;
-    try { file = JSON.parse(payload)?.tool_input?.file_path; } catch { return 0; }
+    let input: EditInput | undefined;
+    try { input = JSON.parse(payload)?.tool_input; } catch { return 0; }
+    const file = input?.file_path;
     if (!file || !LINTABLE.test(file)) return 0;
 
     const { join } = await import("node:path");
@@ -119,12 +121,15 @@ async function runLintStep(payload: string): Promise<number> {
 
     let text: string;
     try { text = readFileSync(file, "utf8"); } catch { return 0; }
+    const before = textBeforeEdit(text, input!);
     const fixed = linter.fixText(file, text);
     if (fixed !== text) {
         try { writeFileSync(file, fixed); text = fixed; } catch { /* read-only, so report on what is there */ }
     }
 
-    const violations = linter.lintText(file, text);
+    // Only what THIS edit introduced. A finding the file already had is not the model's to fix now,
+    // and reporting it turned every edit to a legacy file into a block listing lines nobody touched.
+    const violations = introducedViolations(linter.lintText(file, text), text, before === null ? null : linter.lintText(file, before), before);
     // Clean file, no output, no tokens. Silence is what makes this affordable to run on every edit.
     if (!violations.length) return 0;
 
@@ -132,6 +137,52 @@ async function runLintStep(payload: string): Promise<number> {
     if (violations.length > MAX_FINDINGS) shown.push(`...and ${violations.length - MAX_FINDINGS} more`);
     process.stderr.write(`enigmax-lint ${file}\n${shown.join("\n")}\n`);
     return 2;
+}
+
+/** The `tool_input` fields of Edit, MultiEdit and Write that the lint step reads. */
+interface EditInput {
+    file_path?: string;
+    old_string?: string;
+    new_string?: string;
+    replace_all?: boolean;
+    edits?: { old_string?: string; new_string?: string; replace_all?: boolean; }[];
+}
+
+/**
+ * The file as it was before an Edit/MultiEdit, rebuilt by undoing its replacements in reverse, or
+ * null when it cannot be rebuilt (a Write, an empty replacement, text no longer found). Null means
+ * every finding is reported: a baseline that might be wrong could hide one the edit introduced.
+ */
+export function textBeforeEdit(after: string, input: EditInput): string | null {
+    const edits = input.edits ?? (input.old_string === undefined ? [] : [input]);
+    if (!edits.length) return null;
+    let text = after;
+    for (const edit of [...edits].reverse()) {
+        const { old_string: prev, new_string: next } = edit;
+        if (prev === undefined || !next || !text.includes(next)) return null;
+        text = edit.replace_all ? text.split(next).join(prev) : text.replace(next, () => prev);
+    }
+    return text;
+}
+
+/**
+ * The findings in `after` that `before` did not already have. Matched by rule and the trimmed
+ * source line rather than by line number, so an edit that shifts the rest of the file does not
+ * make every finding below it look new; counted, so a second copy of an old finding still reports.
+ */
+export function introducedViolations(found: LintViolation[], after: string, baseline: LintViolation[] | null, before: string | null): LintViolation[] {
+    if (!baseline || before === null) return found;
+    const key = (v: LintViolation, lines: string[]): string => `${v.rule}\0${(lines[v.line - 1] ?? "").trim()}`;
+    const beforeLines = before.split("\n");
+    const afterLines = after.split("\n");
+    const known = new Map<string, number>();
+    for (const v of baseline) known.set(key(v, beforeLines), (known.get(key(v, beforeLines)) ?? 0) + 1);
+    return found.filter((v) => {
+        const left = known.get(key(v, afterLines)) ?? 0;
+        if (!left) return true;
+        known.set(key(v, afterLines), left - 1);
+        return false;
+    });
 }
 
 /** What the linter reports back. Declared here because the package is resolved at runtime. */
