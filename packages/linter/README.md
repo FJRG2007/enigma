@@ -100,7 +100,7 @@ found (URL/CDN imports, hardcoded secrets), so it can gate a commit or CI step.
 | Rule | What it flags |
 | --- | --- |
 | `length-sorted-imports` | imports not ordered by line length, shortest first |
-| `prefer-double-quotes` | single-quoted strings (where double would work) and no-interpolation template literals |
+| `prefer-double-quotes` | single-quoted strings (where double would work) and no-interpolation template literals (where double would work, i.e. no newline and no double quote in the content) |
 | `no-useless-concat` | string concatenation with `+` that should be a template literal |
 | `require-semicolons` | statements missing a terminating semicolon - declarations (`const`/`let`/`var`), imports, exports, directives like `"use strict"`, type aliases, and class fields (function/class declarations are exempt, as their body terminates them) - plus every interface or type-literal member, including the last one of a single-line literal (`{ url?: string; }`) and members a comma separates |
 | `no-import-trailing-comma` | a trailing comma closing a named import or export list (`export { a, b, };`) |
