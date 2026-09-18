@@ -254,6 +254,25 @@ and wins over `agent_path_override` in the YAML. Two things follow from where it
 `axi run --skip push,pr,ci` runs to completion in an image that has no forge CLI. `doctor`
 lists it as optional and says which steps use it.
 
+## Which account a run authenticates as (`src/gate/account-env.ts`)
+
+There is one daemon per gate home and it outlives the session that spawned it, so its own
+`CLAUDE_CONFIG_DIR` (and `CODEX_HOME`, opencode's XDG pair, `KIMI_CODE_HOME`) belongs to
+whichever session ran `axi run` first. Agents used to inherit that: a run pushed from a
+default-account session silently spent a managed account's quota, and nothing said so.
+
+Now the pusher is authoritative. `__gate-notify` runs from the post-receive hook, which git
+spawns with the pushing process's environment, so `captureAccountEnv()` there is the
+session's account; `axi run`'s rerun fallback and `gate rerun` snapshot it the same way. The
+snapshot rides `push_received`/`rerun` as `account_env` (every variable from `accountEnvKeys()`
+in `accounts.ts`, `null` = unset in the pusher), is validated in `decodeAccountEnv` (only
+account variables, absolute paths), and the manager pins it to the run's worktree before any
+agent is built. `spawnConfigured` applies it to every child whose cwd is inside that
+worktree - agents, agent servers and configured commands - removing a `null` variable so the
+daemon's managed dir cannot leak into a default-account run. `releaseWorktree` unpins it.
+`daemon.log` records `run account` with the resolved values per run; a client without the
+field logs a warning and falls back to the daemon's environment.
+
 ## `fix_policy`: who answers a gate (an enigma extension)
 
 Upstream's pipeline only knows "park and wait for a response"; WHO produces that response was

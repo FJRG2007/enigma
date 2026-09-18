@@ -34,6 +34,7 @@ import type { Paths } from "../paths";
 import { removeDirTree } from "../disk";
 import { writeSnapshot } from "./snapshot";
 import { type Agent } from "../agent/agent";
+import * as accountEnv from "../account-env";
 import type { Step } from "../pipeline/types";
 import { Executor } from "../pipeline/executor";
 import { withSteering } from "../agent/steering";
@@ -230,7 +231,7 @@ export class RunManager {
         if (repo === null) throw new Error(`unknown repo for gate ${params.gate}`);
 
         const branch = branchFromRef(params.ref);
-        return this.startRun(repo, branch, params.new, params.old, "push", params.skipSteps ?? [], params.intent ?? "");
+        return this.startRun(repo, branch, params.new, params.old, "push", params.skipSteps ?? [], params.intent ?? "", params.accountEnv);
     }
 
     /**
@@ -238,7 +239,13 @@ export class RunManager {
      * agent-supplied intent. The base SHA reuses the matching prior run's base
      * when one exists, else the latest run's base for that branch.
      */
-    async handleRerun(repoID: string, branch: string, skipSteps: StepName[], intent: string): Promise<string> {
+    async handleRerun(
+        repoID: string,
+        branch: string,
+        skipSteps: StepName[],
+        intent: string,
+        account?: accountEnv.AccountEnv
+    ): Promise<string> {
         let repo: gateDb.Repo | null;
         try {
             repo = gateDb.getRepo(this.db, repoID);
@@ -275,7 +282,7 @@ export class RunManager {
         if (latestForBranch === null) throw new Error(`no previous run for branch ${branch}`);
 
         const baseSHA = matchingHead !== null ? matchingHead.baseSha : latestForBranch.baseSha;
-        return this.startRun(repo, branch, headSHA, baseSHA, "rerun", skipSteps, intent);
+        return this.startRun(repo, branch, headSHA, baseSHA, "rerun", skipSteps, intent, account);
     }
 
     /**
@@ -290,7 +297,8 @@ export class RunManager {
         baseSHA: string,
         trigger: string,
         skipSteps: StepName[],
-        intent: string
+        intent: string,
+        account: accountEnv.AccountEnv | undefined
     ): Promise<string> {
         const branchRole = telemetryBranchRole(branch, repo.defaultBranch);
         const trackStartFailure = (stage: string): void => {
@@ -307,7 +315,7 @@ export class RunManager {
         const lockKey = `${repo.id}/${branch}`;
         const release = await this.acquireBranchLock(lockKey);
         try {
-            return await this.startRunLocked(repo, branch, headSHA, baseSHA, trigger, skipSteps, intent, branchRole, trackStartFailure);
+            return await this.startRunLocked(repo, branch, headSHA, baseSHA, trigger, skipSteps, intent, account, branchRole, trackStartFailure);
         } finally {
             release();
         }
@@ -352,6 +360,7 @@ export class RunManager {
         trigger: string,
         skipSteps: StepName[],
         intent: string,
+        account: accountEnv.AccountEnv | undefined,
         branchRole: string,
         trackStartFailure: (stage: string) => void
     ): Promise<string> {
@@ -417,6 +426,17 @@ export class RunManager {
             if (bgOwnsWorktree) return;
             await this.releaseWorktree(gateDir, wtDir, "setup cleanup");
         };
+
+        // Pinned before any agent is built so every child of this run authenticates as
+        // the pusher's account; releaseWorktree unpins it. A client that predates the
+        // snapshot leaves the daemon's own environment in charge, which is the old,
+        // session-independent behavior - said loudly, since it may be another account.
+        if (account !== undefined) {
+            accountEnv.registerRunAccountEnv(wtDir, account);
+            log.info("run account", "run_id", run.id, "env", accountEnv.describeAccountEnv(account));
+        } else {
+            log.warn("pusher sent no account snapshot: agents use the daemon's environment", "run_id", run.id, "env", accountEnv.describeAccountEnv(accountEnv.captureAccountEnv()));
+        }
 
         try {
             // SECURITY: fetch the trusted default branch and resolve it to an
@@ -559,6 +579,7 @@ export class RunManager {
         // Non-null only for a path that is exactly one run's directory under the
         // worktrees root, which is also what makes deleting it outright safe below.
         const tmpDir = this.paths.agentTmpDirForWorktree(wtDir);
+        accountEnv.unregisterRunAccountEnv(wtDir);
         try {
             await worktreeRemove(gateDir, wtDir);
         } catch (err) {

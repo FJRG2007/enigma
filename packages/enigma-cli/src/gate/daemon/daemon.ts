@@ -413,7 +413,7 @@ function registerHandlers(srv: Server, mgr: RunManager, d: gateDb.Database, shut
 
     srv.handle(proto.MethodRerun, async params => {
         const p = proto.decodeRerunParams(params ?? {});
-        const runId = await mgr.handleRerun(p.repoId, p.branch, p.skipSteps ?? [], p.intent ?? "");
+        const runId = await mgr.handleRerun(p.repoId, p.branch, p.skipSteps ?? [], p.intent ?? "", p.accountEnv);
         return proto.encodeRerunResult({ runId });
     });
 

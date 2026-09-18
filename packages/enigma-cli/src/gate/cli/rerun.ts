@@ -7,6 +7,7 @@ import type { Paths } from "../paths";
 import { Client } from "../ipc/client";
 import { currentBranch } from "../git";
 import { ensureDaemon } from "./daemonCmd";
+import { captureAccountEnv } from "../account-env";
 import { out, sDim, sGreen, openDb, findRepo, errMessage } from "./common";
 
 /** Reruns the pipeline for the current branch. */
@@ -40,7 +41,7 @@ export async function runRerunCli(paths: Paths): Promise<void> {
         try {
             let runId: string;
             try {
-                runId = await client.rerun({ repoId: repo.id, branch });
+                runId = await client.rerun({ repoId: repo.id, branch, accountEnv: captureAccountEnv() });
             } catch (err) {
                 throw new Error(`rerun pipeline: ${errMessage(err)}`);
             }

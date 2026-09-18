@@ -230,6 +230,16 @@ export function getTool(name: string): ToolSpec {
     return tool;
 }
 
+/**
+ * Every environment variable that selects an account, across all tools - the set
+ * that decides which login a spawned agent authenticates as. Probed with a managed
+ * (non-default) dir because opencode's default account injects nothing.
+ */
+export function accountEnvKeys(): string[] {
+    const probe = join(enigmaHome(), "account-env-probe");
+    return [...new Set(Object.values(TOOLS).flatMap((tool) => Object.keys(tool.envFor(probe))))];
+}
+
 /** Reserved name for a tool's built-in (existing) config-dir account. */
 export const DEFAULT_NAME = "default";
 // enigmaHome() honors ENIGMA_CONFIG_HOME so tests can isolate the registry; bun on Linux

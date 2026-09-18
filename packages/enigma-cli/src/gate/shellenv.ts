@@ -18,10 +18,11 @@
 
 import { log } from "./log";
 import { readConfig } from "../config";
+import { withRunAccountEnv } from "./account-env";
 import { userInfo, type UserInfo } from "node:os";
-import { applyBudget, resourceBudget } from "../governor";
 import { join, basename, delimiter } from "node:path";
 import { execFileSync, spawn } from "node:child_process";
+import { applyBudget, resourceBudget } from "../governor";
 import type { ChildProcess, SpawnOptions } from "node:child_process";
 
 // Go's runtime.GOOS uses "windows"/"darwin"/"linux"; Node's process.platform
@@ -96,6 +97,9 @@ export function spawnConfigured(
     options: SpawnOptions = {}
 ): ChildProcess {
     const { signal, ...rest } = options;
+    // A child inside a run's worktree authenticates as the account that pushed the
+    // run, never as whichever session started this daemon (see account-env.ts).
+    if (typeof rest.cwd === "string") rest.env = withRunAccountEnv(rest.cwd, rest.env ?? process.env);
     const child = spawn(command, args, configureSpawnOptions(rest));
     // A gate agent is background work on someone's workstation: it gets a share of the
     // machine, not all of it. Applied after spawn and never fatal - a refused scheduling

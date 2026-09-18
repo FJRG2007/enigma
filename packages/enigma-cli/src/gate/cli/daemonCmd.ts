@@ -23,6 +23,7 @@ import { allSteps } from "../types";
 import { basename } from "node:path";
 import type { Paths } from "../paths";
 import { Client } from "../ipc/client";
+import { captureAccountEnv } from "../account-env";
 import type { StepName } from "../types";
 import { spawn } from "node:child_process";
 import { out, sDim, sGreen, errMessage } from "./common";
@@ -443,7 +444,10 @@ export async function notifyPush(argv: string[], paths: Paths): Promise<void> {
             old: args.old,
             new: args.new,
             skipSteps,
-            intent
+            intent,
+            // The hook inherits the pushing session's environment through git, so
+            // this is that session's account, not the daemon's.
+            accountEnv: captureAccountEnv()
         });
     } finally {
         client.close();

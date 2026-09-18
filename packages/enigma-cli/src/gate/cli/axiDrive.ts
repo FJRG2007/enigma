@@ -22,6 +22,7 @@ import { REMOTE_NAME } from "../init";
 import { readConfig } from "@/config";
 import * as render from "./axiRender";
 import { readFileSync } from "node:fs";
+import { captureAccountEnv } from "../account-env";
 import type { FixPolicy } from "../config";
 import type { RunInfo } from "../ipc/protocol";
 import { DEFAULT_MERGE_METHOD } from "../scm/types";
@@ -351,7 +352,7 @@ async function triggerRun(
 
     // No run appeared: the push was likely up-to-date. Rerun the latest gate head.
     try {
-        return await env.client!.rerun({ repoId: env.repo.id, branch, skipSteps, intent });
+        return await env.client!.rerun({ repoId: env.repo.id, branch, skipSteps, intent, accountEnv: captureAccountEnv() });
     } catch (err) {
         throw new Error(`no run started for "${branch}": ${errMessage(err)}`);
     }

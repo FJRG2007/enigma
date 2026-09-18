@@ -11,6 +11,7 @@
  */
 
 import type { Run, StepResult } from "../db";
+import { decodeAccountEnv, type AccountEnv } from "../account-env";
 import { ACTION_ASKUSER, ACTION_AUTOFIX } from "../types";
 import type { Finding, StepName, RunStatus, StepStatus, ApprovalAction } from "../types";
 
@@ -71,7 +72,8 @@ export class RPCError extends Error {
 /**
  * Sent by the post-receive hook when a push arrives. `intent`, when set, is an
  * agent-supplied description stamped onto the run so the intent step uses it
- * verbatim instead of inferring intent from local transcripts.
+ * verbatim instead of inferring intent from local transcripts. `accountEnv` is
+ * the pusher's account snapshot, which the run's agents authenticate with.
  */
 export interface PushReceivedParams {
     gate: string;
@@ -80,6 +82,7 @@ export interface PushReceivedParams {
     new: string;
     skipSteps?: StepName[];
     intent?: string;
+    accountEnv?: AccountEnv;
 }
 
 /** Requests a single run by ID. */
@@ -104,6 +107,7 @@ export interface RerunParams {
     branch: string;
     skipSteps?: StepName[];
     intent?: string;
+    accountEnv?: AccountEnv;
 }
 
 /** Starts an event stream for a run. */
@@ -311,6 +315,7 @@ export function encodePushReceivedParams(p: PushReceivedParams): Record<string, 
     const w: Record<string, unknown> = { gate: p.gate, ref: p.ref, old: p.old, new: p.new };
     if (p.skipSteps && p.skipSteps.length > 0) w.skip_steps = p.skipSteps;
     if (p.intent) w.intent = p.intent;
+    if (p.accountEnv) w.account_env = p.accountEnv;
     return w;
 }
 
@@ -322,7 +327,8 @@ export function decodePushReceivedParams(raw: any): PushReceivedParams {
         old: raw.old ?? "",
         new: raw.new ?? "",
         skipSteps: Array.isArray(raw.skip_steps) ? (raw.skip_steps as StepName[]) : undefined,
-        intent: raw.intent ?? undefined
+        intent: raw.intent ?? undefined,
+        accountEnv: decodeAccountEnv(raw.account_env)
     };
 }
 
@@ -363,6 +369,7 @@ export function encodeRerunParams(p: RerunParams): Record<string, unknown> {
     const w: Record<string, unknown> = { repo_id: p.repoId, branch: p.branch };
     if (p.skipSteps && p.skipSteps.length > 0) w.skip_steps = p.skipSteps;
     if (p.intent) w.intent = p.intent;
+    if (p.accountEnv) w.account_env = p.accountEnv;
     return w;
 }
 
@@ -372,7 +379,8 @@ export function decodeRerunParams(raw: any): RerunParams {
         repoId: raw.repo_id ?? "",
         branch: raw.branch ?? "",
         skipSteps: Array.isArray(raw.skip_steps) ? (raw.skip_steps as StepName[]) : undefined,
-        intent: raw.intent ?? undefined
+        intent: raw.intent ?? undefined,
+        accountEnv: decodeAccountEnv(raw.account_env)
     };
 }
 
