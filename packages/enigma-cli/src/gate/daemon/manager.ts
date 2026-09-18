@@ -72,6 +72,18 @@ import {
     loadRepoFromBytes
 } from "../config";
 
+/**
+ * A run without the pusher's account snapshot would fall back to the daemon's own
+ * environment, which may be another account, so it is refused instead. Only an
+ * enigma older than the snapshot sends one without it.
+ */
+function requireAccount(account: accountEnv.AccountEnv | undefined): accountEnv.AccountEnv {
+    if (account === undefined) {
+        throw new Error("the request carried no account snapshot (sent by an older enigma); run `enigma gate init` in the repo to refresh its push hook");
+    }
+    return account;
+}
+
 /** Builds the pipeline steps for a run; defaults to `allPipelineSteps`. */
 export type StepFactory = () => Step[];
 
@@ -221,6 +233,7 @@ export class RunManager {
         if (isZeroSHA(params.new)) {
             throw new Error("ref deletion push, no pipeline to run");
         }
+        const account = requireAccount(params.accountEnv);
         const repoID = repoIDFromGatePath(params.gate);
         let repo: gateDb.Repo | null;
         try {
@@ -231,7 +244,7 @@ export class RunManager {
         if (repo === null) throw new Error(`unknown repo for gate ${params.gate}`);
 
         const branch = branchFromRef(params.ref);
-        return this.startRun(repo, branch, params.new, params.old, "push", params.skipSteps ?? [], params.intent ?? "", params.accountEnv);
+        return this.startRun(repo, branch, params.new, params.old, "push", params.skipSteps ?? [], params.intent ?? "", account);
     }
 
     /**
@@ -246,6 +259,7 @@ export class RunManager {
         intent: string,
         account?: accountEnv.AccountEnv
     ): Promise<string> {
+        const pinned = requireAccount(account);
         let repo: gateDb.Repo | null;
         try {
             repo = gateDb.getRepo(this.db, repoID);
@@ -282,7 +296,7 @@ export class RunManager {
         if (latestForBranch === null) throw new Error(`no previous run for branch ${branch}`);
 
         const baseSHA = matchingHead !== null ? matchingHead.baseSha : latestForBranch.baseSha;
-        return this.startRun(repo, branch, headSHA, baseSHA, "rerun", skipSteps, intent, account);
+        return this.startRun(repo, branch, headSHA, baseSHA, "rerun", skipSteps, intent, pinned);
     }
 
     /**
@@ -298,7 +312,7 @@ export class RunManager {
         trigger: string,
         skipSteps: StepName[],
         intent: string,
-        account: accountEnv.AccountEnv | undefined
+        account: accountEnv.AccountEnv
     ): Promise<string> {
         const branchRole = telemetryBranchRole(branch, repo.defaultBranch);
         const trackStartFailure = (stage: string): void => {
@@ -360,7 +374,7 @@ export class RunManager {
         trigger: string,
         skipSteps: StepName[],
         intent: string,
-        account: accountEnv.AccountEnv | undefined,
+        account: accountEnv.AccountEnv,
         branchRole: string,
         trackStartFailure: (stage: string) => void
     ): Promise<string> {
@@ -428,15 +442,9 @@ export class RunManager {
         };
 
         // Pinned before any agent is built so every child of this run authenticates as
-        // the pusher's account; releaseWorktree unpins it. A client that predates the
-        // snapshot leaves the daemon's own environment in charge, which is the old,
-        // session-independent behavior - said loudly, since it may be another account.
-        if (account !== undefined) {
-            accountEnv.registerRunAccountEnv(wtDir, account);
-            log.info("run account", "run_id", run.id, "env", accountEnv.describeAccountEnv(account));
-        } else {
-            log.warn("pusher sent no account snapshot: agents use the daemon's environment", "run_id", run.id, "env", accountEnv.describeAccountEnv(accountEnv.captureAccountEnv()));
-        }
+        // the pusher's account; releaseWorktree unpins it.
+        accountEnv.registerRunAccountEnv(wtDir, account);
+        log.info("run account", "run_id", run.id, "env", accountEnv.describeAccountEnv(account));
 
         try {
             // SECURITY: fetch the trusted default branch and resolve it to an

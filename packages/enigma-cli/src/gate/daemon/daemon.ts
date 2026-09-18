@@ -384,7 +384,7 @@ function removeDirQuietly(path: string): void {
 
 /** Registers all IPC handlers (unary + the subscribe stream) on the server. */
 function registerHandlers(srv: Server, mgr: RunManager, d: gateDb.Database, shutdown: () => void): void {
-    srv.handle(proto.MethodHealth, () => ({ status: "ok" }));
+    srv.handle(proto.MethodHealth, () => ({ status: "ok", account_env: true }));
 
     srv.handle(proto.MethodShutdown, () => {
         shutdown();

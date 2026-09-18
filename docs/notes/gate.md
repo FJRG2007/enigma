@@ -270,8 +270,17 @@ account variables, absolute paths), and the manager pins it to the run's worktre
 agent is built. `spawnConfigured` applies it to every child whose cwd is inside that
 worktree - agents, agent servers and configured commands - removing a `null` variable so the
 daemon's managed dir cannot leak into a default-account run. `releaseWorktree` unpins it.
-`daemon.log` records `run account` with the resolved values per run; a client without the
-field logs a warning and falls back to the daemon's environment.
+`daemon.log` records `run account` with the resolved values per run.
+
+Fail closed, both ends. The manager refuses a push or rerun without `account_env` (only an
+older enigma, e.g. a stale post-receive hook, sends one), because the fallback is the daemon's
+environment, i.e. possibly another account. An upgrade leaves the old binary's daemon serving,
+so `health` advertises `account_env: true` and `ensureDaemon` replaces a daemon that lacks it -
+unless that daemon has active runs, where replacing would cancel them: then it throws
+`OutdatedDaemonError` naming the runs, and `__gate-notify` rethrows it instead of dialing the
+old daemon anyway. The replacement refreshes every bare repo's hook to its own binary at
+startup (`migrateGateConfigs`). Git passing the pusher's environment to `post-receive` was
+checked on Windows, value set and unset.
 
 ## `fix_policy`: who answers a gate (an enigma extension)
 

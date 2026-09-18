@@ -172,9 +172,13 @@ export interface CancelRunResult {
     ok: boolean;
 }
 
-/** Confirms the daemon is alive. */
+/**
+ * Confirms the daemon is alive. `accountEnv` is true when it runs each run's agents
+ * under the pusher's account snapshot; a daemon from before that omits it.
+ */
 export interface HealthResult {
     status: string;
+    accountEnv: boolean;
 }
 
 /** Confirms shutdown was initiated. */
@@ -496,7 +500,7 @@ export function decodeCancelRunResult(raw: any): CancelRunResult {
 
 /** Decodes a health result from the wire. */
 export function decodeHealthResult(raw: any): HealthResult {
-    return { status: raw?.status ?? "" };
+    return { status: raw?.status ?? "", accountEnv: raw?.account_env === true };
 }
 
 /** Decodes a shutdown result from the wire. */

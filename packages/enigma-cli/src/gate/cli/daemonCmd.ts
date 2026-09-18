@@ -19,6 +19,7 @@
  * a precise re-exec without touching this module.
  */
 
+import * as gateDb from "../db";
 import { allSteps } from "../types";
 import { basename } from "node:path";
 import type { Paths } from "../paths";
@@ -26,7 +27,7 @@ import { Client } from "../ipc/client";
 import { captureAccountEnv } from "../account-env";
 import type { StepName } from "../types";
 import { spawn } from "node:child_process";
-import { out, sDim, sGreen, errMessage } from "./common";
+import { out, sDim, sGreen, openDb, errMessage } from "./common";
 import { openSync, closeSync, unlinkSync } from "node:fs";
 import { processRunning, readDaemonPIDFile } from "../daemon/recover";
 
@@ -191,9 +192,55 @@ export async function startDaemon(paths: Paths, spawnFn: SpawnDaemon = spawnDeta
     await waitForDaemonStart(paths, pid);
 }
 
-/** Starts the daemon when it is not already running. */
+/**
+ * Raised when the running daemon predates per-run accounts and cannot be replaced
+ * because it still owns active runs. Using it would run agents under whichever
+ * account started it, so callers must stop rather than fall back to it.
+ */
+export class OutdatedDaemonError extends Error {
+    constructor(runIDs: string[]) {
+        super(`the running gate daemon predates per-run accounts, so its agents would use whichever account started it; it still has ${runIDs.length} active run(s) (${runIDs.join(", ")}). Run "enigma gate daemon restart" once they finish.`);
+        this.name = "OutdatedDaemonError";
+    }
+}
+
+/** Reports whether the running daemon applies each run's account snapshot. */
+async function daemonHonorsAccounts(paths: Paths): Promise<boolean> {
+    let client: Client;
+    try {
+        client = await Client.dial(paths.socket());
+    } catch {
+        return false;
+    }
+    try {
+        return (await client.healthInfo()).accountEnv;
+    } catch {
+        return false;
+    } finally {
+        client.close();
+    }
+}
+
+/**
+ * Starts the daemon when it is not already running, and replaces one that predates
+ * per-run accounts (an upgrade leaves the old binary's daemon serving). Replacing
+ * cancels whatever it is running, so a daemon with active runs is refused instead.
+ */
 export async function ensureDaemon(paths: Paths, spawnFn: SpawnDaemon = spawnDetachedDaemon): Promise<void> {
-    if (await isDaemonRunning(paths)) return;
+    if (!(await isDaemonRunning(paths))) {
+        await startDaemon(paths, spawnFn);
+        return;
+    }
+    if (await daemonHonorsAccounts(paths)) return;
+    const d = openDb(paths);
+    let active: gateDb.Run[];
+    try {
+        active = gateDb.getActiveRuns(d);
+    } finally {
+        d.close();
+    }
+    if (active.length > 0) throw new OutdatedDaemonError(active.map(run => run.id));
+    await stopDaemon(paths);
     await startDaemon(paths, spawnFn);
 }
 
@@ -424,11 +471,12 @@ export async function notifyPush(argv: string[], paths: Paths): Promise<void> {
     const skipSteps = parseSkipPushOptions(args.pushOptions);
     const intent = parseIntentPushOptions(args.pushOptions);
 
-    // Best-effort: a start failure still lets the dial below report a clear error.
+    // Best-effort: a start failure still lets the dial below report a clear error. An
+    // outdated daemon is the exception - dialing it would run under the wrong account.
     try {
         await ensureDaemon(paths);
-    } catch {
-        // fall through to the dial, which surfaces the real connection error
+    } catch (err) {
+        if (err instanceof OutdatedDaemonError) throw err;
     }
 
     let client: Client;

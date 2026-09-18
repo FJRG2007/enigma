@@ -96,8 +96,12 @@ export class Client {
 
     /** Pings the daemon and returns its reported status. */
     async health(): Promise<string> {
-        const raw = await this.call(proto.MethodHealth, {});
-        return proto.decodeHealthResult(raw).status;
+        return (await this.healthInfo()).status;
+    }
+
+    /** Health check with the daemon's capabilities. */
+    async healthInfo(): Promise<proto.HealthResult> {
+        return proto.decodeHealthResult(await this.call(proto.MethodHealth, {}));
     }
 
     /** Asks the daemon to shut down; returns whether shutdown was initiated. */
