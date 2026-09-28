@@ -1,6 +1,6 @@
 {
   "name": "@enigmax/utils",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Headless application utilities that render nothing: a short-TTL read cache with in-flight deduplication, a breached-password check that never sends the password anywhere, and server-side guards for fetching URLs from outside and handling uploads.",
   "type": "module",
   "main": "./dist/index.js",
