@@ -75,11 +75,21 @@ const INJECTION_EXCLUDES = [
     "**/node_modules/**", "node_modules/**", "**/vendor/**", "vendor/**", "**/site-packages/**",
 ];
 
-/** Files that render UI markup. */
+/** Files that render UI markup, and the same plus the stylesheets a visual rule also reads. */
 const UI_CODE_FILES = ["*.tsx", "*.jsx", "*.vue", "*.svelte", "*.astro", "*.html", "*.htm"];
+const UI_STYLE_FILES = [...UI_CODE_FILES, "*.css", "*.scss", "*.sass", "*.less"];
 
 /** The injection excludes plus Storybook, which renders a component in isolation on purpose. */
 const TELL_EXCLUDES = [...INJECTION_EXCLUDES, "**/stories/**", "stories/**", "**/.storybook/**", "*.story.*"];
+
+/**
+ * Code that runs by hand rather than per request - migrations, seeds, maintenance scripts,
+ * benchmarks - plus sample trees, where a whole-row read or a per-row query is not a hot path.
+ */
+const DB_SCRIPT_EXCLUDES = [
+    "**/migrations/**", "migrations/**", "**/migration/**", "migration/**", "**/migrate/**", "*migration*", "*_test.*", "*migrate*", "**/seed/**", "**/seeds/**", "seed.*", "seed-*", "*.seed.*",
+    "**/scripts/**", "scripts/**", "**/benchmarks/**", "*benchmark*", "**/examples/**", "examples/**",
+];
 
 /** One convention rule. `file` rules regex-scan the edited file; `project` rules run a named check. */
 export interface GuardrailRule {
@@ -1883,8 +1893,9 @@ export const BUILTIN_RULES: GuardrailRule[] = [
         severity: "block",
         skill: "security-policy",
     },
-    // SECOND WAVE (guardrails.md, "THE SECOND WAVE"): generated-UI tells. The figure is findings /
-    // candidate lines over the corpus, every finding read by hand; the stage follows the backlog.
+    // SECOND WAVE (guardrails.md, "THE SECOND WAVE"): generated-UI tells, data-loading cost and
+    // viewport sizing. The figure is findings / candidate lines over the corpus, every finding read
+    // by hand; the stage follows the backlog.
     {
         id: "fe-sparkles-icon",
         label: "No sparkles glyph as the generic AI icon",
@@ -1897,6 +1908,161 @@ export const BUILTIN_RULES: GuardrailRule[] = [
         message: "The sparkles glyph is the stock icon for \"AI\" and \"new\", so it says nothing about what this control does. Use an icon that names the action (a pen for \"rewrite\", a list for \"summarize\", a wand only for an actual one-click transform), or no icon at all. Mark the line `enigma:allow-sparkles-icon` when the glyph is literally the subject (a sparkle/effects picker) (frontend-design).",
         severity: "block",
         skill: "frontend-design",
+    },
+    {
+        id: "fe-purple-gradient",
+        label: "No stock purple/indigo gradient",
+        files: UI_STYLE_FILES,
+        excludeFiles: TELL_EXCLUDES,
+        // Measured: 3360 candidate lines, 133 findings in 100 files, every one a purple-family stop paired with a second hue (tonal ramps, spectra and glows into black excluded).
+        scope: "file",
+        stage: "diff",
+        fileCheck: "fe-purple-gradient",
+        message: "A purple/indigo/violet gradient (Tailwind's default indigo ramp, or purple fading into blue, pink or cyan) is the colour scheme every generated landing page ships with, so it reads as a template before anyone reads a word. Derive the accent from the subject's own world and the palette you planned: one solid accent colour, with tone steps of that hue for depth, and a gradient only when it encodes something (a range, a heat scale). Mark the line `enigma:allow-brand-gradient` when this gradient IS the brand (frontend-design).",
+        severity: "block",
+        skill: "frontend-design",
+    },
+    {
+        id: "fe-gradient-text",
+        label: "No gradient-filled text",
+        files: UI_STYLE_FILES,
+        excludeFiles: TELL_EXCLUDES,
+        // Measured: 243 candidate lines, 129 findings in 75 files, every one gradient-filled text (shimmer labels and minified bundles excluded).
+        scope: "file",
+        stage: "diff",
+        fileCheck: "fe-gradient-text",
+        message: "Gradient-filled text (`bg-clip-text text-transparent`, `background-clip: text`) on a heading is one of the clearest tells of generated UI, and it costs legibility: contrast varies along the word and the text vanishes where the gradient meets the background. Set the heading in one solid colour and let size, weight and the display face carry the emphasis. Mark the line `enigma:allow-gradient-text` when the brief explicitly asks for it (frontend-design).",
+        severity: "block",
+        skill: "frontend-design",
+    },
+    {
+        id: "fe-accent-stripe",
+        label: "No coloured stripe on a rounded card",
+        files: UI_STYLE_FILES,
+        excludeFiles: TELL_EXCLUDES,
+        // Measured: 403 candidate lines, 68 findings in 37 files, every one a 2-8px left stripe on a box whose left corners are rounded.
+        scope: "file",
+        stage: "diff",
+        fileCheck: "fe-accent-stripe",
+        message: "A thick coloured left border on a rounded box is the template callout: the stripe fights the radius and repeats what the text already says. For a real status use a status icon plus a tinted background, or a labelled badge; for plain emphasis use none. A quote or a nested thread keeps its rule only on a square edge (drop the radius). Mark the line `enigma:allow-accent-stripe` when the design system defines this component (frontend-policy).",
+        severity: "block",
+        skill: "frontend-policy",
+    },
+    {
+        id: "fe-emoji-icon",
+        label: "Emoji are content, never icons or bullets",
+        files: UI_CODE_FILES,
+        excludeFiles: TELL_EXCLUDES,
+        // Measured: 2407 candidate lines, 192 findings in 83 files, every one an emoji opening a label, heading, list item or `icon` value (Ink terminal UIs, replayed terminal output and gitmoji samples excluded).
+        scope: "file",
+        stage: "diff",
+        fileCheck: "fe-emoji-icon",
+        message: "An emoji is standing in for an icon or a list bullet. Emoji render differently on every platform (and as blank boxes on some), clash with the icon set's stroke and grid, and are read aloud by screen readers (\"rocket, Fast deploys\"). Use the project's icon library with `aria-hidden` on the glyph, or a styled list marker; keep emoji only where they are the content itself (a reaction, a message, an emoji picker). Mark the line `enigma:allow-emoji-icon` when that is the case (frontend-policy).",
+        severity: "block",
+        skill: "frontend-policy",
+    },
+    {
+        id: "ui-powered-by-buzzword",
+        label: "No \"powered by AI\" copy",
+        files: UI_CODE_FILES,
+        excludeFiles: TELL_EXCLUDES,
+        // Measured: 51 "powered by" lines, 0 findings (every one names a provider or a product), so EDIT stage.
+        scope: "file",
+        fileCheck: "ui-powered-by-buzzword",
+        message: "\"Powered by AI\" / \"powered by cutting-edge technology\" is a generated-copy tell: it names no provider and tells the reader nothing they act on. Say what the feature does for them (\"Drafts a reply from the thread\"), or drop the line. A real attribution names the provider (\"Powered by Stripe\") and is not matched. Mark the line `enigma:allow-powered-by` when the phrase is quoted on purpose (technical-writing-policy).",
+        severity: "block",
+        skill: "technical-writing-policy",
+    },
+    {
+        id: "ui-chat-residue",
+        label: "No chat-assistant residue in shipped copy",
+        files: UI_CODE_FILES,
+        // A sample tree may show real model output on purpose (an eval report replaying a refusal).
+        excludeFiles: [...TELL_EXCLUDES, "**/examples/**", "examples/**"],
+        // Measured: 5 candidate lines, 0 findings (a bio's "as an AI engineer" and an eval sample page excluded), so EDIT stage.
+        scope: "file",
+        fileCheck: "ui-chat-residue",
+        message: "Text a chat assistant left behind is in shipped copy: \"As an AI\", \"I hope this helps\", an unfilled `[Your Company]` placeholder, or a link carrying `utm_source=chatgpt`. Delete the residue, fill every placeholder with the real value (or ask for it), and strip the tracking parameter from the URL. Mark the line `enigma:allow-chat-residue` when the text is quoted on purpose (technical-writing-policy).",
+        severity: "block",
+        skill: "technical-writing-policy",
+    },
+    {
+        id: "ui-ai-vocabulary",
+        label: "No generated-copy vocabulary in UI text",
+        files: UI_CODE_FILES,
+        excludeFiles: TELL_EXCLUDES,
+        // Measured: 1844 candidate lines, 19 findings in 17 files, every one marketing copy ("seamlessly integrates", "leverage machine learning").
+        scope: "file",
+        stage: "diff",
+        fileCheck: "ui-ai-vocabulary",
+        message: "UI copy uses the vocabulary that marks text as generated (delve, seamless, leverage, robust, tapestry, testament). Say the concrete thing: \"Leverage robust tooling to unlock seamless deploys\" -> \"Deploy with one command\". Mark the line `enigma:allow-ai-vocabulary` when the word is literal (a \"robust\" statistical estimator) (technical-writing-policy).",
+        severity: "block",
+        skill: "technical-writing-policy",
+    },
+    {
+        id: "db-unbounded-read",
+        label: "Request-serving reads are bounded",
+        files: ["*.ts", "*.js", "*.mjs", "*.cjs", "*.mts", "*.cts", "*.tsx", "*.jsx"],
+        excludeFiles: [...TELL_EXCLUDES, ...DB_SCRIPT_EXCLUDES],
+        // Measured: 4021 candidate lines, 17 findings in 13 files, every one a whole-table list in a route, action or router (4 filter the result in JS afterwards).
+        scope: "file",
+        stage: "diff",
+        fileCheck: "db-unbounded-read",
+        message: "This request-serving code reads a whole table: a `findMany` with no `where`, `take` or `cursor`, or a `db.select().from(t)` with no `.where(`/`.limit(`. The table's row count becomes the response size, the memory held and the endpoint's latency, and it grows without anyone changing the code. Bound it: `take` plus cursor pagination (`take: 50, cursor: { id }, skip: 1`), Drizzle `.limit(50)` with a keyset `where`, and filter in the query rather than in application code. Mark the line `enigma:allow-unbounded-read` when the table is a small fixed lookup (plans, roles, locales) (database-expert).",
+        severity: "block",
+        skill: "database-expert",
+    },
+    {
+        id: "db-select-star",
+        label: "Queries name their columns",
+        files: ["*.ts", "*.js", "*.mjs", "*.cjs", "*.mts", "*.cts", "*.py", "*.go", "*.java", "*.cs", "*.php", "*.rb"],
+        excludeFiles: [...TELL_EXCLUDES, ...DB_SCRIPT_EXCLUDES],
+        // Measured: 863 candidate lines, 708 findings in 218 files, every one a named table read whole - a real backlog, hence the diff stage.
+        scope: "file",
+        stage: "diff",
+        fileCheck: "db-select-star",
+        message: "`SELECT *` in application code fetches every column, including the wide TEXT/JSONB ones the caller never reads, rules out an index-only scan, and silently changes shape when a migration adds a column. Name the columns the code uses: `SELECT id, name, created_at FROM ...` (on an ORM, an explicit `select`). Mark the line `enigma:allow-select-star` for a genuine whole-row copy (an export, a backup) (database-expert).",
+        severity: "block",
+        skill: "database-expert",
+    },
+    {
+        id: "db-query-in-loop",
+        label: "No query per row (N+1)",
+        files: ["*.ts", "*.js", "*.mjs", "*.cjs", "*.mts", "*.cts", "*.tsx", "*.jsx"],
+        excludeFiles: [...TELL_EXCLUDES, ...DB_SCRIPT_EXCLUDES],
+        // Measured: 48323 loop lines, 49 findings in 40 files, every one a read awaited once per element of a row set.
+        scope: "file",
+        stage: "diff",
+        fileCheck: "db-query-in-loop",
+        message: "A database read is awaited inside a loop over rows: N+1, one round trip per element, so the endpoint's latency grows with the list. Fetch the set in one query and join in memory: `findMany({ where: { id: { in: ids } } })` then a `Map` by id, an `include`/join for the relation, or a `groupBy`/`GROUP BY` for per-row counts. Mark the line `enigma:allow-query-in-loop` when each iteration genuinely depends on the previous one (database-expert).",
+        severity: "block",
+        skill: "database-expert",
+    },
+    {
+        id: "fe-fixed-width",
+        label: "A wide layout width gives way on a phone",
+        files: UI_STYLE_FILES,
+        excludeFiles: TELL_EXCLUDES,
+        // Measured: 2442 candidate lines, 84 findings in 64 files, every one a modal, popover, panel or container wider than a phone with no cap or breakpoint.
+        scope: "file",
+        stage: "diff",
+        fileCheck: "fe-fixed-width",
+        message: "A layout width of 400px or more with nothing letting it shrink: on a 360-390px phone the element is cut off or forces the whole page to scroll sideways. Make the fixed size a cap instead: `w-full max-w-[640px]` (CSS `width: 100%; max-width: 640px`), or apply it from a breakpoint up (`w-full md:w-[640px]`, or an `@media (min-width: ...)` block). Mark the line `enigma:allow-fixed-width` when the element sits inside a horizontal scroller on purpose (frontend-policy).",
+        severity: "block",
+        skill: "frontend-policy",
+    },
+    {
+        id: "fe-static-viewport-height",
+        label: "Viewport-height containers use the dynamic unit",
+        files: UI_STYLE_FILES,
+        excludeFiles: TELL_EXCLUDES,
+        // Measured: 975 candidate lines, 661 findings in 559 files, every one a 100vh height with no dvh beside it.
+        scope: "file",
+        stage: "diff",
+        fileCheck: "fe-static-viewport-height",
+        message: "`100vh` (Tailwind `h-screen`/`min-h-screen`) is the viewport with the mobile browser toolbar HIDDEN, so while the toolbar shows, the bottom of this container - a footer, the last nav item, a submit button - sits underneath it. Use the dynamic unit: `h-dvh`/`min-h-dvh` (Tailwind 3.4+, `h-[100dvh]` before that), CSS `height: 100dvh` (keep a `100vh` line above it only as a fallback for old browsers). Mark the line `enigma:allow-viewport-height` when the element is desktop-only (frontend-policy).",
+        severity: "block",
+        skill: "frontend-policy",
     },
 ];
 
@@ -2009,6 +2175,18 @@ export const FILE_CHECKS: Record<string, (content: string, file: string) => { li
     "sec-untrusted-file-inline": (content, file) => storedFileServedInline(content, file),
     "sec-path-join-from-input": (content, file) => pathJoinedFromInput(content, file),
     "fe-sparkles-icon": (content) => sparklesIcon(content),
+    "fe-purple-gradient": (content) => purpleGradient(content),
+    "fe-gradient-text": (content, file) => gradientText(content, file),
+    "fe-accent-stripe": (content, file) => accentStripe(content, file),
+    "fe-emoji-icon": (content) => emojiAsIcon(content),
+    "ui-powered-by-buzzword": (content) => poweredByBuzzword(content),
+    "ui-chat-residue": (content) => chatResidue(content),
+    "ui-ai-vocabulary": (content) => aiVocabulary(content),
+    "db-unbounded-read": (content) => unboundedOrmRead(content),
+    "db-select-star": (content, file) => selectStar(content, file),
+    "db-query-in-loop": (content) => queryInLoop(content),
+    "fe-fixed-width": (content, file) => fixedWidthNoGuard(content, file),
+    "fe-static-viewport-height": (content, file) => staticViewportHeight(content, file),
 };
 
 /**
@@ -4568,7 +4746,7 @@ export function pathJoinedFromInput(content: string, file: string): { line: numb
     return out;
 }
 
-// --- second wave: generated-UI tells ------------------------------------------------------------
+// --- second wave: generated-UI tells, data-loading cost, viewport sizing ------------------------
 
 type LineHit = { line: number; detail: string; };
 
@@ -4577,6 +4755,502 @@ function allowedAt(lines: string[], index: number, marker: RegExp): boolean {
     return marker.test(lines[index]!) || (index > 0 && marker.test(lines[index - 1]!));
 }
 
+/** A line these checks never judge: a comment or a minified bundle. The marker test is per rule. */
+function tellSkipLine(text: string): boolean {
+    return COMMENT_LINE.test(text) || text.length > MINIFIED_LINE;
+}
+
+/** The quoted runs of a line: where a class list lives (`className="..."`, `cn("...", "...")`, `class="..."`). */
+function quotedRuns(text: string): string[] {
+    return [...text.matchAll(/"([^"]*)"|'([^']*)'|`([^`]*)`/g)].map((m) => m[1] ?? m[2] ?? m[3] ?? "");
+}
+
+/**
+ * Each stylesheet region of a file with the line it starts on: the whole file, or the `<style>`
+ * blocks of a component. A region holding a minified line is build output (a hashed Tailwind
+ * bundle, an exported Framer site) and is not read at all.
+ */
+function styleRegions(content: string, file: string): { text: string; line: number; }[] {
+    const regions: { text: string; line: number; }[] = [];
+    if (/\.(css|scss|sass|less)$/i.test(file)) regions.push({ text: content, line: 1 });
+    else {
+        for (const m of content.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/gi)) {
+            regions.push({ text: m[1]!, line: lineOfOffset(content, m.index! + m[0].indexOf(">") + 1) });
+        }
+    }
+    return regions.filter((r) => !r.text.split("\n").some((l) => l.length > MINIFIED_LINE));
+}
+
+type CssBlock = { selector: string; body: string; line: number; adaptive: boolean; };
+
+/**
+ * The declaration blocks of a stylesheet: each block's own declarations (nested blocks removed),
+ * the line it opens on, and whether it sits inside an at-rule that adapts it (`@media`,
+ * `@container`, `@supports`). Comments are blanked first so a brace inside one cannot unbalance it.
+ */
+function cssBlocks(css: string, firstLine: number): CssBlock[] {
+    const src = css.replace(/\/\*[\s\S]*?\*\//g, (c) => c.replace(/[^\n]/g, " "));
+    const out: CssBlock[] = [];
+    const stack: { selector: string; start: number; body: string; }[] = [];
+    let text = "";
+    let line = firstLine;
+    for (const ch of src) {
+        if (ch === "{") {
+            stack.push({ selector: text.split(/[;}]/).pop()!.trim(), start: line, body: "" });
+            text = "";
+        } else if (ch === "}") {
+            const block = stack.pop();
+            if (block) {
+                block.body += text;
+                out.push({ selector: block.selector, body: block.body, line: block.start, adaptive: stack.some((b) => /^@(?:media|container|supports)\b/i.test(b.selector)) });
+            }
+            text = "";
+        } else {
+            text += ch;
+            if (stack.length) stack[stack.length - 1]!.body += ch;
+        }
+        if (ch === "\n") line++;
+    }
+    return out;
+}
+
+/** Every stylesheet block of a file whose opening line carries no escape marker. */
+function markedCssBlocks(content: string, file: string, lines: string[], marker: RegExp): CssBlock[] {
+    return styleRegions(content, file).flatMap((r) => cssBlocks(r.text, r.line))
+        .filter((b) => lines[b.line - 1] === undefined || !allowedAt(lines, b.line - 1, marker));
+}
+
+// A1: the stock "AI product" gradient - a purple, indigo or violet stop paired with a second hue.
+/** Tailwind's cool palette by nominal hue: the names a generated gradient is built from. */
+const TW_HUE: Record<string, number> = { sky: 199, cyan: 189, blue: 217, indigo: 239, violet: 258, purple: 271, fuchsia: 292, pink: 330 };
+const TW_STOP = /(?<![\w-])(?:from|via|to)-(?:(sky|cyan|blue|indigo|violet|purple|fuchsia|pink)-\d{2,3}\b|\[(#[0-9a-f]{3,8})\])/gi;
+const HEX_COLOR = /#(?:[0-9a-f]{6}|[0-9a-f]{3})\b/gi;
+const ALLOW_BRAND_GRADIENT = /enigma:allow-brand-gradient/;
+
+/** The hue of a saturated hex colour, or null for a grey, near-black or near-white one (no hue to pair). */
+function hexHue(hex: string): number | null {
+    let h = hex.replace("#", "");
+    if (h.length === 3) h = [...h].map((c) => c + c).join("");
+    const [r, g, b] = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16) / 255) as [number, number, number];
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const l = (max + min) / 2;
+    const d = max - min;
+    if (d === 0 || l < 0.2 || l > 0.92) return null;
+    if (d / (1 - Math.abs(2 * l - 1)) < 0.35) return null;
+    const hue = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+    return (hue * 60 + 360) % 360;
+}
+
+/**
+ * A purple-family stop (hue 235-290: indigo, violet, purple) and a second stop at least 15 degrees
+ * away in the blue-to-pink arc (170-345). One hue stepped lighter or darker is a tonal ramp, which
+ * is what the skill recommends instead, so it is not reported; nor is a near-black stop (a glow
+ * fading into the page) or a gradient through yellow or green (a spectrum: a hue picker, a rainbow).
+ */
+function purplePair(hues: number[]): boolean {
+    if (hues.some((h) => h >= 40 && h <= 160)) return false;
+    return hues.some((p) => p >= 235 && p <= 290 && hues.some((q) => q >= 170 && q <= 345 && Math.abs(p - q) >= 15));
+}
+
+function twStopHues(run: string): number[] {
+    return [...run.matchAll(TW_STOP)].map((m) => m[1] ? TW_HUE[m[1].toLowerCase()]! : hexHue(m[2]!)).filter((h): h is number => h !== null);
+}
+
+/**
+ * A gradient pairing Tailwind's purple, indigo or violet with a cool neighbour (`from-purple-500
+ * to-blue-500`, `from-indigo-600 via-purple-600 to-pink-500`, `from-[#3b82f6] to-[#8b5cf6]`), or a
+ * CSS gradient whose hex stops make the same pair - the colour scheme generated pages reach for.
+ */
+export function purpleGradient(content: string): LineHit[] {
+    const lines = content.split("\n");
+    const out: LineHit[] = [];
+    const seen = new Set<number>();
+    for (let i = 0; i < lines.length; i++) {
+        const text = lines[i]!;
+        if (tellSkipLine(text) || allowedAt(lines, i, ALLOW_BRAND_GRADIENT)) continue;
+        if (quotedRuns(text).some((run) => purplePair(twStopHues(run)))) {
+            seen.add(i);
+            out.push({ line: i + 1, detail: text.trim().slice(0, 120) });
+        }
+    }
+    // A gradient's stops often sit on the lines after `linear-gradient(`, so its arguments are read whole.
+    for (const m of content.matchAll(/\b(?:linear|radial|conic)-gradient\(/gi)) {
+        const i = lineOfOffset(content, m.index!) - 1;
+        if (seen.has(i) || tellSkipLine(lines[i]!) || allowedAt(lines, i, ALLOW_BRAND_GRADIENT)) continue;
+        const args = callArguments(content, m.index! + m[0].length - 1, false);
+        const hues = [...args.matchAll(HEX_COLOR)].map((h) => hexHue(h[0])).filter((h): h is number => h !== null);
+        if (purplePair(hues)) {
+            seen.add(i);
+            out.push({ line: i + 1, detail: lines[i]!.trim().slice(0, 120) });
+        }
+    }
+    return out.sort((a, b) => a.line - b.line);
+}
+
+// A2: gradient text.
+const ALLOW_GRADIENT_TEXT = /enigma:allow-gradient-text/;
+/** A moving highlight across a status label ("Thinking...", a gradient sized 200% to slide) is a loading affordance, not a heading style. */
+const SHIMMER = /shimmer|shine|typing|thinking|loading|running|pending|skeleton/i;
+
+/**
+ * Text filled with a gradient: `bg-clip-text` with `text-transparent` and a gradient in one class
+ * list, or a stylesheet block that clips a gradient background to transparent text.
+ */
+export function gradientText(content: string, file: string): LineHit[] {
+    const lines = content.split("\n");
+    const out: LineHit[] = [];
+    for (let i = 0; i < lines.length; i++) {
+        const text = lines[i]!;
+        if (tellSkipLine(text) || allowedAt(lines, i, ALLOW_GRADIENT_TEXT)) continue;
+        const hit = quotedRuns(text).some((run) => /(?<![\w:-])bg-clip-text\b/.test(run) && /(?<![\w:-])text-transparent\b/.test(run)
+            && /(?<![\w-])(?:bg-gradient-|bg-linear-|bg-radial|bg-conic|from-)|gradient\(|\$\{/.test(run) && !SHIMMER.test(run)
+            && !/(?<![\w-])bg-(?:size-\[|\[length:)\d{3}%/.test(run));
+        if (hit) out.push({ line: i + 1, detail: text.trim().slice(0, 120) });
+    }
+    for (const block of markedCssBlocks(content, file, lines, ALLOW_GRADIENT_TEXT)) {
+        if (!/(?:^|[;\s])(?:-webkit-)?background-clip\s*:\s*text\b/i.test(block.body)) continue;
+        if (!/-webkit-text-fill-color\s*:\s*transparent|(?:^|[;\s])color\s*:\s*transparent/i.test(block.body)) continue;
+        if (!/gradient\(|var\(--[\w-]*gradient/i.test(block.body) || SHIMMER.test(block.selector)) continue;
+        out.push({ line: block.line, detail: `${block.selector.slice(0, 80)} { background-clip: text }` });
+    }
+    return out.sort((a, b) => a.line - b.line);
+}
+
+// A4: the accent stripe on a rounded card.
+const TW_LEFT_STRIPE = /(?<![\w:-])border-(?:l|s)-(?:[2-8]|\[[2-8]px\])(?![\w-])/;
+/** A radius that rounds a LEFT corner: all corners, the left or start side, the top or bottom edge, or a left corner alone. */
+const TW_ROUNDED_LEFT = /(?<![\w:-])rounded(?:-(?:l|s|t|b|tl|bl|ss|es))?(?:-(?:sm|md|lg|xl|2xl|3xl|full|\[[^\]]+\]))?(?![\w-])/;
+const ALLOW_ACCENT_STRIPE = /enigma:allow-accent-stripe/;
+
+/** Whether both LEFT corners of a `border-radius` shorthand are zero (top-left and bottom-left). */
+function leftCornersSquare(radius: string): boolean {
+    const v = radius.split("/")[0]!.trim().split(/\s+/);
+    const [tl, bl] = v.length === 1 ? [v[0], v[0]] : v.length === 2 ? [v[0], v[1]] : v.length === 3 ? [v[0], v[1]] : [v[0], v[3]];
+    return [tl, bl].every((c) => /^0(?:px|rem|em|%)?$/.test(c ?? ""));
+}
+
+/**
+ * A thick coloured left border on a box whose left corners are rounded: `border-l-4
+ * border-blue-500 rounded-lg`, or a stylesheet block with `border-left: 4px solid` and a
+ * `border-radius` that rounds the left side. A stripe against a square left edge is not reported.
+ */
+export function accentStripe(content: string, file: string): LineHit[] {
+    const lines = content.split("\n");
+    const out: LineHit[] = [];
+    for (let i = 0; i < lines.length; i++) {
+        const text = lines[i]!;
+        if (tellSkipLine(text) || allowedAt(lines, i, ALLOW_ACCENT_STRIPE)) continue;
+        const hit = quotedRuns(text).some((run) => TW_LEFT_STRIPE.test(run) && TW_ROUNDED_LEFT.test(run)
+            && !/(?<![\w:-])rounded-(?:none|[ls]-none)\b|(?<![\w-])border-(?:l-)?transparent\b/.test(run));
+        if (hit) out.push({ line: i + 1, detail: text.trim().slice(0, 120) });
+    }
+    for (const block of markedCssBlocks(content, file, lines, ALLOW_ACCENT_STRIPE)) {
+        if (!/(?:^|[;\s])border-(?:left|inline-start)\s*:\s*[2-8]px\s+solid\b/i.test(block.body)) continue;
+        const radius = /(?:^|[;\s])border-radius\s*:\s*([^;]+)/i.exec(block.body)?.[1]?.trim();
+        if (!radius || leftCornersSquare(radius)) continue;
+        out.push({ line: block.line, detail: `${block.selector.slice(0, 80)} { border-left + border-radius }` });
+    }
+    return out.sort((a, b) => a.line - b.line);
+}
+
+// A5: emoji standing in for an icon or a bullet.
+/**
+ * Pictographic emoji, by block: Misc Symbols and Pictographs through Symbols and Pictographs
+ * Extended-A, plus the dingbats and symbols that render as colour emoji (check marks, sparkles,
+ * lightning, warning, star). Plain typographic marks are deliberately left out: the arrows, the
+ * text check mark U+2713, the bullet and the chevrons a UI draws in its own font.
+ */
+const EMOJI = "(?:[\\u{1F300}-\\u{1F5FF}\\u{1F680}-\\u{1F6FF}\\u{1F900}-\\u{1FAFF}\\u{1F7E0}-\\u{1F7EB}]|[\\u{2705}\\u{2728}\\u{274C}\\u{274E}\\u{2714}\\u{2753}-\\u{2755}\\u{2757}\\u{26A1}\\u{26A0}\\u{2B50}\\u{2B55}\\u{2615}\\u{23F0}\\u{23F3}\\u{231B}\\u{2764}\\u{2699}\\u{26D4}\\u{267B}\\u{26BD}\\u{2600}-\\u{2604}\\u{260E}\\u{2611}\\u{2614}])\\u{FE0F}?";
+/** An emoji opening a run of JSX text or a copy string and followed by words: a rocket opening `<li>... Fast deploys</li>`, sparkles opening `title: "... New"`. */
+const EMOJI_LEAD = new RegExp([
+    `(?:(?<![=\\-])>|^)\\s*${EMOJI}\\s*[A-Za-z]`,
+    `\\b(?:title|label|heading|subtitle|description|text|name|cta|tagline|badge|message)\\s*[:=]\\s*\\{?\\s*["'\`]\\s*${EMOJI}\\s*[A-Za-z]`,
+].join("|"), "u");
+/** An emoji assigned as an icon: `icon:` or `icon=` with a string holding only emoji. */
+const EMOJI_ICON = new RegExp(`\\bicon\\s*[:=]\\s*\\{?\\s*["'\`]\\s*(?:${EMOJI})+\\s*["'\`]`, "u");
+/** The emoji is quoted content: a gitmoji commit subject (`feat(auth):`) shown as a sample. */
+const EMOJI_COMMIT_SAMPLE = new RegExp(`${EMOJI}\\s*[a-z]+(?:\\([\\w-]+\\))?!?:`, "u");
+/** Markup that replays terminal output, where the glyph is what the program printed. */
+const TERMINAL_MARKUP = /class(?:Name)?\s*=\s*["'{`][^"'`]*\b(?:terminal|output|console|stdout)\b/i;
+const ALLOW_EMOJI_ICON = /enigma:allow-emoji-icon/;
+
+/**
+ * An emoji used as an icon or a list bullet in UI markup, rather than as content. A terminal UI
+ * (Ink) is out: in a terminal an emoji is the only icon there is.
+ */
+export function emojiAsIcon(content: string): LineHit[] {
+    if (/\bfrom\s+["']ink["']|require\(\s*["']ink["']\s*\)/.test(content)) return [];
+    const lines = content.split("\n");
+    const out: LineHit[] = [];
+    for (let i = 0; i < lines.length; i++) {
+        const text = lines[i]!;
+        if (tellSkipLine(text) || allowedAt(lines, i, ALLOW_EMOJI_ICON)) continue;
+        if (/\bconsole\.|\blog(?:ger)?\.\w+\(|\bprint\(/.test(text) || EMOJI_COMMIT_SAMPLE.test(text) || TERMINAL_MARKUP.test(text)) continue;
+        if (EMOJI_LEAD.test(text) || EMOJI_ICON.test(text)) out.push({ line: i + 1, detail: text.trim().slice(0, 120) });
+    }
+    return out;
+}
+
+// B: copy tells, read only where a person reads them.
+/** The props whose string value is shown to a person. */
+const COPY_PROP = /\b(?:title|description|label|placeholder|subtitle|heading|headline|tagline|text|message|alt|aria-label|caption|summary|content|cta|excerpt|tooltip|hint|helperText)\s*[:=]\s*\{?\s*(["'`])((?:(?!\1)[^\\]|\\.)*)\1/g;
+
+/**
+ * The user-facing copy on one line of markup: the text runs between tags, a line that is a bare
+ * sentence inside an element, and the string values of the props that render as text. Code, class
+ * lists and attribute values that are not copy never reach the copy rules.
+ */
+function copyRuns(text: string): string[] {
+    const runs: string[] = [];
+    for (const m of text.matchAll(/(?<![=\-])>([^<>{}]*)/g)) if (/[A-Za-z]{2}/.test(m[1]!)) runs.push(m[1]!);
+    if (/^\s*[A-Z][a-z']+(?:\s+[A-Za-z0-9'.,!?&-]+){2,}\s*$/.test(text)) runs.push(text);
+    for (const m of text.matchAll(COPY_PROP)) runs.push(m[2]!);
+    return runs;
+}
+
+/**
+ * "Powered by" with nothing behind it but a buzzword. A named provider ("Powered by Stripe") is an
+ * attribution, often one the provider's terms require, and is deliberately not matched.
+ */
+const POWERED_BY_BUZZWORD = /\bpowered by (?:AI\b|A\.I\.|artificial intelligence|cutting[- ]edge|state[- ]of[- ]the[- ]art|advanced (?:AI|technology|algorithms)|the latest (?:AI|technology)|next[- ]gen(?:eration)? (?:AI|technology)|machine learning|generative AI)/i;
+const ALLOW_POWERED_BY = /enigma:allow-powered-by/;
+
+/** "Powered by AI", "powered by cutting-edge technology" in product copy. */
+export function poweredByBuzzword(content: string): LineHit[] {
+    const lines = content.split("\n");
+    const out: LineHit[] = [];
+    for (let i = 0; i < lines.length; i++) {
+        const text = lines[i]!;
+        if (tellSkipLine(text) || allowedAt(lines, i, ALLOW_POWERED_BY)) continue;
+        const run = copyRuns(text).find((r) => POWERED_BY_BUZZWORD.test(r));
+        if (run) out.push({ line: i + 1, detail: run.trim().slice(0, 120) });
+    }
+    return out;
+}
+
+/** Text a chat assistant leaves behind when its answer is pasted into a product. */
+const CHAT_RESIDUE = /\bAs an AI(?:\s+(?:language\s+)?model|\s+assistant)?\s*,|\bI hope this helps\b|\[Your (?:Company|Name|Brand|Product|Website|Email|App|Business)(?: Name)?\]|\butm_source=chat[g]pt/i;
+const CHAT_LINK = /\butm_source=chat[g]pt/i;
+const ALLOW_CHAT_RESIDUE = /enigma:allow-chat-residue/;
+
+/** Chat-assistant residue in UI copy: "As an AI, ...", "I hope this helps", an unfilled `[Your Company]`, a `utm_source` link from a chat assistant. */
+export function chatResidue(content: string): LineHit[] {
+    const lines = content.split("\n");
+    const out: LineHit[] = [];
+    for (let i = 0; i < lines.length; i++) {
+        const text = lines[i]!;
+        if (text.length > MINIFIED_LINE || allowedAt(lines, i, ALLOW_CHAT_RESIDUE)) continue;
+        const link = CHAT_LINK.test(text);
+        if (!link && COMMENT_LINE.test(text)) continue;
+        if (link || copyRuns(text).some((r) => CHAT_RESIDUE.test(r))) out.push({ line: i + 1, detail: text.trim().slice(0, 120) });
+    }
+    return out;
+}
+
+/**
+ * The generated-copy vocabulary. `unlock` and `elevate` were measured out: they are literal far
+ * more often than not (a vault PIN, a paywall, an ELEVATED risk tier).
+ */
+const AI_VOCABULARY = /\b(?:delve[sd]?|delving|seamless(?:ly)?|leverag(?:e|es|ed|ing)|robust|tapestry|testament)\b/gi;
+/** "Seamless" in its literal sense: a loop, a wrap or a tile with no visible join. */
+const SEAMLESS_LITERAL = /\bseamless(?:ly)?\s+(?:\w+\s+)?(?:loop|wrap|tile|tiling|repeat|texture|pattern)|\b(?:loop|loops|wrap|wraps|tile|tiles|repeat|repeats)\s+(?:\w+\s+)?seamless/i;
+const ALLOW_AI_VOCABULARY = /enigma:allow-ai-vocabulary/;
+
+/** The generated-copy vocabulary (delve, seamless, leverage, robust, tapestry, testament) in UI copy. */
+export function aiVocabulary(content: string): LineHit[] {
+    const lines = content.split("\n");
+    const out: LineHit[] = [];
+    for (let i = 0; i < lines.length; i++) {
+        const text = lines[i]!;
+        if (tellSkipLine(text) || allowedAt(lines, i, ALLOW_AI_VOCABULARY) || /<(?:code|pre|kbd)\b/i.test(text)) continue;
+        const words = new Set(copyRuns(text).filter((r) => !SEAMLESS_LITERAL.test(r)).flatMap((r) => [...r.matchAll(AI_VOCABULARY)].map((m) => m[0].toLowerCase())));
+        if (words.size) out.push({ line: i + 1, detail: [...words].join(", ") });
+    }
+    return out;
+}
+
+// C: data-loading cost.
+/** A file that answers requests: a route handler, a server action, a controller, a tRPC/GraphQL resolver. */
+const REQUEST_SERVING = /export\s+(?:async\s+)?function\s+(?:GET|POST|PUT|PATCH|DELETE|loader|action)\b|export\s+const\s+(?:GET|POST|PUT|PATCH|DELETE|loader|action)\s*=|^\s*["']use server["']|\b(?:router|app|fastify|server|api|routes)\.(?:get|post|put|patch|delete|all|route)\s*\(|@(?:Get|Post|Put|Patch|Delete|Query|Mutation|Resolver|Controller)\s*\(|\b(?:publicProcedure|protectedProcedure|adminProcedure)\b|\bdefineEventHandler\s*\(|\bcreateServerFn\s*\(/m;
+/** An argument object that bounds the read (or its result: `distinct`), written out or as a shorthand property (`{ where, take }`). */
+const READ_BOUND = /\b(?:take|where|cursor|limit|skip|first|last|distinct)\b\s*(?=[:,}]|$)|\.\.\./m;
+const ALLOW_UNBOUNDED_READ = /enigma:allow-unbounded-read/;
+
+/**
+ * A whole-table ORM read in request-serving code: Prisma or Drizzle-relational `findMany()` /
+ * `findMany({ select })` with no `where`, `take`, `limit` or `cursor`; Drizzle's `db.select().from(t)`
+ * awaited with no `.where(`, `.limit(` or `.groupBy(`. The table's row count becomes the response
+ * size, the memory held and the endpoint's latency.
+ */
+export function unboundedOrmRead(content: string): LineHit[] {
+    if (!REQUEST_SERVING.test(content)) return [];
+    const lines = content.split("\n");
+    const out: LineHit[] = [];
+    const flag = (index: number): void => {
+        const i = lineOfOffset(content, index) - 1;
+        if (tellSkipLine(lines[i]!) || allowedAt(lines, i, ALLOW_UNBOUNDED_READ)) return;
+        if (!out.some((h) => h.line === i + 1)) out.push({ line: i + 1, detail: lines[i]!.trim().slice(0, 120) });
+    };
+    for (const m of content.matchAll(/\.findMany\s*\(/g)) {
+        const lead = content.slice(content.lastIndexOf("\n", m.index!) + 1, m.index!);
+        if (insideStringOnLine(lead, false)) continue;
+        const args = callArguments(content, m.index! + m[0].length - 1, false).trim();
+        if (args !== "" && !args.startsWith("{")) continue;
+        if (READ_BOUND.test(args)) continue;
+        flag(m.index!);
+    }
+    for (const m of content.matchAll(/\b(?:await|return)\s+(?:this\.)?(?:db|tx|database|drizzle)\s*\.\s*select(?:Distinct)?\s*\(/g)) {
+        const rest = content.slice(m.index!, m.index! + 1500);
+        const end = rest.search(/;|\n\s*\n/);
+        const chain = end < 0 ? rest : rest.slice(0, end);
+        if (!/\.from\s*\(/.test(chain) || /\.(?:where|limit|groupBy|\$dynamic)\s*\(/.test(chain)) continue;
+        flag(m.index!);
+    }
+    return out.sort((a, b) => a.line - b.line);
+}
+
+const ALLOW_SELECT_STAR = /enigma:allow-select-star/;
+
+/**
+ * `SELECT * FROM <table>` in a query string of application code. Not reported: a subquery, an
+ * `EXISTS (SELECT *`, a catalog read, and a table named by interpolation - a database browser or a
+ * generic repository cannot know the columns of a table it is handed.
+ */
+export function selectStar(content: string, file: string): LineHit[] {
+    const python = /\.py$/i.test(file);
+    const lines = content.split("\n");
+    const out: LineHit[] = [];
+    for (let i = 0; i < lines.length; i++) {
+        const text = lines[i]!;
+        if (tellSkipLine(text) || allowedAt(lines, i, ALLOW_SELECT_STAR)) continue;
+        const m = /\bSELECT\s+\*\s+FROM\s+(?!\(|pragma|sqlite_|information_schema|pg_catalog|pg_|\$\{|["'`]\s*\+|\{|%s|\?|\[)[`"]?[A-Za-z_][\w.]*/i.exec(text);
+        if (!m) continue;
+        const lead = text.slice(0, m.index);
+        if (/\bEXISTS\s*\(\s*$/i.test(lead)) continue;
+        // A CTE of this file already chose its columns: `WITH src AS (SELECT a, b ...) SELECT * FROM src`.
+        const table = /FROM\s+[`"]?([A-Za-z_][\w.]*)/i.exec(m[0])![1]!.replace(/\./g, "\\.");
+        if (new RegExp(`\\b${table}\\s+AS\\s*\\(`, "i").test(content)) continue;
+        if (insideStringOnLine(lead, python) || /^\s*$/.test(lead)) out.push({ line: i + 1, detail: text.trim().slice(0, 120) });
+    }
+    return out;
+}
+
+/** An ORM read issued once per iteration: the client, then the model, then a read method. */
+const ORM_READ_CALL = /\bawait\s+(?:this\.)?(?:prisma|db|tx|ctx\.db|ctx\.prisma|client)\s*\.\s*(?:\w+\s*\.\s*)?(?:findUnique|findUniqueOrThrow|findFirst|findFirstOrThrow|findMany|count|aggregate|groupBy|findOne|findById)\s*\(|\bawait\s+(?:this\.)?(?:db|tx)\s*\.\s*(?:select|query\s*\.\s*\w+\s*\.\s*find\w*)\s*\(/;
+/** A loop over a collection that opens its own block: `for (const x of rows) {`, `rows.forEach(async (x) => {`. */
+const ROW_LOOP = /\bfor\s*(?:await\s*)?\(\s*(?:const|let|var)\s+(?:\[[^\]]*\]|\{[^}]*\}|[\w$]+)\s+(?:of|in)\s+([^)]+)\)\s*\{\s*(?:\/\/.*)?$|\.forEach\s*\(\s*async\b.*\{\s*(?:\/\/.*)?$/;
+const ALLOW_QUERY_IN_LOOP = /enigma:allow-query-in-loop/;
+
+/**
+ * A database read awaited inside a loop over rows - N+1: one round trip per element where one
+ * query with `in:`/`IN (...)`, an `include`/join, or a `groupBy` would answer the whole set. A
+ * loop over batches or pages (the paging idiom that bounds each query on purpose) is not reported.
+ */
+export function queryInLoop(content: string): LineHit[] {
+    const lines = content.split("\n");
+    const out: LineHit[] = [];
+    for (let i = 0; i < lines.length; i++) {
+        const text = lines[i]!;
+        if (tellSkipLine(text)) continue;
+        const loop = ROW_LOOP.exec(text);
+        if (!loop || /\b(?:batch|chunk|page|slice)\w*/i.test(loop[1] ?? "")) continue;
+        // A fixed set (an array literal, an ALL_CAPS table of specs) is not rows: each pass is a different query.
+        if (/^\s*\[|^\s*(?:Object\.\w+\(\s*)?[A-Z][A-Z0-9_]+\b/.test(loop[1] ?? "")) continue;
+        const { start, end } = enclosingBlock(lines, i);
+        if (start !== i) continue;
+        for (let k = i + 1; k <= end; k++) {
+            if (tellSkipLine(lines[k]!) || !ORM_READ_CALL.test(lines[k]!)) continue;
+            if (!allowedAt(lines, k, ALLOW_QUERY_IN_LOOP) && !allowedAt(lines, i, ALLOW_QUERY_IN_LOOP) && !out.some((h) => h.line === k + 1)) {
+                out.push({ line: k + 1, detail: lines[k]!.trim().slice(0, 120) });
+            }
+            break;
+        }
+    }
+    return out.sort((a, b) => a.line - b.line);
+}
+
+// D: sizes that ignore the viewport.
+/** Templates rendered at a fixed canvas size, where a pixel width is the specification: email bodies and social cards. */
+const FIXED_CANVAS_FILE = /(?:^|[\\/._-])(?:emails?|mail|mails|newsletters?|og|opengraph)(?:[\\/._-])|opengraph-image|twitter-image/i;
+/** Decoration that sits behind the layout: a blurred glow, a ring, anything that takes no pointer events. */
+const TW_DECORATION = /(?<![\w-])(?:blur-|pointer-events-none|-z-\d|opacity-0\b)|(?<![\w-])(?:rounded-full|absolute)\b.*(?<![\w-])h-\[\d+px\]|(?<![\w-])h-\[\d+px\].*(?<![\w-])(?:rounded-full|absolute)\b/;
+/** An HTML email body (Outlook-exported or table-based), where a fixed pixel width is the format. */
+const EMAIL_MARKUP = /\bmso-|\bx_inner|role=["']presentation["']|\bbgcolor=/i;
+const TW_WIDTH_GUARD = /(?<![\w-])max-w-|(?<![\w-])(?:sm|md|lg|xl|2xl|max-sm|max-md|max-lg|max-xl|@\w*):(?:w-|min-w-|max-w-|hidden\b|block\b|flex\b|grid\b|inline)/;
+const ALLOW_FIXED_WIDTH = /enigma:allow-fixed-width/;
+
+/**
+ * A layout width of 400px or more with nothing letting it give way on a phone: a Tailwind
+ * `w-[640px]` whose class list has no `max-w-*` and no breakpoint variant for the width or the
+ * display, or a stylesheet block with `width: 800px`, no `max-width`, outside any media or
+ * container query and never overridden by one. Decoration behind the layout is not reported.
+ */
+export function fixedWidthNoGuard(content: string, file: string): LineHit[] {
+    if (FIXED_CANVAS_FILE.test(file.replace(/\\/g, "/")) || EMAIL_MARKUP.test(content)) return [];
+    const lines = content.split("\n");
+    const out: LineHit[] = [];
+    for (let i = 0; i < lines.length; i++) {
+        const text = lines[i]!;
+        if (tellSkipLine(text) || allowedAt(lines, i, ALLOW_FIXED_WIDTH)) continue;
+        const hit = quotedRuns(text).some((run) => {
+            const w = /(?<![\w:[-])w-\[(\d+)px\]/.exec(run);
+            if (!w || Number(w[1]) < 400) return false;
+            if (TW_WIDTH_GUARD.test(run) || TW_DECORATION.test(run)) return false;
+            // A lone width token (`wide ? "w-[440px]" : "w-[400px]"`) belongs to a class list this
+            // line does not show, and a sibling run on the line may carry the guard (`cn("w-[480px]",
+            // isMobile ? "w-full" : "")`): neither element can be judged from here.
+            if (/^\s*w-\[\d+px\]\s*$/.test(run) || quotedRuns(text).some((r) => r !== run && (TW_WIDTH_GUARD.test(r) || /(?<![\w:-])w-full\b/.test(r)))) return false;
+            // An off-canvas panel is fe-mobile-drawer-full-width's finding, with its own fix.
+            return !(/(?<![\w-])(?:fixed|absolute)\b/.test(run) && /(?<![\w-])(?:inset-y-0|h-full|h-screen)\b/.test(run));
+        });
+        if (hit) out.push({ line: i + 1, detail: text.trim().slice(0, 120) });
+    }
+    for (const region of styleRegions(content, file)) {
+        const blocks = cssBlocks(region.text, region.line);
+        const adapted = new Set(blocks.filter((b) => b.adaptive).map((b) => b.selector.replace(/\s+/g, " ")));
+        for (const block of blocks) {
+            if (block.adaptive || block.selector.startsWith("@") || /::?(?:before|after)\b/.test(block.selector)) continue;
+            const w = /(?:^|[;\s{])width\s*:\s*(\d+)px/i.exec(block.body);
+            if (!w || Number(w[1]) < 400 || /max-width|min\(|clamp\(/i.test(block.body)) continue;
+            if (/pointer-events\s*:\s*none|filter\s*:\s*blur|z-index\s*:\s*-/i.test(block.body)) continue;
+            if (adapted.has(block.selector.replace(/\s+/g, " "))) continue;
+            const i = block.line - 1;
+            if (lines[i] !== undefined && allowedAt(lines, i, ALLOW_FIXED_WIDTH)) continue;
+            out.push({ line: block.line, detail: `${block.selector.slice(0, 80)} { width: ${w[1]}px }` });
+        }
+    }
+    return out.sort((a, b) => a.line - b.line);
+}
+
+const TW_VIEWPORT_HEIGHT = /(?<![\w:[-])(?:min-)?h-screen\b|(?<![\w:[-])(?:min-)?h-\[(?:calc\()?100vh/;
+const DYNAMIC_VIEWPORT = /\b\d*[dsl]vh\b|h-dvh|h-svh|h-lvh/;
+const ALLOW_VIEWPORT_HEIGHT = /enigma:allow-viewport-height/;
+
+/**
+ * A height (or min-height) of `100vh` - Tailwind `h-screen`/`min-h-screen`, a stylesheet
+ * `height: 100vh`, an inline `height: "100vh"` - with no dynamic-viewport unit beside it. On a
+ * phone `100vh` is the height with the browser toolbar HIDDEN, so while it shows, the bottom of
+ * the page (a fixed footer, the last nav item, a submit button) sits under it.
+ */
+export function staticViewportHeight(content: string, file: string): LineHit[] {
+    const lines = content.split("\n");
+    const out: LineHit[] = [];
+    for (let i = 0; i < lines.length; i++) {
+        const text = lines[i]!;
+        if (tellSkipLine(text) || allowedAt(lines, i, ALLOW_VIEWPORT_HEIGHT)) continue;
+        const tw = quotedRuns(text).some((run) => TW_VIEWPORT_HEIGHT.test(run) && !DYNAMIC_VIEWPORT.test(run));
+        const inline = /\b(?:height|minHeight)\s*:\s*["'`](?:calc\(\s*)?100vh/.test(text) && !DYNAMIC_VIEWPORT.test(text);
+        if (tw || inline) out.push({ line: i + 1, detail: text.trim().slice(0, 120) });
+    }
+    for (const block of markedCssBlocks(content, file, lines, ALLOW_VIEWPORT_HEIGHT)) {
+        if (!/(?:^|[;\s{])(?:min-)?height\s*:\s*(?:calc\(\s*)?100vh/i.test(block.body) || DYNAMIC_VIEWPORT.test(block.body)) continue;
+        out.push({ line: block.line, detail: `${block.selector.slice(0, 80)} { height: 100vh }` });
+    }
+    return out.sort((a, b) => a.line - b.line);
+}
+
+// A3: the sparkles glyph.
 /** Icon packages whose sparkles glyph is the stock "AI" icon, and the names it is exported under. */
 const SPARKLES_IMPORT = /\bimport\s+(?:type\s+)?\{([^}]*)\}\s*from\s*["']((?:@lucide\/|lucide-)[\w/-]+|@heroicons\/[\w/-]+|@tabler\/icons-[\w-]+|@phosphor-icons\/[\w/-]+)["']/g;
 const SPARKLES_NAME = /^(?:Sparkles|SparklesIcon|LucideSparkles|IconSparkles|Sparkle|SparkleIcon)$/;

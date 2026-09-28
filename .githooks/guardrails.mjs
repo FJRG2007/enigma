@@ -39,7 +39,29 @@ var INJECTION_EXCLUDES = [
   "**/site-packages/**"
 ];
 var UI_CODE_FILES = ["*.tsx", "*.jsx", "*.vue", "*.svelte", "*.astro", "*.html", "*.htm"];
+var UI_STYLE_FILES = [...UI_CODE_FILES, "*.css", "*.scss", "*.sass", "*.less"];
 var TELL_EXCLUDES = [...INJECTION_EXCLUDES, "**/stories/**", "stories/**", "**/.storybook/**", "*.story.*"];
+var DB_SCRIPT_EXCLUDES = [
+  "**/migrations/**",
+  "migrations/**",
+  "**/migration/**",
+  "migration/**",
+  "**/migrate/**",
+  "*migration*",
+  "*_test.*",
+  "*migrate*",
+  "**/seed/**",
+  "**/seeds/**",
+  "seed.*",
+  "seed-*",
+  "*.seed.*",
+  "**/scripts/**",
+  "scripts/**",
+  "**/benchmarks/**",
+  "*benchmark*",
+  "**/examples/**",
+  "examples/**"
+];
 var BUILTIN_RULES = [
   {
     id: "db-uuid-pk",
@@ -2385,8 +2407,9 @@ var BUILTIN_RULES = [
     severity: "block",
     skill: "security-policy"
   },
-  // SECOND WAVE (guardrails.md, "THE SECOND WAVE"): generated-UI tells. The figure is findings /
-  // candidate lines over the corpus, every finding read by hand; the stage follows the backlog.
+  // SECOND WAVE (guardrails.md, "THE SECOND WAVE"): generated-UI tells, data-loading cost and
+  // viewport sizing. The figure is findings / candidate lines over the corpus, every finding read
+  // by hand; the stage follows the backlog.
   {
     id: "fe-sparkles-icon",
     label: "No sparkles glyph as the generic AI icon",
@@ -2399,6 +2422,161 @@ var BUILTIN_RULES = [
     message: 'The sparkles glyph is the stock icon for "AI" and "new", so it says nothing about what this control does. Use an icon that names the action (a pen for "rewrite", a list for "summarize", a wand only for an actual one-click transform), or no icon at all. Mark the line `enigma:allow-sparkles-icon` when the glyph is literally the subject (a sparkle/effects picker) (frontend-design).',
     severity: "block",
     skill: "frontend-design"
+  },
+  {
+    id: "fe-purple-gradient",
+    label: "No stock purple/indigo gradient",
+    files: UI_STYLE_FILES,
+    excludeFiles: TELL_EXCLUDES,
+    // Measured: 3360 candidate lines, 133 findings in 100 files, every one a purple-family stop paired with a second hue (tonal ramps, spectra and glows into black excluded).
+    scope: "file",
+    stage: "diff",
+    fileCheck: "fe-purple-gradient",
+    message: "A purple/indigo/violet gradient (Tailwind's default indigo ramp, or purple fading into blue, pink or cyan) is the colour scheme every generated landing page ships with, so it reads as a template before anyone reads a word. Derive the accent from the subject's own world and the palette you planned: one solid accent colour, with tone steps of that hue for depth, and a gradient only when it encodes something (a range, a heat scale). Mark the line `enigma:allow-brand-gradient` when this gradient IS the brand (frontend-design).",
+    severity: "block",
+    skill: "frontend-design"
+  },
+  {
+    id: "fe-gradient-text",
+    label: "No gradient-filled text",
+    files: UI_STYLE_FILES,
+    excludeFiles: TELL_EXCLUDES,
+    // Measured: 243 candidate lines, 129 findings in 75 files, every one gradient-filled text (shimmer labels and minified bundles excluded).
+    scope: "file",
+    stage: "diff",
+    fileCheck: "fe-gradient-text",
+    message: "Gradient-filled text (`bg-clip-text text-transparent`, `background-clip: text`) on a heading is one of the clearest tells of generated UI, and it costs legibility: contrast varies along the word and the text vanishes where the gradient meets the background. Set the heading in one solid colour and let size, weight and the display face carry the emphasis. Mark the line `enigma:allow-gradient-text` when the brief explicitly asks for it (frontend-design).",
+    severity: "block",
+    skill: "frontend-design"
+  },
+  {
+    id: "fe-accent-stripe",
+    label: "No coloured stripe on a rounded card",
+    files: UI_STYLE_FILES,
+    excludeFiles: TELL_EXCLUDES,
+    // Measured: 403 candidate lines, 68 findings in 37 files, every one a 2-8px left stripe on a box whose left corners are rounded.
+    scope: "file",
+    stage: "diff",
+    fileCheck: "fe-accent-stripe",
+    message: "A thick coloured left border on a rounded box is the template callout: the stripe fights the radius and repeats what the text already says. For a real status use a status icon plus a tinted background, or a labelled badge; for plain emphasis use none. A quote or a nested thread keeps its rule only on a square edge (drop the radius). Mark the line `enigma:allow-accent-stripe` when the design system defines this component (frontend-policy).",
+    severity: "block",
+    skill: "frontend-policy"
+  },
+  {
+    id: "fe-emoji-icon",
+    label: "Emoji are content, never icons or bullets",
+    files: UI_CODE_FILES,
+    excludeFiles: TELL_EXCLUDES,
+    // Measured: 2407 candidate lines, 192 findings in 83 files, every one an emoji opening a label, heading, list item or `icon` value (Ink terminal UIs, replayed terminal output and gitmoji samples excluded).
+    scope: "file",
+    stage: "diff",
+    fileCheck: "fe-emoji-icon",
+    message: "An emoji is standing in for an icon or a list bullet. Emoji render differently on every platform (and as blank boxes on some), clash with the icon set's stroke and grid, and are read aloud by screen readers (\"rocket, Fast deploys\"). Use the project's icon library with `aria-hidden` on the glyph, or a styled list marker; keep emoji only where they are the content itself (a reaction, a message, an emoji picker). Mark the line `enigma:allow-emoji-icon` when that is the case (frontend-policy).",
+    severity: "block",
+    skill: "frontend-policy"
+  },
+  {
+    id: "ui-powered-by-buzzword",
+    label: 'No "powered by AI" copy',
+    files: UI_CODE_FILES,
+    excludeFiles: TELL_EXCLUDES,
+    // Measured: 51 "powered by" lines, 0 findings (every one names a provider or a product), so EDIT stage.
+    scope: "file",
+    fileCheck: "ui-powered-by-buzzword",
+    message: '"Powered by AI" / "powered by cutting-edge technology" is a generated-copy tell: it names no provider and tells the reader nothing they act on. Say what the feature does for them ("Drafts a reply from the thread"), or drop the line. A real attribution names the provider ("Powered by Stripe") and is not matched. Mark the line `enigma:allow-powered-by` when the phrase is quoted on purpose (technical-writing-policy).',
+    severity: "block",
+    skill: "technical-writing-policy"
+  },
+  {
+    id: "ui-chat-residue",
+    label: "No chat-assistant residue in shipped copy",
+    files: UI_CODE_FILES,
+    // A sample tree may show real model output on purpose (an eval report replaying a refusal).
+    excludeFiles: [...TELL_EXCLUDES, "**/examples/**", "examples/**"],
+    // Measured: 5 candidate lines, 0 findings (a bio's "as an AI engineer" and an eval sample page excluded), so EDIT stage.
+    scope: "file",
+    fileCheck: "ui-chat-residue",
+    message: 'Text a chat assistant left behind is in shipped copy: "As an AI", "I hope this helps", an unfilled `[Your Company]` placeholder, or a link carrying `utm_source=chatgpt`. Delete the residue, fill every placeholder with the real value (or ask for it), and strip the tracking parameter from the URL. Mark the line `enigma:allow-chat-residue` when the text is quoted on purpose (technical-writing-policy).',
+    severity: "block",
+    skill: "technical-writing-policy"
+  },
+  {
+    id: "ui-ai-vocabulary",
+    label: "No generated-copy vocabulary in UI text",
+    files: UI_CODE_FILES,
+    excludeFiles: TELL_EXCLUDES,
+    // Measured: 1844 candidate lines, 19 findings in 17 files, every one marketing copy ("seamlessly integrates", "leverage machine learning").
+    scope: "file",
+    stage: "diff",
+    fileCheck: "ui-ai-vocabulary",
+    message: 'UI copy uses the vocabulary that marks text as generated (delve, seamless, leverage, robust, tapestry, testament). Say the concrete thing: "Leverage robust tooling to unlock seamless deploys" -> "Deploy with one command". Mark the line `enigma:allow-ai-vocabulary` when the word is literal (a "robust" statistical estimator) (technical-writing-policy).',
+    severity: "block",
+    skill: "technical-writing-policy"
+  },
+  {
+    id: "db-unbounded-read",
+    label: "Request-serving reads are bounded",
+    files: ["*.ts", "*.js", "*.mjs", "*.cjs", "*.mts", "*.cts", "*.tsx", "*.jsx"],
+    excludeFiles: [...TELL_EXCLUDES, ...DB_SCRIPT_EXCLUDES],
+    // Measured: 4021 candidate lines, 17 findings in 13 files, every one a whole-table list in a route, action or router (4 filter the result in JS afterwards).
+    scope: "file",
+    stage: "diff",
+    fileCheck: "db-unbounded-read",
+    message: "This request-serving code reads a whole table: a `findMany` with no `where`, `take` or `cursor`, or a `db.select().from(t)` with no `.where(`/`.limit(`. The table's row count becomes the response size, the memory held and the endpoint's latency, and it grows without anyone changing the code. Bound it: `take` plus cursor pagination (`take: 50, cursor: { id }, skip: 1`), Drizzle `.limit(50)` with a keyset `where`, and filter in the query rather than in application code. Mark the line `enigma:allow-unbounded-read` when the table is a small fixed lookup (plans, roles, locales) (database-expert).",
+    severity: "block",
+    skill: "database-expert"
+  },
+  {
+    id: "db-select-star",
+    label: "Queries name their columns",
+    files: ["*.ts", "*.js", "*.mjs", "*.cjs", "*.mts", "*.cts", "*.py", "*.go", "*.java", "*.cs", "*.php", "*.rb"],
+    excludeFiles: [...TELL_EXCLUDES, ...DB_SCRIPT_EXCLUDES],
+    // Measured: 863 candidate lines, 708 findings in 218 files, every one a named table read whole - a real backlog, hence the diff stage.
+    scope: "file",
+    stage: "diff",
+    fileCheck: "db-select-star",
+    message: "`SELECT *` in application code fetches every column, including the wide TEXT/JSONB ones the caller never reads, rules out an index-only scan, and silently changes shape when a migration adds a column. Name the columns the code uses: `SELECT id, name, created_at FROM ...` (on an ORM, an explicit `select`). Mark the line `enigma:allow-select-star` for a genuine whole-row copy (an export, a backup) (database-expert).",
+    severity: "block",
+    skill: "database-expert"
+  },
+  {
+    id: "db-query-in-loop",
+    label: "No query per row (N+1)",
+    files: ["*.ts", "*.js", "*.mjs", "*.cjs", "*.mts", "*.cts", "*.tsx", "*.jsx"],
+    excludeFiles: [...TELL_EXCLUDES, ...DB_SCRIPT_EXCLUDES],
+    // Measured: 48323 loop lines, 49 findings in 40 files, every one a read awaited once per element of a row set.
+    scope: "file",
+    stage: "diff",
+    fileCheck: "db-query-in-loop",
+    message: "A database read is awaited inside a loop over rows: N+1, one round trip per element, so the endpoint's latency grows with the list. Fetch the set in one query and join in memory: `findMany({ where: { id: { in: ids } } })` then a `Map` by id, an `include`/join for the relation, or a `groupBy`/`GROUP BY` for per-row counts. Mark the line `enigma:allow-query-in-loop` when each iteration genuinely depends on the previous one (database-expert).",
+    severity: "block",
+    skill: "database-expert"
+  },
+  {
+    id: "fe-fixed-width",
+    label: "A wide layout width gives way on a phone",
+    files: UI_STYLE_FILES,
+    excludeFiles: TELL_EXCLUDES,
+    // Measured: 2442 candidate lines, 84 findings in 64 files, every one a modal, popover, panel or container wider than a phone with no cap or breakpoint.
+    scope: "file",
+    stage: "diff",
+    fileCheck: "fe-fixed-width",
+    message: "A layout width of 400px or more with nothing letting it shrink: on a 360-390px phone the element is cut off or forces the whole page to scroll sideways. Make the fixed size a cap instead: `w-full max-w-[640px]` (CSS `width: 100%; max-width: 640px`), or apply it from a breakpoint up (`w-full md:w-[640px]`, or an `@media (min-width: ...)` block). Mark the line `enigma:allow-fixed-width` when the element sits inside a horizontal scroller on purpose (frontend-policy).",
+    severity: "block",
+    skill: "frontend-policy"
+  },
+  {
+    id: "fe-static-viewport-height",
+    label: "Viewport-height containers use the dynamic unit",
+    files: UI_STYLE_FILES,
+    excludeFiles: TELL_EXCLUDES,
+    // Measured: 975 candidate lines, 661 findings in 559 files, every one a 100vh height with no dvh beside it.
+    scope: "file",
+    stage: "diff",
+    fileCheck: "fe-static-viewport-height",
+    message: "`100vh` (Tailwind `h-screen`/`min-h-screen`) is the viewport with the mobile browser toolbar HIDDEN, so while the toolbar shows, the bottom of this container - a footer, the last nav item, a submit button - sits underneath it. Use the dynamic unit: `h-dvh`/`min-h-dvh` (Tailwind 3.4+, `h-[100dvh]` before that), CSS `height: 100dvh` (keep a `100vh` line above it only as a fallback for old browsers). Mark the line `enigma:allow-viewport-height` when the element is desktop-only (frontend-policy).",
+    severity: "block",
+    skill: "frontend-policy"
   }
 ];
 var PROJECT_CHECKS = {
@@ -2469,7 +2647,19 @@ var FILE_CHECKS = {
   "sec-ssrf-dns-recheck": (content) => dnsCheckThenFetch(content),
   "sec-untrusted-file-inline": (content, file) => storedFileServedInline(content, file),
   "sec-path-join-from-input": (content, file) => pathJoinedFromInput(content, file),
-  "fe-sparkles-icon": (content) => sparklesIcon(content)
+  "fe-sparkles-icon": (content) => sparklesIcon(content),
+  "fe-purple-gradient": (content) => purpleGradient(content),
+  "fe-gradient-text": (content, file) => gradientText(content, file),
+  "fe-accent-stripe": (content, file) => accentStripe(content, file),
+  "fe-emoji-icon": (content) => emojiAsIcon(content),
+  "ui-powered-by-buzzword": (content) => poweredByBuzzword(content),
+  "ui-chat-residue": (content) => chatResidue(content),
+  "ui-ai-vocabulary": (content) => aiVocabulary(content),
+  "db-unbounded-read": (content) => unboundedOrmRead(content),
+  "db-select-star": (content, file) => selectStar(content, file),
+  "db-query-in-loop": (content) => queryInLoop(content),
+  "fe-fixed-width": (content, file) => fixedWidthNoGuard(content, file),
+  "fe-static-viewport-height": (content, file) => staticViewportHeight(content, file)
 };
 var FIXERS = {
   "fe-name-input-capitalize": (line, file) => {
@@ -3978,6 +4168,340 @@ function pathJoinedFromInput(content, file) {
 function allowedAt(lines, index, marker) {
   return marker.test(lines[index]) || index > 0 && marker.test(lines[index - 1]);
 }
+function tellSkipLine(text) {
+  return COMMENT_LINE.test(text) || text.length > MINIFIED_LINE;
+}
+function quotedRuns(text) {
+  return [...text.matchAll(/"([^"]*)"|'([^']*)'|`([^`]*)`/g)].map((m) => m[1] ?? m[2] ?? m[3] ?? "");
+}
+function styleRegions(content, file) {
+  const regions = [];
+  if (/\.(css|scss|sass|less)$/i.test(file)) regions.push({ text: content, line: 1 });
+  else {
+    for (const m of content.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/gi)) {
+      regions.push({ text: m[1], line: lineOfOffset(content, m.index + m[0].indexOf(">") + 1) });
+    }
+  }
+  return regions.filter((r) => !r.text.split("\n").some((l) => l.length > MINIFIED_LINE));
+}
+function cssBlocks(css, firstLine) {
+  const src = css.replace(/\/\*[\s\S]*?\*\//g, (c) => c.replace(/[^\n]/g, " "));
+  const out = [];
+  const stack = [];
+  let text = "";
+  let line = firstLine;
+  for (const ch of src) {
+    if (ch === "{") {
+      stack.push({ selector: text.split(/[;}]/).pop().trim(), start: line, body: "" });
+      text = "";
+    } else if (ch === "}") {
+      const block = stack.pop();
+      if (block) {
+        block.body += text;
+        out.push({ selector: block.selector, body: block.body, line: block.start, adaptive: stack.some((b) => /^@(?:media|container|supports)\b/i.test(b.selector)) });
+      }
+      text = "";
+    } else {
+      text += ch;
+      if (stack.length) stack[stack.length - 1].body += ch;
+    }
+    if (ch === "\n") line++;
+  }
+  return out;
+}
+function markedCssBlocks(content, file, lines, marker) {
+  return styleRegions(content, file).flatMap((r) => cssBlocks(r.text, r.line)).filter((b) => lines[b.line - 1] === void 0 || !allowedAt(lines, b.line - 1, marker));
+}
+var TW_HUE = { sky: 199, cyan: 189, blue: 217, indigo: 239, violet: 258, purple: 271, fuchsia: 292, pink: 330 };
+var TW_STOP = /(?<![\w-])(?:from|via|to)-(?:(sky|cyan|blue|indigo|violet|purple|fuchsia|pink)-\d{2,3}\b|\[(#[0-9a-f]{3,8})\])/gi;
+var HEX_COLOR = /#(?:[0-9a-f]{6}|[0-9a-f]{3})\b/gi;
+var ALLOW_BRAND_GRADIENT = /enigma:allow-brand-gradient/;
+function hexHue(hex) {
+  let h = hex.replace("#", "");
+  if (h.length === 3) h = [...h].map((c) => c + c).join("");
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16) / 255);
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  const d = max - min;
+  if (d === 0 || l < 0.2 || l > 0.92) return null;
+  if (d / (1 - Math.abs(2 * l - 1)) < 0.35) return null;
+  const hue = max === r ? (g - b) / d % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return (hue * 60 + 360) % 360;
+}
+function purplePair(hues) {
+  if (hues.some((h) => h >= 40 && h <= 160)) return false;
+  return hues.some((p) => p >= 235 && p <= 290 && hues.some((q) => q >= 170 && q <= 345 && Math.abs(p - q) >= 15));
+}
+function twStopHues(run) {
+  return [...run.matchAll(TW_STOP)].map((m) => m[1] ? TW_HUE[m[1].toLowerCase()] : hexHue(m[2])).filter((h) => h !== null);
+}
+function purpleGradient(content) {
+  const lines = content.split("\n");
+  const out = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (let i = 0; i < lines.length; i++) {
+    const text = lines[i];
+    if (tellSkipLine(text) || allowedAt(lines, i, ALLOW_BRAND_GRADIENT)) continue;
+    if (quotedRuns(text).some((run) => purplePair(twStopHues(run)))) {
+      seen.add(i);
+      out.push({ line: i + 1, detail: text.trim().slice(0, 120) });
+    }
+  }
+  for (const m of content.matchAll(/\b(?:linear|radial|conic)-gradient\(/gi)) {
+    const i = lineOfOffset(content, m.index) - 1;
+    if (seen.has(i) || tellSkipLine(lines[i]) || allowedAt(lines, i, ALLOW_BRAND_GRADIENT)) continue;
+    const args = callArguments(content, m.index + m[0].length - 1, false);
+    const hues = [...args.matchAll(HEX_COLOR)].map((h) => hexHue(h[0])).filter((h) => h !== null);
+    if (purplePair(hues)) {
+      seen.add(i);
+      out.push({ line: i + 1, detail: lines[i].trim().slice(0, 120) });
+    }
+  }
+  return out.sort((a, b) => a.line - b.line);
+}
+var ALLOW_GRADIENT_TEXT = /enigma:allow-gradient-text/;
+var SHIMMER = /shimmer|shine|typing|thinking|loading|running|pending|skeleton/i;
+function gradientText(content, file) {
+  const lines = content.split("\n");
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    const text = lines[i];
+    if (tellSkipLine(text) || allowedAt(lines, i, ALLOW_GRADIENT_TEXT)) continue;
+    const hit = quotedRuns(text).some((run) => /(?<![\w:-])bg-clip-text\b/.test(run) && /(?<![\w:-])text-transparent\b/.test(run) && /(?<![\w-])(?:bg-gradient-|bg-linear-|bg-radial|bg-conic|from-)|gradient\(|\$\{/.test(run) && !SHIMMER.test(run) && !/(?<![\w-])bg-(?:size-\[|\[length:)\d{3}%/.test(run));
+    if (hit) out.push({ line: i + 1, detail: text.trim().slice(0, 120) });
+  }
+  for (const block of markedCssBlocks(content, file, lines, ALLOW_GRADIENT_TEXT)) {
+    if (!/(?:^|[;\s])(?:-webkit-)?background-clip\s*:\s*text\b/i.test(block.body)) continue;
+    if (!/-webkit-text-fill-color\s*:\s*transparent|(?:^|[;\s])color\s*:\s*transparent/i.test(block.body)) continue;
+    if (!/gradient\(|var\(--[\w-]*gradient/i.test(block.body) || SHIMMER.test(block.selector)) continue;
+    out.push({ line: block.line, detail: `${block.selector.slice(0, 80)} { background-clip: text }` });
+  }
+  return out.sort((a, b) => a.line - b.line);
+}
+var TW_LEFT_STRIPE = /(?<![\w:-])border-(?:l|s)-(?:[2-8]|\[[2-8]px\])(?![\w-])/;
+var TW_ROUNDED_LEFT = /(?<![\w:-])rounded(?:-(?:l|s|t|b|tl|bl|ss|es))?(?:-(?:sm|md|lg|xl|2xl|3xl|full|\[[^\]]+\]))?(?![\w-])/;
+var ALLOW_ACCENT_STRIPE = /enigma:allow-accent-stripe/;
+function leftCornersSquare(radius) {
+  const v = radius.split("/")[0].trim().split(/\s+/);
+  const [tl, bl] = v.length === 1 ? [v[0], v[0]] : v.length === 2 ? [v[0], v[1]] : v.length === 3 ? [v[0], v[1]] : [v[0], v[3]];
+  return [tl, bl].every((c) => /^0(?:px|rem|em|%)?$/.test(c ?? ""));
+}
+function accentStripe(content, file) {
+  const lines = content.split("\n");
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    const text = lines[i];
+    if (tellSkipLine(text) || allowedAt(lines, i, ALLOW_ACCENT_STRIPE)) continue;
+    const hit = quotedRuns(text).some((run) => TW_LEFT_STRIPE.test(run) && TW_ROUNDED_LEFT.test(run) && !/(?<![\w:-])rounded-(?:none|[ls]-none)\b|(?<![\w-])border-(?:l-)?transparent\b/.test(run));
+    if (hit) out.push({ line: i + 1, detail: text.trim().slice(0, 120) });
+  }
+  for (const block of markedCssBlocks(content, file, lines, ALLOW_ACCENT_STRIPE)) {
+    if (!/(?:^|[;\s])border-(?:left|inline-start)\s*:\s*[2-8]px\s+solid\b/i.test(block.body)) continue;
+    const radius = /(?:^|[;\s])border-radius\s*:\s*([^;]+)/i.exec(block.body)?.[1]?.trim();
+    if (!radius || leftCornersSquare(radius)) continue;
+    out.push({ line: block.line, detail: `${block.selector.slice(0, 80)} { border-left + border-radius }` });
+  }
+  return out.sort((a, b) => a.line - b.line);
+}
+var EMOJI = "(?:[\\u{1F300}-\\u{1F5FF}\\u{1F680}-\\u{1F6FF}\\u{1F900}-\\u{1FAFF}\\u{1F7E0}-\\u{1F7EB}]|[\\u{2705}\\u{2728}\\u{274C}\\u{274E}\\u{2714}\\u{2753}-\\u{2755}\\u{2757}\\u{26A1}\\u{26A0}\\u{2B50}\\u{2B55}\\u{2615}\\u{23F0}\\u{23F3}\\u{231B}\\u{2764}\\u{2699}\\u{26D4}\\u{267B}\\u{26BD}\\u{2600}-\\u{2604}\\u{260E}\\u{2611}\\u{2614}])\\u{FE0F}?";
+var EMOJI_LEAD = new RegExp([
+  `(?:(?<![=\\-])>|^)\\s*${EMOJI}\\s*[A-Za-z]`,
+  `\\b(?:title|label|heading|subtitle|description|text|name|cta|tagline|badge|message)\\s*[:=]\\s*\\{?\\s*["'\`]\\s*${EMOJI}\\s*[A-Za-z]`
+].join("|"), "u");
+var EMOJI_ICON = new RegExp(`\\bicon\\s*[:=]\\s*\\{?\\s*["'\`]\\s*(?:${EMOJI})+\\s*["'\`]`, "u");
+var EMOJI_COMMIT_SAMPLE = new RegExp(`${EMOJI}\\s*[a-z]+(?:\\([\\w-]+\\))?!?:`, "u");
+var TERMINAL_MARKUP = /class(?:Name)?\s*=\s*["'{`][^"'`]*\b(?:terminal|output|console|stdout)\b/i;
+var ALLOW_EMOJI_ICON = /enigma:allow-emoji-icon/;
+function emojiAsIcon(content) {
+  if (/\bfrom\s+["']ink["']|require\(\s*["']ink["']\s*\)/.test(content)) return [];
+  const lines = content.split("\n");
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    const text = lines[i];
+    if (tellSkipLine(text) || allowedAt(lines, i, ALLOW_EMOJI_ICON)) continue;
+    if (/\bconsole\.|\blog(?:ger)?\.\w+\(|\bprint\(/.test(text) || EMOJI_COMMIT_SAMPLE.test(text) || TERMINAL_MARKUP.test(text)) continue;
+    if (EMOJI_LEAD.test(text) || EMOJI_ICON.test(text)) out.push({ line: i + 1, detail: text.trim().slice(0, 120) });
+  }
+  return out;
+}
+var COPY_PROP = /\b(?:title|description|label|placeholder|subtitle|heading|headline|tagline|text|message|alt|aria-label|caption|summary|content|cta|excerpt|tooltip|hint|helperText)\s*[:=]\s*\{?\s*(["'`])((?:(?!\1)[^\\]|\\.)*)\1/g;
+function copyRuns(text) {
+  const runs = [];
+  for (const m of text.matchAll(/(?<![=\-])>([^<>{}]*)/g)) if (/[A-Za-z]{2}/.test(m[1])) runs.push(m[1]);
+  if (/^\s*[A-Z][a-z']+(?:\s+[A-Za-z0-9'.,!?&-]+){2,}\s*$/.test(text)) runs.push(text);
+  for (const m of text.matchAll(COPY_PROP)) runs.push(m[2]);
+  return runs;
+}
+var POWERED_BY_BUZZWORD = /\bpowered by (?:AI\b|A\.I\.|artificial intelligence|cutting[- ]edge|state[- ]of[- ]the[- ]art|advanced (?:AI|technology|algorithms)|the latest (?:AI|technology)|next[- ]gen(?:eration)? (?:AI|technology)|machine learning|generative AI)/i;
+var ALLOW_POWERED_BY = /enigma:allow-powered-by/;
+function poweredByBuzzword(content) {
+  const lines = content.split("\n");
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    const text = lines[i];
+    if (tellSkipLine(text) || allowedAt(lines, i, ALLOW_POWERED_BY)) continue;
+    const run = copyRuns(text).find((r) => POWERED_BY_BUZZWORD.test(r));
+    if (run) out.push({ line: i + 1, detail: run.trim().slice(0, 120) });
+  }
+  return out;
+}
+var CHAT_RESIDUE = /\bAs an AI(?:\s+(?:language\s+)?model|\s+assistant)?\s*,|\bI hope this helps\b|\[Your (?:Company|Name|Brand|Product|Website|Email|App|Business)(?: Name)?\]|\butm_source=chat[g]pt/i;
+var CHAT_LINK = /\butm_source=chat[g]pt/i;
+var ALLOW_CHAT_RESIDUE = /enigma:allow-chat-residue/;
+function chatResidue(content) {
+  const lines = content.split("\n");
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    const text = lines[i];
+    if (text.length > MINIFIED_LINE || allowedAt(lines, i, ALLOW_CHAT_RESIDUE)) continue;
+    const link = CHAT_LINK.test(text);
+    if (!link && COMMENT_LINE.test(text)) continue;
+    if (link || copyRuns(text).some((r) => CHAT_RESIDUE.test(r))) out.push({ line: i + 1, detail: text.trim().slice(0, 120) });
+  }
+  return out;
+}
+var AI_VOCABULARY = /\b(?:delve[sd]?|delving|seamless(?:ly)?|leverag(?:e|es|ed|ing)|robust|tapestry|testament)\b/gi;
+var SEAMLESS_LITERAL = /\bseamless(?:ly)?\s+(?:\w+\s+)?(?:loop|wrap|tile|tiling|repeat|texture|pattern)|\b(?:loop|loops|wrap|wraps|tile|tiles|repeat|repeats)\s+(?:\w+\s+)?seamless/i;
+var ALLOW_AI_VOCABULARY = /enigma:allow-ai-vocabulary/;
+function aiVocabulary(content) {
+  const lines = content.split("\n");
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    const text = lines[i];
+    if (tellSkipLine(text) || allowedAt(lines, i, ALLOW_AI_VOCABULARY) || /<(?:code|pre|kbd)\b/i.test(text)) continue;
+    const words = new Set(copyRuns(text).filter((r) => !SEAMLESS_LITERAL.test(r)).flatMap((r) => [...r.matchAll(AI_VOCABULARY)].map((m) => m[0].toLowerCase())));
+    if (words.size) out.push({ line: i + 1, detail: [...words].join(", ") });
+  }
+  return out;
+}
+var REQUEST_SERVING = /export\s+(?:async\s+)?function\s+(?:GET|POST|PUT|PATCH|DELETE|loader|action)\b|export\s+const\s+(?:GET|POST|PUT|PATCH|DELETE|loader|action)\s*=|^\s*["']use server["']|\b(?:router|app|fastify|server|api|routes)\.(?:get|post|put|patch|delete|all|route)\s*\(|@(?:Get|Post|Put|Patch|Delete|Query|Mutation|Resolver|Controller)\s*\(|\b(?:publicProcedure|protectedProcedure|adminProcedure)\b|\bdefineEventHandler\s*\(|\bcreateServerFn\s*\(/m;
+var READ_BOUND = /\b(?:take|where|cursor|limit|skip|first|last|distinct)\b\s*(?=[:,}]|$)|\.\.\./m;
+var ALLOW_UNBOUNDED_READ = /enigma:allow-unbounded-read/;
+function unboundedOrmRead(content) {
+  if (!REQUEST_SERVING.test(content)) return [];
+  const lines = content.split("\n");
+  const out = [];
+  const flag = (index) => {
+    const i = lineOfOffset(content, index) - 1;
+    if (tellSkipLine(lines[i]) || allowedAt(lines, i, ALLOW_UNBOUNDED_READ)) return;
+    if (!out.some((h) => h.line === i + 1)) out.push({ line: i + 1, detail: lines[i].trim().slice(0, 120) });
+  };
+  for (const m of content.matchAll(/\.findMany\s*\(/g)) {
+    const lead = content.slice(content.lastIndexOf("\n", m.index) + 1, m.index);
+    if (insideStringOnLine(lead, false)) continue;
+    const args = callArguments(content, m.index + m[0].length - 1, false).trim();
+    if (args !== "" && !args.startsWith("{")) continue;
+    if (READ_BOUND.test(args)) continue;
+    flag(m.index);
+  }
+  for (const m of content.matchAll(/\b(?:await|return)\s+(?:this\.)?(?:db|tx|database|drizzle)\s*\.\s*select(?:Distinct)?\s*\(/g)) {
+    const rest = content.slice(m.index, m.index + 1500);
+    const end = rest.search(/;|\n\s*\n/);
+    const chain = end < 0 ? rest : rest.slice(0, end);
+    if (!/\.from\s*\(/.test(chain) || /\.(?:where|limit|groupBy|\$dynamic)\s*\(/.test(chain)) continue;
+    flag(m.index);
+  }
+  return out.sort((a, b) => a.line - b.line);
+}
+var ALLOW_SELECT_STAR = /enigma:allow-select-star/;
+function selectStar(content, file) {
+  const python = /\.py$/i.test(file);
+  const lines = content.split("\n");
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    const text = lines[i];
+    if (tellSkipLine(text) || allowedAt(lines, i, ALLOW_SELECT_STAR)) continue;
+    const m = /\bSELECT\s+\*\s+FROM\s+(?!\(|pragma|sqlite_|information_schema|pg_catalog|pg_|\$\{|["'`]\s*\+|\{|%s|\?|\[)[`"]?[A-Za-z_][\w.]*/i.exec(text);
+    if (!m) continue;
+    const lead = text.slice(0, m.index);
+    if (/\bEXISTS\s*\(\s*$/i.test(lead)) continue;
+    const table = /FROM\s+[`"]?([A-Za-z_][\w.]*)/i.exec(m[0])[1].replace(/\./g, "\\.");
+    if (new RegExp(`\\b${table}\\s+AS\\s*\\(`, "i").test(content)) continue;
+    if (insideStringOnLine(lead, python) || /^\s*$/.test(lead)) out.push({ line: i + 1, detail: text.trim().slice(0, 120) });
+  }
+  return out;
+}
+var ORM_READ_CALL = /\bawait\s+(?:this\.)?(?:prisma|db|tx|ctx\.db|ctx\.prisma|client)\s*\.\s*(?:\w+\s*\.\s*)?(?:findUnique|findUniqueOrThrow|findFirst|findFirstOrThrow|findMany|count|aggregate|groupBy|findOne|findById)\s*\(|\bawait\s+(?:this\.)?(?:db|tx)\s*\.\s*(?:select|query\s*\.\s*\w+\s*\.\s*find\w*)\s*\(/;
+var ROW_LOOP = /\bfor\s*(?:await\s*)?\(\s*(?:const|let|var)\s+(?:\[[^\]]*\]|\{[^}]*\}|[\w$]+)\s+(?:of|in)\s+([^)]+)\)\s*\{\s*(?:\/\/.*)?$|\.forEach\s*\(\s*async\b.*\{\s*(?:\/\/.*)?$/;
+var ALLOW_QUERY_IN_LOOP = /enigma:allow-query-in-loop/;
+function queryInLoop(content) {
+  const lines = content.split("\n");
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    const text = lines[i];
+    if (tellSkipLine(text)) continue;
+    const loop = ROW_LOOP.exec(text);
+    if (!loop || /\b(?:batch|chunk|page|slice)\w*/i.test(loop[1] ?? "")) continue;
+    if (/^\s*\[|^\s*(?:Object\.\w+\(\s*)?[A-Z][A-Z0-9_]+\b/.test(loop[1] ?? "")) continue;
+    const { start, end } = enclosingBlock(lines, i);
+    if (start !== i) continue;
+    for (let k = i + 1; k <= end; k++) {
+      if (tellSkipLine(lines[k]) || !ORM_READ_CALL.test(lines[k])) continue;
+      if (!allowedAt(lines, k, ALLOW_QUERY_IN_LOOP) && !allowedAt(lines, i, ALLOW_QUERY_IN_LOOP) && !out.some((h) => h.line === k + 1)) {
+        out.push({ line: k + 1, detail: lines[k].trim().slice(0, 120) });
+      }
+      break;
+    }
+  }
+  return out.sort((a, b) => a.line - b.line);
+}
+var FIXED_CANVAS_FILE = /(?:^|[\\/._-])(?:emails?|mail|mails|newsletters?|og|opengraph)(?:[\\/._-])|opengraph-image|twitter-image/i;
+var TW_DECORATION = /(?<![\w-])(?:blur-|pointer-events-none|-z-\d|opacity-0\b)|(?<![\w-])(?:rounded-full|absolute)\b.*(?<![\w-])h-\[\d+px\]|(?<![\w-])h-\[\d+px\].*(?<![\w-])(?:rounded-full|absolute)\b/;
+var EMAIL_MARKUP = /\bmso-|\bx_inner|role=["']presentation["']|\bbgcolor=/i;
+var TW_WIDTH_GUARD = /(?<![\w-])max-w-|(?<![\w-])(?:sm|md|lg|xl|2xl|max-sm|max-md|max-lg|max-xl|@\w*):(?:w-|min-w-|max-w-|hidden\b|block\b|flex\b|grid\b|inline)/;
+var ALLOW_FIXED_WIDTH = /enigma:allow-fixed-width/;
+function fixedWidthNoGuard(content, file) {
+  if (FIXED_CANVAS_FILE.test(file.replace(/\\/g, "/")) || EMAIL_MARKUP.test(content)) return [];
+  const lines = content.split("\n");
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    const text = lines[i];
+    if (tellSkipLine(text) || allowedAt(lines, i, ALLOW_FIXED_WIDTH)) continue;
+    const hit = quotedRuns(text).some((run) => {
+      const w = /(?<![\w:[-])w-\[(\d+)px\]/.exec(run);
+      if (!w || Number(w[1]) < 400) return false;
+      if (TW_WIDTH_GUARD.test(run) || TW_DECORATION.test(run)) return false;
+      if (/^\s*w-\[\d+px\]\s*$/.test(run) || quotedRuns(text).some((r) => r !== run && (TW_WIDTH_GUARD.test(r) || /(?<![\w:-])w-full\b/.test(r)))) return false;
+      return !(/(?<![\w-])(?:fixed|absolute)\b/.test(run) && /(?<![\w-])(?:inset-y-0|h-full|h-screen)\b/.test(run));
+    });
+    if (hit) out.push({ line: i + 1, detail: text.trim().slice(0, 120) });
+  }
+  for (const region of styleRegions(content, file)) {
+    const blocks = cssBlocks(region.text, region.line);
+    const adapted = new Set(blocks.filter((b) => b.adaptive).map((b) => b.selector.replace(/\s+/g, " ")));
+    for (const block of blocks) {
+      if (block.adaptive || block.selector.startsWith("@") || /::?(?:before|after)\b/.test(block.selector)) continue;
+      const w = /(?:^|[;\s{])width\s*:\s*(\d+)px/i.exec(block.body);
+      if (!w || Number(w[1]) < 400 || /max-width|min\(|clamp\(/i.test(block.body)) continue;
+      if (/pointer-events\s*:\s*none|filter\s*:\s*blur|z-index\s*:\s*-/i.test(block.body)) continue;
+      if (adapted.has(block.selector.replace(/\s+/g, " "))) continue;
+      const i = block.line - 1;
+      if (lines[i] !== void 0 && allowedAt(lines, i, ALLOW_FIXED_WIDTH)) continue;
+      out.push({ line: block.line, detail: `${block.selector.slice(0, 80)} { width: ${w[1]}px }` });
+    }
+  }
+  return out.sort((a, b) => a.line - b.line);
+}
+var TW_VIEWPORT_HEIGHT = /(?<![\w:[-])(?:min-)?h-screen\b|(?<![\w:[-])(?:min-)?h-\[(?:calc\()?100vh/;
+var DYNAMIC_VIEWPORT = /\b\d*[dsl]vh\b|h-dvh|h-svh|h-lvh/;
+var ALLOW_VIEWPORT_HEIGHT = /enigma:allow-viewport-height/;
+function staticViewportHeight(content, file) {
+  const lines = content.split("\n");
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    const text = lines[i];
+    if (tellSkipLine(text) || allowedAt(lines, i, ALLOW_VIEWPORT_HEIGHT)) continue;
+    const tw = quotedRuns(text).some((run) => TW_VIEWPORT_HEIGHT.test(run) && !DYNAMIC_VIEWPORT.test(run));
+    const inline = /\b(?:height|minHeight)\s*:\s*["'`](?:calc\(\s*)?100vh/.test(text) && !DYNAMIC_VIEWPORT.test(text);
+    if (tw || inline) out.push({ line: i + 1, detail: text.trim().slice(0, 120) });
+  }
+  for (const block of markedCssBlocks(content, file, lines, ALLOW_VIEWPORT_HEIGHT)) {
+    if (!/(?:^|[;\s{])(?:min-)?height\s*:\s*(?:calc\(\s*)?100vh/i.test(block.body) || DYNAMIC_VIEWPORT.test(block.body)) continue;
+    out.push({ line: block.line, detail: `${block.selector.slice(0, 80)} { height: 100vh }` });
+  }
+  return out.sort((a, b) => a.line - b.line);
+}
 var SPARKLES_IMPORT = /\bimport\s+(?:type\s+)?\{([^}]*)\}\s*from\s*["']((?:@lucide\/|lucide-)[\w/-]+|@heroicons\/[\w/-]+|@tabler\/icons-[\w-]+|@phosphor-icons\/[\w/-]+)["']/g;
 var SPARKLES_NAME = /^(?:Sparkles|SparklesIcon|LucideSparkles|IconSparkles|Sparkle|SparkleIcon)$/;
 var ALLOW_SPARKLES = /enigma:allow-sparkles-icon/;
@@ -4178,7 +4702,10 @@ export {
   FILE_CHECKS,
   FIXERS,
   PROJECT_CHECKS,
+  accentStripe,
+  aiVocabulary,
   applyFixes,
+  chatResidue,
   checkFile,
   checkPath,
   countLedger,
@@ -4186,10 +4713,13 @@ export {
   deepRelativeImports,
   dnsCheckThenFetch,
   dynamicCodeExecution,
+  emojiAsIcon,
   extensionImports,
   fetchUrlFromInput,
   findProjectRoot,
+  fixedWidthNoGuard,
   formatFindings,
+  gradientText,
   handRolledColorPicker,
   handRolledContextMenu,
   handRolledLightbox,
@@ -4208,6 +4738,9 @@ export {
   operatorHomePathLeak,
   pageAwaitWithoutBoundary,
   pathJoinedFromInput,
+  poweredByBuzzword,
+  purpleGradient,
+  queryInLoop,
   radixContentWithoutPortal,
   readLedger,
   readReplyLedger,
@@ -4218,10 +4751,12 @@ export {
   runGuardrailsHook,
   runGuardrailsScan,
   runGuardrailsScanCli,
+  selectStar,
   serverFirstMutation,
   shellCommandFromValues,
   sparklesIcon,
   sqlBuiltFromValues,
+  staticViewportHeight,
   storedFileServedInline,
   summarizeLedger,
   textareaSizeBounds,
@@ -4229,6 +4764,7 @@ export {
   truncatedValueUnreachable,
   twoFactorPasswordPrompt,
   unboundedFanout,
+  unboundedOrmRead,
   unboundedRemoteList,
   unsafeDeserialization,
   unsanitizedMarkdownHtml,

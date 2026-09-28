@@ -665,7 +665,9 @@ test("does not remember a bypass assembled out of unrelated clauses", () => {
         // Same commits, a reply with no gate prose in it: nothing was ever decided about them.
         expect(runVerifyHook(payload(dir, "All done, everything is implemented."))).toBe(2);
     }
-});
+    // Two hook runs per message, each several git process starts: past the file's 60 s default on a
+    // machine where a spawn costs seconds, while the assertions themselves always held.
+}, 300_000);
 
 test("the remembered decision clears the announced skip as well as the ledger", () => {
     // The record is read by BOTH gate checks or the exit only works on one of them. Reporting the
