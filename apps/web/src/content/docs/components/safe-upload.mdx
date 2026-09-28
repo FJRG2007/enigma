@@ -1,0 +1,64 @@
+---
+title: Safe upload
+description: Accept a file by what it is, store it under a name nobody chose, and serve it back without running it.
+group: Utils
+order: 43
+space: components
+---
+import Installation from "../../../components/Installation.astro";
+
+An upload handler written from scratch usually trusts three things the uploader controls:
+the file name, the declared type and the path it is saved under. Each one is a known
+attack - a `.svg` or `.html` served inline runs script on your origin, a name like
+`../../app.js` writes outside the upload folder, and a "PNG" can be anything.
+
+These four functions keep that logic in one place:
+
+```ts
+import { inspectUpload, storageName, resolveInside, downloadHeaders } from "@enigmax/utils/server";
+
+const { kind, mime } = inspectUpload(bytes, { allow: ["png", "jpeg", "webp", "pdf"], maxBytes: 10_000_000 });
+const path = resolveInside(UPLOAD_ROOT, storageName(kind));
+await writeFile(path, bytes);
+
+// Serving it back:
+return new Response(body, { headers: downloadHeaders({ name: file.name, type: file.mime, inline: true }) });
+```
+
+## Installation
+
+<Installation item="safe-upload" pkg="@enigmax/utils" entry="@enigmax/utils/server">
+    <div slot="manual">
+
+Node only, no dependencies. Import it from the `/server` entry.
+
+    </div>
+</Installation>
+
+## The four steps
+
+- **`inspectUpload(bytes, { allow, maxBytes })`** decides the type from the file's first
+  bytes. The name and the declared type are not consulted, so there is nothing to lie
+  about. `allow` is required: there is no safe default list. SVG and HTML are recognised
+  so you can refuse them.
+- **`storageName(kind)`** is a random UUID plus the extension the bytes earned. Keep the
+  original name in your database for display, never on disk.
+- **`resolveInside(root, ...segments)`** joins segments under `root` and throws when the
+  result would leave it (`..`, an absolute segment, a drive letter).
+- **`downloadHeaders({ name, type, inline })`** sets `X-Content-Type-Options: nosniff`, a
+  sandboxing `Content-Security-Policy`, and a `Content-Disposition` with a sanitised name.
+  `inline` is honoured only for types a browser renders passively (images, PDF, audio,
+  video, plain text). Anything that could run, SVG and HTML included, is always sent as a
+  download.
+
+A refused upload throws `UploadRefusedError` with a `reason`: `empty`, `too-large`,
+`unknown-type` or `type-not-allowed`. Map it to a message the uploader can act on:
+
+| `reason` | Message |
+| --- | --- |
+| `too-large` | "The file is over 10 MB." |
+| `type-not-allowed` | "Upload a PNG, JPEG, WebP or PDF." |
+| `unknown-type` | "That file type isn't supported." |
+
+`resolveInside` works on the path text only. Do not let uploads create symlinks inside the
+upload folder.

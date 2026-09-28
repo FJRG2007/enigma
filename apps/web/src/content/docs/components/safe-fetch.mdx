@@ -1,0 +1,73 @@
+---
+title: Safe fetch
+description: Fetch a URL someone else chose - a webhook, an avatar link, an import - without letting it reach your own network.
+group: Utils
+order: 42
+space: components
+---
+import Installation from "../../../components/Installation.astro";
+
+A server that fetches a URL a user or an integration supplied can be pointed at itself:
+`localhost`, a database on the private network, or the cloud metadata service that hands
+out credentials. That is server-side request forgery (SSRF), and checking the hostname
+before calling `fetch` does not stop it: the name can resolve to a public address when you
+check and a private one when you connect (DNS rebinding).
+
+`safeFetch` checks the address the socket actually connects to, so the check and the
+connection use the same DNS answer.
+
+```ts
+import { safeFetch, SafeFetchError } from "@enigmax/utils/server";
+
+const response = await safeFetch(webhook.url, { method: "POST", body, timeout: 5000 });
+```
+
+## Installation
+
+<Installation item="safe-fetch" pkg="@enigmax/utils" entry="@enigmax/utils/server">
+    <div slot="manual">
+
+Node only (it uses `node:http` and `node:dns`), no dependencies. Import it from the
+`/server` entry, never from code that ships to the browser.
+
+    </div>
+</Installation>
+
+## What it refuses
+
+- Loopback, private, link-local (including `169.254.169.254`, the metadata service) and
+  reserved addresses, in every spelling the URL parser accepts (`2130706433`, `0x7f.0.0.1`),
+  and IPv6 forms that carry one of them (IPv4-mapped, NAT64, 6to4).
+- Any scheme but `http` and `https`, and credentials written into the URL.
+- A redirect that lands on a refused address: every hop is checked the same way, and
+  credentials are dropped when a redirect leaves the original origin.
+- A body larger than `maxBytes`, and a request that outlives `timeout`.
+
+Each refusal throws a `SafeFetchError` with a `reason` you can branch on:
+
+```ts
+try {
+    await safeFetch(url);
+} catch (error) {
+    if (error instanceof SafeFetchError && error.reason === "blocked-address") {
+        return "That address is not reachable from here.";
+    }
+    throw error;
+}
+```
+
+`reason` is one of `invalid-url`, `blocked-scheme`, `blocked-port`, `credentials-in-url`,
+`blocked-address`, `unresolvable`, `too-many-redirects`, `redirect-refused`, `too-large`,
+`timeout` or `network`.
+
+| Option | Default | |
+| --- | --- | --- |
+| `timeout` | 10 s | Whole request, redirects included |
+| `maxBytes` | 10 MiB | Body read into memory up to this, then refused |
+| `maxRedirects` | 5 | |
+| `redirect` | `"follow"` | `"manual"` returns the 3xx, `"error"` refuses it |
+| `ports` | any | Restrict the ports a URL may name |
+| `allowAddress` | public only | Return `true` to allow one internal service on purpose |
+| `resolve` | `dns.lookup` | Custom DNS, or a test |
+
+`isPublicAddress(address)` is exported too, for checking an address you already hold.

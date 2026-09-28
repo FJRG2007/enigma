@@ -51,6 +51,17 @@ test("every prompt carries the scope-drift pre-pass, evidence rule and clean-res
     }
 });
 
+test("every prompt asks for object-level authorization and bounded role changes", () => {
+    // Most of one audited project's vulnerabilities were authorization logic no line pattern can
+    // see: an id from the request used without proving it belongs to the caller, and a role
+    // change that let a caller rise above their own role. The reviewer is the one place to ask.
+    for (const ui of [false, true]) {
+        const prompt = buildReviewPrompt(input(ui));
+        expect(prompt).toContain("each id taken from the request");
+        expect(prompt).toContain("grant more than they hold themselves");
+    }
+});
+
 test("the prompt ends with the history section so the user intent stays last", () => {
     const prompt = buildReviewPrompt({ ...input(false), historySection: "\n\nUSER-INTENT-MARKER" });
     expect(prompt.endsWith("\n\nUSER-INTENT-MARKER")).toBe(true);

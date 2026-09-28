@@ -249,6 +249,7 @@ Task:
 - Analyze for bugs, risks, and code simplification opportunities.
 - "Simplification" means reducing code complexity through non-functional refactoring (e.g. deduplication, clearer control flow). It does NOT mean removing features, changing product behavior, or stripping intentional user-facing output.
 - Treat security issues, performance regressions, breaking changes, and insufficient error handling as risks.
+- For every server route, action or handler the change adds or edits, check authorization against the object, not just the session: each id taken from the request (path, query, body) must be proven to belong to or be shared with the caller before it is read or written, and a role or permission change must never let a caller grant more than they hold themselves (including making themselves owner or admin). A missing check is an "error".
 - Do a full review pass before returning. Do not stop after the first valid finding. Continue inspecting the rest of the changed code until you have enumerated all material issues you can substantiate.
 
 Rules:
