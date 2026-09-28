@@ -5,12 +5,23 @@
  */
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { test, expect, afterAll } from "bun:test";
+import { test, expect, afterAll, afterEach, beforeEach } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 
 const HOME = mkdtempSync(join(tmpdir(), "enigma-bypass-guard-"));
-process.env.USERPROFILE = HOME;
-process.env.HOME = HOME;
+
+// claude.ts resolves the settings path through enigmaHome() on every call, which prefers
+// ENIGMA_CONFIG_HOME; bun on Linux ignores a reassigned HOME, and other test files point the
+// variable at their own dirs. Pinned per test and restored, like claude-settings.test.ts does.
+let priorConfigHome: string | undefined;
+beforeEach(() => {
+    priorConfigHome = process.env.ENIGMA_CONFIG_HOME;
+    process.env.ENIGMA_CONFIG_HOME = HOME;
+});
+afterEach(() => {
+    if (priorConfigHome === undefined) delete process.env.ENIGMA_CONFIG_HOME;
+    else process.env.ENIGMA_CONFIG_HOME = priorConfigHome;
+});
 
 const { enableClaudeBypass, ensureClaudeBypassGuard, mirrorClaudeSettings, BYPASS_GUARD_DENY } = await import("../src/claude");
 
