@@ -20,6 +20,7 @@ import { applyDashboardMode } from "./dashboard";
 import { execFileSync } from "node:child_process";
 import type { SecurityOptions } from "./security";
 import { dirname, join, resolve } from "node:path";
+import { ensureClaudeBypassGuard } from "./claude";
 import { applyPostEditWiring } from "./post-edit-deploy";
 import { applyLintWiring, mirrorLintWiring } from "./lint";
 import type { RemoteRefreshResult } from "./skills-remote";
@@ -1642,6 +1643,10 @@ export function syncDeployed(agentNames?: string[]): string[] {
         // user happened to run `enigma install` or toggle one of the three features. Silent on
         // purpose: nothing the agent does changes, only how many processes it takes to do it.
         if (agent.name === "claude" && hasDeployment(agent, "global")) applyPostEditWiring();
+        // The destructive-command guard rides with the bypass, and like the rest of this block it
+        // is settings.json wiring an existing install only receives here. Silent: nothing the
+        // agent is allowed to do changes except wiping a machine or force-pushing main.
+        if (agent.name === "claude" && hasDeployment(agent, "global")) ensureClaudeBypassGuard("global");
         // Same reasoning: the status bar is on by default and is settings.json WIRING, not a
         // file the copy loop above touches, so an existing deployment has to pick it up on
         // update rather than only on an explicit install. Gated on the config flag, so a bar

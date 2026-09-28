@@ -232,12 +232,54 @@ export function setClaudeBypass(scope: "global" | "local", on: boolean, dryRun: 
     if (dryRun) return { path, changed: true };
 
     delete permissions.defaultMode;
+    withoutGuard(permissions);
     const next: Record<string, unknown> = { ...current };
     if (Object.keys(permissions).length) next.permissions = permissions;
     else delete next.permissions;
 
     writeClaudeSettings(path, next);
     return { path, changed: true };
+}
+
+/**
+ * Commands no agent should run unasked, denied whenever enigma turns the permission prompt off.
+ *
+ * Bypass mode is what makes an agent fast, and it is also what leaves nothing between a
+ * confused plan and `rm -rf ~`. A deny rule is the one gate that holds in every mode, costs no
+ * process, and is evaluated by Claude Code itself. Each rule matches its command EXACTLY, and
+ * none contains `*`: Claude Code reads `*` in a rule as a wildcard, so `rm -rf /*` would also
+ * refuse `rm -rf /tmp/build`. `rm -rf /tmp/build` and `git push --force origin feat/x` stay
+ * untouched; only the forms that wipe a machine or rewrite a shared default branch are refused.
+ * They ride with the bypass: added when it is turned on, removed with it when it is turned off.
+ */
+export const BYPASS_GUARD_DENY = [
+    "Bash(rm -rf /)",
+    "Bash(rm -rf ~)",
+    "Bash(rm -rf ~/)",
+    "Bash(rm -rf $HOME)",
+    "Bash(sudo rm -rf /)",
+    "Bash(git push --force origin main)",
+    "Bash(git push -f origin main)",
+    "Bash(git push --force origin master)",
+    "Bash(git push -f origin master)",
+];
+
+/** Drop the guard's rules from a permissions object, and the `deny` array if nothing else is left in it. */
+function withoutGuard(permissions: Record<string, unknown>): void {
+    if (!Array.isArray(permissions.deny)) return;
+    const kept = (permissions.deny as unknown[]).map(String).filter((rule) => !BYPASS_GUARD_DENY.includes(rule));
+    if (kept.length) permissions.deny = kept;
+    else delete permissions.deny;
+}
+
+/**
+ * Add the missing BYPASS_GUARD_DENY rules to a scope whose bypass is already on. The update
+ * path: `enableClaudeBypass` only runs on install or a toggle, so an existing install would
+ * never receive a rule added later. A scope with the prompt still on is left alone.
+ */
+export function ensureClaudeBypassGuard(scope: "global" | "local"): boolean {
+    if (!getClaudeBypass(scope)) return false;
+    return enableClaudeBypass(scope, false).changed;
 }
 
 /**
@@ -254,10 +296,12 @@ export function enableClaudeBypass(scope: "global" | "local", dryRun: boolean): 
     const permissions = (typeof current.permissions === "object" && current.permissions !== null)
         ? current.permissions as Record<string, unknown>
         : {};
-    if (permissions.defaultMode === "bypassPermissions") return { path, changed: false };
+    const deny = Array.isArray(permissions.deny) ? (permissions.deny as unknown[]).map(String) : [];
+    const missing = BYPASS_GUARD_DENY.filter((rule) => !deny.includes(rule));
+    if (permissions.defaultMode === "bypassPermissions" && missing.length === 0) return { path, changed: false };
     if (dryRun) return { path, changed: true };
 
-    const next = { ...current, permissions: { ...permissions, defaultMode: "bypassPermissions" } };
+    const next = { ...current, permissions: { ...permissions, defaultMode: "bypassPermissions", deny: [...deny, ...missing] } };
     writeClaudeSettings(path, next);
     return { path, changed: true };
 }
@@ -570,8 +614,17 @@ export function mirrorClaudeSettings(accountDir: string): boolean {
     const perm = (typeof next.permissions === "object" && next.permissions !== null)
         ? { ...next.permissions as Record<string, unknown> }
         : {};
-    if (globalPerm.defaultMode === "bypassPermissions") perm.defaultMode = "bypassPermissions";
-    else if (perm.defaultMode === "bypassPermissions") delete perm.defaultMode;
+    if (globalPerm.defaultMode === "bypassPermissions") {
+        perm.defaultMode = "bypassPermissions";
+        // The guard rides with the bypass: an account launched with prompts off gets the same
+        // refusals as the global scope.
+        const deny = Array.isArray(perm.deny) ? (perm.deny as unknown[]).map(String) : [];
+        const missing = BYPASS_GUARD_DENY.filter((rule) => !deny.includes(rule));
+        if (missing.length) perm.deny = [...deny, ...missing];
+    } else if (perm.defaultMode === "bypassPermissions") {
+        delete perm.defaultMode;
+        withoutGuard(perm);
+    }
     if (Object.keys(perm).length) next.permissions = perm;
     else delete next.permissions;
 
