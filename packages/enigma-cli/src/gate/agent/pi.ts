@@ -20,6 +20,7 @@ import { CLAUDE_MAX_RETRIES } from "./claude";
 import { classifyTransient, runWithRetry } from "./retry";
 import { type Config, agentArgs, agentPath } from "../config";
 import {
+    agentIdleTimeoutMs,
     asRecord,
     hasSchema,
     errMessage,
@@ -63,6 +64,7 @@ export class PiAgent implements Agent {
     private async runOnce(opts: RunOpts, signal?: AbortSignal): Promise<Result> {
         const args = this.buildArgs();
         const child = spawnConfigured(this.bin, args, {
+            idleTimeoutMs: agentIdleTimeoutMs(),
             cwd: opts.cwd,
             env: gitSafeEnv(opts.cwd),
             stdio: ["pipe", "pipe", "pipe"],

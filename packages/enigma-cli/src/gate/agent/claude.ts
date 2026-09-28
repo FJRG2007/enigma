@@ -33,6 +33,7 @@ import {
     type Agent
 } from "./agent";
 import {
+    agentIdleTimeoutMs,
     hasOwn,
     asRecord,
     hasSchema,
@@ -86,6 +87,7 @@ export class ClaudeAgent implements Agent {
         const viaStdin = !promptFitsArgv(opts.prompt, this.extraArgs);
         const args = this.buildArgs(viaStdin ? "" : opts.prompt, opts.jsonSchema);
         const child = spawnConfigured(this.bin, args, {
+            idleTimeoutMs: agentIdleTimeoutMs(),
             cwd: opts.cwd,
             env: gitSafeEnv(opts.cwd),
             stdio: [viaStdin ? "pipe" : "ignore", "pipe", "pipe"],

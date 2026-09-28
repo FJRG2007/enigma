@@ -19,6 +19,41 @@ import type { Readable } from "node:stream";
 import { createInterface } from "node:readline";
 import type { ChildProcess } from "node:child_process";
 
+/**
+ * How long an agent step may go without output before it is treated as hung: 45 minutes, well
+ * past the ten-minute cap the agents put on one shell command. ENIGMA_GATE_AGENT_IDLE_MS
+ * overrides it (tests, or a machine where a legitimate step really is that quiet).
+ */
+export function agentIdleTimeoutMs(): number {
+    const env = Number(process.env.ENIGMA_GATE_AGENT_IDLE_MS);
+    return Number.isFinite(env) && env > 0 ? env : 45 * 60_000;
+}
+
+/** Children stopped by the idle watchdog, with the silence that stopped them. */
+const idleStopped = new WeakMap<ChildProcess, number>();
+
+/**
+ * Stop `child` (via `kill`) when neither stdout nor stderr has produced a byte for `ms`.
+ *
+ * An agent that goes silent this long is hung, not thinking: the agents' own shell tools cap a
+ * single command well below it. Without this a hung step held its run - and its worktree, its
+ * branch and the status bar - for as long as the daemon lived; one measured at ten hours.
+ * Recorded so `awaitProcessOutcome` reports the silence instead of a bare signal.
+ */
+export function watchIdle(child: ChildProcess, ms: number, kill: () => void): void {
+    if (!(ms > 0)) return;
+    let timer: ReturnType<typeof setTimeout>;
+    const arm = (): void => {
+        clearTimeout(timer);
+        timer = setTimeout(() => { idleStopped.set(child, ms); kill(); }, ms);
+        timer.unref?.();
+    };
+    child.stdout?.on("data", arm);
+    child.stderr?.on("data", arm);
+    child.once("close", () => clearTimeout(timer));
+    arm();
+}
+
 /** Outcome of a spawned process: a start failure xor an exit failure. */
 export interface ProcessOutcome {
     /** Set when the binary could not be spawned (Go's `cmd.Start` error). */
@@ -42,7 +77,9 @@ export function awaitProcessOutcome(child: ChildProcess): Promise<ProcessOutcome
         };
         child.once("error", err => finish({ startError: err as Error }));
         child.once("close", (code, signal) => {
-            if (code === 0) finish({});
+            const idle = idleStopped.get(child);
+            if (idle !== undefined) finish({ exitError: new Error(`no output for ${Math.round(idle / 60_000)} min, stopped as hung`) });
+            else if (code === 0) finish({});
             else finish({ exitError: new Error(describeExit(code, signal)) });
         });
     });

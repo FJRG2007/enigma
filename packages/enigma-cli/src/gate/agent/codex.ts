@@ -25,6 +25,7 @@ import { classifyTransient, runWithRetry } from "./retry";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { type Config, agentArgs, agentPath } from "../config";
 import {
+    agentIdleTimeoutMs,
     hasOwn,
     asRecord,
     hasSchema,
@@ -112,6 +113,7 @@ export class CodexAgent implements Agent {
         const viaStdin = !promptFitsArgv(opts.prompt, this.extraArgs);
         const args = this.buildArgs(viaStdin ? "-" : opts.prompt, schemaPath);
         const child = spawnConfigured(this.bin, args, {
+            idleTimeoutMs: agentIdleTimeoutMs(),
             cwd: opts.cwd,
             env: gitSafeEnv(opts.cwd),
             stdio: [viaStdin ? "pipe" : "ignore", "pipe", "pipe"],

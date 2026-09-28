@@ -18,6 +18,7 @@
 
 import { log } from "./log";
 import { readConfig } from "../config";
+import { watchIdle } from "./agent/proc";
 import { withRunAccountEnv } from "./account-env";
 import { userInfo, type UserInfo } from "node:os";
 import { join, basename, delimiter } from "node:path";
@@ -94,9 +95,9 @@ export function killTree(child: ChildProcess): void {
 export function spawnConfigured(
     command: string,
     args: readonly string[] = [],
-    options: SpawnOptions = {}
+    options: SpawnOptions & { idleTimeoutMs?: number; } = {}
 ): ChildProcess {
-    const { signal, ...rest } = options;
+    const { signal, idleTimeoutMs, ...rest } = options;
     // A child inside a run's worktree authenticates as the account that pushed the
     // run, never as whichever session started this daemon (see account-env.ts).
     if (typeof rest.cwd === "string") rest.env = withRunAccountEnv(rest.cwd, rest.env ?? process.env);
@@ -105,6 +106,7 @@ export function spawnConfigured(
     // machine, not all of it. Applied after spawn and never fatal - a refused scheduling
     // hint must not fail the step (see governor.ts).
     applyBudget(child, resourceBudget({ cap: readConfig().config.resourceCap }));
+    if (idleTimeoutMs) watchIdle(child, idleTimeoutMs, () => killTree(child));
     if (signal) {
         const onAbort = (): void => { killTree(child); };
         if (signal.aborted) {

@@ -586,3 +586,7 @@ half needs `bun:sqlite` and is imported dynamically.
   (`for r in <gate home>/repos/*.git; do git --git-dir="$r" cat-file -t <sha> && echo "$r"; done`)
   and fetch `<run branch>` from the path it prints. Four rounds of review fixes were recovered
   this way across three failed runs of one change.
+
+## Agent steps have an idle watchdog
+
+A step agent (claude, codex, pi) that produces no output on stdout or stderr for 45 minutes is stopped as hung (`watchIdle` in `agent/proc.ts`, wired through `spawnConfigured`'s `idleTimeoutMs`), and the step fails with "no output for 45 min, stopped as hung" instead of a bare signal. Before this, no agent step had any time bound: a `claude -p` test step was observed silent for ten hours, holding its run, its worktree and the status bar the whole time. 45 minutes is well past the ten-minute cap the agents put on a single shell command, so real work always emits something first. `ENIGMA_GATE_AGENT_IDLE_MS` overrides it.
