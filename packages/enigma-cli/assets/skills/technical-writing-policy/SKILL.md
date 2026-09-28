@@ -1,14 +1,15 @@
 ---
 name: technical-writing-policy
-description: Concise, realistic technical copy - UI microcopy, labels, descriptions, setting hints, empty/error states, and README/doc prose that informs without over-explaining, restating the obvious, or leaking implementation detail, and that never uses an em dash. Use whenever writing or reviewing user-facing text: a dashboard/app label or description, a settings hint, a panel intro, a button, a skill/package description, a README section, or any doc copy. Also use when the user complains that descriptions are too long, over-explained, obvious, or "cutre".
+description: Concise, realistic technical copy - UI microcopy, labels, descriptions, setting hints, empty/error states, landing/sales and SEO copy, emails, and README/doc prose that describes the user's outcome instead of the mechanism, never enumerates everything or names its lineage ("powered by X"), avoids the recognizable AI-writing tells (delve/seamless/robust vocabulary, "It's not X, it's Y", forced triads, throat-clearing, chat residue), and never uses an em dash. Use whenever writing or reviewing user-facing text: a dashboard/app label or description, a settings hint, a panel intro, a button, a landing page, a marketing or SEO page, an email body, a skill/package description, a README section, or any doc copy. Also use when the user complains that copy is too long, over-explained, obvious, generic, reads as AI-written ("AI slop"), or "cutre".
 ---
 
 # Technical Writing Policy (Concise, Realistic Copy)
 
 User-facing text is design material, not decoration. Every word must earn its place.
 Give the reader exactly what they need to act - not less, not more. This policy owns
-descriptive copy: labels, descriptions, hints, empty/error states, panel intros, and
-README/doc prose. Commit/PR prose is owned by git-policy; visual design by frontend-design.
+every word a person reads: UI labels, descriptions, hints, empty/error states, panel intros,
+landing and sales pages, SEO copy (titles, meta descriptions, headings), email subjects and
+bodies, and README/doc prose. Commit/PR prose is owned by git-policy; visual design by frontend-design.
 
 ## Core Principle
 
@@ -20,6 +21,15 @@ The test for every sentence: **would removing it lose information the reader nee
 or decide?** If not, cut it. If you can't remember a button's exact label, it's good
 microcopy - the reader shouldn't have to study it.
 
+**Outcome, not mechanism.** Copy describes the user's outcome or the decision in front of
+them, never how the system produces it. Name only what the user must act on. Per clause,
+ask: **would a user act differently knowing this?** If not, delete the clause.
+
+- Password hint: "Hashed with Argon2id" -> "At least 12 characters".
+- Search box: a hint listing the 20 data types it covers -> "Search everything", with a
+  filter control that holds the types.
+- Sync status: "Diffed via Merkle tree every 30s" -> "Synced 2 minutes ago".
+
 ## The Cardinal Sins (cut these)
 
 1. **Narrating the obvious.** Do not describe the controls the reader can already see.
@@ -27,7 +37,7 @@ microcopy - the reader shouldn't have to study it.
    buttons tells the reader nothing - they can see the buttons. Describe the *thing*, not
    the toolbar around it.
 2. **Leaking implementation detail.** The reader does not need the internals. A password
-   form does not say "hashed with SHA-256"; a sync feature does not list its diff
+   form does not say "hashed with SHA-256" (it says "At least 12 characters"); a sync feature does not list its diff
    algorithm. Surface mechanism only when the reader must act on it (a security warning, a
    destructive-action caveat, a real constraint they hit).
 3. **Redundant cross-references and meta-commentary.** "...the same as the terminal UI",
@@ -43,6 +53,16 @@ microcopy - the reader shouldn't have to study it.
    one example that proves it, and leave the rest for the docs. A landing/README feature
    list whose job is to make the reader *want* it still obeys this: punchy beats thorough.
    Three padded sentences hide the hook that one tight sentence would land.
+7. **Enumerating everything.** Give one or two representative examples, never the full list
+   of supported formats, providers, languages or data types. The complete list belongs in a
+   filter, a picker, or the docs, where the reader can scan it when they need it. Concise,
+   scannable copy measurably outperforms the exhaustive version (NN/g: +58% usability).
+8. **Naming the lineage.** No "inspired by", "powered by", "built with" or "based on X" in
+   product copy. It sells the tool's ingredients instead of the reader's result. Credit a
+   dependency where attribution is required (a license notice, an about page, docs), not in
+   a hero, a feature card, or a hint.
+9. **Writing in the AI register.** The tells below mark copy as generated and cost the
+   reader's trust in everything around them. See "AI Tells" for the catalogue.
 
 ## Rules
 
@@ -83,6 +103,45 @@ microcopy - the reader shouldn't have to study it.
   Otherwise document a directory only when its purpose is non-obvious and load-bearing, in one
   line of prose, never a whole tree.
 
+## AI Tells (cut on sight)
+
+Each tell with the fix. One tell is noise; several together make the page read as generated.
+
+- **AI vocabulary.** delve, tapestry, testament, underscore, pivotal, intricate, meticulous,
+  vibrant, showcase, foster, garner, interplay, abstract "landscape", boasts, crucial,
+  enhance, robust, seamless, elevate, unlock, leverage. "Leverage robust tooling to unlock
+  seamless deploys" -> "Deploy with one command".
+- **Inflated significance.** "stands as a testament to", "plays a pivotal role in", "in the
+  evolving landscape of". Say what it does: "Handles 40% of our traffic".
+- **Shallow -ing riders.** A clause tacked on with ", highlighting / underscoring / ensuring /
+  showcasing ...". "Retries failed jobs, ensuring reliability" -> "Retries failed jobs up to
+  3 times".
+- **Negative parallelism.** "It's not X, it's Y", "Not only X but Y", "No X, no Y, just Z".
+  State Y.
+- **Forced triads.** "fast, reliable, and scalable". Keep the one adjective you can prove, or
+  give the number.
+- **Copula avoidance.** "serves as", "boasts", "stands as". Use "is" and "has".
+- **Chat residue.** "I hope this helps", "Certainly!", "Great question", "[Your Company]",
+  `utm_source=chatgpt` in a link. Delete it; fill every placeholder.
+- **Throat-clearing.** "Let's dive in", "It's worth noting that", "At its core", "In today's
+  fast-paced world". Start with the point.
+- **Condescending filler.** simply, just, easy, obviously. What is easy for you is the step
+  the reader is stuck on.
+- **Structure tells.** Title Case Headings -> sentence case. A run of bullets that each open
+  with a bold label and a colon -> plain sentences or a table. Emoji as bullets or icons ->
+  none. A heading the next line restates, or meta-commentary ("This section covers") -> cut.
+- **Closers.** A "Challenges and future outlook" section, or a pithy one-line moral at the
+  end ("The future is bright.") -> end on the last useful fact.
+- **Errors.** "Oops! Something went wrong (ERR_502)" -> "Couldn't save your changes. Check
+  your connection and try again." Say what happened and how to fix it; no "Oops", no raw
+  codes, no apology.
+- **Labels.** "Click here", "Submit", "Learn more" -> the verb and its object: "Download the
+  invoice", "Create project".
+- **Marketing claims.** Benefit first, one real attributed number, never an invented one.
+  "10x faster" with no source -> the measured figure with its source ("Builds in <N>s on
+  <benchmark>, measured on <where>"), or cut the claim.
+- Typographic dashes are covered by the dash rule above.
+
 ## Reviewing existing copy
 
 When asked to fix "bad"/over-explained descriptions: read each line and delete what fails
@@ -95,4 +154,5 @@ restates the obvious or narrates the UI. Report what you cut and why in one line
 - Respond in the user's language; copy itself is written in the project's language
   (English here) per core-engineering-policy.
 - Commit messages and PR text: git-policy. Visual/typographic design: frontend-design.
-  Validation/error-handling logic: validation-policy. This policy governs the words.
+  Validation/error-handling logic: validation-policy. Email templating and deliverability:
+  email-policy. This policy governs the words, wherever they ship.

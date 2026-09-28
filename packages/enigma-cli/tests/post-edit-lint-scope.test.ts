@@ -3,7 +3,7 @@
  * legacy file came back as a blocking error listing warnings on lines the edit never touched.
  */
 import { test, expect } from "bun:test";
-import { textBeforeEdit, introducedViolations } from "../src/post-edit-hook";
+import { textBeforeEdit, followsFileStyle, introducedViolations } from "../src/post-edit-hook";
 
 const warn = (line: number, rule = "no-useless-concat") => ({ line, column: 1, severity: "warning", rule, message: "m" });
 
@@ -41,4 +41,14 @@ test("a second copy of an old finding still reports", () => {
 test("the same line under a different rule is a new finding", () => {
     const text = "const q = `a`;\n";
     expect(introducedViolations([warn(1, "prefer-double-quotes")], text, [warn(1)], text)).toHaveLength(1);
+});
+
+test("a style rule the file already breaks is its established style, an audit rule is not", () => {
+    const style = (line: number, rule: string) => ({ ...warn(line, rule), category: "style" });
+    const audit = (line: number, rule: string) => ({ ...warn(line, rule), category: "audit" });
+    const baseline = [style(1, "prefer-double-quotes"), audit(2, "no-useless-concat")];
+    const found = [style(5, "prefer-double-quotes"), style(6, "length-sorted-imports"), audit(7, "no-useless-concat")];
+    expect(followsFileStyle(found, baseline).map((v) => v.rule)).toEqual(["length-sorted-imports", "no-useless-concat"]);
+    // A new file has no style of its own yet, so every finding reports.
+    expect(followsFileStyle(found, null)).toHaveLength(3);
 });

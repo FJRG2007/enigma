@@ -17,6 +17,7 @@
 
 import { join } from "node:path";
 import { homedir } from "node:os";
+import { normKey } from "./normalize";
 import { existsSync, mkdirSync, statSync } from "node:fs";
 
 /** A prepared statement - the slice of bun:sqlite's Statement we use. */
@@ -88,6 +89,11 @@ CREATE TABLE IF NOT EXISTS observations (
   prompt_number  INTEGER,
   content_hash   TEXT    NOT NULL,
   enriched       INTEGER NOT NULL DEFAULT 0,
+  source_count   INTEGER NOT NULL DEFAULT 1,
+  norm_hash      TEXT,
+  superseded_by  INTEGER,
+  forgotten_at   INTEGER,
+  forget_reason  TEXT,
   created_at     INTEGER NOT NULL,
   UNIQUE(session_id, content_hash)
 );
@@ -118,6 +124,15 @@ CREATE TABLE IF NOT EXISTS observation_vectors (
   FOREIGN KEY(observation_id) REFERENCES observations(id) ON DELETE CASCADE
 );
 
+-- Which sessions a (deduplicated) observation was learned in. source_count mirrors its row
+-- count; the table exists so a re-synced session never reinforces the same row twice.
+CREATE TABLE IF NOT EXISTS observation_sources (
+  observation_id INTEGER NOT NULL,
+  session_id     TEXT    NOT NULL,
+  PRIMARY KEY(observation_id, session_id),
+  FOREIGN KEY(observation_id) REFERENCES observations(id) ON DELETE CASCADE
+);
+
 CREATE VIRTUAL TABLE IF NOT EXISTS observations_fts USING fts5(
   title, subtitle, narrative, facts, concepts,
   content='observations', content_rowid='id'
@@ -131,13 +146,68 @@ CREATE TRIGGER IF NOT EXISTS obs_ad AFTER DELETE ON observations BEGIN
   INSERT INTO observations_fts(observations_fts, rowid, title, subtitle, narrative, facts, concepts)
   VALUES ('delete', old.id, old.title, old.subtitle, old.narrative, old.facts, old.concepts);
 END;
-CREATE TRIGGER IF NOT EXISTS obs_au AFTER UPDATE ON observations BEGIN
+-- obs_au (the update trigger) is created by migrate(), which also upgrades an older one.
+`;
+
+/**
+ * Columns added after the first release. CREATE TABLE IF NOT EXISTS never alters an existing
+ * table, so an older database gets them here; every one is nullable or defaulted, so existing
+ * rows stay valid. The duplicate-column error on an up-to-date database is expected.
+ */
+const ADDED_COLUMNS = [
+    "enriched INTEGER NOT NULL DEFAULT 0",
+    "source_count INTEGER NOT NULL DEFAULT 1",
+    "norm_hash TEXT",
+    "superseded_by INTEGER",
+    "forgotten_at INTEGER",
+    "forget_reason TEXT",
+];
+
+const UPDATE_TRIGGER = `CREATE TRIGGER obs_au AFTER UPDATE OF title, subtitle, narrative, facts, concepts ON observations BEGIN
   INSERT INTO observations_fts(observations_fts, rowid, title, subtitle, narrative, facts, concepts)
   VALUES ('delete', old.id, old.title, old.subtitle, old.narrative, old.facts, old.concepts);
   INSERT INTO observations_fts(rowid, title, subtitle, narrative, facts, concepts)
   VALUES (new.id, new.title, new.subtitle, new.narrative, new.facts, new.concepts);
-END;
-`;
+END;`;
+
+/** Bring an existing database up to the current schema in place, without losing a row. */
+function migrate(db: RecallDb): void {
+    for (const col of ADDED_COLUMNS) {
+        try { db.exec(`ALTER TABLE observations ADD COLUMN ${col}`); } catch { /* already present */ }
+    }
+    // Indexes on added columns go here, not in SCHEMA: on an old database SCHEMA runs before
+    // the ALTERs, when these columns do not exist yet.
+    db.exec("CREATE INDEX IF NOT EXISTS idx_obs_norm ON observations(project, norm_hash);");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_obs_superseded ON observations(superseded_by);");
+    // The original update trigger fired on ANY column, so every forget/supersede/reinforce
+    // would rewrite the row's FTS entry. Rebuild it once, scoped to the indexed columns; the
+    // sqlite_master check keeps this from rewriting the schema (and bumping the schema cookie
+    // for every other open connection) on each open.
+    const trigger = db.query("SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = 'obs_au'").get();
+    if (!/UPDATE OF/i.test(String(trigger?.sql ?? ""))) {
+        db.exec("DROP TRIGGER IF EXISTS obs_au;");
+        db.exec(UPDATE_TRIGGER);
+    }
+    backfillNormHashes(db);
+}
+
+/**
+ * Give rows written before dedupe existed their normalized key and their owning session in
+ * observation_sources, so a later identical fact reinforces them instead of duplicating them.
+ * After the first run this is one indexed query that returns nothing.
+ */
+function backfillNormHashes(db: RecallDb): void {
+    const rows = db.query("SELECT id, session_id, type, title, narrative, facts, files_modified FROM observations WHERE norm_hash IS NULL").all();
+    if (!rows.length) return;
+    const list = (v: unknown): string[] => { try { const a = JSON.parse(String(v ?? "[]")); return Array.isArray(a) ? a.map(String) : []; } catch { return []; } };
+    db.transaction(() => {
+        for (const r of rows) {
+            const key = normKey({ type: String(r.type), title: String(r.title), narrative: r.narrative as string | null, facts: list(r.facts), filesModified: list(r.files_modified) });
+            db.run("INSERT OR IGNORE INTO observation_sources (observation_id, session_id) VALUES (?, ?)", r.id, r.session_id);
+            db.run("UPDATE observations SET norm_hash = ? WHERE id = ?", key, r.id);
+        }
+    })();
+}
 
 let cached: RecallDb | null = null;
 
@@ -161,9 +231,7 @@ export function openDb(): RecallDb {
     db.exec("PRAGMA journal_mode = WAL;");
     db.exec("PRAGMA foreign_keys = ON;");
     db.exec(SCHEMA);
-    // Idempotent migration for dev databases created before the column existed (CREATE TABLE
-    // IF NOT EXISTS never alters an existing table). The duplicate-column error is expected.
-    try { db.exec("ALTER TABLE observations ADD COLUMN enriched INTEGER NOT NULL DEFAULT 0"); } catch { /* already present */ }
+    migrate(db);
     cached = db;
     return db;
 }

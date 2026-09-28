@@ -24,6 +24,11 @@
        on, which is why only one colour is a property. */
     --enigma-color-checker: rgba(255, 255, 255, 0.22);
     --enigma-color-checker-size: 0.5rem;
+
+    /* The layer every portaled popup shares, declared with the same value by the select and
+       the context menu: above the lightbox (9999), because a popup is opened FROM whatever
+       is on top. Not in the light-scheme block, or half the readers get no z-index. */
+    --enigma-floating-z: 10000;
 }
 
 @media (prefers-color-scheme: light) {
@@ -40,9 +45,7 @@
     }
 }
 
-/* The anchor the panel hangs from. Inline so it sits in the field's own row, and the
-   positioning context so the panel needs no portal and no scroll listener: it moves with
-   the field because it is INSIDE it. */
+/* The anchor the panel is placed against. Inline so it sits in the field's own row. */
 [data-enigma-color] { position: relative; display: inline-flex; flex: none; }
 
 [data-enigma-color-swatch] {
@@ -66,8 +69,13 @@
    rather than the last good colour: a stale swatch says the value is fine when it is not. */
 [data-enigma-color-swatch][data-invalid] [data-enigma-color-fill] { background: none; }
 
+/* Portaled and placed in viewport coordinates against the swatch (see react/floating.ts),
+   so a dialog or a card with overflow: hidden cannot cut it off. left, top, max-height and
+   data-side are written by the placement: below, flipped above when there is more room
+   there, and capped to the room it has - scrolling inside rather than off the screen. */
 [data-enigma-color-panel] {
-    position: absolute; z-index: 60; top: calc(100% + 0.375rem); left: 0;
+    position: fixed; z-index: var(--enigma-floating-z);
+    overflow-y: auto; overscroll-behavior: contain;
     display: grid; gap: 0.625rem;
     box-sizing: border-box; width: var(--enigma-color-panel-width); padding: 0.625rem;
     color: var(--enigma-color-text); background: var(--enigma-color-panel-bg);
@@ -75,9 +83,6 @@
     border-radius: var(--enigma-color-panel-radius);
     box-shadow: var(--enigma-color-panel-shadow);
 }
-/* Flipped when the field sits near the bottom of the window. Without it the panel opens off
-   the screen and the controls are unreachable, which is the same defect the select fixes. */
-[data-enigma-color-panel][data-side="top"] { top: auto; bottom: calc(100% + 0.375rem); }
 
 [data-enigma-color-area] {
     position: relative; height: var(--enigma-color-area-height);

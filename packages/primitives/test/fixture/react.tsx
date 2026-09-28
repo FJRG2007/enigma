@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Image } from "@/react/image";
 import { Video } from "@/react/video";
 import { createRoot } from "react-dom/client";
@@ -177,6 +177,27 @@ function checkBreach(password: string, { signal }: { signal: AbortSignal; }): Pr
 }
 
 let renders = 0;
+
+/**
+ * A select inside a native modal `<dialog>`, behind a scrolling region that would clip it.
+ * The modal makes everything outside it inert, so a panel portaled to `<body>` would be on
+ * screen and unclickable - this is what proves it goes into the dialog instead.
+ */
+function DialogCase(): React.ReactNode {
+    const dialog = useRef<HTMLDialogElement | null>(null);
+    const [picked, setPicked] = useState("");
+    return (
+        <div data-testid="dialog-case">
+            <button data-testid="open-dialog" type="button" onClick={() => dialog.current?.showModal()}>Open dialog</button>
+            <dialog ref={dialog} data-testid="dialog">
+                <div style={{ overflow: "auto", height: 60, width: 240 }}>
+                    <Select options={COUNTRIES} searchable={false} value={picked} onValueChange={setPicked} placeholder="In a dialog" />
+                </div>
+                <output data-testid="dialog-picked">{picked}</output>
+            </dialog>
+        </div>
+    );
+}
 
 function Form(): React.ReactNode {
     // Every render of this tree, so a component that renders itself in a loop is a number
@@ -366,6 +387,15 @@ function Form(): React.ReactNode {
             <div data-testid="loading-select">
                 <Select options={[]} loading placeholder="Country" />
             </div>
+
+            {/* A card that clips: overflow hidden and barely taller than the trigger, which is
+                where an in-tree panel used to be cut off. Both popups must escape it. */}
+            <div data-testid="clipped" style={{ overflow: "hidden", height: 48, width: 280, display: "flex", gap: 8, alignItems: "center" }}>
+                <Select options={COUNTRIES} searchable={false} placeholder="Clipped" />
+                <Input data-testid="clipped-colour" type="color" defaultValue="#ef4444" swatches={["#22c55e", "#3b82f6"]} />
+            </div>
+
+            <DialogCase />
 
             {/* The right-click menu, over an area with a size to right-click on. */}
             <div data-testid="menu-area">

@@ -289,6 +289,23 @@
           ]
         },
         {
+          "path": "src/core/floating.ts",
+          "dest": "input/floating-core.ts",
+          "targets": [
+            "react"
+          ]
+        },
+        {
+          "path": "src/react/floating.ts",
+          "dest": "input/floating.ts",
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/core/floating": "./floating-core"
+          }
+        },
+        {
           "path": "src/react/input/color.tsx",
           "dest": "input/color.tsx",
           "targets": [
@@ -299,7 +316,8 @@
             "@/react/input/write-value": "./write-value",
             "@/react/input/color-styles": "./color-styles",
             "@/react/input/types": "./types",
-            "@/react/input/color-swatch": "./color-swatch"
+            "@/react/input/color-swatch": "./color-swatch",
+            "@/react/floating": "./floating"
           }
         },
         {
@@ -749,6 +767,23 @@
           }
         },
         {
+          "path": "src/core/floating.ts",
+          "dest": "select/floating-core.ts",
+          "targets": [
+            "react"
+          ]
+        },
+        {
+          "path": "src/react/floating.ts",
+          "dest": "select/floating.ts",
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/core/floating": "./floating-core"
+          }
+        },
+        {
           "path": "src/react/select/root.tsx",
           "dest": "select/root.tsx",
           "targets": [
@@ -760,7 +795,8 @@
             "@/core/search": "./search-core",
             "@/react/slot": "./slot",
             "@/react/select/styles": "./styles",
-            "@/react/select/context": "./context"
+            "@/react/select/context": "./context",
+            "@/react/floating": "./floating"
           }
         },
         {
@@ -896,6 +932,23 @@
           }
         },
         {
+          "path": "src/core/floating.ts",
+          "dest": "context-menu/floating-core.ts",
+          "targets": [
+            "react"
+          ]
+        },
+        {
+          "path": "src/react/floating.ts",
+          "dest": "context-menu/floating.ts",
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/core/floating": "./floating-core"
+          }
+        },
+        {
           "path": "src/react/context-menu/root.tsx",
           "dest": "context-menu/root.tsx",
           "targets": [
@@ -908,7 +961,9 @@
             "@/react/slot": "./slot",
             "@/react/context-menu/styles": "./styles",
             "@/react/context-menu/context": "./context",
-            "@/core/clipboard-menu": "./clipboard-menu"
+            "@/core/clipboard-menu": "./clipboard-menu",
+            "@/react/floating": "./floating",
+            "@/core/floating": "./floating-core"
           }
         },
         {
@@ -1543,6 +1598,23 @@
           }
         },
         {
+          "path": "src/core/floating.ts",
+          "dest": "image/floating-core.ts",
+          "targets": [
+            "react"
+          ]
+        },
+        {
+          "path": "src/react/floating.ts",
+          "dest": "image/floating.ts",
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/core/floating": "./floating-core"
+          }
+        },
+        {
           "path": "src/react/context-menu/root.tsx",
           "dest": "image/root.tsx",
           "targets": [
@@ -1555,7 +1627,9 @@
             "@/react/slot": "./slot",
             "@/react/context-menu/styles": "./context-menu-styles",
             "@/react/context-menu/context": "./context",
-            "@/core/clipboard-menu": "./clipboard-menu"
+            "@/core/clipboard-menu": "./clipboard-menu",
+            "@/react/floating": "./floating",
+            "@/core/floating": "./floating-core"
           }
         },
         {
@@ -1746,6 +1820,23 @@
           }
         },
         {
+          "path": "src/core/floating.ts",
+          "dest": "video/floating-core.ts",
+          "targets": [
+            "react"
+          ]
+        },
+        {
+          "path": "src/react/floating.ts",
+          "dest": "video/floating.ts",
+          "targets": [
+            "react"
+          ],
+          "rewrite": {
+            "@/core/floating": "./floating-core"
+          }
+        },
+        {
           "path": "src/react/context-menu/root.tsx",
           "dest": "video/root.tsx",
           "targets": [
@@ -1758,7 +1849,9 @@
             "@/react/slot": "./slot",
             "@/react/context-menu/styles": "./context-menu-styles",
             "@/react/context-menu/context": "./context",
-            "@/core/clipboard-menu": "./clipboard-menu"
+            "@/core/clipboard-menu": "./clipboard-menu",
+            "@/react/floating": "./floating",
+            "@/core/floating": "./floating-core"
           }
         },
         {

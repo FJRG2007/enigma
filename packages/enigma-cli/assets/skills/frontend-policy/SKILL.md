@@ -100,6 +100,16 @@ Never apply more than one of the three to the same boundary. A block with a bord
 
 **Fewer, larger, quieter.** Prefer one padded region over four nested ones; consistent padding over per-block variation; and type weight, size and colour over outlines when establishing hierarchy. If a screen looks busy, the fix is almost always to delete containers, not to restyle them.
 
+**Radius, shadow and padding by role, not by habit.** The same `rounded-2xl shadow-lg p-6` on every block is the signature of generated UI: it flattens hierarchy because nothing differs. Keep a small radius scale tied to role (controls smallest, cards and panels next, dialogs and sheets largest, full pills only for tags, avatars and toggles), a shadow only on what actually floats (menus, popovers, dialogs, a dragged item), and padding sized to the content it holds.
+
+**No accent stripe on a rounded card.** A thick coloured `border-left` on a rounded card is a template callout: the stripe fights the radius and repeats what the text says. For a real status use a status icon plus a tinted background or a labelled badge; for plain emphasis, use none.
+
+**Left-align what people read.** Centered multi-line paragraphs, lists, forms and card bodies are harder to scan because every line starts somewhere new. Center only a short single line (a hero headline, an empty-state line, a button label); everything longer is left-aligned (start-aligned in RTL).
+
+**Text on colour takes its colour from the surface.** Neutral grey text on a coloured or tinted background reads as washed out and often fails contrast. Use a darker shade of the surface's own hue, or the on-colour text token (white or near-white on a saturated fill), and hold 4.5:1 for body text.
+
+**One icon set, and no emoji as icons.** Every icon comes from one library (the one the project already uses); a second set with a different stroke and grid is visible at a glance. Emoji are content, never icons, list bullets or section markers. Generic tells in both directions (the sparkles glyph for "AI", decorative gradients, badge pills) are catalogued in frontend-design's "Template tells".
+
 ---
 
 ## Icon Actions (Words Only Where No Glyph Speaks)
@@ -222,6 +232,19 @@ A table, log, activity feed or detail panel is full of values that NAME somethin
 - **A timestamp is both forms**: relative for reading ("2 hours ago") with the exact localized value available on hover, per Dates & Timestamps above.
 
 The check to run while building, not afterwards: go column by column and ask what the reader wants to do NEXT with that value. If the answer is "find out more about that thing" or "see the others like it", the cell needs an affordance now.
+
+---
+
+## Overlays Escape Their Container (Selects, Menus, Popovers Inside Dialogs)
+
+A floating panel - select, combobox, dropdown menu, popover, tooltip, date or color picker - is laid out relative to an ancestor unless it is moved out of the tree. Inside a dialog, a drawer, a card or a scroll region, that ancestor almost always has `overflow: hidden`/`auto`, a `transform`, or its own stacking context, and the panel is clipped at the dialog edge or painted underneath it. It works on the page where it was built and breaks the day someone puts it in a modal.
+
+- Render every floating panel through a portal to `document.body` (or the design system's portal container) with fixed positioning measured from the trigger. Radix: wrap `Content` in its `Portal`. MUI: keep the default portal and never pass `disablePortal`. Headless UI: `anchor` or `portal`. Floating UI: `FloatingPortal` or `strategy: "fixed"`.
+- One z-index scale for the whole app, with floating panels above dialogs: page < sticky header < drawer/dialog < popover/menu/select < toast. A panel opened from inside a dialog must stack above that dialog, so it cannot share the dialog's layer.
+- Collision handling is part of the panel: flip above the trigger when there is no room below, shift to stay inside the viewport, and cap the height (`max-height` with its own scroll) so a long list never runs off the screen. Floating UI's `flip()`, `shift()` and `size()` do this; a hand-positioned `absolute top-full` panel does not.
+- A portaled panel still behaves as part of its trigger: outside-click and Escape close it, focus returns to the trigger, arrow keys work, `aria-controls`/`aria-expanded` stay wired, and it follows the trigger on scroll and resize (or closes).
+- Never "fix" a clipped panel by removing the dialog's `overflow` or raising one z-index by hand; that moves the bug to the next container.
+- Verify it where it breaks: open the control inside a dialog, near the bottom of the viewport, at 390px width, with a long option list, and confirm the panel is fully visible and clickable.
 
 ---
 

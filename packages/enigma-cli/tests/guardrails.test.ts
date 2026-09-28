@@ -1256,6 +1256,23 @@ test("a brand-new file is repaired in full, and a line git cannot speak for is n
     rmSync(loose, { recursive: true, force: true });
 });
 
+test("an edit-stage BLOCK on a line the change never touched does not block the edit", () => {
+    // A legacy file that already broke a rule would otherwise block every edit made to it, on a
+    // line the model did not write and was never asked to change.
+    const repo = gitRepo();
+    const file = join(repo, "schema.sql");
+    const legacy = "CREATE TABLE users (id SERIAL PRIMARY KEY);\n";
+    writeFileSync(file, legacy);
+    execFileSync("git", ["add", "-A"], { cwd: repo, stdio: "ignore" });
+    execFileSync("git", ["commit", "-qm", "schema"], { cwd: repo, stdio: "ignore" });
+    writeFileSync(file, `${legacy}CREATE TABLE teams (id UUID PRIMARY KEY);\n`);
+    expect(postEdit(file)).toBe(0);
+    // The same rule on a line this change wrote still blocks.
+    writeFileSync(file, `${legacy}CREATE TABLE teams (id SERIAL PRIMARY KEY);\n`);
+    expect(postEdit(file)).toBe(2);
+    rmSync(repo, { recursive: true, force: true });
+});
+
 test("a diff-stage finding the fixer declines stays with the turn-end sweep", () => {
     // The hook REPORTS at the edit stage and REPAIRS at both: only the sweep knows whether the
     // change added the line, so an unrepaired diff-stage finding is its business, not this one's.

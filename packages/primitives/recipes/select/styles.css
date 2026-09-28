@@ -20,12 +20,17 @@
     --enigma-select-panel-border: #333333;
     --enigma-select-panel-radius: 0.625rem;
     --enigma-select-panel-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
-    --enigma-select-panel-width: 100%;
     --enigma-select-list-height: 15rem;
 
     --enigma-select-active-bg: #2a2a2a;
     --enigma-select-accent: #fbbf24;
     --enigma-select-tag-bg: #2a2a2a;
+
+    /* The layer every portaled popup shares: above the lightbox (9999), because a popup is
+       opened FROM whatever is on top. The select, the colour picker and the context menu
+       each declare it with the same value, so overriding it once moves all three. Here and
+       not in the light-scheme block, or half the readers get an invalid z-index. */
+    --enigma-floating-z: 10000;
 }
 
 @media (prefers-color-scheme: light) {
@@ -130,11 +135,24 @@
 [data-enigma-select-trigger][data-clearable]:focus [data-enigma-select-caret] { opacity: 0; }
 [data-enigma-select-clear]:hover { color: var(--enigma-select-text); background: var(--enigma-select-active-bg); }
 
+/* Portaled to <body> and placed in viewport coordinates against the trigger (see
+   react/floating.ts), so no ancestor's overflow can clip it and no dialog can stack over it.
+   left, top, max-height and data-side are written by the placement: below the trigger,
+   flipped above when there is more room there, and capped to the room it has. The column
+   is what makes the cap shrink the LIST, which scrolls, instead of cutting off the panel. */
 [data-enigma-select-content] {
-    position: absolute; z-index: 50;
-    top: calc(100% + 0.25rem); left: 0;
-    min-width: var(--enigma-select-panel-width); box-sizing: border-box;
+    position: fixed; z-index: var(--enigma-floating-z);
+    display: flex; flex-direction: column;
+    /* As wide as the trigger, measured - 100% would now be a percentage of the window - and
+       wider only for content that cannot shrink. min-content is what keeps the rest at the
+       trigger's width: fixed, the panel's room is the whole window, and a long label or a
+       long "Nothing matches" would otherwise widen it to max-width. --enigma-select-panel-width
+       overrides the trigger's width. */
+    width: min-content;
+    min-width: var(--enigma-select-panel-width, var(--enigma-anchor-width, auto)); box-sizing: border-box;
     padding: 0.25rem;
+    color: var(--enigma-select-text);
+    font-size: var(--enigma-select-font-size);
     background: var(--enigma-select-panel-bg);
     border: 1px solid var(--enigma-select-panel-border);
     border-radius: var(--enigma-select-panel-radius);
@@ -145,9 +163,6 @@
        trigger wider than this, which is what it is for. */
     max-width: min(28rem, calc(100vw - 2rem));
 }
-/* Opening upwards is not a variant, it is the same panel measured against the window: near
-   the bottom of the screen the list would otherwise be unreachable. */
-[data-enigma-select-content][data-side="top"] { top: auto; bottom: calc(100% + 0.25rem); }
 [data-enigma-select-content][data-state="closed"] { animation: enigma-select-out 120ms ease-in forwards; pointer-events: none; }
 
 @keyframes enigma-select-in {
@@ -179,6 +194,8 @@
 
 [data-enigma-select-list] {
     max-height: var(--enigma-select-list-height);
+    /* Allowed below its content, so the panel's placement cap shrinks it and it scrolls. */
+    min-height: 0; flex: 0 1 auto;
     margin-top: 0.25rem;
     overflow-y: auto; overscroll-behavior: contain;
 }

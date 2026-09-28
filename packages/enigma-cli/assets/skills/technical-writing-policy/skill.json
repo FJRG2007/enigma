@@ -1,9 +1,9 @@
 {
   "name": "technical-writing-policy",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "provider": "FJRG2007/enigma",
-  "description": "Concise, realistic technical copy - UI microcopy, descriptions, hints, empty/error states, and README/doc prose that informs without over-explaining or restating the obvious, and never uses a typographic dash.",
+  "description": "Concise, realistic copy for UI, landing/sales, SEO, email and docs - the user's outcome instead of the mechanism, no full enumerations or \"powered by\" lineage, none of the recognizable AI-writing tells, and never a typographic dash.",
   "updated": "2026-08-19T12:37:59+02:00",
   "cliVersion": "1.54.4",
-  "sha": "a5a228a302f50d975a947b9d84676b4c2a4780f2b222f819388cc98d6a12f207"
+  "sha": "e32623f37f1bf90fa611968ca8b216e3381771254b6af7c81a953c17a8889ddb"
 }

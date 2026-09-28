@@ -63,8 +63,8 @@ API. Upstream binary was the `v1.45.3` release; the scaffolding is reproducible 
 **Per pass the two are indistinguishable** - the port costs what upstream costs, and the Go/TS
 difference is noise next to an agent pass. The totals gap is entirely how often the review
 returned `auto-fix` findings and bought a fix round (enigma 3 of 3, upstream 2 of 3); the
-review prompt is byte-identical between `review.go` and `review.ts`, so that is model sampling,
-not drift. The same run legitimately costs 5.5 or 10.6 minutes depending on the draw.
+review prompt was byte-identical between `review.go` and `review.ts` at the time, so that is
+model sampling, not drift (the prompt has since diverged - see "The review prompt" below). The same run legitimately costs 5.5 or 10.6 minutes depending on the draw.
 
 Two facts worth keeping from that floor:
 
@@ -328,6 +328,27 @@ it, not the executor:
 
 Note the gate reads one setting from the OTHER config (`.enigma.json`, not `.enigma-gate.yaml`):
 `commitEmoji`. See the commit subjects section below.
+
+## The review prompt (an enigma extension)
+
+`buildReviewPrompt` in `steps/review.ts` is a pure function so its contract is testable without an
+agent (`tests/gate/review-prompt.test.ts`). Beyond upstream it adds:
+
+- A scope-drift pre-pass against the user intent: unrequested changes, and asks the diff leaves
+  undone, are one `ask-user` finding each.
+- Evidence per finding: the offending line quoted in `description`, ending "Confidence: high" or
+  "Confidence: medium"; low-confidence findings are dropped, never padded.
+- A clean result names the dimensions checked in `risk_rationale`.
+- A copy/design lens, ONLY when `touchesUI(changedFiles)` (markup/style/component/site extensions,
+  test files excluded, ignore patterns applied). A non-UI diff keeps upstream's "Do NOT report
+  styling" line verbatim; a UI diff swaps it for "styling and copy only through the UI lens". The
+  lens lists the tells from technical-writing-policy ("AI Tells") and frontend-design ("Template
+  tells"); keep it in step when those catalogues change.
+
+The wire contract did not move: evidence and confidence ride inside `description` and the checked
+dimensions inside `risk_rationale`, so `reviewFindingsSchema` and `parseFindingsJSON` are unchanged
+(the test pins both `required` lists). A new field would have to stay optional to keep older
+findings parseable; none was needed.
 
 ## Waiting on the USER, and merging when they asked (an enigma extension)
 

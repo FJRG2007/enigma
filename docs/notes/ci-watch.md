@@ -18,25 +18,49 @@ time. Paying continuously to be told nothing is the wrong shape.
 Two halves, and the model's loop is in neither of them.
 
 ```
-agent pushes ──► hook notices the tracking branch moved
-                     └─► spawns a DETACHED poller ──► gh run list / run view
-                                                          └─► state.json (per repo)
-
-next tool call ──► hook reads state.json
-                     ├─ nothing to report ──► prints NOTHING (zero tokens)
-                     └─ undelivered failure ──► prints it once, marks delivered
+Bash call ──► hook (asyncRewake: runs in the BACKGROUND, the call never waits on it)
+                ├─ undelivered failure on file ──► exit 2 + report on stderr (wakes the model)
+                ├─ this call pushed ──► claim SHA, spawn DETACHED poller ──► gh ──► state.json
+                └─ a pending commit for this repo ──► wait on state.json (file reads only)
+                                                        ├─ failure ──► exit 2, marked delivered
+                                                        └─ green / stood down ──► exit 0, no output
+gate push to the default branch ──► claim SHA, spawn the same poller
 ```
 
 - **The poller** (`enigma __ci-watch <repo> <sha>`) is an ordinary background process.
   Its waiting costs wall clock and nothing else. It polls every 30 s for at most 30
   minutes, then gives up rather than living forever behind a queued runner or an
-  environment approval.
-- **The hook** (`enigma __ci-hook`) fires at tool boundaries the harness was going to
-  spawn anyway. On a green build it writes zero bytes, so the feature's cost in the
-  common case is exactly zero tokens.
+  environment approval. Every exit - green, red, no runs, gh unusable, budget spent -
+  writes `done: true`, which is how a waiting hook tells "still polling" from "stopped".
+- **The hook** (`enigma __ci-hook rewake`) is a `PostToolUse` Bash hook with Claude Code's
+  `asyncRewake: true`: it runs in the background, and exit code 2 wakes the model with its
+  stderr - mid-turn OR after the turn ended. On a green build it writes zero bytes and
+  exits 0, so the common case costs zero tokens. `asyncRewake` is in Claude Code's settings
+  schema ("If true, hook runs in background and wakes the model on exit code 2"); its
+  `rewakeMessage`/`rewakeSummary` siblings are marked internal and are not used.
 
-Non-blocking by construction: the hook never denies a call and always exits 0. A
-notifier that could fail a turn would be a worse problem than the one it solves.
+## Why it never reached the agent (fixed 2026-09)
+
+`~/.enigma/ci-watch/state.json` did not exist on the author's machine after weeks of pushes:
+not one watch had ever armed. Causes, in order of weight:
+
+1. **The hook timed out before doing anything.** `__ci-hook` had no launcher fast path, so
+   every Bash call paid a Node start plus the ~99 MB Bun binary start: 16-22 s measured for a
+   no-op against a 20 s budget, and arming adds four git subprocesses on top. Claude Code
+   logged `UserPromptSubmit hook [enigma __ci-hook UserPromptSubmit] timed out after 20s`.
+   Fix: `bin/enigma.mjs` answers `__ci-hook` and `__ci-watch` from `dist/ci-watch.js`
+   (tsup entry), and the hook is async so its cost never lands on a tool call.
+2. **A verdict reached the model only at its next Bash call or prompt.** An agent that pushes
+   and ends its turn - the normal case - heard nothing until the user wrote again, and then
+   only if the prompt hook survived its timeout. Fix: `asyncRewake` waiting hook.
+3. **Gate pushes never armed.** The gate pushes from its own worktree, so the checkout's
+   tracking ref records `fetch: fast-forward` later, never `update by push`. Fix: the push
+   step calls `armGatePushWatch` - only for the default branch with no fork, because a PR
+   branch has the gate's own CI step (which also auto-fixes) and two fixers on one build is
+   worse than one. Keyed by the checkout's `workingPath`, which is where the session runs.
+
+Still not covered: a build triggered by something other than your push (`gh pr merge`, a
+merge button) - it is not "your push", and the reflog guard exists to keep it out.
 
 ## Delivery rules
 
@@ -46,11 +70,14 @@ notifier that could fail a turn would be a worse problem than the one it solves.
 - **Per repository.** `~/.enigma/ci-watch/state.json` holds `{ version, repos }`, the
   same shape as `gate-ledger.ts` and the status-line snapshot, and for the same reason:
   one global slot lets one project's verdict overwrite another's. Deepest matching root
-  wins, so a clone nested inside another repo reads its own.
-- **Delivery never shells out.** It matches `cwd` against the recorded paths instead of
-  resolving the git root, because it runs at every tool boundary and must not cost a
-  subprocess to answer "nothing to say". Only ARMING runs git, and only after delivery
-  found nothing.
+  wins, so a clone nested inside another repo reads its own. Keys are normalized
+  (`repoKey`: forward slashes, upper-case drive letter) so the hook's `git rev-parse` root
+  and the gate's `workingPath` land in the same slot.
+- **Delivery and waiting never shell out.** They match `cwd` against the recorded paths
+  instead of resolving the git root, which is also what lets a gate-armed entry (keyed by
+  the checkout, not by anything git in the session reported) be found. Only ARMING runs
+  git, and only after delivery found nothing; it is in the background now, so it costs no
+  tool-call latency.
 
 ## What arms a watch
 
@@ -104,21 +131,24 @@ without polling and no verdict ever arrives (`monorepo-and-distribution.md`).
 
 ## Wiring
 
-Two Claude Code hooks (`ci-watch-deploy.ts`), both calling the same command:
+One Claude Code hook (`ci-watch-deploy.ts`): `PostToolUse`, matcher `Bash`, command
+`enigma __ci-hook rewake`, `asyncRewake: true`, timeout 2400 s (the host kills a hook at its
+timeout, so it must outlast the poll budget plus the log fetch; the wait budget is 35 min).
 
-- `PostToolUse` matched on `Bash`, which is where a push comes from. This is the one
-  that arms, and the one that delivers soonest - mid-task is when a break is cheapest
-  to fix.
-- `UserPromptSubmit` as the backstop, so a verdict landing after the agent stopped
-  running commands is the first thing on the next turn instead of sitting unread.
-  **Delivery only** - it never arms. Arming costs four git subprocesses to answer
-  "did you push?", and this chain runs before the turn starts with several hooks
-  sharing its budget; it was observed timing out (`UserPromptSubmit hook timed out
-  after 30s`) on a loaded box before this feature existed. A push comes from Bash, so
-  `PostToolUse` is where those subprocesses belong. `runCiWatchHook` enforces it: any
-  event other than `PostToolUse` returns after the state read.
+- **One waiter per commit.** The waiting hook writes `waiter: { pid, at }` into the entry; a
+  later Bash call sees a live claim and exits at once. A claim whose pid is dead (the session
+  closed) or older than the budget is taken over, so the next session still hears the verdict.
+  A newer push replaces the entry, which drops the old waiter and makes the arming hook the
+  new one. The poller carries the waiter over when it records the verdict.
+- **The `UserPromptSubmit` entry is removed** on every re-assert, whatever the toggle. It was
+  the one that timed out, it cost a process per prompt, and the waiting hook delivers what it
+  backstopped.
+- **Old wirings still behave.** `__ci-hook PostToolUse` (synchronous) delivers as JSON
+  additionalContext and arms but never waits - a synchronous hook that waited would hold the
+  tool call to its timeout. `__ci-hook UserPromptSubmit` delivers only. Both disappear at the
+  next `enigma install`/sync, which rewrites the entry.
 
-Claude Code only, deliberately: the delivery channel is a hook whose stdout is fed back
+Claude Code only, deliberately: the delivery channel is a hook whose output is fed back
 to the model. opencode and Kimi get nothing rather than a hook firing into a void - the
 same call `trim-deploy.ts` documents for Codex and `guardrails-deploy.ts` for Kimi.
 

@@ -88,6 +88,20 @@ simply run everything and return 0 - losing it turns a gate into a silent no-op,
 for this to break. A block short-circuits the blast radius on purpose: the model is about to
 redo the write, so the graph note would describe an edit that is being taken back.
 
+Two more scopes keep a foreign repo's legacy file from turning every edit into a block (reported
+from a Next.js repo with single quotes and unsorted imports: one Edit came back with 293 findings
+and a guardrails BLOCK on a line the edit never touched):
+
+- When the payload cannot be undone (a Write, an ambiguous Edit) the baseline is the file at `HEAD`
+  (`git show HEAD:./name`); only a file git has never seen is judged whole.
+- A `style` rule the baseline already breaks is the file's established style, so findings for it are
+  dropped (`followsFileStyle`); `audit` rules always report. The fixer rewrites the whole file, so it
+  only runs when it is a no-op on the baseline - otherwise it reordered every import of a legacy
+  module on a one-line edit.
+- Guardrails reports and repairs only findings on lines changed against `HEAD` (`changedLineFilter`,
+  the same probe the diff-stage repair uses). No git means the whole file still counts; a finding
+  with no line (a size budget) has nothing to scope and counts too.
+
 ## Toggle gating moved from the wiring to the runtime
 
 One entry cannot encode four toggles, so `post-edit-hook.ts` gates each step on its own

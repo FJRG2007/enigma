@@ -23,7 +23,7 @@
 import { log } from "../log";
 import type { Paths } from "../paths";
 import type { Database } from "../db";
-import { getRun, getRepo, getStepsByRun } from "../db";
+import { getRun, getRepo, getActiveRun, getStepsByRun } from "../db";
 import { readRepoKeyedFile, writeRepoKeyedFile } from "@/repo-keyed-file";
 
 /**
@@ -94,6 +94,14 @@ export function buildSnapshot(db: Database, runId: string): Snapshot | null {
     return snapshot;
 }
 
+/** The snapshot of another active run in `runId`'s repository, or null when there is none. */
+function handover(db: Database, runId: string): Snapshot | null {
+    const run = getRun(db, runId);
+    if (run === null) return null;
+    const other = getActiveRun(db, run.repoId, "");
+    return other === null || other.id === runId ? null : buildSnapshot(db, other.id);
+}
+
 /**
  * Records the run under its repository, replacing that repository's previous entry and
  * leaving every other repository's alone - which is the whole point: two runs in flight
@@ -116,7 +124,14 @@ export function writeSnapshot(db: Database, paths: Paths, runId: string): void {
         const repos = readRepoKeyedFile<Snapshot>(target, SNAPSHOT_VERSION);
         const stored = repos[snapshot.repoPath];
         if (ACTIVE_RUN_STATUSES.has(snapshot.status)) repos[snapshot.repoPath] = snapshot;
-        else if (stored === undefined || stored.runId === undefined || stored.runId === snapshot.runId) delete repos[snapshot.repoPath];
+        else if (stored === undefined || stored.runId === undefined || stored.runId === snapshot.runId) {
+            // Hand the key to another run of this repository that is still in flight, if there is
+            // one. Deleting it left the bar blank until that run's next event - and a review step
+            // alone can run for twenty minutes without one.
+            const next = handover(db, runId);
+            if (next) repos[snapshot.repoPath] = next;
+            else delete repos[snapshot.repoPath];
+        }
         writeRepoKeyedFile(target, SNAPSHOT_VERSION, repos, s => s.startedAt);
     } catch (err) {
         log.debug("statusline snapshot write failed", "run_id", runId, "error", String(err));

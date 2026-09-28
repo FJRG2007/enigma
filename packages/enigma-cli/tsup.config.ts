@@ -31,6 +31,8 @@ export default defineConfig({
         trim: "src/trim.ts",
         "post-edit": "src/post-edit-hook.ts",
         "codegraph-hook": "src/codegraph-hook.ts",
+        // The CI notifier's hook and poller, answered by the launcher for the same reason.
+        "ci-watch": "src/ci-watch.ts",
     },
     format: ["esm"],
     target: "node18",

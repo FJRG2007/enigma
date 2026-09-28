@@ -352,9 +352,13 @@ export class RunManager {
         requested: StepName[],
     ): Promise<StepName[]> {
         try {
-            const { diffNameOnly } = await import("../git");
+            const git = await import("../git");
             const { profileChange } = await import("../pipeline/profile");
-            const files = await diffNameOnly(repo.workingPath, baseSHA, headSHA);
+            // A new branch arrives with a zero base, and diffing from zero is not a range git
+            // accepts - so every first push of a branch ran the full pipeline. Its real base
+            // is where it left the default branch.
+            const base = git.isZeroSHA(baseSHA) ? await branchPoint(repo, headSHA) : baseSHA;
+            const files = await git.diffNameOnly(repo.workingPath, base, headSHA);
             const profile = profileChange(files);
             if (profile.skip.length === 0) return requested;
             const merged = new Set<StepName>([...requested, ...profile.skip]);
@@ -813,6 +817,23 @@ export async function loadTrustedRepoConfig(wtDir: string, trustedSHA: string, r
         log.warn("trusted repo config: parse failed; commands/agent from pushed branch will be disabled", "run_id", runID, "sha", trustedSHA, "error", errMessage(err));
         return null;
     }
+}
+
+/**
+ * Where `headSHA` left the repository's default branch, preferring the remote copy (a local
+ * default branch is routinely hundreds of commits behind). Throws when neither resolves, which
+ * the caller turns into "run every step".
+ */
+export async function branchPoint(repo: gateDb.Repo, headSHA: string): Promise<string> {
+    const git = await import("../git");
+    for (const ref of [`origin/${repo.defaultBranch}`, repo.defaultBranch]) {
+        if (!repo.defaultBranch) break;
+        try {
+            const mb = (await git.run(repo.workingPath, ["merge-base", headSHA, ref])).trim();
+            if (mb) return mb;
+        } catch { /* try the next ref */ }
+    }
+    throw new Error(`no merge-base between ${headSHA} and ${repo.defaultBranch || "(no default branch)"}`);
 }
 
 /** Extracts the repo ID from a gate bare repo path (`<root>/repos/<id>.git`). */

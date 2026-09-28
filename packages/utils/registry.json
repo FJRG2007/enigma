@@ -106,6 +106,147 @@
       "styles": false,
       "docs": "docs/notes/primitives.md#password-breach",
       "source": "src/core/password-breach.ts"
+    },
+    {
+      "name": "safe-fetch",
+      "title": "SSRF-safe fetch (server)",
+      "description": "Fetch a URL that came from outside without letting it reach this machine, its network or the cloud metadata service. The address is vetted inside the socket's own DNS lookup, so the address checked is the address connected to and DNS rebinding cannot slip a private one in between; IP literals, every redirect hop, embedded credentials, size and time are checked too. Node only.",
+      "targets": [
+        "vanilla",
+        "astro",
+        "react",
+        "vue",
+        "svelte"
+      ],
+      "entry": {
+        "vanilla": "@enigmax/utils/server",
+        "astro": "@enigmax/utils/server",
+        "react": "@enigmax/utils/server",
+        "vue": "@enigmax/utils/server",
+        "svelte": "@enigmax/utils/server"
+      },
+      "exports": {
+        "vanilla": [
+          "safeFetch",
+          "isPublicAddress",
+          "SafeFetchError"
+        ],
+        "astro": [
+          "safeFetch",
+          "isPublicAddress",
+          "SafeFetchError"
+        ],
+        "react": [
+          "safeFetch",
+          "isPublicAddress",
+          "SafeFetchError"
+        ],
+        "vue": [
+          "safeFetch",
+          "isPublicAddress",
+          "SafeFetchError"
+        ],
+        "svelte": [
+          "safeFetch",
+          "isPublicAddress",
+          "SafeFetchError"
+        ]
+      },
+      "files": [
+        {
+          "path": "src/server/safe-fetch.ts",
+          "dest": "safe-fetch/index.ts",
+          "targets": [
+            "vanilla",
+            "astro",
+            "react",
+            "vue",
+            "svelte"
+          ],
+          "main": true
+        }
+      ],
+      "styles": false,
+      "docs": "docs/notes/primitives.md#safe-fetch",
+      "source": "src/server/safe-fetch.ts"
+    },
+    {
+      "name": "safe-upload",
+      "title": "Safe file upload (server)",
+      "description": "Accept an upload by what its bytes are, against an allowlist and a size cap; store it under a random name; keep any path built from input under its root; serve it back with nosniff, a sandboxing CSP and a forced attachment for anything a browser would run. Node only.",
+      "targets": [
+        "vanilla",
+        "astro",
+        "react",
+        "vue",
+        "svelte"
+      ],
+      "entry": {
+        "vanilla": "@enigmax/utils/server",
+        "astro": "@enigmax/utils/server",
+        "react": "@enigmax/utils/server",
+        "vue": "@enigmax/utils/server",
+        "svelte": "@enigmax/utils/server"
+      },
+      "exports": {
+        "vanilla": [
+          "inspectUpload",
+          "sniffFileType",
+          "storageName",
+          "resolveInside",
+          "downloadHeaders",
+          "UploadRefusedError"
+        ],
+        "astro": [
+          "inspectUpload",
+          "sniffFileType",
+          "storageName",
+          "resolveInside",
+          "downloadHeaders",
+          "UploadRefusedError"
+        ],
+        "react": [
+          "inspectUpload",
+          "sniffFileType",
+          "storageName",
+          "resolveInside",
+          "downloadHeaders",
+          "UploadRefusedError"
+        ],
+        "vue": [
+          "inspectUpload",
+          "sniffFileType",
+          "storageName",
+          "resolveInside",
+          "downloadHeaders",
+          "UploadRefusedError"
+        ],
+        "svelte": [
+          "inspectUpload",
+          "sniffFileType",
+          "storageName",
+          "resolveInside",
+          "downloadHeaders",
+          "UploadRefusedError"
+        ]
+      },
+      "files": [
+        {
+          "path": "src/server/safe-upload.ts",
+          "dest": "safe-upload/index.ts",
+          "targets": [
+            "vanilla",
+            "astro",
+            "react",
+            "vue",
+            "svelte"
+          ],
+          "main": true
+        }
+      ],
+      "styles": false,
+      "docs": "docs/notes/primitives.md#safe-upload",
+      "source": "src/server/safe-upload.ts"
     }
   ]
 }

@@ -4,7 +4,9 @@ import { Slot } from "@/react/slot";
 import { createPortal } from "react-dom";
 import { shortenQuery } from "@/core/search";
 import { shortcutTokens } from "@/core/keys";
+import { placeFloating } from "@/core/floating";
 import { CONTEXT_MENU_STYLES } from "@/react/context-menu/styles";
+import { floatingContainer, measureFrame } from "@/react/floating";
 import { ContextMenuContext, useContextMenuContext, type ContextMenuItem, type ContextMenuNode } from "@/react/context-menu/context";
 import {
     CLIPBOARD_PREFIX, clipboardEntries, clipboardAction, clipboardHasText, inspectClipboardTarget, performClipboardAction,
@@ -38,7 +40,9 @@ import {
  * that is what a pointer event reports. Left in the tree it inherits any ancestor's
  * `overflow: hidden`, any `transform` (which makes `fixed` resolve against that ancestor
  * rather than the window) and any stacking context - so the menu ends up clipped by the row
- * that opened it. Rendered into `<body>`, it is subject to none of them.
+ * that opened it. Rendered into `<body>`, it is subject to none of them. Inside a dialog it
+ * goes into the dialog instead, which a modal `<dialog>` makes the only live part of the
+ * page - the select and the colour picker share the rule, in `react/floating.ts`.
  */
 
 /**
@@ -605,7 +609,7 @@ export function ContextMenuContent({ chunk = 40, portal = true, ...props }: Cont
 
     if (!portal) return panels;
     if (!mounted || typeof document === "undefined") return null;
-    return createPortal(panels, document.body);
+    return createPortal(panels, floatingContainer(menu.triggerRef.current) ?? document.body);
 }
 
 export interface ContextMenuPanelProps extends ComponentPropsWithoutRef<"div"> {
@@ -634,23 +638,31 @@ export function ContextMenuPanel({ level, chunk = 40, ...props }: ContextMenuPan
     useLayoutEffect(() => {
         const panel = ref.current;
         if (!panel) return;
-        // Measured with the placement cleared, so a panel that shrank is not measured against
-        // the width it had while it was longer.
+        // Measured with the cap cleared, so a panel that was shortened to fit last time is
+        // measured at its real height and not at the room it had then.
+        panel.style.maxHeight = "";
         const width = panel.offsetWidth;
         const height = panel.offsetHeight;
-        const vw = window.innerWidth;
-        const vh = window.innerHeight;
+        // The viewport, or the dialog it is portaled into when that dialog is what `fixed`
+        // resolves against - and the offset between the two, which every coordinate pays.
+        const frame = measureFrame(panel);
+        const { boundary } = frame;
 
         let left: number;
         let top: number;
 
         if (level === 0) {
-            left = point?.x ?? MARGIN;
-            top = point?.y ?? MARGIN;
-            // Flipped rather than clamped: a menu whose left edge is dragged back to fit
-            // would sit UNDER the pointer, and the first row would be chosen by the release.
-            if (left + width > vw - MARGIN) left = Math.max(MARGIN, left - width);
-            if (top + height > vh - MARGIN) top = Math.max(MARGIN, top - height);
+            // The pointer is the anchor: a box with no size. Flipped rather than clamped, by
+            // the shared placement - a menu whose left edge is dragged back to fit would sit
+            // UNDER the pointer, and the first row would be chosen by the release.
+            const x = point?.x ?? MARGIN;
+            const y = point?.y ?? MARGIN;
+            const placedAt = placeFloating({ left: x, right: x, top: y, bottom: y }, { width, height }, { boundary, margin: MARGIN });
+            left = placedAt.left;
+            top = placedAt.top;
+            // Capped to the room on the side it opened, with the list scrolling inside: in a
+            // short window the alternative is rows below the edge that nothing can reach.
+            panel.style.maxHeight = `${placedAt.maxHeight}px`;
         } else {
             const parent = document.getElementById(menu.panelId(level - 1))?.getBoundingClientRect();
             const row = document.getElementById(menu.itemId(level - 1, menu.state.levels[level - 1]?.active ?? -1))?.getBoundingClientRect();
@@ -658,12 +670,15 @@ export function ContextMenuPanel({ level, chunk = 40, ...props }: ContextMenuPan
             // Overlapped by a couple of pixels on purpose: a gap between a row and its
             // submenu is a strip of page that closes the branch when the pointer crosses it.
             left = anchor.right - 2;
-            if (left + width > vw - MARGIN) left = Math.max(MARGIN, anchor.left - width + 2);
+            if (left + width > boundary.right - MARGIN) left = Math.max(boundary.left + MARGIN, anchor.left - width + 2);
             top = (row?.top ?? anchor.top) - 4;
-            if (top + height > vh - MARGIN) top = Math.max(MARGIN, vh - MARGIN - height);
+            if (top + height > boundary.bottom - MARGIN) top = Math.max(boundary.top + MARGIN, boundary.bottom - MARGIN - height);
         }
 
-        setPlaced({ left: Math.max(MARGIN, Math.round(left)), top: Math.max(MARGIN, Math.round(top)) });
+        setPlaced({
+            left: Math.max(boundary.left + MARGIN, Math.round(left)) - frame.x,
+            top: Math.max(boundary.top + MARGIN, Math.round(top)) - frame.y
+        });
         // Re-placed whenever the panel's own size can have changed: a filter that shortens the
         // list, a fetched submenu that arrived, another chunk of a long one.
     }, [level, point?.x, point?.y, rows, loading, menu, menu.state.levels.length]);

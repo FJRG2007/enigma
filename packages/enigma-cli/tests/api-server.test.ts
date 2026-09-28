@@ -266,3 +266,18 @@ test("streamChunk emits a valid OpenAI chunk SSE line", () => {
     expect(obj.choices[0].delta.content).toBe("hi");
     expect(obj.choices[0].finish_reason).toBeNull();
 });
+
+test("with an API key set, /v1/sessions answers only the matching key", async () => {
+    const { startApiServer } = await import("../src/api-server");
+    const api = await startApiServer({ port: 0, apiKey: "sk-test-key" });
+    try {
+        const call = (headers: Record<string, string>): Promise<number> => fetch(`${api.url}/v1/sessions`, { headers }).then((r) => r.status);
+        expect(await call({})).toBe(401);
+        expect(await call({ authorization: "Bearer sk-test-kez" })).toBe(401);
+        expect(await call({ authorization: "Bearer sk-test-key-longer" })).toBe(401);
+        expect(await call({ authorization: "Bearer sk-test-key" })).toBe(200);
+        expect(await call({ "x-api-key": "sk-test-key" })).toBe(200);
+    } finally {
+        api.close();
+    }
+});

@@ -150,18 +150,41 @@ test("a partially merged branch keeps its unmerged commit", async () => {
     expect(plan.verdicts.find((v) => v.branch === "feat/half")?.reason).toBe("not-contained");
 });
 
-test("a dirty working tree blocks the whole repository", async () => {
-    const { dir } = repo("dirty");
+test("a dirty working tree does not stop branches it has nothing to do with", async () => {
+    // The blanket "dirty tree blocks the repository" rule is what made this feature never
+    // run: a repo an agent works in is dirty nearly all the time, and 95 of 96 automatic
+    // cleanups were skipped for it. Deleting a ref that is not HEAD touches no file.
+    const { dir } = repo("dirty-other");
     branchWithWork(dir, "feat/done", "done.txt");
     git(dir, "merge", "-q", "--no-ff", "-m", "merge", "feat/done");
     writeFileSync(join(dir, "scratch.txt"), "uncommitted\n");
 
     const plan = await planTidy(dir, "");
-    expect(plan.blocked).toContain("uncommitted");
-    expect(plan.verdicts).toEqual([]);
+    expect(plan.blocked).toBeUndefined();
+    const result = await tidy(dir, { remote: "" });
+    expect(result.deleted).toContain("feat/done");
+    expect(result.switched).toBe(false);
+    // The uncommitted work is still there, untouched, on the branch it belongs to.
+    expect(existsSync(join(dir, "scratch.txt"))).toBe(true);
+    expect(git(dir, "rev-parse", "--abbrev-ref", "HEAD")).toBe("main");
+});
+
+test("a dirty working tree still refuses the branch it is checked out on", async () => {
+    // The one thing the dirty check ever protected: deleting the CURRENT branch needs the
+    // checkout moved off it, and that is the move uncommitted changes would lose.
+    const { dir } = repo("dirty-current");
+    branchWithWork(dir, "feat/done", "done.txt");
+    git(dir, "merge", "-q", "--no-ff", "-m", "merge", "feat/done");
+    git(dir, "checkout", "-q", "feat/done");
+    writeFileSync(join(dir, "scratch.txt"), "uncommitted\n");
+
+    const plan = await planTidy(dir, "");
+    expect(plan.verdicts.find((v) => v.branch === "feat/done")?.reason).toBe("dirty-worktree");
     const result = await tidy(dir, { remote: "" });
     expect(result.deleted).toEqual([]);
+    expect(result.switched).toBe(false);
     expect(git(dir, "branch", "--list", "feat/done").trim()).toContain("feat/done");
+    expect(existsSync(join(dir, "scratch.txt"))).toBe(true);
 });
 
 test("a branch with a stash based on it is left alone", async () => {
@@ -323,4 +346,45 @@ test("nothing is deleted while the undo ledger cannot be written", async () => {
     } finally {
         rmSync(ledger, { recursive: true, force: true });
     }
+});
+
+test("work merged on the remote is proved against it, however far behind the local default branch is", async () => {
+    const { dir, remote } = repo("stale-main");
+    branchWithWork(dir, "feat/landed", "landed.txt");
+    git(dir, "push", "-q", "origin", "feat/landed");
+    // The merge happens in another clone, so this checkout's `main` never sees it.
+    const other = mkdtempSync(join(tmpdir(), "enigma-tidy-stale-main-other-"));
+    dirs.push(other);
+    git(other, "clone", "-q", remote, ".");
+    git(other, "-c", "user.name=t", "-c", "user.email=t@e.test", "merge", "-q", "--no-ff", "-m", "merge", "origin/feat/landed");
+    git(other, "push", "-q", "origin", "main");
+
+    const plan = await planTidy(dir);
+    expect(plan.baseRef).toBe("origin/main");
+    expect(plan.verdicts.find((v) => v.branch === "feat/landed")?.tidyable).toBe(true);
+});
+
+test("a squash-merged branch stays tidyable after the base edits the same file elsewhere", async () => {
+    const { dir } = repo("squash-edited");
+    commit(dir, "list.txt", "a\nb\nc\nd\ne");
+    git(dir, "push", "-q", "origin", "main");
+    git(dir, "checkout", "-q", "-b", "feat/sq");
+    commit(dir, "list.txt", "a\nB\nc\nd\ne");
+    git(dir, "checkout", "-q", "main");
+    git(dir, "merge", "-q", "--squash", "feat/sq");
+    git(dir, "-c", "user.name=t", "-c", "user.email=t@e.test", "commit", "-q", "-m", "squash");
+    // Base moves on and edits the same file on another line: the content proof alone refuses.
+    commit(dir, "list.txt", "a\nB\nc\nd\nE");
+    git(dir, "push", "-q", "origin", "main");
+
+    const verdict = (await planTidy(dir)).verdicts.find((v) => v.branch === "feat/sq");
+    expect(verdict?.tidyable).toBe(true);
+
+    // The same shape with work base does NOT have is still refused.
+    git(dir, "checkout", "-q", "-b", "feat/more", "feat/sq");
+    commit(dir, "list.txt", "a\nB\nC\nd\ne");
+    git(dir, "checkout", "-q", "main");
+    const more = (await planTidy(dir)).verdicts.find((v) => v.branch === "feat/more");
+    expect(more?.tidyable).toBe(false);
+    expect(more?.reason).toBe("not-contained");
 });

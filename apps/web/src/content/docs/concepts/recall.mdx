@@ -55,13 +55,17 @@ For long-term use, keep the store bounded with `enigma recall prune <maxRows>` o
 
 ## For agents (MCP)
 
-When recall is on, enigma's MCP server exposes three tools to any connected agent (Claude Code, Codex, OpenCode), following a token-efficient search -> timeline -> get workflow:
+When recall is on, enigma's MCP server exposes these tools to any connected agent (Claude Code, Codex, OpenCode), following a token-efficient search -> timeline -> get workflow:
 
-- `enigma_recall` - search the memory index (compact results with ids)
-- `enigma_recall_timeline` - chronological context around an observation
+- `enigma_recall` - search the memory index (compact results with ids); `queries` adds extra phrasings of the same need
+- `enigma_recall_timeline` - chronological context around an observation, including older versions
 - `enigma_recall_get` - fetch full details for specific ids
+- `enigma_recall_remember` - save one fact about the current project (secrets redacted, `<private>` blocks dropped)
+- `enigma_recall_forget` - hide outdated or wrong observations by id, with a reason (up to 20 per call)
 
 So an agent can recall prior context about a project at the start of a task. Search first, then fetch only the ids that matter - keeping token use low.
+
+Memories stay current on their own: the same fact learned in another session strengthens the existing one instead of duplicating it, a newer version of a fact replaces the older one in search, and recent, often-repeated facts rank a little higher. Results come back inside a read-only `<enigma-recall>` block, so stored text is treated as data, not instructions.
 
 ## Where it lives
 

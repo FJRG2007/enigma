@@ -16,7 +16,7 @@ import { readJson, enigmaHome } from "./util";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 
 /** One hook entry as Claude Code's settings.json stores it. */
-export interface HookEntry { type?: string; command?: string; timeout?: number; }
+export interface HookEntry { type?: string; command?: string; timeout?: number; asyncRewake?: boolean; }
 
 /** A group of hooks under one event, optionally narrowed by a tool matcher. */
 export interface HookGroup { matcher?: string; hooks?: HookEntry[]; }

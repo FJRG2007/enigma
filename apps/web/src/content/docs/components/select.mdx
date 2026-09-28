@@ -176,9 +176,12 @@ brand is a handful of declarations and no selectors:
 | `styles` | `false` leaves the markup bare for a theme of your own |
 
 Styling hooks: `[data-enigma-select-trigger]` with `[data-empty]` and `[data-loading]`,
-`[data-enigma-select-content]`,
+`[data-enigma-select-content]` with `[data-side="top"|"bottom"]` (portaled to `<body>`, or into
+the dialog it was opened from, so no `overflow: hidden` ancestor can clip it),
 `[data-enigma-select-indicator]` with `[data-enigma-select-caret]` and
 `[data-enigma-select-clear]` stacked in it,
 `[data-enigma-select-option]` with `[data-active]`, `[data-selected]` and `[data-disabled]`,
 `[data-enigma-select-tag]`, `[data-enigma-select-search]`, `[data-enigma-select-empty]`,
 `[data-enigma-select-value]` with `[data-placeholder]`, `[data-empty]` and `[data-loading]`.
+The panel is as wide as the trigger unless `--enigma-select-panel-width` says otherwise, and
+sits on `--enigma-floating-z` (10000), the layer the colour picker and the context menu share.

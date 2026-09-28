@@ -1,9 +1,11 @@
 "use client";
 
 import { Slot } from "@/react/slot";
+import { createPortal } from "react-dom";
 import { groupRows } from "@/core/palette";
 import { shortenQuery } from "@/core/search";
 import { SELECT_STYLES } from "@/react/select/styles";
+import { tabOut, useFloating } from "@/react/floating";
 import { SelectContext, useSelectContext, type SelectItem } from "@/react/select/context";
 import { createSelect, type SelectInstance, type SelectMoveKey, type SelectOptions, type SelectState } from "@/core/select";
 import {
@@ -174,6 +176,9 @@ export function SelectRoot(props: SelectRootProps): ReactNode {
     const triggerRef = useRef<HTMLButtonElement | null>(null);
     const fieldRef = useRef<HTMLInputElement | null>(null);
     const rootRef = useRef<HTMLDivElement | null>(null);
+    const contentRef = useRef<HTMLDivElement | null>(null);
+    /** The root or the portaled panel: both are the select, only one is its DOM subtree. */
+    const owns = useCallback((node: Node | null) => Boolean(node && (rootRef.current?.contains(node) || contentRef.current?.contains(node))), []);
 
     // Kept in a ref so the instance - built once - always calls the CURRENT props rather
     // than the ones it closed over on the first render.
@@ -304,10 +309,10 @@ export function SelectRoot(props: SelectRootProps): ReactNode {
         // Whatever closed it was inside the panel - a row, or Enter in the search field -
         // and the panel is about to unmount with the focus still in it. Focus goes back to
         // the trigger rather than to the body, exactly as Escape does it.
-        const held = rootRef.current?.contains(document.activeElement);
+        const held = owns(document.activeElement);
         setOpen(false);
         if (held) triggerRef.current?.focus();
-    }, [state.open, open, setOpen]);
+    }, [state.open, open, setOpen, owns]);
 
     const close = useCallback(() => {
         setOpen(false);
@@ -321,12 +326,12 @@ export function SelectRoot(props: SelectRootProps): ReactNode {
     useEffect(() => {
         if (!open) return;
         const onPointerDown = (event: PointerEvent) => {
-            if (rootRef.current?.contains(event.target as Node)) return;
+            if (owns(event.target as Node)) return;
             setOpen(false);
         };
         document.addEventListener("pointerdown", onPointerDown, true);
         return () => document.removeEventListener("pointerdown", onPointerDown, true);
-    }, [open, setOpen]);
+    }, [open, setOpen, owns]);
 
     const onListKeyDown = useCallback((event: KeyboardEvent) => {
         const move = MOVE_KEYS[event.key];
@@ -351,6 +356,9 @@ export function SelectRoot(props: SelectRootProps): ReactNode {
             return;
         }
         if (event.key === "Tab" && open) {
+            // The search field is in the portaled panel, at the end of the page: off it, Tab
+            // goes where it would have from beside the trigger, not to the browser chrome.
+            if (contentRef.current?.contains(event.target as Node)) tabOut(event, contentRef.current, triggerRef.current);
             setOpen(false);
             return;
         }
@@ -399,6 +407,7 @@ export function SelectRoot(props: SelectRootProps): ReactNode {
         optionId: (index: number) => `${id}-option-${index}`,
         triggerRef,
         fieldRef,
+        contentRef,
         close,
         onListKeyDown
     }), [instance, state, setOpen, disabled, clearable, multiple, isSearchable, isEmpty, loading, emptyLabel, loadingLabel, ids, id, close, onListKeyDown]);
@@ -614,9 +623,7 @@ export interface SelectContentProps extends ComponentPropsWithoutRef<"div"> {
 
 export function SelectContent({ closeDuration = 120, children, ...props }: SelectContentProps): ReactNode {
     const select = useSelectContext("Select.Content");
-    const ref = useRef<HTMLDivElement | null>(null);
     const [mounted, setMounted] = useState(select.state.open);
-    const [side, setSide] = useState<"top" | "bottom">("bottom");
 
     useEffect(() => {
         if (select.state.open) { setMounted(true); return; }
@@ -625,33 +632,38 @@ export function SelectContent({ closeDuration = 120, children, ...props }: Selec
         return () => clearTimeout(timer);
     }, [select.state.open, closeDuration]);
 
-    // Which way it opens is measured, not assumed: a select near the bottom of the window
-    // opens upwards, or its list is off the screen and unreachable.
-    useLayoutEffect(() => {
-        if (!select.state.open || !ref.current) return;
-        const trigger = select.triggerRef.current?.getBoundingClientRect();
-        if (!trigger) return;
-        const height = ref.current.offsetHeight;
-        const below = window.innerHeight - trigger.bottom;
-        setSide(below < height && trigger.top > below ? "top" : "bottom");
-    }, [select.state.open, select.state.visible.length, select.triggerRef]);
+    /**
+     * Portaled and placed against the trigger, never left in the tree.
+     *
+     * An absolute panel inside the root is clipped by any `overflow: hidden` ancestor and
+     * stacked under any dialog - which is where a select usually sits. So it goes to `<body>`
+     * (or into the dialog it was opened from - see `react/floating.ts`), measured against the
+     * trigger: below it, flipped above when there is more room there, and capped to the room
+     * it has with the list scrolling inside, because a list off the screen is unreachable.
+     */
+    const container = useFloating({
+        open: mounted && select.state.open,
+        anchorRef: select.triggerRef,
+        panelRef: select.contentRef,
+        deps: [select.state.visible.length]
+    });
 
-    if (!mounted) return null;
+    if (!mounted || !container) return null;
 
-    return (
+    return createPortal(
         <div
             {...props}
-            ref={ref}
+            ref={select.contentRef}
             data-enigma-select-content=""
             data-state={select.state.open ? "open" : "closed"}
-            data-side={side}
             onKeyDown={(event) => {
                 props.onKeyDown?.(event);
                 if (!event.defaultPrevented) select.onListKeyDown(event);
             }}
         >
             {children}
-        </div>
+        </div>,
+        container
     );
 }
 

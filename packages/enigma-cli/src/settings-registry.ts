@@ -480,6 +480,13 @@ const RAW_CATEGORIES: Category[] = [
                 readValue: () => conf.readGlobalConfig().verifyCommand,
                 writeValue: (value, scope) => ({ path: conf.setEnigmaValue("verifyCommand", value.trim(), scope), changed: true }),
             },
+            {
+                key: "self-audit",
+                label: "Audit before done",
+                hint: "when the agent reports work as finished, send it back once to review its own change as a hostile reviewer, and again while that review keeps changing code (at most 3 rounds per prompt); needs 'verify'; enigma default: on",
+                read: () => conf.readConfig().config.selfAudit,
+                write: (value, scope) => ({ path: conf.setEnigmaToggle("selfAudit", value, scope), changed: true }),
+            },
         ],
     },
     {

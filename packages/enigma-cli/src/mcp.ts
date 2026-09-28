@@ -16,16 +16,18 @@
  *   enigma_stats       - cumulative token savings.
  *   enigma_recall      - search the local session-memory index (when recall is on).
  *   enigma_recall_get  - fetch full memory observations by id.
+ *   enigma_recall_timeline / _remember / _forget - history around an id; save a fact; soft-forget ids.
  *   enigma_codegraph_* - index and query the native code graph (when codeGraph is on): architecture
  *                        and symbol search, plus the retrieval tools - ask, trace, skeleton, map, grep.
  */
 
+import * as recall from "./recall";
 import { readConfig } from "./config";
 import * as cgQuery from "./codegraph-query";
 import type { ContentType } from "./compress";
 import * as cgFormat from "./codegraph-format";
+import { OBSERVATION_TYPES } from "./recall/types";
 import { compress, retrieve, readStats } from "./compress";
-import { searchRecall, getObservations, recallTimeline, recallAvailable } from "./recall";
 import { indexProject, listProjects, searchGraph, codeGraphArchitecture, ensureProjectForCwd } from "./codegraph";
 
 const PROTOCOL_VERSION = "2025-06-18";
@@ -93,6 +95,7 @@ const RECALL_TOOLS = [
             type: "object",
             properties: {
                 query: { type: "string", description: "Free-text search; empty returns the most recent observations." },
+                queries: { type: "array", items: { type: "string" }, maxItems: recall.MAX_QUERIES, description: "Optional: extra phrasings of the same need (synonyms, the likely file or symbol names); results are fused with the query's." },
                 project: { type: "string", description: "Optional: limit to a project name." },
                 type: { type: "string", description: "Optional: filter by type (bugfix, feature, refactor, change, discovery, decision, security)." },
                 limit: { type: "number", description: "Max results (default 15)." },
@@ -115,6 +118,32 @@ const RECALL_TOOLS = [
             type: "object",
             properties: { id: { type: "number", description: "Anchor observation id." }, before: { type: "number" }, after: { type: "number" } },
             required: ["id"],
+        },
+    },
+    {
+        name: "enigma_recall_remember",
+        description: "Save one durable fact about this project to session memory - a decision, a gotcha, a convention, the cause of a bug. One fact per call. Remembering a known fact reinforces it; remembering an update of one replaces the old version. Secrets are redacted and <private> blocks dropped.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                content: { type: "string", maxLength: 4000, description: "The fact, first sentence as its headline." },
+                type: { type: "string", enum: [...OBSERVATION_TYPES], description: "What kind of fact it is." },
+                files: { type: "array", items: { type: "string" }, maxItems: 20, description: "Optional: files the fact is about." },
+                concepts: { type: "array", items: { type: "string" }, maxItems: 20, description: "Optional: short topic tags." },
+            },
+            required: ["content", "type"],
+        },
+    },
+    {
+        name: "enigma_recall_forget",
+        description: `Forget memory observations that are outdated or wrong, by id (from enigma_recall). They stop appearing in search, timeline and context; an older version they had replaced comes back. At most ${recall.FORGET_MAX_IDS} ids per call; every id must exist.`,
+        inputSchema: {
+            type: "object",
+            properties: {
+                ids: { type: "array", items: { type: "number" }, minItems: 1, maxItems: recall.FORGET_MAX_IDS, description: "Observation ids to forget." },
+                reason: { type: "string", maxLength: 500, description: "Why they are outdated or wrong." },
+            },
+            required: ["ids", "reason"],
         },
     },
 ];
@@ -235,7 +264,7 @@ const CODEGRAPH_TOOLS = [
 function toolList(): unknown[] {
     const cfg = readConfig().config;
     let tools: unknown[] = [...TOOLS];
-    if (cfg.recall && recallAvailable()) tools = [...tools, ...RECALL_TOOLS];
+    if (cfg.recall && recall.recallAvailable()) tools = [...tools, ...RECALL_TOOLS];
     if (cfg.codeGraph) tools = [...tools, ...CODEGRAPH_TOOLS];
     return tools;
 }
@@ -306,6 +335,59 @@ function codeGraphRetrieval(name: string, args: Record<string, unknown>): unknow
     }
 }
 
+/**
+ * The recall tools (the caller has already checked the setting). Everything that returns stored
+ * memory goes out as recallJson: a readonly delimited block, because stored text is data from
+ * past sessions, not instructions. The JSON inside still parses to the same value.
+ */
+function recallTool(name: string, args: Record<string, unknown>): unknown {
+    switch (name) {
+        case "enigma_recall": {
+            const query = typeof args.query === "string" ? args.query : "";
+            if (args.queries !== undefined && (!Array.isArray(args.queries) || !args.queries.every((q) => typeof q === "string" && q.length <= 500))) {
+                return textResult("enigma_recall: 'queries' must be an array of strings (each at most 500 characters).", true);
+            }
+            const extra = (args.queries as string[] | undefined) ?? [];
+            if (extra.length > recall.MAX_QUERIES) return textResult(`enigma_recall: 'queries' takes at most ${recall.MAX_QUERIES} phrasings.`, true);
+            const project = typeof args.project === "string" ? args.project : undefined;
+            const type = typeof args.type === "string" ? args.type : undefined;
+            const limit = typeof args.limit === "number" ? args.limit : 15;
+            // The original query leads so it wins the MAX_QUERIES cap; an empty one still
+            // falls back to recent when no phrasing has a usable token.
+            const hits = recall.searchRecall(extra.length ? [query, ...extra] : query, { project, type, limit });
+            const index = hits.map((o) => ({
+                id: o.id, type: o.type, title: o.title, project: o.project, files: o.filesModified.slice(0, 5),
+                ...(o.sourceCount && o.sourceCount > 1 ? { seenInSessions: o.sourceCount } : {}),
+            }));
+            return textResult(recall.recallJson(index));
+        }
+        case "enigma_recall_get": {
+            const ids = Array.isArray(args.ids) ? args.ids.map(Number).filter((n) => Number.isInteger(n)) : [];
+            if (!ids.length) return textResult("enigma_recall_get: 'ids' (array of numbers) is required.", true);
+            return textResult(recall.recallJson(recall.getObservations(ids)));
+        }
+        case "enigma_recall_timeline": {
+            const id = typeof args.id === "number" ? args.id : 0;
+            if (!id) return textResult("enigma_recall_timeline: 'id' (number) is required.", true);
+            const before = typeof args.before === "number" ? args.before : undefined;
+            const after = typeof args.after === "number" ? args.after : undefined;
+            return textResult(recall.recallJson(recall.recallTimeline({ id, before, after })));
+        }
+        case "enigma_recall_remember": {
+            const input = recall.parseRememberInput(args);
+            if (!input.ok) return textResult(`enigma_recall_remember: ${input.error}.`, true);
+            const r = recall.rememberRecall(input.value, recall.currentProject());
+            return r.ok ? textResult(JSON.stringify(r, null, 2)) : textResult(`enigma_recall_remember: ${r.error}.`, true);
+        }
+        default: {
+            const input = recall.parseForgetInput(args);
+            if (!input.ok) return textResult(`enigma_recall_forget: ${input.error}.`, true);
+            const r = recall.forgetRecall(input.value.ids, input.value.reason);
+            return r.ok ? textResult(JSON.stringify(r, null, 2)) : textResult(`enigma_recall_forget: ${r.error}.`, true);
+        }
+    }
+}
+
 /** Execute a single tool call and return its MCP result payload. */
 function callTool(name: string, args: Record<string, unknown>, source?: string): unknown {
     switch (name) {
@@ -324,30 +406,13 @@ function callTool(name: string, args: Record<string, unknown>, source?: string):
         }
         case "enigma_stats":
             return textResult(JSON.stringify(readStats(), null, 2));
-        case "enigma_recall": {
-            if (!readConfig().config.recall || !recallAvailable()) return textResult("enigma_recall: session memory is off (enable it with `enigma config recall on`).", true);
-            const query = typeof args.query === "string" ? args.query : "";
-            const project = typeof args.project === "string" ? args.project : undefined;
-            const type = typeof args.type === "string" ? args.type : undefined;
-            const limit = typeof args.limit === "number" ? args.limit : 15;
-            const hits = searchRecall(query, { project, type, limit });
-            const index = hits.map((o) => ({ id: o.id, type: o.type, title: o.title, project: o.project, files: o.filesModified.slice(0, 5) }));
-            return textResult(JSON.stringify(index, null, 2));
-        }
-        case "enigma_recall_get": {
-            if (!readConfig().config.recall || !recallAvailable()) return textResult("enigma_recall_get: session memory is off (enable it with `enigma config recall on`).", true);
-            const ids = Array.isArray(args.ids) ? args.ids.map(Number).filter((n) => Number.isInteger(n)) : [];
-            if (!ids.length) return textResult("enigma_recall_get: 'ids' (array of numbers) is required.", true);
-            return textResult(JSON.stringify(getObservations(ids), null, 2));
-        }
-        case "enigma_recall_timeline": {
-            if (!readConfig().config.recall || !recallAvailable()) return textResult("enigma_recall_timeline: session memory is off (enable it with `enigma config recall on`).", true);
-            const id = typeof args.id === "number" ? args.id : 0;
-            if (!id) return textResult("enigma_recall_timeline: 'id' (number) is required.", true);
-            const before = typeof args.before === "number" ? args.before : undefined;
-            const after = typeof args.after === "number" ? args.after : undefined;
-            return textResult(JSON.stringify(recallTimeline({ id, before, after }), null, 2));
-        }
+        case "enigma_recall":
+        case "enigma_recall_get":
+        case "enigma_recall_timeline":
+        case "enigma_recall_remember":
+        case "enigma_recall_forget":
+            if (!readConfig().config.recall || !recall.recallAvailable()) return textResult(`${name}: session memory is off (enable it with \`enigma config recall on\`).`, true);
+            return recallTool(name, args);
         case "enigma_codegraph_index": {
             if (!readConfig().config.codeGraph) return textResult("enigma_codegraph_index: the code graph is off (enable it with `enigma config code-graph on`).", true);
             const root = typeof args.root === "string" && args.root ? args.root : undefined;

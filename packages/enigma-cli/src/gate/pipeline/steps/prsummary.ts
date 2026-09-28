@@ -1036,7 +1036,8 @@ function buildFixResultText(rounds: StepRound[]): string {
 function buildStepDetails(summaryLine: string, sr: StepResult, rounds: StepRound[]): string {
     const b = new StrBuilder();
     b.write("<details>\n");
-    b.write(`<summary>${summaryLine}</summary>\n\n`);
+    // GitHub does not render markdown inside <summary>, so the line's bold is written as HTML.
+    b.write(`<summary>${summaryLine.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>")}</summary>\n\n`);
 
     if (rounds.length === 0) {
         writeStepStatusDetail(b, sr);

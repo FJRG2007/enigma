@@ -121,10 +121,17 @@ async function runLintStep(payload: string): Promise<number> {
 
     let text: string;
     try { text = readFileSync(file, "utf8"); } catch { return 0; }
-    const before = textBeforeEdit(text, input!);
-    const fixed = linter.fixText(file, text);
-    if (fixed !== text) {
-        try { writeFileSync(file, fixed); text = fixed; } catch { /* read-only, so report on what is there */ }
+    // A Write, or an Edit whose new text is ambiguous, cannot be undone from the payload; the
+    // committed copy is the next best baseline. Only a file git has never seen is judged whole.
+    const before = textBeforeEdit(text, input!) ?? await committedText(file);
+    // The fixer rewrites the WHOLE file. On a file that already broke a fixable rule it would also
+    // rewrite lines the edit never touched (reordering every import of a legacy module), putting
+    // code nobody wrote into someone else's diff - so it runs only where it is a no-op on the old text.
+    if (before === null || linter.fixText(file, before) === before) {
+        const fixed = linter.fixText(file, text);
+        if (fixed !== text) {
+            try { writeFileSync(file, fixed); text = fixed; } catch { /* read-only, so report on what is there */ }
+        }
     }
 
     // Only what THIS edit introduced. A finding the file already had is not the model's to fix now,
@@ -132,7 +139,8 @@ async function runLintStep(payload: string): Promise<number> {
     // Clean file, no output, no tokens. Silence is what makes this affordable to run on every edit.
     const found = linter.lintText(file, text);
     if (!found.length) return 0;
-    const violations = introducedViolations(found, text, before === null ? null : linter.lintText(file, before), before);
+    const baseline = before === null ? null : linter.lintText(file, before);
+    const violations = followsFileStyle(introducedViolations(found, text, baseline, before), baseline);
     if (!violations.length) return 0;
 
     const shown = violations.slice(0, MAX_FINDINGS).map((v) => `${v.line}:${v.column} ${v.severity === "error" ? "error" : "warn"} ${v.rule} - ${v.message}`);
@@ -189,11 +197,32 @@ export function introducedViolations(found: LintViolation[], after: string, base
     });
 }
 
+/**
+ * Drop style findings for a rule the file already breaks. A file written with single quotes or
+ * unsorted imports has an established style, and an edit that matches it is correct there - asking
+ * for double quotes on one new line would leave the file inconsistent. Audit findings always stay.
+ */
+export function followsFileStyle(found: LintViolation[], baseline: LintViolation[] | null): LintViolation[] {
+    if (!baseline) return found;
+    const established = new Set(baseline.filter((v) => v.category === "style").map((v) => v.rule));
+    return found.filter((v) => v.category !== "style" || !established.has(v.rule));
+}
+
+/** The file as committed at HEAD, or null when it is untracked, outside a repository or git fails. */
+async function committedText(file: string): Promise<string | null> {
+    const { basename, dirname } = await import("node:path");
+    const { execFileSync } = await import("node:child_process");
+    try {
+        return execFileSync("git", ["show", `HEAD:./${basename(file)}`], { cwd: dirname(file), encoding: "utf8", maxBuffer: 32 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"], windowsHide: true });
+    } catch { return null; }
+}
+
 /** What the linter reports back. Declared here because the package is resolved at runtime. */
 interface LintViolation {
     line: number;
     column: number;
     severity: string;
+    category?: string;
     rule: string;
     message: string;
 }

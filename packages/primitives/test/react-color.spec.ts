@@ -22,12 +22,14 @@ async function open(page: Page): Promise<void> {
 const scope = "[data-testid=colour]";
 const field = "[data-testid=colour-field]";
 const swatch = `${scope} [data-enigma-color-swatch]`;
-const panel = `${scope} [data-enigma-color-panel]`;
-const area = `${scope} [data-enigma-color-area]`;
-const hue = `${scope} [data-enigma-color-rail=hue]`;
-const alpha = `${scope} [data-enigma-color-rail=alpha]`;
-const readout = `${scope} [data-enigma-color-input]`;
-const cycle = `${scope} [data-enigma-color-format]`;
+// The panel is portaled to <body>, so it and everything in it is found on the page rather
+// than inside the field it was opened from.
+const panel = "[data-enigma-color-panel]";
+const area = `${panel} [data-enigma-color-area]`;
+const hue = `${panel} [data-enigma-color-rail=hue]`;
+const alpha = `${panel} [data-enigma-color-rail=alpha]`;
+const readout = `${panel} [data-enigma-color-input]`;
+const cycle = `${panel} [data-enigma-color-format]`;
 
 async function colour(page: Page): Promise<string> {
     return page.evaluate(() => (window as unknown as FixtureWindow).__color);
@@ -155,9 +157,9 @@ test.describe("Input type=color (React)", () => {
     test("a preset is chosen as a colour, not as a string", async ({ page }) => {
         await open(page);
         await page.click(swatch);
-        await page.click(`${scope} [data-enigma-color-preset][title="#22c55e"]`);
+        await page.click(`${panel} [data-enigma-color-preset][title="#22c55e"]`);
         expect(await colour(page)).toBe("#22c55e");
-        await expect(page.locator(`${scope} [data-enigma-color-preset][title="#22c55e"]`)).toHaveAttribute("aria-pressed", "true");
+        await expect(page.locator(`${panel} [data-enigma-color-preset][title="#22c55e"]`)).toHaveAttribute("aria-pressed", "true");
     });
 
     test("what was typed is normalized on blur, and never while it is being typed", async ({ page }) => {

@@ -48,6 +48,14 @@ export interface Observation {
     contentHash: string;
     /** epoch ms. */
     createdAt: number;
+    /** How many distinct sessions learned this exact fact (1 = once); boosts ranking. */
+    sourceCount?: number;
+    /** Id of the newer observation that replaces this one; set = history, hidden from search. */
+    supersededBy?: number;
+    /** epoch ms of a soft forget; set = hidden from search, timeline and context. */
+    forgottenAt?: number;
+    /** Why it was forgotten (agent- or user-supplied). */
+    forgetReason?: string;
 }
 
 /** One per-session summary (request and outcome), one row per session. */

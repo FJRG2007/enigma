@@ -1,5 +1,7 @@
 "use client";
 
+import { createPortal } from "react-dom";
+import { tabOut, useFloating } from "@/react/floating";
 import { writeValue } from "@/react/input/write-value";
 import { ColorSwatch } from "@/react/input/color-swatch";
 import { COLOR_STYLES } from "@/react/input/color-styles";
@@ -47,6 +49,9 @@ const STEP = { fine: 0.01, coarse: 0.1, hue: 1, hueCoarse: 10 };
 
 /** Kept clear of the window edge when deciding which side to open on. */
 const MARGIN = 12;
+
+/** Between the swatch and the panel: the 0.375rem the sheet used to put there. */
+const GAP = 6;
 
 /** The notations the readout cycles through, in the order the button steps over them. */
 const FORMATS: ColorFormat[] = ["hex", "rgb", "hsl"];
@@ -111,7 +116,6 @@ export function ColorExtras({
     const areaRef = useRef<HTMLDivElement | null>(null);
 
     const [open, setOpen] = useState(openOnMount && !locked);
-    const [side, setSide] = useState<"top" | "bottom">(placement === "top" ? "top" : "bottom");
 
     const parsed = useMemo(() => parseColor(value), [value]);
     const [hsv, setHsv] = useState<Hsv>(() => (parsed ? rgbToHsv(parsed) : INITIAL));
@@ -169,29 +173,28 @@ export function ColorExtras({
 
     /* -------- where the panel goes, and what dismisses it -------- */
 
-    const place = useCallback(() => {
-        if (placement !== "auto") return setSide(placement);
-        const anchor = anchorRef.current?.getBoundingClientRect();
-        const panel = panelRef.current?.getBoundingClientRect();
-        if (!anchor || !panel) return;
-        const below = window.innerHeight - anchor.bottom;
-        // Flipped only when there is genuinely more room the other way: near the bottom of the
-        // window an unflipped panel hangs off the screen and its rails cannot be reached.
-        setSide(below < panel.height + MARGIN && anchor.top > below ? "top" : "bottom");
-    }, [placement]);
+    /**
+     * Portaled and placed against the swatch rather than hung from it: a colour field inside a
+     * dialog or a card with `overflow: hidden` would otherwise open a picker cut in half. The
+     * side is measured unless `placement` insists - below, flipped above when there is more
+     * room there - and capped to the room it has. See `react/floating.ts`.
+     */
+    const showing = open && !locked;
+    const container = useFloating({ open: showing, anchorRef, panelRef, gap: GAP, margin: MARGIN, side: placement });
 
-    useLayoutEffect(() => {
-        if (!open) return;
-        place();
-    }, [open, place]);
+    // Focus goes into the panel, because the press that opened it was on a control the
+    // keyboard has to be able to keep using. The square is what the arrows drive. Keyed on the
+    // container as well: the panel only exists once there is somewhere to portal it.
+    useEffect(() => {
+        if (showing && container) areaRef.current?.focus();
+    }, [showing, container]);
 
     useEffect(() => {
         if (!open) return;
-        // Focus goes into the panel, because the press that opened it was on a control the
-        // keyboard has to be able to keep using. The square is what the arrows drive.
-        areaRef.current?.focus();
 
-        const inside = (target: EventTarget | null): boolean => Boolean(anchorRef.current?.contains(target as Node | null));
+        // The swatch or the panel: the panel is portaled, so it is not inside the anchor.
+        const inside = (target: EventTarget | null): boolean =>
+            Boolean(anchorRef.current?.contains(target as Node | null) || panelRef.current?.contains(target as Node | null));
         const onPointerDown = (event: globalThis.PointerEvent): void => { if (!inside(event.target)) setOpenState(false); };
         /**
          * Tabbing out closes it. `document.body` is skipped on purpose: pressing the panel's
@@ -202,17 +205,14 @@ export function ColorExtras({
             if (event.target === document.body || inside(event.target)) return;
             setOpenState(false);
         };
-        const onResize = (): void => place();
 
         document.addEventListener("pointerdown", onPointerDown, true);
         document.addEventListener("focusin", onFocusIn, true);
-        window.addEventListener("resize", onResize);
         return () => {
             document.removeEventListener("pointerdown", onPointerDown, true);
             document.removeEventListener("focusin", onFocusIn, true);
-            window.removeEventListener("resize", onResize);
         };
-    }, [open, place, setOpenState]);
+    }, [open, setOpenState]);
 
     /* -------- dragging -------- */
 
@@ -354,15 +354,17 @@ export function ColorExtras({
             label={text.open ?? "Pick a colour"}
             onPress={() => (open ? close(true) : setOpenState(true))}
         >
-            {open && !locked && (
+            {showing && container && createPortal(
                 <div
                     ref={panelRef}
                     data-enigma-color-panel=""
-                    data-side={side}
                     role="dialog"
                     aria-label={text.panel ?? "Colour picker"}
                     style={panelStyle}
                     onKeyDown={(event) => {
+                        // Off either end of the panel, Tab lands beside the swatch, where the
+                        // panel used to sit - not at the end of the page it is portaled to.
+                        if (tabOut(event, panelRef.current, swatchRef.current)) return;
                         if (event.key !== "Escape") return;
                         event.stopPropagation();
                         close(true);
@@ -504,7 +506,8 @@ export function ColorExtras({
                             })}
                         </div>
                     )}
-                </div>
+                </div>,
+                container
             )}
         </ColorSwatch>
     );

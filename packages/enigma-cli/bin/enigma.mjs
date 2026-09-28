@@ -105,6 +105,33 @@ if (process.argv[2] === "__codegraph-hook" && existsSync(codeGraphBundle)) {
     }
 }
 
+/**
+ * Fast path: the CI notifier's hook and its poller, for the same reason as the two above.
+ *
+ * The hook fires after EVERY Bash call and used to start the binary each time: a no-op run
+ * measured 16-22 s here against its 20 s budget, so it was killed before it could arm a single
+ * watch. Both halves are Node-compatible - the hook reads a JSON file and runs git, the poller
+ * runs `gh` - and the poller lives up to half an hour, which is no reason to keep a ~99 MB
+ * binary resident for it.
+ *
+ * Bundle missing -> fall through untouched and let the binary answer as it always did.
+ */
+const ciWatchBundle = join(pkgRoot, "dist", "ci-watch.js");
+if ((process.argv[2] === "__ci-hook" || process.argv[2] === "__ci-watch") && existsSync(ciWatchBundle)) {
+    const hook = process.argv[2] === "__ci-hook";
+    // Read SYNCHRONOUSLY, before any await, as above.
+    let payload = "";
+    if (hook) { try { payload = readFileSync(0, "utf8"); } catch { /* no stdin; the hook no-ops on it */ } }
+    try {
+        const ci = await import(pathToFileURL(ciWatchBundle).href);
+        // Exit 2 is how the hook hands a failed build to the model; it is never swallowed.
+        process.exit(hook ? ci.runCiWatchHook(payload, process.argv[3] || "PostToolUse") : await ci.runCiWatchPoll(process.argv[3] || "", process.argv[4] || ""));
+    } catch {
+        // Silent: a notifier must never interrupt the session it rides in.
+        process.exit(0);
+    }
+}
+
 /** Resolve the binary, downloading it on first run if the postinstall was skipped. */
 async function resolveBinary() {
     if (process.env.ENIGMA_BIN_PATH && existsSync(process.env.ENIGMA_BIN_PATH)) return process.env.ENIGMA_BIN_PATH;

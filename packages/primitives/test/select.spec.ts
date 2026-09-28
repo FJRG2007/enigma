@@ -40,7 +40,13 @@ async function read<K extends keyof FixtureWindow>(page: Page, key: K): Promise<
     return page.evaluate((name) => (window as unknown as Record<string, unknown>)[name], key) as Promise<FixtureWindow[K]>;
 }
 
-const at = (page: Page, root: string, selector: string): Locator => page.locator(`${root} ${selector}`);
+/**
+ * The panel is portaled to `<body>`, so what lives in it is not inside the root: those parts
+ * are found on the page (one select is open at a time here), and the trigger's inside it.
+ */
+const PANEL = [content, options, search, "[data-enigma-select-list]", "[data-enigma-select-empty]"];
+const at = (page: Page, root: string, selector: string): Locator =>
+    page.locator(PANEL.some((part) => selector.startsWith(part)) ? selector : `${root} ${selector}`);
 
 test.describe("Select", () => {
     test("the panel is closed until the trigger is pressed, and Escape puts focus back", async ({ page }) => {

@@ -14,6 +14,7 @@
  */
 import { resolveBin } from "./util";
 import { readConfig } from "./config";
+import { tokenMatches } from "./dashboard-token";
 import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
@@ -399,7 +400,8 @@ function authorized(req: IncomingMessage, apiKey: string | null): boolean {
     if (!apiKey) return true;
     const header = req.headers.authorization || "";
     const token = header.startsWith("Bearer ") ? header.slice(7).trim() : (req.headers["x-api-key"] as string | undefined);
-    return token === apiKey;
+    // Constant-time: a plain `===` stops at the first differing byte and leaks the key through timing.
+    return tokenMatches(apiKey, token);
 }
 
 /** Server-wide defaults for the backing context, overridable per request. */

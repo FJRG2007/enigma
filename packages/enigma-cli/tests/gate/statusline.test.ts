@@ -203,6 +203,29 @@ test("a run settling leaves the entry a concurrent branch of the same repository
     db.close();
 });
 
+test("the run holding the entry settling hands it to the repository's other run in flight", () => {
+    // The reverse order: the settling run owns the key while another branch is still running.
+    // Deleting it blanked the bar until that run's next event, which a review step can hold back
+    // for twenty minutes.
+    const paths = Paths.withRoot(join(DIR, `gate-${newId()}`));
+    paths.ensureDirs();
+    const db = new Database(paths.db());
+    const repo = insertRepoWithIDAndFork(db, newId(), REPO_PATH, "https://example.com/o/r.git", "", "main");
+    process.env.ENIGMA_GATE_HOME = paths.root();
+
+    const first = activeRun(db, repo.id, "feat/one");
+    const second = activeRun(db, repo.id, "feat/two");
+    writeSnapshot(db, paths, second.id);
+    writeSnapshot(db, paths, first.id);
+    expect(readSnapshot(REPO_PATH)?.branch).toBe("feat/one");
+
+    updateRunStatus(db, first.id, "completed");
+    writeSnapshot(db, paths, first.id);
+    expect(readSnapshot(REPO_PATH)?.branch).toBe("feat/two");
+
+    db.close();
+});
+
 test("a repository nested inside another reads its own snapshot, not its parent's", () => {
     const paths = Paths.withRoot(join(DIR, `gate-${newId()}`));
     const nested = `${REPO_PATH}/vendor/inner`;

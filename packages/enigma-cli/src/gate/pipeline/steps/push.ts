@@ -16,6 +16,7 @@
 import * as git from "@/gate/git";
 import { readdirSync } from "node:fs";
 import { redact } from "@/gate/safeurl";
+import { armGatePushWatch } from "@/ci-watch";
 import { normalizedBranchRef } from "./commonGit";
 import { runStepShellCommand } from "./commonExec";
 import { gateCommitMessage } from "./commitMessage";
@@ -135,6 +136,9 @@ export class PushStep implements Step {
         }
 
         sctx.log("pushed successfully");
+        // A push to the default branch opens no PR, so no CI step will watch its build: hand it
+        // to the CI notifier, which tells the agent in the user's checkout if it breaks.
+        armGatePushWatch({ repoPath: sctx.repo.workingPath, ref, defaultBranch: sctx.repo.defaultBranch, forkUrl: sctx.repo.forkUrl, sha: headSHA });
         return newStepOutcome();
     }
 

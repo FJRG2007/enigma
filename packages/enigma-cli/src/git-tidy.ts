@@ -39,6 +39,7 @@ export type SkipReason =
     | "checked-out-elsewhere"
     | "remote-ahead"
     | "remote-unverifiable"
+    | "dirty-worktree"
     | "has-stash";
 
 /** One branch and what tidying decided about it. */
@@ -59,13 +60,19 @@ export interface BranchVerdict {
 export interface TidyPlan {
     /** Default branch the checkout is returned to. */
     defaultBranch: string;
+    /**
+     * The ref work is proved merged into: the remote's copy of the default branch when it
+     * resolves, else the local one. Absent on a blocked plan.
+     */
+    baseRef?: string;
     /** Branch the checkout is on right now ("" when detached). */
     currentBranch: string;
     /** Every local branch with its verdict, tidyable ones first. */
     verdicts: BranchVerdict[];
     /**
-     * Set when the whole repository is off limits - a dirty worktree, no default
-     * branch, a detached HEAD. Nothing is touched while this is set.
+     * Set when the whole repository is off limits - no default branch, so nothing can be
+     * proved merged against anything. Nothing is touched while this is set. A dirty working
+     * tree is NOT one of these: it refuses the checked-out branch and only that one.
      */
     blocked?: string;
 }
@@ -192,8 +199,48 @@ async function containedIn(dir: string, base: string, branch: string): Promise<b
             .split("\n").map((l) => l.trim()).filter(Boolean);
         if (touched.length === 0) return true;
         const differing = await git.run(dir, ["diff", "--name-only", base, branch, "--", ...touched]);
-        return differing.trim() === "";
+        if (differing.trim() === "") return true;
+    } catch { /* fall through to the merge proof */ }
+
+    // MERGE NO-OP settles what content alone refuses: a squash-merged branch whose files the
+    // base has edited SINCE. Merging the branch into base now, with no conflict, produces
+    // exactly base's own tree - so base already has everything the branch would bring. A
+    // conflict, or any tree change, means it would still add something and is refused. Needs
+    // git 2.38+ (`merge-tree --write-tree`); an older git fails here and reads as "not contained".
+    try {
+        const merged = await git.runRaw(dir, ["merge-tree", "--write-tree", base, branch]);
+        if (merged.code !== 0) return false;
+        const tree = merged.stdout.split("\n")[0]?.trim() ?? "";
+        const baseTree = (await git.run(dir, ["rev-parse", `${base}^{tree}`])).trim();
+        return tree !== "" && tree === baseTree;
     } catch { return false; }
+}
+
+/**
+ * Contained in the remote's default branch OR the local one. Either keeps the work: the
+ * remote copy is what everyone else has, and the local one is what the old check accepted.
+ * Both are needed because either can be the one ahead - the local branch after a merge not
+ * yet pushed, the remote after a PR merged elsewhere - and a failed fetch leaves no way to tell.
+ */
+async function containedInAny(dir: string, base: string, defaultBranch: string, branch: string): Promise<boolean> {
+    if (await containedIn(dir, base, branch)) return true;
+    return base !== defaultBranch && await containedIn(dir, defaultBranch, branch);
+}
+
+/**
+ * The ref to prove containment against. A local default branch is routinely far behind its
+ * remote - measured at 560+ commits in two of the author's repositories - and proving against
+ * it found almost nothing merged, so the feature silently tidied nothing. The remote copy is
+ * refreshed first; offline, or with no such remote, the local branch is used as before.
+ */
+async function containmentBase(dir: string, remote: string, defaultBranch: string): Promise<string> {
+    if (!remote) return defaultBranch;
+    try { await git.run(dir, ["fetch", "--quiet", remote, defaultBranch]); } catch { /* offline: use what is there */ }
+    const tracked = `${remote}/${defaultBranch}`;
+    try {
+        await git.run(dir, ["rev-parse", "--verify", "--quiet", `refs/remotes/${tracked}`]);
+        return tracked;
+    } catch { return defaultBranch; }
 }
 
 /**
@@ -209,9 +256,20 @@ export async function planTidy(dir: string, remote = "origin"): Promise<TidyPlan
     if (!defaultBranch) return empty("no default branch could be resolved, so nothing can be proved merged");
 
     const currentBranch = await git.currentBranch(dir).catch(() => "");
-    if (await git.hasUncommittedChanges(dir).catch(() => true)) {
-        return { defaultBranch, currentBranch, verdicts: [], blocked: "the working tree has uncommitted changes" };
-    }
+    /**
+     * Uncommitted changes protect exactly ONE branch: the one checked out here, because
+     * that is the only branch whose deletion needs the checkout moved off it. Deleting any
+     * other ref does not read or write the working tree at all.
+     *
+     * This used to block the whole repository, and the blanket was not caution, it was the
+     * feature never running. Measured on the author's machine: of 96 automatic cleanups the
+     * gate logged, 95 were skipped for this one reason and one for another - a repository
+     * an agent is working in is dirty almost all the time, so "clean tree" meant "never".
+     * A per-branch refusal keeps every guarantee the blanket had; see the `dirty-worktree`
+     * verdict below.
+     */
+    const dirty = await git.hasUncommittedChanges(dir).catch(() => true);
+    const base = await containmentBase(dir, remote, defaultBranch);
 
     const busy = await branchesInOtherWorktrees(dir);
     const stashed = await branchesWithStash(dir);
@@ -224,6 +282,10 @@ export async function planTidy(dir: string, remote = "origin"): Promise<TidyPlan
 
         if (branch === defaultBranch) { verdicts.push(verdict(false, "the default branch", "default-branch")); continue; }
         if (PROTECTED.has(branch)) { verdicts.push(verdict(false, "a protected branch name", "protected-name")); continue; }
+        if (dirty && branch === currentBranch) {
+            verdicts.push(verdict(false, "checked out here, and the working tree has uncommitted changes to move off it first", "dirty-worktree"));
+            continue;
+        }
         if (busy.has(branch) && branch !== currentBranch) {
             verdicts.push(verdict(false, "checked out in another worktree", "checked-out-elsewhere"));
             continue;
@@ -232,8 +294,8 @@ export async function planTidy(dir: string, remote = "origin"): Promise<TidyPlan
             verdicts.push(verdict(false, "a stash entry is based on it", "has-stash"));
             continue;
         }
-        if (!await containedIn(dir, defaultBranch, branch)) {
-            verdicts.push(verdict(false, `${defaultBranch} does not contain all of its work`, "not-contained"));
+        if (!await containedInAny(dir, base, defaultBranch, branch)) {
+            verdicts.push(verdict(false, `${base} does not contain all of its work`, "not-contained"));
             continue;
         }
 
@@ -253,17 +315,17 @@ export async function planTidy(dir: string, remote = "origin"): Promise<TidyPlan
                 verdicts.push({ ...verdict(true, "merged locally; the remote copy could not be read, so it stays", "remote-unverifiable"), remote: false });
                 continue;
             }
-            if (remoteSha && !await containedIn(dir, defaultBranch, remoteSha)) {
-                verdicts.push(verdict(false, `the copy on ${remote} has work ${defaultBranch} does not contain`, "remote-ahead"));
+            if (remoteSha && !await containedInAny(dir, base, defaultBranch, remoteSha)) {
+                verdicts.push(verdict(false, `the copy on ${remote} has work ${base} does not contain`, "remote-ahead"));
                 continue;
             }
             onRemote = Boolean(remoteSha);
         }
-        verdicts.push({ ...verdict(true, `fully contained in ${defaultBranch}`), remote: onRemote });
+        verdicts.push({ ...verdict(true, `fully contained in ${base}`), remote: onRemote });
     }
 
     verdicts.sort((a, b) => Number(b.tidyable) - Number(a.tidyable) || a.branch.localeCompare(b.branch));
-    return { defaultBranch, currentBranch, verdicts };
+    return { defaultBranch, baseRef: base, currentBranch, verdicts };
 }
 
 export interface TidyOptions {
@@ -294,6 +356,10 @@ export interface TidyOptions {
  */
 export async function tidy(dir: string, opts: TidyOptions = {}): Promise<TidyResult> {
     const remote = opts.remote ?? "origin";
+    // A worktree whose directory is gone still pins its branch as "checked out elsewhere".
+    // Pruning drops only the records of directories that no longer exist; a live worktree,
+    // clean or not, is never touched.
+    if (!opts.dryRun) await git.run(dir, ["worktree", "prune"]).catch(() => "");
     const plan = await planTidy(dir, remote);
     const result: TidyResult = { plan, deleted: [], deletedRemote: [], switched: false, problems: [] };
     if (plan.blocked) return result;
@@ -327,8 +393,9 @@ export async function tidy(dir: string, opts: TidyOptions = {}): Promise<TidyRes
         } catch {
             // git's ancestry check refused. Re-prove containment by content NOW, against
             // the live repository, and only force the delete if it still holds.
-            if (!await containedIn(dir, plan.defaultBranch, target.branch)) {
-                result.problems.push(`kept ${target.branch}: ${plan.defaultBranch} no longer contains all of its work`);
+            const base = plan.baseRef ?? plan.defaultBranch;
+            if (!await containedInAny(dir, base, plan.defaultBranch, target.branch)) {
+                result.problems.push(`kept ${target.branch}: ${base} no longer contains all of its work`);
                 continue;
             }
             try {

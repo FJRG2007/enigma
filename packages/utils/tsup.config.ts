@@ -16,7 +16,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 const CLIENT_ENTRIES = ["dist/react/index.js"];
 
 export default defineConfig({
-    entry: ["src/index.ts", "src/react/index.ts"],
+    entry: ["src/index.ts", "src/react/index.ts", "src/server/index.ts"],
     format: ["esm"],
     dts: true,
     clean: true,

@@ -9,6 +9,37 @@ import { appendFileSync, mkdirSync, readFileSync, readdirSync, writeFileSync, st
 var COMMENT_LINE = /^\s*(\/\/|#|\*|--|<!--|\{?\/\*)/;
 var SKELETON_GUARD_SRC = "\\bif\\s*\\(\\s*(isLoading|isPending|isFetching|loading|pending)\\s*\\)\\s*return\\s+(null\\b|<\\s*\\w*(Spinner|Loader|Loading|CircularProgress)\\b)";
 var SKELETON_SIGNAL_SRC = "skeleton|animate-pulse|shimmer|Suspense|ContentLoader|content-loader|<\\s*Placeholder";
+var INJECTION_EXCLUDES = [
+  "*.test.*",
+  "*.spec.*",
+  "*.stories.*",
+  "*.min.js",
+  "test_*.py",
+  "*_test.py",
+  "conftest.py",
+  "**/tests/**",
+  "tests/**",
+  "**/test/**",
+  "test/**",
+  "**/__tests__/**",
+  "__tests__/**",
+  "**/fixtures/**",
+  "fixtures/**",
+  "**/dist/**",
+  "dist/**",
+  "**/build/**",
+  "build/**",
+  "**/.next/**",
+  ".next/**",
+  "**/generated/**",
+  "**/node_modules/**",
+  "node_modules/**",
+  "**/vendor/**",
+  "vendor/**",
+  "**/site-packages/**"
+];
+var UI_CODE_FILES = ["*.tsx", "*.jsx", "*.vue", "*.svelte", "*.astro", "*.html", "*.htm"];
+var TELL_EXCLUDES = [...INJECTION_EXCLUDES, "**/stories/**", "stories/**", "**/.storybook/**", "*.story.*"];
 var BUILTIN_RULES = [
   {
     id: "db-uuid-pk",
@@ -2092,6 +2123,282 @@ var BUILTIN_RULES = [
     message: "This line carries THIS machine's home directory into a tracked file. A path with the OS account name in it publishes who you are and how your machine is laid out, and a commit keeps it forever - the same class as a deployment domain, a host name, a server IP or an internal email address, none of which belong in code, comments, docs, examples, fixtures, or a committed log. Write a placeholder (`<project-root>`, `$HOME`, `%USERPROFILE%`) or a repository-relative path, and keep the real value in the local gitignored config that already holds it. Being handed a path or a URL to work with is permission to USE it, never permission to publish it - only an explicit request to put that value in the file is (security-policy, git-policy).",
     severity: "block",
     skill: "security-policy"
+  },
+  // The injection class. Every one but sec-unsafe-deserialization is DIFF stage for the reason the
+  // stage exists: each has a measured backlog in real repositories (the counts are in guardrails.md),
+  // so at the edit stage it would block unrelated edits to a file that already carried the shape.
+  // Against the lines a change ADDED it can only fire on code the agent just wrote.
+  {
+    id: "sec-sql-built-from-values",
+    label: "SQL takes values as parameters, never as text",
+    files: ["*.ts", "*.tsx", "*.js", "*.jsx", "*.mjs", "*.cjs", "*.mts", "*.cts", "*.py"],
+    excludeFiles: INJECTION_EXCLUDES,
+    // Measured over 110k files (guardrails.md): 5662 candidate query lines, 6 findings, all a value quoted or compared inside DML.
+    scope: "file",
+    stage: "diff",
+    fileCheck: "sec-sql-built-from-values",
+    message: 'A value is spliced into SQL text and run as-is. Whatever that value holds becomes part of the statement: a quote in a name breaks the query, and a crafted one reads or rewrites any table the connection can reach. Pass it as a PARAMETER and let the driver bind it - `db.query("SELECT * FROM users WHERE id = $1", [id])` (pg), `?` placeholders (mysql2, better-sqlite3), Prisma\'s TAGGED template `$queryRaw` (never `$queryRawUnsafe` with a built string), knex `whereRaw("id = ?", [id])`, Python `cursor.execute("... WHERE id = %s", (id,))` or SQLAlchemy `text("... :id")` with bound params. A table or column name cannot be bound - pick it from a fixed allowlist instead. Mark the line `enigma:allow-sql-interpolation` when the value is provably not input (security-policy).',
+    severity: "block",
+    skill: "security-policy"
+  },
+  {
+    id: "sec-shell-built-from-values",
+    label: "A command takes arguments as an array, never as shell text",
+    files: ["*.ts", "*.tsx", "*.js", "*.jsx", "*.mjs", "*.cjs", "*.mts", "*.cts", "*.py"],
+    excludeFiles: INJECTION_EXCLUDES,
+    // Measured: 8492 candidate spawn lines, 53 findings, every one a runtime value in a shell-parsed string.
+    scope: "file",
+    stage: "diff",
+    fileCheck: "sec-shell-built-from-values",
+    message: 'A value is spliced into a command line that a shell parses. A space splits it into two arguments, and a `;`, `|`, `$(...)` or backtick in it runs a second command with this process\'s rights. Start the program directly with an argument ARRAY and no shell: `execFile("git", ["log", ref])` / `spawn(cmd, args)` in Node, `subprocess.run(["git", "log", ref])` in Python (no `shell=True`). If the command genuinely needs a shell feature (a pipe, a redirect), quote every value on the way in (`shlex.quote`, `shell-quote`) or pass it through the environment and reference it as `"$VAR"`. Mark the line `enigma:allow-shell-interpolation` when the value is provably not input (security-policy).',
+    severity: "block",
+    skill: "security-policy"
+  },
+  {
+    id: "sec-dynamic-code-execution",
+    label: "No eval of a string built at run time",
+    files: ["*.ts", "*.tsx", "*.js", "*.jsx", "*.mjs", "*.cjs", "*.mts", "*.cts", "*.vue", "*.svelte", "*.py"],
+    excludeFiles: INJECTION_EXCLUDES,
+    // Measured: 543 candidate lines, 18 findings, every one eval/exec/new Function over a built string.
+    scope: "file",
+    stage: "diff",
+    fileCheck: "sec-dynamic-code-execution",
+    message: "Code is built from a runtime value and executed with the program's full authority - `eval`/`new Function` in JS, `eval`/`exec` in Python. Whoever controls that value controls the process. Parse data as data instead: `JSON.parse` / `json.loads` for structured input, `ast.literal_eval` for a Python literal, a lookup table of functions for a dispatch by name, a real expression parser for a formula. Where running foreign code IS the feature, do it in an isolated runtime (a worker with no privileges, a sandboxed interpreter, a separate process), never in this one. Mark the line `enigma:allow-dynamic-code` when the string is provably author-controlled (security-policy).",
+    severity: "block",
+    skill: "security-policy"
+  },
+  {
+    id: "sec-tls-verification-off",
+    label: "TLS certificates are verified",
+    files: ["*.ts", "*.tsx", "*.js", "*.jsx", "*.mjs", "*.cjs", "*.mts", "*.cts", "*.py"],
+    excludeFiles: INJECTION_EXCLUDES,
+    // Measured: 152 candidate lines, 32 findings, every one verification off for a non-loopback peer.
+    scope: "file",
+    stage: "diff",
+    fileCheck: "sec-tls-verification-off",
+    message: "TLS certificate verification is switched off, so the connection is encrypted to WHOEVER answers: anyone on the path presents their own certificate and reads or rewrites the traffic, credentials included. Keep verification on and trust the right certificate instead - pass the private CA (`ca: fs.readFileSync(caPath)` in Node, `verify=\"/path/to/ca.pem\"` in requests/httpx, `sslmode=verify-full` with `sslrootcert` for Postgres), or fix the host's certificate. Never set `NODE_TLS_REJECT_UNAUTHORIZED=0`, which turns it off for every connection in the process. A loopback connection is not reported. Mark the line `enigma:allow-insecure-tls` when the peer's identity is verified another way (a pinned fingerprint) or the connection only probes a certificate it then inspects (security-policy).",
+    severity: "block",
+    skill: "security-policy"
+  },
+  {
+    id: "sec-cors-any-origin-credentials",
+    label: "A credentialed CORS policy names its origins",
+    files: ["*.ts", "*.js", "*.mjs", "*.cjs", "*.mts", "*.cts", "*.py"],
+    excludeFiles: INJECTION_EXCLUDES,
+    // Measured: 1134 candidate origin lines, 3 findings, every one a wildcard beside unconditional credentials.
+    scope: "file",
+    stage: "diff",
+    fileCheck: "sec-cors-any-origin-credentials",
+    message: "This CORS policy admits every origin and also allows credentials. Reflecting the request's Origin (`origin: true`, echoing `req.headers.origin`, Starlette's `allow_origins=[\"*\"]` with `allow_credentials=True`, Flask-CORS `supports_credentials=True` with no origins) lets ANY site the user visits make logged-in requests and read the answers; a literal `*` with credentials is refused by the browser, so the credentialed calls silently fail instead. List the origins that may call this API (from config, compared exactly - never a suffix or substring match), or drop credentials for a genuinely public endpoint. Mark the line `enigma:allow-open-cors` when the allowlist is enforced elsewhere (security-policy).",
+    severity: "block",
+    skill: "security-policy"
+  },
+  {
+    id: "sec-unsafe-deserialization",
+    label: "Untrusted data is parsed, not unpickled",
+    files: ["*.py"],
+    excludeFiles: INJECTION_EXCLUDES,
+    // Measured: 16 candidate lines, 0 findings (ruamel loaders, variable Loaders and local pickle files stay out), so EDIT stage.
+    scope: "file",
+    fileCheck: "sec-unsafe-deserialization",
+    message: "This deserializer builds arbitrary Python objects from its input, and building them runs code: a crafted pickle or a YAML document with a `!!python/object` tag executes on load. Use `yaml.safe_load` (or `Loader=yaml.SafeLoader`), and for data that crosses a trust boundary - a request, a socket, a queue, a shared cache - a data-only format (JSON, msgpack) validated with a schema instead of pickle. Mark the line `enigma:allow-unsafe-deserialization` when the bytes are provably written by this same program and nothing else can reach them (security-policy).",
+    severity: "block",
+    skill: "security-policy"
+  },
+  {
+    id: "sec-markdown-html-unsanitized",
+    label: "Rendered Markdown is sanitized before it becomes markup",
+    files: ["*.tsx", "*.jsx", "*.ts", "*.js", "*.vue", "*.svelte", "*.astro"],
+    excludeFiles: INJECTION_EXCLUDES,
+    // Measured: 185 HTML-sink lines, 1 finding. The broad form (any sink, no sanitizer) was 137 lines, mostly highlighter output, and was not shipped.
+    // mammoth (.docx -> HTML, copies a `javascript:` hyperlink verbatim) added after an audit: 7 corpus files import it, 0 findings.
+    scope: "file",
+    stage: "diff",
+    fileCheck: "sec-markdown-html-unsanitized",
+    message: "Markdown (or a Word document converted by mammoth) is rendered to HTML and inserted as markup with nothing cleaning it. This renderer passes raw HTML through, so a `<img src=x onerror=...>` or a `javascript:` link in the source runs in the reader's session - stored XSS the moment the Markdown comes from a user, a model or a fetched file. Sanitize the rendered HTML before inserting it (`DOMPurify.sanitize(marked.parse(src))`, isomorphic-dompurify on the server), or render to elements instead of a string (react-markdown without `rehype-raw`, which escapes HTML by default). Mark the line `enigma:allow-raw-html` when the source is fixed at build time (security-policy, frontend-policy).",
+    severity: "block",
+    skill: "security-policy"
+  },
+  // Overlays inside a dialog. The complaint: selects, dropdowns, popovers and tooltips opened
+  // inside a modal get clipped or hidden. The cause is always the same - the panel was rendered
+  // in place instead of portalled to the document body - and it has two file-local signatures.
+  {
+    id: "fe-overlay-portal-disabled",
+    label: "A floating panel renders through its portal",
+    files: ["*.tsx", "*.jsx", "*.ts", "*.js", "*.vue", "*.svelte"],
+    excludeFiles: INJECTION_EXCLUDES,
+    // Measured: 17 candidate lines, 4 findings, every one an overlay told to skip its portal.
+    scope: "file",
+    stage: "diff",
+    // Case-sensitive, and only the opt-OUT spellings: the bare JSX attribute, `={true}`, or an
+    // options key set to true (MUI `MenuProps={{ disablePortal: true }}`, `slotProps.popper`).
+    // A prop DECLARATION (`disablePortal?: boolean`), a default (`disablePortal = false`) and a
+    // pass-through (`disablePortal={disablePortal}`) are a wrapper forwarding the choice, not
+    // making it, and never match.
+    pattern: "^(?!.*enigma:).*(?<![\\w.?])disablePortal(?:\\s*=\\s*\\{\\s*true\\s*\\}|\\s*:\\s*true\\b|(?=\\s*(?:\\/?>|$)|\\s+[A-Za-z{]))",
+    flags: "",
+    message: "This overlay is told not to use its portal, so the panel is rendered inside the component that opened it and inherits every box around it: a dialog body or any `overflow: hidden`/`auto` ancestor clips it, and a transformed or z-indexed ancestor traps it under its neighbours - the select or popover that opens cut off, or invisible, inside a modal. Remove `disablePortal` and let the panel portal to the body; overlay libraries already stack a portalled panel above the dialog that opened it. If portalling was a workaround for a panel that will not scroll inside a modal dialog, fix that instead (Radix/shadcn Popover: `modal`; MUI: leave the portal on and set `container` to the dialog only if focus must stay inside it). Mark the line `enigma:allow-inline-overlay` when the panel is meant to scroll with its container (frontend-policy).",
+    severity: "block",
+    skill: "frontend-policy"
+  },
+  {
+    id: "fe-radix-overlay-no-portal",
+    label: "A Radix overlay's Content is wrapped in its Portal",
+    files: ["*.tsx", "*.jsx"],
+    excludeFiles: INJECTION_EXCLUDES,
+    // Measured: 209 files importing a Radix overlay, 4 findings, every one a Tooltip/HoverCard Content with no Portal.
+    scope: "file",
+    stage: "diff",
+    fileCheck: "fe-radix-overlay-no-portal",
+    message: "This Radix overlay renders its Content in place, with no Portal. The panel then lives inside every ancestor's box: a dialog body or an `overflow: hidden`/`auto` container clips it, and a transformed or z-indexed ancestor stacks it underneath - the dropdown, select or tooltip that is cut off or invisible inside a modal. Wrap the content in the primitive's own portal: `<X.Portal><X.Content ... /></X.Portal>` (shadcn's current select, popover, dropdown-menu and tooltip wrappers all do). Mark the line `enigma:allow-inline-overlay` when the panel is meant to stay inside its container (frontend-policy).",
+    severity: "block",
+    skill: "frontend-policy"
+  },
+  // The classes a security audit found in agent-written code (guardrails.md, "THE AUDIT CLASSES").
+  // Measured over the same 100k-file corpus as the injection rules; the stage follows the backlog.
+  {
+    id: "sec-ssh-host-key-unverified",
+    label: "An SSH connection verifies the host key",
+    files: [
+      "*.ts",
+      "*.tsx",
+      "*.js",
+      "*.jsx",
+      "*.mjs",
+      "*.cjs",
+      "*.mts",
+      "*.cts",
+      "*.py",
+      "*.go",
+      "*.sh",
+      "*.bash",
+      "*.zsh",
+      "*.ps1",
+      "*.yml",
+      "*.yaml",
+      "*.toml",
+      "*.ini",
+      "*.cfg",
+      "*.conf",
+      "Dockerfile",
+      "Dockerfile.*",
+      "*.dockerfile",
+      "Makefile",
+      "ssh_config",
+      "config"
+    ],
+    excludeFiles: INJECTION_EXCLUDES,
+    // Measured: 168 candidate lines, 8 findings in 6 files, every one a connection that accepts any host key.
+    scope: "file",
+    stage: "diff",
+    fileCheck: "sec-ssh-host-key-unverified",
+    message: "This SSH connection accepts whatever host key the server presents, so anyone who can answer on the path (a spoofed ARP entry on the LAN, a hijacked DNS name) receives the password or the key exchange - often root's. Pin the key instead: trust on first use (store the key the first successful connection presents and accept only that key afterwards - paramiko `RejectPolicy` with `load_host_keys`, asyncssh `known_hosts=` the stored key, ssh2 `hostVerifier` comparing against the stored fingerprint, OpenSSH `StrictHostKeyChecking=accept-new` with a persistent known_hosts), and surface a CHANGED key as an error the operator resolves, never as a silent accept. Mark the line `enigma:allow-unverified-host-key` when the peer is a throwaway local container (security-policy).",
+    severity: "block",
+    skill: "security-policy"
+  },
+  {
+    id: "sec-secret-compare-timing",
+    label: "Secrets are compared in constant time",
+    files: ["*.ts", "*.tsx", "*.js", "*.jsx", "*.mjs", "*.cjs", "*.mts", "*.cts", "*.py"],
+    excludeFiles: INJECTION_EXCLUDES,
+    // Measured: 27340 candidate comparison lines, 31 findings in 26 files, every one a credential compared with == (two change-detection copies were read and are excluded by name).
+    scope: "file",
+    stage: "diff",
+    fileCheck: "sec-secret-compare-timing",
+    message: "A secret is compared with `===`/`==`. The comparison stops at the first byte that differs, so how long the check takes tells the caller how much of the guess was right, and the key leaks a byte at a time. Hash both sides to a fixed length and compare the digests with a constant-time function: Node `crypto.timingSafeEqual(sha256(a), sha256(b))` (equal lengths are required, which the hashing guarantees), Python `hmac.compare_digest(a, b)`. Refuse an EMPTY configured secret before comparing at all, or `Bearer ` with no token authorizes every caller. Mark the line `enigma:allow-plain-compare` when neither side is secret (security-policy).",
+    severity: "block",
+    skill: "security-policy"
+  },
+  {
+    id: "sec-redirect-prefix-check",
+    label: "A redirect target is checked by origin, not by its first characters",
+    files: ["*.ts", "*.tsx", "*.js", "*.jsx", "*.mjs", "*.cjs", "*.mts", "*.cts", "*.vue", "*.svelte", "*.astro", "*.py"],
+    excludeFiles: INJECTION_EXCLUDES,
+    // Measured: 713 candidate lines, 7 findings, 6 of them bypassable same-origin checks on a sign-in destination and 1 an operator-configured redirect rule.
+    scope: "file",
+    stage: "diff",
+    fileCheck: "sec-redirect-prefix-check",
+    message: 'This decides a redirect destination is local because it starts with `/` (and maybe not `//`). Browsers read `/\\evil.example` as `//evil.example`, and the URL parser drops tabs and newlines anywhere, so `/<TAB>/evil.example` passes too - both send the user to another site right after they signed in on the real one. Resolve the value the way the browser will and keep it only if the origin did not change: `const u = new URL(value, "http://placeholder.invalid"); return u.origin === "http://placeholder.invalid" ? u.pathname + u.search + u.hash : "/"` - and return the RESOLVED path, never the raw input, so what is checked is what is followed. Python: `url_has_allowed_host_and_scheme` (Django) or `urlsplit` with empty scheme and netloc after stripping whitespace. Mark the line `enigma:allow-redirect-check` when the value never reaches a navigation (security-policy).',
+    severity: "block",
+    skill: "security-policy"
+  },
+  {
+    id: "sec-open-redirect-from-input",
+    label: "A redirect never goes where the request says without a check",
+    files: ["*.ts", "*.tsx", "*.js", "*.jsx", "*.mjs", "*.cjs", "*.mts", "*.cts", "*.vue", "*.svelte", "*.astro", "*.py"],
+    excludeFiles: INJECTION_EXCLUDES,
+    // Measured: 2142 candidate redirect lines, 0 findings (one snippet inside a template literal read and excluded), so EDIT stage.
+    scope: "file",
+    fileCheck: "sec-open-redirect-from-input",
+    message: 'This redirects to a destination taken straight from the request (a `next`, `returnTo`, `redirect` or `callbackUrl` parameter). Anyone can then send a link to the real sign-in page that lands the user on their site afterwards - the phishing page that follows a genuine login. Accept only a same-origin path: resolve it with `new URL(value, "http://placeholder.invalid")`, keep it only when the origin is still the placeholder, and redirect to the resolved path; or pick the destination from a fixed allowlist of routes. Never a `startsWith("/")` check (see `sec-redirect-prefix-check`). Mark the line `enigma:allow-open-redirect` when the value is validated in a helper this file does not name (security-policy).',
+    severity: "block",
+    skill: "security-policy"
+  },
+  {
+    id: "sec-ssrf-fetch-from-input",
+    label: "A server never fetches a URL from the request unguarded",
+    files: ["*.ts", "*.js", "*.mjs", "*.cjs", "*.mts", "*.cts", "*.py"],
+    excludeFiles: INJECTION_EXCLUDES,
+    // Measured: 33163 candidate request lines, 0 findings (an allowlisted Modrinth URL and a same-named parameter in another function were read and excluded), so EDIT stage.
+    scope: "file",
+    fileCheck: "sec-ssrf-fetch-from-input",
+    message: "The server fetches a URL the request supplied. From inside the network that URL can be `http://169.254.169.254/` (the cloud metadata service and its credentials), `http://localhost:<port>/` or any LAN host, and the response - or its timing - comes back to the caller. Fetch it through an SSRF guard that vets the ADDRESS the socket connects to (not just the hostname), refuses private, loopback and link-local ranges, re-checks every redirect hop and caps size and time: `safeFetch` from `@enigmax/utils/server` (`enigma add safe-fetch`) does all of it in Node; in Python resolve once, check with `ipaddress.ip_address(a).is_global`, and connect to that address. Or restrict the URL to a fixed allowlist of hosts. Mark the line `enigma:allow-outbound-fetch` when the URL is checked in a helper this file does not name (security-policy).",
+    severity: "block",
+    skill: "security-policy"
+  },
+  {
+    id: "sec-ssrf-dns-recheck",
+    label: "An SSRF guard connects to the address it checked",
+    files: ["*.ts", "*.js", "*.mjs", "*.cjs", "*.mts", "*.cts", "*.py"],
+    excludeFiles: INJECTION_EXCLUDES,
+    // Measured: 1190 candidate DNS lines, 13 findings in 13 files, every one an SSRF guard that checks one resolution and fetches by hostname.
+    scope: "file",
+    stage: "diff",
+    fileCheck: "sec-ssrf-dns-recheck",
+    message: "This SSRF guard resolves the host, checks the addresses, and then hands the HOSTNAME to an HTTP client that resolves it a second time. The two answers are independent: a name that answers with a public address for the check and a private one for the connect (DNS rebinding, a zero-TTL record) reaches loopback, the LAN or the metadata service anyway. Vet the address inside the connection instead, so the check and the socket share one resolution: `safeFetch` from `@enigmax/utils/server` (`enigma add safe-fetch`) passes a vetting `lookup` to `http.request`; with undici, a per-request `Agent({ connect: { lookup } })` built from the SAME undici as the `fetch` you call; in Python, connect to the vetted IP and send the original Host/SNI. Re-check on every redirect hop. Mark the line `enigma:allow-dns-recheck` when the connection is pinned in a module this file does not show (security-policy).",
+    severity: "block",
+    skill: "security-policy"
+  },
+  {
+    id: "sec-untrusted-file-inline",
+    label: "Stored files are served so they cannot run script",
+    files: ["*.ts", "*.js", "*.mjs", "*.cjs", "*.mts", "*.cts", "*.py"],
+    excludeFiles: INJECTION_EXCLUDES,
+    // Measured: 11813 candidate content-type lines, 9 findings in 5 files, 8 of them an uploaded or stored blob served with its own type and 1 an app's own runtime files.
+    scope: "file",
+    stage: "diff",
+    fileCheck: "sec-untrusted-file-inline",
+    message: "A stored or fetched file is served back from this origin with the type it arrived with and nothing containing it. An uploaded SVG or HTML file - or a remote one proxied through - then runs its script as whoever opens it, with their session: stored XSS, reachable by anyone who can upload. Serve it with `X-Content-Type-Options: nosniff`, `Content-Security-Policy: default-src 'none'; sandbox` and `Content-Disposition: attachment` unless the type is one a browser renders passively (raster images, PDF, audio, video); `downloadHeaders({ name, type, inline })` from `@enigmax/utils/server` (`enigma add safe-upload`) builds exactly that set, and `inspectUpload` decides the type from the bytes at upload time so an SVG renamed `.png` is still refused. Mark the line `enigma:allow-inline-content` when the bytes are the app's own build assets (security-policy).",
+    severity: "block",
+    skill: "security-policy"
+  },
+  {
+    id: "sec-path-join-from-input",
+    label: "A path built from request input stays under its root",
+    files: ["*.ts", "*.js", "*.mjs", "*.cjs", "*.mts", "*.cts", "*.py"],
+    excludeFiles: INJECTION_EXCLUDES,
+    // Measured: 10820 candidate join lines, 6 findings in 3 files, every one a route parameter joined into a served or written path.
+    scope: "file",
+    stage: "diff",
+    fileCheck: "sec-path-join-from-input",
+    message: 'A filesystem path is joined from request input with nothing keeping it under its base. Route parameters arrive URL-decoded, so `..%2F..%2Fetc` is `../../etc`, and `path.join` normalises the `..` away before any later check could see it: the request reads or writes outside the directory it was meant for. Resolve and CONTAIN it: `resolveInside(root, ...segments)` from `@enigmax/utils/server` (`enigma add safe-upload`), or `const p = path.resolve(root, input); if (path.relative(root, p).startsWith("..") || path.isAbsolute(path.relative(root, p))) refuse`; Python `Path(root, name).resolve().is_relative_to(Path(root).resolve())`; Express `res.sendFile(name, { root })`. For a stored upload, do not use the uploader\'s name on disk at all (`storageName`). Mark the line `enigma:allow-path-join` when the input is checked in a helper this file does not name (security-policy).',
+    severity: "block",
+    skill: "security-policy"
+  },
+  // SECOND WAVE (guardrails.md, "THE SECOND WAVE"): generated-UI tells. The figure is findings /
+  // candidate lines over the corpus, every finding read by hand; the stage follows the backlog.
+  {
+    id: "fe-sparkles-icon",
+    label: "No sparkles glyph as the generic AI icon",
+    files: UI_CODE_FILES,
+    excludeFiles: TELL_EXCLUDES,
+    // Measured: 352 candidate lines, 171 findings in 171 files, every one the sparkles glyph imported from an icon package (usage sampled: token counters, AI examples, "new" badges).
+    scope: "file",
+    stage: "diff",
+    fileCheck: "fe-sparkles-icon",
+    message: 'The sparkles glyph is the stock icon for "AI" and "new", so it says nothing about what this control does. Use an icon that names the action (a pen for "rewrite", a list for "summarize", a wand only for an actual one-click transform), or no icon at all. Mark the line `enigma:allow-sparkles-icon` when the glyph is literally the subject (a sparkle/effects picker) (frontend-design).',
+    severity: "block",
+    skill: "frontend-design"
   }
 ];
 var PROJECT_CHECKS = {
@@ -2145,7 +2452,24 @@ var FILE_CHECKS = {
   "fe-select-hand-rolled": (content) => handRolledSelect(content),
   "fe-native-select-over-primitive": (content) => nativeSelectOverPrimitive(content),
   "fe-toast-hand-rolled": (content) => handRolledToast(content),
-  "fe-palette-hand-rolled": (content) => handRolledPalette(content)
+  "fe-palette-hand-rolled": (content) => handRolledPalette(content),
+  "sec-sql-built-from-values": (content, file) => sqlBuiltFromValues(content, file),
+  "sec-shell-built-from-values": (content, file) => shellCommandFromValues(content, file),
+  "sec-dynamic-code-execution": (content, file) => dynamicCodeExecution(content, file),
+  "sec-tls-verification-off": (content, file) => insecureTls(content, file),
+  "sec-cors-any-origin-credentials": (content, file) => credentialedAnyOrigin(content, file),
+  "sec-unsafe-deserialization": (content) => unsafeDeserialization(content),
+  "sec-markdown-html-unsanitized": (content) => unsanitizedMarkdownHtml(content),
+  "fe-radix-overlay-no-portal": (content) => radixContentWithoutPortal(content),
+  "sec-ssh-host-key-unverified": (content) => unverifiedSshHostKey(content),
+  "sec-secret-compare-timing": (content, file) => timingUnsafeSecretCompare(content, file),
+  "sec-redirect-prefix-check": (content, file) => redirectPrefixCheck(content, file),
+  "sec-open-redirect-from-input": (content, file) => redirectFromInput(content, file),
+  "sec-ssrf-fetch-from-input": (content, file) => fetchUrlFromInput(content, file),
+  "sec-ssrf-dns-recheck": (content) => dnsCheckThenFetch(content),
+  "sec-untrusted-file-inline": (content, file) => storedFileServedInline(content, file),
+  "sec-path-join-from-input": (content, file) => pathJoinedFromInput(content, file),
+  "fe-sparkles-icon": (content) => sparklesIcon(content)
 };
 var FIXERS = {
   "fe-name-input-capitalize": (line, file) => {
@@ -2784,6 +3108,375 @@ function operatorHomePathLeak(content) {
   }
   return out;
 }
+function readStringLiteral(src, start, python) {
+  let i = start;
+  while (i < src.length && /\s/.test(src[i])) i++;
+  let fString = false;
+  if (python) {
+    const prefix = /^[rRbBuUfF]{1,2}(?=["'])/.exec(src.slice(i, i + 3));
+    if (prefix) {
+      fString = /f/i.test(prefix[0]);
+      i += prefix[0].length;
+    }
+  }
+  const quote = src[i];
+  if (quote !== '"' && quote !== "'" && (python || quote !== "`")) return null;
+  if (quote === "`") {
+    let depth = 0;
+    let interpolated = false;
+    for (let j = i + 1; j < src.length; j++) {
+      const ch = src[j];
+      if (depth === 0 && ch === "\\") {
+        j++;
+        continue;
+      }
+      if (depth === 0 && ch === "`") return { body: src.slice(i + 1, j), end: j + 1, interpolated };
+      if (depth === 0 && ch === "$" && src[j + 1] === "{") {
+        depth = 1;
+        interpolated = true;
+        j++;
+        continue;
+      }
+      if (depth > 0 && ch === "{") depth++;
+      else if (depth > 0 && ch === "}") depth--;
+    }
+    return null;
+  }
+  const triple = python && src.startsWith(quote.repeat(3), i);
+  const close = triple ? quote.repeat(3) : quote;
+  for (let j = i + close.length; j < src.length; j++) {
+    if (src[j] === "\\") {
+      j++;
+      continue;
+    }
+    if (!triple && src[j] === "\n") return null;
+    if (src.startsWith(close, j)) {
+      const body = src.slice(i + close.length, j);
+      return { body, end: j + close.length, interpolated: fString && /\{(?!\{)/.test(body.replace(/\{\{/g, "")) };
+    }
+  }
+  return null;
+}
+var MINIFIED_LINE = 400;
+var CALL_LEAD_JS = /(?:^|[=(,:[{;!&|?+>]|\breturn|\bawait|\bthrow|\bvoid)\s*$/;
+var CALL_LEAD_PY = /(?:^|[=(,:[{]|\breturn|\bawait|\byield)\s*$/;
+function insideStringOnLine(lead, python) {
+  const quotes = python ? ['"', "'"] : ['"', "'", "`"];
+  return quotes.some((q) => (lead.match(new RegExp(`(?<!\\\\)${q}`, "g"))?.length ?? 0) % 2 === 1);
+}
+function lineOfOffset(src, index) {
+  return src.slice(0, index).split("\n").length;
+}
+function callArguments(src, open, python) {
+  let depth = 1;
+  let i = open + 1;
+  const limit = Math.min(src.length, open + 8e3);
+  while (i < limit && depth > 0) {
+    const ch = src[i];
+    if (ch === '"' || ch === "'" || ch === "`" || python && /[rRbBuUfF]/.test(ch) && /["']/.test(src[i + 1] ?? "")) {
+      const lit = readStringLiteral(src, i, python);
+      if (lit) {
+        i = lit.end;
+        continue;
+      }
+    }
+    if (ch === "(") depth++;
+    else if (ch === ")") depth--;
+    i++;
+  }
+  return src.slice(open + 1, i - 1);
+}
+function builtBy(src, end, python) {
+  const rest = src.slice(end, end + 40);
+  if (/^\s*\+/.test(rest)) {
+    const next = readStringLiteral(src, src.indexOf("+", end) + 1, python);
+    if (!next || next.interpolated) return "concat";
+    return builtBy(src, next.end, python);
+  }
+  if (python && /^\s*%\s*[\w(\[{]/.test(rest)) return "percent";
+  if (python && /^\s*\.format\s*\(/.test(rest)) return "format";
+  return null;
+}
+function interpolations(body, python) {
+  const out = [];
+  const open = python ? "{" : "${";
+  for (let i = 0; i < body.length; i++) {
+    if (python && body.startsWith("{{", i)) {
+      i++;
+      continue;
+    }
+    if (!body.startsWith(open, i)) continue;
+    let depth = 1;
+    let j = i + open.length;
+    for (; j < body.length && depth > 0; j++) {
+      if (body[j] === "{") depth++;
+      else if (body[j] === "}") depth--;
+    }
+    out.push({ expr: body.slice(i + open.length, j - 1), before: body.slice(Math.max(0, i - 24), i), at: i });
+    i = j - 1;
+  }
+  return out;
+}
+var CONSTANT_EXPR = /^\s*[A-Z][A-Z0-9_]*(?:\.[A-Z][A-Z0-9_]*)*\s*$/;
+var SQL_DML = /\b(?:SELECT\b[\s\S]*?\bFROM|INSERT\s+INTO|UPDATE\s+\S+\s+SET|DELETE\s+FROM)\b/i;
+var SQL_VALUE_POSITION = /(?:[=<>]|\bLIKE|\bIN\s*\(|\bVALUES\s*\()\s*'?%?$/i;
+function insideSqlQuote(text) {
+  return (text.match(/'/g)?.length ?? 0) % 2 === 1;
+}
+var SQL_PLACEHOLDER_BUILDER = /\b\w*(?:params|vars|values|args|bindings?)\.(?:add|bind|next|push)\s*\(/i;
+function placeholderBinding(content, expr) {
+  const name = /^\s*([A-Za-z_][\w]*)\s*$/.exec(expr)?.[1];
+  if (!name) return false;
+  const bind = new RegExp(`(?:const|let|var)\\s+${name}\\s*=\\s*([^;\\n]+)`).exec(content);
+  return !!bind && (SQL_PLACEHOLDER_BUILDER.test(bind[1]) || SQL_SAFE_EXPR.test(bind[1]));
+}
+var SQL_SAFE_EXPR = /["'`]\?["'`]|placeholder|escape|quote|saniti[sz]|sqlstring|pgFormat|\bformat\s*\(|\bNumber\s*\(|\bparseInt\s*\(|\bparseFloat\s*\(|\bint\s*\(|\bfloat\s*\(|\.length\b/i;
+var SQL_CALL_JS = /(?:\.(?:query|execute|exec|prepare|raw|unsafe|\$queryRawUnsafe|\$executeRawUnsafe)|(?<![.\w$])(?:query|execute))\s*\(/g;
+var SQL_CALL_PY = /(?:\.(?:execute|executemany|executescript|exec_driver_sql|raw|mogrify)|(?<![.\w])(?:text|read_sql|read_sql_query))\s*\(/g;
+function sqlValueSpliced(lit, how, python, content) {
+  if (!SQL_DML.test(lit.body)) return null;
+  if (lit.interpolated) {
+    for (const part of interpolations(lit.body, python)) {
+      if (!SQL_VALUE_POSITION.test(part.before) && !insideSqlQuote(lit.body.slice(0, part.at))) continue;
+      if (/\bIN\s*\(\s*$/i.test(part.before) && !/\bjoin\s*\(/.test(part.expr)) continue;
+      if (SQL_SAFE_EXPR.test(part.expr) || SQL_PLACEHOLDER_BUILDER.test(part.expr) || CONSTANT_EXPR.test(part.expr) || placeholderBinding(content, part.expr)) continue;
+      return `\`${part.expr.trim().slice(0, 40)}\` is spliced into the statement`;
+    }
+    return null;
+  }
+  if (how === "concat" && (SQL_VALUE_POSITION.test(lit.body.trimEnd()) || insideSqlQuote(lit.body))) return "a value is concatenated into the statement";
+  if ((how === "percent" || how === "format") && /(?:(?:[=<>]|\bLIKE|\bIN\s*\(|\bVALUES\s*\()\s*'?%?|'%?)(?:%[sdr]|%\(\w+\)[sdr]|\{\w*\})/i.test(lit.body)) {
+    return how === "percent" ? "the statement is built with the % operator" : "the statement is built with .format()";
+  }
+  return null;
+}
+function sqlBuiltFromValues(content, file) {
+  const python = /\.py$/i.test(file);
+  const out = [];
+  const lines = content.split("\n");
+  for (const m of content.matchAll(python ? SQL_CALL_PY : SQL_CALL_JS)) {
+    const open = m.index + m[0].length - 1;
+    const lit = readStringLiteral(content, open + 1, python);
+    if (!lit) continue;
+    const detail = sqlValueSpliced(lit, builtBy(content, lit.end, python), python, content);
+    if (!detail) continue;
+    const line = lineOfOffset(content, m.index);
+    const span = content.slice(m.index, lit.end);
+    if (COMMENT_LINE.test(lines[line - 1]) || lines[line - 1].length > MINIFIED_LINE || /enigma:/.test(lines[line - 1]) || /enigma:/.test(span)) continue;
+    out.push({ line, detail });
+  }
+  return out;
+}
+var SHELL_SAFE_EXPR = /quote|escape|saniti[sz]|shlex|shellwords/i;
+function shellValueSpliced(lit, how, python) {
+  if (lit.interpolated) {
+    const raw = interpolations(lit.body, python).filter((p) => !SHELL_SAFE_EXPR.test(p.expr) && !CONSTANT_EXPR.test(p.expr) && !/^\s*$/.test(lit.body.slice(0, p.at)));
+    return raw.length ? `\`${raw[0].expr.trim().slice(0, 40)}\` is spliced into the command` : null;
+  }
+  if (how === "concat") return "a value is concatenated into the command";
+  if (how === "percent" || how === "format") return how === "percent" ? "the command is built with the % operator" : "the command is built with .format()";
+  return null;
+}
+function childProcessNamespaces(content) {
+  const names = /* @__PURE__ */ new Set();
+  const ns = /(?:import\s*\*\s*as\s+(\w+)\s+from\s*|(?:const|let|var)\s+(\w+)\s*=\s*require\(\s*)["'](?:node:)?child_process["']/g;
+  for (const m of content.matchAll(ns)) names.add(m[1] ?? m[2]);
+  return [...names];
+}
+function shellCommandFromValues(content, file) {
+  const python = /\.py$/i.test(file);
+  const out = [];
+  const lines = content.split("\n");
+  let call;
+  let alwaysShell;
+  if (python) {
+    call = /(?<![.\w])(?:subprocess\.(run|call|Popen|check_output|check_call|getoutput|getstatusoutput)|os\.(system|popen)|(?:asyncio\.)?(create_subprocess_shell))\s*\(/g;
+    alwaysShell = (name) => /^(?:getoutput|getstatusoutput|system|popen|create_subprocess_shell)$/.test(name);
+  } else {
+    const bound = spawnerBindings(content);
+    const promisified = [...content.matchAll(/(?:const|let|var)\s+(\w+)\s*=\s*(?:util\.)?promisify\(\s*(\w+)\s*\)/g)].filter((p) => bound.includes(p[2]) && /^exec(?:Sync)?$/.test(p[2])).map((p) => p[1]);
+    const names = [...bound, ...promisified];
+    const spaces = childProcessNamespaces(content);
+    if (!names.length && !spaces.length) return [];
+    const alts = [...names.map((n) => `(?<![.\\w$])(${n})`), ...spaces.map((s) => `\\b${s}\\.(exec|execSync|spawn|spawnSync|execFile|execFileSync)`)];
+    call = new RegExp(`(?:${alts.join("|")})\\s*\\(`, "g");
+    const origin = /* @__PURE__ */ new Map();
+    for (const m of content.matchAll(/(?:import|(?:const|let|var))\s*\{([^}]*)\}\s*(?:from\s*|=\s*require\(\s*)["'](?:node:)?child_process["']/g)) {
+      for (const part of m[1].split(",")) {
+        const [orig, alias] = part.trim().split(/\s+as\s+/).map((s) => s.trim());
+        if (orig) origin.set(alias || orig, orig);
+      }
+    }
+    for (const p of promisified) origin.set(p, "exec");
+    alwaysShell = (name) => /^exec(?:Sync)?$/.test(origin.get(name) ?? name);
+  }
+  for (const m of content.matchAll(call)) {
+    const name = m.slice(1).find(Boolean);
+    const open = m.index + m[0].length - 1;
+    const lit = readStringLiteral(content, open + 1, python);
+    if (!lit) continue;
+    const args = callArguments(content, open, python);
+    if (!alwaysShell(name) && !(python ? /\bshell\s*=\s*True\b/ : /\bshell\s*:\s*true\b/).test(args)) continue;
+    const detail = shellValueSpliced(lit, builtBy(content, lit.end, python), python);
+    if (!detail) continue;
+    const line = lineOfOffset(content, m.index);
+    if (COMMENT_LINE.test(lines[line - 1]) || lines[line - 1].length > MINIFIED_LINE || /enigma:/.test(lines[line - 1]) || /enigma:/.test(args)) continue;
+    out.push({ line, detail: `${name}: ${detail}` });
+  }
+  return out;
+}
+function dynamicCodeExecution(content, file) {
+  const python = /\.py$/i.test(file);
+  const out = [];
+  const lines = content.split("\n");
+  const call = python ? /(?<![.\w])(eval|exec)\s*\(/g : /(?<![.\w$])(eval)\s*\(|\bnew\s+(Function)\s*\(/g;
+  for (const m of content.matchAll(call)) {
+    const line = lineOfOffset(content, m.index);
+    const text = lines[line - 1];
+    if (COMMENT_LINE.test(text) || /enigma:/.test(text) || text.length > MINIFIED_LINE) continue;
+    const lead = content.slice(content.lastIndexOf("\n", m.index - 1) + 1, m.index);
+    if (!(python ? CALL_LEAD_PY : CALL_LEAD_JS).test(lead) || insideStringOnLine(lead, python)) continue;
+    const open = m.index + m[0].length - 1;
+    const args = callArguments(content, open, python);
+    if (!args.trim()) continue;
+    if (/^\s*[:{]/.test(content.slice(open + args.length + 2, open + args.length + 40))) continue;
+    let rest = args;
+    let literalOnly = true;
+    while (rest.trim()) {
+      const lit = readStringLiteral(rest, 0, python);
+      if (!lit || lit.interpolated) {
+        literalOnly = false;
+        break;
+      }
+      rest = rest.slice(lit.end).replace(/^\s*,?/, "");
+    }
+    if (literalOnly) continue;
+    out.push({ line, detail: `${m[1] ?? m[2]} on a value built at run time` });
+  }
+  return out;
+}
+var INSECURE_TLS_JS = /\brejectUnauthorized\s*:\s*false\b|\bNODE_TLS_REJECT_UNAUTHORIZED\b["'\]]?\s*[:=]\s*["']?0\b|\bstrictSSL\s*:\s*false\b/;
+var INSECURE_TLS_PY = /\bverify\s*=\s*False\b|\bssl\._create_unverified_context\s*\(|\bcert_reqs\s*=\s*(?:ssl\.)?CERT_NONE\b|\bverify_mode\s*=\s*(?:ssl\.)?CERT_NONE\b|\bcheck_hostname\s*=\s*False\b/;
+var PY_HTTP_CLIENT = /^\s*(?:import|from)\s+(?:requests|httpx|urllib3|aiohttp)\b/m;
+var LOOPBACK_HINT = /loopback|localhost|127\.0\.0\.1|::1|isLocal/i;
+var TLS_OPERATOR_TOGGLE = /\w*(?:rejectUnauthorized|verifySsl|verifyTls|insecure|allowSelfSigned|selfSigned|skipVerify)\w*\s*(?:===?|!==?)\s*(?:false|true)\b/i;
+function insecureTls(content, file) {
+  const python = /\.py$/i.test(file);
+  if (python && !PY_HTTP_CLIENT.test(content) && !/\bssl\b/.test(content)) return [];
+  const out = [];
+  const lines = content.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const text = lines[i];
+    if (COMMENT_LINE.test(text) || /enigma:/.test(text) || LOOPBACK_HINT.test(text)) continue;
+    const m = (python ? INSECURE_TLS_PY : INSECURE_TLS_JS).exec(text);
+    if (!m) continue;
+    if (python && /^\s*(?:async\s+)?def\s/.test(text)) continue;
+    if (python && /^verify\s*=/.test(m[0]) && !PY_HTTP_CLIENT.test(content)) continue;
+    if (!python && (text.slice(0, m.index).match(/(?<!\\)`/g)?.length ?? 0) % 2 === 1) continue;
+    if (TLS_OPERATOR_TOGGLE.test(text)) continue;
+    if (out.length && out[out.length - 1].line === i) continue;
+    out.push({ line: i + 1, detail: m[0].replace(/\s+/g, " ") });
+  }
+  return out;
+}
+var CORS_ANY_ORIGIN_JS = /\borigin\s*:\s*(?:["'`]\*["'`]|true\b)|Access-Control-Allow-Origin["'`]\s*,\s*(?:["'`]\*["'`]|(?:req|request|ctx\.request|ctx|c\.req)\.(?:headers\.origin|headers\[["']origin["']\]|header\(\s*["']origin["']\s*\)|get\(\s*["']origin["']\s*\)))/i;
+var CORS_CREDENTIALS_JS = /\bcredentials\s*:\s*true\b|Access-Control-Allow-Credentials["'`]\s*,\s*["'`]?true\b/i;
+var CORS_ANY_ORIGIN_PY = /\ballow_origins\s*=\s*\[\s*["']\*["']\s*\]|\ballow_origin_regex\s*=\s*r?["']\.\*["']/;
+var CORS_CREDENTIALS_PY = /\ballow_credentials\s*=\s*True\b/;
+var CORS_WINDOW = 12;
+function credentialedAnyOrigin(content, file) {
+  const python = /\.py$/i.test(file);
+  const lines = content.split("\n");
+  const out = [];
+  const any = python ? CORS_ANY_ORIGIN_PY : CORS_ANY_ORIGIN_JS;
+  const creds = python ? CORS_CREDENTIALS_PY : CORS_CREDENTIALS_JS;
+  for (let i = 0; i < lines.length; i++) {
+    const text = lines[i];
+    if (COMMENT_LINE.test(text) || /enigma:/.test(text)) continue;
+    if (python && /\bCORS\s*\([^)]*supports_credentials\s*=\s*True/.test(text) && !/\b(?:origins|resources)\s*=/.test(text)) {
+      out.push({ line: i + 1, detail: "supports_credentials with the default origins (*)" });
+      continue;
+    }
+    if (!any.test(text)) continue;
+    const near = lines.slice(Math.max(0, i - CORS_WINDOW), i + CORS_WINDOW + 1);
+    const credLine = (l, k, all) => !COMMENT_LINE.test(l) && creds.test(l) && !/\bif\s*\(\s*[\w.]*credentials\b/i.test(`${all[k - 1] ?? ""}
+${l}`);
+    if (!near.some(credLine)) continue;
+    out.push({ line: i + 1, detail: "every origin, with credentials" });
+  }
+  return out;
+}
+var PYYAML_IMPORT = /^\s*(?:import\s+yaml\b|from\s+yaml\s+import\b)/m;
+var PICKLE_FROM_OUTSIDE = /\b(?:c?[Pp]ickle|_pickle|dill|cloudpickle)\.loads\s*\(\s*[^)]*(?:request|\.recv|\.content|\.body|payload|message|b64decode|redis|\.get\(|cookie)/;
+function unsafeDeserialization(content) {
+  const out = [];
+  const yaml = PYYAML_IMPORT.test(content) && !/ruamel/.test(content);
+  const lines = content.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const text = lines[i];
+    if (COMMENT_LINE.test(text) || /enigma:/.test(text)) continue;
+    if (yaml && /\byaml\.unsafe_load(?:_all)?\s*\(/.test(text)) {
+      out.push({ line: i + 1, detail: "yaml.unsafe_load" });
+      continue;
+    }
+    if (yaml && /\byaml\.load(?:_all)?\s*\(/.test(text)) {
+      const loader = /\bLoader\s*=\s*([\w.]+)/.exec(text);
+      if (!loader || /^(?:yaml\.)?(?:Unsafe)?Loader$/.test(loader[1])) {
+        out.push({ line: i + 1, detail: loader ? `yaml.load with ${loader[1]}` : "yaml.load without a safe Loader" });
+        continue;
+      }
+    }
+    if (PICKLE_FROM_OUTSIDE.test(text)) out.push({ line: i + 1, detail: "unpickling bytes that came from outside the process" });
+  }
+  return out;
+}
+var RAW_HTML_MARKDOWN = /from\s+["'](?:marked|showdown|snarkdown|mammoth)["']|(?:require|import)\(\s*["'](?:marked|showdown|snarkdown|mammoth)["']\s*\)/;
+var OPT_IN_HTML_MARKDOWN = /from\s+["'](?:markdown-it|remarkable|micromark)["']|require\(\s*["'](?:markdown-it|remarkable|micromark)["']\s*\)/;
+var MARKDOWN_HTML_ON = /\bhtml\s*:\s*true\b|allowDangerousHtml\s*:\s*true\b/;
+var HTML_SANITIZER = /DOMPurify|dompurify|sanitize|\bxss\b|insane|rehype-sanitize/i;
+var HTML_SINK = /dangerouslySetInnerHTML|\bv-html\s*=|\{@html\s|\.innerHTML\s*=(?!=)/;
+function unsanitizedMarkdownHtml(content) {
+  const raw = RAW_HTML_MARKDOWN.test(content) || OPT_IN_HTML_MARKDOWN.test(content) && MARKDOWN_HTML_ON.test(content);
+  if (!raw || HTML_SANITIZER.test(content)) return [];
+  const out = [];
+  const lines = content.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const text = lines[i];
+    if (COMMENT_LINE.test(text) || /enigma:/.test(text)) continue;
+    if (HTML_SINK.test(text)) out.push({ line: i + 1, detail: "rendered Markdown inserted as HTML, unsanitized" });
+  }
+  return out;
+}
+var RADIX_OVERLAY_MODULE = /^@radix-ui\/react-(?:select|dropdown-menu|popover|tooltip|context-menu|hover-card|menubar)$/;
+var RADIX_UMBRELLA_PARTS = /* @__PURE__ */ new Set(["Select", "DropdownMenu", "Popover", "Tooltip", "ContextMenu", "HoverCard", "Menubar"]);
+function radixContentWithoutPortal(content) {
+  const aliases = /* @__PURE__ */ new Set();
+  for (const m of content.matchAll(/import\s*\*\s*as\s+(\w+)\s+from\s*["']([^"']+)["']/g)) {
+    if (RADIX_OVERLAY_MODULE.test(m[2])) aliases.add(m[1]);
+  }
+  for (const m of content.matchAll(/import\s*\{([^}]*)\}\s*from\s*["']radix-ui["']/g)) {
+    for (const part of m[1].split(",")) {
+      const [orig, alias] = part.trim().split(/\s+as\s+/).map((s) => s.trim());
+      if (orig && RADIX_UMBRELLA_PARTS.has(orig)) aliases.add(alias || orig);
+    }
+  }
+  const out = [];
+  if (!aliases.size) return out;
+  const lines = content.split("\n");
+  for (const alias of aliases) {
+    if (new RegExp(`<\\s*${alias}\\.Portal\\b`).test(content)) continue;
+    const tag = new RegExp(`<\\s*${alias}\\.Content\\b`);
+    for (let i = 0; i < lines.length; i++) {
+      const text = lines[i];
+      if (COMMENT_LINE.test(text) || /enigma:/.test(text)) continue;
+      if (tag.test(text)) {
+        out.push({ line: i + 1, detail: `${alias}.Content with no ${alias}.Portal` });
+        break;
+      }
+    }
+  }
+  return out;
+}
 var INTERNAL_MODULE = /^\.|^#|^[@~]\//;
 function wideNamedImports(content, max) {
   const per = /* @__PURE__ */ new Map();
@@ -2972,7 +3665,9 @@ function runGuardrailsHook(payload) {
   } catch {
   }
   if (!file || typeof file !== "string") return 0;
-  const found = checkPath(file);
+  const changed = changedLineFilter(file);
+  const touched = (f) => !changed || !f.line || changed(f.line);
+  const found = checkPath(file).filter(touched);
   const repairable = [...found, ...repairableDiffFindings(file)];
   if (!repairable.length) return 0;
   const { fixed } = applyFixes(file, repairable, "diff");
@@ -2980,7 +3675,7 @@ function runGuardrailsHook(payload) {
 ${fixed.map((f) => `${f.file}:${f.line} (${f.ruleId})`).join("\n")}
 `);
   recordFindings(fixed, "fixed");
-  const findings = fixed.length ? checkPath(file) : found;
+  const findings = fixed.length ? checkPath(file).filter(touched) : found;
   if (!findings.length) return 0;
   const warns = findings.filter((f) => f.severity === "warn");
   const blocks = findings.filter((f) => f.severity === "block");
@@ -2997,6 +3692,307 @@ Fix the above before continuing.
     return 2;
   }
   return 0;
+}
+function auditSkipLine(text) {
+  return COMMENT_LINE.test(text) || /enigma:/.test(text) || text.length > MINIFIED_LINE;
+}
+function insideTemplateOnLine(lead) {
+  return (lead.match(/(?<!\\)`/g)?.length ?? 0) % 2 === 1;
+}
+var REQUEST_INPUT_JS = /\b(?:req|request|ctx\.request|ctx|c\.req|event)\.(?:query|body|params)\b(?:\.[\w$]+|\[[^\]]+\])*|\b(?:searchParams|nextUrl\.searchParams|url\.searchParams|query|params|formData|form)\.get\(\s*["'`][^"'`]+["'`]\s*\)|\bc\.req\.query\(\s*["'`][^"'`]+["'`]\s*\)|\bgetQuery\(\s*event\s*\)(?:\.[\w$]+)?|\buseSearchParams\(\)\.get\(/;
+var REQUEST_INPUT_PY = /\brequest\.(?:args|GET|POST|form|query_params|values|json)(?:\.get\(\s*["'][^"']+["']|\[\s*["'][^"']+["']\s*\])/;
+function namesFromInput(lines, input) {
+  const names = /* @__PURE__ */ new Map();
+  lines.forEach((text, i) => {
+    if (COMMENT_LINE.test(text)) return;
+    let m = /^\s*(?:const|let|var)?\s*([A-Za-z_$][\w$]*)\s*(?::\s*[\w<>| ]+)?=(?!=)\s*(.+)$/.exec(text);
+    if (m && input.test(m[2]) && !/safe|saniti|valid|allow|same|normali[sz]e|parse\w*\(/i.test(m[2].replace(input, ""))) names.set(m[1], i);
+    m = /^\s*(?:const|let|var)\s*\{([^}]+)\}\s*=\s*(?:await\s+)?(?:req|request|ctx\.request|c\.req)\.(?:query|body|params)\b\s*;?\s*$/.exec(text);
+    if (m) {
+      for (const part of m[1].split(",")) {
+        const name = part.split(/[:=]/).pop().trim();
+        if (/^[A-Za-z_$][\w$]*$/.test(name)) names.set(name, i);
+      }
+    }
+  });
+  return names;
+}
+function reachesUnchecked(lines, name, bound, sink) {
+  if (bound > sink || sink - bound > 40) return false;
+  const id = name.replace(/\$/g, "\\$");
+  const guard = new RegExp(`\\b(?:if|elif|unless|assert)\\b[^\\n]*\\b${id}\\b|\\b${id}\\b[^\\n]*\\?[^\\n]*:`);
+  for (let k = bound + 1; k < sink; k++) if (guard.test(lines[k])) return false;
+  return true;
+}
+function argumentFromInput(arg, input, names, lines, line) {
+  if (new RegExp(`^(?:new URL\\(\\s*)?(?:${input.source})`).test(arg)) return true;
+  const name = /^(?:new URL\(\s*)?([A-Za-z_$][\w$]*)\s*(?:[,)]|\?\?|\|\||;|\.(?:toString|href)\b|\bor\b|$)/.exec(arg)?.[1];
+  return Boolean(name && names.has(name) && reachesUnchecked(lines, name, names.get(name), line));
+}
+var SSH_HOST_KEY_OFF = [
+  /StrictHostKeyChecking\s*[= ]\s*["']?no\b/i,
+  /UserKnownHostsFile\s*[= ]\s*["']?\/dev\/null/i,
+  /\bhostVerifier\s*[:=]\s*(?:async\s*)?(?:\([^)]*\)|[\w$]+)\s*=>\s*(?:\{\s*return\s+)?(?:true|!0)\b/,
+  /\bhostVerifier\s*[:=]\s*(?:async\s+)?function\s*[\w$]*\s*\([^)]*\)\s*\{\s*return\s+(?:true|!0)\b/,
+  /set_missing_host_key_policy\s*\(\s*(?:paramiko\.)?(?:client\.)?(?:AutoAddPolicy|WarningPolicy)\b/,
+  // asyncssh's keyword in a call (`known_hosts=None,`), not a variable that is filled in below it.
+  /\bknown_hosts\s*=\s*None\s*[,)]/,
+  /\bssh\.InsecureIgnoreHostKey\s*\(/
+];
+function unverifiedSshHostKey(content) {
+  const out = [];
+  const lines = content.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const text = lines[i];
+    if (auditSkipLine(text) || /\bplaceholder\s*[=:]/i.test(text)) continue;
+    const m = SSH_HOST_KEY_OFF.map((re) => re.exec(text)).find(Boolean);
+    if (m) out.push({ line: i + 1, detail: m[0] });
+  }
+  return out;
+}
+var OPERAND_BEFORE = /((?:`[^`]*`)|[A-Za-z_$][\w$]*(?:\??\.[A-Za-z_$][\w$]*|\[[^\]\n]{1,60}\]|\((?:[^()\n]|\([^()\n]*\))*\))*)\s*$/;
+var OPERAND_AFTER = /^\s*((?:`[^`]*`)|(?:await\s+)?[A-Za-z_$][\w$]*(?:\??\.[A-Za-z_$][\w$]*|\[[^\]\n]{1,60}\]|\((?:[^()\n]|\([^()\n]*\))*\))*)/;
+var LITERAL_OPERAND = /^(?:null|undefined|true|false|None|True|False|NaN|\d[\w.]*|["'][^"']*["']|`[^`$]*`)$/;
+var CONFIGURED_SECRET = /\b(?:process\.env|import\.meta\.env|env|Deno\.env\.get|os\.environ(?:\.get)?|os\.getenv|settings|config|cfg|conf)\s*(?:\??\.|\[|\()\s*["'`]?(?![\w-]*(?:public|publishable))[\w-]*(?:secret|token|api_?key|apikey|password|passwd|signature|hmac|access_?key|private_?key|ingest_?key|shared_?key|auth_?key)(?!s\b|_?(?:id|url|name|type|path|file|mode|provider|alias|hash|count|enabled|env|header|ttl|expir\w*|length)\b|(?:Id|ID|Url|URL|Name|Type|Path|File|Mode|Provider|Alias|Hash|Count|Enabled|Env|Header|Ttl|TTL|Expir\w*|Length)\b)[\w-]*["'`]?/i;
+var PRESENTED_CREDENTIAL = /\bheaders?\s*(?:\??\.get\(\s*|\[\s*|\??\.)["'`]?(?:authorization|x-[\w-]*(?:key|token|secret|signature|auth)[\w-]*|[\w-]*(?:api[-_]?key|token|secret|signature)[\w-]*)\b/i;
+var COMPUTED_MAC = /\bcreateHmac\(|\bhmac\.new\(|\bhmac\.digest\(|\bHMAC\(/;
+var SECRET_NAMED = /secret|token|api_?key|apikey|signature|hmac|ingest_?key|access_?key|shared_?key|auth_?key|auth_?header|authorization|bearer|password/i;
+var NOT_SECRET_NAMED = /tokens\b|token_?(?:count|type|usage|limit|index|kind|length|name)\b|tokenizer|max_?tokens|page_?token|cancel\w*token|\.(?:length|type|kind|status|size|name|id|scope|provider)\b/i;
+var REMEMBERED_COPY = /^(?:cached|stored|prev|previous|last|old|existing|current|saved)\b/i;
+function secretKind(expr, bound) {
+  if (expr.startsWith("`")) return /^`(?:Bearer|Basic|Token)\s+\$\{/i.test(expr) ? "configured" : "";
+  if (CONFIGURED_SECRET.test(expr)) return "configured";
+  if (PRESENTED_CREDENTIAL.test(expr)) return "presented";
+  if (COMPUTED_MAC.test(expr)) return "mac";
+  if (/^[A-Za-z_$][\w$]*$/.test(expr) && bound.has(expr)) return bound.get(expr);
+  return SECRET_NAMED.test(expr) && !NOT_SECRET_NAMED.test(expr) ? "named" : "";
+}
+function secretBindings(lines) {
+  const bound = /* @__PURE__ */ new Map();
+  for (const text of lines) {
+    const m = /^\s*(?:const|let|var)?\s*([A-Za-z_$][\w$]*)\s*(?::\s*[\w<>| ]+)?=(?!=)\s*(.+)$/.exec(text);
+    if (!m) continue;
+    const [, name, rhs] = m;
+    if (PRESENTED_CREDENTIAL.test(rhs)) bound.set(name, "presented");
+    else if (CONFIGURED_SECRET.test(rhs)) bound.set(name, "configured");
+    else if (COMPUTED_MAC.test(rhs)) bound.set(name, "mac");
+    else if (!bound.has(name) && SECRET_NAMED.test(`${name} ${rhs}`) && !NOT_SECRET_NAMED.test(`${name} ${rhs}`)) bound.set(name, "named");
+  }
+  return bound;
+}
+function credentialPair(a, b) {
+  if (a === "presented" || b === "presented") return a !== "" && b !== "" && !(a === "presented" && b === "presented");
+  const held = (k) => k === "configured" || k === "mac";
+  return held(a) && b === "named" || held(b) && a === "named" || a === "mac" && b === "mac";
+}
+function timingUnsafeSecretCompare(content, file) {
+  const python = /\.py$/i.test(file);
+  const out = [];
+  const lines = content.split("\n");
+  const bound = secretBindings(lines);
+  const op = python ? /(?<![=!<>])(==|!=)(?!=)/g : /(===|!==|(?<![=!<>])==(?!=)|(?<![=!<>])!=(?!=))/g;
+  for (let i = 0; i < lines.length; i++) {
+    const text = lines[i];
+    if (auditSkipLine(text) || /timingSafeEqual|compare_digest|constantTime|constant_time|safeCompare|secureCompare/i.test(text)) continue;
+    op.lastIndex = 0;
+    let m;
+    while (m = op.exec(text)) {
+      const lead = text.slice(0, m.index);
+      if (!python && insideTemplateOnLine(lead)) continue;
+      const left = OPERAND_BEFORE.exec(lead)?.[1] ?? "";
+      const right = (OPERAND_AFTER.exec(text.slice(m.index + m[0].length))?.[1] ?? "").replace(/^await\s+/, "");
+      if (!left || !right || LITERAL_OPERAND.test(left) || LITERAL_OPERAND.test(right)) continue;
+      if (/typeof\s*$/.test(lead.slice(0, lead.length - left.length))) continue;
+      const a = secretKind(left, bound);
+      const b = secretKind(right, bound);
+      if (!credentialPair(a, b) || REMEMBERED_COPY.test(left) || REMEMBERED_COPY.test(right)) continue;
+      if (a === "configured" && /^[A-Z][A-Z0-9_]+$/.test(right) || b === "configured" && /^[A-Z][A-Z0-9_]+$/.test(left)) continue;
+      out.push({ line: i + 1, detail: `${left} ${m[0]} ${right}` });
+      break;
+    }
+  }
+  return out;
+}
+var SLASH_PREFIX_CHECK = /([A-Za-z_$][\w$.?]*)\s*\.\s*(?:startsWith|startswith)\(\s*["'`]\/["'`]\s*\)|([A-Za-z_$][\w$.?]*)\s*\[0\]\s*={2,3}\s*["'`]\/["'`]|([A-Za-z_$][\w$.?]*)\.charAt\(0\)\s*={2,3}\s*["'`]\/["'`]/;
+var DESTINATION_NAME = /^(?:redirect\w*|return(?:To|Url|Path|_to|_url)?|next(?:Url|Path|Page|_url)?|callback(?:Url|_url)?|continue(?:Url|To)?|goto|target|to|after\w*|backTo|back_to|destinationUrl)$/i;
+var GENERIC_PARAM_NAME = /^(?:value|input|raw|candidate|v|s|str|param|url|path)$/i;
+var NAVIGATION_SINK = /\bredirect\s*\(|\bNextResponse\.redirect|\.redirect\s*\(|\brouter\.(?:push|replace)\s*\(|\bnavigate\s*\(|\blocation\.(?:href\s*=|assign\s*\(|replace\s*\()|\bwindow\.location\s*=|\bRedirectResponse\s*\(|HttpResponseRedirect\s*\(/;
+var DESTINATION_HELPER = /(?:function|const|let|def)\s+\w*(?:redirect|returnTo|returnUrl|return_to|callbackUrl|nextUrl|nextPath|safeNext|sanitizeNext|postLogin|afterLogin|destination|landing|safe_?(?:target|url|path|next|return|dest))\w*/i;
+var SIGN_IN_FILE = /redirect|login|sign-?in|oauth|sso|callback|2fa|two-factor/i;
+var RESOLVED_ORIGIN_CHECK = /new URL\([^)]*\)[\s\S]{0,400}\.(?:origin|host|hostname)\b|urlparse\(|urlsplit\(|url_has_allowed_host_and_scheme/;
+var COMPLETE_PREFIX_CHECK = [/startsWith\(\s*["'`]\/\/["'`]\s*\)|\[1\]\s*!==?\s*["'`]\/["'`]/, /\\\\/, /\\x00|\\x1f|\\s|\\t|\\r|\\n|control/i];
+function redirectPrefixCheck(content, file) {
+  const out = [];
+  const lines = content.split("\n");
+  const signInFile = SIGN_IN_FILE.test(file.split(/[\\/]/).pop() ?? "");
+  for (let i = 0; i < lines.length; i++) {
+    const text = lines[i];
+    if (auditSkipLine(text)) continue;
+    const m = SLASH_PREFIX_CHECK.exec(text);
+    if (!m) continue;
+    const receiver = (m[1] ?? m[2] ?? m[3] ?? "").split(/\??\./).pop() ?? "";
+    const named = DESTINATION_NAME.test(receiver);
+    if (!named && !GENERIC_PARAM_NAME.test(receiver)) continue;
+    const near = lines.slice(Math.max(0, i - 6), i + 7).join("\n");
+    const helper = DESTINATION_HELPER.test(lines.slice(Math.max(0, i - 8), i + 1).join("\n"));
+    if (named ? !(NAVIGATION_SINK.test(near) || helper || signInFile) : !(helper || signInFile && NAVIGATION_SINK.test(near))) continue;
+    const scope = lines.slice(Math.max(0, i - 12), i + 13).join("\n");
+    if (RESOLVED_ORIGIN_CHECK.test(scope) || COMPLETE_PREFIX_CHECK.every((re) => re.test(near))) continue;
+    if (out.length && i + 1 - out[out.length - 1].line <= 3) continue;
+    out.push({ line: i + 1, detail: text.trim().slice(0, 120) });
+  }
+  return out;
+}
+var REDIRECT_SINK_JS = /(?:\b(?:res|reply|response|ctx|c)\.redirect|\bredirect|\bNextResponse\.redirect|\bResponse\.redirect|\bpermanentRedirect)\s*\(\s*(?:\d{3}\s*,\s*)?|\b(?:window\.)?location(?:\.href)?\s*=(?!=)\s*|\blocation\.(?:assign|replace)\s*\(\s*/g;
+var REDIRECT_SINK_PY = /\b(?:redirect|RedirectResponse|HttpResponseRedirect|HttpResponsePermanentRedirect)\s*\(\s*(?:url\s*=\s*)?/g;
+var REDIRECT_VALIDATED = /safeRedirect|safe_redirect|isSafe(?:Redirect|Url|Path|Next)|is_safe_(?:url|redirect)|url_has_allowed_host_and_scheme|isSameOrigin|sameOrigin|same_origin|isRelativeUrl|isLocalUrl|isInternalUrl|allowedRedirect|ALLOWED_REDIRECT|redirectAllow|validateRedirect|sanitizeRedirect|sanitize(?:Next|ReturnTo|Callback)|allowlist|allowedHosts|ALLOWED_HOSTS|allowedOrigins/i;
+function redirectFromInput(content, file) {
+  const python = /\.py$/i.test(file);
+  if (REDIRECT_VALIDATED.test(content)) return [];
+  const input = python ? REQUEST_INPUT_PY : REQUEST_INPUT_JS;
+  const sink = python ? REDIRECT_SINK_PY : REDIRECT_SINK_JS;
+  const lines = content.split("\n");
+  const names = namesFromInput(lines, input);
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    const text = lines[i];
+    if (auditSkipLine(text)) continue;
+    sink.lastIndex = 0;
+    let m;
+    while (m = sink.exec(text)) {
+      if (!python && insideTemplateOnLine(text.slice(0, m.index))) continue;
+      if (argumentFromInput(text.slice(m.index + m[0].length), input, names, lines, i)) {
+        out.push({ line: i + 1, detail: text.trim().slice(0, 120) });
+        break;
+      }
+    }
+  }
+  return out;
+}
+var OUTBOUND_JS = /(?<![\w$.])(?:fetch|\$fetch|ofetch|axios(?:\.(?:get|post|put|patch|delete|head|request))?|got(?:\.(?:get|post|put|stream))?|ky(?:\.(?:get|post))?|needle|superagent\.(?:get|post)|https?\.(?:get|request)|undici\.request)\s*\(\s*/g;
+var OUTBOUND_PY = /\b(?:requests|httpx|urllib\.request)\.(?:get|post|put|patch|delete|request|head|urlopen|stream)\s*\(\s*(?:["'](?:GET|POST|PUT|PATCH|DELETE|HEAD)["']\s*,\s*)?(?:url\s*=\s*)?|\burlopen\s*\(\s*/g;
+var SSRF_GUARDED = /safeFetch|safe[-_]fetch|ssrf|isPrivate|private_?ip|privateAddress|is_private|ipaddr|BlockList|blocklist|allowedHosts|ALLOWED_HOSTS|allowed_hosts|allowlist|allowList|isAllowedUrl|is_global|is_loopback|validateUrl|assertPublic|isPublicUrl|isPublicAddress|is_safe_url/i;
+function fetchUrlFromInput(content, file) {
+  const python = /\.py$/i.test(file);
+  if (!python && (/^\s*["']use client["']/m.test(content) || /\.(?:tsx|jsx)$/i.test(file))) return [];
+  if (SSRF_GUARDED.test(content)) return [];
+  const input = python ? REQUEST_INPUT_PY : REQUEST_INPUT_JS;
+  const sink = python ? OUTBOUND_PY : OUTBOUND_JS;
+  const lines = content.split("\n");
+  const names = namesFromInput(lines, input);
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    const text = lines[i];
+    if (auditSkipLine(text)) continue;
+    sink.lastIndex = 0;
+    let m;
+    while (m = sink.exec(text)) {
+      if (argumentFromInput(text.slice(m.index + m[0].length), input, names, lines, i)) {
+        out.push({ line: i + 1, detail: text.trim().slice(0, 120) });
+        break;
+      }
+    }
+  }
+  return out;
+}
+var DNS_RESOLUTION = /\bdns\.(?:promises\.)?(?:lookup|resolve4?|resolve6|resolveAny)\s*\(|\b(?:lookup|resolve4|resolve6)\s*\(\s*[\w$.]+\s*,\s*\{\s*all|\bsocket\.getaddrinfo\s*\(|\bgethostbyname(?:_ex)?\s*\(|\bawait\s+(?:lookup|resolve4|resolve6|dnsLookup)\s*\(|\bgetaddrinfo\s*\(/;
+var PRIVATE_ADDRESS_CHECK = /isPrivate\w*|is_private|is_global|is_loopback|isLoopback\w*|is_reserved|is_link_local|private_?ip|isInternal\w*|is_internal|isPublic(?:Ip|Address|Host)\w*|169\.254|BlockList|ipaddr/i;
+var OUTBOUND_CALL = /(?<![\w$.])(?:fetch|axios(?:\.\w+)?|got(?:\.\w+)?|https?\.(?:get|request)|requests\.(?:get|post|request|head)|httpx\.(?:get|post|request|AsyncClient|Client)|urlopen|aiohttp\.ClientSession)\s*\(/;
+var CONNECTION_PINNED = /\blookup\s*[:=]\s*(?!await)|\bdispatcher\s*:|connect\s*:\s*\{|setGlobalDispatcher|createConnection\s*[:=]|HTTPAdapter|\bresolve\s*:\s*\[|server_hostname|\bservername\s*:/;
+function dnsCheckThenFetch(content) {
+  if (!OUTBOUND_CALL.test(content) || CONNECTION_PINNED.test(content)) return [];
+  const lines = content.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const text = lines[i];
+    if (auditSkipLine(text) || !DNS_RESOLUTION.test(text)) continue;
+    if (PRIVATE_ADDRESS_CHECK.test(lines.slice(Math.max(0, i - 15), i + 16).join("\n"))) return [{ line: i + 1, detail: text.trim().slice(0, 120) }];
+  }
+  return [];
+}
+var RESPONSE_TYPE_CALL_JS = [
+  /\b(?:res|response|reply|ctx|c)\.(?:setHeader|set|header)\(\s*["'`]content-type["'`]\s*,\s*(?![\s"'`])([^)\n]+)/i,
+  /\b(?:res|reply|response|ctx)\.(?:type|contentType)\(\s*(?![\s"'`])([^)\n]+)/,
+  /\bctx\.type\s*=\s*(?![\s"'`])([^;\n]+)/
+];
+var RESPONSE_TYPE_KEY_JS = /["'`]?content-type["'`]?\s*:\s*(?![\s"'`])([^,}\n]+)/i;
+var RESPONSE_OPENER_JS = /new\s+(?:Next)?Response\s*\(|\bNextResponse\s*\(|\.writeHead\s*\(|\bc\.(?:body|newResponse)\s*\(|\bnew\s+Headers\s*\(/;
+var RESPONSE_TYPE_KWARG_PY = /\b(?:mimetype|media_type|content_type)\s*=\s*(?![\s"'])([\w.[\]"'()]+(?:\([^)\n]*\))?)/;
+var RESPONSE_OPENER_PY = /\b(?:Response|StreamingResponse|FileResponse|HttpResponse|send_file|make_response)\s*\(/;
+var STORED_FILE_TYPE = /\b(?:file|upload\w*|attachment|blob|stat|stats|icon|favicon|avatar|image|img|media|object|obj|document|doc|stored|download|thumbnail|picture|photo)\??\.(?:mime\w*|content_?type|contentType|type|media_?type)\b/i;
+var RESPONSE_SANDBOXED = /content-security-policy[^\n]*sandbox|["'`]sandbox["'`]|default-src[^\n]*\bsandbox\b|downloadHeaders\(|untrusted\w*Headers\(/i;
+function storedFileServedInline(content, file) {
+  if (RESPONSE_SANDBOXED.test(content)) return [];
+  const python = /\.py$/i.test(file);
+  const out = [];
+  const lines = content.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const text = lines[i];
+    if (auditSkipLine(text)) continue;
+    let value;
+    if (python) {
+      const m = RESPONSE_TYPE_KWARG_PY.exec(text);
+      if (m && lines.slice(Math.max(0, i - 6), i + 1).some((l) => RESPONSE_OPENER_PY.test(l))) value = m[1];
+    } else {
+      value = RESPONSE_TYPE_CALL_JS.map((re) => re.exec(text)?.[1]).find(Boolean);
+      if (!value) {
+        const m = RESPONSE_TYPE_KEY_JS.exec(text);
+        if (m && lines.slice(Math.max(0, i - 8), i + 1).some((l) => RESPONSE_OPENER_JS.test(l))) value = m[1];
+      }
+    }
+    if (!value || !STORED_FILE_TYPE.test(value)) continue;
+    const near = lines.slice(Math.max(0, i - 8), i + 9).join("\n");
+    if (/\.\.\.\s*[\w$.]+\(/.test(near)) continue;
+    if (/content-disposition[^\n]*attachment/i.test(near) && !/content-disposition[^\n]*inline/i.test(near)) continue;
+    if (python && /as_attachment\s*=\s*True/.test(near)) continue;
+    out.push({ line: i + 1, detail: text.trim().slice(0, 120) });
+  }
+  return out;
+}
+var PATH_JOIN_JS = /\b(?:path\.)?(?:join|resolve)\s*\(([^)\n]*)\)/g;
+var PATH_JOIN_PY = /\bos\.path\.join\s*\(([^)\n]*)\)|\bPath\s*\([^)\n]*\)\s*\/\s*([^\s)\n]+)/g;
+var PATH_CONTAINED = /\.startsWith\(|\.startswith\(|path\.relative\(|\brelative\(|isInside|isWithin|isSubPath|isSubdir|contain|within|is_relative_to|commonpath|realpath|resolveInside|safeJoin|safe_join|secure_filename|basename\(|sanitize\w*(?:Path|Name|Filename)|\.includes\(\s*["'`]\.\.|\broot\s*:/i;
+function pathJoinedFromInput(content, file) {
+  const python = /\.py$/i.test(file);
+  if (!python && /^\s*["']use client["']/m.test(content)) return [];
+  if (PATH_CONTAINED.test(content)) return [];
+  const input = python ? REQUEST_INPUT_PY : REQUEST_INPUT_JS;
+  const join2 = python ? PATH_JOIN_PY : PATH_JOIN_JS;
+  const lines = content.split("\n");
+  const names = namesFromInput(lines, input);
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    const text = lines[i];
+    if (auditSkipLine(text)) continue;
+    join2.lastIndex = 0;
+    let m;
+    while (m = join2.exec(text)) {
+      const parts = (m[1] ?? m[2] ?? "").split(",").slice(1).map((s) => s.trim());
+      if (parts.some((p) => input.test(p) || names.has(p) || names.has(p.replace(/^`\$\{(\w+)\}.*`$/, "$1")))) {
+        out.push({ line: i + 1, detail: text.trim().slice(0, 120) });
+        break;
+      }
+    }
+  }
+  return out;
+}
+function allowedAt(lines, index, marker) {
+  return marker.test(lines[index]) || index > 0 && marker.test(lines[index - 1]);
+}
+var SPARKLES_IMPORT = /\bimport\s+(?:type\s+)?\{([^}]*)\}\s*from\s*["']((?:@lucide\/|lucide-)[\w/-]+|@heroicons\/[\w/-]+|@tabler\/icons-[\w-]+|@phosphor-icons\/[\w/-]+)["']/g;
+var SPARKLES_NAME = /^(?:Sparkles|SparklesIcon|LucideSparkles|IconSparkles|Sparkle|SparkleIcon)$/;
+var ALLOW_SPARKLES = /enigma:allow-sparkles-icon/;
+function sparklesIcon(content) {
+  const lines = content.split("\n");
+  const out = [];
+  for (const m of content.matchAll(SPARKLES_IMPORT)) {
+    const name = m[1].split(",").map((s) => s.trim().split(/\s+as\s+/)[0].trim()).find((s) => SPARKLES_NAME.test(s));
+    if (!name) continue;
+    const at = m.index + m[0].indexOf(name);
+    const i = lineOfOffset(content, at) - 1;
+    if (COMMENT_LINE.test(lines[i]) || allowedAt(lines, i, ALLOW_SPARKLES) || allowedAt(lines, lineOfOffset(content, m.index) - 1, ALLOW_SPARKLES)) continue;
+    out.push({ line: i + 1, detail: `${name} from ${m[2]}` });
+  }
+  return out;
 }
 var LEDGER_MAX_BYTES = 512 * 1024;
 var LEDGER_KEEP = 2e3;
@@ -3186,8 +4182,12 @@ export {
   checkFile,
   checkPath,
   countLedger,
+  credentialedAnyOrigin,
   deepRelativeImports,
+  dnsCheckThenFetch,
+  dynamicCodeExecution,
   extensionImports,
+  fetchUrlFromInput,
   findProjectRoot,
   formatFindings,
   handRolledColorPicker,
@@ -3198,6 +4198,7 @@ export {
   handRolledSelection,
   handRolledToast,
   handRolledVideoPlayer,
+  insecureTls,
   loadRules,
   missingPathAlias,
   missingWindowsHide,
@@ -3206,20 +4207,32 @@ export {
   newPasswordAffordanceOnSignIn,
   operatorHomePathLeak,
   pageAwaitWithoutBoundary,
+  pathJoinedFromInput,
+  radixContentWithoutPortal,
   readLedger,
   readReplyLedger,
   recordFindings,
+  redirectFromInput,
+  redirectPrefixCheck,
   remoteCollectionNames,
   runGuardrailsHook,
   runGuardrailsScan,
   runGuardrailsScanCli,
   serverFirstMutation,
+  shellCommandFromValues,
+  sparklesIcon,
+  sqlBuiltFromValues,
+  storedFileServedInline,
   summarizeLedger,
   textareaSizeBounds,
+  timingUnsafeSecretCompare,
   truncatedValueUnreachable,
   twoFactorPasswordPrompt,
   unboundedFanout,
   unboundedRemoteList,
+  unsafeDeserialization,
+  unsanitizedMarkdownHtml,
+  unverifiedSshHostKey,
   viewBlankedWhileLoading,
   wideNamedImports
 };

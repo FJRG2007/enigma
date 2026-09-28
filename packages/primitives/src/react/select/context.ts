@@ -36,6 +36,11 @@ export interface SelectContextValue {
     optionId: (index: number) => string;
     triggerRef: RefObject<HTMLButtonElement | null>;
     fieldRef: RefObject<HTMLInputElement | null>;
+    /**
+     * The panel. Portaled out of the root, so "inside the select" is the root OR this - a
+     * press or a focus check against the root alone would call every option outside.
+     */
+    contentRef: RefObject<HTMLDivElement | null>;
     /** Close and put focus back where it came from - the trigger, always. */
     close: () => void;
     /** The keys the list answers to, shared by the trigger and the search field. */

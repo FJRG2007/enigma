@@ -9,6 +9,7 @@ description: Transactional and notification email - build templates with React E
 
 - Apply whenever code sends an email or builds an email body: verification, password reset, invites, receipts, alerts, digests, notifications, or any email-provider integration.
 - Owns templating, rendering, sending, and deliverability. Layering, retries, and queues stay with backend-policy; secrets, tokens, and link safety with security-policy; recipient and payload schemas with validation-policy; package choice with dependency-policy.
+- The words (subject line, body copy, button labels, preheader) follow technical-writing-policy: the recipient's outcome and next action, no AI-writing tells.
 
 ---
 

@@ -34,8 +34,11 @@ export const CONTEXT_MENU_STYLES = `
        top: the image viewer's own three-dot menu was portalled to the same body and painted
        underneath it, so its rows could be neither seen nor pressed. A menu is the topmost
        transient surface on a page, and this is the number that says so. It belongs here and
-       not in the light-scheme block, or half the readers get an invalid z-index. */
-    --enigma-menu-z: 10000;
+       not in the light-scheme block, or half the readers get an invalid z-index.
+       --enigma-floating-z is the layer the select and the colour picker share, declared with
+       the same value in their sheets, so overriding it once moves every popup together. */
+    --enigma-floating-z: 10000;
+    --enigma-menu-z: var(--enigma-floating-z);
 }
 
 @media (prefers-color-scheme: light) {
@@ -57,6 +60,9 @@ export const CONTEXT_MENU_STYLES = `
    ancestor cannot drag it away from the place it was opened. */
 [data-enigma-menu-panel] {
     position: fixed; z-index: var(--enigma-menu-z);
+    /* A column, so the max-height the placement writes in a short window shrinks the LIST,
+       which scrolls, rather than letting rows spill past the panel's edge. */
+    display: flex; flex-direction: column;
     box-sizing: border-box;
     min-width: var(--enigma-menu-min-width);
     max-width: min(22rem, calc(100vw - 1rem));
@@ -111,6 +117,7 @@ export const CONTEXT_MENU_STYLES = `
 
 [data-enigma-menu-list] {
     max-height: var(--enigma-menu-max-height);
+    min-height: 0; flex: 0 1 auto;
     overflow-y: auto; overscroll-behavior: contain;
 }
 

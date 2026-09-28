@@ -9,14 +9,14 @@
  * Privacy: <private>...</private> blocks are dropped and any matched secret is redacted
  * (reusing the commit guard's secret matchers) BEFORE anything is stored.
  *
- * Today only Claude Code's JSONL transcript shape is parsed. The `source` is carried through
- * so codex/opencode can be added behind the same Observation/Summary output once their
- * local transcript format is verified.
+ * Two transcript shapes are parsed: Claude Code's JSONL and Codex's rollout JSONL. Both feed
+ * the same turn model, so everything after parsing (what is worth storing, redaction, the
+ * summary) is one code path. opencode slots in the same way once its format is verified.
  */
 
 import { basename } from "node:path";
-import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { buildSecretMatchers, redactSecrets, type SecretMatcher } from "../guard";
 import type { Observation, ObservationType, RecallSession, RecallSource, SessionSummary } from "./types";
 
@@ -34,13 +34,16 @@ const NARRATIVE_MAX = 600;
 /** A read-only turn is only worth recording when it read at least this many files (real investigation). */
 const NOTABLE_READS = 3;
 
+/** Drop <private>...</private> blocks entirely (never stored). Shared with explicit remember. */
+export function stripPrivate(input: string): string {
+    return input.replace(/<private>[\s\S]*?<\/private>/gi, " ");
+}
+
 /** Strip tag blocks, <private> content, and slash-command noise, then collapse whitespace. */
 function cleanText(input: string): string {
-    let t = input;
-    // Drop private blocks entirely (never stored).
-    t = t.replace(/<private>[\s\S]*?<\/private>/gi, " ");
+    let t = stripPrivate(input);
     // Drop harness/command/meta blocks that are not user intent.
-    t = t.replace(/<(system-reminder|local-command-stdout|local-command-stderr|command-message|command-name|command-args|command-contents)>[\s\S]*?<\/\1>/gi, " ");
+    t = t.replace(/<(system-reminder|ide_opened_file|ide_selection|ide_diagnostics|local-command-stdout|local-command-stderr|command-message|command-name|command-args|command-contents)>[\s\S]*?<\/\1>/gi, " ");
     t = t.replace(/<[^>]+>/g, " ");
     return t.replace(/\s+/g, " ").trim();
 }
@@ -181,7 +184,29 @@ export function extractSession(path: string, source: RecallSource = "claude", ma
         }
     }
     pushCurrent();
+    return assemble({ turns, sessionId, project, cwd, startedAt, endedAt, source, matchers });
+}
 
+/** What a parser hands to `assemble`: the turns plus the session's identity and span. */
+interface ParsedSession {
+    turns: Turn[];
+    sessionId: string;
+    project: string;
+    cwd: string;
+    startedAt: number;
+    endedAt: number;
+    source: RecallSource;
+    matchers: SecretMatcher[];
+}
+
+/**
+ * Turn parsed turns into stored memory: one observation per turn that did durable work, a
+ * session row, and a summary. Shared by every transcript parser, so a new agent only has to
+ * produce turns.
+ */
+function assemble(parsed: ParsedSession): ExtractResult | null {
+    const { turns, sessionId, cwd, source, matchers } = parsed;
+    let { project, startedAt, endedAt } = parsed;
     if (!turns.length) return null;
     if (!project) project = basename(cwd) || "unknown";
     if (!startedAt) startedAt = Date.now();
@@ -237,4 +262,65 @@ export function extractSession(path: string, source: RecallSource = "claude", ma
         createdAt: endedAt || startedAt,
     };
     return { session, observations, summary };
+}
+
+/** Codex's patch envelope names each file it touches on a header line. */
+const CODEX_PATCH_FILE = /^\*\*\* (?:Add|Update|Delete) File: (.+)$/gm;
+
+/** Codex tool names that run a shell command. */
+const CODEX_SHELL_TOOLS = new Set(["exec_command", "shell", "local_shell", "container.exec"]);
+
+/**
+ * Parse a Codex rollout (`~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`) into the same turns
+ * as a Claude transcript. The shape, checked against a real session fixture: a `session_meta`
+ * line carries the id and cwd; each user prompt is an `event_msg` of type `user_message`; the
+ * agent's prose is `agent_message`; a file edit is an `apply_patch` custom tool call whose
+ * input names every file on `*** Update|Add|Delete File:` lines; a shell command is a
+ * `function_call` to `exec_command`/`shell`. Developer and reasoning items are not memory.
+ */
+export function extractCodexSession(path: string, matchers: SecretMatcher[] = buildSecretMatchers()): ExtractResult | null {
+    let raw: string;
+    try { raw = readFileSync(path, "utf8"); } catch { return null; }
+
+    let sessionId = basename(path).replace(/\.jsonl$/, "");
+    let cwd = "";
+    let startedAt = 0;
+    let endedAt = 0;
+    let promptCounter = 0;
+    const turns: Turn[] = [];
+    let current: Turn | null = null;
+    const pushCurrent = (): void => { if (current && (current.modified.size || current.read.size || current.text.length || isMeaningfulPrompt(current.prompt))) turns.push(current); };
+    const open = (ts: number): Turn => (current ??= { prompt: "", promptNumber: ++promptCounter, ts, text: [], read: new Set(), modified: new Set(), commands: 0 });
+
+    for (const line of raw.split("\n")) {
+        if (!line) continue;
+        let rec: Record<string, unknown>;
+        try { rec = JSON.parse(line); } catch { continue; }
+        const payload = (rec.payload ?? {}) as Record<string, unknown>;
+        const ts = typeof rec.timestamp === "string" ? Date.parse(rec.timestamp) : NaN;
+        if (!Number.isNaN(ts)) { if (!startedAt) startedAt = ts; endedAt = Math.max(endedAt, ts); }
+        const at = Number.isNaN(ts) ? endedAt : ts;
+
+        if (rec.type === "session_meta") {
+            if (typeof payload.id === "string") sessionId = payload.id;
+            if (typeof payload.cwd === "string") cwd = payload.cwd;
+        } else if (rec.type === "turn_context") {
+            if (!cwd && typeof payload.cwd === "string") cwd = payload.cwd;
+        } else if (rec.type === "event_msg" && payload.type === "user_message" && typeof payload.message === "string") {
+            const cleaned = cleanText(payload.message);
+            if (!isMeaningfulPrompt(cleaned)) continue;
+            pushCurrent();
+            current = { prompt: cleaned, promptNumber: ++promptCounter, ts: at, text: [], read: new Set(), modified: new Set(), commands: 0 };
+        } else if (rec.type === "event_msg" && payload.type === "agent_message" && typeof payload.message === "string") {
+            const cleaned = cleanText(payload.message);
+            if (cleaned) open(at).text.push(cleaned);
+        } else if (rec.type === "response_item" && payload.type === "custom_tool_call" && payload.name === "apply_patch" && typeof payload.input === "string") {
+            const turn = open(at);
+            for (const m of payload.input.matchAll(CODEX_PATCH_FILE)) turn.modified.add(tidyPath(m[1]!.trim(), cwd));
+        } else if (rec.type === "response_item" && payload.type === "function_call" && typeof payload.name === "string" && CODEX_SHELL_TOOLS.has(payload.name)) {
+            open(at).commands++;
+        }
+    }
+    pushCurrent();
+    return assemble({ turns, sessionId, project: basename(cwd), cwd, startedAt, endedAt, source: "codex", matchers });
 }

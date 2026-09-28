@@ -17,9 +17,10 @@
  *    delivered yet. On a green build it writes nothing at all, so the feature's cost in
  *    the passing case - which is most of them - is exactly zero tokens.
  *
- * Non-blocking by construction: the hook never denies anything and always exits 0. The
- * agent finds out at its next tool call, which is soon enough to fix the build and late
- * enough to not interrupt what it was doing.
+ * Non-blocking by construction: the hook runs in the background (`asyncRewake`), never denies
+ * anything, and waits on the state file for the verdict. A failure wakes the model through the
+ * hook's exit code 2 - mid-turn or after the turn ended - so nobody has to relay it; a green
+ * build ends the wait with no output at all.
  *
  * State lives in `~/.enigma/ci-watch/state.json`, one entry per repository, the same shape
  * `gate-ledger.ts` and the status-line snapshot use - a single global slot would let one
@@ -68,6 +69,18 @@ interface FailureReport {
     log: string;
 }
 
+/** How long a background hook waits for the poller's verdict: the poll budget plus the log fetch. */
+const WAIT_BUDGET_MS = POLL_BUDGET_MS + 5 * 60_000;
+
+/** Gap between the waiting hook's reads of the state file. A local file read, so it costs nothing. */
+const WAIT_INTERVAL_MS = 5_000;
+
+/** The hook process waiting on a pending entry, so two tool calls never both wait on one push. */
+interface Waiter {
+    pid: number;
+    at: number;
+}
+
 /** What is known about one repository's most recent pushed commit. */
 interface RepoState {
     repoPath: string;
@@ -75,8 +88,12 @@ interface RepoState {
     sha: string;
     /** Set once the poller reaches a verdict; absent while it is still waiting. */
     failure?: FailureReport;
+    /** True once the poller has stopped for this commit - green, red, no runs, or gave up. */
+    done?: boolean;
     /** True once the hook has handed this failure to the agent, so it is reported once. */
     delivered?: boolean;
+    /** The background hook currently waiting for this verdict, if any. */
+    waiter?: Waiter;
     at: number;
 }
 
@@ -230,8 +247,13 @@ function failureLog(repoRoot: string, runId: number): { job: string; log: string
  */
 function recordVerdict(repoRoot: string, sha: string, failure: FailureReport | null): void {
     const state = readState();
-    if (state.repos[repoRoot]?.sha !== sha) return;
-    const entry: RepoState = { repoPath: repoRoot, sha, at: Date.now() };
+    const current = state.repos[repoRoot];
+    if (current?.sha !== sha) return;
+    // `done` on every exit, green or not: a waiting hook tells "still polling" from "stopped"
+    // by it, and a poller that stood down silently would otherwise hold the wait to its budget.
+    // The waiter is carried over so the process waiting on this verdict still owns it.
+    const entry: RepoState = { repoPath: repoRoot, sha, done: true, at: Date.now() };
+    if (current.waiter) entry.waiter = current.waiter;
     if (failure) entry.failure = failure;
     state.repos[repoRoot] = entry;
     writeState(state);
@@ -256,8 +278,10 @@ export async function runCiWatchPoll(repoRoot: string, sha: string): Promise<num
         const rows = runsForSha(repoRoot, sha);
         // gh unusable (absent, unauthenticated, not a GitHub remote) is a silent stand-down:
         // this feature is a convenience and must never announce its own plumbing.
-        if (rows === null) return 0;
-        if (rows.length === 0 && Date.now() - started >= RUN_REGISTER_GRACE_MS) return 0;
+        if (rows === null || (rows.length === 0 && Date.now() - started >= RUN_REGISTER_GRACE_MS)) {
+            recordVerdict(repoRoot, sha, null);
+            return 0;
+        }
         const settled = rows.length > 0 && rows.every(r => r.status === "completed");
         if (settled) {
             const failed = rows.find(r => FAILED_CONCLUSIONS.has(r.conclusion));
@@ -270,7 +294,10 @@ export async function runCiWatchPoll(repoRoot: string, sha: string): Promise<num
             recordVerdict(repoRoot, sha, { sha, workflow: failed.workflowName, job, url, log });
             return 0;
         }
-        if (Date.now() >= deadline) return 0;
+        if (Date.now() >= deadline) {
+            recordVerdict(repoRoot, sha, null);
+            return 0;
+        }
         await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
     }
 }
@@ -348,31 +375,164 @@ function emit(event: string, additionalContext: string): void {
     process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: event, additionalContext } }));
 }
 
+/** One spelling per repository, so the hook's git root and the gate's working path share a slot. */
+function repoKey(path: string): string {
+    const slashed = String(path || "").split("\\").join("/").replace(/[/]+$/, "");
+    // `git rev-parse` says `C:/...`, a Node-resolved path can say `c:\...`; same directory.
+    return slashed.replace(/^([a-z]):/, (_, drive: string) => `${drive.toUpperCase()}:`);
+}
+
 /**
- * The hook. Does two things per tool boundary, both cheap, and prints only when there is
- * something the agent did not already know:
+ * Claims `sha` as this repository's watched commit and starts its poller. Returns false when the
+ * notifier is off or the commit is already claimed.
  *
- *  1. Delivers a failure the poller has recorded and has not been handed over yet, then
- *     marks it delivered so a build breaks the agent's flow once rather than every tick.
- *  2. On PostToolUse only, notices that this repository has just pushed the tracking branch
- *     and arms a poller for that commit. Delivery happens on every event; arming does not,
- *     because it costs subprocesses and UserPromptSubmit cannot afford them.
- *
- * Always exits 0. A notifier that can deny a tool call would be a worse problem than the
- * one it was written to solve.
+ * The SHA is claimed before the spawn: two tool calls landing together would otherwise arm two
+ * pollers for the same commit and report the same failure twice. `spawnPoller` is injectable so
+ * a test can arm a watch without starting a process that talks to GitHub.
  */
-export function runCiWatchHook(payload: string, event = "PostToolUse"): number {
+export function armCiWatch(repoRoot: string, sha: string, spawnPoller: (repoRoot: string, sha: string) => void = startPoller): boolean {
+    if (!isCiWatchOn()) return false;
+    const key = repoKey(repoRoot);
+    if (key === "" || sha === "") return false;
+    const state = readState();
+    if (state.repos[key]?.sha === sha) return false;
+    state.repos[key] = { repoPath: key, sha, at: Date.now() };
+    writeState(state);
+    spawnPoller(key, sha);
+    return true;
+}
+
+/** What the gate's push step knows about the push it just made. */
+export interface GatePush {
+    /** The user's checkout the gate serves - where the agent's session runs, not the gate worktree. */
+    repoPath: string;
+    /** The pushed ref, `refs/heads/<branch>` or a bare branch name. */
+    ref: string;
+    defaultBranch: string;
+    /** Non-empty when the gate pushes to a fork, whose runs `gh` in the checkout cannot see. */
+    forkUrl: string;
+    sha: string;
+}
+
+/**
+ * Arms a watch for a push the gate pipeline made, when nothing else will watch it.
+ *
+ * The gate pushes from its own worktree, so the checkout's tracking ref never records
+ * "update by push" and the hook's own test cannot see it. A branch push opens a PR, and the
+ * gate's CI step already babysits that PR and fixes it - reporting it to the agent as well would
+ * set two fixers on one build. A push straight to the default branch opens no PR and has no CI
+ * step behind it, which is exactly the build that used to go unwatched.
+ */
+export function armGatePushWatch(push: GatePush, spawnPoller?: (repoRoot: string, sha: string) => void): boolean {
+    const branch = push.ref.startsWith("refs/heads/") ? push.ref.slice("refs/heads/".length) : push.ref;
+    if (branch === "" || branch !== push.defaultBranch || push.forkUrl.trim() !== "") return false;
+    // Never allowed to fail the push step it rides on: the push already happened.
+    try { return armCiWatch(push.repoPath, push.sha, spawnPoller); } catch { return false; }
+}
+
+/** Whether a process is still running. EPERM means it exists and belongs to someone else. */
+function isAlive(pid: number): boolean {
+    try {
+        process.kill(pid, 0);
+        return true;
+    } catch (err) {
+        return (err as { code?: string; }).code === "EPERM";
+    }
+}
+
+/** Blocks this thread for `ms`. The waiting hook has nothing else to do, and staying sync keeps the entry points sync. */
+function sleepSync(ms: number): void {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+/** Tunables of the wait, overridable only so a test does not sit through half an hour. */
+export interface WaitOptions {
+    budgetMs?: number;
+    intervalMs?: number;
+}
+
+/**
+ * Waits in the background for the verdict on `key`'s pending commit and returns the failure
+ * to deliver, or null when the build is green, the poller stood down, the budget ran out, a
+ * newer push superseded the commit, or another waiter took over.
+ *
+ * Only one process waits per commit: the claim is written into the entry, and a claim whose
+ * process died (its session closed) or that outlived the budget is taken over rather than
+ * honored. Reads a local file every few seconds and nothing else - `gh` is the poller's job.
+ */
+export function waitForVerdict(key: string, options: WaitOptions = {}): FailureReport | null {
+    const budget = options.budgetMs ?? WAIT_BUDGET_MS;
+    const interval = options.intervalMs ?? WAIT_INTERVAL_MS;
+    const state = readState();
+    const entry = state.repos[key];
+    if (!entry || entry.done || entry.failure) return null;
+    const held = entry.waiter;
+    if (held && held.pid !== process.pid && isAlive(held.pid) && Date.now() - held.at < budget) return null;
+    const sha = entry.sha;
+    entry.waiter = { pid: process.pid, at: Date.now() };
+    writeState(state);
+
+    const deadline = Date.now() + budget;
+    for (;;) {
+        sleepSync(interval);
+        const now = readState();
+        const current = now.repos[key];
+        if (!current || current.sha !== sha || current.waiter?.pid !== process.pid) return null;
+        if (current.failure && !current.delivered) {
+            current.delivered = true;
+            delete current.waiter;
+            writeState(now);
+            return current.failure;
+        }
+        if (current.done || current.failure || Date.now() >= deadline) {
+            delete current.waiter;
+            writeState(now);
+            return null;
+        }
+    }
+}
+
+/**
+ * Hands a failure to the agent through Claude Code's `asyncRewake`: the hook ran in the
+ * background, and exit code 2 wakes the model with stderr as the message - whether the turn
+ * is still running or ended minutes ago. Also correct under a plain synchronous PostToolUse
+ * entry, which feeds an exit-2 stderr to the model too.
+ */
+function rewake(failure: FailureReport): number {
+    process.stderr.write(reportText(failure));
+    return 2;
+}
+
+/**
+ * The hook. Three events, one per way it has been wired:
+ *
+ *  - `rewake` (the current wiring): a PostToolUse Bash hook with `asyncRewake`, so it runs in
+ *    the background and never holds up the tool call. It delivers an undelivered failure, arms
+ *    a watch when this call pushed, and then WAITS for the pending verdict of this repository -
+ *    its own push or one the gate pipeline made - reading only the state file. A failure wakes
+ *    the model even after the turn ended; a green build exits 0 with no output, zero tokens.
+ *  - `PostToolUse` (older wiring, synchronous): delivers and arms, never waits - a synchronous
+ *    hook that waited would block the tool call until its timeout.
+ *  - `UserPromptSubmit` (older wiring): delivery only, as it was.
+ *
+ * A failure is marked delivered before it is emitted, so a build breaks the agent's flow once
+ * rather than at every tool boundary.
+ */
+export function runCiWatchHook(payload: string, event = "PostToolUse", options: WaitOptions = {}): number {
     if (!isCiWatchOn()) return 0;
     let cwd = "";
     try {
         cwd = String((JSON.parse(payload) as { cwd?: string; }).cwd ?? "");
     } catch { /* an unreadable payload just means we fall back to the process cwd */ }
     if (cwd === "") cwd = process.cwd();
+    const background = event === "rewake";
     const state = readState();
     const entry = entryFor(state, cwd);
     if (entry?.failure && !entry.delivered) {
         entry.delivered = true;
+        delete entry.waiter;
         writeState(state);
+        if (background) return rewake(entry.failure);
         emit(event, reportText(entry.failure));
         return 0;
     }
@@ -380,17 +540,19 @@ export function runCiWatchHook(payload: string, event = "PostToolUse"): number {
     // Arming is the expensive half - four git subprocesses to answer "did you push?" - and
     // UserPromptSubmit is the wrong place to spend them: that hook chain runs before the turn
     // starts, several tools share its budget, and it was already timing out on a loaded box
-    // before this feature added to it. A push comes from Bash, so PostToolUse arms and
-    // UserPromptSubmit only ever delivers, which costs one JSON read.
-    if (event !== "PostToolUse") return 0;
+    // before this feature added to it. A push comes from Bash, so only the Bash hook arms.
+    if (event !== "PostToolUse" && !background) return 0;
     const repoRoot = repoRootOf(cwd);
-    if (repoRoot === null) return 0;
-    const head = pushedHead(repoRoot);
-    if (head === null || head === state.repos[repoRoot]?.sha) return 0;
-    // Claim the SHA before spawning: two tool calls landing together would otherwise arm
-    // two pollers for the same commit and report the same failure twice.
-    state.repos[repoRoot] = { repoPath: repoRoot, sha: head, at: Date.now() };
-    writeState(state);
-    startPoller(repoRoot, head);
-    return 0;
+    if (repoRoot !== null) {
+        const head = pushedHead(repoRoot);
+        if (head !== null) armCiWatch(repoRoot, head);
+    }
+    if (!background) return 0;
+
+    // Matched by path, not by the git root: the gate arms under the checkout's working path, and
+    // a cwd outside any work tree has nothing pending anyway.
+    const pending = entryFor(readState(), cwd);
+    if (!pending) return 0;
+    const failure = waitForVerdict(pending.repoPath, options);
+    return failure ? rewake(failure) : 0;
 }

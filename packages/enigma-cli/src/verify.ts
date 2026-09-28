@@ -121,7 +121,7 @@ const ANCHOR_KEY_RE = /^(?:gatewatch|gatebypass|head):/;
  * `notNear` suppresses a hit when the preceding lines show it is a legitimate idiom
  * (a Python abstract method raises the unimplemented error by design, for example).
  */
-const INCOMPLETE_PATTERNS: Array<{ id: string; re: RegExp; label: string; notNear?: RegExp; }> = [
+const INCOMPLETE_PATTERNS: Array<{ id: string; re: RegExp; label: string; notNear?: RegExp; ext?: RegExp; }> = [
     { id: "todo-marker", re: /(?:^|[^\w])(TODO|FIXME|XXX|HACK)\b/, label: "unfinished-work marker" }, // enigma:verify-ignore
     {
         id: "unimplemented-path",
@@ -133,7 +133,19 @@ const INCOMPLETE_PATTERNS: Array<{ id: string; re: RegExp; label: string; notNea
     // The bare-token comment openers (# and --) need real separation before the word, or this
     // fires on ordinary code: a CSS custom property (`--placeholder-color`), an anchor
     // (`href="#placeholder"`) or a CLI flag (`--stub`) are not placeholders left behind.
-    { id: "placeholder", re: /(?:(?:\/\/|\/\*|<!--)\s*|(?:#|--)[ \t]+)(placeholder|stub\b|coming soon|fill (?:this )?in|implement (?:this|later))/i, label: "placeholder left in place" },
+    // `//` after a `:` is a URL scheme (`http://placeholder.invalid`), not a comment opener.
+    { id: "placeholder", re: /(?:(?:(?<!:)\/\/|\/\*|<!--)\s*|(?:#|--)[ \t]+)(placeholder|stub\b|coming soon|fill (?:this )?in|implement (?:this|later))/i, label: "placeholder left in place" },
+    // A control that renders and does nothing: the feature "passes its tests" and is dead when the
+    // user clicks it. Three shapes, each a literal that cannot depend on state - a handler with an
+    // empty body, `disabled` with no condition on an interactive control, and a link to `#`. A
+    // control disabled FOR A REASON takes an expression (`disabled={!canSave}`) and never matches.
+    // Markup files only; the escape hatch covers a deliberately inert demo.
+    {
+        id: "dead-control",
+        re: /\bon[A-Z]\w*=\{\s*(?:\([^)]*\)|\w+)\s*=>\s*(?:\{\s*\}|null|undefined|void 0)\s*\}|<(?:button|Button|IconButton|Switch|Toggle|Checkbox|Radio|input|Input|Select|MenuItem|Tab)\b[^>]*\sdisabled(?:=\{true\})?(?=[\s/>])|<a\b[^>]*\shref=["']#["']/,
+        label: "control that does nothing (empty handler, unconditional disabled, or href=\"#\")",
+        ext: /\.(?:tsx|jsx|vue|svelte|astro|html)$/i,
+    },
 ];
 
 // --- completion-claim detection ----------------------------------------------------
@@ -431,6 +443,13 @@ const STYLE_SOFT_FILLER_RE = /(?:^|[.!?]\s+|\n\s*)(just|really|sure)\b(?![-./]\w
 const STYLE_IGNORE_RE = /enigma:style-ignore/;
 
 /**
+ * The verdict a completion report opens with. Optional list/quote marker, bold, or a
+ * `Status:`/`Estado:` label in front; then the verdict word in English, Spanish, Portuguese,
+ * French, German or Italian.
+ */
+const STYLE_STATUS_RE = /^\s*(?:[-*>]\s*)?(?:\*\*|__)?\s*(?:(?:status|estado)\s*:\s*(?:\*\*|__)?\s*)?(?:ready|not ready|blocked|done|listo|lista|no listo|no está listo|bloqueado|bloqueada|hecho|pronto|não está pronto|prêt|pas prêt|bloqué|fertig|nicht fertig|blockiert|non pronto|bloccato)(?![\p{L}\p{N}])/iu;
+
+/**
  * The phrases that report an item as NOT touched, in both languages. A table cell saying nothing
  * but these is route rather than outcome, which is what the style spec bans ("Report the outcome,
  * not the route"), and the shape that prompted this check: a release summary carried two table
@@ -532,6 +551,14 @@ export function styleFindings(message: string): VerifyGap[] {
         hits.push({ rule: "preamble", detail: `the reply opens by announcing the work ("${preamble[0].trim()}") instead of reporting it` });
     }
 
+    // A reply that claims the work is finished opens with its verdict, so "is it ready?" never
+    // has to be asked: the user reads one word before any evidence. Scoped to claimsDone on
+    // purpose - that is the closed surface. A report that discloses a gap is not a done claim and
+    // is left to the kernel's wording.
+    if (openingAt !== -1 && !marked(openingAt) && claimsDone(message) && !STYLE_STATUS_RE.test(opening)) {
+        hits.push({ rule: "status", detail: "the reply claims the work is done but does not open with its verdict (Ready / Not ready / Blocked, in the user's language)" });
+    }
+
     for (const line of lines) {
         const row = untouchedStatusRow(line);
         if (!row) continue;
@@ -575,8 +602,11 @@ export function styleFindings(message: string): VerifyGap[] {
  * reach it, and `sure` went with the other two because rarer false positives are still not a closed
  * surface.
  * Do not promote either back without new evidence; closing one more shape is not evidence.
+ *
+ * `status` blocks because its surface is closed by claimsDone: it only ever reads a reply that
+ * already asserts completion, and the fix is one word at the top, never a rewrite.
  */
-const STYLE_BLOCKING_RULES = new Set(["filler", "preamble"]);
+const STYLE_BLOCKING_RULES = new Set(["filler", "preamble", "status"]);
 
 /** The rule name behind a style gap (`style:filler` -> `filler`). */
 function styleRuleOf(hit: VerifyGap): string {
@@ -1558,6 +1588,7 @@ function scanLines(cwd: string, lines: AddedLine[]): { gaps: VerifyGap[]; capped
         if (DOC_EXT.has(extname(entry.file).toLowerCase())) continue;
         if (IGNORE_RE.test(entry.text)) continue;
         for (const pattern of INCOMPLETE_PATTERNS) {
+            if (pattern.ext && !pattern.ext.test(entry.file)) continue;
             if (!pattern.re.test(entry.text)) continue;
             if (pattern.notNear && suppressedByContext(cwd, entry.file, entry.line, pattern.notNear, cache)) break;
             gaps.push({ kind: "marker", file: entry.file, line: entry.line, detail: `${pattern.label}: ${entry.text.trim().slice(0, 160)}` });
@@ -2157,6 +2188,52 @@ function blockMessage(gaps: VerifyGap[], incomplete: { truncated?: boolean; capp
     ].join("\n");
 }
 
+/** Audit rounds per prompt. Enough for a review that fixed something to be reviewed once more. */
+const MAX_AUDIT_ROUNDS = 3;
+
+/**
+ * Which audit round a done claim over `scanned` has earned, or 0 to let the stop through.
+ *
+ * The loop ends at a fixed point: the work is fingerprinted when an audit is ordered, and a claim
+ * over the SAME fingerprint means the audit found nothing to change - asking again would only
+ * spend a turn. A different fingerprint means the audit (or the user) changed the code, and the
+ * new code has not been reviewed yet. Rounds count within one prompt only (`continuing` is the
+ * Stop payload's stop_hook_active), so a new request starts its own budget and a model that keeps
+ * editing cannot loop past MAX_AUDIT_ROUNDS.
+ */
+function auditRound(session: string, scanned: ScannedLines, continuing: boolean): number {
+    const fingerprint = createHash("sha1").update(scanned.lines.map((l) => `${l.file}\0${l.text}`).join("\n")).digest("hex").slice(0, 16);
+    const key = `audit:${session}`;
+    let prev: { fp?: string; rounds?: number; } = {};
+    try { prev = JSON.parse(stateValue(key) || "{}"); } catch { /* unreadable: start over */ }
+    if (prev.fp === fingerprint) return 0;
+    const rounds = continuing ? Number(prev.rounds) || 0 : 0;
+    if (rounds >= MAX_AUDIT_ROUNDS) return 0;
+    setStateValue(key, JSON.stringify({ fp: fingerprint, rounds: rounds + 1 }));
+    return rounds + 1;
+}
+
+/**
+ * Whether done claims are audited. ENIGMA_SELF_AUDIT=0 turns it off for one process without
+ * touching the config - a headless run, or a test suite whose subject is another check.
+ */
+function auditEnabled(config: { selfAudit?: boolean; }): boolean {
+    return config.selfAudit !== false && process.env.ENIGMA_SELF_AUDIT !== "0";
+}
+
+/** The order an audit round gives. Short on purpose: it is read at the end of every finished task. */
+function auditMessage(round: number): string {
+    return [
+        `enigma verify: audit round ${round}/${MAX_AUDIT_ROUNDS} before this is reported as done.`,
+        "Review your own change as a hostile reviewer who expects it to be broken, then fix what you find:",
+        "  - re-run the exact scenario the user asked for, end to end, the way they will use it (UI clicked, command run, API called) - a passing test is not that;",
+        "  - every control, route and flag you added works and is enabled; nothing renders as a no-op;",
+        "  - edges: empty, huge, concurrent, unauthenticated, old data and existing installs;",
+        "  - every caller and consumer of what you changed still works; nothing else regressed (build, tests, types).",
+        "If this review changes nothing, report the verdict with the evidence you ran. If it changes code, the new change is audited in turn.",
+    ].join("\n");
+}
+
 /**
  * Turn-end hook entry. Reads a Claude Code `Stop` payload (from `payload` or stdin) and
  * returns the process exit code: 2 when a completion claim is contradicted by evidence
@@ -2358,6 +2435,19 @@ export function runVerifyHook(payload?: string): number {
         } else {
             if (noRepo) process.stderr.write("enigma verify: this directory is not a git repository, so there was no change to check this claim against.\n");
             else if (truncated) process.stderr.write("enigma verify: the change was too large to scan in full, so this claim was only partially checked.\n");
+        }
+
+        // The markers are clean, which proves the absence of the defects a regex can see and
+        // nothing more. What found the rest, in practice, was the user asking "are you 100% sure?"
+        // until the answer stopped changing the code - so that loop runs here instead of in the
+        // user's patience. See auditRound for when it asks again and when it lets the stop through.
+        if (!gaps.length && auditEnabled(config) && raw.permission_mode !== "plan" && scanned?.lines.length) {
+            const round = auditRound(session, scanned, raw.stop_hook_active === true);
+            if (round) {
+                substantive = true;
+                process.stderr.write(`${auditMessage(round)}\n`);
+                return 2;
+            }
         }
 
         // Checked LAST, because it is the only gap that is not about the code: everything this turn

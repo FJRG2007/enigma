@@ -32,6 +32,9 @@ process.env.ENIGMA_GATE_HOME = join(HOME, "gate");
 // from inside an enigma gate pipeline) would make every case below pass open and fail here.
 // The one test that exercises that path sets the variable itself.
 delete process.env.ENIGMA_GATE;
+// The audit round asks again on every clean done claim, so every case whose subject is a
+// different check runs without it; the audit's own cases turn it back on.
+process.env.ENIGMA_SELF_AUDIT = "0";
 
 const { claimsDone, asksToContinue, gateSkipped, gateExcused, scanGaps, scanConventions, collectGaps, runVerifyHook, unsourcedTrailers, blockingStyleFindings } = await import("../src/verify");
 const { recordGateRun, lastGateRun, validatingRun } = await import("../src/gate-ledger");
@@ -882,7 +885,63 @@ test("does not mistake ordinary code for a placeholder", () => {
     write(dir, "src/theme.css", ":root { --placeholder-color: #999; }\n");
     write(dir, "src/link.html", "<a href=\"#placeholder\">jump</a>\n");
     write(dir, "package.json", "{ \"scripts\": { \"build\": \"module-build build --stub\" } }\n");
+    write(dir, "src/url.ts", "export const base = new URL(value, \"http://placeholder.invalid\");\n");
     expect(scanGaps(dir)).toEqual([]);
+});
+
+test("a done claim is audited until a review changes nothing, at most three rounds per prompt", () => {
+    delete process.env.ENIGMA_SELF_AUDIT;
+    try {
+        const dir = repoWith();
+        write(dir, "src/new.ts", "export const a = 1;\n");
+        const claim = (extra: Record<string, unknown> = {}): number => runVerifyHook(payload(dir, "All done, everything is implemented.", { session_id: "audit-s", ...extra }));
+        // First claim over clean work: one audit round is ordered.
+        expect(claim()).toBe(2);
+        // The audit changed nothing: the same work is not audited again.
+        expect(claim({ stop_hook_active: true })).toBe(0);
+        // A new prompt over new work starts over; each review that changes the code earns another,
+        // up to the cap.
+        write(dir, "src/new.ts", "export const a = 2;\n");
+        expect(claim()).toBe(2);
+        write(dir, "src/new.ts", "export const a = 3;\n");
+        expect(claim({ stop_hook_active: true })).toBe(2);
+        write(dir, "src/new.ts", "export const a = 4;\n");
+        expect(claim({ stop_hook_active: true })).toBe(2);
+        write(dir, "src/new.ts", "export const a = 5;\n");
+        expect(claim({ stop_hook_active: true })).toBe(0);
+        // Turned off in the config, a claim goes straight through.
+        write(dir, ".enigma.json", JSON.stringify({ selfAudit: false }));
+        write(dir, "src/new.ts", "export const a = 6;\n");
+        expect(claim()).toBe(0);
+    } finally {
+        process.env.ENIGMA_SELF_AUDIT = "0";
+    }
+    // Seven hook runs, each several git process starts: slow on a machine where a spawn is costly.
+}, 300_000);
+
+test("a control that renders and does nothing is unfinished work", () => {
+    const dead = [
+        "<Button onClick={() => {}}>Save</Button>",
+        "<Switch checked={on} onChange={(e) => null} />",
+        "<Switch checked disabled />",
+        "<button type=\"submit\" disabled={true}>Send</button>",
+        "<a href=\"#\">Docs</a>",
+    ];
+    // A control disabled FOR A REASON, a real handler, an in-page anchor, and non-markup files.
+    const live = [
+        "<Button disabled={!canSave} onClick={save}>Save</Button>",
+        "<Switch checked={on} onChange={(e) => setOn(e.target.checked)} />",
+        "<a href=\"#pricing\">Pricing</a>",
+        "<option value=\"\" disabled>Pick one</option>",
+    ];
+    // One repository for every case: each costs several git process starts, and they add up.
+    const dir = repoWith();
+    write(dir, "src/Dead.tsx", `${dead.join("\n")}\n`);
+    write(dir, "src/Live.tsx", `${live.join("\n")}\n`);
+    write(dir, "src/handlers.ts", "export const noop = { onClick={() => {}} };\n");
+    const gaps = scanGaps(dir);
+    expect(gaps.map((g) => `${g.file}:${g.line}`)).toEqual(dead.map((_, i) => `src/Dead.tsx:${i + 1}`));
+    expect(gaps.every((g) => g.detail.includes("control that does nothing"))).toBe(true);
 });
 
 test("a marker committed before the branch existed stays out of scope", () => {
@@ -1446,6 +1505,30 @@ test("a failing suite that PRINTS 'command not found' is a finding, not a tool f
 
 // --- output style: the compression level, enforced instead of merely asked for -------------
 
+test("a reply that claims the work is done opens with its verdict", async () => {
+    const { styleFindings } = await import("../src/verify");
+    const status = (m: string): string[] => blockingStyleFindings(styleFindings(m)).map((h) => h.key).filter((k) => k === "style:status");
+    // The report the user kept having to interrogate: evidence first, the verdict buried.
+    expect(status("Cambié `auth.ts:42` y pasé los tests.\n\nTodo listo, funciona correctamente.")).toEqual(["style:status"]);
+    expect(status("Updated the parser and the fixtures. Everything is done.")).toEqual(["style:status"]);
+    // A verdict line clears it, in either language and with the usual markdown in front.
+    for (const ok of [
+        "Listo. Cambié `auth.ts:42`; todo listo.",
+        "**Listo** - tests 12/12, todo listo.",
+        "Ready: parser updated, everything is done.",
+        "- Done. All done, tests pass.",
+        "Estado: **Listo**. Todo hecho.",
+        "Blocked on credentials - everything else is done.",
+    ]) expect(status(ok)).toEqual([]);
+    // Not a done claim, so not this rule's business: a progress note and a gap report.
+    expect(status("Cambié `auth.ts:42`. Falta el test de integración.")).toEqual([]);
+    expect(status("Reading the config loader next.")).toEqual([]);
+    // "Listo" as the start of a longer word is not a verdict.
+    expect(status("Listone updated. Everything is done.")).toEqual(["style:status"]);
+    // The escape hatch covers the opening line.
+    expect(status("Evidence first <!-- enigma:style-ignore -->\nEverything is done.")).toEqual([]);
+});
+
 test("styleFindings catches the padding the style bans, and nothing else", async () => {
     const { styleFindings } = await import("../src/verify");
 
@@ -1826,7 +1909,8 @@ test("a turn that had something more important to say is still measured", () => 
     // turn that left work unfinished must hear about the work - but the record is the whole
     // justification for demoting the non-blocking rules, and a scan that only ran on the turns with
     // nothing else to say recorded "no padding" for every turn it never looked at.
-    const claiming = hookRun(payload(dir, `All done, everything is implemented.\n${row}`, { session_id: "style-measured-claim" }));
+    // Opens with its verdict, so the only style finding this turn carries is the padded row.
+    const claiming = hookRun(payload(dir, `Done. All done, everything is implemented.\n${row}`, { session_id: "style-measured-claim" }));
     expect(claiming[0]).toBe(2);
     expect(claiming[1]).not.toContain("breaks the output style");
     // Same for the paths that exit before the style gate is ever reached.

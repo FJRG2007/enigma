@@ -342,9 +342,14 @@ Four smaller things that are easy to get wrong, all fixed in place:
 
 - **The swatch is `type="button"`.** Inside a form a bare `<button>` submits, so opening the
   picker would post the half-filled form - the same trap as the password reveal.
-- **The panel is a child of the field**, absolutely positioned, so it moves with it: no
-  portal, no scroll listener, and nothing to keep in sync. The cost is an ancestor with
-  `overflow: hidden`, which clips it - the select makes the same trade.
+- **The panel is portaled and placed against the swatch**, not hung from it. It used to be an
+  absolutely positioned child of the field - no portal, no scroll listener - and the price was
+  that any ancestor with `overflow: hidden` cut it in half, which is exactly where a colour
+  field sits (a dialog, a settings card). That trade is gone; see "Floating panels" under the
+  select for the shared mechanism. Two consequences here: dismissal treats the swatch OR the
+  panel as inside, since the panel is no longer in the anchor's subtree, and Tab off either
+  end of the panel goes through `tabOut` so it lands beside the swatch rather than at the end
+  of `<body>`.
 - **A press on the panel's own padding is not a press outside.** Dismissal listens to
   `pointerdown` outside the anchor and to `focusin` on a real element; focus landing on
   `document.body` (which is what clicking a gap does) is ignored, or the panel would close
@@ -445,7 +450,68 @@ so all of it is deliberate here:
   cannot be submitted by the form it sits in, and that is where it usually sits.
 - **The panel measures before it opens.** `data-side="top"` when the space below is smaller
   than the panel and the space above is larger - near the bottom of the window the list is
-  otherwise unreachable.
+  otherwise unreachable. Whichever side wins, the panel is capped to the room it has and the
+  LIST shrinks and scrolls (the panel is a flex column, the list `min-height: 0`).
+
+### Floating panels: portaled, fixed, one layer
+
+The select's list, the colour picker and the context menu all float, and all three go through
+`core/floating.ts` (`placeFloating`: pure rectangle arithmetic) and `react/floating.ts`
+(`useFloating`, `floatingContainer`, `measureFrame`, `tabOut`). The select and the picker used
+to be `position: absolute` children of their trigger and accepted clipping by any
+`overflow: hidden` ancestor as the price of needing no portal. That price was paid exactly
+where they are used: enigma's own guardrails (`fe-select-hand-rolled`,
+`fe-native-select-over-primitive`) push agents onto this Select, and it then opened half-cut
+inside every dialog and card. So:
+
+- **Portaled, `position: fixed`, measured from the trigger.** Below it, flipped above only when
+  there is more room there, horizontally start-aligned and flipped to end-aligned at the right
+  edge, and capped with `max-height` to the room on the chosen side. The placement is written
+  onto the element in a layout effect, not kept in state, so it lands before paint AND before
+  the panel's children's effects - the select's search field focuses itself in an effect, and
+  a panel waiting on a state round-trip would take focus while off-screen.
+- **Measured at natural size.** `max-height` is cleared before measuring; otherwise the cap
+  from the last placement is read back as the panel's height and a panel that shrank once
+  never grows again.
+- **Width comes from `--enigma-anchor-width`.** `min-width: 100%` meant "the trigger" while the
+  panel sat in the root; fixed, it means the window. The select's panel is also
+  `width: min-content`, or a fixed panel's shrink-to-fit width is the whole window and a long
+  "Nothing matches" stretches it to `max-width`.
+- **Into `<body>`, except inside a dialog.** `floatingContainer` portals into the nearest
+  `dialog[open]`, `[popover]`, `[role=dialog]`, `[role=alertdialog]` or `[aria-modal=true]`.
+  A modal `<dialog>` makes everything outside it inert, and script dialogs trap focus and
+  treat a press outside as dismissal - in `<body>` the panel would be visible and dead. Inside
+  the dialog it is still fixed, which escapes every scroll region in it.
+- **`measureFrame` probes what `left: 0` means.** A `transform`, `filter` or `contain` on an
+  ancestor (the usual centring transform on a dialog) makes `fixed` resolve against that
+  ancestor, so viewport coordinates land offset. A zero-size fixed probe in the container
+  gives the origin; when the container is that containing block and clips, its visible box
+  becomes the boundary the panel flips and shrinks inside.
+- **Kept in place while things move.** Captured `scroll` (a container's scroll does not
+  bubble), `resize` and a ResizeObserver on trigger and panel re-place it, rAF-throttled -
+  the observer callback never resizes synchronously, or Chromium reports a ResizeObserver
+  loop. The context menu instead closes on scroll, as before.
+- **"Inside" is the root OR the panel.** Outside-press dismissal and the "focus was in the
+  panel, return it to the trigger" check both test the portaled panel explicitly.
+- **Tab parity.** `tabOut`: Shift+Tab off the first control focuses the trigger; Tab off the
+  last focuses the trigger and lets the key continue, which is where Tab went when the panel
+  was the trigger's next sibling.
+- **One layer, `--enigma-floating-z: 10000`.** Declared with the same value in the select,
+  colour and context-menu sheets (sheets are extracted verbatim by `sync-recipes.mjs`, so a
+  shared TS constant cannot be interpolated), `--enigma-menu-z` now points at it. Above the
+  lightbox (9999), because a popup is opened from whatever is on top. There is no dialog
+  primitive; a native modal dialog is in the top layer and needs no number, which is why the
+  container rule above matters more than the z-index.
+- **The video settings menu stays in the player.** It is inside the element that goes
+  fullscreen, and only that subtree is rendered in fullscreen - portaled out, it would vanish.
+  Its bound is handled in the player (`max-height`, see the video section).
+- **SSR.** The container is null until a client layout effect, so the server render and the
+  hydration render both render no panel.
+
+`test/floating.spec.ts` holds the browser proof: the panel's parent is `<body>` for a select
+in an overflow-hidden card, it flips near the bottom, caps and scrolls in a short window,
+follows a page scroll, keeps Tab order, and lands inside a modal `<dialog>` where it can be
+pressed.
 
 Two defects that are easy to reintroduce, both fixed with a comment in place:
 
@@ -814,6 +880,71 @@ published under.
 - No WebCrypto (an http:// page) throws `insecure-context` rather than hashing in
   JavaScript, which would be slower and no more private.
 
+## The server entry: safe-fetch and safe-upload
+
+`@enigmax/utils/server` (`src/server/`), Node only, no dependencies. The first utilities
+that are not about the browser: they exist because an audit of agent-written code
+(guardrails.md, "THE AUDIT CLASSES") found SSRF, uploads served as script and path
+traversal hand-rolled wrong in one product, several times each. A separate entry, not the
+main one, so a browser bundle never pulls `node:http` in. Registry targets are all five:
+the target is the project's UI framework, and a Next or Astro project is where these run.
+
+**TypeScript only.** Python (FastAPI/Flask/Django) and Go would need ports of both
+modules; until then the guardrail messages give the per-language recipe and
+security-policy says to implement it once per project and route every call through it.
+
+### safe-fetch
+
+`safeFetch(url, options)` resolves to a standard `Response` (body read into memory,
+capped). The decisions, each covered by `test/safe-fetch.test.mjs`:
+
+- **The address is vetted inside the socket's `lookup`**, passed to `http.request`. The
+  check and the connect share one resolution, so DNS rebinding (public on the check,
+  private on the connect) has nothing to slip between. This is the bug polaris shipped:
+  `dns.lookup` + `isPrivate` + `fetch(hostname)`. The rebinding test proves one
+  resolution per connection and that the socket reached the vetted address.
+- **The whole answer is refused when ANY record is private** - a name answering public
+  and private at once is an attack, not a choice.
+- **`lookup` honours `options.all`.** Node's happy-eyeballs connect asks for every
+  address; answering it with one broke polaris's first fix for every fetch.
+- **No undici.** polaris's second breakage: the runtime's fetch refuses an `Agent` built
+  by a second copy of undici. `node:http` has no such seam.
+- **IP literals never reach `lookup`**, so they are vetted before the request - in every
+  spelling the URL parser normalises (`2130706433`, `0x7f.0.0.1`, `[::ffff:127.0.0.1]`).
+- `isPublicAddress` is an ALLOWLIST for IPv6 (only `2000::/3`, minus Teredo, 6to4 and
+  documentation) and follows mapped, NAT64 and 6to4 forms to the IPv4 they carry.
+- Every redirect hop is a new request through the same gate; `authorization`, `cookie`
+  and `proxy-authorization` are dropped when a hop leaves the origin; 303 (and 301/302
+  after POST) becomes GET, as browsers do.
+- `accept-encoding: identity` is forced: the client does not decompress, and a
+  compressed body would slip past `maxBytes`.
+- `allowAddress` widens the policy for an internal service a feature is meant to reach;
+  it never replaces it. `resolve` swaps the resolver for tests and custom DNS.
+
+### safe-upload
+
+Four functions, one per decision an upload gets wrong:
+
+- `inspectUpload(bytes, { allow, maxBytes })` - the type comes from the magic bytes,
+  never the name or the claimed Content-Type; there is no default allowlist. SVG is
+  recognised as SVG (a document, not an image) so an allowlist of raster types refuses
+  it; text is "html" when it opens with an HTML tag or carries `<script>`, which is what
+  a sniffing browser would render.
+- `storageName(kind)` - a random UUID plus the extension the bytes earned; the
+  uploader's name never reaches the disk.
+- `resolveInside(root, ...segments)` - lexical containment (`path.relative`), refusing
+  `..`, absolute segments, drive letters, NUL and the root itself. Symlinks inside the
+  root are not followed, so uploads must not create them.
+- `downloadHeaders({ name, type, inline })` - `nosniff` always; `default-src 'none';
+  sandbox` on everything but PDF (a sandboxed PDF does not render in Chromium's viewer,
+  which runs no page script anyway); `attachment` unless inline was asked for AND the
+  type is passive; an unknown type goes out as octet-stream; the file name is stripped
+  of controls and quotes for `filename=` and percent-encoded for `filename*`.
+
+The guardrails `sec-ssrf-fetch-from-input`, `sec-ssrf-dns-recheck`,
+`sec-untrusted-file-inline` and `sec-path-join-from-input` name these exports, and
+`sec-untrusted-file-inline` is cleared by a `downloadHeaders(` call in the file.
+
 ## relative-time
 
 `<RelativeTime date={...} />` from utils. The rendering is
@@ -1022,6 +1153,9 @@ What it copies is the Windows behaviour, and most of the file is the parts peopl
 - **Every panel is portaled and `position: fixed`.** It is placed in viewport coordinates
   because that is what a pointer event reports; left in the tree it inherits an ancestor's
   `overflow: hidden`, its `transform` (which re-parents `fixed`) and its stacking context.
+  The root panel's placement is the shared `placeFloating` with the pointer as a zero-size
+  anchor, and the portal target is the shared `floatingContainer` (into a dialog when opened
+  from one) - see "Floating panels" under the select.
 - **Placement flips rather than clamps.** Dragging the left edge back to fit would put the
   panel under the pointer, and the release would choose its first row.
 
@@ -1103,7 +1237,8 @@ visible, so filtering cannot shift the rows sideways.
 image viewer is `9999`, and both portal to the same body: the lightbox's own three-dot menu
 opened behind the backdrop, where its rows could be neither read nor pressed. It had shipped
 that way. A menu is opened FROM whatever is on top, so it is the topmost transient surface by
-definition - `--enigma-menu-z: 10000`, in `:root` and not in the light-scheme block, or half
+definition - `--enigma-menu-z: 10000` (now `var(--enigma-floating-z)`, the layer every popup
+shares), in `:root` and not in the light-scheme block, or half
 the readers get an invalid z-index and no stacking at all.
 
 ## selection

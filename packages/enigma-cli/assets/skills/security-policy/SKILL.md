@@ -1,6 +1,6 @@
 ---
 name: security-policy
-description: Application and AI-agent security - secrets management, authentication and authorization (least privilege), credential flows (sign-in, sign-up that establishes the session, password reset, 2FA, breached-password checks against Have I Been Pwned, refusing a password that repeats the username, email or display name in any casing, and rate limiting per IP and per account), cookie attributes and consent gating before non-essential storage, OWASP Top 10 mitigations, transport and crypto baseline, secure logging, and agent/MCP/tool-use safety (prompt injection, untrusted tool output, permission boundaries). Use when handling secrets, auth, login or registration screens, permissions, untrusted data or tool output, or any security-sensitive code, config, or infrastructure.
+description: Application and AI-agent security - secrets management, authentication and authorization (least privilege), credential flows (sign-in, sign-up that establishes the session, password reset, 2FA, breached-password checks against Have I Been Pwned, refusing a password that repeats the username, email or display name in any casing, and rate limiting per IP and per account), cookie attributes and consent gating before non-essential storage, OWASP Top 10 mitigations (SSRF through a vetted fetch, open redirects, uploads served safely, constant-time secret comparison, object-level and role-level authorization), transport and crypto baseline, secure logging, and agent/MCP/tool-use safety (prompt injection, untrusted tool output, permission boundaries). Use when handling secrets, auth, login or registration screens, permissions, untrusted data or tool output, or any security-sensitive code, config, or infrastructure.
 ---
 
 # Security Policy
@@ -41,6 +41,22 @@ description: Application and AI-agent security - secrets management, authenticat
 - Check object-level ownership on every access (prevent IDOR/BOLA): verify the authenticated principal owns or may access the specific record, not just the route.
 - Store passwords with a strong, slow, salted hash (argon2id or bcrypt). Never use fast or unsalted hashes for credentials.
 - Make sessions and tokens expirable and revocable; set short TTLs, support rotation, and invalidate on logout and privilege change.
+
+### Authorize what the operation actually touches
+
+An audit of agent-written code found the same few gaps again and again. None has a line-level signature, so each is checked by reading the handler (the `/qa` security lens walks this list):
+
+- **The object, scoped by its parent.** Authorizing the space, task or vault and then writing by the child id alone (`where: { id }`) lets anyone with one space edit every other space's rows. Every read and write carries the authorized parent in the filter (`where: { id, spaceId }`), and a child that must live in that parent is checked to.
+- **Ids are strings of the expected shape.** A server action receives whatever the client serialized; an object where an id belongs (`{ not: "" }`) is an ORM filter that matches every row. Validate every id with the schema (`z.string().uuid()`) before it reaches a query, and scope bulk deletes to the parent.
+- **Where it lands, not where it was asked.** Authorize the resolved target: the folder a joined `name` ends up in, the destination of a move or rename, every folder a recursive walk (zip, search, recent) enters, the environment of the service being moved, the bind path a volume really mounts.
+- **Nobody grants more than they hold.** A member who may manage people or roles assigns at most their own role; role names are checked against the enum; the owner's membership, role and wrapped keys cannot be removed, demoted or re-keyed by anyone else.
+- **Writes need the write permission.** A read grant never reaches a toggle, a rotation or a delete.
+- **One guard for every entry point.** API routes, streams, background endpoints and the auth library's own HTTP endpoints go through the same session state the pages use (pending approval, idle lock, owed 2FA), never a bare `getSession()`.
+- **Authorize before the cache.** Check ownership before returning a cached value, and key per-principal caches by the principal.
+- **Derived capabilities expire.** An unlock cookie or share-link pass carries its expiry and the link or password version it was issued for, and the server re-checks the link on each use, so rotating the password or revoking the link revokes it.
+- **Throttle the canonical id.** Normalize (lowercase, validated UUID) before building a rate-limit key, or each spelling gets its own attempts.
+- **A shared credential is not the caller's.** Borrowing an app-wide token (a GitHub App installation, an owner's linked account) requires the caller's own access to that resource.
+- **Leaving removes access everywhere.** A leftover membership row is not access once the space or organization is gone.
 
 ---
 
@@ -128,10 +144,22 @@ The same screens that check the breach corpus reject a password built out of the
 - Injection (SQL/NoSQL/command/LDAP): use parameterized queries and safe APIs; never build queries or shell commands by string concatenation (query specifics in database-expert).
 - Broken access control: deny by default; centralize authorization checks; cover object and function level.
 - Cryptographic failures: protect sensitive data in transit and at rest (crypto baseline below; storage in database-expert).
-- SSRF: validate and allow-list outbound URLs; block requests to internal/metadata addresses.
+- SSRF: validate and allow-list outbound URLs; block requests to internal/metadata addresses (the helper below).
 - Security misconfiguration: disable debug endpoints and verbose errors in production; ship secure defaults; review CORS, headers, and exposed ports.
 - Insecure deserialization / unsafe parsing: never deserialize untrusted data into executable structures; avoid `eval` and dynamic code from input.
 - SSRF, XSS, CSRF: encode output by context, set CSRF protection on state-changing requests, and apply a strict Content-Security-Policy (frontend specifics in frontend-policy).
+
+### Use the vetted helper, not a hand-rolled one
+
+The five cases below are gated by guardrails (`sec-ssrf-*`, `sec-open-redirect-from-input`, `sec-redirect-prefix-check`, `sec-untrusted-file-inline`, `sec-path-join-from-input`, `sec-secret-compare-timing`, `sec-ssh-host-key-unverified`), and the fix is a shared helper rather than new code:
+
+- **Outbound URL from outside** (link preview, webhook, icon, import): `safeFetch` from `@enigmax/utils/server` (`enigma add safe-fetch`). It vets the address inside the socket's lookup, so the check and the connect share one resolution; a guard that resolves, checks, then fetches by hostname is bypassed by DNS rebinding. Every redirect hop is re-checked.
+- **Redirect destination from the request**: resolve with `new URL(value, placeholderOrigin)`, keep it only if the origin is unchanged, and follow the resolved path. `startsWith("/")` is not a check: `/\evil.example` leaves the site.
+- **Uploads**: `inspectUpload` (type from the bytes, allowlist, size cap), `storageName` (random name on disk), `resolveInside` (path containment), and `downloadHeaders` to serve it back (`nosniff`, `sandbox` CSP, `attachment` unless passive) - `enigma add safe-upload`. SVG is a document, not an image.
+- **Secrets**: compare with `crypto.timingSafeEqual` over fixed-length digests (`hmac.compare_digest` in Python), and refuse an empty configured secret before comparing.
+- **SSH**: pin the host key (trust on first use, then only that key; a changed key is an operator decision), never `StrictHostKeyChecking=no`, `AutoAddPolicy` or `known_hosts=None`.
+
+Outside Node (Python, Go) there is no packaged helper yet: implement the same rules in one module of the project and route every call through it.
 
 ---
 
