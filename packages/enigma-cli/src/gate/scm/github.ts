@@ -353,10 +353,35 @@ export class Host {
      * was refused (failing checks, branch protection, no permission), which is the
      * only useful thing to report back, so it goes into the error.
      */
-    async mergePR(signal: AbortSignal | undefined, pr: PR, method: MergeMethod): Promise<void> {
+    async mergePR(signal: AbortSignal | undefined, pr: PR, method: MergeMethod, opts?: { stripAttribution?: boolean; }): Promise<void> {
         const args = ["pr", "merge", pr.number, ...this.repoArgs(), `--${method}`];
-        const { out, err } = await this.cmd(signal, "gh", ...args).combinedOutput();
+        // A rebase merge writes no message of its own, so there is nothing to set.
+        const message = opts?.stripAttribution && method !== "rebase" ? await this.mergeMessage(signal, pr) : null;
+        let cmd = this.cmd(signal, "gh", ...(message === null ? args : [...args, "--subject", message.subject, "--body-file", "-"]));
+        if (message !== null) cmd = cmd.withStdin(message.body);
+        const { out, err } = await cmd.combinedOutput();
         if (err != null) throw new Error(`gh pr merge: ${out.trim()}: ${err.message}`);
+    }
+
+    /**
+     * The message GitHub's squash would write - the PR title with its number, then every commit
+     * message - with the AI attribution lines removed. Null when the PR cannot be read, which
+     * leaves GitHub's own default in place rather than inventing a message.
+     */
+    private async mergeMessage(signal: AbortSignal | undefined, pr: PR): Promise<{ subject: string; body: string; } | null> {
+        const args = ["pr", "view", pr.number, ...this.repoArgs(), "--json", "title,commits"];
+        const { out, err } = await this.cmd(signal, "gh", ...args).output();
+        if (err != null) return null;
+        try {
+            const view = JSON.parse(out) as { title?: string; commits?: Array<{ messageHeadline?: string; messageBody?: string; }>; };
+            if (typeof view.title !== "string" || view.title === "") return null;
+            const body = (view.commits ?? [])
+                .map((c) => `* ${`${c.messageHeadline ?? ""}\n\n${c.messageBody ?? ""}`.trim()}`)
+                .join("\n\n");
+            return { subject: `${view.title} (#${pr.number})`, body: stripAttributionLines(body) };
+        } catch {
+            return null;
+        }
     }
 
     async fetchFailedCheckLogs(
@@ -501,6 +526,15 @@ export function parseIncludedResponse(out: string): { status: number; etag: stri
         if (m !== null) etag = m[1].trim();
     }
     return { status: status === null ? 0 : Number(status[1]), etag, body };
+}
+
+/** Removes AI co-author trailers and "Generated with Claude Code" footers, then collapses the gaps they leave. */
+export function stripAttributionLines(text: string): string {
+    return text
+        .replace(/^[ \t>*-]*co-authored-by:[^\n]*(?:noreply@anthropic\.com|\bclaude\b)[^\n]*\n?/gim, "")
+        .replace(/^[^\n]*generated with \[?claude code\]?[^\n]*\n?/gim, "")
+        .replace(/\n{3,}/g, "\n\n")
+        .trim();
 }
 
 function normalizePRState(raw: string): PRState {

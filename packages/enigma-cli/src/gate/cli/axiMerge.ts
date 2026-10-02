@@ -17,6 +17,7 @@
  */
 
 import * as scm from "../scm/types";
+import { attributionOff } from "@/attribution-guard";
 import { buildHostFor } from "../pipeline/steps/host";
 import { type Run, getRun, getStepsByRun } from "../db";
 import { field, toonHelp, type ToonField } from "../toon";
@@ -147,7 +148,9 @@ export async function mergeRunPR(
         }
     }
 
-    await host.mergePR(pr, method, signal);
+    // Attribution off (enigma's default): the merge message is written without the AI trailers a
+    // branch commit may still carry, so the merge never credits the AI as a co-author.
+    await host.mergePR(pr, method, signal, { stripAttribution: attributionOff() });
     return { merged: true, method, prURL };
 }
 

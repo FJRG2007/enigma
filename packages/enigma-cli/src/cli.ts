@@ -3058,6 +3058,15 @@ export async function run(argv: string[]): Promise<void> {
         const { runTrimHook } = await import("./trim");
         process.exit(await runTrimHook(payload));
     }
+    // Hidden: the PreToolUse guard that refuses an AI co-author trailer or "Generated with
+    // Claude Code" footer while attribution is off. Spawned only for git commit / gh pr calls
+    // (the handlers carry an `if` filter), so ordinary Bash calls never pay for it.
+    if (argv[0] === "__attribution-guard") {
+        let payload = "";
+        try { payload = readFileSync(0, "utf8"); } catch { /* no stdin */ }
+        const { runAttributionGuardHook } = await import("./attribution-guard");
+        process.exit(runAttributionGuardHook(payload));
+    }
     if (argv[0] === "__verify-hook") {
         let payload = "";
         try { payload = readFileSync(0, "utf8"); } catch { /* no stdin */ }

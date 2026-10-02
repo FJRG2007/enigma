@@ -97,6 +97,15 @@ export interface Check {
     completedAt?: Date;
 }
 
+/**
+ * How a merge writes its commit message. `stripAttribution` drops AI co-author trailers and
+ * "Generated with Claude Code" footers from the message GitHub would otherwise assemble from
+ * the branch's commits. Providers that cannot set the message ignore it.
+ */
+export interface MergeOptions {
+    stripAttribution?: boolean;
+}
+
 /** Capabilities declares which optional Host methods return meaningful data. */
 export interface Capabilities {
     mergeableState: boolean;
@@ -136,7 +145,7 @@ export interface Host {
      * still failing, conflicts, branch protection, no permission) - the message is
      * the provider's, since only it knows which rule stopped the merge.
      */
-    mergePR(pr: PR, method: MergeMethod, signal?: AbortSignal): Promise<void>;
+    mergePR(pr: PR, method: MergeMethod, signal?: AbortSignal, opts?: MergeOptions): Promise<void>;
     fetchFailedCheckLogs(
         pr: PR,
         branch: string,

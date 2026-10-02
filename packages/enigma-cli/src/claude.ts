@@ -10,6 +10,7 @@
  */
 
 import { join, normalize, parse, resolve } from "node:path";
+import { applyAttributionGuard } from "./attribution-guard";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { enigmaHome, findGitRoot, isDir, readJson } from "./util";
 import { CONFIG_DEFAULTS, readConfig, readGlobalConfig } from "./config";
@@ -93,7 +94,10 @@ export function disableClaudeAttribution(scope: "global" | "local"): boolean {
 
     const alreadyOff = attribution.commit === "" && attribution.pr === ""
         && attribution.sessionUrl === false && current.includeCoAuthoredBy === false;
-    if (alreadyOff) return false;
+    // The settings only stop Claude Code's own template; the guard stops a trailer the model
+    // writes itself. Asserted even when the settings were already off, so existing installs
+    // gain it on their next sync.
+    if (alreadyOff) return applyAttributionGuard(path, true) === "changed";
 
     const next = {
         ...current,
@@ -104,6 +108,7 @@ export function disableClaudeAttribution(scope: "global" | "local"): boolean {
     const dir = join(path, "..");
     if (!isDir(dir)) mkdirSync(dir, { recursive: true });
     writeFileSync(path, JSON.stringify(next, null, 2) + "\n");
+    applyAttributionGuard(path, true);
     return true;
 }
 
@@ -142,7 +147,7 @@ export function setClaudeAttribution(scope: "global" | "local", enabled: boolean
     if (attribution.pr === "") { delete attribution.pr; changed = true; }
     if (attribution.sessionUrl === false) { delete attribution.sessionUrl; changed = true; }
     if (current.includeCoAuthoredBy === false) changed = true;
-    if (!changed) return false;
+    if (!changed) return applyAttributionGuard(path, false) === "changed";
 
     const next: Record<string, unknown> = { ...current };
     if (Object.keys(attribution).length) next.attribution = attribution;
@@ -150,6 +155,7 @@ export function setClaudeAttribution(scope: "global" | "local", enabled: boolean
     delete next.includeCoAuthoredBy;
 
     writeClaudeSettings(path, next);
+    applyAttributionGuard(path, false);
     return true;
 }
 
@@ -648,11 +654,15 @@ export function mirrorClaudeSettings(accountDir: string): boolean {
         next.statusLine = { ...globalLine };
     }
 
-    if (JSON.stringify(next) === JSON.stringify(current)) return false;
+    // The attribution guard rides with the attribution overrides, so an account (and every
+    // subagent it starts) refuses an AI trailer exactly when the default account does.
+    const guardOn = globalAttr.commit === "" && global.includeCoAuthoredBy === false;
+    if (JSON.stringify(next) === JSON.stringify(current)) return applyAttributionGuard(path, guardOn) === "changed";
     // Nothing to mirror into a file that does not exist yet: avoid creating an
     // empty settings.json in a fresh account dir.
     if (!existsSync(path) && Object.keys(next).length === 0) return false;
     writeClaudeSettings(path, next);
+    applyAttributionGuard(path, guardOn);
     return true;
 }
 

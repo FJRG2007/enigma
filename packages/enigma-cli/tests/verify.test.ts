@@ -2027,3 +2027,29 @@ test("a period inside the question does not split the trigger from its question 
     // question mark in the next are not read as one question.
     expect(asksToContinue("Sigo con el exportador. ¿Te sirve el azul para el badge?")).toBe("");
 });
+
+// The PreToolUse guard cannot see a message written by an editor or another tool, so an AI
+// trailer that reached an unpushed commit is caught at turn end, while attribution is off.
+test("an unpushed commit carrying AI attribution denies the stop while attribution is off", () => {
+    const cfg = mkdtempSync(join(tmpdir(), "enigma-verify-attr-"));
+    const before = process.env.CLAUDE_CONFIG_DIR;
+    const err = process.stderr.write.bind(process.stderr);
+    const said: string[] = [];
+    process.stderr.write = ((chunk: string) => { said.push(String(chunk)); return true; }) as typeof process.stderr.write;
+    try {
+        process.env.CLAUDE_CONFIG_DIR = cfg;
+        writeFileSync(join(cfg, "settings.json"), JSON.stringify({ attribution: { commit: "", pr: "", sessionUrl: false }, includeCoAuthoredBy: false }));
+        const dir = repoWith();
+        write(dir, "src/a.ts", "export const a = 1;\n");
+        execFileSync("git", ["add", "-A"], { cwd: dir });
+        execFileSync("git", ["commit", "-q", "-m", "feat: a\n\nCo-Authored-By: Claude <noreply@anthropic.com>"], { cwd: dir });
+        expect(runVerifyHook(payload(dir, "Added a.", { session_id: "attr-s" }))).toBe(2);
+        expect(said.join("")).toContain("AI attribution is off");
+        // Attribution allowed: the same commit passes.
+        writeFileSync(join(cfg, "settings.json"), "{}");
+        expect(runVerifyHook(payload(dir, "Added a.", { session_id: "attr-s2" }))).toBe(0);
+    } finally {
+        process.stderr.write = err;
+        if (before === undefined) delete process.env.CLAUDE_CONFIG_DIR; else process.env.CLAUDE_CONFIG_DIR = before;
+    }
+}, 120_000);

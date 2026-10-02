@@ -50,6 +50,7 @@ import { join, extname, isAbsolute } from "node:path";
 import { readConfigAt, readGlobalConfig } from "./config";
 import { execFileSync, spawnSync } from "node:child_process";
 import { enigmaHome, readJson, isGateAgentRun } from "./util";
+import { attributedCommits, attributionOff } from "./attribution-guard";
 import { gateLedgerReady, lastGateRun, validatingRun } from "./gate-ledger";
 import { checkFile, loadRules, recordFindings, type Finding } from "./guardrails";
 import { lastAssistantMessage, sessionStartedAt, userTyped } from "./claude-transcripts";
@@ -66,7 +67,7 @@ export interface VerifyGap {
      * unsourcedTrailers); `style` = the REPLY breaks the configured compression level (see
      * styleFindings) - the only kind that is about the prose rather than the work.
      */
-    kind: "marker" | "command" | "stop-short" | "convention" | "gate" | "source" | "style";
+    kind: "marker" | "command" | "stop-short" | "convention" | "gate" | "source" | "style" | "attribution";
     file?: string;
     line?: number;
     detail: string;
@@ -1956,6 +1957,28 @@ export function unsourcedTrailers(cwd: string, transcriptPath: string): VerifyGa
  * and the escape hatch are named in the same breath. An agent that does precisely the right thing
  * must not spend both of its available blocks discovering that the right thing is not enough.
  */
+/**
+ * Unpushed commits carrying an AI attribution line, when attribution is off for this session.
+ * One `git log` and only past a settings read that says attribution is off, so a session that
+ * allows attribution pays nothing.
+ */
+function attributionGaps(cwd: string): VerifyGap[] {
+    if (!attributionOff()) return [];
+    const log = gitTry(cwd, ["log", "-n", "50", "--format=%H%x1e%B%x1d", "HEAD", "--not", "--remotes"]);
+    if (!log) return [];
+    return attributedCommits(log).map(([sha, line]) => ({ kind: "attribution", detail: `${sha.slice(0, 8)} carries "${line}"`, key: `attribution:${sha}` } as VerifyGap));
+}
+
+function attributionMessage(gaps: VerifyGap[]): string {
+    return [
+        "enigma verify: STOP. AI attribution is off, and these unpushed commits carry it:",
+        "",
+        formatGaps(gaps),
+        "",
+        "Remove the line before this is pushed: `git commit --amend` for HEAD; for older unpushed commits, `git reset --soft <oldest>~1` and recommit without it. Once pushed, a squash merge credits the AI as a co-author of the merge. If the user asked for the attribution, say so in your reply and turn it on with `enigma config claude-attribution on`.",
+    ].join("\n");
+}
+
 function sourceMessage(gaps: VerifyGap[]): string {
     return [
         "enigma verify: STOP. This change credits someone using a value you do not have:",
@@ -2416,6 +2439,18 @@ export function runVerifyHook(payload?: string): number {
             substantive = true;
             if (mayBlock(`source:${issueKey(session, invented)}`, session, "source")) {
                 process.stderr.write(`${sourceMessage(invented)}\n`);
+                return 2;
+            }
+        }
+        // An AI co-author or "Generated with Claude Code" line in an unpushed commit while attribution
+        // is off. The PreToolUse guard stops the ones written into a command; this catches what it
+        // cannot see (an editor, a message file written by another tool) before the push makes it
+        // permanent - GitHub's squash merge collects every co-author of the branch's commits.
+        const attributed = raw.permission_mode === "plan" ? [] : attributionGaps(cwd);
+        if (attributed.length) {
+            substantive = true;
+            if (mayBlock(`attribution:${issueKey(session, attributed)}`, session, "attribution")) {
+                process.stderr.write(`${attributionMessage(attributed)}\n`);
                 return 2;
             }
         }

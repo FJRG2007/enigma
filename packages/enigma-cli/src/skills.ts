@@ -20,23 +20,25 @@ import { execFileSync } from "node:child_process";
 import type { SecurityOptions } from "./security";
 import { dirname, join, resolve } from "node:path";
 import { ensureClaudeBypassGuard } from "./claude";
+import { claudeGlobalSettings } from "./claude-hooks";
 import { applyPostEditWiring } from "./post-edit-deploy";
 import { applyLintWiring, mirrorLintWiring } from "./lint";
 import type { RemoteRefreshResult } from "./skills-remote";
+import { applyAttributionGuard } from "./attribution-guard";
 import { setGhTelemetry, starRepoInBackground } from "./github";
 import { applyTrimWiring, mirrorTrimWiring } from "./trim-deploy";
 import type { Agent, AgentTarget, DiscoveredAgent } from "./agents";
 import { applyMcpForAgent, applyMcpForAccount } from "./mcp-deploy";
 import { applyCiWatchWiring, mirrorCiWatchWiring } from "./ci-watch-deploy";
 import { applyCodeGraphWiring, mirrorCodeGraphWiring } from "./codegraph-deploy";
-import { isDir, isNewer, readJson, enigmaHome, listFilesRel, computeContentSha } from "./util";
 import { applyVerifyWiring, isVerifyOn, mirrorVerifyWiring } from "./verify-deploy";
 import { applyGuardrailsWiring, mirrorGuardrailsWiring } from "./guardrails-deploy";
 import { resolveBypassSelection, applyBypass, mirrorAccountSettings } from "./permissions";
+import { isDir, isNewer, readJson, enigmaHome, listFilesRel, computeContentSha } from "./util";
 import { existsSync, readdirSync, readFileSync, writeFileSync, cpSync, mkdirSync, rmSync } from "node:fs";
 import { AGENTS, MANAGED_PROVIDER, isManagedProvider, discoverAgents, runningStatus, localTargetsAt } from "./agents";
-import { disableClaudeAttribution, disableClaudeFeedbackSurvey, enableClaudeStatusline, getClaudeTrust, setClaudeTrust } from "./claude";
 import { cachedRemoteSkills, pinnedRef, refIsPinned as skillsRefIsPinned, refreshRemoteSkills, shouldCheckRemote, skillsOrigin } from "./skills-remote";
+import { disableClaudeAttribution, disableClaudeFeedbackSurvey, enableClaudeStatusline, getClaudeAttribution, getClaudeTrust, setClaudeTrust } from "./claude";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PKG_ROOT = resolve(__dirname, "..");
@@ -1644,6 +1646,12 @@ export function syncDeployed(agentNames?: string[]): string[] {
         // user happened to run `enigma install` or toggle one of the three features. Silent on
         // purpose: nothing the agent does changes, only how many processes it takes to do it.
         if (agent.name === "claude" && hasDeployment(agent, "global")) applyPostEditWiring();
+        // The attribution guard, same reasoning: it is settings.json wiring that rides with the
+        // attribution overrides, and an install from before the guard existed only gains it
+        // here. Only when attribution is off - turning it on is the user's call and removes it.
+        if (agent.name === "claude" && hasDeployment(agent, "global") && !getClaudeAttribution("global")) {
+            applyAttributionGuard(claudeGlobalSettings(), true);
+        }
         // The destructive-command guard rides with the bypass, and like the rest of this block it
         // is settings.json wiring an existing install only receives here. Silent: nothing the
         // agent is allowed to do changes except wiping a machine or force-pushing main.

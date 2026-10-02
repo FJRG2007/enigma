@@ -99,7 +99,7 @@ function adaptGitHubHost(gh: GitHubHost): Host {
                 completedAt: c.completedAt ?? undefined
             })),
         getMergeableState: (pr, signal) => gh.getMergeableState(signal, pr),
-        mergePR: (pr, method, signal) => gh.mergePR(signal, pr, method),
+        mergePR: (pr, method, signal, opts) => gh.mergePR(signal, pr, method, opts),
         fetchFailedCheckLogs: (pr, branch, headSHA, failingNames, signal) =>
             gh.fetchFailedCheckLogs(signal, pr, branch, headSHA, failingNames)
     };

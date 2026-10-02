@@ -9,7 +9,7 @@
  * with `--body-file -` instead (upstream PR 370).
  */
 import { test, expect } from "bun:test";
-import { New, type Cmd, type CmdFactory, parseIncludedResponse } from "@/gate/scm/github";
+import { New, type Cmd, type CmdFactory, parseIncludedResponse, stripAttributionLines } from "@/gate/scm/github";
 
 interface Invocation {
     args: string[];
@@ -76,13 +76,17 @@ test("updatePR sends the body over stdin, never argv", async () => {
  */
 function scriptedCmdFactory(invocations: Invocation[], answers: Array<{ out: string; err: Error | null; }>): CmdFactory {
     return (_signal, _name, ...args) => {
-        invocations.push({ args, stdin: undefined });
+        const invocation: Invocation = { args, stdin: undefined };
+        invocations.push(invocation);
         const answer = answers.shift() ?? { out: "", err: new Error("unexpected call") };
         const cmd: Cmd = {
             run: async () => answer.err,
             output: async () => answer,
             combinedOutput: async () => answer,
-            withStdin: () => cmd
+            withStdin: (text: string) => {
+                invocation.stdin = text;
+                return cmd;
+            }
         };
         return cmd;
     };
@@ -135,4 +139,30 @@ test("a 304 with nothing cached is an error, not a state", async () => {
 test("parseIncludedResponse reads status, ETag and body", () => {
     expect(parseIncludedResponse('HTTP/1.1 200 OK\nETag: "x"\n\n{"a":1}')).toEqual({ status: 200, etag: '"x"', body: '{"a":1}' });
     expect(parseIncludedResponse("")).toEqual({ status: 0, etag: "", body: "" });
+});
+
+// A squash merge assembles its message from the branch's commits, so a commit that still carries
+// an AI trailer makes the merge credit the AI. With attribution off the merge sets the message
+// itself, keeping the PR title (and its emoji) as the subject.
+test("mergePR writes the squash message without AI attribution when asked", async () => {
+    const invocations: Invocation[] = [];
+    const view = JSON.stringify({
+        title: "✨ feat(deploy): zero-downtime cutover",
+        commits: [
+            { messageHeadline: "✨ feat(hostd): aliases per network", messageBody: "Why it matters.\n\nCo-Authored-By: Claude <noreply@anthropic.com>" },
+            { messageHeadline: "🐛 fix(deploy): harden the port gate", messageBody: "" },
+        ],
+    });
+    const host = New(scriptedCmdFactory(invocations, [{ out: view, err: null }, { out: "", err: null }]), () => true, "o/r");
+    await host.mergePR(undefined, pr, "squash", { stripAttribution: true });
+    const merge = invocations[1]!.args;
+    expect(merge.slice(0, 2)).toEqual(["pr", "merge"]);
+    expect(merge[merge.indexOf("--subject") + 1]).toBe("✨ feat(deploy): zero-downtime cutover (#7)");
+    expect(merge).toContain("--body-file");
+    expect(invocations[1]!.stdin).toBe("* ✨ feat(hostd): aliases per network\n\nWhy it matters.\n\n* 🐛 fix(deploy): harden the port gate");
+});
+
+test("stripAttributionLines keeps everything but the AI lines", () => {
+    const body = "* feat: a\n\nWhy.\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n\n* fix: b\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-authored-by: Jane <jane@example.invalid>";
+    expect(stripAttributionLines(body)).toBe("* feat: a\n\nWhy.\n\n* fix: b\n\nCo-authored-by: Jane <jane@example.invalid>");
 });
