@@ -21,6 +21,7 @@ import { runDoctorCli } from "./doctor-hooks";
 import type { ContentType } from "./compress";
 import { spawnSync } from "node:child_process";
 import { starRepoInBackground } from "./github";
+import { FIXED_COMMANDS } from "./command-names";
 import { sharedStoreFor } from "./session-store";
 import { existsSync, readFileSync } from "node:fs";
 import type { CompletionShell } from "./completion";
@@ -49,10 +50,7 @@ const PKG = readJson<{ version?: string; }>(join(__dirname, "..", "package.json"
 
 // Fixed commands plus one launch command per supported tool (e.g. `enigma claude`).
 const COMMANDS = new Set<string>([
-    "install", "update", "security", "guard", "seal", "check", "config", "account", "accounts",
-    "profile", "profiles", "skill", "skills", "issue", "improve", "qa", "compress", "guardrails", "trim", "verify", "mcp", "api", "gate", "dashboard", "dash", "fix-path", "resources", "kill", "recall", "codegraph", "autoskills", "statusline", "help", "version",
-    "add", "components",
-    "pack", "packs", "ssh", "completion", "branches", "doctor", "shim",
+    ...FIXED_COMMANDS,
     ...acct.TOOL_NAMES,
     ...packs.PACKS.map((p) => p.id),
 ]);

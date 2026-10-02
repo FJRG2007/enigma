@@ -822,6 +822,42 @@ var BUILTIN_RULES = [
     skill: "frontend-policy"
   },
   {
+    id: "val-email-regex-hand-rolled",
+    label: "Email validated by a hand-written regex",
+    files: ["*.tsx", "*.jsx", "*.ts", "*.js", "*.mts", "*.cts", "*.mjs", "*.vue", "*.svelte", "*.astro"],
+    excludeFiles: [
+      "*.test.*",
+      "*.spec.*",
+      "*.stories.*",
+      "**/tests/**",
+      "**/__tests__/**",
+      "**/dist/**",
+      "dist/**",
+      "**/build/**",
+      "build/**",
+      "**/node_modules/**"
+    ],
+    scope: "file",
+    // An ANCHORED regex shaped like an email (`^<class>+@<class>+\.`) is a validator, and an
+    // agent writes a fresh one per form instead of reusing the project's. The usual shape,
+    // /^[^\s@]+@[^\s@]+\.[^\s@]+$/, accepts "user@example.com," - a real report: a form
+    // validated its own copy while the rest of the project had a proper check. The anchor is
+    // what separates validation from extraction and redaction (PII masks, linkifiers, log
+    // scrubbers are unanchored and legitimate). MEASURED over 128669 code files of real
+    // repositories on the author's machine: 114 hits, every one a hand-rolled email-shaped
+    // validator (one project carried 20+ copies of the same line); the only non-email ones
+    // were email-SHAPED formats (NIP-05, Lightning addresses), which is what the marker is for.
+    // Git URLs, IRC prefixes and chat JIDs (`[^@/]+@github\.com`, `(\d+)@c\.us`) do not match:
+    // the domain part must itself be a quantified class followed by an escaped dot.
+    pattern: "\\^\\(?(?:\\[[^\\]\\n]*\\]|\\\\[Sw]|[^\\s\\\\])[+*]\\)?@\\(?(?:\\[[^\\]\\n]*\\]|\\\\[Sw]|[^\\s\\\\])[+*]\\)?\\\\\\.",
+    absent: "enigma:allow-email-regex",
+    // DIFF stage: the corpus is full of these, so only a validator the agent just wrote fires.
+    stage: "diff",
+    message: "Email validated with a hand-written regex. Reuse the project's existing email validation (its shared schema or helper - search for it before writing one) or the schema library's own check (`z.string().email()` / `z.email()`, Pydantic `EmailStr`), normalized first (trim, lowercase). The common shape /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/ accepts \"user@example.com,\" and a copy per form drifts from the rest. If this IS the one shared validator, or the format is only email-shaped (NIP-05, a Lightning address), mark the line `enigma:allow-email-regex` (validation-policy).",
+    severity: "block",
+    skill: "validation-policy"
+  },
+  {
     id: "fe-skeleton-loading",
     label: "Skeletons over blank/spinner loading",
     files: ["*.tsx", "*.jsx"],

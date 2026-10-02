@@ -4275,7 +4275,7 @@ export {
 
         // --- accounts & profiles subpage (mirrors the TUI hub over /api/accounts) ---
         let accountsLoaded = false;
-        let accTools = [], accAccounts = [], accProfiles = [], accPresets = [], accSessionSources = [];
+        let accTools = [], accAccounts = [], accProfiles = [], accPresets = [], accSessionSources = [], accReserved = [];
         // Real-time name validator mirroring the server (accounts.ts validateAccountName + the
         // duplicate checks), so the modal blocks an invalid or already-used name as the user types.
         // `taken` = names already in scope (per-tool for accounts, global for profiles); `current`
@@ -4284,6 +4284,7 @@ export {
             return (v) => {
                 if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/.test(v)) return "Use letters, digits, '.', '_' or '-' (max 64).";
                 if (v === "default") return "'default' is a reserved name.";
+                if (accReserved.indexOf(v.toLowerCase()) !== -1) return "'" + v + "' is an enigma command, so it cannot name an account or profile.";
                 if (v !== current && taken.indexOf(v) !== -1) return "That name is already in use.";
                 return null;
             };
@@ -4352,7 +4353,7 @@ export {
         function renderAccounts(d) {
             d = d || {};
             const accounts = d.accounts || [], profiles = d.profiles || [], tools = d.tools || [];
-            accTools = tools; accAccounts = accounts; accProfiles = profiles; accPresets = d.presets || []; accSessionSources = d.sessionSources || [];
+            accTools = tools; accAccounts = accounts; accProfiles = profiles; accPresets = d.presets || []; accSessionSources = d.sessionSources || []; accReserved = d.reservedNames || [];
             $("accountsBody").innerHTML = accounts.length ? accounts.map(accountRow).join("") : '<div class="empty" style="padding:20px 0">No accounts.</div>';
             $("profilesBody").innerHTML = profiles.length ? profiles.map((p) => profileRow(p, tools, accounts)).join("")
                 : '<div class="empty" style="padding:20px 0">No profiles yet. Add one to pin an account per tool.</div>';

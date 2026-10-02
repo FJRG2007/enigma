@@ -1,6 +1,6 @@
 {
   "generator": "enigma seal",
-  "cliVersion": "1.57.0",
+  "cliVersion": "1.57.1",
   "count": 20,
   "skills": [
     {
@@ -161,7 +161,7 @@
       "description": "Strict frontend + backend schema validation, normalization before validation (shared normalizers: trim, lowercase email, capitalize names, canonicalize links and handles), real-time error timing (an emptied or not-yet-filled field is incomplete, not invalid: a `*` and an aria-disabled submit instead of \"not valid\" over an empty input), schema consistency, and safe client-facing error handling.",
       "provider": "FJRG2007/enigma",
       "updated": "2026-08-11T17:10:56+02:00",
-      "sha": "24928a4c9eed28ebede9f23f746b09a9d3d8176f8fcca61a7780a853fa5bed4e"
+      "sha": "7b39ded6b82cb7a8424aea7b8d59a293791205d57e7272ff63d9fa558772ecb1"
     }
   ]
 }

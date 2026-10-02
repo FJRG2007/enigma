@@ -105,3 +105,9 @@ test("account.login is offered for any account and never throws (terminal suppre
     expect(r.ok).toBe(false);
     expect(r.error).toContain("enigma claude");
 });
+
+// The dashboard's name field refuses a command name as it is typed, from the server's own list.
+test("the accounts payload carries the reserved command names", () => {
+    const names = serializeAccounts().reservedNames;
+    for (const n of ["update", "claude", "helio", "gate"]) expect(names).toContain(n);
+});

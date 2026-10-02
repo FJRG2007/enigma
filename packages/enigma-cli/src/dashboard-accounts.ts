@@ -69,6 +69,8 @@ export interface AccountsPayload {
     presets: DashPreset[];
     /** Claude sessions that can be copied into a signed-out account (reuse without re-login). */
     sessionSources: DashSessionSource[];
+    /** Command names an account or profile may not take, so the form refuses them as typed. */
+    reservedNames: string[];
 }
 
 /**
@@ -124,7 +126,7 @@ export function serializeAccounts(): AccountsPayload {
         summary: Object.entries(p.accounts).map(([t, a]) => `${t}=${a}`).join("  ") || "(no accounts pinned)",
     }));
     const presets: DashPreset[] = acct.PROVIDER_PRESETS.map((p) => ({ id: p.id, label: p.label, tool: p.tool, baseUrl: p.baseUrl, model: p.model, tokenUrl: p.tokenUrl }));
-    return { tools: acct.TOOL_NAMES.map((t) => ({ name: t, label: acct.getTool(t).label })), accounts, profiles, presets, sessionSources: serializeSessionSources() };
+    return { tools: acct.TOOL_NAMES.map((t) => ({ name: t, label: acct.getTool(t).label })), accounts, profiles, presets, sessionSources: serializeSessionSources(), reservedNames: acct.reservedAccountNames() };
 }
 
 export interface AccountActionResult { ok: boolean; error?: string; note?: string; data: AccountsPayload; }

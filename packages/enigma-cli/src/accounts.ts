@@ -32,6 +32,7 @@
 
 import { homedir } from "node:os";
 import { readConfig } from "./config";
+import { FIXED_COMMANDS, PACK_COMMANDS } from "./command-names";
 import { randomUUID } from "node:crypto";
 import { startMeasuringProxy } from "./proxy";
 import { readGlobalGuard } from "./guard-config";
@@ -380,6 +381,18 @@ export function validateAccountName(name: string): void {
         throw new Error(`Invalid account name '${name}'. Use letters, digits, '.', '_' or '-' (max 64 chars).`);
     }
     if (name === DEFAULT_NAME) throw new Error(`'${DEFAULT_NAME}' is reserved for the tool's existing config-dir account.`);
+    // An account or profile name is a launch target (`enigma <name>`), and a command always wins
+    // the command slot - so one named "update" or "claude" would be created and then be
+    // unreachable that way. Case-insensitive: Windows command lookup and people both are.
+    const lower = name.toLowerCase();
+    if (reservedAccountNames().includes(lower)) {
+        throw new Error(`'${name}' is an enigma command (enigma ${lower}), so it cannot name an account or a profile. Pick another name.`);
+    }
+}
+
+/** Command names an account or profile may not take, lowercased (the dashboard reads it too). */
+export function reservedAccountNames(): string[] {
+    return [...FIXED_COMMANDS, ...PACK_COMMANDS, ...TOOL_NAMES];
 }
 
 /** Normalize a raw object into a ToolBucket, tolerating partial/legacy data. */

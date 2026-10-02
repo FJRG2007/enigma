@@ -115,3 +115,18 @@ test("provider override: an omitted token is kept on update, then fully cleared"
 test("the default account cannot take a provider override", () => {
     expect(() => accounts.setAccountProvider("claude", "default", { baseUrl: "https://api.minimax.io/anthropic" })).toThrow();
 });
+
+// A name in the command slot launches its account (`enigma bytehide`), and a command always
+// wins the slot - so an account or profile named like a command would be unreachable.
+test("an account or profile cannot take a command's name", () => {
+    for (const name of ["update", "Update", "claude", "codex", "helio", "gate", "branches", "default"]) {
+        expect(() => accounts.addAccount("claude", name)).toThrow();
+        expect(() => accounts.addProfile(name)).toThrow();
+    }
+    accounts.addAccount("claude", "work-acct");
+    expect(() => accounts.renameAccount("claude", "work-acct", "install")).toThrow("enigma command");
+    accounts.addProfile("team");
+    expect(() => accounts.renameProfile("team", "doctor")).toThrow("enigma command");
+    // Names that merely contain a command word are fine.
+    expect(() => accounts.addAccount("claude", "update-team")).not.toThrow();
+});

@@ -1253,3 +1253,25 @@ test("perf-unbounded-fanout warns, at the diff stage, and points at the priority
     expect(rule?.stage, "an existing fan-out is somebody's decision; a new one is not").toBe("diff");
     expect(rule?.skill).toBe("core-engineering-policy");
 });
+
+// --- val-email-regex-hand-rolled ---------------------------------------------------
+// Fixtures are real lines from the measurement corpus. The flagged shape accepts
+// "user@example.com," - the reported bug - and every form carried its own copy.
+
+matrix("val-email-regex-hand-rolled", true, [
+    { name: "the common loose validator", file: "src/NewsletterForm.tsx", code: "if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) {" },
+    { name: "same shape, other class order", file: "src/route.ts", code: "const EMAIL_RE = /^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/;" },
+    { name: "letters-only TLD variant", file: "src/aliases.service.ts", code: "const EMAIL_RE = /^[a-z0-9._+-]+@[a-z0-9.-]+\\.[a-z]{2,}$/;" },
+    { name: "group around the domain", file: "src/url.ts", code: "const pattern = /^[\\w-\\.]+@([\\w-]+\\.)+[\\w-]{2,4}$/;" },
+    { name: "inside a zod refine", file: "src/schema.ts", code: "email: z.string().regex(/^\\S+@\\S+\\.\\S+$/)," },
+]);
+
+matrix("val-email-regex-hand-rolled", false, [
+    { name: "schema library check", file: "src/schema.ts", code: "email: z.string().trim().toLowerCase().email()," },
+    { name: "unanchored extraction (linkify, PII mask)", file: "src/piiSanitizer.ts", code: "regex: /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}/g," },
+    { name: "git URL with credentials", file: "src/triage.ts", code: "return url.replace(/^https:\\/\\/[^@/\\s]+@github\\.com\\//i, \"https://[REDACTED]@github.com/\");" },
+    { name: "chat JID", file: "src/normalize-target.ts", code: "const WHATSAPP_LEGACY_USER_JID_RE = /^(\\d+)@c\\.us$/i;" },
+    { name: "IRC prefix", file: "src/protocol.ts", code: "const nickHostPart = prefix.match(/^([^@]+)@(.+)$/);" },
+    { name: "marked shared validator", file: "src/validators.ts", code: "export const NIP05_RE = /^[a-z0-9._-]+@[a-z0-9.-]+\\.[a-z]{2,}$/i; // enigma:allow-email-regex" },
+    { name: "test file is excluded", file: "src/form.test.ts", code: "expect(/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(\"a@b.co\")).toBe(true);" },
+]);

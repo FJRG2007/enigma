@@ -74,7 +74,7 @@ Per field kind (defaults - override only with a reason):
 
 | Field | Normalizes to |
 | --- | --- |
-| Email | trim, lowercase, then validate. Store it lowercased so lookups and uniqueness never miss. |
+| Email | trim, lowercase, then validate with the project's existing email check or the schema library's (`z.email()`, Pydantic `EmailStr`), never a regex written for this one form - `/^[^\s@]+@[^\s@]+\.[^\s@]+$/` accepts `user@example.com,`. Store it lowercased so lookups and uniqueness never miss. |
 | Person name (full name, first, last) | trim, collapse inner spaces, uppercase the first letter of every word - and ONLY that letter, so `McDonald`, `O'Brien`, `van der Berg` and `Jean-Luc` survive. Split on spaces, hyphens and apostrophes. |
 | Username, handle, slug | trim, drop a leading `@`, lowercase when the identifier is case-insensitive, then check the allowed character set. |
 | Profile link (LinkedIn, GitHub, X, Instagram) | accept BOTH a full URL and a bare handle, canonicalize to one stored form, check the host is the expected domain, and drop query and tracking parameters. |
