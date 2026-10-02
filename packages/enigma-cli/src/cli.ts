@@ -2542,7 +2542,9 @@ async function runBranchesCli(positionals: string[], opts: CliOptions): Promise<
         if (plan.blocked) { console.log(`Nothing can be cleaned up here: ${plan.blocked}.`); return 0; }
         const ready = plan.verdicts.filter((v) => v.tidyable);
         for (const v of plan.verdicts) console.log(`  ${v.tidyable ? "x" : "-"} ${v.branch.padEnd(32)} ${v.detail}`);
-        console.log(ready.length
+        const idle = await tidyMod.idleWorktrees(dir, plan.baseRef ?? plan.defaultBranch, plan.defaultBranch);
+        for (const wt of idle) console.log(`  x worktree ${wt.path} - clean, merged and idle; tidy removes it and frees ${wt.branch || "its commit"}`);
+        console.log(ready.length || idle.length
             ? `\n${ready.length} branch(es) finished. Remove them with: enigma branches tidy`
             : "\nNothing to clean up.");
         return 0;
@@ -2552,18 +2554,27 @@ async function runBranchesCli(positionals: string[], opts: CliOptions): Promise<
     if (result.plan.blocked) { console.error(`Refusing to touch anything: ${result.plan.blocked}.`); return 1; }
     if (opts.dryRun) {
         const ready = result.plan.verdicts.filter((v) => v.tidyable);
+        for (const path of result.worktrees) console.log(`  would remove the worktree ${path}`);
+        for (const branch of result.remoteOnly) console.log(`  would remove ${branch} from ${remote} (only there, merged, no open PR)`);
         for (const v of ready) console.log(`  would remove ${v.branch}${v.remote ? ` (and on ${remote})` : ""}`);
-        if (!ready.length) console.log("Nothing to clean up.");
+        if (!ready.length && !result.worktrees.length && !result.remoteOnly.length) console.log("Nothing to clean up.");
         return 0;
     }
     if (result.switched) console.log(`Back on ${result.plan.defaultBranch}.`);
+    if (result.pruned) console.log(`Pruned ${result.pruned} stale remote-tracking ref(s) (branches already deleted on their remote).`);
+    for (const path of result.worktrees) console.log(`Removed the idle worktree ${path}.`);
+    for (const branch of result.remoteOnly) {
+        const sha = tidyMod.readLedger().find((e) => e.branch === branch && e.remote)?.sha ?? "";
+        console.log(`Removed ${branch} from ${remote}. Restore it with: git push ${remote} ${sha}:refs/heads/${branch}`);
+    }
     for (const branch of result.deleted) {
         const sha = result.plan.verdicts.find((v) => v.branch === branch)?.sha ?? "";
         const alsoRemote = result.deletedRemote.includes(branch) ? ` and on ${remote}` : "";
         console.log(`Removed ${branch}${alsoRemote}. Restore it with: ${tidyMod.restoreCommand(branch, sha)}`);
     }
+    for (const note of result.notes) console.log(`  ${note}`);
     for (const problem of result.problems) console.error(`  ${problem}`);
-    if (!result.deleted.length && !result.problems.length) console.log("Nothing to clean up.");
+    if (!result.deleted.length && !result.worktrees.length && !result.remoteOnly.length && !result.pruned && !result.problems.length) console.log("Nothing to clean up.");
     return result.problems.length ? 1 : 0;
 }
 /**

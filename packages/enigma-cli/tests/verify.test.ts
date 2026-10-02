@@ -35,6 +35,8 @@ delete process.env.ENIGMA_GATE;
 // The audit round asks again on every clean done claim, so every case whose subject is a
 // different check runs without it; the audit's own cases turn it back on.
 process.env.ENIGMA_SELF_AUDIT = "0";
+// The turn-end hook schedules a background branch cleanup; a test must never spawn one.
+process.env.ENIGMA_NO_BACKGROUND_TIDY = "1";
 
 const { claimsDone, asksToContinue, gateSkipped, gateExcused, scanGaps, scanConventions, collectGaps, runVerifyHook, unsourcedTrailers, blockingStyleFindings } = await import("../src/verify");
 const { recordGateRun, lastGateRun, validatingRun } = await import("../src/gate-ledger");

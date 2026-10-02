@@ -388,3 +388,85 @@ test("a squash-merged branch stays tidyable after the base edits the same file e
     expect(more?.tidyable).toBe(false);
     expect(more?.reason).toBe("not-contained");
 });
+
+// An abandoned agent worktree pins its branch as "checked out elsewhere" forever - measured in
+// one repository, 34 of 41 branches were held that way. tidy removes a worktree only when it is
+// clean, merged and idle; any one of those missing keeps it.
+test("an idle, clean, merged worktree is removed and its branch freed; a dirty, fresh or unmerged one is kept", async () => {
+    const { utimesSync } = await import("node:fs");
+    const { dir } = repo("worktrees");
+    const old = new Date(Date.now() - 7 * 60 * 60 * 1000);
+    const age = (path: string): void => {
+        const gitDir = git(path, "rev-parse", "--absolute-git-dir");
+        for (const f of [path, join(gitDir, "HEAD"), join(gitDir, "index"), join(gitDir, "logs", "HEAD")]) {
+            try { utimesSync(f, old, old); } catch { /* absent */ }
+        }
+    };
+    const add = (name: string, merged: boolean): string => {
+        const path = mkdtempSync(join(tmpdir(), `enigma-tidy-wt-${name}-`));
+        rmSync(path, { recursive: true, force: true });
+        dirs.push(path);
+        git(dir, "worktree", "add", "-q", "-b", name, path, "main");
+        commit(path, `${name}.txt`);
+        if (merged) { git(dir, "merge", "-q", "--no-edit", name); git(dir, "push", "-q", "origin", "main"); }
+        return path;
+    };
+    const done = add("done", true);
+    const dirty = add("dirty", true);
+    writeFileSync(join(dirty, "scratch.txt"), "uncommitted\n");
+    const fresh = add("fresh", true);
+    const open = add("open", false);
+    for (const p of [done, dirty, open]) age(p);
+
+    const result = await tidy(dir);
+    const slashes = (p: string): string => p.split("\\").join("/");
+    expect(result.worktrees.map(slashes)).toEqual([slashes(done)]);
+    expect(existsSync(done)).toBe(false);
+    expect(result.deleted).toContain("done");
+    for (const kept of [dirty, fresh, open]) expect(existsSync(kept)).toBe(true);
+    expect(git(dir, "branch", "--list", "dirty", "fresh", "open").split("\n").length).toBe(3);
+}, 120_000);
+
+// The turn-end hook tidies in the background at most once an hour per repository.
+test("a background tidy is claimed once an hour per repository", async () => {
+    const { claimBackgroundTidy } = await import("../src/git-tidy");
+    const now = Date.now();
+    expect(claimBackgroundTidy("C:/repo/a", now)).toBe(true);
+    expect(claimBackgroundTidy("C:/repo/a", now + 60_000)).toBe(false);
+    expect(claimBackgroundTidy("C:/REPO/A", now + 60_000)).toBe(false);
+    expect(claimBackgroundTidy("C:/repo/b", now)).toBe(true);
+});
+
+// A branch that exists only on the remote is deleted there only when it is merged AND the
+// open-PR list says nothing is in review on it; an unreadable list keeps every one of them.
+test("a remote-only branch goes only when merged and without an open PR", async () => {
+    const { remoteOnlyBranches } = await import("../src/git-tidy");
+    const { dir } = repo("remote-only");
+    for (const name of ["merged-a", "in-review", "unmerged"]) {
+        git(dir, "checkout", "-q", "-b", name, "main");
+        commit(dir, `${name}.txt`);
+        git(dir, "push", "-q", "origin", name);
+        git(dir, "checkout", "-q", "main");
+    }
+    git(dir, "merge", "-q", "--no-edit", "merged-a", "in-review");
+    git(dir, "push", "-q", "origin", "main");
+    git(dir, "fetch", "-q", "origin");
+    for (const name of ["merged-a", "in-review", "unmerged"]) git(dir, "branch", "-q", "-D", name);
+
+    const plan = await planTidy(dir);
+    const found = await remoteOnlyBranches(dir, "origin", plan, async () => new Set(["in-review"]));
+    expect(found.verdicts.map((v) => v.branch)).toEqual(["merged-a"]);
+    const unreadable = await remoteOnlyBranches(dir, "origin", plan, async () => null);
+    expect(unreadable.verdicts).toEqual([]);
+    expect(unreadable.note).toContain("left alone");
+}, 120_000);
+
+test("tidy prunes remote-tracking refs whose branch is gone on the remote", async () => {
+    const { dir, remote } = repo("prune");
+    git(dir, "push", "-q", "origin", "main:gone");
+    git(dir, "fetch", "-q", "origin");
+    git(remote, "branch", "-q", "-D", "gone");
+    const result = await tidy(dir);
+    expect(result.pruned).toBe(1);
+    expect(git(dir, "branch", "-r")).not.toContain("origin/gone");
+}, 120_000);

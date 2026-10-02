@@ -21,10 +21,12 @@
  * deletion made here is always reversible with information the caller was handed.
  */
 
-import { join } from "node:path";
 import * as git from "./gate/git";
 import { enigmaHome } from "./util";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { spawn } from "node:child_process";
+import { basename, dirname, join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 
 /** Branch names never deleted, whatever the containment check says. */
 const PROTECTED = new Set(["main", "master", "develop", "development", "trunk", "release", "stable", "HEAD"]);
@@ -87,6 +89,14 @@ export interface TidyResult {
     switched: boolean;
     /** Failures that did not stop the rest (a remote that refused the delete). */
     problems: string[];
+    /** Idle worktrees removed (or, on a dry run, that would be) so their branches could go. */
+    worktrees: string[];
+    /** Branches that existed only on the remote and were deleted there (or would be). */
+    remoteOnly: string[];
+    /** Stale remote-tracking refs pruned (branches already deleted on their remote). */
+    pruned: number;
+    /** Things kept for a reason that is not a failure, for the report. */
+    notes: string[];
 }
 
 /**
@@ -134,6 +144,68 @@ function recordDeletion(repo: string, entry: Omit<LedgerEntry, "at" | "repo">): 
 async function localBranches(dir: string): Promise<string[]> {
     const out = await git.run(dir, ["for-each-ref", "--format=%(refname:short)", "refs/heads"]);
     return out.split("\n").map((l) => l.trim()).filter(Boolean);
+}
+
+/**
+ * How long a worktree must sit untouched before it counts as abandoned. Agents create a
+ * worktree per task (Claude Code's `.claude/worktrees`, a session scratchpad, the gate) and
+ * rarely remove it, and a worktree that still exists pins its branch as "checked out
+ * elsewhere" - measured in one repository, 34 of 41 branches were held that way. Six hours
+ * is far past any single agent turn, so a worktree a live session is using is never one.
+ */
+const WORKTREE_IDLE_MS = 6 * 60 * 60 * 1000;
+
+interface WorktreeEntry { path: string; head: string; branch: string; locked: boolean; }
+
+/** Every worktree but the main one, parsed from `git worktree list --porcelain`. */
+async function linkedWorktrees(dir: string): Promise<WorktreeEntry[]> {
+    const out = await git.run(dir, ["worktree", "list", "--porcelain"]).catch(() => "");
+    const entries: WorktreeEntry[] = [];
+    for (const block of out.split(/\r?\n\r?\n/)) {
+        const lines = block.split(/\r?\n/).map((l) => l.trim());
+        const path = lines.find((l) => l.startsWith("worktree "))?.slice(9) ?? "";
+        if (!path) continue;
+        entries.push({
+            path,
+            head: lines.find((l) => l.startsWith("HEAD "))?.slice(5) ?? "",
+            branch: (lines.find((l) => l.startsWith("branch "))?.slice(7) ?? "").replace(/^refs\/heads\//, ""),
+            locked: lines.some((l) => l === "locked" || l.startsWith("locked ")),
+        });
+    }
+    return entries.slice(1); // the first entry is the main working tree
+}
+
+/** Newest modification time across a worktree's directory and its git metadata, in ms. */
+async function lastTouched(path: string): Promise<number> {
+    const gitDir = await git.run(path, ["rev-parse", "--absolute-git-dir"]).catch(() => "");
+    let newest = 0;
+    for (const file of [path, join(gitDir, "HEAD"), join(gitDir, "index"), join(gitDir, "logs", "HEAD")]) {
+        try { newest = Math.max(newest, statSync(file).mtimeMs); } catch { /* absent: not evidence either way */ }
+    }
+    return newest;
+}
+
+/**
+ * Linked worktrees that are safe to remove: not locked, not the gate's own (it tears those
+ * down itself), present on disk, clean (untracked files count as work), untouched for
+ * WORKTREE_IDLE_MS, and holding nothing `base` lacks. Removing one loses no line of work by
+ * construction, and `git worktree remove` without --force re-checks the clean half itself.
+ */
+export async function idleWorktrees(dir: string, base: string, defaultBranch: string, now = Date.now()): Promise<WorktreeEntry[]> {
+    const slashes = (p: string): string => p.split("\\").join("/").toLowerCase();
+    const gateRoot = slashes(join(enigmaHome(), ".enigma", "gate"));
+    const idle: WorktreeEntry[] = [];
+    for (const wt of await linkedWorktrees(dir)) {
+        if (wt.locked || !existsSync(wt.path)) continue;
+        if (slashes(wt.path).startsWith(gateRoot)) continue;
+        if (now - await lastTouched(wt.path) < WORKTREE_IDLE_MS) continue;
+        const status = await git.run(wt.path, ["status", "--porcelain"]).catch(() => null);
+        if (status === null || status !== "") continue;
+        const tip = wt.branch || wt.head;
+        if (!tip || !await containedInAny(dir, base, defaultBranch, tip)) continue;
+        idle.push(wt);
+    }
+    return idle;
 }
 
 /** Branches checked out by another worktree, which git itself refuses to delete. */
@@ -360,15 +432,38 @@ export async function tidy(dir: string, opts: TidyOptions = {}): Promise<TidyRes
     // Pruning drops only the records of directories that no longer exist; a live worktree,
     // clean or not, is never touched.
     if (!opts.dryRun) await git.run(dir, ["worktree", "prune"]).catch(() => "");
-    const plan = await planTidy(dir, remote);
-    const result: TidyResult = { plan, deleted: [], deletedRemote: [], switched: false, problems: [] };
+    // Remote-tracking refs whose branch is gone on the remote: `remote prune` deletes only those
+    // local refs, never a branch anywhere, so it costs no work. They are most of what a branch
+    // list shows after a PR workflow - measured in one repository, the 40 `origin/*` refs stood
+    // for 4 real branches, and the gate's mirror remotes carried 279 more.
+    const pruned = opts.dryRun ? 0 : await pruneRemotes(dir);
+    let plan = await planTidy(dir, remote);
+    const result: TidyResult = { plan, deleted: [], deletedRemote: [], switched: false, problems: [], notes: [], worktrees: [], remoteOnly: [], pruned };
     if (plan.blocked) return result;
+
+    // Abandoned worktrees first: each one pins its branch, so the plan is rebuilt once after
+    // removing any, and the branches they held are judged like every other branch.
+    const base = plan.baseRef ?? plan.defaultBranch;
+    for (const wt of await idleWorktrees(dir, base, plan.defaultBranch)) {
+        if (opts.dryRun) { result.worktrees.push(wt.path); continue; }
+        try {
+            await git.run(dir, ["worktree", "remove", wt.path]);
+            result.worktrees.push(wt.path);
+        } catch (err) {
+            result.problems.push(`kept the worktree ${wt.path}: ${(err as Error).message}`);
+        }
+    }
+    if (result.worktrees.length && !opts.dryRun) {
+        plan = await planTidy(dir, remote);
+        result.plan = plan;
+        if (plan.blocked) return result;
+    }
 
     const wanted = new Set(opts.only ?? []);
     const targets = plan.verdicts.filter((v) => v.tidyable && (wanted.size === 0 || wanted.has(v.branch)));
-    if (targets.length === 0 || opts.dryRun) return result;
+    const localWork = targets.length > 0 && !opts.dryRun;
 
-    if (targets.some((v) => v.branch === plan.currentBranch)) {
+    if (localWork && targets.some((v) => v.branch === plan.currentBranch)) {
         try {
             await git.run(dir, ["checkout", plan.defaultBranch]);
             result.switched = true;
@@ -380,7 +475,26 @@ export async function tidy(dir: string, opts: TidyOptions = {}): Promise<TidyRes
         }
     }
 
-    for (const target of targets) {
+    // Branches that exist only on the remote. A branch with a local copy is never one of them -
+    // the local verdict above decides both copies - and a dry run only reports them.
+    const remoteOnly = await remoteOnlyBranches(dir, remote, plan);
+    // An unreadable PR list is a normal state (no gh, not GitHub), not a failure: the branches
+    // are simply kept, and the report says why without turning the exit code red.
+    if (remoteOnly.note) result.notes.push(remoteOnly.note);
+    for (const target of remoteOnly.verdicts) {
+        if (wanted.size && !wanted.has(target.branch)) continue;
+        if (opts.dryRun) { result.remoteOnly.push(target.branch); continue; }
+        try {
+            recordDeletion(dir, { branch: target.branch, sha: target.sha, remote: true });
+            await git.run(dir, ["push", remote, "--delete", target.branch]);
+            result.deletedRemote.push(target.branch);
+            result.remoteOnly.push(target.branch);
+        } catch (err) {
+            result.problems.push(`kept ${target.branch} on ${remote}: ${(err as Error).message}`);
+        }
+    }
+
+    for (const target of localWork ? targets : []) {
         try {
             recordDeletion(dir, { branch: target.branch, sha: target.sha, remote: target.remote });
         } catch (err) {
@@ -420,4 +534,108 @@ export async function tidy(dir: string, opts: TidyOptions = {}): Promise<TidyRes
 /** The command that puts a deleted branch back, for the report. */
 export function restoreCommand(branch: string, sha: string): string {
     return `git branch ${branch} ${sha}`;
+}
+
+/** How often a repository is tidied in the background, at most. */
+const BACKGROUND_TIDY_EVERY_MS = 60 * 60 * 1000;
+
+/**
+ * Whether `repoRoot` is due a background tidy, claiming the slot when it is. The marker is
+ * written BEFORE the spawn, so a child that cannot start costs one attempt an hour rather
+ * than one per turn; a marker dated in the future (a clock change) counts as expired.
+ */
+export function claimBackgroundTidy(repoRoot: string, now = Date.now()): boolean {
+    const key = createHash("sha1").update(repoRoot.toLowerCase()).digest("hex").slice(0, 16);
+    const marker = join(enigmaHome(), ".enigma", "tidy", key);
+    try {
+        const age = now - statSync(marker).mtimeMs;
+        if (age >= 0 && age < BACKGROUND_TIDY_EVERY_MS) return false;
+    } catch { /* never tidied: due now */ }
+    try {
+        mkdirSync(dirname(marker), { recursive: true });
+        writeFileSync(marker, String(now));
+    } catch { /* an unwritable marker costs the throttle, never the cleanup */ }
+    return true;
+}
+
+/**
+ * Tidy `repoRoot` in a detached child, at most once an hour per repository. Called from the
+ * turn-end hook, which already runs every turn: a branch merged outside a gate run (the
+ * GitHub button after the run timed out, an agent's own PR, a branch no gate ever saw) is
+ * otherwise left behind until someone asks. Never on the critical path - the marker is one
+ * stat, and the child does the fetch, the proofs and the deletes after the turn has ended.
+ * Gated on `gateTidyBranches`, the same switch as the gate's own pass.
+ */
+export function scheduleBackgroundTidy(repoRoot: string, enabled: boolean): void {
+    // ENIGMA_NO_BACKGROUND_TIDY turns it off for one process (a test suite driving the hook).
+    if (!enabled || !repoRoot || process.env.ENIGMA_NO_BACKGROUND_TIDY || !claimBackgroundTidy(repoRoot)) return;
+    try {
+        // A compiled binary takes the command directly; node/bun on the source entry need the
+        // entry path first (the same dispatch ci-watch.ts documents).
+        const exe = basename(process.execPath).toLowerCase();
+        const dev = exe === "node" || exe === "node.exe" || exe === "bun" || exe === "bun.exe";
+        const args = ["branches", "tidy", "--cwd", repoRoot];
+        const child = spawn(process.execPath, dev ? [process.argv[1]!, ...args] : args, { detached: true, stdio: "ignore", windowsHide: true });
+        child.on("error", () => { /* the cleanup just did not run this hour */ });
+        child.unref();
+    } catch { /* a convenience; a hook must never fail the turn over it */ }
+}
+
+/**
+ * Branches that exist only on `remote`, are fully contained in `base`, and have no open PR -
+ * the dead branches a PR workflow leaves on the remote after a squash merge from the web, which
+ * no local branch ever represented. A remote branch is someone's work until proved otherwise,
+ * so each condition must be SHOWN, never assumed:
+ * - the remote-tracking ref must exist locally at the very sha the remote reports, or there is
+ *   nothing to prove containment against (no fetch is forced here);
+ * - the open-PR list must be readable (`gh pr list`); when it is not - no gh, not GitHub, not
+ *   logged in - every remote-only branch is kept, since an open PR is a branch in review.
+ */
+export async function remoteOnlyBranches(dir: string, remote: string, plan: TidyPlan, listOpen: (dir: string) => Promise<Set<string> | null> = openPRHeads): Promise<{ verdicts: BranchVerdict[]; note?: string; }> {
+    if (!remote || plan.blocked) return { verdicts: [] };
+    const base = plan.baseRef ?? plan.defaultBranch;
+    const local = new Set(await localBranches(dir));
+    const heads = await git.run(dir, ["ls-remote", "--heads", remote]).catch(() => null);
+    if (heads === null) return { verdicts: [], note: `${remote} could not be read, so its branches were left alone` };
+    const open = await listOpen(dir);
+    if (open === null) return { verdicts: [], note: `open pull requests could not be listed (gh), so branches that exist only on ${remote} were left alone` };
+    const verdicts: BranchVerdict[] = [];
+    for (const line of heads.split("\n")) {
+        const [sha = "", ref = ""] = line.trim().split(/\s+/);
+        const branch = ref.replace("refs/heads/", "");
+        if (!sha || !branch || local.has(branch) || branch === plan.defaultBranch || PROTECTED.has(branch) || open.has(branch)) continue;
+        const tracking = await git.resolveRef(dir, `refs/remotes/${remote}/${branch}`).catch(() => "");
+        if (tracking !== sha) continue;
+        if (!await containedInAny(dir, base, plan.defaultBranch, sha)) continue;
+        verdicts.push({ branch, sha, tidyable: true, detail: `only on ${remote}, fully contained in ${base}, no open PR`, remote: true });
+    }
+    return { verdicts };
+}
+
+/** Runs `git remote prune` for every remote and returns how many tracking refs it removed. */
+async function pruneRemotes(dir: string): Promise<number> {
+    const remotes = (await git.run(dir, ["remote"]).catch(() => "")).split("\n").map((r) => r.trim()).filter(Boolean);
+    let pruned = 0;
+    for (const r of remotes) {
+        const out = await git.run(dir, ["remote", "prune", r]).catch(() => "");
+        pruned += out.split("\n").filter((l) => l.includes("[pruned]")).length;
+    }
+    return pruned;
+}
+
+/** Head branch names of the repository's open PRs, or null when they cannot be listed. */
+async function openPRHeads(dir: string): Promise<Set<string> | null> {
+    const { execFile } = await import("node:child_process");
+    return new Promise((resolveHeads) => {
+        execFile("gh", ["pr", "list", "--state", "open", "--limit", "1000", "--json", "headRefName"], { cwd: dir, windowsHide: true, timeout: 30_000 }, (err, stdout) => {
+            if (err) return resolveHeads(null);
+            try {
+                const rows = JSON.parse(String(stdout)) as Array<{ headRefName?: unknown; }>;
+                if (!Array.isArray(rows)) return resolveHeads(null);
+                resolveHeads(new Set(rows.map((r) => String(r.headRefName ?? "")).filter(Boolean)));
+            } catch {
+                resolveHeads(null);
+            }
+        });
+    });
 }

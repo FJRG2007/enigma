@@ -46,11 +46,12 @@
  */
 
 import { createHash } from "node:crypto";
+import { scheduleBackgroundTidy } from "./git-tidy";
 import { join, extname, isAbsolute } from "node:path";
 import { readConfigAt, readGlobalConfig } from "./config";
 import { execFileSync, spawnSync } from "node:child_process";
-import { enigmaHome, readJson, isGateAgentRun } from "./util";
 import { attributedCommits, attributionOff } from "./attribution-guard";
+import { enigmaHome, readJson, findGitRoot, isGateAgentRun } from "./util";
 import { gateLedgerReady, lastGateRun, validatingRun } from "./gate-ledger";
 import { checkFile, loadRules, recordFindings, type Finding } from "./guardrails";
 import { lastAssistantMessage, sessionStartedAt, userTyped } from "./claude-transcripts";
@@ -2335,6 +2336,9 @@ export function runVerifyHook(payload?: string): number {
     let context: GateContext | null = null;
     const gate = (): GateContext => (context ??= gateContextAt(cwd));
     const bypassAnchor = gateBypassAnchorAt(cwd);
+    // Finished branches go without being asked for: at most once an hour per repository, in a
+    // detached child, so a turn never waits on the fetch and the proofs (git-tidy.ts).
+    if (raw.permission_mode !== "plan") scheduleBackgroundTidy(findGitRoot(cwd) ?? "", config.gateTidyBranches !== false);
 
     // The whole gate hangs off the final message, so losing it must be loud rather than a
     // permanent silent no-op that reads exactly like "nothing to report".
