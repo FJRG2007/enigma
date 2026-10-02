@@ -170,9 +170,10 @@ const CLAIM_RE = /\b(?:all done|everything (?:is )?(?:done|complete|completed|im
  * claim. Compounds where `fixed` is an adjective ("fixed-width", "fixed point") are left out,
  * and so is the explanatory voice: how something works ("así funciona el hook", "cómo funciona
  * X") and when a step happens ("released when the tag is pushed", "verified on each commit").
- * A question is never a claim either; claimIn skips those sentences.
+ * A question is never a claim either: claimIn reads only the clause in front of a trailing
+ * question ("Fixed in auth.ts:42, want me to push it?"), and nothing of a sentence that asks.
  */
-const SUCCESS_CLAIM_RE = /(?<!\b(?:not|never|n't|isn't|wasn't|aren't|weren't)\s(?:yet\s)?(?:been\s)?)\b(?:fixed(?![-\w]|\s(?:point|width|size|length|rate|cost|set|number)s?\b)|resolved|deployed|published|shipped)\b|\b(?:released|verified|tested)\b(?!\s(?:when|if|once|until|before|on each|on every|every|each)\b)|\b(?:it|this|that|everything|all|now)\s(?:now\s)?works\b|\bworks\s(?:now|correctly|as expected|end to end|fine)\b|(?<!\bno\s(?:\S+\s)?(?:\S+\s)?)\b(?:arreglad|solucionad|corregid|desplegad|publicad|mergead|probad|comprobad|verificad|terminad)[oa]s?\b|(?<!\bno\s(?:\S+\s)?)\bresuelt[oa]s?\b|(?<!\b(?:no|c[oó]mo|as[ií]|qu[eé])\s(?:\S+\s)?)\bfuncionan?\b(?!\s(?:mal|a medias))/i;
+const SUCCESS_CLAIM_RE = /(?<!\b(?:not|never|n't|isn't|wasn't|aren't|weren't|hasn't|haven't)\s(?:yet\s)?(?:been\s)?)\b(?:fixed(?![-\w]|\s(?:point|width|size|length|rate|cost|set|number)s?\b)|resolved|deployed|published|shipped)\b|(?<!\b(?:not|never|n't|isn't|wasn't|aren't|weren't|hasn't|haven't)\s(?:yet\s)?(?:been\s)?)\b(?:released|verified|tested)\b(?!\s(?:when|if|once|until|before|on each|on every|every|each)\b)|\b(?:it|this|that|everything|all|now)\s(?:now\s)?works\b|\bworks\s(?:now|correctly|as expected|end to end|fine)\b|(?<!\bno\s(?:\S+\s)?(?:\S+\s)?)\b(?:arreglad|solucionad|corregid|desplegad|publicad|mergead|probad|comprobad|verificad|terminad)[oa]s?\b|(?<!\bno\s(?:\S+\s)?)\bresuelt[oa]s?\b|(?<!\b(?:no|cómo|qué|as[ií])\s(?:\S+\s)?)\bfuncionan?\b(?!\s(?:mal|a medias))/i;
 
 /**
  * Phrases that disclose remaining work. A message containing one is an honest report, not
@@ -214,9 +215,25 @@ function claimIn(message: string, results: boolean): boolean {
     for (const [start, end] of sentenceSpans(message)) {
         const sentence = message.slice(start, end);
         if (DISCLOSURE_RE.test(sentence)) return false;
-        if (CLAIM_RE.test(sentence) || (results && !sentence.trimEnd().endsWith("?") && SUCCESS_CLAIM_RE.test(sentence))) claim = true;
+        if (CLAIM_RE.test(sentence) || (results && SUCCESS_CLAIM_RE.test(statedPart(sentence)))) claim = true;
     }
     return claim;
+}
+
+const QUESTION_OPENER_RE = /^\s*(?:¿|(?:is|are|was|were|do|does|did|has|have|had|can|could|should|would|will|shall|may|what|how|why|where|when|which|who)\b)/i;
+
+/**
+ * The part of a sentence that states something: all of it when it does not ask, the clause in
+ * front of a trailing question after ", " or " - " when that clause is not itself a question,
+ * and nothing otherwise.
+ */
+function statedPart(sentence: string): string {
+    const trimmed = sentence.trimEnd();
+    if (!trimmed.endsWith("?")) return sentence;
+    const cut = Math.max(trimmed.lastIndexOf(", "), trimmed.lastIndexOf(" - "));
+    if (cut < 0) return "";
+    const head = trimmed.slice(0, cut);
+    return QUESTION_OPENER_RE.test(head) ? "" : head;
 }
 
 // --- stop-short detection ------------------------------------------------------------

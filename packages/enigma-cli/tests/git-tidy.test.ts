@@ -439,24 +439,25 @@ test("a background tidy is claimed once an hour per repository", async () => {
 
 // A branch that exists only on the remote is deleted there only when it is merged, nothing is in
 // review on it, AND a merged PR had it as head at that very sha; an unreadable list keeps them all.
+// A long-lived branch (the base of some PR, or the head of several merged PRs) is always kept.
 test("a remote-only branch goes only when merged through a PR at its tip", async () => {
     const { remoteOnlyBranches } = await import("../src/git-tidy");
     const { dir } = repo("remote-only");
-    for (const name of ["merged-a", "in-review", "unmerged", "staging", "moved-on"]) {
+    for (const name of ["merged-a", "in-review", "unmerged", "staging", "moved-on", "release/1", "next"]) {
         git(dir, "checkout", "-q", "-b", name, "main");
-        commit(dir, `${name}.txt`);
+        commit(dir, `${name.replace("/", "-")}.txt`);
         git(dir, "push", "-q", "origin", name);
         git(dir, "checkout", "-q", "main");
     }
-    git(dir, "merge", "-q", "--no-edit", "merged-a", "in-review", "staging", "moved-on");
+    git(dir, "merge", "-q", "--no-edit", "merged-a", "in-review", "staging", "moved-on", "release/1", "next");
     git(dir, "push", "-q", "origin", "main");
     git(dir, "fetch", "-q", "origin");
     const tip = (name: string) => git(dir, "rev-parse", name).trim();
-    const merged = new Map([["merged-a", new Set([tip("merged-a")])], ["moved-on", new Set(["0".repeat(40)])]]);
-    for (const name of ["merged-a", "in-review", "unmerged", "staging", "moved-on"]) git(dir, "branch", "-q", "-D", name);
+    const merged = new Map([["merged-a", [tip("merged-a")]], ["moved-on", ["0".repeat(40)]], ["release/1", [tip("release/1")]], ["next", ["1".repeat(40), tip("next")]]]);
+    for (const name of ["merged-a", "in-review", "unmerged", "staging", "moved-on", "release/1", "next"]) git(dir, "branch", "-q", "-D", name);
 
     const plan = await planTidy(dir);
-    const found = await remoteOnlyBranches(dir, "origin", plan, async () => ({ open: new Set(["in-review"]), merged }));
+    const found = await remoteOnlyBranches(dir, "origin", plan, async () => ({ open: new Set(["in-review"]), merged, bases: new Set(["main", "release/1"]) }));
     expect(found.verdicts.map((v) => v.branch)).toEqual(["merged-a"]);
     const unreadable = await remoteOnlyBranches(dir, "origin", plan, async () => null);
     expect(unreadable.verdicts).toEqual([]);

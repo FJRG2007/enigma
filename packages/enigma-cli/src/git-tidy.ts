@@ -600,7 +600,9 @@ export function scheduleBackgroundTidy(repoRoot: string, enabled: boolean): void
  * - no PR on the branch is open, and a merged PR from this repository had it as its head at
  *   this very sha. Containment alone is not enough: a long-lived shared branch (staging, a
  *   deploy branch, a teammate's branch pushed before its first commit) is contained in the
- *   default branch every time it is fast-forwarded, and is nobody's leftover.
+ *   default branch every time it is fast-forwarded, and is nobody's leftover;
+ * - the branch is not long-lived: one that was ever the base of a PR, or the head of more than
+ *   one merged PR (staging, production, next, release/x merged through release PRs), is kept.
  */
 export async function remoteOnlyBranches(dir: string, remote: string, plan: TidyPlan, listPRs: (dir: string) => Promise<PRHeads | null> = prHeads): Promise<{ verdicts: BranchVerdict[]; note?: string; }> {
     if (!remote || plan.blocked) return { verdicts: [] };
@@ -615,7 +617,8 @@ export async function remoteOnlyBranches(dir: string, remote: string, plan: Tidy
         const [sha = "", ref = ""] = line.trim().split(/\s+/);
         const branch = ref.replace("refs/heads/", "");
         if (!sha || !branch || local.has(branch) || branch === plan.defaultBranch || PROTECTED.has(branch) || prs.open.has(branch)) continue;
-        if (!prs.merged.get(branch)?.has(sha)) continue;
+        const mergedAt = prs.merged.get(branch) ?? [];
+        if (!mergedAt.includes(sha) || mergedAt.length > 1 || prs.bases.has(branch)) continue;
         const tracking = await git.resolveRef(dir, `refs/remotes/${remote}/${branch}`).catch(() => "");
         if (tracking !== sha) continue;
         if (!await containedInAny(dir, base, plan.defaultBranch, sha)) continue;
@@ -638,27 +641,30 @@ async function pruneRemotes(dir: string): Promise<number> {
 export interface PRHeads {
     /** Head branch names of the open PRs. */
     open: Set<string>;
-    /** Head branch name -> the head shas it was merged at, for PRs from this repository. */
-    merged: Map<string, Set<string>>;
+    /** Head branch name -> the head sha of each merged PR from this repository. */
+    merged: Map<string, string[]>;
+    /** Base branch names of every PR, in any state. */
+    bases: Set<string>;
 }
 
 /** The repository's PR heads, open and merged, or null when they cannot be listed. */
 async function prHeads(dir: string): Promise<PRHeads | null> {
     const { execFile } = await import("node:child_process");
     return new Promise((resolveHeads) => {
-        execFile("gh", ["pr", "list", "--state", "all", "--limit", "1000", "--json", "headRefName,headRefOid,state,isCrossRepository"], { cwd: dir, windowsHide: true, timeout: 30_000 }, (err, stdout) => {
+        execFile("gh", ["pr", "list", "--state", "all", "--limit", "1000", "--json", "headRefName,headRefOid,baseRefName,state,isCrossRepository"], { cwd: dir, windowsHide: true, timeout: 30_000 }, (err, stdout) => {
             if (err) return resolveHeads(null);
             try {
-                const rows = JSON.parse(String(stdout)) as Array<{ headRefName?: unknown; headRefOid?: unknown; state?: unknown; isCrossRepository?: unknown; }>;
+                const rows = JSON.parse(String(stdout)) as Array<{ headRefName?: unknown; headRefOid?: unknown; baseRefName?: unknown; state?: unknown; isCrossRepository?: unknown; }>;
                 if (!Array.isArray(rows)) return resolveHeads(null);
-                const heads: PRHeads = { open: new Set(), merged: new Map() };
+                const heads: PRHeads = { open: new Set(), merged: new Map(), bases: new Set() };
                 for (const row of rows) {
+                    if (typeof row.baseRefName === "string" && row.baseRefName) heads.bases.add(row.baseRefName);
                     const branch = String(row.headRefName ?? "");
                     if (!branch) continue;
                     if (row.state === "OPEN") heads.open.add(branch);
                     if (row.state !== "MERGED" || row.isCrossRepository !== false || typeof row.headRefOid !== "string") continue;
-                    if (!heads.merged.has(branch)) heads.merged.set(branch, new Set());
-                    heads.merged.get(branch)!.add(row.headRefOid);
+                    if (!heads.merged.has(branch)) heads.merged.set(branch, []);
+                    heads.merged.get(branch)!.push(row.headRefOid);
                 }
                 resolveHeads(heads);
             } catch {

@@ -125,6 +125,10 @@ test("recognises a claim that something works, not only that a task is finished"
         "Published 0.1.13 to the marketplace.",
         "It works now.",
         "I tested the export end to end.",
+        "Confirmo que ya funciona.",
+        "Te aseguro que funciona.",
+        "He visto que funcionan.",
+        "Fixed in `auth.ts:42`, want me to push it?",
     ]) expect(claimsDone(message)).toBe(true);
 });
 
@@ -141,6 +145,12 @@ test("a negated or adjectival result is not a claim", () => {
         "The package is released when the tag is pushed.",
         "Each commit is verified on every push.",
         "Is the login bug fixed?",
+        "Is it fixed, or should I retry?",
+        "It hasn't been released.",
+        "It was never tested.",
+        "The build wasn't verified.",
+        "The 2.0 line is not released.",
+        "It isn't released yet.",
     ]) expect(claimsDone(message)).toBe(false);
 });
 
