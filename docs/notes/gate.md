@@ -601,6 +601,17 @@ half needs `bun:sqlite` and is imported dynamically.
   (`for r in <gate home>/repos/*.git; do git --git-dir="$r" cat-file -t <sha> && echo "$r"; done`)
   and fetch `<run branch>` from the path it prints. Four rounds of review fixes were recovered
   this way across three failed runs of one change.
+- A LEASE TAKEN FROM THE REMOTE'S TIP AT PUSH TIME PROTECTS NOTHING, because it accepts
+  whatever the remote holds the instant it is read - including a commit that landed on the
+  default branch WHILE the run was in flight. Measured case: a bot's `chore: refresh dashboard
+  preview` commit, pushed to `main` mid-run, was silently replaced by the run's
+  `--force-with-lease`. `push.ts`'s `inspectRemoteTip` now fetches the push target's current
+  tip into a run-scoped ref (`refs/enigma/push-bases/<run id>`, removed after the push) before
+  deciding anything, and the default branch is never force-pushed: when that tip is ahead of
+  the run's HEAD, the step rebases the run's commits onto it and pushes the result as a plain
+  fast-forward; a replay that does not apply cleanly stops the step instead of choosing a side.
+  A working branch the run itself rewrote still force-pushes, but leased on the tip just
+  fetched, not on a stale `ls-remote` read. Covered by `tests/gate/push-safety.test.ts`.
 
 ## Agent steps have an idle watchdog
 
