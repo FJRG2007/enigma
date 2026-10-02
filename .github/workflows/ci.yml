@@ -132,7 +132,10 @@ jobs:
             # another PR merges first.
             git fetch origin "${{ github.base_ref }}"
             range="origin/${{ github.base_ref }}...HEAD"
-          elif git rev-parse --verify -q "${{ github.event.before }}" >/dev/null; then
+          # `before` must be a COMMIT that shares history with HEAD: `rev-parse --verify` alone
+          # accepts any object, and a push whose `before` is not an ancestor-reachable commit
+          # made `before...HEAD` die with "Invalid symmetric difference expression".
+          elif git rev-parse --verify -q "${{ github.event.before }}^{commit}" >/dev/null && git merge-base "${{ github.event.before }}" HEAD >/dev/null 2>&1; then
             range="${{ github.event.before }}...HEAD"
           else
             range="HEAD~1...HEAD"
