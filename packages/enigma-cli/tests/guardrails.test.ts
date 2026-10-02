@@ -843,7 +843,7 @@ test("a hand-rolled search box is blocked at the diff stage, a membership test i
         // Lowercasing without a filter is not one either.
         "const slug = title.toLowerCase().includes(prefix);",
         // Already fuzzy.
-        "const fuse = new Fuse(rows, { keys: [\"name\"] });\nconst hits = rows.filter((r) => r.name.toLowerCase().includes(search.toLowerCase()));",
+        "const fuse = new Fuse(rows, { keys: [\"name\"], threshold: 0.3 });\nconst hits = rows.filter((r) => r.name.toLowerCase().includes(search.toLowerCase()));",
         // Explicitly allowed: an exact substring IS the requirement.
         "// enigma:allow-substring-search\nconst rows = data.filter((r) => r.ip.toLowerCase().includes(ipFilter.toLowerCase()));",
     ]) expect(checkFile("src/Table.tsx", line, null, "diff")).toEqual([]);

@@ -178,6 +178,24 @@ matrix("fe-search-fuzzy", false, [
     { name: "test file is excluded", file: "src/List.test.tsx", code: "const r = items.filter(i => i.name.toLowerCase().includes(q.toLowerCase()));" },
 ]);
 
+// --- fe-fuse-loose-threshold -------------------------------------------------------
+
+matrix("fe-fuse-loose-threshold", true, [
+    { name: "defaults with ignoreLocation", file: "src/Search.tsx", code: `import Fuse from "fuse.js";\nconst fuse = new Fuse(items, { keys: ["title", "description"], ignoreLocation: true });` },
+    { name: "no options at all", file: "src/useSearch.ts", code: "const fuse = new Fuse(items);" },
+    { name: "threshold raised to get more results", file: "src/Palette.tsx", code: `const fuse = new Fuse(items, { keys: ["name"], threshold: 0.6 });` },
+    { name: "generic construction", file: "src/useSearch.ts", code: `const fuse = new Fuse<Item>(items, { keys: ["name"], threshold: 1 });` },
+]);
+
+matrix("fe-fuse-loose-threshold", false, [
+    { name: "strict threshold beside the call", file: "src/Search.tsx", code: `const fuse = new Fuse(items, { keys: ["title"], threshold: 0.3, ignoreLocation: true });` },
+    { name: "options object defined in the file", file: "src/useSearch.ts", code: `const options = {\n  keys: ["name"],\n  threshold: .25,\n};\nconst fuse = new Fuse(items, options);` },
+    { name: "exact matching only", file: "src/useSearch.ts", code: `const fuse = new Fuse(items, { keys: ["id"], threshold: 0 });` },
+    { name: "shared options, marked", file: "src/Search.tsx", code: "const fuse = new Fuse(items, SEARCH_OPTIONS); // enigma:allow-fuse-threshold" },
+    { name: "mentioned in a comment", file: "src/Search.tsx", code: `// new Fuse(items) was too loose here\nconst r = search(items, q);` },
+    { name: "test file is excluded", file: "src/Search.test.tsx", code: "const fuse = new Fuse(items);" },
+]);
+
 // --- doc-no-file-tree --------------------------------------------------------------
 // Fixtures embed the literal box-drawing connectors (U+251C/U+2514 + U+2500) the rule detects.
 
