@@ -9,7 +9,7 @@
  * Must run under Bun: bun test tests/gate/conventional.test.ts
  */
 import { test, expect } from "bun:test";
-import { isTitle, stripCommitLogEmoji, stripSubjectEmoji, tightenTitle } from "@/gate/conventional";
+import { isTitle, stripCommitLogEmoji, stripSubjectEmoji, tightenTitle, withTypeEmoji } from "@/gate/conventional";
 
 test("a leading type emoji is dropped, the rest of the subject is untouched", () => {
     expect(stripSubjectEmoji("🐛 fix(gate): tighten skip detection")).toBe("fix(gate): tighten skip detection");
@@ -59,4 +59,13 @@ test("an empty log, a bare sha, and an emoji-only subject survive stripping", ()
     expect(stripCommitLogEmoji("")).toBe("");
     expect(stripCommitLogEmoji("dabe050")).toBe("dabe050");
     expect(stripCommitLogEmoji("dabe050 🔧")).toBe("dabe050");
+});
+
+// A squash merge turns the PR title into the commit subject, so the title carries the type emoji.
+test("withTypeEmoji prefixes the type's emoji and never guesses", () => {
+    expect(withTypeEmoji("feat(deploy): zero-downtime cutover")).toBe("✨ feat(deploy): zero-downtime cutover");
+    expect(withTypeEmoji("fix!: drop the old flag")).toBe("🐛 fix!: drop the old flag");
+    expect(withTypeEmoji("✨ feat: already there")).toBe("✨ feat: already there");
+    expect(withTypeEmoji("Update the readme")).toBe("Update the readme");
+    expect(withTypeEmoji("wip: unknown type")).toBe("wip: unknown type");
 });

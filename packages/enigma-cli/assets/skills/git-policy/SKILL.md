@@ -91,8 +91,9 @@ When the user asks for a human co-author, the trailer is `Co-authored-by: Name <
 - Commit subjects use a leading type emoji by default: `<emoji> <type>: <short description>`.
   Example: `✨ feat: add dual-provider matching`.
 - This is the one sanctioned exception to the global no-emoji rule: it applies ONLY to the
-  commit subject line. Commit bodies, PR text, code, comments, identifiers, and chat responses
-  stay emoji-free. Do not add more than one emoji, and place it only at the start of the subject.
+  commit subject line - and to the PR title, because a squash merge turns the PR title into the
+  merge commit's subject. Commit bodies, PR bodies, code, comments, identifiers, and chat
+  responses stay emoji-free. Do not add more than one emoji, and place it only at the start of the subject.
 - Use exactly this type-to-emoji map (do not invent others):
   - ✨ feat: new features
   - 🐛 fix: bug fixes

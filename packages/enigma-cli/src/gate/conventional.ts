@@ -32,6 +32,33 @@ export const RELEASE_TYPE_RULE =
 
 const LEADING_EMOJI_RE = /^(?:\p{Extended_Pictographic}|[\u{1F3FB}-\u{1F3FF}\u{200D}\u{FE0F}\u{20E3}])+\s*/u;
 
+/** git-policy's type-to-emoji map, the one every enigma commit subject uses. */
+const TYPE_EMOJI: Record<string, string> = {
+    feat: "✨",
+    fix: "🐛",
+    chore: "🔧",
+    refactor: "♻️",
+    perf: "⚡",
+    docs: "📝",
+    test: "✅",
+    build: "📦",
+    ci: "👷",
+    style: "🎨",
+    security: "🔒",
+    revert: "⏪"
+};
+
+/**
+ * Prefixes a conventional title with its type's emoji. A title that already carries an emoji,
+ * or whose type is not in the map, is returned unchanged rather than guessed at.
+ */
+export function withTypeEmoji(title: string): string {
+    if (LEADING_EMOJI_RE.test(title)) return title;
+    const type = TITLE_RE.exec(title)?.[1];
+    const emoji = type === undefined ? undefined : TYPE_EMOJI[type];
+    return emoji === undefined ? title : `${emoji} ${title}`;
+}
+
 /**
  * Drops the leading type emoji git-policy puts on a commit subject when
  * `commitEmoji` is on. Commit subjects keep it; surfaces that must stay plain

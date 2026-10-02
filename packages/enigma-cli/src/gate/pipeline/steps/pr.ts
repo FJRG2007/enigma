@@ -13,13 +13,16 @@
  * strictness so a non-object payload falls through to the deterministic fallback.
  * Upstream commits carried no emoji, so the port adds one thing Go had no need
  * for: the candidate title and the commit log it reads are run through
- * `stripSubjectEmoji`/`stripCommitLogEmoji`, keeping PR title and body plain text
- * while `commitEmoji` is on.
+ * `stripSubjectEmoji`/`stripCommitLogEmoji` so the body stays plain text and
+ * `tightenTitle` sees a bare conventional title; with `commitEmoji` on, the type
+ * emoji is put back on the finished title, since a squash merge makes the PR
+ * title the merge commit's subject.
  */
 
 import { log } from "@/gate/log";
 import * as git from "@/gate/git";
 import { buildHost } from "./host";
+import { readConfigAt } from "@/config";
 import type { Result } from "@/gate/agent/agent";
 import { detectProvider } from "@/gate/scm/host";
 import { resolveBranchBaseSHA } from "./commonGit";
@@ -29,7 +32,7 @@ import { executionContextPromptSection } from "./executionContext";
 import { userIntentPromptSection, cleanedUserIntent } from "./intentPrompt";
 import { buildPipelineSummary, buildTestingSummaryForPR } from "./prsummary";
 import { newStepOutcome, type Step, type StepContext, type StepOutcome } from "../types";
-import { RELEASE_TYPE_RULE, stripCommitLogEmoji, stripSubjectEmoji, tightenTitle } from "@/gate/conventional";
+import { RELEASE_TYPE_RULE, stripCommitLogEmoji, stripSubjectEmoji, tightenTitle, withTypeEmoji } from "@/gate/conventional";
 import {
     getStepsByRun,
     getRoundsByStep,
@@ -110,6 +113,10 @@ export class PRStep implements Step {
             signal, sctx.workDir, sctx.run.baseSha, sctx.repo.defaultBranch, sctx.log
         );
         const content = await this.buildPRContent(sctx, branch, baseSHA);
+        // The title is drafted plain (tightenTitle reads a leading emoji as a missing type), and
+        // the type emoji goes on last: a squash merge turns the PR title into the commit subject,
+        // so a plain title is a merge commit without the emoji every other commit carries.
+        if (readConfigAt(sctx.repo.workingPath).commitEmoji) content.title = withTypeEmoji(content.title);
 
         sctx.log(`checking for existing pull request on branch ${branch}...`);
         const existing = await host.findPR(branch, sctx.repo.defaultBranch, signal);
