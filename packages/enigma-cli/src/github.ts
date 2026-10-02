@@ -20,16 +20,17 @@
  * action) and write back to the cache, so it never goes stale via enigma itself.
  */
 
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { spawn, spawnSync } from "node:child_process";
-import { isDir, readJson, isOffline, resolveBin } from "./util";
+import { isDir, readJson, isOffline, enigmaHome, resolveBin } from "./util";
 
 /** Last-known gh state: enabled/disabled, or null when gh could not tell us. */
 export type GhTelemetry = boolean | null;
 
-const CACHE_FILE = join(homedir(), ".enigma", "cache.json");
+// Resolved per call, never at module load (see accounts.ts registryPath): a constant froze
+// to the first importer's home, which in a shared test process can be the real one.
+const cacheFile = (): string => join(enigmaHome(), ".enigma", "cache.json");
 interface EnigmaCache { ghTelemetry?: GhTelemetry; ghTelemetryCheckedAt?: number; }
 
 let memo: GhTelemetry | "unknown" = "unknown";
@@ -93,12 +94,12 @@ function remember(value: GhTelemetry): void {
     const changed = memo !== "unknown" && memo !== value;
     memo = value;
     try {
-        const cache = readJson<EnigmaCache>(CACHE_FILE) || {};
+        const cache = readJson<EnigmaCache>(cacheFile()) || {};
         cache.ghTelemetry = value;
         cache.ghTelemetryCheckedAt = Date.now();
-        const dir = join(CACHE_FILE, "..");
+        const dir = join(cacheFile(), "..");
         if (!isDir(dir)) mkdirSync(dir, { recursive: true });
-        writeFileSync(CACHE_FILE, JSON.stringify(cache, null, 2) + "\n");
+        writeFileSync(cacheFile(), `${JSON.stringify(cache, null, 2)}\n`);
     } catch { /* cache is best-effort; the memo still serves this process */ }
     if (changed) for (const cb of listeners) cb();
 }
@@ -132,7 +133,7 @@ function revalidate(): void {
  */
 export function getGhTelemetryCached(): GhTelemetry {
     if (memo === "unknown") {
-        const cache = readJson<EnigmaCache>(CACHE_FILE);
+        const cache = readJson<EnigmaCache>(cacheFile());
         if (cache && cache.ghTelemetry !== undefined) memo = cache.ghTelemetry;
         else { memo = getGhTelemetry(); remember(memo); }
     }

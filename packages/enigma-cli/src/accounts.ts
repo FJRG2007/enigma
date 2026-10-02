@@ -245,9 +245,14 @@ export const DEFAULT_NAME = "default";
 // enigmaHome() honors ENIGMA_CONFIG_HOME so tests can isolate the registry; bun on Linux
 // does not reflect a runtime-reassigned $HOME via os.homedir(), so a raw homedir() here
 // would ignore a test's temp HOME and write the registry into the real home dir.
-const ENIGMA_DIR = join(enigmaHome(), ".enigma");
+//
+// Resolved per call, never at module load: bun runs every test file in one process and caches
+// modules, so a constant froze to whichever file imported this first. A file that did so before
+// isolating its HOME pointed every later file at the real registry, and fixture accounts
+// ("p1", "acctA", "seedtest", ...) ended up in a real user's accounts.json.
+const enigmaDir = (): string => join(enigmaHome(), ".enigma");
 /** Registry file mapping each tool's accounts to their config directories. */
-const REGISTRY_PATH = join(ENIGMA_DIR, "accounts.json");
+const registryPath = (): string => join(enigmaDir(), "accounts.json");
 
 const NAME_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/;
 
@@ -409,7 +414,7 @@ function normalizeProfiles(raw: unknown): ProfilesBucket {
 }
 
 function readRegistry(): Registry {
-    const raw = readJson<Record<string, unknown>>(REGISTRY_PATH);
+    const raw = readJson<Record<string, unknown>>(registryPath());
     if (!raw || typeof raw !== "object") return { tools: {}, profiles: normalizeProfiles(null) };
 
     if (raw.tools && typeof raw.tools === "object") {
@@ -426,8 +431,8 @@ function readRegistry(): Registry {
 
 /** Persist the registry, creating ~/.enigma if needed. */
 function writeRegistry(reg: Registry): void {
-    if (!isDir(ENIGMA_DIR)) mkdirSync(ENIGMA_DIR, { recursive: true });
-    writeFileSync(REGISTRY_PATH, JSON.stringify(reg, null, 2) + "\n");
+    if (!isDir(enigmaDir())) mkdirSync(enigmaDir(), { recursive: true });
+    writeFileSync(registryPath(), `${JSON.stringify(reg, null, 2)}\n`);
 }
 
 /** The accounts bucket for a tool (an empty one if it has none yet). */
@@ -437,7 +442,7 @@ function bucketOf(reg: Registry, tool: string): ToolBucket {
 
 /** Base directory holding a tool's managed account config directories. */
 function accountsBase(tool: ToolSpec): string {
-    return join(ENIGMA_DIR, tool.name);
+    return join(enigmaDir(), tool.name);
 }
 
 /** The synthetic entry describing a tool's built-in (existing) config dir. */

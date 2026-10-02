@@ -5,7 +5,6 @@
  */
 
 import * as conf from "./config";
-import { homedir } from "node:os";
 import * as p from "@clack/prompts";
 import { getTool } from "./accounts";
 import { setKimiTrust } from "./kimi";
@@ -30,7 +29,7 @@ import type { Agent, AgentTarget, DiscoveredAgent } from "./agents";
 import { applyMcpForAgent, applyMcpForAccount } from "./mcp-deploy";
 import { applyCiWatchWiring, mirrorCiWatchWiring } from "./ci-watch-deploy";
 import { applyCodeGraphWiring, mirrorCodeGraphWiring } from "./codegraph-deploy";
-import { isDir, isNewer, readJson, listFilesRel, computeContentSha } from "./util";
+import { isDir, isNewer, readJson, enigmaHome, listFilesRel, computeContentSha } from "./util";
 import { applyVerifyWiring, isVerifyOn, mirrorVerifyWiring } from "./verify-deploy";
 import { applyGuardrailsWiring, mirrorGuardrailsWiring } from "./guardrails-deploy";
 import { resolveBypassSelection, applyBypass, mirrorAccountSettings } from "./permissions";
@@ -308,7 +307,9 @@ function skillConfigDrifted(sk: SkillEntry, destDir: string): boolean {
 // to distinguish "stale because the package updated" (safe to rewrite) from
 // "user-authored or user-edited" (never touched silently).
 
-const STATE_FILE = join(homedir(), ".enigma", "state.json");
+// Resolved per call, never at module load (see accounts.ts registryPath): a constant froze
+// to the first importer's home, which in a shared test process can be the real one.
+const stateFile = (): string => join(enigmaHome(), ".enigma", "state.json");
 // `memory` records the sha enigma last wrote to a dest (managed render); `memoryEdited`
 // records the sha of a user's deliberate dashboard edit. A managed write clears the edit
 // marker (the edit was superseded); the overwrite/keep policy below reads the marker to
@@ -318,12 +319,12 @@ interface SyncState { memory?: Record<string, string>; memoryEdited?: Record<str
 const contentHash = (content: string): string => createHash("sha256").update(content).digest("hex");
 
 function readSyncState(): SyncState {
-    return readJson<SyncState>(STATE_FILE) || {};
+    return readJson<SyncState>(stateFile()) || {};
 }
 
 function writeSyncState(state: SyncState): void {
-    mkdirSync(dirname(STATE_FILE), { recursive: true });
-    writeFileSync(STATE_FILE, `${JSON.stringify(state, null, 2)}\n`);
+    mkdirSync(dirname(stateFile()), { recursive: true });
+    writeFileSync(stateFile(), `${JSON.stringify(state, null, 2)}\n`);
 }
 
 function recordMemoryWrite(dest: string, content: string): void {

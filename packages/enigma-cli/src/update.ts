@@ -7,18 +7,20 @@
  * offline registry can neither block, slow down, nor break the actual command.
  */
 
-import { homedir, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { spawn, spawnSync } from "node:child_process";
 import * as p from "@clack/prompts";
-import { isNewer, readJson, isOffline } from "./util";
+import { isNewer, readJson, isOffline, enigmaHome } from "./util";
 import { readConfig } from "./config";
 import { refreshSkillsFromGitHub } from "./skills";
 
 const REGISTRY_URL = "https://registry.npmjs.org/enigma-cli/latest";
 const UPDATE_COMMAND = "npm i -g enigma-cli@latest";
-const CACHE_FILE = join(homedir(), ".enigma-update-check.json");
+// Resolved per call, never at module load (see accounts.ts registryPath): a constant froze
+// to the first importer's home, which in a shared test process can be the real one.
+const cacheFile = (): string => join(enigmaHome(), ".enigma-update-check.json");
 const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000; // re-check the registry at most once a day
 const STALE_RECHECK_MS = 10 * 60 * 1000; // faster cadence while the cache lags the running version
 
@@ -75,7 +77,7 @@ async function fetchAndCacheLatest(): Promise<void> {
     try {
         const res = await fetch(REGISTRY_URL, { signal: ctrl.signal, headers: { "user-agent": "enigma-cli-update-check" } });
         const data = res.ok ? (await res.json()) as { version?: string; } : null;
-        if (data?.version) writeFileSync(CACHE_FILE, JSON.stringify({ latest: data.version, checkedAt: Date.now() }));
+        if (data?.version) writeFileSync(cacheFile(), JSON.stringify({ latest: data.version, checkedAt: Date.now() }));
     } finally {
         clearTimeout(t);
     }
@@ -116,7 +118,7 @@ function renderUpdateBox(current: string, latest: string): string {
 
 /** Read the cached registry result, or null if missing/corrupt. */
 function readCache(): UpdateCache | null {
-    return readJson<UpdateCache>(CACHE_FILE);
+    return readJson<UpdateCache>(cacheFile());
 }
 
 /**
@@ -140,7 +142,7 @@ function scheduleUpdateCheck(current: string): void {
         const cacheStale = !cache?.latest || isNewer(current, cache.latest);
         const interval = cacheStale ? STALE_RECHECK_MS : CHECK_INTERVAL_MS;
         if (cache && Date.now() - cache.checkedAt < interval) return;
-        writeFileSync(CACHE_FILE, JSON.stringify({ latest: cache?.latest ?? null, checkedAt: Date.now() }));
+        writeFileSync(cacheFile(), JSON.stringify({ latest: cache?.latest ?? null, checkedAt: Date.now() }));
         const exe = basename(process.execPath).toLowerCase();
         const spawnOpts = { detached: true, stdio: "ignore", windowsHide: true } as const;
         let child;
@@ -148,7 +150,7 @@ function scheduleUpdateCheck(current: string): void {
             // Dev under node/tsx: the classic update-notifier `node -e` child.
             child = spawn(process.execPath, ["-e", CHILD_SCRIPT], {
                 ...spawnOpts,
-                env: { ...process.env, E_URL: REGISTRY_URL, E_FILE: CACHE_FILE },
+                env: { ...process.env, E_URL: REGISTRY_URL, E_FILE: cacheFile() },
             });
         } else if (exe === "bun" || exe === "bun.exe") {
             // Bun running the source entry (npm run dev): re-run it with the command.
@@ -219,7 +221,7 @@ export function runUpdate(): boolean {
         if (result.status === 0) {
             // Drop the cached check so the freshly installed version re-reads the
             // registry on its next run instead of trusting a pre-update snapshot.
-            try { rmSync(CACHE_FILE, { force: true }); } catch { /* best-effort */ }
+            try { rmSync(cacheFile(), { force: true }); } catch { /* best-effort */ }
             console.log("Updated to the latest enigma-cli.");
             return true;
         }

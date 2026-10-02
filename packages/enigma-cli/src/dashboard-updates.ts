@@ -14,9 +14,8 @@
  * stays cheap to load on the stats hot path and free of import cycles.
  */
 
-import { homedir } from "node:os";
 import { spawn } from "node:child_process";
-import { isNewer, readJson } from "./util";
+import { isNewer, readJson, enigmaHome } from "./util";
 import { installedLinterVersion } from "./lint";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
@@ -25,7 +24,9 @@ import { installedDashboardVersion } from "./dashboard-pkg";
 export interface PkgUpdate { name: string; label: string; installed: string; latest: string | null; hasUpdate: boolean; }
 export interface UpdateStatus { checkedAt: number; packages: PkgUpdate[]; available: boolean; }
 
-const STATUS_FILE = join(homedir(), ".enigma", "update-status.json");
+// Resolved per call, never at module load (see accounts.ts registryPath): a constant froze
+// to the first importer's home, which in a shared test process can be the real one.
+const statusFile = (): string => join(enigmaHome(), ".enigma", "update-status.json");
 const POLL_INTERVAL_MS = 30 * 60 * 1000; // re-query npm at most every 30 min
 const FETCH_TIMEOUT_MS = 6000;
 /** npm registry base; overridable so tests point at a fake local server (never the real npm). */
@@ -64,8 +65,8 @@ export async function refreshUpdateStatus(cliVersion: string): Promise<void> {
     }));
     const status: UpdateStatus = { checkedAt: Date.now(), packages, available: packages.some((p) => p.hasUpdate) };
     try {
-        mkdirSync(dirname(STATUS_FILE), { recursive: true });
-        writeFileSync(STATUS_FILE, JSON.stringify(status));
+        mkdirSync(dirname(statusFile()), { recursive: true });
+        writeFileSync(statusFile(), JSON.stringify(status));
     } catch { /* a disk failure just leaves the previous cache in place */ }
 }
 
@@ -98,7 +99,7 @@ function reconcileInstalled(cached: UpdateStatus | null, cliVersion: string): Up
  * refresh at a time per process; the registry is hit at most once every POLL_INTERVAL_MS.
  */
 export function readUpdateStatusCached(cliVersion: string): UpdateStatus | null {
-    const cached = reconcileInstalled(readJson<UpdateStatus>(STATUS_FILE), cliVersion);
+    const cached = reconcileInstalled(readJson<UpdateStatus>(statusFile()), cliVersion);
     // Escape hatch so tests (and anyone who wants it off) never trigger a registry call.
     if (process.env.ENIGMA_NO_UPDATE_CHECK) return cached;
     const stale = !cached || Date.now() - cached.checkedAt > POLL_INTERVAL_MS;
