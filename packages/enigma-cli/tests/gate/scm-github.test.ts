@@ -9,8 +9,8 @@
  * with `--body-file -` instead (upstream PR 370).
  */
 import { test, expect } from "bun:test";
-import { New, type Cmd, type CmdFactory, parseIncludedResponse } from "@/gate/scm/github";
 import { stripAttributionLines } from "@/attribution-guard";
+import { New, type Cmd, type CmdFactory, parseIncludedResponse } from "@/gate/scm/github";
 
 interface Invocation {
     args: string[];
@@ -169,6 +169,10 @@ test("mergePR leaves GitHub's message alone when there is nothing to strip", asy
     const clean: Invocation[] = [];
     await New(scriptedCmdFactory(clean, [{ out: view, err: null }, { out: "", err: null }]), () => true, "o/r").mergePR(undefined, pr, "squash", { stripAttribution: true });
     expect(clean[1]!.args).not.toContain("--subject");
+    const spaced = JSON.stringify({ title: "feat: x", commits: [{ messageHeadline: "feat: x", messageBody: "Why.\n\n\n\nMore." }] });
+    const blank: Invocation[] = [];
+    await New(scriptedCmdFactory(blank, [{ out: spaced, err: null }, { out: "", err: null }]), () => true, "o/r").mergePR(undefined, pr, "squash", { stripAttribution: true });
+    expect(blank[1]!.args).not.toContain("--subject");
     const merged: Invocation[] = [];
     await New(scriptedCmdFactory(merged, [{ out: "", err: null }]), () => true, "o/r").mergePR(undefined, pr, "merge", { stripAttribution: true });
     expect(merged).toHaveLength(1);

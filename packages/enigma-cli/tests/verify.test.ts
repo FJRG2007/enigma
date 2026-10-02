@@ -142,6 +142,8 @@ test("a negated or adjectival result is not a claim", () => {
         "It doesn't work on Windows.",
         "Así funciona el hook: lee el transcript y decide.",
         "¿Cómo funciona el gate?",
+        "Te explico como funciona el hook.",
+        "Queda tal como funciona ahora.",
         "The package is released when the tag is pushed.",
         "Each commit is verified on every push.",
         "Is the login bug fixed?",

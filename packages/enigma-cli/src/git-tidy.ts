@@ -601,8 +601,10 @@ export function scheduleBackgroundTidy(repoRoot: string, enabled: boolean): void
  *   this very sha. Containment alone is not enough: a long-lived shared branch (staging, a
  *   deploy branch, a teammate's branch pushed before its first commit) is contained in the
  *   default branch every time it is fast-forwarded, and is nobody's leftover;
- * - the branch is not long-lived: one that was ever the base of a PR, or the head of more than
- *   one merged PR (staging, production, next, release/x merged through release PRs), is kept.
+ * - the branch is not long-lived: one that was the base of a PR, or the head of more than one
+ *   merged PR (staging, production, next, release/x merged through release PRs), is kept. Only
+ *   the most recent 1000 PRs are read, so a long-lived branch whose PRs all fall outside that
+ *   window is not caught here; the merged-PR-at-tip requirement above still applies to it.
  */
 export async function remoteOnlyBranches(dir: string, remote: string, plan: TidyPlan, listPRs: (dir: string) => Promise<PRHeads | null> = prHeads): Promise<{ verdicts: BranchVerdict[]; note?: string; }> {
     if (!remote || plan.blocked) return { verdicts: [] };

@@ -11,7 +11,7 @@
 
 import { execFile } from "node:child_process";
 import { Provider, PROVIDER_GITHUB } from "./host";
-import { stripAttributionLines } from "../../attribution-guard";
+import { stripAttributionLines } from "@/attribution-guard";
 
 /** Outcome of a single `gh` invocation: captured text plus a non-null error on failure. */
 export type CmdResult = { out: string; err: Error | null; };
@@ -382,7 +382,7 @@ export class Host {
                 .map((c) => `* ${`${c.messageHeadline ?? ""}\n\n${c.messageBody ?? ""}`.trim()}`)
                 .join("\n\n");
             const stripped = stripAttributionLines(body);
-            if (stripped === body.trim()) return null;
+            if (stripped === body.replace(/\n{3,}/g, "\n\n").trim()) return null;
             return { subject: `${view.title} (#${pr.number})`, body: stripped };
         } catch {
             return null;
