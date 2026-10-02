@@ -785,6 +785,43 @@ var BUILTIN_RULES = [
     skill: "frontend-policy"
   },
   {
+    id: "fe-fuse-loose-threshold",
+    label: 'fuse.js tuned to say "no results"',
+    files: ["*.tsx", "*.jsx", "*.ts", "*.js", "*.mts", "*.cts", "*.vue", "*.svelte", "*.astro"],
+    excludeFiles: [
+      "*.test.*",
+      "*.spec.*",
+      "*.stories.*",
+      "**/tests/**",
+      "**/__tests__/**",
+      "**/dist/**",
+      "dist/**",
+      "**/build/**",
+      "build/**",
+      "**/node_modules/**"
+    ],
+    scope: "file",
+    // The other half of fe-search-fuzzy, and the failure that rule's own advice produces:
+    // fuse.js's default `threshold` is 0.6 (read from the shipped 7.5.0 source), and
+    // agents add `ignoreLocation: true` so late matches count, which together match almost
+    // anything. MEASURED over 30 settings-page items with title+description keys: "zebra"
+    // returned 30 of 30 under defaults plus ignoreLocation, where `threshold: 0.3` plus
+    // `minMatchCharLength: 2` returned 0 and still found "Password" for "pasword". A search
+    // that never says "no results" is broken in a way no test of the happy path shows.
+    //
+    // Fires on a construction in a file with no strict threshold (0.4 or below). `absent` is
+    // file-wide, so options defined beside the call clear it; options shared from another
+    // module take the escape hatch on the call line.
+    pattern: "\\bnew\\s+Fuse\\s*[<(]",
+    absent: "\\bthreshold\\s*:\\s*(?:0?\\.[0-4]|0(?![.\\d]))|enigma:allow-fuse-threshold",
+    // DIFF stage for the reason fe-search-fuzzy is: only a search the agent just wrote can
+    // fire it, never one already sitting in the repository.
+    stage: "diff",
+    message: 'fuse.js without a strict `threshold`. Its default is 0.6, and with `ignoreLocation: true` that matches nearly every item - a search for a word that is not there returns the whole list instead of "No results". Set `threshold` to about 0.3 (never raise it to make results appear), `minMatchCharLength: 2`, weighted `keys` with the title above long description text, and render an explicit empty state naming the query. Check it with a nonsense query (must return nothing) and a one-letter typo of a real item (must find it). If the options come from a shared module that sets a strict threshold, mark the call line `enigma:allow-fuse-threshold` (frontend-policy).',
+    severity: "block",
+    skill: "frontend-policy"
+  },
+  {
     id: "fe-skeleton-loading",
     label: "Skeletons over blank/spinner loading",
     files: ["*.tsx", "*.jsx"],
