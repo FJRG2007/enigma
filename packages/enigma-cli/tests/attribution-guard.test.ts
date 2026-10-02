@@ -18,6 +18,9 @@ test("finds the trailer and the footer in any casing", () => {
     expect(attributionLine("body\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)")).not.toBe("");
     expect(attributionLine("feat: x\n\nCo-authored-by: Jane <jane@example.invalid>")).toBe("");
     expect(attributionLine("docs: explain how Claude Code hooks work")).toBe("");
+    expect(attributionLine("fix: block \"Generated with Claude Code\" footers")).toBe("");
+    expect(attributionLine("feat: x\n\nCo-authored-by: Claude Monet <claude@example.invalid>")).toBe("");
+    expect(attributionLine("git commit -m \"feat: x\" -m \"Generated with Claude Code\" && git push")).toBe("Generated with Claude Code");
 });
 
 test("denies the -m, multi-line and heredoc shapes", () => {

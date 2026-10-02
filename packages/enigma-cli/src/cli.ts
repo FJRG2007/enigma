@@ -79,6 +79,8 @@ interface CliOptions extends skillsMod.InstallOptions {
     shellCommand: string | null;
     /** `branches tidy`: leave every remote alone. */
     noRemote: boolean;
+    /** `branches tidy`: never switch off or delete the checked-out branch. */
+    keepCurrent: boolean;
     /** `compress`: delete all CCR data (stats, history, cache) and reset the dashboard. */
     clear: boolean;
     /** `account provider`: built-in provider preset id (e.g. "minimax"). */
@@ -152,7 +154,7 @@ function parseArgs(argv: string[]): CliOptions {
         ref: null, assetsFrom: null, offline: false,
         bypass: null, noBypass: false, outputStyle: null, minimalCode: null, dashboard: null, promptSecretGuard: null,
         force: false, all: false, yes: false, login: false, dryRun: false, help: false, version: false,
-        stats: false, retrieve: null, compressType: null, shellCommand: null, noRemote: false, clear: false,
+        stats: false, retrieve: null, compressType: null, shellCommand: null, noRemote: false, keepCurrent: false, clear: false,
         copy: false, list: false, dest: null, target: null, style: null, noDeps: false,
         overwrite: false, cwd: null, silent: false,
         flags: null, flagShapes: null, flagFormats: null, flagCountries: null, flagsOut: null,
@@ -244,6 +246,7 @@ function parseArgs(argv: string[]): CliOptions {
             case "--type": opts.compressType = next(); break;
             case "--command": opts.shellCommand = next(); break;
             case "--no-remote": opts.noRemote = true; break;
+            case "--keep-current": opts.keepCurrent = true; break;
             case "--clear": opts.clear = true; break;
             case "--json": opts.json = true; break;
             case "--force": opts.force = true; break;
@@ -801,7 +804,7 @@ agent's status payload on stdin; wired automatically unless you pass --no-status
 Print a shell completion script on stdout; enigma never edits a shell profile itself.
 Without a shell it guesses from $SHELL. Install it where your shell reads completions,
 e.g. eval "$(enigma completion zsh)" in ~/.zshrc.`,
-    branches: `usage: enigma branches [tidy [branch...]] [--dry-run] [--no-remote]
+    branches: `usage: enigma branches [tidy [branch...]] [--dry-run] [--no-remote] [--keep-current]
 Report which working branches are finished, and remove the ones that are. A branch is
 only removed when the default branch already contains every change it made, byte for
 byte - unmerged commits, uncommitted or stashed work, a remote copy that is ahead or
@@ -810,6 +813,7 @@ unreadable, or a branch checked out elsewhere are reported and kept.
   tidy [branch...]   Remove the finished branches (all of them, or just those named)
       --dry-run      Show what tidy would remove
       --no-remote    Leave every remote alone
+      --keep-current Never switch off or delete the checked-out branch
       --target <r>   Remote to clean up (default: origin)
 
 Every deletion is recorded in ~/.enigma/deleted-branches.json with the command that
@@ -2550,12 +2554,12 @@ async function runBranchesCli(positionals: string[], opts: CliOptions): Promise<
         return 0;
     }
 
-    const result = await tidyMod.tidy(dir, { remote, dryRun: opts.dryRun, only });
+    const result = await tidyMod.tidy(dir, { remote, dryRun: opts.dryRun, only, keepCurrent: opts.keepCurrent });
     if (result.plan.blocked) { console.error(`Refusing to touch anything: ${result.plan.blocked}.`); return 1; }
     if (opts.dryRun) {
         const ready = result.plan.verdicts.filter((v) => v.tidyable);
         for (const path of result.worktrees) console.log(`  would remove the worktree ${path}`);
-        for (const branch of result.remoteOnly) console.log(`  would remove ${branch} from ${remote} (only there, merged, no open PR)`);
+        for (const { branch } of result.remoteOnly) console.log(`  would remove ${branch} from ${remote} (only there, merged by a PR at this commit)`);
         for (const v of ready) console.log(`  would remove ${v.branch}${v.remote ? ` (and on ${remote})` : ""}`);
         if (!ready.length && !result.worktrees.length && !result.remoteOnly.length) console.log("Nothing to clean up.");
         return 0;
@@ -2563,8 +2567,7 @@ async function runBranchesCli(positionals: string[], opts: CliOptions): Promise<
     if (result.switched) console.log(`Back on ${result.plan.defaultBranch}.`);
     if (result.pruned) console.log(`Pruned ${result.pruned} stale remote-tracking ref(s) (branches already deleted on their remote).`);
     for (const path of result.worktrees) console.log(`Removed the idle worktree ${path}.`);
-    for (const branch of result.remoteOnly) {
-        const sha = tidyMod.readLedger().find((e) => e.branch === branch && e.remote)?.sha ?? "";
+    for (const { branch, sha } of result.remoteOnly) {
         console.log(`Removed ${branch} from ${remote}. Restore it with: git push ${remote} ${sha}:refs/heads/${branch}`);
     }
     for (const branch of result.deleted) {

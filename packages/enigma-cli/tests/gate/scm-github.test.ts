@@ -9,7 +9,8 @@
  * with `--body-file -` instead (upstream PR 370).
  */
 import { test, expect } from "bun:test";
-import { New, type Cmd, type CmdFactory, parseIncludedResponse, stripAttributionLines } from "@/gate/scm/github";
+import { New, type Cmd, type CmdFactory, parseIncludedResponse } from "@/gate/scm/github";
+import { stripAttributionLines } from "@/attribution-guard";
 
 interface Invocation {
     args: string[];
@@ -160,6 +161,18 @@ test("mergePR writes the squash message without AI attribution when asked", asyn
     expect(merge[merge.indexOf("--subject") + 1]).toBe("✨ feat(deploy): zero-downtime cutover (#7)");
     expect(merge).toContain("--body-file");
     expect(invocations[1]!.stdin).toBe("* ✨ feat(hostd): aliases per network\n\nWhy it matters.\n\n* 🐛 fix(deploy): harden the port gate");
+});
+
+// Without an AI line in any commit, and for a merge commit, GitHub's own message stays.
+test("mergePR leaves GitHub's message alone when there is nothing to strip", async () => {
+    const view = JSON.stringify({ title: "feat: x", commits: [{ messageHeadline: "feat: x", messageBody: "Co-authored-by: Jane <jane@example.invalid>" }] });
+    const clean: Invocation[] = [];
+    await New(scriptedCmdFactory(clean, [{ out: view, err: null }, { out: "", err: null }]), () => true, "o/r").mergePR(undefined, pr, "squash", { stripAttribution: true });
+    expect(clean[1]!.args).not.toContain("--subject");
+    const merged: Invocation[] = [];
+    await New(scriptedCmdFactory(merged, [{ out: "", err: null }]), () => true, "o/r").mergePR(undefined, pr, "merge", { stripAttribution: true });
+    expect(merged).toHaveLength(1);
+    expect(merged[0]!.args).not.toContain("--subject");
 });
 
 test("stripAttributionLines keeps everything but the AI lines", () => {

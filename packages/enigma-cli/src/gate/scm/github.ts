@@ -11,6 +11,7 @@
 
 import { execFile } from "node:child_process";
 import { Provider, PROVIDER_GITHUB } from "./host";
+import { attributionLine, stripAttributionLines } from "../../attribution-guard";
 
 /** Outcome of a single `gh` invocation: captured text plus a non-null error on failure. */
 export type CmdResult = { out: string; err: Error | null; };
@@ -355,8 +356,9 @@ export class Host {
      */
     async mergePR(signal: AbortSignal | undefined, pr: PR, method: MergeMethod, opts?: { stripAttribution?: boolean; }): Promise<void> {
         const args = ["pr", "merge", pr.number, ...this.repoArgs(), `--${method}`];
-        // A rebase merge writes no message of its own, so there is nothing to set.
-        const message = opts?.stripAttribution && method !== "rebase" ? await this.mergeMessage(signal, pr) : null;
+        // Only a squash assembles its message from the branch's commits; a merge commit and a
+        // rebase keep GitHub's own, so there is nothing to strip from them.
+        const message = opts?.stripAttribution && method === "squash" ? await this.mergeMessage(signal, pr) : null;
         let cmd = this.cmd(signal, "gh", ...(message === null ? args : [...args, "--subject", message.subject, "--body-file", "-"]));
         if (message !== null) cmd = cmd.withStdin(message.body);
         const { out, err } = await cmd.combinedOutput();
@@ -365,8 +367,9 @@ export class Host {
 
     /**
      * The message GitHub's squash would write - the PR title with its number, then every commit
-     * message - with the AI attribution lines removed. Null when the PR cannot be read, which
-     * leaves GitHub's own default in place rather than inventing a message.
+     * message - with the AI attribution lines removed. Null when no commit carries one, or when
+     * the PR cannot be read, which leaves GitHub's own default in place rather than inventing a
+     * message.
      */
     private async mergeMessage(signal: AbortSignal | undefined, pr: PR): Promise<{ subject: string; body: string; } | null> {
         const args = ["pr", "view", pr.number, ...this.repoArgs(), "--json", "title,commits"];
@@ -378,6 +381,7 @@ export class Host {
             const body = (view.commits ?? [])
                 .map((c) => `* ${`${c.messageHeadline ?? ""}\n\n${c.messageBody ?? ""}`.trim()}`)
                 .join("\n\n");
+            if (attributionLine(body) === "") return null;
             return { subject: `${view.title} (#${pr.number})`, body: stripAttributionLines(body) };
         } catch {
             return null;
@@ -526,15 +530,6 @@ export function parseIncludedResponse(out: string): { status: number; etag: stri
         if (m !== null) etag = m[1].trim();
     }
     return { status: status === null ? 0 : Number(status[1]), etag, body };
-}
-
-/** Removes AI co-author trailers and "Generated with Claude Code" footers, then collapses the gaps they leave. */
-export function stripAttributionLines(text: string): string {
-    return text
-        .replace(/^[ \t>*-]*co-authored-by:[^\n]*(?:noreply@anthropic\.com|\bclaude\b)[^\n]*\n?/gim, "")
-        .replace(/^[^\n]*generated with \[?claude code\]?[^\n]*\n?/gim, "")
-        .replace(/\n{3,}/g, "\n\n")
-        .trim();
 }
 
 function normalizePRState(raw: string): PRState {

@@ -167,9 +167,12 @@ const CLAIM_RE = /\b(?:all done|everything (?:is )?(?:done|complete|completed|im
  * it is a statement about the user's environment that a clean diff cannot corroborate.
  *
  * A negation directly in front ("not fixed", "no funciona", "no está publicado") is not a
- * claim. Compounds where `fixed` is an adjective ("fixed-width", "fixed point") are left out.
+ * claim. Compounds where `fixed` is an adjective ("fixed-width", "fixed point") are left out,
+ * and so is the explanatory voice: how something works ("así funciona el hook", "cómo funciona
+ * X") and when a step happens ("released when the tag is pushed", "verified on each commit").
+ * A question is never a claim either; claimIn skips those sentences.
  */
-const SUCCESS_CLAIM_RE = /(?<!\b(?:not|never|n't|isn't|wasn't|aren't|weren't)\s(?:yet\s)?(?:been\s)?)\b(?:fixed(?![-\w]|\s(?:point|width|size|length|rate|cost|set|number)s?\b)|resolved|deployed|published|released|shipped|verified|tested)\b|\b(?:it|this|that|everything|all|now)\s(?:now\s)?works\b|\bworks\s(?:now|correctly|as expected|end to end|fine)\b|(?<!\bno\s(?:\S+\s)?(?:\S+\s)?)\b(?:arreglad|solucionad|corregid|desplegad|publicad|mergead|probad|comprobad|verificad|terminad)[oa]s?\b|(?<!\bno\s(?:\S+\s)?)\bresuelt[oa]s?\b|(?<!\bno\s(?:\S+\s)?)\bfuncionan?\b(?!\s(?:mal|a medias))/i;
+const SUCCESS_CLAIM_RE = /(?<!\b(?:not|never|n't|isn't|wasn't|aren't|weren't)\s(?:yet\s)?(?:been\s)?)\b(?:fixed(?![-\w]|\s(?:point|width|size|length|rate|cost|set|number)s?\b)|resolved|deployed|published|shipped)\b|\b(?:released|verified|tested)\b(?!\s(?:when|if|once|until|before|on each|on every|every|each)\b)|\b(?:it|this|that|everything|all|now)\s(?:now\s)?works\b|\bworks\s(?:now|correctly|as expected|end to end|fine)\b|(?<!\bno\s(?:\S+\s)?(?:\S+\s)?)\b(?:arreglad|solucionad|corregid|desplegad|publicad|mergead|probad|comprobad|verificad|terminad)[oa]s?\b|(?<!\bno\s(?:\S+\s)?)\bresuelt[oa]s?\b|(?<!\b(?:no|c[oó]mo|as[ií]|qu[eé])\s(?:\S+\s)?)\bfuncionan?\b(?!\s(?:mal|a medias))/i;
 
 /**
  * Phrases that disclose remaining work. A message containing one is an honest report, not
@@ -211,7 +214,7 @@ function claimIn(message: string, results: boolean): boolean {
     for (const [start, end] of sentenceSpans(message)) {
         const sentence = message.slice(start, end);
         if (DISCLOSURE_RE.test(sentence)) return false;
-        if (CLAIM_RE.test(sentence) || (results && SUCCESS_CLAIM_RE.test(sentence))) claim = true;
+        if (CLAIM_RE.test(sentence) || (results && !sentence.trimEnd().endsWith("?") && SUCCESS_CLAIM_RE.test(sentence))) claim = true;
     }
     return claim;
 }
@@ -1947,18 +1950,6 @@ export function unsourcedTrailers(cwd: string, transcriptPath: string): VerifyGa
 }
 
 /**
- * The message fed back when a commit carries an identity that came from nowhere. It names the
- * ways to SOURCE the value rather than telling the model to remove the trailer, because the
- * co-author is usually real and only the address was invented.
- *
- * The routes are separated by what they can actually do here, which the first wording blurred: the
- * user's own words and the repository's history CLEAR the check, while `gh api` cannot by
- * construction - its answer arrives as a tool result, which `userTyped` deliberately ignores, and a
- * freshly looked-up address is by definition not in `%ae`/`%ce` or `.mailmap` yet. So the lookup
- * and the escape hatch are named in the same breath. An agent that does precisely the right thing
- * must not spend both of its available blocks discovering that the right thing is not enough.
- */
-/**
  * Unpushed commits carrying an AI attribution line, when attribution is off for this session.
  * One `git log` and only past a settings read that says attribution is off, so a session that
  * allows attribution pays nothing.
@@ -1980,6 +1971,18 @@ function attributionMessage(gaps: VerifyGap[]): string {
     ].join("\n");
 }
 
+/**
+ * The message fed back when a commit carries an identity that came from nowhere. It names the
+ * ways to SOURCE the value rather than telling the model to remove the trailer, because the
+ * co-author is usually real and only the address was invented.
+ *
+ * The routes are separated by what they can actually do here, which the first wording blurred: the
+ * user's own words and the repository's history CLEAR the check, while `gh api` cannot by
+ * construction - its answer arrives as a tool result, which `userTyped` deliberately ignores, and a
+ * freshly looked-up address is by definition not in `%ae`/`%ce` or `.mailmap` yet. So the lookup
+ * and the escape hatch are named in the same breath. An agent that does precisely the right thing
+ * must not spend both of its available blocks discovering that the right thing is not enough.
+ */
 function sourceMessage(gaps: VerifyGap[]): string {
     return [
         "enigma verify: STOP. This change credits someone using a value you do not have:",

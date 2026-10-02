@@ -91,8 +91,8 @@ export interface TidyResult {
     problems: string[];
     /** Idle worktrees removed (or, on a dry run, that would be) so their branches could go. */
     worktrees: string[];
-    /** Branches that existed only on the remote and were deleted there (or would be). */
-    remoteOnly: string[];
+    /** Branches that existed only on the remote and were deleted there (or would be), with their tips. */
+    remoteOnly: Array<{ branch: string; sha: string; }>;
     /** Stale remote-tracking refs pruned (branches already deleted on their remote). */
     pruned: number;
     /** Things kept for a reason that is not a failure, for the report. */
@@ -407,6 +407,13 @@ export interface TidyOptions {
     dryRun?: boolean;
     /** Branch names to consider; empty means every tidyable branch. */
     only?: string[];
+    /**
+     * Never switch off or delete the branch checked out here. Set by the unattended background
+     * run: a branch an agent just created has no commits yet, so it is trivially contained in
+     * the default branch, and moving the checkout under a live session would land its next
+     * commit on the default branch.
+     */
+    keepCurrent?: boolean;
 }
 
 /**
@@ -460,7 +467,7 @@ export async function tidy(dir: string, opts: TidyOptions = {}): Promise<TidyRes
     }
 
     const wanted = new Set(opts.only ?? []);
-    const targets = plan.verdicts.filter((v) => v.tidyable && (wanted.size === 0 || wanted.has(v.branch)));
+    const targets = plan.verdicts.filter((v) => v.tidyable && (wanted.size === 0 || wanted.has(v.branch)) && !(opts.keepCurrent && v.branch === plan.currentBranch));
     const localWork = targets.length > 0 && !opts.dryRun;
 
     if (localWork && targets.some((v) => v.branch === plan.currentBranch)) {
@@ -483,12 +490,12 @@ export async function tidy(dir: string, opts: TidyOptions = {}): Promise<TidyRes
     if (remoteOnly.note) result.notes.push(remoteOnly.note);
     for (const target of remoteOnly.verdicts) {
         if (wanted.size && !wanted.has(target.branch)) continue;
-        if (opts.dryRun) { result.remoteOnly.push(target.branch); continue; }
+        if (opts.dryRun) { result.remoteOnly.push({ branch: target.branch, sha: target.sha }); continue; }
         try {
             recordDeletion(dir, { branch: target.branch, sha: target.sha, remote: true });
             await git.run(dir, ["push", remote, "--delete", target.branch]);
             result.deletedRemote.push(target.branch);
-            result.remoteOnly.push(target.branch);
+            result.remoteOnly.push({ branch: target.branch, sha: target.sha });
         } catch (err) {
             result.problems.push(`kept ${target.branch} on ${remote}: ${(err as Error).message}`);
         }
@@ -574,7 +581,7 @@ export function scheduleBackgroundTidy(repoRoot: string, enabled: boolean): void
         // entry path first (the same dispatch ci-watch.ts documents).
         const exe = basename(process.execPath).toLowerCase();
         const dev = exe === "node" || exe === "node.exe" || exe === "bun" || exe === "bun.exe";
-        const args = ["branches", "tidy", "--cwd", repoRoot];
+        const args = ["branches", "tidy", "--keep-current", "--cwd", repoRoot];
         const child = spawn(process.execPath, dev ? [process.argv[1]!, ...args] : args, { detached: true, stdio: "ignore", windowsHide: true });
         child.on("error", () => { /* the cleanup just did not run this hour */ });
         child.unref();
@@ -582,32 +589,37 @@ export function scheduleBackgroundTidy(repoRoot: string, enabled: boolean): void
 }
 
 /**
- * Branches that exist only on `remote`, are fully contained in `base`, and have no open PR -
- * the dead branches a PR workflow leaves on the remote after a squash merge from the web, which
- * no local branch ever represented. A remote branch is someone's work until proved otherwise,
- * so each condition must be SHOWN, never assumed:
+ * Branches that exist only on `remote`, are fully contained in `base`, and were merged through a
+ * pull request - the dead branches a PR workflow leaves on the remote after a squash merge from
+ * the web, which no local branch ever represented. A remote branch is someone's work until proved
+ * otherwise, so each condition must be SHOWN, never assumed:
  * - the remote-tracking ref must exist locally at the very sha the remote reports, or there is
  *   nothing to prove containment against (no fetch is forced here);
- * - the open-PR list must be readable (`gh pr list`); when it is not - no gh, not GitHub, not
- *   logged in - every remote-only branch is kept, since an open PR is a branch in review.
+ * - the PR list must be readable (`gh pr list`); when it is not - no gh, not GitHub, not logged
+ *   in - every remote-only branch is kept;
+ * - no PR on the branch is open, and a merged PR from this repository had it as its head at
+ *   this very sha. Containment alone is not enough: a long-lived shared branch (staging, a
+ *   deploy branch, a teammate's branch pushed before its first commit) is contained in the
+ *   default branch every time it is fast-forwarded, and is nobody's leftover.
  */
-export async function remoteOnlyBranches(dir: string, remote: string, plan: TidyPlan, listOpen: (dir: string) => Promise<Set<string> | null> = openPRHeads): Promise<{ verdicts: BranchVerdict[]; note?: string; }> {
+export async function remoteOnlyBranches(dir: string, remote: string, plan: TidyPlan, listPRs: (dir: string) => Promise<PRHeads | null> = prHeads): Promise<{ verdicts: BranchVerdict[]; note?: string; }> {
     if (!remote || plan.blocked) return { verdicts: [] };
     const base = plan.baseRef ?? plan.defaultBranch;
     const local = new Set(await localBranches(dir));
     const heads = await git.run(dir, ["ls-remote", "--heads", remote]).catch(() => null);
     if (heads === null) return { verdicts: [], note: `${remote} could not be read, so its branches were left alone` };
-    const open = await listOpen(dir);
-    if (open === null) return { verdicts: [], note: `open pull requests could not be listed (gh), so branches that exist only on ${remote} were left alone` };
+    const prs = await listPRs(dir);
+    if (prs === null) return { verdicts: [], note: `pull requests could not be listed (gh), so branches that exist only on ${remote} were left alone` };
     const verdicts: BranchVerdict[] = [];
     for (const line of heads.split("\n")) {
         const [sha = "", ref = ""] = line.trim().split(/\s+/);
         const branch = ref.replace("refs/heads/", "");
-        if (!sha || !branch || local.has(branch) || branch === plan.defaultBranch || PROTECTED.has(branch) || open.has(branch)) continue;
+        if (!sha || !branch || local.has(branch) || branch === plan.defaultBranch || PROTECTED.has(branch) || prs.open.has(branch)) continue;
+        if (!prs.merged.get(branch)?.has(sha)) continue;
         const tracking = await git.resolveRef(dir, `refs/remotes/${remote}/${branch}`).catch(() => "");
         if (tracking !== sha) continue;
         if (!await containedInAny(dir, base, plan.defaultBranch, sha)) continue;
-        verdicts.push({ branch, sha, tidyable: true, detail: `only on ${remote}, fully contained in ${base}, no open PR`, remote: true });
+        verdicts.push({ branch, sha, tidyable: true, detail: `only on ${remote}, fully contained in ${base}, merged by a PR at this commit`, remote: true });
     }
     return { verdicts };
 }
@@ -623,16 +635,32 @@ async function pruneRemotes(dir: string): Promise<number> {
     return pruned;
 }
 
-/** Head branch names of the repository's open PRs, or null when they cannot be listed. */
-async function openPRHeads(dir: string): Promise<Set<string> | null> {
+export interface PRHeads {
+    /** Head branch names of the open PRs. */
+    open: Set<string>;
+    /** Head branch name -> the head shas it was merged at, for PRs from this repository. */
+    merged: Map<string, Set<string>>;
+}
+
+/** The repository's PR heads, open and merged, or null when they cannot be listed. */
+async function prHeads(dir: string): Promise<PRHeads | null> {
     const { execFile } = await import("node:child_process");
     return new Promise((resolveHeads) => {
-        execFile("gh", ["pr", "list", "--state", "open", "--limit", "1000", "--json", "headRefName"], { cwd: dir, windowsHide: true, timeout: 30_000 }, (err, stdout) => {
+        execFile("gh", ["pr", "list", "--state", "all", "--limit", "1000", "--json", "headRefName,headRefOid,state,isCrossRepository"], { cwd: dir, windowsHide: true, timeout: 30_000 }, (err, stdout) => {
             if (err) return resolveHeads(null);
             try {
-                const rows = JSON.parse(String(stdout)) as Array<{ headRefName?: unknown; }>;
+                const rows = JSON.parse(String(stdout)) as Array<{ headRefName?: unknown; headRefOid?: unknown; state?: unknown; isCrossRepository?: unknown; }>;
                 if (!Array.isArray(rows)) return resolveHeads(null);
-                resolveHeads(new Set(rows.map((r) => String(r.headRefName ?? "")).filter(Boolean)));
+                const heads: PRHeads = { open: new Set(), merged: new Map() };
+                for (const row of rows) {
+                    const branch = String(row.headRefName ?? "");
+                    if (!branch) continue;
+                    if (row.state === "OPEN") heads.open.add(branch);
+                    if (row.state !== "MERGED" || row.isCrossRepository !== false || typeof row.headRefOid !== "string") continue;
+                    if (!heads.merged.has(branch)) heads.merged.set(branch, new Set());
+                    heads.merged.get(branch)!.add(row.headRefOid);
+                }
+                resolveHeads(heads);
             } catch {
                 resolveHeads(null);
             }

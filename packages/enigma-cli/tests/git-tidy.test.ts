@@ -437,28 +437,41 @@ test("a background tidy is claimed once an hour per repository", async () => {
     expect(claimBackgroundTidy("C:/repo/b", now)).toBe(true);
 });
 
-// A branch that exists only on the remote is deleted there only when it is merged AND the
-// open-PR list says nothing is in review on it; an unreadable list keeps every one of them.
-test("a remote-only branch goes only when merged and without an open PR", async () => {
+// A branch that exists only on the remote is deleted there only when it is merged, nothing is in
+// review on it, AND a merged PR had it as head at that very sha; an unreadable list keeps them all.
+test("a remote-only branch goes only when merged through a PR at its tip", async () => {
     const { remoteOnlyBranches } = await import("../src/git-tidy");
     const { dir } = repo("remote-only");
-    for (const name of ["merged-a", "in-review", "unmerged"]) {
+    for (const name of ["merged-a", "in-review", "unmerged", "staging", "moved-on"]) {
         git(dir, "checkout", "-q", "-b", name, "main");
         commit(dir, `${name}.txt`);
         git(dir, "push", "-q", "origin", name);
         git(dir, "checkout", "-q", "main");
     }
-    git(dir, "merge", "-q", "--no-edit", "merged-a", "in-review");
+    git(dir, "merge", "-q", "--no-edit", "merged-a", "in-review", "staging", "moved-on");
     git(dir, "push", "-q", "origin", "main");
     git(dir, "fetch", "-q", "origin");
-    for (const name of ["merged-a", "in-review", "unmerged"]) git(dir, "branch", "-q", "-D", name);
+    const tip = (name: string) => git(dir, "rev-parse", name).trim();
+    const merged = new Map([["merged-a", new Set([tip("merged-a")])], ["moved-on", new Set(["0".repeat(40)])]]);
+    for (const name of ["merged-a", "in-review", "unmerged", "staging", "moved-on"]) git(dir, "branch", "-q", "-D", name);
 
     const plan = await planTidy(dir);
-    const found = await remoteOnlyBranches(dir, "origin", plan, async () => new Set(["in-review"]));
+    const found = await remoteOnlyBranches(dir, "origin", plan, async () => ({ open: new Set(["in-review"]), merged }));
     expect(found.verdicts.map((v) => v.branch)).toEqual(["merged-a"]);
     const unreadable = await remoteOnlyBranches(dir, "origin", plan, async () => null);
     expect(unreadable.verdicts).toEqual([]);
     expect(unreadable.note).toContain("left alone");
+}, 120_000);
+
+// The background run never moves the checkout: a branch just created for the next turn has no
+// commits yet, so it is contained in main, and deleting it would put that turn's work on main.
+test("keepCurrent never switches off or deletes the checked-out branch", async () => {
+    const { dir } = repo("keep-current");
+    git(dir, "checkout", "-q", "-b", "feat/fresh", "main");
+    const result = await tidy(dir, { remote: "", keepCurrent: true });
+    expect(result.switched).toBe(false);
+    expect(result.deleted).not.toContain("feat/fresh");
+    expect(git(dir, "branch", "--show-current").trim()).toBe("feat/fresh");
 }, 120_000);
 
 test("tidy prunes remote-tracking refs whose branch is gone on the remote", async () => {

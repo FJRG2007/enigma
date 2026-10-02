@@ -136,6 +136,11 @@ test("a negated or adjectival result is not a claim", () => {
         "The table uses a fixed-width layout.",
         "Switched the loop to a fixed point iteration.",
         "It doesn't work on Windows.",
+        "Así funciona el hook: lee el transcript y decide.",
+        "¿Cómo funciona el gate?",
+        "The package is released when the tag is pushed.",
+        "Each commit is verified on every push.",
+        "Is the login bug fixed?",
     ]) expect(claimsDone(message)).toBe(false);
 });
 

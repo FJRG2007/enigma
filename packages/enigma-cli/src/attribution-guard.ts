@@ -31,10 +31,23 @@ import type { HookGroup, HookWrite } from "./claude-hooks";
 const MARKER = "__attribution-guard";
 
 /**
- * Lines that attribute work to an AI assistant: an Anthropic co-author trailer (any casing,
- * any display name) and Claude Code's "Generated with" footer, with or without its link.
+ * The two lines that attribute work to an AI assistant, each matching a WHOLE line: an Anthropic
+ * co-author trailer (any casing, any display name, an `@anthropic.com` address) and Claude Code's
+ * "Generated with" footer, with or without its emoji and link. Prose that only mentions the
+ * footer, or a human co-author who happens to be named Claude, is neither.
  */
-const ATTRIBUTION_RE = /^[ \t>*-]*co-authored-by:[^\n]*(?:noreply@anthropic\.com|\bclaude\b)[^\n]*$|generated with \[?claude code\]?/im;
+const CO_AUTHOR = String.raw`[ \t>*-]*co-authored-by:[^\n]*@anthropic\.com\b[^\n]*`;
+const FOOTER = String.raw`[ \t>*-]*(?:[^\sA-Za-z0-9]+[ \t]+)?generated with \[?claude code\]?(?:\([^)\n]*\))?[ \t.!]*`;
+
+/**
+ * An attribution line in a command or a message. Besides the start of a line, a line can open
+ * a message argument (`-m "...`, `--body=...`) and end at its closing quote, which is how a
+ * one-line `-m` carries it.
+ */
+const ATTRIBUTION_RE = new RegExp(String.raw`(?:^|(?:-m|--message|-b|--body)(?:=|[ \t]+)\$?["']?)(${CO_AUTHOR}|${FOOTER})(?:["'\x60][^\n]*)?$`, "im");
+
+/** One message line that is an attribution line and nothing else. */
+const ATTRIBUTION_LINE_RE = new RegExp(`^(?:${CO_AUTHOR}|${FOOTER})$`, "i");
 
 /** Commands the hook is spawned for, in Claude Code's permission-rule syntax. */
 const COMMAND_PATTERNS = ["git commit*", "git -C * commit*", "gh pr create*", "gh pr edit*", "gh pr merge*"];
@@ -45,7 +58,17 @@ const MAX_MESSAGE_FILE = 1024 * 1024;
 /** The first attribution line in `text`, or "" when there is none. */
 export function attributionLine(text: string): string {
     const match = ATTRIBUTION_RE.exec(text);
-    return match ? match[0].trim().replace(/["'`]+$/, "") : "";
+    return match ? match[1]!.trim().replace(/["'`]+$/, "") : "";
+}
+
+/** Removes every attribution line from a message, then collapses the gaps they leave. */
+export function stripAttributionLines(text: string): string {
+    return text
+        .split("\n")
+        .filter((line) => !ATTRIBUTION_LINE_RE.test(line.replace(/\r$/, "")))
+        .join("\n")
+        .replace(/\n{3,}/g, "\n\n")
+        .trim();
 }
 
 /**
