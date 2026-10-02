@@ -9,7 +9,7 @@
  * with `--body-file -` instead (upstream PR 370).
  */
 import { test, expect } from "bun:test";
-import { New, type Cmd, type CmdFactory } from "@/gate/scm/github";
+import { New, type Cmd, type CmdFactory, parseIncludedResponse } from "@/gate/scm/github";
 
 interface Invocation {
     args: string[];
@@ -67,4 +67,72 @@ test("updatePR sends the body over stdin, never argv", async () => {
     expect(args).toContain("--body-file");
     expect(args).not.toContain("--body");
     expect(stdin).toBe(bigBody);
+});
+
+/**
+ * A PR parked on a merge is re-read every few seconds, so the read must be a
+ * conditional request: an unchanged PR answers 304, which GitHub does not count
+ * against the rate limit, and the cached state is replayed.
+ */
+function scriptedCmdFactory(invocations: Invocation[], answers: Array<{ out: string; err: Error | null; }>): CmdFactory {
+    return (_signal, _name, ...args) => {
+        invocations.push({ args, stdin: undefined });
+        const answer = answers.shift() ?? { out: "", err: new Error("unexpected call") };
+        const cmd: Cmd = {
+            run: async () => answer.err,
+            output: async () => answer,
+            combinedOutput: async () => answer,
+            withStdin: () => cmd
+        };
+        return cmd;
+    };
+}
+
+const pr = { number: "7", url: "https://github.com/o/r/pull/7" };
+const ok = (etag: string, body: object): string => `HTTP/2.0 200 OK\r\nEtag: ${etag}\r\nX-Other: 1\r\n\r\n${JSON.stringify(body)}`;
+const notModified = (etag: string): { out: string; err: Error; } => ({ out: `HTTP/2.0 304 Not Modified\r\nEtag: ${etag}\r\n\r\n`, err: new Error("exit status 1") });
+
+test("getPRState sends the last ETag and replays the cached state on 304", async () => {
+    const invocations: Invocation[] = [];
+    const host = New(scriptedCmdFactory(invocations, [
+        { out: ok('W/"a"', { state: "open", merged: false, merged_at: null }), err: null },
+        notModified('"a"'),
+        { out: ok('W/"b"', { state: "closed", merged: true, merged_at: "2026-10-02T00:00:00Z" }), err: null }
+    ]), () => true, "o/r");
+
+    expect(await host.getPRState(undefined, pr)).toBe("OPEN");
+    expect(invocations[0].args).toEqual(["api", "--include", "repos/o/r/pulls/7"]);
+
+    expect(await host.getPRState(undefined, pr)).toBe("OPEN");
+    expect(invocations[1].args).toEqual(["api", "--include", "repos/o/r/pulls/7", "-H", 'If-None-Match: W/"a"']);
+
+    // REST reports a merged PR as closed + merged; it must read as MERGED, not CLOSED.
+    expect(await host.getPRState(undefined, pr)).toBe("MERGED");
+});
+
+test("getPRState reports a closed, unmerged PR as CLOSED", async () => {
+    const host = New(scriptedCmdFactory([], [{ out: ok('"c"', { state: "closed", merged: false, merged_at: null }), err: null }]), () => true, "o/r");
+    expect(await host.getPRState(undefined, pr)).toBe("CLOSED");
+});
+
+test("getPRState resolves the repo from the checkout when none is configured", async () => {
+    const invocations: Invocation[] = [];
+    const host = New(scriptedCmdFactory(invocations, [{ out: ok('"a"', { state: "open" }), err: null }]), () => true, "");
+    await host.getPRState(undefined, pr);
+    expect(invocations[0].args[2]).toBe("repos/{owner}/{repo}/pulls/7");
+});
+
+test("getPRState throws on a failed read instead of guessing a state", async () => {
+    const host = New(scriptedCmdFactory([], [{ out: "", err: new Error("gh: Not Found (HTTP 404)") }]), () => true, "o/r");
+    await expect(host.getPRState(undefined, pr)).rejects.toThrow("Not Found");
+});
+
+test("a 304 with nothing cached is an error, not a state", async () => {
+    const host = New(scriptedCmdFactory([], [notModified('"a"')]), () => true, "o/r");
+    await expect(host.getPRState(undefined, pr)).rejects.toThrow();
+});
+
+test("parseIncludedResponse reads status, ETag and body", () => {
+    expect(parseIncludedResponse('HTTP/1.1 200 OK\nETag: "x"\n\n{"a":1}')).toEqual({ status: 200, etag: '"x"', body: '{"a":1}' });
+    expect(parseIncludedResponse("")).toEqual({ status: 0, etag: "", body: "" });
 });

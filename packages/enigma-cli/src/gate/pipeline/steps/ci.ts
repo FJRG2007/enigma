@@ -47,6 +47,44 @@ const CI_CHECKS_RUNNING_MSG = "CI checks running, waiting for results...";
  */
 const CI_MERGE_BLOCK_REASON = "merge the PR";
 
+/**
+ * How often a PR parked on a merge is re-read between full polls. The full poll ramps
+ * to two minutes, which is how long a merge used to sit unnoticed with the status bar
+ * still saying "needs you". A provider whose unchanged re-read is free (a 304 on a
+ * conditional request) is watched every few seconds; the others at a pace their rate
+ * limits absorb for several parked runs at once.
+ */
+const MERGE_WATCH_INTERVAL_CONDITIONAL = 5 * 1000;
+const MERGE_WATCH_INTERVAL = 30 * 1000;
+
+/**
+ * Waits up to `totalMS` while re-reading only the PR's state every `stepMS`, returning
+ * early with the state once the PR is merged or closed, and null when the wait runs out.
+ * A failed read is not an outcome: the next full poll reports it.
+ */
+export async function watchPRSettle(
+    host: Pick<scm.Host, "getPRState">,
+    pr: scm.PR,
+    totalMS: number,
+    stepMS: number,
+    signal: AbortSignal,
+    wait: (signal: AbortSignal, ms: number) => Promise<void>
+): Promise<scm.PRState | null> {
+    let remaining = totalMS;
+    while (remaining > 0) {
+        const step = Math.min(stepMS, remaining);
+        await wait(signal, step);
+        remaining -= step;
+        try {
+            const state = await host.getPRState(pr, signal);
+            if (state === scm.PR_STATE_MERGED || state === scm.PR_STATE_CLOSED) return state;
+        } catch {
+            if (signal.aborted) throw signalError(signal);
+        }
+    }
+    return null;
+}
+
 function errMessage(err: unknown): string {
     return err instanceof Error ? err.message : String(err);
 }
@@ -127,6 +165,19 @@ function formatGoDuration(ms: number): string {
         }
     }
     return neg ? `-${out}` : out;
+}
+
+/** The step's outcome for a PR that reached a final state, or null while it is open. */
+function settledPROutcome(sctx: StepContext, state: scm.PRState): StepOutcome | null {
+    if (state === scm.PR_STATE_MERGED) {
+        sctx.log("PR has been merged!");
+        return newStepOutcome({});
+    }
+    if (state === scm.PR_STATE_CLOSED) {
+        sctx.log("PR has been closed");
+        return newStepOutcome({});
+    }
+    return null;
 }
 
 /** Logs message only when it differs from the previous one; returns message. */
@@ -323,14 +374,8 @@ export class CIStep implements Step {
             // Check PR state (merged/closed -> exit).
             let prStateKnown = true;
             try {
-                const state: scm.PRState = await host.getPRState(pr, signal);
-                if (state === scm.PR_STATE_MERGED) {
-                    sctx.log("PR has been merged!");
-                    return newStepOutcome({});
-                } else if (state === scm.PR_STATE_CLOSED) {
-                    sctx.log("PR has been closed");
-                    return newStepOutcome({});
-                }
+                const settled = settledPROutcome(sctx, await host.getPRState(pr, signal));
+                if (settled !== null) return settled;
             } catch (err) {
                 sctx.log(`warning: could not check PR state: ${errMessage(err)}`);
                 prStateKnown = false;
@@ -505,7 +550,16 @@ export class CIStep implements Step {
                 const remaining = timeout - (now() - timeoutAnchor);
                 if (remaining < interval) interval = remaining;
             }
-            await waitForNextPoll(signal, interval);
+            if (!waitingOnMerge) {
+                await waitForNextPoll(signal, interval);
+                continue;
+            }
+            // Parked on a person: watch the PR's state alone between full polls, so a
+            // merge closes the run in seconds instead of on the next two-minute poll.
+            const watchStep = host.capabilities().conditionalPRState ? MERGE_WATCH_INTERVAL_CONDITIONAL : MERGE_WATCH_INTERVAL;
+            const final = await watchPRSettle(host, pr, interval, watchStep, signal, waitForNextPoll);
+            const settled = final === null ? null : settledPROutcome(sctx, final);
+            if (settled !== null) return settled;
         }
     }
 }

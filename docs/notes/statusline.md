@@ -124,7 +124,9 @@ sit parked at a gate for a long time.
   mirrors the run's `blocked_reason` (gate.md has the mechanism). This is not the same
   as `awaiting`: that one is a gate the driving agent answers, this one is work only
   the user can do - after CI goes green the `ci` step stays `running` until someone
-  merges, and without this the bar spun over a step doing nothing.
+  merges, and without this the bar spun over a step doing nothing. Clearing it is the ci
+  step's merge watch (gate.md): the run ends within ~5s of the merge on GitHub, and the
+  bar drops the line on its next refresh.
 - A negative elapsed time (snapshot and reader disagreeing about the clock) drops the
   segment rather than printing a confident `0s`.
 

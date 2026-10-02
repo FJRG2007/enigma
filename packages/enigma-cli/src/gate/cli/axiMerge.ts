@@ -153,9 +153,11 @@ export async function mergeRunPR(
 
 /**
  * Waits for the pipeline to notice the merged PR and finish, returning the run as
- * it stands when it settles or when the wait runs out. The `ci` step polls on a
- * backoff, so this can take a couple of minutes; timing out is not a failure, it
- * just means the run closes on its own after this command returns.
+ * it stands when it settles or when the wait runs out. A run parked on the merge
+ * re-reads the PR every few seconds, but a `--force` merge over unfinished checks
+ * is only seen by the full poll on its backoff, which can take a couple of minutes;
+ * timing out is not a failure, it just means the run closes on its own after this
+ * command returns.
  */
 async function waitForRunToSettle(env: AxiEnv, runID: string, signal?: AbortSignal): Promise<Run | null> {
     const deadline = Date.now() + RUN_SETTLE_TIMEOUT;

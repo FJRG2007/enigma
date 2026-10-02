@@ -404,9 +404,24 @@ the kernel/`/gate`/`verify` texts all say the same thing: merge only when the us
   running checks refuse the merge unless `--force`, and a closed PR or a known conflict refuses
   it either way (no flag makes those true). Default method is squash - a gate PR carries the
   original commits plus every fix round the pipeline pushed.
-- After the merge the CLI just waits: the `ci` step sees `PR_STATE_MERGED` on its next poll
-  (up to two minutes on the backoff) and closes the run. Nothing tells the daemon to stop; the
-  pipeline ends exactly where it would have ended had a human clicked merge.
+- After the merge the CLI just waits: the `ci` step sees `PR_STATE_MERGED` and closes the run.
+  Nothing tells the daemon to stop; the pipeline ends exactly where it would have ended had a
+  human clicked merge.
+
+**A merge sat unnoticed for up to two minutes.** The full poll ramps to 120s, so a user who
+merged in the browser kept seeing `needs you: merge the PR` long after doing it. While the run
+is blocked on the merge, the sleep between full polls is now `watchPRSettle` (`steps/ci.ts`):
+it re-reads ONLY the PR's state every 5s (`MERGE_WATCH_INTERVAL_CONDITIONAL`) and ends the step
+the moment it reads merged or closed. That is cheap only because GitHub's `getPRState` is a
+conditional REST read (`gh api --include` with the last ETag as `If-None-Match`): an unchanged
+PR answers 304, which does not count against the rate limit - measured, `X-RateLimit-Used`
+stays put on the 304 and moves on the next 200. `gh` exits non-zero on a 304, so the status line
+in the included headers decides, never the exit code. Providers without that
+(`capabilities().conditionalPRState` false: GitLab, Bitbucket - whose 1000 requests/hour would
+not absorb several parked runs at 5s) are re-read every 30s. Worst case from merge to a cleared
+bar is now one watch step plus one status-bar refresh (statusline.md), instead of two minutes.
+The REST API reports a merged PR as `state: "closed"` with `merged: true`; reading only `state`
+would end the run as CLOSED.
 
 ## Commit subjects (`pipeline/steps/commitMessage.ts`)
 

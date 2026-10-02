@@ -101,6 +101,11 @@ export interface Check {
 export interface Capabilities {
     mergeableState: boolean;
     failedCheckLogs: boolean;
+    /**
+     * True when re-reading an unchanged PR's state is free against the provider's
+     * rate limit (a conditional request answered 304), so it can be polled fast.
+     */
+    conditionalPRState: boolean;
 }
 
 /**

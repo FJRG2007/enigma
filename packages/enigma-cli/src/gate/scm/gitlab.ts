@@ -315,7 +315,7 @@ export class GitLabHost implements types.Host {
     }
 
     capabilities(): types.Capabilities {
-        return { mergeableState: true, failedCheckLogs: true };
+        return { mergeableState: true, failedCheckLogs: true, conditionalPRState: false };
     }
 
     async available(signal?: AbortSignal): Promise<void> {

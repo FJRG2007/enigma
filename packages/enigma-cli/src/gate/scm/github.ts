@@ -87,6 +87,11 @@ export interface Check {
 export interface Capabilities {
     mergeableState: boolean;
     failedCheckLogs: boolean;
+    /**
+     * True when re-reading an unchanged PR's state is free against the provider's
+     * rate limit (a conditional request answered 304), so it can be polled fast.
+     */
+    conditionalPRState: boolean;
 }
 
 /** Raw `gh pr list` row shape. */
@@ -116,6 +121,13 @@ interface GithubRunJob {
     name?: string;
     conclusion?: string;
     status?: string;
+}
+
+/** The fields of a REST pull request that decide its lifecycle state. */
+interface RawPullState {
+    state?: string;
+    merged?: boolean;
+    merged_at?: string | null;
 }
 
 /** Raw `gh pr checks` row shape. */
@@ -180,12 +192,15 @@ export class Host {
         private readonly forkOwner: string
     ) {}
 
+    /** Last PR-state answer per PR number, replayed when a conditional re-read returns 304. */
+    private readonly prStates = new Map<string, { etag: string; state: PRState; }>();
+
     provider(): Provider {
         return PROVIDER_GITHUB;
     }
 
     capabilities(): Capabilities {
-        return { mergeableState: true, failedCheckLogs: true };
+        return { mergeableState: true, failedCheckLogs: true, conditionalPRState: true };
     }
 
     /** Returns null when the host is ready, or a descriptive error otherwise. */
@@ -266,12 +281,32 @@ export class Host {
         return pr;
     }
 
+    /**
+     * Reads the PR's state with a conditional REST request: the ETag of the last answer
+     * rides as If-None-Match, and an unchanged PR comes back 304, which GitHub does not
+     * count against the rate limit. That is what lets the ci step watch a PR parked on
+     * a merge every few seconds without spending the user's quota.
+     */
     async getPRState(signal: AbortSignal | undefined, pr: PR): Promise<PRState> {
-        const args = ["pr", "view", pr.number, ...this.repoArgs()];
-        args.push("--json", "state", "--jq", ".state");
+        const repo = this.repo === "" ? "{owner}/{repo}" : this.repo;
+        const args = ["api", "--include", `repos/${repo}/pulls/${pr.number}`];
+        const cached = this.prStates.get(pr.number);
+        if (cached !== undefined) args.push("-H", `If-None-Match: ${cached.etag}`);
+        // gh exits non-zero on a 304, so the status line decides, not the exit error.
         const { out, err } = await this.cmd(signal, "gh", ...args).output();
-        if (err != null) throw new Error(`gh pr view: ${err.message}`);
-        return normalizePRState(out.trim());
+        const res = parseIncludedResponse(out);
+        if (res.status === 304 && cached !== undefined) return cached.state;
+        if (res.status !== 200) throw new Error(`gh api pulls/${pr.number}: ${err?.message ?? `HTTP ${res.status}`}`);
+        let raw: RawPullState;
+        try {
+            raw = JSON.parse(res.body) as RawPullState;
+        } catch (e) {
+            throw new Error(`parse PR state: ${(e as Error).message}`);
+        }
+        // The REST API reports a merged PR as state "closed" plus merged/merged_at.
+        const state = raw.merged === true || (raw.merged_at ?? null) !== null ? PR_STATE_MERGED : normalizePRState(raw.state ?? "");
+        if (res.etag !== "") this.prStates.set(pr.number, { etag: res.etag, state });
+        return state;
     }
 
     async getChecks(signal: AbortSignal | undefined, pr: PR): Promise<Check[]> {
@@ -448,6 +483,24 @@ function isFailedJob(job: GithubRunJob): boolean {
 
 function normalizeRunName(name: string): string {
     return name.trim().toLowerCase();
+}
+
+/**
+ * Splits `gh api --include` output into its status code, ETag and body. A status of 0
+ * means no status line was printed (gh failed before any response).
+ */
+export function parseIncludedResponse(out: string): { status: number; etag: string; body: string; } {
+    const sep = /\r?\n\r?\n/.exec(out);
+    const head = sep === null ? out : out.slice(0, sep.index);
+    const body = sep === null ? "" : out.slice(sep.index + sep[0].length);
+    const lines = head.split(/\r?\n/);
+    const status = /^HTTP\/\S+\s+(\d{3})/.exec(lines[0] ?? "");
+    let etag = "";
+    for (const line of lines.slice(1)) {
+        const m = /^etag:\s*(.+)$/i.exec(line);
+        if (m !== null) etag = m[1].trim();
+    }
+    return { status: status === null ? 0 : Number(status[1]), etag, body };
 }
 
 function normalizePRState(raw: string): PRState {

@@ -439,7 +439,7 @@ export class BitbucketHost implements types.Host {
     // Bitbucket's REST API does not expose a reliable merge-conflict probe, so
     // MergeableState is off.
     capabilities(): types.Capabilities {
-        return { mergeableState: false, failedCheckLogs: true };
+        return { mergeableState: false, failedCheckLogs: true, conditionalPRState: false };
     }
 
     async available(_signal?: AbortSignal): Promise<void> {
