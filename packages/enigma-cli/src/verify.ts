@@ -157,6 +157,19 @@ const INCOMPLETE_PATTERNS: Array<{ id: string; re: RegExp; label: string; notNea
 const CLAIM_RE = /\b(?:all done|everything (?:is )?(?:done|complete|completed|implemented|working|works)|fully (?:done|implemented|ported|migrated|complete)|(?:is|are) (?:now )?(?:fully )?(?:complete|completed|implemented|functional)|nothing (?:is )?(?:left|missing|remaining)|no(?:thing)? (?:further )?(?:changes|work|items|steps)? ?(?:are |is )?(?:needed|remaining|pending)|ready to use|100% (?:complete|done|working))\b|(?:ya está(?: todo)?\b|todo (?:listo|hecho|completado|implementado|funcionando)\b|está (?:todo )?(?:listo|completo|completado|terminado)\b|no falta nada\b|completado con éxito\b|funciona (?:correctamente|perfectamente|al 100))/i;
 
 /**
+ * Sentences asserting that something WORKS in the world - fixed, deployed, published,
+ * tested, working - rather than that a task list is finished. CLAIM_RE alone missed every
+ * one of the reported false successes ("arreglado, en main y publicado", "0.1.12
+ * publicada", "19 de 21 eventos funcionan, probados en real", "deployed"), because none of
+ * them said "all done": they named a result. That is the claim most worth auditing, since
+ * it is a statement about the user's environment that a clean diff cannot corroborate.
+ *
+ * A negation directly in front ("not fixed", "no funciona", "no está publicado") is not a
+ * claim. Compounds where `fixed` is an adjective ("fixed-width", "fixed point") are left out.
+ */
+const SUCCESS_CLAIM_RE = /(?<!\b(?:not|never|n't|isn't|wasn't|aren't|weren't)\s(?:yet\s)?(?:been\s)?)\b(?:fixed(?![-\w]|\s(?:point|width|size|length|rate|cost|set|number)s?\b)|resolved|deployed|published|released|shipped|verified|tested)\b|\b(?:it|this|that|everything|all|now)\s(?:now\s)?works\b|\bworks\s(?:now|correctly|as expected|end to end|fine)\b|(?<!\bno\s(?:\S+\s)?(?:\S+\s)?)\b(?:arreglad|solucionad|corregid|desplegad|publicad|mergead|probad|comprobad|verificad|terminad)[oa]s?\b|(?<!\bno\s(?:\S+\s)?)\bresuelt[oa]s?\b|(?<!\bno\s(?:\S+\s)?)\bfuncionan?\b(?!\s(?:mal|a medias))/i;
+
+/**
  * Phrases that disclose remaining work. A message containing one is an honest report, not
  * a false claim, so the gate leaves it alone. `falta` carries a negative lookbehind because
  * "no falta nada" asserts the opposite - it is a claim, and CLAIM_RE reads it as one.
@@ -177,12 +190,26 @@ const DISCLOSURE_RE = /\b(?:still (?:pending|missing|to do|needs)|remains? (?:pe
  * this module exists to prevent.
  */
 export function claimsDone(message: string): boolean {
+    return claimIn(message, true);
+}
+
+/**
+ * The narrow half of claimsDone: the task list is finished ("all done", "ya esta todo"), without
+ * the result words. The style gate's verdict-opening rule reads this one, because its blocking
+ * was justified by a CLOSED surface; widening it to every "Fixed in auth.ts:42" would demand a
+ * "Ready" opening from ordinary fix reports, which is not what that rule was measured on.
+ */
+export function claimsFinished(message: string): boolean {
+    return claimIn(message, false);
+}
+
+function claimIn(message: string, results: boolean): boolean {
     if (!message || typeof message !== "string") return false;
     let claim = false;
     for (const [start, end] of sentenceSpans(message)) {
         const sentence = message.slice(start, end);
         if (DISCLOSURE_RE.test(sentence)) return false;
-        if (CLAIM_RE.test(sentence)) claim = true;
+        if (CLAIM_RE.test(sentence) || (results && SUCCESS_CLAIM_RE.test(sentence))) claim = true;
     }
     return claim;
 }
@@ -552,10 +579,10 @@ export function styleFindings(message: string): VerifyGap[] {
     }
 
     // A reply that claims the work is finished opens with its verdict, so "is it ready?" never
-    // has to be asked: the user reads one word before any evidence. Scoped to claimsDone on
+    // has to be asked: the user reads one word before any evidence. Scoped to claimsFinished on
     // purpose - that is the closed surface. A report that discloses a gap is not a done claim and
     // is left to the kernel's wording.
-    if (openingAt !== -1 && !marked(openingAt) && claimsDone(message) && !STYLE_STATUS_RE.test(opening)) {
+    if (openingAt !== -1 && !marked(openingAt) && claimsFinished(message) && !STYLE_STATUS_RE.test(opening)) {
         hits.push({ rule: "status", detail: "the reply claims the work is done but does not open with its verdict (Ready / Not ready / Blocked, in the user's language)" });
     }
 
@@ -2192,7 +2219,8 @@ function blockMessage(gaps: VerifyGap[], incomplete: { truncated?: boolean; capp
 const MAX_AUDIT_ROUNDS = 3;
 
 /**
- * Which audit round a done claim over `scanned` has earned, or 0 to let the stop through.
+ * Which audit round a done claim over `work` (the turn's added lines, or HEAD when there are
+ * none) has earned, or 0 to let the stop through.
  *
  * The loop ends at a fixed point: the work is fingerprinted when an audit is ordered, and a claim
  * over the SAME fingerprint means the audit found nothing to change - asking again would only
@@ -2201,8 +2229,8 @@ const MAX_AUDIT_ROUNDS = 3;
  * Stop payload's stop_hook_active), so a new request starts its own budget and a model that keeps
  * editing cannot loop past MAX_AUDIT_ROUNDS.
  */
-function auditRound(session: string, scanned: ScannedLines, continuing: boolean): number {
-    const fingerprint = createHash("sha1").update(scanned.lines.map((l) => `${l.file}\0${l.text}`).join("\n")).digest("hex").slice(0, 16);
+function auditRound(session: string, work: string, continuing: boolean): number {
+    const fingerprint = createHash("sha1").update(work).digest("hex").slice(0, 16);
     const key = `audit:${session}`;
     let prev: { fp?: string; rounds?: number; } = {};
     try { prev = JSON.parse(stateValue(key) || "{}"); } catch { /* unreadable: start over */ }
@@ -2221,7 +2249,17 @@ function auditEnabled(config: { selfAudit?: boolean; }): boolean {
     return config.selfAudit !== false && process.env.ENIGMA_SELF_AUDIT !== "0";
 }
 
-/** The order an audit round gives. Short on purpose: it is read at the end of every finished task. */
+/**
+ * The order an audit round gives. Short on purpose: it is read at the end of every finished task.
+ *
+ * Its second half is about the CLAIM, not the code, and that half was missing when every reported
+ * false success happened: the code was clean and reviewed, and the claim still covered more than
+ * was observed - built but never published, published but cached, tested on land but used on an
+ * island, working for an operator but not a player, export without import, a symptom gone with the
+ * cause never shown. None of those is a defect a diff review finds; each is a claim wider than its
+ * evidence, which is what the agent is asked to reason about here, in general terms rather than
+ * per case.
+ */
 function auditMessage(round: number): string {
     return [
         `enigma verify: audit round ${round}/${MAX_AUDIT_ROUNDS} before this is reported as done.`,
@@ -2230,6 +2268,12 @@ function auditMessage(round: number): string {
         "  - every control, route and flag you added works and is enabled; nothing renders as a no-op;",
         "  - edges: empty, huge, concurrent, unauthenticated, old data and existing installs;",
         "  - every caller and consumer of what you changed still works; nothing else regressed (build, tests, types).",
+        "Then audit each success word in your reply (fixed, works, deployed, published, tested): it is a claim about the user's real use, and it may say no more than you observed:",
+        "  - delivery: committed is not merged, merged is not built (CI can skip a commit), built is not published or deployed, deployed is not what the user's client loads (caches, old installs). Check the far end;",
+        "  - conditions: the roles, locales, environments, devices, providers and existing data the user actually has, not only the one you tried;",
+        "  - the whole flow: round trips (export then import, save then reload), what it leaves behind, and what it must not lose;",
+        "  - cause: does the evidence show the cause you named, or only that the symptom changed? A fact from a doc, memory or a name is checked against the live system first.",
+        "Rewrite every claim to its evidence: what you ran, where, and what it printed. Anything not observed is stated as unverified, never rounded up.",
         "If this review changes nothing, report the verdict with the evidence you ran. If it changes code, the new change is audited in turn.",
     ].join("\n");
 }
@@ -2441,8 +2485,16 @@ export function runVerifyHook(payload?: string): number {
         // nothing more. What found the rest, in practice, was the user asking "are you 100% sure?"
         // until the answer stopped changing the code - so that loop runs here instead of in the
         // user's patience. See auditRound for when it asks again and when it lets the stop through.
-        if (!gaps.length && auditEnabled(config) && raw.permission_mode !== "plan" && scanned?.lines.length) {
-            const round = auditRound(session, scanned, raw.stop_hook_active === true);
+        //
+        // A claim with NO diff is audited too. "Published", "deployed", "the service is stopped" are
+        // claims about the world made after the code is committed or without code at all, and they
+        // were the false successes most often reported. The fixed point there is HEAD: the same
+        // claim over the same commit is audited once.
+        if (!gaps.length && auditEnabled(config) && raw.permission_mode !== "plan") {
+            const work = scanned?.lines.length
+                ? scanned.lines.map((l) => `${l.file}\0${l.text}`).join("\n")
+                : `head:${gitOut(cwd, ["rev-parse", "HEAD"]).trim()}`;
+            const round = auditRound(session, work, raw.stop_hook_active === true);
             if (round) {
                 substantive = true;
                 process.stderr.write(`${auditMessage(round)}\n`);

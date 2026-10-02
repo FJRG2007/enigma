@@ -64,6 +64,13 @@ A completion claim is forbidden unless ALL of these hold:
 
 - The final report must state: total units, done, deferred (with approval), and the verification evidence (commands run and their results).
 - Anything that could not be verified is reported as unverified. Never upgrade unverified to done.
+- A claim is exactly as wide as its evidence. Every success word ("fixed", "works", "deployed", "published", "tested", "arreglado", "funciona") is a statement about the user's real use, so before writing one, name what it covers and check each dimension that applies:
+  - **Delivery chain** - committed, merged, built (CI can skip a commit by path, type or message), released/published, deployed, and what the user's client actually loads (CDN and API caches, an installed old version). Observe the far end; a step you did not observe is not done.
+  - **Conditions** - the roles and permissions (not only admin/operator), locales, environments, terrains, devices, providers and existing data the user actually has. One condition passing proves that condition.
+  - **Whole flow** - the round trip (export then import, save then reload, send then receive), the state it leaves behind, and what it must never lose or duplicate.
+  - **Cause** - the evidence shows the cause you name, not only that a symptom moved. A diagnosis that was not confirmed is reported as a hypothesis, and a fact read from a doc, memory, a name or another agent's report is checked against the live system before it is relied on.
+  - **Neighbors** - a fix for one path says nothing about a sibling path that was not exercised (another endpoint, another device family, the mobile flow next to the desktop one).
+  Then write the claim to fit: "verified X by running Y in Z; not verified: W". A partial verification reported as complete is a false report, however true each observed part is.
 - Never offload doable work to the user. "You can adjust X yourself", "refresh the lockfile if you prefer", "wire the remaining seam when needed" in a final report are deferrals in disguise: if the agent can execute the action (edit the pin, refresh the freeze, run the migration, wire the seam), it does so BEFORE reporting. Hand work to the user only when it genuinely requires them - credentials or access the agent lacks, irreversible or destructive choices, or business decisions - or when the user explicitly approved deferring it.
 
 ---

@@ -107,6 +107,36 @@ test("recognises a completion claim in English and Spanish", () => {
     ]) expect(claimsDone(message)).toBe(true);
 });
 
+// Every phrasing here is a real report that said something worked when it did not. None of
+// them says "all done", which is why they used to pass without any check at all.
+test("recognises a claim that something works, not only that a task is finished", () => {
+    for (const message of [
+        "Philips arreglado y en main (#299, #301).",
+        "0.1.12 publicada.",
+        "19 de 21 eventos funcionan, probados en real en NeoForge 1.21.4.",
+        "Batalla de construcción: funciona.",
+        "Retos: arreglado el interruptor (#286).",
+        "La rotación del límite diario está desplegada.",
+        "Imágenes del chat solucionadas.",
+        "Fixed in `auth.ts:42`.",
+        "The fix is deployed and the latency is resolved.",
+        "Published 0.1.13 to the marketplace.",
+        "It works now.",
+        "I tested the export end to end.",
+    ]) expect(claimsDone(message)).toBe(true);
+});
+
+test("a negated or adjectival result is not a claim", () => {
+    for (const message of [
+        "The login bug is not fixed yet.",
+        "Esto no funciona en la isla.",
+        "No está publicado.",
+        "The table uses a fixed-width layout.",
+        "Switched the loop to a fixed point iteration.",
+        "It doesn't work on Windows.",
+    ]) expect(claimsDone(message)).toBe(false);
+});
+
 test("does not treat progress notes or honest reports as a claim", () => {
     for (const message of [
         "I added the parser; next I will wire the CLI.",
@@ -920,6 +950,28 @@ test("a done claim is audited until a review changes nothing, at most three roun
     }
     // Seven hook runs, each several git process starts: slow on a machine where a spawn is costly.
 }, 300_000);
+
+// "Published", "deployed", "stopped" are claimed after the code is committed or with no code at
+// all, so a claim with nothing in the diff must still be audited - once per commit.
+test("a success claim with no diff is audited once, and the audit asks what the claim covers", () => {
+    delete process.env.ENIGMA_SELF_AUDIT;
+    const stderr: string[] = [];
+    const write0 = process.stderr.write.bind(process.stderr);
+    process.stderr.write = ((chunk: string) => { stderr.push(String(chunk)); return true; }) as typeof process.stderr.write;
+    try {
+        const dir = repoWith();
+        const claim = (extra: Record<string, unknown> = {}): number => runVerifyHook(payload(dir, "0.1.12 publicada.", { session_id: "audit-nodiff", ...extra }));
+        expect(claim()).toBe(2);
+        const said = stderr.join("");
+        expect(said).toContain("deployed is not what the user's client loads");
+        expect(said).toContain("only that the symptom changed");
+        // Nothing changed since: the same claim over the same commit passes.
+        expect(claim({ stop_hook_active: true })).toBe(0);
+    } finally {
+        process.stderr.write = write0;
+        process.env.ENIGMA_SELF_AUDIT = "0";
+    }
+}, 120_000);
 
 test("a control that renders and does nothing is unfinished work", () => {
     const dead = [
