@@ -109,3 +109,23 @@ test("with nothing new on the remote the push is a plain fast-forward", async ()
     await newPushStep().execute(sctx);
     expect(git(remote, "log", "-1", "--format=%s", "main")).toBe("run change");
 }, 60_000);
+
+test("the replay base is the tip fetched for this run, not a ref another run left behind", async () => {
+    const { remote, work, bot } = scenario();
+    const stale = tmp("stale");
+    git(stale, "clone", "-q", remote, ".");
+    writeFileSync(join(stale, "feature.txt"), "unreviewed\n");
+    git(stale, "add", "-A");
+    git(stale, "commit", "-q", "-m", "unreviewed feature");
+    git(work, "fetch", "-q", stale, "+HEAD:refs/enigma/push-base");
+    writeFileSync(join(bot, "preview.txt"), "bot\n");
+    git(bot, "add", "-A");
+    git(bot, "commit", "-q", "-m", "bot: refresh preview");
+    git(bot, "push", "-q", "origin", "main");
+
+    const { sctx } = context(work, remote);
+    await newPushStep().execute(sctx);
+
+    expect(git(remote, "log", "--format=%s", "main").split("\n")).toEqual(["run change", "bot: refresh preview", "base"]);
+    expect(git(work, "for-each-ref", "--format=%(refname)", "refs/enigma/push-bases/")).toBe("");
+}, 60_000);

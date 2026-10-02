@@ -26,21 +26,31 @@ import { repoPushURL, updateRunHeadSHA } from "@/gate/db";
 import { join, relative, sep, isAbsolute } from "node:path";
 import { newStepOutcome, type Step, type StepContext, type StepOutcome } from "../types";
 
-/** Local ref the push target's current tip is fetched into, to compare it with this run. */
-const PUSH_BASE_REF = "refs/enigma/push-base";
+/** Prefix of the run-scoped local ref the push target's current tip is fetched into. */
+const PUSH_BASE_REF_PREFIX = "refs/enigma/push-bases";
 
 /**
- * Whether the push target holds commits this run's HEAD does not contain. Fetches the
- * target's tip into PUSH_BASE_REF and asks git; a tip that cannot be fetched or compared
- * counts as ahead, since the safe reading of "unknown" is "there may be work to lose".
+ * Fetches the push target's current tip and reports it with whether it holds commits this
+ * run's HEAD does not contain. The ref is scoped to the run, since every run of a repo shares
+ * one gate repository, and removed afterwards. A fetch that fails throws: comparing or replaying
+ * against a tip that was never fetched would act on someone else's state.
  */
-async function remoteHasWorkWeLack(sctx: StepContext, pushURL: string, ref: string, upstreamSHA: string, signal: AbortSignal): Promise<boolean> {
+async function inspectRemoteTip(sctx: StepContext, pushURL: string, ref: string, signal: AbortSignal): Promise<{ ahead: boolean; tipSHA: string; }> {
+    const baseRef = `${PUSH_BASE_REF_PREFIX}/${sctx.run.id}`;
     try {
-        await git.run(sctx.workDir, ["fetch", "--no-tags", pushURL, `+${ref}:${PUSH_BASE_REF}`], signal);
-        await git.run(sctx.workDir, ["merge-base", "--is-ancestor", upstreamSHA, "HEAD"], signal);
-        return false;
-    } catch {
-        return true;
+        try {
+            await git.run(sctx.workDir, ["fetch", "--no-tags", pushURL, `+${ref}:${baseRef}`], signal);
+        } catch (err) {
+            throw new Error(`fetch ${ref} from the push target: ${errMessage(err)}`);
+        }
+        const tipSHA = await git.run(sctx.workDir, ["rev-parse", "--verify", `${baseRef}^{commit}`], signal);
+        const ancestor = await git.runRaw(sctx.workDir, ["merge-base", "--is-ancestor", tipSHA, "HEAD"], signal);
+        if (ancestor.code !== 0 && ancestor.code !== 1) {
+            throw new Error(`compare ${tipSHA.slice(0, 12)} with HEAD: exit status ${ancestor.code}: ${ancestor.stderr.trim()}`);
+        }
+        return { ahead: ancestor.code === 1, tipSHA };
+    } finally {
+        await git.run(sctx.workDir, ["update-ref", "-d", baseRef], signal).catch(() => "");
     }
 }
 
@@ -123,18 +133,24 @@ export class PushStep implements Step {
             // landed while the run was in flight is exactly what it would overwrite. Measured on
             // the default branch: a bot commit pushed during a run was silently replaced by the
             // run's push. So first ask whether the remote holds work this run lacks.
-            const remoteAhead = await remoteHasWorkWeLack(sctx, pushURL, ref, upstreamSHA, signal);
+            let remote: { ahead: boolean; tipSHA: string; };
+            try {
+                remote = await inspectRemoteTip(sctx, pushURL, ref, signal);
+            } catch (err) {
+                throw new Error(`inspect ${pushTarget} ${ref}: ${errMessage(err)}`);
+            }
+            const remoteAhead = remote.ahead;
             const onDefault = ref === normalizedBranchRef(sctx.repo.defaultBranch);
             if (remoteAhead && onDefault) {
                 // The default branch is never force-pushed: replay this run's commits onto what
                 // landed meanwhile, then push as a fast-forward. A conflict stops the step rather
                 // than choosing a side.
                 try {
-                    await git.run(sctx.workDir, ["rebase", PUSH_BASE_REF], signal);
-                    sctx.log(`${sctx.repo.defaultBranch} moved on the remote during the run; replayed this run's commits onto ${upstreamSHA.slice(0, 12)}`);
+                    await git.run(sctx.workDir, ["rebase", remote.tipSHA], signal);
+                    sctx.log(`${sctx.repo.defaultBranch} moved on the remote during the run; replayed this run's commits onto ${remote.tipSHA.slice(0, 12)}`);
                 } catch (err) {
                     await git.run(sctx.workDir, ["rebase", "--abort"], signal).catch(() => "");
-                    throw new Error(`${sctx.repo.defaultBranch} moved on the remote during the run (now ${upstreamSHA.slice(0, 12)}) and this run's commits do not replay onto it cleanly - pull, resolve, and run the gate again: ${errMessage(err)}`);
+                    throw new Error(`${sctx.repo.defaultBranch} moved on the remote during the run (now ${remote.tipSHA.slice(0, 12)}) and this run's commits do not replay onto it cleanly - pull, resolve, and run the gate again: ${errMessage(err)}`);
                 }
                 newHeadSHA = await git.headSHA(sctx.workDir, signal);
             }
@@ -142,7 +158,7 @@ export class PushStep implements Step {
                 if (remoteAhead && !onDefault) {
                     // A working branch the run rewrote (rebase, fix rounds) still needs the force,
                     // leased on the SHA just inspected.
-                    await git.push(sctx.workDir, pushURL, ref, upstreamSHA, true, signal);
+                    await git.push(sctx.workDir, pushURL, ref, remote.tipSHA, true, signal);
                 } else {
                     await git.push(sctx.workDir, pushURL, ref, "", false, signal);
                 }
