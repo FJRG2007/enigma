@@ -55,6 +55,6 @@ jobs:
             echo "@enigmax/dashboard@$DV already published; nothing to do."
             exit 0
           fi
-          npm publish --workspace @enigmax/dashboard --provenance --access public
+          bash scripts/npm-publish.sh @enigmax/dashboard packages/dashboard
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

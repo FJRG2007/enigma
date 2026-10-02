@@ -179,3 +179,11 @@ sync. Prefer the CI release flow; manual publish is a fallback.
 - `.github/workflows/publish.yml` - on release / dispatch / `publish:` push:
   verify, build, tag-vs-version check (releases only), skip-if-already-published,
   then `npm publish`.
+
+### When a publish fails with `E409 Cannot publish over previously staged version`
+
+npm can accept a publish and still answer the client with that conflict: the tarball and its
+provenance land, then a repeated PUT of the same version is refused. Every publish step goes
+through `scripts/npm-publish.sh`, which checks the registry after an E409 and passes the step when
+that exact version is live, so one false failure no longer skips the packages published after it.
+Any other error, or a version that never appears, still fails the step.

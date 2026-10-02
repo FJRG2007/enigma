@@ -67,6 +67,6 @@ jobs:
             echo "${{ matrix.package }}@$PV already published; nothing to do."
             exit 0
           fi
-          npm publish --workspace "${{ matrix.package }}" --provenance --access public
+          bash scripts/npm-publish.sh "${{ matrix.package }}" "$DIR"
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

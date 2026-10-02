@@ -205,7 +205,7 @@ jobs:
 
       - name: Publish package
         if: steps.ver.outputs.publish == 'true'
-        run: npm publish --workspace enigma-cli --provenance --access public
+        run: bash scripts/npm-publish.sh enigma-cli packages/enigma-cli
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
@@ -225,7 +225,7 @@ jobs:
           fi
       - name: Publish dashboard UI
         if: steps.dashver.outputs.publish == 'true'
-        run: npm publish --workspace @enigmax/dashboard --provenance --access public
+        run: bash scripts/npm-publish.sh @enigmax/dashboard packages/dashboard
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
@@ -245,6 +245,6 @@ jobs:
           fi
       - name: Publish helio pack
         if: steps.heliover.outputs.publish == 'true'
-        run: npm publish --workspace @enigmax/helio --provenance --access public
+        run: bash scripts/npm-publish.sh @enigmax/helio packages/helio
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

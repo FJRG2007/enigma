@@ -69,6 +69,6 @@ jobs:
 
       - name: Publish to npm
         if: steps.ver.outputs.publish == 'true'
-        run: npm publish --workspace @enigmax/linter --provenance --access public
+        run: bash scripts/npm-publish.sh @enigmax/linter packages/linter
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
