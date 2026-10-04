@@ -37,8 +37,8 @@ import { resolveBypassSelection, applyBypass, mirrorAccountSettings } from "./pe
 import { isDir, isNewer, readJson, enigmaHome, listFilesRel, computeContentSha } from "./util";
 import { existsSync, readdirSync, readFileSync, writeFileSync, cpSync, mkdirSync, rmSync } from "node:fs";
 import { AGENTS, MANAGED_PROVIDER, isManagedProvider, discoverAgents, runningStatus, localTargetsAt } from "./agents";
-import { cachedRemoteSkills, pinnedRef, refIsPinned as skillsRefIsPinned, refreshRemoteSkills, shouldCheckRemote, skillsOrigin } from "./skills-remote";
 import { disableClaudeAttribution, disableClaudeFeedbackSurvey, enableClaudeStatusline, getClaudeTrust, setClaudeTrust } from "./claude";
+import { cachedRemoteSkills, pinnedRef, refIsPinned as skillsRefIsPinned, refreshRemoteSkills, shouldCheckRemote, skillsOrigin } from "./skills-remote";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PKG_ROOT = resolve(__dirname, "..");
