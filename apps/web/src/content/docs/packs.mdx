@@ -13,6 +13,7 @@ A **pack** is an optional harness bundle - skills, slash commands, sub-agents an
 ## Available packs
 
 - <a href={docHref("helio/overview")}><strong>Helio</strong></a> - a bug-bounty and offensive-security harness: recon, vulnerability hunting, web2/web3 audit, Active Directory, cloud, triage and report writing. Created in collaboration with the Dymo Intelligence Team.
+- <strong>Orion</strong> - hunts what looks finished but is not: broken flows, slow loads, unbounded queries, scaling limits and searches that never say "no results" - each finding proved with a trace, a number or a failing input, in a real browser via the built-in Chrome DevTools MCP server.
 
 More packs are on the way. Each one gets its own section here with full documentation.
 
@@ -43,4 +44,4 @@ This lets a pack run under a different identity than your everyday agent - for e
 - **Delivery** - each pack ships as an asset-only npm package (e.g. `@enigmax/helio`) fetched on demand into `~/.enigma/packs/<id>`, the same on-demand model as the dashboard UI. A workspace checkout is used directly in development.
 - **Isolation** - launching a pack deploys its skills, the agent's command set and its sub-agents into `~/.enigma/packs/<id>/context/<tool>`, then spawns the agent pointed at that directory. The context holds only the pack's content.
 - **Shared login** - your chosen account's credentials are seeded into the context, so the isolated agent is already authenticated.
-- **MCP and tooling** - a pack can ship MCP servers. They are registered only by `enigma pack setup <id>` because they need Python and the pack's tooling, which is heavier than the default skills-and-commands launch.
+- **MCP and tooling** - a pack can ship MCP servers. A server that needs Python and the pack's own tooling is registered only by `enigma pack setup <id>`, heavier than the default skills-and-commands launch. A server enigma can launch itself, like Orion's Chrome DevTools server, is registered automatically on every launch instead, following the same <code>browser</code> toggle used everywhere else - no setup step needed.

@@ -14,7 +14,7 @@ Same doctrine applies to the memory enigma ships (`packages/enigma-cli/assets/me
 
 ## Quick facts
 
-- Workspaces monorepo. Published package: `enigma-cli` in `packages/enigma-cli` (command `enigma`, TypeScript in `src/`, entry `src/bin/enigma.ts`). Other workspaces: `packages/{dashboard,linter,helio}`. Website: `apps/web` (Astro, standalone, NOT a workspace).
+- Workspaces monorepo. Published package: `enigma-cli` in `packages/enigma-cli` (command `enigma`, TypeScript in `src/`, entry `src/bin/enigma.ts`). Other workspaces: `packages/{dashboard,linter,helio,orion}`. Website: `apps/web` (Astro, standalone, NOT a workspace).
 - Gates: `npm run verify` (typecheck + check + guard + guardrails), `npm run lint:changed`, pre-commit in `.githooks/`.
 - After editing any `SKILL.md` or `skill.json`, run `npm run seal` or the installer will not see the change.
 - Preview an install: `npm run enigma -- install --local --all --yes --dry-run`.

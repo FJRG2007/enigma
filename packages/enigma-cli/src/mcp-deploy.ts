@@ -1,24 +1,26 @@
 /**
- * Register (or remove) enigma's context-compression MCP server in each managed
- * agent's own config, gated by the `compress` toggle. This is a "mirror settings"
- * deployment, not a verbatim file copy: every agent uses a different config file,
- * format and merge semantics, so each entry is merged into a shared config file -
- * preserving all other keys - and mirrored on presence AND absence (turning the
- * toggle off removes the entry on the next install/sync).
+ * Register (or remove) enigma's managed MCP servers - the `enigma mcp` server (compression,
+ * recall, code graph; gated by the `compress`/`recall`/`codeGraph` toggles) and the Chrome
+ * DevTools server (gated by `browser`) - in each managed agent's own config, each entry
+ * independent of the others (see `SERVERS`). This is a "mirror settings" deployment, not a
+ * verbatim file copy: every agent uses a different config file, format and merge semantics, so
+ * each entry is merged into a shared config file - preserving all other keys - and mirrored on
+ * presence AND absence (turning a toggle off removes that entry on the next install/sync).
  *
- *   claude    mcpServers.enigma in ~/.claude.json (global) / .mcp.json (project) /
+ *   claude    mcpServers.<name> in ~/.claude.json (global) / .mcp.json (project) /
  *             <accountDir>/.claude.json
- *   codex     [mcp_servers.enigma] in ~/.codex/config.toml / <accountDir>/config.toml
+ *   codex     [mcp_servers.<name>] in ~/.codex/config.toml / <accountDir>/config.toml
  *             (no project-local config - matches enigma's command deployment)
- *   opencode  mcp.enigma in ~/.config/opencode/opencode.json (global) /
+ *   opencode  mcp.<name> in ~/.config/opencode/opencode.json (global) /
  *             ./opencode.json (project) / <accountDir>/xdg-config/opencode/opencode.json
- *   kimi      mcpServers.enigma in ~/.kimi-code/mcp.json (global) /
+ *   kimi      mcpServers.<name> in ~/.kimi-code/mcp.json (global) /
  *             ./.kimi-code/mcp.json (project) / <accountDir>/mcp.json
  *
- * The MCP server itself is `enigma mcp` (see mcp.ts), so the registered command is the
+ * The enigma MCP server itself is `enigma mcp` (see mcp.ts), so the registered command is the
  * resolved enigma binary; on Windows, where that is an npm `.cmd` shim no shell-less spawn
  * can run, the agents that spawn without a shell (claude, opencode, kimi) are pointed at the
- * launcher under node instead - see mcpInvocation for why that beats the `cmd /c` wrapper.
+ * launcher under node instead - see mcpInvocation for why that beats the `cmd /c` wrapper. The
+ * Chrome DevTools server is `npx chrome-devtools-mcp`, resolved per OS/tool by browserInvocation.
  */
 
 import { kimiHome } from "./kimi";

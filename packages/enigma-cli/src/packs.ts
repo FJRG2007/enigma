@@ -1,13 +1,14 @@
 /**
  * Packs: optional, isolated harness bundles installed from the marketplace.
  *
- * A pack (Helio is the first) ships skills, slash commands, sub-agents and MCP servers for a
- * focused domain - here, offensive security / bug bounty. Unlike enigma's policy skills, a pack
- * is NEVER deployed into the user's normal agent: it is fetched on demand as an asset-only npm
- * package (@enigmax/<pack>) into a managed dir, and deployed only into a DEDICATED, isolated
- * agent context dir. Launching `enigma helio` spawns the agent pointed at that context (via the
- * tool's config-dir env var, reusing accounts.ts), so the agent sees ONLY the pack's skills and
- * commands - the normal coding agent stays clean and unburdened.
+ * A pack (Helio for offensive security / bug bounty, Orion for bugs/speed/scalability/search
+ * quality QA) ships skills, slash commands, sub-agents and MCP servers for a focused domain.
+ * Unlike enigma's policy skills, a pack is NEVER deployed into the user's normal agent: it is
+ * fetched on demand as an asset-only npm package (@enigmax/<pack>) into a managed dir, and
+ * deployed only into a DEDICATED, isolated agent context dir. Launching `enigma helio` (or
+ * `enigma orion`) spawns the agent pointed at that context (via the tool's config-dir env var,
+ * reusing accounts.ts), so the agent sees ONLY the pack's skills and commands - the normal
+ * coding agent stays clean and unburdened.
  *
  * Credentials are seeded from the user's active account into the context dir, so the isolated
  * pack agent shares the login with no re-authentication.
