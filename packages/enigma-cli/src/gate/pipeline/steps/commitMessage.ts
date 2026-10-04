@@ -12,6 +12,7 @@
  */
 
 import { readConfigAt } from "@/config";
+import { redactOperatorHome } from "@/guardrails";
 import type { StepName } from "@/gate/types";
 
 /** Leading subject emoji per step, mapped to git-policy's commit types. */
@@ -34,7 +35,9 @@ const STEP_EMOJI: Record<StepName, string> = {
  * one. An empty summary falls back to a generic one so the subject is never bare.
  */
 export function gateCommitMessage(repoPath: string, stepName: StepName, summary: string): string {
-    const subject = `enigma(${stepName}): ${summary === "" ? "apply fixes" : summary}`;
+    // The summary is agent-written and lands in shared history, so this machine's home path is
+    // stripped from it like from a PR.
+    const subject = `enigma(${stepName}): ${summary === "" ? "apply fixes" : redactOperatorHome(summary)}`;
     if (!readConfigAt(repoPath).commitEmoji) return subject;
     return `${STEP_EMOJI[stepName]} ${subject}`;
 }

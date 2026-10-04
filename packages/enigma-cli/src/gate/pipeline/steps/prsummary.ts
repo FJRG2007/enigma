@@ -719,8 +719,14 @@ function renderLocalArtifactLine(label: string, localPath: string): string {
     return renderLocalArtifactReference("- Evidence", label, localPath);
 }
 
+/**
+ * A reference to evidence that only exists on the machine that ran the gate. The PR names the
+ * FILE, never its absolute path: nobody reading the PR can open that path, and it carried the
+ * operator's OS, account name and temp layout into a public page (a real report: every gate PR
+ * listed `C:\Users\<name>\AppData\Local\Temp\enigma-gate-evidence\...`).
+ */
 function renderLocalArtifactReference(prefix: string, label: string, localPath: string): string {
-    return `${prefix}: ${htmlEscape(label)} (local file: <code>${htmlEscape(localPath)}</code>)\n`;
+    return `${prefix}: ${htmlEscape(label)} (kept on the machine that ran the gate as <code>${htmlEscape(path.basename(localPath))}</code>)\n`;
 }
 
 function sanitizeArtifactURL(target: string): string {

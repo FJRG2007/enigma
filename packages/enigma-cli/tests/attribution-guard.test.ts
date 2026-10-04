@@ -87,3 +87,30 @@ test("attributionOff reads the session's own config dir", async () => {
         if (before === undefined) delete process.env.CLAUDE_CONFIG_DIR; else process.env.CLAUDE_CONFIG_DIR = before;
     }
 });
+
+// The same hook stops a commit or PR message that publishes this machine's home directory - and
+// only the message: agents prefix `cd <home>/repo &&`, which is where the command runs.
+test("a home path in the message is refused, a home path in the cd is not", async () => {
+    const { messageText } = await import("@/attribution-guard");
+    const prevWin = process.env.USERPROFILE, prevPosix = process.env.HOME;
+    process.env.USERPROFILE = "C:\\Users\\fixture-op";
+    process.env.HOME = "C:\\Users\\fixture-op";
+    try {
+        const cdOnly = "cd C:/Users/fixture-op/repo && git commit -q -m \"fix: tidy the loader\"";
+        expect(messageText(cdOnly)).not.toContain("fixture-op");
+        expect(runAttributionGuardHook(payload(cdOnly))).toBe(0);
+        for (const leaking of [
+            "cd C:/Users/fixture-op/repo && git commit -q -m \"test: evidence in C:\\Users\\fixture-op\\AppData\\Local\\Temp\\shot.png\"",
+            "git commit -q -F - <<'EOF'\nfeat: x\n\nRan from /c/Users/fixture-op/repo\nEOF",
+            "gh pr create --title t --body \"see C:/Users/fixture-op/notes.md\"",
+        ]) expect(runAttributionGuardHook(payload(leaking))).toBe(2);
+        const dir = mkdtempSync(join(tmpdir(), "enigma-attr-home-"));
+        writeFileSync(join(dir, "msg.txt"), "fix: x\n\nlog at C:\\Users\\fixture-op\\tmp\\a.log\n");
+        // The message file's own path is not what gets published; its content is.
+        expect(runAttributionGuardHook(payload("git commit -F C:/Users/fixture-op/msg.txt", dir))).toBe(0);
+        expect(runAttributionGuardHook(payload("git commit -F msg.txt", dir))).toBe(2);
+    } finally {
+        process.env.USERPROFILE = prevWin;
+        process.env.HOME = prevPosix;
+    }
+});

@@ -3588,10 +3588,32 @@ function operatorHome(): string {
  * the finding, because the ledger and the terminal are not places to repeat it.
  */
 export function operatorHomePathLeak(content: string): { line: number; detail: string; }[] {
+    const re = operatorHomeRegex("i");
+    if (re === null) return [];
+    const out: { line: number; detail: string; }[] = [];
+    const lines = content.split("\n");
+    for (let i = 0; i < lines.length; i++) {
+        if (re.test(lines[i]!)) out.push({ line: i + 1, detail: "the path resolves to this machine's home directory" });
+    }
+    return out;
+}
+
+/**
+ * `text` with every spelling of this machine's home directory replaced by `~`. For text that
+ * leaves the machine on enigma's own behalf (a PR the gate writes): there the leak is not a
+ * finding to report but output to correct before it is sent.
+ */
+export function redactOperatorHome(text: string): string {
+    const re = operatorHomeRegex("gi");
+    return re === null ? text : text.replace(re, "~");
+}
+
+/** The regex matching this machine's home in all three spellings, or null for a generic account. */
+function operatorHomeRegex(flags: string): RegExp | null {
     const home = operatorHome();
-    if (!home || home.length < 6) return [];
+    if (!home || home.length < 6) return null;
     const account = home.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || "";
-    if (!account || GENERIC_ACCOUNTS.has(account.toLowerCase())) return [];
+    if (!account || GENERIC_ACCOUNTS.has(account.toLowerCase())) return null;
     const forms = [home];
     const drive = /^([A-Za-z]):[\\/](.*)$/.exec(home);
     if (drive) forms.push(`/${drive[1]!.toLowerCase()}/${drive[2]}`);
@@ -3602,14 +3624,7 @@ export function operatorHomePathLeak(content: string): { line: number; detail: s
     // own home. The trailing boundary keeps a longer neighbour out (`/home/dev` is not
     // `/home/developer`), while still allowing the path to end a sentence.
     const alt = forms.map((f) => f.split(/[\\/]/).map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("[\\\\/]")).join("|");
-    let re: RegExp;
-    try { re = new RegExp(`(?:${alt})(?![A-Za-z0-9_-]|\\.[A-Za-z0-9_-])`, "i"); } catch { return []; }
-    const out: { line: number; detail: string; }[] = [];
-    const lines = content.split("\n");
-    for (let i = 0; i < lines.length; i++) {
-        if (re.test(lines[i]!)) out.push({ line: i + 1, detail: "the path resolves to this machine's home directory" });
-    }
-    return out;
+    try { return new RegExp(`(?:${alt})(?![A-Za-z0-9_-]|\\.[A-Za-z0-9_-])`, flags); } catch { return null; }
 }
 
 // --- injection: a runtime value spliced into code another interpreter runs ----------------

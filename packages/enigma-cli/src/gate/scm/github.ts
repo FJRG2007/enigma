@@ -10,6 +10,7 @@
  */
 
 import { execFile } from "node:child_process";
+import { redactOperatorHome } from "@/guardrails";
 import { Provider, PROVIDER_GITHUB } from "./host";
 import { stripAttributionLines } from "@/attribution-guard";
 
@@ -383,7 +384,7 @@ export class Host {
                 .join("\n\n");
             const stripped = stripAttributionLines(body);
             if (stripped === body.replace(/\n{3,}/g, "\n\n").trim()) return null;
-            return { subject: `${view.title} (#${pr.number})`, body: stripped };
+            return { subject: redactOperatorHome(`${view.title} (#${pr.number})`), body: redactOperatorHome(stripped) };
         } catch {
             return null;
         }

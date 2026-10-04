@@ -20,3 +20,22 @@ test("a step summary carries its name in HTML bold, never markdown asterisks", (
     expect(summaries[0]).toContain("<b>Lint</b>");
     expect(summaries[1]).toBe("<summary>⏭️ <b>Test</b> - skipped</summary>");
 });
+
+// Local evidence used to be listed by absolute path - the operator's OS, account name and temp
+// layout on a public PR page. The PR names the file and nothing else.
+test("local test evidence is referenced by file name, never by its absolute path", async () => {
+    const { mkdirSync, writeFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const { testEvidenceDir } = await import("@/gate/pipeline/steps/evidence");
+    const { buildTestingSummaryForPR } = await import("@/gate/pipeline/steps/prsummary");
+    const dir = testEvidenceDir("RUNPRIVACY");
+    mkdirSync(dir, { recursive: true });
+    const shot = join(dir, "events-list.png");
+    writeFileSync(shot, "png");
+    const findings = JSON.stringify({ items: [], testingSummary: "Checked the events list.", artifacts: [{ kind: "image", label: "Events list", path: shot }] });
+    const testStep = { ...step("test", "passed"), findingsJson: findings } as StepResult;
+    const body = buildTestingSummaryForPR([testStep], new Map(), "", "", "");
+    expect(body).toContain("events-list.png");
+    expect(body).not.toContain(dir);
+    expect(body).not.toContain("enigma-gate-evidence");
+});

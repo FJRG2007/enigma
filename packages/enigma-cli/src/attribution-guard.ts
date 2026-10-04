@@ -16,6 +16,10 @@
  * this process only for `git commit`, `git -C <dir> commit` and `gh pr create|edit|merge` -
  * never for the other Bash calls of a session. Subagent tool calls fire the same hooks.
  *
+ * The same hook refuses a message that contains this machine's home directory (account name, OS
+ * layout, temp paths), since the commands it already watches are exactly where an agent
+ * publishes text. Only the message is read, never the `cd <home>/repo &&` in front of it.
+ *
  * Messages passed by file (`-F <file>`, `--file`, `--body-file`) are read from disk relative to
  * the payload's cwd. A message written by an editor cannot be seen here; the turn-end check
  * (`attributedCommits` in verify.ts) covers whatever reaches history anyway.
@@ -25,6 +29,7 @@ import { join } from "node:path";
 import { enigmaHome, readJson } from "./util";
 import { applyClaudeHook } from "./claude-hooks";
 import { readFileSync, statSync } from "node:fs";
+import { operatorHomePathLeak } from "./guardrails";
 import type { HookGroup, HookWrite } from "./claude-hooks";
 
 /** Marker identifying enigma's handlers in settings.json (see applyClaudeHook). */
@@ -128,9 +133,36 @@ export function runAttributionGuardHook(raw: string): number {
         found = attributionLine(readMessageFile(payload.cwd, file));
         if (found !== "") break;
     }
-    if (found === "") return 0;
-    process.stderr.write(`enigma: AI attribution is turned off here, and this message carries "${found}". Remove that line and run the command again. (enigma config claude-attribution on allows it.)\n`);
-    return 2;
+    if (found !== "") {
+        process.stderr.write(`enigma: AI attribution is turned off here, and this message carries "${found}". Remove that line and run the command again. (enigma config claude-attribution on allows it.)\n`);
+        return 2;
+    }
+    // Same commands, same process: a commit or PR message must not publish this machine's home
+    // directory (account name, OS layout, temp paths) - a real report had agents pasting local
+    // evidence paths into every PR. Only the MESSAGE is read: the `cd C:/Users/.../repo &&` an
+    // agent prefixes and the path of a message file are where the command runs, not what it says.
+    const message = [messageText(payload.command), ...messageFiles(payload.command).map((f) => readMessageFile(payload.cwd, f))].join("\n");
+    if (operatorHomePathLeak(message).length) {
+        process.stderr.write("enigma: this commit or PR message contains a path inside your home directory, which publishes your account name and disk layout. Use a repo-relative path or a file name instead, then run the command again.\n");
+        return 2;
+    }
+    return 0;
+}
+
+/**
+ * The part of a commit/PR command that becomes the published text: the heredoc body when there
+ * is one, else everything after the `git commit` / `gh pr` token up to the next command
+ * separator, with message-FILE arguments removed (their content is read separately).
+ */
+export function messageText(command: string): string {
+    const heredoc = /<<-?\s*['"]?(\w+)['"]?[^\n]*\n([\s\S]*?)\n\s*\1\s*(?:\n|$)/.exec(command);
+    const head = /\b(?:git(?:\s+-C\s+(?:"[^"]*"|'[^']*'|\S+))?\s+commit|gh\s+pr\s+(?:create|edit|merge))\b/.exec(command);
+    if (!head) return heredoc ? heredoc[2]! : "";
+    let tail = command.slice(head.index + head[0].length);
+    // Cut at the next chained command, and at the heredoc marker (its body is added below).
+    tail = tail.split(/&&|\|\||<<-?\s*['"]?\w+/)[0] ?? "";
+    tail = tail.replace(/(?:^|\s)(?:-F|--file|--body-file)(?:=|\s+)(?:"[^"]+"|'[^']+'|\S+)/g, " ");
+    return heredoc ? `${tail}\n${heredoc[2]}` : tail;
 }
 
 /** The PreToolUse group: one filtered handler per command pattern and shell tool. */

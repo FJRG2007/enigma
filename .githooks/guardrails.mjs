@@ -3350,26 +3350,33 @@ function operatorHome() {
   return env?.trim() || homedir();
 }
 function operatorHomePathLeak(content) {
-  const home = operatorHome();
-  if (!home || home.length < 6) return [];
-  const account = home.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || "";
-  if (!account || GENERIC_ACCOUNTS.has(account.toLowerCase())) return [];
-  const forms = [home];
-  const drive = /^([A-Za-z]):[\\/](.*)$/.exec(home);
-  if (drive) forms.push(`/${drive[1].toLowerCase()}/${drive[2]}`);
-  const alt = forms.map((f) => f.split(/[\\/]/).map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("[\\\\/]")).join("|");
-  let re;
-  try {
-    re = new RegExp(`(?:${alt})(?![A-Za-z0-9_-]|\\.[A-Za-z0-9_-])`, "i");
-  } catch {
-    return [];
-  }
+  const re = operatorHomeRegex("i");
+  if (re === null) return [];
   const out = [];
   const lines = content.split("\n");
   for (let i = 0; i < lines.length; i++) {
     if (re.test(lines[i])) out.push({ line: i + 1, detail: "the path resolves to this machine's home directory" });
   }
   return out;
+}
+function redactOperatorHome(text) {
+  const re = operatorHomeRegex("gi");
+  return re === null ? text : text.replace(re, "~");
+}
+function operatorHomeRegex(flags) {
+  const home = operatorHome();
+  if (!home || home.length < 6) return null;
+  const account = home.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || "";
+  if (!account || GENERIC_ACCOUNTS.has(account.toLowerCase())) return null;
+  const forms = [home];
+  const drive = /^([A-Za-z]):[\\/](.*)$/.exec(home);
+  if (drive) forms.push(`/${drive[1].toLowerCase()}/${drive[2]}`);
+  const alt = forms.map((f) => f.split(/[\\/]/).map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("[\\\\/]")).join("|");
+  try {
+    return new RegExp(`(?:${alt})(?![A-Za-z0-9_-]|\\.[A-Za-z0-9_-])`, flags);
+  } catch {
+    return null;
+  }
 }
 function readStringLiteral(src, start, python) {
   let i = start;
@@ -4818,6 +4825,7 @@ export {
   readLedger,
   readReplyLedger,
   recordFindings,
+  redactOperatorHome,
   redirectFromInput,
   redirectPrefixCheck,
   remoteCollectionNames,

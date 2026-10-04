@@ -4,6 +4,6 @@
   "provider": "FJRG2007/enigma",
   "description": "Application and AI-agent security: secrets, authn/authz (least privilege, object- and role-level checks), credential flows with breach-checked passwords (Have I Been Pwned), OWASP Top 10 with vetted helpers for SSRF, redirects and uploads, transport/crypto baseline, cookies and consent, secure logging, and agent/MCP/tool-use safety.",
   "updated": "2026-09-28T21:34:15+02:00",
-  "cliVersion": "1.57.2",
+  "cliVersion": "1.57.3",
   "sha": "544359122f127cccedfe469232da915b04f7f4aa4795297281bd4bc9cd07d371"
 }

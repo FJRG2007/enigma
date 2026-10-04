@@ -4,6 +4,6 @@
   "provider": "FJRG2007/enigma",
   "description": "Strict frontend + backend schema validation, normalization before validation (shared normalizers: trim, lowercase email, capitalize names, canonicalize links and handles), real-time error timing (an emptied or not-yet-filled field is incomplete, not invalid: a `*` and an aria-disabled submit instead of \"not valid\" over an empty input), schema consistency, and safe client-facing error handling.",
   "updated": "2026-10-02T19:07:57+02:00",
-  "cliVersion": "1.57.2",
+  "cliVersion": "1.57.3",
   "sha": "7b39ded6b82cb7a8424aea7b8d59a293791205d57e7272ff63d9fa558772ecb1"
 }

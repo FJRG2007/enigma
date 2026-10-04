@@ -599,6 +599,28 @@ test("operatorHomePathLeak: the home path still matches at the end of a sentence
     expect(leaksUnder("C:\\Users\\ana", "Everything lives under C:\\Users\\ana.")).toBe(true);
 });
 
+// A gate PR listed every local evidence file by absolute path, which put the operator's OS,
+// account name and temp layout on a public page. Text the gate sends is scrubbed before it goes.
+test("redactOperatorHome replaces every spelling of this machine's home, and nothing else", async () => {
+    const { redactOperatorHome } = await import("../src/guardrails");
+    const prevWin = process.env.USERPROFILE, prevPosix = process.env.HOME;
+    process.env.USERPROFILE = "C:\\Users\\fixture-op";
+    process.env.HOME = "C:\\Users\\fixture-op";
+    try {
+        const body = "- Evidence: shot (C:\\Users\\fixture-op\\AppData\\Local\\Temp\\enigma-gate-evidence\\01M\\a.png)\nran in /c/Users/fixture-op/repo and C:/Users/fixture-op/repo\nsee C:\\Users\\fixture-operator\\x";
+        const out = redactOperatorHome(body);
+        expect(out).not.toContain("fixture-op\\");
+        expect(out).not.toContain("fixture-op/");
+        expect(out).toContain("~\\AppData\\Local\\Temp\\enigma-gate-evidence");
+        expect(out).toContain("ran in ~/repo and ~/repo");
+        // A longer neighbouring account is someone else's path, kept as written.
+        expect(out).toContain("C:\\Users\\fixture-operator\\x");
+    } finally {
+        process.env.USERPROFILE = prevWin;
+        process.env.HOME = prevPosix;
+    }
+});
+
 // --- fe-unbounded-remote-list ------------------------------------------------------
 
 matrix("fe-unbounded-remote-list", true, [
