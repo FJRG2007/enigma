@@ -21,7 +21,7 @@ process.env.ENIGMA_HELIO_ASSETS = join(__dirname, "..", "..", "helio", "assets")
 process.env.ENIGMA_ORION_ASSETS = join(__dirname, "..", "..", "orion", "assets");
 
 const packs = await import("../src/packs");
-const { readConfig } = await import("../src/config");
+const { readConfig, setEnigmaValue } = await import("../src/config");
 const { addAccount } = await import("../src/accounts");
 
 afterAll(() => rmSync(HOME, { recursive: true, force: true }));
@@ -283,4 +283,22 @@ test("Orion deploys its skills, commands, agents and the browser server into its
     packs.deployPack("helio", "claude");
     expect(JSON.parse(readFileSync(helioCfg, "utf8")).mcpServers["helio-hackerone"]).toBeUndefined();
     expect(existsSync(join(HOME, ".claude", "skills", "bug-hunt"))).toBe(false);
+});
+
+test("Orion follows the browser toggle and never rewrites an unparseable context config", () => {
+    const ctx = packs.deployPack("orion", "claude")!;
+    const cfg = join(ctx, ".claude.json");
+    writeFileSync(cfg, JSON.stringify({ hasCompletedOnboarding: true, mcpServers: { other: { command: "x" } } }));
+    setEnigmaValue("browser", false, "global");
+    packs.deployPack("orion", "claude");
+    const off = JSON.parse(readFileSync(cfg, "utf8"));
+    expect(off.mcpServers["chrome-devtools"]).toBeUndefined();
+    expect(off.mcpServers.other).toBeTruthy();
+    expect(off.hasCompletedOnboarding).toBe(true);
+    setEnigmaValue("browser", true, "global");
+    packs.deployPack("orion", "claude");
+    expect(JSON.parse(readFileSync(cfg, "utf8")).mcpServers["chrome-devtools"]).toBeTruthy();
+    writeFileSync(cfg, "{ \"oauthAccount\": ");
+    packs.deployPack("orion", "claude");
+    expect(readFileSync(cfg, "utf8")).toBe("{ \"oauthAccount\": ");
 });

@@ -521,12 +521,17 @@ function registerPackMcp(id: string, tool: string, builtinOnly: boolean): string
     const dir = contextDir(id, tool);
     mkdirSync(dir, { recursive: true });
     const file = join(dir, ".claude.json");
-    const current = existsSync(file) ? (readJson<Record<string, unknown>>(file) ?? {}) : {};
+    const current = existsSync(file) ? readJson<Record<string, unknown>>(file) : {};
+    if (current === null) return [];
     const servers = { ...(typeof current.mcpServers === "object" && current.mcpServers ? current.mcpServers as Record<string, unknown> : {}) };
     const added: string[] = [];
     const python = process.platform === "win32" ? "python" : "python3";
     for (const server of pack.mcp) {
         if (server.builtin === "browser") {
+            if (!readConfig().config.browser) {
+                delete servers[server.name];
+                continue;
+            }
             const inv = browserInvocation(tool);
             servers[server.name] = { type: "stdio", command: inv.command, args: inv.args };
             added.push(server.name);
@@ -538,7 +543,6 @@ function registerPackMcp(id: string, tool: string, builtinOnly: boolean): string
         servers[server.name] = { type: "stdio", command: python, args: [script] };
         added.push(server.name);
     }
-    if (!added.length) return [];
     if (JSON.stringify(servers) === JSON.stringify(current.mcpServers ?? {})) return added;
     current.mcpServers = servers;
     writeFileSync(file, `${JSON.stringify(current, null, 2)}\n`);
