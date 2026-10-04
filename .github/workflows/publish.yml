@@ -248,3 +248,21 @@ jobs:
         run: bash scripts/npm-publish.sh @enigmax/helio packages/helio
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # @enigmax/orion is the optional Orion pack (bugs, speed, scalability): asset-only, fetched on
+      # demand when the user enables it. Same version guard as the packs above.
+      - name: Determine if orion pack version is new
+        id: orionver
+        run: |
+          OV="$(node -p "require('./packages/orion/package.json').version")"
+          if npm view "@enigmax/orion@$OV" version >/dev/null 2>&1; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "@enigmax/orion@$OV already published; skipping."
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Publish orion pack
+        if: steps.orionver.outputs.publish == 'true'
+        run: bash scripts/npm-publish.sh @enigmax/orion packages/orion
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

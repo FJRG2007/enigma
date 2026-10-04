@@ -149,6 +149,13 @@ function setCompress(on: boolean, scope: Scope): ApplyResult {
     return { path, changed: true };
 }
 
+/** Persist the browser toggle and (de)register the Chrome DevTools MCP server across agents. */
+function setBrowser(on: boolean, scope: Scope): ApplyResult {
+    const path = conf.setEnigmaToggle("browser", on, scope);
+    applyMcpToggle(scope);
+    return { path, changed: true };
+}
+
 /** Persist the codeGraph toggle and (de)register the enigma MCP server, which hosts its tools. */
 function setCodeGraph(on: boolean, scope: Scope): ApplyResult {
     const path = conf.setEnigmaToggle("codeGraph", on, scope);
@@ -374,6 +381,13 @@ const RAW_CATEGORIES: Category[] = [
                 hint: "deploy enigma's token-compression MCP server (enigma_compress/retrieve/stats) into managed agents; toggling applies immediately to already-deployed agents; off removes it; enigma default: off",
                 read: () => conf.readConfig().config.compress,
                 write: (value, scope) => setCompress(value, scope),
+            },
+            {
+                key: "browser",
+                label: "Browser testing (Chrome MCP)",
+                hint: "lets your agents open the app in a real Chrome to click through it and read the console, network, load-speed trace and Lighthouse audit before calling it done; runs an isolated profile, never your logins; needs Chrome and Node; toggling applies immediately; enigma default: on",
+                read: () => conf.readConfig().config.browser,
+                write: (value, scope) => setBrowser(value, scope),
             },
             {
                 key: "code-graph",

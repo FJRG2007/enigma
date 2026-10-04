@@ -18,6 +18,7 @@ process.env.ENIGMA_CONFIG_HOME = HOME;
 process.env.ENIGMA_PACKS_DIR = join(HOME, "packs");
 // Resolve the Helio pack from the in-repo vendored assets (no npm fetch).
 process.env.ENIGMA_HELIO_ASSETS = join(__dirname, "..", "..", "helio", "assets");
+process.env.ENIGMA_ORION_ASSETS = join(__dirname, "..", "..", "orion", "assets");
 
 const packs = await import("../src/packs");
 const { readConfig } = await import("../src/config");
@@ -259,4 +260,27 @@ test("setup registers the pack's MCP servers into the isolated context only", ()
     expect(cfg.mcpServers["helio-hackerone"].command).toMatch(/python/);
     // The server path points inside the pack assets, and into the agent's own config only.
     expect(cfg.mcpServers["helio-hackerone"].args[0]).toContain("hackerone-mcp");
+});
+
+// Orion's main instrument is the browser, so its Chrome DevTools server is wired on deploy,
+// without `enigma pack setup`, and its skills land only in the isolated context.
+test("Orion deploys its skills, commands, agents and the browser server into its own context", () => {
+    const ctx = packs.deployPack("orion", "claude");
+    expect(ctx).toBeTruthy();
+    for (const skill of ["bug-hunt", "perf-audit", "scale-audit", "search-quality"]) {
+        expect(existsSync(join(ctx!, "skills", skill, "SKILL.md"))).toBe(true);
+    }
+    expect(existsSync(join(ctx!, "commands", "sweep.md"))).toBe(true);
+    expect(existsSync(join(ctx!, "agents", "flow-breaker.md"))).toBe(true);
+    expect(readFileSync(join(ctx!, "CLAUDE.md"), "utf8")).toContain("Orion");
+    const servers = JSON.parse(readFileSync(join(ctx!, ".claude.json"), "utf8")).mcpServers;
+    expect(servers["chrome-devtools"].args).toContain("--isolated");
+    // Helio's shipped python server is still setup-only: deploy never registers it.
+    // (An earlier test ran setup for Helio, so start from a context without its server.)
+    const helio = packs.deployPack("helio", "claude");
+    const helioCfg = join(helio!, ".claude.json");
+    writeFileSync(helioCfg, JSON.stringify({ mcpServers: {} }));
+    packs.deployPack("helio", "claude");
+    expect(JSON.parse(readFileSync(helioCfg, "utf8")).mcpServers["helio-hackerone"]).toBeUndefined();
+    expect(existsSync(join(HOME, ".claude", "skills", "bug-hunt"))).toBe(false);
 });

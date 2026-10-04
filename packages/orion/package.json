@@ -1,0 +1,33 @@
+{
+  "name": "@enigmax/orion",
+  "version": "0.1.0",
+  "description": "Orion packaged as an optional enigma pack: skills, slash commands and sub-agents that hunt broken flows, slow loads and scaling limits in a real browser. Installed on demand into an isolated agent context by enigma-cli; never deployed to your normal coding agent. Not a runtime dependency.",
+  "type": "module",
+  "files": [
+    "assets",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "enigma",
+    "enigma-pack",
+    "orion",
+    "qa",
+    "performance",
+    "scalability",
+    "skills"
+  ],
+  "license": "Apache-2.0",
+  "author": "FJRG2007 <fjrg2007@tpeoficial.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/FJRG2007/enigma.git",
+    "directory": "packages/orion"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

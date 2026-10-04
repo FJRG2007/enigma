@@ -39,6 +39,7 @@ description: Test strategy (test pyramid), coverage gates, deterministic tests, 
 - Test edge cases: empty, null, max size, invalid input, concurrency, and timezone/locale where relevant.
 - Test public behavior and contracts, not private implementation details.
 - For input handling, assert that invalid input is rejected as defined in validation-policy.
+- A UI, flow or load-speed change is checked in a real browser before it is called done, when the `chrome-devtools` MCP tools are available (enigma registers them; `enigma config browser`): open the page, do what the user will do, then read the console and failed network requests, and run a performance trace or Lighthouse audit for speed claims. A passing unit test does not show that a button works, a page renders, or a view loads fast.
 
 ---
 

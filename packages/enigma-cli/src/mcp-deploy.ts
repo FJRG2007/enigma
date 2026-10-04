@@ -122,15 +122,15 @@ function mcpAccountPath(tool: string, dir: string): string | null {
  * preserving every other key. Never clobbers a file it cannot parse, and never
  * creates a file just to remove an absent entry. Returns whether it changed.
  */
-function applyJsonEntry(file: string, parentKey: string, entry: unknown | null): boolean {
+function applyJsonEntry(file: string, parentKey: string, name: string, entry: unknown | null): boolean {
     const fileExists = existsSync(file);
     if (!fileExists && entry === null) return false;
     const current = fileExists ? readJson<Record<string, unknown>>(file) : {};
     if (current === null) return false; // unparseable - refuse to overwrite user data
     const before = JSON.stringify(current);
     const parent = { ...(typeof current[parentKey] === "object" && current[parentKey] ? current[parentKey] as Record<string, unknown> : {}) };
-    if (entry === null) delete parent[SERVER_NAME];
-    else parent[SERVER_NAME] = entry;
+    if (entry === null) delete parent[name];
+    else parent[name] = entry;
     if (Object.keys(parent).length) current[parentKey] = parent;
     else delete current[parentKey];
     if (JSON.stringify(current) === before) return false;
@@ -156,8 +156,8 @@ function tomlLiteral(value: string): string {
     return `'${value.replace(/'/g, "")}'`;
 }
 
-/** Merge or delete `[mcp_servers.enigma]` in a codex config.toml. Returns whether it changed. */
-function applyCodexEntry(file: string, command: string | null, args: string[]): boolean {
+/** Merge or delete `[mcp_servers.<name>]` in a codex config.toml. Returns whether it changed. */
+function applyCodexEntry(file: string, name: string, command: string | null, args: string[]): boolean {
     const fileExists = existsSync(file);
     if (!fileExists && command === null) return false;
     const before = fileExists ? readFileSync(file, "utf8") : "";
@@ -166,13 +166,26 @@ function applyCodexEntry(file: string, command: string | null, args: string[]): 
     // line before it. The previous version toggled that blank line between syncs (removeTomlTable
     // drops the trailing newline inconsistently), so every "Check & update" rewrote the file
     // and reported a phantom change.
-    const head = removeTomlTable(before, "mcp_servers.enigma").replace(/\s*$/, "");
+    //
+    // An existing table is replaced WHERE IT IS: with more than one managed server, removing and
+    // re-appending each in turn moved the first one behind the second on every sync, so the file
+    // never reached a fixed point and every run reported a change.
+    const header = `mcp_servers.${name}`;
+    const block = command === null ? "" : `[${header}]\ncommand = ${tomlLiteral(command)}\nargs = [${args.map(tomlLiteral).join(", ")}]\n`;
+    const lines = before.split("\n");
+    const start = lines.findIndex((l) => l.trim() === `[${header}]`);
     let after: string;
-    if (command !== null) {
-        const block = `[mcp_servers.enigma]\ncommand = ${tomlLiteral(command)}\nargs = [${args.map(tomlLiteral).join(", ")}]\n`;
-        after = head ? `${head}\n\n${block}` : block;
+    if (start !== -1 && command !== null) {
+        let end = start + 1;
+        while (end < lines.length && !/^\s*\[/.test(lines[end]!)) end++;
+        // Keep the blank separator line that preceded the next table, if any.
+        const trailing = end < lines.length ? "\n" : "";
+        after = [...lines.slice(0, start), block.replace(/\n$/, ""), ...(trailing ? [""] : []), ...lines.slice(end)].join("\n");
+        if (!after.endsWith("\n")) after += "\n";
     } else {
-        after = head ? `${head}\n` : "";
+        const head = removeTomlTable(before, header).replace(/\s*$/, "");
+        if (command !== null) after = head ? `${head}\n\n${block}` : block;
+        else after = head ? `${head}\n` : "";
     }
     if (after === before) return false;
     mkdirSync(join(file, ".."), { recursive: true });
@@ -180,23 +193,62 @@ function applyCodexEntry(file: string, command: string | null, args: string[]): 
     return true;
 }
 
-/** Write/remove the enigma MCP entry in `file` for `tool`, per `enabled`. */
-function writeEntry(tool: string, file: string, enabled: boolean): boolean {
-    const inv = mcpInvocation(tool);
+/** One MCP server enigma registers in each agent's config, behind its own toggle. */
+interface ManagedServer {
+    name: string;
+    enabled: () => boolean;
+    invocation: (tool: string) => { command: string; args: string[]; };
+}
+
+/**
+ * The Chrome DevTools MCP server, pinned. It lets any agent open the app it is working on in a
+ * real Chrome, drive it, and read the console, network, performance traces and a Lighthouse
+ * audit - so a "it works" or "it loads fast" claim can be checked where the user sees it.
+ * `--isolated` runs a throwaway profile, never the user's own cookies and logins; usage
+ * statistics and the CrUX lookup (which sends trace URLs to Google) are off.
+ */
+const BROWSER_MCP_PACKAGE = "chrome-devtools-mcp@1.10.1";
+const BROWSER_MCP_ARGS = ["-y", BROWSER_MCP_PACKAGE, "--isolated", "--no-usage-statistics", "--no-performance-crux"];
+
+/**
+ * How an agent launches the browser server. `npx` is an npm `.cmd` shim on Windows, which an
+ * agent that spawns without a shell (claude, opencode, kimi) cannot start, so those get the
+ * `cmd /c` form; Codex resolves `.cmd` itself.
+ */
+export function browserInvocation(tool: string, platform: NodeJS.Platform = process.platform): { command: string; args: string[]; } {
+    if (platform === "win32" && tool !== "codex") return { command: "cmd", args: ["/c", "npx", ...BROWSER_MCP_ARGS] };
+    return { command: "npx", args: [...BROWSER_MCP_ARGS] };
+}
+
+const SERVERS: ManagedServer[] = [
+    { name: SERVER_NAME, enabled: () => mcpEnabled(), invocation: (tool) => mcpInvocation(tool) },
+    { name: "chrome-devtools", enabled: () => readConfig().config.browser, invocation: (tool) => browserInvocation(tool) },
+];
+
+/** Write/remove one managed MCP entry in `file` for `tool`, per `enabled`. */
+function writeEntry(tool: string, file: string, server: ManagedServer, enabled: boolean): boolean {
+    const inv = server.invocation(tool);
     switch (tool) {
         case "claude":
-            return applyJsonEntry(file, "mcpServers", enabled ? { type: "stdio", command: inv.command, args: inv.args } : null);
+            return applyJsonEntry(file, "mcpServers", server.name, enabled ? { type: "stdio", command: inv.command, args: inv.args } : null);
         case "opencode":
-            return applyJsonEntry(file, "mcp", enabled ? { type: "local", command: [inv.command, ...inv.args], enabled: true } : null);
+            return applyJsonEntry(file, "mcp", server.name, enabled ? { type: "local", command: [inv.command, ...inv.args], enabled: true } : null);
         // Kimi infers the stdio transport from the presence of `command`, and rejects
         // fields outside its documented schema - so the entry stays command + args only.
         case "kimi":
-            return applyJsonEntry(file, "mcpServers", enabled ? { command: inv.command, args: inv.args } : null);
+            return applyJsonEntry(file, "mcpServers", server.name, enabled ? { command: inv.command, args: inv.args } : null);
         case "codex":
-            return applyCodexEntry(file, enabled ? inv.command : null, inv.args);
+            return applyCodexEntry(file, server.name, enabled ? inv.command : null, inv.args);
         default:
             return false;
     }
+}
+
+/** Every managed server written to `file`; true when any of them changed it. */
+function writeEntries(tool: string, file: string): boolean {
+    let changed = false;
+    for (const server of SERVERS) if (writeEntry(tool, file, server, server.enabled())) changed = true;
+    return changed;
 }
 
 /**
@@ -210,20 +262,20 @@ function mcpEnabled(): boolean {
 }
 
 /**
- * Register or remove the enigma MCP server for `agent` at `scope`, following the MCP
- * toggle (compress or recall). Returns whether the agent's config changed.
+ * Register or remove enigma's MCP servers for `agent` at `scope`, each following its own
+ * toggle. Returns whether the agent's config changed.
  */
 export function applyMcpForAgent(agent: string, scope: Scope): boolean {
     const file = mcpPath(agent, scope);
     if (!file) return false;
-    return writeEntry(agent, file, mcpEnabled());
+    return writeEntries(agent, file);
 }
 
-/** Register or remove the enigma MCP server in a managed account's config dir. */
+/** Register or remove enigma's MCP servers in a managed account's config dir. */
 export function applyMcpForAccount(tool: string, dir: string): boolean {
     const file = mcpAccountPath(tool, dir);
     if (!file) return false;
-    return writeEntry(tool, file, mcpEnabled());
+    return writeEntries(tool, file);
 }
 
 /** The agents whose own config can host the enigma MCP server. */
@@ -243,21 +295,26 @@ function usesTool(tool: string, file: string): boolean {
 }
 
 /**
- * Apply the MCP toggle's side effect immediately across managed agents at `scope` (driven by
- * the compress OR recall setting) - the on/off twin of dashboard's applyDashboardMode - so
- * toggling either setting takes effect without re-running `enigma install`. Mirrors presence
- * and absence, but to avoid creating config for a tool the user does not use, an ENABLE only
- * touches an agent that is actually installed (see `usesTool`); a DISABLE is already a no-op
- * on an absent file. Returns the tools whose config changed.
+ * Apply the MCP toggles' side effect immediately across managed agents at `scope` (the enigma
+ * server follows compress/recall/codeGraph, the browser server follows `browser`) - the on/off
+ * twin of dashboard's applyDashboardMode - so toggling a setting takes effect without
+ * re-running `enigma install`. Mirrors presence and absence, but to avoid creating config for
+ * a tool the user does not use, an ENABLE only touches an agent that is actually installed
+ * (see `usesTool`); a DISABLE is already a no-op on an absent file. Returns the tools whose
+ * config changed.
  */
 export function applyMcpToggle(scope: Scope): string[] {
-    const enabled = mcpEnabled();
     const changed: string[] = [];
     for (const tool of MANAGED_TOOLS) {
         const file = mcpPath(tool, scope);
         if (!file) continue;
-        if (enabled && !usesTool(tool, file)) continue; // never create config for an unused tool
-        if (writeEntry(tool, file, enabled)) changed.push(tool);
+        let touched = false;
+        for (const server of SERVERS) {
+            const enabled = server.enabled();
+            if (enabled && !usesTool(tool, file)) continue; // never create config for an unused tool
+            if (writeEntry(tool, file, server, enabled)) touched = true;
+        }
+        if (touched) changed.push(tool);
     }
     return changed;
 }

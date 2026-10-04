@@ -22,6 +22,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { copyIfFresher } from "./claude-oauth";
+import { browserInvocation } from "./mcp-deploy";
 import { mirrorAccountSettings } from "./permissions";
 import { readConfig, setEnigmaValue, setPackAccount } from "./config";
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
@@ -43,8 +44,12 @@ export interface PackDef {
     tags: string[];
     /** Pack homepage (the source repo), shown in the marketplace. */
     homepage: string;
-    /** MCP servers the pack ships (registered into the context only by `enigma pack setup`). */
-    mcp?: { name: string; relArgs: string[]; }[];
+    /**
+     * MCP servers the pack uses. A script it ships (`relArgs`, run with python) is registered
+     * only by `enigma pack setup`; a `builtin` server enigma already knows how to launch is
+     * registered on every deploy, so the pack works on its first launch.
+     */
+    mcp?: { name: string; relArgs?: string[]; builtin?: "browser"; }[];
 }
 
 /** Built-in pack catalog. Add a pack as one entry here; the rest is generic. */
@@ -61,6 +66,18 @@ export const PACKS: PackDef[] = [
         // the pack's mcp/burp-mcp-client/README for manual setup.
         mcp: [
             { name: "helio-hackerone", relArgs: ["mcp", "hackerone-mcp", "server.py"] },
+        ],
+    },
+    {
+        id: "orion",
+        label: "Orion",
+        pkg: "@enigmax/orion",
+        description: "Hunts what looks finished but is not: broken flows, slow loads, unbounded queries, scaling limits and searches that never say \"no results\" - each proved with a trace, a number or a failing input, in a real browser. Runs in an isolated agent context.",
+        tags: ["bugs", "performance", "scalability", "qa"],
+        homepage: "https://www.npmjs.com/package/@enigmax/orion",
+        // The browser is the pack's main instrument, so it is wired on deploy, not behind setup.
+        mcp: [
+            { name: "chrome-devtools", builtin: "browser" },
         ],
     },
 ];
@@ -291,6 +308,7 @@ export function deployPack(id: string, tool: string): string | null {
     // next launch.
     mirrorAccountSettings(tool, dir);
     ensurePackBypass(dir, tool);
+    registerPackMcp(id, tool, true);
     const version = installedPackVersion(id) ?? "dev";
     try {
         if (existsSync(deployMarker(dir)) && readFileSync(deployMarker(dir), "utf8").trim() === version) return dir;
@@ -488,9 +506,18 @@ export function packSessionSources(tool: string = DEFAULT_TOOL): { id: string; l
  * registered, or [] when nothing applies. Claude-only for now.
  */
 export function setupPackMcp(id: string, tool: string): string[] {
+    return registerPackMcp(id, tool, false);
+}
+
+/**
+ * Write the pack's MCP servers into its context's `.claude.json`. `builtinOnly` is the deploy
+ * path: only servers enigma launches itself, never a shipped script the user has not set up.
+ */
+function registerPackMcp(id: string, tool: string, builtinOnly: boolean): string[] {
     const pack = getPack(id);
     const assets = packAssetsDir(id);
     if (!pack?.mcp || !assets || tool !== "claude") return [];
+    if (builtinOnly && !pack.mcp.some((server) => server.builtin)) return [];
     const dir = contextDir(id, tool);
     mkdirSync(dir, { recursive: true });
     const file = join(dir, ".claude.json");
@@ -499,12 +526,20 @@ export function setupPackMcp(id: string, tool: string): string[] {
     const added: string[] = [];
     const python = process.platform === "win32" ? "python" : "python3";
     for (const server of pack.mcp) {
+        if (server.builtin === "browser") {
+            const inv = browserInvocation(tool);
+            servers[server.name] = { type: "stdio", command: inv.command, args: inv.args };
+            added.push(server.name);
+            continue;
+        }
+        if (builtinOnly || !server.relArgs) continue;
         const script = join(assets, ...server.relArgs);
         if (!existsSync(script)) continue;
         servers[server.name] = { type: "stdio", command: python, args: [script] };
         added.push(server.name);
     }
     if (!added.length) return [];
+    if (JSON.stringify(servers) === JSON.stringify(current.mcpServers ?? {})) return added;
     current.mcpServers = servers;
     writeFileSync(file, `${JSON.stringify(current, null, 2)}\n`);
     return added;

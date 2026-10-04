@@ -17,7 +17,7 @@ process.env.HOME = HOME;
 // it this file would inherit whatever temp dir a test file that ran earlier left behind.
 process.env.ENIGMA_CONFIG_HOME = HOME;
 
-const { applyMcpForAgent, applyMcpForAccount, applyMcpToggle, mcpInvocation } = await import("../src/mcp-deploy");
+const { applyMcpForAgent, applyMcpForAccount, applyMcpToggle, mcpInvocation, browserInvocation } = await import("../src/mcp-deploy");
 const { setEnigmaValue } = await import("../src/config");
 
 afterAll(() => rmSync(HOME, { recursive: true, force: true }));
@@ -124,6 +124,7 @@ test("disabling when no config file exists does not create one", () => {
     const dir = join(HOME, ".enigma", "claude", "ghost");
     setEnigmaValue("compress", false, "global");
     setEnigmaValue("codeGraph", false, "global");
+    setEnigmaValue("browser", false, "global");
     expect(applyMcpForAccount("claude", dir)).toBe(false);
     expect(existsSync(join(dir, ".claude.json"))).toBe(false);
 });
@@ -219,4 +220,38 @@ test("every platform starts the same server", () => {
     for (const platform of ["win32", "darwin", "linux"] as const) {
         expect(withLauncher(() => mcpInvocation("claude", platform)).args.at(-1), platform).toBe("mcp");
     }
+});
+// The Chrome DevTools server lets any agent test the app in a real, isolated Chrome. It rides
+// next to the enigma server under its own toggle, pinned, with telemetry and CrUX off.
+test("the browser server is registered per agent behind its own toggle", () => {
+    setEnigmaValue("browser", true, "global");
+    const dir = join(HOME, ".enigma", "claude", "browser-acct");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, ".claude.json"), "{}");
+    applyMcpForAccount("claude", dir);
+    const entry = JSON.parse(readFileSync(join(dir, ".claude.json"), "utf8")).mcpServers["chrome-devtools"];
+    expect(entry.args).toContain("chrome-devtools-mcp@1.10.1");
+    expect(entry.args).toContain("--isolated");
+    expect(entry.args).toContain("--no-usage-statistics");
+    setEnigmaValue("browser", false, "global");
+    applyMcpForAccount("claude", dir);
+    expect(JSON.parse(readFileSync(join(dir, ".claude.json"), "utf8")).mcpServers?.["chrome-devtools"]).toBeUndefined();
+    expect(browserInvocation("claude", "win32").command).toBe("cmd");
+    expect(browserInvocation("codex", "win32").command).toBe("npx");
+    expect(browserInvocation("claude", "linux")).toEqual({ command: "npx", args: ["-y", "chrome-devtools-mcp@1.10.1", "--isolated", "--no-usage-statistics", "--no-performance-crux"] });
+});
+
+// With two managed tables, re-appending each in turn moved one behind the other on every sync.
+test("codex config with two managed servers reaches a fixed point", () => {
+    setEnigmaValue("compress", true, "global");
+    setEnigmaValue("browser", true, "global");
+    const dir = join(HOME, ".enigma", "codex", "two-servers");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "config.toml"), "model = 'x'\n");
+    applyMcpForAccount("codex", dir);
+    const first = readFileSync(join(dir, "config.toml"), "utf8");
+    expect(first).toContain("[mcp_servers.enigma]");
+    expect(first).toContain("[mcp_servers.chrome-devtools]");
+    expect(applyMcpForAccount("codex", dir)).toBe(false);
+    expect(readFileSync(join(dir, "config.toml"), "utf8")).toBe(first);
 });

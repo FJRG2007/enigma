@@ -19,4 +19,4 @@ export const FIXED_COMMANDS: readonly string[] = [
 ];
 
 /** Pack ids, which launch a pack (`enigma helio`) and are therefore commands too. */
-export const PACK_COMMANDS: readonly string[] = ["helio"];
+export const PACK_COMMANDS: readonly string[] = ["helio", "orion"];
