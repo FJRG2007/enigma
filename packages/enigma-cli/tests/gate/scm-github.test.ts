@@ -173,6 +173,10 @@ test("mergePR leaves GitHub's message alone when there is nothing to strip", asy
     const blank: Invocation[] = [];
     await New(scriptedCmdFactory(blank, [{ out: spaced, err: null }, { out: "", err: null }]), () => true, "o/r").mergePR(undefined, pr, "squash", { stripAttribution: true });
     expect(blank[1]!.args).not.toContain("--subject");
+    const attributed = JSON.stringify({ title: "feat: x", commits: [{ messageHeadline: "feat: x", messageBody: "Co-Authored-By: Claude <noreply@anthropic.com>" }] });
+    const kept: Invocation[] = [];
+    await New(scriptedCmdFactory(kept, [{ out: attributed, err: null }, { out: "", err: null }]), () => true, "o/r").mergePR(undefined, pr, "squash");
+    expect(kept[1]!.args).not.toContain("--subject");
     const merged: Invocation[] = [];
     await New(scriptedCmdFactory(merged, [{ out: "", err: null }]), () => true, "o/r").mergePR(undefined, pr, "merge", { stripAttribution: true });
     expect(merged).toHaveLength(1);
@@ -182,4 +186,22 @@ test("mergePR leaves GitHub's message alone when there is nothing to strip", asy
 test("stripAttributionLines keeps everything but the AI lines", () => {
     const body = "* feat: a\n\nWhy.\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n\n* fix: b\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-authored-by: Jane <jane@example.invalid>";
     expect(stripAttributionLines(body)).toBe("* feat: a\n\nWhy.\n\n* fix: b\n\nCo-authored-by: Jane <jane@example.invalid>");
+});
+
+// A squash message that would publish the operator's home path is written by the merge itself,
+// redacted, even with attribution on and no AI line to strip.
+test("mergePR redacts the operator's home from the squash message", async () => {
+    const prevWin = process.env.USERPROFILE, prevPosix = process.env.HOME;
+    process.env.USERPROFILE = "C:\Users\fixture-op";
+    process.env.HOME = "C:\Users\fixture-op";
+    try {
+        const view = JSON.stringify({ title: "fix: x", commits: [{ messageHeadline: "fix: x", messageBody: "Log at C:\Users\fixture-op\tmp\a.log" }] });
+        const invocations: Invocation[] = [];
+        await New(scriptedCmdFactory(invocations, [{ out: view, err: null }, { out: "", err: null }]), () => true, "o/r").mergePR(undefined, pr, "squash");
+        expect(invocations[1]!.args[invocations[1]!.args.indexOf("--subject") + 1]).toBe("fix: x (#7)");
+        expect(invocations[1]!.stdin).toBe("* fix: x\n\nLog at ~\tmp\a.log");
+    } finally {
+        process.env.USERPROFILE = prevWin;
+        process.env.HOME = prevPosix;
+    }
 });

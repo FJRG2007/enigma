@@ -359,7 +359,7 @@ export class Host {
         const args = ["pr", "merge", pr.number, ...this.repoArgs(), `--${method}`];
         // Only a squash assembles its message from the branch's commits; a merge commit and a
         // rebase keep GitHub's own, so there is nothing to strip from them.
-        const message = opts?.stripAttribution && method === "squash" ? await this.mergeMessage(signal, pr) : null;
+        const message = method === "squash" ? await this.mergeMessage(signal, pr, opts?.stripAttribution === true) : null;
         let cmd = this.cmd(signal, "gh", ...(message === null ? args : [...args, "--subject", message.subject, "--body-file", "-"]));
         if (message !== null) cmd = cmd.withStdin(message.body);
         const { out, err } = await cmd.combinedOutput();
@@ -368,11 +368,11 @@ export class Host {
 
     /**
      * The message GitHub's squash would write - the PR title with its number, then every commit
-     * message - with the AI attribution lines removed. Null when no commit carries one, or when
-     * the PR cannot be read, which leaves GitHub's own default in place rather than inventing a
-     * message.
+     * message - with the AI attribution lines removed when `strip` is set and the operator's home
+     * path redacted. Null when neither changes anything, or when the PR cannot be read, which
+     * leaves GitHub's own default in place rather than inventing a message.
      */
-    private async mergeMessage(signal: AbortSignal | undefined, pr: PR): Promise<{ subject: string; body: string; } | null> {
+    private async mergeMessage(signal: AbortSignal | undefined, pr: PR, strip: boolean): Promise<{ subject: string; body: string; } | null> {
         const args = ["pr", "view", pr.number, ...this.repoArgs(), "--json", "title,commits"];
         const { out, err } = await this.cmd(signal, "gh", ...args).output();
         if (err != null) return null;
@@ -382,9 +382,11 @@ export class Host {
             const body = (view.commits ?? [])
                 .map((c) => `* ${`${c.messageHeadline ?? ""}\n\n${c.messageBody ?? ""}`.trim()}`)
                 .join("\n\n");
-            const stripped = stripAttributionLines(body);
-            if (stripped === body.replace(/\n{3,}/g, "\n\n").trim()) return null;
-            return { subject: redactOperatorHome(`${view.title} (#${pr.number})`), body: redactOperatorHome(stripped) };
+            const original = body.replace(/\n{3,}/g, "\n\n").trim();
+            const subject = `${view.title} (#${pr.number})`;
+            const message = { subject: redactOperatorHome(subject), body: redactOperatorHome(strip ? stripAttributionLines(body) : original) };
+            if (message.subject === subject && message.body === original) return null;
+            return message;
         } catch {
             return null;
         }

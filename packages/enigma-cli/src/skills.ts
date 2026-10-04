@@ -38,7 +38,7 @@ import { isDir, isNewer, readJson, enigmaHome, listFilesRel, computeContentSha }
 import { existsSync, readdirSync, readFileSync, writeFileSync, cpSync, mkdirSync, rmSync } from "node:fs";
 import { AGENTS, MANAGED_PROVIDER, isManagedProvider, discoverAgents, runningStatus, localTargetsAt } from "./agents";
 import { cachedRemoteSkills, pinnedRef, refIsPinned as skillsRefIsPinned, refreshRemoteSkills, shouldCheckRemote, skillsOrigin } from "./skills-remote";
-import { disableClaudeAttribution, disableClaudeFeedbackSurvey, enableClaudeStatusline, getClaudeAttribution, getClaudeTrust, setClaudeTrust } from "./claude";
+import { disableClaudeAttribution, disableClaudeFeedbackSurvey, enableClaudeStatusline, getClaudeTrust, setClaudeTrust } from "./claude";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PKG_ROOT = resolve(__dirname, "..");
@@ -1646,12 +1646,10 @@ export function syncDeployed(agentNames?: string[]): string[] {
         // user happened to run `enigma install` or toggle one of the three features. Silent on
         // purpose: nothing the agent does changes, only how many processes it takes to do it.
         if (agent.name === "claude" && hasDeployment(agent, "global")) applyPostEditWiring();
-        // The attribution guard, same reasoning: it is settings.json wiring that rides with the
-        // attribution overrides, and an install from before the guard existed only gains it
-        // here. Only when attribution is off - turning it on is the user's call and removes it.
-        if (agent.name === "claude" && hasDeployment(agent, "global") && !getClaudeAttribution("global")) {
-            applyAttributionGuard(claudeGlobalSettings(), true);
-        }
+        // The attribution guard, same reasoning: it is settings.json wiring, and an install from
+        // before the guard existed only gains it here. Always on - its attribution check reads
+        // the setting at run time, its home-path check applies either way.
+        if (agent.name === "claude" && hasDeployment(agent, "global")) applyAttributionGuard(claudeGlobalSettings(), true);
         // The destructive-command guard rides with the bypass, and like the rest of this block it
         // is settings.json wiring an existing install only receives here. Silent: nothing the
         // agent is allowed to do changes except wiping a machine or force-pushing main.

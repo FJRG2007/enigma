@@ -147,7 +147,7 @@ export function setClaudeAttribution(scope: "global" | "local", enabled: boolean
     if (attribution.pr === "") { delete attribution.pr; changed = true; }
     if (attribution.sessionUrl === false) { delete attribution.sessionUrl; changed = true; }
     if (current.includeCoAuthoredBy === false) changed = true;
-    if (!changed) return applyAttributionGuard(path, false) === "changed";
+    if (!changed) return applyAttributionGuard(path, true) === "changed";
 
     const next: Record<string, unknown> = { ...current };
     if (Object.keys(attribution).length) next.attribution = attribution;
@@ -155,7 +155,7 @@ export function setClaudeAttribution(scope: "global" | "local", enabled: boolean
     delete next.includeCoAuthoredBy;
 
     writeClaudeSettings(path, next);
-    applyAttributionGuard(path, false);
+    applyAttributionGuard(path, true);
     return true;
 }
 
@@ -654,15 +654,14 @@ export function mirrorClaudeSettings(accountDir: string): boolean {
         next.statusLine = { ...globalLine };
     }
 
-    // The attribution guard rides with the attribution overrides, so an account (and every
-    // subagent it starts) refuses an AI trailer exactly when the default account does.
-    const guardOn = globalAttr.commit === "" && global.includeCoAuthoredBy === false;
-    if (JSON.stringify(next) === JSON.stringify(current)) return applyAttributionGuard(path, guardOn) === "changed";
+    // The attribution guard is always on: it refuses a home path in any message, and an AI
+    // trailer only while the session's own settings have attribution off.
+    if (JSON.stringify(next) === JSON.stringify(current)) return applyAttributionGuard(path, true) === "changed";
     // Nothing to mirror into a file that does not exist yet: avoid creating an
     // empty settings.json in a fresh account dir.
     if (!existsSync(path) && Object.keys(next).length === 0) return false;
     writeClaudeSettings(path, next);
-    applyAttributionGuard(path, guardOn);
+    applyAttributionGuard(path, true);
     return true;
 }
 

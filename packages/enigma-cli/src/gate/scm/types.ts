@@ -100,7 +100,8 @@ export interface Check {
 /**
  * How a merge writes its commit message. `stripAttribution` drops AI co-author trailers and
  * "Generated with Claude Code" footers from the message GitHub would otherwise assemble from
- * the branch's commits. Providers that cannot set the message ignore it.
+ * the branch's commits. A squash message is always scrubbed of the operator's home path.
+ * Providers that cannot set the message ignore it.
  */
 export interface MergeOptions {
     stripAttribution?: boolean;

@@ -6,11 +6,18 @@
  */
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { test, expect } from "bun:test";
+import { test, expect, beforeEach, afterEach } from "bun:test";
 import { mkdtempSync, writeFileSync, readFileSync } from "node:fs";
 import { attributionLine, messageFiles, parseGuardPayload, runAttributionGuardHook, applyAttributionGuard } from "@/attribution-guard";
 
 const payload = (command: string, cwd = process.cwd(), tool = "Bash"): string => JSON.stringify({ tool_name: tool, tool_input: { command }, cwd });
+
+// The hook reads the session's attribution setting at run time; these tests run with it off.
+const configDir = mkdtempSync(join(tmpdir(), "enigma-attr-session-"));
+const attributionSettings = (off: boolean): void => writeFileSync(join(configDir, "settings.json"), JSON.stringify(off ? { attribution: { commit: "", pr: "", sessionUrl: false }, includeCoAuthoredBy: false } : {}));
+const previousConfigDir = process.env.CLAUDE_CONFIG_DIR;
+beforeEach(() => { process.env.CLAUDE_CONFIG_DIR = configDir; attributionSettings(true); });
+afterEach(() => { if (previousConfigDir === undefined) delete process.env.CLAUDE_CONFIG_DIR; else process.env.CLAUDE_CONFIG_DIR = previousConfigDir; });
 
 test("finds the trailer and the footer in any casing", () => {
     expect(attributionLine("feat: x\n\nCo-Authored-By: Claude <noreply@anthropic.com>")).toContain("noreply@anthropic.com");
@@ -109,6 +116,21 @@ test("a home path in the message is refused, a home path in the cd is not", asyn
         // The message file's own path is not what gets published; its content is.
         expect(runAttributionGuardHook(payload("git commit -F C:/Users/fixture-op/msg.txt", dir))).toBe(0);
         expect(runAttributionGuardHook(payload("git commit -F msg.txt", dir))).toBe(2);
+        // A later command in the chain is not part of the message; a separator inside it is.
+        for (const chained of [
+            "git commit -m \"fix: x\"; ls C:/Users/fixture-op/repo",
+            "git commit -m \"fix: x\" | tee C:/Users/fixture-op/log.txt",
+            "git commit -m \"fix: x\"\nls C:/Users/fixture-op/repo",
+            "git commit -m @'\nfix: x; y | z\n'@; ls C:/Users/fixture-op/repo",
+        ]) expect(runAttributionGuardHook(payload(chained, process.cwd(), "PowerShell"))).toBe(0);
+        for (const leaking of [
+            "git commit -m \"fix: a; see C:/Users/fixture-op/notes.md\"",
+            "git commit -m @'\nfix: x\n\nsee C:/Users/fixture-op/notes.md\n'@",
+        ]) expect(runAttributionGuardHook(payload(leaking, process.cwd(), "PowerShell"))).toBe(2);
+        // With attribution on, the trailer passes and the home path is still refused.
+        attributionSettings(false);
+        expect(runAttributionGuardHook(payload("git commit -m \"feat: x\n\nCo-Authored-By: Claude <noreply@anthropic.com>\""))).toBe(0);
+        expect(runAttributionGuardHook(payload("gh pr create --title t --body \"see C:/Users/fixture-op/notes.md\""))).toBe(2);
     } finally {
         process.env.USERPROFILE = prevWin;
         process.env.HOME = prevPosix;

@@ -18,7 +18,9 @@
  *
  * The same hook refuses a message that contains this machine's home directory (account name, OS
  * layout, temp paths), since the commands it already watches are exactly where an agent
- * publishes text. Only the message is read, never the `cd <home>/repo &&` in front of it.
+ * publishes text. Only the message is read, never the `cd <home>/repo &&` in front of it. That
+ * check runs whatever the attribution setting, so the hook is installed either way and the
+ * attribution check reads the session's setting at run time (`attributionOff`).
  *
  * Messages passed by file (`-F <file>`, `--file`, `--body-file`) are read from disk relative to
  * the payload's cwd. A message written by an editor cannot be seen here; the turn-end check
@@ -128,8 +130,9 @@ export function parseGuardPayload(raw: string): GuardPayload | null {
 export function runAttributionGuardHook(raw: string): number {
     const payload = parseGuardPayload(raw);
     if (payload === null) return 0;
-    let found = attributionLine(payload.command);
-    for (const file of found === "" ? messageFiles(payload.command) : []) {
+    const off = attributionOff();
+    let found = off ? attributionLine(payload.command) : "";
+    for (const file of found === "" && off ? messageFiles(payload.command) : []) {
         found = attributionLine(readMessageFile(payload.cwd, file));
         if (found !== "") break;
     }
@@ -137,9 +140,9 @@ export function runAttributionGuardHook(raw: string): number {
         process.stderr.write(`enigma: AI attribution is turned off here, and this message carries "${found}". Remove that line and run the command again. (enigma config claude-attribution on allows it.)\n`);
         return 2;
     }
-    // Same commands, same process: a commit or PR message must not publish this machine's home
-    // directory (account name, OS layout, temp paths) - a real report had agents pasting local
-    // evidence paths into every PR. Only the MESSAGE is read: the `cd C:/Users/.../repo &&` an
+    // Same commands, same process, whatever the attribution setting: a commit or PR message must
+    // not publish this machine's home directory (account name, OS layout, temp paths) - a real
+    // report had agents pasting local evidence paths into every PR. Only the MESSAGE is read: the `cd C:/Users/.../repo &&` an
     // agent prefixes and the path of a message file are where the command runs, not what it says.
     const message = [messageText(payload.command), ...messageFiles(payload.command).map((f) => readMessageFile(payload.cwd, f))].join("\n");
     if (operatorHomePathLeak(message).length) {
@@ -159,10 +162,37 @@ export function messageText(command: string): string {
     const head = /\b(?:git(?:\s+-C\s+(?:"[^"]*"|'[^']*'|\S+))?\s+commit|gh\s+pr\s+(?:create|edit|merge))\b/.exec(command);
     if (!head) return heredoc ? heredoc[2]! : "";
     let tail = command.slice(head.index + head[0].length);
-    // Cut at the next chained command, and at the heredoc marker (its body is added below).
-    tail = tail.split(/&&|\|\||<<-?\s*['"]?\w+/)[0] ?? "";
+    // Cut at the heredoc marker (its body is added below), then at the next chained command.
+    tail = tail.split(/<<-?\s*['"]?\w+/)[0] ?? "";
+    tail = tail.slice(0, commandEnd(tail));
     tail = tail.replace(/(?:^|\s)(?:-F|--file|--body-file)(?:=|\s+)(?:"[^"]+"|'[^']+'|\S+)/g, " ");
     return heredoc ? `${tail}\n${heredoc[2]}` : tail;
+}
+
+/**
+ * Where the first command in `text` ends: the first `;`, `&&`, `|`, `||` or line break outside a
+ * quoted span. Quoted spans are bash/PowerShell single and double quotes and PowerShell
+ * here-strings (`@'...'@`, `@"..."@`), so a separator inside the message does not cut it.
+ */
+function commandEnd(text: string): number {
+    for (let i = 0; i < text.length; i++) {
+        const c = text[i]!;
+        const here = /^@(['"])\r?\n/.exec(text.slice(i, i + 4));
+        if (here) {
+            const close = text.indexOf(`\n${here[1]}@`, i);
+            if (close === -1) return text.length;
+            i = close + 2;
+        } else if (c === "'" || c === "\"") {
+            let j = i + 1;
+            while (j < text.length && text[j] !== c) j += c === "\"" && (text[j] === "\\" || text[j] === "`") ? 2 : 1;
+            i = j;
+        } else if (c === "\\" || c === "`") {
+            i++;
+        } else if (c === ";" || c === "|" || c === "\n" || c === "\r" || (c === "&" && text[i + 1] === "&")) {
+            return i;
+        }
+    }
+    return text.length;
 }
 
 /** The PreToolUse group: one filtered handler per command pattern and shell tool. */
