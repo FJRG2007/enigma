@@ -88,6 +88,9 @@ enigma verify          Check that work reported as finished actually is: scans t
                        exits 1 on findings, 2 when the check could not run. Also runs at turn
                        end, where it additionally checks the reply itself against your
                        output-style level
+enigma design <src>    Reverse-engineer a design system from a URL, a project folder or a git
+                       repo into DESIGN.md and an agent skill installed for your agents
+                       (--ultra: screenshots, motion and hover states via a local Chrome/Edge)
 enigma mcp             Run the context-compression MCP server over stdio
 enigma dashboard|dash  Open the local dashboard (manage enigma; see savings) in your browser (http://enigma,
                        or http://localhost:24282 if :80/hosts is unavailable)

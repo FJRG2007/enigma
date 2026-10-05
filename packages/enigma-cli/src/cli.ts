@@ -15,6 +15,7 @@ import type { IssueKind } from "./issue";
 import { discoverAgents } from "./agents";
 import { runConfigCli } from "./settings";
 import { pinnedRef } from "./skills-remote";
+import { DESIGN_HELP } from "./design/help";
 import { collectReporter } from "./reporter";
 import { hostname, userInfo } from "node:os";
 import { runDoctorCli } from "./doctor-hooks";
@@ -181,6 +182,12 @@ function parseArgs(argv: string[]): CliOptions {
         // `--` included: those subcommands own it as their own end-of-flags marker, and nothing
         // under codegraph is forwarded to another tool.
         if (opts.command === "codegraph" && opts.positionals.length >= 1 && a !== "-h" && a !== "--help") {
+            opts.positionals.push(a);
+            continue;
+        }
+        // `design` owns its whole flag set (--url, --out, --format, ...), so it parses its own
+        // argv; only the shared help flags stay here.
+        if (opts.command === "design" && a !== "-h" && a !== "--help") {
             opts.positionals.push(a);
             continue;
         }
@@ -428,6 +435,9 @@ Commands:
                          -c --cwd <dir> run against another project  -s --silent
                          --list <query> search      --dry-run  report without writing
                          --style tailwind|css|none for a copied recipe (auto-detected)
+  design <source>      Reverse-engineer a design system from a URL, a project or a git
+                       repo into DESIGN.md and an agent skill (--ultra adds screenshots,
+                       motion and hover states through a local Chrome/Edge)
                          --no-deps  skip the extra packages an item declares
                        add flags also decides where the flag images come from:
                          --flags cdn|local        jsDelivr, or files in the project
@@ -737,6 +747,8 @@ Optional, isolated harness bundles. Each runs in its own agent context, so its s
 and commands never load into your normal agent.
 
   list | install <id> | remove <id> | update <id> | setup <id> | use <id> <acct|-> | run <id> [account]`,
+
+    design: DESIGN_HELP,
 
     resources: `usage: enigma resources [action]
 System cleanup: status (the default), wsl, docker, free-port <PORT>, kill <PID>.
@@ -3215,6 +3227,10 @@ export async function run(argv: string[]): Promise<void> {
         p.outro(done ? "Git hooks configured." : "No changes made.");
         await notifyUpdate(version, interactive);
         return;
+    }
+    if (opts.command === "design") {
+        const { runDesignCli } = await import("./design/cli");
+        process.exit(await runDesignCli(opts.positionals));
     }
 
     // No command: non-interactive default installs skills; a TTY gets the hub.

@@ -51,6 +51,7 @@ Subsystems (read the one you are touching):
 - `local-api-server.md` - OpenAI-compatible local API over the installed agents (`enigma api`), adapters, playground.
 - `primitives.md` - the headless component registry (`@enigmax/primitives`, `@enigmax/utils`) and `enigma add`: core+adapter architecture, theming by data attribute, the marquee's twelve measured rules. Read before adding a primitive or a utility.
 - `autoskills.md` - stack detection and community stack-skill installation.
+- `design.md` - `enigma design`: design-system extraction from a URL/project/repo into DESIGN.md + an agent skill; the native CDP browser driver, the never-execute config reader, and the role rules. Read before touching `src/design/`.
 - `guardrails.md` - the convention rule engine, its rules and the three-tier routing doctrine. Read before adding a rule.
 - `hook-latency.md` - `enigma doctor hooks`: what actually contributes a hook to an event, why the timeout message names the event and never the hook, and the measured cost of the ones on this machine. Read when a turn feels slow or a hook times out.
 - `post-edit-hook.md` - the ONE Claude PostToolUse entry shared by trim, guardrails and the graph's blast radius: why one process instead of three, the ordering it settled, and the toggle gating that moved into the runtime. Read before adding anything that runs after an edit.

@@ -13,7 +13,7 @@
  */
 export const FIXED_COMMANDS: readonly string[] = [
     "install", "update", "security", "guard", "seal", "check", "config", "account", "accounts",
-    "profile", "profiles", "skill", "skills", "issue", "improve", "qa", "compress", "guardrails", "trim", "verify", "mcp", "api", "gate", "dashboard", "dash", "fix-path", "resources", "kill", "recall", "codegraph", "autoskills", "statusline", "help", "version",
+    "profile", "profiles", "skill", "skills", "issue", "improve", "qa", "compress", "guardrails", "trim", "verify", "mcp", "api", "gate", "dashboard", "dash", "fix-path", "resources", "kill", "recall", "codegraph", "autoskills", "design", "statusline", "help", "version",
     "add", "components",
     "pack", "packs", "ssh", "completion", "branches", "doctor", "shim",
 ];
