@@ -2570,8 +2570,10 @@ async function runBranchesCli(positionals: string[], opts: CliOptions): Promise<
         const ready = result.plan.verdicts.filter((v) => v.tidyable);
         for (const path of result.worktrees) console.log(`  would remove the worktree ${path}`);
         for (const { branch } of result.remoteOnly) console.log(`  would remove ${branch} from ${remote} (only there, merged by a PR at this commit)`);
+        for (const { branch } of result.mirror) console.log(`  would remove gate/${branch} from the gate mirror (merged, idle)`);
+        for (const { ref } of result.orphanRefs) console.log(`  would remove ${ref} (its remote no longer exists; merged)`);
         for (const v of ready) console.log(`  would remove ${v.branch}${v.remote ? ` (and on ${remote})` : ""}`);
-        if (!ready.length && !result.worktrees.length && !result.remoteOnly.length) console.log("Nothing to clean up.");
+        if (!ready.length && !result.worktrees.length && !result.remoteOnly.length && !result.mirror.length && !result.orphanRefs.length) console.log("Nothing to clean up.");
         return 0;
     }
     if (result.switched) console.log(`Back on ${result.plan.defaultBranch}.`);
@@ -2585,9 +2587,11 @@ async function runBranchesCli(positionals: string[], opts: CliOptions): Promise<
         const alsoRemote = result.deletedRemote.includes(branch) ? ` and on ${remote}` : "";
         console.log(`Removed ${branch}${alsoRemote}. Restore it with: ${tidyMod.restoreCommand(branch, sha)}`);
     }
+    for (const { branch, sha, bare } of result.mirror) console.log(`Removed gate/${branch} from the gate mirror. Restore it with: git --git-dir="${bare}" branch ${branch} ${sha}`);
+    for (const { ref, sha } of result.orphanRefs) console.log(`Removed ${ref} (its remote no longer exists). Restore it with: git update-ref ${ref} ${sha}`);
     for (const note of result.notes) console.log(`  ${note}`);
     for (const problem of result.problems) console.error(`  ${problem}`);
-    if (!result.deleted.length && !result.worktrees.length && !result.remoteOnly.length && !result.pruned && !result.problems.length) console.log("Nothing to clean up.");
+    if (!result.deleted.length && !result.worktrees.length && !result.remoteOnly.length && !result.mirror.length && !result.orphanRefs.length && !result.pruned && !result.problems.length) console.log("Nothing to clean up.");
     return result.problems.length ? 1 : 0;
 }
 /**

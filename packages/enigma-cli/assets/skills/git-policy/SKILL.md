@@ -32,6 +32,7 @@ description: Commit, branch, and pull request standards - conventional commits, 
 - When in ANY doubt that a branch still holds unmerged, unreleased, or otherwise relevant commits, do NOT delete it - ask the user first. Leaving a stale branch is cheap; losing a branch that held unique work is not.
 - Never delete a protected or long-lived branch (the default branch, release/*, or any branch the repo marks as protected) unless the user explicitly asks.
 - Prune deleted upstreams periodically with `git fetch --prune` so gone remote branches stop lingering locally.
+- Where enigma is installed, clean up with `enigma branches tidy` right after your branch lands instead of deleting by hand: it proves containment by content (squash merges included), clears idle worktrees, merged gate-mirror branches and stale tracking refs, and records every tip so `git branch <name> <sha>` restores it. It also runs on its own after agent turns, at most hourly per repository; a manual run is for the branch you just finished.
 
 ---
 

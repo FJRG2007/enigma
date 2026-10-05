@@ -97,6 +97,10 @@ export interface TidyResult {
     pruned: number;
     /** Things kept for a reason that is not a failure, for the report. */
     notes: string[];
+    /** Merged branches removed from the gate's own mirror (or, on a dry run, that would be), with their tips. */
+    mirror: Array<{ branch: string; sha: string; bare: string; }>;
+    /** Tracking refs of remotes that no longer exist, removed (or that would be), with their tips. */
+    orphanRefs: Array<{ ref: string; sha: string; }>;
 }
 
 /**
@@ -445,8 +449,10 @@ export async function tidy(dir: string, opts: TidyOptions = {}): Promise<TidyRes
     // for 4 real branches, and the gate's mirror remotes carried 279 more.
     const pruned = opts.dryRun ? 0 : await pruneRemotes(dir);
     let plan = await planTidy(dir, remote);
-    const result: TidyResult = { plan, deleted: [], deletedRemote: [], switched: false, problems: [], notes: [], worktrees: [], remoteOnly: [], pruned };
+    const result: TidyResult = { plan, deleted: [], deletedRemote: [], switched: false, problems: [], notes: [], worktrees: [], remoteOnly: [], pruned, mirror: [], orphanRefs: [] };
     if (plan.blocked) return result;
+    await tidyGateMirror(dir, plan, result, !!opts.dryRun);
+    await tidyOrphanRefs(dir, plan, result, !!opts.dryRun);
 
     // Abandoned worktrees first: each one pins its branch, so the plan is rebuilt once after
     // removing any, and the branches they held are judged like every other branch.
@@ -536,6 +542,99 @@ export async function tidy(dir: string, opts: TidyOptions = {}): Promise<TidyRes
         }
     }
     return result;
+}
+
+/** Name of the remote `enigma gate init` adds; mirrors gate/init.ts REMOTE_NAME without importing the gate. */
+const GATE_REMOTE = "gate";
+
+/**
+ * A gate mirror branch younger than this may belong to a run in progress (a run lasts minutes;
+ * this is hours), so it is left for a later pass.
+ */
+const MIRROR_IDLE_MS = 6 * 60 * 60 * 1000;
+
+/** The gate's bare mirror for `dir`, when its `gate` remote points at one enigma owns. */
+async function gateMirrorPath(dir: string): Promise<string | null> {
+    const url = (await git.run(dir, ["remote", "get-url", GATE_REMOTE]).catch(() => "")).trim();
+    if (!url) return null;
+    const root = join(enigmaHome(), ".enigma", "gate", "repos").replace(/\\/g, "/").toLowerCase();
+    const path = url.replace(/^file:\/\//, "").replace(/\\/g, "/");
+    return path.toLowerCase().startsWith(`${root}/`) && existsSync(path) ? path : null;
+}
+
+/** When a branch ref in a bare repository last moved: its loose ref file, else the packed-refs file. */
+function refTouched(bare: string, branch: string): number {
+    for (const file of [join(bare, "refs", "heads", ...branch.split("/")), join(bare, "packed-refs")]) {
+        try { return statSync(file).mtimeMs; } catch { /* try the next */ }
+    }
+    return Date.now();
+}
+
+/**
+ * Remove merged branches from the gate's own bare mirror. Every gate run pushes its branch
+ * there and nothing ever removed one, so they pile up and reappear in the repository as
+ * `gate/feat/...` tracking refs - the branches the user kept seeing after every cleanup. A
+ * mirror branch goes only when it is idle, its tracking ref here is at the mirror's tip, and
+ * that tip is contained in the base by the same proof the local branches get. A branch a run
+ * still has checked out is refused by git itself (the mirror's worktree pins it). The delete
+ * runs IN the bare repository, never as a push: a push to the gate remote is how runs start.
+ */
+async function tidyGateMirror(dir: string, plan: TidyPlan, result: TidyResult, dryRun: boolean, now = Date.now()): Promise<void> {
+    const bare = await gateMirrorPath(dir);
+    if (!bare) return;
+    const base = plan.baseRef ?? plan.defaultBranch;
+    const heads = (await git.run(bare, ["for-each-ref", "--format=%(refname:short) %(objectname)", "refs/heads"]).catch(() => ""))
+        .split("\n").map((l) => l.trim().split(" ")).filter((p): p is [string, string] => p.length === 2);
+    for (const [branch, sha] of heads) {
+        if (PROTECTED.has(branch) || branch === plan.defaultBranch) continue;
+        if (now - refTouched(bare, branch) < MIRROR_IDLE_MS) continue;
+        const tracking = (await git.run(dir, ["rev-parse", "--verify", "--quiet", `refs/remotes/${GATE_REMOTE}/${branch}`]).catch(() => "")).trim();
+        if (tracking !== sha) continue;
+        if (!await containedInAny(dir, base, plan.defaultBranch, `refs/remotes/${GATE_REMOTE}/${branch}`)) continue;
+        if (dryRun) { result.mirror.push({ branch, sha, bare }); continue; }
+        try {
+            recordDeletion(dir, { branch: `${GATE_REMOTE}/${branch}`, sha, remote: true });
+        } catch (err) {
+            result.problems.push(`kept ${GATE_REMOTE}/${branch}: its restore point could not be recorded (${(err as Error).message})`);
+            continue;
+        }
+        try {
+            await git.run(bare, ["branch", "-D", branch]);
+            await git.run(dir, ["update-ref", "-d", `refs/remotes/${GATE_REMOTE}/${branch}`]).catch(() => "");
+            result.mirror.push({ branch, sha, bare });
+        } catch (err) {
+            result.problems.push(`kept ${GATE_REMOTE}/${branch}: ${(err as Error).message.split("\n")[0]}`);
+        }
+    }
+}
+
+/**
+ * Remove tracking refs left by a remote that no longer exists (`git remote remove` keeps
+ * nothing, but a remote renamed or deleted by hand leaves `refs/remotes/<name>/*` behind, and
+ * `remote prune` cannot reach a remote that is gone). A ref is the only pointer to its commits
+ * once its remote is gone, so it goes only when its tip is contained in the base.
+ */
+async function tidyOrphanRefs(dir: string, plan: TidyPlan, result: TidyResult, dryRun: boolean): Promise<void> {
+    const remotes = new Set((await git.run(dir, ["remote"]).catch(() => "")).split("\n").map((r) => r.trim()).filter(Boolean));
+    const base = plan.baseRef ?? plan.defaultBranch;
+    const refs = (await git.run(dir, ["for-each-ref", "--format=%(refname) %(objectname)", "refs/remotes"]).catch(() => ""))
+        .split("\n").map((l) => l.trim().split(" ")).filter((p): p is [string, string] => p.length === 2);
+    for (const [ref, sha] of refs) {
+        const remote = ref.split("/")[2];
+        if (!remote || remotes.has(remote) || ref.endsWith("/HEAD")) continue;
+        if (!await containedInAny(dir, base, plan.defaultBranch, ref)) {
+            result.notes.push(`kept ${ref.replace(/^refs\/remotes\//, "")}: its remote is gone and it holds commits ${base} lacks`);
+            continue;
+        }
+        if (dryRun) { result.orphanRefs.push({ ref, sha }); continue; }
+        try {
+            recordDeletion(dir, { branch: ref, sha, remote: false });
+            await git.run(dir, ["update-ref", "-d", ref]);
+            result.orphanRefs.push({ ref, sha });
+        } catch (err) {
+            result.problems.push(`kept ${ref}: ${(err as Error).message.split("\n")[0]}`);
+        }
+    }
 }
 
 /** The command that puts a deleted branch back, for the report. */

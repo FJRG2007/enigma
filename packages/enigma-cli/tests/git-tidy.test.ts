@@ -15,7 +15,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, expect, afterAll } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync, utimesSync } from "node:fs";
 
 const HOME = mkdtempSync(join(tmpdir(), "enigma-tidy-home-"));
 process.env.USERPROFILE = HOME;
@@ -484,3 +484,85 @@ test("tidy prunes remote-tracking refs whose branch is gone on the remote", asyn
     expect(result.pruned).toBe(1);
     expect(git(dir, "branch", "-r")).not.toContain("origin/gone");
 }, 120_000);
+
+/** A gate mirror where enigma keeps it (`<home>/.enigma/gate/repos/<id>.git`), wired as the `gate` remote. */
+function gateMirror(dir: string, id: string): string {
+    const bare = join(HOME, ".enigma", "gate", "repos", `${id}.git`);
+    mkdirSync(bare, { recursive: true });
+    git(bare, "init", "-q", "--bare", "-b", "main", ".");
+    git(dir, "remote", "add", "gate", bare);
+    return bare;
+}
+
+/** Make a ref in a bare repo look last moved `hours` ago. */
+function age(bare: string, branch: string, hours: number): void {
+    const when = new Date(Date.now() - hours * 3600_000);
+    utimesSync(join(bare, "refs", "heads", ...branch.split("/")), when, when);
+}
+
+test("merged, idle branches leave the gate mirror; unmerged or recent ones stay", async () => {
+    const { dir } = repo("mirror");
+    const bare = gateMirror(dir, "mirror1");
+    branchWithWork(dir, "feat/landed", "landed.txt");
+    branchWithWork(dir, "feat/open", "open.txt");
+    branchWithWork(dir, "feat/fresh", "fresh.txt");
+    git(dir, "push", "-q", "gate", "feat/landed", "feat/open", "feat/fresh", "main");
+    git(dir, "merge", "-q", "--no-ff", "-m", "merge landed", "feat/landed");
+    git(dir, "merge", "-q", "--no-ff", "-m", "merge fresh", "feat/fresh");
+    git(dir, "push", "-q", "origin", "main");
+    for (const b of ["feat/landed", "feat/open", "feat/fresh"]) git(dir, "branch", "-D", b);
+    git(dir, "fetch", "-q", "gate");
+    age(bare, "feat/landed", 24);
+    age(bare, "feat/open", 24);
+
+    const dry = await tidy(dir, { dryRun: true });
+    expect(dry.mirror.map((m) => m.branch)).toEqual(["feat/landed"]);
+    expect(git(bare, "branch", "--list", "feat/landed")).not.toBe("");
+
+    const result = await tidy(dir);
+    expect(result.problems).toEqual([]);
+    expect(result.mirror.map((m) => m.branch)).toEqual(["feat/landed"]);
+    expect(git(bare, "branch", "--list", "feat/landed")).toBe("");
+    expect(git(bare, "branch", "--list", "feat/open")).not.toBe("");
+    expect(git(bare, "branch", "--list", "feat/fresh")).not.toBe("");
+    expect(git(dir, "branch", "-r", "--list", "gate/feat/landed")).toBe("");
+    expect(git(dir, "branch", "-r", "--list", "gate/feat/open")).not.toBe("");
+    // Written down first, and restorable from what the report prints.
+    const entry = readLedger().find((e) => e.branch === "gate/feat/landed");
+    expect(entry?.sha).toBe(result.mirror[0]!.sha);
+    git(dir, `--git-dir=${bare}`, "branch", "feat/landed", entry!.sha);
+    expect(git(bare, "rev-parse", "feat/landed")).toBe(entry!.sha);
+});
+
+test("a remote called gate that is not enigma's mirror is never touched", async () => {
+    const { dir } = repo("not-mirror");
+    const elsewhere = mkdtempSync(join(tmpdir(), "enigma-tidy-foreign-gate-"));
+    dirs.push(elsewhere);
+    git(elsewhere, "init", "-q", "--bare", "-b", "main", ".");
+    git(dir, "remote", "add", "gate", elsewhere);
+    branchWithWork(dir, "feat/theirs", "theirs.txt");
+    git(dir, "push", "-q", "gate", "feat/theirs");
+    git(dir, "merge", "-q", "--no-ff", "-m", "merge", "feat/theirs");
+    git(dir, "branch", "-D", "feat/theirs");
+    git(dir, "fetch", "-q", "gate");
+    const when = new Date(Date.now() - 48 * 3600_000);
+    utimesSync(join(elsewhere, "refs", "heads", "feat", "theirs"), when, when);
+    const result = await tidy(dir);
+    expect(result.mirror).toEqual([]);
+    expect(git(elsewhere, "branch", "--list", "feat/theirs")).not.toBe("");
+});
+
+test("tracking refs of a remote that no longer exists go when merged, stay when they hold work", async () => {
+    const { dir } = repo("orphan-refs");
+    branchWithWork(dir, "feat/merged", "m.txt");
+    branchWithWork(dir, "feat/only-there", "o.txt");
+    git(dir, "merge", "-q", "--no-ff", "-m", "merge", "feat/merged");
+    git(dir, "push", "-q", "origin", "main");
+    git(dir, "update-ref", "refs/remotes/gone/main", git(dir, "rev-parse", "feat/merged"));
+    git(dir, "update-ref", "refs/remotes/gone/wip", git(dir, "rev-parse", "feat/only-there"));
+    const result = await tidy(dir, { only: ["none"] });
+    expect(result.orphanRefs.map((r) => r.ref)).toEqual(["refs/remotes/gone/main"]);
+    expect(git(dir, "for-each-ref", "refs/remotes/gone")).toContain("refs/remotes/gone/wip");
+    expect(git(dir, "for-each-ref", "refs/remotes/gone")).not.toContain("refs/remotes/gone/main");
+    expect(result.notes.some((n) => n.includes("gone/wip"))).toBe(true);
+});
