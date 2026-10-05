@@ -429,10 +429,7 @@ const DISCORD_PATH = "M20.317 4.3698a19.7913 19.7913 0 0 0-4.8851-1.5152.0741.07
         font-family: var(--sans); font-size: var(--fs-h1); line-height: 1.04; font-weight: 800;
         letter-spacing: -0.035em; margin: var(--s-5) auto 0; max-width: 15ch; text-wrap: balance;
     }
-    h1 .hl {
-        background: linear-gradient(100deg, var(--accent) 10%, var(--accent2) 90%);
-        -webkit-background-clip: text; background-clip: text; color: transparent;
-    }
+    h1 .hl { color: var(--accent); }
     .lede { color: var(--muted); font-size: var(--fs-lg); line-height: 1.6; max-width: 58ch; margin: var(--s-5) auto 0; text-wrap: pretty; }
 
     /* The install picker itself lives in InstallTabs.astro; the hero only centers it. */

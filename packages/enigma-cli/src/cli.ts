@@ -425,6 +425,9 @@ Commands:
                        (opt-in; structural code intelligence over MCP, no external tool)
   autoskills [path]    Detect the project's tech stack and install matching agent skills
                        (separate from the policy skills; --dry-run to preview)
+  design <source>      Reverse-engineer a design system from a URL, a project or a git
+                       repo into DESIGN.md and an agent skill (--ultra adds screenshots,
+                       motion and hover states through a local Chrome/Edge)
   add [name...]        Headless primitives and utilities: behaviour, timing and a11y with
                        no styles of their own. No name lists the catalogue. Add them as a
                        DEPENDENCY: that is how a fix reaches your project. --copy vendors the
@@ -435,9 +438,6 @@ Commands:
                          -c --cwd <dir> run against another project  -s --silent
                          --list <query> search      --dry-run  report without writing
                          --style tailwind|css|none for a copied recipe (auto-detected)
-  design <source>      Reverse-engineer a design system from a URL, a project or a git
-                       repo into DESIGN.md and an agent skill (--ultra adds screenshots,
-                       motion and hover states through a local Chrome/Edge)
                          --no-deps  skip the extra packages an item declares
                        add flags also decides where the flag images come from:
                          --flags cdn|local        jsDelivr, or files in the project
