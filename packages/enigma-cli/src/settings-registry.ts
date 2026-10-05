@@ -15,6 +15,7 @@ import { setKimiTrust } from "./kimi";
 import { setTrim } from "./trim-deploy";
 import { setVerify } from "./verify-deploy";
 import { clampCapPercent } from "./governor";
+import { parseTrivialLines } from "./gate/triviality";
 import { applyMcpToggle } from "./mcp-deploy";
 import { setCiWatch } from "./ci-watch-deploy";
 import { applyDashboardMode } from "./dashboard";
@@ -459,6 +460,17 @@ const RAW_CATEGORIES: Category[] = [
                 write: () => ({ changed: false }),
                 readChoice: () => conf.readConfig().config.gateSeverity,
                 writeChoice: (value, scope) => ({ path: conf.setEnigmaValue("gateSeverity", value, scope), changed: true }),
+            },
+            {
+                key: "gate-trivial-lines",
+                label: "Gate threshold for trivial changes",
+                hint: "changed lines at or under which a commit skips the gate pipeline (no review round, no PR): a one-line style fix is pushed as is; auth, dependencies, CI, migrations and binaries always go through; 0 = every change goes through; enigma default: 20",
+                kind: "value",
+                valueHint: "changed lines, 0-1000 (default 20)",
+                read: () => conf.readConfig().config.gateTrivialLines > 0,
+                write: () => ({ changed: false }),
+                readValue: () => String(conf.readConfig().config.gateTrivialLines),
+                writeValue: (value, scope) => ({ path: conf.setEnigmaValue("gateTrivialLines", parseTrivialLines(value), scope), changed: true }),
             },
             {
                 key: "auto-lint",

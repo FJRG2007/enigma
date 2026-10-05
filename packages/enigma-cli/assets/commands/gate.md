@@ -131,6 +131,7 @@ What follows from that:
 
   | The change | Run |
   | --- | --- |
+  | Up to `gate-trivial-lines` changed lines (20 by default) in at most 3 files, no sensitive path (auth, dependencies, CI, migrations, env) and no binary | none: `axi run` declines it with `skipped: true` - push the commit as is, without a branch or PR made just for it. `--full` only when the user asked for a full validation |
   | A typo, a comment, a version bump, generated output | `--quick` |
   | Styles, copy, markup - no new logic | `--quick` |
   | Code whose suite you ALREADY ran green this session, over these commits | `--quick`, and name the suite in your report |

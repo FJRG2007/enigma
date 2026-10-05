@@ -21,16 +21,20 @@ import { join } from "node:path";
 import { REMOTE_NAME } from "../init";
 import { readConfig } from "@/config";
 import * as render from "./axiRender";
+import { branchPoint } from "@/verify";
 import { readFileSync } from "node:fs";
-import { captureAccountEnv } from "../account-env";
 import type { FixPolicy } from "../config";
+import { lastGateRun } from "@/gate-ledger";
+import { spawnSync } from "node:child_process";
 import type { RunInfo } from "../ipc/protocol";
+import { captureAccountEnv } from "../account-env";
 import { DEFAULT_MERGE_METHOD } from "../scm/types";
 import { mergeRunPR, type MergeOutcome } from "./axiMerge";
 import { parseAddFinding, splitLogLines } from "./axiQuery";
 import { field, toonHelp, toonTable, type ToonField } from "../toon";
 import { formatSkipPushOptions, formatIntentPushOption } from "./steps";
 import { currentBranch, run as gitRun, pushWithOptions, hasUncommittedChanges } from "../git";
+import { DEFAULT_TRIVIAL_LINES, describeTrivial, isTrivial, measureChange } from "../triviality";
 import {
     type AxiEnv,
     type AxiDeps,
@@ -400,6 +404,44 @@ async function preflightGuard(deps: AxiDeps, branch: string): Promise<number | n
     return null;
 }
 
+/**
+ * Declines a run whose committed change is below the review threshold
+ * (`gate-trivial-lines`, sensitive paths and binaries excluded - see triviality.ts):
+ * review agents, fix rounds and a PR cost minutes and catch nothing a typecheck and the
+ * commit hooks did not. Checked BEFORE the gate environment opens, so a trivial change
+ * never initializes a repository or starts the daemon. Exit 0 with the next step, because
+ * nothing failed. Returns null - the gate runs as usual - when the change is not trivial,
+ * cannot be measured, the tree is dirty (preflight reports that), or a run is already in
+ * flight on this branch (driving it on is the caller's intent).
+ */
+function declineTrivial(deps: AxiDeps): number | null {
+    const configured = Number(readConfig().config.gateTrivialLines);
+    const threshold = Number.isInteger(configured) && configured >= 0 ? configured : DEFAULT_TRIVIAL_LINES;
+    if (threshold === 0) return null;
+    const git = (args: string[]): string | null => {
+        const res = spawnSync("git", args, { encoding: "utf8", windowsHide: true });
+        return res.status === 0 ? res.stdout.trim() : null;
+    };
+    const branch = git(["rev-parse", "--abbrev-ref", "HEAD"]);
+    if (!branch || branch === "HEAD" || git(["status", "--porcelain"]) !== "") return null;
+    const last = lastGateRun(process.cwd());
+    if (last && last.branch === branch && !render.terminalStatus(last.status)) return null;
+    const base = branchPoint(".");
+    if (base === null) return null;
+    const size = measureChange(".", base);
+    if (size === null || !isTrivial(size, threshold)) return null;
+    render.emitDoc(deps.io, [
+        field("skipped", true),
+        field("reason", `trivial change: ${describeTrivial(size, threshold)}`),
+        toonHelp([
+            `Do not run the pipeline for this. Push the commit on "${branch}" as the repository normally takes it (on the default branch, push it directly; do not open a branch or PR just for it).`,
+            "Run with --full only if the user asked for a full validation of this change.",
+            "Change the threshold with: enigma config gate-trivial-lines <lines> (0 = always run).",
+        ]),
+    ]);
+    return 0;
+}
+
 /** Adds a fixes table when the pipeline applied any fixes. */
 function appendFixesField(fields: ToonField[], fixes: string[][]): void {
     if (fixes.length === 0) return;
@@ -518,9 +560,14 @@ export async function runAxiRun(
     autoYes: boolean,
     skipSteps: StepName[],
     intent: string,
-    merge = false
+    merge = false,
+    full = false
 ): Promise<number> {
     const signal = deps.signal;
+    if (!full) {
+        const declined = declineTrivial(deps);
+        if (declined !== null) return declined;
+    }
     let env: AxiEnv;
     try {
         env = await openAxiEnv(deps, true);

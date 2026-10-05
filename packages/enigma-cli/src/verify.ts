@@ -54,6 +54,7 @@ import { attributedCommits, attributionOff } from "./attribution-guard";
 import { enigmaHome, readJson, findGitRoot, isGateAgentRun } from "./util";
 import { gateLedgerReady, lastGateRun, validatingRun } from "./gate-ledger";
 import { checkFile, loadRules, recordFindings, type Finding } from "./guardrails";
+import { DEFAULT_TRIVIAL_LINES, isTrivial, measureChange } from "./gate/triviality";
 import { lastAssistantMessage, sessionStartedAt, userTyped } from "./claude-transcripts";
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, statSync, writeFileSync } from "node:fs";
 
@@ -1216,6 +1217,8 @@ interface GateContext {
     expected: boolean;
     /** The branch the work is on, or "" when git names none. */
     branch: string;
+    /** Changed lines at or under which committed work is too small to need the gate (`gate-trivial-lines`; 0 = always needed). */
+    trivialLines: number;
 }
 
 /**
@@ -1231,7 +1234,23 @@ function gateContextAt(cwd: string): GateContext {
     // a throw here would break the turn over a malformed setting.
     const protectedBranches = Array.isArray(config.gateProtectedBranches) ? config.gateProtectedBranches : [];
     const expected = Boolean(config.gate) && branch !== "" && !protectedBranches.some((entry) => String(entry).trim() === branch);
-    return { expected, branch };
+    const lines = Number(config.gateTrivialLines);
+    return { expected, branch, trivialLines: Number.isInteger(lines) && lines >= 0 ? lines : DEFAULT_TRIVIAL_LINES };
+}
+
+/**
+ * Whether the work committed ahead of the branch point is below the review threshold - a
+ * one-line style fix the full pipeline (review agents, fix rounds, a PR) would only slow
+ * down. Such work is not expected to go through the gate, so neither half of the check
+ * orders a run for it. Sensitive paths and binaries never count as trivial (triviality.ts).
+ * Any failure to measure answers false: the gate stays expected.
+ */
+function trivialWork(cwd: string, gate: GateContext): boolean {
+    if (gate.trivialLines <= 0) return false;
+    const base = branchPoint(cwd);
+    if (base === null) return false;
+    const size = measureChange(cwd, base);
+    return size !== null && isTrivial(size, gate.trivialLines);
 }
 
 /**
@@ -1296,6 +1315,7 @@ function unvalidatedCommits(cwd: string, gate: GateContext): { count: number; si
     if (base === null) return null;
     const ahead = Number(gitOut(cwd, ["rev-list", "--count", `${base}..HEAD`, "--"]).trim());
     if (!Number.isInteger(ahead) || ahead <= 0) return null;
+    if (trivialWork(cwd, gate)) return null;
     const committedAt = headCommittedAt(cwd);
     if (committedAt === null) return null;
     if (gateValidatedHead(cwd, gate, committedAt)) return null;
@@ -1451,7 +1471,7 @@ function gitOut(cwd: string, args: string[]): string {
  * with no commits - and the caller then falls back to the working tree alone rather than
  * failing: this runs inside a turn-end hook and must never break the turn.
  */
-function branchPoint(cwd: string): string | null {
+export function branchPoint(cwd: string): string | null {
     const refs: string[] = [];
     // NOT the branch's own upstream. Tried, and it silently defeated the whole point: after
     // `git push -u`, the upstream IS this branch, so the merge-base equals HEAD and the scan
@@ -2442,7 +2462,7 @@ export function runVerifyHook(payload?: string): number {
         // loop-safety budget let it block: a gate standing down because its channel is spent must
         // not promote the cosmetic one into its place. See styleGate.
         let substantive = false;
-        if (skipped && gate().expected && !gateValidatedHead(cwd, gate()) && !gateBypassed(bypassAnchor, message)) {
+        if (skipped && gate().expected && !gateValidatedHead(cwd, gate()) && !gateBypassed(bypassAnchor, message) && !trivialWork(cwd, gate())) {
             substantive = true;
             const gap: VerifyGap = { kind: "gate", detail: skipped };
             if (mayBlock(`gate:${issueKey(session, [gap])}`, session, "gate")) {

@@ -1,6 +1,6 @@
 /** `enigma design --help`. Its own module so the main help can show it without loading the extractor. */
 
-import { AGENTS } from "@/agents";
+import { AGENTS } from "../agents";
 
 export const DESIGN_HELP = `usage: enigma design <url|path|git-url> [options]
        enigma design --url <url> | --dir <path> | --repo <git-url> [options]

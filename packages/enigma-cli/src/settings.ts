@@ -222,7 +222,14 @@ export async function runConfigCli(positionals: string[], scope: Scope | null, i
             console.log(`${rawKey} (${target}): ${setting.secret ? (cur ? "(set)" : "(not set)") : (cur || "(default)")}`);
             return 0;
         }
-        const res = setting.writeValue ? setting.writeValue(rawValue, target) : { changed: false };
+        // A setting that rejects the value says why; reporting "Set" for a value never stored would lie.
+        let res: { path?: string; changed: boolean; };
+        try {
+            res = setting.writeValue ? setting.writeValue(rawValue, target) : { changed: false };
+        } catch (err) {
+            console.error(`${rawKey}: ${(err as Error).message}`);
+            return 2;
+        }
         const shown = setting.secret ? (rawValue ? "(set, encrypted)" : "(cleared)") : (rawValue || "(cleared)");
         console.log(`Set ${rawKey} = ${shown} (${target})${res.path ? ` in ${res.path}` : ""}.`);
         return 0;

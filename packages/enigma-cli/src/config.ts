@@ -246,6 +246,12 @@ export interface EnigmaConfig {
     /** Lowest finding severity that stops a gate run for the user's decision. */
     gateSeverity: GateSeverity;
     /**
+     * Changed lines at or under which committed work skips the gate: `axi run` declines it and the
+     * turn-end check does not ask for a run. Sensitive paths and binaries never qualify
+     * (gate/triviality.ts). 0 sends every change through the pipeline.
+     */
+    gateTrivialLines: number;
+    /**
      * Watch the GitHub Actions run a push triggers and tell the agent when it fails, with the
      * failing log attached. Costs no model tokens: a detached process does the waiting and the
      * hook prints nothing at all on a green build.
@@ -420,6 +426,7 @@ export const CONFIG_DEFAULTS: EnigmaConfig = {
     commitEmoji: true, updateNotifier: true, fullscreen: true, parallelSubagents: false, outputStyle: "off", minimalCode: "full", logoColorPolicy: "ask",
     autoSync: true, shareSessions: true, sharedStore: false, statusline: true, statuslineRefresh: 10, claudeTrust: true, kimiTrust: true, remoteSkills: true, skillUpdatePolicy: "overwrite", permissionBypass: true, autoLint: false, guardrails: true, trim: true, verify: true, verifyCommand: "", selfAudit: true, compress: false, codeGraph: true, browser: true, browserHeadless: true, gate: true, dashboard: "off", tokenPrice: 0, tokenSpeed: 0, usageStats: false, recall: false, recallLlm: true, recallProvider: "claude-local", recallModel: "", recallApiBase: "", recallApiKey: "", proxy: false, usageApi: false, promptSecretGuard: false, promptSecretMode: "redact",
     resourceCap: 60, lowMemoryCap: 80,
+    gateTrivialLines: 20,
     planSessionLimit: 0, planWeeklyLimit: 0, planWeeklySonnetLimit: 0, planWeeklyOpusLimit: 0, planWeeklyReset: "mon 00:00",
     dashboardLive: true, dashboardPort: 0, dashboardBind: "loopback", dashboardBindAddress: "", apiPort: 8000, apiAccount: "", apiProfile: "", apiPack: "", toolPaths: {}, bypassDisabled: [], discardedSkills: [], skillAgentsOff: {}, packs: [], packAccounts: {}, gateProtectedBranches: [], gateSeverity: "warning", gateTidyBranches: true, ciWatch: true,
 };

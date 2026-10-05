@@ -309,7 +309,8 @@ export function axiSubcommandHelp(sub: string): string {
             "  --quick, -q       skip test and document: the change is small or already tested",
             "  --yes, -y         treat every actionable finding as consent to fix (drives unattended)",
             "  --merge, -m       ONLY when the user asked for the merge: merge the PR once CI is green",
-            "                    a run that hands back at a gate needs it on the `respond` that reaches CI-green too"
+            "                    a run that hands back at a gate needs it on the `respond` that reaches CI-green too",
+            "  --full            validate even a change below gate-trivial-lines (declined by default)"
         ].join("\n"),
         respond: [
             "usage: enigma gate axi respond --action <approve|fix|skip> [flags]",
@@ -363,12 +364,13 @@ export async function runAxi(argv: string[], deps: Pick<AxiDeps, "daemon"> & Par
 
     switch (sub) {
         case "run": {
-            const f = parseFlags(rest, new Set(["yes", "quick", "merge"]), new Set(["skip", "intent"]),
+            const f = parseFlags(rest, new Set(["yes", "quick", "merge", "full"]), new Set(["skip", "intent"]),
                 { y: "yes", q: "quick", m: "merge" });
             if ("error" in f) return emitError(resolved.io, 2, f.error);
             const autoYes = f.bools.has("yes");
             const quick = f.bools.has("quick");
             const merge = f.bools.has("merge");
+            const full = f.bools.has("full");
             const skipValue = f.values.get("skip") ?? "";
             const intent = f.values.get("intent") ?? "";
             return trackAxiSurface("axi-run", "/axi/run", {
@@ -385,7 +387,7 @@ export async function runAxi(argv: string[], deps: Pick<AxiDeps, "daemon"> & Par
                     return Promise.resolve(emitError(resolved.io, 2, errMessage(err),
                         "Valid steps: intent, rebase, review, test, document, lint, push, pr, ci"));
                 }
-                return runAxiRun(resolved, autoYes, skipSteps, intent, merge);
+                return runAxiRun(resolved, autoYes, skipSteps, intent, merge, full);
             });
         }
         case "respond": {

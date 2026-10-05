@@ -41,6 +41,21 @@ Two levers, and they answer different halves of "why did this take an hour".
   `--skip test,document` in one flag, `parseRunSkips` in `cli/steps.ts`). The agent picks it
   rather than asking: a typo, a version bump, styles or copy, or code whose suite it just ran
   green. `review` is never in it - a quick run is still a gated one.
+- **Below a size threshold there is no run at all** (`gate/triviality.ts`, setting
+  `gate-trivial-lines`, default 20, 0 = off). Reported: agents opened a branch, a PR and a full
+  run for a one-line duplicate-divider fix. Three levers were each insufficient alone, because
+  the cause was deterministic: the turn-end check (`verify.ts` `gateGap`/`gateSkipped`) denied the
+  stop over ANY unvalidated commit, so the kernel's "drive it automatically" was enforced even for
+  a one-liner. Now one classifier decides for both sides: `axi run` declines a trivial change
+  (`skipped: true`, exit 0, "push it as is, no branch or PR for it") BEFORE opening the gate
+  environment - so it never inits a repo or starts the daemon for it - and the turn-end check does
+  not expect a run for it. Trivial = at most 3 files, at most N changed lines, no binary, and NO
+  sensitive path (auth/session/token/permission names, dependency manifests and lockfiles, CI
+  workflows, migrations and SQL, Dockerfiles, `.env*`, infra, `.enigma.json`, `.githooks`): size
+  never exempts the places a review earns its time. One-sided by design - unmeasurable means not
+  trivial. `--full` overrides it when the user asked for a full validation; an in-flight run on
+  the branch is never declined. The PR half lives in git-policy/kernel prose: no branch or PR is
+  opened just for a trivial change.
 
 The agent-facing rule lives in `assets/commands/gate.md` as a table, because the failure it
 replaced was a turn spent asking the user which phases to skip - a decision the agent is

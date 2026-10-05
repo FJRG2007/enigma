@@ -37,6 +37,10 @@ delete process.env.ENIGMA_GATE;
 process.env.ENIGMA_SELF_AUDIT = "0";
 // The turn-end hook schedules a background branch cleanup; a test must never spawn one.
 process.env.ENIGMA_NO_BACKGROUND_TIDY = "1";
+// The ledger cases commit one-line files, which the trivial-change fast path would exempt from
+// the gate; they test the ledger, so the fast path is off for the file and has its own case.
+const BASE_CONFIG = { gateTrivialLines: 0 };
+writeFileSync(join(HOME, ".enigma.json"), JSON.stringify(BASE_CONFIG));
 
 const { claimsDone, asksToContinue, gateSkipped, gateExcused, scanGaps, scanConventions, collectGaps, runVerifyHook, unsourcedTrailers, blockingStyleFindings } = await import("../src/verify");
 const { recordGateRun, lastGateRun, validatingRun } = await import("../src/gate-ledger");
@@ -266,14 +270,14 @@ test("ignores documents, ignore-marked lines, and abstract-method idioms", () =>
 test("runs the configured verification command and reports its failure", () => {
     const dir = repoWith();
     write(dir, "src/new.ts", "export const a = 1;\n");
-    writeFileSync(join(HOME, ".enigma.json"), JSON.stringify({ verifyCommand: "node -e \"process.exit(3)\"" }));
+    writeFileSync(join(HOME, ".enigma.json"), JSON.stringify({ ...BASE_CONFIG, verifyCommand: "node -e \"process.exit(3)\"" }));
     try {
         const { gaps } = collectGaps(dir);
         expect(gaps.length).toBe(1);
         expect(gaps[0]!.kind).toBe("command");
         expect(gaps[0]!.detail).toContain("exited 3");
     } finally {
-        writeFileSync(join(HOME, ".enigma.json"), "{}");
+        writeFileSync(join(HOME, ".enigma.json"), JSON.stringify(BASE_CONFIG));
     }
 });
 
@@ -287,7 +291,7 @@ test("runs the verification command once per piece of new work, not once per cla
     write(dir, "src/more.ts", "export const b = 2;\n");
     git(dir, "add", "-A");
     git(dir, "commit", "-qm", "work, then report - nothing left uncommitted");
-    writeFileSync(join(HOME, ".enigma.json"), JSON.stringify({ verifyCommand: "node -e \"\"" }));
+    writeFileSync(join(HOME, ".enigma.json"), JSON.stringify({ ...BASE_CONFIG, verifyCommand: "node -e \"\"" }));
     try {
         // Committed work still gets verified.
         expect(collectGaps(dir).ranCommand).toBe(true);
@@ -297,7 +301,7 @@ test("runs the verification command once per piece of new work, not once per cla
         write(dir, "src/again.ts", "export const c = 3;\n");
         expect(collectGaps(dir).ranCommand).toBe(true);
     } finally {
-        writeFileSync(join(HOME, ".enigma.json"), "{}");
+        writeFileSync(join(HOME, ".enigma.json"), JSON.stringify(BASE_CONFIG));
     }
 });
 
@@ -481,6 +485,43 @@ test("denies the stop when committed work never reached an enabled gate", () => 
     // A turn that claims nothing is not claiming the unvalidated work is finished.
     commit("src/three.ts");
     expect(runVerifyHook(payload(dir, "Pushed the first half; continuing next turn."))).toBe(0);
+});
+
+test("a trivial change is not expected to go through the gate; anything bigger or sensitive is", () => {
+    recordGateRun({ repoPath: join(tmpdir(), "a-trivial-repo"), branch: "main", headSha: "0".repeat(7), status: "completed", at: 1 });
+    // The project's own setting turns the fast path back on; committed in the base so it is not
+    // part of the change being judged (it is a sensitive path itself).
+    const dir = repoWith({ ".enigma.json": JSON.stringify({ gateTrivialLines: 20 }), "src/app.css": ".a { color: red; }\n.b { border-top: 1px solid; }\n" });
+    git(dir, "checkout", "-q", "-b", "fix");
+    const commit = (file: string, content: string): void => {
+        write(dir, file, content);
+        git(dir, "add", "-A");
+        git(dir, "commit", "-qm", "work");
+    };
+    commit("src/app.css", ".a { color: red; }\n");
+    expect(runVerifyHook(payload(dir, "All done, everything is implemented."))).toBe(0);
+
+    // The one-line fix after the watch is armed: still nothing to validate, in either half.
+    commit("src/app.css", ".a { color: blue; }\n");
+    expect(runVerifyHook(payload(dir, "All done, everything is implemented."))).toBe(0);
+    expect(runVerifyHook(payload(dir, "Listo. El gate sigue sin ejecutarse; dime si quieres que lo lance."))).toBe(0);
+
+    // Past the threshold the gate is expected again.
+    commit("src/big.ts", Array.from({ length: 30 }, (_, i) => `export const v${i} = ${i};`).join("\n"));
+    expect(runVerifyHook(payload(dir, "All done, everything is implemented."))).toBe(2);
+});
+
+test("a small change to a sensitive path still needs the gate", () => {
+    recordGateRun({ repoPath: join(tmpdir(), "a-sensitive-repo"), branch: "main", headSha: "0".repeat(7), status: "completed", at: 1 });
+    const dir = repoWith({ ".enigma.json": JSON.stringify({ gateTrivialLines: 20 }), "src/auth/session.ts": "export const ttl = 60;\n" });
+    git(dir, "checkout", "-q", "-b", "fix");
+    write(dir, "src/other.ts", "export const x = 1;\n");
+    git(dir, "add", "-A");
+    git(dir, "commit", "-qm", "arm");
+    expect(runVerifyHook(payload(dir, "All done, everything is implemented."))).toBe(0);
+    write(dir, "src/auth/session.ts", "export const ttl = 3600;\n");
+    git(dir, "commit", "-qam", "longer sessions");
+    expect(runVerifyHook(payload(dir, "All done, everything is implemented."))).toBe(2);
 });
 
 test("the bypass the user asked for clears the unvalidated-commits block too", () => {
@@ -1856,12 +1897,12 @@ test("the style gate enforces the level the project was actually given", () => {
 
     // ...and a project that turned the style off had the block stripped from its memory, so it
     // must not be blocked by it - whatever the global config says.
-    writeFileSync(join(HOME, ".enigma.json"), JSON.stringify({ outputStyle: "full" }));
+    writeFileSync(join(HOME, ".enigma.json"), JSON.stringify({ ...BASE_CONFIG, outputStyle: "full" }));
     try {
         write(dir, ".enigma.json", JSON.stringify({ outputStyle: "off" }));
         expect(hookRun(payload(dir, padded))[0]).toBe(0);
     } finally {
-        writeFileSync(join(HOME, ".enigma.json"), "{}");
+        writeFileSync(join(HOME, ".enigma.json"), JSON.stringify(BASE_CONFIG));
     }
 });
 
